@@ -261,38 +261,85 @@ fn tally_read(value: &serde_json::Value, receipt: &mut Receipt) -> Option<String
 }
 
 fn render(receipt: &Receipt) -> String {
-    let mut text = if receipt.aborted {
-        "Turn receipt\n- Changed: not captured before abort\n- Verification: not run".to_string()
-    } else {
-        summary(&receipt.changes, &receipt.checks)
-    };
-    let file = if receipt.reads == 1 { "file" } else { "files" };
-    let search = if receipt.searches == 1 {
-        "search"
-    } else {
-        "searches"
-    };
-    let command = if receipt.commands == 1 {
-        "command"
-    } else {
-        "commands"
-    };
-    let header = format!(
-        "Turn receipt\n- Started at: {}\n- Inspected: {} {file} read, {} {search}, {} {command}",
-        receipt.snapshot, receipt.reads, receipt.searches, receipt.commands
+    let cap = crate::limits::limits().receipt_items_max;
+    let mut text = format!(
+        "Turn receipt · {}\n- Started at: {}",
+        headline(receipt),
+        receipt.snapshot
     );
-    text.replace_range(.."Turn receipt".len(), &header);
     if !receipt.failures.is_empty() {
-        let shown = receipt.failures.join("; ");
-        let at = text.find("\n- Changed:").unwrap_or(text.len());
-        text.insert_str(
-            at,
-            &format!("\n- Failed: {}; {shown}", receipt.failures.len()),
-        );
+        let mut seen = BTreeSet::new();
+        let failures: Vec<String> = receipt
+            .failures
+            .iter()
+            .filter(|failure| seen.insert(failure.as_str()))
+            .cloned()
+            .collect();
+        text.push_str(&format!("\n- Failed: {}", capped(&failures, cap, "; ")));
+    }
+    if receipt.aborted {
+        text.push_str("\n- Changed: not captured before abort\n- Verification: not run");
+        return text;
+    }
+    if !receipt.changes.is_empty() {
+        let names: Vec<String> = receipt.changes.iter().map(|change| code(change)).collect();
+        text.push_str(&format!("\n- Changed: {}", capped(&names, cap, ", ")));
+    }
+    let checks = summary(&[], &receipt.checks);
+    if let Some(at) = checks.find("\n- Verification:") {
+        text.push_str(&checks[at..]);
     }
     text
+}
+
+fn headline(receipt: &Receipt) -> String {
+    let mut parts = vec![
+        format!("{} read", receipt.reads),
+        crate::text::plural(receipt.searches, "search"),
+        crate::text::plural(receipt.commands, "command"),
+    ];
+    if !receipt.failures.is_empty() {
+        parts.push(format!("{} failed", receipt.failures.len()));
+    }
+    parts.push(if receipt.aborted {
+        "aborted".to_string()
+    } else if receipt.changes.is_empty() {
+        "no changes".to_string()
+    } else {
+        format!("{} changed", receipt.changes.len())
+    });
+    parts.push(
+        match (
+            receipt.checks.is_empty(),
+            receipt.checks.iter().all(|check| check.passed),
+        ) {
+            _ if receipt.aborted => "not verified",
+            (true, _) => "no check",
+            (false, true) => "check passed",
+            (false, false) => "check failed",
+        }
+        .to_string(),
+    );
+    parts.join(" · ")
+}
+
+fn capped(items: &[String], cap: usize, separator: &str) -> String {
+    let mut shown = items
+        .iter()
+        .take(cap)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(separator);
+    if items.len() > cap {
+        shown.push_str(&format!("{separator}+{} more", items.len() - cap));
+    }
+    shown
 }
 
 fn code(text: &str) -> String {
     format!("`{}`", text.replace('`', "\\`"))
 }
+
+#[cfg(test)]
+#[path = "verify_tests.rs"]
+mod tests;

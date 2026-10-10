@@ -306,6 +306,7 @@ fn kind(name: &str) -> &'static str {
         Some(Builtin::RunCommand) => "execute",
         Some(Builtin::Web) => "fetch",
         Some(Builtin::Lsp | Builtin::Search) => "search",
+        Some(Builtin::Browser) => "fetch",
         Some(Builtin::Skill | Builtin::Todo | Builtin::Task) | None => "other",
     }
 }

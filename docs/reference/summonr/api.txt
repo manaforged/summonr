@@ -236,6 +236,7 @@ pub mod summonr::mail::cli
 pub fn summonr::mail::cli::run(args: &[alloc::string::String], cwd: &std::path::Path) -> summonr::Result<i32>
 pub mod summonr::modules
 pub enum summonr::modules::ModuleId
+pub summonr::modules::ModuleId::Browser
 pub summonr::modules::ModuleId::Jobs
 pub summonr::modules::ModuleId::Lsp
 pub summonr::modules::ModuleId::Mail

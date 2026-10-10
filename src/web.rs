@@ -16,7 +16,10 @@ const QUERY_MAX: usize = 400;
 mod fetch;
 mod results;
 
-use fetch::{host_blocked, resolves_blocked};
+pub(crate) use fetch::OUT_MAX;
+use fetch::{check_url, host_blocked, resolves_blocked};
+
+const INERT_SCHEMES: [&str; 3] = ["about", "data", "chrome-error"];
 use results::{Engine, Hit, Window, engines, flat, format_hits, parse_page};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -46,6 +49,7 @@ pub(crate) struct Search {
     allowed: Vec<String>,
     excluded: Vec<String>,
     logs: Arc<Mutex<Vec<tempfile::TempDir>>>,
+    browser: Arc<Mutex<Option<crate::browser::Browser>>>,
 }
 
 impl Search {
@@ -61,7 +65,18 @@ impl Search {
             allowed,
             excluded,
             logs: Arc::new(Mutex::new(Vec::new())),
+            browser: Arc::new(Mutex::new(None)),
         })
+    }
+
+    pub(crate) fn set_browser(&self, browser: Option<crate::browser::Browser>) {
+        if let Ok(mut held) = self.browser.lock() {
+            *held = browser;
+        }
+    }
+
+    fn browser(&self) -> Option<crate::browser::Browser> {
+        self.browser.lock().ok().and_then(|held| held.clone())
     }
 
     fn http(&self) -> Result<Session> {
@@ -214,6 +229,32 @@ pub(super) fn pinned_session(host: &str, addrs: &[std::net::SocketAddr]) -> Resu
     crate::credentials::session(
         http_builder().dns(DnsConfig::new().resolve_host(host, addrs.iter().copied())),
     )
+}
+
+pub(crate) async fn allowed_url(raw: &str) -> Result<String> {
+    let url = check_url(raw)?;
+    let host = url.host_str().unwrap_or("").to_string();
+    tokio::task::spawn_blocking(move || fetch_targets(&host))
+        .await
+        .unwrap_or(Err(()))
+        .map_err(|()| Error::Tool("browser: that host is not allowed".to_string()))?;
+    Ok(url.to_string())
+}
+
+pub(crate) async fn reachable(raw: &str) -> bool {
+    let Ok(url) = Url::parse(raw) else {
+        return false;
+    };
+    if INERT_SCHEMES.contains(&url.scheme()) {
+        return true;
+    }
+    let host = url.host_str().unwrap_or("").to_string();
+    if !matches!(url.scheme(), "https" | "http") || host_blocked(&host) {
+        return false;
+    }
+    tokio::task::spawn_blocking(move || !resolves_blocked(&host))
+        .await
+        .unwrap_or(false)
 }
 
 fn safe_redirect(url: &Url) -> bool {

@@ -51,6 +51,7 @@ pub(crate) struct ToolRegistry {
     workspace: PathBuf,
     policy: Policy,
     search: Option<Search>,
+    browser: Option<crate::browser::Browser>,
     env: Vec<(String, String)>,
     sandbox: Option<sandbox::Sandbox>,
     background: bool,
@@ -123,6 +124,7 @@ impl ToolRegistry {
             workspace,
             policy,
             search,
+            browser: None,
             env: Vec::new(),
             sandbox: None,
             background: true,
@@ -158,6 +160,7 @@ impl ToolRegistry {
         } else if self.search.is_none() {
             self.search = crate::web::Search::discover().ok();
         }
+        self.set_browser(switches.enabled(ModuleId::Browser));
         self.language = switches.enabled(ModuleId::Lsp);
         self.background = switches.enabled(ModuleId::Jobs);
         self.skills = switches.enabled(ModuleId::Skills);
@@ -300,6 +303,7 @@ impl ToolRegistry {
             Builtin::Todo => parse_todo(arguments).map(ToolOutput::ok),
             Builtin::Web => self.web(arguments).await.map(ToolOutput::ok),
             Builtin::Lsp => self.lsp(arguments).await,
+            Builtin::Browser => self.browse(arguments).await.map(ToolOutput::ok),
             Builtin::Task => Err(Error::Tool(format!(
                 "unknown tool `{}`",
                 call.function.name

@@ -13,6 +13,7 @@ pub enum ModuleId {
     Skills,
     Mcp,
     Mail,
+    Browser,
 }
 
 impl ModuleId {
@@ -26,6 +27,7 @@ impl ModuleId {
             Self::Skills => "skills",
             Self::Mcp => "mcp",
             Self::Mail => "mail",
+            Self::Browser => "browser",
         }
     }
 
@@ -57,7 +59,7 @@ pub struct Module {
     pub default: bool,
 }
 
-pub(crate) const ALL: [Module; 7] = [
+pub(crate) const ALL: [Module; 8] = [
     Module {
         id: ModuleId::Search,
         summary: "the web tool (search, fetch) through Leyline with a browser identity",
@@ -91,6 +93,11 @@ pub(crate) const ALL: [Module; 7] = [
     Module {
         id: ModuleId::Mail,
         summary: "the model's mail tools: agents, send, inbox, board",
+        default: false,
+    },
+    Module {
+        id: ModuleId::Browser,
+        summary: "drive a real Chrome: snapshot, click, type, tabs, logins kept",
         default: false,
     },
 ];

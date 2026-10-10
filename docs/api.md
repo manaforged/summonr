@@ -159,11 +159,11 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`. Use one key, not both. The checks decide exit code 2. The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. When the check file changes during a run anyway, summonr restores it, a `note` event says so, and the run keeps the check it loaded at start.
 - A file that summonr's own stdout or stderr is redirected to, for example `--json > ci/events.jsonl` inside the repository, never counts as a change.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't widen it.
-- A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail` and `search` are off by default.
+- A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail`, `search`, and `browser` are off by default.
 - The advertised tool list freezes after the first model round. A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, a table `{ command = "...", dialect = "claude" }`, or a list of either, run in order. Each hook reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. A hook with `dialect = "claude"`, and every plugin hook, follows the Claude Code rules instead (see the reference).
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
-- The sandbox is off by default. In a noninteractive run, sandbox escape, network grants, and writes outside the workspace are denied; `--no-net` stays in force after a command failure. Auto mode asks before it grants an extra write root.
+- The sandbox is off by default. Without `--sandbox`, an unattended `--goal` run can read and run anything your account can, including files outside the workspace; run CI and other unattended goals with `--sandbox`. In a noninteractive run, sandbox escape, network grants, and writes outside the workspace are denied; `--no-net` stays in force after a command failure. Auto mode asks before it grants an extra write root.
 - `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root are read only when the workspace is trusted. A home `SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it.
 
 The [reference](guide/reference.md) has every flag and config key. [Extending summonr](guide/extending.md) covers skills, MCP servers, hooks, and CLIs.

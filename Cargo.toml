@@ -57,6 +57,7 @@ toml_edit = "0.22"
 unicode-segmentation = "1.13.3"
 uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
+charm-cdp = { git = "https://github.com/manaforged/charm", rev = "34368a216cb912b2d6f8080e1f680fb2b21d73a9" }
 leyline = { workspace = true }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }

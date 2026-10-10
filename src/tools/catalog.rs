@@ -2,7 +2,9 @@ use crate::provider::ToolDefinition;
 
 use super::{ToolRegistry, tool};
 
+mod browser;
 mod search;
+use browser::browser;
 use search::search;
 
 impl ToolRegistry {
@@ -24,6 +26,9 @@ impl ToolRegistry {
         if self.search.is_some() {
             all.push(web());
         }
+        if self.browser.is_some() {
+            all.push(browser());
+        }
         all.push(todo());
         all
     }
@@ -37,6 +42,7 @@ impl ToolRegistry {
             Builtin::Lsp => self.language,
             Builtin::RunCommand => !self.policy.is_read_only() || self.sandbox.is_some(),
             Builtin::Web => self.search.is_some(),
+            Builtin::Browser => self.browser.is_some(),
             Builtin::Task => false,
         }
     }
@@ -53,6 +59,7 @@ pub(crate) enum Builtin {
     RunCommand,
     Todo,
     Web,
+    Browser,
     Task,
 }
 
@@ -66,6 +73,7 @@ const LIVE: &[(&str, Builtin)] = &[
     ("run_command", Builtin::RunCommand),
     ("todo", Builtin::Todo),
     ("web", Builtin::Web),
+    ("browser", Builtin::Browser),
     ("task", Builtin::Task),
 ];
 
@@ -112,6 +120,7 @@ impl Builtin {
             Self::RunCommand => "Run",
             Self::Todo => "Todo",
             Self::Web => "Web",
+            Self::Browser => "Browse",
             Self::Task => "Task",
         }
     }

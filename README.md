@@ -43,7 +43,7 @@ cargo install --git https://github.com/manaforged/summonr --locked
 ## First run
 
 1. Run `summonr` in a project directory.
-2. Type `/login` and pick a provider.
+2. Pick a provider in the list that opens on the first run, or type `/login` later.
 3. Paste the API key, or sign in to a coding plan in the browser.
 
 To skip the prompt, set a key such as `ANTHROPIC_API_KEY` and run `summonr anthropic`.
@@ -100,7 +100,7 @@ summonr anthropic --goal "make cargo test pass"
 Next commands:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
-- Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; `/modules task off` disables.
+- Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; turn it off in the Modules rows of `/settings` or with `task = false` under `[modules]` in `~/.summonr/config.toml`.
 - An implement child works in `<repo>-deltas/<id>`, a checkout beside the repo. It shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects. It does not add a branch. Sharing those directories skips a second copy of the build cache. It does not limit how many checks run at once. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk, shows as a conflict, and the other children still land. summonr never deletes a kept checkout. A research child stays in the directory you launched. `--worktree` still isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`.
 - A `[mcp.NAME]` table in `~/.summonr/config.toml` connects an MCP server. The server starts on its first tool call and stops when idle.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
@@ -175,11 +175,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-755 public items (76 types, 106 functions, 122 methods, 265 fields, 184 variants, 2 constants) at 755 paths; 0 are re-export aliases. 394 trait impl lines, 33 inherent impl lines. 24 modules, 0 re-export only.
+757 public items (76 types, 106 functions, 123 methods, 266 fields, 184 variants, 2 constants) at 757 paths; 0 are re-export aliases. 394 trait impl lines, 33 inherent impl lines. 24 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 510 | 42 | 57 | 99 | 0 |
+| `summonr` | 511 | 42 | 57 | 100 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
@@ -194,7 +194,7 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 | `summonr::limits` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::mail` | 0 | 0 | 0 | 0 | 0 |
 | `summonr::mail::cli` | 1 | 0 | 1 | 0 | 0 |
-| `summonr::modules` | 20 | 3 | 2 | 5 | 0 |
+| `summonr::modules` | 21 | 3 | 2 | 5 | 0 |
 | `summonr::prefs` | 19 | 2 | 2 | 1 | 0 |
 | `summonr::secret` | 10 | 1 | 2 | 1 | 0 |
 | `summonr::splash` | 13 | 1 | 1 | 2 | 0 |

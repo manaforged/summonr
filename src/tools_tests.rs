@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use super::*;
 use crate::policy::Policy;
 
+#[path = "tools_tests/browser.rs"]
+mod browser;
 #[path = "tools_tests/command.rs"]
 mod command;
 #[path = "tools_tests/edit.rs"]

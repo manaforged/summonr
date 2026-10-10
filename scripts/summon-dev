@@ -13,8 +13,12 @@ root=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd)
 target="$root/target/summon-dev"
 bin="$target/release/summonr"
 
+built="$target/summon-dev.head"
+head=$(git -C "$root" rev-parse HEAD 2>/dev/null)
+
 stale() {
     [ ! -x "$bin" ] && return 0
+    [ "$head" = "$(cat "$built" 2>/dev/null)" ] || return 0
     for path in "$root/src" "$root/Cargo.toml" "$root/Cargo.lock" "$root/build.rs" "$root/.git/HEAD"; do
         [ -e "$path" ] || continue
         if [ -n "$(find "$path" -newer "$bin" -print -quit 2>/dev/null)" ]; then
@@ -30,7 +34,8 @@ if stale; then
         CARGO_PROFILE_RELEASE_CODEGEN_UNITS=256 \
         CARGO_PROFILE_RELEASE_INCREMENTAL=true \
         cargo build --locked --manifest-path "$root/Cargo.toml" --release \
-        --bin summonr >&2 ||
+        --bin summonr >&2 &&
+        printf '%s\n' "$head" >"$built" ||
         echo "summonr: the build failed; starting the previous build" >&2
 fi
 

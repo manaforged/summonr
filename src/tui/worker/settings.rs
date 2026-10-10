@@ -328,6 +328,7 @@ impl Worker {
                 levels: self.levels.clone(),
                 verify: verify_display(self.loop_.verify_commands()),
                 strict: self.loop_.is_strict(),
+                approval: self.loop_.is_approval(),
                 endpoint: self.endpoint.clone(),
                 context_window: self.loop_.context_window(),
                 workflow: self.loop_.workflow(),

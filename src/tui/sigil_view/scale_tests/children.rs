@@ -3,9 +3,10 @@ use super::{State, busy_info, frame_with};
 use crate::tools::Event;
 use crate::tui::Msg;
 
-const IDS: [&str; 2] = [
+const IDS: [&str; 3] = [
     "01a104ac000000000000000000001111",
     "01a104ac000000000000000000002222",
+    "01a104ac000000000000000000003333",
 ];
 
 fn spawn(app: &App, id: &str, assignment: &str, background: bool) {
@@ -106,7 +107,7 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
     .join("\n");
     assert_eq!(running, "1");
     assert!(
-        done.contains("Task Benchmark startup and RSS") && done.contains("background"),
+        done.contains("● Task Benchmark startup and RSS") && done.contains("background"),
         "{done}"
     );
     assert!(
@@ -233,4 +234,103 @@ fn a_child_that_recovers_from_a_failed_command_reads_done_and_one_that_aborts_re
     .join("\n");
     assert!(shown.contains("1 done · 1 failed"), "{shown}");
     assert!(shown.contains("parser fixed"), "{shown}");
+}
+
+#[test]
+fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
+    use super::super::{chat::panels, model::Entry, view::root};
+    use crate::tui::{Activity, Cmd};
+    use sigil::{Host, events::EventRouter, reactive::Runtime, terminal::Screen};
+    use tokio::sync::mpsc::{error::TryRecvError, unbounded_channel};
+
+    Runtime::scope("clear-background", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, mut sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
+        app.resize(100, 30);
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        spawn(&app, IDS[0], "Keep the parent working", true);
+        spawn(&app, IDS[1], "Foreground child", false);
+        let mut host = Host::cells();
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(100, 30);
+        let mut router = EventRouter::new();
+        for _ in 0..2 {
+            screen
+                .frame(&mut host, &mut router, [], (100, 30))
+                .expect("frame");
+        }
+        let shown = screen
+            .frame(&mut host, &mut router, [], (100, 30))
+            .expect("frame")
+            .text();
+        let (row, line) = shown
+            .lines()
+            .enumerate()
+            .find(|(_, line)| line.contains("Clear"))
+            .expect("Clear button");
+        let col = sigil::app::cell_width(&line[..line.find("Clear").expect("Clear label")]);
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                sigil::terminal::click(col as u16, row as u16),
+                (100, 30),
+            )
+            .expect("click Clear");
+        assert!(
+            matches!(sent.try_recv(), Err(TryRecvError::Empty)),
+            "Clear sent a worker command"
+        );
+        let model = app.model.get();
+        assert!(model.busy_since.is_some());
+        assert_eq!(model.agents.len(), 2);
+        assert!(!model.agents[0].done);
+        drop(model);
+        assert_eq!(panels::strip_rows(&app), 0);
+        act(
+            &app,
+            IDS[0],
+            Event::Usage {
+                prompt_tokens: 5,
+                completion_tokens: 2,
+                reasoning_tokens: 0,
+                cached_tokens: 0,
+                millis: None,
+                prefix_hash: String::new(),
+                cost: Some(0.25),
+            },
+        );
+        act(
+            &app,
+            IDS[0],
+            Event::Note {
+                text: "late progress".to_owned(),
+            },
+        );
+        assert_eq!(panels::strip_rows(&app), 0);
+        app.toggle_agents();
+        assert_eq!(panels::strip_rows(&app), 2);
+        app.clear_agent(&crate::child::tag(IDS[1]));
+        assert_eq!(panels::strip_rows(&app), 2);
+        spawn(&app, IDS[2], "New background child", true);
+        assert_eq!(panels::strip_rows(&app), 3);
+        act(
+            &app,
+            IDS[0],
+            Event::Assistant {
+                text: "still finishes".to_owned(),
+            },
+        );
+        let model = app.model.get();
+        assert_eq!(model.agents[0].tokens, 7);
+        assert_eq!(model.agents[0].cost, 0.25);
+        assert!(model.agents[0].done);
+        assert!(model.busy_since.is_some());
+        assert!(model.entries.iter().any(|entry| matches!(entry,
+            Entry::Tool { name, output, .. }
+                if name == "Background" && output == "still finishes")));
+    });
 }

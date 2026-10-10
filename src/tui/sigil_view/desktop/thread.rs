@@ -341,7 +341,17 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
         chat::panels::Band::Form { lines, review } => {
             chat::form::form_band(app, usize::MAX, lines, review)
         }
-        chat::panels::Band::Busy(status) => notice_band(status, Tone::Neutral),
+        chat::panels::Band::Busy { status, attached } => {
+            let row = notice_band(status, Tone::Neutral);
+            if attached == 0 {
+                row
+            } else {
+                container()
+                    .layout(LayoutStyle::flex_column().fill_width())
+                    .child(row)
+                    .child(notice_bar(app, chat::panels::Band::Attached(attached)))
+            }
+        }
         chat::panels::Band::Attached(count) => {
             notice_band(chat::panels::attached_note(&app, count), Tone::Info)
         }

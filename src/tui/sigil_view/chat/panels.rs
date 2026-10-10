@@ -12,7 +12,7 @@ pub(in crate::tui::sigil_view) use super::strip::{agents, rows as strip_rows};
 pub(in crate::tui::sigil_view) enum Band {
     Approval { detail: String, persist: bool },
     Form { lines: Vec<String>, review: bool },
-    Busy(String),
+    Busy { status: String, attached: usize },
     Attached(usize),
 }
 
@@ -28,11 +28,7 @@ pub(in crate::tui::sigil_view) fn band(app: &App) -> Option<Band> {
     }
     let attached = app.attached.get();
     if let Some(status) = busy_status(&app.model.get(), app.ticks.get()) {
-        return Some(Band::Busy(if attached > 0 {
-            format!("{status} · {}", attached_text(attached))
-        } else {
-            status
-        }));
+        return Some(Band::Busy { status, attached });
     }
     (attached > 0).then_some(Band::Attached(attached))
 }
@@ -60,7 +56,17 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
         Band::Form { lines, review } => {
             above(super::form::form_band(app.clone(), width, lines, review))
         }
-        Band::Busy(status) => busy_row(&crate::text::ellipsize(&status, width)),
+        Band::Busy { status, attached } => {
+            let row = busy_row(&crate::text::ellipsize(&status, width));
+            if attached == 0 {
+                row
+            } else {
+                container()
+                    .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+                    .child(row)
+                    .child(band_nodes(app, width, Band::Attached(attached)))
+            }
+        }
         Band::Attached(attached) => above(notice_band(attached_note(app, attached), Tone::Info)),
     }
 }

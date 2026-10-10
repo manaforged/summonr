@@ -193,6 +193,14 @@ impl<P: Provider> Loop<P> {
         self.tools.set_env(env);
     }
 
+    pub(crate) fn toggle_approval(&mut self) -> bool {
+        self.tools.toggle_approval()
+    }
+
+    pub(crate) fn is_approval(&self) -> bool {
+        self.tools.policy().is_approval()
+    }
+
     pub fn set_images(&mut self, model_images: bool, vision: Option<crate::endpoint::Endpoint>) {
         self.tools.set_images(model_images, vision);
     }

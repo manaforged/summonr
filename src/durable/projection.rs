@@ -62,6 +62,15 @@ impl Line {
                 events
             }
             Line::Interrupted { text, reasoning } => said(text, reasoning, speech),
+            Line::Child { record } => record
+                .state
+                .notification()
+                .map(|event| Event::Child {
+                    id: record.id.to_string(),
+                    event: Box::new(event),
+                })
+                .into_iter()
+                .collect(),
             Line::Tool {
                 call,
                 text,

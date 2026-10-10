@@ -69,7 +69,6 @@ impl Model {
 
     fn child_spawn(&mut self, agent: Agent) {
         self.agents.push(agent);
-        self.agents_hidden = false;
     }
 
     fn child_usage(
@@ -83,7 +82,6 @@ impl Model {
         let index = match self.agents.iter().position(|agent| agent.id == tag) {
             Some(index) => index,
             None => {
-                self.agents_hidden = false;
                 self.agents.push(Agent::placeholder(tag));
                 self.agents.len() - 1
             }
@@ -97,7 +95,6 @@ impl Model {
         let index = match self.agents.iter().position(|agent| agent.id == tag) {
             Some(index) => index,
             None => {
-                self.agents_hidden = false;
                 self.agents.push(Agent::placeholder(tag));
                 self.agents.len() - 1
             }

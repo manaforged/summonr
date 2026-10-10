@@ -177,3 +177,90 @@ fn a_session_journal_opens_in_one_host_at_a_time() {
         "a released journal opens again once forked children exec"
     );
 }
+
+#[test]
+fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
+    use crate::child::{Access, ChildRecord, ChildState};
+    use crate::durable::projection::Speech;
+    use crate::tools::AbortCode;
+    let record = ChildRecord {
+        version: 1,
+        id: "01a104ac000000000000000000001111"
+            .parse()
+            .expect("child id"),
+        parent: "01a104ac000000000000000000002222"
+            .parse()
+            .expect("parent id"),
+        assignment: "Child terminal".to_owned(),
+        model: "m".to_owned(),
+        workspace: "/w".into(),
+        depth: 1,
+        access: Access::Research,
+        call: Some("t1".to_owned()),
+        state: ChildState::Running,
+    };
+    assert!(
+        Line::Child {
+            record: record.clone()
+        }
+        .events()
+        .is_empty()
+    );
+    let ChildState::Interrupted(mut result) = record.interrupt("parent cancelled").state else {
+        panic!("interrupted result")
+    };
+    result.text = "child answer".to_owned();
+    result.diagnostic = None;
+    result.usage.prompt_tokens = 2_000;
+    let mut empty = result.clone();
+    empty.text.clear();
+    let dir = tempfile::tempdir().expect("journal directory");
+    let path = dir.path().join("session.jsonl");
+    let mut journal = Log::create(&path).expect("journal");
+    for state in [
+        ChildState::Completed(result.clone()),
+        ChildState::Aborted(result.clone()),
+        ChildState::Failed(result.clone()),
+        ChildState::Interrupted(result),
+        ChildState::Completed(empty),
+    ] {
+        journal
+            .append(&Line::Child {
+                record: ChildRecord {
+                    state,
+                    ..record.clone()
+                },
+            })
+            .expect("child record");
+    }
+    let records = read(&path).expect("read journal");
+    assert_eq!(records.len(), 5);
+    for (line, expected) in records.into_iter().zip([
+        Event::Assistant {
+            text: "child answer".to_owned(),
+        },
+        Event::Aborted {
+            reason: "aborted".to_owned(),
+            code: AbortCode::Error,
+        },
+        Event::Aborted {
+            reason: "failed".to_owned(),
+            code: AbortCode::Error,
+        },
+        Event::Aborted {
+            reason: "interrupted".to_owned(),
+            code: AbortCode::Interrupted,
+        },
+        Event::Assistant {
+            text: String::new(),
+        },
+    ]) {
+        let events = line.into_events(Speech::Skip);
+        assert_eq!(events.len(), 1, "{events:?}");
+        let Event::Child { id, event } = &events[0] else {
+            panic!("child notification")
+        };
+        assert_eq!(id, &record.id.to_string());
+        assert_eq!(**event, expected);
+    }
+}

@@ -171,6 +171,10 @@ impl ToolRegistry {
         self.policy.set_strict();
     }
 
+    pub(crate) fn toggle_approval(&mut self) -> bool {
+        self.policy.toggle_approval()
+    }
+
     pub(crate) fn set_unrestricted(&mut self) {
         self.policy.set_unrestricted();
     }

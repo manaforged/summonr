@@ -52,6 +52,28 @@ impl ChildState {
     pub(crate) fn terminal(&self) -> bool {
         !matches!(self, Self::Running)
     }
+
+    pub(crate) fn notification(&self) -> Option<crate::tools::Event> {
+        use crate::tools::{AbortCode, Event};
+        let (label, result, code) = match self {
+            Self::Running => return None,
+            Self::Completed(result) => {
+                return Some(Event::Assistant {
+                    text: result.text.clone(),
+                });
+            }
+            Self::Aborted(result) => ("aborted", result, AbortCode::Error),
+            Self::Failed(result) => ("failed", result, AbortCode::Error),
+            Self::Interrupted(result) => ("interrupted", result, AbortCode::Interrupted),
+        };
+        Some(Event::Aborted {
+            reason: result
+                .diagnostic
+                .clone()
+                .unwrap_or_else(|| label.to_string()),
+            code,
+        })
+    }
 }
 
 impl ChildRecord {

@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Token,
-    container,
+    AlignItems, ControlSize, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder,
+    NodeEventsExt, Token, button, container,
 };
 
 use super::{Agent, App};
@@ -20,7 +20,7 @@ fn mark(agent: &Agent) -> (&'static str, Look) {
     }
 }
 
-fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilder {
+fn line(agent: &Agent, lead: &str, app: &App, detail: bool) -> NodeBuilder {
     let (glyph, tone) = mark(agent);
     let access = agent.access.name();
     let meta = if detail {
@@ -37,7 +37,7 @@ fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilde
             crate::provider::compact(agent.tokens)
         )
     };
-    container()
+    let mut line = container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
@@ -47,27 +47,42 @@ fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilde
         )
         .child(text(lead.to_string(), Look::xs(Token::Gray10)))
         .child(text(glyph, tone))
-        .child(text(agent.title.clone(), Look::xs(Token::Gray12)))
+        .child(
+            text(agent.title.clone(), Look::xs(Token::Gray12))
+                .ellipsize()
+                .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
+        )
         .child(
             text(
-                super::entry::workspace_relative(&agent.last, roots),
+                super::entry::workspace_relative(&agent.last, &app.roots),
                 Look::xs(Token::Gray10),
             )
             .ellipsize()
             .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
         )
-        .child(text(meta, Look::xs(Token::Gray10)))
+        .child(text(meta, Look::xs(Token::Gray10)));
+    if agent.background {
+        let clear = app.clone();
+        let id = agent.id.clone();
+        line = line.child(
+            button("Clear")
+                .ghost()
+                .size(ControlSize::Compact)
+                .accessible(format!("Clear background task {}", agent.title))
+                .activate(move || clear.clear_agent(&id)),
+        );
+    }
+    line
 }
 
 fn shown(app: &App) -> (bool, Vec<Agent>) {
     let model = app.model.get();
-    if model.agents_hidden {
-        return (false, Vec::new());
-    }
     let expanded = model.agents_expanded;
+    let hidden: &std::collections::BTreeSet<String> = &model.agents_hidden;
     let rows = model
         .agents
         .iter()
+        .filter(|agent| !hidden.contains(&agent.id))
         .filter(|agent| expanded || (agent.background && !agent.done))
         .cloned()
         .collect();
@@ -127,7 +142,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
             }
             for agent in &rows {
                 let lead = format!("{:<10}", if agent.background { "background" } else { "" });
-                nodes.push(line(agent, &lead, &app.roots, expanded));
+                nodes.push(line(agent, &lead, &app, expanded));
             }
             nodes
         })

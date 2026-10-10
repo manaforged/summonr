@@ -282,7 +282,6 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
             }
         })
-        .child(super::input::tab_shortcuts(app))
         .on_scroll(move |event| {
             scroll.settle.set(false);
             let lines = super::canvas::scroll_lines(event.delta);
@@ -306,5 +305,6 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
             }
         });
+    let shell = super::input::tab_shortcuts(shell, app);
     super::input::hotkey_shortcuts(super::input::composer_keys(shell, app), app)
 }

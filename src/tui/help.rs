@@ -30,13 +30,13 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "".to_string(),
             "composer".to_string(),
             "  enter        send; during a turn, queue, then enter again sends it now".to_string(),
-            "  tab          complete a /command or @path".to_string(),
-            "  ?            on an empty draft, show this help".to_string(),
-            "  ↑            on an empty draft, pull queued input back".to_string(),
             format!(
-                "  shift+tab    cycle reasoning effort: {}",
+                "  tab          complete a /command or @path; otherwise cycle effort: {}",
                 Effort::ALL.map(Effort::as_str).join(", ")
             ),
+            "  ?            on an empty draft, show this help".to_string(),
+            "  ↑            on an empty draft, pull queued input back".to_string(),
+            "  shift+tab    toggle approval for risky commands; keep configured policy".to_string(),
             "  esc          cancel; twice on an idle composer opens the session tree".to_string(),
             "  ctrl+c       clear the draft; twice on an empty draft quits".to_string(),
             "  ctrl+d       quit when the draft is empty".to_string(),

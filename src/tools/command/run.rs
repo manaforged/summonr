@@ -200,7 +200,7 @@ impl ToolRegistry {
         Ok(ToolOutput {
             text: output.trim_end().to_string(),
             success: code == 0,
-            mutated: !read_only && code == 0 && !crate::policy::reads_only(command),
+            mutated: may_write(read_only, command),
             grant,
             images: Vec::new(),
             patch: None,
@@ -245,7 +245,7 @@ impl ToolRegistry {
         let StartedCommand { log_path, .. } = started;
         let raw = scrubbed_preview(&log_path)?;
         let shown = digest(command, &raw);
-        let mutated = !read_only && !crate::policy::reads_only(command);
+        let mutated = may_write(read_only, command);
         let warning = if read_only {
             "\nworkspace writes were restricted by the command sandbox"
         } else if mutated {
@@ -314,4 +314,8 @@ fn scrubbed_preview(log_path: &std::path::Path) -> Result<String> {
     } else {
         preview
     })
+}
+
+fn may_write(read_only: bool, command: &str) -> bool {
+    !read_only && !crate::policy::reads_only(command)
 }

@@ -96,3 +96,18 @@ fn freshness_rejects_an_unknown_window() {
         Some(super::results::Window::Month)
     );
 }
+
+#[test]
+fn the_browser_reaches_only_https_and_inert_pages() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        assert!(!super::reachable("http://example.com/").await);
+        assert!(!super::reachable("http://127.0.0.1:8080/").await);
+        assert!(!super::reachable("https://127.0.0.1/").await);
+        assert!(!super::reachable("file:///etc/passwd").await);
+        assert!(super::reachable("about:blank").await);
+    });
+}

@@ -137,3 +137,45 @@ fn a_login_cookie_survives_summonr_exiting() {
             .expect("close");
     });
 }
+
+#[test]
+#[ignore = "launches the installed Chrome and reaches httpbin.org"]
+fn a_redirect_to_a_private_host_returns_nothing_from_it() {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut stream = stream;
+            let mut buf = [0_u8; 2048];
+            drop(stream.read(&mut buf));
+            let body = "<title>private</title><p>SECRET-METADATA-TOKEN</p>";
+            drop(write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            ));
+        }
+    });
+    let target = format!("http%3A%2F%2F127.0.0.1%3A{port}%2F");
+    let (_dir, tools) = browsing(&[]);
+    runtime().block_on(async {
+        let landed = call(
+            &tools,
+            serde_json::json!({"action": "navigate", "url": format!("https://httpbin.org/redirect-to?url={target}")}),
+        )
+        .await
+        .expect("navigate");
+        let read = call(&tools, serde_json::json!({"action": "read"}))
+            .await
+            .expect("read");
+        for text in [&landed, &read] {
+            assert!(!text.contains("SECRET-METADATA-TOKEN"), "{text}");
+            assert!(!text.contains("private"), "{text}");
+        }
+        assert!(landed.contains("blocked"), "{landed}");
+        call(&tools, serde_json::json!({"action": "close"}))
+            .await
+            .expect("close");
+    });
+}

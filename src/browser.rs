@@ -110,6 +110,9 @@ impl Browser {
         let out_max = self.settings.out_max;
         let page = self.ready(&mut live).await?;
         page.goto(url.as_str()).await.map_err(fail)?;
+        if let Some(blocked) = extras::guard(page).await? {
+            return Err(Error::Tool(blocked));
+        }
         let text = page
             .text(charm::TextFormat::Markdown, out_max)
             .await

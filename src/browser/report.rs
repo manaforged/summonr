@@ -1,7 +1,10 @@
-const ESCAPED: &str =
-    "blocked: the page reached a host summonr does not allow; the tab now shows about:blank";
+const BLOCKED: &str = "blocked: the page reached a host or scheme summonr does not allow; nothing from it was read, and the tab now shows about:blank";
 
-pub(super) fn outcome(outcome: &charm::Outcome, escaped: bool, out_max: usize) -> String {
+pub(super) fn blocked(url: &str) -> String {
+    format!("{BLOCKED}\nurl: {url}")
+}
+
+pub(super) fn outcome(outcome: &charm::Outcome, out_max: usize) -> String {
     let mut out = format!("url: {}\n", outcome.url_after);
     if outcome.url_before != outcome.url_after {
         out.push_str(&format!("from: {}", outcome.url_before));
@@ -44,10 +47,6 @@ pub(super) fn outcome(outcome: &charm::Outcome, escaped: bool, out_max: usize) -
             out.push_str(&format!("console errors: {errors}"));
             out.push('\n');
         }
-    }
-    if escaped {
-        out.push_str(ESCAPED);
-        out.push('\n');
     }
     if let Some(snapshot) = &outcome.snapshot {
         out.push_str(&crate::text::ellipsize(snapshot, out_max));

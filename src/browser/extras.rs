@@ -14,6 +14,13 @@ pub(super) async fn run(
     shots: &Path,
     out_max: usize,
 ) -> Result<String> {
+    if matches!(
+        extra,
+        Extra::Snapshot { .. } | Extra::Read { .. } | Extra::Screenshot { .. }
+    ) && let Some(blocked) = guard(page).await?
+    {
+        return Ok(blocked);
+    }
     match extra {
         Extra::Snapshot {
             interactive_only,
@@ -52,9 +59,17 @@ pub(super) async fn act(
     out_max: usize,
 ) -> Result<String> {
     let outcome = page.act(action, report).await.map_err(fail)?;
-    let escaped = !crate::web::reachable(&outcome.url_after).await;
-    if escaped {
-        page.goto(BLANK).await.map_err(fail)?;
+    if let Some(blocked) = guard(page).await? {
+        return Ok(blocked);
     }
-    Ok(report::outcome(&outcome, escaped, out_max))
+    Ok(report::outcome(&outcome, out_max))
+}
+
+pub(super) async fn guard(page: &mut charm::Session) -> Result<Option<String>> {
+    let url = page.url().await.map_err(fail)?;
+    if crate::web::reachable(&url).await {
+        return Ok(None);
+    }
+    page.goto(BLANK).await.map_err(fail)?;
+    Ok(Some(report::blocked(&url)))
 }

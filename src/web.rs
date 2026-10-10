@@ -249,7 +249,7 @@ pub(crate) async fn reachable(raw: &str) -> bool {
         return true;
     }
     let host = url.host_str().unwrap_or("").to_string();
-    if !matches!(url.scheme(), "https" | "http") || host_blocked(&host) {
+    if url.scheme() != "https" || host_blocked(&host) {
         return false;
     }
     tokio::task::spawn_blocking(move || !resolves_blocked(&host))

@@ -31,12 +31,11 @@ fn footer_view(app: &App) -> FooterView {
     drop(app.status.get());
     let context_open = app.context_open.get();
     let cache_open = app.cache_open.get();
-    let hover = app.meter_hover.get();
     let model = app.model.get();
     let spend = model.spend().map(crate::dollars);
-    let open = if hover == Some(Target::Context) || (hover.is_none() && context_open) {
+    let open = if context_open {
         Some((false, model.context_facts()))
-    } else if hover == Some(Target::Cache) || (hover.is_none() && cache_open) {
+    } else if cache_open {
         Some((true, model.cache_facts()))
     } else {
         None
@@ -236,11 +235,6 @@ fn meter_button(
     card: Option<Vec<(String, String)>>,
     width: usize,
 ) -> NodeBuilder {
-    let press = app.clone();
-    let enter = app.clone();
-    let leave = app.clone();
-    let down_target = target.clone();
-    let enter_target = target.clone();
     let mut button = container()
         .layout(
             LayoutStyle::flex_row()
@@ -259,22 +253,16 @@ fn meter_button(
                         .inset_bottom(LengthPercentageAuto::Percent(1.0))
                         .inset_right(0.0),
                 )
+                .pointer_down(|event| event.stop_propagation())
                 .child(meter_card(rows, width, target.clone())),
         );
     }
-    button
-        .pointer_down(move |event| {
-            if event.button == Some(MouseButton::Left) {
-                press.toggle_meter(down_target.clone());
-                event.stop_propagation();
-            }
-        })
-        .pointer_enter(move |_| enter.meter_hover.set(Some(enter_target.clone())))
-        .pointer_leave(move |_| {
-            if leave.meter_hover.peek() == Some(target.clone()) {
-                leave.meter_hover.set(None);
-            }
-        })
+    button.pointer_down(move |event| {
+        if event.button == Some(MouseButton::Left) {
+            app.toggle_meter(target.clone());
+            event.stop_propagation();
+        }
+    })
 }
 
 fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> NodeBuilder {

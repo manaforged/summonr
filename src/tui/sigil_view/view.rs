@@ -38,35 +38,38 @@ pub(in crate::tui::sigil_view) use keys::shell;
 
 pub(super) fn root(app: App) -> NodeBuilder {
     let screen = app.clone();
-    keys::shell(&app).children_reactive(move || {
-        let chat = if screen.splash.get() {
-            splash::layer(screen.clone())
-        } else {
-            surface::layer(screen.clone())
-        };
-        let overlays = screen.clone();
-        let dialog = container()
-            .layout(LayoutStyle::block())
-            .children_reactive(move || {
-                let _viewport = overlays.viewport.get();
-                let screen = overlays.clone();
-                vec![
-                    screen
-                        .overlay()
-                        .and_then(|overlay| overlay.layer(screen.clone()))
-                        .unwrap_or_else(container),
-                ]
-            });
-        vec![
-            container()
-                .layout(LayoutStyle::block().fill_width().fill_height())
-                .bg(sigil::prelude::Token::Surface)
-                .child(chat)
-                .child(dialog)
-                .theme(surface::theme(
-                    &screen.theme_name.get(),
-                    screen.backdrop.get(),
-                )),
-        ]
-    })
+    let outside = app.clone();
+    keys::shell(&app)
+        .pointer_down(move |_| outside.close_meters())
+        .children_reactive(move || {
+            let chat = if screen.splash.get() {
+                splash::layer(screen.clone())
+            } else {
+                surface::layer(screen.clone())
+            };
+            let overlays = screen.clone();
+            let dialog = container()
+                .layout(LayoutStyle::block())
+                .children_reactive(move || {
+                    let _viewport = overlays.viewport.get();
+                    let screen = overlays.clone();
+                    vec![
+                        screen
+                            .overlay()
+                            .and_then(|overlay| overlay.layer(screen.clone()))
+                            .unwrap_or_else(container),
+                    ]
+                });
+            vec![
+                container()
+                    .layout(LayoutStyle::block().fill_width().fill_height())
+                    .bg(sigil::prelude::Token::Surface)
+                    .child(chat)
+                    .child(dialog)
+                    .theme(surface::theme(
+                        &screen.theme_name.get(),
+                        screen.backdrop.get(),
+                    )),
+            ]
+        })
 }

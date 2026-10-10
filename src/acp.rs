@@ -158,7 +158,12 @@ where
                             break None;
                         };
                         match rpc::parse(&line) {
-                            Ok(Frame::Notification { method, .. }) if method == "session/cancel" => break None,
+                            Ok(Frame::Notification { method, params })
+                                if method == "session/cancel"
+                                    && params.get("sessionId").and_then(Value::as_str) == Some(session.as_str()) =>
+                            {
+                                break None;
+                            }
                             Ok(Frame::Request { id, .. }) => {
                                 let busy = Err((-32000, "a prompt is already running".to_string()));
                                 drop(out.send(frame_line(&answer(&id, busy))));

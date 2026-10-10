@@ -131,7 +131,6 @@ impl<P: Provider> Loop<P> {
             probe: None,
             effort: None,
             turn_started: 0,
-            shield_epoch: 0,
             summary_wait: 0,
             workspace: dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf()),
             mailbox: None,

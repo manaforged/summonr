@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::SystemTime;
 
 const DEPTH: usize = 3;
 const MIN_LEN: usize = 6;
@@ -34,37 +35,59 @@ const HOME_FILES: &[&str] = &[
     ".docker/config.json",
 ];
 const WORKSPACE_FILES: &[&str] = &[".npmrc", ".pypirc"];
+const ENV_FILE: &str = ".env";
 const KEY_BEGIN: &str = "-----BEGIN ";
 const KEY_END: &str = "-----END ";
 const KEY_TAIL: &str = "PRIVATE KEY-----";
 const HIDDEN: &str = "[secret]";
 
-type Seen = HashMap<PathBuf, (u64, Arc<Vec<String>>)>;
+type Stamp = Option<(SystemTime, u64)>;
 
-static SEEN: Mutex<Option<Seen>> = Mutex::new(None);
+struct Scan {
+    watched: Vec<(PathBuf, Stamp)>,
+    values: Arc<Vec<String>>,
+}
 
-pub(crate) fn scrub(text: &str, workspace: &Path, epoch: u64) -> String {
+static SEEN: Mutex<Option<HashMap<PathBuf, Scan>>> = Mutex::new(None);
+
+pub(crate) fn scrub(text: &str, workspace: &Path) -> String {
     let text = crate::askpass::scrub(text);
-    let values = known(workspace, epoch);
+    let values = known(workspace);
     let text = crate::text::redact(&text, values.iter().map(String::as_str));
     private_keys(&text)
 }
 
-fn known(workspace: &Path, epoch: u64) -> Arc<Vec<String>> {
+fn known(workspace: &Path) -> Arc<Vec<String>> {
     let mut seen = SEEN.lock().unwrap_or_else(PoisonError::into_inner);
     let seen = seen.get_or_insert_with(HashMap::new);
-    if let Some((at, values)) = seen.get(workspace)
-        && *at == epoch
+    if let Some(scan) = seen.get(workspace)
+        && scan.watched.iter().all(|(path, was)| stamp(path) == *was)
     {
-        return Arc::clone(values);
+        return Arc::clone(&scan.values);
     }
-    let values = Arc::new(values(workspace));
-    seen.insert(workspace.to_path_buf(), (epoch, Arc::clone(&values)));
+    let (files, folders) = files(workspace);
+    let values = Arc::new(values(&files));
+    let watched = files.into_iter().chain(folders).map(|path| {
+        let now = stamp(&path);
+        (path, now)
+    });
+    seen.insert(
+        workspace.to_path_buf(),
+        Scan {
+            watched: watched.collect(),
+            values: Arc::clone(&values),
+        },
+    );
     values
 }
 
-fn values(workspace: &Path) -> Vec<String> {
-    let mut found: Vec<String> = files(workspace)
+fn stamp(path: &Path) -> Stamp {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.modified().ok()?, meta.len()))
+}
+
+fn values(files: &[PathBuf]) -> Vec<String> {
+    let mut found: Vec<String> = files
         .iter()
         .filter_map(|path| std::fs::read_to_string(path).ok())
         .flat_map(|text| secrets_in(&text))
@@ -74,9 +97,9 @@ fn values(workspace: &Path) -> Vec<String> {
     found
 }
 
-fn files(workspace: &Path) -> Vec<std::path::PathBuf> {
+fn files(workspace: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let home = crate::config::home_dir();
-    let mut paths: Vec<std::path::PathBuf> = HOME_FILES
+    let mut paths: Vec<PathBuf> = HOME_FILES
         .iter()
         .filter_map(|name| home.as_ref().map(|home| home.join(name)))
         .chain(WORKSPACE_FILES.iter().map(|name| workspace.join(name)))
@@ -90,13 +113,21 @@ fn files(workspace: &Path) -> Vec<std::path::PathBuf> {
                 || !crate::SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
         })
         .build();
-    paths.extend(walk.filter_map(Result::ok).filter_map(|entry| {
+    let mut folders = Vec::new();
+    for entry in walk.filter_map(Result::ok) {
         let name = entry.file_name().to_string_lossy();
-        (entry.file_type().is_some_and(|kind| kind.is_file())
-            && (name == ".env" || name.starts_with(".env.")))
-        .then(|| entry.into_path())
-    }));
-    paths
+        if entry.file_type().is_some_and(|kind| kind.is_dir()) {
+            folders.push(entry.into_path());
+        } else if env_file(&name) {
+            paths.push(entry.into_path());
+        }
+    }
+    (paths, folders)
+}
+
+fn env_file(name: &str) -> bool {
+    name.strip_prefix(ENV_FILE)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
 }
 
 fn secrets_in(text: &str) -> Vec<String> {

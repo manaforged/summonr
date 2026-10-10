@@ -1,21 +1,44 @@
 #[test]
-fn one_epoch_scans_once_and_a_new_epoch_rescans() {
+fn a_secret_written_after_a_scan_is_hidden_on_the_next_result() {
     let workspace = tempfile::tempdir().unwrap();
-    let env = workspace.path().join(".env");
-    std::fs::write(&env, "API_KEY=first-secret-value\n").unwrap();
-    let shown = super::scrub("got first-secret-value", workspace.path(), 1);
-    assert_eq!(shown, "got [secret]");
-    std::fs::write(&env, "API_KEY=second-secret-value\n").unwrap();
-    let cached = super::scrub(
-        "first-secret-value second-secret-value",
-        workspace.path(),
-        1,
+    std::fs::write(
+        workspace.path().join(".env"),
+        "API_KEY=first-secret-value\n",
+    )
+    .unwrap();
+    assert_eq!(
+        super::scrub("got first-secret-value", workspace.path()),
+        "got [secret]"
     );
-    assert_eq!(cached, "[secret] second-secret-value");
-    let fresh = super::scrub(
-        "first-secret-value second-secret-value",
-        workspace.path(),
-        2,
+    let nested = workspace.path().join("app");
+    std::fs::create_dir(&nested).unwrap();
+    std::fs::write(nested.join(".env.local"), "TOKEN=second-secret-value\n").unwrap();
+    assert_eq!(
+        super::scrub("second-secret-value", workspace.path()),
+        "[secret]"
     );
-    assert_eq!(fresh, "first-secret-value [secret]");
+    std::fs::write(
+        workspace.path().join(".env"),
+        "API_KEY=third-secret-value!\n",
+    )
+    .unwrap();
+    assert_eq!(
+        super::scrub("third-secret-value!", workspace.path()),
+        "[secret]"
+    );
+}
+
+#[test]
+fn an_unchanged_workspace_reuses_its_scan() {
+    let workspace = tempfile::tempdir().unwrap();
+    std::fs::write(workspace.path().join(".env"), "API_KEY=kept-secret-value\n").unwrap();
+    assert_eq!(
+        super::scrub("kept-secret-value", workspace.path()),
+        "[secret]"
+    );
+    let reused = super::known(workspace.path());
+    assert!(std::sync::Arc::ptr_eq(
+        &reused,
+        &super::known(workspace.path())
+    ));
 }

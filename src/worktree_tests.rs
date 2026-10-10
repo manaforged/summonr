@@ -187,3 +187,22 @@ fn generated_files_from_two_children_do_not_block_their_edits() {
     assert_eq!(std::fs::read(primary.join("right.py")).unwrap(), b"R");
     assert!(!primary.join("__pycache__").exists());
 }
+
+#[test]
+fn a_child_edit_to_a_non_ascii_name_lands() {
+    let (_root, primary) = repo();
+    std::fs::write(primary.join("café.txt"), "original").unwrap();
+    git(&primary, &["add", "café.txt"]);
+    git(&primary, &["commit", "-q", "-m", "cafe"]);
+    let child = super::open_delta(&primary).unwrap();
+    std::fs::write(child.path.join("café.txt"), "changed").unwrap();
+    std::fs::write(child.path.join("naïve.txt"), "new").unwrap();
+    let landed = super::reconcile_children(&primary, &[(child.clone(), Vec::new())]).unwrap();
+    assert_eq!(std::fs::read(primary.join("café.txt")).unwrap(), b"changed");
+    assert_eq!(std::fs::read(primary.join("naïve.txt")).unwrap(), b"new");
+    assert_eq!(
+        landed[0].paths,
+        vec!["café.txt".to_string(), "naïve.txt".to_string()]
+    );
+    assert!(landed[0].kept.is_none(), "{:?}", landed[0].kept);
+}

@@ -10,8 +10,8 @@ pub(in crate::tui::sigil_view) const STAR_MID: Rgba8 = rgb(120, 148, 200);
 
 pub(in crate::tui::sigil_view) const STAR_BRIGHT: Rgba8 = rgb(176, 200, 240);
 
-const SKY_STEP: u64 = 8;
-const SKY_PERIOD: u64 = 480;
+const DRIFT_TICKS: u64 = 1200;
+const SKY_PERIOD: u64 = 100;
 const LANES: [[f32; 4]; 6] = [
     [-0.08, 0.02, 1.08, 0.42],
     [-0.08, 0.48, 1.05, 0.78],
@@ -40,8 +40,8 @@ fn night() -> Cell {
 }
 
 fn stars(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64) {
-    let sky = ticks / SKY_STEP;
-    let drift = (sky / 150) as u16;
+    let sky = ticks;
+    let drift = (ticks / DRIFT_TICKS) as u16;
     for y in 0..rows {
         for x in 0..cols {
             let n = hash(x.wrapping_add(drift), y);
@@ -49,10 +49,10 @@ fn stars(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64) {
                 continue;
             }
             let phase = (sky.wrapping_add(u64::from((n >> 7) % SKY_PERIOD as u32))) % SKY_PERIOD;
-            if phase < 16 {
+            if phase < 4 {
                 continue;
             }
-            let bright = n.is_multiple_of(5) && (16..40).contains(&phase);
+            let bright = n.is_multiple_of(5) && (4..12).contains(&phase);
             let (text, fg) = if bright {
                 ("✦", STAR_BRIGHT)
             } else {

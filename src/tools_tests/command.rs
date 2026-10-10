@@ -255,6 +255,30 @@ fn a_timed_out_command_is_a_change_only_when_it_can_write() {
 }
 
 #[test]
+fn a_failed_command_that_wrote_a_file_is_a_change() {
+    let (dir, tools) = workspace(&[]);
+    let call = ToolCall {
+        id: "f1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({"command": "printf changed > changed.txt; exit 1"})
+                .to_string(),
+        },
+        continuation: None,
+    };
+    let output = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call))
+        .unwrap();
+    assert!(!output.success && output.mutated, "{}", output.text);
+    assert!(dir.path().join("changed.txt").exists());
+}
+
+#[test]
 fn a_protected_read_is_refused_from_any_working_directory() {
     let (_dir, tools) = workspace(&[]);
     for (command, workdir) in [

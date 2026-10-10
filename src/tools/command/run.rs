@@ -218,7 +218,7 @@ impl ToolRegistry {
         let mut detail = String::new();
         if matches!(wait, Wait::Detach(_)) {
             match self.register(command, &started) {
-                Ok(()) => return self.detach(started, command, seconds),
+                Ok(()) => return self.detach(started, command, seconds, read_only),
                 Err(error) => detail = format!(" ({error}; could not continue it as a job)"),
             }
         }
@@ -285,7 +285,13 @@ impl ToolRegistry {
         }
     }
 
-    fn detach(&self, started: StartedCommand, command: &str, seconds: u64) -> Result<ToolOutput> {
+    fn detach(
+        &self,
+        started: StartedCommand,
+        command: &str,
+        seconds: u64,
+        read_only: bool,
+    ) -> Result<ToolOutput> {
         let raw = crate::askpass::scrub(&jobs::preview(&started.log_path, LOG_READ_BYTES)?);
         let shown = digest(command, &raw);
         let mut output = background_result(started);
@@ -295,7 +301,7 @@ impl ToolRegistry {
         )
         .trim_end()
         .to_string();
-        output.mutated = !crate::policy::reads_only(command);
+        output.mutated = may_write(read_only, command);
         Ok(output)
     }
 }

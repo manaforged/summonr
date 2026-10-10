@@ -521,9 +521,6 @@ impl core::marker::StructuralPartialEq for summonr::EndpointState
 pub enum summonr::Error
 pub summonr::Error::Config(alloc::string::String)
 pub summonr::Error::Denied(alloc::string::String)
-pub summonr::Error::EditApproval
-pub summonr::Error::EditApproval::detail: alloc::string::String
-pub summonr::Error::EditApproval::setting: &'static str
 pub summonr::Error::Io(core::io::error::Error)
 pub summonr::Error::Json(serde_json::error::Error)
 pub summonr::Error::Provider(summonr::error::ProviderFailure)
@@ -627,8 +624,10 @@ impl core::marker::StructuralPartialEq for summonr::LoginFlow
 pub enum summonr::McpFieldKind
 pub summonr::McpFieldKind::Boolean
 pub summonr::McpFieldKind::Choice
+pub summonr::McpFieldKind::Choice::custom: bool
 pub summonr::McpFieldKind::Choice::options: alloc::vec::Vec<summonr::McpChoice>
 pub summonr::McpFieldKind::Choices
+pub summonr::McpFieldKind::Choices::custom: bool
 pub summonr::McpFieldKind::Choices::max_items: core::option::Option<usize>
 pub summonr::McpFieldKind::Choices::min_items: core::option::Option<usize>
 pub summonr::McpFieldKind::Choices::options: alloc::vec::Vec<summonr::McpChoice>
@@ -977,6 +976,7 @@ pub async fn summonr::Loop<P>::turn(&mut self, prompt: &str) -> summonr::Result<
 pub async fn summonr::Loop<P>::turn_mail_with(&mut self, emit: impl core::ops::function::FnMut(&summonr::Event)) -> summonr::Result<summonr::Turn>
 pub async fn summonr::Loop<P>::turn_with(&mut self, input: impl core::convert::Into<summonr::UserInput>, emit: impl core::ops::function::FnMut(&summonr::Event)) -> summonr::Result<summonr::Turn>
 pub struct summonr::McpChoice
+pub summonr::McpChoice::description: core::option::Option<alloc::string::String>
 pub summonr::McpChoice::title: alloc::string::String
 pub summonr::McpChoice::value: alloc::string::String
 impl core::clone::Clone for summonr::McpChoice
@@ -996,6 +996,7 @@ pub summonr::McpField::title: alloc::string::String
 impl summonr::McpField
 pub fn summonr::McpField::check(&self, value: &serde_json::value::Value) -> core::result::Result<(), alloc::string::String>
 pub fn summonr::McpField::read(&self, typed: &str) -> core::result::Result<core::option::Option<serde_json::value::Value>, alloc::string::String>
+pub fn summonr::McpField::shown(value: &serde_json::value::Value) -> alloc::string::String
 impl core::clone::Clone for summonr::McpField
 impl core::cmp::PartialEq for summonr::McpField
 impl core::fmt::Debug for summonr::McpField
@@ -1005,7 +1006,7 @@ impl<'de> serde_core::de::Deserialize<'de> for summonr::McpField
 pub struct summonr::McpForm
 pub summonr::McpForm::fields: alloc::vec::Vec<summonr::McpField>
 pub summonr::McpForm::message: alloc::string::String
-pub summonr::McpForm::server: alloc::string::String
+pub summonr::McpForm::server: core::option::Option<alloc::string::String>
 impl summonr::McpForm
 pub fn summonr::McpForm::check(&self, content: &serde_json::map::Map<alloc::string::String, serde_json::value::Value>) -> core::result::Result<(), alloc::string::String>
 impl core::clone::Clone for summonr::McpForm

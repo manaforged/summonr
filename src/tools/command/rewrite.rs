@@ -83,7 +83,7 @@ pub(super) fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: 
             "\nnote: the OS sandbox denied this command. Approving runs it without the sandbox.\n"
                 .to_string()
         }
-        Some(Grant::Danger { .. } | Grant::Edit(_)) => String::new(),
+        Some(Grant::Danger { .. }) => String::new(),
         None if registry.has_sandbox()
             && (raw.contains("Operation not permitted") || raw.contains("Permission denied")) =>
         {

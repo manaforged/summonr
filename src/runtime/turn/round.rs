@@ -215,9 +215,6 @@ impl<P: Provider> Loop<P> {
         }
         let read_only = self.depth > 0 && self.tools.is_read_only();
         self.tools.set_read_only(read_only);
-        if self.depth == 0 {
-            self.tools.reset_edits();
-        }
         self.summary_wait = 0;
         self.turn_started = crate::mail::now();
         self.shield_epoch += 1;

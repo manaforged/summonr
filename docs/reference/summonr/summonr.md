@@ -285,6 +285,7 @@
 
 | Field | Description |
 | --- | --- |
+| <code>description: Option&lt;String&gt;</code> |  |
 | <code>title: String</code> |  |
 | <code>value: String</code> |  |
 
@@ -299,6 +300,7 @@
 | --- | --- |
 | <code>check(&amp;self, value: &amp;Value) -&gt; Result&lt;(), String&gt;</code> |  |
 | <code>read(&amp;self, typed: &amp;str) -&gt; Result&lt;Option&lt;Value&gt;, String&gt;</code> |  |
+| <code>shown(value: &amp;Value) -&gt; String</code> |  |
 
 **Fields**
 
@@ -328,7 +330,7 @@
 | --- | --- |
 | <code>fields: Vec&lt;<a href="#mcpfield">McpField</a>&gt;</code> |  |
 | <code>message: String</code> |  |
-| <code>server: String</code> |  |
+| <code>server: Option&lt;String&gt;</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>PartialEq</code>, <code>Debug</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>, <code>Deserialize&lt;'de&gt;</code>
 
@@ -607,20 +609,12 @@
 | --- | --- |
 | <code>provider(kind: <a href="#providerfailurekind">ProviderFailureKind</a>, message: impl Into&lt;String&gt;) -&gt; Self</code> |  |
 
-**Fields**
-
-| Field | Description |
-| --- | --- |
-| <code>EditApproval::detail: String</code> |  |
-| <code>EditApproval::setting: &amp;'static str</code> |  |
-
 **Variants**
 
 | Variant | Description |
 | --- | --- |
 | <code>Config(String)</code> |  |
 | <code>Denied(String)</code> |  |
-| <code>EditApproval</code> |  |
 | <code>Io(Error)</code> |  |
 | <code>Json(Error)</code> |  |
 | <code>Provider(error::ProviderFailure)</code> |  |
@@ -738,7 +732,9 @@
 
 | Field | Description |
 | --- | --- |
+| <code>Choice::custom: bool</code> |  |
 | <code>Choice::options: Vec&lt;<a href="#mcpchoice">McpChoice</a>&gt;</code> |  |
+| <code>Choices::custom: bool</code> |  |
 | <code>Choices::max_items: Option&lt;usize&gt;</code> |  |
 | <code>Choices::min_items: Option&lt;usize&gt;</code> |  |
 | <code>Choices::options: Vec&lt;<a href="#mcpchoice">McpChoice</a>&gt;</code> |  |

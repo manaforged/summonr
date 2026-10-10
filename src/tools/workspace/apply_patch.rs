@@ -98,7 +98,7 @@ fn stage_update(
         text = apply_patches(&text, vec![patch])?.0;
     }
     let edited = restore(&endings, &raw, &text);
-    let preview = registry.stage_write(&dest, &raw, &edited, false)?;
+    let preview = super::write::preview(&raw, &edited, false);
     let change = Change {
         dest,
         display: path.to_string(),
@@ -121,7 +121,7 @@ fn stage_add(
         )));
     }
     let content = format!("{}\n", lines.join("\n"));
-    let preview = registry.stage_write(&dest, "", &content, false)?;
+    let preview = super::write::preview("", &content, false);
     let change = Change {
         dest,
         display: path.to_string(),

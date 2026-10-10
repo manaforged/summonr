@@ -32,8 +32,6 @@ pub(crate) struct File {
     #[serde(alias = "bus")]
     pub mail: Option<bool>,
     pub layout: Option<String>,
-    pub ban_comments: Option<bool>,
-    pub ban_tests: Option<bool>,
     #[serde(default)]
     pub hotkeys: BTreeMap<String, String>,
     pub secrets: Option<String>,

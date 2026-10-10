@@ -111,7 +111,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `elicit` | `form` (`message`, `fields`, and the MCP `server`, absent when the model asks), or null when the question ends |
 | `verify` | `command`, `passed`. `{"command":"workspace changed after the check ran","passed":false}` means files changed after summonr captured the candidate it checked, so the verdict fails; it counts toward `checks_failed` |
 | `receipt` | `receipt` |
-| `work` | `progress`; its `checks_failed` agrees with the `verify` events |
+| `work` | `progress`; its `checks_failed` agrees with the `verify` events. `rounds` counts the checked rounds of the current goal or step, and `attempts` the failed checks in a row on it, so a goal that passed its first check reports `rounds` 1 and `attempts` 0 |
 | `child` | `id`, `event` (a nested event) |
 
 A step that contains ``Run `CMD` `` is gated on `CMD` and on `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check.

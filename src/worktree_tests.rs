@@ -249,3 +249,55 @@ fn a_worktree_run_commits_its_edits_without_caches_under_a_whole_word_subject() 
         "{subject}"
     );
 }
+
+fn tracked(primary: &Path, path: &str) {
+    if let Some(dir) = Path::new(path).parent() {
+        std::fs::create_dir_all(primary.join(dir)).unwrap();
+    }
+    std::fs::write(primary.join(path), "kept\n").unwrap();
+    git(primary, &["add", "--", path]);
+    git(primary, &["commit", "-q", "-m", "track"]);
+}
+
+fn on_main(primary: &Path) -> String {
+    let out = Command::new("git")
+        .args(["ls-tree", "-r", "-z", "--name-only", "main"])
+        .current_dir(primary)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).replace('\0', "\n")
+}
+
+#[test]
+fn a_worktree_run_lands_a_deleted_non_ascii_file() {
+    let (_root, primary) = repo();
+    tracked(&primary, "café.rs");
+    let tree = super::add(&primary).unwrap();
+    std::fs::remove_file(tree.path.join("café.rs")).unwrap();
+    let committed = super::finish(&tree, "drop café", &["café.rs".to_string()]).unwrap();
+    assert_eq!(committed, vec!["café.rs".to_string()]);
+    assert!(!on_main(&primary).contains("café.rs"));
+}
+
+#[test]
+fn a_glob_character_in_a_touched_path_stages_only_that_file() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("a[b].txt"), "touched\n").unwrap();
+    std::fs::write(tree.path.join("ab.txt"), "not part of the run\n").unwrap();
+    let result = super::finish(&tree, "edit a[b]", &["a[b].txt".to_string()]);
+    assert!(result.is_err_and(|error| error.to_string().contains("ab.txt")));
+    assert!(!on_main(&primary).contains("ab.txt"));
+}
+
+#[test]
+fn a_rename_into_a_cache_path_is_not_thrown_away() {
+    let (_root, primary) = repo();
+    tracked(&primary, "a.c");
+    let tree = super::add(&primary).unwrap();
+    std::fs::create_dir(tree.path.join("__pycache__")).unwrap();
+    git(&tree.path, &["mv", "a.c", "__pycache__/a.c"]);
+    let result = super::finish(&tree, "move a.c", &[]);
+    assert!(result.is_err_and(|error| error.to_string().contains("a.c")));
+    assert!(tree.path.join("__pycache__/a.c").exists());
+}

@@ -7,8 +7,8 @@ const SUBJECT_MAX: usize = 60;
 pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<String>> {
     let mut committed = Vec::new();
     if dirty(&tree.path)? {
-        let tracked = crate::diff::git_env(&tree.path, &[], &["ls-files"])?;
-        let tracked: std::collections::HashSet<&str> = tracked.lines().collect();
+        let tracked = crate::diff::git_paths(&tree.path, &["ls-files", "-z"])?;
+        let tracked: std::collections::HashSet<&str> = tracked.iter().map(String::as_str).collect();
         let small: Vec<&str> = paths
             .iter()
             .map(String::as_str)
@@ -21,7 +21,7 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             })
             .collect();
         if !small.is_empty() {
-            let mut args = vec!["add", "--all", "--"];
+            let mut args = vec!["--literal-pathspecs", "add", "--all", "--"];
             args.extend(small.iter().copied());
             crate::diff::git_env(&tree.path, &[], &args)?;
             crate::diff::git_env(
@@ -31,13 +31,7 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             )?;
             committed = small.iter().map(|path| (*path).to_string()).collect();
         }
-        let leftover: Vec<String> = crate::diff::git_paths(
-            &tree.path,
-            &["status", "--porcelain", "-z", "--untracked-files=all"],
-        )?
-        .into_iter()
-        .filter(|record| record.len() > 3 && !crate::diff::ignored::hidden(&record[3..]))
-        .collect();
+        let leftover = leftover(&tree.path)?;
         if !leftover.is_empty() {
             return Err(Error::Config(format!(
                 "left uncommitted in {} (not part of this run, or over {} bytes):\n{}",
@@ -47,20 +41,19 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             )));
         }
     }
-    let big: Vec<String> = crate::diff::git_env(
+    let big: Vec<String> = crate::diff::git_paths(
         &tree.primary,
-        &[],
         &[
             "diff",
             "--name-only",
+            "-z",
             &format!("{}..{}", tree.base, tree.branch),
         ],
     )?
-    .lines()
+    .into_iter()
     .filter(|path| {
         std::fs::metadata(tree.path.join(path)).is_ok_and(|meta| meta.len() > COMMIT_MAX)
     })
-    .map(str::to_string)
     .collect();
     if !big.is_empty() {
         return Err(Error::Config(format!(
@@ -84,6 +77,28 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
     )?;
     tree.remove()?;
     Ok(committed)
+}
+
+fn leftover(root: &std::path::Path) -> Result<Vec<String>> {
+    let hidden = crate::diff::ignored::hidden;
+    let mut fields = crate::diff::git_paths(
+        root,
+        &["status", "--porcelain", "-z", "--untracked-files=all"],
+    )?
+    .into_iter();
+    let mut left = Vec::new();
+    while let Some(record) = fields.next() {
+        let moved = matches!(record.as_bytes().first(), Some(b'R' | b'C'));
+        let from = moved.then(|| fields.next()).flatten();
+        let Some(path) = record.get(3..) else {
+            continue;
+        };
+        let source = from.filter(|_| record.starts_with('R'));
+        if !hidden(path) || source.is_some_and(|from| !hidden(&from)) {
+            left.push(record);
+        }
+    }
+    Ok(left)
 }
 
 fn subject(objective: &str) -> String {

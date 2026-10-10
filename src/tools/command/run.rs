@@ -200,7 +200,7 @@ impl ToolRegistry {
         Ok(ToolOutput {
             text: output.trim_end().to_string(),
             success: code == 0,
-            mutated: !read_only && code == 0 && !crate::policy::reads_only(command),
+            mutated: may_write(read_only, command),
             grant,
             images: Vec::new(),
             patch: None,
@@ -218,7 +218,7 @@ impl ToolRegistry {
         let mut detail = String::new();
         if matches!(wait, Wait::Detach(_)) {
             match self.register(command, &started) {
-                Ok(()) => return self.detach(started, command, seconds),
+                Ok(()) => return self.detach(started, command, seconds, read_only),
                 Err(error) => detail = format!(" ({error}; could not continue it as a job)"),
             }
         }
@@ -245,7 +245,7 @@ impl ToolRegistry {
         let StartedCommand { log_path, .. } = started;
         let raw = scrubbed_preview(&log_path)?;
         let shown = digest(command, &raw);
-        let mutated = !read_only && !crate::policy::reads_only(command);
+        let mutated = may_write(read_only, command);
         let warning = if read_only {
             "\nworkspace writes were restricted by the command sandbox"
         } else if mutated {
@@ -285,7 +285,13 @@ impl ToolRegistry {
         }
     }
 
-    fn detach(&self, started: StartedCommand, command: &str, seconds: u64) -> Result<ToolOutput> {
+    fn detach(
+        &self,
+        started: StartedCommand,
+        command: &str,
+        seconds: u64,
+        read_only: bool,
+    ) -> Result<ToolOutput> {
         let raw = crate::askpass::scrub(&jobs::preview(&started.log_path, LOG_READ_BYTES)?);
         let shown = digest(command, &raw);
         let mut output = background_result(started);
@@ -295,7 +301,7 @@ impl ToolRegistry {
         )
         .trim_end()
         .to_string();
-        output.mutated = !crate::policy::reads_only(command);
+        output.mutated = may_write(read_only, command);
         Ok(output)
     }
 }
@@ -314,4 +320,8 @@ fn scrubbed_preview(log_path: &std::path::Path) -> Result<String> {
     } else {
         preview
     })
+}
+
+fn may_write(read_only: bool, command: &str) -> bool {
+    !read_only && !crate::policy::reads_only(command)
 }

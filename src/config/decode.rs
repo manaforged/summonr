@@ -18,7 +18,7 @@ fn bad(path: &Path, message: &str) -> Error {
     Error::Config(format!("{}: {message}", tilde(path)))
 }
 
-const RETIRED: &[&str] = &["last_endpoint", "plan_mode"];
+const RETIRED: &[&str] = &["last_endpoint", "plan_mode", "ban_comments", "ban_tests"];
 
 pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
     let mut table: toml::Table = toml::from_str(text).map_err(|error| {

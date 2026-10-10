@@ -67,7 +67,6 @@ pub(crate) struct ToolRegistry {
     roots: Vec<paths::Root>,
     network_once: std::sync::atomic::AtomicBool,
     approved_once: std::sync::Mutex<Option<command::Approval>>,
-    allowed_edits: Vec<&'static str>,
     model_images: bool,
     vision: Option<crate::endpoint::Endpoint>,
     only: Option<Vec<Builtin>>,
@@ -137,7 +136,6 @@ impl ToolRegistry {
             launches: lsp::Launches::default(),
             network_once: std::sync::atomic::AtomicBool::new(false),
             approved_once: std::sync::Mutex::new(None),
-            allowed_edits: Vec::new(),
             model_images: false,
             vision: None,
             only: None,
@@ -184,7 +182,6 @@ impl ToolRegistry {
             .transpose()?;
         child.background = false;
         child.language = self.language;
-        child.allowed_edits.clone_from(&self.allowed_edits);
         child.skills = self.skills;
         child.set_session(session);
         Ok(child)

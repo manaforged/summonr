@@ -5,12 +5,10 @@ use crate::error::Result;
 
 mod background;
 mod diff;
-mod edit;
 mod hotkeys;
 mod notify;
 pub(crate) use background::Background;
 pub(crate) use diff::DiffLayout;
-pub(crate) use edit::banned_edit;
 pub use hotkeys::Hotkey;
 pub(crate) use hotkeys::{EditorKey, Hotkeys, available};
 pub(crate) use notify::Notify;
@@ -141,8 +139,6 @@ pub struct Prefs {
     pub(crate) tools: ToolOutput,
     pub(crate) diff_layout: DiffLayout,
     pub(crate) mail: bool,
-    pub(crate) ban_comments: bool,
-    pub(crate) ban_tests: bool,
     pub(crate) layout: String,
     pub(crate) hotkeys: Hotkeys,
 }
@@ -161,8 +157,6 @@ impl Default for Prefs {
             tools: ToolOutput::Compact,
             diff_layout: DiffLayout::Split,
             mail: true,
-            ban_comments: false,
-            ban_tests: false,
             hotkeys: Hotkeys::default(),
             layout: "chat".to_string(),
         }
@@ -192,8 +186,6 @@ fn from_file(file: &config::File) -> Result<Prefs> {
         diff_layout: file.diff_layout.unwrap_or(base.diff_layout),
         layout: file.layout.clone().unwrap_or(base.layout),
         mail: file.mail.unwrap_or(base.mail),
-        ban_comments: file.ban_comments.unwrap_or(base.ban_comments),
-        ban_tests: file.ban_tests.unwrap_or(base.ban_tests),
     })
 }
 

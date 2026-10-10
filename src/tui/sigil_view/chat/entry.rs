@@ -88,6 +88,11 @@ pub(in crate::tui::sigil_view) fn row(
     }
 }
 
+pub(in crate::tui::sigil_view) fn hidden(entry: &Entry, prefs: &Prefs) -> bool {
+    blank(entry)
+        || matches!(entry, Entry::Receipt(_)) && prefs.receipts == crate::prefs::Visibility::Off
+}
+
 fn blank(entry: &Entry) -> bool {
     matches!(
         entry,

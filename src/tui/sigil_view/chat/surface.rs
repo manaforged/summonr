@@ -230,7 +230,8 @@ fn single(app: &App, index: usize, spacing: (f32, f32)) -> Vec<NodeBuilder> {
             model.prefs.clone(),
         )
     });
-    item.map(|item| vec![inset(entry::row(item, live, &prefs, app, index), spacing)])
+    item.filter(|item| !entry::hidden(item, &prefs))
+        .map(|item| vec![inset(entry::row(item, live, &prefs, app, index), spacing)])
         .unwrap_or_default()
 }
 

@@ -235,7 +235,7 @@ impl ToolRegistry {
             let dest = self.resolve_write(&path)?;
             self.check_write(&dest)?;
             let before = write::current(&dest, &path)?;
-            let note = self.stage_write(&dest, &before, content, write::View::Overwrite)?;
+            let note = write::preview(&before, content, write::View::Overwrite);
             out.push_str(&format!(
                 "wrote {path} ({} lines, {note})\n",
                 content.lines().count()

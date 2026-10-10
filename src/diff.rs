@@ -11,7 +11,7 @@ pub(crate) mod ignored;
 mod turn;
 
 use git::{git, numstat_row};
-pub(crate) use git::{git_env, git_output};
+pub(crate) use git::{git_env, git_output, git_paths};
 pub use turn::{TurnId, turn_patch, turn_stats};
 
 fn editor(name: &str) -> bool {
@@ -193,10 +193,11 @@ fn changes(root: &Path, base: Option<String>, lines: bool) -> Result<Diff> {
         .filter_map(numstat_row)
         .filter(|stat| !ignored::hidden(&stat.path))
         .collect();
-    let untracked = git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+    let untracked = git_paths(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
     for path in untracked
-        .split('\0')
-        .filter(|path| !path.is_empty() && !ignored::hidden(path))
+        .iter()
+        .map(String::as_str)
+        .filter(|path| !ignored::hidden(path))
     {
         files.push(Stat {
             path: path.to_string(),
@@ -252,12 +253,12 @@ pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {
 fn tracked_patch(root: &Path, base: &str, path: Option<&str>) -> Result<String> {
     let shown: Vec<String> = match path {
         Some(path) => vec![path.to_string()],
-        None => git(
+        None => git_paths(
             root,
             &["diff", "--name-only", "-z", "--no-renames", base, "--"],
         )?
-        .split('\0')
-        .filter(|file| !file.is_empty() && !ignored::hidden(file))
+        .iter()
+        .filter(|file| !ignored::hidden(file))
         .map(|file| format!(":(literal){file}"))
         .collect(),
     };
@@ -275,10 +276,12 @@ fn tracked_patch(root: &Path, base: &str, path: Option<&str>) -> Result<String> 
 
 fn untracked_patch(root: &Path, path: Option<&str>) -> Result<String> {
     let mut text = String::new();
-    let untracked = git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
-    for file in untracked.split('\0').filter(|file| {
-        !file.is_empty() && !ignored::hidden(file) && path.is_none_or(|path| path == *file)
-    }) {
+    let untracked = git_paths(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+    for file in untracked
+        .iter()
+        .map(String::as_str)
+        .filter(|file| !ignored::hidden(file) && path.is_none_or(|path| path == *file))
+    {
         if file.ends_with('/') {
             if path.is_some() {
                 return Err(Error::Config(format!(

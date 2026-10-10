@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::str::FromStr;
 
-use super::{Diff, Stat, git, ignored, numstat_row};
+use super::{Diff, Stat, git, git_paths, ignored, numstat_row};
 use crate::checkpoint::Checkpoints;
 use crate::error::{Error, Result};
 
@@ -50,7 +50,7 @@ impl Span {
                 "--",
             ],
         )?;
-        let added = git(
+        let added = git_paths(
             root,
             &[
                 "diff",
@@ -63,7 +63,7 @@ impl Span {
                 "--",
             ],
         )?;
-        let new: Vec<&str> = added.split('\0').filter(|path| !path.is_empty()).collect();
+        let new: Vec<&str> = added.iter().map(String::as_str).collect();
         let mut files: Vec<Stat> = numstat
             .lines()
             .filter_map(numstat_row)

@@ -42,6 +42,12 @@ fn reconcile_delta(target: &Path, tree: &Tree, paths: &[String]) -> Landing {
         Ok(patch) => patch,
         Err(error) => return tree.kept(Hold::Unreadable, &format!("was kept: {error}")),
     };
+    if bytes.is_empty() && !found.is_empty() {
+        return tree.kept(
+            Hold::Unreadable,
+            "changed files that produced no patch; it was kept",
+        );
+    }
     if !bytes.is_empty()
         && let Err(error) = apply(target, &bytes)
     {
@@ -123,15 +129,16 @@ impl Tree {
         let mut list = vec![
             "--literal-pathspecs",
             "ls-files",
+            "-z",
             "--others",
             "--exclude-standard",
             "--",
         ];
         list.extend(paths.iter().map(String::as_str));
-        let untracked = crate::diff::git_env(&self.path, &[], &list)?;
+        let untracked = crate::diff::git_paths(&self.path, &list)?;
         if !untracked.is_empty() {
             let mut mark = vec!["--literal-pathspecs", "add", "-N", "--"];
-            mark.extend(untracked.lines());
+            mark.extend(untracked.iter().map(String::as_str));
             crate::diff::git_env(&self.path, &[], &mark)?;
         }
         let base = self.snapshot.as_deref().unwrap_or("HEAD");
@@ -150,18 +157,12 @@ impl Tree {
 
     fn snapshot_paths(&self) -> Result<Vec<String>> {
         let snapshot = self.snapshot.as_deref().unwrap_or("HEAD");
-        let diff = crate::diff::git_env(&self.path, &[], &["diff", "--name-only", snapshot])?;
-        let untracked = crate::diff::git_env(
+        let mut paths =
+            crate::diff::git_paths(&self.path, &["diff", "--name-only", "-z", snapshot])?;
+        paths.extend(crate::diff::git_paths(
             &self.path,
-            &[],
-            &["ls-files", "--others", "--exclude-standard"],
-        )?;
-        let mut paths: Vec<String> = diff
-            .lines()
-            .chain(untracked.lines())
-            .filter(|line| !line.is_empty())
-            .map(str::to_string)
-            .collect();
+            &["ls-files", "-z", "--others", "--exclude-standard"],
+        )?);
         paths.sort();
         paths.dedup();
         Ok(paths)

@@ -43,11 +43,6 @@ pub enum Error {
     Tool(String),
     #[error("policy denied: {0}")]
     Denied(String),
-    #[error("{setting} needs approval for this task: {detail}")]
-    EditApproval {
-        setting: &'static str,
-        detail: String,
-    },
 }
 
 impl Error {

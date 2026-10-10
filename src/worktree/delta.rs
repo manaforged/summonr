@@ -135,13 +135,12 @@ fn overlay(primary: &Path, dest: &Path, names: &[String]) -> Result<()> {
             Some(&patch),
         )?;
     }
-    let listed = diff::git_env(
+    let listed = diff::git_paths(
         primary,
-        &[],
-        &["ls-files", "--others", "--exclude-standard"],
+        &["ls-files", "-z", "--others", "--exclude-standard"],
     )?;
     let skip: HashSet<&str> = names.iter().map(String::as_str).collect();
-    for line in listed.lines() {
+    for line in listed.iter().map(String::as_str) {
         let head = line.split(['/', '\\']).next().unwrap_or(line);
         if skip.contains(head) {
             continue;

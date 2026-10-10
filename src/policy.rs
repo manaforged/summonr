@@ -35,7 +35,6 @@ pub(crate) enum Grant {
     Guarded(PathBuf),
     Command(String),
     Danger { command: String, reason: String },
-    Edit(&'static str),
     Network,
 }
 
@@ -52,7 +51,6 @@ impl Grant {
                     reason.strip_prefix("it ").unwrap_or(reason)
                 )
             }
-            Self::Edit(setting) => format!("allow {setting} for this task (saved setting is off)"),
             Self::Network => "network".to_string(),
         }
     }

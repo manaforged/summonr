@@ -87,11 +87,6 @@ impl<P: Provider> Loop<P> {
             if self.grant_blocked(&grant, &asked) {
                 break;
             }
-            if matches!(grant, Grant::Edit(_)) {
-                self.apply_grant(&grant, false, events, emit)?;
-                output = self.tools.execute_outcome(call).await;
-                continue;
-            }
             if !self.ask_grant(grant, &mut asked, events, emit).await? {
                 break;
             }
@@ -138,10 +133,6 @@ impl<P: Provider> Loop<P> {
             Grant::Danger { .. } => {
                 self.tools.approve_once(Approval::Policy)?;
                 return Ok(());
-            }
-            Grant::Edit(setting) => {
-                self.tools.allow_edit(setting);
-                format!("{setting} allowed for this task")
             }
             Grant::Command(command) => {
                 self.tools.approve_once(Approval::Uncontained)?;

@@ -75,3 +75,35 @@ fn the_transcript_opens_on_the_first_message_with_no_header_row() {
         small.join("\n")
     );
 }
+
+#[test]
+fn a_diff_card_leaves_one_row_before_the_next_tool() {
+    let full = frame_with(busy_info(), 100, 40, State::Idle, |app| {
+        for (id, name, arguments, output) in [
+            (
+                "e",
+                "edit",
+                r#"{"path":"a.py"}"#,
+                "@@ -1 +1 @@\n-old_line\n+new_line",
+            ),
+            ("r", "run_command", r#"{"command":"pytest -q"}"#, "4 passed"),
+        ] {
+            app.update(Msg::Event(Event::ToolCall {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                arguments: arguments.to_owned(),
+            }));
+            app.update(Msg::Event(Event::ToolResult {
+                id: id.to_owned(),
+                success: true,
+                mutated: false,
+                output: output.to_owned(),
+                millis: Some(4),
+                patch: None,
+            }));
+        }
+    });
+    let new = find(&full, "new_line").expect("diff row");
+    let run = find(&full, "● Run").expect("next tool row");
+    assert_eq!(run - new, 2, "{}", full.join("\n"));
+}

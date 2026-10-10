@@ -10,10 +10,15 @@ while [ -L "$self" ]; do
     esac
 done
 root=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd)
-bin="$root/target/release/summonr"
+target="$root/target/summon-dev"
+bin="$target/release/summonr"
+
+built="$target/summon-dev.head"
+head=$(git -C "$root" rev-parse HEAD 2>/dev/null)
 
 stale() {
     [ ! -x "$bin" ] && return 0
+    [ "$head" = "$(cat "$built" 2>/dev/null)" ] || return 0
     for path in "$root/src" "$root/Cargo.toml" "$root/Cargo.lock" "$root/build.rs" "$root/.git/HEAD"; do
         [ -e "$path" ] || continue
         if [ -n "$(find "$path" -newer "$bin" -print -quit 2>/dev/null)" ]; then
@@ -23,20 +28,16 @@ stale() {
     return 1
 }
 
-lock="$root/target/summon-dev.lock"
-log="$root/target/summon-dev.log"
-
-if [ ! -x "$bin" ]; then
-    cargo build --locked --manifest-path "$root/Cargo.toml" --release \
-        --bin summonr >&2 || exit 1
-elif stale; then
-    if mkdir "$lock" 2>/dev/null; then
-        nohup sh -c 'echo $$ >"$1/pid"; cargo build --locked --manifest-path "$2" --release --bin summonr >"$3" 2>&1; rm -rf "$1"' \
-            sh "$lock" "$root/Cargo.toml" "$log" </dev/null >/dev/null 2>&1 &
-        echo "summonr: rebuilding in the background; the next start uses it ($log)" >&2
-    elif ! kill -0 "$(cat "$lock/pid" 2>/dev/null)" 2>/dev/null; then
-        rm -rf "$lock"
-    fi
+if stale; then
+    CARGO_TARGET_DIR="$target" \
+        CARGO_PROFILE_RELEASE_LTO=off \
+        CARGO_PROFILE_RELEASE_CODEGEN_UNITS=256 \
+        CARGO_PROFILE_RELEASE_INCREMENTAL=true \
+        cargo build --locked --manifest-path "$root/Cargo.toml" --release \
+        --bin summonr >&2 &&
+        printf '%s\n' "$head" >"$built" ||
+        echo "summonr: the build failed; starting the previous build" >&2
 fi
 
+[ -x "$bin" ] || exit 1
 exec "$bin" "$@"

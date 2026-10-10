@@ -39,50 +39,16 @@ impl ToolRegistry {
         content: &str,
         view: impl Into<View>,
     ) -> Result<Written> {
-        let (preview, patch) = self.stage_write_full(dest, before, content, view)?;
+        let (preview, patch) = edit_view(before, content, view.into());
         stage(dest, display, content)?
             .commit()
             .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))?;
         Ok(Written { preview, patch })
     }
+}
 
-    pub(in crate::tools) fn stage_write(
-        &self,
-        dest: &Path,
-        before: &str,
-        content: &str,
-        view: impl Into<View>,
-    ) -> Result<String> {
-        Ok(self.stage_write_full(dest, before, content, view)?.0)
-    }
-
-    fn stage_write_full(
-        &self,
-        dest: &Path,
-        before: &str,
-        content: &str,
-        view: impl Into<View>,
-    ) -> Result<(String, Option<String>)> {
-        if let Some((option, detail)) =
-            crate::prefs::banned_edit(dest, before, content, &self.allowed_edits)
-        {
-            return Err(Error::EditApproval {
-                setting: option,
-                detail,
-            });
-        }
-        Ok(edit_view(before, content, view.into()))
-    }
-
-    pub(crate) fn allow_edit(&mut self, setting: &'static str) {
-        if !self.allowed_edits.contains(&setting) {
-            self.allowed_edits.push(setting);
-        }
-    }
-
-    pub(crate) fn reset_edits(&mut self) {
-        self.allowed_edits.clear();
-    }
+pub(in crate::tools) fn preview(before: &str, content: &str, view: impl Into<View>) -> String {
+    edit_view(before, content, view.into()).0
 }
 
 pub(in crate::tools) fn current(dest: &Path, display: &str) -> Result<String> {

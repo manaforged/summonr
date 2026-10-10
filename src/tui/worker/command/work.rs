@@ -75,10 +75,10 @@ impl Worker {
             }
         };
         if code == 0 {
-            self.system(&format!("steps complete: {total} of {total}"));
+            self.outcome(&format!("steps complete: {total} of {total}"));
         } else {
             let reason = self.stop_reason().unwrap_or_default();
-            self.system(&format!("steps stopped (exit {code}): {reason}"));
+            self.outcome(&format!("steps stopped (exit {code}): {reason}"));
         }
         true
     }
@@ -196,12 +196,12 @@ impl Worker {
             }
         };
         if code == 0 {
-            self.system("goal achieved");
+            self.outcome("goal achieved");
         } else {
             let reason = self
                 .stop_reason()
                 .unwrap_or_else(|| "resume with `summonr --goal`".to_string());
-            self.system(&format!("goal stopped (exit {code}): {reason}"));
+            self.outcome(&format!("goal stopped (exit {code}): {reason}"));
         }
         true
     }
@@ -210,7 +210,8 @@ impl Worker {
         if self.loop_.mode() == crate::RunMode::Goal
             && self.loop_.active_goal().ok().flatten().is_none()
         {
-            set_run_mode(&mut self.loop_, &self.ui, mode);
+            self.loop_.set_mode(mode);
+            drop(self.ui.send(Msg::RunMode(mode)));
         }
     }
 

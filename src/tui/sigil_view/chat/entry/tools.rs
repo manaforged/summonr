@@ -185,7 +185,7 @@ fn framed(child: impl IntoNode + 'static) -> NodeBuilder {
             LayoutStyle::flex_column()
                 .fill_width()
                 .min_size(0.0, 0.0)
-                .padding_bottom(crate::tui::sigil_view::canvas::GUTTER),
+                .padding_bottom(crate::tui::sigil_view::canvas::cell().h),
         )
         .child(child)
 }

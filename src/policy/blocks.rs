@@ -153,7 +153,6 @@ pub(crate) fn outside_hint(path: &str) -> String {
 
 pub(crate) fn grant_from_error(error: &Error) -> Option<Grant> {
     match error {
-        Error::EditApproval { setting, .. } => Some(Grant::Edit(setting)),
         Error::Denied(message) | Error::Tool(message) => grant_from_message(message),
         _ => None,
     }

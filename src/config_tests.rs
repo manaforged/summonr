@@ -81,6 +81,18 @@ fn a_retired_plan_mode_key_is_not_called_unknown_and_the_next_save_drops_it() {
 }
 
 #[test]
+fn retired_ban_keys_are_not_called_unknown_and_the_next_save_drops_them() {
+    let (_dir, path) = written("ban_comments = true\nban_tests = false\ntheme = \"space\"\n");
+    let file = parse(&path).unwrap();
+    assert!(!file.other.contains_key("ban_comments"), "{:?}", file.other);
+    assert!(!file.other.contains_key("ban_tests"), "{:?}", file.other);
+    let prefs = crate::prefs::load_from(&path).unwrap();
+    crate::prefs::save_in(&path, &prefs).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("ban_"), "{text}");
+}
+
+#[test]
 fn module_switches_load_by_id_and_unknown_names_do_not_break_the_file() {
     let (_dir, path) =
         written("[modules]\nmail = true\nbogus = false\n\n[sessions]\nretain_days = 2\n");

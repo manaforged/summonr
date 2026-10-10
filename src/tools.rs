@@ -329,6 +329,7 @@ pub async fn run_tool(
         crate::policy::Policy::discover(workspace)?,
         crate::web::Search::discover().ok(),
     )?;
+    tools.set_modules(&crate::modules::Switches::load(workspace)?);
     if let Some(network) = sandbox {
         tools.enable_sandbox(network)?;
     }

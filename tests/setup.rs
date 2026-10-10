@@ -261,3 +261,17 @@ fn acp_answers_initialize_before_a_provider_is_set_up() {
         "{replies:?}"
     );
 }
+
+#[test]
+fn the_tool_command_runs_a_module_tool_that_is_switched_on() {
+    let home = tempfile::tempdir().unwrap();
+    let summonr_home = home.path().join(".summonr");
+    std::fs::create_dir_all(&summonr_home).unwrap();
+    std::fs::write(
+        summonr_home.join("config.toml"),
+        "[modules]\nbrowser = true\n",
+    )
+    .unwrap();
+    let (_, text) = summonr(home.path(), &["tool", "browser", "{}"]);
+    assert!(!text.contains("unavailable in the current mode"), "{text}");
+}

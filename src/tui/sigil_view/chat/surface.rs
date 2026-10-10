@@ -212,7 +212,7 @@ fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
         LayoutStyle::flex_column()
             .fill_width()
             .min_size(0.0, 0.0)
-            .gap(0.0),
+            .gap(canvas::cell().h),
     );
     for (at, item, live, prefs) in rows {
         if let Some(item) = item {

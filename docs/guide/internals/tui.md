@@ -33,6 +33,25 @@ holds `{ text, fg, bg }`. The second one is on the delete list in §3.
 
 `ImageSource` and `ImageSource::id` are Sigil's.
 
+## 1a. Child status rows
+
+Owner: `src/tui/sigil_view/chat/strip.rs`, with display state in `model.rs`
+and actions in `app/adjust.rs`.
+
+| Row | Job | Callers |
+| --- | --- | --- |
+| `App::clear_agent` | dismiss a background status row; keep execution, accounting, and transcript reports | `chat/strip.rs` |
+| `Model::agents_hidden` | child tags dismissed in the current view; late events do not reveal them | `App::clear_agent`, `chat/strip.rs` |
+
+## Composer Tab bindings
+
+Owner: `view/input.rs::tab_shortcuts`, attached to `view/keys.rs::shell`
+through Sigil capture handlers. There are no hidden Tab shortcut nodes.
+Tab navigates an open overlay or accepts a completion before cycling effort.
+Shift+Tab navigates an open overlay or sends `Cmd::ToggleApproval`.
+`Snapshot::approval` reflects effective policy; it is separate from work mode
+and is updated by the worker, not optimistically by the key handler.
+
 ## 1b. Overlay helpers (2026-09-19)
 
 Owner: `src/tui/sigil_view/overlay.rs`. The one visual language for every

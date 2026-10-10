@@ -1,11 +1,11 @@
 use sigil::prelude::{
-    AlignItems, IntoNode, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt,
-    Paint, PointerEvent, Token, container,
+    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Paint,
+    PointerEvent, Token, container,
 };
 
 use super::super::{App, Call, Entry};
 use super::tree::{branch, label, tree};
-use super::{COMPACT_ROWS, patch_of, patch_path, patch_view, preview};
+use super::{COMPACT_ROWS, patch_of, patch_path, patch_view, preview, wrap};
 use crate::prefs::{DiffLayout, ToolOutput};
 use crate::tools::Builtin;
 use crate::tui::ToolState;
@@ -156,7 +156,7 @@ pub(in crate::tui::sigil_view) fn call_output(
     if patch.is_none()
         && let Some(card) = super::reply::stat_node_of(output)
     {
-        return Some(framed(card));
+        return Some(wrap(card));
     }
     let Some(patch) = patch else {
         let ranged = Builtin::is(name, Builtin::Read) && crate::tools::read_span(output).is_some();
@@ -176,18 +176,7 @@ pub(in crate::tui::sigil_view) fn call_output(
     } else {
         view.path(patch_path(output).unwrap_or_else(|| call.arg.clone()))
     };
-    Some(framed(view))
-}
-
-fn framed(child: impl IntoNode + 'static) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .min_size(0.0, 0.0)
-                .padding_bottom(crate::tui::sigil_view::canvas::cell().h),
-        )
-        .child(child)
+    Some(wrap(view))
 }
 
 pub(super) fn tool_card(

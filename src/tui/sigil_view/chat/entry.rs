@@ -17,9 +17,10 @@ use sigil::prelude::icon_button;
 use sigil::prelude::image;
 use sigil::prelude::markdown_inline;
 use sigil::prelude::text;
+use sigil::terminal::caps;
 use sigil::widgets::DiffBuilder;
 
-use super::{App, Call, Entry};
+use super::{App, Call, Entry, canvas};
 use crate::prefs::{DiffLayout, Prefs};
 use crate::tui::sigil_view::look::Look;
 
@@ -203,7 +204,7 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
     let (width, height) = (source.width() as f32, source.height() as f32);
     let id = source.id();
     let kind = crate::tools::image_type(&bytes).and_then(|media| media.strip_prefix("image/"));
-    container()
+    let mut picture = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .pointer_up(move |event| {
             if event.button != Some(MouseButton::Left) {
@@ -214,20 +215,22 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
             if crate::durable::store::write(&path, &bytes).is_ok() {
                 drop(std::process::Command::new("open").arg(&path).spawn());
             }
-        })
-        .child(
+        });
+    if canvas::is_window() || caps().is_some_and(|caps| caps.graphics.is_some()) {
+        picture = picture.child(
             image(source)
                 .alt(name.clone())
                 .fit(ObjectFit::Contain)
                 .layout(LayoutStyle::block().width(width).height(height)),
-        )
-        .child(
-            sigil::kernel::text(name)
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
-        )
+        );
+    }
+    picture.child(
+        sigil::kernel::text(name)
+            .nowrap()
+            .text_color(sigil::prelude::Token::OnSurface)
+            .font_size(12.0)
+            .text_color(sigil::prelude::Token::Gray11),
+    )
 }
 
 pub(super) fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {

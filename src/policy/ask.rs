@@ -1,8 +1,20 @@
 use std::path::Path;
 
-use super::{Policy, danger, paths::matches_deny};
+use super::{Gate, Policy, danger, paths::matches_deny};
 
 impl Policy {
+    pub(crate) fn toggle_approval(&mut self) -> bool {
+        self.session_confirm = match self.session_confirm {
+            Gate::Destructive => Gate::Risky,
+            Gate::Risky => Gate::Destructive,
+        };
+        self.is_approval()
+    }
+
+    pub(crate) fn is_approval(&self) -> bool {
+        self.confirm.max(self.session_confirm) == Gate::Risky
+    }
+
     #[must_use]
     pub(crate) fn needs_approval(
         &self,
@@ -10,7 +22,12 @@ impl Policy {
         workspace: &Path,
         start: &Path,
     ) -> Option<String> {
-        if let Some(reason) = danger(command, workspace, start, self.confirm) {
+        if let Some(reason) = danger(
+            command,
+            workspace,
+            start,
+            self.confirm.max(self.session_confirm),
+        ) {
             return Some(reason.to_string());
         }
         self.ask

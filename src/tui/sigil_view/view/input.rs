@@ -26,39 +26,27 @@ pub(super) fn composer_keys(mut node: NodeBuilder, app: &App) -> NodeBuilder {
     node
 }
 
-pub(super) fn tab_shortcuts(app: &App) -> NodeBuilder {
+pub(super) fn tab_shortcuts(node: NodeBuilder, app: &App) -> NodeBuilder {
     let complete = app.clone();
     let mode = app.clone();
-    let tab = Shortcut::new(Key::Tab, ModifiersState::empty());
-    let shift_tab = Shortcut::new(Key::Tab, ModifiersState::SHIFT);
-    container()
-        .layout(
-            LayoutStyle::block()
-                .position(Position::Absolute)
-                .width(0.0)
-                .height(0.0),
-        )
-        .hittable(false)
-        .child(
-            container()
-                .keyboard_shortcut(tab.clone())
-                .key(tab, move |event| {
-                    event.stop_propagation();
-                    if !complete.overlay_tab(1) && !complete.complete() {
-                        complete.cycle_effort(1);
-                    }
-                }),
-        )
-        .child(
-            container()
-                .keyboard_shortcut(shift_tab.clone())
-                .key(shift_tab, move |event| {
-                    event.stop_propagation();
-                    if !mode.overlay_tab(-1) {
-                        mode.cycle_effort(-1);
-                    }
-                }),
-        )
+    node.key_capture(
+        Shortcut::new(Key::Tab, ModifiersState::empty()),
+        move |event| {
+            event.stop_propagation();
+            if !complete.overlay_tab(1) && !complete.complete() {
+                complete.cycle_effort(1);
+            }
+        },
+    )
+    .key_capture(
+        Shortcut::new(Key::Tab, ModifiersState::SHIFT),
+        move |event| {
+            event.stop_propagation();
+            if !mode.overlay_tab(-1) {
+                drop(mode.cmd.send(Cmd::ToggleApproval));
+            }
+        },
+    )
 }
 
 pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder {

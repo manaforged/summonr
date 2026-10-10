@@ -172,3 +172,90 @@ fn answer_stays_last_after_the_check_receipt_and_goal_verdict() {
         .expect("answer reaches the scrollback");
     assert!(verdict < answer, "{lines}");
 }
+
+#[test]
+fn journal_child_terminals_close_rows_once_without_recharging_usage() {
+    use crate::child::{Access, ChildRecord, ChildState};
+    use crate::durable::log::Line;
+    let record = ChildRecord {
+        version: 1,
+        id: "01a104ac000000000000000000001111"
+            .parse()
+            .expect("child id"),
+        parent: "01a104ac000000000000000000002222"
+            .parse()
+            .expect("parent id"),
+        assignment: "Child terminal".to_owned(),
+        model: "m".to_owned(),
+        workspace: "/w".into(),
+        depth: 1,
+        access: Access::Research,
+        call: Some("t1".to_owned()),
+        state: ChildState::Running,
+    };
+    let interrupted = record.interrupt("cancelled by parent");
+    let ChildState::Interrupted(mut result) = interrupted.state else {
+        panic!("interrupted result")
+    };
+    result.text = "child answer".to_owned();
+    result.usage.prompt_tokens = 2_000;
+    let mut empty = result.clone();
+    empty.text.clear();
+    for (state, failed) in [
+        (ChildState::Completed(result.clone()), false),
+        (ChildState::Failed(result.clone()), true),
+        (ChildState::Aborted(result.clone()), true),
+        (ChildState::Interrupted(result), true),
+        (ChildState::Completed(empty), false),
+    ] {
+        let mut model = model();
+        model.apply(Msg::Busy(Some(Activity::Turn)));
+        model.apply(Msg::Event(Event::Child {
+            id: record.id.to_string(),
+            event: Box::new(Event::Spawned {
+                assignment: record.assignment.clone(),
+                access: record.access,
+                call: "t1".to_owned(),
+                background: true,
+                workspace: "/w".to_owned(),
+                agent: String::new(),
+            }),
+        }));
+        model.apply(Msg::Event(Event::Child {
+            id: record.id.to_string(),
+            event: Box::new(Event::Usage {
+                prompt_tokens: 5,
+                completion_tokens: 2,
+                reasoning_tokens: 0,
+                cached_tokens: 0,
+                millis: None,
+                prefix_hash: String::new(),
+                cost: Some(0.25),
+            }),
+        }));
+        let line = Line::Child {
+            record: ChildRecord {
+                state,
+                ..record.clone()
+            },
+        };
+        for _ in 0..2 {
+            for event in line.events() {
+                model.apply(Msg::Event(event));
+            }
+        }
+        assert!(model.agents[0].done);
+        assert_eq!(model.agents[0].failed, failed);
+        assert_eq!(model.agents[0].tokens, 7);
+        assert_eq!(model.agents[0].cost, 0.25);
+        assert!(model.busy_since.is_some());
+        assert_eq!(
+            model
+                .entries
+                .iter()
+                .filter(|entry| matches!(entry, Entry::Tool { name, .. } if name == "Background"))
+                .count(),
+            1
+        );
+    }
+}

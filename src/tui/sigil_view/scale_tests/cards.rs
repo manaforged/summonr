@@ -230,6 +230,10 @@ fn tool_headers_name_the_call() {
     );
     assert!(shown.contains("src/models.py:17:7"), "{shown}");
     assert!(shown.contains(&long), "{shown}");
+    let lines: Vec<_> = shown.lines().map(str::to_owned).collect();
+    let lsp = find(&lines, "src/models.py:17:7").expect("LSP call line");
+    assert!(lines[lsp - 1].trim().is_empty(), "{shown}");
+    assert!(!lines[lsp - 2].trim().is_empty(), "{shown}");
 }
 
 #[test]

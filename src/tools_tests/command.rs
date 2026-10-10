@@ -322,3 +322,33 @@ fn a_content_search_over_a_folder_holding_a_protected_path_is_refused() {
         assert!(!ran.contains("protected path"), "{command}: {ran}");
     }
 }
+
+#[test]
+fn approval_toggle_gates_execution_and_preserves_one_shot_command_approval() {
+    use super::super::command::Approval;
+
+    let (dir, mut tools) = workspace(&[]);
+    let command = "git clean -fdn; printf approved > ran.txt";
+    assert!(tools.toggle_approval());
+    let asked = outcome(&tools, command);
+    assert!(asked.contains("needs the user's approval"), "{asked}");
+    assert!(!dir.path().join("ran.txt").exists());
+    tools.approve_once(Approval::Policy).expect("approve once");
+    let approved = outcome(&tools, command);
+    assert!(approved.starts_with("exit 0"), "{approved}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("ran.txt")).expect("command marker"),
+        "approved"
+    );
+    std::fs::remove_file(dir.path().join("ran.txt")).expect("reset marker");
+    let again = outcome(&tools, command);
+    assert!(again.contains("needs the user's approval"), "{again}");
+    assert!(!dir.path().join("ran.txt").exists());
+    assert!(!tools.toggle_approval());
+    let automatic = outcome(&tools, command);
+    assert!(automatic.starts_with("exit 0"), "{automatic}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("ran.txt")).expect("auto marker"),
+        "approved"
+    );
+}

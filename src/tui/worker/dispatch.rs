@@ -24,6 +24,7 @@ impl Worker {
             | Cmd::LoginAnswer(_)) => self.traffic(command),
             command @ (Cmd::SetEffort(_)
             | Cmd::SetVerify(_)
+            | Cmd::ToggleApproval
             | Cmd::SetEndpoint(_)
             | Cmd::SetModel(_)
             | Cmd::SetSeat(..)
@@ -134,6 +135,20 @@ impl Worker {
                 self.send_settings();
             }
             Cmd::SetVerify(on) => self.set_verify(on),
+            Cmd::ToggleApproval => {
+                if self.loop_.is_strict() {
+                    self.system("strict policy rejects risky commands instead of asking");
+                } else {
+                    let before = self.loop_.is_approval();
+                    let on = self.loop_.toggle_approval();
+                    self.system(match (on, before == on) {
+                        (true, true) => "approval mode stays on: configured policy requires it",
+                        (true, false) => "approval mode: risky commands ask before running",
+                        (false, _) => "auto approval: destructive commands and policy asks still require approval",
+                    });
+                }
+                self.send_settings();
+            }
             Cmd::SetEndpoint(name) => self.set_endpoint(&name).await,
             Cmd::SetModel(model) => self.set_model(&model).await,
             Cmd::SetSeat(endpoint, model) => self.set_seat(&endpoint, &model).await,

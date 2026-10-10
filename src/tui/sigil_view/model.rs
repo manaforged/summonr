@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -90,7 +90,7 @@ pub(super) struct Model {
     pub(super) busy_since: Option<(Activity, Instant)>,
     pub(super) live_tool: Option<(String, String)>,
     pub(super) agents: Vec<Agent>,
-    pub(super) agents_hidden: bool,
+    pub(super) agents_hidden: BTreeSet<String>,
     pub(super) agents_expanded: bool,
     pub(super) prefs: Prefs,
     pub(super) snapshot: Snapshot,
@@ -180,7 +180,7 @@ impl Model {
             busy_since: None,
             live_tool: None,
             agents: Vec::new(),
-            agents_hidden: false,
+            agents_hidden: BTreeSet::new(),
             agents_expanded: false,
             prefs: info.prefs.clone(),
             snapshot: Snapshot {
@@ -366,6 +366,7 @@ impl Model {
         self.rounds = 0;
         self.live_tool = None;
         self.agents.clear();
+        self.agents_hidden.clear();
         self.speed = Speed::default();
     }
 }

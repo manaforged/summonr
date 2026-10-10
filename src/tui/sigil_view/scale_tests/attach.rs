@@ -2,12 +2,17 @@ use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
-use super::{State, busy_info, frame_with};
+use super::{State, busy_info, frame_with, paint};
 use crate::tui::{Activity, Cmd, Msg};
 
 fn paste_png(app: &App) {
-    let file = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
-    image::RgbaImage::new(2, 2).save(file.path()).unwrap();
+    let file = tempfile::Builder::new()
+        .suffix(".png")
+        .tempfile()
+        .expect("image file");
+    image::RgbaImage::new(480, 320)
+        .save(file.path())
+        .expect("PNG fixture");
     assert!(app.paste(&file.path().display().to_string()));
 }
 
@@ -76,4 +81,49 @@ fn an_image_only_draft_queues_during_a_turn() {
         }
         assert_eq!(queued.map(|input| input.images.len()), Some(1));
     });
+}
+
+#[test]
+fn an_attached_image_keeps_its_info_band_during_active_and_queued_turns() {
+    let note = |state, queued| {
+        let grid = paint(busy_info(), 110, 34, state, |app| {
+            app.update(Msg::Queued {
+                steering: 0,
+                queued,
+            });
+            paste_png(app);
+        });
+        let shown = grid.text();
+        let row = shown
+            .lines()
+            .position(|line| line.contains("1 image attached"))
+            .expect("attachment notice");
+        let cell = (0..grid.cols())
+            .filter_map(|col| grid.get(col, row))
+            .find(|cell| cell.text == "1")
+            .expect("image count cell");
+        let caption = shown.lines().nth(row).expect("notice row").trim();
+        if state != State::Idle {
+            assert!(shown.contains("thinking"), "{shown}");
+            if queued > 0 {
+                assert!(shown.contains("1 queued"), "{shown}");
+            }
+        }
+        (cell.fg, cell.bg, caption.to_owned())
+    };
+    let idle = note(State::Idle, 0);
+    for (state, queued) in [(State::Busy, 0), (State::Tool, 0), (State::Busy, 1)] {
+        assert_eq!(note(state, queued), idle, "{state:?}, queued={queued}");
+    }
+}
+
+#[test]
+fn an_image_without_terminal_graphics_keeps_its_label_without_a_blank_preview() {
+    let lines = frame_with(busy_info(), 110, 34, State::Idle, |app| {
+        paste_png(app);
+        app.submit();
+    });
+    let shown = lines.join("\n");
+    assert!(shown.contains("image ·"), "{shown}");
+    assert!(shown.contains("Measured layout."), "{shown}");
 }

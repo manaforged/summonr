@@ -113,7 +113,14 @@ fn mode_text(model: &Model) -> ModeText {
     };
     let mode = model.snapshot.mode_name();
     let glyph = ["▣", "◎", "●"][class];
-    (format!("{glyph} {mode}"), class as u8)
+    let approval = if model.snapshot.strict {
+        "strict"
+    } else if model.snapshot.approval {
+        "approval"
+    } else {
+        "auto approval"
+    };
+    (format!("{glyph} {mode} · {approval}"), class as u8)
 }
 
 fn model_text(model: &Model) -> String {
@@ -219,15 +226,20 @@ fn mode_label(mode: ModeText) -> NodeBuilder {
             .font_size(12.0)
             .text_color(sigil::prelude::Token::Success11)
     };
-    container().child(title)
+    container()
+        .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0))
+        .child(title.ellipsize())
 }
 
 fn model_label(model: String) -> NodeBuilder {
-    container().child(
-        sigil::kernel::text(model)
-            .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
-            .font_size(12.0)
-            .text_color(sigil::prelude::Token::Gray11),
-    )
+    container()
+        .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0))
+        .child(
+            sigil::kernel::text(model)
+                .nowrap()
+                .ellipsize()
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
+        )
 }

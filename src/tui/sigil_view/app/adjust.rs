@@ -236,6 +236,19 @@ impl App {
         self.refresh();
     }
 
+    pub(in crate::tui::sigil_view) fn clear_agent(&self, id: &str) {
+        self.model_mut(|model| {
+            if model
+                .agents
+                .iter()
+                .any(|agent| agent.id == id && agent.background)
+            {
+                model.agents_hidden.insert(id.to_owned());
+            }
+        });
+        self.refresh();
+    }
+
     pub(in crate::tui::sigil_view) fn toggle_mail(&self) {
         self.model_mut(|model| {
             model.prefs.mail = !model.prefs.mail;

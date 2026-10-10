@@ -20,6 +20,7 @@ pub(crate) use {
 pub(crate) struct Policy {
     pub strict: bool,
     confirm: Gate,
+    session_confirm: Gate,
     read_only: bool,
     unrestricted: bool,
     deny: Vec<String>,

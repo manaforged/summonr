@@ -70,6 +70,7 @@ impl MidTurn<'_> {
             | Cmd::Merge(_)
             | Cmd::Discard(_)
             | Cmd::SetVerify(_)
+            | Cmd::ToggleApproval
             | Cmd::SetEndpoint(_)
             | Cmd::SetModel(_)
             | Cmd::SetSeat(..)

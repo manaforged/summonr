@@ -135,7 +135,7 @@ impl Tree {
             "--",
         ];
         list.extend(paths.iter().map(String::as_str));
-        let untracked = super::delta::paths(&self.path, &list)?;
+        let untracked = crate::diff::git_paths(&self.path, &list)?;
         if !untracked.is_empty() {
             let mut mark = vec!["--literal-pathspecs", "add", "-N", "--"];
             mark.extend(untracked.iter().map(String::as_str));
@@ -157,8 +157,9 @@ impl Tree {
 
     fn snapshot_paths(&self) -> Result<Vec<String>> {
         let snapshot = self.snapshot.as_deref().unwrap_or("HEAD");
-        let mut paths = super::delta::paths(&self.path, &["diff", "--name-only", "-z", snapshot])?;
-        paths.extend(super::delta::paths(
+        let mut paths =
+            crate::diff::git_paths(&self.path, &["diff", "--name-only", "-z", snapshot])?;
+        paths.extend(crate::diff::git_paths(
             &self.path,
             &["ls-files", "-z", "--others", "--exclude-standard"],
         )?);

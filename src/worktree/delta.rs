@@ -135,7 +135,7 @@ fn overlay(primary: &Path, dest: &Path, names: &[String]) -> Result<()> {
             Some(&patch),
         )?;
     }
-    let listed = paths(
+    let listed = diff::git_paths(
         primary,
         &["ls-files", "-z", "--others", "--exclude-standard"],
     )?;
@@ -197,13 +197,4 @@ fn link(from: &Path, to: &Path) -> std::io::Result<()> {
     } else {
         std::os::windows::fs::symlink_file(from, to)
     }
-}
-
-pub(super) fn paths(root: &Path, args: &[&str]) -> Result<Vec<String>> {
-    let out = diff::git_output(root, &[], args, None)?;
-    Ok(String::from_utf8_lossy(&out)
-        .split('\0')
-        .filter(|name| !name.is_empty())
-        .map(str::to_string)
-        .collect())
 }

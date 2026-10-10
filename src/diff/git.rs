@@ -71,3 +71,12 @@ pub(crate) fn git_output(
     }
     Ok(output.stdout)
 }
+
+pub(crate) fn git_paths(root: &Path, args: &[&str]) -> Result<Vec<String>> {
+    let out = git_output(root, &[], args, None)?;
+    Ok(String::from_utf8_lossy(&out)
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(str::to_string)
+        .collect())
+}

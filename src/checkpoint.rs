@@ -77,7 +77,10 @@ impl Checkpoints {
                     String::from_utf8_lossy(status)
                 ))
             })?;
-            paths.push(String::from_utf8_lossy(path).into_owned());
+            let path = String::from_utf8_lossy(path).into_owned();
+            if !crate::diff::ignored::hidden(&path) {
+                paths.push(path);
+            }
         }
         let env = self.env();
         git_env(&self.root, &env, &["read-tree", "--reset", "-u", target])?;

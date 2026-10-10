@@ -196,6 +196,7 @@ pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
             .filter(|path| !capture.files.contains_key(*path))
             .cloned(),
     );
+    paths.retain(|path| !crate::diff::ignored::hidden(path));
     paths.sort();
     paths
 }

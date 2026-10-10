@@ -84,3 +84,23 @@ fn a_file_staged_before_it_was_skipped_leaves_the_next_checkpoint() -> Result<()
     assert!(!listed.contains("diff.json"), "{listed}");
     Ok(())
 }
+
+#[test]
+fn an_undo_reports_only_the_files_a_user_would_see() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    std::fs::write(workspace.join("calc.py"), "before\n")?;
+    let checkpoints =
+        Checkpoints::open(workspace, "undo").expect("a Git workspace supports checkpoints");
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("calc.py"), "after\n")?;
+    std::fs::create_dir(workspace.join("__pycache__"))?;
+    std::fs::write(workspace.join("__pycache__/calc.cpython-312.pyc"), "x")?;
+    assert_eq!(checkpoints.restore(1)?, vec!["calc.py".to_string()]);
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("calc.py"))?,
+        "before\n"
+    );
+    Ok(())
+}

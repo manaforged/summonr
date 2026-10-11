@@ -20,6 +20,7 @@ use crate::endpoint::Wire;
 pub(crate) use summonr_auth::Auth;
 
 mod client;
+mod fit;
 mod message;
 mod reasoning;
 mod request;

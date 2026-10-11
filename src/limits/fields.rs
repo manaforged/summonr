@@ -65,6 +65,8 @@ table! {
     mcp_progress_stretch: u32,
     mcp_cancel_write_secs: u64,
     mcp_close_grace_ms: u64,
+    image_side_px: u32,
+    image_bytes: usize,
     mcp_log_max_bytes: u64,
     mcp_frame_max_bytes: usize,
     mcp_stderr_tail_bytes: usize,

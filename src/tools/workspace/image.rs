@@ -35,12 +35,12 @@ impl ToolRegistry {
     ) -> Result<ToolOutput> {
         if self.model_images {
             return Ok(ToolOutput {
-                images: vec![Image::encode(media, bytes)],
+                images: vec![Image::fit(bytes)?],
                 ..ToolOutput::ok(format!("{path} ({media}, {width}x{height}) is attached"))
             });
         }
         if let Some(endpoint) = &self.vision {
-            return match self.describe_image(endpoint, media, bytes) {
+            return match self.describe_image(endpoint, bytes) {
                 Ok(text) => Ok(ToolOutput::ok(format!(
                     "{path} ({media}, {width}x{height}) described by {}: {text}",
                     endpoint.name
@@ -110,13 +110,8 @@ impl ToolRegistry {
         Ok(reply.content.unwrap_or_default())
     }
 
-    fn describe_image(
-        &self,
-        endpoint: &crate::endpoint::Endpoint,
-        media: &str,
-        bytes: &[u8],
-    ) -> Result<String> {
-        let image = Image::encode(media, bytes);
+    fn describe_image(&self, endpoint: &crate::endpoint::Endpoint, bytes: &[u8]) -> Result<String> {
+        let image = Image::fit(bytes)?;
         tokio::runtime::Handle::current()
             .block_on(self.narrate_images(endpoint, std::slice::from_ref(&image)))
     }
@@ -141,14 +136,14 @@ pub(crate) fn attach(workspace: &Path, line: &str) -> Result<UserInput> {
             let Some(bytes) = read_attachment(workspace, word, path)? else {
                 continue;
             };
-            if let Some(media_type) = image_type(&bytes) {
+            if image_type(&bytes).is_some() {
                 image_bytes = image_bytes.saturating_add(bytes.len());
                 if image_bytes > IMAGES_MAX_BYTES {
                     return Err(Error::Tool(format!(
                         "attached images are larger than {IMAGES_MAX_BYTES} bytes"
                     )));
                 }
-                images.push(Image::encode(media_type, &bytes));
+                images.push(Image::fit(&bytes)?);
             } else {
                 let text = String::from_utf8(bytes).map_err(|error| {
                     Error::Tool(format!(
@@ -232,3 +227,7 @@ pub(crate) fn image_type(bytes: &[u8]) -> Option<&'static str> {
         None
     }
 }
+
+#[cfg(test)]
+#[path = "image_tests.rs"]
+mod image_tests;

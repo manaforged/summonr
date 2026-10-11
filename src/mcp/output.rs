@@ -78,5 +78,13 @@ fn image(item: &mut Value, used: &mut usize) -> Option<Image> {
         return None;
     }
     *used += bytes;
-    Some(Image { media_type, data })
+    let raw = Image {
+        media_type: media_type.clone(),
+        data,
+    }
+    .bytes()
+    .ok()?;
+    (crate::tools::image_type(&raw) == Some(media_type.as_str()))
+        .then(|| Image::fit(&raw).ok())
+        .flatten()
 }

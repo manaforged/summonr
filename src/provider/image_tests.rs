@@ -109,3 +109,21 @@ fn a_gif_never_reaches_grok() {
     assert!(!sent.contains("data:image/gif"), "{sent}");
     assert!(sent.contains("[image omitted: "), "{sent}");
 }
+
+#[test]
+fn an_anthropic_image_over_ten_megabytes_is_omitted() {
+    let claude = endpoint("anthropic", "claude-opus-5-5", None);
+    let sent = body(
+        &claude,
+        &[
+            pictured("huge", vec![png(8 * 1024 * 1024)]),
+            pictured("small", vec![png(64)]),
+        ],
+    );
+    assert_eq!(sent.matches(r#""type":"image""#).count(), 1);
+    assert!(
+        sent.contains(r"huge\n\n[image omitted: larger than"),
+        "{}",
+        &sent[..200]
+    );
+}

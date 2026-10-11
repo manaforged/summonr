@@ -64,6 +64,11 @@ fn verdicts(
                     "this endpoint does not accept {}",
                     image.media_type
                 ))
+            } else if size > budget.each {
+                Some(format!(
+                    "larger than the {} bytes one image can be",
+                    budget.each
+                ))
             } else if count >= budget.count || bytes + size > budget.bytes {
                 Some("older than the images this request can carry".to_string())
             } else {

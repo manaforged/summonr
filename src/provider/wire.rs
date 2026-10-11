@@ -24,6 +24,7 @@ pub(crate) fn headers(wire: crate::endpoint::Wire) -> &'static [(&'static str, &
 pub(crate) struct ImageBudget {
     pub(crate) types: &'static [&'static str],
     pub(crate) count: usize,
+    pub(crate) each: usize,
     pub(crate) bytes: usize,
 }
 
@@ -34,6 +35,7 @@ pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
         crate::endpoint::Wire::Anthropic => ImageBudget {
             types: &["image/png", "image/jpeg", "image/gif", "image/webp"],
             count: 100,
+            each: 10_000_000,
             bytes: 24_000_000,
         },
         crate::endpoint::Wire::Gemini => ImageBudget {
@@ -45,21 +47,25 @@ pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
                 "image/heif",
             ],
             count: 3600,
+            each: 15_000_000,
             bytes: 15_000_000,
         },
         crate::endpoint::Wire::Responses => ImageBudget {
             types: &["image/png", "image/jpeg", "image/gif", "image/webp"],
             count: 1500,
+            each: 256_000_000,
             bytes: 256_000_000,
         },
         crate::endpoint::Wire::Completions => ImageBudget {
             types: PNG_JPEG,
             count: 100,
+            each: 10_000_000,
             bytes: 20_000_000,
         },
         crate::endpoint::Wire::Decisions => ImageBudget {
             types: PNG_JPEG,
             count: 0,
+            each: 0,
             bytes: 0,
         },
     }

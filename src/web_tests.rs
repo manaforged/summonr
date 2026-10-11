@@ -99,6 +99,9 @@ const BRAVE: &str = r#"<div class="snippet svelte-jmfu5f" data-pos="0" data-type
 
 const BING: &str = r#"<ol id="b_results"><li class="b_algo" data-id iid=SERP.5344><link rel="stylesheet" href="https://r.bing.com/rp/a.css" type="text/css"/><div class="b_tpcn"><a class="tilk" href="https://serde.rs/"><div class="tptxt">serde.rs</div></a></div><h2><a target="_blank" href="https://www.bing.com/ck/a?!&amp;&amp;p=1ecb&amp;ptn=3&amp;u=a1aHR0cHM6Ly9zZXJkZS5ycy9maWVsZC1hdHRycy5odG1s&amp;ntb=1" h="ID=SERP,5128.2">Field attributes &#183; <strong>Serde</strong></a></h2><div class="b_caption"><p class="b_lineclamp2">Serialize and deserialize this field with the given name.</p></div></li><li class="b_algo"><h2><a href="https://www.bing.com/ck/a?!&amp;&amp;u=a1aHR0cHM6Ly93d3cuYmluZy5jb20vbmV3cw&amp;ntb=1">Bing News</a></h2></li></ol>"#;
 
+const YAHOO: &str = r#"<li class="first"><div class="dd fst algo algo-sr relsrch richAlgo"><div class="compTitle options-toggle"><a class="d-ib va-top" target="_blank" href="https://r.search.yahoo.com/_ylt=A2RR;_ylu=Y29s/RV=2/RE=1792959646/RO=10/RU=https%3a%2f%2fserde.rs%2ffield-attrs.html/RK=2/RS=Ckx3-"><span class="d-ib va-mid"><span class="fc-141414 d-b">Serde</span>https://serde.rs › field-attrs</span><h3 class="title fc-2015C2-imp"><span class="d-b fz-20">Field attributes &middot; Serde</span></h3></a></div><div class="compText aAbs"><p class="fc-dustygray"> Learn how to use<b> #[serde(rename = &quot;name&quot;)]</b> attributes. </p></div></div></li>
+<li><div class="dd algo algo-sr"><div class="compTitle"><a href="https://r.search.yahoo.com/_ylt=x/RV=2/RU=https%3a%2f%2fsearch.yahoo.com%2fpreferences/RK=2/RS=y-"><h3 class="title">Preferences</h3></a></div></div></li>"#;
+
 fn engine(name: &str) -> &'static super::results::Engine {
     super::results::engines()
         .unwrap()
@@ -108,13 +111,13 @@ fn engine(name: &str) -> &'static super::results::Engine {
 }
 
 #[test]
-fn engines_are_tried_bing_then_duckduckgo_then_brave() {
+fn engines_are_tried_bing_duckduckgo_yahoo_then_brave() {
     let names = super::results::engines()
         .unwrap()
         .iter()
         .map(|engine| engine.name.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(names, ["bing", "duckduckgo", "brave"]);
+    assert_eq!(names, ["bing", "duckduckgo", "yahoo", "brave"]);
 }
 
 #[test]
@@ -133,6 +136,18 @@ fn a_bing_page_yields_the_decoded_url_title_and_snippet_and_skips_its_own_links(
     assert_eq!(
         url.as_str(),
         "https://www.bing.com/search?q=serde&filters=ex1%3A%22ez2%22"
+    );
+}
+
+#[test]
+fn a_yahoo_page_yields_the_url_from_its_redirect_path_and_skips_its_own_links() {
+    let hits = super::results::parse_page(YAHOO, engine("yahoo"));
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].url, "https://serde.rs/field-attrs.html");
+    assert_eq!(hits[0].title, "Field attributes · Serde");
+    assert_eq!(
+        hits[0].snippet,
+        "Learn how to use #[serde(rename = \"name\")] attributes."
     );
 }
 

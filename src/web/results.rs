@@ -8,6 +8,10 @@ use super::{domain_match, host_of};
 use crate::error::{Error, Result};
 use crate::text::ellipsize;
 
+mod markup;
+
+use markup::{attr, decode, element, plain, tag};
+
 const SNIPPET_MAX: usize = 280;
 const TITLE_MAX: usize = 120;
 const ENGINES: &str = include_str!("engines.toml");
@@ -26,12 +30,14 @@ pub(super) struct Engine {
     #[serde(default)]
     link: Option<String>,
     #[serde(default)]
-    heading: Option<String>,
+    link_in: Option<Container>,
     #[serde(default)]
     title: Option<String>,
     snippet: String,
     #[serde(default)]
     unwrap: Option<String>,
+    #[serde(default)]
+    carrier: Carrier,
     #[serde(default)]
     unwrap_prefix: Option<String>,
     #[serde(default)]
@@ -66,6 +72,21 @@ impl Window {
             ))
         })
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Container {
+    Tag(String),
+    Class(String),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Carrier {
+    #[default]
+    Query,
+    Path,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -120,11 +141,23 @@ impl Engine {
         let Some(param) = &self.unwrap else {
             return Some(absolute);
         };
-        let inner = Url::parse(&absolute)
-            .ok()?
-            .query_pairs()
-            .find(|(key, _)| key == param)
-            .map(|(_, value)| value.into_owned());
+        let parsed = Url::parse(&absolute).ok()?;
+        let inner = match self.carrier {
+            Carrier::Query => parsed
+                .query_pairs()
+                .find(|(key, _)| key == param)
+                .map(|(_, value)| value.into_owned()),
+            Carrier::Path => parsed.path_segments().and_then(|mut segments| {
+                let value = segments.find_map(|segment| {
+                    segment
+                        .strip_prefix(param.as_str())
+                        .and_then(|rest| rest.strip_prefix('='))
+                })?;
+                url::form_urlencoded::parse(format!("v={value}").as_bytes())
+                    .next()
+                    .map(|(_, decoded)| decoded.into_owned())
+            }),
+        };
         let Some(inner) = inner else {
             return Some(absolute);
         };
@@ -145,11 +178,9 @@ impl Engine {
     }
 
     fn anchor<'a>(&self, block: &'a str) -> Option<&'a str> {
-        match (&self.heading, &self.link) {
-            (Some(heading), _) => {
-                let inside = tag(block, heading)?;
-                tag(inside, "a")
-            }
+        match (&self.link_in, &self.link) {
+            (Some(Container::Tag(name)), _) => tag(tag(block, name)?, "a"),
+            (Some(Container::Class(class)), _) => tag(element(block, class)?, "a"),
             (None, Some(link)) => element(block, link),
             (None, None) => None,
         }
@@ -205,73 +236,6 @@ fn page_hit(block: &str, engine: &Engine) -> Option<Hit> {
     })
 }
 
-fn element<'a>(html: &'a str, class: &str) -> Option<&'a str> {
-    let marker = "class=\"";
-    let mut from = 0;
-    while let Some(relative) = html[from..].find(marker) {
-        let start = from + relative + marker.len();
-        let end = start + html[start..].find('"')?;
-        if html[start..end]
-            .split_whitespace()
-            .any(|token| token == class)
-        {
-            let open = html[..start].rfind('<')?;
-            return Some(&html[open..closing(html, open)?]);
-        }
-        from = end;
-    }
-    None
-}
-
-fn tag<'a>(html: &'a str, name: &str) -> Option<&'a str> {
-    let opener = format!("<{name}");
-    let mut from = 0;
-    while let Some(relative) = html[from..].find(&opener) {
-        let open = from + relative;
-        let after = open + opener.len();
-        if html[after..].starts_with(|c: char| c.is_whitespace() || c == '>') {
-            return Some(&html[open..closing(html, open)?]);
-        }
-        from = after;
-    }
-    None
-}
-
-fn closing(html: &str, open: usize) -> Option<usize> {
-    let rest = &html[open + 1..];
-    let name = &rest[..rest.find(|c: char| c.is_whitespace() || c == '>' || c == '/')?];
-    let opener = format!("<{name}");
-    let closer = format!("</{name}>");
-    let mut depth = 0usize;
-    let mut at = open;
-    loop {
-        let close = at + html[at..].find(&closer)?;
-        let next = html[at..close].find(&opener).map(|index| at + index);
-        match next {
-            Some(index) => {
-                at = index + opener.len();
-                if html[at..].starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/') {
-                    depth += 1;
-                }
-            }
-            None => {
-                at = close + closer.len();
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(at);
-                }
-            }
-        }
-    }
-}
-
-fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    let marker = format!(" {name}=\"");
-    let start = tag.find(&marker)? + marker.len();
-    let end = start + tag[start..].find('"')?;
-    Some(&tag[start..end])
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Hit {
     pub(super) title: String,
@@ -303,63 +267,6 @@ pub(super) fn format_hits(query: &str, hits: &[Hit]) -> String {
         ));
     }
     out.push_str("\nRead chosen URLs with web_fetch.");
-    out
-}
-
-fn plain(html: &str) -> String {
-    let mut out = String::new();
-    let mut tag = false;
-    for ch in html.chars() {
-        match ch {
-            '<' => tag = true,
-            '>' => tag = false,
-            _ if !tag => out.push(ch),
-            _ => {}
-        }
-    }
-    decode(&out)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn decode(text: &str) -> String {
-    numeric(text)
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#x27;", "'")
-        .replace("&#39;", "'")
-        .replace("&nbsp;", " ")
-}
-
-fn numeric(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(at) = rest.find("&#") {
-        out.push_str(&rest[..at]);
-        let body = &rest[at + 2..];
-        let decoded = body.find(';').and_then(|end| {
-            let code = &body[..end];
-            let value = match code.strip_prefix(['x', 'X']) {
-                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
-                None => code.parse().ok()?,
-            };
-            Some((char::from_u32(value)?, end))
-        });
-        match decoded {
-            Some((ch, end)) => {
-                out.push(ch);
-                rest = &body[end + 1..];
-            }
-            None => {
-                out.push_str("&#");
-                rest = body;
-            }
-        }
-    }
-    out.push_str(rest);
     out
 }
 

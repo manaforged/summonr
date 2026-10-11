@@ -3,33 +3,48 @@ use super::*;
 use crate::workflow;
 
 pub(super) fn force_compact(history: &[Message]) -> Vec<(usize, Message)> {
-    let live: Vec<usize> = history
-        .iter()
-        .enumerate()
-        .filter(|(_, message)| {
-            message.role == Role::Tool && !message.content.starts_with("[cleared")
-        })
-        .map(|(index, _)| index)
-        .collect();
+    let live = live_outputs(history, history.len());
     let target = live
         .iter()
         .map(|index| history[*index].content.len())
         .sum::<usize>()
         .div_ceil(2);
     let keep = live.len().saturating_sub(KEEP_TAIL).max(1).min(live.len());
+    clear_outputs(history, &live[..keep], target).0
+}
+
+fn live_outputs(history: &[Message], before: usize) -> Vec<usize> {
+    history[..before.min(history.len())]
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| {
+            message.role == Role::Tool && !message.content.starts_with("[cleared")
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+fn clear_outputs(
+    history: &[Message],
+    candidates: &[usize],
+    target: usize,
+) -> (Vec<(usize, Message)>, usize) {
     let mut reclaimed = 0;
     let mut edits = Vec::new();
-    for index in live.into_iter().take(keep) {
-        let message = &history[index];
-        reclaimed += message.content.len();
-        let call = message.tool_call_id.clone().unwrap_or_default();
-        let cleared = format!("[cleared {} chars]", message.content.len());
-        edits.push((index, Message::tool(call, cleared)));
+    for &index in candidates {
         if reclaimed >= target {
             break;
         }
+        let message = &history[index];
+        let cleared = format!("[cleared {} chars]", message.content.len());
+        if cleared.len() >= message.content.len() {
+            continue;
+        }
+        reclaimed += message.content.len() - cleared.len();
+        let call = message.tool_call_id.clone().unwrap_or_default();
+        edits.push((index, Message::tool(call, cleared)));
     }
-    edits
+    (edits, reclaimed)
 }
 
 pub(super) fn repair_arguments(history: &[Message]) -> Vec<(usize, Message)> {
@@ -162,6 +177,30 @@ impl<P: Provider> Loop<P> {
         else {
             return Ok(false);
         };
+        let limits = crate::limits::limits();
+        let target_chars = window.map_or(
+            compact_chars.saturating_mul(limits.elide_percent) / limits.compact_percent.max(1),
+            |window| {
+                chars.saturating_mul(window as usize * limits.elide_percent / 100)
+                    / estimated_tokens.max(1)
+            },
+        );
+        let needed = chars.saturating_sub(target_chars);
+        let stale = live_outputs(&messages[1..], keep_from - 1);
+        let (edits, reclaimed) = clear_outputs(&messages[1..], &stale, needed);
+        if needed > 0 && reclaimed >= needed {
+            let cleared = edits.len();
+            self.rewrite(messages, edits)?;
+            self.tools.forget_reads();
+            self.push_event(
+                events,
+                emit,
+                Event::Note {
+                    text: format!("context compacted: cleared {cleared} old tool outputs"),
+                },
+            )?;
+            return Ok(true);
+        }
         self.push_event(
             events,
             emit,

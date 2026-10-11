@@ -1,8 +1,7 @@
 use super::super::{Accumulate, Delta, blocked, parse};
 use super::frame::{Failure, Frame, FrameKind, Item, PartShape, Response, Shape};
-use crate::error::{Error, ProviderFailureKind};
 use crate::provider::message::Checked;
-use crate::provider::stream::ARGUMENT_CAP;
+use crate::provider::stream::append_arguments;
 use crate::provider::{
     AssistantMessage, Continuation, Partial, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
 };
@@ -202,13 +201,7 @@ impl Stream {
         if let Some(index) = index
             && let Some(call) = self.calls.get_mut(index)
         {
-            call.function.arguments.push_str(&frame.delta);
-            if call.function.arguments.len() > ARGUMENT_CAP {
-                return Err(Error::provider(
-                    ProviderFailureKind::Malformed,
-                    format!("streamed tool arguments exceeded {ARGUMENT_CAP} bytes"),
-                ));
-            }
+            append_arguments(&mut call.function.arguments, &frame.delta)?;
         }
         Ok((!frame.delta.is_empty())
             .then_some(Delta::Progress)

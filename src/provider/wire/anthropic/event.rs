@@ -142,7 +142,7 @@ impl Counted {
     }
 
     pub(crate) fn usage(&self) -> Usage {
-        let field = |count: Option<u64>| count.unwrap_or_default().min(u64::from(u32::MAX)) as u32;
+        let field = |count: Option<u64>| Usage::clamp(count.unwrap_or_default());
         Usage {
             prompt_tokens: field(self.input_tokens)
                 + field(self.cache_creation_input_tokens)

@@ -242,16 +242,17 @@ fn escalates(command: &str) -> bool {
     !running_as_root()
         && unquoted(command, &["&&", "||", "|", ";", "\n", "&"])
             .iter()
-            .any(|segment| {
-                segment
-                    .split_whitespace()
-                    .map(|word| word.rsplit('/').next().unwrap_or(word))
-                    .find(|word| {
-                        !word.contains('=') && !word.starts_with('-') && !WRAPPERS.contains(word)
-                            || matches!(*word, "sudo" | "doas")
-                    })
-                    .is_some_and(|word| matches!(word, "sudo" | "doas"))
-            })
+            .any(|segment| matches!(command_word(segment, true), Some("sudo" | "doas")))
+}
+
+pub(super) fn command_word(segment: &str, stop_at_escalator: bool) -> Option<&str> {
+    segment
+        .split_whitespace()
+        .map(|word| word.rsplit('/').next().unwrap_or(word))
+        .find(|word| {
+            !word.contains('=') && !word.starts_with('-') && !WRAPPERS.contains(word)
+                || stop_at_escalator && matches!(*word, "sudo" | "doas")
+        })
 }
 
 #[cfg(unix)]

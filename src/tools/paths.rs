@@ -119,18 +119,7 @@ impl ToolRegistry {
         let opened = existing(&requested)
             .canonicalize()
             .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?;
-        let normal = requested
-            .components()
-            .fold(PathBuf::new(), |mut path, part| {
-                match part {
-                    Component::ParentDir => {
-                        path.pop();
-                    }
-                    Component::CurDir => {}
-                    other => path.push(other),
-                }
-                path
-            });
+        let normal = crate::policy::normalize(&requested);
         if (shield == Shield::Always || !self.policy.is_unrestricted())
             && [&requested, &normal, &opened]
                 .into_iter()

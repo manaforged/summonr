@@ -101,7 +101,7 @@ pub(crate) struct Counted {
 
 impl Counted {
     pub(crate) fn usage(&self) -> Usage {
-        let field = |count: u64| count.min(u64::from(u32::MAX)) as u32;
+        let field = Usage::clamp;
         Usage {
             prompt_tokens: field(self.prompt_token_count),
             completion_tokens: field(self.candidates_token_count)

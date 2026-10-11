@@ -218,10 +218,7 @@ async fn read_reply(
     if events.oversize
         || (events.reply.is_none() && body.len() > crate::limits::limits().mcp_frame_max_bytes)
     {
-        return Err(Failure::Unreachable(Error::Tool(format!(
-            "a reply to `{method}` was over {} MiB; summonr dropped it",
-            crate::limits::limits().mcp_frame_max_bytes / (1024 * 1024)
-        ))));
+        return Err(Failure::Unreachable(rpc::oversize(method)));
     }
     events
         .reply

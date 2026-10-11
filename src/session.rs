@@ -59,8 +59,8 @@ pub(crate) fn decorate(harness: &str, text: &str) -> String {
     }
 }
 
-pub(crate) fn user_text(text: &str) -> &str {
-    text.split("\n\nHarness").next().unwrap_or(text)
+pub(crate) fn user_text<'a>(text: &'a str, source: Option<&'a str>) -> &'a str {
+    source.unwrap_or_else(|| text.split("\n\nHarness").next().unwrap_or(text))
 }
 
 #[cfg(test)]

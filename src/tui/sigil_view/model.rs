@@ -12,15 +12,14 @@ use crate::tools::Event;
 use crate::tui::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
 
 pub(super) use super::app;
+use super::panes::ledger::{LedgerRow, Mark};
 use super::speed::Speed;
 
 mod children;
 mod entry;
 mod event;
 
-pub(in crate::tui::sigil_view) use entry::{
-    Call, Entry, decode, entry_markdown, itemized, preview,
-};
+pub(in crate::tui::sigil_view) use entry::{Call, Entry, decode, entry_markdown, preview};
 pub(in crate::tui::sigil_view) use state::{Agent, Entries, View};
 mod state;
 mod tools;
@@ -60,8 +59,8 @@ pub(super) struct Model {
     pub(super) live: Vec<crate::tui::hub::Live>,
     pub(super) entries: Entries,
     committed: usize,
-    pub(super) ledger: Vec<String>,
-    pub(super) child_todos: Vec<(String, Vec<String>)>,
+    pub(super) ledger: Vec<LedgerRow>,
+    pub(super) child_todos: Vec<(String, Vec<LedgerRow>)>,
     pub(super) todos_expanded: bool,
     pub(super) todos_offset: usize,
     pub(super) plan_current: Option<usize>,
@@ -248,11 +247,7 @@ impl Model {
             | Msg::Restored(_)
             | Msg::Saved { .. } => {}
         }
-        if self
-            .ledger
-            .iter()
-            .all(|line| super::panes::ledger::item(line).0 == '✓')
-        {
+        if self.ledger.iter().all(|row| row.mark == Mark::Done) {
             self.todos_expanded = false;
             self.todos_offset = 0;
         }

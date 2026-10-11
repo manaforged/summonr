@@ -4,7 +4,7 @@ use sigil::prelude::{
 
 use super::super::{App, canvas};
 use crate::tui::sigil_view::app::{Login, Note};
-use crate::tui::sigil_view::ui::{group, notice};
+use crate::tui::sigil_view::ui::{Size, group, notice};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Input {
@@ -65,8 +65,7 @@ pub(super) fn line(text: impl Into<String>) -> NodeBuilder {
 
 fn form_cells(app: &App) -> usize {
     let (cols, _) = app.viewport.get();
-    ((canvas::dialog_width(cols, canvas::DIALOG_CELLS) / canvas::cell().w) as usize)
-        .saturating_sub(2)
+    Size::Normal.cells(cols).saturating_sub(2)
 }
 
 pub(super) fn notes(note: &Note, width: usize) -> Vec<NodeBuilder> {

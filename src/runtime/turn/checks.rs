@@ -162,7 +162,8 @@ impl<P: Provider> Loop<P> {
         }
         if progress.kind != WorkKind::Single && !progress.ledger.is_empty() {
             parts.push(format!(
-                "Harness ledger ([x] done, [/] this step, [ ] later, [!] blocked):\n{}",
+                "{}\n{}",
+                crate::durable::work::Work::ledger_legend(),
                 progress.ledger.join("\n")
             ));
         }

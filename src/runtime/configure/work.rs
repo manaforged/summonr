@@ -118,15 +118,7 @@ impl<P: Provider> Loop<P> {
         abort: &crate::tools::Abort,
         mut emit: impl FnMut(&Event),
     ) -> Result<()> {
-        let scope = if abort.code == crate::tools::AbortCode::Cancelled {
-            crate::child::ChildScope::Foreground
-        } else {
-            crate::child::ChildScope::All
-        };
-        self.forget_children(scope);
-        self.session
-            .interrupt_children(&abort.reason, scope)
-            .map_err(super::session_err)?;
+        self.forget_children(abort.code.child_scope());
         self.session
             .abort(abort, None)
             .map_err(super::session_err)?;

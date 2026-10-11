@@ -146,6 +146,17 @@ pub enum AbortCode {
     Error,
 }
 
+impl AbortCode {
+    #[must_use]
+    pub(crate) fn child_scope(self) -> crate::child::ChildScope {
+        if self == Self::Cancelled {
+            crate::child::ChildScope::Foreground
+        } else {
+            crate::child::ChildScope::All
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Abort {
     pub code: AbortCode,

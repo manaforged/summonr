@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::error::{Error, Result};
 use crate::hashline::resolve_span;
+use crate::text::squash;
 
 use super::edit::Patch;
 use super::object_string;
@@ -228,10 +229,6 @@ fn relaxed_patch(text: &str, old: &str, new: &str) -> Option<Patch> {
         replacement: lines(new),
         relaxed: true,
     })
-}
-
-pub(super) fn squash(line: &str) -> String {
-    line.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn relocate_exact_anchor(text: &str, tag: &str) -> Option<(usize, usize)> {

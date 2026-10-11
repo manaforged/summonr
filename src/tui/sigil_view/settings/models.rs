@@ -118,7 +118,7 @@ fn split(cols: u16) -> bool {
 fn body(paint: &App) -> Vec<NodeBuilder> {
     let view = Rc::new(View::read(paint));
     let (cols, term_rows) = paint.viewport.get();
-    let span = (canvas::dialog_width(cols, f32::from(cols)) / canvas::cell().w) as usize;
+    let span = Size::Page.cells(cols);
     let wide = split(cols);
     let visible = canvas::list_rows(term_rows, LIST_CHROME + u16::from(!wide));
     let grid = Grid::new(span, wide);

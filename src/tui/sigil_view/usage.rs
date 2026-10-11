@@ -75,7 +75,7 @@ impl Panel {
 pub(super) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let (cols, rows) = app.viewport.peek();
-    let width = canvas::dialog_width(cols, f32::from(cols));
+    let width = Size::Page.width(cols);
     let height = f32::from(rows.saturating_sub(CHROME_ROWS).max(4)) * canvas::cell().h;
     let page = container()
         .focusable(true)

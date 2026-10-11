@@ -70,9 +70,14 @@ impl Model {
                 self.ledger = progress
                     .ledger
                     .iter()
-                    .filter(|line| itemized(line))
-                    .cloned()
-                    .chain(progress.todos.iter().map(crate::tools::Todo::line))
+                    .map(String::as_str)
+                    .filter_map(LedgerRow::parse)
+                    .chain(
+                        progress
+                            .todos
+                            .iter()
+                            .map(|todo| LedgerRow::todo(todo, 0, None)),
+                    )
                     .chain(self.child_todos.iter().flat_map(|(_, lines)| lines.clone()))
                     .collect();
                 self.plan_current = progress.current;
@@ -222,7 +227,7 @@ impl Model {
         if !todos.is_empty() {
             let lines = todos
                 .iter()
-                .map(|todo| format!("  {} {tag} · {}", todo.mark(), todo.text))
+                .map(|todo| LedgerRow::todo(todo, 2, Some(tag)))
                 .collect();
             self.child_todos.push((tag.to_string(), lines));
         }

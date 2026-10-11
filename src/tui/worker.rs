@@ -62,5 +62,3 @@ struct Worker {
     last_peers: Option<Vec<crate::mail::Agent>>,
     reader: Reader,
 }
-
-impl Worker {}

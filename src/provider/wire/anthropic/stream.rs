@@ -3,6 +3,7 @@ use serde_json::{Value, json};
 use super::event::{Change, Counted, Event, EventKind, Opened, Shape};
 use super::stop_reason;
 use crate::provider::message::Checked;
+use crate::provider::stream::append_arguments;
 use crate::provider::wire::{Accumulate, Delta};
 use crate::provider::{
     AssistantMessage, Partial, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
@@ -137,7 +138,7 @@ impl Stream {
                     None
                 }
             }
-            EventKind::ContentBlockDelta => self.delta(&event.delta),
+            EventKind::ContentBlockDelta => self.delta(&event.delta)?,
             EventKind::ContentBlockStop => {
                 self.close();
                 None
@@ -212,27 +213,27 @@ impl Stream {
 }
 
 impl Stream {
-    fn delta(&mut self, change: &Change<'_>) -> Option<Delta> {
+    fn delta(&mut self, change: &Change<'_>) -> crate::error::Result<Option<Delta>> {
         match &mut self.block {
             Block::Text { .. } => {
                 let chunk = change.text.to_string();
                 self.text.push_str(&chunk);
-                Some(Delta::Text(chunk))
+                Ok(Some(Delta::Text(chunk)))
             }
             Block::Thinking { signature, .. } => {
                 signature.push_str(&change.signature);
                 if change.thinking.is_empty() {
-                    return (!change.signature.is_empty()).then_some(Delta::Progress);
+                    return Ok((!change.signature.is_empty()).then_some(Delta::Progress));
                 }
                 let chunk = change.thinking.to_string();
                 self.thinking.push_str(&chunk);
-                Some(Delta::Thinking(chunk))
+                Ok(Some(Delta::Thinking(chunk)))
             }
             Block::Call { input, .. } => {
-                input.push_str(&change.partial_json);
-                (!change.partial_json.is_empty()).then_some(Delta::Progress)
+                append_arguments(input, &change.partial_json)?;
+                Ok((!change.partial_json.is_empty()).then_some(Delta::Progress))
             }
-            Block::Raw(_) | Block::Other => None,
+            Block::Raw(_) | Block::Other => Ok(None),
         }
     }
 

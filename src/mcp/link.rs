@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
@@ -25,7 +25,7 @@ pub(super) struct Link {
     server: Server,
     workspace: PathBuf,
     conn: Slot<Conn>,
-    fresh: std::sync::Mutex<Option<HashMap<String, bool>>>,
+    fresh: std::sync::Mutex<Option<HashSet<String>>>,
     started: AtomicBool,
     detail: std::sync::Mutex<Option<String>>,
     journal: Journal,
@@ -92,22 +92,15 @@ impl Link {
         gate: &Gate<'_>,
         report: &mut (dyn FnMut(McpUpdate) + Send),
     ) -> Result<Called> {
-        gate.policy.tool(&tool.alias, tool.readonly)?;
+        gate.policy.tool(&tool.alias, false)?;
         let mut slot = self.conn.lock().await;
         self.ensure(&mut slot, gate.sandbox).await?;
-        let readonly = self.readonly(tool)?;
-        if readonly != tool.readonly {
-            gate.policy.tool(&tool.alias, readonly)?;
-        }
+        self.offered(tool)?;
         let params = json!({"name": tool.name, "arguments": arguments});
         let (value, changed) = self
             .exchange(&mut slot, "tools/call", params, report)
             .await?;
-        Ok(Called {
-            value,
-            readonly,
-            changed,
-        })
+        Ok(Called { value, changed })
     }
 
     pub(super) async fn request(
@@ -264,27 +257,28 @@ impl Link {
     }
 
     fn remember(&self, items: &[Value]) {
-        let flags = items
+        let names = items
             .iter()
             .filter_map(|item| Tool::parse(&self.server.name, item))
-            .map(|tool| (tool.name, tool.readonly))
+            .map(|tool| tool.name)
             .collect();
         if let Ok(mut fresh) = self.fresh.lock() {
-            *fresh = Some(flags);
+            *fresh = Some(names);
         }
     }
 
-    fn readonly(&self, tool: &Tool) -> Result<bool> {
+    fn offered(&self, tool: &Tool) -> Result<()> {
         let fresh = self.fresh.lock().ok();
-        let Some(flags) = fresh.as_ref().and_then(|fresh| fresh.as_ref()) else {
-            return Ok(tool.readonly);
+        let Some(names) = fresh.as_ref().and_then(|fresh| fresh.as_ref()) else {
+            return Ok(());
         };
-        flags.get(&tool.name).copied().ok_or_else(|| {
-            Error::Tool(format!(
-                "`{}` is no longer offered by mcp {}",
-                tool.alias, self.server.name
-            ))
-        })
+        if names.contains(&tool.name) {
+            return Ok(());
+        }
+        Err(Error::Tool(format!(
+            "`{}` is no longer offered by mcp {}",
+            tool.alias, self.server.name
+        )))
     }
 }
 
@@ -301,7 +295,6 @@ struct Changes {
 
 pub(super) struct Called {
     pub(super) value: Value,
-    pub(super) readonly: bool,
     pub(super) changed: bool,
 }
 

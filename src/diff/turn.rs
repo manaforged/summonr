@@ -113,8 +113,8 @@ fn pick(root: &Path, session: &str, id: TurnId) -> Result<(Span, Diff)> {
             Ok((span, diff))
         }
         TurnId::Number(number) => Err(Error::Config(format!(
-            "no turn {number}; the session has {count} turn{}",
-            if count == 1 { "" } else { "s" }
+            "no turn {number}; the session has {}",
+            crate::text::plural(count, "turn")
         ))),
         TurnId::Last => {
             let mut empty = None;

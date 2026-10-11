@@ -64,11 +64,6 @@ impl AuthInfo {
         }
     }
 
-    #[must_use]
-    pub fn catalog_heading(&self) -> &'static str {
-        self.listed().heading()
-    }
-
     fn listed(&self) -> LoginGroup {
         match self.group {
             LoginGroup::Key if !self.plan.is_empty() => LoginGroup::Plan,

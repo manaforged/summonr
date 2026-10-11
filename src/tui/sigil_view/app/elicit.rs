@@ -5,6 +5,8 @@ use serde_json::{Map, Value, json};
 use crate::mcp::{Choice, Field, FieldKind, Form, FormAction, FormAnswer};
 
 use super::*;
+use crate::prefs::Hotkeys;
+use crate::tui::sigil_view::ui::{Hints, Key};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Stage {
@@ -190,18 +192,28 @@ fn hint(kind: &FieldKind) -> String {
             maximum,
         } => number_hint(*integer, *minimum, *maximum),
         FieldKind::Boolean => "yes or no".to_string(),
-        FieldKind::Choice { custom, .. } => picking("↑↓ move · enter picks", *custom),
-        FieldKind::Choices { custom, .. } => {
-            picking("↑↓ move · space toggles · enter confirms", *custom)
-        }
+        FieldKind::Choice { custom, .. } => picking(
+            &Hints::new()
+                .key(Key::UpDown, "move")
+                .key(Key::Enter, "picks"),
+            *custom,
+        ),
+        FieldKind::Choices { custom, .. } => picking(
+            &Hints::new()
+                .key(Key::UpDown, "move")
+                .key(Key::Space, "toggles")
+                .key(Key::Enter, "confirms"),
+            *custom,
+        ),
     }
 }
 
-fn picking(keys: &str, custom: bool) -> String {
+fn picking(hints: &Hints, custom: bool) -> String {
+    let keys = hints.text(&Hotkeys::default());
     if custom {
         format!("{keys} · or type your own answer")
     } else {
-        keys.to_string()
+        keys
     }
 }
 

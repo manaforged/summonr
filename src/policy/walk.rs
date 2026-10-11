@@ -224,12 +224,20 @@ pub(crate) fn resolve(target: &str, cwd: &Path) -> Option<PathBuf> {
     if target.contains(['$', '`']) || target.starts_with('~') {
         return None;
     }
-    let mut path = if Path::new(target).is_absolute() {
+    let base = if Path::new(target).is_absolute() {
         PathBuf::new()
     } else {
         cwd.to_path_buf()
     };
-    for part in Path::new(target).components() {
+    Some(normalize_onto(base, Path::new(target)))
+}
+
+pub(crate) fn normalize(path: &Path) -> PathBuf {
+    normalize_onto(PathBuf::new(), path)
+}
+
+fn normalize_onto(base: PathBuf, path: &Path) -> PathBuf {
+    path.components().fold(base, |mut path, part| {
         match part {
             Component::ParentDir => {
                 path.pop();
@@ -237,8 +245,8 @@ pub(crate) fn resolve(target: &str, cwd: &Path) -> Option<PathBuf> {
             Component::CurDir => {}
             other => path.push(other),
         }
-    }
-    Some(path)
+        path
+    })
 }
 
 pub(crate) fn without_heredocs(command: &str) -> String {

@@ -10,7 +10,7 @@ mod protected;
 pub(crate) use protected::{holds_protected, protected_read, workspace_control};
 mod walk;
 
-pub(crate) use walk::shell_words;
+pub(crate) use walk::{normalize, shell_words};
 pub(crate) use {
     danger::danger,
     walk::{argv, verb},

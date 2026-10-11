@@ -143,6 +143,11 @@ pub(crate) fn hide_key_echo(text: &str) -> String {
 }
 
 #[must_use]
+pub(crate) fn squash(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[must_use]
 pub(crate) fn lines_within(text: &str, width: usize) -> Vec<String> {
     let mut parts: Vec<String> = Vec::new();
     for word in text.split_whitespace() {

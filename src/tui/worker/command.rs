@@ -58,5 +58,3 @@ async fn attend<T>(inbox: Inbox<'_>, task: impl Future<Output = T>) -> Attended<
         }
     }
 }
-
-impl Worker {}

@@ -63,7 +63,7 @@ pub fn short(id: &str) -> &str {
 const PREVIEW_WIDTH: usize = 72;
 
 pub(crate) fn preview(text: &str) -> String {
-    crate::text::ellipsize(user_text(text), PREVIEW_WIDTH)
+    crate::text::ellipsize(user_text(text, None), PREVIEW_WIDTH)
 }
 
 pub(crate) fn name_of(path: &Path) -> Option<String> {
@@ -208,7 +208,7 @@ pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt
                 } => saved.push(Prompt {
                     session: Arc::clone(&session),
                     turn: saved.len(),
-                    text: source.unwrap_or_else(|| user_text(&text).to_string()),
+                    text: user_text(&text, source.as_deref()).to_string(),
                     images: images.len(),
                     closed: false,
                 }),

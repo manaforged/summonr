@@ -169,7 +169,7 @@ struct Detail {
 
 impl Counted {
     pub(super) fn usage(&self) -> Usage {
-        let field = |count: Option<u64>| count.unwrap_or_default().min(u64::from(u32::MAX)) as u32;
+        let field = |count: Option<u64>| Usage::clamp(count.unwrap_or_default());
         Usage {
             prompt_tokens: field(self.input_tokens),
             completion_tokens: field(self.output_tokens),

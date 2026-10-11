@@ -97,7 +97,7 @@ pub fn call_label(name: &str, arguments: &str) -> String {
 fn allowed<'a>(link: &'a Arc<Link>, policy: &'a Policy) -> impl Iterator<Item = &'a Tool> {
     link.tools
         .iter()
-        .filter(|item| policy.tool(&item.alias, item.readonly).is_ok())
+        .filter(|item| policy.tool(&item.alias, false).is_ok())
 }
 
 fn declared(item: &Tool) -> ToolDefinition {

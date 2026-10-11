@@ -72,14 +72,6 @@ pub(super) fn cell() -> Metrics {
 
 pub(super) const DIALOG_CELLS: f32 = 72.0;
 
-pub(super) fn dialog_width(cols: u16, max_cells: f32) -> f32 {
-    if WINDOW.load(Ordering::Relaxed) {
-        520.0
-    } else {
-        (f32::from(cols.saturating_sub(4)) * cell().w).min(max_cells * cell().w)
-    }
-}
-
 pub(super) fn overlay_gap() -> f32 {
     if WINDOW.load(Ordering::Relaxed) {
         2.0

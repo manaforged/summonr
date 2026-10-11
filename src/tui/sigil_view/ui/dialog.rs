@@ -17,12 +17,20 @@ pub(in crate::tui) enum Size {
 }
 
 impl Size {
-    fn width(self, cols: u16) -> f32 {
-        let cells = match self {
+    pub(in crate::tui) fn width(self, cols: u16) -> f32 {
+        if canvas::is_window() {
+            return 520.0;
+        }
+        let max_cells = match self {
             Self::Normal => canvas::DIALOG_CELLS,
             Self::Page => f32::from(cols),
         };
-        canvas::dialog_width(cols, cells)
+        (f32::from(cols.saturating_sub(4)) * canvas::cell().w).min(max_cells * canvas::cell().w)
+    }
+
+    #[must_use]
+    pub(in crate::tui) fn cells(self, cols: u16) -> usize {
+        (self.width(cols) / canvas::cell().w) as usize
     }
 }
 

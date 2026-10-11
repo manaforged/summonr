@@ -65,12 +65,29 @@ fn step_mark(state: StepState) -> &'static str {
     }
 }
 
+const LEGEND: [(StepState, &str); 4] = [
+    (StepState::Completed, "done"),
+    (StepState::Active, "this step"),
+    (StepState::Pending, "later"),
+    (StepState::Blocked, "blocked"),
+];
+
+impl Work {
+    pub(crate) fn ledger_legend() -> String {
+        let marks: Vec<String> = LEGEND
+            .iter()
+            .map(|(state, word)| format!("{} {word}", step_mark(*state)))
+            .collect();
+        format!("Harness ledger ({}):", marks.join(", "))
+    }
+}
+
 fn tally_state(lines: &mut Vec<String>, state: StepState) {
-    match state {
-        StepState::Completed => tally(lines, "[x]", "done"),
-        StepState::Pending => tally(lines, "[ ]", "later"),
-        StepState::Blocked => tally(lines, "[!]", "blocked"),
-        StepState::Active => {}
+    if state == StepState::Active {
+        return;
+    }
+    if let Some((_, word)) = LEGEND.iter().find(|(listed, _)| *listed == state) {
+        tally(lines, step_mark(state), word);
     }
 }
 

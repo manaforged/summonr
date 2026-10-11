@@ -65,9 +65,7 @@ fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
             start,
             ..
         } => {
-            let text = source
-                .clone()
-                .unwrap_or_else(|| user_text(text).to_string());
+            let text = user_text(text, source.as_deref()).to_string();
             let message = if *start || source.is_some() {
                 Msg::User(text)
             } else {

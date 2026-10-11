@@ -160,9 +160,7 @@ pub(crate) fn servers(workspace: &Path) -> Result<Found> {
         if entry.enabled == Some(false) {
             continue;
         }
-        if let Some(server) = entry.server(name, workspace)?
-            && !ours(&server)
-        {
+        if let Some(server) = entry.server(name, workspace)? {
             servers.push(server);
         }
     }
@@ -301,17 +299,6 @@ fn toml_map(value: Option<&toml::Value>) -> BTreeMap<String, Entry> {
         .flatten()
         .filter_map(|(name, entry)| Some((name.clone(), entry.clone().try_into().ok()?)))
         .collect()
-}
-
-fn ours(server: &Server) -> bool {
-    let Launch::Stdio { command, args, .. } = &server.launch else {
-        return false;
-    };
-    let program = Path::new(command)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    matches!(program, "summon" | "summonr") && args.first().is_some_and(|arg| arg == "room")
 }
 
 fn expand(text: &str) -> String {

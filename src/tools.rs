@@ -153,20 +153,6 @@ impl ToolRegistry {
         self.vision = vision;
     }
 
-    pub(crate) fn set_modules(&mut self, switches: &crate::modules::Switches) {
-        use crate::modules::ModuleId;
-        if !switches.enabled(ModuleId::Search) {
-            self.search = None;
-        } else if self.search.is_none() {
-            self.search = crate::web::Search::discover().ok();
-        }
-        self.set_browser(switches.enabled(ModuleId::Browser));
-        self.language = switches.enabled(ModuleId::Lsp);
-        self.background = switches.enabled(ModuleId::Jobs);
-        self.skills = switches.enabled(ModuleId::Skills);
-        self.probed = std::sync::OnceLock::new();
-    }
-
     pub(crate) fn set_strict(&mut self) {
         self.policy.set_strict();
     }
@@ -190,6 +176,8 @@ impl ToolRegistry {
         child.background = false;
         child.language = self.language;
         child.skills = self.skills;
+        child.search.clone_from(&self.search);
+        child.browser.clone_from(&self.browser);
         child.set_session(session);
         Ok(child)
     }
@@ -331,9 +319,9 @@ pub async fn run_tool(
     let mut tools = ToolRegistry::with_policy_and_search(
         workspace,
         crate::policy::Policy::discover(workspace)?,
-        crate::web::Search::discover().ok(),
+        None,
     )?;
-    tools.set_modules(&crate::modules::Switches::load(workspace)?);
+    tools.set_modules(&crate::modules::Switches::load(workspace)?)?;
     if let Some(network) = sandbox {
         tools.enable_sandbox(network)?;
     }

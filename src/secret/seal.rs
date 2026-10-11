@@ -5,7 +5,9 @@ use std::sync::mpsc;
 use std::time::Instant;
 
 use base64::engine::general_purpose::STANDARD as BASE64;
-use chacha20poly1305::aead::{Aead, KeyInit, OsRng, rand_core::RngCore};
+use chacha20poly1305::aead::{Aead, KeyInit};
+#[cfg(test)]
+use chacha20poly1305::aead::{OsRng, rand_core::RngCore};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use toml_edit::DocumentMut;
 
@@ -18,28 +20,22 @@ pub(super) fn wrap_path(credentials: &Path) -> PathBuf {
     credentials.with_file_name("credentials.wrap")
 }
 
-pub(super) fn file_wrap(credentials: &Path, create: bool) -> Result<[u8; KEY_LEN]> {
+pub(super) fn file_wrap(credentials: &Path) -> Result<[u8; KEY_LEN]> {
     let path = wrap_path(credentials);
     match std::fs::read(&path) {
         Ok(bytes) => decode_wrap_bytes(&bytes),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             #[cfg(target_os = "macos")]
             if credentials.exists()
-                && let Ok(key) = wrap_via_security(Path::new("/usr/bin/security"), false)
+                && let Ok(key) = wrap_via_security(Path::new("/usr/bin/security"))
             {
                 write_wrap(&path, &key)?;
                 return Ok(key);
             }
-            if !create {
-                return Err(Error::Config(
-                    "credential store: missing wrap key; set SUMMONR_SECRETS=file and retry"
-                        .to_string(),
-                ));
-            }
-            let mut key = [0_u8; KEY_LEN];
-            OsRng.fill_bytes(&mut key);
-            write_wrap(&path, &key)?;
-            Ok(key)
+            Err(Error::Config(
+                "credential store: missing wrap key; set SUMMONR_SECRETS=file and retry"
+                    .to_string(),
+            ))
         }
         Err(error) => Err(error.into()),
     }
@@ -231,24 +227,6 @@ pub(super) fn open_file(key: Option<&[u8; KEY_LEN]>, bytes: &[u8]) -> Result<Doc
     }
 }
 
-pub(super) fn seal_file(key: &[u8; KEY_LEN], plain: &[u8]) -> Result<Vec<u8>> {
-    let mut nonce_bytes = [0_u8; NONCE_LEN];
-    OsRng.fill_bytes(&mut nonce_bytes);
-    let cipher = ChaCha20Poly1305::new(&Key::from(*key));
-    let ct = cipher
-        .encrypt(&Nonce::from(nonce_bytes), plain)
-        .map_err(|error| {
-            Error::Config(format!(
-                "credential store: could not seal the file: {error}"
-            ))
-        })?;
-    let mut out = Vec::with_capacity(MAGIC.len() + NONCE_LEN + ct.len());
-    out.extend_from_slice(MAGIC);
-    out.extend_from_slice(&nonce_bytes);
-    out.extend(ct);
-    Ok(out)
-}
-
 pub(super) fn decode_wrap(encoded: &str) -> Result<[u8; KEY_LEN]> {
     let bytes = BASE64.decode(encoded.trim()).map_err(|error| {
         Error::Config(format!("credential store: wrap key is not base64: {error}"))
@@ -263,26 +241,18 @@ pub(super) fn decode_wrap(encoded: &str) -> Result<[u8; KEY_LEN]> {
     Ok(key)
 }
 
-pub(super) fn os_wrap_key(create: bool, tool: Option<&Path>) -> Result<[u8; KEY_LEN]> {
+pub(super) fn os_wrap_key(tool: Option<&Path>) -> Result<[u8; KEY_LEN]> {
     if let Some(tool) = tool {
-        return wrap_via_security(tool, create);
+        return wrap_via_security(tool);
     }
     #[cfg(target_os = "macos")]
     {
-        wrap_via_security(Path::new("/usr/bin/security"), create)
+        wrap_via_security(Path::new("/usr/bin/security"))
     }
     #[cfg(not(target_os = "macos"))]
     {
         match native_get(SEAL)? {
             Some(encoded) => decode_wrap(&encoded),
-            None if create => {
-                let mut key = [0_u8; KEY_LEN];
-                OsRng.fill_bytes(&mut key);
-                native_entry(SEAL)?
-                    .set_password(&BASE64.encode(key))
-                    .map_err(|error| Error::Config(format!("credential store: {error}")))?;
-                Ok(key)
-            }
             None => Err(Error::Config(
                 "credential store: missing wrap key; unlock the keychain or log in again"
                     .to_string(),
@@ -291,17 +261,9 @@ pub(super) fn os_wrap_key(create: bool, tool: Option<&Path>) -> Result<[u8; KEY_
     }
 }
 
-pub(super) fn wrap_via_security(tool: &Path, create: bool) -> Result<[u8; KEY_LEN]> {
+pub(super) fn wrap_via_security(tool: &Path) -> Result<[u8; KEY_LEN]> {
     match find(tool, SEAL)? {
         Some(encoded) => decode_wrap(&encoded),
-        None if create => {
-            let mut key = [0_u8; KEY_LEN];
-            OsRng.fill_bytes(&mut key);
-            let encoded = BASE64.encode(key);
-            let line = format!("add-generic-password -U -s {SERVICE} -a {SEAL} -w \"{encoded}\"\n");
-            security(tool, &["-i"], Some(line))?;
-            Ok(key)
-        }
         None => Err(Error::Config(
             "credential store: missing wrap key; unlock the keychain or log in again".to_string(),
         )),

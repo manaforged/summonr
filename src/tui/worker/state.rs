@@ -77,15 +77,16 @@ impl Worker {
             && let Some(next) = self.followups.pop_front()
         {
             self.carried -= 1;
-            announce(&self.ui, &self.steering, &self.followups);
+            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
             return Some(Cmd::Submit(next));
         }
         self.carried = 0;
         if let Some(command) = self.deferred.pop_front() {
+            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
             return Some(command);
         }
         if let Some(next) = self.followups.pop_front() {
-            announce(&self.ui, &self.steering, &self.followups);
+            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
             return Some(Cmd::Submit(next));
         }
         let command = self.cmd.recv().await?;

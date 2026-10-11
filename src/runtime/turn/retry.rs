@@ -20,10 +20,12 @@ struct Failed {
 impl<P: Provider> Loop<P> {
     pub(super) fn steer_waiting(&self) -> bool {
         !self.steer.is_empty()
-            || self
-                .steer_shared
-                .as_ref()
-                .is_some_and(|shared| shared.lock().is_ok_and(|queue| !queue.is_empty()))
+            || self.steer_shared.as_ref().is_some_and(|shared| {
+                !shared
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .is_empty()
+            })
     }
 
     pub(super) fn take_mail(
@@ -33,14 +35,21 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         while let Some(input) = self.steer.pop_front() {
-            self.session.steer(&input).map_err(super::session_err)?;
+            if let Err(error) = self.session.steer(&input) {
+                self.steer.push_front(input);
+                return Err(super::session_err(error));
+            }
             messages.push(Message::user(input));
         }
-        if let Some(shared) = &self.steer_shared
-            && let Ok(mut queue) = shared.lock()
-        {
+        if let Some(shared) = self.steer_shared.clone() {
+            let mut queue = shared
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             while let Some(input) = queue.pop_front() {
-                self.session.steer(&input).map_err(super::session_err)?;
+                if let Err(error) = self.session.steer(&input) {
+                    queue.push_front(input);
+                    return Err(super::session_err(error));
+                }
                 messages.push(Message::user(input));
             }
         }

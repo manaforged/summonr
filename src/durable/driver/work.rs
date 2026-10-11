@@ -161,6 +161,7 @@ impl SessionDriver {
             let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
             work.select(objective, commands)?;
             work.apply_todos(todos);
+            self.checkpoint()?;
         }
         self.sync_turn_checks(commands)?;
         self.advance_turn_work(objective, commands)

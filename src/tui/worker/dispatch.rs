@@ -113,7 +113,7 @@ impl Worker {
         match command {
             Cmd::Steer(text) | Cmd::Queue(text) => {
                 self.followups.push_back(text);
-                announce(&self.ui, &self.steering, &self.followups);
+                announce(&self.ui, &self.steering, &self.followups, &self.deferred);
             }
             Cmd::SteerQueued | Cmd::Answer(_) => {}
             Cmd::Send(to, text) => {

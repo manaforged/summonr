@@ -60,7 +60,7 @@ pub(crate) fn decorate(harness: &str, text: &str) -> String {
 }
 
 pub(crate) fn user_text(text: &str) -> &str {
-    text.split("\n\nHarness state:").next().unwrap_or(text)
+    text.split("\n\nHarness").next().unwrap_or(text)
 }
 
 #[cfg(test)]

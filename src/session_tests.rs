@@ -124,3 +124,9 @@ fn usage_counts_each_session_once_and_keeps_its_workspace() {
             .any(|row| row.workspace == "/work/beta" && row.turns == 1)
     );
 }
+
+#[test]
+fn steering_note_never_counts_as_the_users_words_in_old_history() {
+    let stored = "fix the test\n\nHarness: the previous turn stopped early (cancelled). Address it.\n\nHarness state: auto mode.";
+    assert_eq!(super::user_text(stored), "fix the test");
+}

@@ -148,7 +148,7 @@ impl MidTurn<'_> {
             .extend(self.followups.drain(..).map(Cmd::Submit));
         self.deferred.push_back(command);
         drop(self.ui.send(Msg::System(note)));
-        super::announce(self.ui, self.steering, self.followups);
+        super::announce(self.ui, self.steering, self.followups, self.deferred);
         Outcome::Keep
     }
 
@@ -177,14 +177,22 @@ impl MidTurn<'_> {
                 }
             }
             Cmd::Dequeue => {
-                let pending: Vec<UserInput> = self.followups.drain(..).collect();
+                let mut pending = Vec::new();
+                self.deferred.retain(|command| match command {
+                    Cmd::Submit(input) => {
+                        pending.push(input.clone());
+                        false
+                    }
+                    _ => true,
+                });
+                pending.extend(self.followups.drain(..));
                 if !pending.is_empty() {
                     drop(self.ui.send(Msg::Restored(pending)));
                 }
             }
             _command => unreachable!("queued routes only queue commands"),
         }
-        super::announce(self.ui, self.steering, self.followups);
+        super::announce(self.ui, self.steering, self.followups, self.deferred);
         Outcome::Keep
     }
 }
@@ -316,7 +324,7 @@ impl Worker {
         for input in left.into_iter().rev() {
             self.followups.push_front(input);
         }
-        super::announce(&self.ui, &self.steering, &self.followups);
+        super::announce(&self.ui, &self.steering, &self.followups, &self.deferred);
     }
 
     pub(super) fn recover(&mut self) {
@@ -343,7 +351,7 @@ impl Worker {
         if !pending.is_empty() {
             drop(self.ui.send(Msg::Restored(pending)));
         }
-        super::announce(&self.ui, &self.steering, &self.followups);
+        super::announce(&self.ui, &self.steering, &self.followups, &self.deferred);
     }
 }
 

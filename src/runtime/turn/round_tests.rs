@@ -61,3 +61,33 @@ async fn a_switch_to_a_blind_model_folds_the_next_attached_image() {
         "the blind model received image content: {sent:?}"
     );
 }
+
+#[tokio::test]
+async fn a_fallback_to_a_blind_model_folds_the_next_attached_image() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let primary = Scripted::new([Reply::Fail("the primary is down")]);
+    let mut loop_ = blind_session(workspace.path(), home.path(), primary);
+    loop_.set_images(true, None);
+    let fallback = Scripted::new([Reply::Text("ok"), Reply::Text("ok")]);
+    let sent = fallback.sent();
+    loop_.set_fallbacks([(fallback, "glm-5.3".to_string())]);
+    loop_
+        .turn_with(UserInput::from("hi"), |_| {})
+        .await
+        .unwrap();
+    let input = UserInput {
+        text: "what is in this?".to_string(),
+        images: vec![Image::encode("image/png", b"not a real png")],
+        source: None,
+    };
+    loop_.turn_with(input, |_| {}).await.unwrap();
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 2);
+    assert!(
+        sent.iter()
+            .flatten()
+            .all(|message| message.images.is_empty()),
+        "the blind fallback received image content: {sent:?}"
+    );
+}

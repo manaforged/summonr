@@ -310,9 +310,8 @@ impl<P: Provider> Loop<P> {
         let Some((provider, model)) = self.fallbacks.pop_front() else {
             return Ok(false);
         };
-        let from = std::mem::replace(&mut self.model, model);
-        self.provider = provider;
-        self.context_sample = None;
+        let from = self.model.clone();
+        self.set_provider(provider, model);
         self.push_event(
             events,
             emit,

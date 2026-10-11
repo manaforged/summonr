@@ -62,6 +62,7 @@ impl Client {
             headers,
             opencode: opts.opencode,
             keep_reasoning: false,
+            assistant_after_tool: false,
             images: true,
             name: String::new(),
             prompt_cache_key: opts.prompt_cache_key,

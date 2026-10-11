@@ -358,6 +358,7 @@ base_url = "https://api.mistral.ai/v1"
 model = ""
 env_keys = ["MISTRAL_API_KEY"]
 opencode_ids = ["mistral"]
+assistant_after_tool = true
 
 [preset.reasoning]
 levels = ["high"]

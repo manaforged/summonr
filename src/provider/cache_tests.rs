@@ -252,3 +252,25 @@ fn a_steer_after_a_tool_result_reaches_every_endpoint_after_that_result() {
     }
     assert!(checked >= 20, "only {checked} endpoints built a request");
 }
+
+#[test]
+fn mistral_gets_an_assistant_turn_between_a_tool_result_and_a_steer() {
+    let mut messages = tool_round();
+    messages.push(Message::user("also check the docs"));
+    let roles = |name: &str, model: &str| -> Vec<String> {
+        body(&endpoint(name, model), &messages, None)["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|message| message["role"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(
+        roles("mistral", "devstral-medium-latest"),
+        ["system", "user", "assistant", "tool", "assistant", "user"]
+    );
+    assert_eq!(
+        roles("zai", "glm-5.3-flash"),
+        ["system", "user", "assistant", "tool", "user"]
+    );
+}

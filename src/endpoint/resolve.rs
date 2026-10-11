@@ -117,6 +117,7 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
         keep_reasoning: std::env::var_os("SUMMONR_KEEP_REASONING").is_some(),
         opencode: hosted(base).is_some_and(|preset| preset.opencode),
         prompt_cache_key: hosted(base).is_some_and(|preset| preset.prompt_cache_key),
+        assistant_after_tool: hosted(base).is_some_and(|preset| preset.assistant_after_tool),
         cache_ttl: hosted(base)
             .and_then(|preset| preset.cache_ttl)
             .unwrap_or(crate::limits::limits().cache_ttl),
@@ -227,6 +228,7 @@ pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         keep_reasoning: row.keep_reasoning.unwrap_or(false),
         opencode: preset.is_some_and(|preset| preset.opencode),
         prompt_cache_key: preset.is_some_and(|preset| preset.prompt_cache_key),
+        assistant_after_tool: preset.is_some_and(|preset| preset.assistant_after_tool),
         cache_ttl: row
             .cache_ttl
             .or_else(|| preset.and_then(|preset| preset.cache_ttl))

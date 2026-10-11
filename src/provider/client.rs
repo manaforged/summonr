@@ -47,6 +47,7 @@ pub struct Client {
     pub(super) headers: Vec<(String, String)>,
     pub(super) opencode: bool,
     pub(super) keep_reasoning: bool,
+    pub(super) assistant_after_tool: bool,
     pub(super) images: bool,
     pub(super) name: String,
     pub(super) prompt_cache_key: bool,
@@ -111,6 +112,7 @@ impl Client {
         client.keep_reasoning =
             endpoint.keep_reasoning || wire::traits::traits(&endpoint.model).replay;
         client.images = crate::catalog::accepts_images(endpoint);
+        client.assistant_after_tool = endpoint.assistant_after_tool;
         client.name.clone_from(&endpoint.name);
         client.cache_ttl = endpoint.cache_ttl;
         client.cache_header.clone_from(&endpoint.cache_header);
@@ -205,6 +207,7 @@ impl Client {
                 list: call.messages,
                 keep_reasoning: self.keeps_reasoning(),
                 cached: call.traits.family == wire::traits::Family::Anthropic,
+                assistant_after_tool: self.assistant_after_tool,
             })?)
         } else {
             wired.messages

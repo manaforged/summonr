@@ -26,6 +26,7 @@ pub(crate) struct ImageBudget {
     pub(crate) count: usize,
     pub(crate) each: usize,
     pub(crate) bytes: usize,
+    pub(crate) tool_images: bool,
 }
 
 const PNG_JPEG: &[&str] = &["image/png", "image/jpeg"];
@@ -37,6 +38,7 @@ pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
             count: 100,
             each: 10_000_000,
             bytes: 24_000_000,
+            tool_images: true,
         },
         crate::endpoint::Wire::Gemini => ImageBudget {
             types: &[
@@ -49,24 +51,28 @@ pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
             count: 3600,
             each: 15_000_000,
             bytes: 15_000_000,
+            tool_images: false,
         },
         crate::endpoint::Wire::Responses => ImageBudget {
             types: &["image/png", "image/jpeg", "image/gif", "image/webp"],
             count: 1500,
             each: 256_000_000,
             bytes: 256_000_000,
+            tool_images: true,
         },
         crate::endpoint::Wire::Completions => ImageBudget {
             types: PNG_JPEG,
             count: 100,
             each: 10_000_000,
             bytes: 20_000_000,
+            tool_images: true,
         },
         crate::endpoint::Wire::Decisions => ImageBudget {
             types: PNG_JPEG,
             count: 0,
             each: 0,
             bytes: 0,
+            tool_images: true,
         },
     }
 }

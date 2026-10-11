@@ -175,7 +175,7 @@ impl Client {
     ) -> Result<Body<'a>> {
         let reasoning = &self.reasoning;
         let cache = self.cache_ttl;
-        let admitted = self.admit(request.messages);
+        let admitted = self.admit(request);
         let call = &CompletionRequest {
             messages: &admitted,
             ..request.clone()

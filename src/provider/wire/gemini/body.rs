@@ -198,5 +198,19 @@ fn response_part(message: &Message, names: &std::collections::HashMap<&str, &str
     if !id.starts_with(SYNTHETIC) {
         response["id"] = json!(id);
     }
+    if !message.images.is_empty() {
+        response["parts"] = message
+            .images
+            .iter()
+            .enumerate()
+            .map(|(slot, image)| {
+                json!({"inlineData": {
+                    "displayName": format!("{id}-{slot}"),
+                    "mimeType": image.media_type,
+                    "data": image.data,
+                }})
+            })
+            .collect();
+    }
     json!({"functionResponse": response})
 }

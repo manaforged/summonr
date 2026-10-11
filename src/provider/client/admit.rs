@@ -4,12 +4,10 @@ use super::*;
 use crate::provider::wire::ImageBudget;
 
 impl Client {
-    pub(super) fn admit<'m>(&self, messages: &'m [Message]) -> Cow<'m, [Message]> {
-        admit(
-            messages,
-            self.images,
-            &crate::provider::wire::image_budget(self.wire),
-        )
+    pub(super) fn admit<'m>(&self, request: &CompletionRequest<'m>) -> Cow<'m, [Message]> {
+        let mut budget = crate::provider::wire::image_budget(self.wire);
+        budget.tool_images |= request.traits.tool_images;
+        admit(request.messages, self.images, &budget)
     }
 }
 
@@ -59,6 +57,8 @@ fn verdicts(
             let typed = budget.types.contains(&image.media_type.as_str());
             *reason = if !seen {
                 Some("the active model does not accept image input".to_string())
+            } else if message.role == Role::Tool && !budget.tool_images {
+                Some("this model does not take images in tool results".to_string())
             } else if !typed {
                 Some(format!(
                     "this endpoint does not accept {}",

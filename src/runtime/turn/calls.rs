@@ -239,7 +239,17 @@ impl<P: Provider> Loop<P> {
             ),
             Err(error) => (false, false, error.to_string(), Vec::new(), None),
         };
-        let text = self.tool_text(&call, success, text).await;
+        let mut text = self.tool_text(&call, success, text).await;
+        if let Some(nudge) = super::repeat::nudge(messages, &call.function, &text) {
+            text.push_str(&nudge);
+            self.push_event(
+                events,
+                emit,
+                Event::Note {
+                    text: format!("{} keeps returning the same result", call.function.name),
+                },
+            )?;
+        }
         self.session
             .finish_tool(planned, text.as_str(), success, mutated, millis, patch)
             .map_err(super::session_err)?;

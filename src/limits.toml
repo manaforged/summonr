@@ -69,6 +69,7 @@ worker_stop_secs = 2
 repeat_window_secs = 2
 step_attempts = 3
 repair_limit = 6
+repeat_nudge = 5
 edit_hunk_rows = 80
 display_patch_lines = 1000
 token_expiry_skew_secs = 60

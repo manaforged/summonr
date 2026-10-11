@@ -215,6 +215,7 @@ cache_ttl = "5m"
 | `repeat_window_secs` | `2` | Window for a double key press. |
 | `step_attempts` | `3` | Attempts per plan step. |
 | `repair_limit` | `6` | Argument repairs and overflow retries per turn. |
+| `repeat_nudge` | `5` | Times the same tool call, or the same cycle of up to three calls, may return the same result in a row before summonr adds a note to the result asking the model to change approach. The call still runs, and a new message starts the count again. `0` turns the note off. |
 | `edit_hunk_rows` | `80` | Rows shown per edit hunk. |
 | `display_patch_lines` | `1000` | Most patch lines shown. |
 | `token_expiry_skew_secs` | `60` | Refresh a sign-in token this early. |

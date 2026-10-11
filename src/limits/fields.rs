@@ -96,6 +96,7 @@ table! {
     repeat_window_secs: u64,
     step_attempts: u16,
     repair_limit: usize,
+    repeat_nudge: usize,
     edit_hunk_rows: usize,
     display_patch_lines: usize,
     token_expiry_skew_secs: u64,

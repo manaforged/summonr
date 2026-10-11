@@ -80,6 +80,7 @@ mod elicit;
 pub(crate) use elicit::Steering;
 mod finish;
 mod grant;
+mod repeat;
 mod retry;
 mod round;
 mod steer;
@@ -89,6 +90,8 @@ mod usage;
 mod finish_tests;
 #[cfg(test)]
 mod permission_tests;
+#[cfg(test)]
+mod repeat_tests;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn remaining_time(&self) -> Option<Duration> {

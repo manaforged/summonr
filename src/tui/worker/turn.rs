@@ -144,8 +144,11 @@ impl MidTurn<'_> {
             ),
             _ => SETTINGS_LATER.to_string(),
         };
+        self.deferred
+            .extend(self.followups.drain(..).map(Cmd::Submit));
         self.deferred.push_back(command);
         drop(self.ui.send(Msg::System(note)));
+        super::announce(self.ui, self.steering, self.followups);
         Outcome::Keep
     }
 
@@ -360,7 +363,9 @@ pub(super) fn mail(ui: &UnboundedSender<Msg>, from: &str, to: &[String], text: &
 
 fn steerable(input: &UserInput) -> bool {
     let line = input.text.trim_start();
-    super::command::shell::shell_prefix(line).is_none() && !line.starts_with('/')
+    input.images.is_empty()
+        && super::command::shell::shell_prefix(line).is_none()
+        && !line.starts_with('/')
 }
 
 fn steer(
@@ -370,7 +375,13 @@ fn steer(
 ) {
     let notes = crate::hunks::drain(workspace);
     let mut queue = steering.lock().unwrap_or_else(PoisonError::into_inner);
-    queue.extend(inputs);
+    queue.extend(inputs.into_iter().map(|mut input| {
+        input.source.get_or_insert_with(|| crate::provider::Source {
+            text: input.text.clone(),
+            images: input.images.len(),
+        });
+        input
+    }));
     queue.extend(notes.map(UserInput::from));
 }
 

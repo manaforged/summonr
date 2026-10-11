@@ -4,7 +4,12 @@ use crate::tools::Builtin;
 impl Model {
     pub(in crate::tui::sigil_view) fn apply_child(&mut self, id: &str, event: Event) {
         let tag = crate::child::tag(id);
-        if let Event::Work { progress } = &event {
+        if let Event::Work { progress } = &event
+            && !self
+                .agents
+                .iter()
+                .any(|agent| agent.id == tag && agent.done)
+        {
             self.child_todos(&tag, &progress.todos);
         }
         match &event {

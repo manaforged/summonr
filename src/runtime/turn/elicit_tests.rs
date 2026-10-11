@@ -34,14 +34,17 @@ async fn answered(reply: Option<&str>) -> (FormAnswer, Vec<Event>) {
     let workspace = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let mut loop_ = session(workspace.path(), home.path());
-    if let Some(reply) = reply {
-        loop_.steer_with(Arc::new(Steering::answered([UserInput::from(
-            reply.to_string(),
-        )])));
-    }
+    let steering = Arc::new(Steering::default());
+    let mut respond: Box<dyn FnMut(&Event)> = match reply {
+        Some(reply) => {
+            loop_.steer_with(Arc::clone(&steering));
+            Box::new(steering.replying(&[reply]))
+        }
+        None => Box::new(|_: &Event| {}),
+    };
     let mut events = Vec::new();
     let answer = loop_
-        .elicit(form(), &mut events, &mut |_| {})
+        .elicit(form(), &mut events, &mut respond)
         .await
         .unwrap();
     (answer, events)

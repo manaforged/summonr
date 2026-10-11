@@ -145,3 +145,24 @@ fn todo_list_from_work_survives_a_parent_tool_call() {
     let shown = lines.join("\n");
     assert!(shown.contains("Keep me"), "{shown}");
 }
+
+#[test]
+fn todo_rows_of_a_finished_child_stay_gone_after_a_late_update() {
+    let child = "01a104ac000000000000000000002222".to_owned();
+    let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
+        app.update(Msg::Event(Event::Child {
+            id: child.clone(),
+            event: Box::new(Event::Assistant {
+                text: "checked".to_owned(),
+            }),
+        }));
+        app.update(Msg::Event(Event::Child {
+            id: child.clone(),
+            event: Box::new(todo(
+                r#"{"items":[{"text":"Late child row","status":"active"}]}"#,
+            )),
+        }));
+    });
+    let shown = lines.join("\n");
+    assert!(!shown.contains("Late child row"), "{shown}");
+}

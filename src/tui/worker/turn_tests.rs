@@ -23,3 +23,12 @@ fn steering_queue_sends_plain_messages_and_bang_inside_text() {
         assert!(steerable(&UserInput::from(line)), "{line}");
     }
 }
+
+#[test]
+fn steering_queue_holds_images_for_the_turn_that_checks_them() {
+    let mut input = UserInput::from("look at this");
+    input
+        .images
+        .push(crate::provider::Image::encode("image/png", &[1, 2, 3]));
+    assert!(!steerable(&input));
+}

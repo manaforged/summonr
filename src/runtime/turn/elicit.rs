@@ -11,6 +11,7 @@ impl<P: Provider> Loop<P> {
         let Some(shared) = self.steer_shared.clone() else {
             return Ok(FormAnswer::declined());
         };
+        shared.reset_answers();
         let _blocked = self.herdr.blocked(&form.message);
         self.push_event(
             events,
@@ -55,12 +56,31 @@ impl Steering {
     }
 
     #[cfg(test)]
-    pub(crate) fn answered(answers: impl IntoIterator<Item = UserInput>) -> Self {
-        let steering = Self::default();
-        for input in answers {
-            steering.answer(input);
+    pub(crate) fn replying(self: &Arc<Self>, answers: &[&str]) -> impl FnMut(&Event) + use<> {
+        let steering = Arc::clone(self);
+        let mut answers: VecDeque<UserInput> = answers
+            .iter()
+            .map(|answer| UserInput::from(*answer))
+            .collect();
+        move |event| {
+            if matches!(
+                event,
+                Event::Approval {
+                    detail: Some(_),
+                    ..
+                } | Event::Elicit { form: Some(_) }
+            ) && let Some(answer) = answers.pop_front()
+            {
+                steering.answer(answer);
+            }
         }
-        steering
+    }
+
+    pub(super) fn reset_answers(&self) {
+        self.answers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
     }
 
     pub(crate) fn answer(&self, input: UserInput) {

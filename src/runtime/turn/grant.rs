@@ -41,6 +41,7 @@ impl<P: Provider> Loop<P> {
         let Some(shared) = self.steer_shared.clone() else {
             return Ok(GrantAnswer::Deny);
         };
+        shared.reset_answers();
         let status: String = detail.chars().take(160).collect();
         let _blocked = self.herdr.blocked(&status);
         self.push_event(

@@ -44,3 +44,43 @@ fn a_compacted_tail_replays_as_the_model_saw_it_after_an_interrupted_reply() {
     driver.compact("summary", &seen).unwrap();
     assert_eq!(&driver.history()[2..], seen.as_slice());
 }
+
+#[test]
+fn todo_list_does_not_outlive_clear() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver.prepare_turn_work("task", &[]).unwrap();
+    driver
+        .apply_todos(vec![crate::tools::Todo {
+            text: "old task".to_string(),
+            status: crate::tools::TodoStatus::Active,
+        }])
+        .unwrap();
+    driver.clear().unwrap();
+    driver.prepare_turn_work("next", &[]).unwrap();
+    assert!(driver.work.as_ref().unwrap().todos.is_empty());
+}
+
+#[test]
+fn steering_a_typed_steer_exports_whole_as_the_users_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver.prepare_turn_work("task", &[]).unwrap();
+    driver.start_input(&UserInput::from("task")).unwrap();
+    let typed = "Use staging.\nDo not run the migration.";
+    driver
+        .steer(&UserInput {
+            text: typed.to_string(),
+            images: Vec::new(),
+            source: Some(crate::provider::Source {
+                text: typed.to_string(),
+                images: 0,
+            }),
+        })
+        .unwrap();
+    let exported = crate::session::export(driver.path()).unwrap();
+    assert!(
+        exported.contains(&format!("## You\n\n{typed}")),
+        "{exported}"
+    );
+}

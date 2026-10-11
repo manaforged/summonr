@@ -1,10 +1,28 @@
 # summonr
 
-An open-source coding agent for any model, in your terminal or a desktop window. It does the same work as heavier harnesses on fewer tokens and a fraction of the memory: in our [Terminal-Bench 2.1 run](https://summonr.dev/benchmarks) it used 24 MB, where four other harnesses peaked between 146 and 505 MB. It loads no third-party code into its process.
+A coding agent for any model, in your terminal or a desktop window, written in Rust.
+
+- **Light**: 24 MB peak in our [Terminal-Bench 2.1 run](#benchmarks), where four other harnesses peaked between 146 and 505 MB.
+- **Any model**: 42 built-in endpoints, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
+- **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.
+- **Batteries included**: web search, a real browser, MCP servers, and parallel child agents in one binary.
+- **Contained**: `--sandbox` runs shell commands under Seatbelt on macOS and bubblewrap on Linux.
+
+[Docs](docs/guide/README.md) | [Reference](docs/guide/reference.md) | [Scripting API](docs/api.md) | [Benchmarks](#benchmarks)
 
 ![summonr fixing two bugs in calc.py and running pytest, captured from a session](docs/guide/assets/summonr-session.png)
 
+Status: unreleased. Until 0.1.0 ships, install from source. Pull requests are by invitation; open an [issue](https://github.com/manaforged/summonr/issues) for bugs and requests.
+
 ## Install
+
+From source (Rust 1.98, Git, CMake, and a C and C++ compiler):
+
+```sh
+cargo install --git https://github.com/manaforged/summonr --locked
+```
+
+From the 0.1.0 release on, the installers below fetch a release binary.
 
 macOS and Linux:
 
@@ -33,12 +51,6 @@ gh attestation verify <file> --repo manaforged/summonr
 ```
 
 To update, run the installer again. To uninstall, delete the binary: `~/.local/bin/summonr` or `%LOCALAPPDATA%\Programs\summonr\bin\summonr.exe`.
-
-From source (the same targets as the release binaries, Rust 1.98, Git, CMake, and a C and C++ compiler):
-
-```sh
-cargo install --git https://github.com/manaforged/summonr --locked
-```
 
 ## First run
 

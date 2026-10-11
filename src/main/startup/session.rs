@@ -150,14 +150,7 @@ pub(super) fn build(
     );
     loop_.set_price(endpoint.price);
     loop_.set_env(endpoint.env.clone());
-    loop_.set_images(
-        images,
-        if images {
-            None
-        } else {
-            summonr::vision_endpoint()?
-        },
-    );
+    loop_.set_images(images, summonr::vision_endpoint()?);
     loop_.set_modules(&switches)?;
     configure(loop_, args, check)
 }

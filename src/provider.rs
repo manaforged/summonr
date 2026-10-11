@@ -50,6 +50,10 @@ pub trait Provider: Send + Sync + 'static {
         false
     }
 
+    fn takes_images(&self) -> bool {
+        false
+    }
+
     fn supports_children(&self) -> bool {
         false
     }

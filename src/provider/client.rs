@@ -352,6 +352,10 @@ impl Provider for Client {
         self.opencode || self.keep_reasoning
     }
 
+    fn takes_images(&self) -> bool {
+        self.images
+    }
+
     fn complete<'a>(
         &'a self,
         request: &'a CompletionRequest<'a>,

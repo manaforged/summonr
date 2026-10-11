@@ -157,6 +157,10 @@ impl ToolRegistry {
         self.vision = vision;
     }
 
+    pub(crate) fn set_model_images(&mut self, model_images: bool) {
+        self.model_images = model_images;
+    }
+
     pub(crate) fn set_strict(&mut self) {
         self.policy.set_strict();
     }

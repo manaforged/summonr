@@ -234,7 +234,7 @@ fn alt_p_adds_the_selected_model_to_favorites() {
 }
 
 #[test]
-fn the_model_picker_stays_a_dialog_in_a_tall_terminal() {
+fn the_model_picker_fills_a_tall_terminal() {
     let models: Vec<(String, Option<u64>)> = (0..90)
         .map(|index| (format!("model-{index:02}"), days_ago(20)))
         .collect();
@@ -246,9 +246,10 @@ fn the_model_picker_stays_a_dialog_in_a_tall_terminal() {
     let top = screen.iter().position(|line| line.contains('┏'));
     let bottom = screen.iter().rposition(|line| line.contains('┗'));
     let tall = top.zip(bottom).map(|(top, bottom)| bottom - top + 1);
+    assert_eq!(tall, Some(83), "{}", screen.join("\n"));
     assert!(
-        tall.is_some_and(|tall| tall <= 48),
-        "{tall:?}\n{}",
+        screen.iter().any(|line| line.contains("model-60")),
+        "{}",
         screen.join("\n")
     );
 }

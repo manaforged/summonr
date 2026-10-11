@@ -2,7 +2,6 @@ use sigil::app::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) use super::app::App;
-pub(super) use super::chat;
 
 use super::canvas::write_at;
 use super::canvas::{Cell, Ink, blend, cell as metrics, ink, palette, rgb, shown};
@@ -40,7 +39,6 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
             drop(app.theme_name.get());
             let _backdrop = app.backdrop.get();
             let _draft = app.draft.get();
-            let _caret = app.caret.get();
             let ticks = app.ticks.get();
             let ticks = if app.model.get().prefs.animations {
                 ticks
@@ -48,7 +46,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 0
             };
             let mut cells = space(cols, rows, ticks);
-            compose(&mut cells, cols, rows, &app, ticks);
+            compose(&mut cells, cols, rows, &app);
             cells
                 .chunks(usize::from(cols).max(1))
                 .map(scene_row)

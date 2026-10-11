@@ -3,7 +3,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use sigil::app::cell_width;
 use sigil::prelude::ImageSource;
 use sigil::prelude::Signal;
 use sigil::prelude::signal;
@@ -26,7 +25,6 @@ use super::canvas::cell;
 pub(super) use super::model;
 use super::model::{Entry, Model, preview};
 use super::pane::{Layout, Pane};
-pub(super) use super::scene;
 pub(super) use super::settings;
 pub(super) use super::suggest;
 use super::suggest::Picker;

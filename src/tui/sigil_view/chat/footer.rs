@@ -10,7 +10,7 @@ use sigil::prelude::Paint;
 use sigil::prelude::container;
 use sigil::prelude::spacer;
 
-use super::{App, canvas, cell_width};
+use super::{App, Entry, canvas, cell_width};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Target {
@@ -23,7 +23,7 @@ type FooterView = (
     Option<String>,
     Option<(String, bool)>,
     Option<u64>,
-    u64,
+    Option<u64>,
     Option<(bool, Vec<(String, String)>)>,
 );
 
@@ -33,7 +33,14 @@ fn footer_view(app: &App) -> FooterView {
     let cache_open = app.cache_open.get();
     let model = app.model.get();
     let spend = model.spend().map(crate::dollars);
-    let open = if context_open {
+    let started = !model.usage.is_empty()
+        || model
+            .entries
+            .iter()
+            .any(|entry| matches!(entry, Entry::User(_)));
+    let open = if !started {
+        None
+    } else if context_open {
         Some((false, model.context_facts()))
     } else if cache_open {
         Some((true, model.cache_facts()))
@@ -44,8 +51,8 @@ fn footer_view(app: &App) -> FooterView {
         app.notice.get(),
         spend,
         elsewhere(&model.live),
-        model.context_percent(),
-        model.cache_percent(),
+        started.then(|| model.context_percent()).flatten(),
+        started.then(|| model.cache_percent()),
         open,
     )
 }
@@ -82,7 +89,7 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
 
 fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
     let (notice, spend, elsewhere, context_pct, cache_pct, open) = view;
-    let taken = 42
+    let taken = cache_pct.map_or(0, |_| 42)
         + elsewhere
             .as_ref()
             .map_or(0, |(note, _)| cell_width(note) + 2)
@@ -181,13 +188,16 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
             width,
         ));
     }
-    row.child(meter_button(
-        app,
-        Target::Cache,
-        meter("cache", cache_pct, sigil::prelude::Token::Info11),
-        cache_card,
-        width,
-    ))
+    if let Some(percent) = cache_pct {
+        row = row.child(meter_button(
+            app,
+            Target::Cache,
+            meter("cache", percent, sigil::prelude::Token::Info11),
+            cache_card,
+            width,
+        ));
+    }
+    row
 }
 
 fn meter(caption: &str, percent: u64, fill: sigil::prelude::Token) -> NodeBuilder {

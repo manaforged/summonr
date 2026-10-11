@@ -30,7 +30,6 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn change(&self, draft: &str) {
         self.recalled.set(None);
-        self.reveal(draft);
         if draft.contains('@') && !self.commands.mentions() {
             drop(self.cmd.send(Cmd::ListFiles));
         }
@@ -40,16 +39,6 @@ impl App {
             &self.model.peek().snapshot.endpoint,
             &self.picker.facts.peek(),
         );
-    }
-
-    pub(in crate::tui::sigil_view) fn reveal(&self, draft: &str) {
-        if self.splash.peek() {
-            let (cols, rows) = self.viewport.peek();
-            let width = super::scene::prompt_area(self, cols, rows)[2].saturating_sub(9);
-            if draft.contains('\n') || cell_width(draft) > usize::from(width) {
-                self.splash.set(false);
-            }
-        }
     }
 
     pub(in crate::tui::sigil_view) fn boundary(&self, end: bool, extend: bool) -> bool {
@@ -118,7 +107,6 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn select(&self, draft: &str) {
-        self.reveal(draft);
         self.caret.set(draft.len());
         self.draft.set(draft.to_string());
     }

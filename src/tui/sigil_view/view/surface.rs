@@ -33,7 +33,7 @@ fn side(app: App, pane: Pane, cols: u16) -> NodeBuilder {
         .children_reactive(move || vec![panes::body(&app, pane, cols)])
 }
 
-fn chat_surface(app: App, cols: u16) -> NodeBuilder {
+pub(super) fn editor(app: App) -> impl FnOnce() -> NodeBuilder {
     let submit = app.clone();
     let changed = app.clone();
     let editor = text_edit(app.draft)
@@ -49,14 +49,17 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
         })
         .submit(move |_| submit.submit())
         .focus_when(app.editor_focus);
-    let focus = app.clone();
-    let editor = move || {
-        if untrack(|| focus.overlay().is_none() && focus.note_target.peek().is_none()) {
-            editor.autofocus()
+    move || {
+        if untrack(|| app.overlay().is_none() && app.note_target.peek().is_none()) {
+            editor.autofocus().into()
         } else {
-            editor
+            editor.into()
         }
-    };
+    }
+}
+
+fn chat_surface(app: App, cols: u16) -> NodeBuilder {
+    let editor = editor(app.clone());
     let surface = if app.inline {
         chat::inline_layer(app, cols, editor)
     } else if app.view_edit.get() {

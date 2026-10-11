@@ -1,17 +1,9 @@
-use super::input::{
-    FACTS_MS, ROW_MS, ROW_WIPE_MS, clear, dim_rect, fill_bg, frame, overlay, prompt, write,
-};
+use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, dim_rect, fill_bg, frame, overlay, write};
 use super::space::STAR_BRIGHT;
 use super::*;
 use sigil::prelude::Paint;
 
-pub(in crate::tui::sigil_view) fn compose(
-    cells: &mut [Cell],
-    cols: u16,
-    rows: u16,
-    app: &App,
-    ticks: u64,
-) {
+pub(in crate::tui::sigil_view) fn compose(cells: &mut [Cell], cols: u16, rows: u16, app: &App) {
     let width = usize::from(cols);
     if width == 0 || rows == 0 {
         return;
@@ -20,7 +12,7 @@ pub(in crate::tui::sigil_view) fn compose(
     let facts = facts(&model, app);
     let logo = crate::splash::logo();
     let [body_width, body_rows] = cover(logo, &facts);
-    let [body_x, body_y, input_x, input_y, input_width] = layout(cols, rows, body_width, body_rows);
+    let [body_x, body_y, _, _, _] = layout(cols, rows, body_width, body_rows);
     let card_x = body_x.saturating_sub(3);
     let card_y = body_y.saturating_sub(2);
     let card = [
@@ -79,23 +71,6 @@ pub(in crate::tui::sigil_view) fn compose(
     }
     fill_bg(cells, cols, card);
     frame(cells, cols, card);
-    clear(
-        cells,
-        cols,
-        input_x,
-        input_y.saturating_sub(1),
-        input_width,
-        4,
-    );
-    prompt(
-        cells,
-        cols,
-        [input_x, input_y, input_width],
-        &model,
-        app,
-        facts_visible,
-        ticks,
-    );
     drop(model);
 }
 

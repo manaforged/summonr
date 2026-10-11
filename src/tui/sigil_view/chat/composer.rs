@@ -3,14 +3,10 @@ use std::time::Instant;
 use sigil::app::cell_width;
 
 use super::Speed;
-use crate::text::ellipsize;
 
 pub(super) use super::{App, Model, suggest};
 use crate::tui::Activity;
 
-use draft::Draft;
-
-mod draft;
 mod widget;
 
 pub(super) use widget::widget;
@@ -56,36 +52,6 @@ pub(in crate::tui::sigil_view) fn composer_hint(
         .into_iter()
         .find(|hint| cell_width(hint.as_str()) <= available)
         .unwrap_or_default()
-}
-
-pub(in crate::tui::sigil_view) fn draft_view(
-    draft: &str,
-    position: usize,
-    width: usize,
-    caret: char,
-) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    let mut position = position.min(draft.len());
-    while position > 0 && !draft.is_char_boundary(position) {
-        position -= 1;
-    }
-    let line_start = draft[..position].rfind('\n').map_or(0, |index| index + 1);
-    let line_end = draft[position..]
-        .find('\n')
-        .map_or(draft.len(), |index| position + index);
-    let hidden_lines = line_start > 0 || line_end < draft.len();
-    let prefix = if hidden_lines { "↵ " } else { "" };
-    if cell_width(prefix) >= width {
-        return ellipsize(prefix, width);
-    }
-    let window = Draft::new(
-        &draft[line_start..line_end],
-        Some(position - line_start),
-        width - cell_width(prefix),
-    );
-    format!("{prefix}{}", window.text(caret))
 }
 
 #[cfg(test)]

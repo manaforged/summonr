@@ -9,7 +9,8 @@ use crate::provider::UserInput;
 use crate::tools::Event;
 use crate::tui::Activity;
 
-pub(in crate::tui) const SENT_NOW: &str = "sent to the running turn";
+const SENT_NOW: &str = "sent to the running turn";
+pub(in crate::tui) const QUEUED_LATER: &str = "queued for the next turn";
 const SETTINGS_LATER: &str = "settings apply when the current turn ends; esc cancels now";
 
 enum Input {
@@ -150,35 +151,30 @@ impl MidTurn<'_> {
 
     fn queued(&mut self, command: Cmd, workspace: &std::path::Path) -> Outcome {
         match command {
-            Cmd::Steer(text) => {
-                if let Ok(mut queue) = self.steering.lock() {
-                    queue.push_back(text);
-                    if let Some(notes) = crate::hunks::drain(workspace) {
-                        queue.push_back(UserInput::from(notes));
-                    }
-                }
+            Cmd::Steer(input)
+                if self.followups.is_empty() && self.deferred.is_empty() && steerable(&input) =>
+            {
+                steer(self.steering, [input], workspace);
+                drop(self.ui.send(Msg::System(SENT_NOW.to_string())));
+            }
+            Cmd::Steer(input) => {
+                self.followups.push_back(input);
+                drop(self.ui.send(Msg::System(QUEUED_LATER.to_string())));
             }
             Cmd::Queue(input) | Cmd::Submit(input) => self.followups.push_back(input),
             Cmd::SteerQueued => {
-                let sent = self.followups.len();
-                if sent > 0
-                    && let Ok(mut queue) = self.steering.lock()
-                {
-                    queue.extend(self.followups.drain(..));
-                    if let Some(notes) = crate::hunks::drain(workspace) {
-                        queue.push_back(UserInput::from(notes));
-                    }
-                }
-                if sent > 0 {
+                let count = self
+                    .followups
+                    .iter()
+                    .take_while(|input| steerable(input))
+                    .count();
+                if count > 0 {
+                    steer(self.steering, self.followups.drain(..count), workspace);
                     drop(self.ui.send(Msg::System(SENT_NOW.to_string())));
                 }
             }
             Cmd::Dequeue => {
-                let mut pending: Vec<UserInput> = self
-                    .steering
-                    .lock()
-                    .map_or_else(|_| Vec::new(), |mut queue| queue.drain(..).collect());
-                pending.extend(self.followups.drain(..));
+                let pending: Vec<UserInput> = self.followups.drain(..).collect();
                 if !pending.is_empty() {
                     drop(self.ui.send(Msg::Restored(pending)));
                 }
@@ -361,3 +357,23 @@ pub(super) fn mail(ui: &UnboundedSender<Msg>, from: &str, to: &[String], text: &
     };
     drop(ui.send(Msg::System(note)));
 }
+
+fn steerable(input: &UserInput) -> bool {
+    let line = input.text.trim_start();
+    super::command::shell::shell_prefix(line).is_none() && !line.starts_with('/')
+}
+
+fn steer(
+    steering: &crate::runtime::Steering,
+    inputs: impl IntoIterator<Item = UserInput>,
+    workspace: &std::path::Path,
+) {
+    let notes = crate::hunks::drain(workspace);
+    let mut queue = steering.lock().unwrap_or_else(PoisonError::into_inner);
+    queue.extend(inputs);
+    queue.extend(notes.map(UserInput::from));
+}
+
+#[cfg(test)]
+#[path = "turn_tests.rs"]
+mod tests;

@@ -1,4 +1,4 @@
-pub(super) fn shell_prefix(line: &str) -> Option<(bool, &str)> {
+pub(in crate::tui::worker) fn shell_prefix(line: &str) -> Option<(bool, &str)> {
     let rest = line.strip_prefix('!')?;
     let (send, command) = match rest.strip_prefix('!') {
         Some(quiet) => (false, quiet),

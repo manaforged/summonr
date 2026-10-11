@@ -74,16 +74,19 @@ impl Worker {
 
     pub(super) async fn next(&mut self) -> Option<Cmd> {
         if self.carried > 0
-            && let Some(next) = self.take_followups()
+            && let Some(next) = self.followups.pop_front()
         {
-            return Some(next);
+            self.carried -= 1;
+            announce(&self.ui, &self.steering, &self.followups);
+            return Some(Cmd::Submit(next));
         }
         self.carried = 0;
         if let Some(command) = self.deferred.pop_front() {
             return Some(command);
         }
-        if let Some(next) = self.take_followups() {
-            return Some(next);
+        if let Some(next) = self.followups.pop_front() {
+            announce(&self.ui, &self.steering, &self.followups);
+            return Some(Cmd::Submit(next));
         }
         let command = self.cmd.recv().await?;
         match command {
@@ -189,28 +192,4 @@ impl Worker {
     pub(super) fn fail(&self, text: &str) {
         drop(self.ui.send(Msg::Failed(text.to_string())));
     }
-
-    fn take_followups(&mut self) -> Option<Cmd> {
-        let next = joined(self.followups.drain(..))?;
-        self.carried = 0;
-        announce(&self.ui, &self.steering, &self.followups);
-        Some(Cmd::Submit(next))
-    }
 }
-
-fn joined(inputs: impl IntoIterator<Item = UserInput>) -> Option<UserInput> {
-    inputs.into_iter().reduce(|mut joined, input| {
-        joined.text = match (joined.text.trim().is_empty(), input.text.trim().is_empty()) {
-            (_, true) => joined.text,
-            (true, false) => input.text,
-            (false, false) => format!("{}\n\n{}", joined.text, input.text),
-        };
-        joined.images.extend(input.images);
-        joined.source = None;
-        joined
-    })
-}
-
-#[cfg(test)]
-#[path = "state_tests.rs"]
-mod tests;

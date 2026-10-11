@@ -140,6 +140,7 @@ fn a_meter_card_opens_on_a_click_and_closes_on_a_click_outside() {
         let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
         let app = super::super::app::App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(110, 30);
+        app.update(Msg::User("started conversation".to_string()));
         app.refresh();
         let mut host = sigil::Host::cells();
         let tree = app.clone();

@@ -28,17 +28,6 @@ jobs:
           persist-credentials: false
       - name: Rust toolchain
         run: rustup show active-toolchain
-      - name: private git deps
-        env:
-          TOKEN: ${{ secrets.CI_CROSS_REPO_TOKEN }}
-        run: |
-          if [ -n "$TOKEN" ]; then
-            git config --global url."https://x-access-token:$TOKEN@github.com/".insteadOf "https://github.com/"
-            cargo fetch --locked
-            git config --global --get-regexp '^url\..*\.insteadof$' | cut -d' ' -f1 | while read -r key; do
-              git config --global --unset-all "$key"
-            done
-          fi
       - name: formatting
         run: cargo fmt --all -- --check
       - name: API limits
@@ -50,6 +39,14 @@ jobs:
           save-if: 'false'
       - name: clippy
         run: cargo clippy -p summonr --all-targets --locked -- -D warnings
+      - name: sandbox
+        run: |
+          if ! bwrap --ro-bind / / true 2>/dev/null; then
+            sudo apt-get update -q
+            sudo apt-get install -yq bubblewrap
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --ro-bind / / true
       - name: tests
         run: cargo test --workspace --locked
 
@@ -95,16 +92,7 @@ jobs:
           rustup show active-toolchain
           rustup target add ${{ matrix.target }}
       - name: fetch dependencies
-        env:
-          TOKEN: ${{ secrets.CI_CROSS_REPO_TOKEN }}
-        run: |
-          if [ -n "$TOKEN" ]; then
-            git config --global url."https://x-access-token:$TOKEN@github.com/".insteadOf "https://github.com/"
-          fi
-          cargo fetch --locked
-          git config --global --get-regexp '^url\..*\.insteadof$' | cut -d' ' -f1 | while read -r key; do
-            git config --global --unset-all "$key"
-          done
+        run: cargo fetch --locked
       - name: build
         run: cargo build --release --locked -p summonr --bin summonr --target ${{ matrix.target }}
       - name: package

@@ -24,10 +24,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn resize(&self, cols: u16, rows: u16) {
-        batch(|| {
-            self.viewport.set((cols, rows));
-            self.reveal(&self.draft.peek());
-        });
+        self.viewport.set((cols, rows));
     }
 
     pub(in crate::tui::sigil_view) fn animate(&self) {

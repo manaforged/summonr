@@ -11,23 +11,43 @@ fn the_splash_field_covers_the_screen() {
 }
 
 #[test]
-fn a_star_that_flashes_flashes_again_within_four_seconds() {
-    let (cols, rows) = (96, 26);
-    let window = u64::from(crate::prefs::FPS_DEFAULT) * 4;
-    let mut lit = vec![false; usize::from(cols) * usize::from(rows)];
-    let mut onsets = vec![0_u32; lit.len()];
-    for tick in 0..window * 2 {
-        let mut cells = vec![super::night(); lit.len()];
-        super::stars(&mut cells, cols, rows, tick);
-        for (at, cell) in cells.iter().enumerate() {
-            let bright = cell.text == "✦";
-            if bright && !lit[at] {
-                onsets[at] += 1;
-            }
-            lit[at] = bright;
+fn splash_has_at_most_two_bright_points_even_with_a_meteor_on_a_large_screen() {
+    for tick in 0..880 {
+        let cells = super::space(200, 60, tick);
+        let bright = cells.iter().filter(|cell| cell.text == "✦").count();
+        assert!(bright <= 2, "tick {tick}: {bright} simultaneous sparkles");
+    }
+}
+
+#[test]
+fn splash_stars_drift_one_cell_per_second_without_flashing() {
+    let earlier = super::space(80, 24, 120);
+    let later = super::space(80, 24, 145);
+    assert!(earlier.iter().zip(&later).any(|(a, b)| a.text != b.text));
+    for row in 0..24 {
+        for col in 0..79 {
+            assert_eq!(later[row * 80 + col].text, earlier[row * 80 + col + 1].text);
         }
     }
-    let flashing: Vec<u32> = onsets.into_iter().filter(|count| *count > 0).collect();
-    assert!(flashing.len() >= 8, "only {} stars flashed", flashing.len());
-    assert!(flashing.iter().all(|count| *count >= 2), "{flashing:?}");
+}
+
+#[test]
+fn splash_has_one_brief_sparkle_every_two_seconds_with_quiet_gaps() {
+    let mut lit = false;
+    let mut onsets = Vec::new();
+    let mut lit_frames = 0;
+    for tick in 120..420 {
+        let cells = super::space(200, 60, tick);
+        let bright = cells.iter().filter(|cell| cell.text == "✦").count();
+        assert!(bright <= 1, "tick {tick}: {bright} stationary sparkles");
+        if bright == 1 {
+            lit_frames += 1;
+            if !lit {
+                onsets.push(tick);
+            }
+        }
+        lit = bright == 1;
+    }
+    assert_eq!(onsets, [154, 204, 254, 304, 354, 404]);
+    assert_eq!(lit_frames, 96);
 }

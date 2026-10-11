@@ -18,6 +18,54 @@ fn commands_suggest_and_complete_while_a_turn_runs() {
 }
 
 #[test]
+fn slash_typeahead_shows_command_names_and_syntax_without_descriptions() {
+    for (query, label, description) in [
+        ("/model", "/model [NAME] [LEVEL]", "choose the model"),
+        ("/stats", "/stats-report", "plugin prose"),
+    ] {
+        let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
+            app.model_mut(|model| {
+                model.offers = vec![crate::mcp::Offer {
+                    kind: crate::mcp::OfferKind::Prompt,
+                    insert: "/stats-report".to_string(),
+                    about: "plugin prose".to_string(),
+                }];
+            });
+            app.replace(query.to_string());
+        })
+        .join("\n");
+        assert!(shown.contains(label), "{shown}");
+        assert!(!shown.contains(description), "{shown}");
+    }
+}
+
+#[test]
+fn mention_typeahead_keeps_peer_details() {
+    let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
+        app.update(crate::tui::Msg::Peers(vec![crate::mail::Agent {
+            id: "0123456789abcdef0123456789abcdef".to_string(),
+            name: "build-peer".to_string(),
+            kind: crate::mail::KIND.to_string(),
+            model: "peer-model".to_string(),
+            cwd: "/work/summonr".to_string(),
+            pid: 1,
+            status: crate::mail::Presence::Idle,
+            last_seen: 0,
+        }]));
+        app.replace("@build".to_string());
+    })
+    .join("\n");
+    let row = shown
+        .lines()
+        .find(|line| line.contains("build-peer"))
+        .expect("peer suggestion");
+    assert!(
+        row.contains("peer-model") && row.contains("idle"),
+        "{shown}"
+    );
+}
+
+#[test]
 fn enter_queues_a_message_mid_turn_and_an_immediate_enter_sends_it() {
     use super::super::app::App;
     use crate::tui::{Activity, Cmd, Msg};

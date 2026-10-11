@@ -43,24 +43,12 @@ jobs:
       - name: fetch dependencies
         id: deps
         if: steps.scope.outputs.args != ''
-        env:
-          TOKEN: ${{ secrets.CI_CROSS_REPO_TOKEN }}
         run: |
-          if [ -n "$TOKEN" ]; then
-            git config --global url."https://x-access-token:$TOKEN@github.com/".insteadOf "https://github.com/"
-          fi
           ok=true
           cargo fetch --locked || ok=false
-          git config --global --get-regexp '^url\..*\.insteadof$' | cut -d' ' -f1 | while read -r key; do
-            git config --global --unset-all "$key"
-          done
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
           if [ "$ok" = false ]; then
-            if [ -z "$TOKEN" ]; then
-              msg="cargo fetch failed and CI_CROSS_REPO_TOKEN is not set, so private dependencies cannot be fetched. clippy and tests did not run."
-            else
-              msg="cargo fetch failed. clippy and tests did not run."
-            fi
+            msg="cargo fetch failed. clippy and tests did not run."
             echo "::error::$msg"
             echo "$msg" >> "$GITHUB_STEP_SUMMARY"
             exit 1
@@ -72,6 +60,15 @@ jobs:
       - name: cargo clippy
         if: steps.deps.outputs.ok == 'true'
         run: cargo clippy ${{ steps.scope.outputs.args }} --all-targets --locked --no-deps -- -D warnings
+      - name: sandbox
+        if: steps.deps.outputs.ok == 'true'
+        run: |
+          if ! bwrap --ro-bind / / true 2>/dev/null; then
+            sudo apt-get update -q
+            sudo apt-get install -yq bubblewrap
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --ro-bind / / true
       - name: cargo test
         if: steps.deps.outputs.ok == 'true'
         run: |

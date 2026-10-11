@@ -44,7 +44,8 @@ fn popup(app: &App, width: usize) -> Option<Popup> {
     let start = cursor.saturating_add(1).saturating_sub(limit);
     let shown = &matches[start..matches.len().min(start + limit)];
     let head = app.commands.head(&draft);
-    let title = match (mention(&draft, caret), head) {
+    let mention = mention(&draft, caret);
+    let title = match (mention, head) {
         (Some(_), _) => "mentions".to_string(),
         (None, Some(head)) => format!("{head} {}", usage(head)),
         (None, None) => "commands".to_string(),
@@ -61,12 +62,12 @@ fn popup(app: &App, width: usize) -> Option<Popup> {
             SuggestRow {
                 index,
                 name: label,
-                description: description.clone(),
+                description: mention.map_or_else(String::new, |_| description.clone()),
                 selected: index == cursor,
             }
         })
         .collect();
-    let enter = if head.is_some() || mention(&draft, caret).is_some() {
+    let enter = if head.is_some() || mention.is_some() {
         "complete"
     } else {
         "run"

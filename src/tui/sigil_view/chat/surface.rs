@@ -97,7 +97,6 @@ pub(in crate::tui::sigil_view) fn inline_layer(
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
-                .fill_height()
                 .min_size(0.0, 0.0)
                 .gap(0.0),
         )

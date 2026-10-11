@@ -43,6 +43,16 @@ and actions in `app/adjust.rs`.
 | `App::clear_agent` | dismiss a background status row; keep execution, accounting, and transcript reports | `chat/strip.rs` |
 | `Model::agents_hidden` | child tags dismissed in the current view; late events do not reveal them | `App::clear_agent`, `chat/strip.rs` |
 
+## Composer
+
+| Job | Owner | Callers |
+| --- | --- | --- |
+| Prompt editor | `view/surface.rs::editor`, Sigil `text_edit` | transcript and splash; auto height with a viewport-bounded scroll area |
+| Inline composer | `chat/surface.rs::inline_layer` | inline transcript and splash; shared command completion, composer, and footer |
+| Splash placement | `scene/input.rs::prompt_area` | `view/splash.rs`; bottom-anchored composer grows upward over the backdrop |
+
+Typing, wrapping, newlines, and resizing do not dismiss the splash. A transcript entry or explicit navigation does.
+
 ## Composer Tab bindings
 
 Owner: `view/input.rs::tab_shortcuts`, attached to `view/keys.rs::shell`

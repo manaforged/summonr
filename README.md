@@ -171,41 +171,6 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 
 The [changelog](CHANGELOG.md) lists the changes in each release. Example configs: [`config.example.toml`](config.example.toml) and [`policy.example.toml`](policy.example.toml).
 
-## API
-
-<!-- truesight:surface summonr -->
-
-757 public items (76 types, 106 functions, 123 methods, 266 fields, 184 variants, 2 constants) at 757 paths; 0 are re-export aliases. 394 trait impl lines, 33 inherent impl lines. 24 modules, 0 re-export only.
-
-| Module | Items | Types | Functions | Methods | Aliases |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 511 | 42 | 57 | 100 | 0 |
-| `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
-| `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
-| `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
-| `summonr::child` | 5 | 1 | 1 | 1 | 0 |
-| `summonr::classify` | 38 | 5 | 2 | 3 | 0 |
-| `summonr::classify::digest` | 1 | 0 | 1 | 0 | 0 |
-| `summonr::classify::eval` | 20 | 3 | 4 | 1 | 0 |
-| `summonr::classify::patch` | 6 | 1 | 3 | 0 | 0 |
-| `summonr::classify::sets` | 5 | 0 | 4 | 0 | 0 |
-| `summonr::classify::sweep` | 2 | 0 | 2 | 0 | 0 |
-| `summonr::diff` | 20 | 3 | 5 | 3 | 0 |
-| `summonr::limits` | 1 | 0 | 1 | 0 | 0 |
-| `summonr::mail` | 0 | 0 | 0 | 0 | 0 |
-| `summonr::mail::cli` | 1 | 0 | 1 | 0 | 0 |
-| `summonr::modules` | 21 | 3 | 2 | 5 | 0 |
-| `summonr::prefs` | 19 | 2 | 2 | 1 | 0 |
-| `summonr::secret` | 10 | 1 | 2 | 1 | 0 |
-| `summonr::splash` | 13 | 1 | 1 | 2 | 0 |
-| `summonr::steps` | 16 | 3 | 3 | 1 | 0 |
-| `summonr::supervise` | 3 | 1 | 0 | 0 | 0 |
-| `summonr::tui` | 22 | 3 | 3 | 3 | 0 |
-| `summonr::tui::hub` | 4 | 2 | 0 | 0 | 0 |
-| `summonr::workflow` | 9 | 2 | 3 | 1 | 0 |
-
-<!-- /truesight -->
-
 ## Security
 
 Report vulnerabilities as described in [SECURITY.md](SECURITY.md).

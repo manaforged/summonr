@@ -44,7 +44,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let (cols, rows) = app.viewport.peek();
     Dialog::new(Size::Page, "Providers", Hints::new())
         .header(Some(tab_strip(&app, Tab::Providers)))
-        .fixed(rows)
+        .fixed(canvas::picker_rows(rows))
         .live_hints(move || hints(&state))
         .child(
             container()
@@ -159,7 +159,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         } else {
             NARROW_NOTE_ROWS as u16
         };
-    let visible = canvas::list_rows(app.viewport.get().1, chrome);
+    let visible = canvas::list_rows(canvas::picker_rows(app.viewport.get().1), chrome);
     let anchor = if shown < visible {
         0
     } else if shown - header < visible {

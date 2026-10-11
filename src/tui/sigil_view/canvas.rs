@@ -107,6 +107,12 @@ pub(super) fn overlay_list_row() -> f32 {
 pub(super) const DIALOG_CHROME: u16 = 16;
 const PAGE_CHROME: u16 = 5;
 
+const PICKER_ROWS: u16 = 49;
+
+pub(super) fn picker_rows(rows: u16) -> u16 {
+    rows.min(PICKER_ROWS)
+}
+
 pub(super) fn page_rows(rows: u16) -> u16 {
     rows.saturating_sub(PAGE_CHROME).max(8)
 }

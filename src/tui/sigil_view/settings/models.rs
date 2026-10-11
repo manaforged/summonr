@@ -61,7 +61,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let (cols, rows) = app.viewport.peek();
     Dialog::new(Size::Page, "Models", Hints::new())
         .header(Some(tab_strip(&app, Tab::Models)))
-        .fixed(rows)
+        .fixed(canvas::picker_rows(rows))
         .live_hints(move || {
             if count.auth.open.get() {
                 super::auth::hints(&count)
@@ -120,7 +120,10 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
     let (cols, term_rows) = paint.viewport.get();
     let span = (canvas::dialog_width(cols, f32::from(cols)) / canvas::cell().w) as usize;
     let wide = split(cols);
-    let visible = canvas::list_rows(term_rows, LIST_CHROME + u16::from(!wide));
+    let visible = canvas::list_rows(
+        canvas::picker_rows(term_rows),
+        LIST_CHROME + u16::from(!wide),
+    );
     let grid = Grid::new(span, wide);
     let rows = view.rows();
     let fixing = rows

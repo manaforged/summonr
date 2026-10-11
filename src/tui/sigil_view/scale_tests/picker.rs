@@ -232,3 +232,23 @@ fn alt_p_adds_the_selected_model_to_favorites() {
     });
     assert!(screen.contains("★ favorite fresh-model"), "{screen}");
 }
+
+#[test]
+fn the_model_picker_stays_a_dialog_in_a_tall_terminal() {
+    let models: Vec<(String, Option<u64>)> = (0..90)
+        .map(|index| (format!("model-{index:02}"), days_ago(20)))
+        .collect();
+    let rows: Vec<(&str, Option<u64>)> = models
+        .iter()
+        .map(|(id, release)| (id.as_str(), *release))
+        .collect();
+    let screen = frame_with(busy_info(), 165, 85, State::Idle, |app| open(app, &rows, 0));
+    let top = screen.iter().position(|line| line.contains('┏'));
+    let bottom = screen.iter().rposition(|line| line.contains('┗'));
+    let tall = top.zip(bottom).map(|(top, bottom)| bottom - top + 1);
+    assert!(
+        tall.is_some_and(|tall| tall <= 48),
+        "{tall:?}\n{}",
+        screen.join("\n")
+    );
+}

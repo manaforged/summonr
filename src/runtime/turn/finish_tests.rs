@@ -294,3 +294,30 @@ async fn a_check_file_changed_during_a_run_is_put_back() {
         "check = \"false\"\n"
     );
 }
+
+#[tokio::test]
+async fn a_steer_sent_during_the_last_round_reaches_the_model_in_that_turn() {
+    let steering = Arc::new(Steering::from(VecDeque::new()));
+    let late = Arc::clone(&steering);
+    let provider = Scripted::new([Reply::Text("first answer"), Reply::Text("steered answer")])
+        .on_complete(move |call| {
+            if call == 0 {
+                late.lock()
+                    .unwrap()
+                    .push_back(UserInput::from("also check the docs"));
+            }
+        });
+    let sent = provider.sent();
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let driver =
+        super::super::configure::open_driver(home.path(), workspace.path(), "m", "system").unwrap();
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    loop_.steer_with(steering);
+    let turn = loop_.turn("start").await.unwrap();
+    assert_eq!(turn.text, "steered answer");
+    assert!(format!("{:?}", turn.events).contains("first answer"));
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 2);
+    assert!(format!("{:?}", sent[1]).contains("also check the docs"));
+}

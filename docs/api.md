@@ -98,7 +98,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `session` | `id` |
 | `tool_call` | `id`, `name`, `arguments` (string) |
 | `tool_result` | `id`, `success`, `mutated`, `output`, optional `millis` |
-| `assistant` | `text` |
+| `assistant` | `text`; a turn that takes a steered message after a reply prints one per reply |
 | `delta` | `text` |
 | `reasoning` | `text` |
 | `note` | `text` |

@@ -56,16 +56,45 @@ impl ToolRegistry {
         )))
     }
 
-    fn describe_image(
+    pub(crate) async fn fold_unseen_images(&self, input: &mut UserInput) -> Result<()> {
+        if self.model_images || input.images.is_empty() {
+            return Ok(());
+        }
+        let count = input.images.len();
+        let note = match &self.vision {
+            Some(endpoint) => match self.narrate_images(endpoint, &input.images).await {
+                Ok(text) => format!(
+                    "[attached {count} image(s), described by {}: {}]",
+                    endpoint.name,
+                    text.trim()
+                ),
+                Err(error) => format!(
+                    "[attached {count} image(s); vision endpoint `{}` failed: {error}; the model cannot see them]",
+                    endpoint.name
+                ),
+            },
+            None => format!(
+                "[attached {count} image(s); the active model does not accept image input, so they were not sent]"
+            ),
+        };
+        input.text = if input.text.trim().is_empty() {
+            note
+        } else {
+            format!("{}\n\n{note}", input.text)
+        };
+        input.images.clear();
+        Ok(())
+    }
+
+    async fn narrate_images(
         &self,
         endpoint: &crate::endpoint::Endpoint,
-        media: &str,
-        bytes: &[u8],
+        images: &[Image],
     ) -> Result<String> {
         let client = crate::provider::Client::connect(endpoint)?;
         let messages = [Message::user(UserInput {
             text: "Describe this image so an agent that cannot see it can act on it. State what it shows, name any text it contains, and be concise.".to_string(),
-            images: vec![Image::encode(media, bytes)],
+            images: images.to_vec(),
             source: None,
         })];
         let request = CompletionRequest::new(
@@ -77,9 +106,19 @@ impl ToolRegistry {
             false,
             None,
         );
-        let reply = tokio::runtime::Handle::current()
-            .block_on(async { client.complete(&request).await })?;
+        let reply = client.complete(&request).await?;
         Ok(reply.content.unwrap_or_default())
+    }
+
+    fn describe_image(
+        &self,
+        endpoint: &crate::endpoint::Endpoint,
+        media: &str,
+        bytes: &[u8],
+    ) -> Result<String> {
+        let image = Image::encode(media, bytes);
+        tokio::runtime::Handle::current()
+            .block_on(self.narrate_images(endpoint, std::slice::from_ref(&image)))
     }
 }
 

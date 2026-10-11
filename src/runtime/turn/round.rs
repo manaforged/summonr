@@ -285,3 +285,7 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "round_tests.rs"]
+mod tests;

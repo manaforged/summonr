@@ -237,9 +237,10 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Turn> {
         let _report = self.herdr.turn();
         let mut events = Vec::new();
-        let input = self
+        let mut input = self
             .expand_mcp(input.into(), &mut events, &mut emit)
             .await?;
+        self.tools.fold_unseen_images(&mut input).await?;
         let messages = self.begin_turn(input)?;
         let mut pre = self.checkpoint();
         let mut usage = Usage::default();

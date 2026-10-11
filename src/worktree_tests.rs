@@ -19,6 +19,8 @@ fn repo() -> (tempfile::TempDir, std::path::PathBuf) {
     let primary = root.path().join("repo");
     std::fs::create_dir(&primary).unwrap();
     git(&primary, &["init", "-q", "-b", "main"]);
+    git(&primary, &["config", "user.name", "Dev"]);
+    git(&primary, &["config", "user.email", "dev@example.com"]);
     std::fs::create_dir(primary.join("target")).unwrap();
     std::fs::write(primary.join("target").join("marker"), "cache").unwrap();
     std::fs::write(primary.join("README"), "hi").unwrap();

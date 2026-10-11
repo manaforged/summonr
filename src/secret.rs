@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "macos", all(test, unix)))]
+use std::path::Path;
+use std::path::PathBuf;
 
 use base64::Engine as _;
 #[cfg(any(target_os = "macos", all(test, unix)))]

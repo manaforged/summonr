@@ -178,12 +178,12 @@ impl MidTurn<'_> {
             }
             Cmd::Dequeue => {
                 let mut pending = Vec::new();
-                self.deferred.retain(|command| match command {
-                    Cmd::Submit(input) => {
-                        pending.push(input.clone());
-                        false
-                    }
-                    _ => true,
+                self.deferred.retain(|command| {
+                    let Cmd::Submit(input) = command else {
+                        return true;
+                    };
+                    pending.push(input.clone());
+                    false
                 });
                 pending.extend(self.followups.drain(..));
                 if !pending.is_empty() {

@@ -4,6 +4,11 @@ use image::{DynamicImage, ImageFormat, ImageReader, imageops::FilterType};
 
 use super::{Error, Image, Result};
 
+const SENT_AS_IS: [(ImageFormat, &str); 2] = [
+    (ImageFormat::Png, "image/png"),
+    (ImageFormat::Jpeg, "image/jpeg"),
+];
+
 impl Image {
     pub(crate) fn fit(bytes: &[u8]) -> Result<Self> {
         let limits = crate::limits::limits();
@@ -12,11 +17,10 @@ impl Image {
         let (width, height) = ImageReader::with_format(Cursor::new(bytes), format)
             .into_dimensions()
             .map_err(unreadable)?;
-        let media = match format {
-            ImageFormat::Png => Some("image/png"),
-            ImageFormat::Jpeg => Some("image/jpeg"),
-            _ => None,
-        };
+        let media = SENT_AS_IS
+            .iter()
+            .find(|(sent, _)| *sent == format)
+            .map(|(_, media)| *media);
         if let Some(media) = media
             && width.max(height) <= side
             && bytes.len() <= limits.image_bytes

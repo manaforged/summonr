@@ -5,6 +5,7 @@ const MAIL_PER_ROUND: usize = 5;
 #[derive(Default)]
 struct RetryState {
     retried: bool,
+    continued: bool,
     repairs: usize,
     overflows: usize,
     usage: Usage,
@@ -173,6 +174,11 @@ impl<P: Provider> Loop<P> {
             self.repair_call(messages, events, emit)?;
             return Ok(true);
         }
+        if kind == Some(ProviderFailureKind::Empty) && !state.continued {
+            state.continued = true;
+            self.continue_empty(messages, events, emit)?;
+            return Ok(true);
+        }
         if kind == Some(ProviderFailureKind::ContextOverflow) {
             if state.overflows >= crate::limits::limits().repair_limit {
                 return Err(error);
@@ -273,6 +279,26 @@ impl<P: Provider> Loop<P> {
             emit,
             Event::Note {
                 text: "malformed tool-call JSON; requesting a repaired call".to_string(),
+            },
+        )
+    }
+
+    fn continue_empty(
+        &mut self,
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        let input = UserInput::from(
+            "[summon control: the previous reply was empty. Please continue the task.]",
+        );
+        self.session.steer(&input).map_err(super::session_err)?;
+        messages.push(Message::user(input));
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: "empty reply; asking the model to continue".to_string(),
             },
         )
     }

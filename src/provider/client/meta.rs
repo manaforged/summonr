@@ -223,6 +223,7 @@ impl Client {
                 | ProviderFailureKind::ContextOverflow
                 | ProviderFailureKind::MalformedToolCall
                 | ProviderFailureKind::Malformed
+                | ProviderFailureKind::Empty
                 | ProviderFailureKind::Http,
                 _,
             ) => return Error::Provider(failure),
@@ -268,6 +269,7 @@ impl Client {
                 | Kind::ContextOverflow
                 | Kind::MalformedToolCall
                 | Kind::Malformed
+                | Kind::Empty
                 | Kind::Http,
             )
             | None => State::Error,

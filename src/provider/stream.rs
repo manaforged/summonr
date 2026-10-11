@@ -190,6 +190,17 @@ fn cut(error: Error) -> Error {
 pub(crate) const PARTIAL_CAP: usize = 8 * 1024 * 1024;
 pub(crate) const ARGUMENT_CAP: usize = 1024 * 1024;
 
+pub(crate) fn append_arguments(arguments: &mut String, delta: &str) -> Result<()> {
+    arguments.push_str(delta);
+    if arguments.len() > ARGUMENT_CAP {
+        return Err(Error::provider(
+            ProviderFailureKind::Malformed,
+            format!("streamed tool arguments exceeded {ARGUMENT_CAP} bytes"),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) -> Result<()> {
     let index = part.index.unwrap_or(calls.len().saturating_sub(1));
     if index > calls.len() {
@@ -216,13 +227,7 @@ pub(crate) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) -> Result<(
             call.function.name = name;
         }
         if let Some(arguments) = function.arguments {
-            call.function.arguments.push_str(&arguments);
-            if call.function.arguments.len() > ARGUMENT_CAP {
-                return Err(Error::provider(
-                    ProviderFailureKind::Malformed,
-                    format!("streamed tool arguments exceeded {ARGUMENT_CAP} bytes"),
-                ));
-            }
+            append_arguments(&mut call.function.arguments, &arguments)?;
         }
     }
     Ok(())
@@ -241,7 +246,7 @@ pub(super) fn finish(mut message: AssistantMessage) -> Result<AssistantMessage> 
 pub(super) fn validate(text: &str, calls: &[ToolCall], stop: StopReason) -> Result<()> {
     if text.trim().is_empty() && calls.is_empty() && stop != StopReason::Length {
         return Err(Error::provider(
-            ProviderFailureKind::Malformed,
+            ProviderFailureKind::Empty,
             "stream produced neither text nor a tool call",
         ));
     }

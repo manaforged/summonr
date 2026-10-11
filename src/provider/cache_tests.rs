@@ -212,3 +212,43 @@ fn effort_reaches_cohere_and_groq_only_in_values_they_accept() {
     );
     assert_eq!(oss["reasoning_effort"], "high", "{oss}");
 }
+
+#[test]
+fn a_steer_after_a_tool_result_reaches_every_endpoint_after_that_result() {
+    let mut messages = tool_round();
+    messages.push(Message::user("also check the docs"));
+    let mut checked = 0;
+    for name in crate::endpoint::names().unwrap() {
+        let Ok(endpoint) = crate::endpoint::resolve(Some(&name), None, crate::Need::Config) else {
+            continue;
+        };
+        let request = CompletionRequest::new(
+            "s".to_string(),
+            endpoint.model.clone(),
+            &messages,
+            &[],
+            Some(16_000),
+            false,
+            None,
+        );
+        let Ok(body) =
+            Client::connect(&endpoint).and_then(|client| client.request_body(&request, false))
+        else {
+            continue;
+        };
+        let text = body.to_string();
+        let result = text.find("file text");
+        let steer = text.find("also check the docs");
+        assert!(
+            matches!((result, steer), (Some(result), Some(steer)) if result < steer),
+            "{name}: {text}"
+        );
+        assert_eq!(
+            text.matches("also check the docs").count(),
+            1,
+            "{name}: {text}"
+        );
+        checked += 1;
+    }
+    assert!(checked >= 20, "only {checked} endpoints built a request");
+}

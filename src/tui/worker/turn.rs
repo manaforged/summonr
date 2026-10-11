@@ -4,12 +4,14 @@ use std::sync::{Arc, PoisonError};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::settings::set_run_mode;
+use super::steer::{steer, steerable, take_steerable};
 use super::{Cmd, Msg, Worker};
 use crate::provider::UserInput;
 use crate::tools::Event;
 use crate::tui::Activity;
 
 const SENT_NOW: &str = "sent to the running turn";
+const NOTHING_TO_SEND: &str = "nothing to send now: shell and slash lines run after the turn";
 pub(in crate::tui) const QUEUED_LATER: &str = "queued for the next turn";
 const SETTINGS_LATER: &str = "settings apply when the current turn ends; esc cancels now";
 
@@ -163,15 +165,14 @@ impl MidTurn<'_> {
             }
             Cmd::Queue(input) | Cmd::Submit(input) => self.followups.push_back(input),
             Cmd::SteerQueued => {
-                let count = self
-                    .followups
-                    .iter()
-                    .take_while(|input| self.deferred.is_empty() && steerable(input))
-                    .count();
-                if count > 0 {
-                    steer(self.steering, self.followups.drain(..count), workspace);
-                    drop(self.ui.send(Msg::System(SENT_NOW.to_string())));
-                }
+                let now = take_steerable(self.deferred, self.followups);
+                let note = if now.is_empty() {
+                    NOTHING_TO_SEND
+                } else {
+                    steer(self.steering, now, workspace);
+                    SENT_NOW
+                };
+                drop(self.ui.send(Msg::System(note.to_string())));
             }
             Cmd::Dequeue => {
                 let mut pending = Vec::new();
@@ -364,30 +365,6 @@ pub(super) fn mail(ui: &UnboundedSender<Msg>, from: &str, to: &[String], text: &
         Err(error) => format!("mail failed: {error}"),
     };
     drop(ui.send(Msg::System(note)));
-}
-
-fn steerable(input: &UserInput) -> bool {
-    let line = input.text.trim_start();
-    input.images.is_empty()
-        && super::command::shell::shell_prefix(line).is_none()
-        && !line.starts_with('/')
-}
-
-fn steer(
-    steering: &crate::runtime::Steering,
-    inputs: impl IntoIterator<Item = UserInput>,
-    workspace: &std::path::Path,
-) {
-    let notes = crate::hunks::drain(workspace);
-    let mut queue = steering.lock().unwrap_or_else(PoisonError::into_inner);
-    queue.extend(inputs.into_iter().map(|mut input| {
-        input.source.get_or_insert_with(|| crate::provider::Source {
-            text: input.text.clone(),
-            images: input.images.len(),
-        });
-        input
-    }));
-    queue.extend(notes.map(UserInput::from));
 }
 
 #[cfg(test)]

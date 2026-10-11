@@ -108,33 +108,68 @@ fn steering_queue_count_keeps_messages_held_behind_a_deferred_command() {
     assert_eq!(last, Some(1));
 }
 
-#[test]
-fn steering_queue_keeps_held_messages_behind_a_deferred_command_on_blank_enter() {
-    let (workspace, ui, _inbox, steering) = mid_turn_fixture();
+fn blank_enter(
+    deferred: &mut std::collections::VecDeque<super::Cmd>,
+    followups: &mut std::collections::VecDeque<UserInput>,
+) -> (Vec<String>, Vec<super::Msg>) {
+    let (workspace, ui, mut inbox, steering) = mid_turn_fixture();
     let reader = super::super::reader::Reader::new(
         workspace.path().to_path_buf(),
         Default::default(),
         ui.clone(),
     );
-    let (mut deferred, mut followups, mut auto_reply) =
-        (Default::default(), Default::default(), false);
+    let mut auto_reply = false;
     let mut mid = super::MidTurn {
-        deferred: &mut deferred,
-        followups: &mut followups,
+        deferred,
+        followups,
         steering: &steering,
         auto_reply: &mut auto_reply,
         ui: &ui,
         reader: &reader,
     };
-    mid.later(super::Cmd::Command("/model opus".to_string()));
-    mid.queued(
-        super::Cmd::Steer(UserInput::from("continue after setup")),
-        workspace.path(),
-    );
     mid.queued(super::Cmd::SteerQueued, workspace.path());
-    assert!(steering.lock().unwrap().is_empty());
+    let steered = steering
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|input| input.text.clone())
+        .collect();
+    (
+        steered,
+        std::iter::from_fn(|| inbox.try_recv().ok()).collect(),
+    )
+}
+
+#[test]
+fn blank_enter_sends_plain_messages_held_behind_a_deferred_command_or_a_shell_line() {
+    let mut deferred = std::collections::VecDeque::from([
+        super::Cmd::Submit(UserInput::from("check the logs")),
+        super::Cmd::Command("/model opus".to_string()),
+    ]);
+    let mut followups = std::collections::VecDeque::from([
+        UserInput::from("!ls"),
+        UserInput::from("and the tests"),
+    ]);
+    let (steered, _) = blank_enter(&mut deferred, &mut followups);
+    assert_eq!(steered, ["check the logs", "and the tests"]);
+    assert!(matches!(
+        deferred.iter().collect::<Vec<_>>().as_slice(),
+        [super::Cmd::Command(line)] if line == "/model opus"
+    ));
     let waiting: Vec<&str> = followups.iter().map(|input| input.text.as_str()).collect();
-    assert_eq!(waiting, ["continue after setup"]);
+    assert_eq!(waiting, ["!ls"]);
+}
+
+#[test]
+fn blank_enter_says_why_when_only_shell_and_slash_lines_wait() {
+    let mut deferred = std::collections::VecDeque::new();
+    let mut followups = std::collections::VecDeque::from([UserInput::from("!ls")]);
+    let (steered, notes) = blank_enter(&mut deferred, &mut followups);
+    assert!(steered.is_empty());
+    assert!(notes.iter().any(|msg| matches!(
+        msg,
+        super::Msg::System(text) if text.contains("after the turn")
+    )));
 }
 
 #[tokio::test]

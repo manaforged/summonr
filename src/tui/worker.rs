@@ -25,6 +25,7 @@ mod settings;
 #[cfg(test)]
 mod startup_tests;
 mod state;
+mod steer;
 mod turn;
 pub(in crate::tui) use turn::QUEUED_LATER;
 

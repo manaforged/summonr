@@ -339,3 +339,35 @@ async fn todo_harness_note_never_shows_in_the_users_own_message() {
     assert!(exported.contains("ship the parser"), "{exported}");
     assert!(!exported.contains("Harness"), "{exported}");
 }
+
+#[tokio::test]
+async fn a_steer_sent_while_a_tool_runs_reaches_the_model_after_the_tool_result() {
+    let steering = Arc::new(Steering::default());
+    let late = Arc::clone(&steering);
+    let provider = Scripted::new([background("echo hi"), Reply::Text("steered answer")])
+        .on_complete(move |call| {
+            if call == 0 {
+                late.lock()
+                    .unwrap()
+                    .push_back(UserInput::from("also check the docs"));
+            }
+        });
+    let sent = provider.sent();
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let driver =
+        super::super::configure::open_driver(home.path(), workspace.path(), "m", "system").unwrap();
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    loop_.steer_with(steering);
+    let turn = loop_.turn("start").await.unwrap();
+    assert_eq!(turn.text, "steered answer");
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 2);
+    let second = format!("{:?}", sent[1]);
+    let result = second.find("tool_call_id: Some(\"t1\")");
+    let steer = second.find("also check the docs");
+    assert!(
+        matches!((result, steer), (Some(result), Some(steer)) if result < steer),
+        "{second}"
+    );
+}

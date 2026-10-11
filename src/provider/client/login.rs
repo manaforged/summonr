@@ -62,6 +62,7 @@ impl Client {
             headers,
             opencode: opts.opencode,
             keep_reasoning: false,
+            images: true,
             name: String::new(),
             prompt_cache_key: opts.prompt_cache_key,
             cache_ttl: crate::limits::limits().cache_ttl,

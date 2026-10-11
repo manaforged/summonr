@@ -90,3 +90,7 @@ pub(crate) mod scripted;
 #[cfg(test)]
 #[path = "provider/stall_tests.rs"]
 mod stall_tests;
+
+#[cfg(test)]
+#[path = "provider/image_tests.rs"]
+mod image_tests;

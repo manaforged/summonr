@@ -1,6 +1,7 @@
 use super::*;
 use leyline::http::StatusCode;
 
+mod admit;
 mod classify;
 mod encode;
 mod login;
@@ -46,6 +47,7 @@ pub struct Client {
     pub(super) headers: Vec<(String, String)>,
     pub(super) opencode: bool,
     pub(super) keep_reasoning: bool,
+    pub(super) images: bool,
     pub(super) name: String,
     pub(super) prompt_cache_key: bool,
     pub(super) cache_ttl: crate::endpoint::CacheTtl,
@@ -108,6 +110,7 @@ impl Client {
         )?;
         client.keep_reasoning =
             endpoint.keep_reasoning || wire::traits::traits(&endpoint.model).replay;
+        client.images = crate::catalog::accepts_images(endpoint);
         client.name.clone_from(&endpoint.name);
         client.cache_ttl = endpoint.cache_ttl;
         client.cache_header.clone_from(&endpoint.cache_header);
@@ -172,18 +175,23 @@ impl Client {
     ) -> Result<Body<'a>> {
         let reasoning = &self.reasoning;
         let cache = self.cache_ttl;
+        let admitted = self.admit(request.messages);
+        let call = &CompletionRequest {
+            messages: &admitted,
+            ..request.clone()
+        };
         let wired = match self.wire {
             Wire::Anthropic => {
-                <wire::anthropic::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
+                <wire::anthropic::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
             }
             Wire::Gemini => {
-                <wire::gemini::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
+                <wire::gemini::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
             }
             Wire::Responses => {
-                <wire::responses::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
+                <wire::responses::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
             }
             Wire::Completions => {
-                <wire::completions::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
+                <wire::completions::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
             }
             Wire::Decisions => {
                 return Err(Error::Config(
@@ -194,9 +202,9 @@ impl Client {
         let completions = self.wire == Wire::Completions;
         let messages = if completions {
             Some(serde_json::to_vec(&Messages {
-                list: request.messages,
+                list: call.messages,
                 keep_reasoning: self.keeps_reasoning(),
-                cached: request.traits.family == wire::traits::Family::Anthropic,
+                cached: call.traits.family == wire::traits::Family::Anthropic,
             })?)
         } else {
             wired.messages

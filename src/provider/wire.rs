@@ -21,6 +21,50 @@ pub(crate) fn headers(wire: crate::endpoint::Wire) -> &'static [(&'static str, &
     }
 }
 
+pub(crate) struct ImageBudget {
+    pub(crate) types: &'static [&'static str],
+    pub(crate) count: usize,
+    pub(crate) bytes: usize,
+}
+
+const PNG_JPEG: &[&str] = &["image/png", "image/jpeg"];
+
+pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
+    match wire {
+        crate::endpoint::Wire::Anthropic => ImageBudget {
+            types: &["image/png", "image/jpeg", "image/gif", "image/webp"],
+            count: 100,
+            bytes: 24_000_000,
+        },
+        crate::endpoint::Wire::Gemini => ImageBudget {
+            types: &[
+                "image/png",
+                "image/jpeg",
+                "image/webp",
+                "image/heic",
+                "image/heif",
+            ],
+            count: 3600,
+            bytes: 15_000_000,
+        },
+        crate::endpoint::Wire::Responses => ImageBudget {
+            types: &["image/png", "image/jpeg", "image/gif", "image/webp"],
+            count: 1500,
+            bytes: 256_000_000,
+        },
+        crate::endpoint::Wire::Completions => ImageBudget {
+            types: PNG_JPEG,
+            count: 100,
+            bytes: 20_000_000,
+        },
+        crate::endpoint::Wire::Decisions => ImageBudget {
+            types: PNG_JPEG,
+            count: 0,
+            bytes: 0,
+        },
+    }
+}
+
 pub(crate) fn arguments<'a>(name: &str, raw: &'a str) -> Result<&'a RawValue> {
     serde_json::from_str(raw).map_err(|error| {
         Error::provider(

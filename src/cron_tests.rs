@@ -5,7 +5,8 @@ use jiff::Zoned;
 use jiff::civil::DateTime;
 use jiff::tz::TimeZone;
 
-use super::install::{cron_line, crontab_without, plist, units};
+use super::install::crontab::{cron_line, crontab_without};
+use super::install::{domains, plist, units};
 use super::refuse;
 use super::runner::{Due, due};
 use super::schedule::parse;
@@ -229,4 +230,12 @@ fn the_systemd_timer_fires_each_minute() {
     assert!(service.contains("ExecStart=\"/bin/summonr\" cron tick"));
     assert!(service.contains("Environment=\"PATH=/usr/bin\""));
     assert!(timer.contains("OnCalendar=*-*-* *:*:00"));
+}
+
+#[test]
+fn launchd_domains_try_the_gui_session_first() {
+    assert_eq!(
+        domains(501),
+        ["gui/501".to_string(), "user/501".to_string()]
+    );
 }

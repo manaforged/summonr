@@ -3,6 +3,9 @@ use std::process::Command;
 
 use crate::error::{Error, Result};
 
+#[cfg(any(unix, test))]
+pub(crate) mod crontab;
+
 #[cfg(any(target_os = "macos", test))]
 const LABEL: &str = "dev.summonr.cron";
 #[cfg(any(target_os = "macos", test))]
@@ -15,10 +18,6 @@ const SYSTEMD_DIR: &str = ".config/systemd/user";
 const SERVICE_FILE: &str = "summonr-cron.service";
 #[cfg(target_os = "linux")]
 const TIMER_FILE: &str = "summonr-cron.timer";
-#[cfg(any(target_os = "linux", test))]
-const CRON_MARKER: &str = "# summonr-cron";
-#[cfg(target_os = "linux")]
-const CRONTAB_PATH: &str = "crontab";
 #[cfg(windows)]
 const TASK_NAME: &str = "summonr-cron";
 #[cfg(windows)]
@@ -89,26 +88,6 @@ pub(crate) fn units(
         "[Unit]\nDescription=summonr cron tick\n\n[Timer]\n{schedule}AccuracySec=1s\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n"
     );
     (service, timer)
-}
-
-#[cfg(any(target_os = "linux", test))]
-pub(crate) fn cron_line(exe: &Path, path: &str, home: Option<&str>) -> String {
-    let home = home
-        .map(|h| format!("{HOME_VAR}={} ", crate::shell::quote(h)))
-        .unwrap_or_default();
-    format!(
-        "* * * * * {PATH_VAR}={} {home}{} cron tick {CRON_MARKER}",
-        crate::shell::quote(path),
-        crate::shell::quote(&exe.display().to_string())
-    )
-}
-
-#[cfg(any(target_os = "linux", test))]
-pub(crate) fn crontab_without(text: &str) -> String {
-    text.lines()
-        .filter(|line| !line.trim_end().ends_with(CRON_MARKER))
-        .map(|line| format!("{line}\n"))
-        .collect()
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -185,21 +164,27 @@ fn plist_path() -> Result<PathBuf> {
     Ok(os_home()?.join(PLIST_DIR).join(PLIST_FILE))
 }
 
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn domains(uid: u32) -> [String; 2] {
+    [format!("gui/{uid}"), format!("user/{uid}")]
+}
+
 #[cfg(target_os = "macos")]
 #[expect(unsafe_code, reason = "std has no user-id query")]
-fn domain() -> String {
+fn uid() -> u32 {
     // SAFETY: getuid has no preconditions and cannot fail.
-    let uid = unsafe { libc::getuid() };
-    format!("gui/{uid}")
+    unsafe { libc::getuid() }
 }
 
 #[cfg(target_os = "macos")]
 fn bootout() {
-    drop(run(
-        "launchctl",
-        &["bootout", &format!("{}/{LABEL}", domain())],
-        None,
-    ));
+    for domain in domains(uid()) {
+        drop(run(
+            "launchctl",
+            &["bootout", &format!("{domain}/{LABEL}")],
+            None,
+        ));
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -218,20 +203,32 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<PathBuf> {
         plist(exe, every_secs, &log, &env_path(), home.as_deref()),
     )?;
     bootout();
-    run(
-        "launchctl",
-        &["bootstrap", &domain(), &file.display().to_string()],
-        None,
-    )?;
-    Ok(file)
+    let mut failures = Vec::new();
+    for domain in domains(uid()) {
+        match run(
+            "launchctl",
+            &["bootstrap", &domain, &file.display().to_string()],
+            None,
+        ) {
+            Ok(_) => return Ok(file),
+            Err(Error::Config(text)) => failures.push(text),
+            Err(error) => return Err(error),
+        }
+    }
+    std::fs::remove_file(&file)?;
+    crontab::install(exe, &env_path(), home.as_deref()).map_err(|error| match error {
+        Error::Config(text) => Error::Config(format!("{}; {text}", failures.join("; "))),
+        other => other,
+    })
 }
 
 #[cfg(target_os = "macos")]
 pub(crate) fn uninstall() -> Result<Option<PathBuf>> {
     let file = plist_path()?;
     bootout();
+    let tab = crontab::uninstall()?;
     if !file.exists() {
-        return Ok(None);
+        return Ok(tab);
     }
     std::fs::remove_file(&file)?;
     Ok(Some(file))
@@ -240,7 +237,7 @@ pub(crate) fn uninstall() -> Result<Option<PathBuf>> {
 #[cfg(target_os = "macos")]
 pub(crate) fn status() -> Result<Option<PathBuf>> {
     let file = plist_path()?;
-    Ok(file.exists().then_some(file))
+    Ok(file.exists().then_some(file).or_else(crontab::status))
 }
 
 #[cfg(target_os = "linux")]
@@ -252,17 +249,6 @@ fn unit_paths() -> Result<(PathBuf, PathBuf)> {
 #[cfg(target_os = "linux")]
 fn has_systemd() -> bool {
     run("systemctl", &["--user", "show-environment"], None).is_ok()
-}
-
-#[cfg(target_os = "linux")]
-fn crontab() -> String {
-    run("crontab", &["-l"], None).unwrap_or_default()
-}
-
-#[cfg(target_os = "linux")]
-fn has_cron_line(text: &str) -> bool {
-    text.lines()
-        .any(|line| line.trim_end().ends_with(CRON_MARKER))
 }
 
 #[cfg(target_os = "linux")]
@@ -284,11 +270,7 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<PathBuf> {
         )?;
         return Ok(timer_path);
     }
-    let mut text = crontab_without(&crontab());
-    text.push_str(&cron_line(exe, &env_path(), home.as_deref()));
-    text.push('\n');
-    run("crontab", &["-"], Some(&text))?;
-    Ok(PathBuf::from(CRONTAB_PATH))
+    crontab::install(exe, &env_path(), home.as_deref())
 }
 
 #[cfg(target_os = "linux")]
@@ -307,12 +289,7 @@ pub(crate) fn uninstall() -> Result<Option<PathBuf>> {
         drop(run("systemctl", &["--user", "daemon-reload"], None));
         return Ok(Some(timer_path));
     }
-    let text = crontab();
-    if !has_cron_line(&text) {
-        return Ok(None);
-    }
-    run("crontab", &["-"], Some(&crontab_without(&text)))?;
-    Ok(Some(PathBuf::from(CRONTAB_PATH)))
+    crontab::uninstall()
 }
 
 #[cfg(target_os = "linux")]
@@ -321,7 +298,7 @@ pub(crate) fn status() -> Result<Option<PathBuf>> {
     if timer_path.exists() {
         return Ok(Some(timer_path));
     }
-    Ok(has_cron_line(&crontab()).then(|| PathBuf::from(CRONTAB_PATH)))
+    Ok(crontab::status())
 }
 
 #[cfg(windows)]

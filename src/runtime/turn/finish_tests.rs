@@ -321,3 +321,21 @@ async fn a_steer_sent_during_the_last_round_reaches_the_model_in_that_turn() {
     assert_eq!(sent.len(), 2);
     assert!(format!("{:?}", sent[1]).contains("also check the docs"));
 }
+
+#[tokio::test]
+async fn todo_harness_note_never_shows_in_the_users_own_message() {
+    let mut run = session([Reply::Text("done")]);
+    run.loop_.set_seat(
+        workflow::Role::Review,
+        Scripted::new([Reply::Text(r#"{"pass": true}"#)]),
+        "r",
+        None,
+        None,
+    );
+    run.loop_.turn("ship the parser").await.unwrap();
+    let sent = format!("{:?}", run.sent.lock().unwrap()[0]);
+    assert!(sent.contains("Harness: a reviewer"), "{sent}");
+    let exported = crate::session::export(run.loop_.session.path()).unwrap();
+    assert!(exported.contains("ship the parser"), "{exported}");
+    assert!(!exported.contains("Harness"), "{exported}");
+}

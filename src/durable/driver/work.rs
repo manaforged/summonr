@@ -29,10 +29,14 @@ impl SessionDriver {
 
     pub(crate) fn apply_todos(
         &mut self,
-        items: &[(String, crate::durable::work::StepState)],
+        todos: Vec<crate::tools::Todo>,
     ) -> Result<(), DriverError> {
-        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
-        work.apply_todos(items);
+        let work = self
+            .work
+            .as_mut()
+            .filter(|work| !work.terminal())
+            .ok_or(DriverError::NoWork)?;
+        work.apply_todos(todos);
         self.checkpoint()?;
         Ok(())
     }
@@ -148,11 +152,15 @@ impl SessionDriver {
         commands: &[String],
     ) -> Result<(), DriverError> {
         if self.active().is_none() {
+            let todos = self
+                .work
+                .as_ref()
+                .map(|work| work.todos.clone())
+                .unwrap_or_default();
             self.set_work(objective, Policy::Single)?;
-            self.work
-                .as_mut()
-                .ok_or(DriverError::NoWork)?
-                .select(objective, commands)?;
+            let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+            work.select(objective, commands)?;
+            work.apply_todos(todos);
         }
         self.sync_turn_checks(commands)?;
         self.advance_turn_work(objective, commands)

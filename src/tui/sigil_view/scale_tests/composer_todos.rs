@@ -4,11 +4,29 @@ use crate::durable::work::{WorkKind, WorkPhase, WorkProgress};
 use crate::tools::Event;
 use crate::tui::Msg;
 
-fn todo(arguments: &str) -> Event {
-    Event::ToolCall {
-        id: "tasks".to_owned(),
-        name: "todo".to_owned(),
-        arguments: arguments.to_owned(),
+fn progress(ledger: Vec<String>, todos: Vec<crate::tools::Todo>) -> WorkProgress {
+    WorkProgress {
+        kind: WorkKind::Steps,
+        objective: "Polish the interface".to_owned(),
+        phase: WorkPhase::Execute,
+        checks_failed: false,
+        current: Some(1),
+        total: 2,
+        attempts: 1,
+        rounds: 1,
+        reason: None,
+        ledger,
+        todos,
+        touched: Vec::new(),
+    }
+}
+
+pub(super) fn todo(arguments: &str) -> Event {
+    Event::Work {
+        progress: progress(
+            Vec::new(),
+            crate::tools::todos_from_args(arguments).expect("todo arguments"),
+        ),
     }
 }
 
@@ -16,22 +34,13 @@ fn todo(arguments: &str) -> Event {
 fn a_work_plan_stays_above_the_composer_without_opening_a_pane() {
     let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
         app.update(Msg::Event(Event::Work {
-            progress: WorkProgress {
-                kind: WorkKind::Steps,
-                objective: "Polish the interface".to_owned(),
-                phase: WorkPhase::Execute,
-                checks_failed: false,
-                current: Some(1),
-                total: 2,
-                attempts: 1,
-                rounds: 1,
-                reason: None,
-                ledger: vec![
+            progress: progress(
+                vec![
                     "[/] Keep tasks inline".to_owned(),
                     "[ ] Verify changes".to_owned(),
                 ],
-                touched: Vec::new(),
-            },
+                Vec::new(),
+            ),
         }));
         assert_eq!(app.layout.peek().secondary, None);
     });
@@ -98,4 +107,41 @@ fn the_task_shortcut_still_opens_the_ledger_without_active_tasks() {
         });
         assert!(lines.join("\n").contains("Ledger"), "{}", lines.join("\n"));
     }
+}
+
+#[test]
+fn todo_rows_of_a_child_leave_the_strip_when_the_child_finishes() {
+    let child = "01a104ac000000000000000000001111".to_owned();
+    let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
+        app.update(Msg::Event(Event::Child {
+            id: child.clone(),
+            event: Box::new(todo(
+                r#"{"items":[{"text":"Check child result","status":"active"}]}"#,
+            )),
+        }));
+        app.update(Msg::Event(Event::Child {
+            id: child.clone(),
+            event: Box::new(Event::Assistant {
+                text: "checked".to_owned(),
+            }),
+        }));
+    });
+    let shown = lines.join("\n");
+    assert!(!shown.contains("Check child result"), "{shown}");
+}
+
+#[test]
+fn todo_list_from_work_survives_a_parent_tool_call() {
+    let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
+        app.update(Msg::Event(todo(
+            r#"{"items":[{"text":"Keep me","status":"active"}]}"#,
+        )));
+        app.update(Msg::Event(Event::ToolCall {
+            id: "t2".to_owned(),
+            name: "todo".to_owned(),
+            arguments: r#"{"items":[]}"#.to_owned(),
+        }));
+    });
+    let shown = lines.join("\n");
+    assert!(shown.contains("Keep me"), "{shown}");
 }

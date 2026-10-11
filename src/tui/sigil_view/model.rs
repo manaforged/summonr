@@ -61,6 +61,7 @@ pub(super) struct Model {
     pub(super) entries: Entries,
     committed: usize,
     pub(super) ledger: Vec<String>,
+    pub(super) child_todos: Vec<(String, Vec<String>)>,
     pub(super) todos_expanded: bool,
     pub(super) todos_offset: usize,
     pub(super) plan_current: Option<usize>,
@@ -151,6 +152,7 @@ impl Model {
             entries: Entries::default(),
             committed: 0,
             ledger: Vec::new(),
+            child_todos: Vec::new(),
             todos_expanded: false,
             todos_offset: 0,
             plan_current: None,
@@ -351,6 +353,7 @@ impl Model {
         self.entries.clear();
         self.tools.clear();
         self.ledger.clear();
+        self.child_todos.clear();
         self.todos_expanded = false;
         self.todos_offset = 0;
         self.plan_current = None;

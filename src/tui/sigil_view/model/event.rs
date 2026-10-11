@@ -45,6 +45,7 @@ impl Model {
         self.tools.clear();
         self.agents.clear();
         self.ledger.clear();
+        self.child_todos.clear();
         self.plan_current = None;
         self.plan_total = 0;
         self.plan_objective.clear();
@@ -71,6 +72,8 @@ impl Model {
                     .iter()
                     .filter(|line| itemized(line))
                     .cloned()
+                    .chain(progress.todos.iter().map(crate::tools::Todo::line))
+                    .chain(self.child_todos.iter().flat_map(|(_, lines)| lines.clone()))
                     .collect();
                 self.plan_current = progress.current;
                 self.plan_total = progress.total;
@@ -141,9 +144,6 @@ impl Model {
                     (Some(Builtin::Read), None | Some("file")) => Some((arguments.clone(), true)),
                     _ => None,
                 };
-                if Builtin::is(&name, Builtin::Todo) {
-                    self.apply_todos(&arguments, None);
-                }
                 self.start_tool(id, name, arguments);
                 if let Some((arguments, quiet)) = shown {
                     self.show_call(&arguments, quiet);
@@ -210,28 +210,24 @@ impl Model {
         }
     }
 
-    pub(in crate::tui::sigil_view) fn apply_todos(&mut self, arguments: &str, child: Option<&str>) {
-        let Ok(items) = crate::tools::todos_from_args(arguments) else {
-            return;
-        };
-        if items.is_empty() && child.is_none() {
-            self.ledger.clear();
-            return;
+    pub(in crate::tui::sigil_view) fn child_todos(
+        &mut self,
+        tag: &str,
+        todos: &[crate::tools::Todo],
+    ) {
+        let shown: usize = self.child_todos.iter().map(|(_, lines)| lines.len()).sum();
+        self.ledger
+            .truncate(self.ledger.len().saturating_sub(shown));
+        self.child_todos.retain(|(child, _)| child != tag);
+        if !todos.is_empty() {
+            let lines = todos
+                .iter()
+                .map(|todo| format!("  {} {tag} · {}", todo.mark(), todo.text))
+                .collect();
+            self.child_todos.push((tag.to_string(), lines));
         }
-        let lines: Vec<String> = items
-            .iter()
-            .map(|todo| match child {
-                Some(tag) => format!("  {} {tag} · {}", todo.mark(), todo.text),
-                None => todo.ledger_line(),
-            })
-            .collect();
-        if let Some(tag) = child {
-            let needle = format!(" {tag} · ");
-            self.ledger.retain(|line| !line.contains(&needle));
-            self.ledger.extend(lines);
-        } else {
-            self.ledger = lines;
-        }
+        self.ledger
+            .extend(self.child_todos.iter().flat_map(|(_, lines)| lines.clone()));
     }
 
     pub(in crate::tui::sigil_view) fn record_usage(

@@ -123,6 +123,8 @@ pub struct WorkProgress {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ledger: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub todos: Vec<crate::tools::Todo>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub touched: Vec<String>,
 }
 

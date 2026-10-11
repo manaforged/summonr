@@ -3,14 +3,10 @@ use crate::tools::Builtin;
 
 impl Model {
     pub(in crate::tui::sigil_view) fn apply_child(&mut self, id: &str, event: Event) {
-        if let Event::ToolCall {
-            name, arguments, ..
-        } = &event
-            && Builtin::is(name, Builtin::Todo)
-        {
-            self.apply_todos(arguments, Some(&crate::child::tag(id)));
-        }
         let tag = crate::child::tag(id);
+        if let Event::Work { progress } = &event {
+            self.child_todos(&tag, &progress.todos);
+        }
         match &event {
             Event::Spawned {
                 assignment,
@@ -95,7 +91,7 @@ impl Model {
         let index = match self.agents.iter().position(|agent| agent.id == tag) {
             Some(index) => index,
             None => {
-                self.agents.push(Agent::placeholder(tag));
+                self.agents.push(Agent::placeholder(tag.clone()));
                 self.agents.len() - 1
             }
         };
@@ -123,6 +119,9 @@ impl Model {
                 expanded: false,
                 patch: None,
             });
+        }
+        if finished {
+            self.child_todos(&tag, &[]);
         }
     }
 }

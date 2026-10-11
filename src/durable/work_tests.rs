@@ -1,30 +1,64 @@
 use super::{Candidate, Decision, Policy, StepState, Work};
 use crate::durable::tree::snapshot;
+use crate::tools::{Todo, TodoStatus};
+
+fn todo(text: &str, status: TodoStatus) -> Todo {
+    Todo {
+        text: text.to_string(),
+        status,
+    }
+}
 
 #[test]
-fn a_single_turn_todo_list_survives_work_progress() {
+fn todo_list_never_switches_off_the_completion_check() {
     let mut work = Work::new("ship", Policy::Single);
-    work.apply_todos(&[
-        ("decode the image".to_string(), StepState::Active),
-        ("write the overlay".to_string(), StepState::Pending),
+    work.select("ship", &["cargo test".to_string()]).unwrap();
+    work.apply_todos(vec![
+        todo("decode the image", TodoStatus::Done),
+        todo("write the overlay", TodoStatus::Active),
     ]);
-    let progress = work.progress();
-    assert!(
-        progress
-            .ledger
-            .iter()
-            .any(|line| line.contains("[/]") && line.contains("decode the image")),
-        "{:?}",
-        progress.ledger
-    );
-    assert!(
-        progress
-            .ledger
-            .iter()
-            .any(|line| line.contains("[ ]") && line.contains("write the overlay")),
-        "{:?}",
-        progress.ledger
-    );
+    assert_eq!(work.policy, Policy::Single);
+    assert_eq!(work.completion_checks().len(), 1);
+    assert_eq!(work.progress().todos.len(), 2);
+}
+
+#[test]
+fn todo_marked_done_cannot_finish_a_steps_plan() {
+    let dir = tempfile::tempdir().unwrap();
+    let shot = snapshot(dir.path(), None, None).unwrap();
+    let mut work = Work::new("plan", Policy::Steps);
+    work.select(
+        "## Steps\n1. first\n2. second\n",
+        &["cargo test".to_string()],
+    )
+    .unwrap();
+    work.execute(shot.clone()).unwrap();
+    work.apply_todos(vec![
+        todo("first", TodoStatus::Done),
+        todo("second", TodoStatus::Done),
+    ]);
+    work.verify(shot.clone()).unwrap();
+    work.verdict(true, Decision::Automatic).unwrap();
+    assert!(!work.terminal());
+    assert_eq!(work.steps[1].state, StepState::Active);
+    assert_eq!(work.completion_checks().len(), 1);
+}
+
+#[test]
+fn todo_marked_done_never_overrides_the_goal_judge() {
+    let dir = tempfile::tempdir().unwrap();
+    let shot = snapshot(dir.path(), None, None).unwrap();
+    let mut work = Work::new("make the check pass", Policy::Goal {});
+    work.plan = Some("plan".to_string());
+    work.execute(shot.clone()).unwrap();
+    work.apply_todos(vec![todo("everything", TodoStatus::Done)]);
+    work.verify(shot.clone()).unwrap();
+    work.verdict(
+        true,
+        Decision::GoalContinue("tests still missing".to_string()),
+    )
+    .unwrap();
+    assert!(!work.terminal());
 }
 
 #[test]

@@ -233,6 +233,12 @@ impl<P: Provider> Loop<P> {
         self.prepare_work(&input.text, &commands)?;
         let harness = self.harness_note(&self.work_progress()?);
         if !self.note_sent(&harness) {
+            if input.source.is_none() {
+                input.source = Some(crate::provider::Source {
+                    text: input.text.clone(),
+                    images: input.images.len(),
+                });
+            }
             input.text = decorate(&harness, &input.text);
         }
         self.session

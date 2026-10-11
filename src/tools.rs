@@ -30,8 +30,10 @@ mod workspace;
 
 use args::{nonempty_path, object_bool, object_string, object_usize};
 pub(crate) use args::{parse_args, tool};
+#[cfg(test)]
+pub(crate) use todo::TodoStatus;
 use todo::parse_todo;
-pub(crate) use todo::{TodoStatus, todos_from_args};
+pub(crate) use todo::{Todo, todos_from_args};
 pub(crate) use workspace::search::index::{ENTRY as INDEX_ENTRY, build as build_file_index};
 
 pub(crate) fn blocking<T>(work: impl FnOnce() -> T) -> T {

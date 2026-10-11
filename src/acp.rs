@@ -227,6 +227,14 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
             "status": "in_progress",
             "content": [{"type": "content", "content": {"type": "text", "text": crate::tools::progress_text(*progress, *total, message.as_deref())}}],
         }),
+        Event::Work { progress } => json!({
+            "sessionUpdate": "plan",
+            "entries": progress
+                .todos
+                .iter()
+                .map(|todo| json!({"content": todo.text, "priority": "medium", "status": todo.status.acp()}))
+                .collect::<Vec<_>>(),
+        }),
         Event::Note { text } | Event::Aborted { reason: text, .. } => json!({
             "sessionUpdate": "agent_thought_chunk",
             "content": {"type": "text", "text": text},
@@ -242,7 +250,6 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
         | Event::Elicit { .. }
         | Event::Verify { .. }
         | Event::Receipt { .. }
-        | Event::Work { .. }
         | Event::Spawned { .. }
         | Event::Session { .. }
         | Event::Child { .. } => return,

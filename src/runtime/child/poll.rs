@@ -227,15 +227,29 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Vec<ChildRecord>> {
         let mut records = Vec::new();
         let ids: Vec<String> = self.spawned.keys().cloned().collect();
-        for id in ids {
-            let Some(spawned) = self.spawned.remove(&id) else {
+        for id in &ids {
+            let Some(spawned) = self.spawned.remove(id) else {
                 continue;
             };
             let done = killed(spawned, &self.workspace, reason).await?;
             records.push(done.record.clone());
             usage.add(&self.task_settle(done)?.usage);
         }
+        self.discard_events(&ids);
         Ok(records)
+    }
+
+    pub(in crate::runtime) fn discard_events(&mut self, ids: &[String]) {
+        let ids: std::collections::HashSet<&String> = ids.iter().collect();
+        let mut kept = Vec::new();
+        while let Ok(event) = self.events.1.try_recv() {
+            if !matches!(&event, Event::Child { id, .. } if ids.contains(id)) {
+                kept.push(event);
+            }
+        }
+        for event in kept {
+            drop(self.events.0.send(event));
+        }
     }
 
     pub(in crate::runtime) fn drain(

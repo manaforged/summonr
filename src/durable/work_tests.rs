@@ -167,3 +167,24 @@ fn a_cache_file_is_never_a_touched_path() {
     assert_eq!(paths, vec!["calc.py".to_string()]);
     assert_eq!(work.touched.iter().collect::<Vec<_>>(), vec!["calc.py"]);
 }
+
+#[test]
+fn an_old_checkpoint_with_a_model_made_step_still_runs_the_saved_checks() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut work = Work::new("plan", Policy::Steps);
+    work.select("## Steps\n1. first\n", &["false".to_string()])
+        .unwrap();
+    let path = dir.path().join("work.json");
+    let mut saved = serde_json::to_value(&work).unwrap();
+    saved["steps"][0]["title"] = "Investigate".into();
+    saved["steps"][0]["checks"] = serde_json::json!([]);
+    saved["active"] = 0.into();
+    std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let loaded = Work::load(&path).unwrap().unwrap();
+    let commands: Vec<String> = loaded
+        .completion_checks()
+        .into_iter()
+        .map(|check| check.command)
+        .collect();
+    assert_eq!(commands, ["false"]);
+}

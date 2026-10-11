@@ -133,13 +133,16 @@ impl<P: Provider> Loop<P> {
     }
 
     fn forget_children(&mut self, scope: crate::child::ChildScope) {
-        self.spawned.retain(|_, spawned| {
+        let mut ids = Vec::new();
+        self.spawned.retain(|id, spawned| {
             let forget = scope == crate::child::ChildScope::All || !spawned.background();
             if forget {
                 spawned.abort();
+                ids.push(id.clone());
             }
             !forget
         });
+        self.discard_events(&ids);
     }
 
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {

@@ -206,3 +206,36 @@ fn an_assignment_names_the_childs_checkout_not_the_parent() {
         "In the current workspace (/w/app-deltas/1), fix /w/app-deltas/1/src/a.rs; leave /w/app-old alone"
     );
 }
+
+#[tokio::test]
+async fn a_failed_turn_drops_the_updates_its_background_children_left_queued() {
+    let (mut parent, _dirs) = parent(vec![Reply::Text("ok"), Reply::Text("child done")]);
+    parent.turn("hi").await.unwrap();
+    let args = serde_json::from_value(serde_json::json!({
+        "assignment": "find the config loader",
+        "access": "research",
+        "background": true,
+    }))
+    .unwrap();
+    let budget = parent.task_budget(1).unwrap();
+    parent.task_spawn(args, &budget).unwrap();
+    let id = parent.spawned.keys().next().cloned().unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    parent
+        .abort_with(
+            &crate::tools::Abort {
+                code: crate::tools::AbortCode::Error,
+                reason: "provider failed".to_string(),
+            },
+            |_| {},
+        )
+        .unwrap();
+    let late: Vec<_> = parent
+        .child_events()
+        .into_iter()
+        .filter(
+            |event| matches!(event, crate::tools::Event::Child { id: child, .. } if *child == id),
+        )
+        .collect();
+    assert!(late.is_empty(), "{late:?}");
+}

@@ -295,12 +295,38 @@ impl Work {
         store::write(path, serde_json::to_vec(self)?)
     }
 
+    fn repair_steps(&mut self) {
+        if self.policy != Policy::Steps || self.checks.is_empty() {
+            return;
+        }
+        let planned = self
+            .plan
+            .as_deref()
+            .and_then(|plan| crate::steps::parse(plan).ok())
+            .is_some_and(|parsed| {
+                parsed
+                    .iter()
+                    .map(|step| step.text.as_str())
+                    .eq(self.steps.iter().map(|step| step.title.as_str()))
+            });
+        if planned {
+            return;
+        }
+        let all: Vec<usize> = (0..self.checks.len()).collect();
+        for step in &mut self.steps {
+            if step.checks.is_empty() {
+                step.checks = all.clone();
+            }
+        }
+    }
+
     pub(crate) fn load(path: &Path) -> io::Result<Option<Self>> {
         let mut work: Self = match std::fs::read(path) {
             Ok(bytes) => serde_json::from_slice(&bytes)?,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
         };
+        work.repair_steps();
         let trees: Trees<Snapshot> = match std::fs::read(path.with_extension(TREES)) {
             Ok(bytes) => match serde_json::from_slice(&bytes) {
                 Ok(trees) => trees,

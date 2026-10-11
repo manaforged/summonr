@@ -289,7 +289,12 @@ impl SessionDriver {
         {
             self.checkpoint()?;
         }
-        self.interrupt_children(reason)?;
+        let scope = if abort.code == crate::tools::AbortCode::Cancelled {
+            crate::child::ChildScope::Foreground
+        } else {
+            crate::child::ChildScope::All
+        };
+        self.interrupt_children(reason, scope)?;
         Ok(())
     }
 

@@ -59,12 +59,17 @@ impl SessionDriver {
         self.state.children.get(&id).cloned()
     }
 
-    pub(crate) fn interrupt_children(&mut self, reason: &str) -> Result<(), DriverError> {
+    pub(crate) fn interrupt_children(
+        &mut self,
+        reason: &str,
+        scope: crate::child::ChildScope,
+    ) -> Result<(), DriverError> {
         let records = self
             .state
             .children
             .values()
             .filter(|child| !child.state.terminal())
+            .filter(|child| scope == crate::child::ChildScope::All || !child.background)
             .map(|child| child.interrupt(reason))
             .collect::<Vec<_>>();
         for record in records {

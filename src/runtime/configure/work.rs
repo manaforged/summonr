@@ -65,7 +65,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn adopt(&mut self, session: SessionDriver, replay: crate::session::Replay) {
-        self.forget_children();
+        self.forget_children(crate::child::ChildScope::All);
         self.session = session;
         self.tools.set_session(&self.session.id().to_string());
         self.spent_tokens = replay.spent_tokens;
@@ -118,9 +118,14 @@ impl<P: Provider> Loop<P> {
         abort: &crate::tools::Abort,
         mut emit: impl FnMut(&Event),
     ) -> Result<()> {
-        self.forget_children();
+        let scope = if abort.code == crate::tools::AbortCode::Cancelled {
+            crate::child::ChildScope::Foreground
+        } else {
+            crate::child::ChildScope::All
+        };
+        self.forget_children(scope);
         self.session
-            .interrupt_children(&abort.reason)
+            .interrupt_children(&abort.reason, scope)
             .map_err(super::session_err)?;
         self.session
             .abort(abort, None)
@@ -135,11 +140,14 @@ impl<P: Provider> Loop<P> {
         self.session.usage().1
     }
 
-    fn forget_children(&mut self) {
-        for spawned in self.spawned.values() {
-            spawned.abort();
-        }
-        self.spawned.clear();
+    fn forget_children(&mut self, scope: crate::child::ChildScope) {
+        self.spawned.retain(|_, spawned| {
+            let forget = scope == crate::child::ChildScope::All || !spawned.background();
+            if forget {
+                spawned.abort();
+            }
+            !forget
+        });
     }
 
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {

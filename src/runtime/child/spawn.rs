@@ -105,6 +105,7 @@ impl<P: Provider> Loop<P> {
             workspace,
             depth: 1,
             access: args.access,
+            background: args.background,
             call: Some(args.call.clone()),
             state: ChildState::Running,
         };

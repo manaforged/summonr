@@ -159,6 +159,7 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
         workspace: "/w/repo-deltas/abc".into(),
         depth: 1,
         access: crate::child::Access::Implement,
+        background: false,
         call: Some("t9".to_owned()),
         state: ChildState::Completed(ChildResult {
             text: "Parser fixed; 4 tests pass.".to_owned(),

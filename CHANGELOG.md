@@ -89,6 +89,7 @@ First stable release.
 
 ### Fixed
 
+- Cancelling a turn no longer kills background children. A `task` call made with `background: true` keeps running when the turn is cancelled, stays `running` in the journal, and a later poll collects its result; stopping the session or `kill: true` still stops it, and children spawned without `background` still stop with their turn.
 - A `tags` search hit on a line over 500 bytes, or inside a multiline match, now carries the tag `edit` accepts, and searching overlapping paths with `depth` no longer drops the deeper path.
 - Secret values no longer reach the model in any session. A tool result shows `[secret]` in place of each secret value from the workspace's `.env` files, `.npmrc`, `.pypirc`, `~/.aws/credentials`, `~/.netrc`, `~/.git-credentials`, `~/.config/gh/hosts.yml`, and `~/.docker/config.json`, and in place of any PEM private key, whether it came from `grep -r`, `cat`, `read`, or any other command. Commands still read the real files, so test suites that load `.env` keep working. `search` never reads a protected file, even uncontained, and `credentials.*`, `.git-credentials`, `.pypirc`, `~/.docker`, `~/.kube`, `~/.config/gh`, and `~/.config/gcloud` are protected.
 - In the terminal, only the `✻ thinking` header folds expanded reasoning, so a drag over the reasoning text selects and copies it.

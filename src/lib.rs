@@ -64,6 +64,7 @@ pub fn stop_children() {
     tools::command::stop_groups();
 }
 
+pub mod cron;
 pub mod mail;
 pub mod prefs;
 pub mod splash;

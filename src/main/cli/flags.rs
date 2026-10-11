@@ -108,7 +108,7 @@ pub(super) const VALUES: [Valued; 11] = [
     },
 ];
 
-pub(super) const COMMANDS: [(&str, Run); 24] = [
+pub(super) const COMMANDS: [(&str, Run); 25] = [
     ("endpoints", |args, _| on(&mut args.list)),
     ("sessions", |args, _| on(&mut args.list_sessions)),
     ("resume", Args::resume),
@@ -137,6 +137,9 @@ pub(super) const COMMANDS: [(&str, Run); 24] = [
     }),
     ("mail", |args, input| {
         some(&mut args.mail, input.by_ref().collect())
+    }),
+    ("cron", |args, input| {
+        some(&mut args.cron, input.by_ref().collect())
     }),
     ("tool", |args, input| {
         some(&mut args.tool, input.by_ref().collect())

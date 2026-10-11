@@ -105,4 +105,9 @@ table! {
     read_line_limit: usize,
     paste_fold_lines: usize,
     paste_fold_chars: usize,
+    cron_tick_secs: u64,
+    cron_budget_secs: u64,
+    cron_runs_kept: usize,
+    cron_catchup_secs: u64,
+    cron_fail_pause: u32,
 }

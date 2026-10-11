@@ -30,6 +30,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
 | `summonr tool NAME [JSON]` | Run one tool in the current directory and print its result; a module tool needs its module on. Exit 0 on success, 1 on a tool error |
 | `summonr mail [agents\|send\|inbox\|board]` | Read and write peer mail between agent sessions on this machine |
+| `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|install\|uninstall\|status` | Run a prompt or goal on a schedule; `install` adds the once-a-minute OS tick |
 | `summonr classify ...` | Ask typed questions of a decisions endpoint |
 | `summonr doctor [--logs]` | List per-run JSONL logs, or report incomplete and crashed runs |
 | `summonr --help`, `summonr --version` | Print help, or the version and revision |
@@ -67,6 +68,7 @@ echo $?
 | Review what a turn changed | `summonr diff --turn last --json` |
 | Drive a session from an editor | `summonr acp` |
 | Classify text | `summonr classify --set NAME [STATE]`, `--questions JSON\|@FILE`, `--noul QUESTION`, `--patch`, `--review --session ID`, `--eval FILE`, `--gate NUMBER` |
+| Run on a schedule | `summonr cron add NAME --cron "0 3 * * *" --goal TEXT`, then `summonr cron install` once |
 | Save a transcript | `summonr export [ID\|NAME]`; add `--digest` for the condensed form |
 
 ## Exit codes
@@ -130,6 +132,10 @@ With `--json`, a run that fails with exit code 1 or ends on a signal prints a la
 
 When a goal or steps run stops short, the `aborted` event is not the last line: summonr runs the exit check when the work is not already finished, then prints its `verify` events and a final `work` event. Read the exit code to learn the result.
 
+### `summonr cron list --json`
+
+One JSON object per job and line: `name`, `schedule`, `next` (RFC 3339 time or null), `last` (the last run's outcome or null), `paused`. An outcome is `running`, `done` (exit 0), `check_failed` (exit 2), `unfinished` (exit 3), `error` (any other exit), `overlap` (the previous run was still going), or `expired` (missed by more than the catch-up window).
+
 ### `summonr diff --json`
 
 One object: `{"base": string, "files": [{"path", "added", "removed", "new"}]}`. With `--turn`, `base` is `"turn N"` and `session` holds the session id.
@@ -165,6 +171,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail`, `search`, and `browser` are off by default.
 - The advertised tool list freezes after the first model round. A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, a table `{ command = "...", dialect = "claude" }`, or a list of either, run in order. Each hook reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. A hook with `dialect = "claude"`, and every plugin hook, follows the Claude Code rules instead (see the reference).
+- A cron run sets `SUMMONR_CRON` to the job name. Inside it, `summonr cron add`, `edit`, and `remove` exit 1.
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
 - The sandbox is off by default. Without `--sandbox`, an unattended `--goal` run can read and run anything your account can, including files outside the workspace; run CI and other unattended goals with `--sandbox`. In a noninteractive run, sandbox escape, network grants, and writes outside the workspace are denied; `--no-net` stays in force after a command failure. Auto mode asks before it grants an extra write root.
 - `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root are read only when the workspace is trusted. A home `SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it.

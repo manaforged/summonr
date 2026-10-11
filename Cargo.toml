@@ -72,6 +72,7 @@ notify = { version = "8", default-features = false, features = ["macos_fsevent"]
 chacha20poly1305 = "0.10"
 libc = "0.2"
 dunce = "1.0"
+jiff = "0.2.38"
 
 [patch.crates-io]
 crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "ee9ebdbb0d0e7d49e06a8adfcaa11c3679dca7da" }

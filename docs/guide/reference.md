@@ -234,6 +234,7 @@ cache_ttl = "5m"
 | `SUMMONR_KEEP_REASONING` | When set, `SUMMONR_BASE_URL` keeps reasoning as `keep_reasoning = true` does. |
 | `SUMMONR_SYSTEM_PROMPT` | Replace the whole system prompt. `SYSTEM.md`, `AGENTS.md`, `CLAUDE.md`, and skills are not added. |
 | `SUMMONR_MODELS_URL` | URL of the model catalog. |
+| `SUMMONR_CRON` | Set by summonr to the job name in a cron run. `summonr cron add`, `edit`, and `remove` refuse while it is set. |
 | `SUMMONR_CAPTURE_DIR` | Write raw provider request and stream frames as JSON lines to this directory. |
 | `SUMMONR_VERSION` | Installer: release tag to install. Default `latest`. |
 | `SUMMONR_INSTALL_DIR` | Installer: install directory. |
@@ -569,6 +570,25 @@ summonr mail board [get <key>|set <key> <text>]
 ```
 
 A foreign agent takes part by picking an id: it reads `summonr mail inbox <id>`, and anyone can write to it with `summonr mail send <id> <text>`. Its messages arrive from `cli` unless it writes its own inbox name into replies. `inbox <id> --clear` prints the mail and empties that inbox. It refuses the inbox of a live summonr session, because that session keeps its own read position. A lock file next to each inbox makes a send, a read, and a clear wait for each other, so no message is lost between them.
+
+## Cron
+
+`summonr cron` runs a prompt or a goal on a schedule, headless, in the directory you add it from:
+
+```sh
+summonr cron add nightly --cron "0 3 * * 1-5" --goal "make cargo test pass"
+summonr cron add digest --every 6h -p "summarize what changed in git log since yesterday" --mail summonr-1
+summonr cron add once --at "2026-10-12 09:00" -p "check the release notes"
+summonr cron install
+```
+
+A schedule is five cron fields (minute, hour, day, month, weekday, with `*`, lists, ranges, steps, and `jan`-`dec` and `sun`-`sat` names; `0` and `7` are Sunday), `@hourly`, `@daily`, `@weekly`, `@monthly`, or `@yearly`, `--every` with `m`, `h`, or `d`, or one `--at` time. When both day and weekday are set, either one matches. Times are local, or in `--tz ZONE`. A time that daylight saving skips does not fire that day, and a repeated time fires once. `--every 1d` fires at midnight and `--every 2h` on even hours. An `--at` job pauses itself after it runs.
+
+`summonr cron install` asks the OS to run `summonr cron tick` once a minute: a launch agent on macOS, a systemd user timer on Linux (a crontab line when systemd has no user session), and a scheduled task on Windows. It records your `PATH` and `SUMMONR_HOME`, so store keys with `summonr login` rather than in your shell. `uninstall` removes it, and `status` says whether it is installed and when the next job fires. No summonr process stays running.
+
+Each due job starts as its own process with `--json` and a time budget: `--max-secs`, or `cron_budget_secs` (30 minutes). `--endpoint`, `--model`, `--max-tokens`, and `--worktree` pass through. A `--goal` job is done only when the workspace check passes. A job still running when its next time comes is skipped, and that skip is logged. When the machine was asleep, the latest missed time runs once; times older than `cron_catchup_secs` (7 days) are logged as expired. After `cron_fail_pause` failures in a row (3), the job pauses itself; `summonr cron resume NAME` restarts it.
+
+`--notify failure` (the default) shows a desktop notification when a run fails, `always` after every run, and `never` stays quiet. `--mail SESSION` also sends the result to that session's inbox. `summonr cron log NAME` lists past runs with their outcome and shows the last run's output; the run itself is a job under `.summonr/jobs` in the job's directory. `summonr cron run NAME` runs a job now. Jobs live in `~/.summonr/cron/jobs.toml`. The model manages jobs with the same commands through `run_command`, except inside a cron run, which cannot add, edit, or remove jobs.
 
 ## Limits
 

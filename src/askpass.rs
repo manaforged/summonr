@@ -96,8 +96,8 @@ pub fn start(send: impl Fn(Request) + Send + 'static) -> Result<()> {
     crate::durable::store::scratch(
         &helper,
         format!(
-            "#!/bin/sh\nexec '{}' askpass \"$@\"\n",
-            exe.replace('\'', "'\\''")
+            "#!/bin/sh\nexec {} askpass \"$@\"\n",
+            crate::shell::quote(&exe)
         ),
     )?;
     set_permissions(&helper, Permissions::from_mode(0o700))?;
@@ -106,8 +106,8 @@ pub fn start(send: impl Fn(Request) + Send + 'static) -> Result<()> {
         crate::durable::store::scratch(
             &shim,
             format!(
-                "#!/bin/sh\nexec '{}' -A \"$@\"\n",
-                sudo.display().to_string().replace('\'', "'\\''")
+                "#!/bin/sh\nexec {} -A \"$@\"\n",
+                crate::shell::quote(&sudo.display().to_string())
             ),
         )?;
         set_permissions(&shim, Permissions::from_mode(0o700))?;

@@ -55,11 +55,16 @@ pub(crate) fn arguments(script: &str, cwd: &Path) -> Vec<String> {
     ]
 }
 
+#[cfg(any(unix, test))]
+pub(crate) fn quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
 #[cfg(unix)]
 pub(crate) fn wrap(command: &str, exit: &Path, _: &Path) -> String {
-    let exit = exit.to_string_lossy().replace('\'', "'\\''");
+    let exit = quote(&exit.to_string_lossy());
     format!(
-        "trap '' HUP\n(\n{command}\nsummonr_status=$?\nwait\nexit \"$summonr_status\"\n)\ncode=$?\nprintf '%s\\n' \"$code\" > '{exit}'\nexit \"$code\""
+        "trap '' HUP\n(\n{command}\nsummonr_status=$?\nwait\nexit \"$summonr_status\"\n)\ncode=$?\nprintf '%s\\n' \"$code\" > {exit}\nexit \"$code\""
     )
 }
 

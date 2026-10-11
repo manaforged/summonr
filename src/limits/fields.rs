@@ -34,6 +34,7 @@ table! {
     stream_total_secs: u64,
     connect_secs: u64,
     compact_percent: usize,
+    elide_percent: usize,
     compact_chars: usize,
     summary_retry_rounds: usize,
     job_wait_secs: u64,

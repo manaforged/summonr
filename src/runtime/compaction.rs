@@ -3,33 +3,48 @@ use super::*;
 use crate::workflow;
 
 pub(super) fn force_compact(history: &[Message]) -> Vec<(usize, Message)> {
-    let live: Vec<usize> = history
-        .iter()
-        .enumerate()
-        .filter(|(_, message)| {
-            message.role == Role::Tool && !message.content.starts_with("[cleared")
-        })
-        .map(|(index, _)| index)
-        .collect();
+    let live = live_outputs(history, history.len());
     let target = live
         .iter()
         .map(|index| history[*index].content.len())
         .sum::<usize>()
         .div_ceil(2);
     let keep = live.len().saturating_sub(KEEP_TAIL).max(1).min(live.len());
+    clear_outputs(history, &live[..keep], target).0
+}
+
+fn live_outputs(history: &[Message], before: usize) -> Vec<usize> {
+    history[..before.min(history.len())]
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| {
+            message.role == Role::Tool && !message.content.starts_with("[cleared")
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+fn clear_outputs(
+    history: &[Message],
+    candidates: &[usize],
+    target: usize,
+) -> (Vec<(usize, Message)>, usize) {
     let mut reclaimed = 0;
     let mut edits = Vec::new();
-    for index in live.into_iter().take(keep) {
-        let message = &history[index];
-        reclaimed += message.content.len();
-        let call = message.tool_call_id.clone().unwrap_or_default();
-        let cleared = format!("[cleared {} chars]", message.content.len());
-        edits.push((index, Message::tool(call, cleared)));
+    for &index in candidates {
         if reclaimed >= target {
             break;
         }
+        let message = &history[index];
+        let cleared = format!("[cleared {} chars]", message.content.len());
+        if cleared.len() >= message.content.len() {
+            continue;
+        }
+        reclaimed += message.content.len() - cleared.len();
+        let call = message.tool_call_id.clone().unwrap_or_default();
+        edits.push((index, Message::tool(call, cleared)));
     }
-    edits
+    (edits, reclaimed)
 }
 
 pub(super) fn repair_arguments(history: &[Message]) -> Vec<(usize, Message)> {
@@ -43,6 +58,13 @@ pub(super) fn repair_arguments(history: &[Message]) -> Vec<(usize, Message)> {
         }
     }
     vec![(index, message)]
+}
+
+struct Size {
+    chars: usize,
+    estimated_tokens: usize,
+    window: Option<u32>,
+    keep_from: usize,
 }
 
 pub(super) const CHARS_PER_TOKEN: usize = 4;
@@ -136,10 +158,7 @@ impl<P: Provider> Loop<P> {
         let keep = self.provider.keeps_reasoning();
         let chars: usize = messages.iter().map(|m| message_chars(m, keep)).sum();
         let estimated_tokens = self.estimated_prompt_tokens(chars, tool_bytes);
-        let window = match (self.context_window, self.compact_tokens) {
-            (Some(window), Some(cap)) => Some(window.min(cap)),
-            (window, cap) => window.or(cap),
-        };
+        let window = self.compact_window();
         let compact_chars = crate::limits::limits().compact_chars;
         let pressure = window.map_or(chars >= compact_chars, |window| {
             under_pressure(estimated_tokens, window)
@@ -147,21 +166,20 @@ impl<P: Provider> Loop<P> {
         if !pressure || messages.len() < 8 {
             return Ok(false);
         }
-        let tail_chars = window.map_or(compact_chars / 4, |window| {
-            let tail_tokens = window
-                .saturating_sub(RESERVE_TOKENS.min(window / 4))
-                .div_ceil(4)
-                .clamp(1, TAIL_TOKENS);
-            chars
-                .saturating_mul(tail_tokens as usize)
-                .checked_div(estimated_tokens.max(1))
-                .unwrap_or(chars / 4)
-                .max(1)
-        });
+        let tail_chars = tail_chars(window, chars, estimated_tokens, compact_chars);
         let Some(keep_from) = compact_boundary(messages, tail_chars, keep, self.session.opener())
         else {
             return Ok(false);
         };
+        let size = Size {
+            chars,
+            estimated_tokens,
+            window,
+            keep_from,
+        };
+        if self.elide_stale(messages, &size, events, emit)? {
+            return Ok(true);
+        }
         self.push_event(
             events,
             emit,
@@ -206,6 +224,59 @@ impl<P: Provider> Loop<P> {
                 text: "context auto-compacted: earlier turns summarized".to_string(),
             },
         )?;
+        self.compact_hook(&summary, events, emit).await?;
+        Ok(true)
+    }
+
+    fn compact_window(&self) -> Option<u32> {
+        match (self.context_window, self.compact_tokens) {
+            (Some(window), Some(cap)) => Some(window.min(cap)),
+            (window, cap) => window.or(cap),
+        }
+    }
+
+    fn elide_stale(
+        &mut self,
+        messages: &mut [Message],
+        size: &Size,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<bool> {
+        let limits = crate::limits::limits();
+        let target_chars = size.window.map_or(
+            limits.compact_chars.saturating_mul(limits.elide_percent)
+                / limits.compact_percent.max(1),
+            |window| {
+                size.chars
+                    .saturating_mul(window as usize * limits.elide_percent / 100)
+                    / size.estimated_tokens.max(1)
+            },
+        );
+        let needed = size.chars.saturating_sub(target_chars);
+        let stale = live_outputs(&messages[1..], size.keep_from - 1);
+        let (edits, reclaimed) = clear_outputs(&messages[1..], &stale, needed);
+        if needed == 0 || reclaimed < needed {
+            return Ok(false);
+        }
+        let cleared = edits.len();
+        self.rewrite(messages, edits)?;
+        self.tools.forget_reads();
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: format!("context compacted: cleared {cleared} old tool outputs"),
+            },
+        )?;
+        Ok(true)
+    }
+
+    async fn compact_hook(
+        &mut self,
+        summary: &str,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
         let payload = serde_json::json!({"event": "compact", "summary": summary});
         if let Some(note) = self
             .hook(crate::hooks::HookEvent::Compact, None, payload)
@@ -220,7 +291,7 @@ impl<P: Provider> Loop<P> {
                 },
             )?;
         }
-        Ok(true)
+        Ok(())
     }
 
     pub async fn compact(&mut self) -> Result<bool> {
@@ -273,6 +344,25 @@ pub(super) fn message_chars(message: &Message, reasoning_on_wire: bool) -> usize
             .iter()
             .map(|call| call.function.arguments.len() + call.function.name.len())
             .sum::<usize>()
+}
+
+fn tail_chars(
+    window: Option<u32>,
+    chars: usize,
+    estimated_tokens: usize,
+    compact_chars: usize,
+) -> usize {
+    window.map_or(compact_chars / 4, |window| {
+        let tail_tokens = window
+            .saturating_sub(RESERVE_TOKENS.min(window / 4))
+            .div_ceil(4)
+            .clamp(1, TAIL_TOKENS);
+        chars
+            .saturating_mul(tail_tokens as usize)
+            .checked_div(estimated_tokens.max(1))
+            .unwrap_or(chars / 4)
+            .max(1)
+    })
 }
 
 fn tail_start(messages: &[Message], target_chars: usize, reasoning_on_wire: bool) -> usize {

@@ -156,6 +156,7 @@ cache_ttl = "5m"
 | `stream_total_secs` | `86400` | Total time limit for one request. |
 | `connect_secs` | `20` | Connect timeout. |
 | `compact_percent` | `80` | Share of the context window that starts compaction. |
+| `elide_percent` | `60` | Share of the context window that compaction aims for by clearing old tool output; it summarizes only when clearing cannot get there. |
 | `compact_chars` | `400000` | Prompt size in characters that starts compaction when the window is unknown. |
 | `summary_retry_rounds` | `8` | Rounds before a failed compaction summary retries. |
 | `job_wait_secs` | `120` | Wait on a job or hook before it is reported still running. |

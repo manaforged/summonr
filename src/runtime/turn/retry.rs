@@ -18,6 +18,14 @@ struct Failed {
 }
 
 impl<P: Provider> Loop<P> {
+    pub(super) fn steer_waiting(&self) -> bool {
+        !self.steer.is_empty()
+            || self
+                .steer_shared
+                .as_ref()
+                .is_some_and(|shared| shared.lock().is_ok_and(|queue| !queue.is_empty()))
+    }
+
     pub(super) fn take_mail(
         &mut self,
         messages: &mut Vec<Message>,

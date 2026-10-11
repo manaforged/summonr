@@ -108,17 +108,16 @@ fn text_and_reasoning_both_reach_the_caller() {
 }
 
 #[test]
-fn a_content_filter_stop_keeps_the_text() {
-    let mut stream = <Stream as Accumulate>::new("glm-5.3");
-    stream
-        .on(&json!({"choices": [{"delta": {"content": "partial answer"}}]}).to_string())
-        .unwrap();
-    stream
-        .on(&json!({"choices": [{"delta": {}, "finish_reason": "content_filter"}]}).to_string())
-        .expect("a filtered stop is not an error on this wire");
-    let message = stream.finish();
-    assert_eq!(message.content.as_deref(), Some("partial answer"));
-    assert_ne!(message.stop_reason, crate::provider::StopReason::Stop);
+fn a_filtered_finish_is_a_blocked_error_like_the_responses_wire() {
+    for reason in ["content_filter", "sensitive"] {
+        let error = streamed(&[said(json!("half an ans"), Some(reason))]).unwrap_err();
+        assert!(error.to_string().contains(reason), "{reason}: {error}");
+        assert_eq!(
+            kind(error),
+            crate::error::ProviderFailureKind::Http,
+            "{reason}"
+        );
+    }
 }
 
 fn streamed(frames: &[serde_json::Value]) -> crate::error::Result<AssistantMessage> {

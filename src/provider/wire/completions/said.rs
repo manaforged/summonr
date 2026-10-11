@@ -28,7 +28,9 @@ impl Finish {
                 ProviderFailureKind::Server,
                 format!("the provider cut the reply short: {self:?}"),
             )),
-            Self::ContentFilter | Self::Sensitive | Self::Other => Ok(StopReason::Other),
+            Self::ContentFilter => Err(crate::provider::wire::blocked("content_filter")),
+            Self::Sensitive => Err(crate::provider::wire::blocked("sensitive")),
+            Self::Other => Ok(StopReason::Other),
         }
     }
 }

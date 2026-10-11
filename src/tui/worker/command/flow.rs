@@ -128,6 +128,7 @@ impl Worker {
             crate::SlashCommand::Fork => self.fork(),
             crate::SlashCommand::Undo => self.undo_command(argument),
             crate::SlashCommand::Agents => self.agents(),
+            crate::SlashCommand::Memory => self.memory(),
             _ => self.unknown(line).unwrap_or(true),
         }
     }
@@ -249,6 +250,30 @@ impl Worker {
 
     pub(in crate::tui::worker) fn agents(&self) -> bool {
         let text = crate::mail::roster(&self.loop_.peers(), &self.loop_.session_id());
+        self.system(&text);
+        true
+    }
+
+    fn memory(&self) -> bool {
+        let home = match crate::prompt::summonr_home() {
+            Ok(home) => home,
+            Err(error) => {
+                self.fail(&error.to_string());
+                return true;
+            }
+        };
+        let cap = crate::limits::limits().memory_bytes;
+        let mut text = String::new();
+        for file in crate::memory::files(&home, self.loop_.workspace()) {
+            let scope = file.scope.label();
+            let size = if file.bytes == 0 {
+                "none yet".to_string()
+            } else {
+                format!("{} of {cap} bytes", file.bytes)
+            };
+            text.push_str(&format!("{scope}\t{}\t{size}\n", file.path.display()));
+        }
+        text.push_str("Ask me to remember something, or edit these files.");
         self.system(&text);
         true
     }

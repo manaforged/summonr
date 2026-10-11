@@ -118,6 +118,13 @@ pub(super) const SPECS: &[CommandSpec] = &[
         Bare,
         Session,
     ),
+    spec(
+        "/memory",
+        "show the memory files and their size",
+        SlashCommand::Memory,
+        Bare,
+        Session,
+    ),
     spec("/exit", "quit summonr", SlashCommand::Exit, Bare, Session),
     spec(
         "/model",

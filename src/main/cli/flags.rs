@@ -36,7 +36,7 @@ pub(super) const SWITCHES: [Switch; 16] = [
     (&["--inline"], |args| args.inline = true),
 ];
 
-pub(super) const VALUES: [Valued; 11] = [
+pub(super) const VALUES: [Valued; 12] = [
     Valued {
         option: "--add-dir",
         short: None,
@@ -99,6 +99,12 @@ pub(super) const VALUES: [Valued; 11] = [
         short: None,
         expected: "a positive integer",
         set: |args, raw| some(&mut args.max_secs, count(&raw, "--max-secs")?),
+    },
+    Valued {
+        option: "--grep",
+        short: None,
+        expected: "a pattern",
+        set: |args, pattern| some(&mut args.grep, pattern),
     },
     Valued {
         option: "--effort",

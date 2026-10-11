@@ -451,6 +451,7 @@ When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`, such
 | `/mcp` | MCP servers: state, tools, schema size, last error |
 | `/usage [session]` | token spend; session profiles this session |
 | `/agents` | list agent sessions on this machine |
+| `/memory` | show the memory files and their size |
 | `/exit` | quit summonr |
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort |
 | `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
@@ -533,7 +534,7 @@ The old names (`read_file`, `list_dir`, `grep`, `glob`, `show_image`, `write_fil
 
 ## Modules
 
-Every optional capability is a **module** compiled into the binary: `search`, `browser`, `lsp`, `jobs`, `task`, `skills`, `mcp`, and `mail`. That list is the built-in module set: curated, switchable, and inside the harness process RSS. `search`, `browser`, and `mail` are off by default so unused tool schemas stay out of the first `prefix_hash`; `mcp` is on, and adds schemas only for servers you configure; the mail roster and `@` messages work without the `mail` module. `summonr modules` lists them with their state; the Modules rows in `/settings` in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`. After the first `prefix_hash` in this process, that write is for the next process only. A workspace `.summonr/config.toml` may turn a module off for that project but cannot turn one on. A new compiled tool is a row on [`module-api.md`](internals/module-api.md) in the same change; if a skill or MCP can do the job, it is not a module. summonr runs no third-party code inside the harness; modules read declarative files under `.summonr` where they need user input.
+Every optional capability is a **module** compiled into the binary: `search`, `browser`, `lsp`, `jobs`, `task`, `skills`, `mcp`, `mail`, and `memory`. That list is the built-in module set: curated, switchable, and inside the harness process RSS. `search`, `browser`, and `mail` are off by default so unused tool schemas stay out of the first `prefix_hash`; `mcp` is on, and adds schemas only for servers you configure; the mail roster and `@` messages work without the `mail` module. `summonr modules` lists them with their state; the Modules rows in `/settings` in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`. After the first `prefix_hash` in this process, that write is for the next process only. A workspace `.summonr/config.toml` may turn a module off for that project but cannot turn one on. A new compiled tool is a row on [`module-api.md`](internals/module-api.md) in the same change; if a skill or MCP can do the job, it is not a module. summonr runs no third-party code inside the harness; modules read declarative files under `.summonr` where they need user input.
 
 The `search` tool is always on and is separate from the `search` module. It honors `.gitignore`, skips build directories, binaries, and files over 1 MiB, and lists matching files when only `glob` is set. With the `search` module on, `web` with `query` reads DuckDuckGo's results page, then Brave's when DuckDuckGo returns nothing, without a key, and `url` fetches one page. `freshness` takes `day`, `week`, or `month`. The engine list is data in `src/web/engines.toml`. Both go through Leyline with a browser identity, so no search API key or self-hosted search service is needed. `[search]` takes `count`, `allowed_domains`, and `excluded_domains`.
 
@@ -570,6 +571,14 @@ summonr mail board [get <key>|set <key> <text>]
 ```
 
 A foreign agent takes part by picking an id: it reads `summonr mail inbox <id>`, and anyone can write to it with `summonr mail send <id> <text>`. Its messages arrive from `cli` unless it writes its own inbox name into replies. `inbox <id> --clear` prints the mail and empties that inbox. It refuses the inbox of a live summonr session, because that session keeps its own read position. A lock file next to each inbox makes a send, a read, and a clear wait for each other, so no message is lost between them.
+
+## Memory
+
+summonr remembers across sessions through two Markdown files that load into every trusted session: user memory at `~/.summonr/memory/MEMORY.md`, and project memory at `~/.summonr/memory/<repository>/MEMORY.md`. Every worktree and child checkout of one repository shares its project memory; another repository never sees it. Ask the model to remember something and it writes the file with its normal edit tools, one dated entry per fact. It is told to save corrections, stable preferences, and facts the code does not show, never what the repository already records, and to check a remembered fact against the code before it acts on it. Edit or delete the files yourself at any time; `/memory` shows where they are and how full they are.
+
+Each file loads up to `memory_bytes` (25,000 bytes); past that it is cut with a note asking the model to prune it. Invisible and direction-changing characters are dropped, and secret-shaped values become `[secret]` before the text reaches the model. Memory loads only in a trusted workspace (`--no-trust` skips it), and `memory = false` under `[modules]` turns it off. Under `--sandbox`, the summonr home is protected, so the model reads memory from its prompt but cannot write it.
+
+`summonr sessions --grep TEXT` searches the text of past sessions, newest first, case-insensitively, and prints the session id, its directory, and each matching line. The model can run it through `run_command` to recall earlier work.
 
 ## Cron
 

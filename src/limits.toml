@@ -83,3 +83,4 @@ cron_budget_secs = 1800
 cron_runs_kept = 50
 cron_catchup_secs = 604800
 cron_fail_pause = 3
+memory_bytes = 25000

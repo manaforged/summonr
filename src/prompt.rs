@@ -45,6 +45,7 @@ pub struct Sources {
     pub trust: bool,
     pub skills: bool,
     pub images: bool,
+    pub memory: bool,
 }
 
 pub fn system_prompt(workspace: &Path, sources: Sources) -> String {
@@ -56,6 +57,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
         trust,
         skills,
         images,
+        memory,
     } = sources;
     if let Ok(prompt) = std::env::var("SUMMONR_SYSTEM_PROMPT")
         && !prompt.trim().is_empty()
@@ -72,6 +74,11 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     }
     if trust {
         instructions(&mut parts, workspace);
+        if let Some(home) = home.filter(|_| memory) {
+            let files = crate::memory::files(home, workspace);
+            parts.extend(crate::memory::sections(&files, workspace));
+            parts.push(crate::memory::guidance(&files));
+        }
     }
     if !images {
         parts.push(

@@ -110,4 +110,5 @@ table! {
     cron_runs_kept: usize,
     cron_catchup_secs: u64,
     cron_fail_pause: u32,
+    memory_bytes: usize,
 }

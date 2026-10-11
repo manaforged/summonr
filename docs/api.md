@@ -16,6 +16,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr [ENDPOINT] --steps PLAN.md` | Run each numbered step under `## Steps`, and gate each step on its check |
 | `summonr -c`, `summonr --session ID`, `summonr resume [ID\|NAME]` | Resume the last session here, or a session by short id, id prefix, or name |
 | `summonr sessions` | List sessions, tab-separated: id, name, directory, preview |
+| `summonr sessions --grep TEXT` | Search past sessions, newest first: id, directory, matching line; at most 50 lines, `no matches` when none |
 | `summonr export [ID\|NAME]` | Print a session as Markdown |
 | `summonr profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS and the peak resident set on Linux; the footprint leaves out shared pages, so it reads lower than RSS |
 | `summonr diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
@@ -171,6 +172,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail`, `search`, and `browser` are off by default.
 - The advertised tool list freezes after the first model round. A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, a table `{ command = "...", dialect = "claude" }`, or a list of either, run in order. Each hook reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. A hook with `dialect = "claude"`, and every plugin hook, follows the Claude Code rules instead (see the reference).
+- Memory files: `~/.summonr/memory/MEMORY.md` (user) and `~/.summonr/memory/<repository>/MEMORY.md` (project) load into every trusted session unless `memory = false` under `[modules]`.
 - A cron run sets `SUMMONR_CRON` to the job name. Inside it, `summonr cron add`, `edit`, and `remove` exit 1.
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
 - The sandbox is off by default. Without `--sandbox`, an unattended `--goal` run can read and run anything your account can, including files outside the workspace; run CI and other unattended goals with `--sandbox`. In a noninteractive run, sandbox escape, network grants, and writes outside the workspace are denied; `--no-net` stays in force after a command failure. Auto mode asks before it grants an extra write root.

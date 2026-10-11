@@ -16,6 +16,7 @@ pub(super) struct Args {
     pub(super) json: bool,
     pub(super) list: bool,
     pub(super) list_sessions: bool,
+    pub(super) grep: Option<String>,
     pub(super) logs: bool,
     pub(super) doctor: bool,
     pub(super) export: bool,
@@ -205,6 +206,11 @@ impl Args {
     }
 
     fn check(&self) -> Result<()> {
+        if self.grep.is_some() && !self.list_sessions {
+            return Err(Error::Config(
+                "--grep works with `summonr sessions`".to_string(),
+            ));
+        }
         if self.here && self.worktree {
             return Err(Error::Config(
                 "use --here or --worktree, not both".to_string(),

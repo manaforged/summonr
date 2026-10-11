@@ -57,6 +57,12 @@ pub(crate) fn scrub(text: &str, workspace: &Path) -> String {
     private_keys(&text)
 }
 
+pub(crate) fn scrub_found(text: &str, workspace: &Path) -> String {
+    let found = secrets_in(text);
+    let text = crate::text::redact(text, found.iter().map(String::as_str));
+    scrub(&text, workspace)
+}
+
 fn known(workspace: &Path) -> Arc<Vec<String>> {
     let mut seen = SEEN.lock().unwrap_or_else(PoisonError::into_inner);
     let seen = seen.get_or_insert_with(HashMap::new);

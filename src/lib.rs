@@ -39,6 +39,7 @@ pub use mcp::{
     call_label as mcp_call_label, probe as mcp_probe, remove as mcp_remove, status as mcp_status,
 };
 mod browser;
+pub mod memory;
 pub mod modules;
 mod plugins;
 mod policy;

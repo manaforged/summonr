@@ -127,6 +127,7 @@ pub(super) fn build(
             trust: args.trust,
             skills: switches.enabled(summonr::modules::ModuleId::Skills),
             images,
+            memory: switches.enabled(summonr::modules::ModuleId::Memory),
         },
     );
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));

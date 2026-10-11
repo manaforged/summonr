@@ -112,6 +112,40 @@ pub(super) fn print_sessions() -> Result<()> {
     Ok(())
 }
 
+const GREP_LINES: usize = 50;
+const GREP_WIDTH: usize = 160;
+
+pub(super) fn grep_sessions(pattern: &str) -> Result<()> {
+    let needle = pattern.to_lowercase();
+    let mut shown = 0;
+    for info in list_sessions()?.into_iter().rev() {
+        let Ok(text) = summonr::export_session(&info.path) else {
+            continue;
+        };
+        for line in text
+            .lines()
+            .filter(|line| line.to_lowercase().contains(&needle))
+        {
+            if shown == GREP_LINES {
+                println!("… more matches; narrow the pattern");
+                return Ok(());
+            }
+            let line: String = line.trim().chars().take(GREP_WIDTH).collect();
+            println!(
+                "{}\t{}\t{}",
+                summonr::short(&info.id),
+                info.cwd.as_deref().unwrap_or("-"),
+                line
+            );
+            shown += 1;
+        }
+    }
+    if shown == 0 {
+        println!("no matches");
+    }
+    Ok(())
+}
+
 pub(super) fn print_workflows() -> Result<()> {
     let names = workflow::names()?;
     if names.is_empty() {

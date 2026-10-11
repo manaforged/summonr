@@ -17,8 +17,8 @@ use super::cli::Args;
 use super::diagnostics;
 use classify::run_classify;
 use commands::{
-    adopt, export_session_cmd, manage_worktrees, mcp, print_diff, print_sessions, print_workflows,
-    probe_endpoints, session_path, workspace,
+    adopt, export_session_cmd, grep_sessions, manage_worktrees, mcp, print_diff, print_sessions,
+    print_workflows, probe_endpoints, session_path, workspace,
 };
 use lifecycle::launch;
 use login::run_login;
@@ -203,7 +203,10 @@ fn logout(args: &Args) -> Result<i32> {
 fn listing(args: &Args) -> Option<Result<i32>> {
     let done = |result: Result<()>| Some(result.map(|()| 0));
     if args.list_sessions {
-        return done(print_sessions());
+        return done(match args.grep.as_deref() {
+            Some(pattern) => grep_sessions(pattern),
+            None => print_sessions(),
+        });
     }
     if args.export {
         return done(export_session_cmd(args));

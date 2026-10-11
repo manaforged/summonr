@@ -169,3 +169,17 @@ fn grok_routes_every_request_to_its_cache_with_the_prefix_hash() {
     let want = format!("x-grok-conv-id: {}", request.prefix_hash()).to_ascii_lowercase();
     assert!(headers.contains(&want), "{headers}");
 }
+
+#[test]
+fn kimi_k3_sends_back_its_reasoning_after_a_tool_call() {
+    for model in ["k3", "kimi-k3", "kimi-k2.7-code"] {
+        let kimi = endpoint("kimi", model);
+        let mut messages = tool_round();
+        messages[2].reasoning = Some("read the file first".to_string());
+        let sent = body(&kimi, &messages, None);
+        assert_eq!(
+            sent["messages"][2]["reasoning_content"], "read the file first",
+            "{model}: {sent}"
+        );
+    }
+}

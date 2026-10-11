@@ -142,3 +142,11 @@ fn read_request(socket: &mut TcpStream) {
         }
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_cut_at_the_output_limit_before_any_text_is_a_length_stop() {
+    let cut =
+        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n";
+    let (reply, _) = run(server(cut, "", 0, "")).await;
+    assert_eq!(reply.unwrap().stop_reason, StopReason::Length);
+}

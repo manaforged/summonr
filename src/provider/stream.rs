@@ -232,21 +232,14 @@ pub(super) fn finish(mut message: AssistantMessage) -> Result<AssistantMessage> 
     think::hoist(&mut message);
     validate(
         message.content.as_deref().unwrap_or_default(),
-        message.reasoning_content.as_deref().unwrap_or_default(),
         &message.tool_calls,
         message.stop_reason,
     )?;
     Ok(message)
 }
 
-pub(super) fn validate(
-    text: &str,
-    reasoning: &str,
-    calls: &[ToolCall],
-    stop: StopReason,
-) -> Result<()> {
-    let truncated_reasoning = stop == StopReason::Length && !reasoning.trim().is_empty();
-    if text.trim().is_empty() && calls.is_empty() && !truncated_reasoning {
+pub(super) fn validate(text: &str, calls: &[ToolCall], stop: StopReason) -> Result<()> {
+    if text.trim().is_empty() && calls.is_empty() && stop != StopReason::Length {
         return Err(Error::provider(
             ProviderFailureKind::Malformed,
             "stream produced neither text nor a tool call",

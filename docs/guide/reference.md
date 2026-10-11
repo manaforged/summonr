@@ -597,7 +597,81 @@ A schedule is five cron fields (minute, hour, day, month, weekday, with `*`, lis
 
 Each due job starts as its own process with `--json` and a time budget: `--max-secs`, or `cron_budget_secs` (30 minutes). `--endpoint`, `--model`, `--max-tokens`, and `--worktree` pass through. A `--goal` job is done only when the workspace check passes. A job still running when its next time comes is skipped, and that skip is logged. When the machine was asleep, the latest missed time runs once; times older than `cron_catchup_secs` (7 days) are logged as expired. After `cron_fail_pause` failures in a row (3), the job pauses itself; `summonr cron resume NAME` restarts it.
 
-`--notify failure` (the default) shows a desktop notification when a run fails, `always` after every run, and `never` stays quiet. `--mail SESSION` also sends the result to that session's inbox. `summonr cron log NAME` lists past runs with their outcome and shows the last run's output; the run itself is a job under `.summonr/jobs` in the job's directory. `summonr cron run NAME` runs a job now. Jobs live in `~/.summonr/cron/jobs.toml`. The model manages jobs with the same commands through `run_command`, except inside a cron run, which cannot add, edit, or remove jobs.
+`--notify failure` (the default) shows a desktop notification when a run fails, `always` after every run, and `never` stays quiet. `--mail SESSION` also sends the result to that session's inbox, and `--chat` to every chat paired with `summonr gateway`. `summonr cron log NAME` lists past runs with their outcome and shows the last run's output; the run itself is a job under `.summonr/jobs` in the job's directory. `summonr cron run NAME` runs a job now. Jobs live in `~/.summonr/cron/jobs.toml`. The model manages jobs with the same commands through `run_command`, except inside a cron run, which cannot add, edit, or remove jobs.
+
+## Gateway
+
+`summonr gateway` lets a chat app or a web request start work on your machine. Nothing listens on a public port.
+
+### Telegram
+
+Create a bot with [@BotFather](https://t.me/BotFather), then:
+
+```sh
+summonr gateway setup telegram     # paste the bot token; it is stored, never shown
+summonr gateway telegram           # run the bridge here; Ctrl+C stops it
+```
+
+The bridge asks Telegram for new messages, so it works behind a router or firewall. The first time you message the bot it answers with a pairing code; run `summonr gateway pair CODE` on the machine to allow your Telegram account. Anyone else gets nothing. Codes expire after `gateway_pair_secs` (an hour). `summonr gateway unpair USER_ID` removes an account, and `summonr gateway status` lists accounts and chats.
+
+Each chat is one summonr session in the directory where the bridge runs (`--dir` picks another; `--endpoint` and `--model` pick the seat). Every message is one turn, and the answer comes back to the chat. Messages sent while a turn runs wait for the next turn. `/new` starts a fresh session, `/status` shows the current one, and `/stop` ends the running turn. A chat turn runs like `-p`: anything that needs an approval is denied, so pair only accounts you trust with that directory, and consider `on = true` under `[sandbox]`.
+
+`summonr cron add ... --chat` also sends a job's result to every paired chat.
+
+### Webhook
+
+```sh
+summonr cron token nightly         # prints the job's bearer token once
+summonr gateway webhook            # listens on 127.0.0.1:8765
+curl -X POST -H "Authorization: Bearer $TOKEN" --data @event.json http://127.0.0.1:8765/run/nightly
+```
+
+`POST /run/NAME` with the job's token starts that cron job now and answers `202`. A wrong token or an unknown job both answer `401`, a second fire within `gateway_fire_secs` (60 seconds) answers `429`, and a body over `gateway_body_bytes` (64 KiB) answers `413`. The body is saved to a file, and the run is told it is untrusted event data, not instructions. The listener binds loopback only; to take events from another machine, put a tunnel or reverse proxy in front of it. `summonr cron token NAME` again rotates the token, and `summonr cron remove NAME` forgets it.
+
+### GitHub
+
+GitHub Actions is already a listener for issues and comments. This workflow runs summonr when someone with write access comments `/summonr <task>` on an issue, then opens a pull request:
+
+```yaml
+name: summonr
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  run:
+    if: >-
+      startsWith(github.event.comment.body, '/summonr ') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: curl -fsSL https://summonr.dev/install.sh | sh
+      - name: Work on the request
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          task=$(printf '%s' "$BODY" | perl -0pe 's/<!--.*?-->//gs; s/^\/summonr //')
+          ~/.local/bin/summonr anthropic --goal "$task" --sandbox --json --max-secs 1800 > "$RUNNER_TEMP/summonr.jsonl"
+      - name: Open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh auth setup-git
+          git switch -c "summonr/issue-$ISSUE"
+          git add -A
+          git -c user.name=summonr -c user.email=summonr@users.noreply.github.com commit -m "Work on #$ISSUE"
+          git push -u origin HEAD
+          gh pr create --fill --body "From the comment on #$ISSUE."
+```
+
+The comment reaches the workflow through an environment variable, never pasted into the script, and hidden HTML comments are stripped before the model sees it. Only owners, members and collaborators can start it. The checkout keeps no GitHub token, so the run holds only the model key and its shell is sandboxed; the pull request step signs in after the run ends. When the check fails, `--goal` exits 2 and no pull request opens.
 
 ## Limits
 

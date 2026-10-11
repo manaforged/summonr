@@ -114,7 +114,7 @@ pub(super) const VALUES: [Valued; 12] = [
     },
 ];
 
-pub(super) const COMMANDS: [(&str, Run); 25] = [
+pub(super) const COMMANDS: [(&str, Run); 26] = [
     ("endpoints", |args, _| on(&mut args.list)),
     ("sessions", |args, _| on(&mut args.list_sessions)),
     ("resume", Args::resume),
@@ -146,6 +146,9 @@ pub(super) const COMMANDS: [(&str, Run); 25] = [
     }),
     ("cron", |args, input| {
         some(&mut args.cron, input.by_ref().collect())
+    }),
+    ("gateway", |args, input| {
+        some(&mut args.gateway, input.by_ref().collect())
     }),
     ("tool", |args, input| {
         some(&mut args.tool, input.by_ref().collect())

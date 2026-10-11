@@ -31,7 +31,8 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
 | `summonr tool NAME [JSON]` | Run one tool in the current directory and print its result; a module tool needs its module on. Exit 0 on success, 1 on a tool error |
 | `summonr mail [agents\|send\|inbox\|board]` | Read and write peer mail between agent sessions on this machine |
-| `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|install\|uninstall\|status` | Run a prompt or goal on a schedule; `install` adds the once-a-minute OS tick |
+| `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|token\|install\|uninstall\|status` | Run a prompt or goal on a schedule; `install` adds the once-a-minute OS tick; `token NAME` prints a webhook token |
+| `summonr gateway setup telegram\|telegram\|pair CODE\|unpair ID\|status\|webhook [--port N]` | Drive sessions from a paired Telegram chat, or fire cron jobs from a loopback webhook |
 | `summonr classify ...` | Ask typed questions of a decisions endpoint |
 | `summonr doctor [--logs]` | List per-run JSONL logs, or report incomplete and crashed runs |
 | `summonr --help`, `summonr --version` | Print help, or the version and revision |
@@ -69,6 +70,7 @@ echo $?
 | Review what a turn changed | `summonr diff --turn last --json` |
 | Drive a session from an editor | `summonr acp` |
 | Classify text | `summonr classify --set NAME [STATE]`, `--questions JSON\|@FILE`, `--noul QUESTION`, `--patch`, `--review --session ID`, `--eval FILE`, `--gate NUMBER` |
+| Start a job from a web request | `summonr cron token NAME`, `summonr gateway webhook`, then `POST /run/NAME` with `Authorization: Bearer TOKEN` (202 fired, 401 bad token or job, 429 too soon, 413 too large) |
 | Run on a schedule | `summonr cron add NAME --cron "0 3 * * *" --goal TEXT`, then `summonr cron install` once |
 | Save a transcript | `summonr export [ID\|NAME]`; add `--digest` for the condensed form |
 

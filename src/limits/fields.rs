@@ -111,4 +111,10 @@ table! {
     cron_catchup_secs: u64,
     cron_fail_pause: u32,
     memory_bytes: usize,
+    gateway_poll_secs: u64,
+    gateway_pair_secs: u64,
+    gateway_port: u16,
+    gateway_body_bytes: usize,
+    gateway_fire_secs: u64,
+    gateway_read_secs: u64,
 }

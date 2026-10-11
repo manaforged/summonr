@@ -58,7 +58,7 @@ fn read_line(prompt: &str) -> Option<String> {
     Some(typed)
 }
 
-fn read_secret(prompt: &str) -> Result<String> {
+pub(super) fn read_secret(prompt: &str) -> Result<String> {
     use std::io::Write as _;
     if !std::io::stdin().is_terminal() {
         let mut key = String::new();

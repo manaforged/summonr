@@ -7,7 +7,7 @@ use super::schedule;
 use super::store::{self, Job, Notify, Task};
 use crate::error::{Error, Result};
 
-const USAGE: &str = "usage:\n  summonr cron add NAME (--cron EXPR | --every 30m | --at TIME) (-p PROMPT | --goal GOAL)\n      [--dir D] [--endpoint E] [--model M] [--tz ZONE] [--max-secs N] [--max-tokens N]\n      [--worktree] [--notify never|failure|always] [--mail SESSION]\n  summonr cron edit NAME [same flags]\n  summonr cron list [--json]\n  summonr cron show|pause|resume|run|remove NAME\n  summonr cron log NAME [--last N]\n  summonr cron install|uninstall|status\n\nThe OS starts `summonr cron tick` once a minute after `summonr cron install`.";
+const USAGE: &str = "usage:\n  summonr cron add NAME (--cron EXPR | --every 30m | --at TIME) (-p PROMPT | --goal GOAL)\n      [--dir D] [--endpoint E] [--model M] [--tz ZONE] [--max-secs N] [--max-tokens N]\n      [--worktree] [--chat] [--notify never|failure|always] [--mail SESSION]\n  summonr cron edit NAME [same flags]\n  summonr cron list [--json]\n  summonr cron show|pause|resume|run|remove NAME\n  summonr cron log NAME [--last N]\n  summonr cron token NAME\n  summonr cron install|uninstall|status\n\nThe OS starts `summonr cron tick` once a minute after `summonr cron install`.";
 const TIME_FORMAT: &str = "%Y-%m-%d %H:%M %Z";
 
 #[derive(Default)]
@@ -23,46 +23,74 @@ struct Spec {
     max_secs: Option<u64>,
     max_tokens: Option<u64>,
     worktree: bool,
+    chat: bool,
     notify: Option<Notify>,
     mail: Option<String>,
 }
 
 pub fn run(args: &[String], cwd: &Path) -> Result<i32> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
-    match words.as_slice() {
-        ["add", name, flags @ ..] => add(name, &spec(flags, cwd)?, cwd),
-        ["edit", name, flags @ ..] => edit(name, &spec(flags, cwd)?),
+    jobs(&words, cwd)
+        .or_else(|| system(&words))
+        .unwrap_or_else(|| Err(Error::Config(USAGE.to_string())))
+}
+
+fn jobs(words: &[&str], cwd: &Path) -> Option<Result<i32>> {
+    Some(match words {
+        ["add", name, flags @ ..] => spec(flags, cwd).and_then(|spec| add(name, &spec, cwd)),
+        ["edit", name, flags @ ..] => spec(flags, cwd).and_then(|spec| edit(name, &spec)),
         ["list"] => list(false),
         ["list", "--json"] => list(true),
         ["show", name] => show(name),
         ["pause", name] => set_paused(name, true),
         ["resume", name] => set_paused(name, false),
-        ["run", name] => {
-            let code = runner::exec(name, super::now())?;
-            log(name, Some(1))?;
-            Ok(code)
-        }
+        ["run", name] => run_now(name),
         ["remove", name] => remove(name),
         ["log", name] => log(name, None),
-        ["log", name, "--last", count] => log(name, Some(number(count)?)),
-        ["install"] => {
-            let exe = std::env::current_exe()?;
-            let every = crate::limits::limits().cron_tick_secs;
-            let path = super::install::install(&exe, every)?;
-            say(format!("installed {}", path.display()))
-        }
-        ["uninstall"] => match super::install::uninstall()? {
-            Some(path) => say(format!("removed {}", path.display())),
-            None => say("not installed".to_string()),
-        },
+        ["log", name, "--last", count] => number(count).and_then(|count| log(name, Some(count))),
+        ["token", name] => store::rotate_token(name).and_then(say),
+        [..] => return None,
+    })
+}
+
+fn system(words: &[&str]) -> Option<Result<i32>> {
+    Some(match words {
+        ["install"] => install(),
+        ["uninstall"] => uninstall(),
         ["status"] => status(),
         ["tick"] => runner::tick(super::now()).map(|()| 0),
-        ["exec", name, "--slot", slot] => {
-            let slot = slot
-                .parse()
-                .map_err(|error| Error::Config(format!("bad slot `{slot}`: {error}")))?;
-            runner::exec(name, slot)
-        }
+        ["exec", name, "--slot", slot, rest @ ..] => exec(name, slot, rest),
+        [..] => return None,
+    })
+}
+
+fn run_now(name: &str) -> Result<i32> {
+    let code = runner::exec(name, super::now(), None)?;
+    log(name, Some(1))?;
+    Ok(code)
+}
+
+fn install() -> Result<i32> {
+    let exe = std::env::current_exe()?;
+    let every = crate::limits::limits().cron_tick_secs;
+    let path = super::install::install(&exe, every)?;
+    say(format!("installed {}", path.display()))
+}
+
+fn uninstall() -> Result<i32> {
+    match super::install::uninstall()? {
+        Some(path) => say(format!("removed {}", path.display())),
+        None => say("not installed".to_string()),
+    }
+}
+
+fn exec(name: &str, slot: &str, rest: &[&str]) -> Result<i32> {
+    let slot = slot
+        .parse()
+        .map_err(|error| Error::Config(format!("bad slot `{slot}`: {error}")))?;
+    match rest {
+        [] => runner::exec(name, slot, None),
+        ["--payload", file] => runner::exec(name, slot, Some(Path::new(file))),
         [..] => Err(Error::Config(USAGE.to_string())),
     }
 }
@@ -77,38 +105,70 @@ fn number<T: std::str::FromStr<Err = std::num::ParseIntError>>(text: &str) -> Re
         .map_err(|error| Error::Config(format!("expected a number, got `{text}`: {error}")))
 }
 
+type Switch = fn(&mut Spec);
+type Valued = fn(&mut Spec, String, &Path) -> Result<()>;
+
+const SWITCHES: [(&str, Switch); 2] = [
+    ("--worktree", |spec| spec.worktree = true),
+    ("--chat", |spec| spec.chat = true),
+];
+
+const VALUES: [(&str, Valued); 14] = [
+    ("--cron", |spec, value, _| set(&mut spec.cron, value)),
+    ("--every", |spec, value, _| set(&mut spec.every, value)),
+    ("--at", |spec, value, _| set(&mut spec.at, value)),
+    ("-p", |spec, value, _| {
+        set(&mut spec.task, Task::Prompt(value))
+    }),
+    ("--prompt", |spec, value, _| {
+        set(&mut spec.task, Task::Prompt(value))
+    }),
+    ("--goal", |spec, value, _| {
+        set(&mut spec.task, Task::Goal(value))
+    }),
+    ("--dir", |spec, value, cwd| {
+        set(&mut spec.dir, cwd.join(value))
+    }),
+    ("--endpoint", |spec, value, _| {
+        set(&mut spec.endpoint, value)
+    }),
+    ("--model", |spec, value, _| set(&mut spec.model, value)),
+    ("--tz", |spec, value, _| set(&mut spec.tz, value)),
+    ("--max-secs", |spec, value, _| {
+        set(&mut spec.max_secs, number(&value)?)
+    }),
+    ("--max-tokens", |spec, value, _| {
+        set(&mut spec.max_tokens, number(&value)?)
+    }),
+    ("--notify", |spec, value, _| {
+        set(&mut spec.notify, notify(&value)?)
+    }),
+    ("--mail", |spec, value, _| set(&mut spec.mail, value)),
+];
+
+fn set<T>(slot: &mut Option<T>, value: T) -> Result<()> {
+    *slot = Some(value);
+    Ok(())
+}
+
 fn spec(words: &[&str], cwd: &Path) -> Result<Spec> {
     let mut spec = Spec::default();
     let mut words = words.iter().copied();
     while let Some(flag) = words.next() {
-        if flag == "--worktree" {
-            spec.worktree = true;
+        // complexity: bounded by the two cron switches
+        if let Some((_, switch)) = SWITCHES.iter().find(|(name, _)| *name == flag) {
+            switch(&mut spec);
             continue;
         }
+        // complexity: bounded by the fourteen cron options
+        let (_, apply) = VALUES
+            .iter()
+            .find(|(name, _)| *name == flag)
+            .ok_or_else(|| Error::Config(format!("unknown option `{flag}`\n{USAGE}")))?;
         let value = words
             .next()
-            .ok_or_else(|| Error::Config(format!("{flag} needs a value\n{USAGE}")))?
-            .to_string();
-        match flag {
-            "--cron" => spec.cron = Some(value),
-            "--every" => spec.every = Some(value),
-            "--at" => spec.at = Some(value),
-            "-p" | "--prompt" => spec.task = Some(Task::Prompt(value)),
-            "--goal" => spec.task = Some(Task::Goal(value)),
-            "--dir" => spec.dir = Some(cwd.join(value)),
-            "--endpoint" => spec.endpoint = Some(value),
-            "--model" => spec.model = Some(value),
-            "--tz" => spec.tz = Some(value),
-            "--max-secs" => spec.max_secs = Some(number(&value)?),
-            "--max-tokens" => spec.max_tokens = Some(number(&value)?),
-            "--notify" => spec.notify = Some(notify(&value)?),
-            "--mail" => spec.mail = Some(value),
-            unknown => {
-                return Err(Error::Config(format!(
-                    "unknown option `{unknown}`\n{USAGE}"
-                )));
-            }
-        }
+            .ok_or_else(|| Error::Config(format!("{flag} needs a value\n{USAGE}")))?;
+        apply(&mut spec, value.to_string(), cwd)?;
     }
     Ok(spec)
 }
@@ -165,6 +225,7 @@ fn apply(job: &mut Job, spec: &Spec) -> Result<()> {
     job.max_secs = spec.max_secs.or(job.max_secs);
     job.max_tokens = spec.max_tokens.or(job.max_tokens);
     job.worktree = job.worktree || spec.worktree;
+    job.chat = job.chat || spec.chat;
     job.notify = spec.notify.unwrap_or(job.notify);
     job.mail = spec.mail.clone().or(job.mail.take());
     Ok(())
@@ -192,6 +253,7 @@ fn add(name: &str, spec: &Spec, cwd: &Path) -> Result<i32> {
         worktree: false,
         notify: Notify::default(),
         mail: None,
+        chat: false,
         paused: false,
         fails: 0,
         created: super::now(),
@@ -227,6 +289,7 @@ fn remove(name: &str) -> Result<i32> {
         }
         Ok(())
     })?;
+    store::forget_token(name)?;
     say(format!("removed {name}"))
 }
 

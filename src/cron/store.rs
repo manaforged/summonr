@@ -6,6 +6,10 @@ use crate::durable::store;
 use crate::error::{Error, Result};
 
 const FILE: &str = "jobs.toml";
+const TOKEN_PREFIX: &str = "cron:";
+const TOKEN_BYTES: usize = 32;
+const PAYLOADS: &str = "payloads";
+const PAYLOAD_SUFFIX: &str = "body";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -67,6 +71,8 @@ pub(crate) struct Job {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mail: Option<String>,
     #[serde(default)]
+    pub chat: bool,
+    #[serde(default)]
     pub paused: bool,
     #[serde(default)]
     pub fails: u32,
@@ -111,6 +117,48 @@ pub(crate) fn name<T: Serialize>(value: &T) -> String {
 
 pub(crate) fn dir() -> Result<PathBuf> {
     Ok(crate::prompt::summonr_home()?.join("cron"))
+}
+
+pub(crate) fn payload_path(name: &str, slot: i64) -> Result<PathBuf> {
+    Ok(dir()?
+        .join(PAYLOADS)
+        .join(format!("{name}-{slot}.{PAYLOAD_SUFFIX}")))
+}
+
+pub(crate) fn rotate_token(name: &str) -> Result<String> {
+    use base64::Engine;
+    use chacha20poly1305::aead::{OsRng, rand_core::RngCore};
+    get(name)?;
+    let mut bytes = [0u8; TOKEN_BYTES];
+    OsRng.fill_bytes(&mut bytes);
+    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    crate::secret::set(&token_key(name), &token)?;
+    Ok(token)
+}
+
+pub(crate) fn token(name: &str) -> Option<String> {
+    crate::secret::get(&token_key(name))
+        .ok()
+        .flatten()
+        .map(|(token, _)| token)
+}
+
+pub(crate) fn forget_token(name: &str) -> Result<bool> {
+    crate::secret::forget(&token_key(name))
+}
+
+pub(crate) fn same_secret(left: &str, right: &str) -> bool {
+    let (left, right) = (left.as_bytes(), right.as_bytes());
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .fold(0u8, |diff, (a, b)| diff | (a ^ b))
+            == 0
+}
+
+fn token_key(name: &str) -> String {
+    format!("{TOKEN_PREFIX}{name}")
 }
 
 pub(crate) fn check_name(name: &str) -> Result<()> {

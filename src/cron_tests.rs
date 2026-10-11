@@ -41,6 +41,7 @@ fn job(schedule: &str, created: i64) -> Job {
         max_secs: None,
         max_tokens: None,
         worktree: false,
+        chat: false,
         notify: Notify::default(),
         mail: None,
         paused: false,

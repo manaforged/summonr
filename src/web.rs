@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 use leyline::{
     Browser, CompressionConfig, DnsConfig, Family, RedirectAction, RedirectPolicy, Session,
-    TimeoutConfig,
 };
 use url::Url;
 
@@ -249,23 +248,21 @@ impl Search {
 }
 
 fn http_builder() -> leyline::SessionBuilder {
-    Session::builder()
-        .browser(Browser::latest(Family::Chrome))
-        .timeout(
-            TimeoutConfig::new()
-                .total(crate::limits::limits().web_search())
-                .connect(crate::limits::limits().web_connect()),
-        )
-        .compression(CompressionConfig::new().max_body_size(crate::limits::limits().web_body_bytes))
-        .redirect(RedirectPolicy::custom(|attempt| {
-            if attempt.previous.len() >= crate::limits::limits().web_redirect_max
-                || !safe_redirect(attempt.url)
-            {
-                RedirectAction::Stop
-            } else {
-                RedirectAction::Follow
-            }
-        }))
+    summonr_auth::builder(
+        crate::limits::limits().web_search(),
+        crate::limits::limits().web_connect(),
+    )
+    .browser(Browser::latest(Family::Chrome))
+    .compression(CompressionConfig::new().max_body_size(crate::limits::limits().web_body_bytes))
+    .redirect(RedirectPolicy::custom(|attempt| {
+        if attempt.previous.len() >= crate::limits::limits().web_redirect_max
+            || !safe_redirect(attempt.url)
+        {
+            RedirectAction::Stop
+        } else {
+            RedirectAction::Follow
+        }
+    }))
 }
 
 fn client() -> Result<Session> {

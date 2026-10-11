@@ -1,0 +1,135 @@
+use std::path::Path;
+
+use super::telegram::Bot;
+use super::turn::{self, Options};
+use super::{SECRET, block, store, token};
+use crate::error::{Error, Result};
+
+const USAGE: &str = "usage:\n  summonr gateway setup telegram\n  summonr gateway telegram [--endpoint E] [--model M] [--dir D]\n  summonr gateway pair CODE\n  summonr gateway unpair USER_ID\n  summonr gateway status\n  summonr gateway webhook [--port N]\n\nThe Telegram bridge long-polls the Bot API; no port opens.";
+const TOKEN_PROMPT: &str = "Telegram bot token: ";
+const NO_TOKEN: &str = "no Telegram bot token stored: run `summonr gateway setup telegram`";
+
+pub fn run(
+    args: &[String],
+    cwd: &Path,
+    read_secret: &dyn Fn(&str) -> Result<String>,
+) -> Result<i32> {
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    match words.as_slice() {
+        ["setup", "telegram"] => setup(read_secret),
+        ["telegram", flags @ ..] => bridge(options(flags, cwd)?),
+        ["pair", code] => pair(code),
+        ["unpair", user] => unpair(number(user)?),
+        ["status"] => status(),
+        ["webhook"] => super::webhook::serve(crate::limits::limits().gateway_port),
+        ["webhook", "--port", port] => super::webhook::serve(number(port)?),
+        [..] => Err(Error::Config(USAGE.to_string())),
+    }
+}
+
+fn number<T: std::str::FromStr<Err = std::num::ParseIntError>>(text: &str) -> Result<T> {
+    text.parse()
+        .map_err(|error| Error::Config(format!("expected a number, got `{text}`: {error}")))
+}
+
+fn options(words: &[&str], cwd: &Path) -> Result<Options> {
+    let mut options = Options {
+        dir: cwd.to_path_buf(),
+        ..Options::default()
+    };
+    let mut words = words.iter().copied();
+    while let Some(flag) = words.next() {
+        let value = words
+            .next()
+            .ok_or_else(|| Error::Config(format!("{flag} needs a value\n{USAGE}")))?
+            .to_string();
+        match flag {
+            "--endpoint" => options.endpoint = Some(value),
+            "--model" => options.model = Some(value),
+            "--dir" => options.dir = cwd.join(value),
+            unknown => {
+                return Err(Error::Config(format!(
+                    "unknown option `{unknown}`\n{USAGE}"
+                )));
+            }
+        }
+    }
+    Ok(options)
+}
+
+fn setup(read_secret: &dyn Fn(&str) -> Result<String>) -> Result<i32> {
+    let token = read_secret(TOKEN_PROMPT)?.trim().to_string();
+    if token.is_empty() {
+        return Err(Error::Config("no token given".to_string()));
+    }
+    let bot = Bot::new(&token)?;
+    let me = block(bot.me())??;
+    crate::secret::set(SECRET, &token)?;
+    println!(
+        "stored the Telegram bot token for @{}",
+        me.username.as_deref().unwrap_or("?")
+    );
+    Ok(0)
+}
+
+fn bridge(options: Options) -> Result<i32> {
+    let token = token()?.ok_or_else(|| Error::Config(NO_TOKEN.to_string()))?;
+    let bot = Bot::new(&token)?;
+    let me = block(bot.me())??;
+    println!(
+        "@{} is listening; messages run in {} (Ctrl+C stops)",
+        me.username.as_deref().unwrap_or("?"),
+        options.dir.display()
+    );
+    block(turn::serve(bot, options))?
+}
+
+fn pair(code: &str) -> Result<i32> {
+    let now = crate::cron::now();
+    let pending = store::update(|state| Ok(state.pair(code, now)))?
+        .ok_or_else(|| Error::Config(format!("no pending pairing with code `{code}`")))?;
+    println!("paired Telegram user {}", pending.user);
+    if let Some(token) = token()? {
+        let bot = Bot::new(&token)?;
+        drop(block(bot.send(pending.chat, "paired"))?);
+    }
+    Ok(0)
+}
+
+fn unpair(user: i64) -> Result<i32> {
+    if store::update(|state| Ok(state.unpair(user)))? {
+        println!("unpaired Telegram user {user}");
+        Ok(0)
+    } else {
+        Err(Error::Config(format!("Telegram user {user} is not paired")))
+    }
+}
+
+fn status() -> Result<i32> {
+    let stored = token()?.is_some();
+    println!(
+        "telegram token: {}",
+        if stored { "stored" } else { "not set" }
+    );
+    let state = store::load()?;
+    let users: Vec<String> = state.users.iter().map(i64::to_string).collect();
+    println!(
+        "paired users: {}",
+        if users.is_empty() {
+            "none".to_string()
+        } else {
+            users.join(", ")
+        }
+    );
+    let now = crate::cron::now();
+    let waiting = state
+        .pending
+        .iter()
+        .filter(|pending| pending.expires > now)
+        .count();
+    println!("pending pairings: {waiting}");
+    for chat in &state.chats {
+        println!("chat {} -> session {}", chat.chat, chat.session);
+    }
+    Ok(0)
+}

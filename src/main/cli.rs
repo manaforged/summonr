@@ -28,6 +28,7 @@ pub(super) struct Args {
     pub(super) list_modules: bool,
     pub(super) mail: Option<Vec<String>>,
     pub(super) cron: Option<Vec<String>>,
+    pub(super) gateway: Option<Vec<String>>,
     pub(super) tool: Option<Vec<String>>,
     pub(super) mcp: Option<McpCommand>,
     pub(super) acp: bool,

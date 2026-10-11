@@ -66,6 +66,7 @@ pub fn stop_children() {
 }
 
 pub mod cron;
+pub mod gateway;
 pub mod mail;
 pub mod prefs;
 pub mod splash;

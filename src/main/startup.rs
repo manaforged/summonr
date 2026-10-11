@@ -24,8 +24,12 @@ use lifecycle::launch;
 use login::run_login;
 use session::{SessionAction, build};
 
+fn store_command(args: &Args) -> bool {
+    args.mail.is_some() || args.cron.is_some() || args.gateway.is_some()
+}
+
 pub(super) async fn run(args: Args) -> Result<i32> {
-    let log = if args.mail.is_some() || args.cron.is_some() {
+    let log = if store_command(&args) {
         None
     } else {
         diagnostics::Log::start()
@@ -101,6 +105,14 @@ async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32
             std::env::current_dir()
                 .map_err(Into::into)
                 .and_then(|cwd| summonr::cron::cli::run(words, &cwd)),
+        );
+    }
+    if let Some(words) = &args.gateway {
+        let read: &dyn Fn(&str) -> Result<String> = &login::read_secret;
+        return Some(
+            std::env::current_dir()
+                .map_err(Into::into)
+                .and_then(|cwd| summonr::gateway::cli::run(words, &cwd, read)),
         );
     }
     if let Some(tool) = &args.tool {

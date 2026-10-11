@@ -160,40 +160,42 @@ fn every(text: &str) -> Result<u64> {
 }
 
 fn field(text: &str, range: &Range) -> Result<u64> {
-    let mut bits = 0_u64;
-    for part in text.split(',') {
-        let (base, step) = match part.split_once('/') {
-            Some((base, step)) => (base, Some(step)),
-            None => (part, None),
-        };
-        let step: u32 = match step {
-            Some(step) => step
-                .parse()
-                .ok()
-                .filter(|step| *step > 0)
-                .ok_or_else(|| bad(part, "the step must be a number above zero"))?,
-            None => 1,
-        };
-        let (low, high) = match base {
-            "*" => (range.min, range.max),
-            bounds => match bounds.split_once('-') {
-                Some((low, high)) => (value(low, range)?, value(high, range)?),
-                None => {
-                    let low = value(base, range)?;
-                    (low, if step > 1 { range.max } else { low })
-                }
-            },
-        };
-        if low > high {
-            return Err(bad(part, "the range runs backward"));
-        }
-        let mut at = low;
-        while at <= high {
-            bits |= 1 << at;
-            at += step;
+    text.split(',')
+        .try_fold(0_u64, |bits, part| Ok(bits | part_bits(part, range)?))
+}
+
+fn part_bits(part: &str, range: &Range) -> Result<u64> {
+    let (base, step) = match part.split_once('/') {
+        Some((base, step)) => (base, step_of(part, step)?),
+        None => (part, 1),
+    };
+    let (low, high) = bounds(base, step, range)?;
+    if low > high {
+        return Err(bad(part, "the range runs backward"));
+    }
+    Ok((low..=high)
+        .step_by(usize::try_from(step).unwrap_or(usize::MAX))
+        .fold(0, |bits, at| bits | (1 << at)))
+}
+
+fn step_of(part: &str, step: &str) -> Result<u32> {
+    step.parse()
+        .ok()
+        .filter(|step| *step > 0)
+        .ok_or_else(|| bad(part, "the step must be a number above zero"))
+}
+
+fn bounds(base: &str, step: u32, range: &Range) -> Result<(u32, u32)> {
+    if base == "*" {
+        return Ok((range.min, range.max));
+    }
+    match base.split_once('-') {
+        Some((low, high)) => Ok((value(low, range)?, value(high, range)?)),
+        None => {
+            let low = value(base, range)?;
+            Ok((low, if step > 1 { range.max } else { low }))
         }
     }
-    Ok(bits)
 }
 
 fn value(text: &str, range: &Range) -> Result<u32> {

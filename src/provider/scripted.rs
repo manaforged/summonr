@@ -13,11 +13,14 @@ pub(crate) enum Reply {
     Fail(&'static str),
 }
 
+type Hook = Arc<dyn Fn(usize) + Send + Sync>;
+
 #[derive(Default)]
 pub(crate) struct Scripted {
     replies: Arc<Mutex<VecDeque<Reply>>>,
     sent: Sent,
     prefixes: Prefixes,
+    hook: Option<Hook>,
 }
 
 pub(crate) type Sent = Arc<Mutex<Vec<Vec<Message>>>>;
@@ -29,7 +32,13 @@ impl Scripted {
             replies: Arc::new(Mutex::new(replies.into_iter().collect())),
             sent: Sent::default(),
             prefixes: Prefixes::default(),
+            hook: None,
         }
+    }
+
+    pub(crate) fn on_complete(mut self, hook: impl Fn(usize) + Send + Sync + 'static) -> Self {
+        self.hook = Some(Arc::new(hook));
+        self
     }
 
     pub(crate) fn sent(&self) -> Sent {
@@ -47,6 +56,7 @@ impl Provider for Scripted {
             replies: Arc::clone(&self.replies),
             sent: Arc::clone(&self.sent),
             prefixes: Arc::clone(&self.prefixes),
+            hook: self.hook.clone(),
         })
     }
 
@@ -54,7 +64,14 @@ impl Provider for Scripted {
         &'a self,
         request: &'a CompletionRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-        self.sent.lock().unwrap().push(request.messages.to_vec());
+        let call = {
+            let mut sent = self.sent.lock().unwrap();
+            sent.push(request.messages.to_vec());
+            sent.len() - 1
+        };
+        if let Some(hook) = &self.hook {
+            hook(call);
+        }
         self.prefixes.lock().unwrap().push(request.prefix_hash());
         let reply = self.replies.lock().unwrap().pop_front();
         Box::pin(async move {

@@ -54,6 +54,18 @@ impl<P: Provider> Loop<P> {
                 messages.append(&mut steered);
                 continue;
             }
+            if message.tool_calls.is_empty() && self.steer_waiting() {
+                self.session
+                    .finish_provider(durable_attempt, &message.content, &reasoning, meter, meta)
+                    .map_err(super::session_err)?;
+                self.emit_records(events, &mut emit)?;
+                if !message.content.is_empty() {
+                    let text = message.content.clone();
+                    self.push_event(events, &mut emit, Event::Assistant { text })?;
+                }
+                messages.push(message);
+                continue;
+            }
             if message.tool_calls.is_empty() {
                 return self
                     .finish_turn(

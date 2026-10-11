@@ -183,3 +183,16 @@ fn kimi_k3_sends_back_its_reasoning_after_a_tool_call() {
         );
     }
 }
+
+#[test]
+fn effort_reaches_cohere_and_groq_only_in_values_they_accept() {
+    let messages = [Message::user("hi")];
+    let cohere = body(&endpoint("cohere", "north-mini-code-1-0"), &messages, Some(Effort::Low));
+    assert_eq!(cohere["reasoning_effort"], "high", "{cohere}");
+    let off = body(&endpoint("cohere", "north-mini-code-1-0"), &messages, Some(Effort::None));
+    assert_eq!(off["reasoning_effort"], "none", "{off}");
+    let llama = body(&endpoint("groq", "llama-3.3-70b-versatile"), &messages, Some(Effort::High));
+    assert!(llama.get("reasoning_effort").is_none(), "{llama}");
+    let oss = body(&endpoint("groq", "openai/gpt-oss-120b"), &messages, Some(Effort::High));
+    assert_eq!(oss["reasoning_effort"], "high", "{oss}");
+}

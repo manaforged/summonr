@@ -339,6 +339,9 @@ model = ""
 env_keys = ["GROQ_API_KEY"]
 opencode_ids = ["groq"]
 
+[preset.reasoning]
+levels = []
+
 [[preset]]
 name = "cerebras"
 base_url = "https://api.cerebras.ai/v1"
@@ -413,6 +416,10 @@ base_url = "https://api.cohere.ai/compatibility/v1"
 model = "north-mini-code-1-0"
 env_keys = ["COHERE_API_KEY"]
 opencode_ids = ["cohere"]
+
+[preset.reasoning]
+levels = ["high"]
+off = "none"
 
 [[preset]]
 name = "perplexity"

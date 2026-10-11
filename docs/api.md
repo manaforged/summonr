@@ -112,7 +112,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `elicit` | `form` (`message`, `fields`, and the MCP `server`, absent when the model asks), or null when the question ends |
 | `verify` | `command`, `passed`. `{"command":"workspace changed after the check ran","passed":false}` means files changed after summonr captured the candidate it checked, so the verdict fails; it counts toward `checks_failed` |
 | `receipt` | `receipt` |
-| `work` | `progress`; its `checks_failed` agrees with the `verify` events. `rounds` counts the checked rounds of the current goal or step, and `attempts` the failed checks in a row on it, so a goal that passed its first check reports `rounds` 1 and `attempts` 0 |
+| `work` | `progress`; its `checks_failed` agrees with the `verify` events. `rounds` counts the checked rounds of the current goal or step, and `attempts` the failed checks in a row on it, so a goal that passed its first check reports `rounds` 1 and `attempts` 0. `todos` is the model's own list, each with `text` and `status` (`pending`, `active`, or `done`); it is for display and never completes a goal or a step |
 | `child` | `id`, `event` (a nested event) |
 
 A step that contains ``Run `CMD` `` is gated on `CMD` and on `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check.

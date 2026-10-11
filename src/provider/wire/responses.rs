@@ -92,7 +92,7 @@ fn input(call: &CompletionRequest<'_>) -> crate::error::Result<(String, Vec<Valu
             Role::Tool => input.push(json!({
                 "type": "function_call_output",
                 "call_id": call_id(message.tool_call_id.as_deref().unwrap_or_default())?,
-                "output": message.content,
+                "output": tool_output(message),
             })),
         }
     }
@@ -144,17 +144,21 @@ fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
         .collect()
 }
 
+fn tool_output(message: &Message) -> Value {
+    if message.images.is_empty() {
+        return json!(message.content);
+    }
+    let mut parts = vec![json!({"type": "input_text", "text": message.content})];
+    parts.extend(message.images.iter().map(input_image));
+    Value::Array(parts)
+}
+
+fn input_image(image: &crate::provider::Image) -> Value {
+    json!({"type": "input_image", "image_url": image.url()})
+}
+
 fn user_parts(message: &Message) -> Vec<Value> {
-    let mut parts: Vec<Value> = message
-        .images
-        .iter()
-        .map(|image| {
-            json!({
-                "type": "input_image",
-                "image_url": format!("data:{};base64,{}", image.media_type, image.data),
-            })
-        })
-        .collect();
+    let mut parts: Vec<Value> = message.images.iter().map(input_image).collect();
     if !message.content.is_empty() {
         parts.push(json!({"type": "input_text", "text": message.content}));
     }

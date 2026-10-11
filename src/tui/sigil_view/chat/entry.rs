@@ -201,10 +201,13 @@ fn verify(command: &str, passed: bool) -> NodeBuilder {
 }
 
 fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeBuilder {
+    if !canvas::is_window() && caps().is_none_or(|caps| caps.graphics.is_none()) {
+        return wrap(Look::sm(sigil::prelude::Token::Gray11).on(text("[attached image]")));
+    }
     let (width, height) = (source.width() as f32, source.height() as f32);
     let id = source.id();
     let kind = crate::tools::image_type(&bytes).and_then(|media| media.strip_prefix("image/"));
-    let mut picture = container()
+    let picture = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .pointer_up(move |event| {
             if event.button != Some(MouseButton::Left) {
@@ -216,21 +219,20 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
                 drop(std::process::Command::new("open").arg(&path).spawn());
             }
         });
-    if canvas::is_window() || caps().is_some_and(|caps| caps.graphics.is_some()) {
-        picture = picture.child(
+    picture
+        .child(
             image(source)
                 .alt(name.clone())
                 .fit(ObjectFit::Contain)
                 .layout(LayoutStyle::block().width(width).height(height)),
-        );
-    }
-    picture.child(
-        sigil::kernel::text(name)
-            .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
-            .font_size(12.0)
-            .text_color(sigil::prelude::Token::Gray11),
-    )
+        )
+        .child(
+            sigil::kernel::text(name)
+                .nowrap()
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
+        )
 }
 
 pub(super) fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {

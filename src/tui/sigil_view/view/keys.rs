@@ -9,6 +9,10 @@ type Handler = fn(&App, &mut KeyEvent);
 impl App {
     fn escape(&self, event: &mut KeyEvent) {
         event.stop_propagation();
+        if self.hotkeys.armed.peek() {
+            self.hotkeys.armed.set(false);
+            return;
+        }
         if self.options_active() {
             super::input::escape(self);
         } else if self.form_stage().is_some() {
@@ -244,10 +248,13 @@ fn hunk_keys() -> Vec<(Shortcut, Handler)> {
 }
 
 pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
-    let mut shell = container()
-        .role(Role::Main)
-        .label("Summonr agent harness")
-        .layout(LayoutStyle::flex_column().fill_width().fill_height());
+    let mut shell = super::input::leader_shortcuts(
+        container()
+            .role(Role::Main)
+            .label("Summonr agent harness")
+            .layout(LayoutStyle::flex_column().fill_width().fill_height()),
+        app,
+    );
     let bindings = respond().into_iter().chain(panes()).chain(nav());
     for (shortcut, action) in bindings {
         let app = app.clone();
@@ -270,6 +277,10 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
     let owner = app.clone();
     let shell = shell
         .key_capture_any(move |event| {
+            if super::input::leader_plain(&owner, event) {
+                event.stop_propagation();
+                return;
+            }
             let typed = event
                 .text
                 .as_ref()

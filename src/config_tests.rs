@@ -149,6 +149,6 @@ fn the_notify_setting_survives_a_save() {
 fn an_old_hotkey_table_that_binds_ctrl_n_still_loads() {
     let (_dir, path) = written("[hotkeys]\npane = \"ctrl+n\"\n");
     let prefs = crate::prefs::load_from(&path).unwrap();
-    assert_eq!(prefs.hotkeys.key(crate::prefs::Hotkey::Pane), 'n');
-    assert_ne!(prefs.hotkeys.key(crate::prefs::Hotkey::Fold), 'n');
+    assert_eq!(prefs.hotkeys.action('n'), Some(crate::prefs::Hotkey::Pane));
+    assert_eq!(prefs.hotkeys.chord('n'), Some(crate::prefs::Hotkey::Fold));
 }

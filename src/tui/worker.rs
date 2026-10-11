@@ -22,6 +22,8 @@ pub(super) use export::{announce, export_session};
 mod history;
 mod reader;
 mod settings;
+#[cfg(test)]
+mod startup_tests;
 mod state;
 mod turn;
 

@@ -10,7 +10,7 @@ mod notify;
 pub(crate) use background::Background;
 pub(crate) use diff::DiffLayout;
 pub use hotkeys::Hotkey;
-pub(crate) use hotkeys::{EditorKey, Hotkeys, available};
+pub(crate) use hotkeys::{EditorKey, Hotkeys};
 pub(crate) use notify::Notify;
 
 pub(crate) const AUTO_THEME: &str = "auto";

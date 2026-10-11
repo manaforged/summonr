@@ -11,8 +11,8 @@ fn hints_render_one_separator_and_follow_rebound_keys() {
     let mut keys = Hotkeys::default();
     assert_eq!(
         hints.text(&keys),
-        "↑↓ move · ↵ use · ctrl+a children · esc close"
+        "↑↓ move · ↵ use · ctrl+x a children · esc close"
     );
-    assert!(keys.assign(Hotkey::Agents, 'g'));
+    assert!(keys.assign(Hotkey::Agents, 'g', false));
     assert!(hints.text(&keys).contains("ctrl+g children"));
 }

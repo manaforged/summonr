@@ -118,9 +118,16 @@ fn mode_text(model: &Model) -> ModeText {
     } else if model.snapshot.approval {
         "approval"
     } else {
-        "auto approval"
+        ""
     };
-    (format!("{glyph} {mode} · {approval}"), class as u8)
+    let text = if approval.is_empty() {
+        format!("{glyph} {mode}")
+    } else if class == 2 {
+        format!("{glyph} {approval}")
+    } else {
+        format!("{glyph} {mode} · {approval}")
+    };
+    (text, class as u8)
 }
 
 fn model_text(model: &Model) -> String {
@@ -160,6 +167,13 @@ fn header_row(app: App) -> NodeBuilder {
 fn hint_row(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
     let hint = sigil::reactive::derived(move || {
+        if update.hotkeys.armed.get() {
+            return " ctrl+x ".to_string();
+        }
+        let note = update.hotkeys.note.get();
+        if !update.hotkeys.open.get() && !note.is_empty() {
+            return note;
+        }
         let select = update.select.get();
         let model = update.model.get();
         let keys = &model.prefs.hotkeys;

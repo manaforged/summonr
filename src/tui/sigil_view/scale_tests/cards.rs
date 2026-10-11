@@ -299,7 +299,7 @@ fn the_fold_key_cycles_thinking_and_tool_output() {
     let mut seen = Vec::new();
     let _ = card(110, |app| {
         for _ in 0..3 {
-            assert!(app.route_hotkey('n'));
+            assert!(app.route_chord('n'));
             let prefs = app.model.peek().prefs.clone();
             seen.push((prefs.reasoning.name(), prefs.tools.name()));
         }

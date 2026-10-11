@@ -15,6 +15,7 @@ mod approval;
 mod attach;
 mod cards;
 mod children;
+mod composer_todos;
 mod copy_notice;
 mod effort;
 mod footer;

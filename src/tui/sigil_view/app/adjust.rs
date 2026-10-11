@@ -102,12 +102,14 @@ impl App {
     pub(in crate::tui::sigil_view) fn open_hotkeys(&self) {
         self.hotkeys.sel.set(0);
         self.hotkeys.recording.set(false);
+        self.hotkeys.armed.set(false);
         self.hotkeys.note.set(String::new());
         self.hotkeys.open.set(true);
     }
 
     pub(in crate::tui::sigil_view) fn close_hotkeys(&self) {
         self.hotkeys.recording.set(false);
+        self.hotkeys.armed.set(false);
         self.hotkeys.note.set(String::new());
         self.hotkeys.open.set(false);
     }
@@ -128,6 +130,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn edit_hotkey(&self) {
         if !self.hotkeys.recording.peek() {
             self.hotkeys.note.set(String::new());
+            self.hotkeys.armed.set(false);
             self.hotkeys.recording.set(true);
         }
     }
@@ -138,17 +141,45 @@ impl App {
         });
         let prefs = self.model.peek().prefs.clone();
         self.hotkeys.recording.set(false);
+        self.hotkeys.armed.set(false);
         self.hotkeys.note.set(String::new());
         self.persist(&prefs);
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn route_hotkey(&self, key: char) -> bool {
+    pub(in crate::tui::sigil_view) fn arm_leader(&self) {
+        self.hotkeys.note.set(String::new());
+        self.hotkeys.armed.set(true);
+    }
+
+    pub(in crate::tui::sigil_view) fn take_chord(&self, key: char) {
+        self.hotkeys.armed.set(false);
+        if key == 'x' {
+            return;
+        }
         if self.hotkeys.recording.peek() {
-            self.record_hotkey(key);
+            self.record_chord(key, true);
+        } else {
+            self.route_chord(key);
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn route_hotkey(&self, key: char) -> bool {
+        self.dispatch(self.model.get().prefs.hotkeys.action(key))
+    }
+
+    pub(in crate::tui::sigil_view) fn route_chord(&self, key: char) -> bool {
+        self.hotkeys.armed.set(false);
+        let found = self.model.get().prefs.hotkeys.chord(key);
+        if found.is_none() {
+            self.hotkeys.note.set(format!("ctrl+x {key} is unbound"));
             return true;
         }
-        let action = self.model.get().prefs.hotkeys.action(key);
+        self.hotkeys.note.set(String::new());
+        self.dispatch(found)
+    }
+
+    fn dispatch(&self, action: Option<Hotkey>) -> bool {
         let Some(action) = action else {
             return false;
         };
@@ -158,20 +189,25 @@ impl App {
         self.run_hotkey(action)
     }
 
-    fn record_hotkey(&self, key: char) {
+    pub(in crate::tui::sigil_view) fn record_chord(&self, key: char, leader: bool) {
         let action = Hotkey::ALL[self.hotkeys.sel.peek().min(Hotkey::ALL.len() - 1)];
         let mut assigned = false;
-        if crate::prefs::available(key) {
-            self.model_mut(|model| {
-                assigned = model.prefs.hotkeys.assign(action, key);
-            });
-        }
+        self.model_mut(|model| {
+            assigned = model.prefs.hotkeys.assign(action, key, leader);
+        });
         if !assigned {
-            self.hotkeys.note.set(format!("ctrl+{key} is reserved"));
+            let binding = if leader {
+                format!("ctrl+x {key}")
+            } else {
+                format!("ctrl+{key}")
+            };
+            self.hotkeys.note.set(format!("{binding} is reserved"));
+            self.hotkeys.armed.set(false);
             return;
         }
         let prefs = self.model.peek().prefs.clone();
         self.hotkeys.recording.set(false);
+        self.hotkeys.armed.set(false);
         self.hotkeys.note.set(String::new());
         self.persist(&prefs);
         self.refresh();

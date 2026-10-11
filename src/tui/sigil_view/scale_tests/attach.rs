@@ -124,6 +124,15 @@ fn an_image_without_terminal_graphics_keeps_its_label_without_a_blank_preview() 
         app.submit();
     });
     let shown = lines.join("\n");
-    assert!(shown.contains("image ·"), "{shown}");
-    assert!(shown.contains("Measured layout."), "{shown}");
+    assert!(shown.contains("[attached image]"), "{shown}");
+    assert!(!shown.contains("image ·"), "{shown}");
+    let caption = lines
+        .iter()
+        .position(|line| line.contains("[attached image]"))
+        .expect("attachment caption");
+    let previous = lines[..caption]
+        .iter()
+        .rposition(|line| line.contains("Measured layout."))
+        .expect("preceding reply");
+    assert!(caption - previous <= 5, "{shown}");
 }

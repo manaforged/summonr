@@ -20,6 +20,17 @@ impl Worker {
             loop_.mcp_board(),
             ui.clone(),
         );
+        let levels = match crate::endpoint::resolve(
+            Some(&info.endpoint),
+            Some(loop_.model()),
+            crate::endpoint::Need::Config,
+        ) {
+            Ok(endpoint) => endpoint.reasoning.levels_for(loop_.model()),
+            Err(error) => {
+                drop(ui.send(Msg::Failed(error.to_string())));
+                Vec::new()
+            }
+        };
         Self {
             home,
             reader,
@@ -41,7 +52,7 @@ impl Worker {
             last_peers: None,
             workflow: info.workflow.unwrap_or_default(),
             dial: None,
-            levels: Vec::new(),
+            levels,
         }
     }
 

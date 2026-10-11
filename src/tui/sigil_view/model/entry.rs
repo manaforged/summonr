@@ -97,7 +97,7 @@ pub(in crate::tui::sigil_view) fn entry_markdown(entry: &Entry) -> String {
         Entry::System(text) => format!("> {text}"),
         Entry::Error(text) => format!("**Error:** {text}"),
         Entry::Chart(rounds) => super::app::presentation::stats(rounds),
-        Entry::Image { label, .. } => format!("   {label}"),
+        Entry::Image { .. } => "[attached image]".to_string(),
     }
 }
 

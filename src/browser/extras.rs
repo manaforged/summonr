@@ -58,6 +58,9 @@ pub(super) async fn act(
     report: charm::ActReport,
     out_max: usize,
 ) -> Result<String> {
+    if let Some(blocked) = guard(page).await? {
+        return Ok(blocked);
+    }
     let outcome = page.act(action, report).await.map_err(fail)?;
     if let Some(blocked) = guard(page).await? {
         return Ok(blocked);

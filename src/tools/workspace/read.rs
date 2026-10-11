@@ -99,10 +99,14 @@ impl ToolRegistry {
         }
         let mut out = String::new();
         let mut images = Vec::new();
+        let mut attempted = 0_usize;
+        let mut failed = 0_usize;
+        let mut first_failure: Option<String> = None;
         for path in paths {
             let Some(path) = path.as_str() else {
                 continue;
             };
+            attempted += 1;
             let mut call = args.clone();
             if let Some(fields) = call.as_object_mut() {
                 fields.remove("paths");
@@ -122,9 +126,15 @@ impl ToolRegistry {
                     images.extend(read.images);
                 }
                 Err(error) => {
-                    out.push_str(&format!("{path}: {error}\n"));
+                    failed += 1;
+                    let text = error.to_string();
+                    out.push_str(&format!("{path}: {text}\n"));
+                    first_failure.get_or_insert(text);
                 }
             }
+        }
+        if attempted > 0 && attempted == failed {
+            return Err(Error::Tool(first_failure.unwrap_or_default()));
         }
         Ok(ToolOutput {
             images,

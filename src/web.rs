@@ -20,6 +20,24 @@ pub(crate) use fetch::OUT_MAX;
 use fetch::{check_url, host_blocked, resolves_blocked};
 
 const INERT_SCHEMES: [&str; 3] = ["about", "data", "chrome-error"];
+pub(crate) const PRIVATE_URL_PATTERNS: &[&str] = &[
+    "*://localhost/*",
+    "*://localhost:*/*",
+    "*://*.localhost/*",
+    "*://*.localhost:*/*",
+    "*://*.local/*",
+    "*://*.local:*/*",
+    "*://*.internal/*",
+    "*://*.internal:*/*",
+    "*://127.0.0.1/*",
+    "*://127.0.0.1:*/*",
+    "*://0.0.0.0/*",
+    "*://0.0.0.0:*/*",
+    "*://[::1]/*",
+    "*://[::1]:*/*",
+    "*://metadata.google.internal/*",
+    "*://metadata.google.internal:*/*",
+];
 use results::{Engine, Hit, Window, engines, flat, format_hits, parse_page};
 
 #[derive(Clone, Copy, PartialEq, Eq)]

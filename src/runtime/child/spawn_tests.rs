@@ -1,20 +1,33 @@
-use std::sync::Arc;
-
 use crate::provider::scripted::{Reply, Scripted};
 use crate::runtime::Loop;
 
 #[tokio::test]
-async fn a_child_reuses_the_parent_prefix_and_gets_its_brief_in_the_first_message() {
+async fn a_child_gets_its_brief_and_its_own_tools() {
     let provider = Scripted::new([Reply::Text("hello"), Reply::Text("found it")]);
-    let prefixes = provider.prefixes();
     let workspace = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let driver =
         crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")
             .unwrap();
     let mut parent = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    let browser_on: std::collections::BTreeMap<crate::modules::ModuleId, bool> =
+        [(crate::modules::ModuleId::Browser, true)]
+            .into_iter()
+            .collect();
+    parent
+        .set_modules(&crate::modules::Switches::from_maps(
+            &browser_on,
+            &Default::default(),
+        ))
+        .unwrap();
     parent.turn("hi").await.unwrap();
-    let parent_tools = parent.advertised_tools();
+    assert!(
+        parent
+            .advertised_tools()
+            .tools
+            .iter()
+            .any(|definition| definition.function.name == "browser")
+    );
     let args = serde_json::from_value(serde_json::json!({
         "assignment": "find the config loader",
         "access": "research",
@@ -23,8 +36,27 @@ async fn a_child_reuses_the_parent_prefix_and_gets_its_brief_in_the_first_messag
     let budget = parent.task_budget(1).unwrap();
     let mut run = parent.task_start_in(args, &budget, None).unwrap();
     assert_eq!(run.child.system_prompt, parent.system_prompt);
-    let child_tools = run.child.schema.clone().unwrap();
-    assert!(Arc::ptr_eq(&child_tools, &parent_tools));
+    let child_tools = run.child.advertised_tools();
+    assert!(
+        !child_tools
+            .tools
+            .iter()
+            .any(|definition| definition.function.name == "browser"),
+        "{}",
+        child_tools
+            .tools
+            .iter()
+            .map(|definition| definition.function.name.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    assert!(
+        !child_tools.tools.iter().any(|definition| definition
+            .function
+            .name
+            .as_str()
+            .starts_with("task"))
+    );
     assert!(
         run.assignment.starts_with("Harness: child."),
         "{}",
@@ -39,11 +71,45 @@ async fn a_child_reuses_the_parent_prefix_and_gets_its_brief_in_the_first_messag
     assert!(run.assignment.ends_with("find the config loader"));
     let assignment = run.assignment.clone();
     run.child.turn(&assignment).await.unwrap();
-    let prefixes = prefixes.lock().unwrap();
-    assert_eq!(prefixes.len(), 2);
-    assert_eq!(
-        prefixes[1], prefixes[0],
-        "the child's first request missed the parent prefix"
+}
+
+#[tokio::test]
+async fn an_implement_child_keeps_the_browser() {
+    let provider = Scripted::new([Reply::Text("done")]);
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    let mut parent = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    let browser_on: std::collections::BTreeMap<crate::modules::ModuleId, bool> =
+        [(crate::modules::ModuleId::Browser, true)]
+            .into_iter()
+            .collect();
+    parent
+        .set_modules(&crate::modules::Switches::from_maps(
+            &browser_on,
+            &Default::default(),
+        ))
+        .unwrap();
+    let budget = parent.task_budget(1).unwrap();
+    let mut run = parent
+        .task_start_in(
+            serde_json::from_value(serde_json::json!({
+                "assignment": "add the flag",
+                "access": "implement",
+            }))
+            .unwrap(),
+            &budget,
+            None,
+        )
+        .unwrap();
+    assert!(
+        run.child
+            .advertised_tools()
+            .tools
+            .iter()
+            .any(|definition| definition.function.name == "browser")
     );
 }
 
@@ -70,6 +136,50 @@ fn implement() -> super::Args {
         "access": "implement",
     }))
     .unwrap()
+}
+
+#[tokio::test]
+async fn a_cancelled_turn_leaves_background_children_settleable_by_poll() {
+    let (mut parent, _dirs) = parent(vec![Reply::Text("ok"), Reply::Text("child done")]);
+    parent.turn("hi").await.unwrap();
+    let args = serde_json::from_value(serde_json::json!({
+        "assignment": "find the config loader",
+        "access": "research",
+        "background": true,
+    }))
+    .unwrap();
+    let budget = parent.task_budget(1).unwrap();
+    parent.task_spawn(args, &budget).unwrap();
+    let id = parent.spawned.keys().next().cloned().unwrap();
+    parent
+        .abort_with(
+            &crate::tools::Abort {
+                code: crate::tools::AbortCode::Cancelled,
+                reason: "cancelled by user".to_string(),
+            },
+            |_| {},
+        )
+        .unwrap();
+    assert!(parent.spawned.contains_key(&id));
+    let running = id
+        .parse::<crate::durable::id::SessionId>()
+        .ok()
+        .and_then(|parsed| parent.session.child(parsed))
+        .map(|record| record.state);
+    assert!(matches!(running, Some(crate::child::ChildState::Running)));
+    parent
+        .await_children(
+            &mut Vec::new(),
+            &mut |_| {},
+            &mut crate::provider::Usage::default(),
+        )
+        .await
+        .unwrap();
+    let execution = parent
+        .task_poll(&id, false, &mut Vec::new(), &mut |_| {})
+        .await
+        .unwrap();
+    assert!(execution.output.success);
 }
 
 #[tokio::test]

@@ -106,6 +106,17 @@ async fn a_long_tool_argument_stream_is_not_cut_as_silence() {
     assert!(message.tool_calls[0].function.arguments.ends_with("{}"));
 }
 
+#[tokio::test]
+async fn a_done_sentinel_without_a_finish_reason_is_not_a_finished_reply() {
+    let last = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n";
+    let (outcome, partial) = run(server(GREETING, GREETING, 1, last)).await;
+    let Err(Error::Provider(failure)) = outcome else {
+        panic!("expected a provider failure, got {outcome:?}");
+    };
+    assert_eq!(failure.kind, ProviderFailureKind::Transport);
+    assert_eq!(partial.text, "hihi");
+}
+
 fn read_request(socket: &mut TcpStream) {
     let mut request = Vec::new();
     let mut buf = [0u8; 65536];

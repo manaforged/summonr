@@ -88,7 +88,6 @@ impl<P: Provider> Loop<P> {
             None,
         )?;
         child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
-        child.schema = Some(self.advertised_tools());
         child.depth = 1;
         child.context_window = self.context_window;
         child.context_sample = self.context_sample;

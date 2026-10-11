@@ -71,6 +71,7 @@ pub(crate) struct ToolRegistry {
     model_images: bool,
     vision: Option<crate::endpoint::Endpoint>,
     only: Option<Vec<Builtin>>,
+    standalone: bool,
 }
 
 pub(crate) struct ToolOutput {
@@ -141,6 +142,7 @@ impl ToolRegistry {
             model_images: false,
             vision: None,
             only: None,
+            standalone: false,
         })
     }
 
@@ -246,6 +248,7 @@ impl ToolRegistry {
 
     pub(crate) fn contain_read_only(&mut self) {
         self.policy.set_read_only(true);
+        self.browser = None;
         if self.sandbox.is_none() {
             drop(self.enable_sandbox(sandbox::Network::Allowed));
         }
@@ -321,6 +324,7 @@ pub async fn run_tool(
         crate::policy::Policy::discover(workspace)?,
         None,
     )?;
+    tools.standalone = true;
     tools.set_modules(&crate::modules::Switches::load(workspace)?)?;
     if let Some(network) = sandbox {
         tools.enable_sandbox(network)?;

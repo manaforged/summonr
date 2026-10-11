@@ -46,11 +46,13 @@ impl Browser {
         if headed {
             launch = launch.headed();
         }
-        match charm::Session::launch(launch).await {
-            Ok(session) => Ok(Live { session, headed }),
-            Err(charm::Error::ProfileInUse { .. }) => self.attach().await,
-            Err(error) => Err(fail(error)),
-        }
+        let mut live = match charm::Session::launch(launch).await {
+            Ok(session) => Live { session, headed },
+            Err(charm::Error::ProfileInUse { .. }) => self.attach().await?,
+            Err(error) => return Err(fail(error)),
+        };
+        arm(&mut live.session).await?;
+        Ok(live)
     }
 
     async fn attach(&self) -> Result<Live> {
@@ -77,6 +79,19 @@ impl Browser {
             headed: true,
         })
     }
+}
+
+async fn arm(session: &mut charm::Session) -> Result<()> {
+    for pattern in crate::web::PRIVATE_URL_PATTERNS {
+        session
+            .route(
+                charm::UrlMatch::Glob((*pattern).to_string()),
+                charm::RouteAction::Abort(charm::ErrorReason::BlockedByClient),
+            )
+            .await
+            .map_err(fail)?;
+    }
+    Ok(())
 }
 
 pub(super) async fn close(live: &mut Option<Live>) -> Result<String> {

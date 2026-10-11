@@ -22,6 +22,66 @@ fn a_fetch_rejects_an_address_in_the_unspecified_block() {
     assert!(!super::fetch::host_blocked("203.0.113.7"));
 }
 
+fn glob(pattern: &str, text: &str) -> bool {
+    match pattern.split_once('*') {
+        None => pattern == text,
+        Some((head, tail)) => {
+            let Some(rest) = text.strip_prefix(head) else {
+                return false;
+            };
+            (0..=rest.len()).any(|at| glob(tail, &rest[at..]))
+        }
+    }
+}
+
+#[test]
+fn the_private_url_patterns_reach_the_denied_host_literals() {
+    let denied = [
+        "http://localhost/a",
+        "https://sub.localhost/a",
+        "https://127.0.0.1:9/a",
+        "http://[::1]:80/a",
+        "http://0.0.0.0/a",
+        "https://metadata.google.internal/a",
+    ];
+    for url in denied {
+        assert!(
+            super::PRIVATE_URL_PATTERNS
+                .iter()
+                .any(|pattern| glob(pattern, url)),
+            "{url}"
+        );
+    }
+    let guard_covered = [
+        "https://10.0.0.5/a",
+        "http://192.168.1.10/a",
+        "https://169.254.3.4/a",
+        "http://[fd00::1]/a",
+    ];
+    for url in guard_covered {
+        assert!(
+            !super::PRIVATE_URL_PATTERNS
+                .iter()
+                .any(|pattern| glob(pattern, url)),
+            "{url}"
+        );
+    }
+    let allowed = [
+        "https://example.com/a",
+        "https://8.8.8.8/a",
+        "https://172.32.0.1/a",
+        "https://example.com/?next=http%3A%2F%2F127.0.0.1%2F",
+    ];
+    for url in allowed {
+        assert!(
+            !super::PRIVATE_URL_PATTERNS
+                .iter()
+                .any(|pattern| glob(pattern, url)),
+            "{url}"
+        );
+    }
+}
+
 const DDG: &str = r#"<div class="result results_links results_links_deep web-result "><div class="links_main links_deep result__body"><h2 class="result__title"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdocs.rs%2Ftokio%2Flatest%2Ftokio%2Fmacro.select.html&amp;rut=9d03">select in <b>tokio</b> - Rust &amp; Docs.rs</a></h2><a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdocs.rs%2F">Waits on <b>multiple</b> concurrent branches.</a></div></div>
 <div class="result results_links results_links_deep web-result "><div class="links_main links_deep result__body"><h2 class="result__title"><a rel="nofollow" class="result__a" href="https://duckduckgo.com/y.js?ad_domain=example.com">Ad</a></h2></div></div>"#;
 

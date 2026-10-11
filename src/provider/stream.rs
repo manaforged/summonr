@@ -86,10 +86,7 @@ impl Client {
                 break;
             }
         }
-        let Some(stream) = state
-            .state
-            .take_if(|stream| frames.ended() || stream.finished())
-        else {
+        let Some(stream) = state.state.take_if(|stream| stream.finished()) else {
             return Err(cut(Error::provider(
                 ProviderFailureKind::Transport,
                 "stream ended before the provider finished the reply",

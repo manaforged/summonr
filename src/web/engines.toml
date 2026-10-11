@@ -1,4 +1,24 @@
 [[engine]]
+name = "bing"
+url = "https://www.bing.com/search"
+query = "q"
+block = "class=\"b_algo\""
+heading = "h2"
+snippet = "b_caption"
+unwrap = "u"
+unwrap_prefix = "a1"
+encoding = "base64"
+hosts = ["bing.com"]
+
+[engine.freshness]
+param = "filters"
+
+[engine.freshness.values]
+day = 'ex1:"ez1"'
+week = 'ex1:"ez2"'
+month = 'ex1:"ez3"'
+
+[[engine]]
 name = "duckduckgo"
 url = "https://html.duckduckgo.com/html/"
 query = "q"

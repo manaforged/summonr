@@ -22,6 +22,13 @@ fn a_fetch_rejects_an_address_in_the_unspecified_block() {
     assert!(!super::fetch::host_blocked("203.0.113.7"));
 }
 
+#[test]
+fn the_classifier_reads_a_trailing_dot_host() {
+    assert!(super::fetch::host_blocked("localhost."));
+    assert!(super::fetch::host_blocked("127.0.0.1."));
+    assert!(!super::fetch::host_blocked("example.com."));
+}
+
 fn glob(pattern: &str, text: &str) -> bool {
     match pattern.split_once('*') {
         None => pattern == text,
@@ -40,6 +47,8 @@ fn the_private_url_patterns_reach_the_denied_host_literals() {
         "http://localhost/a",
         "https://sub.localhost/a",
         "https://127.0.0.1:9/a",
+        "http://localhost.:8080/a",
+        "http://localhost./a",
         "http://[::1]:80/a",
         "http://0.0.0.0/a",
         "https://metadata.google.internal/a",
@@ -88,6 +97,8 @@ const DDG: &str = r#"<div class="result results_links results_links_deep web-res
 const BRAVE: &str = r#"<div class="snippet svelte-jmfu5f" data-pos="0" data-type="web" data-keynav="true"><div class="result-content svelte-1rq4ngz"><a href="https://stackoverflow.com/questions/72263644" target="_self" class="svelte-14r20fy l1"><div class="site-name-content svelte-on1hvy"><div class="desktop-small-semibold">Stack Overflow</div></div> <div class="title search-snippet-title line-clamp-1 svelte-14r20fy" title="Tokio select">rust - Tokio select macro</div></a> <div class="generic-snippet svelte-1cwdgg3"><div class="content svelte-1cwdgg3">Each <strong>branch</strong> &lt;runs&gt; concurrently.</div></div></div></div>
 <div class="snippet svelte-jmfu5f" data-pos="1" data-type="web" data-keynav="true"><a href="https://search.brave.com/goggles" class="svelte-14r20fy l1"><div class="title search-snippet-title">Goggles</div></a></div>"#;
 
+const BING: &str = r#"<ol id="b_results"><li class="b_algo" data-id iid=SERP.5344><link rel="stylesheet" href="https://r.bing.com/rp/a.css" type="text/css"/><div class="b_tpcn"><a class="tilk" href="https://serde.rs/"><div class="tptxt">serde.rs</div></a></div><h2><a target="_blank" href="https://www.bing.com/ck/a?!&amp;&amp;p=1ecb&amp;ptn=3&amp;u=a1aHR0cHM6Ly9zZXJkZS5ycy9maWVsZC1hdHRycy5odG1s&amp;ntb=1" h="ID=SERP,5128.2">Field attributes &#183; <strong>Serde</strong></a></h2><div class="b_caption"><p class="b_lineclamp2">Serialize and deserialize this field with the given name.</p></div></li><li class="b_algo"><h2><a href="https://www.bing.com/ck/a?!&amp;&amp;u=a1aHR0cHM6Ly93d3cuYmluZy5jb20vbmV3cw&amp;ntb=1">Bing News</a></h2></li></ol>"#;
+
 fn engine(name: &str) -> &'static super::results::Engine {
     super::results::engines()
         .unwrap()
@@ -97,13 +108,32 @@ fn engine(name: &str) -> &'static super::results::Engine {
 }
 
 #[test]
-fn engines_are_tried_duckduckgo_then_brave() {
+fn engines_are_tried_bing_then_duckduckgo_then_brave() {
     let names = super::results::engines()
         .unwrap()
         .iter()
         .map(|engine| engine.name.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(names, ["duckduckgo", "brave"]);
+    assert_eq!(names, ["bing", "duckduckgo", "brave"]);
+}
+
+#[test]
+fn a_bing_page_yields_the_decoded_url_title_and_snippet_and_skips_its_own_links() {
+    let hits = super::results::parse_page(BING, engine("bing"));
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].url, "https://serde.rs/field-attrs.html");
+    assert_eq!(hits[0].title, "Field attributes · Serde");
+    assert_eq!(
+        hits[0].snippet,
+        "Serialize and deserialize this field with the given name."
+    );
+    let url = engine("bing")
+        .request("serde", Some(super::results::Window::Week))
+        .unwrap();
+    assert_eq!(
+        url.as_str(),
+        "https://www.bing.com/search?q=serde&filters=ex1%3A%22ez2%22"
+    );
 }
 
 #[test]

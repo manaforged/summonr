@@ -23,12 +23,19 @@ pub(super) struct Engine {
     url: String,
     query: String,
     block: String,
-    link: String,
+    #[serde(default)]
+    link: Option<String>,
+    #[serde(default)]
+    heading: Option<String>,
     #[serde(default)]
     title: Option<String>,
     snippet: String,
     #[serde(default)]
     unwrap: Option<String>,
+    #[serde(default)]
+    unwrap_prefix: Option<String>,
+    #[serde(default)]
+    encoding: Encoding,
     #[serde(default)]
     freshness: Option<Freshness>,
     #[serde(default)]
@@ -55,6 +62,14 @@ impl Window {
             ))
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Encoding {
+    #[default]
+    Url,
+    Base64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,9 +121,33 @@ impl Engine {
             .query_pairs()
             .find(|(key, _)| key == param)
             .map(|(_, value)| value.into_owned());
-        match inner {
-            Some(inner) => result_url(inner),
-            None => Some(absolute),
+        let Some(inner) = inner else {
+            return Some(absolute);
+        };
+        let inner = match &self.unwrap_prefix {
+            Some(prefix) => inner.strip_prefix(prefix.as_str())?.to_string(),
+            None => inner,
+        };
+        match self.encoding {
+            Encoding::Url => result_url(inner),
+            Encoding::Base64 => {
+                use base64::Engine as _;
+                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(inner.trim_end_matches('='))
+                    .ok()?;
+                result_url(String::from_utf8(bytes).ok()?)
+            }
+        }
+    }
+
+    fn anchor<'a>(&self, block: &'a str) -> Option<&'a str> {
+        match (&self.heading, &self.link) {
+            (Some(heading), _) => {
+                let inside = tag(block, heading)?;
+                tag(inside, "a")
+            }
+            (None, Some(link)) => element(block, link),
+            (None, None) => None,
         }
     }
 
@@ -126,7 +165,7 @@ pub(super) fn parse_page(html: &str, engine: &Engine) -> Vec<Hit> {
 }
 
 fn page_hit(block: &str, engine: &Engine) -> Option<Hit> {
-    let anchor = element(block, &engine.link)?;
+    let anchor = engine.anchor(block)?;
     let href = attr(&anchor[..anchor.find('>')? + 1], "href")?;
     let url = engine.target(href)?;
     if engine.own(&url) {
@@ -164,6 +203,20 @@ fn element<'a>(html: &'a str, class: &str) -> Option<&'a str> {
             return Some(&html[open..closing(html, open)?]);
         }
         from = end;
+    }
+    None
+}
+
+fn tag<'a>(html: &'a str, name: &str) -> Option<&'a str> {
+    let opener = format!("<{name}");
+    let mut from = 0;
+    while let Some(relative) = html[from..].find(&opener) {
+        let open = from + relative;
+        let after = open + opener.len();
+        if html[after..].starts_with(|c: char| c.is_whitespace() || c == '>') {
+            return Some(&html[open..closing(html, open)?]);
+        }
+        from = after;
     }
     None
 }
@@ -255,13 +308,43 @@ fn plain(html: &str) -> String {
 }
 
 fn decode(text: &str) -> String {
-    text.replace("&amp;", "&")
+    numeric(text)
+        .replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#x27;", "'")
         .replace("&#39;", "'")
         .replace("&nbsp;", " ")
+}
+
+fn numeric(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("&#") {
+        out.push_str(&rest[..at]);
+        let body = &rest[at + 2..];
+        let decoded = body.find(';').and_then(|end| {
+            let code = &body[..end];
+            let value = match code.strip_prefix(['x', 'X']) {
+                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+                None => code.parse().ok()?,
+            };
+            Some((char::from_u32(value)?, end))
+        });
+        match decoded {
+            Some((ch, end)) => {
+                out.push(ch);
+                rest = &body[end + 1..];
+            }
+            None => {
+                out.push_str("&#");
+                rest = body;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 pub(super) fn flat(text: &str) -> String {

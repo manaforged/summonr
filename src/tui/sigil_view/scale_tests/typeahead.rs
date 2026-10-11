@@ -163,3 +163,24 @@ fn up_brings_back_a_draft_cleared_with_ctrl_c() {
     });
     assert_eq!(seen, (String::new(), "half written thought".to_owned()));
 }
+
+#[test]
+fn enter_on_an_empty_composer_sends_queued_messages_into_the_turn() {
+    use super::super::app::App;
+    use crate::tui::{Activity, Cmd, Msg};
+    sigil::reactive::Runtime::scope("queue-steer", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Queued {
+            steering: 0,
+            queued: 1,
+        });
+        app.submit();
+        let steered = std::iter::from_fn(|| sent.try_recv().ok())
+            .filter(|command| matches!(command, Cmd::SteerQueued))
+            .count();
+        assert_eq!(steered, 1);
+    });
+}

@@ -62,8 +62,8 @@ pub fn short(id: &str) -> &str {
 
 const PREVIEW_WIDTH: usize = 72;
 
-pub(crate) fn preview(text: &str) -> String {
-    crate::text::ellipsize(user_text(text, None), PREVIEW_WIDTH)
+pub(crate) fn preview(text: &str, source: Option<&str>) -> String {
+    crate::text::ellipsize(user_text(text, source), PREVIEW_WIDTH)
 }
 
 pub(crate) fn name_of(path: &Path) -> Option<String> {
@@ -300,13 +300,7 @@ fn peek_lines(lines: &[Line]) -> (Peek, bool) {
                 depth = *recorded_depth;
             }
             Line::User { text, source, .. } if !text.is_empty() => {
-                let info = (
-                    cwd,
-                    model,
-                    preview(source.as_deref().unwrap_or(text)),
-                    parent,
-                    depth,
-                );
+                let info = (cwd, model, preview(text, source.as_deref()), parent, depth);
                 return (info, true);
             }
             _ => {}

@@ -133,3 +133,11 @@ fn steering_note_never_counts_as_the_users_words_in_old_history() {
     let stored = "fix the test\n\nHarness: the previous turn stopped early (cancelled). Address it.\n\nHarness state: auto mode.";
     assert_eq!(super::user_text(stored, None), "fix the test");
 }
+
+#[test]
+fn a_user_paragraph_that_starts_with_harness_stays_in_the_message() {
+    let typed = "Fix this.\n\nHarness the existing API and preserve retries.";
+    assert_eq!(user_text(typed, None), typed);
+    let noted = format!("{typed}\n\nHarness state: auto mode. Do only what they asked.");
+    assert_eq!(user_text(&noted, None), typed);
+}

@@ -157,10 +157,10 @@ impl SessionDriver {
                 .as_ref()
                 .map(|work| work.todos.clone())
                 .unwrap_or_default();
-            self.set_work(objective, Policy::Single)?;
-            let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+            let mut work = Work::new(objective, Policy::Single);
             work.select(objective, commands)?;
             work.apply_todos(todos);
+            self.work = Some(work);
             self.checkpoint()?;
         }
         self.sync_turn_checks(commands)?;

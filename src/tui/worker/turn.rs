@@ -79,7 +79,8 @@ impl MidTurn<'_> {
             | Cmd::ClearRole(_)
             | Cmd::SaveWorkflow(_)
             | Cmd::ListWorkflows
-            | Cmd::SetModule(..)) => self.later(command),
+            | Cmd::SetModule(..)
+            | Cmd::SetEffort(_)) => self.later(command),
             command @ (Cmd::ListModels { .. }
             | Cmd::Pin(..)
             | Cmd::SaveDefault(_)
@@ -109,10 +110,6 @@ impl MidTurn<'_> {
             | Cmd::SteerQueued) => self.queued(command, workspace),
             Cmd::Export(target) => {
                 super::export_session(session_path, session_id, target, self.ui);
-                Outcome::Keep
-            }
-            Cmd::SetEffort(effort) => {
-                self.deferred.push_back(Cmd::SetEffort(effort));
                 Outcome::Keep
             }
             Cmd::SetMail(on) => {
@@ -169,7 +166,7 @@ impl MidTurn<'_> {
                 let count = self
                     .followups
                     .iter()
-                    .take_while(|input| steerable(input))
+                    .take_while(|input| self.deferred.is_empty() && steerable(input))
                     .count();
                 if count > 0 {
                     steer(self.steering, self.followups.drain(..count), workspace);

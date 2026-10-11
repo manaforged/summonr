@@ -59,8 +59,24 @@ pub(crate) fn decorate(harness: &str, text: &str) -> String {
     }
 }
 
+const HARNESS_HEADERS: [&str; 5] = [
+    "Harness:",
+    "Harness state",
+    "Harness evidence",
+    "Harness ledger",
+    "Harness objective",
+];
+
 pub(crate) fn user_text<'a>(text: &'a str, source: Option<&'a str>) -> &'a str {
-    source.unwrap_or_else(|| text.split("\n\nHarness").next().unwrap_or(text))
+    source.unwrap_or_else(|| {
+        text.match_indices("\n\nHarness")
+            .find(|(at, _)| {
+                HARNESS_HEADERS
+                    .iter()
+                    .any(|header| text[at + 2..].starts_with(header))
+            })
+            .map_or(text, |(at, _)| &text[..at])
+    })
 }
 
 #[cfg(test)]

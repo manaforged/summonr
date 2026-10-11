@@ -107,3 +107,68 @@ fn steering_queue_count_keeps_messages_held_behind_a_deferred_command() {
         .last();
     assert_eq!(last, Some(1));
 }
+
+#[test]
+fn steering_queue_keeps_held_messages_behind_a_deferred_command_on_blank_enter() {
+    let (workspace, ui, _inbox, steering) = mid_turn_fixture();
+    let reader = super::super::reader::Reader::new(
+        workspace.path().to_path_buf(),
+        Default::default(),
+        ui.clone(),
+    );
+    let (mut deferred, mut followups, mut auto_reply) =
+        (Default::default(), Default::default(), false);
+    let mut mid = super::MidTurn {
+        deferred: &mut deferred,
+        followups: &mut followups,
+        steering: &steering,
+        auto_reply: &mut auto_reply,
+        ui: &ui,
+        reader: &reader,
+    };
+    mid.later(super::Cmd::Command("/model opus".to_string()));
+    mid.queued(
+        super::Cmd::Steer(UserInput::from("continue after setup")),
+        workspace.path(),
+    );
+    mid.queued(super::Cmd::SteerQueued, workspace.path());
+    assert!(steering.lock().unwrap().is_empty());
+    let waiting: Vec<&str> = followups.iter().map(|input| input.text.as_str()).collect();
+    assert_eq!(waiting, ["continue after setup"]);
+}
+
+#[tokio::test]
+async fn steering_queue_runs_an_effort_change_after_messages_queued_before_it() {
+    let (workspace, ui, _inbox, steering) = mid_turn_fixture();
+    let reader = super::super::reader::Reader::new(
+        workspace.path().to_path_buf(),
+        Default::default(),
+        ui.clone(),
+    );
+    let (mut deferred, mut followups, mut auto_reply) =
+        (Default::default(), Default::default(), false);
+    let mut mid = super::MidTurn {
+        deferred: &mut deferred,
+        followups: &mut followups,
+        steering: &steering,
+        auto_reply: &mut auto_reply,
+        ui: &ui,
+        reader: &reader,
+    };
+    mid.queued(
+        super::Cmd::Queue(UserInput::from("!check")),
+        workspace.path(),
+    );
+    mid.command(
+        super::Cmd::SetEffort(Some(crate::provider::Effort::High)),
+        workspace.path(),
+        "session",
+        workspace.path(),
+    )
+    .await;
+    assert!(matches!(
+        deferred.front(),
+        Some(super::Cmd::Submit(input)) if input.text == "!check"
+    ));
+    assert!(matches!(deferred.back(), Some(super::Cmd::SetEffort(_))));
+}

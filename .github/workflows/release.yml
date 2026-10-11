@@ -39,6 +39,14 @@ jobs:
           save-if: 'false'
       - name: clippy
         run: cargo clippy -p summonr --all-targets --locked -- -D warnings
+      - name: sandbox
+        run: |
+          if ! bwrap --ro-bind / / true 2>/dev/null; then
+            sudo apt-get update -q
+            sudo apt-get install -yq bubblewrap
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --ro-bind / / true
       - name: tests
         run: cargo test --workspace --locked
 

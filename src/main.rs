@@ -8,7 +8,7 @@ mod modes;
 mod startup;
 
 fn main() {
-    restore_sigpipe();
+    guard_sigpipe();
     #[cfg(all(windows, feature = "windows-sandbox"))]
     if std::env::args_os()
         .nth(1)
@@ -53,17 +53,44 @@ fn main() {
 #[cfg(unix)]
 #[expect(
     unsafe_code,
-    reason = "std has no wrapper to restore the default SIGPIPE action"
+    reason = "std has no wrapper to install a SIGPIPE handler"
 )]
-fn restore_sigpipe() {
-    // SAFETY: called first in main before any thread starts; SIG_DFL is a valid disposition for SIGPIPE.
+fn guard_sigpipe() {
+    // SAFETY: called first in main before any thread starts; on_sigpipe is an extern "C" handler that only calls async-signal-safe functions.
     unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        libc::signal(
+            libc::SIGPIPE,
+            on_sigpipe as extern "C" fn(libc::c_int) as libc::sighandler_t,
+        );
+    }
+}
+
+#[cfg(unix)]
+#[expect(
+    unsafe_code,
+    reason = "a signal handler polls and re-raises through libc"
+)]
+extern "C" fn on_sigpipe(_: libc::c_int) {
+    let mut fds = [1, 2].map(|fd| libc::pollfd {
+        fd,
+        events: libc::POLLOUT,
+        revents: 0,
+    });
+    // SAFETY: poll, signal and raise are async-signal-safe; fds is a valid array of two pollfd.
+    unsafe {
+        let broken = libc::poll(fds.as_mut_ptr(), 2, 0) > 0
+            && fds
+                .iter()
+                .any(|fd| fd.revents & (libc::POLLERR | libc::POLLHUP) != 0);
+        if broken {
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+            libc::raise(libc::SIGPIPE);
+        }
     }
 }
 
 #[cfg(not(unix))]
-fn restore_sigpipe() {}
+fn guard_sigpipe() {}
 
 async fn until_signal<T>(work: impl std::future::Future<Output = T>) -> Result<T, i32> {
     use futures::FutureExt;

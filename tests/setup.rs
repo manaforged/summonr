@@ -275,3 +275,25 @@ fn the_tool_command_runs_a_module_tool_that_is_switched_on() {
     let (_, text) = summonr(home.path(), &["tool", "browser", "{}"]);
     assert!(!text.contains("unavailable in the current mode"), "{text}");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_child_that_exits_before_reading_does_not_end_summonr() {
+    let home = tempfile::tempdir().unwrap();
+    for index in 0..20 {
+        let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
+            .args(["mcp", "add", &format!("demo{index}"), "--", "/usr/bin/true"])
+            .current_dir(home.path())
+            .env_clear()
+            .env("HOME", home.path())
+            .env("SUMMONR_HOME", home.path().join(".summonr"))
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&output.stdout).into_owned()
+            + &String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "run {index}: {text:?}");
+        assert!(text.contains("not reachable"), "run {index}: {text:?}");
+    }
+}

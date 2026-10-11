@@ -40,6 +40,10 @@ pub(super) struct Engine {
     freshness: Option<Freshness>,
     #[serde(default)]
     hosts: Vec<String>,
+    block_status: Vec<u16>,
+    #[serde(default)]
+    block_markers: Vec<String>,
+    cooldown_secs: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
@@ -149,6 +153,18 @@ impl Engine {
             (None, Some(link)) => element(block, link),
             (None, None) => None,
         }
+    }
+
+    pub(super) fn blocked(&self, status: u16, body: &str) -> bool {
+        self.block_status.contains(&status)
+            || self
+                .block_markers
+                .iter()
+                .any(|marker| body.contains(marker.as_str()))
+    }
+
+    pub(super) fn cooldown(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.cooldown_secs)
     }
 
     fn own(&self, url: &str) -> bool {

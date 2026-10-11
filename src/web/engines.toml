@@ -9,6 +9,8 @@ unwrap = "u"
 unwrap_prefix = "a1"
 encoding = "base64"
 hosts = ["bing.com"]
+block_status = [429]
+cooldown_secs = 60
 
 [engine.freshness]
 param = "filters"
@@ -27,6 +29,9 @@ link = "result__a"
 snippet = "result__snippet"
 unwrap = "uddg"
 hosts = ["duckduckgo.com"]
+block_status = [202, 429]
+block_markers = ["anomaly-modal"]
+cooldown_secs = 60
 
 [engine.freshness]
 param = "df"
@@ -45,6 +50,8 @@ link = "l1"
 title = "search-snippet-title"
 snippet = "generic-snippet"
 hosts = ["brave.com"]
+block_status = [429]
+cooldown_secs = 60
 
 [engine.freshness]
 param = "tf"

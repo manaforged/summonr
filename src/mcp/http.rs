@@ -47,10 +47,10 @@ impl Http {
         auth: Option<crate::provider::Auth>,
     ) -> Result<Self> {
         Ok(Self {
-            client: crate::credentials::session(summonr_auth::builder(
-                wait,
-                crate::limits::limits().connect(),
-            ))?,
+            client: crate::credentials::session(
+                summonr_auth::builder(wait, crate::limits::limits().connect()),
+                crate::limits::limits().retry_policy(),
+            )?,
             url: url.to_string(),
             headers: headers.to_vec(),
             session: None,
@@ -63,10 +63,10 @@ impl Http {
     }
 
     pub(super) fn set_wait(&mut self, wait: Duration) -> Result<()> {
-        self.client = crate::credentials::session(summonr_auth::builder(
-            wait,
-            crate::limits::limits().connect(),
-        ))?;
+        self.client = crate::credentials::session(
+            summonr_auth::builder(wait, crate::limits::limits().connect()),
+            crate::limits::limits().retry_policy(),
+        )?;
         Ok(())
     }
 

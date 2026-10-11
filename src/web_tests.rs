@@ -201,3 +201,25 @@ fn the_browser_reaches_only_https_and_inert_pages() {
         assert!(super::reachable("about:blank").await);
     });
 }
+
+#[test]
+fn a_challenge_page_or_a_rate_limit_counts_as_a_blocked_engine() {
+    let duckduckgo = engine("duckduckgo");
+    assert!(duckduckgo.blocked(202, "<div class=\"anomaly-modal__modal\">"));
+    assert!(duckduckgo.blocked(200, "<form id=\"challenge-form\" class=\"anomaly-modal\">"));
+    assert!(engine("bing").blocked(429, ""));
+    assert!(!duckduckgo.blocked(200, DDG));
+    assert!(!engine("bing").blocked(200, BING));
+}
+
+#[test]
+fn a_blocked_engine_rests_until_its_cooldown_ends() {
+    use std::time::{Duration, Instant};
+    let rest = super::Rest::default();
+    let now = Instant::now();
+    rest.block("duckduckgo", now + Duration::from_secs(60));
+    assert!(rest.resting("duckduckgo", now + Duration::from_secs(59)));
+    assert!(!rest.resting("duckduckgo", now + Duration::from_secs(61)));
+    assert!(!rest.resting("bing", now));
+    assert_eq!(engine("duckduckgo").cooldown(), Duration::from_secs(60));
+}

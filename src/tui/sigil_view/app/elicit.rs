@@ -23,6 +23,8 @@ pub(in crate::tui::sigil_view) struct FormState {
     cursor: usize,
     picked: BTreeSet<usize>,
     pub(in crate::tui::sigil_view) stage: Stage,
+    dialog: u64,
+    saved: (String, usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,7 +36,7 @@ pub(in crate::tui::sigil_view) enum Reply {
 }
 
 impl FormState {
-    fn new(form: Form) -> Self {
+    fn new(form: Form, dialog: u64, saved: (String, usize)) -> Self {
         let mut state = Self {
             form,
             index: 0,
@@ -43,6 +45,8 @@ impl FormState {
             cursor: 0,
             picked: BTreeSet::new(),
             stage: Stage::Filling,
+            dialog,
+            saved,
         };
         state.focus();
         state
@@ -228,13 +232,29 @@ fn number_hint(integer: bool, minimum: Option<f64>, maximum: Option<f64>) -> Str
 }
 
 impl App {
-    pub(in crate::tui::sigil_view) fn form_open(&self, form: Option<Form>) {
-        let state = form.map(FormState::new);
-        let draft = state.as_ref().map(FormState::prefill);
-        self.form.set(state);
-        if let Some(draft) = draft {
-            self.replace(draft);
-        }
+    pub(in crate::tui::sigil_view) fn form_open(&self, form: Option<Form>, dialog: u64) {
+        let Some(form) = form else {
+            self.form_close();
+            return;
+        };
+        let saved = self.form.peek().map_or_else(
+            || (self.draft.peek(), self.caret.peek()),
+            |state| state.saved,
+        );
+        let state = FormState::new(form, dialog, saved);
+        let draft = state.prefill();
+        self.form.set(Some(state));
+        self.replace(draft);
+    }
+
+    pub(in crate::tui::sigil_view) fn form_close(&self) {
+        let Some(state) = self.form.peek() else {
+            return;
+        };
+        self.form.set(None);
+        let (draft, caret) = state.saved;
+        self.replace(draft);
+        self.caret.set(caret);
     }
 
     pub(in crate::tui::sigil_view) fn form_stage(&self) -> Option<Stage> {
@@ -341,10 +361,9 @@ impl App {
                 return;
             }
         };
-        self.form.set(None);
-        self.replace(String::new());
+        self.form_close();
         match serde_json::to_string(&answer) {
-            Ok(text) => self.steer_answer(text),
+            Ok(text) => self.steer_answer(state.dialog, text),
             Err(error) => self.push_entry(Entry::Error(format!("mcp form: {error}"))),
         }
     }

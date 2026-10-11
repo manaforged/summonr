@@ -17,7 +17,10 @@ pub(in crate::tui::sigil_view) enum Band {
 }
 
 pub(in crate::tui::sigil_view) fn band(app: &App) -> Option<Band> {
-    if let Some((detail, persist)) = app.approval.get() {
+    if let Some(crate::tui::sigil_view::app::Asked {
+        detail, persist, ..
+    }) = app.approval.get()
+    {
         return Some(Band::Approval { detail, persist });
     }
     if let Some(state) = app.form.get() {

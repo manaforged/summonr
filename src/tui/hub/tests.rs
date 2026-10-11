@@ -6,6 +6,7 @@ fn approval(detail: Option<&str>) -> Msg {
     Msg::Event(Event::Approval {
         detail: detail.map(str::to_string),
         persist: false,
+        dialog: 1,
     })
 }
 
@@ -41,7 +42,10 @@ fn session_status_follows_the_turn_and_its_questions() {
         (Status::Review, Msg::System("note".into()), Status::Review),
         (
             Status::Working,
-            Msg::Event(Event::Elicit { form: None }),
+            Msg::Event(Event::Elicit {
+                form: None,
+                dialog: 1,
+            }),
             Status::Working,
         ),
     ];

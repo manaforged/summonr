@@ -83,7 +83,7 @@ fn respond() -> Vec<(Shortcut, Handler)> {
         (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
             |app, event| {
-                if app.answering() && app.approval.peek().is_some_and(|(_, persist)| persist) {
+                if app.answering() && app.approval.peek().is_some_and(|asked| asked.persist) {
                     event.stop_propagation();
                     app.approval_answer(crate::runtime::GrantAnswer::Always);
                 }

@@ -108,8 +108,8 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `aborted` | `code` (`time_budget`, `token_budget`, `interrupted`, `cancelled`, or `error`), `reason` (free text) |
 | `merged` | `branch`, `base`, `files` |
 | `progress` | `id` (the tool call), `progress`, optional `total`, `message` |
-| `approval` | `detail`, optional `persist` |
-| `elicit` | `form` (`message`, `fields`, and the MCP `server`, absent when the model asks), or null when the question ends |
+| `approval` | `detail`, optional `persist`, and `dialog`, the number an answer must carry |
+| `elicit` | `form` (`message`, `fields`, and the MCP `server`, absent when the model asks), or null when the question ends; `dialog`, the number an answer must carry |
 | `verify` | `command`, `passed`. `{"command":"workspace changed after the check ran","passed":false}` means files changed after summonr captured the candidate it checked, so the verdict fails; it counts toward `checks_failed` |
 | `receipt` | `receipt` |
 | `work` | `progress`; its `checks_failed` agrees with the `verify` events. `rounds` counts the checked rounds of the current goal or step, and `attempts` the failed checks in a row on it, so a goal that passed its first check reports `rounds` 1 and `attempts` 0. `todos` is the model's own list, each with `text` and `status` (`pending`, `active`, or `done`); it is for display and never completes a goal or a step |

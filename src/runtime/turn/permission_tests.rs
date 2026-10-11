@@ -82,7 +82,7 @@ async fn steering_answer_never_comes_from_a_steer_waiting_in_the_queue() {
 #[tokio::test]
 async fn steering_answer_left_from_an_earlier_dialog_never_answers_the_next() {
     let steering = user();
-    steering.answer(UserInput::from("y"));
+    steering.answer(steering.open_dialog(), UserInput::from("y"));
     let (exists, text, _) = delete_outside(Some(Arc::clone(&steering)), &["n"]).await;
     assert!(exists, "{text}");
 }

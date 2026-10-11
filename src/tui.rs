@@ -151,7 +151,7 @@ enum Cmd {
     Submit(UserInput),
     Mail,
     Steer(UserInput),
-    Answer(String),
+    Answer(u64, String),
     Queue(UserInput),
     Send(Vec<String>, String),
     SetEffort(Option<crate::provider::Effort>),

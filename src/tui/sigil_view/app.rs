@@ -61,6 +61,13 @@ mod update;
 mod viewer;
 mod workflow;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::tui::sigil_view) struct Asked {
+    pub(in crate::tui::sigil_view) detail: String,
+    pub(in crate::tui::sigil_view) persist: bool,
+    pub(in crate::tui::sigil_view) dialog: u64,
+}
+
 pub(super) use files::{Action, Context, FileRow};
 use files::{armed, file_url, read_git_branch, save};
 
@@ -168,7 +175,7 @@ pub(super) struct App {
     view_saved: Signal<String>,
     discard_armed: Signal<bool>,
     pub(super) copy: Signal<Option<String>>,
-    pub(super) approval: Signal<Option<(String, bool)>>,
+    pub(super) approval: Signal<Option<Asked>>,
     pub(super) form: Signal<Option<FormState>>,
     pub(super) secret: Signal<Option<(String, usize)>>,
     pub(super) secret_dialog: Signal<bool>,

@@ -51,12 +51,19 @@ impl App {
     fn prepare(&self, msg: &Msg) {
         match msg {
             Msg::Event(crate::Event::Work { .. }) => self.load(),
-            Msg::Event(crate::Event::Approval { detail, persist }) => {
-                self.approval
-                    .set(detail.clone().map(|detail| (detail, *persist)));
+            Msg::Event(crate::Event::Approval {
+                detail,
+                persist,
+                dialog,
+            }) => {
+                self.approval.set(detail.clone().map(|detail| Asked {
+                    detail,
+                    persist: *persist,
+                    dialog: *dialog,
+                }));
             }
-            Msg::Event(crate::Event::Elicit { form }) => {
-                self.form_open(form.clone());
+            Msg::Event(crate::Event::Elicit { form, dialog }) => {
+                self.form_open(form.clone(), *dialog);
             }
             Msg::Diff(_) => {
                 if let Some(path) = self.diff_view.peek() {
@@ -66,11 +73,11 @@ impl App {
             }
             Msg::Reset => {
                 self.approval.set(None);
-                self.form.set(None);
+                self.form_close();
             }
             Msg::Busy(None) => {
                 self.approval.set(None);
-                self.form.set(None);
+                self.form_close();
                 self.secret_finish(false);
                 drop(self.cmd.send(Cmd::Offers));
             }
@@ -255,11 +262,14 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn approval_answer(&self, answer: crate::runtime::GrantAnswer) {
+        let Some(asked) = self.approval.peek() else {
+            return;
+        };
         self.approval.set(None);
-        self.steer_answer(answer.token().to_string());
+        self.steer_answer(asked.dialog, answer.token().to_string());
     }
 
-    pub(in crate::tui::sigil_view) fn steer_answer(&self, text: String) {
-        drop(self.cmd.send(Cmd::Answer(text)));
+    pub(in crate::tui::sigil_view) fn steer_answer(&self, dialog: u64, text: String) {
+        drop(self.cmd.send(Cmd::Answer(dialog, text)));
     }
 }

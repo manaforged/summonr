@@ -86,11 +86,15 @@ pub enum Event {
     },
     Elicit {
         form: Option<crate::mcp::Form>,
+        #[serde(default)]
+        dialog: u64,
     },
     Approval {
         detail: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         persist: bool,
+        #[serde(default)]
+        dialog: u64,
     },
     Verify {
         command: String,

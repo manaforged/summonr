@@ -83,7 +83,10 @@ fn opened(workspace: &std::path::Path, form: Form) -> (App, UnboundedReceiver<Cm
     let (commands, receiver) = unbounded_channel();
     let app = App::new(busy_info(), workspace.to_owned(), commands);
     app.resize(100, 30);
-    app.update(Msg::Event(Event::Elicit { form: Some(form) }));
+    app.update(Msg::Event(Event::Elicit {
+        form: Some(form),
+        dialog: 1,
+    }));
     (app, receiver)
 }
 
@@ -95,7 +98,7 @@ fn typed(app: &App, text: &str) {
 fn sent(receiver: &mut UnboundedReceiver<Cmd>) -> FormAnswer {
     loop {
         match receiver.try_recv() {
-            Ok(Cmd::Answer(text)) => return serde_json::from_str(&text).unwrap(),
+            Ok(Cmd::Answer(_, text)) => return serde_json::from_str(&text).unwrap(),
             Ok(_other) => {}
             Err(error) => panic!("no answer was sent: {error}"),
         }
@@ -242,5 +245,24 @@ fn model_question_toggles_several_and_takes_a_typed_answer() {
             serde_json::Value::Object(sent(&mut receiver).content.unwrap()),
             json!({"Shell": "zsh"})
         );
+    });
+}
+
+#[test]
+fn a_question_gives_back_the_unsent_draft_when_it_closes() {
+    Runtime::scope("form-draft", || {
+        let workspace = tempfile::tempdir().unwrap();
+        std::fs::create_dir(workspace.path().join(".git")).unwrap();
+        std::fs::write(workspace.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(100, 30);
+        app.replace("my draft".to_owned());
+        app.update(Msg::Event(Event::Elicit {
+            form: Some(form()),
+            dialog: 1,
+        }));
+        app.form_reply(Reply::Cancel);
+        assert_eq!(app.draft.peek(), "my draft");
     });
 }

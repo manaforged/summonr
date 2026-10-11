@@ -57,7 +57,10 @@ async fn model_question_answers_reach_the_model_and_a_dismissal_says_so() {
         output.text,
         "Which database? → Postgres\nTargets? → Linux, my own\nAnything else? → (no answer)"
     );
-    let Some(Event::Elicit { form: Some(form) }) = events.first() else {
+    let Some(Event::Elicit {
+        form: Some(form), ..
+    }) = events.first()
+    else {
         panic!("no question was shown: {events:?}");
     };
     assert_eq!(form.server, None);

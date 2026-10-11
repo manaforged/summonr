@@ -57,9 +57,12 @@ async fn a_user_answer_reaches_the_server_after_a_check() {
     assert_eq!(answer.action, FormAction::Accept);
     assert_eq!(answer.content.unwrap()["name"], json!("Ada"));
     assert!(events.iter().any(
-        |event| matches!(event, Event::Elicit { form: Some(form) } if form.server.as_deref() == Some("fixture"))
+        |event| matches!(event, Event::Elicit { form: Some(form), .. } if form.server.as_deref() == Some("fixture"))
     ));
-    assert!(matches!(events.last(), Some(Event::Elicit { form: None })));
+    assert!(matches!(
+        events.last(),
+        Some(Event::Elicit { form: None, .. })
+    ));
 }
 
 #[tokio::test]
@@ -80,12 +83,23 @@ async fn a_form_without_a_user_is_declined() {
 #[tokio::test]
 async fn a_pushed_answer_wakes_the_waiting_dialog() {
     let steering = Arc::new(Steering::default());
+    let dialog = steering.open_dialog();
     let waiting = Arc::clone(&steering);
     let answer = tokio::spawn(async move {
         tokio::time::timeout(std::time::Duration::from_secs(5), waiting.next()).await
     });
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    steering.answer(UserInput::from("go on"));
+    steering.answer(dialog, UserInput::from("go on"));
     let input = answer.await.unwrap().expect("the push wakes the waiter");
     assert_eq!(input.text, "go on");
+}
+
+#[tokio::test]
+async fn an_answer_to_a_closed_dialog_never_answers_the_next_one() {
+    let steering = Steering::default();
+    let closed = steering.open_dialog();
+    steering.open_dialog();
+    steering.answer(closed, UserInput::from("y"));
+    let waited = tokio::time::timeout(std::time::Duration::from_millis(50), steering.next()).await;
+    assert!(waited.is_err(), "{waited:?}");
 }

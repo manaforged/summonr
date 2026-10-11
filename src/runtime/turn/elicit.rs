@@ -11,16 +11,15 @@ impl<P: Provider> Loop<P> {
         let Some(shared) = self.steer_shared.clone() else {
             return Ok(FormAnswer::declined());
         };
-        shared.reset_answers();
-        let _blocked = self.herdr.blocked(&form.message);
-        self.push_event(
-            events,
-            emit,
-            Event::Elicit {
-                form: Some(form.clone()),
-            },
-        )?;
-        let answer = match self.answer(&shared).await {
+        let message = form.message.clone();
+        let opened = Some(form.clone());
+        let (dialog, input) = self
+            .dialog(&shared, &message, events, emit, |dialog| Event::Elicit {
+                form: opened,
+                dialog,
+            })
+            .await?;
+        let answer = match input {
             Some(input) => match serde_json::from_str::<FormAnswer>(input.text.trim()) {
                 Ok(answer) => checked(&form, answer),
                 Err(_) => {
@@ -30,14 +29,25 @@ impl<P: Provider> Loop<P> {
             },
             None => FormAnswer::cancelled(),
         };
-        self.push_event(events, emit, Event::Elicit { form: None })?;
+        self.push_event(events, emit, Event::Elicit { form: None, dialog })?;
         Ok(answer)
     }
 
-    pub(super) async fn answer(&self, shared: &Steering) -> Option<UserInput> {
-        tokio::time::timeout(crate::limits::limits().grant_wait(), shared.next())
+    pub(super) async fn dialog(
+        &mut self,
+        shared: &Steering,
+        status: &str,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        open: impl FnOnce(u64) -> Event,
+    ) -> Result<(u64, Option<UserInput>)> {
+        let dialog = shared.open_dialog();
+        let _blocked = self.herdr.blocked(status);
+        self.push_event(events, emit, open(dialog))?;
+        let input = tokio::time::timeout(crate::limits::limits().grant_wait(), shared.next())
             .await
-            .ok()
+            .ok();
+        Ok((dialog, input))
     }
 }
 
@@ -45,6 +55,7 @@ impl<P: Provider> Loop<P> {
 pub(crate) struct Steering {
     queue: Mutex<VecDeque<UserInput>>,
     answers: Mutex<VecDeque<UserInput>>,
+    dialog: std::sync::atomic::AtomicU64,
     wake: tokio::sync::Notify,
 }
 
@@ -63,31 +74,43 @@ impl Steering {
             .map(|answer| UserInput::from(*answer))
             .collect();
         move |event| {
-            if matches!(
-                event,
-                Event::Approval {
-                    detail: Some(_),
-                    ..
-                } | Event::Elicit { form: Some(_) }
-            ) && let Some(answer) = answers.pop_front()
+            if let Event::Approval {
+                detail: Some(_),
+                dialog,
+                ..
+            }
+            | Event::Elicit {
+                form: Some(_),
+                dialog,
+            } = event
+                && let Some(answer) = answers.pop_front()
             {
-                steering.answer(answer);
+                steering.answer(*dialog, answer);
             }
         }
     }
 
-    pub(super) fn reset_answers(&self) {
-        self.answers
+    pub(crate) fn open_dialog(&self) -> u64 {
+        let mut answers = self
+            .answers
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clear();
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        answers.clear();
+        self.dialog
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            .wrapping_add(1)
     }
 
-    pub(crate) fn answer(&self, input: UserInput) {
-        self.answers
+    pub(crate) fn answer(&self, dialog: u64, input: UserInput) {
+        let mut answers = self
+            .answers
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push_back(input);
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if dialog != self.dialog.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        answers.push_back(input);
+        drop(answers);
         self.wake.notify_one();
     }
 

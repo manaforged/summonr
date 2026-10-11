@@ -97,6 +97,7 @@ fn steering_waits_in_the_queue_while_an_approval_is_open() {
         app.update(Msg::Event(crate::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
             persist: false,
+            dialog: 1,
         }));
         app.replace("yes".to_owned());
         app.submit();
@@ -127,6 +128,7 @@ fn enter_on_an_empty_composer_never_answers_a_pending_approval() {
         app.update(Msg::Event(crate::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
             persist: false,
+            dialog: 1,
         }));
         app.submit();
         let steered = std::iter::from_fn(|| sent.try_recv().ok())

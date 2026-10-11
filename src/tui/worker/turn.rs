@@ -9,7 +9,7 @@ use crate::provider::UserInput;
 use crate::tools::Event;
 use crate::tui::Activity;
 
-const SENT_NOW: &str = "sent to the running turn";
+pub(in crate::tui) const SENT_NOW: &str = "sent to the running turn";
 const SETTINGS_LATER: &str = "settings apply when the current turn ends; esc cancels now";
 
 enum Input {

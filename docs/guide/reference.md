@@ -386,7 +386,7 @@ The screen is a set of panes on one session. `ctrl+x e` (or `/pane files`) opens
 
 In the diff pane `t` keeps only the files the last turn edited (the header says `· last turn`), `c` copies the patch on show to the clipboard (OSC 52 in the terminal; the system clipboard in the window), and a pane `diff_split_min_cols` columns or wider (100 by default) shows a file's hunks side by side, old on the left; a narrower pane shows the unified diff. `summonr diff --turn N` shows what turn N changed: from the checkpoint taken at its start to the next turn's checkpoint, or to the workspace for the newest turn. `--turn last` is the newest turn that changed files, in the newest session for this workspace. Without `--stat` or `--json`, it writes the same summary line as `--stat` to stderr before the patch. A resumed session keeps numbering its turns. The summary reads `turn N of session <short id>`; the JSON has `base: "turn N"` and `session` with the session id. A diff of the whole workspace still reads `vs HEAD`. A file that summonr's own output is redirected to stays out of every later checkpoint in that workspace, in every session, so `--turn` never lists it. A change to `.summonr/check.toml` or `.summonr/policy.toml` is never a touched path.
 
-While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it is running), the round, the seconds so far, the output rate, and the queue count. A message sent during the turn waits in the queue for the next turn; `enter` on an empty composer sends the queue into the running turn instead.
+While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it is running), the round, the seconds so far, the output rate, and the queue count. A message sent during the turn goes into the running turn, and the model reads it after its current tool calls. While an approval or a question waits for your answer, a message waits in the queue instead; `enter` on an empty composer sends the queue into the running turn. Messages still waiting when the turn ends become one next turn, in the order you sent them.
 
 The output rate is tokens per second. While text streams it is an estimate: characters received in the last three seconds, divided by the characters per token measured on the previous round (4 until then), over that span. When the provider reports the round's usage, the rate becomes exact: output tokens over the time between the first and last streamed chunk, or over the whole round when nothing streamed, as in a round that only called tools.
 
@@ -400,7 +400,7 @@ When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`, such
 
 | Key | Idle composer | During a turn |
 | --- | --- | --- |
-| `enter` | send | queue for the next turn; on an empty composer, send the queue into the running turn after the current tool calls |
+| `enter` | send | send into the running turn after the current tool calls; while an approval or a question is open, queue it, and on an empty composer send the queue |
 | `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri`; in `/model`, cycle the filter: all, ready, ★, plan, free, think, vision, ≥1M; otherwise cycle reasoning effort | effort takes effect when the turn ends |
 | `↑` | recall earlier prompts; with input queued, pull it back into the editor | |
 | `esc` | dismiss; twice within two seconds opens the session tree | cancel the turn |

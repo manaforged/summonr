@@ -26,6 +26,7 @@ mod settings;
 mod startup_tests;
 mod state;
 mod turn;
+pub(in crate::tui) use turn::SENT_NOW;
 
 use reader::Reader;
 

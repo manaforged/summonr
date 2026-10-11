@@ -65,7 +65,7 @@ fn an_image_pasted_during_a_turn_shows_as_attached() {
 }
 
 #[test]
-fn an_image_only_draft_queues_during_a_turn() {
+fn steering_an_image_only_draft_goes_into_the_running_turn() {
     Runtime::scope("attach-queue", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = unbounded_channel();
@@ -73,13 +73,13 @@ fn an_image_only_draft_queues_during_a_turn() {
         app.update(Msg::Busy(Some(Activity::Turn)));
         paste_png(&app);
         app.submit();
-        let mut queued = None;
+        let mut steered = None;
         while let Ok(command) = sent.try_recv() {
-            if let Cmd::Queue(input) = command {
-                queued = Some(input);
+            if let Cmd::Steer(input) = command {
+                steered = Some(input);
             }
         }
-        assert_eq!(queued.map(|input| input.images.len()), Some(1));
+        assert_eq!(steered.map(|input| input.images.len()), Some(1));
     });
 }
 

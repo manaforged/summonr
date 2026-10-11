@@ -98,6 +98,12 @@ impl App {
     fn queue_command(&self, input: UserInput) -> Cmd {
         let activity = self.model.get().busy_since.map(|(activity, _)| activity);
         match activity {
+            Some(Activity::Turn)
+                if self.approval.peek().is_none() && self.form.peek().is_none() =>
+            {
+                self.push_entry(Entry::System(crate::tui::worker::SENT_NOW.to_string()));
+                Cmd::Steer(input)
+            }
             Some(Activity::Turn) => {
                 self.push_entry(Entry::System(QUEUED_NOW.to_string()));
                 self.model_mut(|model| model.queued.1 += 1);

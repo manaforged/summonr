@@ -126,6 +126,10 @@ impl MidTurn<'_> {
                 super::history::reshow_running(session_path, session_id, self.ui);
                 Outcome::Keep
             }
+            Cmd::Answer(text) => {
+                self.steering.answer(UserInput::from(text));
+                Outcome::Keep
+            }
             Cmd::Mail | Cmd::Tick | Cmd::LoginAnswer(_) | Cmd::Open(_) => Outcome::Keep,
             Cmd::Cancel | Cmd::Quit => unreachable!("attend handles Cancel and Quit"),
         }

@@ -35,14 +35,14 @@ async fn model_question_answers_reach_the_model_and_a_dismissal_says_so() {
     let workspace = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let mut loop_ = session(workspace.path(), home.path());
-    let answers = VecDeque::from([
+    let answers = Steering::answered([
         UserInput::from(
             json!({"action": "accept", "content": {"1": "Postgres", "2": ["Linux", "my own"]}})
                 .to_string(),
         ),
         UserInput::from(json!({"action": "cancel"}).to_string()),
     ]);
-    loop_.steer_with(Arc::new(Steering::from(answers)));
+    loop_.steer_with(Arc::new(answers));
     let questions = json!({"questions": [
         {"question": "Which database?", "options": [{"label": "Postgres", "description": "server"}, {"label": "SQLite"}]},
         {"question": "Targets?", "options": [{"label": "Linux"}, {"label": "macOS"}], "multiple": true},

@@ -43,40 +43,39 @@ impl<P: Provider> Loop<P> {
 #[derive(Default)]
 pub(crate) struct Steering {
     queue: Mutex<VecDeque<UserInput>>,
+    answers: Mutex<VecDeque<UserInput>>,
     wake: tokio::sync::Notify,
 }
 
-pub(crate) struct SteerGuard<'a> {
-    queue: std::sync::MutexGuard<'a, VecDeque<UserInput>>,
-    wake: &'a tokio::sync::Notify,
-}
-
-impl From<VecDeque<UserInput>> for Steering {
-    fn from(queue: VecDeque<UserInput>) -> Self {
-        Self {
-            queue: Mutex::new(queue),
-            wake: tokio::sync::Notify::new(),
-        }
-    }
-}
-
 impl Steering {
-    pub(crate) fn lock(&self) -> std::sync::LockResult<SteerGuard<'_>> {
-        let wake = &self.wake;
-        match self.queue.lock() {
-            Ok(queue) => Ok(SteerGuard { queue, wake }),
-            Err(poisoned) => Err(std::sync::PoisonError::new(SteerGuard {
-                queue: poisoned.into_inner(),
-                wake,
-            })),
+    pub(crate) fn lock(
+        &self,
+    ) -> std::sync::LockResult<std::sync::MutexGuard<'_, VecDeque<UserInput>>> {
+        self.queue.lock()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn answered(answers: impl IntoIterator<Item = UserInput>) -> Self {
+        let steering = Self::default();
+        for input in answers {
+            steering.answer(input);
         }
+        steering
+    }
+
+    pub(crate) fn answer(&self, input: UserInput) {
+        self.answers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push_back(input);
+        self.wake.notify_one();
     }
 
     async fn next(&self) -> UserInput {
         loop {
             let notified = self.wake.notified();
             let popped = self
-                .queue
+                .answers
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .pop_front();
@@ -84,28 +83,6 @@ impl Steering {
                 return input;
             }
             notified.await;
-        }
-    }
-}
-
-impl std::ops::Deref for SteerGuard<'_> {
-    type Target = VecDeque<UserInput>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.queue
-    }
-}
-
-impl std::ops::DerefMut for SteerGuard<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.queue
-    }
-}
-
-impl Drop for SteerGuard<'_> {
-    fn drop(&mut self) {
-        if !self.queue.is_empty() {
-            self.wake.notify_one();
         }
     }
 }

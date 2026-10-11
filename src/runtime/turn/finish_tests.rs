@@ -297,7 +297,7 @@ async fn a_check_file_changed_during_a_run_is_put_back() {
 
 #[tokio::test]
 async fn a_steer_sent_during_the_last_round_reaches_the_model_in_that_turn() {
-    let steering = Arc::new(Steering::from(VecDeque::new()));
+    let steering = Arc::new(Steering::default());
     let late = Arc::clone(&steering);
     let provider = Scripted::new([Reply::Text("first answer"), Reply::Text("steered answer")])
         .on_complete(move |call| {

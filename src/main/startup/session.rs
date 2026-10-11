@@ -158,7 +158,7 @@ pub(super) fn build(
             summonr::vision_endpoint()?
         },
     );
-    loop_.set_modules(&switches);
+    loop_.set_modules(&switches)?;
     configure(loop_, args, check)
 }
 

@@ -260,6 +260,6 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn steer_answer(&self, text: String) {
-        drop(self.cmd.send(Cmd::Steer(UserInput::from(text))));
+        drop(self.cmd.send(Cmd::Answer(text)));
     }
 }

@@ -95,7 +95,7 @@ fn typed(app: &App, text: &str) {
 fn sent(receiver: &mut UnboundedReceiver<Cmd>) -> FormAnswer {
     loop {
         match receiver.try_recv() {
-            Ok(Cmd::Steer(input)) => return serde_json::from_str(&input.text).unwrap(),
+            Ok(Cmd::Answer(text)) => return serde_json::from_str(&text).unwrap(),
             Ok(_other) => {}
             Err(error) => panic!("no answer was sent: {error}"),
         }

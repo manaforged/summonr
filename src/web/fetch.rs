@@ -31,25 +31,23 @@ impl Search {
             .browser()
             .filter(|_| WALL.status(response.status().as_u16()))
         {
-            return Ok(self.output(&url, &browser.render(&url).await?));
+            return Ok(self.output(&url, &browser.render(&url, format).await?));
         }
         let ctype = response
             .header("content-type")
             .unwrap_or("")
             .to_ascii_lowercase();
         validate(&response, &ctype)?;
-        let bytes = response
-            .bytes()
+        let text = response
+            .text()
             .await
             .map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))?;
-        if bytes.contains(&0) {
+        if text.contains('\0') {
             return Err(Error::Tool("web_fetch: binary body".to_string()));
         }
-        let text = std::str::from_utf8(&bytes)
-            .map_err(|error| Error::Tool(format!("web_fetch: binary body: {error}")))?;
-        let body = page_body(text, &ctype, format);
-        if let Some(browser) = self.browser().filter(|_| WALL.body(&body, text)) {
-            return Ok(self.output(&url, &browser.render(&url).await?));
+        let body = page_body(&text, &ctype, format);
+        if let Some(browser) = self.browser().filter(|_| WALL.body(&body, &text)) {
+            return Ok(self.output(&url, &browser.render(&url, format).await?));
         }
         Ok(self.output(&url, &body))
     }

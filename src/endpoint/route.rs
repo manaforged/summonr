@@ -166,16 +166,63 @@ pub(crate) fn toggle(info: &super::AuthInfo, toggle: Toggle) -> Result<Option<St
     let Some(next) = next(info, toggle) else {
         return Ok(None);
     };
-    let mut fields = vec![("access", word(next.access)?)];
-    if let Some(region) = next.region {
+    save(
+        &info.provider,
+        Choice {
+            region: next.region,
+            access: Some(next.access),
+        },
+    )?;
+    Ok(Some(next.name.clone()))
+}
+
+fn save(provider: &str, choice: Choice) -> Result<()> {
+    let mut fields = Vec::new();
+    if let Some(access) = choice.access {
+        fields.push(("access", word(access)?));
+    }
+    if let Some(region) = choice.region {
         fields.push(("region", word(region)?));
     }
     let fields: Vec<(&str, &str)> = fields
         .iter()
         .map(|(key, setting)| (*key, setting.as_str()))
         .collect();
-    config::save_provider(&config::path()?, &info.provider, &fields)?;
-    Ok(Some(next.name.clone()))
+    config::save_provider(&config::path()?, provider, &fields)
+}
+
+pub(super) fn choice_for(route: &str) -> Option<(String, Choice)> {
+    let preset = preset(route)?;
+    if preset.provider == route || routes(&preset.provider).nth(1).is_none() {
+        return None;
+    }
+    Some((
+        preset.provider.clone(),
+        Choice {
+            region: preset.region,
+            access: Some(preset.access()),
+        },
+    ))
+}
+
+pub(crate) fn select(route: &str) -> Result<bool> {
+    let Some((provider, choice)) = choice_for(route) else {
+        return Ok(false);
+    };
+    save(&provider, choice)?;
+    Ok(true)
+}
+
+pub(super) fn slot(file: &File, name: &str) -> String {
+    if preset(name).is_some() {
+        name.to_string()
+    } else {
+        pick(file, name)
+    }
+}
+
+pub(super) fn retired_name(name: &str) -> bool {
+    retired().contains_key(name)
 }
 
 fn word(setting: impl Serialize) -> Result<String> {

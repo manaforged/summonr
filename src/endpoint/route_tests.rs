@@ -110,3 +110,34 @@ fn a_key_saved_under_a_provider_lands_on_the_route_that_reads_it() {
     assert!(stored.is_some(), "the key is stored for the route");
     assert!(crate::secret::get("alibaba").unwrap().is_none());
 }
+
+#[test]
+fn a_key_named_for_a_route_stays_on_that_route() {
+    let china = file("[provider.zai]\nregion = \"cn\"\n");
+    assert_eq!(super::slot(&china, "zai"), "zai");
+    assert_eq!(super::slot(&china, "alibaba"), "qwen-plan");
+    assert_eq!(super::slot(&china, "glm"), "zai-cn");
+}
+
+#[test]
+fn naming_a_route_selects_it_for_its_provider() {
+    let (provider, choice) = super::choice_for("claude").unwrap();
+    assert_eq!(provider, "anthropic");
+    assert_eq!(choice.access, Some(super::Access::Plan));
+    let (provider, choice) = super::choice_for("zai-cn").unwrap();
+    assert_eq!(provider, "zai");
+    assert_eq!(choice.region, Some(super::Region::Cn));
+    assert!(
+        super::choice_for("zai").is_none(),
+        "a provider name keeps the saved choice"
+    );
+}
+
+#[test]
+fn a_retired_name_keeps_its_own_overrides() {
+    let custom = file("[endpoint.glm]\nmodel = \"glm-5.3\"\n");
+    let route = pick(&custom, "glm");
+    assert_eq!(route, "zai-cn");
+    let endpoint = super::super::resolve::seat(&custom, "glm").unwrap();
+    assert_eq!(endpoint.model, "glm-5.3");
+}

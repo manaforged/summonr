@@ -62,7 +62,7 @@ fn a_command_past_the_wait_limit_keeps_running_as_a_job() {
     let started = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "sleep 2; echo finished"}),
+        serde_json::json!({"command": past_the_wait()}),
     );
     let id = started
         .lines()
@@ -117,7 +117,7 @@ fn a_command_that_cannot_become_a_job_outlives_the_job_wait() {
     let output = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "sleep 2; echo finished"}),
+        serde_json::json!({"command": past_the_wait()}),
     );
     assert!(output.starts_with("exit 0"), "{output}");
     assert!(output.contains("finished"), "{output}");
@@ -226,7 +226,7 @@ fn a_timed_out_command_is_a_change_only_when_it_can_write() {
             function: ToolFunction {
                 checked: Default::default(),
                 name: "run_command".to_string(),
-                arguments: serde_json::json!({"command": command, "timeout_secs": 1}).to_string(),
+                arguments: serde_json::json!({"command": command, "timeout_secs": if cfg!(windows) { 10 } else { 1 }}).to_string(),
             },
             continuation: None,
         };

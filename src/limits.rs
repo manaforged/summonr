@@ -13,6 +13,8 @@ pub(crate) const fn seconds(value: u64) -> Duration {
 const BUILT_IN: &str = include_str!("limits.toml");
 #[cfg(test)]
 const TEST: &str = include_str!("limits_test.toml");
+#[cfg(test)]
+const TEST_WINDOWS: &str = include_str!("limits_test_windows.toml");
 
 fn parse<T: serde::de::DeserializeOwned>(text: &str, name: &str) -> T {
     match toml::from_str(text) {
@@ -66,7 +68,12 @@ fn load() -> Limits {
 
 #[cfg(test)]
 fn load() -> Limits {
-    Limits::built_in().overlay(&parse(TEST, "test"))
+    let test = Limits::built_in().overlay(&parse(TEST, "test"));
+    if cfg!(windows) {
+        test.overlay(&parse(TEST_WINDOWS, "windows test"))
+    } else {
+        test
+    }
 }
 
 pub(crate) fn limits() -> &'static Limits {

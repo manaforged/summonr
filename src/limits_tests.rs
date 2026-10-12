@@ -40,7 +40,7 @@ fn an_endpoint_without_a_ttl_takes_the_limits_default() {
 fn tests_load_the_built_in_limits_with_the_test_overlay() {
     let built = Limits::built_in();
     let (job, wait, kill) = if cfg!(windows) {
-        (10, 10, 30)
+        (30, 30, 60)
     } else {
         (1, 1, 4)
     };

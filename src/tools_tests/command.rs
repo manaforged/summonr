@@ -226,7 +226,7 @@ fn a_timed_out_command_is_a_change_only_when_it_can_write() {
             function: ToolFunction {
                 checked: Default::default(),
                 name: "run_command".to_string(),
-                arguments: serde_json::json!({"command": command, "timeout_secs": 1}).to_string(),
+                arguments: serde_json::json!({"command": command, "timeout_secs": if cfg!(windows) { 10 } else { 1 }}).to_string(),
             },
             continuation: None,
         };

@@ -77,4 +77,4 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: tests
-        run: cargo test --workspace --locked --no-fail-fast
+        run: cargo test --workspace --locked --no-fail-fast -- --test-threads=2

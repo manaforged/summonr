@@ -321,3 +321,19 @@ fn a_key_row_with_a_plan_sign_in_lists_under_coding_plans_by_its_plan_name() {
         assert!(!info.plan(), "{name} keeps key pricing");
     }
 }
+
+#[test]
+fn every_default_model_is_current_in_the_bundled_catalog() {
+    for preset in super::preset::presets() {
+        if preset.model.is_empty() || preset.model == "default" {
+            continue;
+        }
+        if let Some(current) = crate::catalog::serves(preset.opencode_ids, &preset.model) {
+            assert!(
+                current,
+                "{} defaults to {}, which its catalog providers do not list as current",
+                preset.name, preset.model
+            );
+        }
+    }
+}

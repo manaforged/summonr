@@ -66,6 +66,12 @@ pub(super) struct Row {
     start: Option<String>,
     #[serde(default)]
     key_from: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    region: Option<super::super::Region>,
+    #[serde(default)]
+    replaces: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -217,6 +223,9 @@ impl Row {
             label: self.label,
             start: self.start,
             key_from: self.key_from,
+            provider: self.provider.unwrap_or_else(|| name.clone()),
+            region: self.region,
+            replaces: self.replaces,
             name,
             base_url,
         })

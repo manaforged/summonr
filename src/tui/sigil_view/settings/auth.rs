@@ -30,6 +30,14 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
         event.stop_propagation();
         app.key_entry();
     }));
+    bindings.extend(alt("r", |app, event| {
+        event.stop_propagation();
+        app.toggle_route(crate::endpoint::Toggle::Region);
+    }));
+    bindings.extend(alt("a", |app, event| {
+        event.stop_propagation();
+        app.toggle_route(crate::endpoint::Toggle::Access);
+    }));
     bindings
 }
 
@@ -112,6 +120,12 @@ fn listing_hints(app: &App) -> Hints {
     hints = hints.key(Key::Enter, choice.key_action());
     if choice.paste_key() {
         hints = hints.key(Key::Fixed("alt+k"), "paste a key");
+    }
+    if let Some(region) = choice.switch(crate::endpoint::Toggle::Region) {
+        hints = hints.key(Key::Fixed("alt+r"), region);
+    }
+    if let Some(access) = choice.switch(crate::endpoint::Toggle::Access) {
+        hints = hints.key(Key::Fixed("alt+a"), access);
     }
     if choice.stored() {
         hints = hints.key(Key::Fixed("alt+d"), "sign out");

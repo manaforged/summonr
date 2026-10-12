@@ -207,6 +207,7 @@ fn cost(name: &str, other: &str) -> usize {
 }
 
 pub(super) fn seat(file: &File, chosen: &str) -> Option<Endpoint> {
+    let chosen = &super::route::pick(file, chosen);
     let mut endpoint = builtin(chosen).or_else(|| from_file(file, chosen))?;
     if let Some(row) = file.endpoint.get(chosen) {
         endpoint.overlay(row);

@@ -71,6 +71,14 @@ impl App {
     pub(in crate::tui::sigil_view) fn begin_auth(&self, focus: Option<&str>) {
         let choices = providers();
         let current = self.model.get().snapshot.endpoint.clone();
+        let focus = focus.map(|name| {
+            choices
+                .iter()
+                .find(|choice| choice.provider == name)
+                .map_or(name, |choice| choice.name.as_str())
+                .to_string()
+        });
+        let focus = focus.as_deref();
         if let Some(name) = focus
             && !choices.iter().any(|choice| choice.name == name)
         {
@@ -160,6 +168,32 @@ impl App {
             let best = best_match(&matching(self.auth.choices.peek(), &filter), &filter);
             self.auth.filter.set(filter);
             self.auth.sel.set(best);
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn toggle_route(&self, toggle: crate::endpoint::Toggle) {
+        let Some(choice) = self.auth_choice() else {
+            return;
+        };
+        if !matches!(self.auth.step.peek(), Login::List(_)) {
+            return;
+        }
+        match crate::endpoint::toggle(&choice, toggle) {
+            Ok(Some(_)) => {
+                self.auth.choices.set(providers());
+                let rows = self.filtered_auth();
+                let selected = rows
+                    .iter()
+                    .position(|row| row.provider == choice.provider)
+                    .unwrap_or(0);
+                self.auth.sel.set(selected);
+                self.list_models(None);
+            }
+            Ok(None) => {}
+            Err(error) => self
+                .auth
+                .step
+                .set(Login::List(Note::failed(error.to_string()))),
         }
     }
 

@@ -2,10 +2,16 @@ use super::resolve::*;
 use super::*;
 
 pub fn auth_info(name: &str) -> Result<AuthInfo> {
+    let file = config::file()?;
+    let route = super::route::pick(&file, name);
+    let name = route.as_str();
     let endpoint = resolve(Some(name), None, Need::Config)?;
     let offered = offered_login(name, &endpoint);
+    let provider = super::route::provider_of(name).to_string();
     let mut info = AuthInfo {
         name: name.to_string(),
+        routes: super::route::options(&provider),
+        provider,
         flow: endpoint.oauth.as_ref().map(flow).unwrap_or_default(),
         login: offered.as_ref().map(flow).unwrap_or_default(),
         key: endpoint.takes_key() || (preset(name).is_none() && offered.is_none()),
@@ -255,7 +261,7 @@ pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
 #[cfg(test)]
 pub(crate) fn catalog(wire: Wire) -> Vec<String> {
     let mut models = Vec::new();
-    for row in presets() {
+    for row in super::preset::presets() {
         if row.wire != wire {
             continue;
         }

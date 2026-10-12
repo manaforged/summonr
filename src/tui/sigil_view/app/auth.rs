@@ -69,6 +69,11 @@ pub(in crate::tui::sigil_view) fn section(choice: &crate::endpoint::AuthInfo) ->
 
 impl App {
     pub(in crate::tui::sigil_view) fn begin_auth(&self, focus: Option<&str>) {
+        if let Some(name) = focus
+            && let Err(error) = crate::endpoint::select(name)
+        {
+            self.push_entry(Entry::Error(error.to_string()));
+        }
         let choices = providers();
         let current = self.model.get().snapshot.endpoint.clone();
         let focus = focus.map(|name| {

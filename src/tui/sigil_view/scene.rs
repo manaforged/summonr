@@ -18,7 +18,7 @@ pub(in crate::tui::sigil_view) use input::prompt_area;
 
 mod logo;
 pub(in crate::tui::sigil_view) use logo::{compose, scene_row};
-pub(in crate::tui::sigil_view) use space::{SCRIM, space};
+pub(in crate::tui::sigil_view) use space::{QUIET, SCRIM, space, step_sky};
 
 mod input;
 mod space;
@@ -45,7 +45,8 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
             } else {
                 0
             };
-            let mut cells = space(cols, rows, ticks);
+            let sky = app.sky.get();
+            let mut cells = space(cols, rows, ticks, sky);
             compose(&mut cells, cols, rows, &app);
             cells
                 .chunks(usize::from(cols).max(1))

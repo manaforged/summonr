@@ -112,6 +112,18 @@ impl App {
         });
     }
 
+    pub(in crate::tui::sigil_view) fn cycle_sky(&self, step: i8, plain: bool) -> bool {
+        if !self.splash.peek()
+            || self.overlay().is_some()
+            || (plain && !self.draft.peek().is_empty())
+        {
+            return false;
+        }
+        self.sky
+            .update(|sky| *sky = super::super::scene::step_sky(*sky, step));
+        true
+    }
+
     fn tick(&self) {
         self.ticks.update(|ticks| *ticks = ticks.saturating_add(1));
         if !self.splash_revealed.peek()

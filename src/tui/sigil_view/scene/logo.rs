@@ -69,6 +69,18 @@ pub(in crate::tui::sigil_view) fn compose(cells: &mut [Cell], cols: u16, rows: u
             palette().gray,
         );
     }
+    write(
+        cells,
+        cols,
+        facts_x,
+        facts_y + facts.len() as u16,
+        &format!(
+            "{:<8} {}   ← →",
+            "sky",
+            super::space::sky_name(app.sky.get())
+        ),
+        palette().dim,
+    );
     fill_bg(cells, cols, card);
     frame(cells, cols, card);
     drop(model);

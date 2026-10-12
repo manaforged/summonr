@@ -229,3 +229,39 @@ fn a_server_prompt_line_is_sent_as_a_turn_and_an_unknown_command_is_not() {
         assert_eq!(send("/nosuchcommand now"), 0);
     });
 }
+
+#[test]
+fn splash_arrows_cycle_the_sky() {
+    use sigil::Host;
+    use sigil::events::{
+        EventRouter, KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
+        ShellEvent,
+    };
+    use sigil::terminal::Screen;
+
+    Runtime::scope("splash-sky", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(info(), workspace.path().to_owned(), commands);
+        app.splash.set(true);
+        app.resize(80, 24);
+        let mut host = Host::cells();
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(80, 24);
+        let mut router = EventRouter::new();
+        screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+        let right = ShellEvent::Key(KeyEvent::new(KeyEventInit {
+            key: LogicalKey::named(sigil::prelude::Key::ArrowRight),
+            physical: PhysicalKey::Unidentified,
+            modifiers: ModifiersState::empty(),
+            repeat: false,
+            phase: KeyPhase::Down,
+            text: None,
+        }));
+        screen
+            .frame(&mut host, &mut router, [right], (80, 24))
+            .unwrap();
+        assert_eq!(app.sky.peek(), super::super::space::HALO);
+    });
+}

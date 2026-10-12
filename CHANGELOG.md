@@ -6,6 +6,7 @@ First stable release.
 
 ### Added
 
+- On the `claude` seat a changed system prompt reaches resumed turns, Claude Code's own tools (such as `EndConversation`) are refused so only summonr's tools run, and two turns on one session no longer start two Claude Code processes.
 - `summonr login zai` stores the key under `zai` even when the saved choice is China; `/login claude` and `/login zai-cn` switch their provider to that route; an `[endpoint.glm]` override still applies to `summonr glm`.
 - The `claude` seat recovers on its own: a prompt after a cancelled tool call starts a fresh run, a failed turn starts a new Claude Code session from summonr's history, and a resumed run that ends on tool results gets them as input instead of waiting. Claude Code now runs with your environment (`CLAUDE_CONFIG_DIR`, proxies, CA settings) and takes the system prompt from a temporary file, so a long prompt fits on Windows.
 - Built-in default models follow each vendor's current list: `anthropic` defaults to `claude-opus-5-5`, `openai` to `gpt-6-astra`, `gemini` to `gemini-3.8-flash`, `grok` to `grok-4.7`, `deepseek` to `deepseek-flash`, the Alibaba routes to `qwen3.7-plus`, `tencent-plan` to `tc-code-latest`, `volcengine-plan` to `doubao-seed-evolving`, and `copilot` to `gpt-5.3-codex`. `kimi-for-coding` is no longer read as `k3`. A test fails when a default is missing or deprecated in the bundled model catalog.

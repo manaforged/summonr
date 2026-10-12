@@ -40,9 +40,16 @@ pub(super) enum Control {
     CanUseTool {
         #[serde(default)]
         input: Value,
+        #[serde(default)]
+        mcp_server: Option<Origin>,
     },
     #[serde(other)]
     Other,
+}
+
+#[derive(Deserialize)]
+pub(super) struct Origin {
+    pub(super) name: String,
 }
 
 #[derive(Deserialize)]

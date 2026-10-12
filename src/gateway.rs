@@ -20,12 +20,22 @@ pub(crate) enum Action {
     New,
     Status,
     Stop,
+    Help,
 }
 
-const COMMANDS: [(&str, Action); 3] = [
+const COMMANDS: [(&str, Action); 5] = [
     ("/new", Action::New),
     ("/status", Action::Status),
     ("/stop", Action::Stop),
+    ("/start", Action::Help),
+    ("/help", Action::Help),
+];
+
+pub(crate) const MENU: [(&str, &str); 4] = [
+    ("new", "start a fresh session"),
+    ("status", "show the session and the queue"),
+    ("stop", "end the running turn"),
+    ("help", "how to use this bot"),
 ];
 
 pub(crate) fn route(state: &State, user: i64, _chat: i64, text: &str, now: i64) -> Action {

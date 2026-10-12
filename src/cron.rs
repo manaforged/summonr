@@ -7,6 +7,7 @@ mod install;
 pub(crate) mod runner;
 pub(crate) mod schedule;
 pub(crate) mod store;
+mod view;
 
 pub(crate) fn now() -> i64 {
     i64::try_from(crate::mail::now()).unwrap_or(i64::MAX)

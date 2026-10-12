@@ -102,6 +102,14 @@ impl Outcome {
     }
 }
 
+impl Notify {
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        [Self::Never, Self::Failure, Self::Always]
+            .into_iter()
+            .find(|notify| name(notify) == text)
+    }
+}
+
 impl Job {
     pub(crate) fn last_slot(&self) -> Option<i64> {
         self.runs.iter().map(|run| run.slot).max()

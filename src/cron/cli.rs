@@ -5,10 +5,10 @@ use jiff::Zoned;
 use super::runner;
 use super::schedule;
 use super::store::{self, Job, Notify, Task};
+use super::view;
 use crate::error::{Error, Result};
 
 const USAGE: &str = "usage:\n  summonr cron add NAME (--cron EXPR | --every 30m | --at TIME) (-p PROMPT | --goal GOAL)\n      [--dir D] [--endpoint E] [--model M] [--tz ZONE] [--max-secs N] [--max-tokens N]\n      [--worktree] [--chat] [--notify never|failure|always] [--mail SESSION]\n  summonr cron edit NAME [same flags]\n  summonr cron list [--json]\n  summonr cron show|pause|resume|run|remove NAME\n  summonr cron log NAME [--last N]\n  summonr cron token NAME\n  summonr cron install|uninstall|status\n\nThe OS starts `summonr cron tick` once a minute after `summonr cron install`.";
-const TIME_FORMAT: &str = "%Y-%m-%d %H:%M %Z";
 
 #[derive(Default)]
 struct Spec {
@@ -30,9 +30,21 @@ struct Spec {
 
 pub fn run(args: &[String], cwd: &Path) -> Result<i32> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    if matches!(words[..], [] | ["help" | "--help" | "-h"]) {
+        return say(USAGE.to_string());
+    }
     jobs(&words, cwd)
         .or_else(|| system(&words))
-        .unwrap_or_else(|| Err(Error::Config(USAGE.to_string())))
+        .unwrap_or_else(|| {
+            Err(usage(&format!(
+                "unknown cron command `{}`",
+                words.join(" ")
+            )))
+        })
+}
+
+fn usage(message: &str) -> Error {
+    Error::Config(format!("{message}{}", view::HELP_HINT))
 }
 
 fn jobs(words: &[&str], cwd: &Path) -> Option<Result<i32>> {
@@ -48,7 +60,9 @@ fn jobs(words: &[&str], cwd: &Path) -> Option<Result<i32>> {
         ["remove", name] => remove(name),
         ["log", name] => log(name, None),
         ["log", name, "--last", count] => number(count).and_then(|count| log(name, Some(count))),
-        ["token", name] => store::rotate_token(name).and_then(say),
+        ["token", name] => {
+            store::rotate_token(name).and_then(|token| say(view::token(name, &token)))
+        }
         [..] => return None,
     })
 }
@@ -91,7 +105,7 @@ fn exec(name: &str, slot: &str, rest: &[&str]) -> Result<i32> {
     match rest {
         [] => runner::exec(name, slot, None),
         ["--payload", file] => runner::exec(name, slot, Some(Path::new(file))),
-        [..] => Err(Error::Config(USAGE.to_string())),
+        [..] => Err(usage("exec takes NAME --slot N [--payload FILE]")),
     }
 }
 
@@ -164,19 +178,19 @@ fn spec(words: &[&str], cwd: &Path) -> Result<Spec> {
         let (_, apply) = VALUES
             .iter()
             .find(|(name, _)| *name == flag)
-            .ok_or_else(|| Error::Config(format!("unknown option `{flag}`\n{USAGE}")))?;
+            .ok_or_else(|| usage(&format!("unknown option `{flag}`")))?;
         let value = words
             .next()
-            .ok_or_else(|| Error::Config(format!("{flag} needs a value\n{USAGE}")))?;
+            .ok_or_else(|| usage(&format!("{flag} needs a value")))?;
         apply(&mut spec, value.to_string(), cwd)?;
     }
     Ok(spec)
 }
 
 fn notify(text: &str) -> Result<Notify> {
-    serde_json::from_value(serde_json::Value::String(text.to_string())).map_err(|error| {
+    Notify::parse(text).ok_or_else(|| {
         Error::Config(format!(
-            "bad --notify `{text}`: use never, failure or always ({error})"
+            "bad --notify `{text}`: use never, failure or always"
         ))
     })
 }
@@ -233,15 +247,16 @@ fn apply(job: &mut Job, spec: &Spec) -> Result<()> {
 
 fn add(name: &str, spec: &Spec, cwd: &Path) -> Result<i32> {
     super::guard()?;
-    store::check_name(name)?;
+    let name = name.to_ascii_lowercase();
+    store::check_name(&name)?;
     let schedule = schedule_text(spec, spec.tz.as_deref())?
-        .ok_or_else(|| Error::Config(format!("add needs --cron, --every or --at\n{USAGE}")))?;
+        .ok_or_else(|| usage("add needs --cron, --every or --at"))?;
     let task = spec
         .task
         .clone()
-        .ok_or_else(|| Error::Config(format!("add needs -p PROMPT or --goal GOAL\n{USAGE}")))?;
+        .ok_or_else(|| usage("add needs -p PROMPT or --goal GOAL"))?;
     let mut job = Job {
-        name: name.to_string(),
+        name: name.clone(),
         schedule,
         tz: None,
         task,
@@ -267,7 +282,9 @@ fn add(name: &str, spec: &Spec, cwd: &Path) -> Result<i32> {
         jobs.push(job.clone());
         Ok(())
     })?;
-    say(format!("added {name}: {}", line(&job)))
+    println!("{}", view::added("added", &job));
+    unscheduled()?;
+    Ok(0)
 }
 
 fn edit(name: &str, spec: &Spec) -> Result<i32> {
@@ -276,7 +293,7 @@ fn edit(name: &str, spec: &Spec) -> Result<i32> {
         apply(job, spec)?;
         Ok(job.clone())
     })?;
-    say(format!("edited {name}: {}", line(&job)))
+    say(view::added("edited", &job))
 }
 
 fn remove(name: &str) -> Result<i32> {
@@ -307,71 +324,44 @@ fn set_paused(name: &str, paused: bool) -> Result<i32> {
     ))
 }
 
-fn when(zoned: Option<Zoned>) -> String {
-    zoned.map_or_else(
-        || "-".to_string(),
-        |at| at.strftime(TIME_FORMAT).to_string(),
-    )
-}
-
-fn line(job: &Job) -> String {
-    let last = job
-        .runs
-        .last()
-        .map_or_else(|| "-".to_string(), |run| store::name(&run.outcome));
-    let next = if job.paused {
-        "paused".to_string()
-    } else {
-        when(runner::next_fire(job, super::now()))
-    };
-    format!(
-        "{}  [{}]  next {next}  last {last}",
-        job.schedule,
-        job.dir.display()
-    )
+fn unscheduled() -> Result<()> {
+    if super::install::status()?.is_none() {
+        println!("{}", view::UNSCHEDULED);
+    }
+    Ok(())
 }
 
 fn list(json: bool) -> Result<i32> {
-    for job in store::load()? {
-        if json {
-            let next = runner::next_fire(&job, super::now()).map(|at| at.timestamp().to_string());
-            println!(
-                "{}",
-                serde_json::json!({
-                    "name": job.name,
-                    "schedule": job.schedule,
-                    "next": next,
-                    "last": job.runs.last().map(|run| run.outcome),
-                    "paused": job.paused,
-                })
-            );
-        } else {
-            println!("{}  {}", job.name, line(&job));
+    let jobs = store::load()?;
+    if json {
+        for job in jobs {
+            println!("{}", view::json(&job));
         }
+        return Ok(0);
     }
+    if jobs.is_empty() {
+        println!("{}", view::EMPTY);
+    } else {
+        let header = std::io::IsTerminal::is_terminal(&std::io::stdout());
+        println!("{}", view::table(&jobs, header));
+    }
+    unscheduled()?;
     Ok(0)
 }
 
 fn show(name: &str) -> Result<i32> {
-    let job = store::get(name)?;
-    let text = toml::to_string(&job).map_err(|error| Error::Config(error.to_string()))?;
-    say(format!(
-        "{text}\nnext: {}",
-        when(runner::next_fire(&job, super::now()))
-    ))
+    say(view::show(&store::get(name)?))
 }
 
 fn log(name: &str, last: Option<usize>) -> Result<i32> {
     let job = store::get(name)?;
     let skip = last.map_or(0, |last| job.runs.len().saturating_sub(last));
     let tz = schedule::zone(job.tz.as_deref())?;
+    if job.runs.is_empty() {
+        return say(view::NO_RUNS.to_string());
+    }
     for run in job.runs.iter().skip(skip) {
-        println!(
-            "{}  {}  {}",
-            when(runner::zoned(run.slot, &tz)),
-            store::name(&run.outcome),
-            run.job.as_deref().unwrap_or("-")
-        );
+        println!("{}", view::run_line(run, &tz));
     }
     if let Some(id) = job.runs.iter().rev().find_map(|run| run.job.as_deref()) {
         match crate::jobs::load(&job.dir, id) {
@@ -395,6 +385,6 @@ fn status() -> Result<i32> {
         .filter_map(|job| runner::next_fire(job, now))
         .min_by_key(Zoned::timestamp);
     println!("jobs: {}", jobs.len());
-    println!("next: {}", when(next));
+    println!("next: {}", view::when(next));
     Ok(0)
 }

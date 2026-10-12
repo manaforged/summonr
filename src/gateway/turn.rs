@@ -9,7 +9,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
 use super::store;
-use super::telegram::{Bot, Update};
+use super::telegram::{Bot, Update, User};
 use super::{Action, route};
 use crate::Event;
 use crate::error::{Error, Result};
@@ -134,19 +134,7 @@ impl Bridge {
         let action = route(&store::load()?, user.id, chat, &text, now);
         match action {
             Action::Drop => {}
-            Action::Pair => {
-                let code = store::new_code();
-                store::update(|state| {
-                    state.offer(user.id, chat, &code, now);
-                    Ok(())
-                })?;
-                eprintln!("pairing request from Telegram user {}", user.id);
-                self.say(
-                    chat,
-                    &format!("To pair, run on your machine:\nsummonr gateway pair {code}"),
-                )
-                .await;
-            }
+            Action::Pair => self.pair(&user, chat, now).await?,
             Action::New => {
                 store::update(|state| {
                     state.set_session(chat, None);
@@ -158,33 +146,69 @@ impl Bridge {
                 let text = self.status(chat)?;
                 self.say(chat, &text).await;
             }
-            Action::Stop => {
-                let stopped = self.chats.get_mut(&chat).is_some_and(|running| {
-                    running.queue.clear();
-                    running
-                        .stop
-                        .take()
-                        .is_some_and(|stop| stop.send(()).is_ok())
-                });
-                if !stopped {
-                    self.say(chat, IDLE).await;
-                }
+            Action::Help => {
+                let text = format!(
+                    "Send a message and I work on it in {}. /new starts fresh, /status shows the session, /stop ends the running turn.",
+                    crate::config::tilde(&self.options.dir)
+                );
+                self.say(chat, &text).await;
             }
-            Action::Run(text) => match self.chats.get_mut(&chat) {
-                Some(running) => running.queue.push_back(text),
-                None => {
-                    let stop = self.start(chat, text);
-                    self.chats.insert(
-                        chat,
-                        Running {
-                            stop: Some(stop),
-                            queue: VecDeque::new(),
-                        },
-                    );
-                }
-            },
+            Action::Stop => self.stop(chat).await,
+            Action::Run(text) => self.run(chat, text).await,
         }
         Ok(())
+    }
+
+    async fn pair(&self, user: &User, chat: i64, now: i64) -> Result<()> {
+        let code = store::new_code();
+        store::update(|state| {
+            state.offer(user.id, chat, &code, now);
+            Ok(())
+        })?;
+        eprintln!(
+            "pairing request from {}; they were sent a code",
+            user.describe()
+        );
+        self.say(
+            chat,
+            &format!("To pair, run on your machine:\nsummonr gateway pair {code}"),
+        )
+        .await;
+        Ok(())
+    }
+
+    async fn stop(&mut self, chat: i64) {
+        let stopped = self.chats.get_mut(&chat).is_some_and(|running| {
+            running.queue.clear();
+            running
+                .stop
+                .take()
+                .is_some_and(|stop| stop.send(()).is_ok())
+        });
+        if !stopped {
+            self.say(chat, IDLE).await;
+        }
+    }
+
+    async fn run(&mut self, chat: i64, text: String) {
+        if let Some(running) = self.chats.get_mut(&chat) {
+            running.queue.push_back(text);
+            let ahead = running.queue.len();
+            self.say(
+                chat,
+                &format!("queued ({ahead} ahead); I'll start it when the current turn ends."),
+            )
+            .await;
+            return;
+        }
+        let stop = self.start(chat, text);
+        self.chats.insert(
+            chat,
+            Running {
+                stop: Some(stop),
+                queue: VecDeque::new(),
+            },
+        );
     }
 
     fn status(&self, chat: i64) -> Result<String> {
@@ -197,7 +221,7 @@ impl Bridge {
         Ok(format!(
             "session: {session}\nrunning: {}\nqueued: {queued}\ndir: {}",
             if running { "yes" } else { "no" },
-            self.options.dir.display()
+            crate::config::tilde(&self.options.dir)
         ))
     }
 

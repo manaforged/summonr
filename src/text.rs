@@ -3,7 +3,7 @@ use std::hash::Hasher;
 use sigil::app::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
-const IRREGULAR: &[(&str, &str)] = &[("child", "children")];
+const IRREGULAR: &[(&str, &str)] = &[("child", "children"), ("entry", "entries")];
 
 pub(crate) fn plural(count: usize, word: &str) -> String {
     if count == 1 {

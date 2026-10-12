@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 pub(crate) const FILE: &str = "MEMORY.md";
 const DIR: &str = "memory";
 const GIT_DIR: &str = ".git";
+const REPORT_END: &str = "Ask me to remember something, or edit a file above. `memory = false` under [modules] turns memory off.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
@@ -74,6 +75,38 @@ pub(crate) fn sections(files: &[MemoryFile], workspace: &Path) -> Vec<String> {
         .collect()
 }
 
+pub fn report(files: &[MemoryFile]) -> String {
+    let cap = crate::limits::limits().memory_bytes;
+    let mut text = String::new();
+    for file in files {
+        let name = format!("{} memory", file.scope.label());
+        text.push_str(&format!(
+            "{name:<16} {}\n  {}\n",
+            crate::config::tilde(&file.path),
+            status(file, cap)
+        ));
+    }
+    text.push_str(REPORT_END);
+    text
+}
+
+fn status(file: &MemoryFile, cap: usize) -> String {
+    if file.bytes == 0 {
+        return "empty".to_string();
+    }
+    let entries = std::fs::read_to_string(&file.path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.starts_with("- ") || line.starts_with(|c: char| c.is_ascii_digit()))
+        .count();
+    format!(
+        "{} of {cap} bytes, {}",
+        file.bytes,
+        crate::text::plural(entries, "entry")
+    )
+}
+
 pub(crate) fn guidance(files: &[MemoryFile]) -> String {
     let path = |scope: Scope| {
         files
@@ -83,7 +116,7 @@ pub(crate) fn guidance(files: &[MemoryFile]) -> String {
             .unwrap_or_default()
     };
     format!(
-        "Memory: project memory is {project} and user memory is {user}. Save a durable fact to project memory with the edit or write tools (write creates a missing file): a user correction, a stable preference, a non-obvious project fact, or a pointer to an outside resource. Put cross-project preferences in user memory. Never save what the repo or git history already records, or task state. Start each entry with its date (YYYY-MM-DD). Prune the file to keep it under {cap} bytes. Check a remembered fact against the current code before you act on it, and delete it when it is wrong.",
+        "Memory: project memory is {project} and user memory is {user}. Save a durable fact to project memory with edit or write (write creates a missing file): a user correction, a stable preference, a non-obvious project fact, or a pointer to an outside resource. Put cross-project preferences in user memory. Never save task state or what git already records. Start each entry with its date (YYYY-MM-DD). Prune the file to keep it under {cap} bytes. After saving, tell the user in one line what you saved and where. Check a remembered fact against the code before you act on it; delete it when wrong.",
         project = path(Scope::Project),
         user = path(Scope::User),
         cap = crate::limits::limits().memory_bytes,

@@ -8,6 +8,7 @@ Usage: summonr [ENDPOINT] [OPTIONS] [PROMPT]
 Sessions:
   resume [ID|NAME]            resume a session; bare resumes the last one here
   sessions                    list sessions
+  sessions --grep TEXT        search past sessions
   export [ID|NAME]            write a session as markdown (--digest for classify)
   profile [ID|NAME]           time and tokens of a session (--all [--last N])
   diff [PATH]                 changes against the base (--stat, --json, --turn N|last)
@@ -37,6 +38,8 @@ Integrations:
   mail                        peer mail between agent sessions: agents, send, inbox, board
   tool NAME [JSON]            run one tool and print the result
   classify --set NAME [STATE] answer typed questions about text (below)
+  cron add NAME ...           run a prompt or goal on a schedule; cron --help
+  gateway telegram|webhook    start work from a Telegram chat or a web request; gateway --help
 
 Options:
   -e, --endpoint NAME  endpoint: {endpoints}

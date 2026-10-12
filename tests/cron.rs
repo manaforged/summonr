@@ -49,7 +49,7 @@ fn a_job_is_added_listed_and_removed() {
     assert_eq!(job["paused"], false);
     let (code, text) = cron(home.path(), &[], &["remove", "nightly"]);
     assert_eq!(code, 0, "{text}");
-    assert_eq!(cron(home.path(), &[], &["list"]).1, "");
+    assert!(cron(home.path(), &[], &["list", "--json"]).1.is_empty());
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn a_cron_run_cannot_change_jobs() {
         text.contains("a cron run cannot change cron jobs"),
         "{text}"
     );
-    assert_eq!(cron(home.path(), &[], &["list"]).1, "");
+    assert!(cron(home.path(), &[], &["list", "--json"]).1.is_empty());
 }
 
 #[test]
@@ -98,4 +98,59 @@ fn a_run_still_going_skips_the_next_one() {
     let (_, log) = cron(home.path(), &[], &["log", "slow"]);
     assert!(log.contains("overlap"), "{log}");
     drop(held);
+}
+
+#[test]
+fn cron_help_and_empty_states_guide_a_new_user() {
+    let home = tempfile::tempdir().unwrap();
+    let (code, help) = cron(home.path(), &[], &["--help"]);
+    assert_eq!(code, 0, "{help}");
+    assert!(help.starts_with("usage:"), "{help}");
+    let (code, list) = cron(home.path(), &[], &["list"]);
+    assert_eq!(code, 0, "{list}");
+    assert!(list.contains("no cron jobs; add one with"), "{list}");
+    assert!(list.contains("run `summonr cron install` once"), "{list}");
+    let (code, error) = cron(home.path(), &[], &["add", "x", "-p", "hi"]);
+    assert_ne!(code, 0);
+    assert!(error.contains("see `summonr cron --help`"), "{error}");
+    assert!(!error.contains("usage:"), "{error}");
+}
+
+#[test]
+fn a_job_reads_as_plain_lines() {
+    let home = tempfile::tempdir().unwrap();
+    let (code, added) = cron(
+        home.path(),
+        &[],
+        &[
+            "add",
+            "Nightly",
+            "--at",
+            "2026-12-01 09:00",
+            "--tz",
+            "America/Chicago",
+            "--goal",
+            "ship it",
+        ],
+    );
+    assert_eq!(code, 0, "{added}");
+    assert!(
+        added.starts_with("added nightly: at 2026-12-01 09:00 CST, next"),
+        "{added}"
+    );
+    let (_, show) = cron(home.path(), &[], &["show", "nightly"]);
+    assert!(show.contains("goal: ship it"), "{show}");
+    assert!(show.contains("budget: 30m00s (default)"), "{show}");
+    assert!(!show.contains("created = "), "{show}");
+    let (_, log) = cron(home.path(), &[], &["log", "nightly"]);
+    assert_eq!(log.trim(), "no runs yet");
+    let (_, token) = cron(home.path(), &[], &["token", "nightly"]);
+    assert!(token.contains("Authorization: Bearer"), "{token}");
+    assert!(token.contains("/run/nightly"), "{token}");
+    let (_, bad) = cron(
+        home.path(),
+        &[],
+        &["add", "y", "--every", "1h", "-p", "hi", "--notify", "loud"],
+    );
+    assert!(!bad.contains("unknown variant"), "{bad}");
 }

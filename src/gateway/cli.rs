@@ -23,13 +23,24 @@ pub fn run(
         ["status"] => status(),
         ["webhook"] => super::webhook::serve(crate::limits::limits().gateway_port),
         ["webhook", "--port", port] => super::webhook::serve(number(port)?),
-        [..] => Err(Error::Config(USAGE.to_string())),
+        [] | ["help" | "--help" | "-h"] => {
+            println!("{USAGE}");
+            Ok(0)
+        }
+        [..] => Err(misuse(&format!(
+            "unknown gateway command `{}`",
+            words.join(" ")
+        ))),
     }
+}
+
+fn misuse(what: &str) -> Error {
+    Error::Config(format!("{what}; see `summonr gateway --help`"))
 }
 
 fn number<T: std::str::FromStr<Err = std::num::ParseIntError>>(text: &str) -> Result<T> {
     text.parse()
-        .map_err(|error| Error::Config(format!("expected a number, got `{text}`: {error}")))
+        .map_err(|error| misuse(&format!("expected a number, got `{text}`: {error}")))
 }
 
 fn options(words: &[&str], cwd: &Path) -> Result<Options> {
@@ -41,16 +52,14 @@ fn options(words: &[&str], cwd: &Path) -> Result<Options> {
     while let Some(flag) = words.next() {
         let value = words
             .next()
-            .ok_or_else(|| Error::Config(format!("{flag} needs a value\n{USAGE}")))?
+            .ok_or_else(|| misuse(&format!("{flag} needs a value")))?
             .to_string();
         match flag {
             "--endpoint" => options.endpoint = Some(value),
             "--model" => options.model = Some(value),
             "--dir" => options.dir = cwd.join(value),
             unknown => {
-                return Err(Error::Config(format!(
-                    "unknown option `{unknown}`\n{USAGE}"
-                )));
+                return Err(misuse(&format!("unknown option `{unknown}`")));
             }
         }
     }
@@ -77,10 +86,13 @@ fn bridge(options: Options) -> Result<i32> {
     let bot = Bot::new(&token)?;
     let me = block(bot.me())??;
     println!(
-        "@{} is listening; messages run in {} (Ctrl+C stops)",
+        "@{} is listening; chats work in {}. Ctrl+C stops.",
         me.username.as_deref().unwrap_or("?"),
-        options.dir.display()
+        crate::config::tilde(&options.dir)
     );
+    if let Err(error) = block(bot.set_commands(&super::MENU))? {
+        eprintln!("{error}");
+    }
     block(turn::serve(bot, options))?
 }
 
@@ -109,14 +121,18 @@ fn status() -> Result<i32> {
     let stored = token()?.is_some();
     println!(
         "telegram token: {}",
-        if stored { "stored" } else { "not set" }
+        if stored {
+            "stored"
+        } else {
+            "not set; run `summonr gateway setup telegram`"
+        }
     );
     let state = store::load()?;
     let users: Vec<String> = state.users.iter().map(i64::to_string).collect();
     println!(
         "paired users: {}",
         if users.is_empty() {
-            "none".to_string()
+            "none; message your bot on Telegram to get a pairing code".to_string()
         } else {
             users.join(", ")
         }

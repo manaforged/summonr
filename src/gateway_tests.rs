@@ -131,3 +131,17 @@ fn the_webhook_fires_only_with_the_job_token() {
         Reply::NotFound
     );
 }
+
+#[test]
+fn start_and_help_show_the_guide_to_a_paired_owner_only() {
+    let state = paired();
+    assert_eq!(route(&state, OWNER, OWNER, "/start", 20), Action::Help);
+    assert_eq!(
+        route(&state, OWNER, OWNER, "/help@my_bot", 20),
+        Action::Help
+    );
+    assert_eq!(
+        route(&State::default(), STRANGER, STRANGER, "/start", 20),
+        Action::Pair
+    );
+}

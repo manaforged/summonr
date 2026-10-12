@@ -33,3 +33,22 @@ fn hidden_characters_and_secrets_never_reach_the_prompt() {
 fn an_empty_memory_adds_no_section() {
     assert_eq!(one("  \n"), "");
 }
+
+#[test]
+fn the_memory_report_uses_spaces_and_counts_entries() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let path = home.path().join(DIR).join(FILE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        "# Memory\n- 2026-10-11 tabs\n2026-10-12 trunk-stable\n",
+    )
+    .unwrap();
+    let text = report(&files(home.path(), work.path()));
+    assert!(!text.contains('\t'), "{text}");
+    assert!(text.starts_with("user memory      "), "{text}");
+    assert!(text.contains("bytes, 2 entries"), "{text}");
+    assert!(text.contains("project memory   "), "{text}");
+    assert!(text.contains("\n  empty\n"), "{text}");
+}

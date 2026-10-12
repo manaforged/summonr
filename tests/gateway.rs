@@ -62,7 +62,11 @@ fn a_webhook_fires_its_cron_job_once_with_the_token() {
         home.path(),
         &["add", "hook", "--every", "1d", "-p", "triage the event"],
     );
-    let token = cron(home.path(), &["token", "hook"]).trim().to_string();
+    let token = cron(home.path(), &["token", "hook"])
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
     let (mut server, port) = serve(home.path());
 
     assert!(post(port, "POST", "/run/hook", None, "{}").starts_with("HTTP/1.1 401"));
@@ -98,7 +102,11 @@ fn a_webhook_fires_its_cron_job_once_with_the_token() {
 fn removing_a_job_forgets_its_webhook_token() {
     let home = tempfile::tempdir().unwrap();
     cron(home.path(), &["add", "gone", "--every", "1d", "-p", "hi"]);
-    let token = cron(home.path(), &["token", "gone"]).trim().to_string();
+    let token = cron(home.path(), &["token", "gone"])
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
     cron(home.path(), &["remove", "gone"]);
     cron(home.path(), &["add", "gone", "--every", "1d", "-p", "hi"]);
     let (mut server, port) = serve(home.path());

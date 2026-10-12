@@ -9,6 +9,8 @@ use crate::error::{Error, Result};
 const BASE: &str = "https://api.telegram.org/bot";
 pub(crate) const MESSAGE_MAX: usize = 4096;
 const TYPING: &str = "typing";
+const UNAUTHORIZED: i64 = 401;
+const REJECTED: &str = "Telegram rejected that token (HTTP 401). Copy it again from @BotFather.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Method {
@@ -16,6 +18,7 @@ enum Method {
     GetUpdates,
     SendMessage,
     SendChatAction,
+    SetMyCommands,
 }
 
 impl Method {
@@ -25,6 +28,7 @@ impl Method {
             Self::GetUpdates => "getUpdates",
             Self::SendMessage => "sendMessage",
             Self::SendChatAction => "sendChatAction",
+            Self::SetMyCommands => "setMyCommands",
         }
     }
 }
@@ -66,6 +70,30 @@ pub(crate) struct Chat {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct User {
     pub id: i64,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub first_name: Option<String>,
+    #[serde(default)]
+    pub last_name: Option<String>,
+}
+
+impl User {
+    pub(crate) fn describe(&self) -> String {
+        let name: Vec<&str> = [&self.first_name, &self.last_name]
+            .into_iter()
+            .filter_map(Option::as_deref)
+            .collect();
+        let handle = self
+            .username
+            .as_deref()
+            .map_or_else(|| "a user".to_string(), |user| format!("@{user}"));
+        if name.is_empty() {
+            format!("{handle} (id {})", self.id)
+        } else {
+            format!("{handle} ({}, id {})", name.join(" "), self.id)
+        }
+    }
 }
 
 pub(crate) struct Bot {
@@ -114,10 +142,12 @@ impl Bot {
             .map_err(|error| self.failed(name, &format!("HTTP {status}: {error}")))?;
         match (reply.ok, reply.result) {
             (true, Some(result)) => Ok(result),
-            (true | false, Some(_) | None) => Err(Error::Tool(format!(
-                "telegram {name}: HTTP {}",
-                reply.error_code.unwrap_or_else(|| i64::from(status))
-            ))),
+            (true | false, Some(_) | None) => {
+                match reply.error_code.unwrap_or_else(|| i64::from(status)) {
+                    UNAUTHORIZED => Err(Error::Config(REJECTED.to_string())),
+                    code => Err(Error::Tool(format!("telegram {name}: HTTP {code}"))),
+                }
+            }
         }
     }
 
@@ -143,6 +173,16 @@ impl Bot {
             .await?;
         }
         Ok(())
+    }
+
+    pub(crate) async fn set_commands(&self, menu: &[(&str, &str)]) -> Result<()> {
+        let commands: Vec<Value> = menu
+            .iter()
+            .map(|(command, description)| json!({ "command": command, "description": description }))
+            .collect();
+        self.call::<Value>(Method::SetMyCommands, &json!({ "commands": commands }))
+            .await
+            .map(drop)
     }
 
     pub(crate) async fn typing(&self, chat: i64) -> Result<()> {

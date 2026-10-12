@@ -99,18 +99,25 @@ fn an_incomplete_reply_with_a_call_stays_a_length_stop() {
 }
 
 #[test]
-fn reasoning_asks_for_a_summary_and_encrypted_content_only_with_effort() {
+fn a_reasoning_model_always_asks_for_a_summary_and_encrypted_content() {
     let messages = vec![message(Role::User, "hi")];
     let with = request(&ask(&messages, Some(Effort::High)), true).unwrap();
     assert_eq!(with["reasoning"]["summary"], "auto");
     assert_eq!(with["include"][0], "reasoning.encrypted_content");
-    let without = request(&ask(&messages, None), true).unwrap();
-    assert!(without.get("include").is_none());
-    assert!(without.get("reasoning").is_none());
+    let default = request(&ask(&messages, None), true).unwrap();
+    assert_eq!(default["reasoning"]["summary"], "auto", "{default}");
+    assert!(default["reasoning"].get("effort").is_none(), "{default}");
+    assert_eq!(default["include"][0], "reasoning.encrypted_content");
+    let mut chat = ask(&messages, None);
+    chat.model = "gpt-4o".to_string();
+    chat.traits = crate::provider::traits("gpt-4o");
+    let plain = request(&chat, true).unwrap();
+    assert!(plain.get("reasoning").is_none(), "{plain}");
+    assert!(plain.get("include").is_none(), "{plain}");
 }
 
 #[test]
-fn a_function_tool_is_declared_not_strict() {
+fn a_function_tool_leaves_strict_to_the_api() {
     let messages = vec![message(Role::User, "hi")];
     let tools = vec![ToolDefinition {
         kind: ToolKind::Function,
@@ -123,7 +130,7 @@ fn a_function_tool_is_declared_not_strict() {
     let mut call = ask(&messages, None);
     call.tools = &tools;
     let body = request(&call, true).unwrap();
-    assert_eq!(body["tools"][0]["strict"], false);
+    assert!(body["tools"][0].get("strict").is_none(), "{body}");
     assert_eq!(body["tools"][0]["name"], "read");
 }
 

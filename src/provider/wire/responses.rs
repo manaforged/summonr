@@ -100,7 +100,8 @@ fn input(call: &CompletionRequest<'_>) -> crate::error::Result<(String, Vec<Valu
 }
 
 fn effort(body: &mut Map<String, Value>, call: &CompletionRequest<'_>, reasoning: &Reasoning) {
-    match reasoning.plan(call.traits).step(call.effort) {
+    let plan = reasoning.plan(call.traits);
+    match plan.step(call.effort) {
         Step::Level(Effort::None) => {
             body.insert("reasoning".to_string(), json!({"effort": "none"}));
         }
@@ -109,6 +110,13 @@ fn effort(body: &mut Map<String, Value>, call: &CompletionRequest<'_>, reasoning
                 "reasoning".to_string(),
                 json!({"effort": level.as_str(), "summary": "auto"}),
             );
+            body.insert(
+                "include".to_string(),
+                json!(["reasoning.encrypted_content"]),
+            );
+        }
+        Step::Default if !plan.levels.is_empty() => {
+            body.insert("reasoning".to_string(), json!({"summary": "auto"}));
             body.insert(
                 "include".to_string(),
                 json!(["reasoning.encrypted_content"]),
@@ -138,7 +146,6 @@ fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
                 "name": tool.function.name,
                 "description": tool.function.description,
                 "parameters": tool.function.parameters,
-                "strict": false,
             })
         })
         .collect()

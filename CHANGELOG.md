@@ -6,6 +6,7 @@ First stable release.
 
 ### Added
 
+- On the Responses API, tools no longer say `strict: false`, so OpenAI normalizes them to strict when it can, as its function-calling guide recommends. Reasoning models ask for a summary and encrypted reasoning even at the default effort, so their reasoning shows and replays.
 - Gemini returns thought summaries at the default effort, and a tool-result image reaches a Gemini function response only as PNG, JPEG, or WebP, the types Google accepts there; a HEIC or HEIF screenshot from a tool is named as omitted instead of failing the request.
 - OpenRouter (`x-session-id`), Fireworks (`x-session-affinity`), and Mistral (`prompt_cache_key`) get the per-session cache hint their docs name, and DashScope pay-as-you-go rows send explicit `cache_control` breakpoints. When Ollama is not running, summonr names `OLLAMA_CONTEXT_LENGTH=65536 ollama serve`, since Ollama's 4k default context silently drops a coding agent's tools.
 - GPT-5, GPT-6, and Codex models edit through `apply_patch` (`*** Begin Patch` … `*** End Patch`), the format OpenAI trains them on, in place of `edit` and `write`; the patch runs through the same edit engine, policy, and checks. Other models keep `edit` and `write`. `gpt-6.1-sol` no longer receives an effort it rejects.

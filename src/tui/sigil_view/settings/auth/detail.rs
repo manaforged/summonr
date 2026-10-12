@@ -90,7 +90,7 @@ pub(super) fn pane(
         text("↵ ", Token::Accent11),
         text(primary(choice, state), Token::OnSurface),
     ]));
-    if choice.key && choice.env.is_none() {
+    if choice.paste_key() {
         nodes.push(heading(vec![
             text("alt+k ", Token::Accent11),
             text("paste an API key", Token::OnSurface),
@@ -142,7 +142,7 @@ fn primary(choice: &AuthInfo, state: &str) -> String {
         Some(env) => format!("key comes from ${env}"),
         None if choice.stored() => "replace the key".to_string(),
         None if state == State::NoKey.word() => "set a key if the server asks for one".to_string(),
-        None => "paste an API key".to_string(),
+        None => "set a key".to_string(),
     }
 }
 

@@ -1,4 +1,5 @@
 use super::resolve::{choose, closest, from_file, hosted};
+use super::{AuthInfo, LoginFlow, LoginGroup, Source};
 
 fn row(name: &str, base_url: &str) -> super::Endpoint {
     let file: crate::config::File = toml::from_str(&format!(
@@ -6,6 +7,61 @@ fn row(name: &str, base_url: &str) -> super::Endpoint {
     ))
     .unwrap();
     from_file(&file, name).unwrap()
+}
+
+#[test]
+fn enter_label_names_what_enter_does_per_provider_state() {
+    let pinned = info(
+        true,
+        Some(Source::Env),
+        Some("ANTHROPIC_API_KEY"),
+        LoginFlow::Key,
+    );
+    assert_eq!(pinned.key_action(), "unset the env key");
+    assert!(!pinned.paste_key());
+    let stored = info(true, Some(Source::File), None, LoginFlow::Key);
+    assert_eq!(stored.key_action(), "replace the key");
+    assert!(stored.paste_key());
+    let peer = info(true, Some(Source::Peer("opencode")), None, LoginFlow::Key);
+    assert_eq!(peer.key_action(), "set a key");
+    assert!(peer.paste_key());
+    let missing = info(true, None, None, LoginFlow::Key);
+    assert_eq!(missing.key_action(), "set a key");
+    assert!(missing.paste_key());
+    let plan = info(true, Some(Source::Keychain), None, LoginFlow::Browser);
+    assert_eq!(plan.key_action(), "sign in");
+    assert!(plan.paste_key());
+}
+
+#[test]
+fn paste_key_offer_follows_the_key_and_env_fields() {
+    assert!(info(true, None, None, LoginFlow::Key).paste_key());
+    assert!(!info(false, None, None, LoginFlow::Key).paste_key());
+    assert!(!info(true, None, Some("OPENAI_API_KEY"), LoginFlow::Key).paste_key());
+}
+
+fn info(
+    key: bool,
+    source: Option<Source>,
+    env: Option<&'static str>,
+    login: LoginFlow,
+) -> AuthInfo {
+    AuthInfo {
+        name: "lab".to_string(),
+        flow: LoginFlow::Key,
+        login,
+        key,
+        plan: String::new(),
+        configured: source.is_some(),
+        source,
+        setup: String::new(),
+        env,
+        model: "m".to_string(),
+        base_url: None,
+        own: false,
+        env_hint: None,
+        group: LoginGroup::Key,
+    }
 }
 
 #[test]

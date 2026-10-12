@@ -50,39 +50,17 @@ struct Range {
     min: u32,
     max: u32,
     names: &'static [&'static str],
-    names_from: u32,
 }
 
-const MINUTE: Range = Range {
-    min: 0,
-    max: 59,
-    names: &[],
-    names_from: 0,
-};
-const HOUR: Range = Range {
-    min: 0,
-    max: 23,
-    names: &[],
-    names_from: 0,
-};
-const DOM: Range = Range {
-    min: 1,
-    max: 31,
-    names: &[],
-    names_from: 0,
-};
-const MONTH: Range = Range {
-    min: 1,
-    max: 12,
-    names: &MONTHS,
-    names_from: 1,
-};
-const DOW: Range = Range {
-    min: 0,
-    max: 7,
-    names: &WEEKDAYS,
-    names_from: 0,
-};
+const fn range(min: u32, max: u32, names: &'static [&'static str]) -> Range {
+    Range { min, max, names }
+}
+
+const MINUTE: Range = range(0, 59, &[]);
+const HOUR: Range = range(0, 23, &[]);
+const DOM: Range = range(1, 31, &[]);
+const MONTH: Range = range(1, 12, &MONTHS);
+const DOW: Range = range(0, 7, &WEEKDAYS);
 
 pub(crate) fn parse(text: &str) -> Result<Schedule> {
     let text = text.trim().to_ascii_lowercase();
@@ -241,7 +219,7 @@ fn value(text: &str, range: &Range) -> Result<u32> {
         .iter()
         .position(|name| *name == text)
         .and_then(|index| u32::try_from(index).ok())
-        .map(|index| index + range.names_from);
+        .map(|index| index + range.min);
     match found.or_else(|| text.parse().ok()) {
         Some(at) if (range.min..=range.max).contains(&at) => Ok(at),
         Some(_) | None => Err(bad(

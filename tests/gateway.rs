@@ -72,34 +72,40 @@ fn raw(port: u16, request: &str) -> String {
 }
 
 fn post(port: u16, method: &str, path: &str, token: Option<&str>, body: &str) -> String {
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     let auth = token.map_or_else(String::new, |token| {
         format!("Authorization: Bearer {token}\r\n")
     });
-    write!(
-        stream,
-        "{method} {path} HTTP/1.1\r\nHost: localhost\r\n{auth}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
+    raw(
+        port,
+        &format!(
+            "{method} {path} HTTP/1.1\r\nHost: localhost\r\n{auth}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        ),
     )
-    .unwrap();
-    let mut reply = String::new();
-    stream.read_to_string(&mut reply).unwrap();
-    reply
+}
+
+fn job(home: &Path, name: &str, schedule: &[&str], prompt: &str) -> String {
+    let mut args = vec!["add", name];
+    args.extend(schedule);
+    args.extend(["-p", prompt]);
+    cron(home, &args);
+    cron(home, &["token", name])
+        .lines()
+        .next()
+        .unwrap()
+        .to_string()
+}
+
+fn stop(mut server: Child) {
+    drop(server.kill());
+    drop(server.wait());
 }
 
 #[test]
 fn a_webhook_fires_its_cron_job_once_with_the_token() {
     let home = tempfile::tempdir().unwrap();
-    cron(
-        home.path(),
-        &["add", "hook", "--every", "1d", "-p", "triage the event"],
-    );
-    let token = cron(home.path(), &["token", "hook"])
-        .lines()
-        .next()
-        .unwrap()
-        .to_string();
-    let (mut server, port) = serve(home.path());
+    let token = job(home.path(), "hook", &["--every", "1d"], "triage the event");
+    let (server, port) = serve(home.path());
 
     assert!(post(port, "POST", "/run/hook", None, "{}").starts_with("HTTP/1.1 401"));
     assert!(post(port, "POST", "/run/hook", Some("wrong"), "{}").starts_with("HTTP/1.1 401"));
@@ -121,8 +127,7 @@ fn a_webhook_fires_its_cron_job_once_with_the_token() {
         ),
     );
     assert!(chunked.starts_with("HTTP/1.1 411"), "{chunked}");
-    drop(server.kill());
-    drop(server.wait());
+    stop(server);
 
     let saved = bodies(home.path());
     assert_eq!(saved.len(), 1);
@@ -143,34 +148,22 @@ fn a_webhook_fires_its_cron_job_once_with_the_token() {
 #[test]
 fn removing_a_job_forgets_its_webhook_token() {
     let home = tempfile::tempdir().unwrap();
-    cron(home.path(), &["add", "gone", "--every", "1d", "-p", "hi"]);
-    let token = cron(home.path(), &["token", "gone"])
-        .lines()
-        .next()
-        .unwrap()
-        .to_string();
+    let token = job(home.path(), "gone", &["--every", "1d"], "hi");
     cron(home.path(), &["remove", "gone"]);
     cron(home.path(), &["add", "gone", "--every", "1d", "-p", "hi"]);
-    let (mut server, port) = serve(home.path());
+    let (server, port) = serve(home.path());
     let reply = post(port, "POST", "/run/gone", Some(&token), "");
-    drop(server.kill());
-    drop(server.wait());
+    stop(server);
     assert!(reply.starts_with("HTTP/1.1 401"), "{reply}");
 }
 
 #[test]
 fn a_query_string_still_reaches_the_job_and_removal_deletes_payloads() {
     let home = tempfile::tempdir().unwrap();
-    cron(home.path(), &["add", "q", "--every", "1d", "-p", "hi"]);
-    let token = cron(home.path(), &["token", "q"])
-        .lines()
-        .next()
-        .unwrap()
-        .to_string();
-    let (mut server, port) = serve(home.path());
+    let token = job(home.path(), "q", &["--every", "1d"], "hi");
+    let (server, port) = serve(home.path());
     let fired = post(port, "POST", "/run/q?source=ci", Some(&token), "{}");
-    drop(server.kill());
-    drop(server.wait());
+    stop(server);
     assert!(fired.starts_with("HTTP/1.1 202"), "{fired}");
     assert_eq!(bodies(home.path()).len(), 1);
     cron(home.path(), &["remove", "q"]);
@@ -181,12 +174,7 @@ fn a_query_string_still_reaches_the_job_and_removal_deletes_payloads() {
 #[test]
 fn the_webhook_stops_on_sigterm_and_a_slow_client_blocks_nobody() {
     let home = tempfile::tempdir().unwrap();
-    cron(home.path(), &["add", "s", "--manual", "-p", "hi"]);
-    let token = cron(home.path(), &["token", "s"])
-        .lines()
-        .next()
-        .unwrap()
-        .to_string();
+    let token = job(home.path(), "s", &["--manual"], "hi");
     let (mut server, port) = serve(home.path());
     let stalled: Vec<TcpStream> = (0..12)
         .map(|_| {
@@ -242,17 +230,11 @@ fn every_gateway_command_answers_help() {
 #[test]
 fn an_oversized_body_gets_a_readable_413_and_bad_tokens_are_explained() {
     let home = tempfile::tempdir().unwrap();
-    cron(home.path(), &["add", "big", "--manual", "-p", "hi"]);
-    let token = cron(home.path(), &["token", "big"])
-        .lines()
-        .next()
-        .unwrap()
-        .to_string();
-    let (mut server, port) = serve(home.path());
+    let token = job(home.path(), "big", &["--manual"], "hi");
+    let (server, port) = serve(home.path());
     let body = "x".repeat(70_000);
     let reply = post(port, "POST", "/run/big", Some(&token), &body);
-    drop(server.kill());
-    drop(server.wait());
+    stop(server);
     assert!(reply.starts_with("HTTP/1.1 413"), "{reply}");
     assert!(reply.contains("{\"error\""), "{reply}");
     let mut setup = summonr(home.path())

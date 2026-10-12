@@ -3,9 +3,7 @@ use super::*;
 pub(super) fn composer_keys(mut node: NodeBuilder, app: &App) -> NodeBuilder {
     for modifier in [ModifiersState::SHIFT, ModifiersState::ALT] {
         node = node.key_capture(Shortcut::new(Key::Enter, modifier), |event| {
-            event.key = Key::Enter.into();
-            event.modifiers = ModifiersState::empty();
-            event.text = None;
+            rewrite(event, Key::Enter);
         });
     }
     for (key, end) in [(Key::Home, false), (Key::End, true)] {
@@ -71,9 +69,7 @@ pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
             Shortcut::ctrl(LogicalKey::character(key.to_string())),
             move |event| {
                 if newline(&route, key) {
-                    event.key = Key::Enter.into();
-                    event.modifiers = ModifiersState::empty();
-                    event.text = None;
+                    rewrite(event, Key::Enter);
                 }
             },
         );
@@ -115,13 +111,17 @@ fn apply_ctrl(app: &App, key: char, event: &mut KeyEvent) -> bool {
     match ctrl_action(app, key) {
         Ctrl::Stop => true,
         Ctrl::Rewrite(key) => {
-            event.key = key.into();
-            event.modifiers = ModifiersState::empty();
-            event.text = None;
+            rewrite(event, key);
             false
         }
         Ctrl::Fall => false,
     }
+}
+
+fn rewrite(event: &mut KeyEvent, key: Key) {
+    event.key = key.into();
+    event.modifiers = ModifiersState::empty();
+    event.text = None;
 }
 
 fn ctrl_action(app: &App, key: char) -> Ctrl {

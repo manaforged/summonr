@@ -224,22 +224,16 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
 
 fn mode_label(mode: ModeText) -> NodeBuilder {
     let (text, class) = mode;
+    let tone = [
+        sigil::prelude::Token::Warn11,
+        sigil::prelude::Token::Error11,
+        sigil::prelude::Token::Success11,
+    ][usize::from(class).min(2)];
     let title = sigil::kernel::text(text)
         .nowrap()
-        .text_color(sigil::prelude::Token::OnSurface);
-    let title = if class == 0 {
-        title
-            .font_size(12.0)
-            .text_color(sigil::prelude::Token::Warn11)
-    } else if class == 1 {
-        title
-            .font_size(12.0)
-            .text_color(sigil::prelude::Token::Error11)
-    } else {
-        title
-            .font_size(12.0)
-            .text_color(sigil::prelude::Token::Success11)
-    };
+        .text_color(sigil::prelude::Token::OnSurface)
+        .font_size(12.0)
+        .text_color(tone);
     container()
         .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0))
         .child(title.ellipsize())

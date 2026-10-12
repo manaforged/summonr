@@ -108,16 +108,24 @@ fn text_and_reasoning_both_reach_the_caller() {
 }
 
 #[test]
-fn a_filtered_finish_is_a_blocked_error_like_the_responses_wire() {
-    for reason in ["content_filter", "sensitive"] {
+fn finish_reasons_map_to_failures_or_a_length_stop() {
+    use crate::error::ProviderFailureKind::{Http, Server};
+    for (reason, expected) in [
+        ("content_filter", Http),
+        ("sensitive", Http),
+        ("network_error", Server),
+        ("insufficient_system_resource", Server),
+    ] {
         let error = streamed(&[said(json!("half an ans"), Some(reason))]).unwrap_err();
-        assert!(error.to_string().contains(reason), "{reason}: {error}");
-        assert_eq!(
-            kind(error),
-            crate::error::ProviderFailureKind::Http,
-            "{reason}"
+        let text = error.to_string();
+        assert!(
+            expected == Server || text.contains(reason),
+            "{reason}: {text}"
         );
+        assert_eq!(kind(error), expected, "{reason}");
     }
+    let reply = streamed(&[said(json!("so far"), Some("model_context_window_exceeded"))]).unwrap();
+    assert_eq!(reply.stop_reason, StopReason::Length);
 }
 
 fn streamed(frames: &[serde_json::Value]) -> crate::error::Result<AssistantMessage> {
@@ -156,24 +164,6 @@ fn mistral_thinking_chunks_stream_as_reasoning_then_text() {
     .unwrap();
     assert_eq!(reply.content.as_deref(), Some("Hi there"));
     assert_eq!(reply.reasoning_content.as_deref(), Some("weigh it twice"));
-}
-
-#[test]
-fn a_finish_cut_by_the_server_is_a_server_failure() {
-    for reason in ["network_error", "insufficient_system_resource"] {
-        let error = streamed(&[said(json!("half an ans"), Some(reason))]).unwrap_err();
-        assert_eq!(
-            kind(error),
-            crate::error::ProviderFailureKind::Server,
-            "{reason}"
-        );
-    }
-}
-
-#[test]
-fn a_full_context_window_finish_is_a_length_stop() {
-    let reply = streamed(&[said(json!("so far"), Some("model_context_window_exceeded"))]).unwrap();
-    assert_eq!(reply.stop_reason, StopReason::Length);
 }
 
 #[test]

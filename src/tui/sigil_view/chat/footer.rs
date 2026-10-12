@@ -173,27 +173,34 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
                 .text_color(sigil::prelude::Token::Gray12),
         );
     }
-    let context_card = open
-        .as_ref()
-        .and_then(|(cache, rows)| (!*cache).then_some(rows.clone()));
-    let cache_card = open
-        .as_ref()
-        .and_then(|(cache, rows)| (*cache).then_some(rows.clone()));
-    if let Some(percent) = context_pct {
+    let meters = [
+        (
+            false,
+            Target::Context,
+            "ctx",
+            context_pct,
+            sigil::prelude::Token::Accent,
+        ),
+        (
+            true,
+            Target::Cache,
+            "cache",
+            cache_pct,
+            sigil::prelude::Token::Info11,
+        ),
+    ];
+    for (cache, target, caption, percent, fill) in meters {
+        let Some(percent) = percent else {
+            continue;
+        };
+        let card = open
+            .as_ref()
+            .and_then(|(shown, rows)| (*shown == cache).then(|| rows.clone()));
         row = row.child(meter_button(
             app.clone(),
-            Target::Context,
-            meter("ctx", percent, sigil::prelude::Token::Accent),
-            context_card,
-            width,
-        ));
-    }
-    if let Some(percent) = cache_pct {
-        row = row.child(meter_button(
-            app,
-            Target::Cache,
-            meter("cache", percent, sigil::prelude::Token::Info11),
-            cache_card,
+            target,
+            meter(caption, percent, fill),
+            card,
             width,
         ));
     }

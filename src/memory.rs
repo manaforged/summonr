@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 pub(crate) const FILE: &str = "MEMORY.md";
 const DIR: &str = "memory";
-const GIT_DIR: &str = ".git";
 const KEY_NAME_CHARS: usize = 40;
 const OVER: &str = "; only the newest part loads; ask me to read and tidy it";
 const REPORT_END: &str = "Ask me to remember something, or edit a file above; changes to these files apply to new sessions. `memory = false` under [modules] turns memory off.";
@@ -118,8 +117,7 @@ pub fn report(files: &[MemoryFile]) -> String {
             status(file, cap)
         ));
     }
-    text.push_str(REPORT_END);
-    text
+    text + REPORT_END
 }
 
 fn status(file: &MemoryFile, cap: usize) -> String {
@@ -204,7 +202,10 @@ fn root(workspace: &Path) -> PathBuf {
     .filter(|dir| !dir.is_empty())
     .map(PathBuf::from)
     .map(|common| {
-        if common.file_name().is_some_and(|name| name == GIT_DIR) {
+        if common
+            .file_name()
+            .is_some_and(|name| name == crate::policy::git::GIT_DIR)
+        {
             common.parent().map_or(common.clone(), Path::to_path_buf)
         } else {
             common

@@ -72,37 +72,12 @@ fn repository() -> tempfile::TempDir {
     work
 }
 
-fn fnv1a(bytes: &[u8]) -> String {
-    let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
-    });
-    format!("{hash:016x}")
-}
-
 fn project_memory(home: &Path, work: &Path) -> PathBuf {
-    let common = Command::new("git")
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .current_dir(work)
-        .output()
-        .unwrap();
-    let common = PathBuf::from(String::from_utf8_lossy(&common.stdout).trim());
-    let root = common.parent().unwrap();
-    let name: String = root
-        .file_name()
+    summonr::memory::files(home, work)
+        .into_iter()
+        .find(|file| file.scope == summonr::memory::Scope::Project)
         .unwrap()
-        .to_string_lossy()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .take(40)
-        .collect();
-    let key = format!("{name}-{}", fnv1a(root.to_string_lossy().as_bytes()));
-    home.join("memory").join(key).join("MEMORY.md")
+        .path
 }
 
 fn configure(home: &Path, port: u16, extra: &str) {
@@ -208,13 +183,23 @@ fn sessions_grep_finds_text_from_a_past_session() {
         &["sessions", "--grep", "WALRUS"],
     );
     assert!(found.contains("the walrus is noted"), "{found}");
-    let none = summonr(
-        home.path(),
-        work.path(),
-        port,
-        &["sessions", "--grep", "narwhal"],
+    let date = found.split('\t').nth(1).unwrap_or_default();
+    assert!(date.starts_with("20") && date.len() == 16, "{found}");
+    let none = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["sessions", "--grep", "narwhal"])
+        .current_dir(work.path())
+        .env("HOME", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(none.status.code(), Some(1));
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&none.stdout),
+        String::from_utf8_lossy(&none.stderr)
     );
-    assert_eq!(none.trim(), "no matches");
+    assert_eq!(text.trim(), "no matches");
     let alone = summonr(home.path(), work.path(), port, &["--grep", "walrus"]);
     assert!(
         alone.contains("--grep works with `summonr sessions`"),
@@ -231,35 +216,4 @@ fn a_mistyped_command_is_not_sent_to_the_model() {
     let text = summonr(home.path(), work.path(), port, &["sesions"]);
     assert!(text.contains("did you mean `sessions`"), "{text}");
     assert!(bodies.lock().unwrap().is_empty(), "{text}");
-}
-
-#[test]
-fn sessions_grep_dates_matches_and_fails_on_none() {
-    let home = tempfile::tempdir().unwrap();
-    let work = repository();
-    let (port, _bodies) = provider();
-    configure(home.path(), port, "");
-    summonr(
-        home.path(),
-        work.path(),
-        port,
-        &["-e", "local", "-p", "remember the walrus"],
-    );
-    let found = summonr(
-        home.path(),
-        work.path(),
-        port,
-        &["sessions", "--grep", "walrus"],
-    );
-    let year = found.split('\t').nth(1).unwrap_or_default();
-    assert!(year.starts_with("20") && year.len() == 16, "{found}");
-    let status = Command::new(env!("CARGO_BIN_EXE_summonr"))
-        .args(["sessions", "--grep", "narwhal"])
-        .current_dir(work.path())
-        .env("HOME", home.path())
-        .env("SUMMONR_HOME", home.path())
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
-    assert_eq!(status.status.code(), Some(1));
 }

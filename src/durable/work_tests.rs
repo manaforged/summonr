@@ -131,36 +131,21 @@ fn a_goal_stops_after_three_failed_checks() {
 }
 
 #[test]
-fn a_changed_check_file_is_never_a_touched_path() {
+fn check_file_and_cache_files_are_never_touched_paths() {
     let dir = tempfile::tempdir().unwrap();
+    let write = |path: &str, text: &str| std::fs::write(dir.path().join(path), text).unwrap();
     crate::diff::git_env(dir.path(), &[], &["init", "-q"]).unwrap();
     std::fs::create_dir_all(dir.path().join(".summonr")).unwrap();
-    std::fs::write(dir.path().join(".summonr/check.toml"), "check = \"a\"\n").unwrap();
-    std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+    write(".summonr/check.toml", "check = \"a\"\n");
+    write("calc.py", "a");
     let mut work = Work::new("ship", Policy::Single);
     work.plan = Some("plan".to_string());
     work.execute(snapshot(dir.path(), None, None).unwrap())
         .unwrap();
-    std::fs::write(dir.path().join(".summonr/check.toml"), "check = \"bb\"\n").unwrap();
-    std::fs::write(dir.path().join("a.txt"), "bb").unwrap();
-    let paths = work
-        .verify(snapshot(dir.path(), None, None).unwrap())
-        .unwrap();
-    assert_eq!(paths, vec!["a.txt".to_string()]);
-}
-
-#[test]
-fn a_cache_file_is_never_a_touched_path() {
-    let dir = tempfile::tempdir().unwrap();
-    crate::diff::git_env(dir.path(), &[], &["init", "-q"]).unwrap();
-    std::fs::write(dir.path().join("calc.py"), "a").unwrap();
-    let mut work = Work::new("ship", Policy::Single);
-    work.plan = Some("plan".to_string());
-    work.execute(snapshot(dir.path(), None, None).unwrap())
-        .unwrap();
-    std::fs::write(dir.path().join("calc.py"), "bb").unwrap();
+    write(".summonr/check.toml", "check = \"bb\"\n");
+    write("calc.py", "bb");
     std::fs::create_dir(dir.path().join("__pycache__")).unwrap();
-    std::fs::write(dir.path().join("__pycache__/calc.cpython-312.pyc"), "x").unwrap();
+    write("__pycache__/calc.cpython-312.pyc", "x");
     let paths = work
         .verify(snapshot(dir.path(), None, None).unwrap())
         .unwrap();

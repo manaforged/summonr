@@ -22,15 +22,7 @@ const RULES: &[Rule] = &[
 impl Rule {
     fn hides(&self, path: &str) -> bool {
         match self {
-            Self::Dir(name) => {
-                let mut parts = path.split('/').peekable();
-                while let Some(part) = parts.next() {
-                    if part == *name && parts.peek().is_some() {
-                        return true;
-                    }
-                }
-                false
-            }
+            Self::Dir(name) => path.split('/').rev().skip(1).any(|part| part == *name),
             Self::Suffix(suffix) => path.ends_with(suffix),
             Self::Under { dir, keep } => path
                 .strip_prefix(*dir)

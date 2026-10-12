@@ -6,7 +6,7 @@ use super::args::{self, Show, Spec, USAGE, usage};
 use super::report;
 use super::runner;
 use super::schedule;
-use super::store::{self, Job, Notify, Outcome};
+use super::store::{self, Job, Notify};
 use super::view;
 use crate::error::{Error, Result};
 
@@ -78,22 +78,20 @@ fn install() -> Result<i32> {
     super::guard()?;
     let exe = std::env::current_exe()?;
     let every = crate::limits::limits().cron_tick_secs;
-    let installed = super::install::install(&exe, every)?;
-    say(view::installed(&installed.path, installed.note))
+    let (path, note) = super::install::install(&exe, every)?;
+    say(view::installed(&path, note))
 }
 
 fn uninstall() -> Result<i32> {
     super::guard()?;
-    match super::install::uninstall()? {
-        Some(path) => say(format!("removed {}", path.display())),
-        None => say("not installed".to_string()),
-    }
+    say(super::install::uninstall()?.map_or_else(
+        || "not installed".to_string(),
+        |path| format!("removed {}", path.display()),
+    ))
 }
 
 fn exec(name: &str, slot: &str, rest: &[&str]) -> Result<i32> {
-    let slot = slot
-        .parse()
-        .map_err(|error| Error::Config(format!("bad slot `{slot}`: {error}")))?;
+    let slot = args::number(slot)?;
     match rest {
         [] => runner::exec(name, slot, None),
         ["--payload", file] => runner::exec(name, slot, Some(Path::new(file))),
@@ -117,16 +115,16 @@ fn schedule_text(spec: &Spec, tz: Option<&str>) -> Result<Option<String>> {
             "use one of --cron, --every, --at and --manual".to_string(),
         ));
     }
-    let text = if spec.manual {
-        Some(schedule::MANUAL.to_string())
-    } else if let Some(expr) = &spec.cron {
-        Some(expr.clone())
-    } else if let Some(every) = &spec.every {
-        Some(schedule::every_text(every)?)
-    } else if let Some(at) = &spec.at {
-        Some(schedule::at_text(at, &schedule::zone(tz)?)?)
-    } else {
-        None
+    let text = match spec {
+        Spec { manual: true, .. } => Some(schedule::MANUAL.to_string()),
+        Spec {
+            cron: Some(expr), ..
+        } => Some(expr.clone()),
+        Spec {
+            every: Some(every), ..
+        } => Some(schedule::every_text(every)?),
+        Spec { at: Some(at), .. } => Some(schedule::at_text(at, &schedule::zone(tz)?)?),
+        Spec { .. } => None,
     };
     if let Some(text) = &text {
         schedule::parse(text)?;
@@ -198,7 +196,7 @@ fn add(name: &str, spec: &Spec, cwd: &Path) -> Result<i32> {
         Ok(())
     })?;
     println!("{}", view::added("added", &job));
-    warn(&job, spec, true);
+    view::warn(&job, spec, true);
     unscheduled()?;
     Ok(0)
 }
@@ -209,7 +207,7 @@ fn edit(name: &str, spec: &Spec) -> Result<i32> {
         apply(job, spec)?;
         Ok(job.clone())
     })?;
-    warn(&job, spec, false);
+    view::warn(&job, spec, false);
     say(view::added("edited", &job))
 }
 
@@ -219,10 +217,10 @@ fn remove(name: &str) -> Result<i32> {
         let index = jobs
             .iter()
             .position(|job| job.name == name)
-            .ok_or_else(|| Error::Config(format!("no cron job named `{name}`")))?;
+            .ok_or_else(|| store::unknown(name))?;
         Ok(jobs.remove(index))
     })?;
-    let stopped = stop_running(&job);
+    let stopped = runner::stop_running(&job);
     store::forget_token(name)?;
     store::remove_payloads(&job.dir, name)?;
     store::remove_run_lock(name)?;
@@ -230,29 +228,6 @@ fn remove(name: &str) -> Result<i32> {
         println!("stopped the running run");
     }
     say(format!("removed {name}"))
-}
-
-fn stop_running(job: &Job) -> bool {
-    let Some(id) = job
-        .runs
-        .iter()
-        .rev()
-        .find(|run| run.outcome == Outcome::Running)
-        .and_then(|run| run.job.as_deref())
-    else {
-        return false;
-    };
-    let Ok(record) = crate::jobs::load(&job.dir, id) else {
-        return false;
-    };
-    let running = crate::jobs::status(&job.dir, &record)
-        .is_ok_and(|status| status.state == crate::jobs::JobState::Running);
-    if !running {
-        return false;
-    }
-    let mut group = crate::tools::command::ProcessGroup::new(record.pid, record.sandbox);
-    group.disarm();
-    group.terminate()
 }
 
 fn set_paused(name: &str, paused: bool) -> Result<i32> {
@@ -321,59 +296,6 @@ fn log(name: &str, show: Show) -> Result<i32> {
         }
     }
     Ok(0)
-}
-
-fn warn(job: &Job, spec: &Spec, adding: bool) {
-    let notes = [
-        spec.mail.as_deref().and_then(mail_missing),
-        spec.chat.then(chat_missing).flatten(),
-        adding
-            .then(|| key_missing(job.endpoint.as_deref()))
-            .flatten(),
-    ];
-    for note in notes.into_iter().flatten() {
-        eprintln!("warning: {note}");
-    }
-}
-
-fn mail_missing(session: &str) -> Option<String> {
-    let dir = crate::mail::dir().ok()?;
-    let found = crate::mail::live(&dir)
-        .iter()
-        .any(|agent| agent.answers_to(session));
-    (!found).then(|| format!("no live session has the name or id `{session}` right now"))
-}
-
-fn chat_missing() -> Option<String> {
-    if crate::gateway::token().ok().flatten().is_none() {
-        return Some(
-            "no Telegram token is stored, so --chat sends nothing; run `summonr gateway setup telegram`"
-                .to_string(),
-        );
-    }
-    let paired = crate::gateway::store::load()
-        .map(|state| state.paired_chats())
-        .unwrap_or_default();
-    paired.is_empty().then(|| {
-        "no Telegram user is paired, so --chat sends nothing; message your bot, then run `summonr gateway pair CODE`"
-            .to_string()
-    })
-}
-
-fn key_missing(endpoint: Option<&str>) -> Option<String> {
-    let ready = crate::endpoint::set_up();
-    let name = endpoint
-        .map(str::to_string)
-        .or_else(|| crate::endpoint::default_seat().map(|seat| seat.endpoint));
-    match name {
-        Some(name) if !ready.contains(&name) => Some(format!(
-            "{name} has no usable key; run `summonr login {name}`"
-        )),
-        None if ready.is_empty() => {
-            Some("no endpoint has a key; run `summonr login NAME`".to_string())
-        }
-        Some(_) | None => None,
-    }
 }
 
 fn status() -> Result<i32> {

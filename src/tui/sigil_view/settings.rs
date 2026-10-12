@@ -53,7 +53,7 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     } else {
         "auto"
     };
-    let mut rows = vec![
+    let rows = [
         ("session", Setting::Mode, "mode", mode.to_string()),
         (
             "session",
@@ -107,15 +107,14 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
             .to_string(),
         ),
     ];
-    let mut shown: Vec<Row> = rows.drain(..).map(Row::from).collect();
     let modules = app.modules.peek();
-    shown.extend(crate::modules::ALL.iter().map(|module| Row {
+    let module_rows = crate::modules::ALL.iter().map(|module| Row {
         group: "modules",
         setting: Setting::Module(module.id),
         label: format!("{} tools", module.id.name()),
         value: on_off(modules.get(&module.id).copied().unwrap_or(module.default)).to_string(),
-    }));
-    rows.extend([
+    });
+    let interface = [
         ("interface", Setting::Theme, "theme", prefs.theme.clone()),
         (
             "interface",
@@ -159,9 +158,12 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
             "hotkeys",
             format!("{} bindings", crate::prefs::Hotkey::ALL.len()),
         ),
-    ]);
-    shown.extend(rows.into_iter().map(Row::from));
-    shown
+    ];
+    rows.into_iter()
+        .map(Row::from)
+        .chain(module_rows)
+        .chain(interface.into_iter().map(Row::from))
+        .collect()
 }
 
 impl From<(&'static str, Setting, &str, String)> for Row {

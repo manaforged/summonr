@@ -29,12 +29,9 @@ fn at(text: &str) -> Zoned {
         .unwrap()
 }
 
-fn next(expr: &str, after: &str) -> String {
-    parse(expr)
-        .unwrap()
-        .next_after(at(after))
-        .unwrap()
-        .to_string()
+fn next(expr: &str, after: Zoned) -> String {
+    let next = parse(expr).unwrap().next_after(after).unwrap().to_string();
+    next.strip_suffix("[America/Chicago]").unwrap().to_string()
 }
 
 fn job(schedule: &str, created: i64) -> Job {
@@ -70,42 +67,68 @@ fn a_cron_run_cannot_add_jobs() {
 }
 
 #[test]
-fn weekday_hours_skip_the_weekend() {
-    assert_eq!(
-        next("*/15 9-17 * * mon-fri", "2026-10-12T08:50"),
-        "2026-10-12T09:00:00-05:00[America/Chicago]"
-    );
-    assert_eq!(
-        next("*/15 9-17 * * mon-fri", "2026-10-16T17:45"),
-        "2026-10-19T09:00:00-05:00[America/Chicago]"
-    );
+fn schedules_fire_at_the_next_local_slot() {
+    for (expr, after, want) in [
+        (
+            "*/15 9-17 * * mon-fri",
+            "2026-10-12T08:50",
+            "2026-10-12T09:00:00-05:00",
+        ),
+        (
+            "*/15 9-17 * * mon-fri",
+            "2026-10-16T17:45",
+            "2026-10-19T09:00:00-05:00",
+        ),
+        (
+            "0 12 * * 7",
+            "2026-10-17T13:00",
+            "2026-10-18T12:00:00-05:00",
+        ),
+        (
+            "0 0 1 jan *",
+            "2026-10-17T13:00",
+            "2027-01-01T00:00:00-06:00",
+        ),
+        ("@daily", "2026-10-17T13:00", "2026-10-18T00:00:00-05:00"),
+        (
+            "0 0 13 * fri",
+            "2026-10-10T12:00",
+            "2026-10-13T00:00:00-05:00",
+        ),
+        (
+            "0 0 13 * fri",
+            "2026-10-13T12:00",
+            "2026-10-16T00:00:00-05:00",
+        ),
+        (
+            "30 2 * * *",
+            "2026-03-07T03:00",
+            "2026-03-09T02:30:00-05:00",
+        ),
+        (
+            "30 1 * * *",
+            "2026-11-01T00:00",
+            "2026-11-01T01:30:00-05:00",
+        ),
+        ("every 1d", "2026-10-11T15:00", "2026-10-12T00:00:00-05:00"),
+        ("every 30m", "2026-10-11T15:10", "2026-10-11T15:30:00-05:00"),
+        ("every 1d", "2026-03-08T00:00", "2026-03-09T00:00:00-05:00"),
+        ("every 1d", "2026-11-01T00:00", "2026-11-02T00:00:00-06:00"),
+    ] {
+        assert_eq!(next(expr, at(after)), want, "{expr} after {after}");
+    }
 }
 
 #[test]
-fn seven_is_sunday_and_names_parse() {
+fn the_repeated_hour_fires_once_and_still_fires_for_a_job_made_inside_it() {
+    let zoned = |text: &str| format!("{text}[America/Chicago]").parse::<Zoned>().unwrap();
     assert_eq!(
-        next("0 12 * * 7", "2026-10-17T13:00"),
-        "2026-10-18T12:00:00-05:00[America/Chicago]"
+        next("30 1 * * *", zoned("2026-11-01T01:30:00-05:00")),
+        "2026-11-02T01:30:00-06:00"
     );
     assert_eq!(
-        next("0 0 1 jan *", "2026-10-17T13:00"),
-        "2027-01-01T00:00:00-06:00[America/Chicago]"
-    );
-    assert_eq!(
-        next("@daily", "2026-10-17T13:00"),
-        "2026-10-18T00:00:00-05:00[America/Chicago]"
-    );
-}
-
-#[test]
-fn a_restricted_day_and_weekday_fire_on_either() {
-    assert_eq!(
-        next("0 0 13 * fri", "2026-10-10T12:00"),
-        "2026-10-13T00:00:00-05:00[America/Chicago]"
-    );
-    assert_eq!(
-        next("0 0 13 * fri", "2026-10-13T12:00"),
-        "2026-10-16T00:00:00-05:00[America/Chicago]"
+        next("30 1 * * *", zoned("2026-11-01T01:10:00-06:00")),
+        "2026-11-01T01:30:00-06:00"
     );
 }
 
@@ -124,59 +147,17 @@ fn bad_schedules_are_refused() {
 }
 
 #[test]
-fn a_time_daylight_saving_skips_does_not_fire_that_day() {
-    assert_eq!(
-        next("30 2 * * *", "2026-03-07T03:00"),
-        "2026-03-09T02:30:00-05:00[America/Chicago]"
-    );
-}
-
-#[test]
-fn a_repeated_time_fires_once() {
-    let first = next("30 1 * * *", "2026-11-01T00:00");
-    assert_eq!(first, "2026-11-01T01:30:00-05:00[America/Chicago]");
-    let after = parse("30 1 * * *")
-        .unwrap()
-        .next_after(first.parse::<Zoned>().unwrap())
-        .unwrap();
-    assert_eq!(
-        after.to_string(),
-        "2026-11-02T01:30:00-06:00[America/Chicago]"
-    );
-}
-
-#[test]
-fn every_counts_from_local_midnight() {
-    assert_eq!(
-        next("every 1d", "2026-10-11T15:00"),
-        "2026-10-12T00:00:00-05:00[America/Chicago]"
-    );
-    assert_eq!(
-        next("every 30m", "2026-10-11T15:10"),
-        "2026-10-11T15:30:00-05:00[America/Chicago]"
-    );
-}
-
-#[test]
-fn missed_slots_run_once_at_the_latest() {
+fn missed_slots_run_once_at_the_latest_and_old_slots_expire() {
     let hourly = job("0 * * * *", secs("2026-10-11T09:10"));
     assert_eq!(
         due(&hourly, None, secs("2026-10-11T12:05")).unwrap(),
         Due::Run(secs("2026-10-11T12:00"))
     );
+    let ran = Some(secs("2026-10-11T12:00"));
     assert_eq!(
-        due(
-            &hourly,
-            Some(secs("2026-10-11T12:00")),
-            secs("2026-10-11T12:59")
-        )
-        .unwrap(),
+        due(&hourly, ran, secs("2026-10-11T12:59")).unwrap(),
         Due::No
     );
-}
-
-#[test]
-fn a_slot_older_than_the_catch_up_window_expires() {
     let once = job("at 2026-09-01T12:00:00Z", secs("2026-08-30T12:00"));
     assert_eq!(
         due(&once, None, secs("2026-10-11T12:00")).unwrap(),
@@ -186,11 +167,15 @@ fn a_slot_older_than_the_catch_up_window_expires() {
 
 #[test]
 fn exit_codes_map_to_outcomes() {
-    assert_eq!(Outcome::from_code(Some(0)), Outcome::Done);
-    assert_eq!(Outcome::from_code(Some(2)), Outcome::CheckFailed);
-    assert_eq!(Outcome::from_code(Some(3)), Outcome::Unfinished);
-    assert_eq!(Outcome::from_code(Some(1)), Outcome::Error);
-    assert_eq!(Outcome::from_code(None), Outcome::Error);
+    for (code, outcome) in [
+        (Some(0), Outcome::Done),
+        (Some(2), Outcome::CheckFailed),
+        (Some(3), Outcome::Unfinished),
+        (Some(1), Outcome::Error),
+        (None, Outcome::Error),
+    ] {
+        assert_eq!(Outcome::from_code(code), outcome);
+    }
     assert!(!Outcome::Done.failed() && Outcome::Unfinished.failed());
 }
 
@@ -227,10 +212,14 @@ fn the_launch_agent_escapes_paths() {
         text.contains("<key>HOME</key>\n    <string>/h</string>"),
         "{text}"
     );
+    assert_eq!(
+        domains(501),
+        ["gui/501".to_string(), "user/501".to_string()]
+    );
 }
 
 #[test]
-fn the_crontab_line_is_quoted_and_replaceable() {
+fn the_crontab_line_is_quoted_escaped_and_replaceable() {
     let line = cron_line(Path::new("/opt/it's/summonr"), bare("/usr/bin"));
     assert_eq!(
         line,
@@ -238,6 +227,14 @@ fn the_crontab_line_is_quoted_and_replaceable() {
     );
     let table = format!("0 1 * * * backup\n{line}\n");
     assert_eq!(crontab_without(&table), "0 1 * * * backup\n");
+    let line = cron_line(Path::new("/opt/100%/summonr"), bare("/usr/bin"));
+    assert!(line.contains("'/opt/100\\%/summonr'"), "{line}");
+    let env = TickEnv {
+        home: Some("/Users/frankie"),
+        ..bare("/usr/bin")
+    };
+    let line = cron_line(Path::new("/bin/summonr"), env);
+    assert!(line.contains("HOME='/Users/frankie'"), "{line}");
 }
 
 #[test]
@@ -247,56 +244,4 @@ fn the_systemd_timer_fires_each_minute() {
     assert!(service.contains("Environment=\"PATH=/usr/bin\""));
     assert!(timer.contains("OnCalendar=*-*-* *:*:00"));
     assert!(service.contains("KillMode=process"), "{service}");
-}
-
-#[test]
-fn launchd_domains_try_the_gui_session_first() {
-    assert_eq!(
-        domains(501),
-        ["gui/501".to_string(), "user/501".to_string()]
-    );
-}
-
-#[test]
-fn a_job_made_during_the_repeated_hour_still_fires_that_night() {
-    let made = "2026-11-01T01:10:00-06:00[America/Chicago]"
-        .parse::<Zoned>()
-        .unwrap();
-    assert_eq!(
-        parse("30 1 * * *")
-            .unwrap()
-            .next_after(made)
-            .unwrap()
-            .to_string(),
-        "2026-11-01T01:30:00-06:00[America/Chicago]"
-    );
-}
-
-#[test]
-fn every_day_stays_on_local_midnight_across_daylight_saving() {
-    assert_eq!(
-        next("every 1d", "2026-03-08T00:00"),
-        "2026-03-09T00:00:00-05:00[America/Chicago]"
-    );
-    assert_eq!(
-        next("every 1d", "2026-11-01T00:00"),
-        "2026-11-02T00:00:00-06:00[America/Chicago]"
-    );
-}
-
-#[test]
-fn the_crontab_line_escapes_percent_signs() {
-    let line = cron_line(Path::new("/opt/100%/summonr"), bare("/usr/bin"));
-    assert!(line.contains("'/opt/100\\%/summonr'"), "{line}");
-}
-
-#[test]
-fn the_crontab_line_records_home_for_the_job() {
-    let env = TickEnv {
-        path: "/usr/bin",
-        home: Some("/Users/frankie"),
-        summonr_home: None,
-    };
-    let line = cron_line(Path::new("/bin/summonr"), env);
-    assert!(line.contains("HOME='/Users/frankie'"), "{line}");
 }

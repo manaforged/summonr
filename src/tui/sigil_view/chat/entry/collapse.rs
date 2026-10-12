@@ -33,36 +33,15 @@ pub(super) fn collapsible(
         }
     };
     match visibility {
-        Visibility::Off | Visibility::Collapsed if live => wrap(
-            sigil::kernel::text("✻ thinking…")
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .font_italic(true)
-                .text_color(sigil::prelude::Token::Gray11),
-        )
-        .pointer_down(press),
+        Visibility::Off | Visibility::Collapsed if live => {
+            caption("✻ thinking…").pointer_down(press)
+        }
         Visibility::Off if !reasoning => container(),
-        Visibility::Off => wrap(
-            sigil::kernel::text(format!("▸ {kind} · hidden"))
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .font_italic(true)
-                .text_color(sigil::prelude::Token::Gray11),
-        )
-        .pointer_down(press),
+        Visibility::Off => caption(format!("▸ {kind} · hidden")).pointer_down(press),
         Visibility::Collapsed if reasoning => {
             let words = body.split_whitespace().count();
-            wrap(
-                sigil::kernel::text(format!("▸ {kind} · {}", crate::text::plural(words, "word")))
-                    .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
-                    .font_size(12.0)
-                    .font_italic(true)
-                    .text_color(sigil::prelude::Token::Gray11),
-            )
-            .pointer_down(press)
+            caption(format!("▸ {kind} · {}", crate::text::plural(words, "word")))
+                .pointer_down(press)
         }
         Visibility::Collapsed => {
             let count = body.lines().filter(|line| !line.trim().is_empty()).count();
@@ -74,31 +53,16 @@ pub(super) fn collapsible(
                     || crate::text::plural(count, "line"),
                     |(_, gist)| gist.to_string(),
                 );
-            wrap(
-                sigil::kernel::text(format!("▸ {kind} · {gist}"))
-                    .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
-                    .font_size(12.0)
-                    .font_italic(true)
-                    .text_color(sigil::prelude::Token::Gray11),
-            )
-            .pointer_down(press)
+            caption(format!("▸ {kind} · {gist}")).pointer_down(press)
         }
         Visibility::Expanded => container()
             .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
             .child(
-                wrap(
-                    sigil::kernel::text(if live {
-                        "✻ thinking…".to_string()
-                    } else {
-                        format!("✻ {kind}")
-                    })
-                    .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
-                    .font_size(12.0)
-                    .font_italic(true)
-                    .text_color(sigil::prelude::Token::Gray11),
-                )
+                caption(if live {
+                    "✻ thinking…".to_string()
+                } else {
+                    format!("✻ {kind}")
+                })
                 .pointer_down(press),
             )
             .child(prose(
@@ -106,4 +70,15 @@ pub(super) fn collapsible(
                 Look::xs(sigil::prelude::Token::Gray10).italic(),
             )),
     }
+}
+
+fn caption(text: impl Into<String>) -> NodeBuilder {
+    wrap(
+        sigil::kernel::text(text.into())
+            .nowrap()
+            .text_color(sigil::prelude::Token::OnSurface)
+            .font_size(12.0)
+            .font_italic(true)
+            .text_color(sigil::prelude::Token::Gray11),
+    )
 }

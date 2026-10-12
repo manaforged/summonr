@@ -30,11 +30,12 @@ pub(crate) struct ImageBudget {
 }
 
 const PNG_JPEG: &[&str] = &["image/png", "image/jpeg"];
+const WEB_IMAGES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
 
 pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
     match wire {
         crate::endpoint::Wire::Anthropic => ImageBudget {
-            types: &["image/png", "image/jpeg", "image/gif", "image/webp"],
+            types: WEB_IMAGES,
             count: 100,
             each: 10_000_000,
             bytes: 24_000_000,
@@ -54,7 +55,7 @@ pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
             tool_images: false,
         },
         crate::endpoint::Wire::Responses => ImageBudget {
-            types: &["image/png", "image/jpeg", "image/gif", "image/webp"],
+            types: WEB_IMAGES,
             count: 1500,
             each: 256_000_000,
             bytes: 256_000_000,

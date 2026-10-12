@@ -27,20 +27,12 @@ pub(super) enum LoginGroup {
 }
 
 impl LoginGroup {
-    const fn heading(self) -> &'static str {
+    const fn title(self) -> &'static str {
         match self {
             Self::Key => "API keys",
             Self::Plan => "Coding plans",
-            Self::Decide => "Decisions",
-            Self::Local => "Local",
-        }
-    }
-
-    const fn title(self) -> &'static str {
-        match self {
             Self::Decide => "Decisions  (summonr classify / Jev)",
             Self::Local => "Local  (no key)",
-            Self::Key | Self::Plan => self.heading(),
         }
     }
 }

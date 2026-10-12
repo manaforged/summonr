@@ -32,78 +32,72 @@ fn cron(home: &Path, env: &[(&str, &str)], args: &[&str]) -> (i32, String) {
     (output.status.code().unwrap_or(-1), text)
 }
 
+fn run(home: &Path, args: &[&str]) -> (i32, String) {
+    cron(home, &[], args)
+}
+
 #[test]
 fn a_job_is_added_listed_and_removed() {
     let home = tempfile::tempdir().unwrap();
-    let (code, text) = cron(
+    let add = [
+        "add",
+        "nightly",
+        "--cron",
+        "0 3 * * *",
+        "--goal",
+        "make the tests pass",
+    ];
+    let (code, text) = run(
         home.path(),
-        &[],
-        &[
-            "add",
-            "nightly",
-            "--cron",
-            "0 3 * * *",
-            "--goal",
-            "make the tests pass",
-            "--tz",
-            "America/Chicago",
-        ],
+        &[&add[..], &["--tz", "America/Chicago"][..]].concat(),
     );
     assert_eq!(code, 0, "{text}");
-    let (_, list) = cron(home.path(), &[], &["list", "--json"]);
+    let (_, list) = run(home.path(), &["list", "--json"]);
     let job: serde_json::Value = serde_json::from_str(list.trim()).unwrap();
     assert_eq!(job["name"], "nightly");
     assert_eq!(job["schedule"], "0 3 * * *");
     assert_eq!(job["paused"], false);
-    let (code, text) = cron(home.path(), &[], &["remove", "nightly"]);
+    let (code, text) = run(home.path(), &["remove", "nightly"]);
     assert_eq!(code, 0, "{text}");
-    assert!(cron(home.path(), &[], &["list", "--json"]).1.is_empty());
+    assert!(run(home.path(), &["list", "--json"]).1.is_empty());
 }
 
 #[test]
-fn a_cron_run_cannot_change_jobs() {
+fn bad_adds_are_refused_with_the_reason() {
     let home = tempfile::tempdir().unwrap();
-    let (code, text) = cron(
-        home.path(),
-        &[("SUMMONR_CRON", "nightly")],
-        &["add", "more", "--every", "1m", "-p", "hi"],
-    );
-    assert_ne!(code, 0);
-    assert!(
-        text.contains("a cron run cannot change cron jobs"),
-        "{text}"
-    );
-    assert!(cron(home.path(), &[], &["list", "--json"]).1.is_empty());
-}
-
-#[test]
-fn a_bad_schedule_is_refused_at_add() {
-    let home = tempfile::tempdir().unwrap();
-    let (code, text) = cron(
-        home.path(),
-        &[],
-        &["add", "x", "--cron", "61 * * * *", "-p", "hi"],
-    );
-    assert_ne!(code, 0);
-    assert!(text.contains("bad schedule"), "{text}");
+    for (args, want) in [
+        (["x", "--cron", "61 * * * *", "-p", "hi"], "bad schedule"),
+        (
+            ["x", "--every", "1h", "--goal", "-rf everything"],
+            "cannot start with `-`",
+        ),
+        (["old", "--at", "2020-01-01 00:00", "-p", "hi"], "past"),
+        (
+            ["bad", "--at", "yesterday", "-p", "hi"],
+            "use HH:MM, YYYY-MM-DD HH:MM, or RFC 3339",
+        ),
+    ] {
+        let (code, text) = run(home.path(), &[&["add"][..], &args[..]].concat());
+        assert_ne!(code, 0, "{args:?}");
+        assert!(text.contains(want), "{text}");
+        assert!(!text.contains("strptime"), "{text}");
+    }
+    let (code, text) = run(home.path(), &["add", "soon", "--at", "23:59", "-p", "hi"]);
+    assert_eq!(code, 0, "{text}");
 }
 
 #[test]
 fn a_run_still_going_skips_the_next_one() {
     let home = tempfile::tempdir().unwrap();
-    let (code, text) = cron(
-        home.path(),
-        &[],
-        &["add", "slow", "--every", "1h", "-p", "hi"],
-    );
+    let (code, text) = run(home.path(), &["add", "slow", "--every", "1h", "-p", "hi"]);
     assert_eq!(code, 0, "{text}");
     let runs = home.path().join(".summonr/cron/runs");
     std::fs::create_dir_all(&runs).unwrap();
     let held = std::fs::File::create(runs.join("slow.lock")).unwrap();
     held.lock().unwrap();
-    let (code, text) = cron(home.path(), &[], &["exec", "slow", "--slot", "1"]);
+    let (code, text) = run(home.path(), &["exec", "slow", "--slot", "1"]);
     assert_eq!(code, 1, "{text}");
-    let (_, log) = cron(home.path(), &[], &["log", "slow"]);
+    let (_, log) = run(home.path(), &["log", "slow"]);
     assert!(log.contains("overlap"), "{log}");
     drop(held);
 }
@@ -111,73 +105,79 @@ fn a_run_still_going_skips_the_next_one() {
 #[test]
 fn cron_help_and_empty_states_guide_a_new_user() {
     let home = tempfile::tempdir().unwrap();
-    let (code, help) = cron(home.path(), &[], &["--help"]);
-    assert_eq!(code, 0, "{help}");
-    assert!(help.starts_with("usage:"), "{help}");
-    let (code, list) = cron(home.path(), &[], &["list"]);
+    for help in [&["--help"][..], &["add", "--help"][..]] {
+        let (code, text) = run(home.path(), help);
+        assert_eq!(code, 0, "{text}");
+        assert!(text.starts_with("usage:"), "{text}");
+    }
+    let (code, list) = run(home.path(), &["list"]);
     assert_eq!(code, 0, "{list}");
     assert!(list.contains("no cron jobs; add one with"), "{list}");
-    let (code, error) = cron(home.path(), &[], &["add", "x", "-p", "hi"]);
+    let (code, error) = run(home.path(), &["add", "x", "-p", "hi"]);
     assert_ne!(code, 0);
     assert!(error.contains("see `summonr cron --help`"), "{error}");
     assert!(!error.contains("usage:"), "{error}");
+    run(home.path(), &["add", "x", "--every", "1h", "-p", "hi"]);
+    let (code, text) = run(home.path(), &["log", "x", "--last"]);
+    assert_ne!(code, 0);
+    assert!(text.contains("--last needs a value"), "{text}");
+    let mail = ["--mail", "nobody-here", "--chat"];
+    let (_, warned) = run(
+        home.path(),
+        &[&["add", "y", "--every", "1h", "-p", "hi"][..], &mail[..]].concat(),
+    );
+    assert!(warned.contains("nobody-here"), "{warned}");
+    assert!(warned.contains("gateway setup telegram"), "{warned}");
 }
 
 #[test]
 fn a_job_reads_as_plain_lines() {
     let home = tempfile::tempdir().unwrap();
-    let (code, added) = cron(
+    let at = ["--at", "2026-12-01 09:00", "--tz", "America/Chicago"];
+    let (code, added) = run(
         home.path(),
-        &[],
-        &[
-            "add",
-            "Nightly",
-            "--at",
-            "2026-12-01 09:00",
-            "--tz",
-            "America/Chicago",
-            "--goal",
-            "ship it",
-        ],
+        &[&["add", "Nightly", "--goal", "ship it"][..], &at[..]].concat(),
     );
     assert_eq!(code, 0, "{added}");
     assert!(
         added.starts_with("added nightly: at 2026-12-01 09:00 CST, next"),
         "{added}"
     );
-    let (_, show) = cron(home.path(), &[], &["show", "nightly"]);
+    let (_, show) = run(home.path(), &["show", "nightly"]);
     assert!(show.contains("goal: ship it"), "{show}");
     assert!(show.contains("budget: 30m00s (default)"), "{show}");
     assert!(!show.contains("created = "), "{show}");
-    let (_, log) = cron(home.path(), &[], &["log", "nightly"]);
+    let (_, log) = run(home.path(), &["log", "nightly"]);
     assert_eq!(log.trim(), "no runs yet");
-    let (_, token) = cron(home.path(), &[], &["token", "nightly"]);
+    let (_, token) = run(home.path(), &["token", "nightly"]);
     assert!(token.contains("Authorization: Bearer"), "{token}");
     assert!(token.contains("/run/nightly"), "{token}");
-    let (_, bad) = cron(
+    let (_, bad) = run(
         home.path(),
-        &[],
         &["add", "y", "--every", "1h", "-p", "hi", "--notify", "loud"],
     );
     assert!(!bad.contains("unknown variant"), "{bad}");
 }
 
 #[test]
-fn a_cron_run_cannot_read_tokens_or_unpause_jobs_even_through_run_command() {
+fn a_cron_run_cannot_change_jobs_even_through_run_command() {
     let home = tempfile::tempdir().unwrap();
-    cron(
-        home.path(),
-        &[],
-        &["add", "job", "--every", "1h", "-p", "hi"],
-    );
-    for words in [["token", "job"], ["resume", "job"], ["run", "job"]] {
-        let (code, text) = cron(home.path(), &[("SUMMONR_CRON", "job")], &words);
+    run(home.path(), &["add", "job", "--every", "1h", "-p", "hi"]);
+    let more = ["add", "more", "--every", "1m", "-p", "hi"];
+    for words in [
+        &more[..],
+        &["token", "job"][..],
+        &["resume", "job"][..],
+        &["run", "job"][..],
+    ] {
+        let (code, text) = cron(home.path(), &[("SUMMONR_CRON", "job")], words);
         assert_ne!(code, 0, "{words:?}: {text}");
         assert!(
             text.contains("a cron run cannot change cron jobs"),
             "{text}"
         );
     }
+    assert!(!run(home.path(), &["list", "--json"]).1.contains("more"));
     let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
         .args([
             "tool",
@@ -196,95 +196,30 @@ fn a_cron_run_cannot_read_tokens_or_unpause_jobs_even_through_run_command() {
 }
 
 #[test]
-fn a_goal_that_reads_as_a_flag_is_refused() {
-    let home = tempfile::tempdir().unwrap();
-    let (code, text) = cron(
-        home.path(),
-        &[],
-        &["add", "x", "--every", "1h", "--goal", "-rf everything"],
-    );
-    assert_ne!(code, 0);
-    assert!(text.contains("cannot start with `-`"), "{text}");
-}
-
-#[test]
-fn a_one_shot_in_the_past_is_refused_with_the_formats_that_work() {
-    let home = tempfile::tempdir().unwrap();
-    let (code, text) = cron(
-        home.path(),
-        &[],
-        &["add", "old", "--at", "2020-01-01 00:00", "-p", "hi"],
-    );
-    assert_ne!(code, 0);
-    assert!(text.contains("past"), "{text}");
-    let (code, text) = cron(
-        home.path(),
-        &[],
-        &["add", "bad", "--at", "yesterday", "-p", "hi"],
-    );
-    assert_ne!(code, 0);
-    assert!(
-        text.contains("use HH:MM, YYYY-MM-DD HH:MM, or RFC 3339"),
-        "{text}"
-    );
-    assert!(!text.contains("strptime"), "{text}");
-    let (code, text) = cron(
-        home.path(),
-        &[],
-        &["add", "soon", "--at", "23:59", "-p", "hi"],
-    );
-    assert_eq!(code, 0, "{text}");
-}
-
-#[test]
 fn manual_jobs_never_fire_on_their_own_and_runs_read_as_answers() {
     let home = tempfile::tempdir().unwrap();
-    let (code, text) = cron(
-        home.path(),
-        &[],
-        &["add", "alert", "--manual", "-p", "triage"],
-    );
+    let (code, text) = run(home.path(), &["add", "alert", "--manual", "-p", "triage"]);
     assert_eq!(code, 0, "{text}");
-    cron(home.path(), &[], &["tick"]);
-    let (_, log) = cron(home.path(), &[], &["log", "alert"]);
+    run(home.path(), &["tick"]);
+    let (_, log) = run(home.path(), &["log", "alert"]);
     assert!(log.contains("no runs yet"), "{log}");
-    cron(home.path(), &[], &["run", "alert"]);
-    let (_, log) = cron(home.path(), &[], &["log", "alert"]);
+    run(home.path(), &["run", "alert"]);
+    let (_, log) = run(home.path(), &["log", "alert"]);
     assert!(!log.contains("{\"type\""), "{log}");
     assert!(log.contains("log: "), "{log}");
-    let (_, list) = cron(home.path(), &[], &["list", "--json"]);
-    assert!(list.contains("\"paused\":false"), "{list}");
-    assert!(list.contains("\"task\""), "{list}");
-    assert!(list.contains("\"dir\""), "{list}");
-}
-
-#[test]
-fn help_and_missing_values_point_at_the_right_word() {
-    let home = tempfile::tempdir().unwrap();
-    let (code, help) = cron(home.path(), &[], &["add", "--help"]);
-    assert_eq!(code, 0, "{help}");
-    assert!(help.starts_with("usage:"), "{help}");
-    cron(home.path(), &[], &["add", "x", "--every", "1h", "-p", "hi"]);
-    let (code, text) = cron(home.path(), &[], &["log", "x", "--last"]);
-    assert_ne!(code, 0);
-    assert!(text.contains("--last needs a value"), "{text}");
-    let (_, warned) = cron(
+    run(
         home.path(),
-        &[],
-        &[
-            "add",
-            "y",
-            "--every",
-            "1h",
-            "-p",
-            "hi",
-            "--mail",
-            "nobody-here",
-            "--chat",
-        ],
+        &["add", "e", "--every", "1h", "-e", "zai", "-p", "hi"],
     );
-    assert!(warned.contains("nobody-here"), "{warned}");
-    assert!(warned.contains("gateway setup telegram"), "{warned}");
+    let (_, list) = run(home.path(), &["list", "--json"]);
+    for field in [
+        "\"paused\":false",
+        "\"task\"",
+        "\"dir\"",
+        "\"endpoint\":\"zai\"",
+    ] {
+        assert!(list.contains(field), "{list}");
+    }
 }
 
 #[test]
@@ -293,27 +228,13 @@ fn a_run_that_cannot_start_is_recorded_as_an_error() {
     let gone = home.path().join("gone");
     std::fs::create_dir_all(&gone).unwrap();
     let dir = gone.to_string_lossy().to_string();
-    cron(
+    run(
         home.path(),
-        &[],
         &["add", "lost", "--every", "1h", "-p", "hi", "--dir", &dir],
     );
     std::fs::remove_dir_all(&gone).unwrap();
-    cron(home.path(), &[], &["run", "lost"]);
-    let (_, log) = cron(home.path(), &[], &["log", "lost"]);
+    run(home.path(), &["run", "lost"]);
+    let (_, log) = run(home.path(), &["log", "lost"]);
     assert!(log.contains("error"), "{log}");
     assert!(!log.contains("running"), "{log}");
-}
-
-#[test]
-fn the_short_endpoint_flag_works_in_cron() {
-    let home = tempfile::tempdir().unwrap();
-    let (code, text) = cron(
-        home.path(),
-        &[],
-        &["add", "e", "--every", "1h", "-e", "zai", "-p", "hi"],
-    );
-    assert_eq!(code, 0, "{text}");
-    let (_, list) = cron(home.path(), &[], &["list", "--json"]);
-    assert!(list.contains("\"endpoint\":\"zai\""), "{list}");
 }

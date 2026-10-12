@@ -194,9 +194,6 @@ fn hit_line(line: &str) -> String {
     if line.len() <= GREP_LINE_MAX {
         return line.to_string();
     }
-    let mut end = GREP_LINE_MAX;
-    while !line.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = line.floor_char_boundary(GREP_LINE_MAX);
     format!("{}… [line clipped at {GREP_LINE_MAX} bytes]", &line[..end])
 }

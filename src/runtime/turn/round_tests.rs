@@ -10,6 +10,23 @@ fn blind_session(workspace: &Path, home: &Path, provider: Scripted) -> Loop<Scri
     loop_
 }
 
+fn picture(text: &str) -> UserInput {
+    UserInput {
+        text: text.to_string(),
+        images: vec![Image::encode("image/png", b"not a real png")],
+        source: None,
+    }
+}
+
+fn assert_blind(sent: &[Vec<Message>]) {
+    assert!(
+        sent.iter()
+            .flatten()
+            .all(|message| message.images.is_empty()),
+        "a blind model received image content: {sent:?}"
+    );
+}
+
 #[tokio::test]
 async fn an_image_on_a_blind_model_is_folded_to_text_not_sent() {
     let workspace = tempfile::tempdir().unwrap();
@@ -17,19 +34,12 @@ async fn an_image_on_a_blind_model_is_folded_to_text_not_sent() {
     let provider = Scripted::new([Reply::Text("ok")]);
     let sent = provider.sent();
     let mut loop_ = blind_session(workspace.path(), home.path(), provider);
-    let input = UserInput {
-        text: "here is a pic of me".to_string(),
-        images: vec![Image::encode("image/png", b"not a real png")],
-        source: None,
-    };
-    loop_.turn_with(input, |_| {}).await.unwrap();
+    loop_
+        .turn_with(picture("here is a pic of me"), |_| {})
+        .await
+        .unwrap();
     let sent = sent.lock().unwrap();
-    assert!(
-        sent.iter()
-            .flatten()
-            .all(|message| message.images.is_empty()),
-        "a blind model received image content: {sent:?}"
-    );
+    assert_blind(&sent);
     assert!(
         sent.iter()
             .flatten()
@@ -47,19 +57,11 @@ async fn a_switch_to_a_blind_model_folds_the_next_attached_image() {
     let provider = Scripted::new([Reply::Text("ok")]);
     let sent = provider.sent();
     loop_.set_provider(provider, "glm-5.3");
-    let input = UserInput {
-        text: "what is in this?".to_string(),
-        images: vec![Image::encode("image/png", b"not a real png")],
-        source: None,
-    };
-    loop_.turn_with(input, |_| {}).await.unwrap();
-    let sent = sent.lock().unwrap();
-    assert!(
-        sent.iter()
-            .flatten()
-            .all(|message| message.images.is_empty()),
-        "the blind model received image content: {sent:?}"
-    );
+    loop_
+        .turn_with(picture("what is in this?"), |_| {})
+        .await
+        .unwrap();
+    assert_blind(&sent.lock().unwrap());
 }
 
 #[tokio::test]
@@ -76,20 +78,13 @@ async fn a_fallback_to_a_blind_model_folds_the_next_attached_image() {
         .turn_with(UserInput::from("hi"), |_| {})
         .await
         .unwrap();
-    let input = UserInput {
-        text: "what is in this?".to_string(),
-        images: vec![Image::encode("image/png", b"not a real png")],
-        source: None,
-    };
-    loop_.turn_with(input, |_| {}).await.unwrap();
+    loop_
+        .turn_with(picture("what is in this?"), |_| {})
+        .await
+        .unwrap();
     let sent = sent.lock().unwrap();
     assert_eq!(sent.len(), 2);
-    assert!(
-        sent.iter()
-            .flatten()
-            .all(|message| message.images.is_empty()),
-        "the blind fallback received image content: {sent:?}"
-    );
+    assert_blind(&sent);
 }
 
 fn two_reply_server(bodies: std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> String {

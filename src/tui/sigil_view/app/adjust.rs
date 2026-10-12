@@ -101,17 +101,26 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn open_hotkeys(&self) {
         self.hotkeys.sel.set(0);
-        self.hotkeys.recording.set(false);
-        self.hotkeys.armed.set(false);
-        self.hotkeys.note.set(String::new());
+        self.stop_recording();
         self.hotkeys.open.set(true);
     }
 
     pub(in crate::tui::sigil_view) fn close_hotkeys(&self) {
+        self.stop_recording();
+        self.hotkeys.open.set(false);
+    }
+
+    fn stop_recording(&self) {
         self.hotkeys.recording.set(false);
         self.hotkeys.armed.set(false);
         self.hotkeys.note.set(String::new());
-        self.hotkeys.open.set(false);
+    }
+
+    fn save_hotkeys(&self) {
+        let prefs = self.model.peek().prefs.clone();
+        self.stop_recording();
+        self.persist(&prefs);
+        self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn move_hotkey(&self, delta: isize) {
@@ -139,12 +148,7 @@ impl App {
         self.model_mut(|model| {
             model.prefs.hotkeys = Default::default();
         });
-        let prefs = self.model.peek().prefs.clone();
-        self.hotkeys.recording.set(false);
-        self.hotkeys.armed.set(false);
-        self.hotkeys.note.set(String::new());
-        self.persist(&prefs);
-        self.refresh();
+        self.save_hotkeys();
     }
 
     pub(in crate::tui::sigil_view) fn arm_leader(&self) {
@@ -202,15 +206,9 @@ impl App {
                 format!("ctrl+{key}")
             };
             self.hotkeys.note.set(format!("{binding} is reserved"));
-            self.hotkeys.armed.set(false);
             return;
         }
-        let prefs = self.model.peek().prefs.clone();
-        self.hotkeys.recording.set(false);
-        self.hotkeys.armed.set(false);
-        self.hotkeys.note.set(String::new());
-        self.persist(&prefs);
-        self.refresh();
+        self.save_hotkeys();
     }
 
     fn run_hotkey(&self, action: Hotkey) -> bool {

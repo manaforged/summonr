@@ -1,20 +1,10 @@
-use std::process::{Command, Stdio};
+use std::path::Path;
+use std::process::{Command, Output, Stdio};
 
 #[test]
 fn a_first_run_without_a_provider_says_how_to_set_one_up() {
     let home = tempfile::tempdir().unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
-        .args(["-p", "hi"])
-        .current_dir(home.path())
-        .env_clear()
-        .env("HOME", home.path())
-        .env("USERPROFILE", home.path())
-        .env("SUMMONR_HOME", home.path().join(".summonr"))
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .envs(std::env::var_os("SYSTEMROOT").map(|root| ("SYSTEMROOT", root)))
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
+    let output = run(home.path(), &["-p", "hi"]);
     let text = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "{text}");
     assert!(
@@ -26,20 +16,8 @@ fn a_first_run_without_a_provider_says_how_to_set_one_up() {
 #[test]
 fn there_is_no_plan_mode_flag() {
     let home = tempfile::tempdir().unwrap();
-    for work in [["-p", "hi"], ["--goal", "fix it"]] {
-        let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
-            .arg("--plan")
-            .args(work)
-            .current_dir(home.path())
-            .env_clear()
-            .env("HOME", home.path())
-            .env("USERPROFILE", home.path())
-            .env("SUMMONR_HOME", home.path().join(".summonr"))
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .envs(std::env::var_os("SYSTEMROOT").map(|root| ("SYSTEMROOT", root)))
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
+    for work in [["--plan", "-p", "hi"], ["--plan", "--goal", "fix it"]] {
+        let output = run(home.path(), &work);
         let text = String::from_utf8_lossy(&output.stderr);
         assert_eq!(output.status.code(), Some(1), "{work:?}: {text}");
         assert!(text.contains("unknown option `--plan`"), "{work:?}: {text}");
@@ -96,19 +74,29 @@ fn global_json_reaches_mcp_list_and_worktree_prune() {
     );
 }
 
-fn summonr(home: &std::path::Path, args: &[&str]) -> (bool, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
-        .args(args)
+fn isolated(program: &str, home: &Path) -> Command {
+    let mut command = Command::new(program);
+    command
         .current_dir(home)
         .env_clear()
         .env("HOME", home)
         .env("USERPROFILE", home)
         .env("SUMMONR_HOME", home.join(".summonr"))
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .envs(std::env::var_os("SYSTEMROOT").map(|root| ("SYSTEMROOT", root)))
+        .envs(std::env::var_os("SYSTEMROOT").map(|root| ("SYSTEMROOT", root)));
+    command
+}
+
+fn run(home: &Path, args: &[&str]) -> Output {
+    isolated(env!("CARGO_BIN_EXE_summonr"), home)
+        .args(args)
         .stdin(Stdio::null())
         .output()
-        .unwrap();
+        .unwrap()
+}
+
+fn summonr(home: &Path, args: &[&str]) -> (bool, String) {
+    let output = run(home, args);
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -174,7 +162,7 @@ fn a_local_server_updates_in_place_reads_ready_and_takes_its_default_with_it() {
 fn a_closed_pipe_ends_a_command_quietly() {
     let home = tempfile::tempdir().unwrap();
     let home = home.path();
-    let output = Command::new("sh")
+    let output = isolated("sh", home)
         .args([
             "-c",
             &format!(
@@ -182,11 +170,6 @@ fn a_closed_pipe_ends_a_command_quietly() {
                 env!("CARGO_BIN_EXE_summonr")
             ),
         ])
-        .current_dir(home)
-        .env_clear()
-        .env("HOME", home)
-        .env("SUMMONR_HOME", home.join(".summonr"))
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .output()
         .unwrap();
     let text = String::from_utf8_lossy(&output.stderr);
@@ -222,15 +205,8 @@ fn a_local_server_takes_a_new_model_and_becomes_the_default_from_the_shell() {
 fn acp_answers_initialize_before_a_provider_is_set_up() {
     use std::io::Write;
     let home = tempfile::tempdir().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_summonr"))
+    let mut child = isolated(env!("CARGO_BIN_EXE_summonr"), home.path())
         .arg("acp")
-        .current_dir(home.path())
-        .env_clear()
-        .env("HOME", home.path())
-        .env("USERPROFILE", home.path())
-        .env("SUMMONR_HOME", home.path().join(".summonr"))
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .envs(std::env::var_os("SYSTEMROOT").map(|root| ("SYSTEMROOT", root)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -281,16 +257,10 @@ fn the_tool_command_runs_a_module_tool_that_is_switched_on() {
 fn a_child_that_exits_before_reading_does_not_end_summonr() {
     let home = tempfile::tempdir().unwrap();
     for index in 0..20 {
-        let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
-            .args(["mcp", "add", &format!("demo{index}"), "--", "/usr/bin/true"])
-            .current_dir(home.path())
-            .env_clear()
-            .env("HOME", home.path())
-            .env("SUMMONR_HOME", home.path().join(".summonr"))
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
+        let output = run(
+            home.path(),
+            &["mcp", "add", &format!("demo{index}"), "--", "/usr/bin/true"],
+        );
         let text = String::from_utf8_lossy(&output.stdout).into_owned()
             + &String::from_utf8_lossy(&output.stderr);
         assert_eq!(output.status.code(), Some(1), "run {index}: {text:?}");

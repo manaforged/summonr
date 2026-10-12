@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use super::child::{Exit, Seen, argv, outcome};
+use super::child::{Seen, argv, outcome};
 use super::store::{State, code_from};
 use super::telegram::split;
 use super::turn::Options;
-use super::webhook::{Reply, decide};
+use super::webhook::{Status, decide};
 use super::{Action, addressed, route};
 
 const OWNER: i64 = 7;
@@ -20,17 +20,11 @@ fn paired() -> State {
 #[test]
 fn a_stranger_gets_one_pairing_code_then_silence() {
     let mut state = State::default();
-    assert_eq!(route(&state, STRANGER, STRANGER, "hi", 0), Action::Pair);
+    assert_eq!(route(&state, STRANGER, "hi", 0), Action::Pair);
     state.offer(STRANGER, STRANGER, "XYZ789", 0);
-    assert_eq!(
-        route(&state, STRANGER, STRANGER, "hi again", 5),
-        Action::Drop
-    );
+    assert_eq!(route(&state, STRANGER, "hi again", 5), Action::Drop);
     let expired = i64::try_from(crate::limits::limits().gateway_pair_secs).unwrap() + 1;
-    assert_eq!(
-        route(&state, STRANGER, STRANGER, "later", expired),
-        Action::Pair
-    );
+    assert_eq!(route(&state, STRANGER, "later", expired), Action::Pair);
 }
 
 #[test]
@@ -50,17 +44,16 @@ fn a_pairing_code_expires_and_works_once() {
 fn a_paired_owner_runs_text_and_chat_commands() {
     let state = paired();
     assert_eq!(
-        route(&state, OWNER, OWNER, "fix the tests", 20),
+        route(&state, OWNER, "fix the tests", 20),
         Action::Run("fix the tests".to_string())
     );
-    assert_eq!(route(&state, OWNER, OWNER, "/new", 20), Action::New);
-    assert_eq!(
-        route(&state, OWNER, OWNER, "/stop@my_bot", 20),
-        Action::Stop
-    );
-    assert_eq!(route(&state, OWNER, OWNER, "/status", 20), Action::Status);
-    assert_eq!(route(&state, OWNER, OWNER, "   ", 20), Action::Drop);
-    assert_eq!(route(&state, STRANGER, OWNER, "/new", 20), Action::Pair);
+    assert_eq!(route(&state, OWNER, "/new", 20), Action::New);
+    assert_eq!(route(&state, OWNER, "/stop@my_bot", 20), Action::Stop);
+    assert_eq!(route(&state, OWNER, "/status", 20), Action::Status);
+    assert_eq!(route(&state, OWNER, "   ", 20), Action::Drop);
+    assert_eq!(route(&state, OWNER, "/start", 20), Action::Help);
+    assert_eq!(route(&state, OWNER, "/help@my_bot", 20), Action::Help);
+    assert_eq!(route(&state, STRANGER, "/new", 20), Action::Pair);
 }
 
 #[test]
@@ -101,7 +94,7 @@ fn the_turn_reply_is_the_last_answer_with_any_abort() {
     seen.read(r#"{"type":"assistant","text":"done"}"#);
     seen.read(r#"{"type":"aborted","code":"time_budget","reason":"out of time"}"#);
     assert_eq!(seen.session.as_deref(), Some("s9"));
-    assert_eq!(seen.reply(), "done\n\naborted: out of time");
+    assert_eq!(outcome(&seen, Some(0), &[]), "done\n\naborted: out of time");
 }
 
 #[test]
@@ -109,41 +102,31 @@ fn the_webhook_fires_only_with_the_job_token() {
     let token = |name: &str| (name == "nightly").then(|| "t0ken".to_string());
     assert_eq!(
         decide("POST", "/run/nightly", Some("Bearer t0ken"), token),
-        Reply::Fire("nightly".to_string())
+        Ok("nightly".to_string())
+    );
+    assert_eq!(
+        decide("POST", "/run/nightly", Some("bearer t0ken"), token),
+        Ok("nightly".to_string())
     );
     assert_eq!(
         decide("POST", "/run/nightly", Some("Bearer wrong"), token),
-        Reply::Unauthorized
+        Err(Status::Unauthorized)
     );
     assert_eq!(
         decide("POST", "/run/other", Some("Bearer t0ken"), token),
-        Reply::Unauthorized
+        Err(Status::Unauthorized)
     );
     assert_eq!(
         decide("POST", "/run/nightly", None, token),
-        Reply::Unauthorized
+        Err(Status::Unauthorized)
     );
     assert_eq!(
         decide("GET", "/run/nightly", Some("Bearer t0ken"), token),
-        Reply::NotFound
+        Err(Status::WrongMethod)
     );
     assert_eq!(
         decide("POST", "/admin", Some("Bearer t0ken"), token),
-        Reply::NotFound
-    );
-}
-
-#[test]
-fn start_and_help_show_the_guide_to_a_paired_owner_only() {
-    let state = paired();
-    assert_eq!(route(&state, OWNER, OWNER, "/start", 20), Action::Help);
-    assert_eq!(
-        route(&state, OWNER, OWNER, "/help@my_bot", 20),
-        Action::Help
-    );
-    assert_eq!(
-        route(&State::default(), STRANGER, STRANGER, "/start", 20),
-        Action::Pair
+        Err(Status::NotFound)
     );
 }
 
@@ -171,14 +154,10 @@ fn unpairing_revokes_chats_and_notifications() {
 fn the_reply_says_when_the_check_failed_or_the_run_broke() {
     let mut seen = Seen::default();
     seen.read(r#"{"type":"assistant","text":"done"}"#);
-    assert_eq!(outcome(&seen, Exit::Done, &[]), "done");
-    assert!(outcome(&seen, Exit::CheckFailed, &[]).contains("the check failed"));
+    assert_eq!(outcome(&seen, Some(0), &[]), "done");
+    assert!(outcome(&seen, Some(2), &[]).contains("the check failed"));
     let silent = Seen::default();
-    let broke = outcome(
-        &silent,
-        Exit::Failed(1),
-        &["summonr: no provider".to_string()],
-    );
+    let broke = outcome(&silent, Some(1), &["summonr: no provider".to_string()]);
     assert!(broke.contains("failed (exit 1)"), "{broke}");
     assert!(broke.contains("no provider"), "{broke}");
 }
@@ -191,13 +170,4 @@ fn the_poll_offset_survives_a_restart() {
     };
     let text = toml::to_string(&state).unwrap();
     assert_eq!(toml::from_str::<State>(&text).unwrap().offset, 42);
-}
-
-#[test]
-fn the_bearer_scheme_is_case_insensitive() {
-    let token = |name: &str| (name == "nightly").then(|| "t0ken".to_string());
-    assert_eq!(
-        decide("POST", "/run/nightly", Some("bearer t0ken"), token),
-        Reply::Fire("nightly".to_string())
-    );
 }

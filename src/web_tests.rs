@@ -1,6 +1,8 @@
 use url::Url;
 
-use super::safe_redirect;
+use super::fetch::host_blocked;
+use super::results::{Window, engines, parse_page};
+use super::{PRIVATE_URL_PATTERNS, safe_redirect};
 
 fn follows(url: &str) -> bool {
     safe_redirect(&Url::parse(url).unwrap())
@@ -17,16 +19,12 @@ fn a_redirect_stops_at_credentials_plain_http_and_blocked_hosts() {
 }
 
 #[test]
-fn a_fetch_rejects_an_address_in_the_unspecified_block() {
-    assert!(super::fetch::host_blocked("0.1.2.3"));
-    assert!(!super::fetch::host_blocked("203.0.113.7"));
-}
-
-#[test]
-fn the_classifier_reads_a_trailing_dot_host() {
-    assert!(super::fetch::host_blocked("localhost."));
-    assert!(super::fetch::host_blocked("127.0.0.1."));
-    assert!(!super::fetch::host_blocked("example.com."));
+fn a_fetch_blocks_the_unspecified_block_and_trailing_dot_hosts() {
+    assert!(host_blocked("0.1.2.3"));
+    assert!(!host_blocked("203.0.113.7"));
+    assert!(host_blocked("localhost."));
+    assert!(host_blocked("127.0.0.1."));
+    assert!(!host_blocked("example.com."));
 }
 
 fn glob(pattern: &str, text: &str) -> bool {
@@ -41,9 +39,15 @@ fn glob(pattern: &str, text: &str) -> bool {
     }
 }
 
+fn private(url: &str) -> bool {
+    PRIVATE_URL_PATTERNS
+        .iter()
+        .any(|pattern| glob(pattern, url))
+}
+
 #[test]
 fn the_private_url_patterns_reach_the_denied_host_literals() {
-    let denied = [
+    for url in [
         "http://localhost/a",
         "https://sub.localhost/a",
         "https://127.0.0.1:9/a",
@@ -52,42 +56,20 @@ fn the_private_url_patterns_reach_the_denied_host_literals() {
         "http://[::1]:80/a",
         "http://0.0.0.0/a",
         "https://metadata.google.internal/a",
-    ];
-    for url in denied {
-        assert!(
-            super::PRIVATE_URL_PATTERNS
-                .iter()
-                .any(|pattern| glob(pattern, url)),
-            "{url}"
-        );
+    ] {
+        assert!(private(url), "{url}");
     }
-    let guard_covered = [
+    for url in [
         "https://10.0.0.5/a",
         "http://192.168.1.10/a",
         "https://169.254.3.4/a",
         "http://[fd00::1]/a",
-    ];
-    for url in guard_covered {
-        assert!(
-            !super::PRIVATE_URL_PATTERNS
-                .iter()
-                .any(|pattern| glob(pattern, url)),
-            "{url}"
-        );
-    }
-    let allowed = [
         "https://example.com/a",
         "https://8.8.8.8/a",
         "https://172.32.0.1/a",
         "https://example.com/?next=http%3A%2F%2F127.0.0.1%2F",
-    ];
-    for url in allowed {
-        assert!(
-            !super::PRIVATE_URL_PATTERNS
-                .iter()
-                .any(|pattern| glob(pattern, url)),
-            "{url}"
-        );
+    ] {
+        assert!(!private(url), "{url}");
     }
 }
 
@@ -103,7 +85,7 @@ const YAHOO: &str = r#"<li class="first"><div class="dd fst algo algo-sr relsrch
 <li><div class="dd algo algo-sr"><div class="compTitle"><a href="https://r.search.yahoo.com/_ylt=x/RV=2/RU=https%3a%2f%2fsearch.yahoo.com%2fpreferences/RK=2/RS=y-"><h3 class="title">Preferences</h3></a></div></div></li>"#;
 
 fn engine(name: &str) -> &'static super::results::Engine {
-    super::results::engines()
+    engines()
         .unwrap()
         .iter()
         .find(|engine| engine.name == name)
@@ -112,7 +94,7 @@ fn engine(name: &str) -> &'static super::results::Engine {
 
 #[test]
 fn engines_are_tried_bing_duckduckgo_yahoo_then_brave() {
-    let names = super::results::engines()
+    let names = engines()
         .unwrap()
         .iter()
         .map(|engine| engine.name.as_str())
@@ -122,7 +104,7 @@ fn engines_are_tried_bing_duckduckgo_yahoo_then_brave() {
 
 #[test]
 fn a_bing_page_yields_the_decoded_url_title_and_snippet_and_skips_its_own_links() {
-    let hits = super::results::parse_page(BING, engine("bing"));
+    let hits = parse_page(BING, engine("bing"));
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].url, "https://serde.rs/field-attrs.html");
     assert_eq!(hits[0].title, "Field attributes · Serde");
@@ -130,9 +112,7 @@ fn a_bing_page_yields_the_decoded_url_title_and_snippet_and_skips_its_own_links(
         hits[0].snippet,
         "Serialize and deserialize this field with the given name."
     );
-    let url = engine("bing")
-        .request("serde", Some(super::results::Window::Week))
-        .unwrap();
+    let url = engine("bing").request("serde", Some(Window::Week)).unwrap();
     assert_eq!(
         url.as_str(),
         "https://www.bing.com/search?q=serde&filters=ex1%3A%22ez2%22"
@@ -141,7 +121,7 @@ fn a_bing_page_yields_the_decoded_url_title_and_snippet_and_skips_its_own_links(
 
 #[test]
 fn a_yahoo_page_yields_the_url_from_its_redirect_path_and_skips_its_own_links() {
-    let hits = super::results::parse_page(YAHOO, engine("yahoo"));
+    let hits = parse_page(YAHOO, engine("yahoo"));
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].url, "https://serde.rs/field-attrs.html");
     assert_eq!(hits[0].title, "Field attributes · Serde");
@@ -153,7 +133,7 @@ fn a_yahoo_page_yields_the_url_from_its_redirect_path_and_skips_its_own_links() 
 
 #[test]
 fn a_duckduckgo_page_yields_the_unwrapped_url_title_and_snippet() {
-    let hits = super::results::parse_page(DDG, engine("duckduckgo"));
+    let hits = parse_page(DDG, engine("duckduckgo"));
     assert_eq!(hits.len(), 1);
     assert_eq!(
         hits[0].url,
@@ -165,7 +145,7 @@ fn a_duckduckgo_page_yields_the_unwrapped_url_title_and_snippet() {
 
 #[test]
 fn a_brave_page_yields_results_and_skips_its_own_links() {
-    let hits = super::results::parse_page(BRAVE, engine("brave"));
+    let hits = parse_page(BRAVE, engine("brave"));
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].url, "https://stackoverflow.com/questions/72263644");
     assert_eq!(hits[0].title, "rust - Tokio select macro");
@@ -175,14 +155,14 @@ fn a_brave_page_yields_results_and_skips_its_own_links() {
 #[test]
 fn freshness_maps_to_the_engine_parameter() {
     let url = engine("brave")
-        .request("tokio select", Some(super::results::Window::Week))
+        .request("tokio select", Some(Window::Week))
         .unwrap();
     assert_eq!(
         url.as_str(),
         "https://search.brave.com/search?q=tokio+select&tf=pw"
     );
     let url = engine("duckduckgo")
-        .request("tokio", Some(super::results::Window::Day))
+        .request("tokio", Some(Window::Day))
         .unwrap();
     assert_eq!(
         url.as_str(),
@@ -194,12 +174,9 @@ fn freshness_maps_to_the_engine_parameter() {
 
 #[test]
 fn freshness_rejects_an_unknown_window() {
-    let error = super::results::Window::parse(Some("year")).unwrap_err();
+    let error = Window::parse(Some("year")).unwrap_err();
     assert!(error.to_string().contains("not `year`"), "{error}");
-    assert_eq!(
-        super::results::Window::parse(Some(" month ")).unwrap(),
-        Some(super::results::Window::Month)
-    );
+    assert_eq!(Window::parse(Some(" month ")).unwrap(), Some(Window::Month));
 }
 
 #[test]

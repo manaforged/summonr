@@ -71,18 +71,13 @@ pub fn call_label(name: &str, arguments: &str) -> String {
         || {
             let summary = crate::tui::tool_arg(arguments);
             if summary.is_empty() {
-                name.to_string()
-            } else if name == SEARCH_TOOL {
-                format!(
-                    "{name} search {}",
-                    crate::text::ellipsize(&summary, LABEL_ARG_WIDTH)
-                )
-            } else {
-                format!(
-                    "{name} {}",
-                    crate::text::ellipsize(&summary, LABEL_ARG_WIDTH)
-                )
+                return name.to_string();
             }
+            let verb = if name == SEARCH_TOOL { " search" } else { "" };
+            format!(
+                "{name}{verb} {}",
+                crate::text::ellipsize(&summary, LABEL_ARG_WIDTH)
+            )
         },
         |(alias, _)| {
             let target = alias.split_once("__").map_or_else(

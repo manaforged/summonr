@@ -94,7 +94,7 @@ impl Hotkeys {
             return Ok(Self::default());
         }
         let mut hotkeys = Self::assigned(rows)?;
-        if hotkeys.bare_y() > 1 {
+        if hotkeys.bound('y', false) > 1 {
             return Err(Error::Config(
                 "config.toml: hotkey ctrl+y is assigned more than once".to_string(),
             ));
@@ -141,13 +141,7 @@ impl Hotkeys {
             action,
             Hotkey::Copy | Hotkey::Search | Hotkey::History | Hotkey::Fold
         ) && !rows.contains_key(action.name());
-        bare_y || inherited && self.same(index)
-    }
-
-    fn same(&self, index: usize) -> bool {
-        self.keys.iter().enumerate().any(|(other, key)| {
-            other != index && *key == self.keys[index] && self.leader[other] == self.leader[index]
-        })
+        bare_y || inherited && self.bound(self.keys[index], self.leader[index]) > 1
     }
 
     fn vacant(&self, leader: bool) -> Option<char> {
@@ -155,58 +149,30 @@ impl Hotkeys {
             .keys
             .into_iter()
             .chain('a'..='z')
-            .find(|key| self.open(*key, leader))
+            .find(|key| acceptable(*key, leader) && self.bound(*key, leader) == 0)
     }
 
-    fn open(&self, key: char, leader: bool) -> bool {
-        let fits = if leader {
-            leader_letter(key)
-        } else {
-            available(key)
-        };
-        fits && !self.taken(key, leader)
-    }
-
-    fn taken(&self, key: char, leader: bool) -> bool {
+    fn bound(&self, key: char, leader: bool) -> usize {
         self.keys
             .iter()
             .zip(self.leader)
-            .any(|(bound, plane)| *bound == key && plane == leader)
-    }
-
-    fn bare_y(&self) -> usize {
-        self.keys
-            .iter()
-            .zip(self.leader)
-            .filter(|(key, leader)| **key == 'y' && !leader)
+            .filter(|(bound, plane)| **bound == key && *plane == leader)
             .count()
     }
 
     fn unique(&self) -> Result<()> {
-        let mut bare = [false; 26];
-        let mut chord = [false; 26];
-        for (&key, &leader) in self.keys.iter().zip(self.leader.iter()) {
-            let place = (key as usize).wrapping_sub('a' as usize);
-            if place >= 26 {
-                return Err(Error::Config(format!(
-                    "config.toml: hotkey {} is not a letter",
-                    label_of(leader, key)
-                )));
-            }
-            let slot = if leader {
-                &mut chord[place]
-            } else {
-                &mut bare[place]
-            };
-            if *slot {
-                return Err(Error::Config(format!(
-                    "config.toml: hotkey {} is assigned more than once",
-                    label_of(leader, key)
-                )));
-            }
-            *slot = true;
+        match self
+            .keys
+            .iter()
+            .zip(self.leader)
+            .find(|(key, leader)| self.bound(**key, *leader) > 1)
+        {
+            Some((key, leader)) => Err(Error::Config(format!(
+                "config.toml: hotkey {} is assigned more than once",
+                label_of(leader, *key)
+            ))),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     #[must_use]
@@ -349,13 +315,9 @@ fn previous_default(rows: &BTreeMap<String, String>) -> bool {
 
 fn parse(binding: &str) -> Option<(char, bool)> {
     let rest = binding.strip_prefix("ctrl+")?;
-    if let Some(chord) = rest.strip_prefix("x ") {
-        return one_letter(chord)
-            .filter(|key| leader_letter(*key))
-            .map(|key| (key, true));
-    }
-    if let Some(chord) = rest.strip_prefix('x')
-        && !chord.is_empty()
+    if let Some(chord) = rest
+        .strip_prefix("x ")
+        .or_else(|| rest.strip_prefix('x').filter(|chord| !chord.is_empty()))
     {
         return one_letter(chord)
             .filter(|key| leader_letter(*key))

@@ -13,13 +13,9 @@ use crate::error::{Error, Result};
 use crate::tools::command::ProcessGroup;
 
 const TYPING_EVERY: Duration = Duration::from_secs(4);
-const NO_REPLY: &str = "(no reply)";
-const STOPPED: &str = "stopped";
 const TAIL: usize = 20;
-const CHECK_FAILED: i32 = 2;
-const STOPPED_SHORT: i32 = 3;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Default)]
 pub(crate) struct Seen {
     pub session: Option<String>,
     pub text: Option<String>,
@@ -35,56 +31,30 @@ impl Seen {
             Ok(_) | Err(_) => {}
         }
     }
-
-    pub(crate) fn reply(&self) -> String {
-        let text = self.text.as_deref().unwrap_or(NO_REPLY);
-        match &self.aborted {
-            Some(reason) => format!("{text}\n\naborted: {reason}"),
-            None => text.to_string(),
-        }
-    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Exit {
-    Done,
-    CheckFailed,
-    Short,
-    Failed(i32),
-    Killed,
-}
-
-impl Exit {
-    pub(crate) fn from_code(code: Option<i32>) -> Self {
-        match code {
-            Some(0) => Self::Done,
-            Some(CHECK_FAILED) => Self::CheckFailed,
-            Some(STOPPED_SHORT) => Self::Short,
-            Some(code) => Self::Failed(code),
-            None => Self::Killed,
-        }
-    }
-
-    fn note(self) -> Option<String> {
-        match self {
-            Self::Done => None,
-            Self::CheckFailed => Some("the check failed".to_string()),
-            Self::Short => Some("stopped short".to_string()),
-            Self::Failed(code) => Some(format!("failed (exit {code})")),
-            Self::Killed => Some("failed (killed by a signal)".to_string()),
-        }
-    }
-}
-
-pub(crate) fn outcome(seen: &Seen, exit: Exit, stderr: &[String]) -> String {
-    let mut text = seen.reply();
-    if let Some(note) = exit.note() {
-        text = format!("{text}\n\n{note}");
-    }
+pub(crate) fn outcome(seen: &Seen, code: Option<i32>, stderr: &[String]) -> String {
+    let mut parts = vec![
+        seen.text
+            .clone()
+            .unwrap_or_else(|| "(no reply)".to_string()),
+    ];
+    parts.extend(
+        seen.aborted
+            .as_ref()
+            .map(|reason| format!("aborted: {reason}")),
+    );
+    parts.extend(match code {
+        Some(0) => None,
+        Some(2) => Some("the check failed".to_string()),
+        Some(3) => Some("stopped short".to_string()),
+        Some(code) => Some(format!("failed (exit {code})")),
+        None => Some("failed (killed by a signal)".to_string()),
+    });
     if !stderr.is_empty() {
-        text = format!("{text}\n\n{}", stderr.join("\n"));
+        parts.push(stderr.join("\n"));
     }
-    text
+    parts.join("\n\n")
 }
 
 pub(crate) fn argv(options: &Options, session: Option<&str>, text: &str) -> Vec<String> {
@@ -95,18 +65,8 @@ pub(crate) fn argv(options: &Options, session: Option<&str>, text: &str) -> Vec<
     if let Some(session) = session {
         args.extend(["--session".to_string(), session.to_string()]);
     }
-    args.extend([
-        "--json".to_string(),
-        "-p".to_string(),
-        "--".to_string(),
-        text.to_string(),
-    ]);
+    args.extend(["--json", "-p", "--", text].map(str::to_string));
     args
-}
-
-pub(crate) struct Turn {
-    pub session: Option<String>,
-    pub reply: String,
 }
 
 async fn tail(stderr: Option<tokio::process::ChildStderr>) -> Vec<String> {
@@ -156,7 +116,7 @@ pub(crate) async fn turn(
     chat: i64,
     text: &str,
     mut stopped: oneshot::Receiver<()>,
-) -> Result<Turn> {
+) -> Result<(Option<String>, String)> {
     let session = store::load()?.session(chat).map(str::to_string);
     let mut child = spawn(options, session.as_deref(), text)?;
     let mut group = child.id().map(|pid| ProcessGroup::new(pid, false));
@@ -173,7 +133,7 @@ pub(crate) async fn turn(
         tokio::select! {
             Ok(()) = &mut stopped => {
                 halt(&mut child, group.take()).await?;
-                return Ok(Turn { session: seen.session, reply: STOPPED.to_string() });
+                return Ok((seen.session, "stopped".to_string()));
             }
             _ = beat.tick() => drop(bot.typing(chat).await),
             line = lines.next_line() => match line? {
@@ -185,11 +145,9 @@ pub(crate) async fn turn(
             },
         }
     }
-    let exit = Exit::from_code(child.wait().await?.code());
+    let code = child.wait().await?.code();
     let stderr = errors.await.unwrap_or_default();
     let stderr = if printed { &[][..] } else { stderr.as_slice() };
-    Ok(Turn {
-        reply: outcome(&seen, exit, stderr),
-        session: seen.session,
-    })
+    let reply = outcome(&seen, code, stderr);
+    Ok((seen.session, reply))
 }

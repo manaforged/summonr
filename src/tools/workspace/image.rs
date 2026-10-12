@@ -40,7 +40,10 @@ impl ToolRegistry {
             });
         }
         if let Some(endpoint) = &self.vision {
-            return match self.describe_image(endpoint, bytes) {
+            let images = [Image::fit(bytes)?];
+            let described =
+                tokio::runtime::Handle::current().block_on(self.narrate_images(endpoint, &images));
+            return match described {
                 Ok(text) => Ok(ToolOutput::ok(format!(
                     "{path} ({media}, {width}x{height}) described by {}: {text}",
                     endpoint.name
@@ -108,12 +111,6 @@ impl ToolRegistry {
         );
         let reply = client.complete(&request).await?;
         Ok(reply.content.unwrap_or_default())
-    }
-
-    fn describe_image(&self, endpoint: &crate::endpoint::Endpoint, bytes: &[u8]) -> Result<String> {
-        let image = Image::fit(bytes)?;
-        tokio::runtime::Handle::current()
-            .block_on(self.narrate_images(endpoint, std::slice::from_ref(&image)))
     }
 }
 

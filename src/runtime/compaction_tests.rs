@@ -94,14 +94,11 @@ async fn compaction_clears_old_tool_output_before_it_asks_for_a_summary() {
             continuation: None,
         })
     };
-    let provider = Scripted::new([
-        read("t1"),
-        read("t2"),
-        read("t3"),
-        read("t4"),
-        read("t5"),
-        Reply::Text("done"),
-    ]);
+    let provider = Scripted::new(
+        (1..=5)
+            .map(|index| read(&format!("t{index}")))
+            .chain([Reply::Text("done")]),
+    );
     let sent = provider.sent();
     let driver =
         super::super::configure::open_driver(home.path(), workspace.path(), "m", "system").unwrap();

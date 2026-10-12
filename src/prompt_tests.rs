@@ -1,7 +1,18 @@
 use super::*;
 
+fn trusted(workspace: &Path) -> String {
+    compose(
+        workspace,
+        None,
+        Sources {
+            trust: true,
+            ..Sources::default()
+        },
+    )
+}
+
 #[test]
-fn the_default_prompt_does_not_steer_the_model() {
+fn the_default_prompt_names_the_modules_without_steering() {
     let workspace = tempfile::tempdir().unwrap();
     let prompt = compose(workspace.path(), None, Sources::default());
     for steering in [
@@ -12,12 +23,6 @@ fn the_default_prompt_does_not_steer_the_model() {
     ] {
         assert!(!prompt.contains(steering), "{steering}: {prompt}");
     }
-}
-
-#[test]
-fn the_default_prompt_names_the_module_surface() {
-    let workspace = tempfile::tempdir().unwrap();
-    let prompt = compose(workspace.path(), None, Sources::default());
     for capability in [
         "web (search, fetch)",
         "mail (agents, send, inbox, board)",
@@ -40,14 +45,7 @@ fn an_at_include_pulls_the_referenced_file_in_once() {
         "@AGENTS.md\n@docs/map.md\n\nCLAUDE RULE",
     )
     .unwrap();
-    let prompt = compose(
-        workspace.path(),
-        None,
-        Sources {
-            trust: true,
-            ..Sources::default()
-        },
-    );
+    let prompt = trusted(workspace.path());
     assert!(prompt.contains("MAP RULE"), "{prompt}");
     assert!(prompt.contains("CLAUDE RULE"), "{prompt}");
     assert_eq!(prompt.matches("AGENTS RULE").count(), 1, "{prompt}");
@@ -57,14 +55,7 @@ fn an_at_include_pulls_the_referenced_file_in_once() {
 fn a_missing_at_include_stays_a_literal_line() {
     let workspace = tempfile::tempdir().unwrap();
     std::fs::write(workspace.path().join("CLAUDE.md"), "@NOPE.md").unwrap();
-    let prompt = compose(
-        workspace.path(),
-        None,
-        Sources {
-            trust: true,
-            ..Sources::default()
-        },
-    );
+    let prompt = trusted(workspace.path());
     assert!(prompt.contains("@NOPE.md"), "{prompt}");
 }
 
@@ -73,14 +64,7 @@ fn at_include_cycles_terminate() {
     let workspace = tempfile::tempdir().unwrap();
     std::fs::write(workspace.path().join("AGENTS.md"), "@CLAUDE.md").unwrap();
     std::fs::write(workspace.path().join("CLAUDE.md"), "@AGENTS.md").unwrap();
-    let prompt = compose(
-        workspace.path(),
-        None,
-        Sources {
-            trust: true,
-            ..Sources::default()
-        },
-    );
+    let prompt = trusted(workspace.path());
     assert!(
         prompt.contains("@CLAUDE.md") || prompt.contains("@AGENTS.md"),
         "{prompt}"
@@ -91,14 +75,7 @@ fn at_include_cycles_terminate() {
 fn a_workspace_system_file_keeps_the_preamble() {
     let workspace = tempfile::tempdir().unwrap();
     std::fs::write(workspace.path().join("SYSTEM.md"), "WORKSPACE RULE").unwrap();
-    let prompt = compose(
-        workspace.path(),
-        None,
-        Sources {
-            trust: true,
-            ..Sources::default()
-        },
-    );
+    let prompt = trusted(workspace.path());
     assert!(
         prompt.contains("You are an expert coding assistant running inside summonr"),
         "{prompt}"

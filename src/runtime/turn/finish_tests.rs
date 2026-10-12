@@ -9,9 +9,12 @@ struct Run {
 }
 
 fn session(replies: impl IntoIterator<Item = Reply>) -> Run {
+    open(Scripted::new(replies))
+}
+
+fn open(provider: Scripted) -> Run {
     let workspace = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    let provider = Scripted::new(replies);
     let sent = provider.sent();
     let driver =
         super::super::configure::open_driver(home.path(), workspace.path(), "m", "system").unwrap();
@@ -33,6 +36,32 @@ fn goal(run: &mut Run, review: impl IntoIterator<Item = Reply>) {
         None,
         None,
     );
+}
+
+fn stalled(check: &str) -> Run {
+    let mut run = session([
+        Reply::Text("tried"),
+        Reply::Text(r#"{"verdict": "continue", "reason": "not yet"}"#),
+    ]);
+    run.loop_
+        .select_goal("make the tests pass", &[check.to_string()])
+        .unwrap();
+    run
+}
+
+fn steered(first: Reply) -> Run {
+    let steering = Arc::new(Steering::default());
+    let late = Arc::clone(&steering);
+    let provider = Scripted::new([first, Reply::Text("steered answer")]).on_complete(move |call| {
+        if call == 0 {
+            late.lock()
+                .unwrap()
+                .push_back(UserInput::from("also check the docs"));
+        }
+    });
+    let mut run = open(provider);
+    run.loop_.steer_with(steering);
+    run
 }
 
 fn background(command: &str) -> Reply {
@@ -237,13 +266,7 @@ async fn steps_selected_from_the_command_line_run_the_completion_check() {
 #[tokio::test]
 async fn a_goal_that_stops_short_exits_on_its_check() {
     for (check, code) in [("false", 2), ("true", 3)] {
-        let mut run = session([
-            Reply::Text("tried"),
-            Reply::Text(r#"{"verdict": "continue", "reason": "not yet"}"#),
-        ]);
-        run.loop_
-            .select_goal("make the tests pass", &[check.to_string()])
-            .unwrap();
+        let mut run = stalled(check);
         run.loop_.turn("make the tests pass").await.unwrap();
         let exit = run
             .loop_
@@ -256,13 +279,7 @@ async fn a_goal_that_stops_short_exits_on_its_check() {
 
 #[tokio::test]
 async fn a_failed_check_reads_the_same_in_progress_and_verify() {
-    let mut run = session([
-        Reply::Text("tried"),
-        Reply::Text(r#"{"verdict": "continue", "reason": "the check failed"}"#),
-    ]);
-    run.loop_
-        .select_goal("make the tests pass", &["false".to_string()])
-        .unwrap();
+    let mut run = stalled("false");
     let turn = run.loop_.turn("make the tests pass").await.unwrap();
     assert!(
         turn.events
@@ -276,17 +293,11 @@ async fn a_failed_check_reads_the_same_in_progress_and_verify() {
 
 #[tokio::test]
 async fn a_check_file_changed_during_a_run_is_put_back() {
-    let mut run = session([
-        Reply::Text("tried"),
-        Reply::Text(r#"{"verdict": "continue", "reason": "not yet"}"#),
-    ]);
+    let mut run = stalled("false");
     let path = run.loop_.workspace().join(".summonr/check.toml");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "check = \"false\"\n").unwrap();
     run.loop_.set_verify(Some(vec!["false".to_string()]));
-    run.loop_
-        .select_goal("make the tests pass", &["false".to_string()])
-        .unwrap();
     std::fs::write(&path, "check = \"true\"\n").unwrap();
     run.loop_.turn("make the tests pass").await.unwrap();
     assert_eq!(
@@ -297,27 +308,11 @@ async fn a_check_file_changed_during_a_run_is_put_back() {
 
 #[tokio::test]
 async fn a_steer_sent_during_the_last_round_reaches_the_model_in_that_turn() {
-    let steering = Arc::new(Steering::default());
-    let late = Arc::clone(&steering);
-    let provider = Scripted::new([Reply::Text("first answer"), Reply::Text("steered answer")])
-        .on_complete(move |call| {
-            if call == 0 {
-                late.lock()
-                    .unwrap()
-                    .push_back(UserInput::from("also check the docs"));
-            }
-        });
-    let sent = provider.sent();
-    let workspace = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
-    let driver =
-        super::super::configure::open_driver(home.path(), workspace.path(), "m", "system").unwrap();
-    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
-    loop_.steer_with(steering);
-    let turn = loop_.turn("start").await.unwrap();
+    let mut run = steered(Reply::Text("first answer"));
+    let turn = run.loop_.turn("start").await.unwrap();
     assert_eq!(turn.text, "steered answer");
     assert!(format!("{:?}", turn.events).contains("first answer"));
-    let sent = sent.lock().unwrap();
+    let sent = run.sent.lock().unwrap();
     assert_eq!(sent.len(), 2);
     assert!(format!("{:?}", sent[1]).contains("also check the docs"));
 }
@@ -342,26 +337,10 @@ async fn todo_harness_note_never_shows_in_the_users_own_message() {
 
 #[tokio::test]
 async fn a_steer_sent_while_a_tool_runs_reaches_the_model_after_the_tool_result() {
-    let steering = Arc::new(Steering::default());
-    let late = Arc::clone(&steering);
-    let provider = Scripted::new([background("echo hi"), Reply::Text("steered answer")])
-        .on_complete(move |call| {
-            if call == 0 {
-                late.lock()
-                    .unwrap()
-                    .push_back(UserInput::from("also check the docs"));
-            }
-        });
-    let sent = provider.sent();
-    let workspace = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
-    let driver =
-        super::super::configure::open_driver(home.path(), workspace.path(), "m", "system").unwrap();
-    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
-    loop_.steer_with(steering);
-    let turn = loop_.turn("start").await.unwrap();
+    let mut run = steered(background("echo hi"));
+    let turn = run.loop_.turn("start").await.unwrap();
     assert_eq!(turn.text, "steered answer");
-    let sent = sent.lock().unwrap();
+    let sent = run.sent.lock().unwrap();
     assert_eq!(sent.len(), 2);
     let second = format!("{:?}", sent[1]);
     let result = second.find("tool_call_id: Some(\"t1\")");

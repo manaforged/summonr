@@ -47,15 +47,16 @@ impl Finish {
             | Self::ImageRecitation
             | Self::Escalation
             | Self::PupLimitedDisabled => Err(crate::provider::wire::blocked(raw)),
-            Self::MalformedFunctionCall => Err(Error::provider(
-                ProviderFailureKind::MalformedToolCall,
-                format!("native response ended with {raw}"),
-            )),
-            Self::UnexpectedToolCall
+            Self::MalformedFunctionCall
+            | Self::UnexpectedToolCall
             | Self::TooManyToolCalls
             | Self::MissingThoughtSignature
             | Self::MalformedResponse => Err(Error::provider(
-                ProviderFailureKind::Http,
+                if matches!(self, Self::MalformedFunctionCall) {
+                    ProviderFailureKind::MalformedToolCall
+                } else {
+                    ProviderFailureKind::Http
+                },
                 format!("native response ended with {raw}"),
             )),
             Self::Stop | Self::MaxTokens | Self::Other => Ok(()),

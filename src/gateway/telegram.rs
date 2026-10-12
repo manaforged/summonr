@@ -8,15 +8,7 @@ use crate::error::{Error, Result};
 
 const BASE: &str = "https://api.telegram.org/bot";
 pub(crate) const MESSAGE_MAX: usize = 4096;
-const TYPING: &str = "typing";
-const UNAUTHORIZED: i64 = 401;
-const NOT_FOUND: i64 = 404;
 const MALFORMED: &str = "that does not look like a Telegram bot token (it should look like 123456789:AA...); copy it from @BotFather";
-const CONFLICT: i64 = 409;
-const TOO_MANY: u16 = 429;
-const UPDATE_KINDS: &str = "[\"message\"]";
-const TAKEN: &str = "another bridge or a webhook is already reading this bot's updates";
-const REJECTED: &str = "Telegram rejected that token (HTTP 401). Copy it again from @BotFather.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Method {
@@ -72,9 +64,6 @@ pub(crate) struct Message {
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ChatKind {
     Private,
-    Group,
-    Supergroup,
-    Channel,
     #[default]
     #[serde(other)]
     Other,
@@ -153,11 +142,10 @@ impl Bot {
 
     async fn post<T: DeserializeOwned>(&self, method: Method, body: &Value) -> Result<T> {
         let request = self.http.post(self.url(method)).json(body);
-        let request = match method {
-            Method::SendMessage => request.retry(send_policy()),
-            Method::GetMe | Method::GetUpdates | Method::SendChatAction | Method::SetMyCommands => {
-                request
-            }
+        let request = if method == Method::SendMessage {
+            request.retry(send_policy())
+        } else {
+            request
         };
         self.call(method, request).await
     }
@@ -179,18 +167,19 @@ impl Bot {
             .map_err(|error| self.failed(name, &format!("HTTP {status}: {error}")))?;
         let reply: Reply<T> = serde_json::from_str(&text)
             .map_err(|error| self.failed(name, &format!("HTTP {status}: {error}")))?;
-        match (reply.ok, reply.result) {
-            (true, Some(result)) => Ok(result),
-            (true | false, Some(_) | None) => {
-                match reply.error_code.unwrap_or_else(|| i64::from(status)) {
-                    UNAUTHORIZED => Err(Error::Config(REJECTED.to_string())),
-                    NOT_FOUND if method == Method::GetMe => {
-                        Err(Error::Config(MALFORMED.to_string()))
-                    }
-                    CONFLICT => Err(Error::Config(TAKEN.to_string())),
-                    code => Err(Error::Tool(format!("telegram {name}: HTTP {code}"))),
-                }
-            }
+        if let (true, Some(result)) = (reply.ok, reply.result) {
+            return Ok(result);
+        }
+        match reply.error_code.unwrap_or_else(|| i64::from(status)) {
+            401 => Err(Error::Config(
+                "Telegram rejected that token (HTTP 401). Copy it again from @BotFather."
+                    .to_string(),
+            )),
+            404 if method == Method::GetMe => Err(Error::Config(MALFORMED.to_string())),
+            409 => Err(Error::Config(
+                "another bridge or a webhook is already reading this bot's updates".to_string(),
+            )),
+            code => Err(Error::Tool(format!("telegram {name}: HTTP {code}"))),
         }
     }
 
@@ -203,7 +192,7 @@ impl Bot {
         let request = self.http.get(self.url(Method::GetUpdates)).query([
             ("offset", offset.to_string()),
             ("timeout", wait.to_string()),
-            ("allowed_updates", UPDATE_KINDS.to_string()),
+            ("allowed_updates", "[\"message\"]".to_string()),
         ]);
         self.call(Method::GetUpdates, request).await
     }
@@ -232,7 +221,7 @@ impl Bot {
     pub(crate) async fn typing(&self, chat: i64) -> Result<()> {
         self.post::<Value>(
             Method::SendChatAction,
-            &json!({ "chat_id": chat, "action": TYPING }),
+            &json!({ "chat_id": chat, "action": "typing" }),
         )
         .await
         .map(drop)
@@ -251,7 +240,7 @@ fn well_formed(token: &str) -> bool {
 fn send_policy() -> leyline::RetryPolicy {
     crate::limits::limits()
         .retry_policy()
-        .retry_on([leyline::RetryTrigger::Status(TOO_MANY)])
+        .retry_on([leyline::RetryTrigger::Status(429)])
         .allow_non_idempotent(true)
 }
 

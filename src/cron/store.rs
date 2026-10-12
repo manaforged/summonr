@@ -9,8 +9,6 @@ const FILE: &str = "jobs.toml";
 const TOKEN_PREFIX: &str = "cron:";
 const TOKEN_BYTES: usize = 32;
 const PAYLOAD_SUFFIX: &str = "body";
-const DASH: char = '-';
-const RUNS: &str = "runs";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -129,7 +127,7 @@ pub(crate) fn dir() -> Result<PathBuf> {
 }
 
 pub(crate) fn run_lock(name: &str) -> Result<PathBuf> {
-    Ok(dir()?.join(RUNS).join(name))
+    Ok(dir()?.join("runs").join(name))
 }
 
 pub(crate) fn remove_run_lock(name: &str) -> Result<()> {
@@ -137,11 +135,7 @@ pub(crate) fn remove_run_lock(name: &str) -> Result<()> {
 }
 
 pub(crate) fn payload_path(workspace: &Path, name: &str, slot: i64) -> PathBuf {
-    crate::jobs::dir(workspace).join(payload_file(name, slot))
-}
-
-pub(crate) fn payload_file(name: &str, slot: i64) -> String {
-    format!("{name}-{slot}.{PAYLOAD_SUFFIX}")
+    crate::jobs::dir(workspace).join(format!("{name}-{slot}.{PAYLOAD_SUFFIX}"))
 }
 
 pub(crate) fn remove_payloads(workspace: &Path, name: &str) -> Result<()> {
@@ -165,7 +159,7 @@ fn payload_of(path: &Path, name: &str) -> bool {
             .file_stem()
             .and_then(|stem| stem.to_str())
             .and_then(|stem| stem.strip_prefix(name))
-            .and_then(|rest| rest.strip_prefix(DASH))
+            .and_then(|rest| rest.strip_prefix('-'))
             .is_some_and(|slot| slot.parse::<i64>().is_ok())
 }
 
@@ -189,7 +183,7 @@ fn trim(jobs: &mut [Job]) -> Result<()> {
 
 pub(crate) fn check_task(task: &Task) -> Result<()> {
     match task {
-        Task::Goal(goal) if goal.starts_with(DASH) => {
+        Task::Goal(goal) if goal.starts_with('-') => {
             Err(Error::Config("the goal cannot start with `-`".to_string()))
         }
         Task::Goal(_) | Task::Prompt(_) => Ok(()),
@@ -310,6 +304,6 @@ fn read(path: &Path) -> Result<Vec<Job>> {
         .map_err(|error| Error::Config(format!("{}: {error}", path.display())))
 }
 
-fn unknown(name: &str) -> Error {
+pub(super) fn unknown(name: &str) -> Error {
     Error::Config(format!("no cron job named `{name}`"))
 }

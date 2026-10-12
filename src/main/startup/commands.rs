@@ -240,39 +240,38 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn last_session(cwd: &Path) -> Result<String> {
-    summonr::last_for(cwd)?
-        .map(|info| info.id)
-        .ok_or_else(|| summonr::Error::Config(format!("no session for {}", cwd.display())))
-}
-
 pub(super) fn print_diff(args: &Args) -> Result<()> {
     let cwd = workspace()?;
     let path = args.prompt.first().map(String::as_str);
-    let Some(turn) = args.turn.as_deref() else {
-        if args.json || args.stat {
-            let mut diff = summonr::diff::stats(&cwd)?;
-            diff.files
-                .retain(|stat| path.is_none_or(|path| stat.path == path));
-            return print_stats(&diff, args.json);
-        }
+    let turn = args
+        .turn
+        .as_deref()
+        .map(|turn| session_turn(&cwd, turn))
+        .transpose()?;
+    if turn.is_none() && !args.json && !args.stat {
         print!("{}", summonr::diff::patch(&cwd, path)?);
         return Ok(());
-    };
-    let turn: summonr::diff::TurnId = turn.parse()?;
-    let session = last_session(&cwd)?;
-    if args.json || args.stat {
-        let mut diff = summonr::diff::turn_stats(&cwd, &session, turn)?;
-        diff.files
-            .retain(|stat| path.is_none_or(|path| stat.path == path));
-        return print_stats(&diff, args.json);
     }
-    let mut diff = summonr::diff::turn_stats(&cwd, &session, turn)?;
+    let mut diff = match &turn {
+        Some((session, turn)) => summonr::diff::turn_stats(&cwd, session, *turn)?,
+        None => summonr::diff::stats(&cwd)?,
+    };
     diff.files
         .retain(|stat| path.is_none_or(|path| stat.path == path));
+    let Some((session, turn)) = turn.filter(|_| !args.json && !args.stat) else {
+        return print_stats(&diff, args.json);
+    };
     eprintln!("{}", diff.summary());
     print!("{}", summonr::diff::turn_patch(&cwd, &session, turn, path)?);
     Ok(())
+}
+
+fn session_turn(cwd: &Path, turn: &str) -> Result<(String, summonr::diff::TurnId)> {
+    let turn = turn.parse()?;
+    let session = summonr::last_for(cwd)?
+        .map(|info| info.id)
+        .ok_or_else(|| summonr::Error::Config(format!("no session for {}", cwd.display())))?;
+    Ok((session, turn))
 }
 
 fn print_stats(diff: &summonr::diff::Diff, json: bool) -> Result<()> {

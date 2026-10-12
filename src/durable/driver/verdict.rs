@@ -24,15 +24,9 @@ impl SessionDriver {
             .map(|candidate| &candidate.snapshot);
         let now = self.snapshot(candidate)?;
         let stable = candidate.is_some_and(|candidate| *candidate == now);
-        if stable {
-            return Ok(Verdict {
-                passed,
-                diagnostic: None,
-            });
-        }
         Ok(Verdict {
-            passed: false,
-            diagnostic: Some("workspace changed after candidate capture".to_string()),
+            passed: passed && stable,
+            diagnostic: (!stable).then(|| "workspace changed after candidate capture".to_string()),
         })
     }
 
@@ -56,14 +50,7 @@ impl SessionDriver {
             .as_mut()
             .ok_or(DriverError::NoWork)?
             .reject(findings)?;
-        self.checkpoint()?;
-        if let Some(receipt) = receipt {
-            self.append(Line::Receipt {
-                text: String::new(),
-                receipt: Some(receipt.clone()),
-            })?;
-        }
-        self.close()
+        self.close_with(receipt)
     }
 
     pub(crate) fn commit_verdict(
@@ -79,6 +66,10 @@ impl SessionDriver {
             .as_mut()
             .ok_or(DriverError::NoWork)?
             .verdict(verdict.passed, decision)?;
+        self.close_with(receipt)
+    }
+
+    fn close_with(&mut self, receipt: Option<&crate::verify::Receipt>) -> Result<(), DriverError> {
         self.checkpoint()?;
         if let Some(receipt) = receipt {
             self.append(Line::Receipt {

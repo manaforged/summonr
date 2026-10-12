@@ -340,7 +340,7 @@ pub(crate) fn protected_write(path: &Path) -> bool {
 }
 
 mod blocks;
-mod git;
+pub(crate) mod git;
 mod paths;
 mod shell;
 mod verbs;

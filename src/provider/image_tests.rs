@@ -129,24 +129,20 @@ fn an_anthropic_image_over_ten_megabytes_is_omitted() {
 }
 
 #[test]
-fn a_gemini_3_tool_result_carries_its_image_inside_the_function_response() {
-    let gemini = endpoint("gemini", "gemini-3-flash", Some(true));
+fn only_gemini_3_takes_a_tool_result_image_inside_the_function_response() {
     let mut messages = vec![Message::user("look")];
     messages.extend(tool_round(vec![png(64)]));
-    let sent: serde_json::Value = serde_json::from_str(&body(&gemini, &messages)).unwrap();
-    let response = &sent["contents"][2]["parts"][0]["functionResponse"];
+    let three = body(&endpoint("gemini", "gemini-3-flash", Some(true)), &messages);
+    let three: serde_json::Value = serde_json::from_str(&three).unwrap();
+    let response = &three["contents"][2]["parts"][0]["functionResponse"];
     assert_eq!(
         response["parts"][0]["inlineData"]["mimeType"], "image/png",
-        "{sent}"
+        "{three}"
     );
-}
-
-#[test]
-fn a_gemini_2_5_tool_result_image_is_omitted_with_a_note() {
-    let gemini = endpoint("gemini", "gemini-2.5-flash", Some(true));
-    let mut messages = vec![Message::user("look")];
-    messages.extend(tool_round(vec![png(64)]));
-    let sent = body(&gemini, &messages);
-    assert!(!sent.contains("inlineData"), "{sent}");
-    assert!(sent.contains("[image omitted: "), "{sent}");
+    let older = body(
+        &endpoint("gemini", "gemini-2.5-flash", Some(true)),
+        &messages,
+    );
+    assert!(!older.contains("inlineData"), "{older}");
+    assert!(older.contains("[image omitted: "), "{older}");
 }

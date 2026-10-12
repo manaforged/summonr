@@ -76,10 +76,7 @@ pub(super) fn plain(html: &str) -> String {
             _ => {}
         }
     }
-    decode(&out)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    super::flat(&decode(&out))
 }
 
 pub(super) fn decode(text: &str) -> String {

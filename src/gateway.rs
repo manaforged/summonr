@@ -24,22 +24,26 @@ pub(crate) enum Action {
     Help,
 }
 
-const COMMANDS: [(&str, Action); 5] = [
-    ("/new", Action::New),
-    ("/status", Action::Status),
-    ("/stop", Action::Stop),
-    ("/start", Action::Help),
-    ("/help", Action::Help),
+const COMMANDS: [(&str, Action, Option<&str>); 5] = [
+    ("new", Action::New, Some("start a fresh session")),
+    (
+        "status",
+        Action::Status,
+        Some("show the session and the queue"),
+    ),
+    ("stop", Action::Stop, Some("end the running turn")),
+    ("start", Action::Help, None),
+    ("help", Action::Help, Some("how to use this bot")),
 ];
 
-pub(crate) const MENU: [(&str, &str); 4] = [
-    ("new", "start a fresh session"),
-    ("status", "show the session and the queue"),
-    ("stop", "end the running turn"),
-    ("help", "how to use this bot"),
-];
+pub(crate) fn menu() -> Vec<(&'static str, &'static str)> {
+    COMMANDS
+        .iter()
+        .filter_map(|(name, _, about)| Some((*name, (*about)?)))
+        .collect()
+}
 
-pub(crate) fn route(state: &State, user: i64, _chat: i64, text: &str, now: i64) -> Action {
+pub(crate) fn route(state: &State, user: i64, text: &str, now: i64) -> Action {
     if !state.paired(user) {
         return if state.waiting(user, now) {
             Action::Drop
@@ -55,10 +59,10 @@ pub(crate) fn route(state: &State, user: i64, _chat: i64, text: &str, now: i64) 
     let command = word.split('@').next().unwrap_or_default();
     COMMANDS
         .iter()
-        .find(|(name, _)| *name == command)
+        .find(|(name, _, _)| command.strip_prefix('/') == Some(*name))
         .map_or_else(
             || Action::Run(text.to_string()),
-            |(_, action)| action.clone(),
+            |(_, action, _)| action.clone(),
         )
 }
 

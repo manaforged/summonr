@@ -1,6 +1,7 @@
 use jiff::Zoned;
 use jiff::tz::TimeZone;
 
+use super::args::Spec;
 use super::runner;
 use super::schedule::{self, Schedule};
 use super::store::{self, Job, Run, Task};
@@ -44,12 +45,6 @@ fn next(job: &Job) -> String {
     }
 }
 
-fn last(job: &Job) -> String {
-    job.runs
-        .last()
-        .map_or_else(|| "-".to_string(), |run| store::name(&run.outcome))
-}
-
 pub(super) fn added(verb: &str, job: &Job) -> String {
     format!(
         "{verb} {}: {}, next {}",
@@ -69,7 +64,9 @@ pub(super) fn table(jobs: &[Job], header: bool) -> String {
             job.name.clone(),
             schedule_label(job),
             next(job),
-            last(job),
+            job.runs
+                .last()
+                .map_or_else(|| "-".to_string(), |run| store::name(&run.outcome)),
             tilde(&job.dir),
         ]
     }));
@@ -103,13 +100,6 @@ pub(super) fn run_line(run: &Run, tz: &TimeZone) -> String {
     )
 }
 
-fn task(job: &Job) -> String {
-    match &job.task {
-        Task::Prompt(text) => format!("prompt: {text}"),
-        Task::Goal(text) => format!("goal: {text}"),
-    }
-}
-
 fn budget(job: &Job) -> String {
     let time = job.max_secs.map_or_else(
         || {
@@ -141,23 +131,25 @@ fn optional(lines: &mut Vec<String>, label: &str, value: Option<&str>) {
     }
 }
 
-fn yes_no(value: bool) -> &'static str {
-    if value { "yes" } else { "no" }
-}
-
 pub(super) fn show(job: &Job) -> String {
     let tz = zone(job);
     let mut lines = vec![
         format!("name: {}", job.name),
         format!("schedule: {}", schedule_label(job)),
         format!("time zone: {}", tz.iana_name().unwrap_or("system")),
-        task(job),
+        match &job.task {
+            Task::Prompt(text) => format!("prompt: {text}"),
+            Task::Goal(text) => format!("goal: {text}"),
+        },
         format!("directory: {}", tilde(&job.dir)),
     ];
     optional(&mut lines, "endpoint", job.endpoint.as_deref());
     optional(&mut lines, "model", job.model.as_deref());
     lines.push(format!("budget: {}", budget(job)));
-    lines.push(format!("worktree: {}", yes_no(job.worktree)));
+    lines.push(format!(
+        "worktree: {}",
+        if job.worktree { "yes" } else { "no" }
+    ));
     lines.push(format!("notify: {}", store::name(&job.notify)));
     optional(&mut lines, "mail", job.mail.as_deref());
     if job.chat {
@@ -188,10 +180,8 @@ fn runs(job: &Job, tz: &TimeZone) -> String {
 }
 
 pub(super) fn installed(path: &std::path::Path, note: Option<&str>) -> String {
-    match note {
-        Some(note) => format!("installed {}\n{note}", path.display()),
-        None => format!("installed {}", path.display()),
-    }
+    let note = note.map(|note| format!("\n{note}")).unwrap_or_default();
+    format!("installed {}{note}", path.display())
 }
 
 pub(super) fn token_help(name: &str, token: &str, rotated: bool) -> String {
@@ -220,4 +210,57 @@ pub(super) fn json(job: &Job) -> serde_json::Value {
         "task": job.task,
         "endpoint": job.endpoint,
     })
+}
+
+pub(super) fn warn(job: &Job, spec: &Spec, adding: bool) {
+    let notes = [
+        spec.mail.as_deref().and_then(mail_missing),
+        spec.chat.then(chat_missing).flatten(),
+        adding
+            .then(|| key_missing(job.endpoint.as_deref()))
+            .flatten(),
+    ];
+    for note in notes.into_iter().flatten() {
+        eprintln!("warning: {note}");
+    }
+}
+
+fn mail_missing(session: &str) -> Option<String> {
+    let dir = crate::mail::dir().ok()?;
+    let found = crate::mail::live(&dir)
+        .iter()
+        .any(|agent| agent.answers_to(session));
+    (!found).then(|| format!("no live session has the name or id `{session}` right now"))
+}
+
+fn chat_missing() -> Option<String> {
+    if crate::gateway::token().ok().flatten().is_none() {
+        return Some(
+            "no Telegram token is stored, so --chat sends nothing; run `summonr gateway setup telegram`"
+                .to_string(),
+        );
+    }
+    let paired = crate::gateway::store::load()
+        .map(|state| state.paired_chats())
+        .unwrap_or_default();
+    paired.is_empty().then(|| {
+        "no Telegram user is paired, so --chat sends nothing; message your bot, then run `summonr gateway pair CODE`"
+            .to_string()
+    })
+}
+
+fn key_missing(endpoint: Option<&str>) -> Option<String> {
+    let ready = crate::endpoint::set_up();
+    let name = endpoint
+        .map(str::to_string)
+        .or_else(|| crate::endpoint::default_seat().map(|seat| seat.endpoint));
+    match name {
+        Some(name) if !ready.contains(&name) => Some(format!(
+            "{name} has no usable key; run `summonr login {name}`"
+        )),
+        None if ready.is_empty() => {
+            Some("no endpoint has a key; run `summonr login NAME`".to_string())
+        }
+        Some(_) | None => None,
+    }
 }

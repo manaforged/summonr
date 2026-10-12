@@ -44,7 +44,10 @@ fn webhook(words: &[&str]) -> Result<i32> {
     match words {
         [] => super::webhook::serve(crate::limits::limits().gateway_port),
         ["--port"] => Err(misuse("--port needs a value")),
-        ["--port", port] => super::webhook::serve(number(port)?),
+        ["--port", port] => super::webhook::serve(
+            port.parse()
+                .map_err(|error| misuse(&format!("expected a number, got `{port}`: {error}")))?,
+        ),
         [..] => Err(misuse(&format!(
             "unknown webhook option `{}`",
             words.join(" ")
@@ -54,11 +57,6 @@ fn webhook(words: &[&str]) -> Result<i32> {
 
 fn misuse(what: &str) -> Error {
     Error::Config(format!("{what}; see `summonr gateway --help`"))
-}
-
-fn number<T: std::str::FromStr<Err = std::num::ParseIntError>>(text: &str) -> Result<T> {
-    text.parse()
-        .map_err(|error| misuse(&format!("expected a number, got `{text}`: {error}")))
 }
 
 fn user_id(text: &str) -> Result<i64> {
@@ -116,7 +114,7 @@ fn bridge(options: Options) -> Result<i32> {
         me.username.as_deref().unwrap_or("?"),
         crate::config::tilde(&options.dir)
     );
-    if let Err(error) = block(bot.set_commands(&super::MENU))? {
+    if let Err(error) = block(bot.set_commands(&super::menu()))? {
         eprintln!("{error}");
     }
     block(turn::serve(bot, options, me.username))?
@@ -124,7 +122,7 @@ fn bridge(options: Options) -> Result<i32> {
 
 fn pair(code: &str) -> Result<i32> {
     let now = crate::cron::now();
-    let pending = store::update(|state| Ok(state.pair(code, now)))?
+    let pending = store::update(|state| state.pair(code, now))?
         .ok_or_else(|| Error::Config(format!("no pending pairing with code `{code}`")))?;
     println!("paired Telegram user {}", pending.user);
     if let Some(token) = token()? {
@@ -135,7 +133,7 @@ fn pair(code: &str) -> Result<i32> {
 }
 
 fn unpair(user: i64) -> Result<i32> {
-    if store::update(|state| Ok(state.unpair(user)))? {
+    if store::update(|state| state.unpair(user))? {
         println!("unpaired Telegram user {user}");
         Ok(0)
     } else {
@@ -144,10 +142,9 @@ fn unpair(user: i64) -> Result<i32> {
 }
 
 fn status() -> Result<i32> {
-    let stored = token()?.is_some();
     println!(
         "telegram token: {}",
-        if stored {
+        if token()?.is_some() {
             "stored"
         } else {
             "not set; run `summonr gateway setup telegram`"

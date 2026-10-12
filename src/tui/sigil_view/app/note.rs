@@ -49,16 +49,17 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn hunk_accept(&self) {
-        let Some(path) = self.diff_view.peek() else {
-            return;
-        };
+    pub(in crate::tui::sigil_view) fn current_hunk(&self) -> Option<(String, String)> {
+        let path = self.diff_view.peek()?;
         let hunks = self.hunks();
-        let Some(hunk) = hunks.get(self.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))
-        else {
-            return;
-        };
-        self.hunk_toggle(&path, &hunk.id.clone());
+        let hunk = hunks.get(self.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))?;
+        Some((path, hunk.id.clone()))
+    }
+
+    pub(in crate::tui::sigil_view) fn hunk_accept(&self) {
+        if let Some((path, hunk)) = self.current_hunk() {
+            self.hunk_toggle(&path, &hunk);
+        }
     }
 
     pub(in crate::tui::sigil_view) fn hunk_toggle(&self, path: &str, hunk: &str) {
@@ -72,15 +73,9 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn hunk_reject(&self) {
-        let Some(path) = self.diff_view.peek() else {
-            return;
-        };
-        let hunks = self.hunks();
-        let Some(hunk) = hunks.get(self.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))
-        else {
-            return;
-        };
-        self.hunk_mark(&path, &hunk.id.clone(), crate::hunks::Op::Reject);
+        if let Some((path, hunk)) = self.current_hunk() {
+            self.hunk_mark(&path, &hunk, crate::hunks::Op::Reject);
+        }
     }
 
     pub(in crate::tui::sigil_view) fn hunk_mark(

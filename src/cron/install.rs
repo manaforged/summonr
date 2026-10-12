@@ -8,24 +8,12 @@ pub(crate) mod crontab;
 
 #[cfg(any(target_os = "macos", test))]
 const LABEL: &str = "dev.summonr.cron";
-#[cfg(any(target_os = "macos", test))]
-const PLIST_DIR: &str = "Library/LaunchAgents";
-#[cfg(any(target_os = "macos", test))]
-const PLIST_FILE: &str = "dev.summonr.cron.plist";
-#[cfg(target_os = "linux")]
-const SYSTEMD_DIR: &str = ".config/systemd/user";
-#[cfg(target_os = "linux")]
-const SERVICE_FILE: &str = "summonr-cron.service";
 #[cfg(target_os = "linux")]
 const TIMER_FILE: &str = "summonr-cron.timer";
 #[cfg(windows)]
 const TASK_NAME: &str = "summonr-cron";
 #[cfg(windows)]
 const TASK_PATH: &str = "schtasks:summonr-cron";
-#[cfg(target_os = "macos")]
-const LOG_DIR: &str = "cron";
-#[cfg(target_os = "macos")]
-const LOG_FILE: &str = "tick.log";
 #[cfg(any(unix, test))]
 const HOME_VAR: &str = "SUMMONR_HOME";
 #[cfg(any(unix, test))]
@@ -34,25 +22,8 @@ const PATH_VAR: &str = "PATH";
 const USER_HOME_VAR: &str = "HOME";
 #[cfg(any(target_os = "linux", windows, test))]
 const MINUTE_SECS: u64 = 60;
-#[cfg(target_os = "linux")]
-const LINGER_OFF: &str = "no";
-#[cfg(target_os = "linux")]
-const LINGER_NOTE: &str = "jobs run only while you are logged in; `loginctl enable-linger` keeps them running after logout";
-#[cfg(target_os = "macos")]
-const GUI_NOTE: &str = "jobs run while you are logged in";
-#[cfg(target_os = "macos")]
-const FULL_DISK_NOTE: &str = "cron needs Full Disk Access (System Settings › Privacy & Security) for jobs that touch Desktop, Documents or Downloads";
 
-pub(crate) struct Installed {
-    pub path: PathBuf,
-    pub note: Option<&'static str>,
-}
-
-impl Installed {
-    fn new(path: PathBuf, note: Option<&'static str>) -> Self {
-        Self { path, note }
-    }
-}
+pub(crate) type Installed = (PathBuf, Option<&'static str>);
 
 #[cfg(any(unix, test))]
 #[derive(Clone, Copy)]
@@ -132,21 +103,6 @@ fn systemd_quote(text: &str) -> String {
     )
 }
 
-#[cfg(target_os = "macos")]
-fn log_path() -> Result<PathBuf> {
-    Ok(crate::prompt::summonr_home()?.join(LOG_DIR).join(LOG_FILE))
-}
-
-#[cfg(unix)]
-fn env_path() -> String {
-    std::env::var(PATH_VAR).unwrap_or_default()
-}
-
-#[cfg(unix)]
-fn env_var(key: &str) -> Option<String> {
-    std::env::var(key).ok().filter(|value| !value.is_empty())
-}
-
 #[cfg(unix)]
 struct OwnedEnv {
     path: String,
@@ -157,10 +113,11 @@ struct OwnedEnv {
 #[cfg(unix)]
 impl OwnedEnv {
     fn current() -> Self {
+        let set = |key| std::env::var(key).ok().filter(|value| !value.is_empty());
         Self {
-            path: env_path(),
-            home: env_var(USER_HOME_VAR),
-            summonr_home: env_var(HOME_VAR),
+            path: std::env::var(PATH_VAR).unwrap_or_default(),
+            home: set(USER_HOME_VAR),
+            summonr_home: set(HOME_VAR),
         }
     }
 
@@ -208,11 +165,6 @@ fn run(program: &str, args: &[&str], stdin: Option<&str>) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-#[cfg(target_os = "macos")]
-fn plist_path() -> Result<PathBuf> {
-    Ok(os_home()?.join(PLIST_DIR).join(PLIST_FILE))
-}
-
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn domains(uid: u32) -> [String; 2] {
     [format!("gui/{uid}"), format!("user/{uid}")]
@@ -223,6 +175,11 @@ pub(crate) fn domains(uid: u32) -> [String; 2] {
 fn uid() -> u32 {
     // SAFETY: getuid has no preconditions and cannot fail.
     unsafe { libc::getuid() }
+}
+
+#[cfg(target_os = "macos")]
+fn plist_path() -> Result<PathBuf> {
+    Ok(os_home()?.join(format!("Library/LaunchAgents/{LABEL}.plist")))
 }
 
 #[cfg(target_os = "macos")]
@@ -239,10 +196,9 @@ fn bootout() {
 #[cfg(target_os = "macos")]
 pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
     let file = plist_path()?;
-    let log = log_path()?;
-    if let Some(dir) = log.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
+    let logs = crate::prompt::summonr_home()?.join("cron");
+    let log = logs.join("tick.log");
+    std::fs::create_dir_all(&logs)?;
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -256,14 +212,19 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
             &["bootstrap", &domain, &file.display().to_string()],
             None,
         ) {
-            Ok(_) => return Ok(Installed::new(file, (index == 0).then_some(GUI_NOTE))),
+            Ok(_) => {
+                return Ok((
+                    file,
+                    (index == 0).then_some("jobs run while you are logged in"),
+                ));
+            }
             Err(Error::Config(text)) => failures.push(text),
             Err(error) => return Err(error),
         }
     }
     std::fs::remove_file(&file)?;
     crontab::install(exe, env.view())
-        .map(|path| Installed::new(path, Some(FULL_DISK_NOTE)))
+        .map(|path| (path, Some("cron needs Full Disk Access (System Settings › Privacy & Security) for jobs that touch Desktop, Documents or Downloads")))
         .map_err(|error| match error {
             Error::Config(text) => Error::Config(format!("{}; {text}", failures.join("; "))),
             other => other,
@@ -290,13 +251,8 @@ pub(crate) fn status() -> Result<Option<PathBuf>> {
 
 #[cfg(target_os = "linux")]
 fn unit_paths() -> Result<(PathBuf, PathBuf)> {
-    let dir = os_home()?.join(SYSTEMD_DIR);
-    Ok((dir.join(SERVICE_FILE), dir.join(TIMER_FILE)))
-}
-
-#[cfg(target_os = "linux")]
-fn has_systemd() -> bool {
-    run("systemctl", &["--user", "show-environment"], None).is_ok()
+    let dir = os_home()?.join(".config/systemd/user");
+    Ok((dir.join("summonr-cron.service"), dir.join(TIMER_FILE)))
 }
 
 #[cfg(target_os = "linux")]
@@ -308,13 +264,15 @@ fn linger_note() -> Option<&'static str> {
         None,
     )
     .ok()?;
-    (linger.trim() == LINGER_OFF).then_some(LINGER_NOTE)
+    (linger.trim() == "no").then_some(
+        "jobs run only while you are logged in; `loginctl enable-linger` keeps them running after logout",
+    )
 }
 
 #[cfg(target_os = "linux")]
 pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
     let env = OwnedEnv::current();
-    if has_systemd() {
+    if run("systemctl", &["--user", "show-environment"], None).is_ok() {
         let (service_path, timer_path) = unit_paths()?;
         if let Some(dir) = timer_path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -328,9 +286,9 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
             &["--user", "enable", "--now", TIMER_FILE],
             None,
         )?;
-        return Ok(Installed::new(timer_path, linger_note()));
+        return Ok((timer_path, linger_note()));
     }
-    crontab::install(exe, env.view()).map(|path| Installed::new(path, None))
+    crontab::install(exe, env.view()).map(|path| (path, None))
 }
 
 #[cfg(target_os = "linux")]
@@ -355,10 +313,10 @@ pub(crate) fn uninstall() -> Result<Option<PathBuf>> {
 #[cfg(target_os = "linux")]
 pub(crate) fn status() -> Result<Option<PathBuf>> {
     let (_, timer_path) = unit_paths()?;
-    if timer_path.exists() {
-        return Ok(Some(timer_path));
-    }
-    Ok(crontab::status())
+    Ok(timer_path
+        .exists()
+        .then_some(timer_path)
+        .or_else(crontab::status))
 }
 
 #[cfg(windows)]
@@ -372,7 +330,7 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
         ],
         None,
     )?;
-    Ok(Installed::new(PathBuf::from(TASK_PATH), None))
+    Ok((PathBuf::from(TASK_PATH), None))
 }
 
 #[cfg(windows)]

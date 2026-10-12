@@ -28,27 +28,25 @@ pub(super) fn steer(
     queue.extend(notes.map(UserInput::from));
 }
 
-pub(super) fn take_steerable(
+pub(super) fn take_inputs(
     deferred: &mut VecDeque<Cmd>,
     followups: &mut VecDeque<UserInput>,
+    pick: impl Fn(&UserInput) -> bool,
 ) -> Vec<UserInput> {
-    let mut now = Vec::new();
-    deferred.retain(|command| {
-        let Cmd::Submit(input) = command else {
-            return true;
-        };
-        if !steerable(input) {
-            return true;
+    let mut taken = Vec::new();
+    deferred.retain(|command| match command {
+        Cmd::Submit(input) if pick(input) => {
+            taken.push(input.clone());
+            false
         }
-        now.push(input.clone());
-        false
+        _other => true,
     });
     followups.retain(|input| {
-        if !steerable(input) {
-            return true;
+        let take = pick(input);
+        if take {
+            taken.push(input.clone());
         }
-        now.push(input.clone());
-        false
+        !take
     });
-    now
+    taken
 }

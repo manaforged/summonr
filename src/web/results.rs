@@ -27,22 +27,16 @@ pub(super) struct Engine {
     url: String,
     query: String,
     block: String,
-    #[serde(default)]
     link: Option<String>,
-    #[serde(default)]
     link_in: Option<Container>,
-    #[serde(default)]
     title: Option<String>,
     snippet: String,
-    #[serde(default)]
     unwrap: Option<String>,
     #[serde(default)]
     carrier: Carrier,
-    #[serde(default)]
     unwrap_prefix: Option<String>,
     #[serde(default)]
     encoding: Encoding,
-    #[serde(default)]
     freshness: Option<Freshness>,
     #[serde(default)]
     hosts: Vec<String>,
@@ -245,9 +239,10 @@ pub(super) struct Hit {
 
 fn result_url(raw: String) -> Option<String> {
     let raw = decode(raw.trim());
-    let raw = raw
-        .strip_prefix("//")
-        .map_or(raw.clone(), |rest| format!("https://{rest}"));
+    let raw = match raw.strip_prefix("//") {
+        Some(rest) => format!("https://{rest}"),
+        None => raw,
+    };
     let url = Url::parse(&raw).ok()?;
     matches!(url.scheme(), "http" | "https").then(|| url.to_string())
 }

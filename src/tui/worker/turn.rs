@@ -4,7 +4,7 @@ use std::sync::{Arc, PoisonError};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::settings::set_run_mode;
-use super::steer::{steer, steerable, take_steerable};
+use super::steer::{steer, steerable, take_inputs};
 use super::{Cmd, Msg, Worker};
 use crate::provider::UserInput;
 use crate::tools::Event;
@@ -165,7 +165,7 @@ impl MidTurn<'_> {
             }
             Cmd::Queue(input) | Cmd::Submit(input) => self.followups.push_back(input),
             Cmd::SteerQueued => {
-                let now = take_steerable(self.deferred, self.followups);
+                let now = take_inputs(self.deferred, self.followups, steerable);
                 let note = if now.is_empty() {
                     NOTHING_TO_SEND
                 } else {
@@ -175,15 +175,7 @@ impl MidTurn<'_> {
                 drop(self.ui.send(Msg::System(note.to_string())));
             }
             Cmd::Dequeue => {
-                let mut pending = Vec::new();
-                self.deferred.retain(|command| {
-                    let Cmd::Submit(input) = command else {
-                        return true;
-                    };
-                    pending.push(input.clone());
-                    false
-                });
-                pending.extend(self.followups.drain(..));
+                let pending = take_inputs(self.deferred, self.followups, |_| true);
                 if !pending.is_empty() {
                     drop(self.ui.send(Msg::Restored(pending)));
                 }

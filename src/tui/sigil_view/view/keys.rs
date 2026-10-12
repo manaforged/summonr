@@ -232,16 +232,10 @@ fn hunk_keys() -> Vec<(Shortcut, Handler)> {
         }),
         (LogicalKey::character("n").into(), |app, event| {
             if app.pane_active() == Some(super::Pane::Diff)
-                && let Some(path) = app.diff_view.peek()
+                && let Some((path, hunk)) = app.current_hunk()
             {
-                let hunks = app.hunks();
-                let Some(hunk) =
-                    hunks.get(app.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))
-                else {
-                    return;
-                };
                 event.stop_propagation();
-                app.note_start(path, hunk.id.clone());
+                app.note_start(path, hunk);
             }
         }),
     ]

@@ -39,6 +39,14 @@ struct Events {
     oversize: bool,
 }
 
+fn client(wait: Duration) -> Result<leyline::Session> {
+    let limits = crate::limits::limits();
+    crate::credentials::session(
+        summonr_auth::builder(wait, limits.connect()),
+        limits.retry_policy(),
+    )
+}
+
 impl Http {
     pub(super) fn new(
         url: &str,
@@ -47,10 +55,7 @@ impl Http {
         auth: Option<crate::provider::Auth>,
     ) -> Result<Self> {
         Ok(Self {
-            client: crate::credentials::session(
-                summonr_auth::builder(wait, crate::limits::limits().connect()),
-                crate::limits::limits().retry_policy(),
-            )?,
+            client: client(wait)?,
             url: url.to_string(),
             headers: headers.to_vec(),
             session: None,
@@ -63,10 +68,7 @@ impl Http {
     }
 
     pub(super) fn set_wait(&mut self, wait: Duration) -> Result<()> {
-        self.client = crate::credentials::session(
-            summonr_auth::builder(wait, crate::limits::limits().connect()),
-            crate::limits::limits().retry_policy(),
-        )?;
+        self.client = client(wait)?;
         Ok(())
     }
 

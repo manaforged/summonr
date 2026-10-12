@@ -1,12 +1,24 @@
 use super::*;
 
-fn one(text: &str) -> String {
+fn with_user_memory(text: &str) -> (tempfile::TempDir, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
-    let work = tempfile::tempdir().unwrap();
     let path = home.path().join(DIR).join(FILE);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, text).unwrap();
+    (home, tempfile::tempdir().unwrap())
+}
+
+fn one(text: &str) -> String {
+    let (home, work) = with_user_memory(text);
     sections(&files(home.path(), work.path()), work.path()).join("\n")
+}
+
+fn project(home: &Path, dir: &Path) -> PathBuf {
+    files(home, dir)
+        .into_iter()
+        .find(|file| file.scope == Scope::Project)
+        .unwrap()
+        .path
 }
 
 #[test]
@@ -54,19 +66,12 @@ fn a_moved_repository_keeps_its_memory() {
     };
     git(&before, &["init", "-q"]);
     git(&before, &["commit", "-q", "--allow-empty", "-m", "start"]);
-    let project = |dir: &Path| {
-        files(home.path(), dir)
-            .into_iter()
-            .find(|file| file.scope == Scope::Project)
-            .unwrap()
-            .path
-    };
-    let first = project(&before);
+    let first = project(home.path(), &before);
     std::fs::create_dir_all(first.parent().unwrap()).unwrap();
     std::fs::write(&first, "- 2026-10-11 deploy on Thursdays\n").unwrap();
     let after = root.path().join("api-renamed");
     std::fs::rename(&before, &after).unwrap();
-    assert_eq!(project(&after), first);
+    assert_eq!(project(home.path(), &after), first);
 }
 
 #[test]
@@ -86,15 +91,7 @@ fn an_empty_memory_adds_no_section() {
 
 #[test]
 fn the_memory_report_uses_spaces_and_counts_entries() {
-    let home = tempfile::tempdir().unwrap();
-    let work = tempfile::tempdir().unwrap();
-    let path = home.path().join(DIR).join(FILE);
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(
-        &path,
-        "# Memory\n- 2026-10-11 tabs\n2026-10-12 trunk-stable\n",
-    )
-    .unwrap();
+    let (home, work) = with_user_memory("# Memory\n- 2026-10-11 tabs\n2026-10-12 trunk-stable\n");
     let text = report(&files(home.path(), work.path()));
     assert!(!text.contains('\t'), "{text}");
     assert!(text.starts_with("user memory      "), "{text}");
@@ -111,15 +108,8 @@ fn look_alike_repository_paths_get_separate_memory() {
     let under = root.path().join("a_b");
     std::fs::create_dir_all(&dash).unwrap();
     std::fs::create_dir_all(&under).unwrap();
-    let project = |dir: &Path| {
-        files(home.path(), dir)
-            .into_iter()
-            .find(|file| file.scope == Scope::Project)
-            .unwrap()
-            .path
-    };
-    assert_ne!(project(&dash), project(&under));
-    assert_eq!(project(&dash), project(&dash));
+    assert_ne!(project(home.path(), &dash), project(home.path(), &under));
+    assert_eq!(project(home.path(), &dash), project(home.path(), &dash));
 }
 
 #[test]

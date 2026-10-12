@@ -14,7 +14,6 @@ use super::proc::{
 use super::rewrite::{read_only_note, sandbox_grant, sandbox_note};
 
 const LOG_READ_BYTES: usize = 512 * 1024;
-const COMMAND_LOG_PREFIX: &str = "command-";
 
 #[derive(Clone, Copy)]
 pub(super) enum Wait {
@@ -40,17 +39,6 @@ impl Wait {
     }
 }
 
-struct JobFiles {
-    rec_path: PathBuf,
-    exit_path: PathBuf,
-}
-
-struct CommandFiles {
-    id: String,
-    log_path: PathBuf,
-    job: Option<JobFiles>,
-}
-
 impl ToolRegistry {
     pub(super) fn start_command(
         &self,
@@ -61,17 +49,22 @@ impl ToolRegistry {
         cwd: PathBuf,
     ) -> Result<StartedCommand> {
         let persist = matches!(wait, Wait::Background | Wait::Detach(_));
-        let files = self.command_files(persist)?;
-        let script = match &files.job {
-            Some(job) => crate::shell::wrap(command, &job.exit_path, &cwd),
-            None => command.to_string(),
+        let (id, log_path, record_path) = if persist {
+            let (id, record_path, log_path, exit_path) = jobs::prepare(&self.workspace)?;
+            let script = crate::shell::wrap(command, &exit_path, &cwd);
+            (id, log_path, Some((record_path, script)))
+        } else {
+            (String::new(), self.spill_file("command-", &[])?, None)
         };
+        let script = record_path
+            .as_ref()
+            .map_or(command, |(_, script)| script.as_str());
         let sandbox = self.command_sandbox(approval)?;
         let child = spawn_command(
             &self.env,
             sandbox.as_ref(),
-            &script,
-            &files.log_path,
+            script,
+            &log_path,
             persist,
             read_only,
             &cwd,
@@ -80,38 +73,15 @@ impl ToolRegistry {
             .id()
             .ok_or_else(|| Error::Tool("command started without a pid".to_string()))?;
         let group = ProcessGroup::new(pid, sandbox.is_some());
-        if let Some(job) = files
-            .job
-            .as_ref()
-            .filter(|_| matches!(wait, Wait::Background))
-        {
-            jobs::write(&job.rec_path, &self.job_record(&files.id, pid, command)?)?;
+        if let Some((record_path, _)) = record_path.filter(|_| matches!(wait, Wait::Background)) {
+            jobs::write(&record_path, &self.job_record(&id, pid, command)?)?;
         }
         Ok(StartedCommand {
-            id: files.id,
+            id,
             pid,
-            log_path: files.log_path,
+            log_path,
             child,
             group,
-        })
-    }
-
-    fn command_files(&self, persist: bool) -> Result<CommandFiles> {
-        if persist {
-            let (id, rec_path, log_path, exit_path) = jobs::prepare(&self.workspace)?;
-            return Ok(CommandFiles {
-                id,
-                log_path,
-                job: Some(JobFiles {
-                    rec_path,
-                    exit_path,
-                }),
-            });
-        }
-        Ok(CommandFiles {
-            id: String::new(),
-            log_path: self.spill_file(COMMAND_LOG_PREFIX, &[])?,
-            job: None,
         })
     }
 
@@ -209,7 +179,7 @@ impl ToolRegistry {
 
     async fn timed_out(
         &self,
-        started: StartedCommand,
+        mut started: StartedCommand,
         command: &str,
         wait: Wait,
         read_only: bool,
@@ -222,27 +192,13 @@ impl ToolRegistry {
                 Err(error) => detail = format!(" ({error}; could not continue it as a job)"),
             }
         }
-        let headline = format!("command timed out after {seconds}s{detail}");
-        self.killed(started, command, headline, read_only).await
-    }
-
-    async fn killed(
-        &self,
-        mut started: StartedCommand,
-        command: &str,
-        headline: String,
-        read_only: bool,
-    ) -> Result<ToolOutput> {
-        stop_command(&mut started.child, started.pid)
-            .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
-        started
-            .child
-            .wait()
-            .await
-            .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
+        let cleanup =
+            |error: std::io::Error| Error::Tool(format!("command cleanup failed: {error}"));
+        stop_command(&mut started.child, started.pid).map_err(cleanup)?;
+        started.child.wait().await.map_err(cleanup)?;
         started.group.disarm();
         self.discard_job(&started.id);
-        let StartedCommand { log_path, .. } = started;
+        let log_path = started.log_path;
         let raw = scrubbed_preview(&log_path)?;
         let shown = digest(command, &raw);
         let mutated = may_write(read_only, command);
@@ -260,9 +216,12 @@ impl ToolRegistry {
         );
         keep_log(&log_path, shown.cut);
         Ok(ToolOutput {
-            text: format!("{headline}{warning}{note}\n{}", shown.text)
-                .trim_end()
-                .to_string(),
+            text: format!(
+                "command timed out after {seconds}s{detail}{warning}{note}\n{}",
+                shown.text
+            )
+            .trim_end()
+            .to_string(),
             success: false,
             mutated,
             grant: None,

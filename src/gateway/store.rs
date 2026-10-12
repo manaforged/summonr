@@ -138,11 +138,11 @@ pub(crate) fn load() -> Result<State> {
     read(&path)
 }
 
-pub(crate) fn update<T>(change: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
+pub(crate) fn update<T>(change: impl FnOnce(&mut State) -> T) -> Result<T> {
     let path = path()?;
     let _guard = store::lock(&path, true)?;
     let mut state = read(&path)?;
-    let out = change(&mut state)?;
+    let out = change(&mut state);
     let text = toml::to_string(&state)
         .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
     store::write(&path, text)?;

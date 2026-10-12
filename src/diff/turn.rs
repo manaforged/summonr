@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -34,10 +35,6 @@ struct Span {
 }
 
 impl Span {
-    fn label(&self) -> String {
-        format!("turn {}", self.turn)
-    }
-
     fn stats(&self, root: &Path, session: &str) -> Result<Diff> {
         let numstat = git(
             root,
@@ -50,7 +47,7 @@ impl Span {
                 "--",
             ],
         )?;
-        let added = git_paths(
+        let added: HashSet<String> = git_paths(
             root,
             &[
                 "diff",
@@ -62,20 +59,21 @@ impl Span {
                 &self.to,
                 "--",
             ],
-        )?;
-        let new: Vec<&str> = added.iter().map(String::as_str).collect();
+        )?
+        .into_iter()
+        .collect();
         let mut files: Vec<Stat> = numstat
             .lines()
             .filter_map(numstat_row)
             .filter(|stat| !ignored::hidden(&stat.path))
             .map(|stat| Stat {
-                new: new.contains(&stat.path.as_str()),
+                new: added.contains(&stat.path),
                 ..stat
             })
             .collect();
         files.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(Diff {
-            base: self.label(),
+            base: format!("turn {}", self.turn),
             session: Some(session.to_string()),
             files,
         })

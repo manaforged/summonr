@@ -145,9 +145,12 @@ fn unknown(chosen: &str) -> Error {
     ))
 }
 
+fn config_shown() -> String {
+    config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path))
+}
+
 fn no_seat() -> String {
-    let config =
-        config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path));
+    let config = config_shown();
     format!(
         "no provider is set up yet.\n  Fix: `summonr login NAME`, or `export ANTHROPIC_API_KEY=…`, or a local [endpoint.NAME] base_url in {config}.\n  `summonr login` lists every provider and its status."
     )

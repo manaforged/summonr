@@ -14,10 +14,6 @@ use git::{git, numstat_row};
 pub(crate) use git::{git_env, git_output, git_paths};
 pub use turn::{TurnId, turn_patch, turn_stats};
 
-fn editor(name: &str) -> bool {
-    crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits)
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Stat {
     pub path: String,
@@ -47,7 +43,6 @@ impl Diff {
 
     #[must_use]
     pub fn summary(&self) -> String {
-        let count = self.files.len();
         let scope = match &self.session {
             Some(session) => format!(
                 "{} of session {}",
@@ -57,8 +52,8 @@ impl Diff {
             None => format!("vs {}", self.base),
         };
         format!(
-            "{count} file{} · +{} −{} · {scope}",
-            if count == 1 { "" } else { "s" },
+            "{} · +{} −{} · {scope}",
+            crate::text::plural(self.files.len(), "file"),
             self.added(),
             self.removed(),
         )
@@ -121,9 +116,9 @@ pub(crate) fn snapshot(root: &Path) -> String {
     match count {
         0 => format!("{head} ({}), worktree clean", short(&base)),
         count => format!(
-            "{head} ({}), {count} file{} dirty",
+            "{head} ({}), {} dirty",
             short(&base),
-            if count == 1 { "" } else { "s" }
+            crate::text::plural(count, "file")
         ),
     }
 }
@@ -193,15 +188,10 @@ fn changes(root: &Path, base: Option<String>, lines: bool) -> Result<Diff> {
         .filter_map(numstat_row)
         .filter(|stat| !ignored::hidden(&stat.path))
         .collect();
-    let untracked = git_paths(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
-    for path in untracked
-        .iter()
-        .map(String::as_str)
-        .filter(|path| !ignored::hidden(path))
-    {
+    for path in untracked(root)? {
         files.push(Stat {
-            path: path.to_string(),
-            added: if lines { added(root, path)? } else { 0 },
+            added: if lines { added(root, &path)? } else { 0 },
+            path,
             removed: 0,
             new: true,
         });
@@ -276,11 +266,10 @@ fn tracked_patch(root: &Path, base: &str, path: Option<&str>) -> Result<String> 
 
 fn untracked_patch(root: &Path, path: Option<&str>) -> Result<String> {
     let mut text = String::new();
-    let untracked = git_paths(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
-    for file in untracked
+    for file in untracked(root)?
         .iter()
         .map(String::as_str)
-        .filter(|file| !ignored::hidden(file) && path.is_none_or(|path| path == *file))
+        .filter(|file| path.is_none_or(|path| path == *file))
     {
         if file.ends_with('/') {
             if path.is_some() {
@@ -297,6 +286,12 @@ fn untracked_patch(root: &Path, path: Option<&str>) -> Result<String> {
         text.push('\n');
     }
     Ok(text)
+}
+
+fn untracked(root: &Path) -> Result<Vec<String>> {
+    let mut paths = git_paths(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+    paths.retain(|path| !ignored::hidden(path));
+    Ok(paths)
 }
 
 pub(crate) fn hunks(root: &Path, path: &str) -> Result<Vec<(usize, usize)>> {
@@ -332,7 +327,7 @@ fn hunk_header(line: &str) -> Option<(usize, usize)> {
 pub(crate) fn edited<'a>(calls: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
     let mut paths: Vec<String> = Vec::new();
     for (name, arguments) in calls {
-        if !editor(name) {
+        if !crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits) {
             continue;
         }
         let Ok(args) = serde_json::from_str::<serde_json::Value>(arguments) else {

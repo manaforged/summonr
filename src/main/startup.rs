@@ -93,27 +93,21 @@ async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32
     if args.doctor {
         return Some(diagnostics::doctor(log.map(diagnostics::Log::path)));
     }
-    if let Some(words) = &args.mail {
-        return Some(
+    let in_cwd = |run: &dyn Fn(&std::path::Path) -> Result<i32>| {
+        Some(
             std::env::current_dir()
                 .map_err(Into::into)
-                .and_then(|cwd| summonr::mail::cli::run(words, &cwd)),
-        );
+                .and_then(|cwd| run(&cwd)),
+        )
+    };
+    if let Some(words) = &args.mail {
+        return in_cwd(&|cwd| summonr::mail::cli::run(words, cwd));
     }
     if let Some(words) = &args.cron {
-        return Some(
-            std::env::current_dir()
-                .map_err(Into::into)
-                .and_then(|cwd| summonr::cron::cli::run(words, &cwd)),
-        );
+        return in_cwd(&|cwd| summonr::cron::cli::run(words, cwd));
     }
     if let Some(words) = &args.gateway {
-        let read: &dyn Fn(&str) -> Result<String> = &login::read_secret;
-        return Some(
-            std::env::current_dir()
-                .map_err(Into::into)
-                .and_then(|cwd| summonr::gateway::cli::run(words, &cwd, read)),
-        );
+        return in_cwd(&|cwd| summonr::gateway::cli::run(words, cwd, &login::read_secret));
     }
     if let Some(tool) = &args.tool {
         return Some(tool::run(args, tool).await);

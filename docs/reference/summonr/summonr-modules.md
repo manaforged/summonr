@@ -56,6 +56,7 @@
 | <code>Lsp</code> |  |
 | <code>Mail</code> |  |
 | <code>Mcp</code> |  |
+| <code>Memory</code> |  |
 | <code>Search</code> |  |
 | <code>Skills</code> |  |
 | <code>Task</code> |  |

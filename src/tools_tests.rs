@@ -84,6 +84,10 @@ fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
     (dir, tools)
 }
 
+fn per_shell(bash: &'static str, powershell: &'static str) -> &'static str {
+    if cfg!(windows) { powershell } else { bash }
+}
+
 fn run(tools: &ToolRegistry, name: &str, arguments: serde_json::Value) -> String {
     let call = ToolCall {
         id: "t1".to_string(),

@@ -23,6 +23,50 @@ pub(crate) fn slow(secs: u64) -> u64 {
     }
 }
 
+const PROFILE_DIRS: &[&str] = &["AppData/Local", "AppData/Roaming"];
+const TAIL_LINES: usize = 6;
+
+#[cfg(windows)]
+fn children(pid: u32) -> String {
+    let script = format!(
+        "function T($p, $d) {{ Get-CimInstance Win32_Process -Filter \"ParentProcessId=$p\" | ForEach-Object {{ ('  ' * $d) + \"$($_.ProcessId) $($_.Name) $($_.CommandLine)\"; T $_.ProcessId ($d + 1) }} }}; T {pid} 0"
+    );
+    Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+#[cfg(unix)]
+fn children(pid: u32) -> String {
+    Command::new("pgrep")
+        .args(["-l", "-P", &pid.to_string()])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default()
+}
+const TAIL_LINE_CHARS: usize = 300;
+
+fn tail(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(TAIL_LINES)..]
+        .iter()
+        .map(|line| line.chars().take(TAIL_LINE_CHARS).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn journals(home: &Path) -> String {
+    std::fs::read_dir(home.join("sessions"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| tail(&read(&entry.path().join("session.jsonl"))))
+        .collect::<Vec<_>>()
+        .join("\n--\n")
+}
+
 pub(crate) fn pause(wait: Duration) {
     let until = Instant::now() + wait;
     while let Some(left) = until
@@ -59,8 +103,14 @@ impl Session {
     }
 
     pub(crate) fn with_files(files: &Path) -> Self {
+        let home = tempfile::tempdir().unwrap();
+        if cfg!(windows) {
+            for dir in PROFILE_DIRS {
+                std::fs::create_dir_all(home.path().join(dir)).unwrap();
+            }
+        }
         Self {
-            home: tempfile::tempdir().unwrap(),
+            home,
             work: repository(),
             files: tempfile::tempdir_in(files).unwrap(),
         }
@@ -149,7 +199,13 @@ impl Session {
             }
             if started.elapsed() > Duration::from_secs(slow(FINISH_SECS)) {
                 drop(child.kill());
-                panic!("summonr did not finish: {}", read(&stderr));
+                panic!(
+                    "summonr did not finish: {}\nstdout ends: {}\njournal ends: {}\nchildren: {}",
+                    read(&stderr),
+                    tail(&read(&stdout)),
+                    journals(self.home.path()),
+                    children(child.id())
+                );
             }
             if !interrupted
                 && options

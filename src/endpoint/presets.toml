@@ -8,7 +8,7 @@ label = "GLM coding plan, international"
 key_from = "glm-intl"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
-env_keys = ["ZAI_CODING_API_KEY", "ZAI_API_KEY"]
+env_keys = ["ZAI_CODING_API_KEY", "ZAI_API_KEY", "ZHIPU_API_KEY"]
 missing = "run `summonr login NAME` or set ZAI_API_KEY"
 opencode_ids = ["zai-coding-plan", "zai"]
 plan = true
@@ -56,7 +56,7 @@ region = "cn"
 label = "GLM API, China"
 base_url = "https://open.bigmodel.cn/api/paas/v4"
 model = "glm-5.3"
-env_keys = ["ZHIPU_API_KEY", "GLM_API_KEY"]
+env_keys = ["GLM_API_KEY"]
 opencode_ids = ["zhipuai"]
 
 [preset.reasoning]

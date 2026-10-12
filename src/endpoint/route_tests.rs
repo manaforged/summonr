@@ -88,3 +88,16 @@ fn a_toggle_switches_one_axis_and_keeps_the_other() {
     assert_eq!(access.name, "zai-cn-api");
     assert_eq!(info.title(), "zai");
 }
+
+#[test]
+fn a_zhipu_key_runs_the_international_coding_plan() {
+    let reads = |route: &str| {
+        super::super::preset::preset(route)
+            .unwrap()
+            .env_keys
+            .contains(&"ZHIPU_API_KEY")
+    };
+    assert!(reads("zai"));
+    assert!(!reads("zai-cn"));
+    assert!(!reads("zai-cn-api"));
+}

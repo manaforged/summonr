@@ -23,6 +23,7 @@ pub(crate) fn headers(wire: crate::endpoint::Wire) -> &'static [(&'static str, &
 
 pub(crate) struct ImageBudget {
     pub(crate) types: &'static [&'static str],
+    pub(crate) tool_types: &'static [&'static str],
     pub(crate) count: usize,
     pub(crate) each: usize,
     pub(crate) bytes: usize,
@@ -31,24 +32,28 @@ pub(crate) struct ImageBudget {
 
 const PNG_JPEG: &[&str] = &["image/png", "image/jpeg"];
 const WEB_IMAGES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
+const GEMINI_IMAGES: &[&str] = &[
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+];
+const GEMINI_TOOL_IMAGES: &[&str] = &["image/png", "image/jpeg", "image/webp"];
 
 pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
     match wire {
         crate::endpoint::Wire::Anthropic | crate::endpoint::Wire::AgentSdk => ImageBudget {
             types: WEB_IMAGES,
+            tool_types: WEB_IMAGES,
             count: 100,
             each: 10_000_000,
             bytes: 24_000_000,
             tool_images: true,
         },
         crate::endpoint::Wire::Gemini => ImageBudget {
-            types: &[
-                "image/png",
-                "image/jpeg",
-                "image/webp",
-                "image/heic",
-                "image/heif",
-            ],
+            types: GEMINI_IMAGES,
+            tool_types: GEMINI_TOOL_IMAGES,
             count: 3600,
             each: 15_000_000,
             bytes: 15_000_000,
@@ -56,6 +61,7 @@ pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
         },
         crate::endpoint::Wire::Responses => ImageBudget {
             types: WEB_IMAGES,
+            tool_types: WEB_IMAGES,
             count: 1500,
             each: 256_000_000,
             bytes: 256_000_000,
@@ -63,6 +69,7 @@ pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
         },
         crate::endpoint::Wire::Completions => ImageBudget {
             types: PNG_JPEG,
+            tool_types: PNG_JPEG,
             count: 100,
             each: 10_000_000,
             bytes: 20_000_000,
@@ -70,6 +77,7 @@ pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
         },
         crate::endpoint::Wire::Decisions => ImageBudget {
             types: PNG_JPEG,
+            tool_types: PNG_JPEG,
             count: 0,
             each: 0,
             bytes: 0,

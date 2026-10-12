@@ -6,6 +6,7 @@ First stable release.
 
 ### Added
 
+- Gemini returns thought summaries at the default effort, and a tool-result image reaches a Gemini function response only as PNG, JPEG, or WebP, the types Google accepts there; a HEIC or HEIF screenshot from a tool is named as omitted instead of failing the request.
 - OpenRouter (`x-session-id`), Fireworks (`x-session-affinity`), and Mistral (`prompt_cache_key`) get the per-session cache hint their docs name, and DashScope pay-as-you-go rows send explicit `cache_control` breakpoints. When Ollama is not running, summonr names `OLLAMA_CONTEXT_LENGTH=65536 ollama serve`, since Ollama's 4k default context silently drops a coding agent's tools.
 - GPT-5, GPT-6, and Codex models edit through `apply_patch` (`*** Begin Patch` … `*** End Patch`), the format OpenAI trains them on, in place of `edit` and `write`; the patch runs through the same edit engine, policy, and checks. Other models keep `edit` and `write`. `gpt-6.1-sol` no longer receives an effort it rejects.
 - Kimi Code's `kimi-for-coding` models and MiniMax M3 on its OpenAI endpoint send their reasoning back between tool calls, as both vendors require. GLM-5.3 no longer receives `thinking: disabled`, which it does not support, and MiniMax's OpenAI routes omit it too. Qwen 3.x Plus and Max turn thinking off with the top-level `enable_thinking: false` that Alibaba documents.

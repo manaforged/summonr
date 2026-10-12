@@ -117,7 +117,9 @@
 | <code>catalog_title(&amp;self) -&gt; &amp;'static str</code> |  |
 | <code>display_name(&amp;self) -&gt; String</code> |  |
 | <code>dual(&amp;self) -&gt; bool</code> |  |
+| <code>key_action(&amp;self) -&gt; &amp;'static str</code> |  |
 | <code>keyless(&amp;self) -&gt; bool</code> |  |
+| <code>paste_key(&amp;self) -&gt; bool</code> |  |
 | <code>plan(&amp;self) -&gt; bool</code> |  |
 | <code>state(&amp;self) -&gt; String</code> |  |
 | <code>status(&amp;self) -&gt; String</code> |  |

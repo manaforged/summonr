@@ -53,8 +53,16 @@ pub(crate) fn servers_are_added_listed_described_and_removed_from_the_shell() {
     assert!(described.lines().any(|line| line == "echo"), "{described}");
     assert!(described.contains("MCP_FIXTURE_SECRET"), "{described}");
     assert!(!described.contains("proof-secret-value"), "{described}");
-    let (removed, text) = session.cli(&["mcp", "remove", "fixture1"]);
-    assert!(removed, "{text}");
+    let elsewhere = std::process::Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["mcp", "remove", "fixture1"])
+        .current_dir(session.home.path())
+        .env("HOME", session.home.path())
+        .env("USERPROFILE", session.home.path())
+        .env("SUMMONR_HOME", session.home.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(elsewhere.status.success(), "{elsewhere:?}");
     let (_, listed) = session.cli(&["mcp", "list"]);
     assert!(listed.contains("no MCP servers configured"), "{listed}");
     assert!(

@@ -1224,7 +1224,7 @@ pub fn summonr::logout(name: &str) -> summonr::Result<alloc::string::String>
 pub fn summonr::mcp_add(name: &str, launch: &summonr::McpLaunch) -> summonr::Result<alloc::string::String>
 pub fn summonr::mcp_call_label(name: &str, arguments: &str) -> alloc::string::String
 pub async fn summonr::mcp_probe(workspace: &std::path::Path, name: &str) -> summonr::Result<usize>
-pub fn summonr::mcp_remove(workspace: &std::path::Path, name: &str) -> summonr::Result<bool>
+pub fn summonr::mcp_remove(name: &str) -> summonr::Result<bool>
 pub fn summonr::mcp_status(workspace: &std::path::Path, board: core::option::Option<&summonr::McpBoard>) -> summonr::Result<alloc::vec::Vec<summonr::ServerStatus>>
 pub fn summonr::parse_command(line: &str) -> core::option::Option<summonr::SlashCommand>
 pub fn summonr::profile(scope: summonr::ProfileScope<'_>) -> summonr::Result<alloc::string::String>

@@ -133,3 +133,23 @@ fn an_untitled_live_session_is_not_named_like_the_new_session_button() {
     assert_eq!(buttons, 1, "{}", shown(&runs));
     row(&runs, rail::UNTITLED);
 }
+
+#[test]
+fn recent_leaves_out_sessions_without_a_message() {
+    let info = |id: &str, preview: &str| crate::session::SessionInfo {
+        id: id.to_owned(),
+        path: std::path::PathBuf::new(),
+        cwd: Some("/work".to_owned()),
+        model: None,
+        preview: preview.to_owned(),
+        name: None,
+        parent: None,
+        depth: 0,
+    };
+    let shown = rail::recent(
+        vec![info("empty", ""), info("used", "fix the tests")],
+        "/work",
+    );
+    let ids: Vec<&str> = shown.iter().map(|info| info.id.as_str()).collect();
+    assert_eq!(ids, ["used"]);
+}

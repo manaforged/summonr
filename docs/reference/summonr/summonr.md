@@ -1227,7 +1227,7 @@
 
 ### `mcp_remove`
 
-<pre>pub fn <a href="#mcp_remove">mcp_remove</a>(workspace: &amp;Path, name: &amp;str) -&gt; <a href="#result">Result</a>&lt;bool&gt;</pre>
+<pre>pub fn <a href="#mcp_remove">mcp_remove</a>(name: &amp;str) -&gt; <a href="#result">Result</a>&lt;bool&gt;</pre>
 
 
 ### `mcp_status`

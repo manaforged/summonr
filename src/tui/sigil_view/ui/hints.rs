@@ -7,6 +7,8 @@ use super::rows::row;
 
 const SEPARATOR: &str = " · ";
 
+pub(in crate::tui) const FILTER_HINT: &str = "type to filter";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui) enum Key {
     Enter,

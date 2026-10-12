@@ -55,7 +55,7 @@ fn system(words: &[&str]) -> Option<Result<i32>> {
 
 fn run_now(name: &str, show: Show) -> Result<i32> {
     super::guard()?;
-    let code = runner::exec(name, super::now(), None)?;
+    let code = runner::exec(name, super::now(), None, show.notify)?;
     log(
         name,
         Show {
@@ -93,8 +93,8 @@ fn uninstall() -> Result<i32> {
 fn exec(name: &str, slot: &str, rest: &[&str]) -> Result<i32> {
     let slot = args::number(slot)?;
     match rest {
-        [] => runner::exec(name, slot, None),
-        ["--payload", file] => runner::exec(name, slot, Some(Path::new(file))),
+        [] => runner::exec(name, slot, None, None),
+        ["--payload", file] => runner::exec(name, slot, Some(Path::new(file)), None),
         [..] => Err(usage("exec takes NAME --slot N [--payload FILE]")),
     }
 }

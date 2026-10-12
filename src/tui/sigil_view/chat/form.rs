@@ -20,32 +20,33 @@ pub(in crate::tui::sigil_view) fn form_band(
 fn hints(review: bool) -> Hints {
     if review {
         Hints::new()
-            .key(Key::Fixed("y"), "send")
+            .key(Key::Enter, "send")
             .key(Key::Fixed("n"), "decline")
             .key(Key::Fixed("e"), "edit")
             .key(Key::Esc, "cancel")
     } else {
-        Hints::new().key(Key::Enter, "next").key(Key::Esc, "cancel")
+        Hints::new()
     }
 }
 
-fn actions(app: App, review: bool, mut prompt: Prompt) -> Prompt {
+fn actions(app: App, review: bool, prompt: Prompt) -> Prompt {
+    if !review {
+        return prompt;
+    }
     let reply = |kind: Reply| {
         let app = app.clone();
         move || app.form_reply(kind)
     };
-    if review {
-        prompt = prompt
-            .action(Action::new("Send", ActionKind::Primary, reply(Reply::Send)))
-            .action(Action::new(
-                "Decline",
-                ActionKind::Plain,
-                reply(Reply::Decline),
-            ));
-    }
-    prompt.action(Action::new(
-        "Cancel",
-        ActionKind::Destructive,
-        reply(Reply::Cancel),
-    ))
+    prompt
+        .action(Action::new("Send", ActionKind::Primary, reply(Reply::Send)))
+        .action(Action::new(
+            "Decline",
+            ActionKind::Plain,
+            reply(Reply::Decline),
+        ))
+        .action(Action::new(
+            "Cancel",
+            ActionKind::Destructive,
+            reply(Reply::Cancel),
+        ))
 }

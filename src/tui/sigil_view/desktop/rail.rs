@@ -85,12 +85,7 @@ fn sessions(app: &App) -> NodeBuilder {
         sigil::reactive::derived(move || model.get().live.clone())
     };
     let here = app.workspace.display().to_string();
-    let mut recent: Vec<session::SessionInfo> = session::list()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|info| info.cwd.as_deref() == Some(here.as_str()) && info.depth == 0)
-        .collect();
-    recent.reverse();
+    let recent = recent(session::list().unwrap_or_default(), &here);
     let open = app.clone();
     container()
         .layout(LayoutStyle::flex_column().fill_width().gap(2.0))
@@ -117,6 +112,16 @@ fn sessions(app: &App) -> NodeBuilder {
             }
             rows
         })
+}
+
+pub(super) fn recent(sessions: Vec<session::SessionInfo>, here: &str) -> Vec<session::SessionInfo> {
+    let mut recent: Vec<session::SessionInfo> = sessions
+        .into_iter()
+        .filter(|info| info.cwd.as_deref() == Some(here) && info.depth == 0)
+        .filter(|info| !info.preview.trim().is_empty())
+        .collect();
+    recent.reverse();
+    recent
 }
 
 fn new_session(app: &App) -> NodeBuilder {

@@ -70,9 +70,25 @@ pub(super) fn failure(key: &str) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-pub(super) fn forget(key: &str) {
-    for extension in [LISTING, FAILURE] {
-        if let Some(path) = file(key, extension) {
+pub(super) fn stem(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .collect()
+}
+
+pub(super) fn forget(name: &str) {
+    let Some(dir) = file("", LISTING).and_then(|path| path.parent().map(PathBuf::from)) else {
+        return;
+    };
+    let stem = stem(name);
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        let owned = path
+            .file_stem()
+            .and_then(|found| found.to_str())
+            .and_then(|found| found.rsplit_once('-'))
+            .is_some_and(|(prefix, _)| prefix == stem);
+        if owned {
             drop(std::fs::remove_file(path));
         }
     }

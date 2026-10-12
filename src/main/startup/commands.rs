@@ -97,8 +97,11 @@ pub(super) fn print_sessions() -> Result<()> {
         println!("no sessions");
         return Ok(());
     }
+    const HEADER: &str = "ID\tNAME\tDIRECTORY\tFIRST PROMPT";
     if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
-        println!("ID\tNAME\tDIRECTORY\tFIRST PROMPT");
+        println!("{HEADER}");
+    } else {
+        eprintln!("{HEADER}");
     }
     for info in sessions.iter().rev() {
         println!(
@@ -315,7 +318,7 @@ pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
             Ok(())
         }
         McpCommand::Remove { name } => {
-            if !summonr::mcp_remove(&workspace()?, name)? {
+            if !summonr::mcp_remove(name)? {
                 return Err(summonr::Error::Config(format!(
                     "no MCP server named {name} in ~/.summonr/config.toml"
                 )));

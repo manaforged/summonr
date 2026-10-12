@@ -271,3 +271,15 @@ fn every_resume_row_keeps_its_id_project_and_model_under_a_long_title() {
     assert!(lines[first].contains("1a12e62c"), "{screen}");
     assert!(lines[first].contains("· work"), "{screen}");
 }
+
+#[test]
+fn the_session_filter_is_one_labelled_row_above_the_list() {
+    let lines = frame_with(busy_info(), 120, 30, State::Idle, |app| {
+        app.open_sessions(false);
+        app.update(Msg::Sessions(Ok(vec![(session("first", None), true)])));
+    });
+    let screen = lines.join("\n");
+    let field = super::find(&lines, super::super::ui::FILTER_HINT).expect(&screen);
+    let row = super::find(&lines, "Session first").expect(&screen);
+    assert!(row > field && row - field <= 2, "{screen}");
+}

@@ -182,7 +182,7 @@ impl FormState {
 }
 
 fn facts(field: &Field) -> String {
-    let mut parts = vec![hint(&field.kind)];
+    let mut parts = vec![keys(&field.kind), hint(&field.kind)];
     if field.required {
         parts.push("required".to_string());
     }
@@ -204,24 +204,33 @@ fn hint(kind: &FieldKind) -> String {
             maximum,
         } => number_hint(*integer, *minimum, *maximum),
         FieldKind::Boolean => "yes or no".to_string(),
+        FieldKind::Choice { .. } | FieldKind::Choices { .. } => String::new(),
+    }
+}
+
+fn keys(kind: &FieldKind) -> String {
+    match kind {
         FieldKind::Choice { custom, .. } => picking(
-            &Hints::new()
+            Hints::new()
                 .key(Key::UpDown, "move")
                 .key(Key::Enter, "picks"),
             *custom,
         ),
         FieldKind::Choices { custom, .. } => picking(
-            &Hints::new()
+            Hints::new()
                 .key(Key::UpDown, "move")
                 .key(Key::Space, "toggles")
                 .key(Key::Enter, "confirms"),
             *custom,
         ),
+        FieldKind::Text { .. } | FieldKind::Number { .. } | FieldKind::Boolean => {
+            picking(Hints::new().key(Key::Enter, "next"), false)
+        }
     }
 }
 
-fn picking(hints: &Hints, custom: bool) -> String {
-    let keys = hints.text(&Hotkeys::default());
+fn picking(hints: Hints, custom: bool) -> String {
+    let keys = hints.key(Key::Esc, "cancel").text(&Hotkeys::default());
     if custom {
         format!("{keys} · or type your own answer")
     } else {
@@ -274,6 +283,7 @@ impl App {
             return false;
         };
         if state.stage == Stage::Review {
+            self.form_reply(Reply::Send);
             return true;
         }
         let Some(field) = state.field().cloned() else {

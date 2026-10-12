@@ -150,6 +150,54 @@ fn a_filled_form_is_checked_per_field_and_sent_after_review() {
 }
 
 #[test]
+fn enter_on_the_review_sends_the_answers() {
+    Runtime::scope("form-review-enter", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (app, mut receiver) = open(workspace.path());
+        typed(&app, "Ada");
+        typed(&app, "7");
+        typed(&app, "");
+        assert_eq!(
+            app.form_stage(),
+            Some(crate::tui::sigil_view::app::Stage::Review)
+        );
+        assert!(app.form_enter());
+        let answer = sent(&mut receiver);
+        assert_eq!(answer.action, FormAction::Accept);
+        assert_eq!(
+            serde_json::Value::Object(answer.content.unwrap()),
+            json!({"name": "Ada", "age": 7, "color": "Red"})
+        );
+    });
+}
+
+#[test]
+fn a_question_shows_one_key_line_and_no_bare_cancel() {
+    let form = Form {
+        server: None,
+        message: "Which database?".to_owned(),
+        fields: vec![question(
+            "Which database?",
+            FieldKind::Choice {
+                options: choices(&["Postgres", "SQLite"]),
+                custom: true,
+            },
+        )],
+    };
+    let lines = frame_with(busy_info(), 100, 30, State::Idle, move |app| {
+        app.update(Msg::Event(Event::Elicit {
+            form: Some(form),
+            dialog: 1,
+        }));
+    });
+    let shown = lines.join("\n");
+    assert!(shown.contains("2. SQLite"), "{shown}");
+    assert_eq!(shown.matches("esc cancel").count(), 1, "{shown}");
+    assert!(!shown.contains("↵ next"), "{shown}");
+    assert!(!lines.iter().any(|line| line.trim() == "Cancel"), "{shown}");
+}
+
+#[test]
 fn cancelling_the_form_sends_cancel() {
     Runtime::scope("form-cancel", || {
         let workspace = tempfile::tempdir().unwrap();

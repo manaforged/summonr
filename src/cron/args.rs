@@ -38,7 +38,7 @@ pub(super) fn wants_help(words: &[&str]) -> bool {
 }
 
 pub(super) fn usage(message: &str) -> Error {
-    Error::Config(format!("{message}{}", view::HELP_HINT))
+    Error::Setup(format!("{message}{}", view::HELP_HINT))
 }
 
 pub(super) fn number<T: std::str::FromStr<Err = std::num::ParseIntError>>(text: &str) -> Result<T> {
@@ -136,7 +136,7 @@ pub(super) fn spec(words: &[&str], cwd: &Path) -> Result<Spec> {
 
 fn notify(text: &str) -> Result<Notify> {
     Notify::parse(text).ok_or_else(|| {
-        Error::Config(format!(
+        usage(&format!(
             "bad --notify `{text}`: use never, failure or always"
         ))
     })

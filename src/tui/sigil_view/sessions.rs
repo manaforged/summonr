@@ -312,7 +312,8 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .child(
             text_edit(picker.query)
                 .caret_position(picker.caret)
-                .height(canvas::overlay_field()),
+                .placeholder(super::ui::FILTER_HINT)
+                .height(canvas::overlay_list_row()),
         )
         .child(container().children_reactive(move || {
             let note = picker.error.get();

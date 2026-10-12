@@ -97,8 +97,11 @@ pub(super) fn print_sessions() -> Result<()> {
         println!("no sessions");
         return Ok(());
     }
+    const HEADER: &str = "ID\tNAME\tDIRECTORY\tFIRST PROMPT";
     if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
-        println!("ID\tNAME\tDIRECTORY\tFIRST PROMPT");
+        println!("{HEADER}");
+    } else {
+        eprintln!("{HEADER}");
     }
     for info in sessions.iter().rev() {
         println!(

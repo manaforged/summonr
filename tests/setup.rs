@@ -94,6 +94,33 @@ fn global_json_reaches_mcp_list_and_worktree_prune() {
     );
 }
 
+#[test]
+fn the_session_list_names_its_columns_and_keeps_stdout_tabular() {
+    let home = tempfile::tempdir().unwrap();
+    let id = "0190000000007000800000000000abcd";
+    let dir = home.path().join(".summonr/sessions").join(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let session = serde_json::json!({
+        "kind": "session",
+        "id": id,
+        "model": "m",
+        "system": "",
+        "workspace": home.path(),
+    });
+    let user = serde_json::json!({"kind": "user", "text": "fix the tests"});
+    std::fs::write(dir.join("session.jsonl"), format!("{session}\n{user}\n")).unwrap();
+    let output = run(home.path(), &["sessions"]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ID\tNAME\tDIRECTORY\tFIRST PROMPT"),
+        "{stderr}"
+    );
+    let row = stdout.lines().next().unwrap_or_default();
+    assert!(row.ends_with("\tfix the tests"), "{stdout}");
+}
+
 fn isolated(program: &str, home: &Path) -> Command {
     let mut command = Command::new(program);
     command

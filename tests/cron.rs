@@ -272,3 +272,12 @@ fn a_job_names_the_endpoint_it_runs_on_and_unknown_jobs_are_not_config_errors() 
     assert!(missing.contains("no cron job named `nosuch`"), "{missing}");
     assert!(!missing.contains("configuration error"), "{missing}");
 }
+
+#[test]
+fn a_wrong_cron_flag_is_a_usage_error() {
+    let home = tempfile::tempdir().unwrap();
+    let (code, text) = run(home.path(), &["run", "nosuch", "--notify", "never"]);
+    assert_eq!(code, 1, "{text}");
+    assert!(text.contains("unknown option `--notify`"), "{text}");
+    assert!(!text.contains("configuration error"), "{text}");
+}

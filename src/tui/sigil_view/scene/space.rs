@@ -31,7 +31,7 @@ pub(in crate::tui::sigil_view) fn step_sky(sky: u8, step: i8) -> u8 {
 struct Look {
     far_every: u32,
     near_every: u32,
-    band: f32,
+    glow: f32,
     halo: bool,
 }
 
@@ -40,22 +40,18 @@ fn look(sky: u8) -> Look {
     Look {
         far_every: if dust { 14 } else { FAR_EVERY },
         near_every: if dust { 64 } else { NEAR_EVERY },
-        band: if dust { 1.0 } else { 0.7 },
+        glow: if dust { 1.15 } else { 1.0 },
         halo: sky % 3 == HALO,
     }
 }
-
-const BAND: Rgba8 = rgb(36, 18, 62);
-
-const AIR: Rgba8 = rgb(16, 28, 52);
-
-const VOID: Rgba8 = rgb(4, 3, 10);
 
 const WARM: Rgba8 = rgb(214, 176, 122);
 
 const FLARE: Rgba8 = rgb(244, 246, 255);
 
 const FAR_EVERY: u32 = 30;
+
+const GLOW: f32 = 0.22;
 
 const FAR_DRIFT: u64 = 62;
 
@@ -93,49 +89,30 @@ struct Flight {
 
 pub(in crate::tui::sigil_view) fn space(cols: u16, rows: u16, ticks: u64, sky: u8) -> Vec<Cell> {
     let look = look(sky);
-    let mut cells = backdrop(cols, rows, look.band);
+    let mut cells = backdrop(cols, rows, look.glow);
     stars(&mut cells, cols, rows, ticks, &look);
     meteor(&mut cells, cols, rows, ticks, look.halo);
     cells
 }
 
-fn backdrop(cols: u16, rows: u16, band: f32) -> Vec<Cell> {
-    let mut cells = Vec::with_capacity(usize::from(cols) * usize::from(rows));
-    for y in 0..rows {
-        let tint = row_tint(y, rows, band);
-        for x in 0..cols {
-            cells.push(night(shade(tint, x, cols)));
-        }
+fn backdrop(cols: u16, rows: u16, glow: f32) -> Vec<Cell> {
+    let field = super::galaxy::field(cols, rows, glow);
+    let mut cells = Vec::with_capacity(field.len());
+    for sky in field.iter() {
+        cells.push(Cell {
+            text: if sky.dots == 0 {
+                " ".into()
+            } else {
+                braille(sky.dots).to_string().into()
+            },
+            fg: ink(sky.fg),
+            bg: ink(sky.bg),
+            bold: false,
+            italic: false,
+            ..Cell::blank()
+        });
     }
     cells
-}
-
-fn row_tint(y: u16, rows: u16, mix: f32) -> Rgba8 {
-    if rows <= 1 {
-        return SCRIM;
-    }
-    let t = f32::from(y) / f32::from(rows - 1);
-    let band = (-((t - 0.36) / 0.18).powi(2)).exp();
-    let air = (1.0 - t * 3.2).max(0.0);
-    blend(blend(SCRIM, BAND, band * mix), AIR, air * 0.35)
-}
-
-fn shade(tint: Rgba8, x: u16, cols: u16) -> Rgba8 {
-    let margin = 6u16.min(cols / 5);
-    if margin == 0 {
-        return tint;
-    }
-    let x = i32::from(x);
-    let cols = i32::from(cols);
-    let margin = i32::from(margin);
-    let edge = if x < margin {
-        (margin - x) as f32 / margin as f32
-    } else if cols - x <= margin {
-        (margin - (cols - x) + 1) as f32 / margin as f32
-    } else {
-        0.0
-    };
-    blend(tint, VOID, edge * 0.55)
 }
 
 fn stars(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64, look: &Look) {
@@ -158,10 +135,14 @@ fn layer(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64, look: &Look, near
             if !n.is_multiple_of(every) {
                 continue;
             }
-            let color = blend(tone(n), STAR_BRIGHT, lift);
+            let color = if near {
+                blend(tone(n), STAR_BRIGHT, lift)
+            } else {
+                fg_of(cells, cols, x, y)
+            };
             put(cells, cols, x, y, "·", color, near);
-            if near && look.halo {
-                glow(cells, cols, rows, x, y, color);
+            if near && look.halo && (n >> 20) % 8 < 2 {
+                glow(cells, cols, rows, x, y, STAR_BRIGHT);
             }
         }
     }
@@ -236,9 +217,9 @@ fn meteor(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64, halo: bool) {
 }
 
 fn glow(cells: &mut [Cell], cols: u16, rows: u16, x: u16, y: u16, color: Rgba8) {
-    for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+    for dx in [-1, 1] {
         let nx = i32::from(x) + dx;
-        let ny = i32::from(y) + dy;
+        let ny = i32::from(y);
         if nx < 0 || ny < 0 || nx >= i32::from(cols) || ny >= i32::from(rows) {
             continue;
         }
@@ -246,16 +227,11 @@ fn glow(cells: &mut [Cell], cols: u16, rows: u16, x: u16, y: u16, color: Rgba8) 
         let Some(cell) = cells.get_mut(index) else {
             continue;
         };
-        if cell.text != " " {
-            continue;
-        }
         let bg = match cell.bg {
             Ink::Exact(color) => color,
             _ => SCRIM,
         };
-        let lifted = blend(bg, color, 0.45);
-        cell.bg = ink(lifted);
-        cell.fg = ink(lifted);
+        cell.bg = ink(blend(bg, color, GLOW));
     }
 }
 
@@ -313,17 +289,6 @@ fn lerp(from: f32, to: f32, t: f32) -> f32 {
     from + (to - from) * t
 }
 
-fn night(color: Rgba8) -> Cell {
-    Cell {
-        text: " ".into(),
-        fg: ink(color),
-        bg: ink(color),
-        bold: false,
-        italic: false,
-        ..Cell::blank()
-    }
-}
-
 fn put(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &'static str, fg: Rgba8, bold: bool) {
     if x >= cols {
         return;
@@ -343,6 +308,14 @@ fn put(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &'static str, fg: Rg
             ..Cell::blank()
         },
     );
+}
+
+fn fg_of(cells: &[Cell], cols: u16, x: u16, y: u16) -> Rgba8 {
+    let index = usize::from(y) * usize::from(cols) + usize::from(x);
+    if let Some(Ink::Exact(color)) = cells.get(index).map(|cell| cell.fg) {
+        return color;
+    }
+    STAR_DIM
 }
 
 fn bg_of(cells: &[Cell], cols: u16, x: u16, y: u16) -> Rgba8 {

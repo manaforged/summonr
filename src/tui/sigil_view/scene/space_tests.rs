@@ -60,9 +60,14 @@ fn splash_layers_drift_apart_instead_of_jumping_together() {
 #[test]
 fn splash_meteor_is_a_fading_streak() {
     let quiet = super::space(96, 28, 200, super::QUIET);
-    assert!(quiet.iter().all(|cell| !braille(&cell.text)));
-    let flying = super::space(96, 28, 24, super::QUIET);
-    let streak = flying.iter().filter(|cell| braille(&cell.text)).count();
+    assert!(quiet.iter().all(|cell| cell.text != "✦"));
+    let mut flying = quiet.clone();
+    super::meteor(&mut flying, 96, 28, 24, false);
+    let streak = flying
+        .iter()
+        .zip(&quiet)
+        .filter(|(after, before)| braille(&after.text) && after != before)
+        .count();
     let head = flying.iter().filter(|cell| cell.text == "✦").count();
     assert_eq!(head, 1, "meteor head");
     assert!(streak >= 8, "streak cells {streak}");
@@ -128,3 +133,85 @@ fn splash_has_one_brief_sparkle_every_two_seconds_with_quiet_gaps() {
     assert_eq!(onsets, [154, 204, 254, 304, 354, 404]);
     assert_eq!(lit_frames, 96);
 }
+
+fn luma(cell: &sigil::terminal::Cell) -> u32 {
+    match cell.bg {
+        Ink::Exact(colour) => u32::from(colour.r) + u32::from(colour.g) + u32::from(colour.b),
+        _ => panic!("bare sky"),
+    }
+}
+
+fn runs(cells: &[sigil::terminal::Cell], cols: u16) -> usize {
+    cells
+        .chunks(usize::from(cols))
+        .map(|row| {
+            1 + row
+                .windows(2)
+                .filter(|pair| {
+                    pair[0].fg != pair[1].fg
+                        || pair[0].bg != pair[1].bg
+                        || pair[0].bold != pair[1].bold
+                })
+                .count()
+        })
+        .sum()
+}
+
+#[test]
+fn the_splash_sky_is_a_galaxy_band_with_a_core_and_a_dust_lane() {
+    let (cols, rows) = (120_u16, 36_u16);
+    let cells = super::space(cols, rows, 200, super::QUIET);
+    let at = |x: u16, y: u16| luma(&cells[usize::from(y) * usize::from(cols) + usize::from(x)]);
+    let darkest = cells.iter().map(luma).min().unwrap();
+    let brightest = (0..cols)
+        .flat_map(|x| (0..rows).map(move |y| (x, y)))
+        .max_by_key(|&(x, y)| at(x, y))
+        .unwrap();
+    assert!(
+        brightest.0 > cols / 5
+            && brightest.0 < cols - 4
+            && brightest.1 > 2
+            && brightest.1 < rows - 3,
+        "no core inside the sky: brightest at {brightest:?}"
+    );
+    assert!(
+        at(brightest.0, brightest.1) > darkest * 4,
+        "the core does not stand out"
+    );
+    let column: Vec<u32> = (0..rows).map(|y| at(cols / 2, y)).collect();
+    let floor = column[0].min(column[usize::from(rows) - 1]);
+    let rift = (1..column.len() - 1).any(|mid| {
+        let before = column[..mid].iter().max().unwrap();
+        let after = column[mid + 1..].iter().max().unwrap();
+        column[mid] < *before && column[mid] < *after && *before > floor && *after > floor
+    });
+    assert!(rift, "no dark lane across the band: {column:?}");
+    let dusty = |xs: std::ops::Range<u16>, ys: std::ops::Range<u16>| {
+        xs.flat_map(|x| ys.clone().map(move |y| (x, y)))
+            .filter(|&(x, y)| {
+                braille(&cells[usize::from(y) * usize::from(cols) + usize::from(x)].text)
+            })
+            .count()
+    };
+    let (cx, cy) = brightest;
+    let core = dusty(cx - 6..cx + 6, cy.saturating_sub(3)..cy + 3);
+    let corner = dusty(0..12, 0..6);
+    assert!(
+        core > corner * 3 && core >= 24,
+        "no dust cloud: core {core}, corner {corner}"
+    );
+}
+
+#[test]
+fn the_splash_sky_stays_within_a_run_budget() {
+    let (cols, rows) = (200_u16, 60_u16);
+    for sky in [super::QUIET, super::HALO, super::DUST] {
+        for tick in [0, 24, 160, 300] {
+            let cells = super::space(cols, rows, tick, sky);
+            let count = runs(&cells, cols);
+            assert!(count <= BUDGET, "sky {sky} tick {tick}: {count} runs");
+        }
+    }
+}
+
+const BUDGET: usize = 1_600;

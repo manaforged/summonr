@@ -20,6 +20,7 @@ mod logo;
 pub(in crate::tui::sigil_view) use logo::{compose, scene_row};
 pub(in crate::tui::sigil_view) use space::{QUIET, SCRIM, space, step_sky};
 
+mod galaxy;
 mod input;
 mod space;
 

@@ -1,11 +1,11 @@
 [[preset]]
-name = "zai"
+name = "zai-intl"
+key_from = ["zai", "glm-intl"]
 env_default = true
 replaces = ["glm-intl"]
 provider = "zai"
 region = "intl"
 label = "GLM coding plan, international"
-key_from = "glm-intl"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
 env_keys = ["ZAI_CODING_API_KEY", "ZAI_API_KEY", "ZHIPU_API_KEY"]
@@ -19,11 +19,11 @@ off = "disabled"
 
 [[preset]]
 name = "zai-cn"
+key_from = ["glm"]
 replaces = ["glm"]
 provider = "zai"
 region = "cn"
 label = "GLM coding plan, China"
-key_from = "glm"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3-flash"
 env_keys = [
@@ -48,7 +48,7 @@ region = "intl"
 label = "GLM API, international"
 base_url = "https://api.z.ai/api/paas/v4"
 model = "glm-5.3"
-env_keys = ["ZAI_API_KEY"]
+env_keys = ["ZAI_API_KEY", "ZHIPU_API_KEY"]
 opencode_ids = ["zai"]
 
 [preset.reasoning]
@@ -112,15 +112,16 @@ env_keys = ["DASHSCOPE_API_KEY"]
 opencode_ids = ["alibaba-cn"]
 
 [[preset]]
-name = "kimi"
+name = "kimi-cn"
+key_from = ["kimi"]
 label = "Kimi Code, China"
 provider = "kimi"
 region = "cn"
 base_url = "https://api.kimi.com/coding/v1"
 model = "k3"
-env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"]
+env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY"]
 missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
-aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
+aliases = { "kimi-k3" = "k3", "k3" = "k3" }
 cli_token = "kimi-code"
 opencode_ids = ["kimi-code-plan-cn", "moonshotai-cn"]
 plan = true
@@ -131,15 +132,16 @@ off = "unsupported"
 
 [[preset]]
 name = "kimi-intl"
+key_from = ["kimi"]
 label = "Kimi Code, international"
 provider = "kimi"
 region = "intl"
 base_url = "https://api.kimi.ai/coding/v1"
 model = "k3"
-env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"]
+env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY"]
 cli_token = "kimi-code"
 missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
-aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
+aliases = { "kimi-k3" = "k3", "k3" = "k3" }
 opencode_ids = ["kimi-code-plan-global", "moonshotai"]
 plan = true
 
@@ -216,12 +218,13 @@ off = "none"
 host_only = true
 
 [[preset]]
-name = "anthropic"
+name = "anthropic-api"
+key_from = ["anthropic"]
 provider = "anthropic"
 base_url = "https://api.anthropic.com/v1/"
 model = "claude-opus-5-5"
 env_keys = ["ANTHROPIC_API_KEY"]
-missing = "run `summonr login anthropic`, set ANTHROPIC_API_KEY, or run a Claude plan with `summonr claude`"
+missing = "run `summonr login anthropic-api`, set ANTHROPIC_API_KEY, or run a Claude plan with `summonr claude`"
 aliases = { "sonnet" = "claude-sonnet-5-5", "opus" = "claude-opus-5-5", "claude" = "claude-opus-5-5" }
 opencode_ids = ["anthropic"]
 wire = "anthropic"
@@ -267,7 +270,8 @@ opencode_ids = ["google"]
 wire = "gemini"
 
 [[preset]]
-name = "minimax"
+name = "minimax-api"
+key_from = ["minimax"]
 provider = "minimax"
 region = "intl"
 label = "MiniMax API, international"
@@ -438,7 +442,8 @@ opencode_ids = ["deepinfra"]
 off = "none"
 
 [[preset]]
-name = "siliconflow"
+name = "siliconflow-intl"
+key_from = ["siliconflow"]
 provider = "siliconflow"
 region = "intl"
 label = "SiliconFlow, international"
@@ -495,7 +500,7 @@ opencode_ids = ["perplexity"]
 name = "muse"
 base_url = "https://api.meta.ai/v1"
 model = "muse-spark-1.3"
-env_keys = ["META_API_KEY", "MODEL_API_KEY"]
+env_keys = ["MODEL_API_KEY", "META_MODEL_API_KEY", "META_API_KEY"]
 opencode_ids = ["meta"]
 
 [preset.reasoning]
@@ -503,13 +508,14 @@ levels = ["minimal", "low", "medium", "high", "xhigh"]
 off = "unsupported"
 
 [[preset]]
-name = "opencode"
+name = "opencode-zen"
+key_from = ["opencode", "zen"]
 replaces = ["zen"]
 provider = "opencode"
 base_url = "https://opencode.ai/inference/v1"
 model = "glm-5.3-flash"
 env_keys = ["OPENCODE_API_KEY"]
-missing = "run `summonr login opencode`, set OPENCODE_API_KEY, or `opencode auth login`"
+missing = "run `summonr login opencode-zen`, set OPENCODE_API_KEY, or `opencode auth login`"
 opencode = true
 opencode_ids = ["opencode"]
 [[preset]]

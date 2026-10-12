@@ -141,7 +141,10 @@ pub(crate) enum Forgot {
 }
 
 pub(crate) fn forget_key(name: &str) -> Result<Forgot> {
-    let stored = secret::forget(name)?;
+    let mut stored = false;
+    for slot in super::route::slots(name) {
+        stored |= secret::forget(&slot)?;
+    }
     let token = secret::forget(&crate::credentials::login_slot(name))?;
     let config = config::remove_key(&config::path()?, name)?;
     Ok(if token {

@@ -312,7 +312,10 @@ impl Worker {
 
     pub(super) fn remember_seat(&self) {
         if let Some(home) = &self.home {
-            let seat = crate::recent::Seat::new(self.endpoint.clone(), self.loop_.model());
+            let seat = crate::recent::Seat::new(
+                crate::endpoint::remembered(&self.endpoint),
+                self.loop_.model(),
+            );
             drop(crate::recent::record(home, &seat, self.loop_.effort()));
         }
     }

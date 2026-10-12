@@ -90,7 +90,7 @@ fn a_custom_row_matches_the_preset_with_the_longest_base_url() {
     assert_eq!(hosted("https://opencode.ai/zen/go/v1").unwrap().name, "go");
     assert_eq!(
         hosted("https://opencode.ai/inference/v1").unwrap().name,
-        "opencode"
+        "opencode-zen"
     );
     assert!(hosted("https://opencode.ai.evil.example/inference/v1").is_none());
 }

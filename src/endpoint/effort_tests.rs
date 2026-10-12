@@ -43,10 +43,10 @@ fn deepseek_gets_only_a_level_it_documents() {
 #[test]
 fn glm_5_3_flash_clamps_to_its_three_levels_and_cannot_turn_thinking_off() {
     assert_eq!(
-        body("zai", "glm-5.3-flash", Some(Effort::High))["reasoning_effort"],
+        body("zai-intl", "glm-5.3-flash", Some(Effort::High))["reasoning_effort"],
         "high"
     );
-    let off = body("zai", "glm-5.3-flash", Some(Effort::None));
+    let off = body("zai-intl", "glm-5.3-flash", Some(Effort::None));
     assert_eq!(off["reasoning_effort"], "low");
     assert_eq!(off["thinking"]["type"], "enabled", "{off}");
 }
@@ -100,9 +100,9 @@ fn grok_never_gets_none() {
 
 #[test]
 fn anthropic_levels_follow_the_model() {
-    let opus = body("anthropic", "claude-opus-4-8", Some(Effort::XHigh));
+    let opus = body("anthropic-api", "claude-opus-4-8", Some(Effort::XHigh));
     assert_eq!(opus["output_config"]["effort"], "xhigh");
-    let older = body("anthropic", "claude-opus-4-6", Some(Effort::XHigh));
+    let older = body("anthropic-api", "claude-opus-4-6", Some(Effort::XHigh));
     assert_eq!(older["output_config"]["effort"], "high");
 }
 
@@ -173,7 +173,7 @@ fn deepseek_and_glm_get_their_earlier_reasoning_back() {
         "my earlier chain of thought"
     );
     assert_eq!(
-        replayed_reasoning("zai", "glm-5.3-flash"),
+        replayed_reasoning("zai-intl", "glm-5.3-flash"),
         "my earlier chain of thought"
     );
 }
@@ -186,7 +186,7 @@ fn deepseek_and_glm_get_their_reasoning_back_behind_a_proxy() {
         "my earlier chain of thought"
     );
     assert_eq!(
-        replayed_through("zai", "glm-5.3-flash", proxy),
+        replayed_through("zai-intl", "glm-5.3-flash", proxy),
         "my earlier chain of thought"
     );
 }
@@ -201,7 +201,7 @@ fn a_vendor_that_does_not_ask_for_it_gets_no_replayed_reasoning() {
 
 #[test]
 fn a_tool_image_reaches_a_chat_completions_model_as_a_user_attachment() {
-    let mut endpoint = builtin("zai").unwrap();
+    let mut endpoint = builtin("zai-intl").unwrap();
     endpoint.model = "glm-5.3-flash".to_string();
     endpoint.api_key = Some("k".to_string());
     let client = Client::connect(&endpoint).unwrap();
@@ -244,7 +244,7 @@ fn a_tool_image_reaches_a_chat_completions_model_as_a_user_attachment() {
 
 #[test]
 fn glm_keeps_its_reasoning_and_streams_tool_arguments() {
-    let mut endpoint = builtin("zai").unwrap();
+    let mut endpoint = builtin("zai-intl").unwrap();
     endpoint.name = super::ENV_ENDPOINT.to_string();
     endpoint.base_url = Some("http://172.17.0.1:8095/label/v1".to_string());
     endpoint.model = "glm-5.3-flash".to_string();

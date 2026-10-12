@@ -35,7 +35,7 @@ pub(super) struct Preset {
     pub(super) opencode_ids: &'static [&'static str],
     pub(super) label: Option<String>,
     pub(super) start: Option<String>,
-    pub(super) key_from: Option<String>,
+    pub(super) key_from: Vec<String>,
 }
 
 pub(super) struct CliToken {
@@ -183,16 +183,6 @@ pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
         .collect();
     if let Some(old) = retired.iter().find(|old| names.contains(*old)) {
         return Err(format!("`{old}` is retired but is still a preset"));
-    }
-    if let Some(row) = rows.iter().find(|row| {
-        row.key_from
-            .as_deref()
-            .is_some_and(|peer| !names.contains(peer) && !retired.contains(peer))
-    }) {
-        return Err(format!(
-            "`{}` reads its key from an unknown preset",
-            row.name
-        ));
     }
     Ok(rows)
 }

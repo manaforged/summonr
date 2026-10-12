@@ -39,6 +39,18 @@ fn serve(home: &Path) -> (Child, u16) {
     (child, port)
 }
 
+fn bodies(workspace: &Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(workspace.join(".summonr/jobs"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| path.extension().is_some_and(|ext| ext == "body"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn raw(port: u16, request: &str) -> String {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     stream.write_all(request.as_bytes()).unwrap();
@@ -80,12 +92,16 @@ fn a_webhook_fires_its_cron_job_once_with_the_token() {
     assert!(post(port, "POST", "/run/hook", None, "{}").starts_with("HTTP/1.1 401"));
     assert!(post(port, "POST", "/run/hook", Some("wrong"), "{}").starts_with("HTTP/1.1 401"));
     assert!(post(port, "POST", "/run/nope", Some(&token), "{}").starts_with("HTTP/1.1 401"));
-    assert!(post(port, "GET", "/run/hook", Some(&token), "").starts_with("HTTP/1.1 404"));
+    let get = post(port, "GET", "/run/hook", Some(&token), "");
+    assert!(get.starts_with("HTTP/1.1 405"), "{get}");
+    assert!(get.contains("Allow: POST"), "{get}");
     let fired = post(port, "POST", "/run/hook", Some(&token), "{\"issue\":42}");
     assert!(fired.starts_with("HTTP/1.1 202"), "{fired}");
     assert!(fired.contains("\"job\":\"hook\""), "{fired}");
     let again = post(port, "POST", "/run/hook", Some(&token), "{}");
     assert!(again.starts_with("HTTP/1.1 429"), "{again}");
+    assert!(again.contains("Retry-After:"), "{again}");
+    assert!(again.contains("{\"error\""), "{again}");
     let chunked = raw(
         port,
         &format!(
@@ -96,11 +112,10 @@ fn a_webhook_fires_its_cron_job_once_with_the_token() {
     drop(server.kill());
     drop(server.wait());
 
-    let payloads = home.path().join(".summonr/cron/payloads");
-    let saved: Vec<_> = std::fs::read_dir(&payloads).unwrap().flatten().collect();
+    let saved = bodies(home.path());
     assert_eq!(saved.len(), 1);
     assert_eq!(
-        std::fs::read_to_string(saved[0].path()).unwrap(),
+        std::fs::read_to_string(&saved[0]).unwrap(),
         "{\"issue\":42}"
     );
 
@@ -145,8 +160,64 @@ fn a_query_string_still_reaches_the_job_and_removal_deletes_payloads() {
     drop(server.kill());
     drop(server.wait());
     assert!(fired.starts_with("HTTP/1.1 202"), "{fired}");
-    let payloads = home.path().join(".summonr/cron/payloads");
-    assert_eq!(std::fs::read_dir(&payloads).unwrap().count(), 1);
+    assert_eq!(bodies(home.path()).len(), 1);
     cron(home.path(), &["remove", "q"]);
-    assert_eq!(std::fs::read_dir(&payloads).unwrap().count(), 0);
+    assert!(bodies(home.path()).is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn the_webhook_stops_on_sigterm_and_a_slow_client_blocks_nobody() {
+    let home = tempfile::tempdir().unwrap();
+    cron(home.path(), &["add", "s", "--manual", "-p", "hi"]);
+    let token = cron(home.path(), &["token", "s"])
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    let (mut server, port) = serve(home.path());
+    let mut stalled = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stalled.write_all(b"POST /run/s HTTP/1.1\r\n").unwrap();
+    let started = Instant::now();
+    let fired = post(port, "POST", "/run/s", Some(&token), "{}");
+    assert!(fired.starts_with("HTTP/1.1 202"), "{fired}");
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
+    let status = Command::new("kill")
+        .args(["-TERM", &server.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let started = Instant::now();
+    let code = loop {
+        if let Some(status) = server.try_wait().unwrap() {
+            break status.code();
+        }
+        assert!(started.elapsed() < Duration::from_secs(5), "still running");
+        std::thread::park_timeout(Duration::from_millis(50));
+    };
+    assert_eq!(code, Some(143));
+    drop(stalled);
+}
+
+#[test]
+fn every_gateway_command_answers_help() {
+    let home = tempfile::tempdir().unwrap();
+    for words in [
+        &["pair", "--help"][..],
+        &["setup", "telegram", "--help"],
+        &["webhook", "-h"],
+    ] {
+        let output = summonr(home.path())
+            .arg("gateway")
+            .args(words)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{words:?}");
+        assert!(text.starts_with("usage:"), "{words:?}: {text}");
+    }
 }

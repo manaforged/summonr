@@ -16,7 +16,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr [ENDPOINT] --steps PLAN.md` | Run each numbered step under `## Steps`, and gate each step on its check |
 | `summonr -c`, `summonr --session ID`, `summonr resume [ID\|NAME]` | Resume the last session here, or a session by short id, id prefix, or name |
 | `summonr sessions` | List sessions, tab-separated: id, name, directory, preview |
-| `summonr sessions --grep TEXT` | Search past sessions, newest first: id, directory, matching line; at most 50 lines, `no matches` when none |
+| `summonr sessions --grep TEXT` | Search past sessions, newest first: id, start time, directory, matching line; at most 50 lines; exit 1 and `no matches` on stderr when none |
 | `summonr export [ID\|NAME]` | Print a session as Markdown |
 | `summonr profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS and the peak resident set on Linux; the footprint leaves out shared pages, so it reads lower than RSS |
 | `summonr diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
@@ -70,7 +70,7 @@ echo $?
 | Review what a turn changed | `summonr diff --turn last --json` |
 | Drive a session from an editor | `summonr acp` |
 | Classify text | `summonr classify --set NAME [STATE]`, `--questions JSON\|@FILE`, `--noul QUESTION`, `--patch`, `--review --session ID`, `--eval FILE`, `--gate NUMBER` |
-| Start a job from a web request | `summonr cron token NAME`, `summonr gateway webhook`, then `POST /run/NAME` with `Authorization: Bearer TOKEN` (202 fired, 401 bad token or job, 429 too soon, 413 too large) |
+| Start a job from a web request | `summonr cron add NAME --manual -p PROMPT`, `TOKEN=$(summonr cron token NAME)`, `summonr gateway webhook`, then `POST /run/NAME` with `Authorization: Bearer TOKEN` (202 fired with `log`, 401 bad token or job, 405 method, 408 slow, 409 paused, 411 chunked, 413 too large, 429 too soon with `Retry-After`; errors are `{"error": ...}`) |
 | Run on a schedule | `summonr cron add NAME --cron "0 3 * * *" --goal TEXT`, then `summonr cron install` once |
 | Save a transcript | `summonr export [ID\|NAME]`; add `--digest` for the condensed form |
 
@@ -137,7 +137,7 @@ When a goal or steps run stops short, the `aborted` event is not the last line: 
 
 ### `summonr cron list --json`
 
-One JSON object per job and line: `name`, `schedule`, `next` (RFC 3339 time or null), `last` (the last run's outcome or null), `paused`. An outcome is `running`, `done` (exit 0), `check_failed` (exit 2), `unfinished` (exit 3), `error` (any other exit), `overlap` (the previous run was still going), or `expired` (missed by more than the catch-up window).
+One JSON object per job and line: `name`, `schedule`, `next` (RFC 3339 time, or null when paused or manual), `last` (the last run's outcome or null), `paused`, `dir`, `endpoint`, and `task` (`{"prompt": ...}` or `{"goal": ...}`). An outcome is `running`, `done` (exit 0), `check_failed` (exit 2), `unfinished` (exit 3), `error` (any other exit), `overlap` (the previous run was still going), or `expired` (missed by more than the catch-up window).
 
 ### `summonr diff --json`
 

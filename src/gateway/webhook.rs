@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::cron::{runner, store};
@@ -12,6 +13,8 @@ const CONTENT_LENGTH: &str = "content-length";
 const TRANSFER_ENCODING: &str = "transfer-encoding";
 const MAX_HEADERS: usize = 32;
 const CHUNK: usize = 4096;
+const IN_FLIGHT: usize = 8;
+const POST: &str = "POST";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Reply {
@@ -26,7 +29,9 @@ enum Status {
     BadRequest,
     Unauthorized,
     NotFound,
+    WrongMethod,
     Timeout,
+    Paused,
     LengthRequired,
     TooLarge,
     TooMany,
@@ -40,11 +45,45 @@ impl Status {
             Self::BadRequest => "400 Bad Request",
             Self::Unauthorized => "401 Unauthorized",
             Self::NotFound => "404 Not Found",
+            Self::WrongMethod => "405 Method Not Allowed",
             Self::Timeout => "408 Request Timeout",
+            Self::Paused => "409 Conflict",
             Self::LengthRequired => "411 Length Required",
             Self::TooLarge => "413 Payload Too Large",
             Self::TooMany => "429 Too Many Requests",
             Self::Failed => "500 Internal Server Error",
+        }
+    }
+
+    fn reason(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::BadRequest => "malformed request",
+            Self::Unauthorized => "missing or wrong bearer token",
+            Self::NotFound => "no such route; POST /run/NAME",
+            Self::WrongMethod => "use POST",
+            Self::Timeout => "request not received in time",
+            Self::Paused => "job is paused",
+            Self::LengthRequired => "send Content-Length, not chunked encoding",
+            Self::TooLarge => "request too large",
+            Self::TooMany => "job fired too recently",
+            Self::Failed => "could not start the job",
+        }
+    }
+}
+
+struct Answer {
+    status: Status,
+    body: String,
+    retry: Option<u64>,
+}
+
+impl From<Status> for Answer {
+    fn from(status: Status) -> Self {
+        Self {
+            status,
+            body: serde_json::json!({ "error": status.reason() }).to_string(),
+            retry: None,
         }
     }
 }
@@ -92,15 +131,26 @@ impl Conn<'_> {
 }
 
 pub(crate) fn serve(port: u16) -> Result<i32> {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port))?;
+    let listener = Arc::new(TcpListener::bind((Ipv4Addr::LOCALHOST, port))?);
     let bound = listener.local_addr()?.port();
     println!("listening on http://127.0.0.1:{bound}");
-    for stream in listener.incoming() {
-        let Ok(mut stream) = stream else { continue };
-        let (status, body) = handle(&mut stream);
-        drop(respond(&mut stream, status, &body));
+    for _ in 0..IN_FLIGHT {
+        let listener = Arc::clone(&listener);
+        std::thread::Builder::new()
+            .name("webhook".to_string())
+            .spawn(move || work(&listener))?;
     }
-    Ok(0)
+    super::block(crate::interrupted())
+}
+
+fn work(listener: &TcpListener) {
+    loop {
+        let Ok((mut stream, _)) = listener.accept() else {
+            continue;
+        };
+        let answer = handle(&mut stream);
+        drop(respond(&mut stream, &answer));
+    }
 }
 
 pub(crate) fn decide(
@@ -112,7 +162,7 @@ pub(crate) fn decide(
     let Some(name) = path.strip_prefix(ROUTE) else {
         return Reply::NotFound;
     };
-    if method != "POST" || store::check_name(name).is_err() {
+    if method != POST || store::check_name(name).is_err() {
         return Reply::NotFound;
     }
     let presented = auth
@@ -127,17 +177,23 @@ pub(crate) fn decide(
     }
 }
 
-fn handle(stream: &mut TcpStream) -> (Status, String) {
+fn handle(stream: &mut TcpStream) -> Answer {
     let mut conn = Conn {
         stream,
         deadline: Instant::now() + Duration::from_secs(crate::limits::limits().gateway_read_secs),
     };
-    accept(&mut conn).unwrap_or_else(|status| (status, String::new()))
+    accept(&mut conn).unwrap_or_else(Answer::from)
 }
 
-fn accept(conn: &mut Conn<'_>) -> std::result::Result<(Status, String), Status> {
+fn accept(conn: &mut Conn<'_>) -> std::result::Result<Answer, Status> {
     let head = head(conn)?;
     let path = head.path.split('?').next().unwrap_or_default();
+    let routed = path
+        .strip_prefix(ROUTE)
+        .is_some_and(|name| store::check_name(name).is_ok());
+    if routed && head.method != POST {
+        return Err(Status::WrongMethod);
+    }
     let name = match decide(&head.method, path, head.auth.as_deref(), store::token) {
         Reply::Fire(name) => name,
         Reply::Unauthorized => return Err(Status::Unauthorized),
@@ -150,16 +206,33 @@ fn accept(conn: &mut Conn<'_>) -> std::result::Result<(Status, String), Status> 
     Ok(fire(&name, &body))
 }
 
-fn fire(name: &str, body: &[u8]) -> (Status, String) {
+fn fire(name: &str, body: &[u8]) -> Answer {
+    let job = match store::get(name) {
+        Ok(job) => job,
+        Err(Error::Config(_)) => return Status::NotFound.into(),
+        Err(_) => return Status::Failed.into(),
+    };
+    if job.paused {
+        return Status::Paused.into();
+    }
     let payload = (!body.is_empty()).then_some(body);
     match runner::fire(name, payload) {
-        Ok(slot) => (
-            Status::Accepted,
-            serde_json::json!({ "job": name, "slot": slot }).to_string(),
-        ),
-        Err(Error::Denied(_)) => (Status::TooMany, String::new()),
-        Err(Error::Config(_)) => (Status::NotFound, String::new()),
-        Err(_) => (Status::Failed, String::new()),
+        Ok(slot) => Answer {
+            status: Status::Accepted,
+            body: serde_json::json!({
+                "job": name,
+                "slot": slot,
+                "log": format!("summonr cron log {name}"),
+            })
+            .to_string(),
+            retry: None,
+        },
+        Err(Error::Denied(_)) => Answer {
+            retry: Some(crate::cron::runner::cooldown(&job, crate::cron::now()).unwrap_or(1)),
+            ..Status::TooMany.into()
+        },
+        Err(Error::Config(_)) => Status::NotFound.into(),
+        Err(_) => Status::Failed.into(),
     }
 }
 
@@ -223,12 +296,21 @@ fn body(conn: &mut Conn<'_>, head: Head) -> std::result::Result<Vec<u8>, Status>
     Ok(body)
 }
 
-fn respond(stream: &mut TcpStream, status: Status, body: &str) -> std::io::Result<()> {
+fn respond(stream: &mut TcpStream, answer: &Answer) -> std::io::Result<()> {
+    let allow = if answer.status == Status::WrongMethod {
+        "Allow: POST\r\n"
+    } else {
+        ""
+    };
+    let retry = answer
+        .retry
+        .map_or_else(String::new, |secs| format!("Retry-After: {secs}\r\n"));
     write!(
         stream,
-        "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        status.line(),
-        body.len()
+        "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{allow}{retry}Connection: close\r\n\r\n{}",
+        answer.status.line(),
+        answer.body.len(),
+        answer.body
     )?;
     stream.flush()
 }

@@ -35,20 +35,6 @@ fn skip_csi() -> Result<()> {
     }
 }
 
-fn mask_one() -> Result<()> {
-    use std::io::Write as _;
-    eprint!("*");
-    std::io::stderr().flush()?;
-    Ok(())
-}
-
-fn unmask_one() -> Result<()> {
-    use std::io::Write as _;
-    eprint!("\x08 \x08");
-    std::io::stderr().flush()?;
-    Ok(())
-}
-
 fn read_line(prompt: &str) -> Option<String> {
     use std::io::Write as _;
     eprint!("{prompt}: ");
@@ -86,14 +72,11 @@ fn masked(key: &mut String) -> Result<Result<()>> {
             b'\r' | b'\n' => return Ok(Ok(())),
             0x03 | 0x04 => return Ok(Err(summonr::Error::Config("cancelled".to_string()))),
             0x7f | 0x08 => {
-                if key.pop().is_some() {
-                    unmask_one()?;
-                }
+                key.pop();
             }
             0x1b => skip_csi()?,
             other if (32..127).contains(&other) => {
                 key.push(other as char);
-                mask_one()?;
             }
             _ => {}
         }

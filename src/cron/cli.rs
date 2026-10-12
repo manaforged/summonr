@@ -1,36 +1,18 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use jiff::Zoned;
 
+use super::args::{self, Show, Spec, USAGE, usage};
+use super::report;
 use super::runner;
 use super::schedule;
-use super::store::{self, Job, Notify, Task};
+use super::store::{self, Job, Notify};
 use super::view;
 use crate::error::{Error, Result};
 
-const USAGE: &str = "usage:\n  summonr cron add NAME (--cron EXPR | --every 30m | --at TIME) (-p PROMPT | --goal GOAL)\n      [--dir D] [--endpoint E] [--model M] [--tz ZONE] [--max-secs N] [--max-tokens N]\n      [--worktree] [--chat] [--notify never|failure|always] [--mail SESSION]\n  summonr cron edit NAME [same flags]\n  summonr cron list [--json]\n  summonr cron show|pause|resume|run|remove NAME\n  summonr cron log NAME [--last N]\n  summonr cron token NAME\n  summonr cron install|uninstall|status\n\nThe OS starts `summonr cron tick` once a minute after `summonr cron install`.";
-
-#[derive(Default)]
-struct Spec {
-    cron: Option<String>,
-    every: Option<String>,
-    at: Option<String>,
-    task: Option<Task>,
-    dir: Option<PathBuf>,
-    endpoint: Option<String>,
-    model: Option<String>,
-    tz: Option<String>,
-    max_secs: Option<u64>,
-    max_tokens: Option<u64>,
-    worktree: bool,
-    chat: bool,
-    notify: Option<Notify>,
-    mail: Option<String>,
-}
-
 pub fn run(args: &[String], cwd: &Path) -> Result<i32> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
-    if matches!(words[..], [] | ["help" | "--help" | "-h"]) {
+    if args::wants_help(&words) {
         return say(USAGE.to_string());
     }
     jobs(&words, cwd)
@@ -43,26 +25,19 @@ pub fn run(args: &[String], cwd: &Path) -> Result<i32> {
         })
 }
 
-fn usage(message: &str) -> Error {
-    Error::Config(format!("{message}{}", view::HELP_HINT))
-}
-
 fn jobs(words: &[&str], cwd: &Path) -> Option<Result<i32>> {
     Some(match words {
-        ["add", name, flags @ ..] => spec(flags, cwd).and_then(|spec| add(name, &spec, cwd)),
-        ["edit", name, flags @ ..] => spec(flags, cwd).and_then(|spec| edit(name, &spec)),
+        ["add", name, flags @ ..] => args::spec(flags, cwd).and_then(|spec| add(name, &spec, cwd)),
+        ["edit", name, flags @ ..] => args::spec(flags, cwd).and_then(|spec| edit(name, &spec)),
         ["list"] => list(false),
         ["list", "--json"] => list(true),
         ["show", name] => show(name),
         ["pause", name] => set_paused(name, true),
         ["resume", name] => set_paused(name, false),
-        ["run", name] => run_now(name),
+        ["run", name, flags @ ..] => args::show(flags, false).and_then(|show| run_now(name, show)),
         ["remove", name] => remove(name),
-        ["log", name] => log(name, None),
-        ["log", name, "--last", count] => number(count).and_then(|count| log(name, Some(count))),
-        ["token", name] => super::guard()
-            .and_then(|()| store::rotate_token(name))
-            .and_then(|token| say(view::token(name, &token))),
+        ["log", name, flags @ ..] => args::show(flags, true).and_then(|show| log(name, show)),
+        ["token", name] => token(name),
         [..] => return None,
     })
 }
@@ -78,11 +53,24 @@ fn system(words: &[&str]) -> Option<Result<i32>> {
     })
 }
 
-fn run_now(name: &str) -> Result<i32> {
+fn run_now(name: &str, show: Show) -> Result<i32> {
     super::guard()?;
     let code = runner::exec(name, super::now(), None)?;
-    log(name, Some(1))?;
+    log(
+        name,
+        Show {
+            last: Some(1),
+            ..show
+        },
+    )?;
     Ok(code)
+}
+
+fn token(name: &str) -> Result<i32> {
+    super::guard()?;
+    let token = store::rotate_token(name)?;
+    eprintln!("{}", view::token_help(name, &token));
+    say(token)
 }
 
 fn install() -> Result<i32> {
@@ -117,98 +105,20 @@ fn say(text: String) -> Result<i32> {
     Ok(0)
 }
 
-fn number<T: std::str::FromStr<Err = std::num::ParseIntError>>(text: &str) -> Result<T> {
-    text.parse()
-        .map_err(|error| Error::Config(format!("expected a number, got `{text}`: {error}")))
-}
-
-type Switch = fn(&mut Spec);
-type Valued = fn(&mut Spec, String, &Path) -> Result<()>;
-
-const SWITCHES: [(&str, Switch); 2] = [
-    ("--worktree", |spec| spec.worktree = true),
-    ("--chat", |spec| spec.chat = true),
-];
-
-const VALUES: [(&str, Valued); 14] = [
-    ("--cron", |spec, value, _| set(&mut spec.cron, value)),
-    ("--every", |spec, value, _| set(&mut spec.every, value)),
-    ("--at", |spec, value, _| set(&mut spec.at, value)),
-    ("-p", |spec, value, _| {
-        set(&mut spec.task, Task::Prompt(value))
-    }),
-    ("--prompt", |spec, value, _| {
-        set(&mut spec.task, Task::Prompt(value))
-    }),
-    ("--goal", |spec, value, _| {
-        set(&mut spec.task, Task::Goal(value))
-    }),
-    ("--dir", |spec, value, cwd| {
-        set(&mut spec.dir, cwd.join(value))
-    }),
-    ("--endpoint", |spec, value, _| {
-        set(&mut spec.endpoint, value)
-    }),
-    ("--model", |spec, value, _| set(&mut spec.model, value)),
-    ("--tz", |spec, value, _| set(&mut spec.tz, value)),
-    ("--max-secs", |spec, value, _| {
-        set(&mut spec.max_secs, number(&value)?)
-    }),
-    ("--max-tokens", |spec, value, _| {
-        set(&mut spec.max_tokens, number(&value)?)
-    }),
-    ("--notify", |spec, value, _| {
-        set(&mut spec.notify, notify(&value)?)
-    }),
-    ("--mail", |spec, value, _| set(&mut spec.mail, value)),
-];
-
-fn set<T>(slot: &mut Option<T>, value: T) -> Result<()> {
-    *slot = Some(value);
-    Ok(())
-}
-
-fn spec(words: &[&str], cwd: &Path) -> Result<Spec> {
-    let mut spec = Spec::default();
-    let mut words = words.iter().copied();
-    while let Some(flag) = words.next() {
-        // complexity: bounded by the two cron switches
-        if let Some((_, switch)) = SWITCHES.iter().find(|(name, _)| *name == flag) {
-            switch(&mut spec);
-            continue;
-        }
-        // complexity: bounded by the fourteen cron options
-        let (_, apply) = VALUES
-            .iter()
-            .find(|(name, _)| *name == flag)
-            .ok_or_else(|| usage(&format!("unknown option `{flag}`")))?;
-        let value = words
-            .next()
-            .ok_or_else(|| usage(&format!("{flag} needs a value")))?;
-        apply(&mut spec, value.to_string(), cwd)?;
-    }
-    Ok(spec)
-}
-
-fn notify(text: &str) -> Result<Notify> {
-    Notify::parse(text).ok_or_else(|| {
-        Error::Config(format!(
-            "bad --notify `{text}`: use never, failure or always"
-        ))
-    })
-}
-
 fn schedule_text(spec: &Spec, tz: Option<&str>) -> Result<Option<String>> {
     let given = [&spec.cron, &spec.every, &spec.at]
         .iter()
         .filter(|value| value.is_some())
-        .count();
+        .count()
+        + usize::from(spec.manual);
     if given > 1 {
         return Err(Error::Config(
-            "use one of --cron, --every and --at".to_string(),
+            "use one of --cron, --every, --at and --manual".to_string(),
         ));
     }
-    let text = if let Some(expr) = &spec.cron {
+    let text = if spec.manual {
+        Some(schedule::MANUAL.to_string())
+    } else if let Some(expr) = &spec.cron {
         Some(expr.clone())
     } else if let Some(every) = &spec.every {
         Some(schedule::every_text(every)?)
@@ -254,7 +164,7 @@ fn add(name: &str, spec: &Spec, cwd: &Path) -> Result<i32> {
     let name = name.to_ascii_lowercase();
     store::check_name(&name)?;
     let schedule = schedule_text(spec, spec.tz.as_deref())?
-        .ok_or_else(|| usage("add needs --cron, --every or --at"))?;
+        .ok_or_else(|| usage("add needs --cron, --every, --at or --manual"))?;
     let task = spec
         .task
         .clone()
@@ -287,6 +197,7 @@ fn add(name: &str, spec: &Spec, cwd: &Path) -> Result<i32> {
         Ok(())
     })?;
     println!("{}", view::added("added", &job));
+    warn(&job, spec, true);
     unscheduled()?;
     Ok(0)
 }
@@ -297,21 +208,21 @@ fn edit(name: &str, spec: &Spec) -> Result<i32> {
         apply(job, spec)?;
         Ok(job.clone())
     })?;
+    warn(&job, spec, false);
     say(view::added("edited", &job))
 }
 
 fn remove(name: &str) -> Result<i32> {
     super::guard()?;
-    store::update(|jobs| {
-        let before = jobs.len();
-        jobs.retain(|job| job.name != name);
-        if jobs.len() == before {
-            return Err(Error::Config(format!("no cron job named `{name}`")));
-        }
-        Ok(())
+    let dir = store::update(|jobs| {
+        let index = jobs
+            .iter()
+            .position(|job| job.name == name)
+            .ok_or_else(|| Error::Config(format!("no cron job named `{name}`")))?;
+        Ok(jobs.remove(index).dir)
     })?;
     store::forget_token(name)?;
-    store::remove_payloads(name)?;
+    store::remove_payloads(&dir, name)?;
     say(format!("removed {name}"))
 }
 
@@ -351,7 +262,6 @@ fn list(json: bool) -> Result<i32> {
         let header = std::io::IsTerminal::is_terminal(&std::io::stdout());
         println!("{}", view::table(&jobs, header));
     }
-    unscheduled()?;
     Ok(0)
 }
 
@@ -359,9 +269,11 @@ fn show(name: &str) -> Result<i32> {
     say(view::show(&store::get(name)?))
 }
 
-fn log(name: &str, last: Option<usize>) -> Result<i32> {
+fn log(name: &str, show: Show) -> Result<i32> {
     let job = store::get(name)?;
-    let skip = last.map_or(0, |last| job.runs.len().saturating_sub(last));
+    let skip = show
+        .last
+        .map_or(0, |last| job.runs.len().saturating_sub(last));
     let tz = schedule::zone(job.tz.as_deref())?;
     if job.runs.is_empty() {
         return say(view::NO_RUNS.to_string());
@@ -369,13 +281,68 @@ fn log(name: &str, last: Option<usize>) -> Result<i32> {
     for run in job.runs.iter().skip(skip) {
         println!("{}", view::run_line(run, &tz));
     }
-    if let Some(id) = job.runs.iter().rev().find_map(|run| run.job.as_deref()) {
-        match crate::jobs::load(&job.dir, id) {
-            Ok(record) => println!("\n{}", crate::jobs::status(&job.dir, &record)?.text),
-            Err(error) => println!("\n{error}"),
-        }
+    if let Some(run) = job.runs.iter().rev().find(|run| run.job.is_some()) {
+        let text = if show.raw {
+            report::raw(&job, run)?
+        } else {
+            report::render(&job, run, &tz)
+        };
+        println!("\n{text}");
     }
     Ok(0)
+}
+
+fn warn(job: &Job, spec: &Spec, adding: bool) {
+    let notes = [
+        spec.mail.as_deref().and_then(mail_missing),
+        spec.chat.then(chat_missing).flatten(),
+        adding
+            .then(|| key_missing(job.endpoint.as_deref()))
+            .flatten(),
+    ];
+    for note in notes.into_iter().flatten() {
+        eprintln!("warning: {note}");
+    }
+}
+
+fn mail_missing(session: &str) -> Option<String> {
+    let dir = crate::mail::dir().ok()?;
+    let found = crate::mail::live(&dir)
+        .iter()
+        .any(|agent| agent.answers_to(session));
+    (!found).then(|| format!("no live session has the name or id `{session}` right now"))
+}
+
+fn chat_missing() -> Option<String> {
+    if crate::gateway::token().ok().flatten().is_none() {
+        return Some(
+            "no Telegram token is stored, so --chat sends nothing; run `summonr gateway setup telegram`"
+                .to_string(),
+        );
+    }
+    let paired = crate::gateway::store::load()
+        .map(|state| state.paired_chats())
+        .unwrap_or_default();
+    paired.is_empty().then(|| {
+        "no Telegram user is paired, so --chat sends nothing; message your bot, then run `summonr gateway pair CODE`"
+            .to_string()
+    })
+}
+
+fn key_missing(endpoint: Option<&str>) -> Option<String> {
+    let ready = crate::endpoint::set_up();
+    let name = endpoint
+        .map(str::to_string)
+        .or_else(|| crate::endpoint::default_seat().map(|seat| seat.endpoint));
+    match name {
+        Some(name) if !ready.contains(&name) => Some(format!(
+            "{name} has no usable key; run `summonr login {name}`"
+        )),
+        None if ready.is_empty() => {
+            Some("no endpoint has a key; run `summonr login NAME`".to_string())
+        }
+        Some(_) | None => None,
+    }
 }
 
 fn status() -> Result<i32> {

@@ -4,7 +4,8 @@ pub(crate) const FILE: &str = "MEMORY.md";
 const DIR: &str = "memory";
 const GIT_DIR: &str = ".git";
 const KEY_NAME_CHARS: usize = 40;
-const REPORT_END: &str = "Ask me to remember something, or edit a file above. `memory = false` under [modules] turns memory off.";
+const REPORT_END: &str = "Ask me to remember something, or edit a file above; changes to these files apply to new sessions. `memory = false` under [modules] turns memory off.";
+pub const OFF: &str = "memory is off: `memory = false` under [modules] in ~/.summonr/config.toml. Turn it on in /settings or with `memory = true`; it applies to new sessions. Sessions started with --no-trust also load no memory.\n";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
@@ -33,7 +34,7 @@ pub fn files(home: &Path, workspace: &Path) -> Vec<MemoryFile> {
     let root = home.join(DIR);
     [
         (Scope::User, root.join(FILE)),
-        (Scope::Project, root.join(key(workspace)).join(FILE)),
+        (Scope::Project, root.join(key(&root, workspace)).join(FILE)),
     ]
     .into_iter()
     .map(|(scope, path)| MemoryFile {
@@ -49,43 +50,59 @@ pub(crate) fn sections(files: &[MemoryFile], workspace: &Path) -> Vec<String> {
     files
         .iter()
         .filter_map(|file| {
-            let (raw, over) = read_capped(&file.path, cap)?;
+            let raw = read_tail(&file.path, cap)?;
             let text = clean(&raw, workspace);
             let text = text.trim();
             if text.is_empty() {
                 return None;
             }
-            let note = format!("\n[memory truncated at {cap} bytes; prune this file]");
-            let body = if over || text.len() > cap {
-                let mut end = cap.saturating_sub(note.len()).min(text.len());
-                while !text.is_char_boundary(end) {
-                    end -= 1;
-                }
-                format!("{}{note}", &text[..end])
-            } else {
-                text.to_string()
-            };
+            let total = usize::try_from(file.bytes)
+                .unwrap_or(usize::MAX)
+                .max(text.len());
             Some(format!(
-                "<memory scope=\"{}\" path=\"{}\">\n{body}\n</memory>",
+                "<memory scope=\"{}\" path=\"{}\">\n{}\n</memory>",
                 file.scope.label(),
-                file.path.display()
+                file.path.display(),
+                excerpt(text, total, cap, &file.path)
             ))
         })
         .collect()
 }
 
-fn read_capped(path: &Path, cap: usize) -> Option<(String, bool)> {
-    use std::io::Read;
+fn excerpt(text: &str, total: usize, cap: usize, path: &Path) -> String {
+    if total <= cap && text.len() <= cap {
+        return text.to_string();
+    }
+    let room = omitted(total, path).len();
+    let mut start = text.len().saturating_sub(cap.saturating_sub(room));
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    if start > 0 && !text[..start].ends_with('\n') {
+        start = text[start..]
+            .find('\n')
+            .map_or(start, |line| start + line + 1);
+    }
+    let kept = &text[start..];
+    format!("{}{kept}", omitted(total.saturating_sub(kept.len()), path))
+}
+
+fn omitted(older: usize, path: &Path) -> String {
+    format!(
+        "[{older} older bytes of this file are not shown. Read {} in full before you edit it; never rewrite it from this excerpt.]\n",
+        path.display()
+    )
+}
+
+fn read_tail(path: &Path, cap: usize) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
     let limit = u64::try_from(cap.saturating_mul(4)).unwrap_or(u64::MAX);
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(limit))).ok()?;
     let mut bytes = Vec::new();
-    std::fs::File::open(path)
-        .ok()?
-        .take(limit.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .ok()?;
-    let over = u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limit;
-    bytes.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
-    Some((String::from_utf8_lossy(&bytes).into_owned(), over))
+    file.take(limit).read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 pub fn report(files: &[MemoryFile]) -> String {
@@ -129,15 +146,49 @@ pub(crate) fn guidance(files: &[MemoryFile]) -> String {
             .unwrap_or_default()
     };
     format!(
-        "Memory: project memory is {project} and user memory is {user}. Save a durable fact to project memory with edit or write (write creates a missing file): a user correction, a stable preference, a non-obvious project fact, or a pointer to an outside resource. Put cross-project preferences in user memory. Never save task state or what git already records. Start each entry with its date (YYYY-MM-DD). Prune the file to keep it under {cap} bytes. After saving, tell the user in one line what you saved and where. Check a remembered fact against the code before you act on it; delete it when wrong.",
+        "Memory: project memory is {project} and user memory is {user}. Save a durable fact to project memory with edit or write (write creates a missing file): a user correction, a stable preference, a non-obvious project fact, or a pointer to an outside resource. Put cross-project preferences in user memory. Never save task state or what git already records. Start each entry with its date (YYYY-MM-DD). Read the file before you change it; use edit for one entry, never rewrite the whole file from memory. Prune the file to keep it under {cap} bytes. After saving, tell the user in one line what you saved and where. Check a remembered fact against the code before you act on it; delete it when wrong.",
         project = path(Scope::Project),
         user = path(Scope::User),
         cap = crate::limits::limits().memory_bytes,
     )
 }
 
-fn key(workspace: &Path) -> String {
-    let root = crate::diff::git_env(
+fn key(memory: &Path, workspace: &Path) -> String {
+    let root = root(workspace);
+    let identity = crate::diff::git_env(workspace, &[], &["rev-list", "--max-parents=0", "HEAD"])
+        .ok()
+        .and_then(|ids| ids.lines().next().map(str::trim).map(str::to_string))
+        .filter(|id| !id.is_empty())
+        .unwrap_or_else(|| root.to_string_lossy().into_owned());
+    let name: String = root
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(KEY_NAME_CHARS)
+        .collect();
+    let hash = crate::text::fnv64(identity.as_bytes());
+    existing(memory, &hash).unwrap_or_else(|| format!("{name}-{hash}"))
+}
+
+fn existing(memory: &Path, hash: &str) -> Option<String> {
+    let suffix = format!("-{hash}");
+    std::fs::read_dir(memory)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .find(|name| name.ends_with(&suffix))
+}
+
+fn root(workspace: &Path) -> PathBuf {
+    crate::diff::git_env(
         workspace,
         &[],
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -156,23 +207,7 @@ fn key(workspace: &Path) -> String {
         workspace
             .canonicalize()
             .unwrap_or_else(|_| workspace.to_path_buf())
-    });
-    let path = root.to_string_lossy();
-    let name: String = root
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .take(KEY_NAME_CHARS)
-        .collect();
-    format!("{name}-{}", crate::text::fnv64(path.as_bytes()))
+    })
 }
 
 fn clean(text: &str, workspace: &Path) -> String {

@@ -221,3 +221,45 @@ fn sessions_grep_finds_text_from_a_past_session() {
         "{alone}"
     );
 }
+
+#[test]
+fn a_mistyped_command_is_not_sent_to_the_model() {
+    let home = tempfile::tempdir().unwrap();
+    let work = repository();
+    let (port, bodies) = provider();
+    configure(home.path(), port, "");
+    let text = summonr(home.path(), work.path(), port, &["sesions"]);
+    assert!(text.contains("did you mean `sessions`"), "{text}");
+    assert!(bodies.lock().unwrap().is_empty(), "{text}");
+}
+
+#[test]
+fn sessions_grep_dates_matches_and_fails_on_none() {
+    let home = tempfile::tempdir().unwrap();
+    let work = repository();
+    let (port, _bodies) = provider();
+    configure(home.path(), port, "");
+    summonr(
+        home.path(),
+        work.path(),
+        port,
+        &["-e", "local", "-p", "remember the walrus"],
+    );
+    let found = summonr(
+        home.path(),
+        work.path(),
+        port,
+        &["sessions", "--grep", "walrus"],
+    );
+    let year = found.split('\t').nth(1).unwrap_or_default();
+    assert!(year.starts_with("20") && year.len() == 16, "{found}");
+    let status = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["sessions", "--grep", "narwhal"])
+        .current_dir(work.path())
+        .env("HOME", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(status.status.code(), Some(1));
+}

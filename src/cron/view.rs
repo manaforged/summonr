@@ -30,7 +30,9 @@ fn zone(job: &Job) -> TimeZone {
 pub(super) fn schedule_label(job: &Job) -> String {
     match schedule::parse(&job.schedule) {
         Ok(Schedule::At(stamp)) => format!("at {}", when(Some(stamp.to_zoned(zone(job))))),
-        Ok(Schedule::Cron(_) | Schedule::Every(_)) | Err(_) => job.schedule.clone(),
+        Ok(Schedule::Cron(_) | Schedule::Every(_) | Schedule::Manual) | Err(_) => {
+            job.schedule.clone()
+        }
     }
 }
 
@@ -192,20 +194,25 @@ pub(super) fn installed(path: &std::path::Path, note: Option<&str>) -> String {
     }
 }
 
-pub(super) fn token(name: &str, token: &str) -> String {
+pub(super) fn token_help(name: &str, token: &str) -> String {
     let port = crate::limits::limits().gateway_port;
     format!(
-        "{token}\nShown once. Fire the job with:\n  curl -X POST -H 'Authorization: Bearer {token}' http://127.0.0.1:{port}/run/{name}\nafter starting `summonr gateway webhook`."
+        "Shown once. Fire the job with:\n  curl -X POST -H 'Authorization: Bearer {token}' http://127.0.0.1:{port}/run/{name}\nafter starting `summonr gateway webhook`."
     )
 }
 
 pub(super) fn json(job: &Job) -> serde_json::Value {
-    let next = runner::next_fire(job, super::now()).map(|at| at.timestamp().to_string());
+    let next = runner::next_fire(job, super::now())
+        .filter(|_| !job.paused)
+        .map(|at| at.timestamp().to_string());
     serde_json::json!({
         "name": job.name,
         "schedule": job.schedule,
         "next": next,
         "last": job.runs.last().map(|run| run.outcome),
         "paused": job.paused,
+        "dir": job.dir,
+        "task": job.task,
+        "endpoint": job.endpoint,
     })
 }

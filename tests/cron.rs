@@ -109,7 +109,6 @@ fn cron_help_and_empty_states_guide_a_new_user() {
     let (code, list) = cron(home.path(), &[], &["list"]);
     assert_eq!(code, 0, "{list}");
     assert!(list.contains("no cron jobs; add one with"), "{list}");
-    assert!(list.contains("run `summonr cron install` once"), "{list}");
     let (code, error) = cron(home.path(), &[], &["add", "x", "-p", "hi"]);
     assert_ne!(code, 0);
     assert!(error.contains("see `summonr cron --help`"), "{error}");
@@ -201,18 +200,83 @@ fn a_goal_that_reads_as_a_flag_is_refused() {
 }
 
 #[test]
-fn a_past_one_shot_expires_and_pauses_on_the_next_tick() {
+fn a_one_shot_in_the_past_is_refused_with_the_formats_that_work() {
     let home = tempfile::tempdir().unwrap();
-    cron(
+    let (code, text) = cron(
         home.path(),
         &[],
         &["add", "old", "--at", "2020-01-01 00:00", "-p", "hi"],
     );
+    assert_ne!(code, 0);
+    assert!(text.contains("past"), "{text}");
+    let (code, text) = cron(
+        home.path(),
+        &[],
+        &["add", "bad", "--at", "yesterday", "-p", "hi"],
+    );
+    assert_ne!(code, 0);
+    assert!(
+        text.contains("use HH:MM, YYYY-MM-DD HH:MM, or RFC 3339"),
+        "{text}"
+    );
+    assert!(!text.contains("strptime"), "{text}");
+    let (code, text) = cron(
+        home.path(),
+        &[],
+        &["add", "soon", "--at", "23:59", "-p", "hi"],
+    );
+    assert_eq!(code, 0, "{text}");
+}
+
+#[test]
+fn manual_jobs_never_fire_on_their_own_and_runs_read_as_answers() {
+    let home = tempfile::tempdir().unwrap();
+    let (code, text) = cron(
+        home.path(),
+        &[],
+        &["add", "alert", "--manual", "-p", "triage"],
+    );
+    assert_eq!(code, 0, "{text}");
     cron(home.path(), &[], &["tick"]);
+    let (_, log) = cron(home.path(), &[], &["log", "alert"]);
+    assert!(log.contains("no runs yet"), "{log}");
+    cron(home.path(), &[], &["run", "alert"]);
+    let (_, log) = cron(home.path(), &[], &["log", "alert"]);
+    assert!(!log.contains("{\"type\""), "{log}");
+    assert!(log.contains("log: "), "{log}");
     let (_, list) = cron(home.path(), &[], &["list", "--json"]);
-    assert!(list.contains("\"paused\":true"), "{list}");
-    let (_, log) = cron(home.path(), &[], &["log", "old"]);
-    assert!(log.contains("expired"), "{log}");
+    assert!(list.contains("\"paused\":false"), "{list}");
+    assert!(list.contains("\"task\""), "{list}");
+    assert!(list.contains("\"dir\""), "{list}");
+}
+
+#[test]
+fn help_and_missing_values_point_at_the_right_word() {
+    let home = tempfile::tempdir().unwrap();
+    let (code, help) = cron(home.path(), &[], &["add", "--help"]);
+    assert_eq!(code, 0, "{help}");
+    assert!(help.starts_with("usage:"), "{help}");
+    cron(home.path(), &[], &["add", "x", "--every", "1h", "-p", "hi"]);
+    let (code, text) = cron(home.path(), &[], &["log", "x", "--last"]);
+    assert_ne!(code, 0);
+    assert!(text.contains("--last needs a value"), "{text}");
+    let (_, warned) = cron(
+        home.path(),
+        &[],
+        &[
+            "add",
+            "y",
+            "--every",
+            "1h",
+            "-p",
+            "hi",
+            "--mail",
+            "nobody-here",
+            "--chat",
+        ],
+    );
+    assert!(warned.contains("nobody-here"), "{warned}");
+    assert!(warned.contains("gateway setup telegram"), "{warned}");
 }
 
 #[test]

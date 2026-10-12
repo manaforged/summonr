@@ -11,6 +11,8 @@ summonr anthropic
 summonr kimi -p "What is in Cargo.toml?"
 ```
 
+A single word that is not a command, endpoint, or prompt flag but looks like a mistyped command (`summonr sesions`) is refused with a suggestion; use `-p` to send it as a prompt.
+
 summonr starts on the first endpoint and model that applies: the endpoint and `--model` flags, then `SUMMONR_ENDPOINT` and `SUMMONR_MODEL`, then the default (`default` and `default_model` in `config.toml`), then the last endpoint and model you used, then the first endpoint that is set up. The last-used seat lives in `~/.summonr/recent.json` and changes only after a turn succeeds. A `default` or last-used endpoint that no longer exists or has no key prints one note, and summonr falls back to the next rule. Only an endpoint named on the command line is a hard error. `alt+d` in the `/model` picker sets the selected row as the default, and `alt+d` on the default row clears it. The header shows which rule chose the endpoint, for example `(default)` or `(last used)`, until you switch.
 
 Add your own OpenAI-compatible server from the command line:
@@ -574,11 +576,11 @@ A foreign agent takes part by picking an id: it reads `summonr mail inbox <id>`,
 
 ## Memory
 
-summonr remembers across sessions through two Markdown files that load into every trusted session: user memory at `~/.summonr/memory/MEMORY.md`, and project memory at `~/.summonr/memory/<repository>/MEMORY.md`. Every worktree and child checkout of one repository shares its project memory; another repository never sees it. Ask the model to remember something and it writes the file with its normal edit tools, one dated entry per fact. It is told to save corrections, stable preferences, and facts the code does not show, never what the repository already records, and to check a remembered fact against the code before it acts on it. Edit or delete the files yourself at any time; `/memory` shows where they are and how full they are.
+summonr remembers across sessions through two Markdown files that load into every trusted session: user memory at `~/.summonr/memory/MEMORY.md`, and project memory at `~/.summonr/memory/<repository>/MEMORY.md`. Every worktree and child checkout of one repository shares its project memory; another repository never sees it. Ask the model to remember something and it writes the file with its normal edit tools, one dated entry per fact. It is told to save corrections, stable preferences, and facts the code does not show, never what the repository already records, and to check a remembered fact against the code before it acts on it. Edit or delete the files yourself at any time; `/memory` shows where they are, how full they are, and whether memory is on. Changes apply to new sessions. Project memory follows the repository, not its folder: moving, renaming, or cloning a repository keeps its memory, because the key comes from the repository's first commit (a folder with no commits is keyed by its path).
 
-Each file loads up to `memory_bytes` (25,000 bytes); past that it is cut with a note asking the model to prune it. Invisible and direction-changing characters are dropped, and secret-shaped values become `[secret]` before the text reaches the model. Memory loads only in a trusted workspace (`--no-trust` skips it), and `memory = false` under `[modules]` turns it off. Under `--sandbox`, the summonr home is protected, so the model reads memory from its prompt but cannot write it.
+Each file loads up to `memory_bytes` (25,000 bytes). A longer file loads its newest entries, under a note that tells the model the older part is not shown and to read the whole file before it edits it, so a prune never deletes what the model did not see. Invisible and direction-changing characters are dropped, and secret-shaped values become `[secret]` before the text reaches the model. Memory loads only in a trusted workspace (`--no-trust` skips it), and `memory = false` under `[modules]` turns it off. Under `--sandbox`, the summonr home is protected, so the model reads memory from its prompt but cannot write it.
 
-`summonr sessions --grep TEXT` searches the text of past sessions, newest first, case-insensitively, and prints the session id, its directory, and each matching line. The model can run it through `run_command` to recall earlier work.
+`summonr sessions --grep TEXT` searches the text of past sessions, newest first, case-insensitively, and prints the session id, its start time, its directory, and each matching line; it exits 1 when nothing matches. The model can run it through `run_command` to recall earlier work.
 
 ## Cron
 
@@ -587,17 +589,18 @@ Each file loads up to `memory_bytes` (25,000 bytes); past that it is cut with a 
 ```sh
 summonr cron add nightly --cron "0 3 * * 1-5" --goal "make cargo test pass"
 summonr cron add digest --every 6h -p "summarize what changed in git log since yesterday" --mail summonr-1
-summonr cron add once --at "2026-10-12 09:00" -p "check the release notes"
+summonr cron add once --at 09:00 -p "check the release notes"
+summonr cron add triage --manual -p "triage the alert in the payload"
 summonr cron install
 ```
 
-A schedule is five cron fields (minute, hour, day, month, weekday, with `*`, lists, ranges, steps, and `jan`-`dec` and `sun`-`sat` names; `0` and `7` are Sunday), `@hourly`, `@daily`, `@weekly`, `@monthly`, or `@yearly`, `--every` with `m`, `h`, or `d`, or one `--at` time. When both day and weekday are set, either one matches. Times are local, or in `--tz ZONE`. A time that daylight saving skips does not fire that day, and a repeated time fires once. `--every 1d` fires at midnight and `--every 2h` on even hours. An `--at` job pauses itself after it runs.
+A schedule is five cron fields (minute, hour, day, month, weekday, with `*`, lists, ranges, steps, and `jan`-`dec` and `sun`-`sat` names; `0` and `7` are Sunday), `@hourly`, `@daily`, `@weekly`, `@monthly`, or `@yearly`, `--every` with `m`, `h`, or `d`, one `--at` time (`HH:MM` for the next such time, `YYYY-MM-DD HH:MM`, or RFC 3339; a time already past is refused), or `--manual` for a job that runs only through `summonr cron run` or the webhook. When both day and weekday are set, either one matches. Times are local, or in `--tz ZONE`. A time that daylight saving skips does not fire that day, and a repeated time fires once. `--every 1d` fires at midnight and `--every 2h` on even hours. An `--at` job pauses itself after its scheduled run; running it by hand or from the webhook does not use it up.
 
 `summonr cron install` asks the OS to run `summonr cron tick` once a minute: a launch agent on macOS, a systemd user timer on Linux, and a scheduled task on Windows. A launch agent runs while you are logged in; when launchd refuses one, as on a Mac with no one signed in, summonr installs a crontab line instead, and cron then needs Full Disk Access for jobs that touch Desktop, Documents or Downloads. A systemd user timer stops at logout unless lingering is on (`loginctl enable-linger`); install says so, and falls back to a crontab line when systemd has no user session. On macOS and Linux it records your `PATH` and `SUMMONR_HOME`; on Windows, set them as user environment variables. Store keys with `summonr login` rather than in your shell. `uninstall` removes it, and `status` says whether it is installed and when the next job fires. No summonr process stays running.
 
-Each due job starts as its own process with `--json` and a time budget: `--max-secs`, or `cron_budget_secs` (30 minutes). `--endpoint`, `--model`, `--max-tokens`, and `--worktree` pass through. A `--goal` job is done only when the workspace check passes. A job still running when its next time comes is skipped, and that skip is logged. When the machine was asleep, the latest missed time runs once; times older than `cron_catchup_secs` (7 days) are logged as expired. After `cron_fail_pause` failures in a row (3), the job pauses itself; `summonr cron resume NAME` restarts it. A run that cannot start, for example because its directory is gone, counts as a failure. An `--at` time already past when the job is checked is logged as expired and the job pauses. A goal cannot start with `-`.
+Each due job starts as its own process with `--json` and a time budget: `--max-secs`, or `cron_budget_secs` (30 minutes). `--endpoint`, `--model`, `--max-tokens`, and `--worktree` pass through. A `--goal` job is done only when the workspace check passes. A job still running when its next time comes is skipped, and that skip is logged. When the machine was asleep, the latest missed time runs once; times older than `cron_catchup_secs` (7 days) are logged as expired. After `cron_fail_pause` failures in a row (3), the job pauses itself; `summonr cron resume NAME` restarts it. A run that cannot start, for example because its directory is gone, counts as a failure. An `--at` time that passed while the machine was off past the catch-up window is logged as expired and the job pauses. A goal cannot start with `-`. A goal runs until the judge agrees it is met; a precise goal ("make `cargo test` pass") ends sooner than an open one.
 
-`--notify failure` (the default) shows a desktop notification when a run fails, `always` after every run, and `never` stays quiet. `--mail SESSION` also sends the result to that session's inbox, and `--chat` to every chat paired with `summonr gateway`. `summonr cron log NAME` lists past runs with their outcome and shows the last run's output; the run itself is a job under `.summonr/jobs` in the job's directory. `summonr cron run NAME` runs a job now. Jobs live in `~/.summonr/cron/jobs.toml`. The model manages jobs with the same commands through `run_command`, except inside a cron run, which cannot add, edit, remove, pause, resume, run, install, or uninstall jobs, or print a token.
+`--notify failure` (the default) shows a desktop notification when a run fails, `always` after every run, and `never` stays quiet. `--mail SESSION` also sends the result to that session's inbox, and `--chat` to every chat paired with `summonr gateway`. `summonr cron log NAME` lists past runs with their outcome, then the last run's final answer and verdict ("check passed", "check failed", or why it stopped) and the path of its full log; `--raw` shows the raw events. The run itself is a job under `.summonr/jobs` in the job's directory. `cron add` warns when the endpoint has no stored key (cron runs do not see your shell's variables), when `--mail` names no live session, and when `--chat` has no paired chat. `summonr cron run NAME` runs a job now. Jobs live in `~/.summonr/cron/jobs.toml`. The model manages jobs with the same commands through `run_command`, except inside a cron run, which cannot add, edit, remove, pause, resume, run, install, or uninstall jobs, or print a token.
 
 ## Gateway
 
@@ -612,21 +615,23 @@ summonr gateway setup telegram     # paste the bot token; it is stored, never sh
 summonr gateway telegram           # run the bridge here; Ctrl+C stops it
 ```
 
+The bridge runs while its terminal runs. To keep it going after you close the terminal, start it in `tmux` or `screen`, or as a launch agent or systemd user service that runs `summonr gateway telegram --dir PROJECT`. Pair your account before you leave the machine: pairing needs a command on the machine.
+
 The bridge asks Telegram for new messages, so it works behind a router or firewall. The bridge answers only private chats, never groups or channels. The first time you message the bot it answers with a pairing code, and the terminal shows who asked; run `summonr gateway pair CODE` on the machine to allow your Telegram account. Anyone else gets nothing. Codes expire after `gateway_pair_secs` (an hour). `summonr gateway unpair USER_ID` removes an account, its chat, and any messages it queued, and `summonr gateway status` lists accounts and chats.
 
-Each chat is one summonr session in the directory where the bridge runs (`--dir` picks another; `--endpoint` and `--model` pick the seat). Every message is one turn, and the answer comes back to the chat. Messages sent while a turn runs wait for the next turn, and the bot says how many are ahead. `/new` starts a fresh session, `/status` shows the current one, `/stop` ends the running turn (it stops the turn's commands too, then kills what is left after `gateway_stop_secs`), and `/start` or `/help` shows these commands. A reply says when the check failed or the run broke. The bridge remembers where it stopped reading, so a restart never runs a message twice; a second bridge on the same bot is refused. A chat turn runs like `-p`: anything that needs an approval is denied, so pair only accounts you trust with that directory, and consider `on = true` under `[sandbox]`.
+Each chat is one summonr session in the directory where the bridge runs (`--dir` picks another; `--endpoint` and `--model` pick the seat). Every message is one turn, and the answer comes back to the chat. Messages sent while a turn runs wait for the next turn, and the bot says how many are ahead. `/new` starts a fresh session, `/status` shows the current one, `/stop` ends the running turn (it stops the turn's commands too, then kills what is left after `gateway_stop_secs`), and `/start` or `/help` shows these commands. A reply says when the check failed or the run broke. The bridge remembers where it stopped reading, so a restart never runs a message twice; a second bridge on the same bot is refused. A chat turn runs like `-p` with your account: it can run any command your policy allows and read or write anything you can, unless you contain it. Anything that needs an approval is denied. Pair only accounts you trust with that directory, start the bridge in a project folder rather than your home, and consider `on = true` under `[sandbox]` in `~/.summonr/config.toml`.
 
-`summonr cron add ... --chat` also sends a job's result to every paired chat.
+`summonr cron add ... --chat` also sends a job's result to every paired chat. The token is kept in the summonr secret store; `summonr gateway setup telegram` again replaces it.
 
 ### Webhook
 
 ```sh
-summonr cron token nightly         # prints the job's bearer token once
+TOKEN=$(summonr cron token nightly) # the token on stdout, how to use it on stderr
 summonr gateway webhook            # listens on 127.0.0.1:8765
 curl -X POST -H "Authorization: Bearer $TOKEN" --data @event.json http://127.0.0.1:8765/run/nightly
 ```
 
-`POST /run/NAME` with the job's token starts that cron job now and answers `202`. A wrong token or an unknown job both answer `401` before any body is read, a second fire within `gateway_fire_secs` (60 seconds) answers `429`, a body over `gateway_body_bytes` (64 KiB) answers `413`, a chunked body answers `411`, and a request not finished within `gateway_read_secs` answers `408`. A query string is ignored. The body is saved to a file, the run is told it is untrusted event data, not instructions, and it runs with `--sandbox`, so it cannot write outside its directory or touch the summonr home and memory. Saved bodies are deleted with the run history that refers to them. The listener binds loopback only; to take events from another machine, put a tunnel or reverse proxy in front of it. `summonr cron token NAME` again rotates the token, and `summonr cron remove NAME` forgets it.
+`POST /run/NAME` with the job's token starts that cron job now and answers `202` with `{"job", "slot", "log"}`; `summonr cron log NAME` then shows how it went. A job you only fire from outside is a `--manual` job. A wrong token or an unknown job both answer `401` before any body is read, a second fire within `gateway_fire_secs` (60 seconds) answers `429`, a body over `gateway_body_bytes` (64 KiB) answers `413`, a chunked body answers `411`, and a request not finished within `gateway_read_secs` answers `408`, another method answers `405`, and a paused job answers `409`. Every error has a JSON body `{"error": ...}`, and `429` carries `Retry-After`. A query string is ignored. Several requests are served at once, so a slow client blocks no one, and Ctrl+C, `SIGTERM`, or `SIGHUP` stops the listener. The body is saved in the job's directory under `.summonr/jobs`, the run is told it is untrusted event data, not instructions, and it runs with `--sandbox`, so it cannot write outside its directory or touch the summonr home and memory. Saved bodies are deleted with the run history that refers to them. The listener binds loopback only; to take events from another machine, put a tunnel or reverse proxy in front of it. `summonr cron token NAME` again rotates the token, and `summonr cron remove NAME` forgets it.
 
 ### GitHub
 
@@ -642,7 +647,7 @@ permissions:
   pull-requests: write
 jobs:
   run:
-    if: startsWith(github.event.comment.body, '/summonr ')
+    if: startsWith(github.event.comment.body, '/summonr ') && !github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
       - name: Require write access
@@ -669,14 +674,14 @@ jobs:
           ISSUE: ${{ github.event.issue.number }}
         run: |
           gh auth setup-git
-          git switch -c "summonr/issue-$ISSUE"
+          git switch -c "summonr/issue-$ISSUE-$GITHUB_RUN_ID"
           git add -A
           git -c user.name=summonr -c user.email=summonr@users.noreply.github.com commit -m "Work on #$ISSUE"
           git push -u origin HEAD
-          gh pr create --fill --body "From the comment on #$ISSUE."
+          gh pr create --title "Work on #$ISSUE" --body "From the comment on #$ISSUE."
 ```
 
-The comment reaches the workflow through an environment variable, never pasted into the script, and hidden HTML comments are stripped before the model sees it. Only people with write or admin access to the repository can start it; the first step asks GitHub for the commenter's permission. The checkout keeps no GitHub token, so the run holds only the model key and its shell is sandboxed; the pull request step signs in after the run ends. When the check fails, `--goal` exits 2 and no pull request opens.
+The comment reaches the workflow through an environment variable, never pasted into the script, and hidden HTML comments are stripped before the model sees it. Only people with write or admin access to the repository can start it; the first step asks GitHub for the commenter's permission. The checkout keeps no GitHub token, so the run holds only the model key and its shell is sandboxed; the pull request step signs in after the run ends. The repository needs a `.summonr/check.toml` (for example `check = "cargo test"`): without one, `--goal` stops with exit 3 and no pull request opens, and when the check fails it exits 2. Comments on pull requests are ignored, and each run uses its own branch.
 
 ## Limits
 

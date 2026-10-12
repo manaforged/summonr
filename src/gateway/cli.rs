@@ -15,20 +15,37 @@ pub fn run(
     read_secret: &dyn Fn(&str) -> Result<String>,
 ) -> Result<i32> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    if asks_help(&words) {
+        println!("{USAGE}");
+        return Ok(0);
+    }
     match words.as_slice() {
         ["setup", "telegram"] => setup(read_secret),
         ["telegram", flags @ ..] => bridge(options(flags, cwd)?),
+        ["pair"] => Err(misuse("pair needs the code the bot sent you")),
         ["pair", code] => pair(code),
         ["unpair", user] => unpair(number(user)?),
         ["status"] => status(),
-        ["webhook"] => super::webhook::serve(crate::limits::limits().gateway_port),
-        ["webhook", "--port", port] => super::webhook::serve(number(port)?),
-        [] | ["help" | "--help" | "-h"] => {
-            println!("{USAGE}");
-            Ok(0)
-        }
+        ["webhook", rest @ ..] => webhook(rest),
         [..] => Err(misuse(&format!(
             "unknown gateway command `{}`",
+            words.join(" ")
+        ))),
+    }
+}
+
+fn asks_help(words: &[&str]) -> bool {
+    words.is_empty()
+        || words == ["help"]
+        || words.iter().any(|word| matches!(*word, "--help" | "-h"))
+}
+
+fn webhook(words: &[&str]) -> Result<i32> {
+    match words {
+        [] => super::webhook::serve(crate::limits::limits().gateway_port),
+        ["--port", port] => super::webhook::serve(number(port)?),
+        [..] => Err(misuse(&format!(
+            "unknown webhook option `{}`",
             words.join(" ")
         ))),
     }

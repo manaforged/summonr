@@ -46,11 +46,21 @@ summonr anthropic --goal "make cargo test pass" --max-secs 1800 --json
 | 2 | The check failed, including when the budget ran out. |
 | 3 | Stopped short with no check configured, or the check passed but the goal was not met. |
 
+Run on a schedule or from a web request:
+
+```sh
+summonr cron add nightly --cron "0 3 * * *" --goal "make cargo test pass"
+summonr cron install          # once: the OS starts due jobs
+summonr cron log nightly      # what the last run did and whether the check passed
+```
+
+`summonr cron add NAME --manual -p PROMPT` with `summonr cron token NAME` and `summonr gateway webhook` starts a job from `POST /run/NAME`. `summonr gateway telegram` drives sessions from a paired Telegram chat.
+
 Useful flags: `--sandbox` to contain shell commands, `--worktree` to work on a separate git branch, and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
 
 ## Give it project instructions
 
-When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. A home `~/.summonr/SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it. `--no-trust` ignores the workspace files.
+When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. Your user-level files load in every session: `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md`, from the account's home directory. A home `~/.summonr/SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it. `--no-trust` ignores the workspace files. Memory files under `~/.summonr/memory` load into trusted sessions too; `memory = false` under `[modules]` turns them off.
 
 An implement child works in `<repo>-deltas/<id>`. That checkout shares the parent's `target/` and `node_modules`. The parent applies each finished child's edits on its own. When two children change the same lines, that checkout stays on disk, and summonr never deletes it. A research child stays on the parent workspace. `--worktree` still isolates the whole session in a git worktree.
 

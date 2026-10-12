@@ -262,7 +262,15 @@ impl Worker {
                 return true;
             }
         };
-        let text = crate::memory::report(&crate::memory::files(&home, self.loop_.workspace()));
+        let workspace = self.loop_.workspace();
+        let on = crate::modules::Switches::load(workspace)
+            .is_ok_and(|switches| switches.enabled(crate::modules::ModuleId::Memory));
+        let report = crate::memory::report(&crate::memory::files(&home, workspace));
+        let text = if on {
+            report
+        } else {
+            format!("{}{report}", crate::memory::OFF)
+        };
         self.system(&text);
         true
     }

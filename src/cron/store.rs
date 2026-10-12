@@ -8,7 +8,6 @@ use crate::error::{Error, Result};
 const FILE: &str = "jobs.toml";
 const TOKEN_PREFIX: &str = "cron:";
 const TOKEN_BYTES: usize = 32;
-const PAYLOADS: &str = "payloads";
 const PAYLOAD_SUFFIX: &str = "body";
 const DASH: char = '-';
 
@@ -128,14 +127,16 @@ pub(crate) fn dir() -> Result<PathBuf> {
     Ok(crate::prompt::summonr_home()?.join("cron"))
 }
 
-pub(crate) fn payload_path(name: &str, slot: i64) -> Result<PathBuf> {
-    Ok(dir()?
-        .join(PAYLOADS)
-        .join(format!("{name}-{slot}.{PAYLOAD_SUFFIX}")))
+pub(crate) fn payload_path(workspace: &Path, name: &str, slot: i64) -> PathBuf {
+    crate::jobs::dir(workspace).join(payload_file(name, slot))
 }
 
-pub(crate) fn remove_payloads(name: &str) -> Result<()> {
-    let entries = match std::fs::read_dir(dir()?.join(PAYLOADS)) {
+pub(crate) fn payload_file(name: &str, slot: i64) -> String {
+    format!("{name}-{slot}.{PAYLOAD_SUFFIX}")
+}
+
+pub(crate) fn remove_payloads(workspace: &Path, name: &str) -> Result<()> {
+    let entries = match std::fs::read_dir(crate::jobs::dir(workspace)) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error.into()),
@@ -171,7 +172,7 @@ fn trim(jobs: &mut [Job]) -> Result<()> {
     for job in jobs {
         let extra = job.runs.len().saturating_sub(kept);
         for run in job.runs.drain(..extra) {
-            remove_quiet(&payload_path(&job.name, run.slot)?)?;
+            remove_quiet(&payload_path(&job.dir, &job.name, run.slot))?;
         }
     }
     Ok(())

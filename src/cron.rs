@@ -2,8 +2,10 @@ use std::ffi::OsStr;
 
 use crate::error::{Error, Result};
 
+mod args;
 pub mod cli;
 mod install;
+mod report;
 pub(crate) mod runner;
 pub(crate) mod schedule;
 pub(crate) mod store;

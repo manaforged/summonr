@@ -10,13 +10,63 @@ fn one(text: &str) -> String {
 }
 
 #[test]
-fn an_oversized_memory_is_cut_with_a_marker() {
+fn an_oversized_memory_keeps_the_newest_entries_and_says_to_read_first() {
     let cap = crate::limits::limits().memory_bytes;
-    let text = one(&"é".repeat(cap));
-    assert!(text.contains(&format!(
-        "[memory truncated at {cap} bytes; prune this file]"
-    )));
-    assert!(text.len() < cap + 200);
+    let entries: String = (0..2000)
+        .map(|n| format!("- 2026-10-{:02} entry {n} é\n", n % 28 + 1))
+        .collect();
+    let text = one(&entries);
+    let body = text
+        .split_once('\n')
+        .and_then(|(_, rest)| rest.rsplit_once("\n</memory>"))
+        .map(|(body, _)| body)
+        .unwrap();
+    assert!(body.starts_with("["), "{body}");
+    assert!(
+        body.contains("older bytes of this file are not shown"),
+        "{body}"
+    );
+    assert!(body.contains("Read "), "{body}");
+    assert!(body.contains("entry 1999"), "newest entry kept");
+    assert!(!body.contains("entry 0 "), "oldest entry dropped");
+    assert!(body.len() <= cap, "{} > {cap}", body.len());
+}
+
+#[test]
+fn a_moved_repository_keeps_its_memory() {
+    let home = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let before = root.path().join("api");
+    std::fs::create_dir_all(&before).unwrap();
+    let git = |dir: &Path, args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .status()
+                .unwrap()
+                .success()
+        );
+    };
+    git(&before, &["init", "-q"]);
+    git(&before, &["commit", "-q", "--allow-empty", "-m", "start"]);
+    let project = |dir: &Path| {
+        files(home.path(), dir)
+            .into_iter()
+            .find(|file| file.scope == Scope::Project)
+            .unwrap()
+            .path
+    };
+    let first = project(&before);
+    std::fs::create_dir_all(first.parent().unwrap()).unwrap();
+    std::fs::write(&first, "- 2026-10-11 deploy on Thursdays\n").unwrap();
+    let after = root.path().join("api-renamed");
+    std::fs::rename(&before, &after).unwrap();
+    assert_eq!(project(&after), first);
 }
 
 #[test]

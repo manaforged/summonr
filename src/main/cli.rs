@@ -6,6 +6,8 @@ use flags::{COMMANDS, Input, SCOPED, SWITCHES, VALUES};
 mod flags;
 #[path = "cli/mcp.rs"]
 mod mcp;
+#[path = "cli/typo.rs"]
+mod typo;
 
 pub(super) use mcp::McpCommand;
 
@@ -90,7 +92,9 @@ enum Step {
 }
 
 fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
-    let mut input: Input = args.into_iter().collect::<Vec<_>>().into_iter().peekable();
+    let words: Vec<String> = args.into_iter().collect();
+    typo::refuse(&words)?;
+    let mut input: Input = words.into_iter().peekable();
     let mut args = Args {
         trust: true,
         network: true,

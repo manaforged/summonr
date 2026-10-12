@@ -95,37 +95,12 @@ fn guard_sigpipe() {}
 async fn until_signal<T>(work: impl std::future::Future<Output = T>) -> Result<T, i32> {
     use futures::FutureExt;
 
-    let mut interrupt = std::pin::pin!(interrupted());
+    let mut interrupt = std::pin::pin!(summonr::interrupted());
     tokio::select! {
         biased;
         code = &mut interrupt => Err(code),
         done = work => interrupt.now_or_never().map_or(Ok(done), Err),
     }
-}
-
-#[cfg(unix)]
-async fn interrupted() -> i32 {
-    use tokio::signal::unix::{SignalKind, signal};
-    let (Ok(mut interrupt), Ok(mut terminate), Ok(mut hangup)) = (
-        signal(SignalKind::interrupt()),
-        signal(SignalKind::terminate()),
-        signal(SignalKind::hangup()),
-    ) else {
-        return std::future::pending().await;
-    };
-    tokio::select! {
-        _ = interrupt.recv() => 130,
-        _ = terminate.recv() => 143,
-        _ = hangup.recv() => 129,
-    }
-}
-
-#[cfg(not(unix))]
-async fn interrupted() -> i32 {
-    if tokio::signal::ctrl_c().await.is_ok() {
-        return 130;
-    }
-    std::future::pending().await
 }
 
 async fn run(args: Option<cli::Args>) -> summonr::Result<i32> {

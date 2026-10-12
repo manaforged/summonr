@@ -1,4 +1,4 @@
-use jiff::civil::{Date, DateTime};
+use jiff::civil::{Date, DateTime, Time};
 use jiff::tz::{AmbiguousOffset, AmbiguousZoned, TimeZone};
 use jiff::{SignedDuration, Timestamp, Zoned};
 
@@ -23,6 +23,9 @@ const FOLD_SECS: i64 = 7200;
 const EPOCH: DateTime = DateTime::constant(1970, 1, 1, 0, 0, 0, 0);
 const EVERY: &str = "every ";
 const AT: &str = "at ";
+pub(crate) const MANUAL: &str = "manual";
+const AT_FORMAT: &str = "%Y-%m-%d %H:%M";
+const TIME_FORMAT: &str = "%H:%M";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Fields {
@@ -40,6 +43,7 @@ pub(crate) enum Schedule {
     Cron(Fields),
     Every(u64),
     At(Timestamp),
+    Manual,
 }
 
 struct Range {
@@ -82,6 +86,9 @@ const DOW: Range = Range {
 
 pub(crate) fn parse(text: &str) -> Result<Schedule> {
     let text = text.trim().to_ascii_lowercase();
+    if text == MANUAL {
+        return Ok(Schedule::Manual);
+    }
     if let Some(rest) = text.strip_prefix(EVERY) {
         return every(rest.trim()).map(Schedule::Every);
     }
@@ -125,14 +132,41 @@ pub(crate) fn every_text(value: &str) -> Result<String> {
 
 pub(crate) fn at_text(value: &str, tz: &TimeZone) -> Result<String> {
     let value = value.trim();
-    let stamp = match value.parse::<Timestamp>() {
-        Ok(stamp) => stamp,
-        Err(_) => DateTime::strptime("%Y-%m-%d %H:%M", value)
-            .and_then(|civil| civil.to_zoned(tz.clone()))
-            .map(|zoned| zoned.timestamp())
-            .map_err(|error| bad(value, &error.to_string()))?,
-    };
+    let now = Timestamp::now();
+    let stamp = at_stamp(value, tz, now).ok_or_else(|| {
+        Error::Config(format!(
+            "bad --at `{value}`: use HH:MM, YYYY-MM-DD HH:MM, or RFC 3339"
+        ))
+    })?;
+    if stamp <= now {
+        return Err(Error::Config(format!(
+            "--at `{value}` is in the past; pick a later time"
+        )));
+    }
     Ok(format!("{AT}{stamp}"))
+}
+
+fn at_stamp(value: &str, tz: &TimeZone, now: Timestamp) -> Option<Timestamp> {
+    if let Ok(stamp) = value.parse::<Timestamp>() {
+        return Some(stamp);
+    }
+    if let Ok(civil) = DateTime::strptime(AT_FORMAT, value) {
+        return civil
+            .to_zoned(tz.clone())
+            .ok()
+            .map(|zoned| zoned.timestamp());
+    }
+    let time = Time::strptime(TIME_FORMAT, value).ok()?;
+    let today = now
+        .to_zoned(tz.clone())
+        .date()
+        .to_datetime(time)
+        .to_zoned(tz.clone())
+        .ok()?;
+    if today.timestamp() > now {
+        return Some(today.timestamp());
+    }
+    today.tomorrow().ok().map(|zoned| zoned.timestamp())
 }
 
 pub(crate) fn zone(name: Option<&str>) -> Result<TimeZone> {
@@ -336,6 +370,7 @@ impl Schedule {
             Self::At(stamp) => {
                 (*stamp > after.timestamp()).then(|| stamp.to_zoned(after.time_zone().clone()))
             }
+            Self::Manual => None,
         }
     }
 }

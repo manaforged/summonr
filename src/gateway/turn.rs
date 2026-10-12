@@ -12,7 +12,6 @@ use crate::error::Result;
 
 use super::child::turn;
 
-const INTERRUPTED: i32 = 130;
 const IDLE: &str = "nothing is running";
 const FRESH: &str = "new session";
 
@@ -40,7 +39,7 @@ struct Finished {
 }
 
 enum Wake {
-    Quit,
+    Quit(i32),
     Done(Option<Finished>),
     Updates(Result<Vec<Update>>),
 }
@@ -63,18 +62,18 @@ pub(crate) async fn serve(bot: Bot, options: Options, username: Option<String>) 
         generations: HashMap::new(),
         tasks: JoinSet::new(),
     };
-    let mut interrupt = std::pin::pin!(tokio::signal::ctrl_c());
+    let mut interrupt = std::pin::pin!(crate::interrupted());
     let mut offset = store::load()?.offset;
     loop {
         let wake = tokio::select! {
-            _ = &mut interrupt => Wake::Quit,
+            code = &mut interrupt => Wake::Quit(code),
             Some(done) = bridge.tasks.join_next(), if !bridge.tasks.is_empty() => Wake::Done(done.ok()),
             updates = bridge.bot.updates(offset) => Wake::Updates(updates),
         };
         match wake {
-            Wake::Quit => {
+            Wake::Quit(code) => {
                 bridge.tasks.abort_all();
-                return Ok(INTERRUPTED);
+                return Ok(code);
             }
             Wake::Done(Some(finished)) => bridge.finish(finished)?,
             Wake::Done(None) => {}

@@ -114,6 +114,8 @@ pub(super) fn print_sessions() -> Result<()> {
 
 const GREP_LINES: usize = 50;
 const GREP_WIDTH: usize = 160;
+const GREP_TIME: &str = "%Y-%m-%d %H:%M";
+const UUID_TIME_SHIFT: u32 = 80;
 
 pub(super) fn grep_sessions(pattern: &str) -> Result<()> {
     let needle = pattern.to_lowercase();
@@ -132,8 +134,9 @@ pub(super) fn grep_sessions(pattern: &str) -> Result<()> {
             }
             let line: String = line.trim().chars().take(GREP_WIDTH).collect();
             println!(
-                "{}\t{}\t{}",
+                "{}\t{}\t{}\t{}",
                 summonr::short(&info.id),
+                started(&info.id),
                 info.cwd.as_deref().unwrap_or("-"),
                 line
             );
@@ -141,9 +144,25 @@ pub(super) fn grep_sessions(pattern: &str) -> Result<()> {
         }
     }
     if shown == 0 {
-        println!("no matches");
+        eprintln!("no matches");
+        std::process::exit(1);
     }
     Ok(())
+}
+
+fn started(id: &str) -> String {
+    u128::from_str_radix(id, 16)
+        .ok()
+        .and_then(|bits| i64::try_from(bits >> UUID_TIME_SHIFT).ok())
+        .and_then(|millis| jiff::Timestamp::from_millisecond(millis).ok())
+        .map_or_else(
+            || "-".to_string(),
+            |at| {
+                at.to_zoned(jiff::tz::TimeZone::system())
+                    .strftime(GREP_TIME)
+                    .to_string()
+            },
+        )
 }
 
 pub(super) fn print_workflows() -> Result<()> {

@@ -12,6 +12,17 @@ mod model;
 
 pub(crate) use model::{Model, Step};
 
+const WINDOWS_SLOWDOWN: u64 = 5;
+const FINISH_SECS: u64 = 90;
+
+pub(crate) fn slow(secs: u64) -> u64 {
+    if cfg!(windows) {
+        secs * WINDOWS_SLOWDOWN
+    } else {
+        secs
+    }
+}
+
 pub(crate) fn pause(wait: Duration) {
     let until = Instant::now() + wait;
     while let Some(left) = until
@@ -136,7 +147,7 @@ impl Session {
             if let Some(status) = child.try_wait().unwrap() {
                 break status;
             }
-            if started.elapsed() > Duration::from_secs(90) {
+            if started.elapsed() > Duration::from_secs(slow(FINISH_SECS)) {
                 drop(child.kill());
                 panic!("summonr did not finish: {}", read(&stderr));
             }
@@ -261,7 +272,12 @@ pub(crate) fn harness(tests: &[(&'static str, fn())]) {
         println!("test {name} ... {}", if passed { "ok" } else { "FAILED" });
         failed += usize::from(!passed);
     }
-    println!("test result: {} passed; {failed} failed", total - failed);
+    println!(
+        "test result: {}. {} passed; {failed} failed; 0 ignored; 0 measured; {} filtered out",
+        if failed == 0 { "ok" } else { "FAILED" },
+        total - failed,
+        tests.len() - total
+    );
     if failed > 0 {
         std::process::exit(1);
     }

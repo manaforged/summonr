@@ -97,6 +97,7 @@ fn commit_all(session: &Session) {
 }
 
 pub(crate) fn a_failed_worktree_run_without_changes_says_so() {
+    let budget = crate::support::slow(2).to_string();
     let session = Session::new();
     with_check(&session, "exit 1");
     commit_all(&session);
@@ -109,7 +110,7 @@ pub(crate) fn a_failed_worktree_run_without_changes_says_so() {
             "--goal",
             "finish",
             "--max-secs",
-            "2",
+            &budget,
             "--json",
         ],
     );

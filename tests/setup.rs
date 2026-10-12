@@ -300,6 +300,10 @@ fn a_closed_local_server_fails_at_once_and_says_nothing_is_listening() {
     let url = format!("http://127.0.0.1:{port}/v1");
     let (ok, text) = summonr(home, &["login", "lab", "--url", &url, "--model", "m"]);
     assert!(ok, "{text}");
+    let config = home.join(".summonr/config.toml");
+    let mut table = std::fs::read_to_string(&config).unwrap();
+    table.push_str("\n[limits]\nretry_base_ms = 10000\n");
+    std::fs::write(&config, table).unwrap();
     let started = std::time::Instant::now();
     let (ok, text) = summonr(home, &["lab", "-p", "hi"]);
     assert!(!ok, "{text}");
@@ -308,7 +312,7 @@ fn a_closed_local_server_fails_at_once_and_says_nothing_is_listening() {
         "{text}"
     );
     assert!(
-        started.elapsed() < std::time::Duration::from_millis(900),
+        started.elapsed() < std::time::Duration::from_secs(5),
         "a refused local connection was retried: {:?}",
         started.elapsed()
     );

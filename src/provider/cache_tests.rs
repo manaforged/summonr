@@ -107,12 +107,10 @@ fn claude_through_a_completions_host_marks_its_cache_breakpoints() {
     assert_eq!(other["messages"][1]["content"], "hi");
 }
 
-#[test]
-fn grok_routes_every_request_of_a_session_to_its_cache() {
+fn sent(mut endpoint: Endpoint, request: &CompletionRequest<'_>) -> String {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let mut grok = endpoint("grok", "grok-4.6");
-    grok.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
-    grok.oauth = None;
+    endpoint.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
+    endpoint.oauth = None;
     let heard = std::thread::spawn(move || {
         let (mut socket, _) = listener.accept().unwrap();
         let mut seen = Vec::new();
@@ -143,31 +141,85 @@ fn grok_routes_every_request_of_a_session_to_its_cache() {
             .unwrap();
         String::from_utf8_lossy(&seen).to_ascii_lowercase()
     });
-    let messages = [Message::system("sys"), Message::user("hi")];
-    let request = CompletionRequest::new(
-        "s".to_string(),
-        grok.model.clone(),
-        &messages,
-        &[],
-        Some(1_000),
-        false,
-        None,
-    );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     let _context = runtime.enter();
-    let client = Client::connect(&grok).unwrap();
-    let outcome = runtime.block_on(client.complete_stream(&request, &mut Partial::default()));
+    let client = Client::connect(&endpoint).unwrap();
+    let outcome = runtime.block_on(client.complete_stream(request, &mut Partial::default()));
     let failure = outcome.unwrap_err().to_string();
-    let headers = heard.join().unwrap();
-    assert!(
-        !headers.is_empty(),
-        "no request reached the server: {failure}"
+    let seen = heard.join().unwrap();
+    assert!(!seen.is_empty(), "no request reached the server: {failure}");
+    seen
+}
+
+fn plain<'a>(
+    model: &str,
+    messages: &'a [Message],
+    effort: Option<Effort>,
+) -> CompletionRequest<'a> {
+    CompletionRequest::new(
+        "s".to_string(),
+        model.to_string(),
+        messages,
+        &[],
+        None,
+        false,
+        effort,
+    )
+}
+
+#[test]
+fn grok_routes_every_request_of_a_session_to_its_cache() {
+    let messages = [Message::system("sys"), Message::user("hi")];
+    let headers = sent(
+        endpoint("grok", "grok-4.6"),
+        &plain("grok-4.6", &messages, None),
     );
     assert!(headers.contains("x-grok-conv-id: s\r\n"), "{headers}");
     assert!(headers.contains("\"prompt_cache_key\":\"s\""), "{headers}");
+}
+
+#[test]
+fn current_claude_models_bind_thinking_and_ask_for_the_full_output() {
+    let messages = tool_round();
+    for (model, effort) in [
+        ("claude-opus-5-5", None),
+        ("claude-haiku-5-5", Some(Effort::High)),
+    ] {
+        let seen = sent(
+            endpoint("anthropic", model),
+            &plain(model, &messages, effort),
+        );
+        assert!(
+            seen.contains("anthropic-beta: thinking-binding-controls-2026-08-01"),
+            "{model}: {seen}"
+        );
+        assert!(
+            seen.contains("\"prefix_mismatch_behavior\":\"drop_block\""),
+            "{model}: {seen}"
+        );
+        assert!(
+            seen.contains("\"display\":\"summarized\""),
+            "{model}: {seen}"
+        );
+        assert!(seen.contains("\"max_tokens\":128000"), "{model}: {seen}");
+    }
+    let haiku = sent(
+        endpoint("anthropic", "claude-haiku-5-5"),
+        &plain("claude-haiku-5-5", &messages, Some(Effort::High)),
+    );
+    assert!(haiku.contains("\"effort\":\"high\""), "{haiku}");
+    let older = sent(
+        endpoint("anthropic", "claude-opus-4-8"),
+        &plain("claude-opus-4-8", &messages, Some(Effort::High)),
+    );
+    assert!(
+        !older.contains("anthropic-beta: thinking-binding"),
+        "{older}"
+    );
+    assert!(!older.contains("block_binding"), "{older}");
 }
 
 #[test]

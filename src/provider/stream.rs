@@ -57,7 +57,10 @@ impl Client {
                 bytes,
                 model.as_deref(),
                 &request.session,
-                route.as_deref(),
+                super::client::Routing {
+                    cache: route.as_deref(),
+                    beta: W::beta(request),
+                },
                 true,
             )
             .await?

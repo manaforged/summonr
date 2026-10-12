@@ -363,10 +363,13 @@ Anthropic Messages (`anthropic`, or any row with `wire = "anthropic"`), by model
 | `claude-mythos-preview` | `low`, `medium`, `high`, `max` | sends `low` |
 | `claude-opus-5`, `claude-sonnet-5` | `low`, `medium`, `high`, `xhigh`, `max` | `thinking` type `disabled` |
 | `claude-sonnet-5-5` | `low`, `medium`, `high`, `xhigh`, `max` | `thinking` type `between_tools` |
+| `claude-haiku-5-5` | `low`, `medium`, `high`, `xhigh`, `max` | `thinking` type `disabled` |
 | `claude-opus-4-8`, `claude-opus-4-7` | `low`, `medium`, `high`, `xhigh`, `max` | no `thinking` field |
 | `claude-opus-4-6`, `claude-sonnet-4-6` | `low`, `medium`, `high`, `max` | no `thinking` field |
 | `claude-opus-4-5` | `low`, `medium`, `high` | no `thinking` field |
 | Earlier Claude models | `low`, `medium`, `high`, sent as a thinking budget | no `thinking` field |
+
+On `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`, summonr sends adaptive thinking with `display: "summarized"` and `block_binding.prefix_mismatch_behavior: "drop_block"` (beta `thinking-binding-controls-2026-08-01`), so a compacted history drops stale thinking blocks instead of failing. `max_tokens` defaults to 128,000 on Claude 5.x models and 64,000 on the 4.5 family; thinking counts toward it.
 
 OpenAI (`openai`, on the chat or the Responses wire), by model id:
 

@@ -39,6 +39,12 @@ fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+pub(super) struct Routing<'a> {
+    pub(super) cache: Option<&'a str>,
+    pub(super) beta: Option<(&'static str, &'static str)>,
+}
+
 #[derive(Clone)]
 pub struct Client {
     pub(super) http: leyline::Session,
@@ -304,10 +310,10 @@ impl Client {
         body: Vec<u8>,
         model: Option<&str>,
         session: &str,
-        route: Option<&str>,
+        routing: Routing<'_>,
         stream: bool,
     ) -> Result<leyline::Response> {
-        let response = self.post_json(url, body, session, route, stream).await?;
+        let response = self.post_json(url, body, session, routing, stream).await?;
         let status = response.status();
         if status.is_success() {
             return Ok(response);
@@ -323,15 +329,18 @@ impl Client {
         url: &str,
         body: Vec<u8>,
         session: &str,
-        route: Option<&str>,
+        routing: Routing<'_>,
         stream: bool,
     ) -> Result<leyline::Response> {
         let token = self.token().await?;
         let mut request = self
             .attach(self.http.post(url), &token, Some(session))
             .header("content-type", "application/json");
-        if let (Some(name), Some(value)) = (&self.cache_header, route) {
+        if let (Some(name), Some(value)) = (&self.cache_header, routing.cache) {
             request = request.header(name.as_str(), value);
+        }
+        if let Some((name, value)) = routing.beta {
+            request = request.header(name, value);
         }
         let request = request.body(body);
         let request = if stream { request.stream() } else { request };

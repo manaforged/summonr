@@ -287,6 +287,10 @@ pub(crate) trait Chat {
         None
     }
 
+    fn beta(_call: &CompletionRequest<'_>) -> Option<(&'static str, &'static str)> {
+        None
+    }
+
     fn body(
         call: &CompletionRequest<'_>,
         reasoning: &Reasoning,

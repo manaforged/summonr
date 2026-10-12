@@ -34,9 +34,9 @@ fn a_route_with_a_key_wins_when_no_toggle_is_set() {
 fn old_row_names_still_reach_their_route_unless_the_user_owns_the_name() {
     let plain = file("");
     assert_eq!(pick(&plain, "glm"), "zai-cn");
-    assert_eq!(pick(&plain, "glm-intl"), "zai");
+    assert_eq!(pick(&plain, "glm-intl"), "zai-intl");
     assert_eq!(pick(&plain, "zai-cn"), "zai-cn");
-    assert_eq!(pick(&plain, "zen"), "opencode");
+    assert_eq!(pick(&plain, "zen"), "opencode-zen");
     let owned = file("[endpoint.glm]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\n");
     assert_eq!(pick(&owned, "glm"), "glm");
 }
@@ -83,7 +83,7 @@ fn a_toggle_switches_one_axis_and_keeps_the_other() {
     assert_eq!(info.provider, "zai");
     info.name = "zai-cn".to_string();
     let region = super::next(&info, super::Toggle::Region).unwrap();
-    assert_eq!(region.name, "zai");
+    assert_eq!(region.name, "zai-intl");
     let access = super::next(&info, super::Toggle::Access).unwrap();
     assert_eq!(access.name, "zai-cn-api");
     assert_eq!(info.title(), "zai");
@@ -97,7 +97,7 @@ fn a_zhipu_key_runs_the_international_coding_plan() {
             .env_keys
             .contains(&"ZHIPU_API_KEY")
     };
-    assert!(reads("zai"));
+    assert!(reads("zai-intl"));
     assert!(!reads("zai-cn"));
     assert!(!reads("zai-cn-api"));
 }
@@ -114,7 +114,7 @@ fn a_key_saved_under_a_provider_lands_on_the_route_that_reads_it() {
 #[test]
 fn a_key_named_for_a_route_stays_on_that_route() {
     let china = file("[provider.zai]\nregion = \"cn\"\n");
-    assert_eq!(super::slot(&china, "zai"), "zai");
+    assert_eq!(super::slot(&china, "zai-intl"), "zai-intl");
     assert_eq!(super::slot(&china, "alibaba"), "qwen-plan");
     assert_eq!(super::slot(&china, "glm"), "zai-cn");
 }
@@ -140,4 +140,52 @@ fn a_retired_name_keeps_its_own_overrides() {
     assert_eq!(route, "zai-cn");
     let endpoint = super::super::resolve::seat(&custom, "glm").unwrap();
     assert_eq!(endpoint.model, "glm-5.3");
+}
+
+#[test]
+fn no_route_shares_its_providers_name() {
+    let china = file("[provider.zai]\nregion = \"cn\"\n");
+    for provider in [
+        "zai",
+        "anthropic",
+        "kimi",
+        "minimax",
+        "siliconflow",
+        "opencode",
+    ] {
+        assert!(
+            super::super::preset::preset(provider).is_none(),
+            "{provider}"
+        );
+    }
+    assert_eq!(super::slot(&china, "zai"), "zai-cn");
+    assert_eq!(super::slot(&china, "zai-intl"), "zai-intl");
+    assert_eq!(super::super::remembered("zai-cn"), "zai");
+    assert_eq!(super::super::remembered("deepseek"), "deepseek");
+}
+
+#[test]
+fn a_key_stored_under_an_old_route_name_still_works() {
+    crate::secret::set("siliconflow", "sk-old-slot").unwrap();
+    let endpoint = super::super::resolve(Some("siliconflow"), None, crate::Need::Config);
+    crate::secret::forget("siliconflow").unwrap();
+    let endpoint = endpoint.unwrap();
+    assert_eq!(endpoint.name, "siliconflow-intl");
+    assert_eq!(endpoint.api_key.as_deref(), Some("sk-old-slot"));
+}
+
+#[test]
+fn a_provider_table_overlays_its_route_and_the_route_table_wins() {
+    let provider = file("[endpoint.zai]\nmodel = \"glm-5.3\"\n");
+    assert_eq!(
+        super::super::resolve::seat(&provider, "zai").unwrap().model,
+        "glm-5.3"
+    );
+    let both = file("[endpoint.glm]\nmodel = \"old\"\n[endpoint.zai-cn]\nmodel = \"new\"\n");
+    assert_eq!(
+        super::super::resolve::seat(&both, "glm").unwrap().model,
+        "new"
+    );
+    let off = super::provider_names(&file("[endpoint.claude-pro]\nmodel = \"x\"\n"));
+    assert!(!off.iter().any(|name| name == "claude-pro"), "{off:?}");
 }

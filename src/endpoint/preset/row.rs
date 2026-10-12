@@ -67,7 +67,7 @@ pub(super) struct Row {
     #[serde(default)]
     start: Option<String>,
     #[serde(default)]
-    key_from: Option<String>,
+    key_from: Vec<String>,
     #[serde(default)]
     provider: Option<String>,
     #[serde(default)]
@@ -196,7 +196,7 @@ impl Row {
         self.check_env_keys(&name)?;
         let missing = self.missing(&name);
         let reasoning = self.reasoning.spec(&name)?;
-        if self.key_from.as_deref() == Some(name.as_str()) {
+        if self.key_from.contains(&name) {
             return Err(format!("`{name}` reads its key from itself"));
         }
         Ok(Preset {

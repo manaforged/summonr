@@ -135,7 +135,7 @@ fn ready(file: &File, route: &Preset) -> bool {
     configured
         || env_key(route.env_keys).is_some()
         || stored(&route.name)
-        || route.key_from.as_deref().is_some_and(stored)
+        || route.key_from.iter().any(|slot| stored(slot))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,8 +221,21 @@ pub(super) fn slot(file: &File, name: &str) -> String {
     }
 }
 
-pub(super) fn retired_name(name: &str) -> bool {
-    retired().contains_key(name)
+pub(crate) fn remembered(route: &str) -> String {
+    let provider = provider_of(route);
+    if routes(provider).nth(1).is_some() {
+        provider.to_string()
+    } else {
+        route.to_string()
+    }
+}
+
+pub(super) fn slots(route: &str) -> Vec<String> {
+    let mut slots = vec![route.to_string()];
+    if let Some(preset) = preset(route) {
+        slots.extend(preset.key_from.iter().cloned());
+    }
+    slots
 }
 
 fn word(setting: impl Serialize) -> Result<String> {
@@ -240,8 +253,14 @@ pub(crate) fn provider_names(file: &File) -> Vec<String> {
             names.push(preset.provider.clone());
         }
     }
+    let shipped: BTreeSet<&str> = super::preset::listed()
+        .iter()
+        .map(|preset| preset.name.as_str())
+        .collect();
     for (name, row) in &file.endpoint {
-        let builtin = preset(name).is_some() || retired().contains_key(name.as_str());
+        let builtin = shipped.contains(name.as_str())
+            || retired().contains_key(name.as_str())
+            || seen.contains(name);
         let owned = row.base_url.is_some() && preset(name).is_none();
         if (!builtin || owned) && seen.insert(name.clone()) {
             names.push(name.clone());

@@ -220,13 +220,12 @@ pub(super) fn seat(file: &File, chosen: &str) -> Option<Endpoint> {
     let typed = chosen;
     let chosen = &super::route::pick(file, typed);
     let mut endpoint = builtin(chosen).or_else(|| from_file(file, chosen))?;
-    if let Some(row) = file.endpoint.get(chosen) {
-        endpoint.overlay(row);
-    }
     if chosen != typed
-        && super::route::retired_name(typed)
         && let Some(row) = file.endpoint.get(typed)
     {
+        endpoint.overlay(row);
+    }
+    if let Some(row) = file.endpoint.get(chosen) {
         endpoint.overlay(row);
     }
     Some(endpoint)

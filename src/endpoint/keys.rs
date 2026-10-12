@@ -44,10 +44,12 @@ impl Endpoint {
         if let Some(found) = secret::get(&self.name)? {
             return Ok(Some(found));
         }
-        match preset(&self.name).and_then(|row| row.key_from.as_deref()) {
-            Some(peer) => secret::get(peer),
-            None => Ok(None),
+        for slot in preset(&self.name).map_or(&[][..], |row| row.key_from.as_slice()) {
+            if let Some(found) = secret::get(slot)? {
+                return Ok(Some(found));
+            }
         }
+        Ok(None)
     }
 
     pub(super) fn takes_key(&self) -> bool {

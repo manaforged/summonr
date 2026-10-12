@@ -6,7 +6,7 @@ use super::args::{self, Show, Spec, USAGE, usage};
 use super::report;
 use super::runner;
 use super::schedule;
-use super::store::{self, Job, Notify};
+use super::store::{self, Job};
 use super::view;
 use crate::error::{Error, Result};
 
@@ -162,32 +162,19 @@ fn add(name: &str, spec: &Spec, cwd: &Path) -> Result<i32> {
     super::guard()?;
     let name = name.to_ascii_lowercase();
     store::check_name(&name)?;
-    let schedule = schedule_text(spec, spec.tz.as_deref())?
-        .ok_or_else(|| usage("add needs --cron, --every, --at or --manual"))?;
-    let task = spec
-        .task
-        .clone()
-        .ok_or_else(|| usage("add needs -p PROMPT or --goal GOAL"))?;
     let mut job = Job {
         name: name.clone(),
-        schedule,
-        tz: None,
-        task,
-        endpoint: None,
-        model: None,
         dir: cwd.to_path_buf(),
-        max_secs: None,
-        max_tokens: None,
-        worktree: false,
-        notify: Notify::default(),
-        mail: None,
-        chat: false,
-        paused: false,
-        fails: 0,
         created: super::now(),
-        runs: Vec::new(),
+        ..Job::default()
     };
     apply(&mut job, spec)?;
+    if job.schedule.is_empty() {
+        return Err(usage("add needs --cron, --every, --at or --manual"));
+    }
+    if spec.task.is_none() {
+        return Err(usage("add needs -p PROMPT or --goal GOAL"));
+    }
     store::update(|jobs| {
         if jobs.iter().any(|other| other.name == name) {
             return Err(Error::Config(format!("cron job `{name}` already exists")));

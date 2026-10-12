@@ -94,7 +94,7 @@ impl Reporter {
 
     pub(crate) fn set_model(&self, model: &str) {
         if let Some(target) = &self.target {
-            store(&target.model, short_model(model));
+            store(&target.model, model_label(model));
             target.metadata();
         }
     }
@@ -236,7 +236,7 @@ fn target(
         socket,
         session: Mutex::new(session.to_string()),
         title: Mutex::new(folder(workspace)),
-        model: Mutex::new(short_model(model)),
+        model: Mutex::new(model_label(model)),
         life: AtomicU64::new(0),
         meta: AtomicU64::new(0),
         queue: Mutex::new(None),
@@ -348,7 +348,7 @@ fn metadata_args(pane: &OsStr, title: &str, model: &str, seq: u64) -> Vec<OsStri
     .into()
 }
 
-fn short_model(model: &str) -> String {
+fn model_label(model: &str) -> String {
     let name = model.rsplit(['/', ':']).next().unwrap_or(model);
     crate::text::ellipsize(name.trim(), 80)
 }

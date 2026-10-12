@@ -17,6 +17,12 @@ pub(crate) enum Task {
     Goal(String),
 }
 
+impl Default for Task {
+    fn default() -> Self {
+        Self::Prompt(String::new())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Notify {
@@ -47,7 +53,7 @@ pub(crate) struct Run {
     pub outcome: Outcome,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Job {
     pub name: String,
     pub schedule: String,

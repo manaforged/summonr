@@ -114,10 +114,10 @@ pub(crate) fn snapshot(root: &Path) -> String {
         return "Git state unavailable".to_string();
     };
     match count {
-        0 => format!("{head} ({}), worktree clean", short(&base)),
+        0 => format!("{head} ({}), worktree clean", abbrev(&base)),
         count => format!(
             "{head} ({}), {} dirty",
-            short(&base),
+            abbrev(&base),
             crate::text::plural(count, "file")
         ),
     }
@@ -154,7 +154,7 @@ fn dirty(root: &Path) -> Result<(String, String, usize)> {
         }
     }
     Ok(match head.filter(|oid| oid != "(initial)") {
-        Some(oid) => (short(&oid).to_string(), named, count),
+        Some(oid) => (abbrev(&oid).to_string(), named, count),
         None => ("no commits".to_string(), "empty tree".to_string(), count),
     })
 }
@@ -169,8 +169,8 @@ fn status_path(record: &str) -> Option<&str> {
     record.splitn(fields, ' ').nth(fields - 1)
 }
 
-fn short(value: &str) -> &str {
-    value.get(..12).unwrap_or(value)
+fn abbrev(oid: &str) -> &str {
+    oid.get(..12).unwrap_or(oid)
 }
 
 pub fn stats(root: &Path) -> Result<Diff> {

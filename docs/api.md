@@ -102,7 +102,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | --- | --- |
 | `session` | `id` |
 | `tool_call` | `id`, `name`, `arguments` (string) |
-| `tool_result` | `id`, `success`, `mutated`, `output`, optional `millis` |
+| `tool_result` | `id`, `success`, `mutated`, `output`, optional `millis`, and for a file edit an optional `patch` (the unified diff of that call) |
 | `assistant` | `text`; a turn that takes a steered message after a reply prints one per reply |
 | `delta` | `text` |
 | `reasoning` | `text` |
@@ -117,7 +117,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `elicit` | `form` (`message`, `fields`, and the MCP `server`, absent when the model asks), or null when the question ends; `dialog`, the number an answer must carry |
 | `verify` | `command`, `passed`. `{"command":"workspace changed after the check ran","passed":false}` means files changed after the check ran; it counts toward `checks_failed` |
 | `receipt` | `receipt` |
-| `work` | `progress`. `checks_failed` agrees with the `verify` events. `rounds` counts checked rounds of the current goal or step, and `attempts` the failed checks in a row, so a first-check pass reports `rounds` 1 and `attempts` 0. `todos` is the model's display-only list, each with `text` and `status` (`pending`, `active`, or `done`) |
+| `work` | `progress`. `checks_failed` agrees with the `verify` events. `rounds` counts checked rounds of the current goal or step, and `attempts` the failed checks in a row, so a first-check pass reports `rounds` 1 and `attempts` 0. `todos` is the model's display-only list, each with `text` and `status` (`pending`, `active`, or `done`). The other fields: `kind` (`single`, `steps`, or `goal`), `objective` (the goal or step text, left out when empty), `phase` (`plan`, `execute`, `verify`, `review`, `completed`, or `failed`), `current` and `total` (the step number and step count; `current` is null outside steps), `reason` (why the work stopped, or null), `ledger` (the lines of the Ledger pane), and `touched` (workspace files changed so far); empty lists are left out |
 | `child` | `id`, `event` (a nested event) |
 
 A step that contains ``Run `CMD` `` is gated on `CMD` and on `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check.
@@ -174,7 +174,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail`, `search`, and `browser` are off by default.
 - The advertised tool list freezes after the first model round. A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, a table `{ command = "...", dialect = "claude" }`, or a list of either, run in order. Each hook reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. A hook with `dialect = "claude"`, and every plugin hook, follows the Claude Code rules instead (see the reference).
-- Memory files: `~/.summonr/memory/MEMORY.md` (user) and `~/.summonr/memory/<repository>/MEMORY.md` (project) load into every trusted session unless `memory = false` under `[modules]`.
+- Memory files: `~/.summonr/memory/MEMORY.md` (user) and `~/.summonr/memory/<name>-<hash>/MEMORY.md` (project; the folder is named for the repository and a hash of its first commit, or of its path outside git) load into every trusted session unless `memory = false` under `[modules]`.
 - A cron run sets `SUMMONR_CRON` to the job name. Inside it, `summonr cron add`, `edit`, and `remove` exit 1.
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
 - The sandbox is off by default, so an unattended `--goal` run can read and run anything your account can. Run CI and other unattended goals with `--sandbox`. In a noninteractive run, sandbox escape, network grants, and writes outside the workspace are denied; `--no-net` stays in force after a command failure. Auto mode asks before it grants an extra write root.

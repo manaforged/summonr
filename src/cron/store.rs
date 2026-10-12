@@ -9,6 +9,8 @@ const FILE: &str = "jobs.toml";
 const TOKEN_PREFIX: &str = "cron:";
 const TOKEN_BYTES: usize = 32;
 const PAYLOAD_SUFFIX: &str = "body";
+const DASH: char = '-';
+const RUNS: &str = "runs";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -133,7 +135,7 @@ pub(crate) fn dir() -> Result<PathBuf> {
 }
 
 pub(crate) fn run_lock(name: &str) -> Result<PathBuf> {
-    Ok(dir()?.join("runs").join(name))
+    Ok(dir()?.join(RUNS).join(name))
 }
 
 pub(crate) fn remove_run_lock(name: &str) -> Result<()> {
@@ -165,7 +167,7 @@ fn payload_of(path: &Path, name: &str) -> bool {
             .file_stem()
             .and_then(|stem| stem.to_str())
             .and_then(|stem| stem.strip_prefix(name))
-            .and_then(|rest| rest.strip_prefix('-'))
+            .and_then(|rest| rest.strip_prefix(DASH))
             .is_some_and(|slot| slot.parse::<i64>().is_ok())
 }
 
@@ -189,7 +191,7 @@ fn trim(jobs: &mut [Job]) -> Result<()> {
 
 pub(crate) fn check_task(task: &Task) -> Result<()> {
     match task {
-        Task::Goal(goal) if goal.starts_with('-') => {
+        Task::Goal(goal) if goal.starts_with(DASH) => {
             Err(Error::Config("the goal cannot start with `-`".to_string()))
         }
         Task::Goal(_) | Task::Prompt(_) => Ok(()),

@@ -13,6 +13,10 @@ use crate::error::{Error, Result};
 use crate::tools::command::ProcessGroup;
 
 const TYPING_EVERY: Duration = Duration::from_secs(4);
+const NO_REPLY: &str = "(no reply)";
+const STOPPED: &str = "stopped";
+const CHECK_FAILED: i32 = 2;
+const STOPPED_SHORT: i32 = 3;
 const TAIL: usize = 20;
 
 #[derive(Default)]
@@ -34,11 +38,7 @@ impl Seen {
 }
 
 pub(crate) fn outcome(seen: &Seen, code: Option<i32>, stderr: &[String]) -> String {
-    let mut parts = vec![
-        seen.text
-            .clone()
-            .unwrap_or_else(|| "(no reply)".to_string()),
-    ];
+    let mut parts = vec![seen.text.clone().unwrap_or_else(|| NO_REPLY.to_string())];
     parts.extend(
         seen.aborted
             .as_ref()
@@ -46,8 +46,8 @@ pub(crate) fn outcome(seen: &Seen, code: Option<i32>, stderr: &[String]) -> Stri
     );
     parts.extend(match code {
         Some(0) => None,
-        Some(2) => Some("the check failed".to_string()),
-        Some(3) => Some("stopped short".to_string()),
+        Some(CHECK_FAILED) => Some("the check failed".to_string()),
+        Some(STOPPED_SHORT) => Some("stopped short".to_string()),
         Some(code) => Some(format!("failed (exit {code})")),
         None => Some("failed (killed by a signal)".to_string()),
     });
@@ -133,7 +133,7 @@ pub(crate) async fn turn(
         tokio::select! {
             Ok(()) = &mut stopped => {
                 halt(&mut child, group.take()).await?;
-                return Ok((seen.session, "stopped".to_string()));
+                return Ok((seen.session, STOPPED.to_string()));
             }
             _ = beat.tick() => drop(bot.typing(chat).await),
             line = lines.next_line() => match line? {

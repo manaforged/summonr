@@ -14,6 +14,7 @@ use super::proc::{
 use super::rewrite::{read_only_note, sandbox_grant, sandbox_note};
 
 const LOG_READ_BYTES: usize = 512 * 1024;
+const COMMAND_LOG_PREFIX: &str = "command-";
 
 #[derive(Clone, Copy)]
 pub(super) enum Wait {
@@ -54,7 +55,11 @@ impl ToolRegistry {
             let script = crate::shell::wrap(command, &exit_path, &cwd);
             (id, log_path, Some((record_path, script)))
         } else {
-            (String::new(), self.spill_file("command-", &[])?, None)
+            (
+                String::new(),
+                self.spill_file(COMMAND_LOG_PREFIX, &[])?,
+                None,
+            )
         };
         let script = record_path
             .as_ref()

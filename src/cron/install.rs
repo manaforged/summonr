@@ -8,12 +8,24 @@ pub(crate) mod crontab;
 
 #[cfg(any(target_os = "macos", test))]
 const LABEL: &str = "dev.summonr.cron";
+#[cfg(any(target_os = "macos", test))]
+const PLIST_DIR: &str = "Library/LaunchAgents";
+#[cfg(any(target_os = "macos", test))]
+const PLIST_FILE: &str = "dev.summonr.cron.plist";
+#[cfg(target_os = "linux")]
+const SYSTEMD_DIR: &str = ".config/systemd/user";
+#[cfg(target_os = "linux")]
+const SERVICE_FILE: &str = "summonr-cron.service";
 #[cfg(target_os = "linux")]
 const TIMER_FILE: &str = "summonr-cron.timer";
 #[cfg(windows)]
 const TASK_NAME: &str = "summonr-cron";
 #[cfg(windows)]
 const TASK_PATH: &str = "schtasks:summonr-cron";
+#[cfg(target_os = "macos")]
+const LOG_DIR: &str = "cron";
+#[cfg(target_os = "macos")]
+const LOG_FILE: &str = "tick.log";
 #[cfg(any(unix, test))]
 const HOME_VAR: &str = "SUMMONR_HOME";
 #[cfg(any(unix, test))]
@@ -22,6 +34,14 @@ const PATH_VAR: &str = "PATH";
 const USER_HOME_VAR: &str = "HOME";
 #[cfg(any(target_os = "linux", windows, test))]
 const MINUTE_SECS: u64 = 60;
+#[cfg(target_os = "linux")]
+const LINGER_OFF: &str = "no";
+#[cfg(target_os = "linux")]
+const LINGER_NOTE: &str = "jobs run only while you are logged in; `loginctl enable-linger` keeps them running after logout";
+#[cfg(target_os = "macos")]
+const GUI_NOTE: &str = "jobs run while you are logged in";
+#[cfg(target_os = "macos")]
+const FULL_DISK_NOTE: &str = "cron needs Full Disk Access (System Settings › Privacy & Security) for jobs that touch Desktop, Documents or Downloads";
 
 pub(crate) type Installed = (PathBuf, Option<&'static str>);
 
@@ -179,7 +199,7 @@ fn uid() -> u32 {
 
 #[cfg(target_os = "macos")]
 fn plist_path() -> Result<PathBuf> {
-    Ok(os_home()?.join(format!("Library/LaunchAgents/{LABEL}.plist")))
+    Ok(os_home()?.join(PLIST_DIR).join(PLIST_FILE))
 }
 
 #[cfg(target_os = "macos")]
@@ -196,8 +216,8 @@ fn bootout() {
 #[cfg(target_os = "macos")]
 pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
     let file = plist_path()?;
-    let logs = crate::prompt::summonr_home()?.join("cron");
-    let log = logs.join("tick.log");
+    let logs = crate::prompt::summonr_home()?.join(LOG_DIR);
+    let log = logs.join(LOG_FILE);
     std::fs::create_dir_all(&logs)?;
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
@@ -213,10 +233,7 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
             None,
         ) {
             Ok(_) => {
-                return Ok((
-                    file,
-                    (index == 0).then_some("jobs run while you are logged in"),
-                ));
+                return Ok((file, (index == 0).then_some(GUI_NOTE)));
             }
             Err(Error::Config(text)) => failures.push(text),
             Err(error) => return Err(error),
@@ -224,7 +241,7 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
     }
     std::fs::remove_file(&file)?;
     crontab::install(exe, env.view())
-        .map(|path| (path, Some("cron needs Full Disk Access (System Settings › Privacy & Security) for jobs that touch Desktop, Documents or Downloads")))
+        .map(|path| (path, Some(FULL_DISK_NOTE)))
         .map_err(|error| match error {
             Error::Config(text) => Error::Config(format!("{}; {text}", failures.join("; "))),
             other => other,
@@ -251,8 +268,8 @@ pub(crate) fn status() -> Result<Option<PathBuf>> {
 
 #[cfg(target_os = "linux")]
 fn unit_paths() -> Result<(PathBuf, PathBuf)> {
-    let dir = os_home()?.join(".config/systemd/user");
-    Ok((dir.join("summonr-cron.service"), dir.join(TIMER_FILE)))
+    let dir = os_home()?.join(SYSTEMD_DIR);
+    Ok((dir.join(SERVICE_FILE), dir.join(TIMER_FILE)))
 }
 
 #[cfg(target_os = "linux")]
@@ -264,9 +281,7 @@ fn linger_note() -> Option<&'static str> {
         None,
     )
     .ok()?;
-    (linger.trim() == "no").then_some(
-        "jobs run only while you are logged in; `loginctl enable-linger` keeps them running after logout",
-    )
+    (linger.trim() == LINGER_OFF).then_some(LINGER_NOTE)
 }
 
 #[cfg(target_os = "linux")]

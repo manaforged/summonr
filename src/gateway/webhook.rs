@@ -7,6 +7,10 @@ use crate::cron::{runner, store};
 use crate::error::Error;
 
 const ROUTE: &str = "/run/";
+const BEARER: &str = "bearer";
+const AUTHORIZATION: &str = "authorization";
+const CONTENT_LENGTH: &str = "content-length";
+const TRANSFER_ENCODING: &str = "transfer-encoding";
 const MAX_HEADERS: usize = 32;
 const CHUNK: usize = 4096;
 const IN_FLIGHT: usize = 32;
@@ -137,7 +141,7 @@ pub(crate) fn decide(
     }
     let presented = auth
         .and_then(|value| value.trim().split_once(' '))
-        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case(BEARER))
         .map(|(_, presented)| presented.trim());
     if presented
         .zip(token(name))
@@ -235,7 +239,7 @@ fn head(conn: &mut Conn<'_>, buffer: &mut Vec<u8>) -> Step<Head> {
                         .and_then(|header| std::str::from_utf8(header.value).ok())
                         .map(str::trim)
                 };
-                let length = match header("content-length").map(str::parse::<usize>) {
+                let length = match header(CONTENT_LENGTH).map(str::parse::<usize>) {
                     None => 0,
                     Some(Ok(length)) => length,
                     Some(Err(_)) => return Err(Status::BadRequest),
@@ -243,9 +247,9 @@ fn head(conn: &mut Conn<'_>, buffer: &mut Vec<u8>) -> Step<Head> {
                 return Ok(Head {
                     method: parsed.method.unwrap_or_default().to_string(),
                     path: parsed.path.unwrap_or_default().to_string(),
-                    auth: header("authorization").map(str::to_string),
+                    auth: header(AUTHORIZATION).map(str::to_string),
                     length,
-                    chunked: header("transfer-encoding").is_some(),
+                    chunked: header(TRANSFER_ENCODING).is_some(),
                     offset,
                 });
             }

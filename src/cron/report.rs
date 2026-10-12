@@ -5,6 +5,10 @@ use super::store::{self, Job, Notify, Outcome, Run};
 use crate::Event;
 use crate::error::Result;
 
+const NO_ANSWER: &str = "(no answer)";
+const STILL_RUNNING: &str = "still running";
+const CHECK_FAILED: &str = "check failed";
+
 #[derive(Default)]
 pub(super) struct Report {
     text: Option<String>,
@@ -69,7 +73,7 @@ impl Report {
 
     pub(super) fn reason(&self, outcome: Outcome) -> Option<String> {
         self.aborted.clone().or_else(|| match outcome {
-            Outcome::CheckFailed => Some("check failed".to_string()),
+            Outcome::CheckFailed => Some(CHECK_FAILED.to_string()),
             Outcome::Running
             | Outcome::Done
             | Outcome::Unfinished
@@ -85,13 +89,13 @@ pub(super) fn render(job: &Job, run: &Run) -> Option<String> {
     let log = crate::jobs::log_path(&job.dir, &record);
     let report = Report::read(&log);
     let fallback = match run.outcome {
-        Outcome::Running => "still running",
+        Outcome::Running => STILL_RUNNING,
         Outcome::Done
         | Outcome::CheckFailed
         | Outcome::Unfinished
         | Outcome::Error
         | Outcome::Overlap
-        | Outcome::Expired => "(no answer)",
+        | Outcome::Expired => NO_ANSWER,
     };
     let mut lines = vec![
         report.text.clone().unwrap_or_else(|| fallback.to_string()),

@@ -12,6 +12,9 @@ use super::{Action, addressed, route};
 use crate::config::tilde;
 use crate::error::Result;
 
+const IDLE: &str = "nothing is running";
+const FRESH: &str = "new session";
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Options {
     pub endpoint: Option<String>,
@@ -98,7 +101,7 @@ impl Bridge {
                 let generation = self.generations.entry(chat).or_default();
                 *generation = generation.wrapping_add(1);
                 store::update(|state| state.set_session(chat, None))?;
-                Some("new session".to_string())
+                Some(FRESH.to_string())
             }
             Action::Status => Some(self.status(chat, &dir)?),
             Action::Help => Some(format!(
@@ -129,7 +132,7 @@ impl Bridge {
                 .take()
                 .is_some_and(|stop| stop.send(()).is_ok())
         });
-        (!stopped).then(|| "nothing is running".to_string())
+        (!stopped).then(|| IDLE.to_string())
     }
 
     fn run(&mut self, chat: i64, user: i64, text: String) -> Option<String> {

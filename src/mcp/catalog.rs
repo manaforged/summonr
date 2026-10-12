@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const LISTING: &str = "json";
+const FAILURE: &str = "failed";
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(super) struct Listing {
     #[serde(default)]
@@ -34,26 +37,26 @@ fn file(key: &str, extension: &str) -> Option<PathBuf> {
 }
 
 pub(super) fn load(key: &str) -> Option<Listing> {
-    let text = crate::durable::store::read_or_empty(&file(key, "json")?).ok()?;
+    let text = crate::durable::store::read_or_empty(&file(key, LISTING)?).ok()?;
     serde_json::from_str::<Listing>(&text)
         .ok()
         .filter(|listing| !listing.is_empty())
 }
 
 pub(super) fn save(key: &str, listing: &Listing) {
-    if let Some(failed) = file(key, "failed") {
+    if let Some(failed) = file(key, FAILURE) {
         drop(std::fs::remove_file(failed));
     }
     if load(key).is_some_and(|cached| cached == *listing) {
         return;
     }
-    if let (Some(path), Ok(text)) = (file(key, "json"), serde_json::to_string(listing)) {
+    if let (Some(path), Ok(text)) = (file(key, LISTING), serde_json::to_string(listing)) {
         drop(crate::durable::store::write(&path, text));
     }
 }
 
 pub(super) fn fail(key: &str, error: &str) {
-    if let Some(path) = file(key, "failed") {
+    if let Some(path) = file(key, FAILURE) {
         drop(crate::durable::store::write(
             &path,
             error.lines().next().unwrap_or_default(),
@@ -62,7 +65,7 @@ pub(super) fn fail(key: &str, error: &str) {
 }
 
 pub(super) fn failure(key: &str) -> Option<String> {
-    let text = crate::durable::store::read_or_empty(&file(key, "failed")?).ok()?;
+    let text = crate::durable::store::read_or_empty(&file(key, FAILURE)?).ok()?;
     let text = text.trim();
     (!text.is_empty()).then(|| text.to_string())
 }

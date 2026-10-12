@@ -5,6 +5,8 @@ use super::view;
 use crate::error::{Error, Result};
 
 pub(super) const USAGE: &str = "usage:\n  summonr cron add NAME (--cron EXPR | --every 30m | --at TIME | --manual) (-p PROMPT | --goal GOAL)\n      [--dir D] [-e|--endpoint E] [--model M] [--tz ZONE] [--max-secs N] [--max-tokens N]\n      [--worktree] [--chat] [--notify never|failure|always] [--mail SESSION]\n  summonr cron edit NAME [same flags]\n  summonr cron list [--json]\n  summonr cron show|pause|resume|remove NAME\n  summonr cron run NAME [--raw]\n  summonr cron log NAME [--last N] [--raw]\n  summonr cron token NAME\n  summonr cron install|uninstall|status\n\nTIME is HH:MM, YYYY-MM-DD HH:MM, or RFC 3339. A --manual job runs only through `cron run` or the webhook.\nThe OS starts `summonr cron tick` once a minute after `summonr cron install`.";
+const HELP: [&str; 2] = ["--help", "-h"];
+const RAW: &str = "--raw";
 
 #[derive(Default)]
 pub(super) struct Spec {
@@ -32,7 +34,7 @@ pub(super) struct Show {
 }
 
 pub(super) fn wants_help(words: &[&str]) -> bool {
-    matches!(words, [] | ["help", ..]) || words.iter().any(|word| ["--help", "-h"].contains(word))
+    matches!(words, [] | ["help", ..]) || words.iter().any(|word| HELP.contains(word))
 }
 
 pub(super) fn usage(message: &str) -> Error {
@@ -49,7 +51,7 @@ pub(super) fn show(words: &[&str], last: bool) -> Result<Show> {
     let mut words = words.iter().copied();
     while let Some(flag) = words.next() {
         match flag {
-            "--raw" => show.raw = true,
+            RAW => show.raw = true,
             "--last" if last => {
                 let value = words.next().ok_or_else(|| missing(flag))?;
                 show.last = Some(number(value)?);

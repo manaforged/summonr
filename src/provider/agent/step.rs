@@ -16,6 +16,17 @@ pub(in crate::provider) enum Step {
 }
 
 impl Run {
+    pub(super) fn abandoned(&self, messages: &[Message]) -> bool {
+        let answered: std::collections::BTreeSet<&str> = messages
+            .iter()
+            .filter(|message| message.role == Role::Tool)
+            .filter_map(|message| message.tool_call_id.as_deref())
+            .collect();
+        self.pending
+            .iter()
+            .any(|call| !answered.contains(call.id.as_str()))
+    }
+
     pub(super) async fn answer(&mut self, messages: &[Message]) -> Result<()> {
         for call in std::mem::take(&mut self.pending) {
             let result = messages.iter().rev().find(|message| {

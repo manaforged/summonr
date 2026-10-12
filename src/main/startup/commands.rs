@@ -315,7 +315,7 @@ pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
             Ok(())
         }
         McpCommand::Remove { name } => {
-            if !summonr::mcp_remove(&workspace()?, name)? {
+            if !summonr::mcp_remove(name)? {
                 return Err(summonr::Error::Config(format!(
                     "no MCP server named {name} in ~/.summonr/config.toml"
                 )));

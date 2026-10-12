@@ -79,9 +79,13 @@ impl Entry {
             }
         }
         let root = dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
-        let key = crate::text::fnv64(
-            &serde_json::to_vec(&(root, &name, &self.command, &self.args, &self.url))
-                .unwrap_or_default(),
+        let key = format!(
+            "{}-{}",
+            super::catalog::stem(&name),
+            crate::text::fnv64(
+                &serde_json::to_vec(&(root, &name, &self.command, &self.args, &self.url))
+                    .unwrap_or_default(),
+            )
         );
         let allow = self.tools.clone();
         let idle = (self.keep_alive != Some(true)).then(|| {

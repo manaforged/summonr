@@ -8,9 +8,9 @@ pub(crate) mod crontab;
 
 #[cfg(any(target_os = "macos", test))]
 const LABEL: &str = "dev.summonr.cron";
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 const PLIST_DIR: &str = "Library/LaunchAgents";
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 const PLIST_FILE: &str = "dev.summonr.cron.plist";
 #[cfg(target_os = "linux")]
 const SYSTEMD_DIR: &str = ".config/systemd/user";

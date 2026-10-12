@@ -11,6 +11,7 @@ use chacha20poly1305::aead::{OsRng, rand_core::RngCore};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use toml_edit::DocumentMut;
 
+#[cfg(target_os = "macos")]
 use crate::durable::store;
 use crate::error::{Error, Result};
 
@@ -41,6 +42,7 @@ pub(super) fn file_wrap(credentials: &Path) -> Result<[u8; KEY_LEN]> {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub(super) fn write_wrap(path: &Path, key: &[u8; KEY_LEN]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -86,6 +88,7 @@ impl From<SecurityExit> for Error {
     }
 }
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 pub(super) fn security(tool: &Path, args: &[&str], stdin: Option<String>) -> Result<String> {
     run(tool, args, stdin)?.map_err(Error::from)
 }

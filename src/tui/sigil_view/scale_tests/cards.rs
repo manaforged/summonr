@@ -390,3 +390,10 @@ fn a_search_jump_opens_that_tool_and_keeps_the_saved_setting() {
     });
     assert_eq!(state, Some((true, crate::prefs::ToolOutput::Hidden)));
 }
+
+#[test]
+fn a_pane_narrower_than_the_split_threshold_gets_a_unified_diff() {
+    use crate::tui::sigil_view::chat::entry::Fit;
+    assert_eq!(Fit::of(47), Fit::Narrow);
+    assert_eq!(Fit::of(160), Fit::Wide);
+}

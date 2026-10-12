@@ -43,7 +43,7 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
         )
         .bg(sigil::prelude::Token::Gray3);
     column = match pane {
-        Pane::Diff => diff::diff(app, column),
+        Pane::Diff => diff::diff(app, column, cols_in(width)),
         Pane::Files => files(app, column),
         Pane::Worktrees => trees(app, column),
         Pane::Jobs => jobs::jobs(app, column),
@@ -346,4 +346,13 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
         );
     }
     column
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a pane is a few hundred pixels wide, far inside u16"
+)]
+fn cols_in(width: f32) -> u16 {
+    (width / crate::tui::sigil_view::canvas::cell().w).max(0.0) as u16
 }

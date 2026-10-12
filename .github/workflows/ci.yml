@@ -63,6 +63,9 @@ jobs:
     steps:
       - name: line endings
         run: git config --global core.autocrlf false
+      - name: real-time scanning
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false

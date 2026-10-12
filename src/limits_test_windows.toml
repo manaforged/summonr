@@ -1,0 +1,3 @@
+command_wait_secs = 10
+command_kill_secs = 30
+job_wait_secs = 10

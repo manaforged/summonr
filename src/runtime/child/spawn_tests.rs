@@ -97,8 +97,12 @@ async fn a_child_gets_its_brief_and_its_own_tools() {
         run.assignment
     );
     assert!(
-        run.assignment
-            .contains(&dirs[0].path().display().to_string()),
+        run.assignment.contains(
+            &dunce::canonicalize(dirs[0].path())
+                .unwrap()
+                .display()
+                .to_string()
+        ),
         "{}",
         run.assignment
     );

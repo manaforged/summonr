@@ -84,6 +84,13 @@ fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
     (dir, tools)
 }
 
+fn past_the_wait() -> String {
+    format!(
+        "sleep {}; echo finished",
+        crate::limits::limits().command_wait_secs + 1
+    )
+}
+
 fn per_shell(bash: &'static str, powershell: &'static str) -> &'static str {
     if cfg!(windows) { powershell } else { bash }
 }

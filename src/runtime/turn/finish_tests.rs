@@ -168,7 +168,8 @@ async fn an_unreachable_reviewer_fails_the_turn_and_says_why_once() {
 
 #[tokio::test]
 async fn a_turn_that_leaves_a_job_running_is_deferred_not_verified() {
-    let mut run = session([background("sleep 5"), Reply::Text("started it")]);
+    let sleep = format!("sleep {}", crate::limits::limits().job_wait_secs + 4);
+    let mut run = session([background(&sleep), Reply::Text("started it")]);
     goal(&mut run, []);
     let turn = run.loop_.turn("go").await.unwrap();
     assert!(turn.checks.is_empty(), "{:?}", turn.checks);

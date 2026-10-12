@@ -19,6 +19,10 @@ case "$MODE$n" in
     say '{"type":"control_request","request_id":"m9","request":{"subtype":"mcp_message","server_name":"summonr","message":{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"read","arguments":{},"_meta":{"claudecode/toolUseId":"toolu_9"}}}}}'
     IFS= read -r line
     exit 0 ;;
+  deny1)
+    say '{"type":"control_request","request_id":"p7","request":{"subtype":"can_use_tool","tool_name":"EndConversation","input":{},"tool_use_id":"toolu_7"}}'
+    take
+    ;;
   fail1)
     say '{"type":"assistant","message":{"id":"a","content":[{"type":"text","text":"x"}]}}'
     say '{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["boom"],"usage":{}}'
@@ -160,4 +164,39 @@ async fn claude_code_gets_the_users_environment_and_the_prompt_in_a_file() {
     let prompt = std::fs::read_to_string(dir.path().join("claude.prompt")).unwrap();
     assert_eq!(prompt, "the system prompt");
     assert!(flag(&runs(dir.path())[0], "--system-prompt").is_none());
+    assert_eq!(
+        flag(&runs(dir.path())[0], "--system-prompt-snapshot").as_deref(),
+        Some("off")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_built_in_claude_code_tool_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    mode(dir.path(), "deny");
+    let client = seat_at(dir.path(), RUNS);
+    let messages = [Message::system("sys"), Message::user("hi")];
+    turn(&client, &messages, &[]).await.unwrap();
+    let log = std::fs::read_to_string(dir.path().join("claude.log")).unwrap();
+    let reply: serde_json::Value = log
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|sent| sent["response"]["request_id"] == "p7")
+        .unwrap();
+    assert_eq!(reply["response"]["response"]["behavior"], "deny");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_turns_on_one_session_run_one_after_the_other() {
+    let dir = tempfile::tempdir().unwrap();
+    mode(dir.path(), "plain");
+    let client = seat_at(dir.path(), RUNS);
+    let messages = [Message::system("sys"), Message::user("hi")];
+    let (left, right) = tokio::join!(turn(&client, &messages, &[]), turn(&client, &messages, &[]));
+    left.unwrap();
+    right.unwrap();
+    let runs = runs(dir.path());
+    let started = flag(&runs[0], "--session-id");
+    assert!(started.is_some(), "{runs:?}");
+    assert_eq!(flag(&runs[1], "--resume"), started, "{runs:?}");
 }

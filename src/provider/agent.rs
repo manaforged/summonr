@@ -18,6 +18,7 @@ pub(super) struct Seat {
     env: Vec<(String, String)>,
     runs: Arc<Mutex<HashMap<String, Run>>>,
     threads: Arc<Mutex<HashMap<String, String>>>,
+    gates: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 impl Seat {
@@ -30,6 +31,7 @@ impl Seat {
                 .collect(),
             runs: Arc::default(),
             threads: Arc::default(),
+            gates: Arc::default(),
         }
     }
 
@@ -41,6 +43,13 @@ impl Seat {
         if let Ok(mut runs) = self.runs.lock() {
             runs.insert(session.to_string(), run);
         }
+    }
+
+    fn gate(&self, session: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.gates.lock().map_or_else(
+            |_| Arc::default(),
+            |mut gates| Arc::clone(gates.entry(session.to_string()).or_default()),
+        )
     }
 
     fn forget(&self, session: &str) {
@@ -73,6 +82,8 @@ impl Client {
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         let seat = self.seat()?;
+        let gate = seat.gate(&request.session);
+        let _turn = gate.lock().await;
         let step = self.turn(seat, request, partial).await;
         if step.is_err() {
             seat.forget(&request.session);

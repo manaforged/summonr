@@ -113,12 +113,14 @@ impl Run {
                 self.send(&bridge::reply(&id, json!({"mcp_response": reply})))
                     .await?;
             }
-            Control::CanUseTool { input } => {
-                self.send(&bridge::reply(
-                    &id,
-                    json!({"behavior": "allow", "updatedInput": input}),
-                ))
-                .await?;
+            Control::CanUseTool { input, mcp_server } => {
+                let ours = mcp_server.is_some_and(|origin| origin.name == bridge::SERVER);
+                let verdict = if ours {
+                    json!({"behavior": "allow", "updatedInput": input})
+                } else {
+                    json!({"behavior": "deny", "message": "summonr runs only its own tools"})
+                };
+                self.send(&bridge::reply(&id, verdict)).await?;
             }
             Control::Other => self.send(&bridge::refusal(&id)).await?,
         }

@@ -21,7 +21,7 @@ take
 say '{"type":"system","subtype":"init","session_id":"s"}'
 say '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"read"}}}'
 say '{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":2,"cache_read_input_tokens":40,"cache_creation_input_tokens":7,"output_tokens":1},"model":"m","content":[{"type":"text","text":"reading"},{"type":"tool_use","id":"toolu_1","name":"mcp__summonr__read","input":{"path":"a.txt"}}]}}'
-say '{"type":"control_request","request_id":"p1","request":{"subtype":"can_use_tool","tool_name":"mcp__summonr__read","input":{"path":"a.txt"},"tool_use_id":"toolu_1"}}'
+say '{"type":"control_request","request_id":"p1","request":{"subtype":"can_use_tool","tool_name":"mcp__summonr__read","mcp_server":{"name":"summonr","source":"sdk"},"input":{"path":"a.txt"},"tool_use_id":"toolu_1"}}'
 take
 mcp m3 '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read","arguments":{"path":"a.txt"},"_meta":{"claudecode/toolUseId":"toolu_1"}}}'
 take

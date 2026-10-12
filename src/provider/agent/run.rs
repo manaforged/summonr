@@ -296,6 +296,8 @@ fn arguments(spec: &Spec<'_>, prompt: Option<&std::path::Path>) -> Vec<String> {
         args.extend([
             "--system-prompt-file".to_string(),
             prompt.display().to_string(),
+            "--system-prompt-snapshot".to_string(),
+            "off".to_string(),
         ]);
     }
     if let Some(effort) = spec.effort {

@@ -93,6 +93,17 @@ impl ProcessGroup {
         }
     }
 
+    pub(crate) fn terminate(&self) -> bool {
+        #[cfg(unix)]
+        {
+            signal(self.pid, libc::SIGTERM)
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    }
+
     pub(super) fn disarm(&mut self) {
         self.armed = false;
     }
@@ -235,6 +246,7 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
         "CARGO_HOME",
         "RUSTUP_HOME",
         "CARGO_TARGET_DIR",
+        crate::cron::runner::ENV,
         "SystemRoot",
         "ComSpec",
         "PATHEXT",

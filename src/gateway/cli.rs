@@ -93,7 +93,7 @@ fn bridge(options: Options) -> Result<i32> {
     if let Err(error) = block(bot.set_commands(&super::MENU))? {
         eprintln!("{error}");
     }
-    block(turn::serve(bot, options))?
+    block(turn::serve(bot, options, me.username))?
 }
 
 fn pair(code: &str) -> Result<i32> {

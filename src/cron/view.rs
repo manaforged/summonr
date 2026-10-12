@@ -185,6 +185,13 @@ fn runs(job: &Job, tz: &TimeZone) -> String {
     format!("runs:\n{}", lines.join("\n"))
 }
 
+pub(super) fn installed(path: &std::path::Path, note: Option<&str>) -> String {
+    match note {
+        Some(note) => format!("installed {}\n{note}", path.display()),
+        None => format!("installed {}", path.display()),
+    }
+}
+
 pub(super) fn token(name: &str, token: &str) -> String {
     let port = crate::limits::limits().gateway_port;
     format!(

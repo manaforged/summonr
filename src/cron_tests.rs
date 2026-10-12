@@ -231,6 +231,7 @@ fn the_systemd_timer_fires_each_minute() {
     assert!(service.contains("ExecStart=\"/bin/summonr\" cron tick"));
     assert!(service.contains("Environment=\"PATH=/usr/bin\""));
     assert!(timer.contains("OnCalendar=*-*-* *:*:00"));
+    assert!(service.contains("KillMode=process"), "{service}");
 }
 
 #[test]
@@ -239,4 +240,37 @@ fn launchd_domains_try_the_gui_session_first() {
         domains(501),
         ["gui/501".to_string(), "user/501".to_string()]
     );
+}
+
+#[test]
+fn a_job_made_during_the_repeated_hour_still_fires_that_night() {
+    let made = "2026-11-01T01:10:00-06:00[America/Chicago]"
+        .parse::<Zoned>()
+        .unwrap();
+    assert_eq!(
+        parse("30 1 * * *")
+            .unwrap()
+            .next_after(made)
+            .unwrap()
+            .to_string(),
+        "2026-11-01T01:30:00-06:00[America/Chicago]"
+    );
+}
+
+#[test]
+fn every_day_stays_on_local_midnight_across_daylight_saving() {
+    assert_eq!(
+        next("every 1d", "2026-03-08T00:00"),
+        "2026-03-09T00:00:00-05:00[America/Chicago]"
+    );
+    assert_eq!(
+        next("every 1d", "2026-11-01T00:00"),
+        "2026-11-02T00:00:00-06:00[America/Chicago]"
+    );
+}
+
+#[test]
+fn the_crontab_line_escapes_percent_signs() {
+    let line = cron_line(Path::new("/opt/100%/summonr"), "/usr/bin", None);
+    assert!(line.contains("'/opt/100\\%/summonr'"), "{line}");
 }

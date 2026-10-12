@@ -32,6 +32,25 @@ const HOME_VAR: &str = "SUMMONR_HOME";
 const PATH_VAR: &str = "PATH";
 #[cfg(any(target_os = "linux", windows, test))]
 const MINUTE_SECS: u64 = 60;
+#[cfg(target_os = "linux")]
+const LINGER_OFF: &str = "no";
+#[cfg(target_os = "linux")]
+const LINGER_NOTE: &str = "jobs run only while you are logged in; `loginctl enable-linger` keeps them running after logout";
+#[cfg(target_os = "macos")]
+const GUI_NOTE: &str = "jobs run while you are logged in";
+#[cfg(target_os = "macos")]
+const FULL_DISK_NOTE: &str = "cron needs Full Disk Access (System Settings › Privacy & Security) for jobs that touch Desktop, Documents or Downloads";
+
+pub(crate) struct Installed {
+    pub path: PathBuf,
+    pub note: Option<&'static str>,
+}
+
+impl Installed {
+    fn new(path: PathBuf, note: Option<&'static str>) -> Self {
+        Self { path, note }
+    }
+}
 
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn plist(
@@ -76,7 +95,7 @@ pub(crate) fn units(
         ));
     }
     let service = format!(
-        "[Unit]\nDescription=summonr cron tick\n\n[Service]\nType=oneshot\nExecStart={} cron tick\n{env}",
+        "[Unit]\nDescription=summonr cron tick\n\n[Service]\nType=oneshot\nKillMode=process\nExecStart={} cron tick\n{env}",
         systemd_quote(&exe.display().to_string())
     );
     let schedule = if every_secs == MINUTE_SECS {
@@ -169,7 +188,7 @@ pub(crate) fn domains(uid: u32) -> [String; 2] {
     [format!("gui/{uid}"), format!("user/{uid}")]
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[expect(unsafe_code, reason = "std has no user-id query")]
 fn uid() -> u32 {
     // SAFETY: getuid has no preconditions and cannot fail.
@@ -188,7 +207,7 @@ fn bootout() {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<PathBuf> {
+pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
     let file = plist_path()?;
     let log = log_path()?;
     if let Some(dir) = log.parent() {
@@ -204,22 +223,24 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<PathBuf> {
     )?;
     bootout();
     let mut failures = Vec::new();
-    for domain in domains(uid()) {
+    for (index, domain) in domains(uid()).into_iter().enumerate() {
         match run(
             "launchctl",
             &["bootstrap", &domain, &file.display().to_string()],
             None,
         ) {
-            Ok(_) => return Ok(file),
+            Ok(_) => return Ok(Installed::new(file, (index == 0).then_some(GUI_NOTE))),
             Err(Error::Config(text)) => failures.push(text),
             Err(error) => return Err(error),
         }
     }
     std::fs::remove_file(&file)?;
-    crontab::install(exe, &env_path(), home.as_deref()).map_err(|error| match error {
-        Error::Config(text) => Error::Config(format!("{}; {text}", failures.join("; "))),
-        other => other,
-    })
+    crontab::install(exe, &env_path(), home.as_deref())
+        .map(|path| Installed::new(path, Some(FULL_DISK_NOTE)))
+        .map_err(|error| match error {
+            Error::Config(text) => Error::Config(format!("{}; {text}", failures.join("; "))),
+            other => other,
+        })
 }
 
 #[cfg(target_os = "macos")]
@@ -252,7 +273,19 @@ fn has_systemd() -> bool {
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<PathBuf> {
+fn linger_note() -> Option<&'static str> {
+    let user = uid().to_string();
+    let linger = run(
+        "loginctl",
+        &["show-user", &user, "--property=Linger", "--value"],
+        None,
+    )
+    .ok()?;
+    (linger.trim() == LINGER_OFF).then_some(LINGER_NOTE)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
     let home = env_home();
     if has_systemd() {
         let (service_path, timer_path) = unit_paths()?;
@@ -268,9 +301,9 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<PathBuf> {
             &["--user", "enable", "--now", TIMER_FILE],
             None,
         )?;
-        return Ok(timer_path);
+        return Ok(Installed::new(timer_path, linger_note()));
     }
-    crontab::install(exe, &env_path(), home.as_deref())
+    crontab::install(exe, &env_path(), home.as_deref()).map(|path| Installed::new(path, None))
 }
 
 #[cfg(target_os = "linux")]
@@ -302,7 +335,7 @@ pub(crate) fn status() -> Result<Option<PathBuf>> {
 }
 
 #[cfg(windows)]
-pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<PathBuf> {
+pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
     let every = (every_secs / MINUTE_SECS).max(1).to_string();
     let action = format!("\"{}\" cron tick", exe.display());
     run(
@@ -312,7 +345,7 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<PathBuf> {
         ],
         None,
     )?;
-    Ok(PathBuf::from(TASK_PATH))
+    Ok(Installed::new(PathBuf::from(TASK_PATH), None))
 }
 
 #[cfg(windows)]

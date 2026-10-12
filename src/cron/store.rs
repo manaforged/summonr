@@ -10,6 +10,7 @@ const TOKEN_PREFIX: &str = "cron:";
 const TOKEN_BYTES: usize = 32;
 const PAYLOADS: &str = "payloads";
 const PAYLOAD_SUFFIX: &str = "body";
+const DASH: char = '-';
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -133,6 +134,58 @@ pub(crate) fn payload_path(name: &str, slot: i64) -> Result<PathBuf> {
         .join(format!("{name}-{slot}.{PAYLOAD_SUFFIX}")))
 }
 
+pub(crate) fn remove_payloads(name: &str) -> Result<()> {
+    let entries = match std::fs::read_dir(dir()?.join(PAYLOADS)) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
+        let path = entry?.path();
+        if payload_of(&path, name) {
+            remove_quiet(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn payload_of(path: &Path, name: &str) -> bool {
+    path.extension().is_some_and(|ext| ext == PAYLOAD_SUFFIX)
+        && path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| stem.strip_prefix(name))
+            .and_then(|rest| rest.strip_prefix(DASH))
+            .is_some_and(|slot| slot.parse::<i64>().is_ok())
+}
+
+fn remove_quiet(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        Ok(()) | Err(_) => Ok(()),
+    }
+}
+
+fn trim(jobs: &mut [Job]) -> Result<()> {
+    let kept = crate::limits::limits().cron_runs_kept;
+    for job in jobs {
+        let extra = job.runs.len().saturating_sub(kept);
+        for run in job.runs.drain(..extra) {
+            remove_quiet(&payload_path(&job.name, run.slot)?)?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn check_task(task: &Task) -> Result<()> {
+    match task {
+        Task::Goal(goal) if goal.starts_with(DASH) => {
+            Err(Error::Config("the goal cannot start with `-`".to_string()))
+        }
+        Task::Goal(_) | Task::Prompt(_) => Ok(()),
+    }
+}
+
 pub(crate) fn rotate_token(name: &str) -> Result<String> {
     use base64::Engine;
     use chacha20poly1305::aead::{OsRng, rand_core::RngCore};
@@ -201,11 +254,7 @@ pub(crate) fn update<T>(change: impl FnOnce(&mut Vec<Job>) -> Result<T>) -> Resu
     let _guard = store::lock(&path, true)?;
     let mut jobs = read(&path)?;
     let out = change(&mut jobs)?;
-    let kept = crate::limits::limits().cron_runs_kept;
-    for job in &mut jobs {
-        let extra = job.runs.len().saturating_sub(kept);
-        job.runs.drain(..extra);
-    }
+    trim(&mut jobs)?;
     let text = toml::to_string(&Book { job: jobs })
         .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
     store::write(&path, text)?;

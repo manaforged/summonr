@@ -90,3 +90,4 @@ gateway_port = 8765
 gateway_body_bytes = 65536
 gateway_fire_secs = 60
 gateway_read_secs = 10
+gateway_stop_secs = 5

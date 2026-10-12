@@ -305,9 +305,9 @@ impl Drop for Client {
         }
         let grace = crate::limits::limits().mcp_close_grace();
         let child = &mut self.child;
-        drop(tokio::task::block_in_place(|| {
-            runtime.block_on(tokio::time::timeout(grace, child.wait()))
-        }));
+        let _exited = tokio::task::block_in_place(|| {
+            runtime.block_on(crate::supervise::exited_within(child, grace))
+        });
     }
 }
 

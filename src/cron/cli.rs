@@ -60,9 +60,9 @@ fn jobs(words: &[&str], cwd: &Path) -> Option<Result<i32>> {
         ["remove", name] => remove(name),
         ["log", name] => log(name, None),
         ["log", name, "--last", count] => number(count).and_then(|count| log(name, Some(count))),
-        ["token", name] => {
-            store::rotate_token(name).and_then(|token| say(view::token(name, &token)))
-        }
+        ["token", name] => super::guard()
+            .and_then(|()| store::rotate_token(name))
+            .and_then(|token| say(view::token(name, &token))),
         [..] => return None,
     })
 }
@@ -79,19 +79,22 @@ fn system(words: &[&str]) -> Option<Result<i32>> {
 }
 
 fn run_now(name: &str) -> Result<i32> {
+    super::guard()?;
     let code = runner::exec(name, super::now(), None)?;
     log(name, Some(1))?;
     Ok(code)
 }
 
 fn install() -> Result<i32> {
+    super::guard()?;
     let exe = std::env::current_exe()?;
     let every = crate::limits::limits().cron_tick_secs;
-    let path = super::install::install(&exe, every)?;
-    say(format!("installed {}", path.display()))
+    let installed = super::install::install(&exe, every)?;
+    say(view::installed(&installed.path, installed.note))
 }
 
 fn uninstall() -> Result<i32> {
+    super::guard()?;
     match super::install::uninstall()? {
         Some(path) => say(format!("removed {}", path.display())),
         None => say("not installed".to_string()),
@@ -229,6 +232,7 @@ fn apply(job: &mut Job, spec: &Spec) -> Result<()> {
         job.schedule = text;
     }
     if let Some(task) = &spec.task {
+        store::check_task(task)?;
         job.task = task.clone();
     }
     if let Some(dir) = &spec.dir {
@@ -307,10 +311,12 @@ fn remove(name: &str) -> Result<i32> {
         Ok(())
     })?;
     store::forget_token(name)?;
+    store::remove_payloads(name)?;
     say(format!("removed {name}"))
 }
 
 fn set_paused(name: &str, paused: bool) -> Result<i32> {
+    super::guard()?;
     store::with_job(name, |job| {
         job.paused = paused;
         if !paused {

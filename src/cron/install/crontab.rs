@@ -10,12 +10,13 @@ pub(crate) fn cron_line(exe: &Path, path: &str, home: Option<&str>) -> String {
     let home = home
         .map(|h| format!("{}={} ", super::HOME_VAR, crate::shell::quote(h)))
         .unwrap_or_default();
-    format!(
-        "* * * * * {}={} {home}{} cron tick {CRON_MARKER}",
+    let command = format!(
+        "{}={} {home}{} cron tick",
         super::PATH_VAR,
         crate::shell::quote(path),
         crate::shell::quote(&exe.display().to_string())
-    )
+    );
+    format!("* * * * * {} {CRON_MARKER}", command.replace('%', "\\%"))
 }
 
 pub(crate) fn crontab_without(text: &str) -> String {

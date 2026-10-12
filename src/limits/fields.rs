@@ -117,4 +117,5 @@ table! {
     gateway_body_bytes: usize,
     gateway_fire_secs: u64,
     gateway_read_secs: u64,
+    gateway_stop_secs: u64,
 }

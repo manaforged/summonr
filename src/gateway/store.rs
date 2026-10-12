@@ -32,6 +32,8 @@ pub(crate) struct State {
     pub pending: Vec<Pending>,
     #[serde(default)]
     pub chats: Vec<Chat>,
+    #[serde(default)]
+    pub offset: i64,
 }
 
 impl State {
@@ -79,6 +81,7 @@ impl State {
         let before = self.users.len();
         self.users.retain(|known| *known != user);
         self.pending.retain(|pending| pending.user != user);
+        self.chats.retain(|row| row.chat != user);
         self.users.len() != before
     }
 
@@ -97,8 +100,7 @@ impl State {
     }
 
     pub(crate) fn paired_chats(&self) -> Vec<i64> {
-        let mut chats: Vec<i64> = self.chats.iter().map(|row| row.chat).collect();
-        chats.extend(self.users.iter().copied());
+        let mut chats = self.users.clone();
         chats.sort_unstable();
         chats.dedup();
         chats

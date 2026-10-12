@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 pub(crate) const FILE: &str = "MEMORY.md";
 const DIR: &str = "memory";
 const GIT_DIR: &str = ".git";
+const KEY_NAME_CHARS: usize = 40;
 const REPORT_END: &str = "Ask me to remember something, or edit a file above. `memory = false` under [modules] turns memory off.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,21 +49,19 @@ pub(crate) fn sections(files: &[MemoryFile], workspace: &Path) -> Vec<String> {
     files
         .iter()
         .filter_map(|file| {
-            let raw = std::fs::read_to_string(&file.path).ok()?;
+            let (raw, over) = read_capped(&file.path, cap)?;
             let text = clean(&raw, workspace);
             let text = text.trim();
             if text.is_empty() {
                 return None;
             }
-            let body = if text.len() > cap {
-                let mut end = cap;
+            let note = format!("\n[memory truncated at {cap} bytes; prune this file]");
+            let body = if over || text.len() > cap {
+                let mut end = cap.saturating_sub(note.len()).min(text.len());
                 while !text.is_char_boundary(end) {
                     end -= 1;
                 }
-                format!(
-                    "{}\n[memory truncated at {cap} bytes; prune this file]",
-                    &text[..end]
-                )
+                format!("{}{note}", &text[..end])
             } else {
                 text.to_string()
             };
@@ -73,6 +72,20 @@ pub(crate) fn sections(files: &[MemoryFile], workspace: &Path) -> Vec<String> {
             ))
         })
         .collect()
+}
+
+fn read_capped(path: &Path, cap: usize) -> Option<(String, bool)> {
+    use std::io::Read;
+    let limit = u64::try_from(cap.saturating_mul(4)).unwrap_or(u64::MAX);
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .ok()?;
+    let over = u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limit;
+    bytes.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+    Some((String::from_utf8_lossy(&bytes).into_owned(), over))
 }
 
 pub fn report(files: &[MemoryFile]) -> String {
@@ -144,10 +157,22 @@ fn key(workspace: &Path) -> String {
             .canonicalize()
             .unwrap_or_else(|_| workspace.to_path_buf())
     });
-    root.to_string_lossy()
+    let path = root.to_string_lossy();
+    let name: String = root
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(KEY_NAME_CHARS)
+        .collect();
+    format!("{name}-{}", crate::text::fnv64(path.as_bytes()))
 }
 
 fn clean(text: &str, workspace: &Path) -> String {
@@ -162,6 +187,9 @@ fn invisible(c: char) -> bool {
             | '\u{202A}'..='\u{202E}'
             | '\u{2060}'..='\u{2064}'
             | '\u{2066}'..='\u{2069}'
+            | '\u{00AD}'
+            | '\u{061C}'
+            | '\u{180E}'
             | '\u{FEFF}'
             | '\u{E0000}'..='\u{E007F}'
     )

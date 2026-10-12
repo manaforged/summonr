@@ -39,6 +39,14 @@ fn serve(home: &Path) -> (Child, u16) {
     (child, port)
 }
 
+fn raw(port: u16, request: &str) -> String {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).unwrap();
+    reply
+}
+
 fn post(port: u16, method: &str, path: &str, token: Option<&str>, body: &str) -> String {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     let auth = token.map_or_else(String::new, |token| {
@@ -78,6 +86,13 @@ fn a_webhook_fires_its_cron_job_once_with_the_token() {
     assert!(fired.contains("\"job\":\"hook\""), "{fired}");
     let again = post(port, "POST", "/run/hook", Some(&token), "{}");
     assert!(again.starts_with("HTTP/1.1 429"), "{again}");
+    let chunked = raw(
+        port,
+        &format!(
+            "POST /run/hook HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer {token}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n0\r\n\r\n"
+        ),
+    );
+    assert!(chunked.starts_with("HTTP/1.1 411"), "{chunked}");
     drop(server.kill());
     drop(server.wait());
 
@@ -114,4 +129,24 @@ fn removing_a_job_forgets_its_webhook_token() {
     drop(server.kill());
     drop(server.wait());
     assert!(reply.starts_with("HTTP/1.1 401"), "{reply}");
+}
+
+#[test]
+fn a_query_string_still_reaches_the_job_and_removal_deletes_payloads() {
+    let home = tempfile::tempdir().unwrap();
+    cron(home.path(), &["add", "q", "--every", "1d", "-p", "hi"]);
+    let token = cron(home.path(), &["token", "q"])
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    let (mut server, port) = serve(home.path());
+    let fired = post(port, "POST", "/run/q?source=ci", Some(&token), "{}");
+    drop(server.kill());
+    drop(server.wait());
+    assert!(fired.starts_with("HTTP/1.1 202"), "{fired}");
+    let payloads = home.path().join(".summonr/cron/payloads");
+    assert_eq!(std::fs::read_dir(&payloads).unwrap().count(), 1);
+    cron(home.path(), &["remove", "q"]);
+    assert_eq!(std::fs::read_dir(&payloads).unwrap().count(), 0);
 }

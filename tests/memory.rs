@@ -72,6 +72,13 @@ fn repository() -> tempfile::TempDir {
     work
 }
 
+fn fnv1a(bytes: &[u8]) -> String {
+    let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    format!("{hash:016x}")
+}
+
 fn project_memory(home: &Path, work: &Path) -> PathBuf {
     let common = Command::new("git")
         .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
@@ -79,13 +86,22 @@ fn project_memory(home: &Path, work: &Path) -> PathBuf {
         .output()
         .unwrap();
     let common = PathBuf::from(String::from_utf8_lossy(&common.stdout).trim());
-    let key: String = common
-        .parent()
+    let root = common.parent().unwrap();
+    let name: String = root
+        .file_name()
         .unwrap()
         .to_string_lossy()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(40)
         .collect();
+    let key = format!("{name}-{}", fnv1a(root.to_string_lossy().as_bytes()));
     home.join("memory").join(key).join("MEMORY.md")
 }
 

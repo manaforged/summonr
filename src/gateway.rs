@@ -2,6 +2,7 @@ use std::future::Future;
 
 use crate::error::{Error, Result};
 
+mod child;
 pub mod cli;
 pub(crate) mod store;
 pub(crate) mod telegram;
@@ -59,6 +60,17 @@ pub(crate) fn route(state: &State, user: i64, _chat: i64, text: &str, now: i64) 
             || Action::Run(text.to_string()),
             |(_, action)| action.clone(),
         )
+}
+
+pub(crate) fn addressed(text: &str, bot: Option<&str>) -> bool {
+    let word = text.split_whitespace().next().unwrap_or_default();
+    match word
+        .strip_prefix('/')
+        .and_then(|command| command.split_once('@'))
+    {
+        None => true,
+        Some((_, name)) => bot.is_some_and(|bot| bot.eq_ignore_ascii_case(name)),
+    }
 }
 
 pub(crate) fn token() -> Result<Option<String>> {

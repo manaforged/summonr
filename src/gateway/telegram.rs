@@ -10,6 +10,10 @@ const BASE: &str = "https://api.telegram.org/bot";
 pub(crate) const MESSAGE_MAX: usize = 4096;
 const TYPING: &str = "typing";
 const UNAUTHORIZED: i64 = 401;
+const CONFLICT: i64 = 409;
+const TOO_MANY: u16 = 429;
+const UPDATE_KINDS: &str = "[\"message\"]";
+const TAKEN: &str = "another bridge or a webhook is already reading this bot's updates";
 const REJECTED: &str = "Telegram rejected that token (HTTP 401). Copy it again from @BotFather.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,9 +66,23 @@ pub(crate) struct Message {
     pub text: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ChatKind {
+    Private,
+    Group,
+    Supergroup,
+    Channel,
+    #[default]
+    #[serde(other)]
+    Other,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Chat {
     pub id: i64,
+    #[serde(rename = "type", default)]
+    pub kind: ChatKind,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -123,13 +141,28 @@ impl Bot {
         Error::Tool(format!("telegram {name}: {why}"))
     }
 
-    async fn call<T: DeserializeOwned>(&self, method: Method, body: &Value) -> Result<T> {
+    fn url(&self, method: Method) -> String {
+        format!("{BASE}{}/{}", self.token, method.name())
+    }
+
+    async fn post<T: DeserializeOwned>(&self, method: Method, body: &Value) -> Result<T> {
+        let request = self.http.post(self.url(method)).json(body);
+        let request = match method {
+            Method::SendMessage => request.retry(send_policy()),
+            Method::GetMe | Method::GetUpdates | Method::SendChatAction | Method::SetMyCommands => {
+                request
+            }
+        };
+        self.call(method, request).await
+    }
+
+    async fn call<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        request: leyline::RequestBuilder,
+    ) -> Result<T> {
         let name = method.name();
-        let url = format!("{BASE}{}/{name}", self.token);
-        let response = self
-            .http
-            .post(url)
-            .json(body)
+        let response = request
             .send()
             .await
             .map_err(|error| self.failed(name, &error.to_string()))?;
@@ -145,6 +178,7 @@ impl Bot {
             (true | false, Some(_) | None) => {
                 match reply.error_code.unwrap_or_else(|| i64::from(status)) {
                     UNAUTHORIZED => Err(Error::Config(REJECTED.to_string())),
+                    CONFLICT => Err(Error::Config(TAKEN.to_string())),
                     code => Err(Error::Tool(format!("telegram {name}: HTTP {code}"))),
                 }
             }
@@ -152,21 +186,22 @@ impl Bot {
     }
 
     pub(crate) async fn me(&self) -> Result<Me> {
-        self.call(Method::GetMe, &json!({})).await
+        self.post(Method::GetMe, &json!({})).await
     }
 
     pub(crate) async fn updates(&self, offset: i64) -> Result<Vec<Update>> {
         let wait = crate::limits::limits().gateway_poll_secs;
-        self.call(
-            Method::GetUpdates,
-            &json!({ "offset": offset, "timeout": wait, "allowed_updates": ["message"] }),
-        )
-        .await
+        let request = self.http.get(self.url(Method::GetUpdates)).query([
+            ("offset", offset.to_string()),
+            ("timeout", wait.to_string()),
+            ("allowed_updates", UPDATE_KINDS.to_string()),
+        ]);
+        self.call(Method::GetUpdates, request).await
     }
 
     pub(crate) async fn send(&self, chat: i64, text: &str) -> Result<()> {
         for part in split(text, MESSAGE_MAX) {
-            self.call::<Value>(
+            self.post::<Value>(
                 Method::SendMessage,
                 &json!({ "chat_id": chat, "text": part }),
             )
@@ -180,19 +215,26 @@ impl Bot {
             .iter()
             .map(|(command, description)| json!({ "command": command, "description": description }))
             .collect();
-        self.call::<Value>(Method::SetMyCommands, &json!({ "commands": commands }))
+        self.post::<Value>(Method::SetMyCommands, &json!({ "commands": commands }))
             .await
             .map(drop)
     }
 
     pub(crate) async fn typing(&self, chat: i64) -> Result<()> {
-        self.call::<Value>(
+        self.post::<Value>(
             Method::SendChatAction,
             &json!({ "chat_id": chat, "action": TYPING }),
         )
         .await
         .map(drop)
     }
+}
+
+fn send_policy() -> leyline::RetryPolicy {
+    crate::limits::limits()
+        .retry_policy()
+        .retry_on([leyline::RetryTrigger::Status(TOO_MANY)])
+        .allow_non_idempotent(true)
 }
 
 pub(crate) fn split(text: &str, max: usize) -> Vec<String> {

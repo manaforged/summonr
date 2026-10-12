@@ -154,3 +154,81 @@ fn a_job_reads_as_plain_lines() {
     );
     assert!(!bad.contains("unknown variant"), "{bad}");
 }
+
+#[test]
+fn a_cron_run_cannot_read_tokens_or_unpause_jobs_even_through_run_command() {
+    let home = tempfile::tempdir().unwrap();
+    cron(
+        home.path(),
+        &[],
+        &["add", "job", "--every", "1h", "-p", "hi"],
+    );
+    for words in [["token", "job"], ["resume", "job"], ["run", "job"]] {
+        let (code, text) = cron(home.path(), &[("SUMMONR_CRON", "job")], &words);
+        assert_ne!(code, 0, "{words:?}: {text}");
+        assert!(
+            text.contains("a cron run cannot change cron jobs"),
+            "{text}"
+        );
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args([
+            "tool",
+            "run_command",
+            r#"{"command":"echo cron=$SUMMONR_CRON"}"#,
+        ])
+        .current_dir(home.path())
+        .env("HOME", home.path())
+        .env("SUMMONR_HOME", home.path().join(".summonr"))
+        .env("SUMMONR_CRON", "job")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("cron=job"), "{text}");
+}
+
+#[test]
+fn a_goal_that_reads_as_a_flag_is_refused() {
+    let home = tempfile::tempdir().unwrap();
+    let (code, text) = cron(
+        home.path(),
+        &[],
+        &["add", "x", "--every", "1h", "--goal", "-rf everything"],
+    );
+    assert_ne!(code, 0);
+    assert!(text.contains("cannot start with `-`"), "{text}");
+}
+
+#[test]
+fn a_past_one_shot_expires_and_pauses_on_the_next_tick() {
+    let home = tempfile::tempdir().unwrap();
+    cron(
+        home.path(),
+        &[],
+        &["add", "old", "--at", "2020-01-01 00:00", "-p", "hi"],
+    );
+    cron(home.path(), &[], &["tick"]);
+    let (_, list) = cron(home.path(), &[], &["list", "--json"]);
+    assert!(list.contains("\"paused\":true"), "{list}");
+    let (_, log) = cron(home.path(), &[], &["log", "old"]);
+    assert!(log.contains("expired"), "{log}");
+}
+
+#[test]
+fn a_run_that_cannot_start_is_recorded_as_an_error() {
+    let home = tempfile::tempdir().unwrap();
+    let gone = home.path().join("gone");
+    std::fs::create_dir_all(&gone).unwrap();
+    let dir = gone.to_string_lossy().to_string();
+    cron(
+        home.path(),
+        &[],
+        &["add", "lost", "--every", "1h", "-p", "hi", "--dir", &dir],
+    );
+    std::fs::remove_dir_all(&gone).unwrap();
+    cron(home.path(), &[], &["run", "lost"]);
+    let (_, log) = cron(home.path(), &[], &["log", "lost"]);
+    assert!(log.contains("error"), "{log}");
+    assert!(!log.contains("running"), "{log}");
+}

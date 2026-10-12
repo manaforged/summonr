@@ -1,6 +1,6 @@
 use jiff::civil::{Date, DateTime};
-use jiff::tz::{AmbiguousOffset, TimeZone};
-use jiff::{Timestamp, Zoned};
+use jiff::tz::{AmbiguousOffset, AmbiguousZoned, TimeZone};
+use jiff::{SignedDuration, Timestamp, Zoned};
 
 use crate::error::{Error, Result};
 
@@ -18,6 +18,9 @@ const MACROS: [(&str, &str); 6] = [
 ];
 const UNITS: [(char, u64); 3] = [('m', 60), ('h', 3600), ('d', 86_400)];
 const SEARCH_DAYS: usize = 366 * 28;
+const EVERY_STEPS: usize = 1441;
+const FOLD_SECS: i64 = 7200;
+const EPOCH: DateTime = DateTime::constant(1970, 1, 1, 0, 0, 0, 0);
 const EVERY: &str = "every ";
 const AT: &str = "at ";
 
@@ -237,51 +240,99 @@ impl Fields {
     }
 
     fn next_after(&self, after: &Zoned) -> Option<Zoned> {
-        let tz = after.time_zone();
-        let start = after.datetime();
-        let mut date = start.date();
+        let mut date = after.date();
         for _ in 0..SEARCH_DAYS {
-            if self.day(date) {
-                for hour in (0..24_i8).filter(|hour| has(self.hour, *hour)) {
-                    for minute in (0..60_i8).filter(|minute| has(self.minute, *minute)) {
-                        let civil = date.at(hour, minute, 0, 0);
-                        if date == start.date() && civil <= start {
-                            continue;
-                        }
-                        let ambiguous = tz.to_ambiguous_zoned(civil);
-                        if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
-                            continue;
-                        }
-                        let zoned = ambiguous.earlier().ok()?;
-                        if zoned.timestamp() > after.timestamp() {
-                            return Some(zoned);
-                        }
-                    }
-                }
+            if let Some(found) = self.day(date).then(|| self.on_day(date, after)).flatten() {
+                return Some(found);
             }
             date = date.tomorrow().ok()?;
         }
         None
     }
+
+    fn on_day(&self, date: Date, after: &Zoned) -> Option<Zoned> {
+        let tz = after.time_zone();
+        let floor = after
+            .datetime()
+            .checked_sub(SignedDuration::from_secs(FOLD_SECS))
+            .ok()?;
+        let mut best: Option<Zoned> = None;
+        for civil in self.slots(date).filter(|civil| *civil > floor) {
+            let Some((zoned, first)) = first_after(tz.to_ambiguous_zoned(civil), after) else {
+                continue;
+            };
+            best = Some(match best {
+                Some(seen) if seen.timestamp() <= zoned.timestamp() => seen,
+                Some(_) | None => zoned,
+            });
+            if first {
+                break;
+            }
+        }
+        best
+    }
+
+    fn slots(&self, date: Date) -> impl Iterator<Item = DateTime> + '_ {
+        (0..24_i8)
+            .filter(|hour| has(self.hour, *hour))
+            .flat_map(move |hour| {
+                (0..60_i8)
+                    .filter(|minute| has(self.minute, *minute))
+                    .map(move |minute| date.at(hour, minute, 0, 0))
+            })
+    }
+}
+
+fn first_after(ambiguous: AmbiguousZoned, after: &Zoned) -> Option<(Zoned, bool)> {
+    let offset = ambiguous.offset();
+    if matches!(offset, AmbiguousOffset::Gap { .. }) {
+        return None;
+    }
+    let earlier = ambiguous.clone().earlier().ok()?;
+    if earlier.timestamp() > after.timestamp() {
+        return Some((earlier, true));
+    }
+    if !matches!(offset, AmbiguousOffset::Fold { .. }) || after.datetime() >= ambiguous.datetime() {
+        return None;
+    }
+    ambiguous
+        .later()
+        .ok()
+        .filter(|later| later.timestamp() > after.timestamp())
+        .map(|later| (later, false))
+}
+
+fn resolve(ambiguous: AmbiguousZoned) -> Option<Zoned> {
+    match ambiguous.offset() {
+        AmbiguousOffset::Gap { .. } => ambiguous.later().ok(),
+        AmbiguousOffset::Fold { .. } | AmbiguousOffset::Unambiguous { .. } => {
+            ambiguous.earlier().ok()
+        }
+    }
+}
+
+fn every_after(secs: u64, after: &Zoned) -> Option<Zoned> {
+    let secs = i64::try_from(secs).ok()?;
+    let civil = after.datetime().duration_since(EPOCH).as_secs();
+    let mut slot = civil.div_euclid(secs).checked_add(1)?;
+    for _ in 0..EVERY_STEPS {
+        let at = EPOCH
+            .checked_add(SignedDuration::from_secs(slot.checked_mul(secs)?))
+            .ok()?;
+        let zoned = resolve(after.time_zone().to_ambiguous_zoned(at))?;
+        if zoned.timestamp() > after.timestamp() {
+            return Some(zoned);
+        }
+        slot = slot.checked_add(1)?;
+    }
+    None
 }
 
 impl Schedule {
     pub(crate) fn next_after(&self, after: Zoned) -> Option<Zoned> {
         match self {
             Self::Cron(fields) => fields.next_after(&after),
-            Self::Every(secs) => {
-                let secs = i64::try_from(*secs).ok()?;
-                let offset = i64::from(after.offset().seconds());
-                let local = after.timestamp().as_second().checked_add(offset)?;
-                let next = local
-                    .div_euclid(secs)
-                    .checked_add(1)?
-                    .checked_mul(secs)?
-                    .checked_sub(offset)?;
-                Timestamp::from_second(next)
-                    .ok()
-                    .map(|stamp| stamp.to_zoned(after.time_zone().clone()))
-            }
+            Self::Every(secs) => every_after(*secs, &after),
             Self::At(stamp) => {
                 (*stamp > after.timestamp()).then(|| stamp.to_zoned(after.time_zone().clone()))
             }

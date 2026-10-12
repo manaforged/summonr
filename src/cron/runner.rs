@@ -73,27 +73,58 @@ pub(crate) fn tick(now: i64) -> Result<()> {
     let starts = store::update(|jobs| {
         let mut starts = Vec::new();
         for job in jobs.iter_mut().filter(|job| !job.paused) {
-            let (slot, outcome) = match due(job, job.last_slot(), now).unwrap_or(Due::No) {
-                Due::Run(slot) => (slot, Outcome::Running),
-                Due::Expired(slot) => (slot, Outcome::Expired),
-                Due::No => continue,
-            };
-            job.runs.push(Run {
-                slot,
-                started: now,
-                job: None,
-                outcome,
-            });
-            if outcome == Outcome::Running {
-                starts.push((job.name.clone(), slot));
+            match pending(job, now) {
+                Due::Run(slot) => starts.push((job.name.clone(), slot)),
+                Due::Expired(slot) => expire(job, slot, now),
+                Due::No => {}
             }
         }
         Ok(starts)
     })?;
+    let mut failed = None;
     for (name, slot) in starts {
-        spawn(&name, slot, None)?;
+        if let Err(error) = launch(&name, slot, now, None) {
+            failed.get_or_insert(error);
+        }
     }
-    Ok(())
+    failed.map_or(Ok(()), Err)
+}
+
+fn at_slot(job: &Job) -> Option<i64> {
+    match schedule::parse(&job.schedule) {
+        Ok(Schedule::At(stamp)) => Some(stamp.as_second()),
+        Ok(Schedule::Cron(_) | Schedule::Every(_)) | Err(_) => None,
+    }
+}
+
+fn pending(job: &Job, now: i64) -> Due {
+    match due(job, job.last_slot(), now).unwrap_or(Due::No) {
+        Due::No => at_slot(job)
+            .filter(|slot| *slot <= job.created)
+            .map_or(Due::No, Due::Expired),
+        found @ (Due::Run(_) | Due::Expired(_)) => found,
+    }
+}
+
+fn expire(job: &mut Job, slot: i64, now: i64) {
+    job.runs.push(Run {
+        slot,
+        started: now,
+        job: None,
+        outcome: Outcome::Expired,
+    });
+    job.paused = job.paused || at_slot(job).is_some();
+}
+
+fn launch(name: &str, slot: i64, started: i64, payload: Option<&Path>) -> Result<()> {
+    let spawned = spawn(name, slot, payload);
+    let failed = spawned.is_err();
+    store::settle(name, slot, started, |run| {
+        if failed {
+            run.outcome = Outcome::Error;
+        }
+    })?;
+    spawned
 }
 
 pub(crate) fn fire(name: &str, payload: Option<&[u8]>) -> Result<i64> {
@@ -126,7 +157,7 @@ pub(crate) fn fire(name: &str, payload: Option<&[u8]>) -> Result<i64> {
         }
         None => None,
     };
-    spawn(name, now, file.as_deref())?;
+    launch(name, now, now, file.as_deref())?;
     Ok(now)
 }
 
@@ -157,7 +188,13 @@ pub(crate) fn exec(name: &str, slot: i64, payload: Option<&Path>) -> Result<i32>
     let Some(_guard) = durable::lock(&store::dir()?.join(RUNS).join(name), false)? else {
         return skip_overlap(name, slot, started);
     };
-    let (child, exit) = start_child(&job, slot, started, payload)?;
+    let (child, exit) = match start_child(&job, slot, started, payload) {
+        Ok(started_child) => started_child,
+        Err(error) => {
+            conclude(&job, slot, started, None)?;
+            return Err(error);
+        }
+    };
     let code = await_exit(child, &exit)?;
     conclude(&job, slot, started, code)?;
     Ok(code.unwrap_or(1))
@@ -246,6 +283,9 @@ fn argv(job: &Job, payload: Option<&Path>) -> Vec<String> {
     }
     if job.worktree {
         args.push("--worktree".to_string());
+    }
+    if payload.is_some() {
+        args.push("--sandbox".to_string());
     }
     let (flags, text) = match &job.task {
         Task::Prompt(prompt) => (["-p", "--"].as_slice(), prompt),

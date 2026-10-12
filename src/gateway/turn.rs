@@ -1,23 +1,18 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
 use super::store;
-use super::telegram::{Bot, Update, User};
-use super::{Action, route};
-use crate::Event;
-use crate::error::{Error, Result};
+use super::telegram::{Bot, ChatKind, Update, User};
+use super::{Action, addressed, route};
+use crate::error::Result;
 
-const TYPING_EVERY: Duration = Duration::from_secs(4);
+use super::child::turn;
+
 const INTERRUPTED: i32 = 130;
-const NO_REPLY: &str = "(no reply)";
-const STOPPED: &str = "stopped";
 const IDLE: &str = "nothing is running";
 const FRESH: &str = "new session";
 
@@ -28,76 +23,48 @@ pub(crate) struct Options {
     pub dir: PathBuf,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Seen {
-    pub session: Option<String>,
-    pub text: Option<String>,
-    pub aborted: Option<String>,
-}
-
-impl Seen {
-    pub(crate) fn read(&mut self, line: &str) {
-        match serde_json::from_str::<Event>(line) {
-            Ok(Event::Session { id }) => self.session = Some(id),
-            Ok(Event::Assistant { text }) if !text.trim().is_empty() => self.text = Some(text),
-            Ok(Event::Aborted { reason, .. }) => self.aborted = Some(reason),
-            Ok(_) | Err(_) => {}
-        }
-    }
-
-    pub(crate) fn reply(&self) -> String {
-        let text = self.text.as_deref().unwrap_or(NO_REPLY);
-        match &self.aborted {
-            Some(reason) => format!("{text}\n\naborted: {reason}"),
-            None => text.to_string(),
-        }
-    }
-}
-
-pub(crate) fn argv(options: &Options, session: Option<&str>, text: &str) -> Vec<String> {
-    let mut args: Vec<String> = options.endpoint.iter().cloned().collect();
-    if let Some(model) = &options.model {
-        args.extend(["--model".to_string(), model.clone()]);
-    }
-    if let Some(session) = session {
-        args.extend(["--session".to_string(), session.to_string()]);
-    }
-    args.extend([
-        "--json".to_string(),
-        "-p".to_string(),
-        "--".to_string(),
-        text.to_string(),
-    ]);
-    args
+struct Queued {
+    user: i64,
+    text: String,
 }
 
 struct Running {
     stop: Option<oneshot::Sender<()>>,
-    queue: VecDeque<String>,
+    queue: VecDeque<Queued>,
+}
+
+struct Finished {
+    chat: i64,
+    generation: u64,
+    session: Option<String>,
 }
 
 enum Wake {
     Quit,
-    Done(Option<i64>),
+    Done(Option<Finished>),
     Updates(Result<Vec<Update>>),
 }
 
 struct Bridge {
     bot: Arc<Bot>,
     options: Arc<Options>,
+    username: Option<String>,
     chats: HashMap<i64, Running>,
-    tasks: JoinSet<i64>,
+    generations: HashMap<i64, u64>,
+    tasks: JoinSet<Finished>,
 }
 
-pub(crate) async fn serve(bot: Bot, options: Options) -> Result<i32> {
+pub(crate) async fn serve(bot: Bot, options: Options, username: Option<String>) -> Result<i32> {
     let mut bridge = Bridge {
         bot: Arc::new(bot),
         options: Arc::new(options),
+        username,
         chats: HashMap::new(),
+        generations: HashMap::new(),
         tasks: JoinSet::new(),
     };
     let mut interrupt = std::pin::pin!(tokio::signal::ctrl_c());
-    let mut offset = 0;
+    let mut offset = store::load()?.offset;
     loop {
         let wake = tokio::select! {
             _ = &mut interrupt => Wake::Quit,
@@ -109,11 +76,15 @@ pub(crate) async fn serve(bot: Bot, options: Options) -> Result<i32> {
                 bridge.tasks.abort_all();
                 return Ok(INTERRUPTED);
             }
-            Wake::Done(Some(chat)) => bridge.next(chat),
+            Wake::Done(Some(finished)) => bridge.finish(finished)?,
             Wake::Done(None) => {}
             Wake::Updates(updates) => {
                 for update in updates? {
                     offset = offset.max(update.update_id.saturating_add(1));
+                    store::update(|state| {
+                        state.offset = offset;
+                        Ok(())
+                    })?;
                     bridge.handle(update).await?;
                 }
             }
@@ -122,26 +93,25 @@ pub(crate) async fn serve(bot: Bot, options: Options) -> Result<i32> {
 }
 
 impl Bridge {
+    fn accept(&self, update: Update) -> Option<(User, i64, String)> {
+        let message = update.message?;
+        if message.chat.kind != ChatKind::Private {
+            return None;
+        }
+        let (user, text) = (message.from?, message.text?);
+        addressed(&text, self.username.as_deref()).then_some((user, message.chat.id, text))
+    }
+
     async fn handle(&mut self, update: Update) -> Result<()> {
-        let Some(message) = update.message else {
+        let Some((user, chat, text)) = self.accept(update) else {
             return Ok(());
         };
-        let (Some(user), Some(text)) = (message.from, message.text) else {
-            return Ok(());
-        };
-        let chat = message.chat.id;
         let now = crate::cron::now();
         let action = route(&store::load()?, user.id, chat, &text, now);
         match action {
             Action::Drop => {}
             Action::Pair => self.pair(&user, chat, now).await?,
-            Action::New => {
-                store::update(|state| {
-                    state.set_session(chat, None);
-                    Ok(())
-                })?;
-                self.say(chat, FRESH).await;
-            }
+            Action::New => self.fresh(chat).await?,
             Action::Status => {
                 let text = self.status(chat)?;
                 self.say(chat, &text).await;
@@ -154,8 +124,19 @@ impl Bridge {
                 self.say(chat, &text).await;
             }
             Action::Stop => self.stop(chat).await,
-            Action::Run(text) => self.run(chat, text).await,
+            Action::Run(text) => self.run(chat, user.id, text).await,
         }
+        Ok(())
+    }
+
+    async fn fresh(&mut self, chat: i64) -> Result<()> {
+        let generation = self.generations.entry(chat).or_default();
+        *generation = generation.wrapping_add(1);
+        store::update(|state| {
+            state.set_session(chat, None);
+            Ok(())
+        })?;
+        self.say(chat, FRESH).await;
         Ok(())
     }
 
@@ -190,9 +171,9 @@ impl Bridge {
         }
     }
 
-    async fn run(&mut self, chat: i64, text: String) {
+    async fn run(&mut self, chat: i64, user: i64, text: String) {
         if let Some(running) = self.chats.get_mut(&chat) {
-            running.queue.push_back(text);
+            running.queue.push_back(Queued { user, text });
             let ahead = running.queue.len();
             self.say(
                 chat,
@@ -231,82 +212,65 @@ impl Bridge {
         }
     }
 
+    fn generation(&self, chat: i64) -> u64 {
+        self.generations.get(&chat).copied().unwrap_or_default()
+    }
+
     fn start(&mut self, chat: i64, text: String) -> oneshot::Sender<()> {
         let (stop, stopped) = oneshot::channel();
         let bot = Arc::clone(&self.bot);
         let options = Arc::clone(&self.options);
+        let generation = self.generation(chat);
         self.tasks.spawn(async move {
-            let reply = match turn(&bot, &options, chat, &text, stopped).await {
-                Ok(Some(seen)) => seen.reply(),
-                Ok(None) => STOPPED.to_string(),
-                Err(error) => format!("error: {error}"),
+            let (session, reply) = match turn(&bot, &options, chat, &text, stopped).await {
+                Ok(done) => (done.session, done.reply),
+                Err(error) => (None, format!("error: {error}")),
             };
             if let Err(error) = bot.send(chat, &reply).await {
                 eprintln!("{error}");
             }
-            chat
+            Finished {
+                chat,
+                generation,
+                session,
+            }
         });
         stop
     }
 
+    fn finish(&mut self, finished: Finished) -> Result<()> {
+        let Finished {
+            chat,
+            generation,
+            session,
+        } = finished;
+        if let Some(id) = session.filter(|_| generation == self.generation(chat)) {
+            store::update(|state| {
+                state.set_session(chat, Some(id));
+                Ok(())
+            })?;
+        }
+        self.next(chat);
+        Ok(())
+    }
+
     fn next(&mut self, chat: i64) {
-        let queued = self
-            .chats
-            .get_mut(&chat)
-            .and_then(|running| running.queue.pop_front());
-        let Some(text) = queued else {
+        let state = store::load().ok();
+        let queued = self.chats.get_mut(&chat).and_then(|running| {
+            running.queue.retain(|queued| {
+                state
+                    .as_ref()
+                    .is_some_and(|state| state.paired(queued.user))
+            });
+            running.queue.pop_front()
+        });
+        let Some(queued) = queued else {
             self.chats.remove(&chat);
             return;
         };
-        let stop = self.start(chat, text);
+        let stop = self.start(chat, queued.text);
         if let Some(running) = self.chats.get_mut(&chat) {
             running.stop = Some(stop);
         }
     }
-}
-
-async fn turn(
-    bot: &Bot,
-    options: &Options,
-    chat: i64,
-    text: &str,
-    mut stopped: oneshot::Receiver<()>,
-) -> Result<Option<Seen>> {
-    let session = store::load()?.session(chat).map(str::to_string);
-    let mut child = tokio::process::Command::new(std::env::current_exe()?)
-        .args(argv(options, session.as_deref(), text))
-        .current_dir(&options.dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .spawn()?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| Error::Tool("the turn has no output".to_string()))?;
-    let mut lines = BufReader::new(stdout).lines();
-    let mut beat = tokio::time::interval(TYPING_EVERY);
-    let mut seen = Seen::default();
-    loop {
-        tokio::select! {
-            Ok(()) = &mut stopped => {
-                child.kill().await?;
-                return Ok(None);
-            }
-            _ = beat.tick() => drop(bot.typing(chat).await),
-            line = lines.next_line() => match line? {
-                Some(line) => seen.read(&line),
-                None => break,
-            },
-        }
-    }
-    child.wait().await?;
-    if let Some(id) = seen.session.clone() {
-        store::update(|state| {
-            state.set_session(chat, Some(id));
-            Ok(())
-        })?;
-    }
-    Ok(Some(seen))
 }

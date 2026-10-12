@@ -125,6 +125,7 @@ summonr login NAME --key                   skip the question and store a key
 summonr login NAME --default [--model M]   start on NAME when no endpoint is named
 summonr login NAME --url URL [--model M]   add or update your own OpenAI-compatible server
 summonr login NAME --model M               change the model of a server you added
+summonr logout NAME                        forget the stored key or token
 summonr logout NAME --remove               remove a server you added"
     );
     Ok(())

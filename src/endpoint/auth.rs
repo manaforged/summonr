@@ -145,17 +145,26 @@ pub(crate) fn forget_key(name: &str) -> Result<Forgot> {
 }
 
 pub fn logout(name: &str) -> Result<String> {
-    let head = match forget_key(name)? {
+    let forgot = forget_key(name)?;
+    let info = auth_info(name)?;
+    let head = match forgot {
         Forgot::Token => format!("✓ Signed out of {name}."),
         Forgot::Key => format!("✓ Removed the stored key for {name}."),
         Forgot::Nothing if resolve(Some(name), None, Need::Config)?.keyless() => format!(
             "{name} needs no key, so nothing was stored. `summonr logout {name} --remove` deletes the endpoint."
         ),
-        Forgot::Nothing => format!("Nothing is stored for {name}."),
+        Forgot::Nothing => match info.source {
+            Some(Source::Peer(peer)) => format!(
+                "Nothing is stored for {name}; it reads the {peer} key. `summonr login {name} --key` stores a replacement."
+            ),
+            Some(_) => format!("Nothing is stored for {name}."),
+            None => format!("Nothing is stored for {name}."),
+        },
     };
-    Ok(match auth_info(name)?.source {
-        Some(source) => format!("{head} It now uses the {} key.", source.label()),
-        None => head,
+    Ok(match (forgot, info.source) {
+        (Forgot::Nothing, Some(Source::Peer(_))) => head,
+        (_, Some(source)) => format!("{head} It now uses the {} key.", source.label()),
+        (_, None) => head,
     })
 }
 

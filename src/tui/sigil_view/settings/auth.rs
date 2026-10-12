@@ -109,17 +109,8 @@ fn listing_hints(app: &App) -> Hints {
     if !stacked {
         hints = hints.key(Key::UpDown, "move");
     }
-    hints = hints.key(
-        Key::Enter,
-        if choice.login.signs_in() {
-            "sign in"
-        } else if choice.keyless() {
-            "set a key"
-        } else {
-            "open"
-        },
-    );
-    if choice.dual() && choice.env.is_none() {
+    hints = hints.key(Key::Enter, choice.key_action());
+    if choice.paste_key() {
         hints = hints.key(Key::Fixed("alt+k"), "paste a key");
     }
     if choice.stored() {

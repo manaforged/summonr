@@ -135,4 +135,22 @@ impl AuthInfo {
                     Some(Source::Keychain | Source::File | Source::Config)
                 ))
     }
+
+    #[must_use]
+    pub fn key_action(&self) -> &'static str {
+        if self.login.signs_in() {
+            "sign in"
+        } else if self.env.is_some() {
+            "unset the env key"
+        } else if self.stored() {
+            "replace the key"
+        } else {
+            "set a key"
+        }
+    }
+
+    #[must_use]
+    pub fn paste_key(&self) -> bool {
+        self.key && self.env.is_none()
+    }
 }

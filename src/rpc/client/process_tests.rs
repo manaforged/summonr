@@ -56,3 +56,22 @@ async fn a_read_only_server_cannot_write_its_workspace() {
         "the writable sandbox refused"
     );
 }
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dropping_a_client_returns_before_the_close_grace() {
+    let dir = tempfile::tempdir().unwrap();
+    let client = crate::rpc::client::Client::spawn(&crate::rpc::client::Spawn {
+        program: "sh",
+        args: &["-c", "while :; do sleep 1; done"],
+        env: &[],
+        cwd: dir.path(),
+        sandbox: None,
+        wait: std::time::Duration::from_secs(5),
+    })
+    .unwrap();
+    let started = std::time::Instant::now();
+    drop(client);
+    let grace = crate::limits::limits().mcp_close_grace();
+    assert!(started.elapsed() < grace / 2, "{:?}", started.elapsed());
+}

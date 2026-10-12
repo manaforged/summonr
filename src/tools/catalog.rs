@@ -23,7 +23,12 @@ impl ToolRegistry {
         self.set_browser(switches.enabled(ModuleId::Browser))?;
         self.search = search;
         if let Some(search) = &self.search {
-            search.set_browser(self.browser.clone());
+            let renderer = if switches.enabled(ModuleId::Browser) {
+                Some(crate::browser::Browser::ephemeral()?)
+            } else {
+                None
+            };
+            search.set_browser(renderer);
         }
         self.language = switches.enabled(ModuleId::Lsp);
         self.background = switches.enabled(ModuleId::Jobs);

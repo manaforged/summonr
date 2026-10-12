@@ -177,6 +177,7 @@ fn a_redirect_to_a_private_host_returns_nothing_from_it() {
         }
     });
     let target = format!("http%3A%2F%2F127.0.0.1%3A{port}%2F");
+    let dotted = format!("http%3A%2F%2Flocalhost.%3A{port}%2F");
     let (_dir, tools) = browsing(&[]);
     runtime().block_on(async {
         let landed = match call(
@@ -188,16 +189,29 @@ fn a_redirect_to_a_private_host_returns_nothing_from_it() {
             Ok(text) => text,
             Err(error) => error.to_string(),
         };
+        let dotted_landed = match call(
+            &tools,
+            serde_json::json!({"action": "navigate", "url": format!("https://httpbin.org/redirect-to?url={dotted}")}),
+        )
+        .await
+        {
+            Ok(text) => text,
+            Err(error) => error.to_string(),
+        };
         let read = call(&tools, serde_json::json!({"action": "read"}))
             .await
             .expect("read");
-        for text in [&landed, &read] {
+        for text in [&landed, &dotted_landed, &read] {
             assert!(!text.contains("SECRET-METADATA-TOKEN"), "{text}");
             assert!(!text.contains("<title>private</title>"), "{text}");
         }
         assert!(
             landed.contains("blocked") || landed.contains("BLOCKED"),
             "{landed}"
+        );
+        assert!(
+            dotted_landed.contains("blocked") || dotted_landed.contains("BLOCKED"),
+            "{dotted_landed}"
         );
         call(&tools, serde_json::json!({"action": "close"}))
             .await

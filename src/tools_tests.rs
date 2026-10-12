@@ -56,7 +56,17 @@ fn todo_accepts_the_todos_key_models_actually_send() {
 fn a_standalone_registry_keeps_its_spill_directory() {
     let (dir, mut tools) = workspace(&[]);
     tools.standalone = true;
-    let path = tools.spill_file("output-", b"kept").unwrap();
+    let output = tools
+        .fit_output(Ok(ToolOutput::ok("x".repeat(80_000))))
+        .unwrap();
+    assert!(output.text.contains("[full output:"), "{}", output.text);
+    let path = output
+        .text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("[full output: "))
+        .and_then(|rest| rest.split(' ').next())
+        .map(std::path::PathBuf::from)
+        .unwrap();
     drop(tools);
     drop(dir);
     let expected = crate::prompt::summonr_home().unwrap().join("spill");

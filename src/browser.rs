@@ -27,7 +27,7 @@ pub(crate) struct Live {
 
 pub(crate) struct Settings {
     name: String,
-    profile: PathBuf,
+    profile: Option<PathBuf>,
     headed: bool,
     chrome: Option<PathBuf>,
     events: charm::Events,
@@ -65,8 +65,30 @@ impl Browser {
             live: Arc::new(Mutex::new(None)),
             settings: Arc::new(Settings {
                 name: name.to_string(),
-                profile,
+                profile: Some(profile),
                 headed: raw.headed.unwrap_or(false),
+                chrome: raw.chrome.clone(),
+                events,
+                timing: launch::timing(),
+                out_max: crate::web::OUT_MAX,
+            }),
+        })
+    }
+
+    pub(crate) fn ephemeral() -> Result<Self> {
+        let raw = &crate::config::file()?.browser;
+        let events = raw
+            .events
+            .map_or_else(charm::Events::all, |events| charm::Events {
+                page: events.page,
+                runtime: events.runtime,
+            });
+        Ok(Self {
+            live: Arc::new(Mutex::new(None)),
+            settings: Arc::new(Settings {
+                name: String::new(),
+                profile: None,
+                headed: false,
                 chrome: raw.chrome.clone(),
                 events,
                 timing: launch::timing(),

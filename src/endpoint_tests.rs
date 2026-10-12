@@ -89,10 +89,10 @@ fn a_public_host_that_only_mentions_localhost_needs_a_key() {
 fn a_custom_row_matches_the_preset_with_the_longest_base_url() {
     assert_eq!(hosted("https://opencode.ai/zen/go/v1").unwrap().name, "go");
     assert_eq!(
-        hosted("https://opencode.ai/zen/v1").unwrap().name,
+        hosted("https://opencode.ai/inference/v1").unwrap().name,
         "opencode"
     );
-    assert!(hosted("https://opencode.ai.evil.example/zen/v1").is_none());
+    assert!(hosted("https://opencode.ai.evil.example/inference/v1").is_none());
 }
 
 #[test]
@@ -328,12 +328,22 @@ fn every_default_model_is_current_in_the_bundled_catalog() {
         if preset.model.is_empty() || preset.model == "default" {
             continue;
         }
-        if let Some(current) = crate::catalog::serves(preset.opencode_ids, &preset.model) {
-            assert!(
-                current,
-                "{} defaults to {}, which its catalog providers do not list as current",
-                preset.name, preset.model
-            );
+        for model in std::iter::once(&preset.model).chain(preset.login_model.as_ref()) {
+            if let Some(current) = crate::catalog::serves(preset.opencode_ids, model) {
+                assert!(
+                    current,
+                    "{} defaults to {model}, which its catalog providers do not list as current",
+                    preset.name
+                );
+            }
         }
     }
+}
+
+#[test]
+fn a_chatgpt_sign_in_and_gemini_aliases_reach_current_models() {
+    let openai = super::preset::preset("openai").unwrap();
+    assert_eq!(openai.login_model.as_deref(), Some("gpt-6.1-sol"));
+    let flash = super::resolve(Some("gemini"), Some("flash"), crate::Need::Config).unwrap();
+    assert_eq!(flash.model, "gemini-3.8-flash");
 }

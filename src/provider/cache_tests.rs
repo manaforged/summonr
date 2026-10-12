@@ -108,7 +108,7 @@ fn claude_through_a_completions_host_marks_its_cache_breakpoints() {
 }
 
 #[test]
-fn grok_routes_every_request_to_its_cache_with_the_prefix_hash() {
+fn grok_routes_every_request_of_a_session_to_its_cache() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let mut grok = endpoint("grok", "grok-4.6");
     grok.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
@@ -166,8 +166,8 @@ fn grok_routes_every_request_to_its_cache_with_the_prefix_hash() {
         !headers.is_empty(),
         "no request reached the server: {failure}"
     );
-    let want = format!("x-grok-conv-id: {}", request.prefix_hash()).to_ascii_lowercase();
-    assert!(headers.contains(&want), "{headers}");
+    assert!(headers.contains("x-grok-conv-id: s\r\n"), "{headers}");
+    assert!(headers.contains("\"prompt_cache_key\":\"s\""), "{headers}");
 }
 
 #[test]

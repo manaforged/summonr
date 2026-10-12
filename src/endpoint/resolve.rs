@@ -63,6 +63,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
     };
     let mut endpoint = seat(&file, &chosen).ok_or_else(|| unknown(&chosen))?;
 
+    let model_flag_unset = model_flag.is_none();
     if let Some(model) = model_flag {
         endpoint.model = named_model(&endpoint.name, &model);
     } else if need.model() && endpoint.model.is_empty() {
@@ -82,7 +83,16 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
         endpoint.overlay_model(spec);
     }
 
-    fill_key(endpoint, need.key())
+    let mut endpoint = fill_key(endpoint, need.key())?;
+    if model_flag_unset
+        && endpoint.oauth.is_some()
+        && let Some(row) = super::preset::preset(&endpoint.name)
+        && endpoint.model == row.model
+        && let Some(model) = &row.login_model
+    {
+        endpoint.model.clone_from(model);
+    }
+    Ok(endpoint)
 }
 
 fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {

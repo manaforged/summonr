@@ -21,6 +21,8 @@ pub(super) struct Row {
     #[serde(default)]
     model: String,
     #[serde(default)]
+    login_model: Option<String>,
+    #[serde(default)]
     env_keys: Vec<String>,
     #[serde(default)]
     default_key: Option<String>,
@@ -200,6 +202,7 @@ impl Row {
         Ok(Preset {
             models_url: leak_str(self.models_url.as_deref()),
             model: self.model,
+            login_model: self.login_model,
             env_keys: leak_list(&self.env_keys),
             default_key: leak_str(self.default_key.as_deref()),
             missing,

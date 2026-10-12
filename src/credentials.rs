@@ -56,7 +56,7 @@ pub(crate) fn scheme(wire: Wire) -> Scheme {
     match wire {
         Wire::Anthropic => Scheme::ApiKey,
         Wire::Gemini => Scheme::GoogleKey,
-        Wire::Completions | Wire::Responses | Wire::Decisions => Scheme::Bearer,
+        Wire::Completions | Wire::Responses | Wire::Decisions | Wire::AgentSdk => Scheme::Bearer,
     }
 }
 

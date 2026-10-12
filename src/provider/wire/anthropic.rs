@@ -19,6 +19,7 @@ mod event;
 mod part;
 mod stream;
 
+pub(crate) use event::Counted;
 pub(crate) use stream::Stream;
 
 pub(crate) struct Wire;

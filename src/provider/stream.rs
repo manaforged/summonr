@@ -28,6 +28,7 @@ impl Client {
                 self.stream_wire::<super::wire::responses::Wire>(request, partial)
                     .await
             }
+            crate::endpoint::Wire::AgentSdk => self.stream_agent(request, partial).await,
             crate::endpoint::Wire::Completions | crate::endpoint::Wire::Decisions => {
                 self.stream_wire::<super::wire::completions::Wire>(request, partial)
                     .await
@@ -128,7 +129,7 @@ impl Client {
         ))
     }
 
-    fn apply(
+    pub(super) fn apply(
         &self,
         request: &CompletionRequest<'_>,
         sizes: &mut (usize, usize),

@@ -324,7 +324,7 @@ fn frame_line(value: &Value) -> Result<String> {
     Ok(line)
 }
 
-async fn tail(mut pipe: ChildStderr, keep: Arc<Mutex<Vec<u8>>>) {
+pub(crate) async fn tail(mut pipe: ChildStderr, keep: Arc<Mutex<Vec<u8>>>) {
     let mut chunk = [0_u8; 1024];
     while let Ok(read) = pipe.read(&mut chunk).await {
         if read == 0 {

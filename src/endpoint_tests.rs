@@ -307,7 +307,15 @@ fn a_key_row_with_a_plan_sign_in_lists_under_coding_plans_by_its_plan_name() {
             group: super::login_group(name, &endpoint),
         };
         assert_eq!(info.catalog_title(), "Coding plans", "{name}");
-        assert!(info.display_name().contains(plan), "{name}");
+        assert_eq!(
+            info.title(),
+            name,
+            "the plan belongs in the notes, not the title"
+        );
+        assert!(
+            info.matches(&plan.to_lowercase()),
+            "{name} is found by its plan"
+        );
         assert!(info.catalog_line(16, 16).contains(plan), "{name}");
         assert!(!info.plan(), "{name} keeps key pricing");
     }

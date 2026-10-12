@@ -49,11 +49,14 @@ impl AuthInfo {
     }
 
     #[must_use]
-    pub fn display_name(&self) -> String {
-        match self.plan.as_str() {
-            "" => self.name.clone(),
-            plan => format!("{} · {plan}", self.name),
-        }
+    pub fn title(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn matches(&self, query: &str) -> bool {
+        let text = format!("{} {}", self.name, self.plan).to_lowercase();
+        query.split_whitespace().all(|word| text.contains(word))
     }
 
     fn listed(&self) -> LoginGroup {

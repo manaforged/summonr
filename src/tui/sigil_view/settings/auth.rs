@@ -255,7 +255,7 @@ fn sections(
                 .unwrap_or(0);
         }
         lookup.push((
-            row.display_name(),
+            row.title().to_string(),
             chip(row, states.get(&row.name)),
             Some(index),
         ));

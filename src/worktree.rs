@@ -210,19 +210,16 @@ impl Tree {
         if !self.path.exists() {
             return Ok(true);
         }
-        let Some(snapshot) = &self.snapshot else {
-            return Ok(!dirty(&self.path)?);
-        };
-        let diff = crate::diff::git_env(&self.path, &[], &["diff", "--name-only", snapshot])?;
-        if !diff.is_empty() {
-            return Ok(false);
-        }
-        let untracked = crate::diff::git_env(
+        let base = self.snapshot.as_deref().unwrap_or("HEAD");
+        let diff = crate::diff::git_paths(&self.path, &["diff", "--name-only", "-z", base])?;
+        let untracked = crate::diff::git_paths(
             &self.path,
-            &[],
-            &["ls-files", "--others", "--exclude-standard"],
+            &["ls-files", "-z", "--others", "--exclude-standard"],
         )?;
-        Ok(untracked.is_empty())
+        Ok(diff
+            .iter()
+            .chain(&untracked)
+            .all(|path| crate::diff::ignored::hidden(path)))
     }
 }
 

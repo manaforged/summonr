@@ -56,7 +56,7 @@ summonr cron log nightly      # what the last run did and whether the check pass
 
 `summonr cron add NAME --manual -p PROMPT` with `summonr cron token NAME` and `summonr gateway webhook` starts a job from `POST /run/NAME`. `summonr gateway telegram` drives sessions from a paired Telegram chat.
 
-Useful flags: `--sandbox` to contain shell commands, `--worktree` to work in a separate git worktree (on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch; on failure it keeps the worktree), and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
+Run unattended goals with `--sandbox`: without it the model can change files outside the workspace, including tools the check calls. Useful flags: `--sandbox` to contain shell commands, `--worktree` to work in a separate git worktree (on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch; on failure it keeps the worktree), and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
 
 ## Give it project instructions
 

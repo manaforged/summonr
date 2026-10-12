@@ -262,6 +262,7 @@ async fn the_judge_refuses_a_gamed_pass_and_contradictory_tests_stop_the_goal() 
     let sent = run.sent.lock().unwrap().clone();
     let system = &sent[1][0].content;
     assert!(system.contains("hidden state, call order"), "{system}");
+    assert!(system.contains("a stub or shim on PATH"), "{system}");
     assert!(
         system.contains("reply `impossible` and name both tests"),
         "{system}"

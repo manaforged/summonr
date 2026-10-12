@@ -23,6 +23,28 @@ pub(crate) fn slow(secs: u64) -> u64 {
     }
 }
 
+const TAIL_LINES: usize = 6;
+const TAIL_LINE_CHARS: usize = 300;
+
+fn tail(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(TAIL_LINES)..]
+        .iter()
+        .map(|line| line.chars().take(TAIL_LINE_CHARS).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn journals(home: &Path) -> String {
+    std::fs::read_dir(home.join("sessions"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| tail(&read(&entry.path().join("session.jsonl"))))
+        .collect::<Vec<_>>()
+        .join("\n--\n")
+}
+
 pub(crate) fn pause(wait: Duration) {
     let until = Instant::now() + wait;
     while let Some(left) = until
@@ -149,7 +171,12 @@ impl Session {
             }
             if started.elapsed() > Duration::from_secs(slow(FINISH_SECS)) {
                 drop(child.kill());
-                panic!("summonr did not finish: {}", read(&stderr));
+                panic!(
+                    "summonr did not finish: {}\nstdout ends: {}\njournal ends: {}",
+                    read(&stderr),
+                    tail(&read(&stdout)),
+                    journals(self.home.path())
+                );
             }
             if !interrupted
                 && options

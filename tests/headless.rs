@@ -125,14 +125,34 @@ fn an_interrupted_json_run_says_so_and_leaves_an_exit_record() {
     assert!(!next.contains("without an exit record"), "{next}");
 }
 
+fn request_head(stream: &std::net::TcpStream) -> String {
+    use std::io::BufRead;
+    let Ok(clone) = stream.try_clone() else {
+        return String::new();
+    };
+    let mut reader = std::io::BufReader::new(clone);
+    let (mut head, mut length) = (String::new(), 0);
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+            break;
+        }
+        if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            length = value.trim().parse().unwrap_or(0);
+        }
+        head.push_str(&line);
+    }
+    let mut body = vec![0; length];
+    drop(reader.read_exact(&mut body));
+    head
+}
+
 fn streaming(chunks: &'static [&'static str]) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
         for mut stream in listener.incoming().flatten() {
-            let mut buffer = [0_u8; 65536];
-            let read = stream.read(&mut buffer).unwrap_or(0);
-            let head = String::from_utf8_lossy(&buffer[..read]);
+            let head = request_head(&stream);
             let path = head.split_whitespace().nth(1).unwrap_or("");
             let (kind, body) = if path.ends_with("/chat/completions") {
                 let events: String = chunks

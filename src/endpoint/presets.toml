@@ -26,7 +26,13 @@ label = "GLM coding plan, China"
 key_from = "glm"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3-flash"
-env_keys = ["ZAI_CODING_CN_API_KEY", "GLM_CODING_API_KEY", "GLM_API_KEY"]
+env_keys = [
+    "ZAI_CODING_CN_API_KEY",
+    "GLM_CODING_API_KEY",
+    "GLM_API_KEY",
+    "ZAI_CODING_API_KEY",
+    "ZAI_API_KEY",
+]
 missing = "run `summonr login NAME` or set ZAI_CODING_CN_API_KEY"
 opencode_ids = ["zhipuai-coding-plan", "zhipuai"]
 plan = true
@@ -106,24 +112,6 @@ env_keys = ["DASHSCOPE_API_KEY"]
 opencode_ids = ["alibaba-cn"]
 
 [[preset]]
-name = "kimi-intl"
-label = "Kimi Code, international"
-provider = "kimi"
-region = "intl"
-base_url = "https://api.kimi.ai/coding/v1"
-model = "k3"
-env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"]
-cli_token = "kimi-code"
-missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
-aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-for-coding" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
-opencode_ids = ["kimi-code-plan-global", "moonshotai"]
-plan = true
-
-[preset.reasoning]
-levels = ["low", "high", "max"]
-off = "unsupported"
-
-[[preset]]
 name = "kimi"
 label = "Kimi Code, China"
 provider = "kimi"
@@ -135,6 +123,24 @@ missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Ki
 aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-for-coding" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
 cli_token = "kimi-code"
 opencode_ids = ["kimi-code-plan-cn", "moonshotai-cn"]
+plan = true
+
+[preset.reasoning]
+levels = ["low", "high", "max"]
+off = "unsupported"
+
+[[preset]]
+name = "kimi-intl"
+label = "Kimi Code, international"
+provider = "kimi"
+region = "intl"
+base_url = "https://api.kimi.ai/coding/v1"
+model = "k3"
+env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"]
+cli_token = "kimi-code"
+missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
+aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-for-coding" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
+opencode_ids = ["kimi-code-plan-global", "moonshotai"]
 plan = true
 
 [preset.reasoning]
@@ -214,6 +220,7 @@ provider = "anthropic"
 base_url = "https://api.anthropic.com/v1/"
 model = "claude-sonnet-5"
 env_keys = ["ANTHROPIC_API_KEY"]
+missing = "run `summonr login anthropic`, set ANTHROPIC_API_KEY, or run a Claude plan with `summonr claude`"
 aliases = { "sonnet" = "claude-sonnet-5", "claude" = "claude-sonnet-5" }
 opencode_ids = ["anthropic"]
 wire = "anthropic"
@@ -306,7 +313,7 @@ region = "cn"
 label = "MiniMax coding plan, China"
 base_url = "https://api.minimax.cn/anthropic/v1"
 model = "MiniMax-M3"
-env_keys = ["MINIMAX_CODE_CN_API_KEY", "MINIMAX_CN_API_KEY"]
+env_keys = ["MINIMAX_CODE_CN_API_KEY", "MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]
 opencode_ids = ["minimax-cn-coding-plan"]
 plan = true
 wire = "anthropic"

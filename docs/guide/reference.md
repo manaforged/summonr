@@ -72,7 +72,7 @@ Built-ins are providers: `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `z
 | --- | --- |
 | `zai` | `zai` (coding plan, international), `zai-cn` (coding plan, China), `zai-api` (API key, international), `zai-cn-api` (API key, China) |
 | `alibaba` | `qwen-plan`, `qwen-plan-cn` (coding plan), `dashscope`, `dashscope-cn` (API key) |
-| `kimi` | `kimi-intl` (Kimi Code, international), `kimi` (Kimi Code, China) |
+| `kimi` | `kimi` (Kimi Code, China), `kimi-intl` (Kimi Code, international) |
 | `minimax` | `minimax`, `minimax-cn` (API key), `minimax-plan`, `minimax-cn-plan` (coding plan, Anthropic wire) |
 | `siliconflow` | `siliconflow` (international), `siliconflow-cn` (China) |
 | `anthropic` | `anthropic` (API key), `claude` (Claude plan through Claude Code) |

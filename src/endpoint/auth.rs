@@ -108,9 +108,10 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
     if key.is_empty() {
         return Err(Error::Config("API key cannot be empty".to_string()));
     }
-    let source = secret::set(name, key)?;
-    secret::forget(&crate::credentials::login_slot(name))?;
-    config::remove_key(&config::path()?, name)?;
+    let slot = info.name.as_str();
+    let source = secret::set(slot, key)?;
+    secret::forget(&crate::credentials::login_slot(slot))?;
+    config::remove_key(&config::path()?, slot)?;
     Ok(source)
 }
 
@@ -151,8 +152,8 @@ pub(crate) fn forget_key(name: &str) -> Result<Forgot> {
 }
 
 pub fn logout(name: &str) -> Result<String> {
-    let forgot = forget_key(name)?;
     let info = auth_info(name)?;
+    let forgot = forget_key(&info.name)?;
     let head = match forgot {
         Forgot::Token => format!("✓ Signed out of {name}."),
         Forgot::Key => format!("✓ Removed the stored key for {name}."),

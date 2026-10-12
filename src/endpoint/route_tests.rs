@@ -101,3 +101,12 @@ fn a_zhipu_key_runs_the_international_coding_plan() {
     assert!(!reads("zai-cn"));
     assert!(!reads("zai-cn-api"));
 }
+
+#[test]
+fn a_key_saved_under_a_provider_lands_on_the_route_that_reads_it() {
+    super::super::auth::save_key("alibaba", "sk-test-alibaba").unwrap();
+    let stored = crate::secret::get("qwen-plan").unwrap();
+    crate::secret::forget("qwen-plan").unwrap();
+    assert!(stored.is_some(), "the key is stored for the route");
+    assert!(crate::secret::get("alibaba").unwrap().is_none());
+}

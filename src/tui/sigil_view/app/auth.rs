@@ -72,9 +72,14 @@ impl App {
         let choices = providers();
         let current = self.model.get().snapshot.endpoint.clone();
         let focus = focus.map(|name| {
+            let provider = crate::endpoint::auth_info(name).map(|info| info.provider);
             choices
                 .iter()
-                .find(|choice| choice.provider == name)
+                .find(|choice| {
+                    provider
+                        .as_deref()
+                        .is_ok_and(|named| choice.provider == named)
+                })
                 .map_or(name, |choice| choice.name.as_str())
                 .to_string()
         });

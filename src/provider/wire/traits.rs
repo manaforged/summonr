@@ -33,6 +33,7 @@ pub(crate) struct Traits {
     pub(crate) tool_images: bool,
     pub(crate) bound: bool,
     pub(crate) output: u32,
+    pub(crate) patch: bool,
 }
 
 struct Row {
@@ -51,6 +52,7 @@ const NONE: Traits = Traits {
     tool_images: false,
     bound: false,
     output: 0,
+    patch: false,
 };
 
 const fn row(
@@ -72,6 +74,7 @@ const fn row(
             tool_images: false,
             bound: false,
             output: 0,
+            patch: false,
         },
     }
 }
@@ -95,6 +98,7 @@ const fn signed(
             tool_images: true,
             bound: false,
             output: 0,
+            patch: false,
         },
     }
 }
@@ -129,6 +133,16 @@ const fn sized(output: u32, row: Row) -> Row {
         parts: row.parts,
         traits: Traits {
             output,
+            ..row.traits
+        },
+    }
+}
+
+const fn patched(row: Row) -> Row {
+    Row {
+        parts: row.parts,
+        traits: Traits {
+            patch: true,
             ..row.traits
         },
     }

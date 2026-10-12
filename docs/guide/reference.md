@@ -68,6 +68,9 @@ If you want the OS store instead, set `secrets = "keychain"` in `config.toml` (o
 
 Built-ins are providers: `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `zai`, `alibaba`, `kimi`, `minimax`, `tencent-plan`, `volcengine-plan`, `copilot`, `openrouter`, `together`, `groq`, `cerebras`, `mistral`, `muse`, `opencode`, `fireworks`, `deepinfra`, `siliconflow`, `nvidia`, `huggingface`, `cohere`, `ollama`, `lmstudio`, and `ollama-cloud`. The whole list is one data table, `src/endpoint/presets.toml`: each `[[preset]]` row is a route with its base URL, env keys, wire, and reasoning quirks, and a row summonr cannot honor fails startup by name. A provider with several routes tags each one with `provider`, `region` (`intl` or `cn`), and its access (a coding plan or an API key):
 
+GPT-5, GPT-6, and Codex models see an `apply_patch` tool instead of `edit` and `write`, because OpenAI trains them on that patch format; it runs through the same edit engine. Every other model sees `edit` and `write`.
+
+
 | Provider | Routes |
 | --- | --- |
 | `zai` | `zai-intl` (coding plan, international), `zai-cn` (coding plan, China), `zai-api` (API key, international), `zai-cn-api` (API key, China) |

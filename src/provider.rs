@@ -16,6 +16,7 @@ pub(crate) mod stream;
 pub(crate) mod think;
 mod wire;
 pub(crate) use wire::boundary;
+pub(crate) use wire::traits::traits;
 
 use crate::endpoint::Wire;
 pub(crate) use summonr_auth::Auth;

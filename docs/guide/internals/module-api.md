@@ -38,6 +38,7 @@ The tool schemas. Six core, seven behind a module, a workspace file, or a person
 | `search` | `tools/catalog/search.rs::search` | always; `workspace/search.rs` builds the query, `search/walk.rs::run` walks under `search_secs`, `search/filter.rs` owns `name`, `newer`, and `group`, `search/render.rs` owns the result text |
 | `edit` | `tools/catalog.rs::edit` | always |
 | `write` | `tools/catalog.rs::write` | always |
+| `apply_patch` | `tools/catalog/patch.rs::shaped` | in place of `edit` and `write` when the session model's trait row sets `patch` (GPT-5, GPT-6, Codex); an alias of `edit` with `patch`, so the one patch parser, policy, and checks apply |
 | `run_command` | `tools/catalog.rs::run_command` | always outside a read-only research child; there only with a sandbox; the schema is frozen per session |
 | `todo` | `tools/catalog.rs::todo` | steps and goal runs only; owns the itemized Work step list |
 | `skill` | `tools/catalog.rs::skill` | `.summonr/skills` present |

@@ -3,8 +3,10 @@ use crate::provider::ToolDefinition;
 use super::{ToolRegistry, tool};
 
 mod browser;
+mod patch;
 mod search;
 use browser::browser;
+pub(crate) use patch::shaped;
 use search::search;
 
 impl ToolRegistry {
@@ -161,6 +163,7 @@ pub(crate) const RETIRED: &[(&str, &str, Option<&str>)] = &[
     ("grep", "search", None),
     ("glob", "search", None),
     ("show_image", "read", Some("image")),
+    ("apply_patch", "edit", None),
     ("edit_file", "edit", None),
     ("replace_text", "edit", None),
     ("replace_texts", "edit", Some("sequence")),

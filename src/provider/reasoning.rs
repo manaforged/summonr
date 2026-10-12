@@ -47,6 +47,7 @@ pub(crate) enum Off {
     BetweenTools,
     #[serde(rename = "chat_template_kwargs")]
     TemplateKwarg,
+    EnableThinking,
     Unsupported,
 }
 
@@ -58,6 +59,7 @@ impl Off {
             Self::TemplateKwarg => {
                 Some(("chat_template_kwargs", json!({"enable_thinking": false})))
             }
+            Self::EnableThinking => Some(("enable_thinking", json!(false))),
             Self::Omit | Self::EffortNone | Self::Unsupported => None,
         }
     }
@@ -164,7 +166,10 @@ impl Plan<'_> {
         match self.off {
             Off::Omit => Step::Default,
             Off::EffortNone => Step::Level(Effort::None),
-            Off::ThinkingDisabled | Off::BetweenTools | Off::TemplateKwarg => Step::Off(self.off),
+            Off::ThinkingDisabled
+            | Off::BetweenTools
+            | Off::TemplateKwarg
+            | Off::EnableThinking => Step::Off(self.off),
             Off::Unsupported => self
                 .levels
                 .iter()

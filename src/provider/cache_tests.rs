@@ -237,6 +237,45 @@ fn kimi_k3_sends_back_its_reasoning_after_a_tool_call() {
 }
 
 #[test]
+fn kimi_code_and_minimax_send_back_their_reasoning_and_off_means_what_each_vendor_accepts() {
+    for (name, model) in [
+        ("kimi", "kimi-for-coding"),
+        ("kimi", "kimi-for-coding-highspeed"),
+        ("minimax", "MiniMax-M3"),
+    ] {
+        let mut messages = tool_round();
+        messages[2].reasoning = Some("read the file first".to_string());
+        let sent = body(&endpoint(name, model), &messages, None);
+        assert_eq!(
+            sent["messages"][2]["reasoning_content"], "read the file first",
+            "{model}: {sent}"
+        );
+    }
+    let glm = body(
+        &endpoint("zai", "glm-5.3"),
+        &tool_round(),
+        Some(Effort::None),
+    );
+    assert!(
+        glm.get("thinking")
+            .is_none_or(|thinking| thinking["type"] != "disabled"),
+        "{glm}"
+    );
+    let minimax = body(
+        &endpoint("minimax", "MiniMax-M3"),
+        &tool_round(),
+        Some(Effort::None),
+    );
+    assert!(minimax.get("thinking").is_none(), "{minimax}");
+    let qwen = body(
+        &endpoint("alibaba", "qwen3.7-plus"),
+        &tool_round(),
+        Some(Effort::None),
+    );
+    assert_eq!(qwen["enable_thinking"], false, "{qwen}");
+}
+
+#[test]
 fn effort_reaches_cohere_and_groq_only_in_values_they_accept() {
     let messages = [Message::user("hi")];
     let cohere = body(

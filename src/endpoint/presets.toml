@@ -15,7 +15,7 @@ plan = true
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "unsupported"
 
 [[preset]]
 name = "zai-cn"
@@ -39,7 +39,7 @@ plan = true
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "unsupported"
 
 [[preset]]
 name = "zai-api"
@@ -53,7 +53,7 @@ opencode_ids = ["zai"]
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "unsupported"
 
 [[preset]]
 name = "zai-cn-api"
@@ -67,7 +67,7 @@ opencode_ids = ["zhipuai"]
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "unsupported"
 
 [[preset]]
 name = "qwen-plan"
@@ -282,7 +282,7 @@ opencode_ids = ["minimax"]
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "omit"
 
 [[preset]]
 name = "minimax-cn"
@@ -296,7 +296,7 @@ opencode_ids = ["minimax-cn"]
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "omit"
 
 [[preset]]
 name = "minimax-plan"

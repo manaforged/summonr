@@ -401,17 +401,17 @@ Other built-in endpoints:
 
 | Endpoint | Levels | `none` |
 | --- | --- | --- |
-| `zai`, `zai-cn`, `zai-api`, `zai-cn-api` | `glm-5.3`: `low`, `high`, `max`. `glm-5.2`: `minimal` to `max`. Earlier models: no effort setting. | `glm-5.3`: sends `low`. `glm-5.2`: sends `none`. Earlier models: `thinking` type `disabled`. |
+| `zai-intl`, `zai-cn`, `zai-api`, `zai-cn-api` | no effort setting: GLM-5.3 and GLM-5.3-Flash always think, and their reasoning goes back between tool calls | sends nothing |
 | `deepseek` | `minimal` to `max` | `thinking` type `disabled` |
-| `kimi`, `kimi-intl` | `k3`: `low`, `high`, `max`. `kimi-k2` models: no effort setting. | `k3`: sends `low`. `kimi-k2.6`: `thinking` type `disabled`. Other `kimi-k2` models: sends nothing. |
+| `kimi-cn`, `kimi-intl` | `k3` and `kimi-for-coding`: `low`, `high`, `max`. `kimi-k2` models and `kimi-for-coding-highspeed`: no effort setting. | `k3`: sends `low`. `kimi-for-coding` and `kimi-k2.6`: `thinking` type `disabled`. Others: sends nothing. Every Kimi Code model gets its reasoning back between tool calls. |
 | `grok` | `grok-4.7` and `grok-4.6`: `low` to `xhigh`. Others: `low`, `medium`, `high`. | sends the lowest level |
 | `muse` | `minimal` to `xhigh` | sends `minimal` |
 | `mistral` | `high` | sends `none` |
 | `cerebras`, `deepinfra`, `ollama` | `low`, `medium`, `high` | sends `none` |
 | `openrouter` | `minimal` to `xhigh`, sent as `reasoning` with an `effort` key | sends `none` |
-| `qwen-plan`, `qwen-plan-cn`, `dashscope`, `dashscope-cn` | `low`, `medium`, `high` | sends nothing |
+| `qwen-plan`, `qwen-plan-cn`, `dashscope`, `dashscope-cn` | `low`, `medium`, `high` | Qwen 3.x Plus and Max: `enable_thinking: false`. Others: sends nothing |
 | `together`, `groq`, `copilot`, `go`, `opencode`, `fireworks` | `low`, `medium`, `high` | sends nothing |
-| `minimax`, `minimax-cn` | no effort setting | `thinking` type `disabled` |
+| `minimax-api`, `minimax-cn` | no effort setting; reasoning goes back between tool calls | sends nothing |
 | `minimax-plan`, `minimax-cn-plan` | `low`, `medium`, `high` | sends nothing |
 | `tencent-plan`, `volcengine-plan`, `siliconflow`, `siliconflow-cn`, `nvidia`, `huggingface`, `cohere`, `ollama-cloud`, `lmstudio` | `tencent-plan` and `volcengine-plan`: no effort setting. Others: `low`, `medium`, `high` | sends nothing |
 

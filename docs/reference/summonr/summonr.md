@@ -115,15 +115,16 @@
 | <code>catalog_line(&amp;self, name: usize, state: usize) -&gt; String</code> |  |
 | <code>catalog_rank(&amp;self) -&gt; u8</code> |  |
 | <code>catalog_title(&amp;self) -&gt; &amp;'static str</code> |  |
-| <code>display_name(&amp;self) -&gt; String</code> |  |
 | <code>dual(&amp;self) -&gt; bool</code> |  |
 | <code>key_action(&amp;self) -&gt; &amp;'static str</code> |  |
 | <code>keyless(&amp;self) -&gt; bool</code> |  |
+| <code>matches(&amp;self, query: &amp;str) -&gt; bool</code> |  |
 | <code>paste_key(&amp;self) -&gt; bool</code> |  |
 | <code>plan(&amp;self) -&gt; bool</code> |  |
 | <code>state(&amp;self) -&gt; String</code> |  |
 | <code>status(&amp;self) -&gt; String</code> |  |
 | <code>stored(&amp;self) -&gt; bool</code> |  |
+| <code>title(&amp;self) -&gt; &amp;str</code> |  |
 | <code>unmodeled(&amp;self) -&gt; bool</code> |  |
 
 **Fields**
@@ -140,6 +141,7 @@
 | <code>name: String</code> |  |
 | <code>own: bool</code> |  |
 | <code>plan: String</code> |  |
+| <code>provider: String</code> |  |
 | <code>setup: String</code> |  |
 | <code>source: Option&lt;<a href="summonr-secret.html#source">Source</a>&gt;</code> |  |
 

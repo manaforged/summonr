@@ -36,7 +36,7 @@ pub(super) const SWITCHES: [Switch; 16] = [
     (&["--inline"], |args| args.inline = true),
 ];
 
-pub(super) const VALUES: [Valued; 11] = [
+pub(super) const VALUES: [Valued; 12] = [
     Valued {
         option: "--add-dir",
         short: None,
@@ -101,6 +101,12 @@ pub(super) const VALUES: [Valued; 11] = [
         set: |args, raw| some(&mut args.max_secs, count(&raw, "--max-secs")?),
     },
     Valued {
+        option: "--grep",
+        short: None,
+        expected: "a pattern",
+        set: |args, pattern| some(&mut args.grep, pattern),
+    },
+    Valued {
         option: "--effort",
         short: None,
         expected: "none, minimal, low, medium, high, xhigh, or max",
@@ -108,7 +114,7 @@ pub(super) const VALUES: [Valued; 11] = [
     },
 ];
 
-pub(super) const COMMANDS: [(&str, Run); 24] = [
+pub(super) const COMMANDS: [(&str, Run); 26] = [
     ("endpoints", |args, _| on(&mut args.list)),
     ("sessions", |args, _| on(&mut args.list_sessions)),
     ("resume", Args::resume),
@@ -137,6 +143,12 @@ pub(super) const COMMANDS: [(&str, Run); 24] = [
     }),
     ("mail", |args, input| {
         some(&mut args.mail, input.by_ref().collect())
+    }),
+    ("cron", |args, input| {
+        some(&mut args.cron, input.by_ref().collect())
+    }),
+    ("gateway", |args, input| {
+        some(&mut args.gateway, input.by_ref().collect())
     }),
     ("tool", |args, input| {
         some(&mut args.tool, input.by_ref().collect())

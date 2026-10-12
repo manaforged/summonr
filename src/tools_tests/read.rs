@@ -21,6 +21,19 @@ fn web_search_is_off_unless_turned_on() {
 }
 
 #[test]
+fn a_child_registry_inherits_the_web_modules() {
+    let (dir, mut tools) = workspace(&[]);
+    tools.search = Some(crate::web::Search::discover().unwrap());
+    let child = tools.child_at(dir.path(), "child").unwrap();
+    let names: Vec<String> = child
+        .definitions()
+        .into_iter()
+        .map(|tool| tool.function.name)
+        .collect();
+    assert!(names.iter().any(|name| name == "web"), "{names:?}");
+}
+
+#[test]
 fn reading_an_image_hands_it_to_a_model_that_sees_images() {
     let (dir, mut tools) = workspace(&[]);
     let mut png = Vec::new();

@@ -97,8 +97,11 @@ pub(super) fn print_sessions() -> Result<()> {
         println!("no sessions");
         return Ok(());
     }
+    const HEADER: &str = "ID\tNAME\tDIRECTORY\tFIRST PROMPT";
     if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
-        println!("ID\tNAME\tDIRECTORY\tFIRST PROMPT");
+        println!("{HEADER}");
+    } else {
+        eprintln!("{HEADER}");
     }
     for info in sessions.iter().rev() {
         println!(
@@ -110,6 +113,59 @@ pub(super) fn print_sessions() -> Result<()> {
         );
     }
     Ok(())
+}
+
+const GREP_LINES: usize = 50;
+const GREP_WIDTH: usize = 160;
+const GREP_TIME: &str = "%Y-%m-%d %H:%M";
+const UUID_TIME_SHIFT: u32 = 80;
+
+pub(super) fn grep_sessions(pattern: &str) -> Result<()> {
+    let needle = pattern.to_lowercase();
+    let mut shown = 0;
+    for info in list_sessions()?.into_iter().rev() {
+        let Ok(text) = summonr::export_session(&info.path) else {
+            continue;
+        };
+        for line in text
+            .lines()
+            .filter(|line| line.to_lowercase().contains(&needle))
+        {
+            if shown == GREP_LINES {
+                println!("… more matches; narrow the pattern");
+                return Ok(());
+            }
+            let line: String = line.trim().chars().take(GREP_WIDTH).collect();
+            println!(
+                "{}\t{}\t{}\t{}",
+                summonr::short(&info.id),
+                started(&info.id),
+                info.cwd.as_deref().unwrap_or("-"),
+                line
+            );
+            shown += 1;
+        }
+    }
+    if shown == 0 {
+        eprintln!("no matches");
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn started(id: &str) -> String {
+    u128::from_str_radix(id, 16)
+        .ok()
+        .and_then(|bits| i64::try_from(bits >> UUID_TIME_SHIFT).ok())
+        .and_then(|millis| jiff::Timestamp::from_millisecond(millis).ok())
+        .map_or_else(
+            || "-".to_string(),
+            |at| {
+                at.to_zoned(jiff::tz::TimeZone::system())
+                    .strftime(GREP_TIME)
+                    .to_string()
+            },
+        )
 }
 
 pub(super) fn print_workflows() -> Result<()> {
@@ -187,39 +243,38 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn last_session(cwd: &Path) -> Result<String> {
-    summonr::last_for(cwd)?
-        .map(|info| info.id)
-        .ok_or_else(|| summonr::Error::Config(format!("no session for {}", cwd.display())))
-}
-
 pub(super) fn print_diff(args: &Args) -> Result<()> {
     let cwd = workspace()?;
     let path = args.prompt.first().map(String::as_str);
-    let Some(turn) = args.turn.as_deref() else {
-        if args.json || args.stat {
-            let mut diff = summonr::diff::stats(&cwd)?;
-            diff.files
-                .retain(|stat| path.is_none_or(|path| stat.path == path));
-            return print_stats(&diff, args.json);
-        }
+    let turn = args
+        .turn
+        .as_deref()
+        .map(|turn| session_turn(&cwd, turn))
+        .transpose()?;
+    if turn.is_none() && !args.json && !args.stat {
         print!("{}", summonr::diff::patch(&cwd, path)?);
         return Ok(());
-    };
-    let turn: summonr::diff::TurnId = turn.parse()?;
-    let session = last_session(&cwd)?;
-    if args.json || args.stat {
-        let mut diff = summonr::diff::turn_stats(&cwd, &session, turn)?;
-        diff.files
-            .retain(|stat| path.is_none_or(|path| stat.path == path));
-        return print_stats(&diff, args.json);
     }
-    let mut diff = summonr::diff::turn_stats(&cwd, &session, turn)?;
+    let mut diff = match &turn {
+        Some((session, turn)) => summonr::diff::turn_stats(&cwd, session, *turn)?,
+        None => summonr::diff::stats(&cwd)?,
+    };
     diff.files
         .retain(|stat| path.is_none_or(|path| stat.path == path));
+    let Some((session, turn)) = turn.filter(|_| !args.json && !args.stat) else {
+        return print_stats(&diff, args.json);
+    };
     eprintln!("{}", diff.summary());
     print!("{}", summonr::diff::turn_patch(&cwd, &session, turn, path)?);
     Ok(())
+}
+
+fn session_turn(cwd: &Path, turn: &str) -> Result<(String, summonr::diff::TurnId)> {
+    let turn = turn.parse()?;
+    let session = summonr::last_for(cwd)?
+        .map(|info| info.id)
+        .ok_or_else(|| summonr::Error::Config(format!("no session for {}", cwd.display())))?;
+    Ok((session, turn))
 }
 
 fn print_stats(diff: &summonr::diff::Diff, json: bool) -> Result<()> {
@@ -255,7 +310,7 @@ pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
             let count = summonr::mcp_probe(&workspace()?, name)
                 .await
                 .map_err(|error| {
-                    summonr::Error::Config(format!(
+                    summonr::Error::Setup(format!(
                         "{name}: not reachable: {error}\nkept in {kept}; fix the command or run `summonr mcp remove {name}`"
                     ))
                 })?;
@@ -307,11 +362,16 @@ const STATE_WIDTH: usize = 22;
 
 fn server_line(row: &summonr::ServerStatus) -> String {
     let transport = row.transport.map_or("-", summonr::McpTransport::label);
-    format!(
+    let line = format!(
         "{:<20} {:<STATE_WIDTH$} {transport:<6} {} tools  {}",
         row.name,
         row.state_text(STATE_WIDTH),
         row.tools.len(),
         row.schema_size()
-    )
+    );
+    if let (summonr::McpState::Failed, Some(detail)) = (row.state, &row.detail) {
+        format!("{line}\n  failed: {detail}")
+    } else {
+        line
+    }
 }

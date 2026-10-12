@@ -15,6 +15,8 @@ pub(super) use super::pane::Pane;
 pub(super) mod entry;
 mod icons;
 mod rail;
+#[cfg(test)]
+mod tests;
 mod thread;
 
 pub(super) fn root(app: App) -> NodeBuilder {

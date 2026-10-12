@@ -5,6 +5,7 @@ impl<P: Provider> Loop<P> {
         if let Some(probe) = self.probe.take() {
             probe.abort();
         }
+        self.tools.set_model_images(provider.takes_images());
         self.provider = provider;
         self.model = model.into();
         self.herdr.set_model(&self.model);

@@ -10,7 +10,7 @@ mod protected;
 pub(crate) use protected::{holds_protected, protected_read, workspace_control};
 mod walk;
 
-pub(crate) use walk::shell_words;
+pub(crate) use walk::{normalize, shell_words};
 pub(crate) use {
     danger::danger,
     walk::{argv, verb},
@@ -340,7 +340,7 @@ pub(crate) fn protected_write(path: &Path) -> bool {
 }
 
 mod blocks;
-mod git;
+pub(crate) mod git;
 mod paths;
 mod shell;
 mod verbs;

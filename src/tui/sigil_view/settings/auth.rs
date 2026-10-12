@@ -135,7 +135,7 @@ fn listing_hints(app: &App) -> Hints {
 
 fn span(app: &App) -> usize {
     let (cols, _) = app.viewport.get();
-    (canvas::dialog_width(cols, f32::from(cols)) / canvas::cell().w) as usize
+    Size::Page.cells(cols)
 }
 
 fn chip(choice: &AuthInfo, state: Option<&State>) -> String {

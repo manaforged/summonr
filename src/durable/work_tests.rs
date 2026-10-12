@@ -1,30 +1,64 @@
 use super::{Candidate, Decision, Policy, StepState, Work};
 use crate::durable::tree::snapshot;
+use crate::tools::{Todo, TodoStatus};
+
+fn todo(text: &str, status: TodoStatus) -> Todo {
+    Todo {
+        text: text.to_string(),
+        status,
+    }
+}
 
 #[test]
-fn a_single_turn_todo_list_survives_work_progress() {
+fn todo_list_never_switches_off_the_completion_check() {
     let mut work = Work::new("ship", Policy::Single);
-    work.apply_todos(&[
-        ("decode the image".to_string(), StepState::Active),
-        ("write the overlay".to_string(), StepState::Pending),
+    work.select("ship", &["cargo test".to_string()]).unwrap();
+    work.apply_todos(vec![
+        todo("decode the image", TodoStatus::Done),
+        todo("write the overlay", TodoStatus::Active),
     ]);
-    let progress = work.progress();
-    assert!(
-        progress
-            .ledger
-            .iter()
-            .any(|line| line.contains("[/]") && line.contains("decode the image")),
-        "{:?}",
-        progress.ledger
-    );
-    assert!(
-        progress
-            .ledger
-            .iter()
-            .any(|line| line.contains("[ ]") && line.contains("write the overlay")),
-        "{:?}",
-        progress.ledger
-    );
+    assert_eq!(work.policy, Policy::Single);
+    assert_eq!(work.completion_checks().len(), 1);
+    assert_eq!(work.progress().todos.len(), 2);
+}
+
+#[test]
+fn todo_marked_done_cannot_finish_a_steps_plan() {
+    let dir = tempfile::tempdir().unwrap();
+    let shot = snapshot(dir.path(), None, None).unwrap();
+    let mut work = Work::new("plan", Policy::Steps);
+    work.select(
+        "## Steps\n1. first\n2. second\n",
+        &["cargo test".to_string()],
+    )
+    .unwrap();
+    work.execute(shot.clone()).unwrap();
+    work.apply_todos(vec![
+        todo("first", TodoStatus::Done),
+        todo("second", TodoStatus::Done),
+    ]);
+    work.verify(shot.clone()).unwrap();
+    work.verdict(true, Decision::Automatic).unwrap();
+    assert!(!work.terminal());
+    assert_eq!(work.steps[1].state, StepState::Active);
+    assert_eq!(work.completion_checks().len(), 1);
+}
+
+#[test]
+fn todo_marked_done_never_overrides_the_goal_judge() {
+    let dir = tempfile::tempdir().unwrap();
+    let shot = snapshot(dir.path(), None, None).unwrap();
+    let mut work = Work::new("make the check pass", Policy::Goal {});
+    work.plan = Some("plan".to_string());
+    work.execute(shot.clone()).unwrap();
+    work.apply_todos(vec![todo("everything", TodoStatus::Done)]);
+    work.verify(shot.clone()).unwrap();
+    work.verdict(
+        true,
+        Decision::GoalContinue("tests still missing".to_string()),
+    )
+    .unwrap();
+    assert!(!work.terminal());
 }
 
 #[test]
@@ -97,39 +131,45 @@ fn a_goal_stops_after_three_failed_checks() {
 }
 
 #[test]
-fn a_changed_check_file_is_never_a_touched_path() {
+fn check_file_and_cache_files_are_never_touched_paths() {
     let dir = tempfile::tempdir().unwrap();
+    let write = |path: &str, text: &str| std::fs::write(dir.path().join(path), text).unwrap();
     crate::diff::git_env(dir.path(), &[], &["init", "-q"]).unwrap();
     std::fs::create_dir_all(dir.path().join(".summonr")).unwrap();
-    std::fs::write(dir.path().join(".summonr/check.toml"), "check = \"a\"\n").unwrap();
-    std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+    write(".summonr/check.toml", "check = \"a\"\n");
+    write("calc.py", "a");
     let mut work = Work::new("ship", Policy::Single);
     work.plan = Some("plan".to_string());
     work.execute(snapshot(dir.path(), None, None).unwrap())
         .unwrap();
-    std::fs::write(dir.path().join(".summonr/check.toml"), "check = \"bb\"\n").unwrap();
-    std::fs::write(dir.path().join("a.txt"), "bb").unwrap();
-    let paths = work
-        .verify(snapshot(dir.path(), None, None).unwrap())
-        .unwrap();
-    assert_eq!(paths, vec!["a.txt".to_string()]);
-}
-
-#[test]
-fn a_cache_file_is_never_a_touched_path() {
-    let dir = tempfile::tempdir().unwrap();
-    crate::diff::git_env(dir.path(), &[], &["init", "-q"]).unwrap();
-    std::fs::write(dir.path().join("calc.py"), "a").unwrap();
-    let mut work = Work::new("ship", Policy::Single);
-    work.plan = Some("plan".to_string());
-    work.execute(snapshot(dir.path(), None, None).unwrap())
-        .unwrap();
-    std::fs::write(dir.path().join("calc.py"), "bb").unwrap();
+    write(".summonr/check.toml", "check = \"bb\"\n");
+    write("calc.py", "bb");
     std::fs::create_dir(dir.path().join("__pycache__")).unwrap();
-    std::fs::write(dir.path().join("__pycache__/calc.cpython-312.pyc"), "x").unwrap();
+    write("__pycache__/calc.cpython-312.pyc", "x");
     let paths = work
         .verify(snapshot(dir.path(), None, None).unwrap())
         .unwrap();
     assert_eq!(paths, vec!["calc.py".to_string()]);
     assert_eq!(work.touched.iter().collect::<Vec<_>>(), vec!["calc.py"]);
+}
+
+#[test]
+fn an_old_checkpoint_with_a_model_made_step_still_runs_the_saved_checks() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut work = Work::new("plan", Policy::Steps);
+    work.select("## Steps\n1. first\n", &["false".to_string()])
+        .unwrap();
+    let path = dir.path().join("work.json");
+    let mut saved = serde_json::to_value(&work).unwrap();
+    saved["steps"][0]["title"] = "Investigate".into();
+    saved["steps"][0]["checks"] = serde_json::json!([]);
+    saved["active"] = 0.into();
+    std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let loaded = Work::load(&path).unwrap().unwrap();
+    let commands: Vec<String> = loaded
+        .completion_checks()
+        .into_iter()
+        .map(|check| check.command)
+        .collect();
+    assert_eq!(commands, ["false"]);
 }

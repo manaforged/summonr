@@ -189,8 +189,8 @@ impl Worker {
             Ok(switches) => {
                 if self.loop_.catalog_frozen() {
                     self.system("saved for the next process; this session's tools stay frozen");
-                } else {
-                    self.loop_.set_modules(&switches);
+                } else if let Err(error) = self.loop_.set_modules(&switches) {
+                    self.fail(&error.to_string());
                 }
             }
             Err(error) => self.fail(&error.to_string()),

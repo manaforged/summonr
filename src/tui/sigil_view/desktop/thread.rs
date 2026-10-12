@@ -21,7 +21,6 @@ pub(super) const BODY: f32 = 13.0;
 pub(super) const META: f32 = 12.0;
 const COLUMN: f32 = 760.0;
 const TITLE_CELLS: usize = 48;
-const NEW_SESSION: &str = "New session";
 const CRUMB: &str = "›";
 const EXPLAIN: &str = "Explain this repo";
 
@@ -182,7 +181,7 @@ fn session_title(app: &App) -> String {
     active(app)
         .map(|entry| crate::text::ellipsize(entry.title.trim(), TITLE_CELLS))
         .filter(|title| !title.trim().is_empty())
-        .unwrap_or_else(|| NEW_SESSION.to_string())
+        .unwrap_or_else(|| super::rail::UNTITLED.to_string())
 }
 
 pub(super) fn title_bar(app: App) -> NodeBuilder {

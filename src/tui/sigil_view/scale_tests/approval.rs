@@ -33,6 +33,7 @@ fn pending_after_n(draft: &str) -> bool {
         app.update(Msg::Event(crate::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
             persist: true,
+            dialog: 1,
         }));
         app.replace(draft.to_owned());
         let mut host = Host::cells();
@@ -89,6 +90,7 @@ fn approval_screen(persist: bool) -> String {
         app.update(Msg::Event(crate::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
             persist,
+            dialog: 1,
         }));
     })
     .join("\n")

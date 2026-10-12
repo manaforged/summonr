@@ -63,11 +63,14 @@ fn export_session(out: &mut String, path: &Path, id: &str, model: &str, workspac
 }
 
 fn export_user(out: &mut String, text: &str, source: Option<&str>, start: bool) {
-    if start {
-        let text = source.unwrap_or_else(|| user_text(text));
+    if start || source.is_some() {
+        let text = user_text(text, source);
         out.push_str(&format!("## You\n\n{text}\n\n"));
     } else {
-        out.push_str(&format!("> {}\n\n", text.lines().next().unwrap_or("")));
+        for line in text.lines() {
+            out.push_str(&format!("> {line}\n"));
+        }
+        out.push('\n');
     }
 }
 

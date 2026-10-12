@@ -293,6 +293,11 @@ impl From<UsageWire> for Usage {
 }
 
 impl Usage {
+    #[must_use]
+    pub fn clamp(count: u64) -> u32 {
+        u32::try_from(count).unwrap_or(u32::MAX)
+    }
+
     pub fn add(&mut self, other: &Self) {
         self.prompt_tokens = self.prompt_tokens.saturating_add(other.prompt_tokens);
         self.completion_tokens = self

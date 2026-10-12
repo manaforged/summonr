@@ -108,10 +108,7 @@ impl Client {
                 self.abandoned.remove(0);
                 Ok(None)
             }
-            Read::Oversize => Err(Error::Tool(format!(
-                "a reply to `{method}` was over {} MiB; summonr dropped it",
-                crate::limits::limits().mcp_frame_max_bytes / (1024 * 1024)
-            ))),
+            Read::Oversize => Err(crate::rpc::oversize(method)),
             Read::Closed => Err(Error::Tool(format!(
                 "the child exited during `{method}`{}",
                 self.stderr_note()

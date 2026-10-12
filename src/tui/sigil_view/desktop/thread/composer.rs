@@ -15,6 +15,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
         (app.draft, app.caret)
     };
     let focus = signal(0_u64);
+    let typing = app.clone();
     container()
         .key_capture(Shortcut::ctrl(LogicalKey::character("v")), move |event| {
             if paste.clipboard() {
@@ -36,7 +37,12 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                 .shrink(0.0)
                 .align_items(AlignItems::Stretch),
         )
-        .pointer_down(move |_| focus.update(|n| *n += 1))
+        .pointer_down(move |_| {
+            if typing.pane_focus.peek() {
+                typing.focus_pane(false);
+            }
+            focus.update(|n| *n += 1);
+        })
         .child(
             container()
                 .layout(

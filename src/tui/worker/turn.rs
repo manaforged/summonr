@@ -4,12 +4,15 @@ use std::sync::{Arc, PoisonError};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::settings::set_run_mode;
+use super::steer::{steer, steerable, take_inputs};
 use super::{Cmd, Msg, Worker};
 use crate::provider::UserInput;
 use crate::tools::Event;
 use crate::tui::Activity;
 
 const SENT_NOW: &str = "sent to the running turn";
+const NOTHING_TO_SEND: &str = "nothing to send now: shell and slash lines run after the turn";
+pub(in crate::tui) const QUEUED_LATER: &str = "queued for the next turn";
 const SETTINGS_LATER: &str = "settings apply when the current turn ends; esc cancels now";
 
 enum Input {
@@ -78,7 +81,8 @@ impl MidTurn<'_> {
             | Cmd::ClearRole(_)
             | Cmd::SaveWorkflow(_)
             | Cmd::ListWorkflows
-            | Cmd::SetModule(..)) => self.later(command),
+            | Cmd::SetModule(..)
+            | Cmd::SetEffort(_)) => self.later(command),
             command @ (Cmd::ListModels { .. }
             | Cmd::Pin(..)
             | Cmd::SaveDefault(_)
@@ -110,10 +114,6 @@ impl MidTurn<'_> {
                 super::export_session(session_path, session_id, target, self.ui);
                 Outcome::Keep
             }
-            Cmd::SetEffort(effort) => {
-                self.deferred.push_back(Cmd::SetEffort(effort));
-                Outcome::Keep
-            }
             Cmd::SetMail(on) => {
                 *self.auto_reply = on;
                 Outcome::Keep
@@ -124,6 +124,10 @@ impl MidTurn<'_> {
             }
             Cmd::Replay => {
                 super::history::reshow_running(session_path, session_id, self.ui);
+                Outcome::Keep
+            }
+            Cmd::Answer(dialog, text) => {
+                self.steering.answer(dialog, UserInput::from(text));
                 Outcome::Keep
             }
             Cmd::Mail | Cmd::Tick | Cmd::LoginAnswer(_) | Cmd::Open(_) => Outcome::Keep,
@@ -139,49 +143,46 @@ impl MidTurn<'_> {
             ),
             _ => SETTINGS_LATER.to_string(),
         };
+        self.deferred
+            .extend(self.followups.drain(..).map(Cmd::Submit));
         self.deferred.push_back(command);
         drop(self.ui.send(Msg::System(note)));
+        super::announce(self.ui, self.steering, self.followups, self.deferred);
         Outcome::Keep
     }
 
     fn queued(&mut self, command: Cmd, workspace: &std::path::Path) -> Outcome {
         match command {
-            Cmd::Steer(text) => {
-                if let Ok(mut queue) = self.steering.lock() {
-                    queue.push_back(text);
-                    if let Some(notes) = crate::hunks::drain(workspace) {
-                        queue.push_back(UserInput::from(notes));
-                    }
-                }
+            Cmd::Steer(input)
+                if self.followups.is_empty() && self.deferred.is_empty() && steerable(&input) =>
+            {
+                steer(self.steering, [input], workspace);
+                drop(self.ui.send(Msg::System(SENT_NOW.to_string())));
+            }
+            Cmd::Steer(input) => {
+                self.followups.push_back(input);
+                drop(self.ui.send(Msg::System(QUEUED_LATER.to_string())));
             }
             Cmd::Queue(input) | Cmd::Submit(input) => self.followups.push_back(input),
             Cmd::SteerQueued => {
-                let sent = self.followups.len();
-                if sent > 0
-                    && let Ok(mut queue) = self.steering.lock()
-                {
-                    queue.extend(self.followups.drain(..));
-                    if let Some(notes) = crate::hunks::drain(workspace) {
-                        queue.push_back(UserInput::from(notes));
-                    }
-                }
-                if sent > 0 {
-                    drop(self.ui.send(Msg::System(SENT_NOW.to_string())));
-                }
+                let now = take_inputs(self.deferred, self.followups, steerable);
+                let note = if now.is_empty() {
+                    NOTHING_TO_SEND
+                } else {
+                    steer(self.steering, now, workspace);
+                    SENT_NOW
+                };
+                drop(self.ui.send(Msg::System(note.to_string())));
             }
             Cmd::Dequeue => {
-                let mut pending: Vec<UserInput> = self
-                    .steering
-                    .lock()
-                    .map_or_else(|_| Vec::new(), |mut queue| queue.drain(..).collect());
-                pending.extend(self.followups.drain(..));
+                let pending = take_inputs(self.deferred, self.followups, |_| true);
                 if !pending.is_empty() {
                     drop(self.ui.send(Msg::Restored(pending)));
                 }
             }
             _command => unreachable!("queued routes only queue commands"),
         }
-        super::announce(self.ui, self.steering, self.followups);
+        super::announce(self.ui, self.steering, self.followups, self.deferred);
         Outcome::Keep
     }
 }
@@ -313,7 +314,7 @@ impl Worker {
         for input in left.into_iter().rev() {
             self.followups.push_front(input);
         }
-        super::announce(&self.ui, &self.steering, &self.followups);
+        super::announce(&self.ui, &self.steering, &self.followups, &self.deferred);
     }
 
     pub(super) fn recover(&mut self) {
@@ -340,7 +341,7 @@ impl Worker {
         if !pending.is_empty() {
             drop(self.ui.send(Msg::Restored(pending)));
         }
-        super::announce(&self.ui, &self.steering, &self.followups);
+        super::announce(&self.ui, &self.steering, &self.followups, &self.deferred);
     }
 }
 
@@ -357,3 +358,7 @@ pub(super) fn mail(ui: &UnboundedSender<Msg>, from: &str, to: &[String], text: &
     };
     drop(ui.send(Msg::System(note)));
 }
+
+#[cfg(test)]
+#[path = "turn_tests.rs"]
+mod tests;

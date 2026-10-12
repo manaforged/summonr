@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 #[cfg(windows)]
 use process_wrap::tokio::{ChildWrapper, CommandWrap, JobObject};
@@ -71,21 +71,15 @@ pub(crate) struct ProcessGroup {
     sandbox: bool,
 }
 
-fn live_groups() -> &'static Mutex<Vec<(u32, bool)>> {
-    static GROUPS: Mutex<Vec<(u32, bool)>> = Mutex::new(Vec::new());
-    &GROUPS
-}
+static GROUPS: Mutex<Vec<(u32, bool)>> = Mutex::new(Vec::new());
 
-fn with_groups(mut apply: impl FnMut(&mut Vec<(u32, bool)>)) {
-    match live_groups().lock() {
-        Ok(mut groups) => apply(&mut groups),
-        Err(poisoned) => apply(&mut poisoned.into_inner()),
-    }
+fn groups() -> MutexGuard<'static, Vec<(u32, bool)>> {
+    GROUPS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl ProcessGroup {
     pub(crate) fn new(pid: u32, sandbox: bool) -> Self {
-        with_groups(|groups| groups.push((pid, sandbox)));
+        groups().push((pid, sandbox));
         Self {
             pid,
             armed: true,
@@ -93,19 +87,29 @@ impl ProcessGroup {
         }
     }
 
-    pub(super) fn disarm(&mut self) {
+    pub(crate) fn terminate(&self) -> bool {
+        #[cfg(unix)]
+        {
+            signal(self.pid, libc::SIGTERM)
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    }
+
+    pub(crate) fn disarm(&mut self) {
         self.armed = false;
     }
 }
 
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
-        let pid = self.pid;
-        with_groups(|groups| {
-            if let Some(at) = groups.iter().position(|group| group.0 == pid) {
-                groups.swap_remove(at);
-            }
-        });
+        let mut live = groups();
+        if let Some(at) = live.iter().position(|group| group.0 == self.pid) {
+            live.swap_remove(at);
+        }
+        drop(live);
         if self.armed {
             kill_group(self.pid, self.sandbox);
         }
@@ -113,10 +117,7 @@ impl Drop for ProcessGroup {
 }
 
 pub(crate) fn stop_groups() {
-    let taken = match live_groups().lock() {
-        Ok(mut groups) => std::mem::take(&mut *groups),
-        Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
-    };
+    let taken = std::mem::take(&mut *groups());
     for (pid, sandbox) in taken {
         kill_group(pid, sandbox);
     }
@@ -235,6 +236,7 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
         "CARGO_HOME",
         "RUSTUP_HOME",
         "CARGO_TARGET_DIR",
+        crate::cron::runner::ENV,
         "SystemRoot",
         "ComSpec",
         "PATHEXT",

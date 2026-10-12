@@ -11,15 +11,15 @@ impl<P: Provider> Loop<P> {
         let Some(shared) = self.steer_shared.clone() else {
             return Ok(FormAnswer::declined());
         };
-        let _blocked = self.herdr.blocked(&form.message);
-        self.push_event(
-            events,
-            emit,
-            Event::Elicit {
-                form: Some(form.clone()),
-            },
-        )?;
-        let answer = match self.answer(&shared).await {
+        let message = form.message.clone();
+        let opened = Some(form.clone());
+        let (dialog, input) = self
+            .dialog(&shared, &message, events, emit, |dialog| Event::Elicit {
+                form: opened,
+                dialog,
+            })
+            .await?;
+        let answer = match input {
             Some(input) => match serde_json::from_str::<FormAnswer>(input.text.trim()) {
                 Ok(answer) => checked(&form, answer),
                 Err(_) => {
@@ -29,54 +29,96 @@ impl<P: Provider> Loop<P> {
             },
             None => FormAnswer::cancelled(),
         };
-        self.push_event(events, emit, Event::Elicit { form: None })?;
+        self.push_event(events, emit, Event::Elicit { form: None, dialog })?;
         Ok(answer)
     }
 
-    pub(super) async fn answer(&self, shared: &Steering) -> Option<UserInput> {
-        tokio::time::timeout(crate::limits::limits().grant_wait(), shared.next())
+    pub(super) async fn dialog(
+        &mut self,
+        shared: &Steering,
+        status: &str,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        open: impl FnOnce(u64) -> Event,
+    ) -> Result<(u64, Option<UserInput>)> {
+        let dialog = shared.open_dialog();
+        let _blocked = self.herdr.blocked(status);
+        self.push_event(events, emit, open(dialog))?;
+        let input = tokio::time::timeout(crate::limits::limits().grant_wait(), shared.next())
             .await
-            .ok()
+            .ok();
+        Ok((dialog, input))
     }
 }
 
 #[derive(Default)]
 pub(crate) struct Steering {
     queue: Mutex<VecDeque<UserInput>>,
+    answers: Mutex<VecDeque<UserInput>>,
+    dialog: std::sync::atomic::AtomicU64,
     wake: tokio::sync::Notify,
 }
 
-pub(crate) struct SteerGuard<'a> {
-    queue: std::sync::MutexGuard<'a, VecDeque<UserInput>>,
-    wake: &'a tokio::sync::Notify,
-}
+impl Steering {
+    pub(crate) fn lock(
+        &self,
+    ) -> std::sync::LockResult<std::sync::MutexGuard<'_, VecDeque<UserInput>>> {
+        self.queue.lock()
+    }
 
-impl From<VecDeque<UserInput>> for Steering {
-    fn from(queue: VecDeque<UserInput>) -> Self {
-        Self {
-            queue: Mutex::new(queue),
-            wake: tokio::sync::Notify::new(),
+    #[cfg(test)]
+    pub(crate) fn replying(self: &Arc<Self>, answers: &[&str]) -> impl FnMut(&Event) + use<> {
+        let steering = Arc::clone(self);
+        let mut answers: VecDeque<UserInput> = answers
+            .iter()
+            .map(|answer| UserInput::from(*answer))
+            .collect();
+        move |event| {
+            if let Event::Approval {
+                detail: Some(_),
+                dialog,
+                ..
+            }
+            | Event::Elicit {
+                form: Some(_),
+                dialog,
+            } = event
+                && let Some(answer) = answers.pop_front()
+            {
+                steering.answer(*dialog, answer);
+            }
         }
     }
-}
 
-impl Steering {
-    pub(crate) fn lock(&self) -> std::sync::LockResult<SteerGuard<'_>> {
-        let wake = &self.wake;
-        match self.queue.lock() {
-            Ok(queue) => Ok(SteerGuard { queue, wake }),
-            Err(poisoned) => Err(std::sync::PoisonError::new(SteerGuard {
-                queue: poisoned.into_inner(),
-                wake,
-            })),
+    pub(crate) fn open_dialog(&self) -> u64 {
+        let mut answers = self
+            .answers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        answers.clear();
+        self.dialog
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            .wrapping_add(1)
+    }
+
+    pub(crate) fn answer(&self, dialog: u64, input: UserInput) {
+        let mut answers = self
+            .answers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if dialog != self.dialog.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
         }
+        answers.push_back(input);
+        drop(answers);
+        self.wake.notify_one();
     }
 
     async fn next(&self) -> UserInput {
         loop {
             let notified = self.wake.notified();
             let popped = self
-                .queue
+                .answers
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .pop_front();
@@ -84,28 +126,6 @@ impl Steering {
                 return input;
             }
             notified.await;
-        }
-    }
-}
-
-impl std::ops::Deref for SteerGuard<'_> {
-    type Target = VecDeque<UserInput>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.queue
-    }
-}
-
-impl std::ops::DerefMut for SteerGuard<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.queue
-    }
-}
-
-impl Drop for SteerGuard<'_> {
-    fn drop(&mut self) {
-        if !self.queue.is_empty() {
-            self.wake.notify_one();
         }
     }
 }

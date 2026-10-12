@@ -169,6 +169,7 @@ pub(super) fn builtin(name: &str) -> Option<Endpoint> {
         keep_reasoning: false,
         opencode: row.opencode,
         prompt_cache_key: row.prompt_cache_key,
+        assistant_after_tool: row.assistant_after_tool,
         cache_ttl: row.cache_ttl.unwrap_or(crate::limits::limits().cache_ttl),
         cache_header: row.cache_header.clone(),
         reasoning: reasoning::from_preset(Some(row)),

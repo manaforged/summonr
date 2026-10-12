@@ -91,7 +91,7 @@ fn asking(msg: &Msg) -> Option<bool> {
     if let Msg::Event(Event::Approval { detail, .. }) = msg {
         return Some(detail.is_some());
     }
-    if let Msg::Event(Event::Elicit { form }) = msg {
+    if let Msg::Event(Event::Elicit { form, .. }) = msg {
         return Some(form.is_some());
     }
     None

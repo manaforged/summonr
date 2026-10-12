@@ -46,7 +46,10 @@ fn historical_usage_excludes_estimates_and_keeps_legacy_charges() {
 #[test]
 fn user_text_strips_the_harness_note() {
     assert_eq!(
-        user_text("hi\n\nHarness state: auto mode. Do only what they asked."),
+        user_text(
+            "hi\n\nHarness state: auto mode. Do only what they asked.",
+            None
+        ),
         "hi"
     );
 }
@@ -123,4 +126,18 @@ fn usage_counts_each_session_once_and_keeps_its_workspace() {
         rows.iter()
             .any(|row| row.workspace == "/work/beta" && row.turns == 1)
     );
+}
+
+#[test]
+fn steering_note_never_counts_as_the_users_words_in_old_history() {
+    let stored = "fix the test\n\nHarness: the previous turn stopped early (cancelled). Address it.\n\nHarness state: auto mode.";
+    assert_eq!(super::user_text(stored, None), "fix the test");
+}
+
+#[test]
+fn a_user_paragraph_that_starts_with_harness_stays_in_the_message() {
+    let typed = "Fix this.\n\nHarness the existing API and preserve retries.";
+    assert_eq!(user_text(typed, None), typed);
+    let noted = format!("{typed}\n\nHarness state: auto mode. Do only what they asked.");
+    assert_eq!(user_text(&noted, None), typed);
 }

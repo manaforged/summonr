@@ -299,7 +299,7 @@ fn the_fold_key_cycles_thinking_and_tool_output() {
     let mut seen = Vec::new();
     let _ = card(110, |app| {
         for _ in 0..3 {
-            assert!(app.route_hotkey('n'));
+            assert!(app.route_chord('n'));
             let prefs = app.model.peek().prefs.clone();
             seen.push((prefs.reasoning.name(), prefs.tools.name()));
         }
@@ -389,4 +389,11 @@ fn a_search_jump_opens_that_tool_and_keeps_the_saved_setting() {
         state = Some((opened, model.prefs.tools));
     });
     assert_eq!(state, Some((true, crate::prefs::ToolOutput::Hidden)));
+}
+
+#[test]
+fn a_pane_narrower_than_the_split_threshold_gets_a_unified_diff() {
+    use crate::tui::sigil_view::chat::entry::Fit;
+    assert_eq!(Fit::of(47), Fit::Narrow);
+    assert_eq!(Fit::of(160), Fit::Wide);
 }

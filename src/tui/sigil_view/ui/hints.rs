@@ -7,11 +7,14 @@ use super::rows::row;
 
 const SEPARATOR: &str = " · ";
 
+pub(in crate::tui) const FILTER_HINT: &str = "type to filter";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui) enum Key {
     Enter,
     Esc,
     Tab,
+    Space,
     UpDown,
     Hotkey(Hotkey),
     Fixed(&'static str),
@@ -24,6 +27,7 @@ impl Key {
             Self::Enter => "↵".to_string(),
             Self::Esc => "esc".to_string(),
             Self::Tab => "tab".to_string(),
+            Self::Space => "space".to_string(),
             Self::UpDown => "↑↓".to_string(),
             Self::Hotkey(action) => keys.label(action),
             Self::Fixed(chord) => chord.to_string(),

@@ -22,8 +22,12 @@ pub(super) use export::{announce, export_session};
 mod history;
 mod reader;
 mod settings;
+#[cfg(test)]
+mod startup_tests;
 mod state;
+mod steer;
 mod turn;
+pub(in crate::tui) use turn::QUEUED_LATER;
 
 use reader::Reader;
 
@@ -59,5 +63,3 @@ struct Worker {
     last_peers: Option<Vec<crate::mail::Agent>>,
     reader: Reader,
 }
-
-impl Worker {}

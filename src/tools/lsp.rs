@@ -12,7 +12,7 @@ use url::Url;
 
 use crate::error::{Error, Result};
 use crate::language;
-use crate::rpc;
+use crate::rpc::{self, Frame};
 
 use super::command::ProcessGroup;
 use super::command::proc::kill_group;
@@ -23,7 +23,7 @@ const INBOX: usize = 64;
 
 pub(super) struct Conn {
     child: Option<Child>,
-    inbox: mpsc::Receiver<Result<Value>>,
+    inbox: mpsc::Receiver<Result<Frame>>,
     reader: JoinHandle<()>,
     writer: Box<dyn AsyncWrite + Send + Unpin>,
     next_id: i64,
@@ -103,15 +103,14 @@ impl Conn {
         let mut stdout = BufReader::new(stdout);
         let reader = tokio::spawn(async move {
             loop {
-                let msg = read_msg(&mut stdout).await;
+                let msg = match read_msg(&mut stdout).await {
+                    Ok(value) => match rpc::frame(value) {
+                        Ok(Frame::Notification { .. }) | Err(_) => continue,
+                        Ok(frame) => Ok(frame),
+                    },
+                    Err(error) => Err(error),
+                };
                 let failed = msg.is_err();
-                if !failed
-                    && msg.as_ref().ok().is_some_and(|value| {
-                        value.get("method").is_some() && value.get("id").is_none()
-                    })
-                {
-                    continue;
-                }
                 if sender.send(msg).await.is_err() || failed {
                     break;
                 }
@@ -267,17 +266,19 @@ impl Conn {
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         let mut reply = self.call(method, params.clone()).await?;
-        if reply.pointer("/error/code").and_then(Value::as_i64) == Some(CONTENT_MODIFIED) {
+        if reply
+            .1
+            .as_ref()
+            .and_then(|error| error.get("code"))
+            .and_then(Value::as_i64)
+            == Some(CONTENT_MODIFIED)
+        {
             reply = self.call(method, params).await?;
         }
-        rpc::outcome(
-            "lsp",
-            reply.get("result").cloned(),
-            reply.get("error").cloned(),
-        )
+        rpc::outcome("lsp", reply.0, reply.1)
     }
 
-    async fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+    async fn call(&mut self, method: &str, params: Value) -> Result<Reply> {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&rpc::request(&json!(id), method, params)).await?;
@@ -295,7 +296,7 @@ impl Conn {
         Ok(())
     }
 
-    async fn pump(&mut self, want: i64) -> Result<Value> {
+    async fn pump(&mut self, want: i64) -> Result<Reply> {
         loop {
             let msg = match self.inbox.recv().await {
                 Some(Ok(msg)) => msg,
@@ -308,20 +309,19 @@ impl Conn {
                     return Err(Error::Tool("language server closed".to_string()));
                 }
             };
-            if msg.get("method").is_some() && msg.get("id").is_some() {
-                self.reply_server(&msg).await?;
-                continue;
-            }
-            if msg.get("id") == Some(&Value::from(want)) {
-                return Ok(msg);
+            match msg {
+                Frame::Request { id, method, params } => {
+                    self.reply_server(id, &method, &params).await?;
+                }
+                Frame::Response { id, result, error } if id == want => {
+                    return Ok((result, error));
+                }
+                Frame::Response { .. } | Frame::Notification { .. } => {}
             }
         }
     }
 
-    async fn reply_server(&mut self, msg: &Value) -> Result<()> {
-        let id = msg.get("id").cloned().unwrap_or(Value::Null);
-        let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
-        let params = msg.get("params").cloned().unwrap_or(Value::Null);
+    async fn reply_server(&mut self, id: Value, method: &str, params: &Value) -> Result<()> {
         let result = match method {
             "workspace/workspaceFolders" => json!([{ "uri": self.root, "name": "workspace" }]),
             "workspace/configuration" => Value::Array(
@@ -362,6 +362,8 @@ impl Conn {
         }
     }
 }
+
+type Reply = (Option<Value>, Option<Value>);
 
 impl Drop for Conn {
     fn drop(&mut self) {

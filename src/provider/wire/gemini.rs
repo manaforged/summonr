@@ -18,6 +18,7 @@ use serde_json::json;
 
 mod body;
 mod config;
+mod finish;
 mod frame;
 
 const SYNTHETIC: &str = "call-";
@@ -98,7 +99,7 @@ impl Accumulate for Reply {
         }
         if let Some(reason) = frame.finish_reason() {
             self.done = true;
-            ended(reason)?;
+            finish::Finish::parse(reason).ended(reason)?;
         }
         Ok(self.value(&frame))
     }
@@ -219,22 +220,6 @@ impl Reply {
     }
 }
 
-fn ended(reason: &str) -> crate::error::Result<()> {
-    if matches!(
-        reason,
-        "SAFETY" | "RECITATION" | "BLOCKLIST" | "PROHIBITED_CONTENT" | "SPII" | "IMAGE_SAFETY"
-    ) {
-        return Err(super::blocked(reason));
-    }
-    if reason == "MALFORMED_FUNCTION_CALL" {
-        return Err(crate::error::Error::provider(
-            crate::error::ProviderFailureKind::MalformedToolCall,
-            format!("native response ended with {reason}"),
-        ));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 pub(crate) fn usage(counted: &Value) -> Usage {
     serde_json::from_value::<Counted>(counted.clone())
@@ -243,11 +228,7 @@ pub(crate) fn usage(counted: &Value) -> Usage {
 }
 
 pub(crate) fn stop_reason(raw: &str) -> StopReason {
-    match raw {
-        "MAX_TOKENS" => StopReason::Length,
-        "STOP" => StopReason::Stop,
-        _ => StopReason::Other,
-    }
+    finish::Finish::parse(raw).stop()
 }
 
 #[cfg(test)]

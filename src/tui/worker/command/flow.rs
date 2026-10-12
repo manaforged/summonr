@@ -128,6 +128,7 @@ impl Worker {
             crate::SlashCommand::Fork => self.fork(),
             crate::SlashCommand::Undo => self.undo_command(argument),
             crate::SlashCommand::Agents => self.agents(),
+            crate::SlashCommand::Memory => self.memory(),
             _ => self.unknown(line).unwrap_or(true),
         }
     }
@@ -249,6 +250,27 @@ impl Worker {
 
     pub(in crate::tui::worker) fn agents(&self) -> bool {
         let text = crate::mail::roster(&self.loop_.peers(), &self.loop_.session_id());
+        self.system(&text);
+        true
+    }
+
+    fn memory(&self) -> bool {
+        let home = match crate::prompt::summonr_home() {
+            Ok(home) => home,
+            Err(error) => {
+                self.fail(&error.to_string());
+                return true;
+            }
+        };
+        let workspace = self.loop_.workspace();
+        let on = crate::modules::Switches::load(workspace)
+            .is_ok_and(|switches| switches.enabled(crate::modules::ModuleId::Memory));
+        let report = crate::memory::report(&crate::memory::files(&home, workspace));
+        let text = if on {
+            report
+        } else {
+            format!("{}{report}", crate::memory::OFF)
+        };
         self.system(&text);
         true
     }

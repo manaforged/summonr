@@ -94,11 +94,17 @@ impl Prompt {
                     .text_color(sigil::prelude::Token::OnSurface),
             );
         }
-        band = band.child(
-            sigil::kernel::text(fit(&self.hints.text(keys)))
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface),
-        );
+        let hints = self.hints.text(keys);
+        if !hints.is_empty() {
+            band = band.child(
+                sigil::kernel::text(fit(&hints))
+                    .nowrap()
+                    .text_color(sigil::prelude::Token::OnSurface),
+            );
+        }
+        if self.actions.is_empty() {
+            return band;
+        }
         let actions = self.actions.into_iter().fold(
             container().layout(
                 LayoutStyle::flex_row()

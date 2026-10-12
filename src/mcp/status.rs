@@ -76,11 +76,7 @@ impl ServerStatus {
 
     #[must_use]
     pub fn state_text(&self, width: usize) -> String {
-        let text = match (self.state, &self.detail) {
-            (McpState::Failed, Some(detail)) => format!("failed: {detail}"),
-            (state, _) => state.label().to_string(),
-        };
-        crate::text::ellipsize(&text, width)
+        crate::text::ellipsize(self.state.label(), width)
     }
 }
 

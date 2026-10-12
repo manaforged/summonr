@@ -43,3 +43,25 @@ fn the_mcp_pane_shows_each_server_with_its_state_size_and_last_error() {
         assert!(shown.contains(needle), "{needle} missing:\n{shown}");
     }
 }
+
+#[test]
+fn a_page_command_on_the_start_screen_opens_its_pane() {
+    sigil::reactive::Runtime::scope("summonr-splash", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let base = Info {
+            splash: true,
+            ..busy_info()
+        };
+        let app = super::App::new(base, workspace.path().to_owned(), commands);
+        app.resize(160, 40);
+        assert!(app.splash.peek());
+        app.replace("/mcp".to_owned());
+        app.submit();
+        assert!(!app.splash.peek());
+        assert_eq!(
+            app.layout.peek().secondary,
+            Some(super::super::pane::Pane::Mcp)
+        );
+    });
+}

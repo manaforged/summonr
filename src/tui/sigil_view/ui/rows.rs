@@ -21,7 +21,6 @@ pub(in crate::tui) fn pick(
     let context = context.into();
     let slots = ListRowSlots {
         status: (!context.is_empty()).then(|| context.into()),
-        shrink: true,
         ..ListRowSlots::default()
     };
     slotted(selected, None, name, slots)

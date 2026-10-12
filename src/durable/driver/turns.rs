@@ -259,7 +259,7 @@ impl SessionDriver {
     ) -> Result<(), DriverError> {
         let reason = abort.reason.as_str();
         if self.turn.is_none() && receipt.is_none() {
-            return Ok(());
+            return self.interrupt_children(reason, abort.code.child_scope());
         }
         if let Some(attempt) = self
             .turn
@@ -289,8 +289,7 @@ impl SessionDriver {
         {
             self.checkpoint()?;
         }
-        self.interrupt_children(reason)?;
-        Ok(())
+        self.interrupt_children(reason, abort.code.child_scope())
     }
 
     fn abort_call(&mut self, call: String) -> Result<(), DriverError> {

@@ -39,6 +39,14 @@ struct Events {
     oversize: bool,
 }
 
+fn client(wait: Duration) -> Result<leyline::Session> {
+    let limits = crate::limits::limits();
+    crate::credentials::session(
+        summonr_auth::builder(wait, limits.connect()),
+        limits.retry_policy(crate::limits::Reach::Remote),
+    )
+}
+
 impl Http {
     pub(super) fn new(
         url: &str,
@@ -47,10 +55,7 @@ impl Http {
         auth: Option<crate::provider::Auth>,
     ) -> Result<Self> {
         Ok(Self {
-            client: crate::credentials::session(summonr_auth::builder(
-                wait,
-                crate::limits::limits().connect(),
-            ))?,
+            client: client(wait)?,
             url: url.to_string(),
             headers: headers.to_vec(),
             session: None,
@@ -63,10 +68,7 @@ impl Http {
     }
 
     pub(super) fn set_wait(&mut self, wait: Duration) -> Result<()> {
-        self.client = crate::credentials::session(summonr_auth::builder(
-            wait,
-            crate::limits::limits().connect(),
-        ))?;
+        self.client = client(wait)?;
         Ok(())
     }
 
@@ -218,10 +220,7 @@ async fn read_reply(
     if events.oversize
         || (events.reply.is_none() && body.len() > crate::limits::limits().mcp_frame_max_bytes)
     {
-        return Err(Failure::Unreachable(Error::Tool(format!(
-            "a reply to `{method}` was over {} MiB; summonr dropped it",
-            crate::limits::limits().mcp_frame_max_bytes / (1024 * 1024)
-        ))));
+        return Err(Failure::Unreachable(rpc::oversize(method)));
     }
     events
         .reply

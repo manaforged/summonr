@@ -5,6 +5,7 @@ const MAIL_PER_ROUND: usize = 5;
 #[derive(Default)]
 struct RetryState {
     retried: bool,
+    continued: bool,
     repairs: usize,
     overflows: usize,
     usage: Usage,
@@ -20,10 +21,12 @@ struct Failed {
 impl<P: Provider> Loop<P> {
     pub(super) fn steer_waiting(&self) -> bool {
         !self.steer.is_empty()
-            || self
-                .steer_shared
-                .as_ref()
-                .is_some_and(|shared| shared.lock().is_ok_and(|queue| !queue.is_empty()))
+            || self.steer_shared.as_ref().is_some_and(|shared| {
+                !shared
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .is_empty()
+            })
     }
 
     pub(super) fn take_mail(
@@ -32,17 +35,12 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        while let Some(input) = self.steer.pop_front() {
-            self.session.steer(&input).map_err(super::session_err)?;
-            messages.push(Message::user(input));
-        }
-        if let Some(shared) = &self.steer_shared
-            && let Ok(mut queue) = shared.lock()
-        {
-            while let Some(input) = queue.pop_front() {
-                self.session.steer(&input).map_err(super::session_err)?;
-                messages.push(Message::user(input));
-            }
+        drain_steer(&mut self.steer, &mut self.session, messages)?;
+        if let Some(shared) = self.steer_shared.clone() {
+            let mut queue = shared
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            drain_steer(&mut queue, &mut self.session, messages)?;
         }
         let (mail, overflow) = self.take_peer_mail(MAIL_PER_ROUND)?;
         for mail in mail {
@@ -164,6 +162,11 @@ impl<P: Provider> Loop<P> {
             self.repair_call(messages, events, emit)?;
             return Ok(true);
         }
+        if kind == Some(ProviderFailureKind::Empty) && !state.continued {
+            state.continued = true;
+            self.continue_empty(messages, events, emit)?;
+            return Ok(true);
+        }
         if kind == Some(ProviderFailureKind::ContextOverflow) {
             if state.overflows >= crate::limits::limits().repair_limit {
                 return Err(error);
@@ -268,6 +271,26 @@ impl<P: Provider> Loop<P> {
         )
     }
 
+    fn continue_empty(
+        &mut self,
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        let input = UserInput::from(
+            "[summon control: the previous reply was empty. Please continue the task.]",
+        );
+        self.session.steer(&input).map_err(super::session_err)?;
+        messages.push(Message::user(input));
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: "empty reply; asking the model to continue".to_string(),
+            },
+        )
+    }
+
     async fn recover_overflow(
         &mut self,
         text: &str,
@@ -310,9 +333,8 @@ impl<P: Provider> Loop<P> {
         let Some((provider, model)) = self.fallbacks.pop_front() else {
             return Ok(false);
         };
-        let from = std::mem::replace(&mut self.model, model);
-        self.provider = provider;
-        self.context_sample = None;
+        let from = self.model.clone();
+        self.set_provider(provider, model);
         self.push_event(
             events,
             emit,
@@ -331,6 +353,21 @@ impl<P: Provider> Loop<P> {
 #[cfg(test)]
 #[path = "retry_tests.rs"]
 mod tests;
+
+fn drain_steer(
+    queue: &mut std::collections::VecDeque<UserInput>,
+    session: &mut SessionDriver,
+    messages: &mut Vec<Message>,
+) -> Result<()> {
+    while let Some(input) = queue.pop_front() {
+        if let Err(error) = session.steer(&input) {
+            queue.push_front(input);
+            return Err(super::session_err(error));
+        }
+        messages.push(Message::user(input));
+    }
+    Ok(())
+}
 
 fn retryable_failure(failure: &crate::error::ProviderFailure) -> bool {
     failure.partial_output

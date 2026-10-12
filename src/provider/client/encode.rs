@@ -85,16 +85,21 @@ pub(crate) struct Messages<'a> {
     pub(super) list: &'a [Message],
     pub(super) keep_reasoning: bool,
     pub(super) cached: bool,
+    pub(super) assistant_after_tool: bool,
 }
 
 impl Serialize for Messages<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         let (lead, prefix) = system_prefix(self.list);
-        let mut seq = serializer.serialize_seq(None)?;
+        let mut seq = Turns {
+            seq: serializer.serialize_seq(None)?,
+            after_tool: self.assistant_after_tool,
+            last: None,
+        };
         if !prefix.is_empty() {
             let mut system = View::text(Role::System, &prefix, &[]);
             system.cached = self.cached;
-            seq.serialize_element(&system)?;
+            seq.push(&system)?;
         }
         let trailing = self
             .list
@@ -117,9 +122,26 @@ impl Serialize for Messages<'_> {
         if !attached.is_empty() {
             let mut view = View::attachments(&attached);
             view.cached = self.cached;
-            seq.serialize_element(&view)?;
+            seq.push(&view)?;
         }
-        seq.end()
+        seq.seq.end()
+    }
+}
+
+struct Turns<Q> {
+    seq: Q,
+    after_tool: bool,
+    last: Option<Role>,
+}
+
+impl<Q: SerializeSeq> Turns<Q> {
+    fn push(&mut self, view: &View<'_, '_>) -> std::result::Result<(), Q::Error> {
+        if self.after_tool && self.last == Some(Role::Tool) && view.role == Role::User {
+            self.seq
+                .serialize_element(&View::text(Role::Assistant, " ", &[]))?;
+        }
+        self.last = Some(view.role);
+        self.seq.serialize_element(view)
     }
 }
 
@@ -139,29 +161,29 @@ fn system_prefix(list: &[Message]) -> (usize, String) {
 }
 
 fn element<'a, Q: SerializeSeq>(
-    seq: &mut Q,
+    seq: &mut Turns<Q>,
     message: &'a Message,
     attached: &mut Vec<&'a Image>,
     keep: bool,
     cached: bool,
 ) -> std::result::Result<(), Q::Error> {
     if message.role != Role::Tool && !attached.is_empty() {
-        seq.serialize_element(&View::attachments(attached))?;
+        seq.push(&View::attachments(attached))?;
         attached.clear();
     }
     if message.role == Role::Tool && !message.images.is_empty() {
         attached.extend(&message.images);
-        return seq.serialize_element(&View::of(message, &[], keep));
+        return seq.push(&View::of(message, &[], keep));
     }
     if message.role == Role::System {
         let mut view = View::text(Role::User, &message.content, &[]);
         view.cached = cached;
-        return seq.serialize_element(&view);
+        return seq.push(&view);
     }
     let images: Vec<&Image> = message.images.iter().collect();
     let mut view = View::of(message, &images, keep);
     view.cached = cached;
-    seq.serialize_element(&view)
+    seq.push(&view)
 }
 
 struct View<'a, 'b> {

@@ -147,21 +147,42 @@ pub(super) fn reason(text: &str) -> String {
         )
 }
 
+fn refused(error: &leyline::Error) -> bool {
+    std::iter::successors(Some(error as &dyn std::error::Error), |cause| {
+        cause.source()
+    })
+    .any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::ConnectionRefused)
+    })
+}
+
+pub(crate) fn unreachable_message(
+    name: &str,
+    base: &str,
+    refused: bool,
+    error: &dyn std::fmt::Display,
+) -> String {
+    let host = crate::splash::host_of(Some(base)).unwrap_or(base);
+    match crate::endpoint::start_command(base) {
+        Some(start) => {
+            let name = if name.is_empty() { host } else { name };
+            format!("{name} is not running at {host}; start it with `{start}` ({error})")
+        }
+        None if refused && crate::endpoint::local(base) => format!(
+            "nothing is listening at {host}; start the server or fix the base_url ({error})"
+        ),
+        None => format!("cannot reach {host}: check the network or the base_url ({error})"),
+    }
+}
+
 impl Client {
-    pub(super) fn unreachable(&self, error: &dyn std::fmt::Display) -> Error {
-        let host = crate::splash::host_of(Some(&self.base)).unwrap_or(&self.base);
-        let message = match crate::endpoint::start_command(&self.base) {
-            Some(start) => {
-                let name = if self.name.is_empty() {
-                    host
-                } else {
-                    &self.name
-                };
-                format!("{name} is not running at {host}; start it with `{start}` ({error})")
-            }
-            None => format!("cannot reach {host}: check the network or the base_url ({error})"),
-        };
-        Error::provider(ProviderFailureKind::Transport, message)
+    pub(super) fn unreachable(&self, error: &leyline::Error) -> Error {
+        Error::provider(
+            ProviderFailureKind::Transport,
+            unreachable_message(&self.name, &self.base, refused(error), error),
+        )
     }
 
     pub(super) async fn rejected(&self, response: leyline::Response, model: Option<&str>) -> Error {
@@ -223,6 +244,7 @@ impl Client {
                 | ProviderFailureKind::ContextOverflow
                 | ProviderFailureKind::MalformedToolCall
                 | ProviderFailureKind::Malformed
+                | ProviderFailureKind::Empty
                 | ProviderFailureKind::Http,
                 _,
             ) => return Error::Provider(failure),
@@ -268,6 +290,7 @@ impl Client {
                 | Kind::ContextOverflow
                 | Kind::MalformedToolCall
                 | Kind::Malformed
+                | Kind::Empty
                 | Kind::Http,
             )
             | None => State::Error,

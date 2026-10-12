@@ -12,7 +12,7 @@ const TICKS: usize = 6;
 const PLOT: f32 = 144.0;
 const AXIS: f32 = 36.0;
 
-pub(super) fn trend(report: &Report, metric: Metric, width: f32) -> NodeBuilder {
+pub(super) fn trend(report: &Report, metric: Metric) -> NodeBuilder {
     let peak = report.columns.iter().copied().fold(0.0_f64, f64::max);
     let (divisor, unit) = scale(peak, metric);
     let colors: Vec<_> = (0..report.series.len()).map(ink).collect();
@@ -35,12 +35,12 @@ pub(super) fn trend(report: &Report, metric: Metric, width: f32) -> NodeBuilder 
                     format!("· {unit} · since {}", report.first),
                     palette().dim,
                 )),
-            container()
-                .layout(LayoutStyle::block().fill_width().width(width))
-                .child(panel().padding(16.0).child(column(
+            container().layout(LayoutStyle::block().fill_width()).child(
+                panel().padding(16.0).child(column(
                     vec![plot(report, peak, divisor, &colors), label_row(&labels)],
                     8.0,
-                ))),
+                )),
+            ),
         ],
         8.0,
     )

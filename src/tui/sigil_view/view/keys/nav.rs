@@ -45,7 +45,7 @@ impl App {
         } else if self.pane_active().is_some() {
             event.stop_propagation();
             self.pane_move(dir);
-        } else if dir < 0 && self.draft.peek().is_empty() && self.model.get().queued != (0, 0) {
+        } else if dir < 0 && self.draft.peek().is_empty() && self.model.get().queued.1 > 0 {
             event.stop_propagation();
             self.dequeue();
         } else if self.suggesting() {

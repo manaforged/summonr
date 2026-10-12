@@ -26,18 +26,30 @@ impl Limits {
         parse(BUILT_IN, "built-in")
     }
 
-    pub(crate) fn retry_policy(&self) -> leyline::RetryPolicy {
-        leyline::RetryPolicy::transient()
+    pub(crate) fn retry_policy(&self, reach: Reach) -> leyline::RetryPolicy {
+        let policy = leyline::RetryPolicy::transient()
             .max_retries(self.retry_limit)
             .initial_backoff(self.retry_base())
             .max_backoff(self.retry_max())
-            .max_retry_after(self.retry_after_max())
-            .retry_on([
+            .max_retry_after(self.retry_after_max());
+        match reach {
+            Reach::Remote => policy.retry_on([
                 leyline::RetryTrigger::ConnectionError,
                 leyline::RetryTrigger::Status(429),
                 leyline::RetryTrigger::ServerError,
-            ])
+            ]),
+            Reach::Local => policy.retry_on([
+                leyline::RetryTrigger::Status(429),
+                leyline::RetryTrigger::ServerError,
+            ]),
+        }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Reach {
+    Remote,
+    Local,
 }
 
 #[cfg(not(test))]

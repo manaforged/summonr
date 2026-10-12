@@ -32,3 +32,17 @@ fn a_server_prompt_line_is_a_prompt_not_a_command() {
     assert_eq!(argument("/github:review 42"), Ok(None));
     drop(argument("/nosuch 42").unwrap_err());
 }
+
+#[test]
+fn every_command_description_starts_in_lower_case() {
+    for spec in command_specs() {
+        let first = spec.description.split_whitespace().next().unwrap_or("");
+        let acronym = first.chars().all(|c| !c.is_lowercase());
+        assert!(
+            acronym || first.starts_with(|c: char| !c.is_uppercase()),
+            "{}: {}",
+            spec.name,
+            spec.description
+        );
+    }
+}

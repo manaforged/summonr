@@ -65,16 +65,24 @@ impl Hotkey {
     }
 }
 
+const PREVIOUS: [char; Hotkey::ALL.len()] = [
+    'o', 'j', 'g', 'e', 'l', 'a', 'x', 'b', 't', 'p', 'f', 'r', 'n',
+];
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Hotkeys {
     keys: [char; Hotkey::ALL.len()],
+    leader: [bool; Hotkey::ALL.len()],
 }
 
 impl Default for Hotkeys {
     fn default() -> Self {
         Self {
             keys: [
-                'o', 'j', 'g', 'e', 'l', 'a', 'x', 'b', 't', 'p', 'f', 'r', 'n',
+                'o', 'j', 'g', 'e', 't', 'a', 'd', 'y', 't', 'b', 'f', 'r', 'n',
+            ],
+            leader: [
+                true, false, false, true, false, true, true, true, true, true, true, false, true,
             ],
         }
     }
@@ -82,15 +90,16 @@ impl Default for Hotkeys {
 
 impl Hotkeys {
     pub(crate) fn configured(rows: &BTreeMap<String, String>) -> Result<Self> {
+        if previous_default(rows) {
+            return Ok(Self::default());
+        }
         let mut hotkeys = Self::assigned(rows)?;
-        if hotkeys.keys.iter().filter(|key| **key == 'y').count() > 1 {
+        if hotkeys.bound('y', false) > 1 {
             return Err(Error::Config(
                 "config.toml: hotkey ctrl+y is assigned more than once".to_string(),
             ));
         }
-        for action in Hotkey::ALL {
-            hotkeys.settle(action, rows)?;
-        }
+        hotkeys.resolve(rows)?;
         hotkeys.unique()?;
         Ok(hotkeys)
     }
@@ -100,49 +109,70 @@ impl Hotkeys {
         for (name, binding) in rows {
             let action = Hotkey::named(name)
                 .ok_or_else(|| Error::Config(format!("config.toml: unknown hotkey `{name}`")))?;
-            let key = parse(binding).ok_or_else(|| {
+            let (key, leader) = parse(binding).ok_or_else(|| {
                 Error::Config(format!(
-                    "config.toml: hotkey `{name}` must be an available ctrl+letter"
+                    "config.toml: hotkey `{name}` must be ctrl+letter or ctrl+x plus a letter"
                 ))
             })?;
-            hotkeys.keys[action.index()] = key;
+            let index = action.index();
+            hotkeys.keys[index] = key;
+            hotkeys.leader[index] = leader;
         }
         Ok(hotkeys)
     }
 
-    fn settle(&mut self, action: Hotkey, rows: &BTreeMap<String, String>) -> Result<()> {
-        let index = action.index();
-        let inherited = matches!(
-            action,
-            Hotkey::Copy | Hotkey::Search | Hotkey::History | Hotkey::Fold
-        ) && !rows.contains_key(action.name());
-        if self.keys[index] == 'y' || inherited && self.shared(index) {
-            self.keys[index] = Self::default()
-                .keys
-                .into_iter()
-                .chain('a'..='z')
-                .find(|key| available(*key) && !self.keys.contains(key))
+    fn resolve(&mut self, rows: &BTreeMap<String, String>) -> Result<()> {
+        for action in Hotkey::ALL {
+            if !self.displaced(action, rows) {
+                continue;
+            }
+            let index = action.index();
+            self.keys[index] = self
+                .vacant(self.leader[index])
                 .ok_or_else(|| Error::Config(format!("no available {} hotkey", action.name())))?;
         }
         Ok(())
     }
 
-    fn shared(&self, index: usize) -> bool {
+    fn displaced(&self, action: Hotkey, rows: &BTreeMap<String, String>) -> bool {
+        let index = action.index();
+        let bare_y = !self.leader[index] && self.keys[index] == 'y';
+        let inherited = matches!(
+            action,
+            Hotkey::Copy | Hotkey::Search | Hotkey::History | Hotkey::Fold
+        ) && !rows.contains_key(action.name());
+        bare_y || inherited && self.bound(self.keys[index], self.leader[index]) > 1
+    }
+
+    fn vacant(&self, leader: bool) -> Option<char> {
+        Self::default()
+            .keys
+            .into_iter()
+            .chain('a'..='z')
+            .find(|key| acceptable(*key, leader) && self.bound(*key, leader) == 0)
+    }
+
+    fn bound(&self, key: char, leader: bool) -> usize {
         self.keys
             .iter()
-            .enumerate()
-            .any(|(other, key)| other != index && *key == self.keys[index])
+            .zip(self.leader)
+            .filter(|(bound, plane)| **bound == key && *plane == leader)
+            .count()
     }
 
     fn unique(&self) -> Result<()> {
-        for (index, key) in self.keys.iter().enumerate() {
-            if self.keys[..index].contains(key) {
-                return Err(Error::Config(format!(
-                    "config.toml: hotkey ctrl+{key} is assigned more than once"
-                )));
-            }
+        match self
+            .keys
+            .iter()
+            .zip(self.leader)
+            .find(|(key, leader)| self.bound(**key, *leader) > 1)
+        {
+            Some((key, leader)) => Err(Error::Config(format!(
+                "config.toml: hotkey {} is assigned more than once",
+                label_of(leader, *key)
+            ))),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     #[must_use]
@@ -152,25 +182,40 @@ impl Hotkeys {
 
     #[must_use]
     pub(crate) fn label(&self, action: Hotkey) -> String {
-        format!("ctrl+{}", self.key(action))
+        label_of(self.leader[action.index()], self.key(action))
     }
 
     #[must_use]
     pub(crate) fn action(&self, key: char) -> Option<Hotkey> {
-        Hotkey::ALL
-            .into_iter()
-            .find(|action| self.key(*action) == key)
+        self.find(key, false)
     }
 
-    pub(crate) fn assign(&mut self, action: Hotkey, key: char) -> bool {
-        if !available(key) {
+    #[must_use]
+    pub(crate) fn chord(&self, key: char) -> Option<Hotkey> {
+        self.find(key, true)
+    }
+
+    fn find(&self, key: char, leader: bool) -> Option<Hotkey> {
+        Hotkey::ALL
+            .into_iter()
+            .find(|action| self.key(*action) == key && self.leader[action.index()] == leader)
+    }
+
+    pub(crate) fn assign(&mut self, action: Hotkey, key: char, leader: bool) -> bool {
+        if !acceptable(key, leader) {
             return false;
         }
-        let old = self.key(action);
-        if let Some(other) = self.action(key) {
-            self.keys[other.index()] = old;
+        let old_key = self.key(action);
+        let old_leader = self.leader[action.index()];
+        if let Some(other) = self.find(key, leader)
+            && other != action
+        {
+            self.keys[other.index()] = old_key;
+            self.leader[other.index()] = old_leader;
         }
-        self.keys[action.index()] = key;
+        let index = action.index();
+        self.keys[index] = key;
+        self.leader[index] = leader;
         true
     }
 
@@ -228,6 +273,10 @@ impl EditorKey {
 
 #[must_use]
 pub(crate) fn available(key: char) -> bool {
+    loadable(key) && !matches!(key, 'a' | 'b' | 'e' | 'f' | 'l' | 'n' | 'p' | 'x')
+}
+
+fn loadable(key: char) -> bool {
     key.is_ascii_lowercase()
         && !matches!(
             key,
@@ -236,10 +285,53 @@ pub(crate) fn available(key: char) -> bool {
         && EditorKey::of(key).is_none_or(EditorKey::shared)
 }
 
-fn parse(binding: &str) -> Option<char> {
-    let mut chars = binding.strip_prefix("ctrl+")?.chars();
+fn leader_letter(key: char) -> bool {
+    key.is_ascii_lowercase() && key != 'x'
+}
+
+fn acceptable(key: char, leader: bool) -> bool {
+    if leader {
+        leader_letter(key)
+    } else {
+        available(key)
+    }
+}
+
+fn label_of(leader: bool, key: char) -> String {
+    if leader {
+        format!("ctrl+x {key}")
+    } else {
+        format!("ctrl+{key}")
+    }
+}
+
+fn previous_default(rows: &BTreeMap<String, String>) -> bool {
+    rows.len() == Hotkey::ALL.len()
+        && Hotkey::ALL.into_iter().all(|action| {
+            rows.get(action.name())
+                .is_some_and(|binding| binding == &format!("ctrl+{}", PREVIOUS[action.index()]))
+        })
+}
+
+fn parse(binding: &str) -> Option<(char, bool)> {
+    let rest = binding.strip_prefix("ctrl+")?;
+    if let Some(chord) = rest
+        .strip_prefix("x ")
+        .or_else(|| rest.strip_prefix('x').filter(|chord| !chord.is_empty()))
+    {
+        return one_letter(chord)
+            .filter(|key| leader_letter(*key))
+            .map(|key| (key, true));
+    }
+    one_letter(rest)
+        .filter(|key| loadable(*key) || *key == 'y')
+        .map(|key| (key, false))
+}
+
+fn one_letter(text: &str) -> Option<char> {
+    let mut chars = text.chars();
     let key = chars.next()?;
-    (chars.next().is_none() && (available(key) || key == 'y')).then_some(key)
+    chars.next().is_none().then_some(key)
 }
 
 #[cfg(test)]
@@ -248,11 +340,10 @@ mod tests {
 
     #[test]
     fn editor_line_keys_cannot_be_bound() {
-        for key in ['u', 'k', 'w'] {
+        for key in ['u', 'k', 'w', 'a', 'b', 'e', 'f', 'l', 'n', 'p', 'x'] {
             assert!(!available(key));
-            assert!(!Hotkeys::default().assign(Hotkey::Fold, key));
+            assert!(!Hotkeys::default().assign(Hotkey::Fold, key, false));
         }
-        assert!(available('a') && available('x'));
     }
 
     #[test]

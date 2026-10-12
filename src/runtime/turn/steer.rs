@@ -8,3 +8,7 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "steer_tests.rs"]
+mod tests;

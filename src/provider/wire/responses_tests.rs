@@ -176,3 +176,37 @@ fn a_call_with_an_empty_id_is_refused_before_sending() {
     let error = request(&ask(&messages, None), true).expect_err("an empty call_id is a 400");
     assert!(error.to_string().contains("call_id"), "got {error}");
 }
+
+#[test]
+fn a_tool_result_carries_its_images() {
+    let mut call = message(Role::Assistant, "");
+    call.tool_calls = vec![ToolCall {
+        id: "call_1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "read".to_string(),
+            arguments: "{}".to_string(),
+        },
+        continuation: None,
+    }];
+    let mut result = message(Role::Tool, "shot.png is attached");
+    result.tool_call_id = Some("call_1".to_string());
+    result.images = vec![crate::provider::Image::encode("image/png", b"png bytes")];
+    let messages = [message(Role::User, "look"), call, result];
+    let body = Wire::request(&ask(&messages, None), true).unwrap();
+    let output = body["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["type"] == "function_call_output")
+        .unwrap()["output"]
+        .clone();
+    assert_eq!(
+        output,
+        json!([
+            {"type": "input_text", "text": "shot.png is attached"},
+            {"type": "input_image", "image_url": "data:image/png;base64,cG5nIGJ5dGVz"}
+        ])
+    );
+}

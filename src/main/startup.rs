@@ -17,15 +17,19 @@ use super::cli::Args;
 use super::diagnostics;
 use classify::run_classify;
 use commands::{
-    adopt, export_session_cmd, manage_worktrees, mcp, print_diff, print_sessions, print_workflows,
-    probe_endpoints, session_path, workspace,
+    adopt, export_session_cmd, grep_sessions, manage_worktrees, mcp, print_diff, print_sessions,
+    print_workflows, probe_endpoints, session_path, workspace,
 };
 use lifecycle::launch;
 use login::run_login;
 use session::{SessionAction, build};
 
+fn store_command(args: &Args) -> bool {
+    args.mail.is_some() || args.cron.is_some() || args.gateway.is_some()
+}
+
 pub(super) async fn run(args: Args) -> Result<i32> {
-    let log = if args.mail.is_some() {
+    let log = if store_command(&args) {
         None
     } else {
         diagnostics::Log::start()
@@ -89,12 +93,21 @@ async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32
     if args.doctor {
         return Some(diagnostics::doctor(log.map(diagnostics::Log::path)));
     }
-    if let Some(words) = &args.mail {
-        return Some(
+    let in_cwd = |run: &dyn Fn(&std::path::Path) -> Result<i32>| {
+        Some(
             std::env::current_dir()
                 .map_err(Into::into)
-                .and_then(|cwd| summonr::mail::cli::run(words, &cwd)),
-        );
+                .and_then(|cwd| run(&cwd)),
+        )
+    };
+    if let Some(words) = &args.mail {
+        return in_cwd(&|cwd| summonr::mail::cli::run(words, cwd));
+    }
+    if let Some(words) = &args.cron {
+        return in_cwd(&|cwd| summonr::cron::cli::run(words, cwd));
+    }
+    if let Some(words) = &args.gateway {
+        return in_cwd(&|cwd| summonr::gateway::cli::run(words, cwd, &login::read_secret));
     }
     if let Some(tool) = &args.tool {
         return Some(tool::run(args, tool).await);
@@ -196,7 +209,10 @@ fn logout(args: &Args) -> Result<i32> {
 fn listing(args: &Args) -> Option<Result<i32>> {
     let done = |result: Result<()>| Some(result.map(|()| 0));
     if args.list_sessions {
-        return done(print_sessions());
+        return done(match args.grep.as_deref() {
+            Some(pattern) => grep_sessions(pattern),
+            None => print_sessions(),
+        });
     }
     if args.export {
         return done(export_session_cmd(args));

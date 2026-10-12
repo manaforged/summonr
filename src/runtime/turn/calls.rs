@@ -239,7 +239,17 @@ impl<P: Provider> Loop<P> {
             ),
             Err(error) => (false, false, error.to_string(), Vec::new(), None),
         };
-        let text = self.tool_text(&call, success, text).await;
+        let mut text = self.tool_text(&call, success, text).await;
+        if let Some(nudge) = super::repeat::nudge(messages, &call.function, &text) {
+            text.push_str(&nudge);
+            self.push_event(
+                events,
+                emit,
+                Event::Note {
+                    text: format!("{} keeps returning the same result", call.function.name),
+                },
+            )?;
+        }
         self.session
             .finish_tool(planned, text.as_str(), success, mutated, millis, patch)
             .map_err(super::session_err)?;
@@ -266,11 +276,7 @@ impl<P: Provider> Loop<P> {
         let Ok(todos) = crate::tools::todos_from_args(arguments) else {
             return Ok(());
         };
-        let items: Vec<(String, crate::durable::work::StepState)> = todos
-            .iter()
-            .map(|todo| (todo.text.clone(), step_state(todo.status)))
-            .collect();
-        match self.session.apply_todos(&items) {
+        match self.session.apply_todos(todos) {
             Ok(()) => {
                 let progress = self.work_progress()?;
                 self.push_event(events, emit, Event::Work { progress })
@@ -360,13 +366,5 @@ impl<P: Provider> Loop<P> {
             running,
             unsettled,
         ))
-    }
-}
-
-fn step_state(status: crate::tools::TodoStatus) -> crate::durable::work::StepState {
-    match status {
-        crate::tools::TodoStatus::Done => crate::durable::work::StepState::Completed,
-        crate::tools::TodoStatus::Active => crate::durable::work::StepState::Active,
-        crate::tools::TodoStatus::Pending => crate::durable::work::StepState::Pending,
     }
 }

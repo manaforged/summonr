@@ -80,6 +80,7 @@ mod elicit;
 pub(crate) use elicit::Steering;
 mod finish;
 mod grant;
+mod repeat;
 mod retry;
 mod round;
 mod steer;
@@ -89,6 +90,8 @@ mod usage;
 mod finish_tests;
 #[cfg(test)]
 mod permission_tests;
+#[cfg(test)]
+mod repeat_tests;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn remaining_time(&self) -> Option<Duration> {
@@ -234,9 +237,10 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Turn> {
         let _report = self.herdr.turn();
         let mut events = Vec::new();
-        let input = self
+        let mut input = self
             .expand_mcp(input.into(), &mut events, &mut emit)
             .await?;
+        self.tools.fold_unseen_images(&mut input).await?;
         let messages = self.begin_turn(input)?;
         let mut pre = self.checkpoint();
         let mut usage = Usage::default();

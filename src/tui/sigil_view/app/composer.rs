@@ -11,7 +11,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn dequeue(&self) {
-        if self.model.get().queued != (0, 0) {
+        if self.model.get().queued.1 > 0 {
             drop(self.cmd.send(Cmd::Dequeue));
         }
     }

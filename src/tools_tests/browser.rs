@@ -2,7 +2,7 @@ use super::*;
 
 fn browsing(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
     let (dir, mut tools) = workspace(files);
-    tools.set_browser(true);
+    tools.set_browser(true).expect("browser setup");
     (dir, tools)
 }
 
@@ -139,13 +139,32 @@ fn a_login_cookie_survives_summonr_exiting() {
 }
 
 #[test]
+fn an_upload_passes_the_registry_read_policy() {
+    let (_dir, tools) = browsing(&[(".env", "TOKEN=1\n")]);
+    runtime().block_on(async {
+        let refused = call(
+            &tools,
+            serde_json::json!({"action": "upload", "target": "e1", "files": [".env"]}),
+        )
+        .await;
+        let message = refused.expect_err(".env").to_string();
+        assert!(message.contains("protected path"), "{message}");
+    });
+}
+
+#[test]
 #[ignore = "launches the installed Chrome and reaches httpbin.org"]
 fn a_redirect_to_a_private_host_returns_nothing_from_it() {
     use std::io::{Read, Write};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
+    let connections = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&connections);
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
+            counted.fetch_add(1, Ordering::SeqCst);
             let mut stream = stream;
             let mut buf = [0_u8; 2048];
             drop(stream.read(&mut buf));
@@ -158,24 +177,49 @@ fn a_redirect_to_a_private_host_returns_nothing_from_it() {
         }
     });
     let target = format!("http%3A%2F%2F127.0.0.1%3A{port}%2F");
+    let dotted = format!("http%3A%2F%2Flocalhost.%3A{port}%2F");
     let (_dir, tools) = browsing(&[]);
     runtime().block_on(async {
-        let landed = call(
+        let landed = match call(
             &tools,
             serde_json::json!({"action": "navigate", "url": format!("https://httpbin.org/redirect-to?url={target}")}),
         )
         .await
-        .expect("navigate");
+        {
+            Ok(text) => text,
+            Err(error) => error.to_string(),
+        };
+        let dotted_landed = match call(
+            &tools,
+            serde_json::json!({"action": "navigate", "url": format!("https://httpbin.org/redirect-to?url={dotted}")}),
+        )
+        .await
+        {
+            Ok(text) => text,
+            Err(error) => error.to_string(),
+        };
         let read = call(&tools, serde_json::json!({"action": "read"}))
             .await
             .expect("read");
-        for text in [&landed, &read] {
+        for text in [&landed, &dotted_landed, &read] {
             assert!(!text.contains("SECRET-METADATA-TOKEN"), "{text}");
-            assert!(!text.contains("private"), "{text}");
+            assert!(!text.contains("<title>private</title>"), "{text}");
         }
-        assert!(landed.contains("blocked"), "{landed}");
+        assert!(
+            landed.contains("blocked") || landed.contains("BLOCKED"),
+            "{landed}"
+        );
+        assert!(
+            dotted_landed.contains("blocked") || dotted_landed.contains("BLOCKED"),
+            "{dotted_landed}"
+        );
         call(&tools, serde_json::json!({"action": "close"}))
             .await
             .expect("close");
     });
+    assert_eq!(
+        connections.load(Ordering::SeqCst),
+        0,
+        "the redirect contacted the private host"
+    );
 }

@@ -117,6 +117,7 @@ pub(in crate::tui::sigil_view) struct HotkeyDialog {
     pub(in crate::tui::sigil_view) open: Signal<bool>,
     pub(in crate::tui::sigil_view) sel: Signal<usize>,
     pub(in crate::tui::sigil_view) recording: Signal<bool>,
+    pub(in crate::tui::sigil_view) armed: Signal<bool>,
     pub(in crate::tui::sigil_view) note: Signal<String>,
 }
 
@@ -126,6 +127,7 @@ impl HotkeyDialog {
             open: signal(false),
             sel: signal(0),
             recording: signal(false),
+            armed: signal(false),
             note: signal(String::new()),
         }
     }

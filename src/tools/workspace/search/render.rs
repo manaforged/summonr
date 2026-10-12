@@ -14,10 +14,7 @@ pub(super) fn render(query: &Query, report: Report) -> String {
     if out.len() <= OUTPUT_MAX {
         return out;
     }
-    let mut end = OUTPUT_MAX;
-    while !out.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = out.floor_char_boundary(OUTPUT_MAX);
     let end = out[..end].rfind('\n').unwrap_or(end);
     format!(
         "{}\n[output cut at {} KB: lower context or limit, or narrow path]",
@@ -240,29 +237,24 @@ fn coverage(report: &Report) -> String {
 fn drain(rows: Vec<Row>, limit: usize, tally: &mut Tally) {
     let mut pending_break = false;
     for row in rows {
-        match row {
+        let line = match row {
             Row::Break => {
                 pending_break = !tally.hits.is_empty();
+                continue;
             }
-            Row::Ctx(line) => {
-                if pending_break {
-                    tally.hits.push("--".to_string());
-                    pending_break = false;
-                }
-                tally.hits.push(line);
-            }
+            Row::Ctx(line) => line,
             Row::Hit(line) => {
                 if tally.matches >= limit {
                     tally.truncated = true;
                     break;
                 }
                 tally.matches += 1;
-                if pending_break {
-                    tally.hits.push("--".to_string());
-                    pending_break = false;
-                }
-                tally.hits.push(line);
+                line
             }
+        };
+        if std::mem::take(&mut pending_break) {
+            tally.hits.push("--".to_string());
         }
+        tally.hits.push(line);
     }
 }

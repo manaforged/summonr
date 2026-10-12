@@ -74,7 +74,7 @@ fn paint(shown: Shown, app: &App, layout: DiffLayout) -> NodeBuilder {
 }
 
 fn patch_node(app: &App, layout: DiffLayout, path: Option<String>, patch: String) -> DiffBuilder {
-    let view = patch_view(app, patch, layout, app.chat_cols()).bg(Token::Field);
+    let view = patch_view(app, patch, layout, super::Fit::chat(app)).bg(Token::Field);
     match path {
         Some(path) => view.path(path),
         None => view,

@@ -196,6 +196,7 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
         workspace: "/w".into(),
         depth: 1,
         access: Access::Research,
+        background: false,
         call: Some("t1".to_owned()),
         state: ChildState::Running,
     };

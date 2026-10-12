@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -45,6 +46,7 @@ pub struct Sources {
     pub trust: bool,
     pub skills: bool,
     pub images: bool,
+    pub memory: bool,
 }
 
 pub fn system_prompt(workspace: &Path, sources: Sources) -> String {
@@ -56,6 +58,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
         trust,
         skills,
         images,
+        memory,
     } = sources;
     if let Ok(prompt) = std::env::var("SUMMONR_SYSTEM_PROMPT")
         && !prompt.trim().is_empty()
@@ -69,9 +72,15 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     }
     if trust {
         push_file(&mut parts, &workspace.join("SYSTEM.md"));
-    }
-    if trust {
         instructions(&mut parts, workspace);
+        if let Some(home) = home.filter(|_| memory) {
+            let files = crate::memory::files(home, workspace);
+            parts.extend(crate::memory::sections(&files, workspace));
+            parts.push(crate::memory::guidance(&files));
+        }
+    }
+    if !(trust && memory) {
+        parts.push(crate::memory::DISABLED.to_string());
     }
     if !images {
         parts.push(
@@ -112,14 +121,15 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
         }
         .to_string(),
     ];
-    let auto = mode == crate::RunMode::Auto;
     if let Some(network) = sandbox {
-        parts.push(if network == crate::Network::Allowed {
-            "Shell commands run in the OS sandbox with network allowed. Writes stay under the workspace and [sandbox] write roots."
+        let access = if network == crate::Network::Allowed {
+            "allowed"
         } else {
-            "Shell commands run in the OS sandbox with network denied. Writes stay under the workspace and [sandbox] write roots."
-        }
-        .to_string());
+            "denied"
+        };
+        parts.push(format!(
+            "Shell commands run in the OS sandbox with network {access}. Writes stay under the workspace and [sandbox] write roots."
+        ));
     }
     #[cfg(windows)]
     parts.push(
@@ -142,56 +152,39 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
                 .to_string(),
         );
     }
-    if auto && parts.len() == 1 {
+    if mode == crate::RunMode::Auto && parts.len() == 1 {
         return String::new();
     }
     parts.join("\n\n")
 }
 
 fn instructions(parts: &mut Vec<String>, workspace: &Path) {
-    let mut seen = std::collections::HashSet::new();
-    let mut sections = std::collections::HashSet::new();
-    if let Some(home) = crate::config::home_dir() {
-        for rel in [
+    let mut seen = HashSet::new();
+    let mut sections = HashSet::new();
+    let home = crate::config::home_dir();
+    let user = home.iter().flat_map(|home| {
+        [
             ".agents/AGENTS.md",
             ".claude/CLAUDE.md",
             ".config/devin/AGENTS.md",
-        ] {
-            context_file(parts, &mut seen, &mut sections, &home, rel, "user_context");
+        ]
+        .map(|rel| (home.as_path(), rel, "user_context"))
+    });
+    let project = ["AGENTS.md", "CLAUDE.md"].map(|rel| (workspace, rel, "project_context"));
+    for (dir, rel, tag) in user.chain(project) {
+        let path = dir.join(rel);
+        if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
+            continue;
+        }
+        if let Some(text) = expanded(&path, &mut seen)
+            && let Some(text) = dedup_sections(&text, &mut sections)
+        {
+            parts.push(format!("<{tag} path=\"{rel}\">\n{text}\n</{tag}>"));
         }
     }
-    for name in ["AGENTS.md", "CLAUDE.md"] {
-        context_file(
-            parts,
-            &mut seen,
-            &mut sections,
-            workspace,
-            name,
-            "project_context",
-        );
-    }
 }
 
-fn context_file(
-    parts: &mut Vec<String>,
-    seen: &mut std::collections::HashSet<PathBuf>,
-    sections: &mut std::collections::HashSet<u64>,
-    dir: &Path,
-    rel: &str,
-    tag: &str,
-) {
-    let path = dir.join(rel);
-    if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
-        return;
-    }
-    if let Some(text) = expanded(&path, seen)
-        && let Some(text) = dedup_sections(&text, sections)
-    {
-        parts.push(format!("<{tag} path=\"{rel}\">\n{text}\n</{tag}>"));
-    }
-}
-
-fn expanded(path: &Path, seen: &mut std::collections::HashSet<PathBuf>) -> Option<String> {
+fn expanded(path: &Path, seen: &mut HashSet<PathBuf>) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     let mut lines = Vec::new();
     for line in text.lines() {
@@ -229,7 +222,7 @@ fn push_file(parts: &mut Vec<String>, path: &Path) -> bool {
     false
 }
 
-fn dedup_sections(text: &str, seen: &mut std::collections::HashSet<u64>) -> Option<String> {
+fn dedup_sections(text: &str, seen: &mut HashSet<u64>) -> Option<String> {
     let mut kept: Vec<String> = Vec::new();
     let mut section = String::new();
     let mut flush = |section: &mut String| {

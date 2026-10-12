@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const LISTING: &str = "json";
+const FAILURE: &str = "failed";
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(super) struct Listing {
     #[serde(default)]
@@ -24,9 +27,6 @@ impl Listing {
     }
 }
 
-const LISTING: &str = "json";
-const FAILURE: &str = "failed";
-
 fn file(key: &str, extension: &str) -> Option<PathBuf> {
     Some(
         crate::prompt::summonr_home()
@@ -36,12 +36,8 @@ fn file(key: &str, extension: &str) -> Option<PathBuf> {
     )
 }
 
-fn path(key: &str) -> Option<PathBuf> {
-    file(key, LISTING)
-}
-
 pub(super) fn load(key: &str) -> Option<Listing> {
-    let text = crate::durable::store::read_or_empty(&path(key)?).ok()?;
+    let text = crate::durable::store::read_or_empty(&file(key, LISTING)?).ok()?;
     serde_json::from_str::<Listing>(&text)
         .ok()
         .filter(|listing| !listing.is_empty())
@@ -54,7 +50,7 @@ pub(super) fn save(key: &str, listing: &Listing) {
     if load(key).is_some_and(|cached| cached == *listing) {
         return;
     }
-    if let (Some(path), Ok(text)) = (path(key), serde_json::to_string(listing)) {
+    if let (Some(path), Ok(text)) = (file(key, LISTING), serde_json::to_string(listing)) {
         drop(crate::durable::store::write(&path, text));
     }
 }
@@ -72,4 +68,28 @@ pub(super) fn failure(key: &str) -> Option<String> {
     let text = crate::durable::store::read_or_empty(&file(key, FAILURE)?).ok()?;
     let text = text.trim();
     (!text.is_empty()).then(|| text.to_string())
+}
+
+pub(super) fn stem(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .collect()
+}
+
+pub(super) fn forget(name: &str) {
+    let Some(dir) = file("", LISTING).and_then(|path| path.parent().map(PathBuf::from)) else {
+        return;
+    };
+    let stem = stem(name);
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        let owned = path
+            .file_stem()
+            .and_then(|found| found.to_str())
+            .and_then(|found| found.rsplit_once('-'))
+            .is_some_and(|(prefix, _)| prefix == stem);
+        if owned {
+            drop(std::fs::remove_file(path));
+        }
+    }
 }

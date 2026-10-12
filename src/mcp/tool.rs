@@ -5,7 +5,6 @@ pub(super) struct Tool {
     pub(super) name: String,
     pub(super) description: String,
     pub(super) schema: Value,
-    pub(super) readonly: bool,
 }
 
 impl Tool {
@@ -33,7 +32,6 @@ impl Tool {
                 .get("inputSchema")
                 .cloned()
                 .unwrap_or_else(|| json!({"type": "object"})),
-            readonly: false,
             name,
         })
     }

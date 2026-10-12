@@ -55,7 +55,11 @@ pub fn add(name: &str, launch: &McpLaunch) -> Result<String> {
 }
 
 pub fn remove(name: &str) -> Result<bool> {
-    config::remove_named(&config::path()?, config::Section::Mcp, name)
+    let removed = config::remove_named(&config::path()?, config::Section::Mcp, name)?;
+    if removed {
+        super::catalog::forget(name);
+    }
+    Ok(removed)
 }
 
 fn pairs(pairs: &[(String, String)]) -> InlineTable {

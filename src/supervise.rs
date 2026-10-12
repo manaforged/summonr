@@ -10,6 +10,10 @@ pub enum ServerKind {
     Lsp,
 }
 
+pub(crate) async fn exited_within(child: &mut tokio::process::Child, grace: Duration) -> bool {
+    tokio::time::timeout(grace, child.wait()).await.is_ok()
+}
+
 pub(crate) type Slot<T> = Arc<tokio::sync::Mutex<Option<T>>>;
 
 #[derive(Clone, Debug)]

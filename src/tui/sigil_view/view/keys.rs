@@ -9,6 +9,10 @@ type Handler = fn(&App, &mut KeyEvent);
 impl App {
     fn escape(&self, event: &mut KeyEvent) {
         event.stop_propagation();
+        if self.hotkeys.armed.peek() {
+            self.hotkeys.armed.set(false);
+            return;
+        }
         if self.options_active() {
             super::input::escape(self);
         } else if self.form_stage().is_some() {
@@ -79,7 +83,7 @@ fn respond() -> Vec<(Shortcut, Handler)> {
         (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
             |app, event| {
-                if app.answering() && app.approval.peek().is_some_and(|(_, persist)| persist) {
+                if app.answering() && app.approval.peek().is_some_and(|asked| asked.persist) {
                     event.stop_propagation();
                     app.approval_answer(crate::runtime::GrantAnswer::Always);
                 }
@@ -228,26 +232,23 @@ fn hunk_keys() -> Vec<(Shortcut, Handler)> {
         }),
         (LogicalKey::character("n").into(), |app, event| {
             if app.pane_active() == Some(super::Pane::Diff)
-                && let Some(path) = app.diff_view.peek()
+                && let Some((path, hunk)) = app.current_hunk()
             {
-                let hunks = app.hunks();
-                let Some(hunk) =
-                    hunks.get(app.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))
-                else {
-                    return;
-                };
                 event.stop_propagation();
-                app.note_start(path, hunk.id.clone());
+                app.note_start(path, hunk);
             }
         }),
     ]
 }
 
 pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
-    let mut shell = container()
-        .role(Role::Main)
-        .label("Summonr agent harness")
-        .layout(LayoutStyle::flex_column().fill_width().fill_height());
+    let mut shell = super::input::leader_shortcuts(
+        container()
+            .role(Role::Main)
+            .label("Summonr agent harness")
+            .layout(LayoutStyle::flex_column().fill_width().fill_height()),
+        app,
+    );
     let bindings = respond().into_iter().chain(panes()).chain(nav());
     for (shortcut, action) in bindings {
         let app = app.clone();
@@ -270,6 +271,10 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
     let owner = app.clone();
     let shell = shell
         .key_capture_any(move |event| {
+            if super::input::leader_plain(&owner, event) {
+                event.stop_propagation();
+                return;
+            }
             let typed = event
                 .text
                 .as_ref()

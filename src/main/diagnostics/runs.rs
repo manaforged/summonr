@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn paths(dir: &Path, exclude: Option<&Path>) -> io::Result<Vec<PathBuf>> {
+fn paths(dir: &Path, exclude: Option<&Path>) -> io::Result<Vec<PathBuf>> {
     let mut paths = match fs::read_dir(dir) {
         Ok(entries) => entries
             .filter_map(std::result::Result::ok)
@@ -32,7 +32,7 @@ pub(super) fn runs(dir: &Path, exclude: Option<&Path>) -> io::Result<Vec<RunInfo
 
 #[derive(Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub(super) enum Event {
+enum Event {
     Panic,
     Exit,
     Session,
@@ -41,16 +41,16 @@ pub(super) enum Event {
 }
 
 #[derive(Deserialize)]
-pub(super) struct Record {
+struct Record {
     event: Option<Event>,
     code: Option<i64>,
 }
 
-pub(super) fn read_status(path: &Path) -> io::Result<RunStatus> {
+fn read_status(path: &Path) -> io::Result<RunStatus> {
     Ok(status(path, &fs::read(path)?))
 }
 
-pub(super) fn status(path: &Path, bytes: &[u8]) -> RunStatus {
+fn status(path: &Path, bytes: &[u8]) -> RunStatus {
     let Ok(text) = std::str::from_utf8(bytes) else {
         return RunStatus::Incomplete;
     };
@@ -80,7 +80,7 @@ pub(super) fn status(path: &Path, bytes: &[u8]) -> RunStatus {
     }
 }
 
-pub(super) fn active(path: &Path) -> bool {
+fn active(path: &Path) -> bool {
     let Ok(lock) = OpenOptions::new()
         .read(true)
         .write(true)
@@ -88,11 +88,7 @@ pub(super) fn active(path: &Path) -> bool {
     else {
         return false;
     };
-    match lock.try_lock() {
-        Ok(()) => false,
-        Err(fs::TryLockError::WouldBlock) => true,
-        Err(fs::TryLockError::Error(_)) => true,
-    }
+    lock.try_lock().is_err()
 }
 
 pub(super) fn lock_path(path: &Path) -> PathBuf {
@@ -133,7 +129,7 @@ pub(super) fn sweep(dir: &Path) -> Option<String> {
     scan(dir, kept)
 }
 
-pub(super) fn scan(dir: &Path, kept: Vec<(PathBuf, Option<RunStatus>)>) -> Option<String> {
+fn scan(dir: &Path, kept: Vec<(PathBuf, Option<RunStatus>)>) -> Option<String> {
     let marker = dir.join("crash-scanned");
     let scanned = fs::read_to_string(&marker).unwrap_or_default();
     let scanned = scanned.trim();

@@ -8,6 +8,35 @@ use browser::browser;
 use search::search;
 
 impl ToolRegistry {
+    pub(crate) fn set_modules(&mut self, switches: &crate::modules::Switches) -> crate::Result<()> {
+        use crate::modules::ModuleId;
+        use crate::web::Search;
+
+        let search = if switches.enabled(ModuleId::Search) {
+            match &self.search {
+                Some(search) => Some(search.clone()),
+                None => Some(Search::discover()?),
+            }
+        } else {
+            None
+        };
+        self.set_browser(switches.enabled(ModuleId::Browser))?;
+        self.search = search;
+        if let Some(search) = &self.search {
+            let renderer = if switches.enabled(ModuleId::Browser) {
+                Some(crate::browser::Browser::ephemeral()?)
+            } else {
+                None
+            };
+            search.set_browser(renderer);
+        }
+        self.language = switches.enabled(ModuleId::Lsp);
+        self.background = switches.enabled(ModuleId::Jobs);
+        self.skills = switches.enabled(ModuleId::Skills);
+        self.probed = std::sync::OnceLock::new();
+        Ok(())
+    }
+
     pub(crate) fn definitions(&self) -> Vec<ToolDefinition> {
         let (lsp_on, skill_on) = *self.probed.get_or_init(|| {
             (
@@ -42,7 +71,7 @@ impl ToolRegistry {
             Builtin::Lsp => self.language,
             Builtin::RunCommand => !self.policy.is_read_only() || self.sandbox.is_some(),
             Builtin::Web => self.search.is_some(),
-            Builtin::Browser => self.browser.is_some(),
+            Builtin::Browser => self.browser.is_some() && !self.policy.is_read_only(),
             Builtin::Task => false,
         }
     }

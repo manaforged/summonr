@@ -53,6 +53,7 @@ pub(crate) struct File {
     pub mcp: BTreeMap<String, crate::mcp::Entry>,
     #[serde(default)]
     pub import_mcp: Option<bool>,
+    pub models_catalog: Option<bool>,
     #[serde(default)]
     pub hooks: crate::hooks::Hooks,
     #[serde(default)]

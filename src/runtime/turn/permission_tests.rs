@@ -29,29 +29,67 @@ fn command(text: &str) -> ToolCall {
     }
 }
 
-async fn delete_outside(answer: Option<&str>) -> (bool, String, Vec<Event>) {
+async fn delete_outside(
+    steering: Option<Arc<Steering>>,
+    answers: &[&str],
+) -> (bool, String, Vec<Event>) {
     let workspace = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let target = workspace.path().to_path_buf();
     let mut loop_ = session(workspace.path(), home.path()).with_unrestricted_commands();
-    if let Some(answer) = answer {
-        let queue = VecDeque::from([UserInput::from(answer.to_string())]);
-        loop_.steer_with(Arc::new(Steering::from(queue)));
-    }
+    let mut reply: Box<dyn FnMut(&Event)> = match steering {
+        Some(steering) => {
+            loop_.steer_with(Arc::clone(&steering));
+            Box::new(steering.replying(answers))
+        }
+        None => Box::new(|_: &Event| {}),
+    };
     let call = command(&format!("{DELETE} {}", target.display()));
     let output = loop_.tools.execute_outcome(&call).await;
     let mut events = Vec::new();
     let output = loop_
-        .with_grant(output, &call, &mut events, &mut |_| {})
+        .with_grant(output, &call, &mut events, &mut reply)
         .await
         .unwrap()
         .unwrap();
     (target.exists(), output.text, events)
 }
 
+fn user() -> Arc<Steering> {
+    Arc::new(Steering::default())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn steering_answer_never_comes_from_a_steer_waiting_in_the_queue() {
+    let steering = user();
+    steering
+        .lock()
+        .unwrap()
+        .push_back(UserInput::from("also update the docs"));
+    let (exists, text, _) = delete_outside(Some(Arc::clone(&steering)), &["y"]).await;
+    assert!(!exists, "{text}");
+    let waiting: Vec<String> = steering
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|input| input.text.clone())
+        .collect();
+    assert_eq!(waiting, ["also update the docs"]);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn steering_answer_left_from_an_earlier_dialog_never_answers_the_next() {
+    let steering = user();
+    steering.answer(steering.open_dialog(), UserInput::from("y"));
+    let (exists, text, _) = delete_outside(Some(Arc::clone(&steering)), &["n"]).await;
+    assert!(exists, "{text}");
+}
+
 #[tokio::test]
 async fn a_destructive_command_asks_the_user_first() {
-    let (exists, text, events) = delete_outside(Some("n")).await;
+    let (exists, text, events) = delete_outside(Some(user()), &["n"]).await;
     assert!(exists, "{text}");
     assert!(
         events
@@ -64,13 +102,13 @@ async fn a_destructive_command_asks_the_user_first() {
 #[cfg(unix)]
 #[tokio::test]
 async fn a_confirmed_destructive_command_runs() {
-    let (exists, text, _) = delete_outside(Some("y")).await;
+    let (exists, text, _) = delete_outside(Some(user()), &["y"]).await;
     assert!(!exists, "{text}");
 }
 
 #[tokio::test]
 async fn a_destructive_command_never_runs_without_a_user() {
-    let (exists, text, _) = delete_outside(None).await;
+    let (exists, text, _) = delete_outside(None, &[]).await;
     assert!(exists, "{text}");
 }
 
@@ -84,8 +122,9 @@ async fn approving_a_destructive_command_keeps_the_sandbox() -> Result<()> {
     std::fs::create_dir(&target)?;
     std::fs::write(target.join("sentinel"), "keep\n")?;
     let mut loop_ = session(workspace.path(), home.path()).with_sandbox(crate::Network::Allowed)?;
-    let answers = VecDeque::from([UserInput::from("y"), UserInput::from("n")]);
-    loop_.steer_with(Arc::new(Steering::from(answers)));
+    let steering = user();
+    loop_.steer_with(Arc::clone(&steering));
+    let mut reply = steering.replying(&["y", "n"]);
     let call = command(&format!(
         "{DELETE} ./*; python3 -c \"from pathlib import Path; Path('{}').unlink()\"",
         target.join("sentinel").display()
@@ -94,7 +133,7 @@ async fn approving_a_destructive_command_keeps_the_sandbox() -> Result<()> {
     let mut events = Vec::new();
 
     let output = loop_
-        .with_grant(output, &call, &mut events, &mut |_| {})
+        .with_grant(output, &call, &mut events, &mut reply)
         .await??;
 
     assert!(

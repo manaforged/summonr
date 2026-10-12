@@ -5,6 +5,10 @@ use serde_json::{Map, Value, json};
 use crate::mcp::{Choice, Field, FieldKind, Form, FormAction, FormAnswer};
 
 use super::*;
+use crate::prefs::Hotkeys;
+use crate::tui::sigil_view::ui::{Hints, Key};
+
+const TYPED_BELOW: &str = "your typed answer below replaces the choices · ↵ sends it";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Stage {
@@ -21,6 +25,8 @@ pub(in crate::tui::sigil_view) struct FormState {
     cursor: usize,
     picked: BTreeSet<usize>,
     pub(in crate::tui::sigil_view) stage: Stage,
+    dialog: u64,
+    saved: (String, usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,7 +38,7 @@ pub(in crate::tui::sigil_view) enum Reply {
 }
 
 impl FormState {
-    fn new(form: Form) -> Self {
+    fn new(form: Form, dialog: u64, saved: (String, usize)) -> Self {
         let mut state = Self {
             form,
             index: 0,
@@ -41,6 +47,8 @@ impl FormState {
             cursor: 0,
             picked: BTreeSet::new(),
             stage: Stage::Filling,
+            dialog,
+            saved,
         };
         state.focus();
         state
@@ -110,20 +118,21 @@ impl FormState {
         ))
     }
 
-    pub(in crate::tui::sigil_view) fn lines(&self) -> Vec<String> {
+    pub(in crate::tui::sigil_view) fn shown(&self, typed: &str) -> Vec<String> {
+        let typed = typed.trim();
         let head = match &self.form.server {
             Some(server) => format!("mcp {server} asks: {}", self.form.message),
             None => "The model asks".to_string(),
         };
         let mut lines = vec![head];
         match self.stage {
-            Stage::Filling => self.filling_lines(&mut lines),
+            Stage::Filling => self.filling_lines(&mut lines, typed),
             Stage::Review => self.review_lines(&mut lines),
         }
         lines
     }
 
-    fn filling_lines(&self, lines: &mut Vec<String>) {
+    fn filling_lines(&self, lines: &mut Vec<String>, typed: &str) {
         if let Some(field) = self.field() {
             lines.push(format!(
                 "{}/{} {}",
@@ -141,13 +150,20 @@ impl FormState {
                         (true, true) => "[x]".to_string(),
                         (true, false) => "[ ]".to_string(),
                     };
-                    let cursor = if index == self.cursor { "❯" } else { " " };
+                    let cursor = if index == self.cursor && typed.is_empty() {
+                        "❯"
+                    } else {
+                        " "
+                    };
                     let about = option
                         .description
                         .as_ref()
                         .map_or_else(String::new, |about| format!("  {about}"));
                     format!("{cursor} {mark} {}{about}", option.title)
                 }));
+            }
+            if !typed.is_empty() {
+                lines.push(TYPED_BELOW.to_string());
             }
             lines.push(facts(field));
         }
@@ -168,7 +184,7 @@ impl FormState {
 }
 
 fn facts(field: &Field) -> String {
-    let mut parts = vec![hint(&field.kind)];
+    let mut parts = vec![keys(&field.kind), hint(&field.kind)];
     if field.required {
         parts.push("required".to_string());
     }
@@ -190,18 +206,37 @@ fn hint(kind: &FieldKind) -> String {
             maximum,
         } => number_hint(*integer, *minimum, *maximum),
         FieldKind::Boolean => "yes or no".to_string(),
-        FieldKind::Choice { custom, .. } => picking("↑↓ move · enter picks", *custom),
-        FieldKind::Choices { custom, .. } => {
-            picking("↑↓ move · space toggles · enter confirms", *custom)
+        FieldKind::Choice { .. } | FieldKind::Choices { .. } => String::new(),
+    }
+}
+
+fn keys(kind: &FieldKind) -> String {
+    match kind {
+        FieldKind::Choice { custom, .. } => picking(
+            Hints::new()
+                .key(Key::UpDown, "move")
+                .key(Key::Enter, "picks"),
+            *custom,
+        ),
+        FieldKind::Choices { custom, .. } => picking(
+            Hints::new()
+                .key(Key::UpDown, "move")
+                .key(Key::Space, "toggles")
+                .key(Key::Enter, "confirms"),
+            *custom,
+        ),
+        FieldKind::Text { .. } | FieldKind::Number { .. } | FieldKind::Boolean => {
+            picking(Hints::new().key(Key::Enter, "next"), false)
         }
     }
 }
 
-fn picking(keys: &str, custom: bool) -> String {
+fn picking(hints: Hints, custom: bool) -> String {
+    let keys = hints.key(Key::Esc, "cancel").text(&Hotkeys::default());
     if custom {
         format!("{keys} · or type your own answer")
     } else {
-        keys.to_string()
+        keys
     }
 }
 
@@ -216,13 +251,29 @@ fn number_hint(integer: bool, minimum: Option<f64>, maximum: Option<f64>) -> Str
 }
 
 impl App {
-    pub(in crate::tui::sigil_view) fn form_open(&self, form: Option<Form>) {
-        let state = form.map(FormState::new);
-        let draft = state.as_ref().map(FormState::prefill);
-        self.form.set(state);
-        if let Some(draft) = draft {
-            self.replace(draft);
-        }
+    pub(in crate::tui::sigil_view) fn form_open(&self, form: Option<Form>, dialog: u64) {
+        let Some(form) = form else {
+            self.form_close();
+            return;
+        };
+        let saved = self.form.peek().map_or_else(
+            || (self.draft.peek(), self.caret.peek()),
+            |state| state.saved,
+        );
+        let state = FormState::new(form, dialog, saved);
+        let draft = state.prefill();
+        self.form.set(Some(state));
+        self.replace(draft);
+    }
+
+    pub(in crate::tui::sigil_view) fn form_close(&self) {
+        let Some(state) = self.form.peek() else {
+            return;
+        };
+        self.form.set(None);
+        let (draft, caret) = state.saved;
+        self.replace(draft);
+        self.caret.set(caret);
     }
 
     pub(in crate::tui::sigil_view) fn form_stage(&self) -> Option<Stage> {
@@ -234,6 +285,7 @@ impl App {
             return false;
         };
         if state.stage == Stage::Review {
+            self.form_reply(Reply::Send);
             return true;
         }
         let Some(field) = state.field().cloned() else {
@@ -329,10 +381,9 @@ impl App {
                 return;
             }
         };
-        self.form.set(None);
-        self.replace(String::new());
+        self.form_close();
         match serde_json::to_string(&answer) {
-            Ok(text) => self.steer_answer(text),
+            Ok(text) => self.steer_answer(state.dialog, text),
             Err(error) => self.push_entry(Entry::Error(format!("mcp form: {error}"))),
         }
     }

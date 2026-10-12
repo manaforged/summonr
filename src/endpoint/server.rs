@@ -29,7 +29,7 @@ pub async fn add_server(
     };
     let path = config::path()?;
     let replaced = config::remove_named(&path, config::Section::Endpoint, name)?;
-    save(&path, name, &url, Some(&model))?;
+    save(&path, name, &url, &model)?;
     if default {
         config::save_default_seat(&path, Some((name, &model)))?;
     }
@@ -112,12 +112,10 @@ pub fn remove_server(name: &str) -> Result<String> {
     }
 }
 
-fn save(path: &std::path::Path, name: &str, url: &str, model: Option<&str>) -> Result<bool> {
+fn save(path: &std::path::Path, name: &str, url: &str, model: &str) -> Result<bool> {
     let mut table = Table::new();
     table["base_url"] = value(url);
-    if let Some(model) = model {
-        table["model"] = value(model);
-    }
+    table["model"] = value(model);
     config::save_named(path, config::Section::Endpoint, name, Item::Table(table))
 }
 

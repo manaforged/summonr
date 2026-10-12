@@ -62,6 +62,15 @@ Shift+Tab navigates an open overlay or sends `Cmd::ToggleApproval`.
 `Snapshot::approval` reflects effective policy; it is separate from work mode
 and is updated by the worker, not optimistically by the key handler.
 
+## Composer keyboard routing
+
+| Job | Owner | Callers |
+| --- | --- | --- |
+| Ctrl bindings and readline motion | `view/input.rs::leader_shortcuts` | `view/keys.rs::shell`; rewrites motion keys for Sigil's editor |
+| Newline binding | `view/input.rs::hotkey_shortcuts` | `view/keys.rs::shell`; rewrites the configured newline key to Enter |
+| Chord continuation | `view/input.rs::leader_plain`, `App::{arm_leader,take_chord,route_chord}` | `view/keys.rs::shell`, `view/input.rs`; Ctrl+X arms one following letter, Escape cancels |
+| Hotkey lookup and rebinding | `prefs::Hotkeys::{action,chord,assign,label}`, `App::record_chord` | `app/adjust.rs`, `view/input.rs`, `settings/hotkeys.rs`, composer and help; plain Ctrl keys and Ctrl+X chords remain distinct |
+
 ## 1b. Overlay helpers (2026-09-19)
 
 Owner: `src/tui/sigil_view/overlay.rs`. The one visual language for every

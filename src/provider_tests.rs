@@ -184,3 +184,19 @@ fn a_rejected_key_error_does_not_echo_the_key() {
         failure.message
     );
 }
+
+#[test]
+fn a_refused_loopback_server_says_nothing_is_listening() {
+    let base = "http://127.0.0.1:8771/v1";
+    let refused = unreachable_message("lab", base, true, &"connect");
+    assert!(
+        refused.starts_with(
+            "nothing is listening at 127.0.0.1:8771; start the server or fix the base_url"
+        ),
+        "{refused}"
+    );
+    let other = unreachable_message("lab", base, false, &"connect");
+    assert!(other.contains("check the network"), "{other}");
+    let remote = unreachable_message("x", "https://api.example.com/v1", true, &"connect");
+    assert!(remote.contains("check the network"), "{remote}");
+}

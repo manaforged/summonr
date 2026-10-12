@@ -210,14 +210,14 @@ impl Store {
         match std::fs::read(&self.file) {
             Ok(bytes) => {
                 let sealed = bytes.starts_with(MAGIC);
-                let key = sealed.then(|| self.wrap(false)).transpose()?;
+                let key = sealed.then(|| self.wrap()).transpose()?;
                 let document = open_file(key.as_ref(), &bytes).map_err(|error| {
                     Error::Config(format!(
                         "{error}; fix or remove {} and log in again",
                         self.file.display()
                     ))
                 })?;
-                if !sealed {
+                if sealed {
                     self.write_file(&document)?;
                 }
                 Ok(document)
@@ -232,22 +232,19 @@ impl Store {
             std::fs::create_dir_all(parent)?;
             tighten_dir(parent)?;
         }
-        Ok(store::write(
-            &self.file,
-            seal_file(&self.wrap(true)?, document.to_string().as_bytes())?,
-        )?)
+        Ok(store::write(&self.file, document.to_string().as_bytes())?)
     }
 
-    fn wrap(&self, create: bool) -> Result<[u8; KEY_LEN]> {
+    fn wrap(&self) -> Result<[u8; KEY_LEN]> {
         if let Some(key) = self.seal {
             return Ok(key);
         }
         match self.backend {
-            Backend::File => file_wrap(&self.file, create),
+            Backend::File => file_wrap(&self.file),
             #[cfg(any(target_os = "macos", all(test, unix)))]
-            Backend::Security(_) => os_wrap_key(create, self.wrap_tool.as_deref()),
+            Backend::Security(_) => os_wrap_key(self.wrap_tool.as_deref()),
             #[cfg(not(target_os = "macos"))]
-            Backend::Native => os_wrap_key(create, self.wrap_tool.as_deref()),
+            Backend::Native => os_wrap_key(self.wrap_tool.as_deref()),
         }
     }
 }
@@ -318,4 +315,50 @@ pub fn set(name: &str, secret: &str) -> Result<Source> {
 
 pub(crate) fn forget(name: &str) -> Result<bool> {
     Store::discover()?.forget(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chacha20poly1305::KeyInit;
+    use chacha20poly1305::aead::Aead;
+    use chacha20poly1305::aead::{OsRng, rand_core::RngCore};
+    use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
+    use std::fs;
+
+    #[test]
+    fn a_stored_key_is_plain_toml_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join(FILE);
+        let store = Store::file_with_seal(file.clone(), [7_u8; KEY_LEN]);
+        store.set("zai", "key-value").unwrap();
+        let bytes = fs::read(&file).unwrap();
+        assert!(!bytes.starts_with(MAGIC));
+        assert!(String::from_utf8(bytes).unwrap().contains("zai"));
+    }
+
+    #[test]
+    fn a_legacy_sealed_store_is_rewritten_plaintext_on_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join(FILE);
+        let seal = [9_u8; KEY_LEN];
+        let cipher = ChaCha20Poly1305::new(&Key::from(seal));
+        let mut nonce_bytes = [0_u8; NONCE_LEN];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let sealed = cipher
+            .encrypt(&Nonce::from(nonce_bytes), b"zai = \"old-key\"".as_slice())
+            .unwrap();
+        let mut blob = MAGIC.to_vec();
+        blob.extend_from_slice(&nonce_bytes);
+        blob.extend(sealed);
+        fs::write(&file, blob).unwrap();
+        let store = Store::file_with_seal(file.clone(), seal);
+        assert_eq!(
+            store.get("zai").unwrap().map(|(value, _)| value),
+            Some("old-key".to_string())
+        );
+        let bytes = fs::read(&file).unwrap();
+        assert!(!bytes.starts_with(MAGIC));
+        assert!(String::from_utf8(bytes).unwrap().contains("old-key"));
+    }
 }

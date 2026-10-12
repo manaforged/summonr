@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+mod said;
+
 use super::{Accumulate, Chat, Delta};
 use crate::provider::{
     AssistantMessage, CompletionRequest, EffortField, Partial, Reasoning, Step, StopReason,
@@ -126,12 +128,13 @@ struct Failure {
 struct FrameChoice {
     #[serde(default)]
     delta: Piece,
-    finish_reason: Option<String>,
+    finish_reason: Option<said::Finish>,
 }
 
 #[derive(Default, Deserialize)]
 struct Piece {
-    content: Option<String>,
+    content: Option<said::Said>,
+    refusal: Option<String>,
     #[serde(
         default,
         alias = "reasoning",
@@ -179,34 +182,31 @@ impl Accumulate for Stream {
         let Some(choice) = frame.choices.into_iter().next() else {
             return Ok(deltas);
         };
+        if let Some(refusal) = choice.delta.refusal.filter(|text| !text.is_empty()) {
+            return Err(crate::provider::wire::blocked(&format!(
+                "refusal: {refusal}"
+            )));
+        }
         if let Some(reason) = choice.finish_reason {
-            self.stop = serde_json::from_value(Value::String(reason))?;
+            self.stop = reason.stop()?;
             self.finished = true;
         }
-        if let Some(part) = choice
-            .delta
-            .reasoning_content
-            .filter(|text| !text.is_empty())
-        {
-            self.reasoning.push_str(&part);
-            deltas.push(Delta::Thinking(part));
+        if let Some(part) = choice.delta.reasoning_content {
+            self.thought(part, &mut deltas);
         }
-        if let Some(part) = choice.delta.content.filter(|text| !text.is_empty()) {
-            let mut text = String::new();
-            let mut thought = String::new();
-            self.think.push(
-                &part,
-                |chunk| text.push_str(chunk),
-                |chunk| thought.push_str(chunk),
-            );
-            if !thought.is_empty() {
-                self.reasoning.push_str(&thought);
-                deltas.push(Delta::Thinking(thought));
+        match choice.delta.content {
+            Some(said::Said::Text(part)) => self.said(&part, &mut deltas),
+            Some(said::Said::Chunks(chunks)) => {
+                for chunk in &chunks {
+                    if let said::Chunk::Thinking { thinking } = chunk {
+                        let part: String = thinking.iter().map(said::Chunk::text).collect();
+                        self.thought(part, &mut deltas);
+                    } else {
+                        self.said(chunk.text(), &mut deltas);
+                    }
+                }
             }
-            if !text.is_empty() {
-                self.text.push_str(&text);
-                deltas.push(Delta::Text(text));
-            }
+            None => {}
         }
         self.merge_calls(choice.delta.tool_calls, &mut deltas)?;
         Ok(deltas)
@@ -244,6 +244,32 @@ impl Accumulate for Stream {
 }
 
 impl Stream {
+    fn thought(&mut self, part: String, deltas: &mut Vec<Delta>) {
+        if part.is_empty() {
+            return;
+        }
+        self.reasoning.push_str(&part);
+        deltas.push(Delta::Thinking(part));
+    }
+
+    fn said(&mut self, part: &str, deltas: &mut Vec<Delta>) {
+        if part.is_empty() {
+            return;
+        }
+        let mut text = String::new();
+        let mut thought = String::new();
+        self.think.push(
+            part,
+            |chunk| text.push_str(chunk),
+            |chunk| thought.push_str(chunk),
+        );
+        self.thought(thought, deltas);
+        if !text.is_empty() {
+            self.text.push_str(&text);
+            deltas.push(Delta::Text(text));
+        }
+    }
+
     fn merge_calls(
         &mut self,
         parts: Vec<crate::provider::stream::CallDelta>,

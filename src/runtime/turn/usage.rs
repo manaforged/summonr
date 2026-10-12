@@ -1,50 +1,6 @@
 use super::*;
 
 impl<P: Provider> Loop<P> {
-    pub(super) fn seat_usage(
-        &mut self,
-        role: workflow::Role,
-        before: &Usage,
-        after: &Usage,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
-        self.sync_usage(emit);
-        let prompt = after.prompt_tokens.saturating_sub(before.prompt_tokens);
-        let completion = after
-            .completion_tokens
-            .saturating_sub(before.completion_tokens);
-        if prompt == 0 && completion == 0 {
-            return Ok(());
-        }
-        let cached = after.cached_tokens.saturating_sub(before.cached_tokens);
-        let written = after
-            .cache_write_tokens
-            .saturating_sub(before.cache_write_tokens);
-        self.push_event(
-            events,
-            emit,
-            Event::Usage {
-                prompt_tokens: prompt,
-                completion_tokens: completion,
-                reasoning_tokens: after
-                    .reasoning_tokens
-                    .saturating_sub(before.reasoning_tokens),
-                cached_tokens: cached,
-                millis: None,
-                prefix_hash: format!("{role:?}").to_lowercase(),
-                cost: self.price_for(role).map(|price| {
-                    price.cost(
-                        u64::from(prompt),
-                        u64::from(completion),
-                        u64::from(cached),
-                        u64::from(written),
-                    )
-                }),
-            },
-        )
-    }
-
     pub(in crate::runtime) fn record_usage(
         &mut self,
         assistant: &AssistantMessage,

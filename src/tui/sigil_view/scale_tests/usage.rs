@@ -107,3 +107,96 @@ fn a_narrow_usage_page_keeps_a_model_off_the_workspace_row() {
         "model row ran into the workspace:\n{row}"
     );
 }
+
+#[test]
+fn todays_bar_fills_its_column_inside_the_chart_frame() {
+    for (cols, rows) in [(100, 48), (120, 40)] {
+        let grid = paint(busy_info(), cols, rows, State::Idle, |app| {
+            app.replace("/usage".to_owned());
+            app.submit();
+            app.update(Msg::Usage(Ok(vec![spend(
+                "glm-5.3-flash",
+                "/w/calc",
+                30_000,
+            )])));
+        });
+        let accent = Ink::Exact(palette().accent);
+        let mut filled = 0;
+        for row in 0..grid.rows() {
+            let bar = (0..grid.cols())
+                .rposition(|col| grid.get(col, row).is_some_and(|cell| cell.bg == accent));
+            let Some(bar) = bar else {
+                continue;
+            };
+            filled += 1;
+            let framed = (bar + 1..grid.cols()).any(|col| {
+                grid.get(col, row).is_some_and(|cell| {
+                    cell.text
+                        .chars()
+                        .any(|c| matches!(c, '│' | '┃' | '▕' | '▐'))
+                })
+            });
+            assert!(
+                framed,
+                "{cols}x{rows}: bar sits on the frame in row {row}:\n{}",
+                grid.text()
+            );
+        }
+        assert!(
+            filled >= 4,
+            "{cols}x{rows}: today's bar is {filled} rows:\n{}",
+            grid.text()
+        );
+    }
+}
+
+#[test]
+fn the_usage_cards_line_up_and_the_daily_chart_frame_closes() {
+    for (cols, rows) in [(100, 48), (120, 40)] {
+        let grid = paint(busy_info(), cols, rows, State::Idle, |app| {
+            app.replace("/usage".to_owned());
+            app.submit();
+            app.update(Msg::Usage(Ok(vec![spend(
+                "glm-5.3-flash",
+                "/w/calc",
+                30_000,
+            )])));
+        });
+        let text = grid.text();
+        let lines: Vec<&str> = text.lines().collect();
+        let title = lines
+            .iter()
+            .position(|line| line.contains("per day"))
+            .unwrap_or_else(|| panic!("{cols}x{rows}: no chart title:\n{text}"));
+        let top = lines
+            .iter()
+            .skip(title)
+            .find(|line| line.contains('╭') || line.contains('┌'))
+            .unwrap_or_else(|| panic!("{cols}x{rows}: no chart frame:\n{text}"));
+        let bottoms: Vec<usize> = lines
+            .iter()
+            .take(title)
+            .enumerate()
+            .filter(|(_, line)| line.contains('└') || line.contains('╰'))
+            .map(|(row, _)| row)
+            .collect();
+        assert_eq!(
+            bottoms.len(),
+            1,
+            "{cols}x{rows}: the cards end on different rows:\n{text}"
+        );
+        let crowded = lines.iter().any(|line| {
+            line.chars()
+                .zip(line.chars().skip(1))
+                .any(|(mark, edge)| ('\u{2580}'..='\u{28ff}').contains(&mark) && edge == '│')
+        });
+        assert!(
+            !crowded,
+            "{cols}x{rows}: a sparkline runs into its card border:\n{text}"
+        );
+        assert!(
+            top.contains('╮') || top.contains('┐'),
+            "{cols}x{rows}: the chart frame is cut on the right:\n{text}"
+        );
+    }
+}

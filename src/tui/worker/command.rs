@@ -9,7 +9,7 @@ use super::{Cmd, Msg, Worker};
 mod flow;
 mod network;
 mod session;
-mod shell;
+pub(super) mod shell;
 mod work;
 use crate::command::argument;
 use crate::durable::log::{self, Line};
@@ -58,5 +58,3 @@ async fn attend<T>(inbox: Inbox<'_>, task: impl Future<Output = T>) -> Attended<
         }
     }
 }
-
-impl Worker {}

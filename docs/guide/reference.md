@@ -11,6 +11,8 @@ summonr anthropic
 summonr kimi -p "What is in Cargo.toml?"
 ```
 
+A single word that is not a command, endpoint, or prompt flag but looks like a mistyped command (`summonr sesions`) is refused with a suggestion; use `-p` to send it as a prompt.
+
 summonr starts on the first endpoint and model that applies: the endpoint and `--model` flags, then `SUMMONR_ENDPOINT` and `SUMMONR_MODEL`, then the default (`default` and `default_model` in `config.toml`), then the last endpoint and model you used, then the first endpoint that is set up. The last-used seat lives in `~/.summonr/recent.json` and changes only after a turn succeeds. A `default` or last-used endpoint that no longer exists or has no key prints one note, and summonr falls back to the next rule. Only an endpoint named on the command line is a hard error. `alt+d` in the `/model` picker sets the selected row as the default, and `alt+d` on the default row clears it. The header shows which rule chose the endpoint, for example `(default)` or `(last used)`, until you switch.
 
 Add your own OpenAI-compatible server from the command line:
@@ -32,6 +34,8 @@ model = "whatever-the-server-calls-it"
 
 Then `summonr local`. A local server needs no `api_key`. When a local built-in such as `ollama` or `lmstudio` is not running, the error says so and names the preset's `start` command (`ollama serve`, `lms server start`). With no model set, the hint lists the models the server has. `effort = "low"` on an endpoint (or `--effort LEVEL`, `/effort` in the interface) sets the reasoning effort for that endpoint. `/effort` and `tab` are remembered per endpoint. An endpoint with no effort set, and none remembered, uses `high` when the model catalog says the model reasons, and sends no effort otherwise. Reasoning effort below lists the levels each model accepts. `price = { input, output, cached, cache_write }` in USD per million tokens (`cache_write` defaults to `input`) prices every round in the footer. A workflow role keeps its own endpoint's effort and price; `--effort` and `/effort` set the driving endpoint and any role whose endpoint does not set them. `summonr endpoints` lists the endpoints that are set up first, and the models of each name through `GET /models`; a host that serves its model list away from its chat base sets `models_url` (`perplexity` does: chat at `/chat/completions`, models at `/v1/models`). Each row shows the key state: `ready`, `needs key`, `sign in`, `key rejected`, `rate limited`, `offline`, `error`, or `no key needed`. `summonr login NAME` prompts for an API key. On an endpoint that needs no key, it says so and reports the endpoint ready, or names the missing model. `summonr login` prints one line per endpoint with its state and label, and `summonr endpoints` one row per endpoint; both size each column to its longest value, and a row with no model shows only its URL; endpoints that are set up come first in each group. A keyless built-in with no model reads `needs model`. `grant = "device_code"` runs a device login, and `grant = "authorization_code"` runs a browser sign-in with PKCE (S256).
 
+`summonr endpoints` and the `/model` picker download the [models.dev](https://models.dev) catalog (`https://models.dev/api.json`, about 350 KB) to fill in model names, context windows, reasoning and vision support, and prices. They fetch it even when every endpoint is local. The copy is cached in `~/.summonr/models-dev.json` and fetched again at most once every `models_catalog_secs` (an hour), with `If-None-Match`. `-p` runs and interface start do not fetch it. Without a cached copy, summonr uses a snapshot built into the binary. `SUMMONR_MODELS_URL` sends the fetch to another URL, such as a mirror you host, and `models_catalog = false` in `config.toml` turns the fetch off.
+
 The browser flow picks its return path from `redirect_uri`:
 
 - A loopback `redirect_uri`, or none at all, opens a local port, catches the provider's redirect, and closes. Omit it and summonr picks a free port; set it when the provider registered a fixed one. Port `0` keeps the provider's path and lets summonr pick the port.
@@ -46,8 +50,6 @@ Endpoints carry the rest of what a provider needs, so a new provider is config, 
 - `[…auth.authorize_params]` and `[…auth.token_params]` add provider parameters to the two requests.
 - `[…auth.claim_headers]` maps a header name to a claim read from the token, so an account id travels on every request.
 
-Set `SUMMONR_NO_BROWSER=1` to print the link instead of opening it.
-
 `config.example.toml` carries ready endpoints for other subscriptions. The `claude-pro` endpoint is off: Anthropic's terms do not allow a third-party app to sign in with a Claude Pro or Max subscription.
 
 An endpoint can offer both a sign-in and a key. `summonr login NAME` then asks which one; `--key` skips the question. A stored sign-in wins over any key, and `summonr logout NAME` returns the endpoint to its key. `auth.label` names the subscription in that question.
@@ -56,7 +58,7 @@ An endpoint can offer both a sign-in and a key. `summonr login NAME` then asks w
 
 `grok` offers a SuperGrok or X Premium+ sign-in next to `XAI_API_KEY`, through the device flow at `auth.x.ai`.
 
-Keys live in `~/.summonr/credentials.toml`, a sealed ChaCha20-Poly1305 blob (mode 0600, written through a rename). `cat` of `credentials.toml` shows ciphertext. File mode stores the 32-byte wrap key in `credentials.wrap` beside that file. On macOS, when `credentials.toml` already exists, summonr can copy the wrap key out of the login keychain into `credentials.wrap`. A missing wrap key is an error and leaves `config.toml` untouched. The key prompt disables echo and stores the key; `summonr login NAME --key` skips the method question on a row that offers both, and storing a key signs that row out of its plan. `summonr logout NAME` forgets the key and any login token, says what it removed (`Signed out of NAME` for a sign-in token, `Removed the stored key for NAME` for a key, or that nothing was stored; on an endpoint that needs no key, it says nothing was stored), and names the key that applies next. A plaintext `api_key` in `config.toml` is moved into that file the first time summonr runs, and it says so once. Resolution order is the host's environment variable, the store, peer stores, `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message; only local and keyless endpoints run without one. `--key` is refused on a row that only signs in, such as `copilot`.
+Keys live in `~/.summonr/credentials.toml`, a plain TOML file with mode 0600, written through a rename. Only your account can read it. A sealed file from an earlier build is decrypted with its `credentials.wrap` key and rewritten as plain TOML the first time summonr reads it; after that, `credentials.wrap` is no longer used. The key prompt disables echo and stores the key; `summonr login NAME --key` skips the method question on a row that offers both, and storing a key signs that row out of its plan. `summonr logout NAME` forgets the key and any login token, says what it removed (`Signed out of NAME` for a sign-in token, `Removed the stored key for NAME` for a key, or that nothing was stored; on an endpoint that needs no key, it says nothing was stored), and names the key that applies next. A plaintext `api_key` in `config.toml` is moved into that file the first time summonr runs, and it says so once. Resolution order is the host's environment variable, the store, peer stores, `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message; only local and keyless endpoints run without one. `--key` is refused on a row that only signs in, such as `copilot`.
 
 Peer stores are read live: OpenCode's `~/.local/share/opencode/auth.json` lends `type: "api"` keys, plus unexpired `type: "oauth"` access tokens on bearer endpoints; Kimi's `~/.kimi-code/credentials/kimi-code.json` lends its unexpired token. A peer key reports as `key · opencode` or `key · kimi-code` in `summonr login`. A stored `summonr login NAME` key wins over a peer key; `summonr logout NAME` returns the endpoint to the peer. Configured endpoints whose `base_url` host matches a built-in share that built-in's peer mapping.
 
@@ -101,6 +103,24 @@ retain_days = 90
 | `--no-splash` | Skip the startup banner. |
 | `--inline` | Keep the transcript in terminal scrollback, with the composer pinned at the bottom. |
 | `--here` | Work in this checkout. This is the default; it cannot be combined with `--worktree`. |
+| `--model NAME` | Use model NAME on the endpoint instead of its default. |
+| `--effort LEVEL` | Set the reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. See Reasoning effort. |
+| `-w`, `--workflow NAME` | Seat each step from `[workflows.NAME]`. |
+| `--json` | Print JSON: one event per line with `-p`, `--goal`, and `--steps`, and JSON output from `diff`, `worktrees`, `mcp`, and `classify`. |
+| `--session ID` | Resume a session by id, short id, prefix, or name. |
+| `--name TEXT` | Name this session. |
+| `--goal TEXT` | Work toward TEXT across turns until the check passes and the judge says `done`. |
+| `--steps PLAN.md` | Run each item under `## Steps` in PLAN.md and gate it on its check. |
+| `--max-tokens N` | Session token budget. A breach stops the run. |
+| `--max-secs N` | Session wall-clock budget in seconds. A breach stops the run. |
+| `--sandbox` | Contain shell commands. Writes stay under the workspace and extra writable roots. |
+| `--no-sandbox` | Run uncontained, even with `on = true` under `[sandbox]`. |
+| `--add-dir DIR` | Add an extra writable root. Repeatable. |
+| `--strict` | Allow only the commands listed in `policy.toml`. |
+| `--worktree` | Isolate this session in a git worktree. |
+| `--gui` | Open the desktop window. Needs a build with `--features gui`. |
+| `-h`, `--help` | Show the help. |
+| `-V`, `--version` | Show the version. |
 
 The last of a pair (`--trust`/`--no-trust`, `--net`/`--no-net`) wins. An option that takes a value rejects a value that starts with `-`: `--name -x` is an error, not the name `-x`.
 
@@ -110,6 +130,53 @@ The last of a pair (`--trust`/`--no-trust`, `--net`/`--no-net`) wins. An option 
 git diff | summonr kimi -p
 ```
 
+### Subcommands
+
+| Command | Job |
+| --- | --- |
+| `resume [ID\|NAME]` | Resume a session; with no argument, the last one in this directory. |
+| `sessions [--grep TEXT]` | List sessions, or search their text. |
+| `export [ID\|NAME] [--digest]` | Print a session as Markdown; `--digest` prints the condensed form that `classify --review` reads. |
+| `profile [ID\|NAME]` | Time and tokens of one session. `--all` totals every session, and `--last N` only the newest N. |
+| `diff [PATH]` | Changes against the base. Takes `--stat`, `--json`, and `--turn N\|last`. |
+| `worktrees [prune] [--json]` | List summonr worktrees, or remove the ones that are gone. |
+| `endpoints` | List endpoints, their models, and each key state. |
+| `login [NAME]` | List keys and plans, or sign in to NAME. Takes `--key`, `--url URL`, `--model NAME`, and `--default`. |
+| `logout NAME [--remove]` | Forget the stored key or token; `--remove` deletes an endpoint you added. |
+| `workflows` | List saved workflows. |
+| `modules` | List the built-in modules. |
+| `mcp list\|get NAME [--json]` | List MCP servers with their state and tool counts, or show one server and its tools. |
+| `mcp add NAME -- CMD [ARGS]` | Add a stdio server; `--env K=V` sets its environment. `mcp add NAME --url URL` adds an HTTP server; `--header K=V` adds a request header. Both flags repeat. |
+| `mcp remove NAME` | Remove an MCP server from `~/.summonr/config.toml`. |
+| `install PATH [--list]` | Install a directory of extras; `--list` shows installed plugins. |
+| `uninstall NAME` | Remove an installed plugin. |
+| `doctor [--logs]` | Report crashed runs; `--logs` lists the run logs. |
+| `acp` | Serve the Agent Client Protocol on stdio. |
+| `mail` | Peer mail between sessions: `agents`, `send`, `inbox`, `board`. See Mail. |
+| `tool NAME [JSON]` | Run one tool with JSON arguments (default `{}`) in this directory and print the result. Exits 1 when the tool fails. `--sandbox` contains it. |
+| `classify --set NAME [STATE]` | Answer a named question set about STATE, read from arguments or stdin. |
+| `classify --questions @FILE [STATE]` | Answer the questions in FILE. |
+| `classify --noul QUESTION [STATE]` | Answer a yes/no question. Repeatable. |
+| `classify --patch` | Rank the files of the working patch by risk. |
+| `classify --review --session ID` | Review a session. |
+| `classify --set NAME --eval FILE` | Score a question set against labeled cases in FILE. `--json` prints answers and probabilities, and `--gate N` sets the confidence floor for every `classify` form. |
+| `cron add NAME SCHEDULE TASK` | Add a job. SCHEDULE is `--cron EXPR`, `--every 30m`, `--at TIME`, or `--manual`; TASK is `-p PROMPT` or `--goal GOAL`. Takes `--dir`, `-e`/`--endpoint`, `--model`, `--tz`, `--max-secs`, `--max-tokens`, `--worktree`, `--chat`, `--notify never\|failure\|always`, and `--mail SESSION`. See Cron. |
+| `cron edit NAME [FLAGS]` | Change a job with the same flags as `add`. |
+| `cron list [--json]` | List jobs. |
+| `cron show NAME` | Show one job, including the endpoint its runs use. |
+| `cron run NAME [--raw] [--notify never\|failure\|always]` | Run a job now; `--notify` overrides the job's setting for this run. |
+| `cron log NAME [--last N] [--raw]` | Past runs, then the last run's answer, verdict, and log path. |
+| `cron pause NAME`, `cron resume NAME` | Stop or restart a job's schedule. |
+| `cron remove NAME` | Delete a job and its token. |
+| `cron token NAME` | Print a new webhook token for a job; the old one stops working. |
+| `cron install`, `cron uninstall`, `cron status` | Register or remove the OS tick that starts due jobs, or say whether it is installed and when the next job fires. Without the tick, nothing fires, and `next` says when a job would fire. |
+| `gateway setup telegram` | Store the Telegram bot token. |
+| `gateway telegram` | Run the Telegram bridge. Takes `--endpoint E`, `--model M`, and `--dir D`. See Gateway. |
+| `gateway pair CODE` | Allow the Telegram account that received CODE. |
+| `gateway unpair USER_ID` | Remove a paired account, its chat, and its queued messages. |
+| `gateway status` | List paired accounts. |
+| `gateway webhook [--port N]` | Listen on `127.0.0.1` (port `gateway_port`) for `POST /run/NAME`. |
+
 ### Config keys
 
 Top-level keys in `~/.summonr/config.toml`:
@@ -117,6 +184,7 @@ Top-level keys in `~/.summonr/config.toml`:
 | Key | Values | Effect |
 | --- | --- | --- |
 | `splash` | `true` (default), `false` | Show the startup banner. |
+| `models_catalog` | `true` (default), `false` | Fetch the models.dev catalog for `summonr endpoints` and `/model`; `false` keeps every request on your own endpoints. |
 | `animations` | `true` (default), `false` | Animate the interface. |
 | `fps` | 1 to 240, default 25 | Interface frame rate. |
 | `diff_layout` | `split` (default), `unified` | Diff pane layout. |
@@ -173,6 +241,9 @@ cache_ttl = "5m"
 | `model_probe_secs` | `8` | Model list request timeout. |
 | `web_search_secs` | `15` | Web search timeout. |
 | `search_secs` | `20` | Time one `search` call walks and scans before it returns what it found. |
+| `search_index_after_ms` | `1000` | A name search outside the workspace that walks at least this long builds a file index in the background. |
+| `search_index_secs` | `300` | Age at which a file index is rebuilt. |
+| `models_catalog_secs` | `3600` | Age at which the models.dev catalog is fetched again. |
 | `web_connect_secs` | `8` | Web connect timeout. |
 | `web_fetch_secs` | `20` | Web fetch timeout. |
 | `web_body_bytes` | `1048576` | Largest web response body. |
@@ -184,12 +255,15 @@ cache_ttl = "5m"
 | `mcp_idle_secs` | `120` | MCP idle stop when a server sets none. |
 | `lsp_idle_secs` | `300` | Language-server idle stop. |
 | `servers_max` | `8` | MCP and language servers live at once; past it the least recently used idle one stops. |
+| `receipt_items_max` | `5` | Failures and changed files listed in an expanded turn receipt. |
 | `closest_percent` | `34` | A name is offered as the closest match only when it differs by at most this percent of the name length. |
 | `typo_min_chars` | `3` | An endpoint name with at least this many characters also gets a hint for one changed, added, or removed character, or two swapped adjacent characters. |
 | `diff_split_min_cols` | `100` | Narrowest diff pane that shows hunks side by side; a narrower pane shows the unified diff. |
 | `mcp_progress_stretch` | `4` | Progress can extend an MCP call up to this multiple of its timeout. |
 | `mcp_cancel_write_secs` | `1` | Time to write an MCP cancel. |
 | `mcp_close_grace_ms` | `500` | After closing a stdio MCP server's input, how long summonr waits for it to exit before it stops the process. |
+| `image_side_px` | `2000` | Longest side of an image sent to the model; a larger image is scaled down. |
+| `image_bytes` | `5000000` | Largest image sent to the model; a larger one is re-encoded to fit. |
 | `mcp_log_max_bytes` | `1048576` | MCP log size before rotation. |
 | `mcp_frame_max_bytes` | `4194304` | Largest MCP reply. |
 | `mcp_stderr_tail_bytes` | `2048` | MCP stderr kept for diagnostics. |
@@ -215,24 +289,45 @@ cache_ttl = "5m"
 | `repeat_window_secs` | `2` | Window for a double key press. |
 | `step_attempts` | `3` | Attempts per plan step. |
 | `repair_limit` | `6` | Argument repairs and overflow retries per turn. |
+| `repeat_nudge` | `5` | Times the same tool call, or the same cycle of up to three calls, may return the same result in a row before summonr adds a note to the result asking the model to change approach. The call still runs, and a new message starts the count again. `0` turns the note off. |
 | `edit_hunk_rows` | `80` | Rows shown per edit hunk. |
 | `display_patch_lines` | `1000` | Most patch lines shown. |
 | `token_expiry_skew_secs` | `60` | Refresh a sign-in token this early. |
 | `read_line_limit` | `1000` | Largest `read` line limit. |
 | `paste_fold_lines` | `8` | A paste of this many lines folds. |
 | `paste_fold_chars` | `1000` | A paste of this many characters folds. |
+| `cron_tick_secs` | `60` | Interval at which the OS runs `summonr cron tick` after `summonr cron install`. |
+| `cron_budget_secs` | `1800` | Time budget of a cron run that sets no `--max-secs`. |
+| `cron_runs_kept` | `50` | Runs kept per cron job; older runs and their saved webhook bodies are deleted. |
+| `cron_catchup_secs` | `604800` | A missed cron time older than this is logged as expired instead of run. |
+| `cron_fail_pause` | `3` | Failed cron runs in a row before the job pauses itself. |
+| `memory_bytes` | `25000` | Bytes of each memory file loaded into a session. |
+| `gateway_poll_secs` | `50` | Long-poll wait of each Telegram update request. |
+| `gateway_pair_secs` | `3600` | Lifetime of a Telegram pairing code. |
+| `gateway_port` | `8765` | Port `summonr gateway webhook` listens on without `--port`. |
+| `gateway_body_bytes` | `65536` | Largest webhook body; a larger one answers `413`. |
+| `gateway_fire_secs` | `60` | A second webhook fire of one job within this time answers `429`. Scheduled runs and `cron run` do not count. |
+| `gateway_head_secs` | `2` | Time a webhook client has to send its headers. |
+| `gateway_read_secs` | `10` | Time a webhook request has to finish; a slower one answers `408`. |
+| `gateway_stop_secs` | `5` | After `/stop` in a chat, wait this long before the remaining commands are killed. |
 
 ### Environment variables
 
 | Variable | Effect |
 | --- | --- |
 | `SUMMONR_HOME` | summonr home directory. Default `~/.summonr`. |
+| `SUMMONR_ENDPOINT` | Endpoint to start on when none is named on the command line. |
+| `SUMMONR_MODEL` | Model to start on when `--model` is not given. |
+| `SUMMONR_SECRETS` | Credential store: `file` (the default) or `keychain`. Overrides `secrets` in `config.toml`. |
+| `SUMMONR_MAIL` | `off` hides this session from peer mail and turns off the mail tools. |
+| `SUMMONR_PLUGIN_ROOT`, `SUMMONR_PLUGIN_DATA` | Set by summonr for a plugin's hooks: the plugin directory and its data directory. |
 | `SUMMONR_BASE_URL` | Use this OpenAI-compatible base URL as the endpoint when no endpoint is named. |
 | `SUMMONR_API_KEY` | API key for `SUMMONR_BASE_URL`. |
 | `SUMMONR_MAX_TOKENS` | `max_tokens` sent with `SUMMONR_BASE_URL`. |
 | `SUMMONR_KEEP_REASONING` | When set, `SUMMONR_BASE_URL` keeps reasoning as `keep_reasoning = true` does. |
 | `SUMMONR_SYSTEM_PROMPT` | Replace the whole system prompt. `SYSTEM.md`, `AGENTS.md`, `CLAUDE.md`, and skills are not added. |
 | `SUMMONR_MODELS_URL` | URL of the model catalog. |
+| `SUMMONR_CRON` | Set by summonr to the job name in a cron run. `summonr cron add`, `edit`, and `remove` refuse while it is set. |
 | `SUMMONR_CAPTURE_DIR` | Write raw provider request and stream frames as JSON lines to this directory. |
 | `SUMMONR_VERSION` | Installer: release tag to install. Default `latest`. |
 | `SUMMONR_INSTALL_DIR` | Installer: install directory. |
@@ -375,17 +470,17 @@ judge = "grok"
 
 ## Interface
 
-`summonr --gui` opens the session in a desktop window (a build with `--features gui`). The window is built on Sigil: a left rail that switches the Files, Changes, Worktrees, and Plan panes and lists this workspace's sessions; a main column with the transcript, and a composer card; a right rail that shows the open pane with real widgets: clickable file rows, +/− chips that open a file's hunks, an Edit/Save file view. The title bar's changes badge is live. The same `App`, keys, and layouts drive the terminal and the window.
+`summonr --gui` opens the session in a desktop window (a build with `--features gui`). The window is built on Sigil: a left rail that switches the Files, Changes, Worktrees, Jobs, Peers, and Ledger panes and lists this workspace's sessions; a main column with the transcript, and a composer card; a right rail that shows the open pane with real widgets: clickable file rows, +/− chips that open a file's hunks, an Edit/Save file view. The title bar's changes badge is live. The same `App`, keys, and layouts drive the terminal and the window.
 
-The screen is a set of panes on one session. `ctrl+e` (or `/pane files`) opens the repository tree beside the chat; `ctrl+l` the plan ledger; `ctrl+p` hides or restores the pane. In the tree: `ctrl+→` focuses it, `↑↓` move, `←→` collapse or expand, `PgUp/PgDn/Home/End` jump, Enter opens a directory or attaches `@path` to your prompt, and a right-click (or the mouse) opens a menu: attach, open in `$EDITOR`, insert path. `ctrl+←` or `esc` returns to the composer. With the composer focused, an empty draft, no open overlay, and no running turn, `esc` closes the open side pane. `/pane off` closes the pane. `/pane focus`, `run`, and `review` are presets, `/pane "chat | files 30%"` sets the split, and ctrl+shift+←/→ resizes it. The layout persists in `~/.summonr/config.toml` as `layout`. `ctrl+o` opens the settings modal, where every hotkey is editable; the choice is stored under `[hotkeys]` in the same file. `ctrl+n` folds every thinking block, then every tool output (`tools = "hidden"`), then shows them all again; a click still opens one block.
+The screen is a set of panes on one session. `ctrl+x e` (or `/pane files`) opens the repository tree beside the chat; `ctrl+t` the plan ledger; `ctrl+x b` hides or restores the pane. In the tree: `ctrl+→` focuses it, `↑↓` move, `←→` collapse or expand, `PgUp/PgDn/Home/End` jump, Enter opens a directory or attaches `@path` to your prompt, and a right-click (or the mouse) opens a menu: attach, open in `$EDITOR`, insert path. `ctrl+←` or `esc` returns to the composer. With the composer focused, an empty draft, no open overlay, and no running turn, `esc` closes the open side pane. `/pane off` closes the pane. `/pane focus`, `run`, and `review` are presets, `/pane "chat | files 30%"` sets the split, and ctrl+shift+←/→ resizes it. The layout persists in `~/.summonr/config.toml` as `layout`. `ctrl+x o` opens the settings modal, where every hotkey is editable; the choice is stored under `[hotkeys]` in the same file. `ctrl+x n` folds every thinking block, then every tool output (`tools = "hidden"`), then shows them all again; a click still opens one block.
 
-`ctrl+x` (or `/pane diff`, `/diff`) shows the changes against the base: the worktree base when you passed `--worktree`, `HEAD` otherwise. Each row is `+added −removed path`; Enter or `→` opens that file's hunks, one card per `@@` block, with a `pending`, `accepted`, or `rejected` badge. Inside a file `↑↓` picks a hunk, `a` toggles `accepted` (Enter does not), `r` reverts the hunk (`git apply --reverse` of just that block), `n` opens a note field under the hunk header (Enter saves, `esc` cancels; a saved note shows there) that rides to the model with your next prompt, and `←` or `esc` returns to the list. While the pane has focus, typed letters stay in the pane, and `esc` from the list returns to the composer. The right-click menu offers the same actions. Verdicts and notes persist in the repository's git directory, `.git/summonr/review.json`, or in `.summonr/review.json` outside a git repository. `/diff PATH` jumps to one file. After a turn that changed the tree, the transcript gets one `changes: N files · +a −r · vs BASE · /pane diff` line. The same data is `summonr diff [PATH]` (the patch), `summonr diff --stat`, and `summonr diff --json`. `summonr diff` never lists generated caches (`__pycache__/`, `*.pyc`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`) or summonr state under `.summonr/` other than `check.toml` and `policy.toml`, even without a `.gitignore`.
+`ctrl+x d` (or `/pane diff`, `/diff`) shows the changes against the base: the worktree base when you passed `--worktree`, `HEAD` otherwise. Each row is `+added −removed path`; Enter or `→` opens that file's hunks, one card per `@@` block, with a `pending`, `accepted`, or `rejected` badge. Inside a file `↑↓` picks a hunk, `a` toggles `accepted` (Enter does not), `r` reverts the hunk (`git apply --reverse` of just that block), `n` opens a note field under the hunk header (Enter saves, `esc` cancels; a saved note shows there) that rides to the model with your next prompt, and `←` or `esc` returns to the list. While the pane has focus, typed letters stay in the pane, and `esc` from the list returns to the composer. The right-click menu offers the same actions. Verdicts and notes persist in the repository's git directory, `.git/summonr/review.json`, or in `.summonr/review.json` outside a git repository. `/diff PATH` jumps to one file. After a turn that changed the tree, the transcript gets one `changes: N files · +a −r · vs BASE · /pane diff` line. The same data is `summonr diff [PATH]` (the patch), `summonr diff --stat`, and `summonr diff --json`. `summonr diff` never lists generated caches (`__pycache__/`, `*.pyc`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`) or summonr state under `.summonr/` other than `check.toml` and `policy.toml`, even without a `.gitignore`.
 
 `→` on a file in the tree (or `/view PATH`, or the menu's view file) reads it in the view pane with line numbers; lines the diff added are green with a `+`. `↑↓`, `PgUp/PgDn`, `Home/End` scroll, `o` opens it in `$EDITOR`, `esc` returns to the tree. `e` edits the file in place: the keyboard goes to the file (type, Enter, arrows, Home/End), the caret is the inverted cell, `ctrl+s` saves, and `esc` leaves. With unsaved text a second `esc` discards it. The tree, the diff, and the view follow the file system: a change on disk relists, re-diffs, or reloads the pane within about half a second.
 
 In the diff pane `t` keeps only the files the last turn edited (the header says `· last turn`), `c` copies the patch on show to the clipboard (OSC 52 in the terminal; the system clipboard in the window), and a pane `diff_split_min_cols` columns or wider (100 by default) shows a file's hunks side by side, old on the left; a narrower pane shows the unified diff. `summonr diff --turn N` shows what turn N changed: from the checkpoint taken at its start to the next turn's checkpoint, or to the workspace for the newest turn. `--turn last` is the newest turn that changed files, in the newest session for this workspace. Without `--stat` or `--json`, it writes the same summary line as `--stat` to stderr before the patch. A resumed session keeps numbering its turns. The summary reads `turn N of session <short id>`; the JSON has `base: "turn N"` and `session` with the session id. A diff of the whole workspace still reads `vs HEAD`. A file that summonr's own output is redirected to stays out of every later checkpoint in that workspace, in every session, so `--turn` never lists it. A change to `.summonr/check.toml` or `.summonr/policy.toml` is never a touched path.
 
-While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it is running), the round, the seconds so far, the output rate, and the queue count. A message sent during the turn waits in the queue for the next turn; `enter` on an empty composer sends the queue into the running turn instead.
+While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it is running), the round, the seconds so far, the output rate, and the queue count. A message sent during the turn goes into the running turn, and the model reads it after its current tool calls. A message waits in the queue for the next turn instead while an approval or a question is open, while earlier messages or commands still wait, or when it starts with `!` or `/`; `enter` on an empty composer sends the waiting plain messages into the running turn.
 
 The output rate is tokens per second. While text streams it is an estimate: characters received in the last three seconds, divided by the characters per token measured on the previous round (4 until then), over that span. When the provider reports the round's usage, the rate becomes exact: output tokens over the time between the first and last streamed chunk, or over the whole round when nothing streamed, as in a round that only called tools.
 
@@ -399,12 +494,12 @@ When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`, such
 
 | Key | Idle composer | During a turn |
 | --- | --- | --- |
-| `enter` | send | queue for the next turn; on an empty composer, send the queue into the running turn after the current tool calls |
+| `enter` | send | send into the running turn after the current tool calls, or queue it for the next turn as described above; on an empty composer, send the waiting plain messages into the running turn |
 | `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri`; in `/model`, cycle the filter: all, ready, ★, plan, free, think, vision, ≥1M; otherwise cycle reasoning effort | effort takes effect when the turn ends |
 | `↑` | recall earlier prompts; with input queued, pull it back into the editor | |
 | `esc` | dismiss; twice within two seconds opens the session tree | cancel the turn |
 | `ctrl+c` | clear the draft; on an empty draft, twice within two seconds quits | cancel the turn |
-| `ctrl+d` | quit when the draft is empty; it only quits | |
+| `ctrl+d` | quit when the draft is empty; otherwise delete the character after the caret | |
 | `pgup` `pgdn` | scroll the transcript a page | same |
 | `home` `end` | on an empty draft, jump to the top or the latest reply | same |
 | `alt+d` | in the sessions picker, twice deletes the selected session; in `/login`, signs out; in `/model`, sets the default | |
@@ -421,6 +516,11 @@ When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`, such
 | `ctrl+w` `alt+backspace` | delete the word before the caret | |
 | `alt+d` | delete the word after the caret | |
 | `ctrl+u` `ctrl+k` | delete to the line start or end | |
+| `ctrl+a` `ctrl+e` | start or end of the line | |
+| `ctrl+b` `ctrl+f` | one character left or right | |
+| `ctrl+p` `ctrl+n` | older or newer prompt, same as ↑ and ↓ | |
+| `ctrl+l` | redraw the screen | |
+| `ctrl+x` | then a letter runs that chord | |
 
 ### Commands
 
@@ -444,10 +544,11 @@ When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`, such
 | `/mcp` | MCP servers: state, tools, schema size, last error |
 | `/usage [session]` | token spend; session profiles this session |
 | `/agents` | list agent sessions on this machine |
+| `/memory` | show the memory files and their size |
 | `/exit` | quit summonr |
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort |
 | `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
-| `/workflow [NAME]` | choose models for plan, work, and review |
+| `/workflow [NAME]` | choose models for scout, work, and review |
 | `/login [NAME]` | sign in to a provider or store its key. Rows sit under `ready`, `needs attention`, and `not set up`; at 96 columns or more a detail pane shows the row's key, sign-in, models, and actions |
 | `/auto` | return to auto mode |
 | `/goal TEXT` | work toward an objective across turns |
@@ -473,7 +574,7 @@ While a turn runs, the composer status also counts waiting input (`2 queued, ↑
 
 `/settings` switches tool output between compact and full, sets chain of thought to `collapsed` (the default: one dim line with a line count), `expanded`, or `off`, and sets turn receipts to `off` (the default), `collapsed` (one line: files read, searches, commands, failures, changed files, and the check result), or `expanded` (that line, the start commit, the first five failures and changed files, and each check). A click on a receipt switches between `collapsed` and `expanded`.
 
-`/export` writes the session as markdown to `~/.summonr/exports/<id>.md`; `/export PATH` writes it where you say. It works while a turn runs. `ctrl+b` (the default copy hotkey) copies the latest assistant reply. `/copy all` copies the full transcript. Both use OSC 52 in the terminal and the system clipboard in the window. `ctrl+t` releases the mouse to the terminal so you can select and copy any transcript span; press it again to restore mouse interaction.
+`/export` writes the session as markdown to `~/.summonr/exports/<id>.md`; `/export PATH` writes it where you say. It works while a turn runs. `ctrl+x y` (the default copy hotkey) copies the latest assistant reply. `/copy all` copies the full transcript. Both use OSC 52 in the terminal and the system clipboard in the window. `ctrl+x t` releases the mouse to the terminal so you can select and copy any transcript span; press it again to restore mouse interaction.
 
 `/pane worktrees` lists the `summonr/*` worktrees of this repository: branch, commits ahead of the base, dirty or clean, the session that ran there, and the directory. Enter or `→` opens that worktree's diff (`esc` comes back); the right-click menu offers show diff, merge (the same ff-only merge a run ends with; a dirty tree is refused), remove worktree (only when clean and fully merged), and insert path. `summonr worktrees` prints the same rows; `summonr worktrees --json` as JSON. `summonr worktrees prune --json` prints the removed paths as a JSON array.
 
@@ -486,7 +587,7 @@ The card takes the keyboard (↑↓ role, enter picks a model, `d` returns it to
 With a `scout` role, a `--steps` or `--goal` job opens with a read-only brief of the files, conventions, and helpers the objective touches. With a `review` role, a turn whose checks passed is read by the reviewer before it completes; a rejection sends the findings back as the next instruction and counts as a failed check.
 ## Questions from the model
 
-In an interactive session the model can call `ask` to put one to four questions to you. The dialog above the composer shows one question at a time: `↑` and `↓` move between options, `space` toggles an option when several are allowed, and `enter` picks. Type in the composer to give your own answer instead, or a number to pick that option. One question sends at once; several end on a review where `y` sends, `e` edits, and `esc` cancels. A message you send while the dialog is open dismisses it and reaches the model as a steer. The same dialog shows MCP server forms. `-p`, `--steps`, `--goal`, `summonr acp`, and child sessions have no one to answer, so the model does not get `ask` there.
+In an interactive session the model can call `ask` to put one to four questions to you. The dialog above the composer shows one question at a time: `↑` and `↓` move between options, `space` toggles an option when several are allowed, and `enter` picks. Type in the composer to give your own answer instead, or a number to pick that option. One question sends at once; several end on a review where `y` sends, `e` edits, and `esc` cancels. A message you sent into the turn before the dialog opened never answers it; it reaches the model after the dialog closes. The same dialog shows MCP server forms. `-p`, `--steps`, `--goal`, `summonr acp`, and child sessions have no one to answer, so the model does not get `ask` there.
 
 ## Child sessions
 
@@ -506,8 +607,8 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | --- | --- | --- |
 | `read` | always | File, directory, or image |
 | `search` | always | Contents (`pattern`) or files by name (`name`, `glob`) under any readable path; ignores case; `newer`, `group`, `offset`, `word`; content search skips files over 1 MiB |
-| `edit` | not plan | Change or move a file; hashes from `read`; `edits` for a batch |
-| `write` | not plan | New or empty files; `files` for several |
+| `edit` | always | Change or move a file; hashes from `read`; `edits` for a batch |
+| `write` | always | New or empty files; `files` for several |
 | `run_command` | always | Sandbox; `workdir` / `background` / `job` / `kill`; full log path |
 | `todo` | `/steps`, `/goal`, `--steps`, `--goal` | Replaces the Work todo list; status `pending`, `active`, or `done` |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
@@ -526,7 +627,7 @@ The old names (`read_file`, `list_dir`, `grep`, `glob`, `show_image`, `write_fil
 
 ## Modules
 
-Every optional capability is a **module** compiled into the binary: `search`, `browser`, `lsp`, `jobs`, `task`, `skills`, `mcp`, and `mail`. That list is the built-in module set: curated, switchable, and inside the harness process RSS. `search`, `browser`, and `mail` are off by default so unused tool schemas stay out of the first `prefix_hash`; `mcp` is on, and adds schemas only for servers you configure; the mail roster and `@` messages work without the `mail` module. `summonr modules` lists them with their state; the Modules rows in `/settings` in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`. After the first `prefix_hash` in this process, that write is for the next process only. A workspace `.summonr/config.toml` may turn a module off for that project but cannot turn one on. A new compiled tool is a row on [`module-api.md`](internals/module-api.md) in the same change; if a skill or MCP can do the job, it is not a module. summonr runs no third-party code inside the harness; modules read declarative files under `.summonr` where they need user input.
+Every optional capability is a **module** compiled into the binary: `search`, `browser`, `lsp`, `jobs`, `task`, `skills`, `mcp`, `mail`, and `memory`. That list is the built-in module set: curated, switchable, and inside the harness process RSS. `search`, `browser`, and `mail` are off by default so unused tool schemas stay out of the first `prefix_hash`; `mcp` is on, and adds schemas only for servers you configure; the mail roster and `@` messages work without the `mail` module. `summonr modules` lists them with their state; the Modules rows in `/settings` in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`. After the first `prefix_hash` in this process, that write is for the next process only. A workspace `.summonr/config.toml` may turn a module off for that project but cannot turn one on. A new compiled tool is a row on [`module-api.md`](internals/module-api.md) in the same change; if a skill or MCP can do the job, it is not a module. summonr runs no third-party code inside the harness; modules read declarative files under `.summonr` where they need user input.
 
 The `search` tool is always on and is separate from the `search` module. It honors `.gitignore`, skips build directories, binaries, and files over 1 MiB, and lists matching files when only `glob` is set. With the `search` module on, `web` with `query` reads DuckDuckGo's results page, then Brave's when DuckDuckGo returns nothing, without a key, and `url` fetches one page. `freshness` takes `day`, `week`, or `month`. The engine list is data in `src/web/engines.toml`. Both go through Leyline with a browser identity, so no search API key or self-hosted search service is needed. `[search]` takes `count`, `allowed_domains`, and `excluded_domains`.
 
@@ -563,6 +664,118 @@ summonr mail board [get <key>|set <key> <text>]
 ```
 
 A foreign agent takes part by picking an id: it reads `summonr mail inbox <id>`, and anyone can write to it with `summonr mail send <id> <text>`. Its messages arrive from `cli` unless it writes its own inbox name into replies. `inbox <id> --clear` prints the mail and empties that inbox. It refuses the inbox of a live summonr session, because that session keeps its own read position. A lock file next to each inbox makes a send, a read, and a clear wait for each other, so no message is lost between them.
+
+## Memory
+
+summonr remembers across sessions through two Markdown files that load into every trusted session: user memory at `~/.summonr/memory/MEMORY.md`, and project memory at `~/.summonr/memory/<name>-<hash>/MEMORY.md`, where `<name>` is the repository folder and `<hash>` comes from its first commit so that a rename or clone keeps it. Every worktree and child checkout of one repository shares its project memory; another repository never sees it. Ask the model to remember something and it writes the file with its normal edit tools, one dated entry per fact. It is told to save corrections, stable preferences, and facts the code does not show, never what the repository already records, and to check a remembered fact against the code before it acts on it. Edit or delete the files yourself at any time; `/memory` shows where they are, how full they are, and whether memory is on. Changes apply to new sessions. Project memory follows the repository, not its folder: moving, renaming, or cloning a repository keeps its memory, because the key comes from the repository's first commit (a folder with no commits is keyed by its path).
+
+Each file loads up to `memory_bytes` (25,000 bytes). A longer file loads its newest entries, under a note that tells the model the older part is not shown and to read the whole file before it edits it, so a prune never deletes what the model did not see. Invisible and direction-changing characters are dropped, and secret-shaped values become `[secret]` before the text reaches the model. Memory loads only in a trusted workspace (`--no-trust` skips it), and `memory = false` under `[modules]` turns it off. Under `--sandbox`, the summonr home is protected, so the model reads memory from its prompt but cannot write it.
+
+`summonr sessions --grep TEXT` searches the text of past sessions, newest first, case-insensitively, and prints the session id, its start time, its directory, and each matching line; it exits 1 when nothing matches. The model can run it through `run_command` to recall earlier work.
+
+## Cron
+
+`summonr cron` runs a prompt or a goal on a schedule, headless, in the directory you add it from:
+
+```sh
+summonr cron add nightly --cron "0 3 * * 1-5" --goal "make cargo test pass"
+summonr cron add digest --every 6h -p "summarize what changed in git log since yesterday" --mail summonr-1
+summonr cron add once --at 09:00 -p "check the release notes"
+summonr cron add triage --manual -p "triage the alert in the payload"
+summonr cron install
+```
+
+A schedule is five cron fields (minute, hour, day, month, weekday, with `*`, lists, ranges, steps, and `jan`-`dec` and `sun`-`sat` names; `0` and `7` are Sunday), `@hourly`, `@daily`, `@weekly`, `@monthly`, or `@yearly`, `--every` with `m`, `h`, or `d`, one `--at` time (`HH:MM` for the next such time, `YYYY-MM-DD HH:MM`, or RFC 3339; a time already past is refused), or `--manual` for a job that runs only through `summonr cron run` or the webhook. When both day and weekday are set, either one matches. Times are local, or in `--tz ZONE`. A time that daylight saving skips does not fire that day, and a repeated time fires once. `--every 1d` fires at midnight and `--every 2h` on even hours. An `--at` job pauses itself after its scheduled run; running it by hand or from the webhook does not use it up.
+
+`summonr cron install` asks the OS to run `summonr cron tick` once a minute: a launch agent on macOS, a systemd user timer on Linux, and a scheduled task on Windows. A launch agent runs while you are logged in; when launchd refuses one, as on a Mac with no one signed in, summonr installs a crontab line instead, and cron then needs Full Disk Access for jobs that touch Desktop, Documents or Downloads. A systemd user timer stops at logout unless lingering is on (`loginctl enable-linger`); install says so, and falls back to a crontab line when systemd has no user session. On macOS and Linux it records your `HOME`, `PATH`, and `SUMMONR_HOME`, so jobs load the same user instruction files and tools as the shell you installed from; on Windows, set them as user environment variables. Store keys with `summonr login` rather than in your shell. `uninstall` removes it, and `status` says whether it is installed and when the next job fires. No summonr process stays running.
+
+Each due job starts as its own process with `--json` and a time budget: `--max-secs`, or `cron_budget_secs` (30 minutes). `--endpoint`, `--model`, `--max-tokens`, and `--worktree` pass through. A `--goal` job is done only when the workspace check passes. A job still running when its next time comes is skipped, and that skip is logged. When the machine was asleep, the latest missed time runs once; times older than `cron_catchup_secs` (7 days) are logged as expired. After `cron_fail_pause` failures in a row (3), the job pauses itself; `summonr cron resume NAME` restarts it. A run that cannot start, for example because its directory is gone, counts as a failure. An `--at` time that passed while the machine was off past the catch-up window is logged as expired and the job pauses. A goal cannot start with `-`. A goal runs until the judge agrees it is met; a precise goal ("make `cargo test` pass") ends sooner than an open one.
+
+`--notify failure` (the default) shows a desktop notification when a run fails, `always` after every run, and `never` stays quiet. `--mail SESSION` also sends the result to that session's inbox, and `--chat` to every chat paired with `summonr gateway`. `summonr cron log NAME` lists past runs with their outcome, then the last run's final answer and verdict ("check passed", "check failed", or why it stopped) and the path of its full log; `--raw` shows the raw events. The run itself is a job under `.summonr/jobs` in the job's directory. `cron add` and `cron show` name the endpoint a run uses: the one set with `-e`, or the one summonr would pick now, with the reason. `cron add` warns when that endpoint has no stored key (cron runs do not see your shell's variables), when `--mail` names no live session, and when `--chat` has no paired chat. `summonr cron run NAME` runs a job now. Jobs live in `~/.summonr/cron/jobs.toml`. The model manages jobs with the same commands through `run_command`, except inside a cron run, which cannot add, edit, remove, pause, resume, run, install, or uninstall jobs, or print a token.
+
+## Gateway
+
+`summonr gateway` lets a chat app or a web request start work on your machine. Nothing listens on a public port.
+
+### Telegram
+
+Create a bot first: open [@BotFather](https://t.me/BotFather) in Telegram, send `/newbot`, pick a display name and a username ending in `bot`, and copy the token it replies with (it looks like `123456789:AA...`). Then:
+
+```sh
+summonr gateway setup telegram     # paste the bot token; it is stored, never shown
+summonr gateway telegram           # run the bridge here; Ctrl+C stops it
+```
+
+The bridge runs while its terminal runs. To keep it going after you close the terminal, start it in `tmux` or `screen`, or as a launch agent or systemd user service that runs `summonr gateway telegram --dir PROJECT`. Pair your account before you leave the machine: pairing needs a command on the machine.
+
+The bridge asks Telegram for new messages, so it works behind a router or firewall. The bridge answers only private chats, never groups or channels. The first time you message the bot it answers with a pairing code, and the terminal shows who asked; run `summonr gateway pair CODE` on the machine to allow your Telegram account. Until you pair them, other people who message the bot get only a pairing code they cannot use, and nothing else. Codes expire after `gateway_pair_secs` (an hour). `summonr gateway status` lists paired accounts with their Telegram user ids, and `summonr gateway unpair USER_ID` removes one, with its chat and any messages it queued.
+
+If you lose the phone or a paired account is compromised: stop the bridge (Ctrl+C, or stop its tmux session or service), run `summonr gateway unpair USER_ID`, revoke the token in @BotFather (`/revoke`), and run `summonr gateway setup telegram` with the new token. The old token stops working at once.
+
+Each chat is one summonr session in the directory where the bridge runs (`--dir` picks another; `--endpoint` and `--model` pick the seat). Every message is one turn, and the answer comes back to the chat. Messages sent while a turn runs wait for the next turn, and the bot says how many are ahead. `/new` starts a fresh session, `/status` shows the current one, `/stop` ends the running turn (it stops the turn's commands too, then kills what is left after `gateway_stop_secs`), and `/start` or `/help` shows these commands. A reply says when the check failed or the run broke. The bridge remembers where it stopped reading, so a restart never runs a message twice; a second bridge on the same bot is refused. A chat turn runs like `-p` with your account: it can run any command your policy allows and read or write anything you can, unless you contain it. Anything that needs an approval is denied. Pair only accounts you trust with that directory, start the bridge in a project folder rather than your home, and consider `on = true` under `[sandbox]` in `~/.summonr/config.toml`.
+
+`summonr cron add ... --chat` also sends a job's result to every paired chat. The token is kept where summonr keeps API keys (`~/.summonr/credentials.toml`, or the keychain with `secrets = "keychain"`); `summonr gateway setup telegram` again replaces it. The `gateway_*` settings are limits: override them under `[limits]` in `~/.summonr/config.toml`.
+
+### Webhook
+
+```sh
+TOKEN=$(summonr cron token nightly) # the token on stdout, how to use it on stderr
+summonr gateway webhook            # listens on 127.0.0.1:8765
+curl -X POST -H "Authorization: Bearer $TOKEN" --data @event.json http://127.0.0.1:8765/run/nightly
+```
+
+`POST /run/NAME` with the job's token starts that cron job now and answers `202` with `{"job", "slot", "log"}`: `slot` is the run's start time in Unix seconds, the time `summonr cron log NAME` shows in its first column, and `log` is that command, which shows how it went. A job you only fire from outside is a `--manual` job. A wrong token or an unknown job both answer `401` before any body is read, a second webhook fire within `gateway_fire_secs` (60 seconds) answers `429` (scheduled runs and `cron run` do not count), a body over `gateway_body_bytes` (64 KiB) answers `413`, a chunked body answers `411`, and a request not finished within `gateway_read_secs` answers `408`, another method answers `405`, and a paused job answers `409`. Every error has a JSON body `{"error": ...}`, and `429` carries `Retry-After`. A query string is ignored. Up to 32 requests are served at once, and a client that has not sent its headers within `gateway_head_secs` (2 seconds) is dropped, so slow clients cannot hold up real events. The listener prints one line per request (method, path, status, and job) to stderr, never the token or body, and Ctrl+C, `SIGTERM`, or `SIGHUP` stops the listener. The body is saved in the job's directory under `.summonr/jobs`, the run is told it is untrusted event data, not instructions, and it runs with `--sandbox`, so it cannot write outside its directory or touch the summonr home and memory. Saved bodies are deleted with the run history that refers to them. What the run read from the body stays in that run's log under `.summonr/jobs` and in its session under `~/.summonr/sessions` until those are pruned (`[sessions] retain_days`), so do not send secrets you would not keep in a log. The listener binds loopback only; to take events from another machine, put a tunnel or reverse proxy in front of it. `summonr cron token NAME` again rotates the token, and `summonr cron remove NAME` forgets it.
+
+### GitHub
+
+GitHub Actions is already a listener for issues and comments. This workflow runs summonr when someone with write access comments `/summonr <task>` on an issue, then opens a pull request:
+
+```yaml
+name: summonr
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  run:
+    if: startsWith(github.event.comment.body, '/summonr ') && !github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require write access
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.event.comment.user.login }}
+        run: |
+          level=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$ACTOR/permission" --jq .permission)
+          case "$level" in admin|write) ;; *) echo "$ACTOR has $level access"; exit 1 ;; esac
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: curl -fsSL https://summonr.dev/install.sh | sh
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Work on the request
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          task=$(printf '%s' "$BODY" | perl -0pe 's/<!--.*?-->//gs; s/^\/summonr //')
+          ~/.local/bin/summonr anthropic --goal "$task" --sandbox --json --max-secs 1800 > "$RUNNER_TEMP/summonr.jsonl"
+      - name: Open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh auth setup-git
+          git switch -c "summonr/issue-$ISSUE-$GITHUB_RUN_ID"
+          git add -A
+          git -c user.name=summonr -c user.email=summonr@users.noreply.github.com commit -m "Work on #$ISSUE"
+          git push -u origin HEAD
+          gh pr create --title "Work on #$ISSUE" --body "From the comment on #$ISSUE."
+```
+
+The comment reaches the workflow through an environment variable, never pasted into the script, and hidden HTML comments are stripped before the model sees it. Only people with write or admin access to the repository can start it; the first step asks GitHub for the commenter's permission. The checkout keeps no GitHub token, so the run holds only the model key and its shell is sandboxed; the pull request step signs in after the run ends. The repository needs a `.summonr/check.toml` (for example `check = "cargo test"`): without one, `--goal` stops with exit 3 and no pull request opens, and when the check fails it exits 2. Comments on pull requests are ignored, and each run uses its own branch.
 
 ## Limits
 

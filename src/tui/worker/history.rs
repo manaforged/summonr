@@ -21,6 +21,16 @@ impl Worker {
 
     fn restore(&self) {
         journal(self.loop_.session_path(), &self.ui);
+        if let Ok(progress) = self.loop_.work_progress()
+            && !progress.todos.is_empty()
+        {
+            drop(self.ui.send(Msg::Event(Event::Work {
+                progress: crate::WorkProgress {
+                    reason: None,
+                    ..progress
+                },
+            })));
+        }
         drop(self.ui.send(Msg::Event(Event::Unreported {
             tokens: self.loop_.unreported_tokens(),
         })));
@@ -55,10 +65,8 @@ fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
             start,
             ..
         } => {
-            let text = source
-                .clone()
-                .unwrap_or_else(|| user_text(text).to_string());
-            let message = if *start {
+            let text = user_text(text, source.as_deref()).to_string();
+            let message = if *start || source.is_some() {
                 Msg::User(text)
             } else {
                 Msg::System(text)

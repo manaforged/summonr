@@ -1,5 +1,4 @@
 use std::net::{IpAddr, ToSocketAddrs};
-use std::path::PathBuf;
 
 use leyline::http::StatusCode;
 use leyline::{Response, Session};
@@ -10,8 +9,10 @@ use crate::browser::wall::WALL;
 use crate::error::{Error, Result};
 
 pub(crate) const OUT_MAX: usize = 32 * 1024;
-const PAGE_PREFIX: &str = "page-";
-const PAGE_SUFFIX: &str = ".md";
+
+fn header(url: &Url, body: &str) -> String {
+    format!("web_fetch {url}\n{body}")
+}
 
 impl Search {
     pub(crate) async fn fetch(&self, raw: &str, format: Format) -> Result<String> {
@@ -31,59 +32,25 @@ impl Search {
             .browser()
             .filter(|_| WALL.status(response.status().as_u16()))
         {
-            return Ok(self.output(&url, &browser.render(&url).await?));
+            return Ok(header(&url, &browser.render(&url, format).await?));
         }
         let ctype = response
             .header("content-type")
             .unwrap_or("")
             .to_ascii_lowercase();
         validate(&response, &ctype)?;
-        let bytes = response
-            .bytes()
+        let text = response
+            .text()
             .await
             .map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))?;
-        if bytes.contains(&0) {
+        if text.contains('\0') {
             return Err(Error::Tool("web_fetch: binary body".to_string()));
         }
-        let text = std::str::from_utf8(&bytes)
-            .map_err(|error| Error::Tool(format!("web_fetch: binary body: {error}")))?;
-        let body = page_body(text, &ctype, format);
-        if let Some(browser) = self.browser().filter(|_| WALL.body(&body, text)) {
-            return Ok(self.output(&url, &browser.render(&url).await?));
+        let body = page_body(&text, &ctype, format);
+        if let Some(browser) = self.browser().filter(|_| WALL.body(&body, &text)) {
+            return Ok(header(&url, &browser.render(&url, format).await?));
         }
-        Ok(self.output(&url, &body))
-    }
-
-    pub(super) fn output(&self, url: &Url, body: &str) -> String {
-        let mut out = format!("web_fetch {url}\n");
-        if body.chars().count() <= OUT_MAX {
-            out.push_str(body);
-            return out;
-        }
-        out.extend(body.chars().take(OUT_MAX));
-        out.push_str("\n… truncated");
-        out.push_str(&match self.keep(body) {
-            Ok(path) => format!("\n[full text: {} ({} bytes)]", path.display(), body.len()),
-            Err(error) => format!("\n[full text not kept: {error}]"),
-        });
-        out
-    }
-
-    fn keep(&self, body: &str) -> Result<PathBuf> {
-        let mut dirs = self.logs.lock().map_err(|e| Error::Tool(e.to_string()))?;
-        if dirs.is_empty() {
-            dirs.push(tempfile::tempdir()?);
-        }
-        let dir = dirs
-            .first()
-            .map(tempfile::TempDir::path)
-            .ok_or_else(|| Error::Tool("web_fetch: page directory is unavailable".to_string()))?;
-        Ok(crate::durable::store::keep(
-            dir,
-            PAGE_PREFIX,
-            PAGE_SUFFIX,
-            body.as_bytes(),
-        )?)
+        Ok(header(&url, &body))
     }
 
     async fn request(session: &Session, url: &Url) -> Result<Response> {
@@ -158,6 +125,7 @@ pub(crate) fn check_url(raw: &str) -> Result<Url> {
 pub(super) fn host_blocked(host: &str) -> bool {
     let host = host
         .trim_matches(|c| c == '[' || c == ']')
+        .trim_end_matches('.')
         .to_ascii_lowercase();
     if host.is_empty()
         || host == "localhost"

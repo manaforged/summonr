@@ -108,15 +108,73 @@ fn text_and_reasoning_both_reach_the_caller() {
 }
 
 #[test]
-fn a_content_filter_stop_keeps_the_text() {
-    let mut stream = <Stream as Accumulate>::new("glm-5.3");
-    stream
-        .on(&json!({"choices": [{"delta": {"content": "partial answer"}}]}).to_string())
-        .unwrap();
-    stream
-        .on(&json!({"choices": [{"delta": {}, "finish_reason": "content_filter"}]}).to_string())
-        .expect("a filtered stop is not an error on this wire");
-    let message = stream.finish();
-    assert_eq!(message.content.as_deref(), Some("partial answer"));
-    assert_ne!(message.stop_reason, crate::provider::StopReason::Stop);
+fn finish_reasons_map_to_failures_or_a_length_stop() {
+    use crate::error::ProviderFailureKind::{Http, Server};
+    for (reason, expected) in [
+        ("content_filter", Http),
+        ("sensitive", Http),
+        ("network_error", Server),
+        ("insufficient_system_resource", Server),
+    ] {
+        let error = streamed(&[said(json!("half an ans"), Some(reason))]).unwrap_err();
+        let text = error.to_string();
+        assert!(
+            expected == Server || text.contains(reason),
+            "{reason}: {text}"
+        );
+        assert_eq!(kind(error), expected, "{reason}");
+    }
+    let reply = streamed(&[said(json!("so far"), Some("model_context_window_exceeded"))]).unwrap();
+    assert_eq!(reply.stop_reason, StopReason::Length);
+}
+
+fn streamed(frames: &[serde_json::Value]) -> crate::error::Result<AssistantMessage> {
+    let mut stream = Stream::new("m");
+    for frame in frames {
+        stream.on(&frame.to_string())?;
+    }
+    assert!(stream.finished());
+    Ok(stream.finish())
+}
+
+fn said(content: serde_json::Value, finish: Option<&str>) -> serde_json::Value {
+    json!({"choices": [{"delta": {"content": content}, "finish_reason": finish}]})
+}
+
+fn kind(error: crate::error::Error) -> crate::error::ProviderFailureKind {
+    error.provider_failure().unwrap().kind
+}
+
+#[test]
+fn mistral_thinking_chunks_stream_as_reasoning_then_text() {
+    let reply = streamed(&[
+        said(
+            json!([{"type": "thinking", "thinking": [{"type": "text", "text": "weigh it"}]}]),
+            None,
+        ),
+        said(
+            json!([
+                {"type": "thinking", "thinking": [{"type": "text", "text": " twice"}]},
+                {"type": "text", "text": "Hi"}
+            ]),
+            None,
+        ),
+        said(json!(" there"), Some("stop")),
+    ])
+    .unwrap();
+    assert_eq!(reply.content.as_deref(), Some("Hi there"));
+    assert_eq!(reply.reasoning_content.as_deref(), Some("weigh it twice"));
+}
+
+#[test]
+fn a_refusal_is_an_error_not_an_empty_reply() {
+    let error = streamed(&[
+        json!({"choices": [{"delta": {"refusal": "I can't help with that."}, "finish_reason": null}]}),
+        said(serde_json::Value::Null, Some("stop")),
+    ])
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("I can't help with that."),
+        "{error}"
+    );
 }

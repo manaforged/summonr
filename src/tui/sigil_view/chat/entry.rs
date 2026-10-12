@@ -201,10 +201,13 @@ fn verify(command: &str, passed: bool) -> NodeBuilder {
 }
 
 fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeBuilder {
+    if !canvas::is_window() && caps().is_none_or(|caps| caps.graphics.is_none()) {
+        return wrap(Look::sm(sigil::prelude::Token::Gray11).on(text("[attached image]")));
+    }
     let (width, height) = (source.width() as f32, source.height() as f32);
     let id = source.id();
     let kind = crate::tools::image_type(&bytes).and_then(|media| media.strip_prefix("image/"));
-    let mut picture = container()
+    let picture = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .pointer_up(move |event| {
             if event.button != Some(MouseButton::Left) {
@@ -216,21 +219,20 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
                 drop(std::process::Command::new("open").arg(&path).spawn());
             }
         });
-    if canvas::is_window() || caps().is_some_and(|caps| caps.graphics.is_some()) {
-        picture = picture.child(
+    picture
+        .child(
             image(source)
                 .alt(name.clone())
                 .fit(ObjectFit::Contain)
                 .layout(LayoutStyle::block().width(width).height(height)),
-        );
-    }
-    picture.child(
-        sigil::kernel::text(name)
-            .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
-            .font_size(12.0)
-            .text_color(sigil::prelude::Token::Gray11),
-    )
+        )
+        .child(
+            sigil::kernel::text(name)
+                .nowrap()
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
+        )
 }
 
 pub(super) fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {
@@ -294,20 +296,43 @@ fn patch_path(output: &str) -> Option<String> {
     None
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::tui::sigil_view) enum Fit {
+    Wide,
+    Narrow,
+}
+
+impl Fit {
+    pub(in crate::tui::sigil_view) fn of(cols: u16) -> Self {
+        if super::canvas::inner_cols(usize::from(cols))
+            < usize::from(crate::limits::limits().diff_split_min_cols)
+        {
+            Self::Narrow
+        } else {
+            Self::Wide
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn chat(app: &App) -> Self {
+        if super::canvas::is_window() {
+            Self::Wide
+        } else {
+            Self::of(app.chat_cols())
+        }
+    }
+}
+
 pub(in crate::tui::sigil_view) fn patch_view(
     app: &App,
     patch: impl Into<String>,
     layout: DiffLayout,
-    cols: u16,
+    fit: Fit,
 ) -> DiffBuilder {
     let pick = app.clone();
-    let narrow = !super::canvas::is_window()
-        && super::canvas::inner_cols(usize::from(cols))
-            < usize::from(crate::limits::limits().diff_split_min_cols);
     diff(patch.into())
-        .view(match layout {
-            DiffLayout::Split if !narrow => DiffView::Split,
-            DiffLayout::Split | DiffLayout::Unified => DiffView::Unified,
+        .view(match (layout, fit) {
+            (DiffLayout::Split, Fit::Wide) => DiffView::Split,
+            (DiffLayout::Split, Fit::Narrow) | (DiffLayout::Unified, _) => DiffView::Unified,
         })
         .change(move |choice| {
             pick.set_diff_layout(match choice {

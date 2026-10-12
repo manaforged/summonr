@@ -22,9 +22,13 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let hotkeys = app.model.peek().prefs.hotkeys.clone();
     Dialog::new(Size::Normal, "Hotkeys", Hints::new())
         .live_hints(move || {
-            if state.hotkeys.recording.get() {
+            if state.hotkeys.armed.get() {
                 Hints::new()
-                    .key(Key::Fixed("ctrl+letter"), "bind")
+                    .key(Key::Fixed("letter"), "bind")
+                    .key(Key::Esc, "cancel")
+            } else if state.hotkeys.recording.get() {
+                Hints::new()
+                    .key(Key::Fixed("ctrl+x, then a letter"), "bind")
                     .key(Key::Esc, "cancel")
             } else {
                 Hints::new()
@@ -45,6 +49,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     let selected = paint.hotkeys.sel.get().min(Hotkey::ALL.len() - 1);
                     let visible = canvas::overlay_shown(Hotkey::ALL.len(), paint.viewport.get().1);
                     let recording = paint.hotkeys.recording.get();
+                    let armed = paint.hotkeys.armed.get();
                     let note = paint.hotkeys.note.get();
                     let rows: Vec<(Hotkey, String)> = {
                         let model = paint.model.get();
@@ -53,7 +58,11 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                             .copied()
                             .map(|action| {
                                 let binding = if recording && action == Hotkey::ALL[selected] {
-                                    "press ctrl+letter".to_string()
+                                    if armed {
+                                        "press a letter".to_string()
+                                    } else {
+                                        "press ctrl+letter or ctrl+x, then a letter".to_string()
+                                    }
                                 } else {
                                     model.prefs.hotkeys.label(action)
                                 };
@@ -98,6 +107,7 @@ fn entry(
     )
     .pointer_down(move |event| {
         choose.hotkeys.recording.set(false);
+        choose.hotkeys.armed.set(false);
         choose.hotkeys.sel.set(index);
         choose.edit_hotkey();
         event.stop_propagation();

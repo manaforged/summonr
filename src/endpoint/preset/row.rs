@@ -43,6 +43,8 @@ pub(super) struct Row {
     #[serde(default)]
     prompt_cache_key: bool,
     #[serde(default)]
+    assistant_after_tool: bool,
+    #[serde(default)]
     cache_ttl: Option<CacheTtl>,
     #[serde(default)]
     cache_header: Option<String>,
@@ -203,6 +205,7 @@ impl Row {
             context_window: self.context_window,
             opencode: self.opencode,
             prompt_cache_key: self.prompt_cache_key,
+            assistant_after_tool: self.assistant_after_tool,
             cache_ttl: self.cache_ttl,
             cache_header: self.cache_header,
             cli_token,

@@ -304,24 +304,25 @@ fn build_overrides(
     if glob.is_none() && exclude.is_none() {
         return Ok(None);
     }
+    let invalid = |what: &str, error: ignore::Error| {
+        Error::Tool(format!("search {what} is invalid: {error}"))
+    };
     let mut builder = OverrideBuilder::new(base);
     builder
         .case_insensitive(fold)
-        .map_err(|error| Error::Tool(format!("search glob is invalid: {error}")))?;
+        .map_err(|error| invalid("glob", error))?;
     if let Some(glob) = glob {
-        builder
-            .add(glob)
-            .map_err(|error| Error::Tool(format!("search glob is invalid: {error}")))?;
+        builder.add(glob).map_err(|error| invalid("glob", error))?;
     }
     if let Some(exclude) = exclude {
         builder
             .add(&format!("!{exclude}"))
-            .map_err(|error| Error::Tool(format!("search exclude is invalid: {error}")))?;
+            .map_err(|error| invalid("exclude", error))?;
     }
     builder
         .build()
         .map(Some)
-        .map_err(|error| Error::Tool(format!("search glob is invalid: {error}")))
+        .map_err(|error| invalid("glob", error))
 }
 
 mod filter;

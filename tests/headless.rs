@@ -32,6 +32,10 @@ fn provider(reply: Option<&'static str>) -> u16 {
 }
 
 fn start(home: &Path, port: u16) -> Child {
+    launch(home, port, &["-p", "--json", "hi"])
+}
+
+fn launch(home: &Path, port: u16, args: &[&str]) -> Child {
     std::fs::write(
         home.join("config.toml"),
         format!(
@@ -40,7 +44,8 @@ fn start(home: &Path, port: u16) -> Child {
     )
     .unwrap();
     Command::new(env!("CARGO_BIN_EXE_summonr"))
-        .args(["-e", "local", "-p", "--json", "hi"])
+        .args(["-e", "local"])
+        .args(args)
         .current_dir(home)
         .env("HOME", home)
         .env("USERPROFILE", home)
@@ -118,4 +123,73 @@ fn an_interrupted_json_run_says_so_and_leaves_an_exit_record() {
         )),
     ));
     assert!(!next.contains("without an exit record"), "{next}");
+}
+
+fn request_head(stream: &std::net::TcpStream) -> String {
+    use std::io::BufRead;
+    let Ok(clone) = stream.try_clone() else {
+        return String::new();
+    };
+    let mut reader = std::io::BufReader::new(clone);
+    let (mut head, mut length) = (String::new(), 0);
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+            break;
+        }
+        if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            length = value.trim().parse().unwrap_or(0);
+        }
+        head.push_str(&line);
+    }
+    let mut body = vec![0; length];
+    drop(reader.read_exact(&mut body));
+    head
+}
+
+fn streaming(chunks: &'static [&'static str]) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let head = request_head(&stream);
+            let path = head.split_whitespace().nth(1).unwrap_or("");
+            let (kind, body) = if path.ends_with("/chat/completions") {
+                let events: String = chunks
+                    .iter()
+                    .map(|chunk| format!("data: {chunk}\n\n"))
+                    .chain(std::iter::once("data: [DONE]\n\n".to_owned()))
+                    .collect();
+                ("text/event-stream", events)
+            } else {
+                ("application/json", "{}".to_owned())
+            };
+            drop(write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: {kind}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            ));
+        }
+    });
+    port
+}
+
+#[test]
+fn a_text_run_keeps_stdout_to_the_answer_and_marks_reasoning_only_before_it() {
+    let home = tempfile::tempdir().unwrap();
+    let port = streaming(&[
+        r#"{"choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"plan"}}]}"#,
+        r#"{"choices":[{"index":0,"delta":{"content":"pytest runs "}}]}"#,
+        r#"{"choices":[{"index":0,"delta":{"reasoning_content":"more"}}]}"#,
+        r#"{"choices":[{"index":0,"delta":{"content":"tests"},"finish_reason":"stop"}]}"#,
+    ]);
+    let output = launch(home.path(), port, &["-p", "hi"])
+        .wait_with_output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert_eq!(stdout.trim(), "pytest runs tests", "{stderr}");
+    assert_eq!(stderr.matches("… reasoning").count(), 1, "{stderr}");
+    assert!(stderr.contains("Turn receipt"), "{stderr}");
 }

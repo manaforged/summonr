@@ -10,6 +10,7 @@ use crate::tools::{ToolOutput, ToolRegistry};
 const SNIFF_CHARS: usize = 24;
 const SPILL_PREFIX: &str = "output-";
 const SPILL_SUFFIX: &str = ".log";
+const SPILL_HOME: &str = "spill";
 
 impl ToolRegistry {
     pub(crate) fn fit_output(&self, result: Result<ToolOutput>) -> Result<ToolOutput> {
@@ -45,6 +46,11 @@ impl ToolRegistry {
     }
 
     pub(super) fn spill_file(&self, prefix: &str, bytes: &[u8]) -> Result<PathBuf> {
+        if self.standalone {
+            let dir = crate::prompt::summonr_home()?.join(SPILL_HOME);
+            std::fs::create_dir_all(&dir)?;
+            return Ok(store::keep(&dir, prefix, SPILL_SUFFIX, bytes)?);
+        }
         Ok(store::keep(self.spill_dir()?, prefix, SPILL_SUFFIX, bytes)?)
     }
 

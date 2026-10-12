@@ -124,8 +124,8 @@ fn image_paste_shortcuts_queue_the_clipboard_image_during_a_turn() {
             app.update(Msg::Clipboard(Ok(png.get_ref().clone())));
             assert_eq!(app.attached.peek(), 1);
             app.submit();
-            let Cmd::Queue(input) = sent.try_recv().expect("queue the image-only input") else {
-                panic!("the image was not queued during the turn");
+            let Cmd::Steer(input) = sent.try_recv().expect("send the image-only input") else {
+                panic!("the image was not sent into the turn");
             };
             assert_eq!(input.images.len(), 1);
             assert_eq!(input.images[0].media_type, "image/png");

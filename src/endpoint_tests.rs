@@ -217,6 +217,9 @@ fn a_short_name_gets_a_hint_only_for_a_near_miss() {
     assert_eq!(closest("qwn", &names, super::Near::Typo), Some("qwen"));
     let lab = vec!["lab".to_string()];
     assert_eq!(closest("lba", &lab, super::Near::Typo), Some("lab"));
+    let mine = vec!["zai".to_string(), "mylab".to_string()];
+    assert_eq!(closest("lab", &mine, super::Near::Typo), Some("mylab"));
+    assert_eq!(closest("lab", &mine, super::Near::Relative), None);
 }
 
 #[test]

@@ -146,7 +146,7 @@ impl Hub {
             .ok_or_else(|| Error::Tool(format!("unknown tool `{alias}`")))?;
         let gate = Gate { policy, sandbox };
         let called = link.call_tool(item, arguments, &gate, report).await?;
-        let mut shown = output(called.value, !called.readonly);
+        let mut shown = output(called.value, true);
         if called.changed {
             shown.text.push_str(&format!(
                 "\n[mcp {} changed its tool list; the new list applies from the next session]",

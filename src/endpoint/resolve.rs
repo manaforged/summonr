@@ -117,6 +117,7 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
         keep_reasoning: std::env::var_os("SUMMONR_KEEP_REASONING").is_some(),
         opencode: hosted(base).is_some_and(|preset| preset.opencode),
         prompt_cache_key: hosted(base).is_some_and(|preset| preset.prompt_cache_key),
+        assistant_after_tool: hosted(base).is_some_and(|preset| preset.assistant_after_tool),
         cache_ttl: hosted(base)
             .and_then(|preset| preset.cache_ttl)
             .unwrap_or(crate::limits::limits().cache_ttl),
@@ -144,9 +145,12 @@ fn unknown(chosen: &str) -> Error {
     ))
 }
 
+fn config_shown() -> String {
+    config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path))
+}
+
 fn no_seat() -> String {
-    let config =
-        config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path));
+    let config = config_shown();
     format!(
         "no provider is set up yet.\n  Fix: `summonr login NAME`, or `export ANTHROPIC_API_KEY=…`, or a local [endpoint.NAME] base_url in {config}.\n  `summonr login` lists every provider and its status."
     )
@@ -170,6 +174,13 @@ pub fn closest<'a>(name: &str, names: &'a [String], near: Near) -> Option<&'a st
                 <= length.saturating_mul(crate::limits::limits().closest_percent)
                 || (typo && *cost <= 1)
         })
+        .chain(
+            names
+                .iter()
+                // complexity: bounded by one endpoint name; this is a substring check, not a list scan
+                .filter(|other| typo && other.contains(name))
+                .map(|other| (other.chars().count() - length, other.as_str())),
+        )
         .min()
         .map(|(_, other)| other)
 }
@@ -227,6 +238,7 @@ pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         keep_reasoning: row.keep_reasoning.unwrap_or(false),
         opencode: preset.is_some_and(|preset| preset.opencode),
         prompt_cache_key: preset.is_some_and(|preset| preset.prompt_cache_key),
+        assistant_after_tool: preset.is_some_and(|preset| preset.assistant_after_tool),
         cache_ttl: row
             .cache_ttl
             .or_else(|| preset.and_then(|preset| preset.cache_ttl))

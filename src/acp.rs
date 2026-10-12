@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, Stdin};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -111,21 +110,9 @@ where
         let out = self.out.clone();
         let tag = tag.clone();
         move |text: &str| {
-            let chunk = Chunk {
-                jsonrpc: "2.0",
-                method: "session/update",
-                params: ChunkParams {
-                    session_id: tag.get().map_or("", String::as_str),
-                    update: ChunkUpdate {
-                        content: ChunkText { text, kind: "text" },
-                        session_update: kind,
-                    },
-                },
-            };
-            if let Ok(mut line) = serde_json::to_string(&chunk) {
-                line.push('\n');
-                drop(out.send(line));
-            }
+            let session = tag.get().map_or("", String::as_str);
+            let content = json!({"sessionUpdate": kind, "content": {"type": "text", "text": text}});
+            drop(out.send(frame_line(&update(session, content))));
         }
     }
 
@@ -227,6 +214,14 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
             "status": "in_progress",
             "content": [{"type": "content", "content": {"type": "text", "text": crate::tools::progress_text(*progress, *total, message.as_deref())}}],
         }),
+        Event::Work { progress } => json!({
+            "sessionUpdate": "plan",
+            "entries": progress
+                .todos
+                .iter()
+                .map(|todo| json!({"content": todo.text, "priority": "medium", "status": todo.status.acp()}))
+                .collect::<Vec<_>>(),
+        }),
         Event::Note { text } | Event::Aborted { reason: text, .. } => json!({
             "sessionUpdate": "agent_thought_chunk",
             "content": {"type": "text", "text": text},
@@ -242,7 +237,6 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
         | Event::Elicit { .. }
         | Event::Verify { .. }
         | Event::Receipt { .. }
-        | Event::Work { .. }
         | Event::Spawned { .. }
         | Event::Session { .. }
         | Event::Child { .. } => return,
@@ -252,34 +246,6 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
 
 fn frame_line(frame: &Value) -> String {
     format!("{frame}\n")
-}
-
-#[derive(Serialize)]
-struct Chunk<'a> {
-    jsonrpc: &'static str,
-    method: &'static str,
-    params: ChunkParams<'a>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ChunkParams<'a> {
-    session_id: &'a str,
-    update: ChunkUpdate<'a>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ChunkUpdate<'a> {
-    content: ChunkText<'a>,
-    session_update: &'static str,
-}
-
-#[derive(Serialize)]
-struct ChunkText<'a> {
-    text: &'a str,
-    #[serde(rename = "type")]
-    kind: &'static str,
 }
 
 fn update(session: &str, content: Value) -> Value {

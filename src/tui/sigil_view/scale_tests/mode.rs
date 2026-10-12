@@ -66,6 +66,12 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
                 .frame(&mut host, &mut router, [], (100, 30))
                 .expect("focus composer");
         }
+        let shown = screen
+            .frame(&mut host, &mut router, [], (100, 30))
+            .expect("auto mode")
+            .text();
+        assert!(shown.contains("● auto"), "{shown}");
+        assert!(!shown.contains("auto approval"), "{shown}");
         let tab = sigil::terminal::map_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
             .expect("Tab");
         screen
@@ -94,7 +100,8 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
             .frame(&mut host, &mut router, [], (100, 30))
             .expect("approval mode")
             .text();
-        assert!(shown.contains("auto · approval"), "{shown}");
+        assert!(shown.contains("● approval"), "{shown}");
+        assert!(!shown.contains("auto · approval"), "{shown}");
         assert!(!shown.contains("auto approval"), "{shown}");
         app.replace("/sett".to_owned());
         let tab = sigil::terminal::map_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))

@@ -160,6 +160,8 @@ pub(crate) struct Work {
     pub(crate) jobs: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) check: Option<CheckVerdict>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) todos: Vec<crate::tools::Todo>,
 }
 
 impl Work {
@@ -184,6 +186,7 @@ impl Work {
             touched: BTreeSet::new(),
             jobs: Vec::new(),
             check: None,
+            todos: Vec::new(),
         }
     }
 
@@ -221,34 +224,8 @@ impl Work {
         });
     }
 
-    pub(crate) fn apply_todos(&mut self, items: &[(String, StepState)]) {
-        if items.is_empty() {
-            return;
-        }
-        let mut steps = Vec::new();
-        for (title, state) in items {
-            let mut step = self
-                .steps
-                .iter()
-                .find(|step| step.title == *title)
-                .cloned()
-                .unwrap_or_else(|| Step::new(title, None, Vec::new()));
-            step.state = *state;
-            steps.push(step);
-        }
-        self.steps = steps;
-        if self.policy == Policy::Single {
-            self.policy = Policy::Steps;
-        }
-        self.active = self
-            .steps
-            .iter()
-            .position(|step| step.state == StepState::Active)
-            .or_else(|| {
-                self.steps
-                    .iter()
-                    .position(|step| step.state == StepState::Pending)
-            });
+    pub(crate) fn apply_todos(&mut self, todos: Vec<crate::tools::Todo>) {
+        self.todos = todos;
     }
 
     pub(crate) fn progress(&self) -> WorkProgress {
@@ -286,6 +263,7 @@ impl Work {
             rounds: step.map_or(0, |step| step.rounds),
             reason,
             ledger: self.ledger(),
+            todos: self.todos.clone(),
             touched: self.touched.iter().cloned().collect(),
         }
     }
@@ -317,12 +295,38 @@ impl Work {
         store::write(path, serde_json::to_vec(self)?)
     }
 
+    fn repair_steps(&mut self) {
+        if self.policy != Policy::Steps || self.checks.is_empty() {
+            return;
+        }
+        let planned = self
+            .plan
+            .as_deref()
+            .and_then(|plan| crate::steps::parse(plan).ok())
+            .is_some_and(|parsed| {
+                parsed
+                    .iter()
+                    .map(|step| step.text.as_str())
+                    .eq(self.steps.iter().map(|step| step.title.as_str()))
+            });
+        if planned {
+            return;
+        }
+        let all: Vec<usize> = (0..self.checks.len()).collect();
+        for step in &mut self.steps {
+            if step.checks.is_empty() {
+                step.checks = all.clone();
+            }
+        }
+    }
+
     pub(crate) fn load(path: &Path) -> io::Result<Option<Self>> {
         let mut work: Self = match std::fs::read(path) {
             Ok(bytes) => serde_json::from_slice(&bytes)?,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
         };
+        work.repair_steps();
         let trees: Trees<Snapshot> = match std::fs::read(path.with_extension(TREES)) {
             Ok(bytes) => match serde_json::from_slice(&bytes) {
                 Ok(trees) => trees,

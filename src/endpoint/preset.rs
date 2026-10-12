@@ -20,6 +20,7 @@ pub(super) struct Preset {
     pub(super) context_window: Option<u32>,
     pub(super) opencode: bool,
     pub(super) prompt_cache_key: bool,
+    pub(super) assistant_after_tool: bool,
     pub(super) cache_ttl: Option<CacheTtl>,
     pub(super) cache_header: Option<String>,
     pub(super) cli_token: Option<CliToken>,

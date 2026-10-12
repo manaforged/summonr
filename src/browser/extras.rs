@@ -19,7 +19,7 @@ pub(super) async fn run(
         Extra::Snapshot { .. } | Extra::Read { .. } | Extra::Screenshot { .. }
     ) && let Some(blocked) = guard(page).await?
     {
-        return Ok(blocked);
+        return Err(crate::error::Error::Tool(blocked));
     }
     match extra {
         Extra::Snapshot {
@@ -58,9 +58,12 @@ pub(super) async fn act(
     report: charm::ActReport,
     out_max: usize,
 ) -> Result<String> {
+    if let Some(blocked) = guard(page).await? {
+        return Err(crate::error::Error::Tool(blocked));
+    }
     let outcome = page.act(action, report).await.map_err(fail)?;
     if let Some(blocked) = guard(page).await? {
-        return Ok(blocked);
+        return Err(crate::error::Error::Tool(blocked));
     }
     Ok(report::outcome(&outcome, out_max))
 }

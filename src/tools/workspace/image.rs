@@ -35,12 +35,15 @@ impl ToolRegistry {
     ) -> Result<ToolOutput> {
         if self.model_images {
             return Ok(ToolOutput {
-                images: vec![Image::encode(media, bytes)],
+                images: vec![Image::fit(bytes)?],
                 ..ToolOutput::ok(format!("{path} ({media}, {width}x{height}) is attached"))
             });
         }
         if let Some(endpoint) = &self.vision {
-            return match self.describe_image(endpoint, media, bytes) {
+            let images = [Image::fit(bytes)?];
+            let described =
+                tokio::runtime::Handle::current().block_on(self.narrate_images(endpoint, &images));
+            return match described {
                 Ok(text) => Ok(ToolOutput::ok(format!(
                     "{path} ({media}, {width}x{height}) described by {}: {text}",
                     endpoint.name
@@ -56,16 +59,45 @@ impl ToolRegistry {
         )))
     }
 
-    fn describe_image(
+    pub(crate) async fn fold_unseen_images(&self, input: &mut UserInput) -> Result<()> {
+        if self.model_images || input.images.is_empty() {
+            return Ok(());
+        }
+        let count = input.images.len();
+        let note = match &self.vision {
+            Some(endpoint) => match self.narrate_images(endpoint, &input.images).await {
+                Ok(text) => format!(
+                    "[attached {count} image(s), described by {}: {}]",
+                    endpoint.name,
+                    text.trim()
+                ),
+                Err(error) => format!(
+                    "[attached {count} image(s); vision endpoint `{}` failed: {error}; the model cannot see them]",
+                    endpoint.name
+                ),
+            },
+            None => format!(
+                "[attached {count} image(s); the active model does not accept image input, so they were not sent]"
+            ),
+        };
+        input.text = if input.text.trim().is_empty() {
+            note
+        } else {
+            format!("{}\n\n{note}", input.text)
+        };
+        input.images.clear();
+        Ok(())
+    }
+
+    async fn narrate_images(
         &self,
         endpoint: &crate::endpoint::Endpoint,
-        media: &str,
-        bytes: &[u8],
+        images: &[Image],
     ) -> Result<String> {
         let client = crate::provider::Client::connect(endpoint)?;
         let messages = [Message::user(UserInput {
             text: "Describe this image so an agent that cannot see it can act on it. State what it shows, name any text it contains, and be concise.".to_string(),
-            images: vec![Image::encode(media, bytes)],
+            images: images.to_vec(),
             source: None,
         })];
         let request = CompletionRequest::new(
@@ -77,8 +109,7 @@ impl ToolRegistry {
             false,
             None,
         );
-        let reply = tokio::runtime::Handle::current()
-            .block_on(async { client.complete(&request).await })?;
+        let reply = client.complete(&request).await?;
         Ok(reply.content.unwrap_or_default())
     }
 }
@@ -102,14 +133,14 @@ pub(crate) fn attach(workspace: &Path, line: &str) -> Result<UserInput> {
             let Some(bytes) = read_attachment(workspace, word, path)? else {
                 continue;
             };
-            if let Some(media_type) = image_type(&bytes) {
+            if image_type(&bytes).is_some() {
                 image_bytes = image_bytes.saturating_add(bytes.len());
                 if image_bytes > IMAGES_MAX_BYTES {
                     return Err(Error::Tool(format!(
                         "attached images are larger than {IMAGES_MAX_BYTES} bytes"
                     )));
                 }
-                images.push(Image::encode(media_type, &bytes));
+                images.push(Image::fit(&bytes)?);
             } else {
                 let text = String::from_utf8(bytes).map_err(|error| {
                     Error::Tool(format!(
@@ -193,3 +224,7 @@ pub(crate) fn image_type(bytes: &[u8]) -> Option<&'static str> {
         None
     }
 }
+
+#[cfg(test)]
+#[path = "image_tests.rs"]
+mod image_tests;

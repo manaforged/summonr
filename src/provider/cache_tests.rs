@@ -169,3 +169,108 @@ fn grok_routes_every_request_to_its_cache_with_the_prefix_hash() {
     let want = format!("x-grok-conv-id: {}", request.prefix_hash()).to_ascii_lowercase();
     assert!(headers.contains(&want), "{headers}");
 }
+
+#[test]
+fn kimi_k3_sends_back_its_reasoning_after_a_tool_call() {
+    for model in ["k3", "kimi-k3", "kimi-k2.7-code"] {
+        let kimi = endpoint("kimi", model);
+        let mut messages = tool_round();
+        messages[2].reasoning = Some("read the file first".to_string());
+        let sent = body(&kimi, &messages, None);
+        assert_eq!(
+            sent["messages"][2]["reasoning_content"], "read the file first",
+            "{model}: {sent}"
+        );
+    }
+}
+
+#[test]
+fn effort_reaches_cohere_and_groq_only_in_values_they_accept() {
+    let messages = [Message::user("hi")];
+    let cohere = body(
+        &endpoint("cohere", "north-mini-code-1-0"),
+        &messages,
+        Some(Effort::Low),
+    );
+    assert_eq!(cohere["reasoning_effort"], "high", "{cohere}");
+    let off = body(
+        &endpoint("cohere", "north-mini-code-1-0"),
+        &messages,
+        Some(Effort::None),
+    );
+    assert_eq!(off["reasoning_effort"], "none", "{off}");
+    let llama = body(
+        &endpoint("groq", "llama-3.3-70b-versatile"),
+        &messages,
+        Some(Effort::High),
+    );
+    assert!(llama.get("reasoning_effort").is_none(), "{llama}");
+    let oss = body(
+        &endpoint("groq", "openai/gpt-oss-120b"),
+        &messages,
+        Some(Effort::High),
+    );
+    assert_eq!(oss["reasoning_effort"], "high", "{oss}");
+}
+
+#[test]
+fn a_steer_after_a_tool_result_reaches_every_endpoint_after_that_result() {
+    let mut messages = tool_round();
+    messages.push(Message::user("also check the docs"));
+    let mut checked = 0;
+    for name in crate::endpoint::names().unwrap() {
+        let Ok(endpoint) = crate::endpoint::resolve(Some(&name), None, crate::Need::Config) else {
+            continue;
+        };
+        let request = CompletionRequest::new(
+            "s".to_string(),
+            endpoint.model.clone(),
+            &messages,
+            &[],
+            Some(16_000),
+            false,
+            None,
+        );
+        let Ok(body) =
+            Client::connect(&endpoint).and_then(|client| client.request_body(&request, false))
+        else {
+            continue;
+        };
+        let text = body.to_string();
+        let result = text.find("file text");
+        let steer = text.find("also check the docs");
+        assert!(
+            matches!((result, steer), (Some(result), Some(steer)) if result < steer),
+            "{name}: {text}"
+        );
+        assert_eq!(
+            text.matches("also check the docs").count(),
+            1,
+            "{name}: {text}"
+        );
+        checked += 1;
+    }
+    assert!(checked >= 20, "only {checked} endpoints built a request");
+}
+
+#[test]
+fn mistral_gets_an_assistant_turn_between_a_tool_result_and_a_steer() {
+    let mut messages = tool_round();
+    messages.push(Message::user("also check the docs"));
+    let roles = |name: &str, model: &str| -> Vec<String> {
+        body(&endpoint(name, model), &messages, None)["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|message| message["role"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(
+        roles("mistral", "devstral-medium-latest"),
+        ["system", "user", "assistant", "tool", "assistant", "user"]
+    );
+    assert_eq!(
+        roles("zai", "glm-5.3-flash"),
+        ["system", "user", "assistant", "tool", "user"]
+    );
+}

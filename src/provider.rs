@@ -20,6 +20,7 @@ use crate::endpoint::Wire;
 pub(crate) use summonr_auth::Auth;
 
 mod client;
+mod fit;
 mod message;
 mod reasoning;
 mod request;
@@ -49,6 +50,10 @@ pub trait Provider: Send + Sync + 'static {
         false
     }
 
+    fn takes_images(&self) -> bool {
+        false
+    }
+
     fn supports_children(&self) -> bool {
         false
     }
@@ -59,7 +64,7 @@ type DeltaFn = Arc<dyn Fn(&str) + Send + Sync>;
 pub use client::Client;
 pub(crate) use client::input_cap;
 #[cfg(test)]
-pub(crate) use client::response_failure;
+pub(crate) use client::{response_failure, unreachable_message};
 #[cfg(test)]
 pub(crate) use message::Checked;
 pub(crate) use message::{
@@ -90,3 +95,7 @@ pub(crate) mod scripted;
 #[cfg(test)]
 #[path = "provider/stall_tests.rs"]
 mod stall_tests;
+
+#[cfg(test)]
+#[path = "provider/image_tests.rs"]
+mod image_tests;

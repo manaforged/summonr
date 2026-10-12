@@ -125,6 +125,10 @@ impl SessionDriver {
         if self.turn.is_some() {
             return Err(DriverError::Busy);
         }
+        if let Some(work) = self.work.as_mut().filter(|work| !work.todos.is_empty()) {
+            work.todos.clear();
+            self.checkpoint()?;
+        }
         self.append(Line::Clear)
     }
 

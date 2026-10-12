@@ -206,7 +206,7 @@ impl Tree {
         Ok(())
     }
 
-    pub(crate) fn unchanged(&self) -> Result<bool> {
+    pub fn unchanged(&self) -> Result<bool> {
         if !self.path.exists() {
             return Ok(true);
         }

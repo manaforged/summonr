@@ -56,6 +56,7 @@ pub struct Client {
     pub(super) prompt_cache_key: bool,
     pub(super) cache_ttl: crate::endpoint::CacheTtl,
     pub(super) cache_header: Option<String>,
+    pub(super) agent: Option<agent::Seat>,
     pub(super) wire: Wire,
     pub(super) reasoning: Reasoning,
     pub(super) idle: Option<Duration>,
@@ -119,6 +120,9 @@ impl Client {
         client.name.clone_from(&endpoint.name);
         client.cache_ttl = endpoint.cache_ttl;
         client.cache_header.clone_from(&endpoint.cache_header);
+        if endpoint.wire == Wire::AgentSdk {
+            client.agent = Some(agent::Seat::new(base, &endpoint.env));
+        }
         client.reasoning.clone_from(&endpoint.reasoning);
         Ok(client)
     }
@@ -201,6 +205,11 @@ impl Client {
             Wire::Decisions => {
                 return Err(Error::Config(
                     "a classify endpoint does not run sessions".to_string(),
+                ));
+            }
+            Wire::AgentSdk => {
+                return Err(Error::Config(
+                    "a Claude Code seat sends no HTTP request".to_string(),
                 ));
             }
         };
@@ -348,7 +357,12 @@ impl Provider for Client {
         &'a self,
         request: &'a CompletionRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-        Box::pin(async move { self.stream(request, &mut Partial::default()).await })
+        Box::pin(async move {
+            if self.wire == Wire::AgentSdk {
+                return self.complete_agent(request).await;
+            }
+            self.stream(request, &mut Partial::default()).await
+        })
     }
 
     fn stream<'a>(

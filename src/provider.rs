@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
+mod agent;
 mod capture;
 pub(crate) mod stream;
 pub(crate) mod think;

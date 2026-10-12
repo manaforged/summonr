@@ -209,6 +209,21 @@ off = true
 wire = "anthropic"
 
 [[preset]]
+name = "claude"
+label = "Claude plan through Claude Code"
+base_url = "claude"
+model = "default"
+default_key = "claude-code"
+missing = "install Claude Code and run `claude auth login`"
+opencode_ids = ["anthropic"]
+plan = true
+wire = "agent-sdk"
+
+[preset.reasoning]
+levels = ["low", "medium", "high", "xhigh", "max"]
+off = "unsupported"
+
+[[preset]]
 name = "gemini"
 base_url = "https://generativelanguage.googleapis.com/v1beta/"
 model = "gemini-2.5-flash"

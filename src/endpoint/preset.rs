@@ -147,6 +147,7 @@ fn wire(value: &str) -> std::result::Result<Wire, String> {
         "responses" => Ok(Wire::Responses),
         "anthropic" => Ok(Wire::Anthropic),
         "gemini" => Ok(Wire::Gemini),
+        "agent-sdk" => Ok(Wire::AgentSdk),
         other => Err(format!("unknown wire `{other}`")),
     }
 }

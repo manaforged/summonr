@@ -255,6 +255,12 @@ impl Client {
 
     pub async fn discover(endpoint: &crate::Endpoint) -> Result<Vec<Model>> {
         let client = Self::connect(endpoint)?;
+        if endpoint.wire == Wire::AgentSdk {
+            let mut models = client.agent_models().await?;
+            crate::catalog::enrich(&endpoint.name, None, &mut models);
+            crate::catalog::remember(&endpoint.name, models.clone())?;
+            return Ok(models);
+        }
         let covered = match crate::endpoint::auth_info(&endpoint.name) {
             _ if endpoint.oauth.is_some() => Cost::Plan,
             Ok(info) if info.plan() => Cost::Plan,
@@ -353,7 +359,7 @@ impl Client {
         let field = match self.wire {
             Wire::Anthropic => Some("max_input_tokens"),
             Wire::Gemini => Some("inputTokenLimit"),
-            Wire::Completions | Wire::Responses | Wire::Decisions => None,
+            Wire::Completions | Wire::Responses | Wire::Decisions | Wire::AgentSdk => None,
         };
         if let Some(field) = field {
             let mut url = url::Url::parse(&format!("{base}/models/")).ok()?;

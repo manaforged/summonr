@@ -97,6 +97,7 @@ pub enum Wire {
     Anthropic,
     Gemini,
     Decisions,
+    AgentSdk,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]

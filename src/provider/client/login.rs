@@ -68,6 +68,7 @@ impl Client {
             prompt_cache_key: opts.prompt_cache_key,
             cache_ttl: crate::limits::limits().cache_ttl,
             cache_header: None,
+            agent: None,
             wire: opts.wire,
             reasoning: Reasoning::default(),
             idle: opts.idle_timeout,

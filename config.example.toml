@@ -1,12 +1,11 @@
 default = "anthropic"
 
-[endpoint.zai]
-base_url = "https://api.z.ai/api/coding/paas/v4"
-model = "glm-5.3-flash"
+[provider.zai]
+region = "cn"
+access = "plan"
 
 [endpoint.zai-cn]
-base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
-model = "glm-5.3-flash"
+model = "glm-5.3"
 
 [endpoint.local]
 base_url = "http://127.0.0.1:8080/v1"

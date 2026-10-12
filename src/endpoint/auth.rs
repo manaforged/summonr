@@ -2,10 +2,16 @@ use super::resolve::*;
 use super::*;
 
 pub fn auth_info(name: &str) -> Result<AuthInfo> {
+    let file = config::file()?;
+    let route = super::route::pick(&file, name);
+    let name = route.as_str();
     let endpoint = resolve(Some(name), None, Need::Config)?;
     let offered = offered_login(name, &endpoint);
+    let provider = super::route::provider_of(name).to_string();
     let mut info = AuthInfo {
         name: name.to_string(),
+        routes: super::route::options(&provider),
+        provider,
         flow: endpoint.oauth.as_ref().map(flow).unwrap_or_default(),
         login: offered.as_ref().map(flow).unwrap_or_default(),
         key: endpoint.takes_key() || (preset(name).is_none() && offered.is_none()),
@@ -102,9 +108,10 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
     if key.is_empty() {
         return Err(Error::Config("API key cannot be empty".to_string()));
     }
-    let source = secret::set(name, key)?;
-    secret::forget(&crate::credentials::login_slot(name))?;
-    config::remove_key(&config::path()?, name)?;
+    let slot = info.name.as_str();
+    let source = secret::set(slot, key)?;
+    secret::forget(&crate::credentials::login_slot(slot))?;
+    config::remove_key(&config::path()?, slot)?;
     Ok(source)
 }
 
@@ -145,8 +152,8 @@ pub(crate) fn forget_key(name: &str) -> Result<Forgot> {
 }
 
 pub fn logout(name: &str) -> Result<String> {
-    let forgot = forget_key(name)?;
     let info = auth_info(name)?;
+    let forgot = forget_key(&info.name)?;
     let head = match forgot {
         Forgot::Token => format!("✓ Signed out of {name}."),
         Forgot::Key => format!("✓ Removed the stored key for {name}."),
@@ -255,7 +262,7 @@ pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
 #[cfg(test)]
 pub(crate) fn catalog(wire: Wire) -> Vec<String> {
     let mut models = Vec::new();
-    for row in presets() {
+    for row in super::preset::presets() {
         if row.wire != wire {
             continue;
         }

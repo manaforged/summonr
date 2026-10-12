@@ -120,9 +120,7 @@ impl Endpoint {
     #[must_use]
     pub fn keyless(&self) -> bool {
         match preset(&self.name) {
-            Some(row) => {
-                row.default_key.is_some() && row.env_keys.is_empty() && row.oauth.is_none()
-            }
+            Some(row) => row.keyless(),
             None => {
                 let url = self.base_url.as_deref();
                 self.oauth.is_none()
@@ -243,13 +241,8 @@ pub fn is_named(token: &str) -> bool {
 }
 
 pub fn names() -> Result<Vec<String>> {
-    let mut names: Vec<String> = presets().map(|preset| preset.name.to_string()).collect();
-    for name in config::file()?.endpoint.keys() {
-        if !names.iter().any(|have| have == name) {
-            names.push(name.clone());
-        }
-    }
-    Ok(names)
+    let file = config::file()?;
+    Ok(route::provider_names(&file))
 }
 
 fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
@@ -282,6 +275,7 @@ mod keys;
 mod preset;
 mod reasoning;
 mod resolve;
+mod route;
 mod server;
 
 #[cfg(test)]
@@ -294,11 +288,12 @@ use info::LoginGroup;
 pub(crate) use keys::peer_token;
 use keys::*;
 pub use preset::label;
+use preset::preset;
 pub(crate) use preset::{catalog_providers, provider_ids, start_command};
-use preset::{preset, presets};
 pub(crate) use resolve::default_seat;
 pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
 use resolve::{hosted, seat};
+pub(crate) use route::{Choice, Region, Route, Toggle, toggle};
 pub use server::{add_server, remove_server, set_default};
 
 #[cfg(test)]

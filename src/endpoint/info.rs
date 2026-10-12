@@ -3,6 +3,8 @@ use super::*;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuthInfo {
     pub name: String,
+    pub provider: String,
+    pub(crate) routes: Vec<super::Route>,
     pub flow: LoginFlow,
     pub login: LoginFlow,
     pub key: bool,
@@ -49,11 +51,58 @@ impl AuthInfo {
     }
 
     #[must_use]
-    pub fn display_name(&self) -> String {
-        match self.plan.as_str() {
-            "" => self.name.clone(),
-            plan => format!("{} · {plan}", self.name),
+    pub fn title(&self) -> &str {
+        &self.provider
+    }
+
+    fn current(&self) -> Option<&super::Route> {
+        self.routes.iter().find(|route| route.name == self.name)
+    }
+
+    pub(crate) fn region_line(&self) -> Option<String> {
+        let region = self.current()?.region?;
+        let other = self
+            .routes
+            .iter()
+            .filter_map(|route| route.region)
+            .find(|other| *other != region);
+        Some(match other {
+            Some(other) => format!("{}  ·  alt+r {}", region.label(), other.label()),
+            None => region.label().to_string(),
+        })
+    }
+
+    pub(crate) fn access_line(&self) -> Option<String> {
+        let current = self.current()?;
+        if self.routes.len() < 2 {
+            return None;
         }
+        let other = self
+            .routes
+            .iter()
+            .map(|route| route.access)
+            .find(|access| *access != current.access);
+        Some(match other {
+            Some(other) => format!("{}  ·  alt+a {}", current.access.label(), other.label()),
+            None => current.access.label().to_string(),
+        })
+    }
+
+    pub(crate) fn switch(&self, toggle: super::Toggle) -> Option<&'static str> {
+        let current = self.current()?;
+        self.routes.iter().find_map(|route| match toggle {
+            super::Toggle::Region => route
+                .region
+                .filter(|region| current.region != Some(*region))
+                .map(super::Region::label),
+            super::Toggle::Access => (route.access != current.access).then(|| route.access.label()),
+        })
+    }
+
+    #[must_use]
+    pub fn matches(&self, query: &str) -> bool {
+        let text = format!("{} {} {}", self.provider, self.name, self.plan).to_lowercase();
+        query.split_whitespace().all(|word| text.contains(word))
     }
 
     fn listed(&self) -> LoginGroup {

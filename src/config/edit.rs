@@ -155,6 +155,19 @@ pub(crate) fn remove_named(path: &Path, section: Section, name: &str) -> Result<
     })
 }
 
+pub(crate) fn save_provider(path: &Path, name: &str, fields: &[(&str, &str)]) -> Result<()> {
+    update(path, |document| {
+        for (key, setting) in fields {
+            document["provider"][name][*key] = value(*setting);
+        }
+        if let Some(table) = document["provider"].as_table_mut() {
+            table.set_implicit(true);
+        }
+        Ok(true)
+    })
+    .map(drop)
+}
+
 pub(crate) fn save_module(path: &Path, id: crate::modules::ModuleId, on: bool) -> Result<()> {
     update(path, |document| {
         document["modules"][id.name()] = value(on);

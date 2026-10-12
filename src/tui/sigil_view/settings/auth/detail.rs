@@ -51,6 +51,12 @@ pub(super) fn pane(
     if choice.login.signs_in() {
         nodes.push(kv("sign-in", login_line(choice), Token::OnSurface));
     }
+    if let Some(region) = choice.region_line() {
+        nodes.push(kv("region", region, Token::OnSurface));
+    }
+    if let Some(access) = choice.access_line() {
+        nodes.push(kv("access", access, Token::OnSurface));
+    }
     let models = models(app, &choice.name);
     if !models.is_empty() {
         let name = width.saturating_sub(CONTEXT + PRICE + 2).min(NAME);

@@ -6,6 +6,9 @@ use crate::provider::Spec;
 
 pub(super) struct Preset {
     pub(super) name: String,
+    pub(super) provider: String,
+    pub(super) region: Option<super::Region>,
+    pub(super) replaces: Vec<String>,
     pub(super) base_url: String,
     pub(super) models_url: Option<&'static str>,
     pub(super) model: String,
@@ -172,10 +175,18 @@ pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
         seen.push(name.clone());
         rows.push(row.into_preset(name, base_url)?);
     }
+    let names: std::collections::BTreeSet<&str> = seen.iter().map(String::as_str).collect();
+    let retired: std::collections::BTreeSet<&str> = rows
+        .iter()
+        .flat_map(|row| row.replaces.iter().map(String::as_str))
+        .collect();
+    if let Some(old) = retired.iter().find(|old| names.contains(*old)) {
+        return Err(format!("`{old}` is retired but is still a preset"));
+    }
     if let Some(row) = rows.iter().find(|row| {
         row.key_from
-            .as_ref()
-            .is_some_and(|peer| !seen.contains(peer))
+            .as_deref()
+            .is_some_and(|peer| !names.contains(peer) && !retired.contains(peer))
     }) {
         return Err(format!(
             "`{}` reads its key from an unknown preset",
@@ -193,6 +204,12 @@ pub(super) fn listed() -> &'static [Preset] {
         Ok(rows) => rows,
         Err(error) => panic!("the built-in provider table is invalid: {error}"),
     })
+}
+
+impl Preset {
+    pub(super) const fn keyless(&self) -> bool {
+        self.default_key.is_some() && self.env_keys.is_empty() && self.oauth.is_none()
+    }
 }
 
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {

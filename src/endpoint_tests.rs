@@ -47,6 +47,8 @@ fn info(
     login: LoginFlow,
 ) -> AuthInfo {
     AuthInfo {
+        provider: String::new(),
+        routes: Vec::new(),
         name: "lab".to_string(),
         flow: LoginFlow::Key,
         login,
@@ -86,7 +88,10 @@ fn a_public_host_that_only_mentions_localhost_needs_a_key() {
 #[test]
 fn a_custom_row_matches_the_preset_with_the_longest_base_url() {
     assert_eq!(hosted("https://opencode.ai/zen/go/v1").unwrap().name, "go");
-    assert_eq!(hosted("https://opencode.ai/zen/v1").unwrap().name, "zen");
+    assert_eq!(
+        hosted("https://opencode.ai/zen/v1").unwrap().name,
+        "opencode"
+    );
     assert!(hosted("https://opencode.ai.evil.example/zen/v1").is_none());
 }
 
@@ -227,15 +232,9 @@ fn the_new_endpoints_point_at_their_hosts() {
         Some("https://api.minimax.io/anthropic/v1")
     );
     assert_eq!(minimax.wire, super::Wire::Anthropic);
-    let perplexity = super::keys::builtin("perplexity").unwrap();
-    assert_eq!(
-        perplexity.base_url.as_deref(),
-        Some("https://api.perplexity.ai")
-    );
-    assert_eq!(
-        perplexity.models_url.as_deref(),
-        Some("https://api.perplexity.ai/v1"),
-        "perplexity serves its model list under /v1 and chat without it"
+    assert!(
+        super::keys::builtin("perplexity").is_none(),
+        "perplexity runs no user tools"
     );
     let lmstudio = super::keys::builtin("lmstudio").unwrap();
     assert!(lmstudio.keyless(), "lmstudio is a local server");
@@ -283,6 +282,8 @@ fn a_key_row_with_a_plan_sign_in_lists_under_coding_plans_by_its_plan_name() {
     for (name, plan) in [("openai", "ChatGPT"), ("grok", "SuperGrok")] {
         let endpoint = super::keys::builtin(name).unwrap();
         let info = super::AuthInfo {
+            provider: name.to_string(),
+            routes: Vec::new(),
             name: name.to_string(),
             flow: super::LoginFlow::default(),
             login: endpoint
@@ -307,7 +308,15 @@ fn a_key_row_with_a_plan_sign_in_lists_under_coding_plans_by_its_plan_name() {
             group: super::login_group(name, &endpoint),
         };
         assert_eq!(info.catalog_title(), "Coding plans", "{name}");
-        assert!(info.display_name().contains(plan), "{name}");
+        assert_eq!(
+            info.title(),
+            name,
+            "the plan belongs in the notes, not the title"
+        );
+        assert!(
+            info.matches(&plan.to_lowercase()),
+            "{name} is found by its plan"
+        );
         assert!(info.catalog_line(16, 16).contains(plan), "{name}");
         assert!(!info.plan(), "{name} keeps key pricing");
     }

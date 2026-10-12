@@ -70,7 +70,7 @@ fn token(name: &str) -> Result<i32> {
     super::guard()?;
     let rotated = store::token(name).is_some();
     let token = store::rotate_token(name)?;
-    eprintln!("{}", view::token_help(name, &token, rotated));
+    eprintln!("{}", view::token_help(name, rotated));
     say(token)
 }
 

@@ -150,8 +150,11 @@ fn a_job_reads_as_plain_lines() {
     let (_, log) = run(home.path(), &["log", "nightly"]);
     assert_eq!(log.trim(), "no runs yet");
     let (_, token) = run(home.path(), &["token", "nightly"]);
-    assert!(token.contains("Authorization: Bearer"), "{token}");
-    assert!(token.contains("/run/nightly"), "{token}");
+    let secret = token.lines().next().unwrap_or_default();
+    let hint = token.replace(secret, "<token>");
+    assert!(hint.contains("Authorization: Bearer $TOKEN"), "{hint}");
+    assert!(hint.contains("/run/nightly"), "{hint}");
+    assert_eq!(token.matches(secret).count(), 1, "the token is printed once");
     let (_, bad) = run(
         home.path(),
         &["add", "y", "--every", "1h", "-p", "hi", "--notify", "loud"],

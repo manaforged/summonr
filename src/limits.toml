@@ -25,6 +25,7 @@ model_probe_secs = 8
 web_search_secs = 15
 search_secs = 20
 search_index_secs = 300
+models_catalog_secs = 3600
 search_index_after_ms = 1000
 web_connect_secs = 8
 web_fetch_secs = 20

@@ -52,6 +52,26 @@ fn invalid_cli_arguments_fail_before_starting_a_session() {
 }
 
 #[test]
+fn a_json_run_with_bad_arguments_ends_with_an_aborted_event() {
+    let home = tempfile::tempdir().unwrap();
+    for args in [
+        vec!["--max-secs", "-5", "-p", "hi", "--json"],
+        vec!["--effort", "ultra", "-p", "hi", "--json"],
+        vec!["-p", "--bogus", "--json"],
+        vec!["--json", "--goal"],
+        vec!["--json", "--max-tokens", "0", "hi"],
+    ] {
+        let output = run(home.path(), &args);
+        assert_eq!(output.status.code(), Some(1), "{args:?}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let event: serde_json::Value =
+            serde_json::from_str(stdout.trim()).unwrap_or_else(|_| panic!("{args:?}: {stdout}"));
+        assert_eq!(event["type"], "aborted", "{args:?}");
+        assert_eq!(event["code"], "error", "{args:?}");
+    }
+}
+
+#[test]
 fn global_json_reaches_mcp_list_and_worktree_prune() {
     let home = tempfile::tempdir().expect("isolated CLI home");
     let (ok, text) = summonr(home.path(), &["--json", "mcp", "list"]);
@@ -266,4 +286,53 @@ fn a_child_that_exits_before_reading_does_not_end_summonr() {
         assert_eq!(output.status.code(), Some(1), "run {index}: {text:?}");
         assert!(text.contains("not reachable"), "run {index}: {text:?}");
     }
+}
+
+#[test]
+fn a_closed_local_server_fails_at_once_and_says_nothing_is_listening() {
+    let home = tempfile::tempdir().unwrap();
+    let home = home.path();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let url = format!("http://127.0.0.1:{port}/v1");
+    let (ok, text) = summonr(home, &["login", "lab", "--url", &url, "--model", "m"]);
+    assert!(ok, "{text}");
+    let started = std::time::Instant::now();
+    let (ok, text) = summonr(home, &["lab", "-p", "hi"]);
+    assert!(!ok, "{text}");
+    assert!(
+        text.contains(&format!("nothing is listening at 127.0.0.1:{port}")),
+        "{text}"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(900),
+        "a refused local connection was retried: {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn the_models_catalog_switch_keeps_endpoints_off_the_network() {
+    let home = tempfile::tempdir().unwrap();
+    let home = home.path();
+    let catalog = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    catalog.set_nonblocking(true).unwrap();
+    let url = format!("http://{}/api.json", catalog.local_addr().unwrap());
+    std::fs::create_dir_all(home.join(".summonr")).unwrap();
+    std::fs::write(
+        home.join(".summonr/config.toml"),
+        "models_catalog = false\n",
+    )
+    .unwrap();
+    let output = isolated(env!("CARGO_BIN_EXE_summonr"), home)
+        .env("SUMMONR_MODELS_URL", &url)
+        .arg("endpoints")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(catalog.accept().is_err(), "summonr fetched the catalog");
 }

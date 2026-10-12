@@ -188,6 +188,7 @@ fn jobs_round_trip_through_toml() {
         started: 3,
         job: Some("j1".to_string()),
         outcome: Outcome::CheckFailed,
+        origin: super::store::Origin::Webhook,
     });
     let text = toml::to_string(&nightly).unwrap();
     assert_eq!(toml::from_str::<Job>(&text).unwrap(), nightly);
@@ -244,4 +245,16 @@ fn the_systemd_timer_fires_each_minute() {
     assert!(service.contains("Environment=\"PATH=/usr/bin\""));
     assert!(timer.contains("OnCalendar=*-*-* *:*:00"));
     assert!(service.contains("KillMode=process"), "{service}");
+}
+
+#[test]
+fn status_without_the_tick_says_nothing_fires() {
+    let next = at("2026-12-01T09:00:00");
+    let off = super::view::status(None, 1, Some(next.clone()));
+    assert!(
+        off.contains("next: nothing fires until you run `summonr cron install`; would fire at 2026-12-01 09:00"),
+        "{off}"
+    );
+    let on = super::view::status(Some(Path::new("/tick")), 1, Some(next));
+    assert!(on.ends_with("next: 2026-12-01 09:00 CST"), "{on}");
 }

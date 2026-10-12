@@ -166,3 +166,21 @@ fn todo_rows_of_a_finished_child_stay_gone_after_a_late_update() {
     let shown = lines.join("\n");
     assert!(!shown.contains("Late child row"), "{shown}");
 }
+
+#[test]
+fn a_numbered_prompt_does_not_open_the_task_strip() {
+    let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
+        let mut single = progress(
+            vec![
+                "Two things:".to_owned(),
+                "1. list the functions in calc.py".to_owned(),
+                "2. no edits".to_owned(),
+            ],
+            Vec::new(),
+        );
+        single.kind = WorkKind::Single;
+        app.update(Msg::Event(Event::Work { progress: single }));
+    });
+    let shown = lines.join("\n");
+    assert!(find(&lines, "Todos").is_none(), "{shown}");
+}

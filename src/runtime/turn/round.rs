@@ -195,9 +195,8 @@ impl<P: Provider> Loop<P> {
             return Ok(());
         }
         let objective = self.session.objective().map_err(super::session_err)?;
-        let before = usage.clone();
         let brief = scout::brief(self, &objective, usage).await;
-        self.seat_usage(workflow::Role::Scout, &before, usage, events, emit)?;
+        self.sync_usage(emit);
         let brief = match brief {
             Ok(brief) => brief,
             Err(error) => {

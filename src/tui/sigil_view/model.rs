@@ -12,7 +12,7 @@ use crate::tools::Event;
 use crate::tui::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
 
 pub(super) use super::app;
-use super::panes::ledger::{LedgerRow, Mark};
+use super::panes::ledger::LedgerRow;
 use super::speed::Speed;
 
 mod children;
@@ -247,7 +247,7 @@ impl Model {
             | Msg::Restored(_)
             | Msg::Saved { .. } => {}
         }
-        if self.ledger.iter().all(|row| row.mark == Mark::Done) {
+        if self.ledger.iter().all(|row| row.mark.settled()) {
             self.todos_expanded = false;
             self.todos_offset = 0;
         }

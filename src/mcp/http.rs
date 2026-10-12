@@ -43,7 +43,7 @@ fn client(wait: Duration) -> Result<leyline::Session> {
     let limits = crate::limits::limits();
     crate::credentials::session(
         summonr_auth::builder(wait, limits.connect()),
-        limits.retry_policy(),
+        limits.retry_policy(crate::limits::Reach::Remote),
     )
 }
 

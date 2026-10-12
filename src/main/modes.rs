@@ -173,7 +173,7 @@ fn print_live(event: &Event) {
                 eprintln!("{line}");
             }
         }
-        Event::Receipt { receipt } => println!("\n{}", receipt.text),
+        Event::Receipt { receipt } => eprintln!("\n{}", receipt.text),
         Event::Aborted { reason, .. } => eprintln!("\n{reason}"),
         Event::Child { id, event } => {
             let tag = summonr::child::tag(id);

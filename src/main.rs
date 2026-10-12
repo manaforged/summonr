@@ -35,7 +35,7 @@ fn main() {
     let args = (!profile)
         .then(cli::parse)
         .transpose()
-        .unwrap_or_else(|error| fail(&error));
+        .unwrap_or_else(|error| fail_parse(&error));
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -113,6 +113,16 @@ async fn run(args: Option<cli::Args>) -> summonr::Result<i32> {
             .await
             .map_or_else(Ok, |done| done.map(|()| 0)),
     }
+}
+
+fn fail_parse(error: &summonr::Error) -> ! {
+    if std::env::args().skip(1).any(|arg| arg == "--json") {
+        modes::print_json(&summonr::Event::Aborted {
+            reason: error.to_string(),
+            code: summonr::AbortCode::Error,
+        });
+    }
+    fail(error)
 }
 
 fn fail(error: &dyn std::fmt::Display) -> ! {

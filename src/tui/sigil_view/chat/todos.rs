@@ -25,7 +25,7 @@ fn view(app: &App, cols: u16) -> Option<TodosView> {
     let layout = app.layout.get();
     if cols == 0
         || (layout.secondary == Some(Pane::Ledger) && layout.split(cols).1 > 0)
-        || model.ledger.iter().all(|row| row.mark == Mark::Done)
+        || model.ledger.iter().all(|row| row.mark.settled())
         || app.commands.open(&draft, caret, &model)
     {
         return None;
@@ -151,7 +151,7 @@ impl App {
             .peek()
             .ledger
             .iter()
-            .all(|row| row.mark == Mark::Done)
+            .all(|row| row.mark.settled())
         {
             self.toggle_pane(Pane::Ledger);
             return;

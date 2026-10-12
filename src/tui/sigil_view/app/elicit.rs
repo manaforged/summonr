@@ -116,20 +116,21 @@ impl FormState {
         ))
     }
 
-    pub(in crate::tui::sigil_view) fn lines(&self) -> Vec<String> {
+    pub(in crate::tui::sigil_view) fn shown(&self, typed: &str) -> Vec<String> {
+        let typed = typed.trim();
         let head = match &self.form.server {
             Some(server) => format!("mcp {server} asks: {}", self.form.message),
             None => "The model asks".to_string(),
         };
         let mut lines = vec![head];
         match self.stage {
-            Stage::Filling => self.filling_lines(&mut lines),
+            Stage::Filling => self.filling_lines(&mut lines, typed),
             Stage::Review => self.review_lines(&mut lines),
         }
         lines
     }
 
-    fn filling_lines(&self, lines: &mut Vec<String>) {
+    fn filling_lines(&self, lines: &mut Vec<String>, typed: &str) {
         if let Some(field) = self.field() {
             lines.push(format!(
                 "{}/{} {}",
@@ -147,13 +148,20 @@ impl FormState {
                         (true, true) => "[x]".to_string(),
                         (true, false) => "[ ]".to_string(),
                     };
-                    let cursor = if index == self.cursor { "❯" } else { " " };
+                    let cursor = if index == self.cursor && typed.is_empty() {
+                        "❯"
+                    } else {
+                        " "
+                    };
                     let about = option
                         .description
                         .as_ref()
                         .map_or_else(String::new, |about| format!("  {about}"));
                     format!("{cursor} {mark} {}{about}", option.title)
                 }));
+            }
+            if !typed.is_empty() {
+                lines.push(format!("❯ {typed}"));
             }
             lines.push(facts(field));
         }

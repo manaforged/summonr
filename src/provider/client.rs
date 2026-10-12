@@ -8,6 +8,8 @@ mod login;
 mod meta;
 
 use encode::*;
+#[cfg(test)]
+pub(crate) use meta::unreachable_message;
 pub(crate) use meta::{input_cap, plan_usage, response_failure};
 
 fn fixed_headers<'a>(raw: impl Iterator<Item = (&'a String, &'a String)>) -> Vec<(String, String)> {
@@ -279,6 +281,14 @@ impl Client {
         format!("{}{}", self.base, W::path(model, stream))
     }
 
+    fn reach(&self) -> crate::limits::Reach {
+        if crate::endpoint::local(&self.base) {
+            crate::limits::Reach::Local
+        } else {
+            crate::limits::Reach::Remote
+        }
+    }
+
     pub(super) fn attach(
         &self,
         request: leyline::RequestBuilder,
@@ -291,7 +301,7 @@ impl Client {
             .apply(request.header("user-agent", summonr_auth::AGENT), token)
             .retry(
                 crate::limits::limits()
-                    .retry_policy()
+                    .retry_policy(self.reach())
                     .allow_non_idempotent(true),
             );
         for (key, value) in wire::headers(self.wire) {

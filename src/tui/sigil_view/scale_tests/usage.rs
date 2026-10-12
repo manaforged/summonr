@@ -107,3 +107,45 @@ fn a_narrow_usage_page_keeps_a_model_off_the_workspace_row() {
         "model row ran into the workspace:\n{row}"
     );
 }
+
+#[test]
+fn todays_bar_fills_its_column_inside_the_chart_frame() {
+    for (cols, rows) in [(100, 48), (120, 40)] {
+        let grid = paint(busy_info(), cols, rows, State::Idle, |app| {
+            app.replace("/usage".to_owned());
+            app.submit();
+            app.update(Msg::Usage(Ok(vec![spend(
+                "glm-5.3-flash",
+                "/w/calc",
+                30_000,
+            )])));
+        });
+        let accent = Ink::Exact(palette().accent);
+        let mut filled = 0;
+        for row in 0..grid.rows() {
+            let bar = (0..grid.cols())
+                .rposition(|col| grid.get(col, row).is_some_and(|cell| cell.bg == accent));
+            let Some(bar) = bar else {
+                continue;
+            };
+            filled += 1;
+            let framed = (bar + 1..grid.cols()).any(|col| {
+                grid.get(col, row).is_some_and(|cell| {
+                    cell.text
+                        .chars()
+                        .any(|c| matches!(c, '│' | '┃' | '▕' | '▐'))
+                })
+            });
+            assert!(
+                framed,
+                "{cols}x{rows}: bar sits on the frame in row {row}:\n{}",
+                grid.text()
+            );
+        }
+        assert!(
+            filled >= 4,
+            "{cols}x{rows}: today's bar is {filled} rows:\n{}",
+            grid.text()
+        );
+    }
+}

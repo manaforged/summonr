@@ -124,6 +124,8 @@ fn saved_memory_reaches_the_model_in_its_own_repository_only() {
         sent(&bodies, "the api tests need the redis fixture"),
         "{text}"
     );
+    let today = format!("today is {}", jiff::Zoned::now().date());
+    assert!(sent(&bodies, &today), "{text}");
 
     let (port, bodies) = provider();
     configure(home.path(), port, "");

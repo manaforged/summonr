@@ -307,7 +307,7 @@ pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
             let count = summonr::mcp_probe(&workspace()?, name)
                 .await
                 .map_err(|error| {
-                    summonr::Error::Config(format!(
+                    summonr::Error::Setup(format!(
                         "{name}: not reachable: {error}\nkept in {kept}; fix the command or run `summonr mcp remove {name}`"
                     ))
                 })?;
@@ -315,7 +315,7 @@ pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
             Ok(())
         }
         McpCommand::Remove { name } => {
-            if !summonr::mcp_remove(name)? {
+            if !summonr::mcp_remove(&workspace()?, name)? {
                 return Err(summonr::Error::Config(format!(
                     "no MCP server named {name} in ~/.summonr/config.toml"
                 )));
@@ -359,11 +359,16 @@ const STATE_WIDTH: usize = 22;
 
 fn server_line(row: &summonr::ServerStatus) -> String {
     let transport = row.transport.map_or("-", summonr::McpTransport::label);
-    format!(
+    let line = format!(
         "{:<20} {:<STATE_WIDTH$} {transport:<6} {} tools  {}",
         row.name,
         row.state_text(STATE_WIDTH),
         row.tools.len(),
         row.schema_size()
-    )
+    );
+    if let (summonr::McpState::Failed, Some(detail)) = (row.state, &row.detail) {
+        format!("{line}\n  failed: {detail}")
+    } else {
+        line
+    }
 }

@@ -154,8 +154,8 @@ pub(crate) fn a_json_run_starts_with_its_session_id() {
         serde_json::from_str(outcome.stdout.lines().next().unwrap_or_default())
             .unwrap_or_else(|_| panic!("{}", outcome.stdout));
     assert_eq!(first["type"], "session", "{}", outcome.stdout);
-    assert!(
-        first["id"].as_str().is_some_and(|id| id.len() >= 12),
-        "{first}"
-    );
+    let id = first["id"].as_str().unwrap_or_default();
+    assert!(id.len() >= 12, "{first}");
+    let stderr = crate::support::read(&session.file("stderr"));
+    assert!(stderr.contains(&id[..12]), "{id}: {stderr}");
 }

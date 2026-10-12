@@ -69,3 +69,11 @@ pub(super) fn failure(key: &str) -> Option<String> {
     let text = text.trim();
     (!text.is_empty()).then(|| text.to_string())
 }
+
+pub(super) fn forget(key: &str) {
+    for extension in [LISTING, FAILURE] {
+        if let Some(path) = file(key, extension) {
+            drop(std::fs::remove_file(path));
+        }
+    }
+}

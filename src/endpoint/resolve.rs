@@ -174,6 +174,13 @@ pub fn closest<'a>(name: &str, names: &'a [String], near: Near) -> Option<&'a st
                 <= length.saturating_mul(crate::limits::limits().closest_percent)
                 || (typo && *cost <= 1)
         })
+        .chain(
+            names
+                .iter()
+                // complexity: bounded by one endpoint name; this is a substring check, not a list scan
+                .filter(|other| typo && other.contains(name))
+                .map(|other| (other.chars().count() - length, other.as_str())),
+        )
         .min()
         .map(|(_, other)| other)
 }

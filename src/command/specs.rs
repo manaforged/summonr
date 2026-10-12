@@ -102,7 +102,13 @@ pub(super) const SPECS: &[CommandSpec] = &[
         Bare,
         Session,
     ),
-    spec("/mcp", "Show MCP servers", SlashCommand::Mcp, Bare, Session),
+    spec(
+        "/mcp",
+        "connected MCP servers and their tools",
+        SlashCommand::Mcp,
+        Bare,
+        Session,
+    ),
     spec(
         "/usage",
         "token spend; session profiles this session",

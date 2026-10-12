@@ -3,6 +3,9 @@ use sigil::prelude::{Radius, progress, signal};
 
 use crate::tui::sigil_view::speed::Speed;
 
+pub(in crate::tui::sigil_view) const CONTEXT_USED: &str = "Context used";
+const METER: f32 = 64.0;
+
 #[expect(clippy::cast_precision_loss, reason = "a percentage fits in f32")]
 pub(in crate::tui::sigil_view) fn meters(app: App) -> NodeBuilder {
     let (used, cached, spend, rate) = {
@@ -31,9 +34,10 @@ pub(in crate::tui::sigil_view) fn meters(app: App) -> NodeBuilder {
                 .child(quiet("context"))
                 .child(
                     container()
-                        .layout(LayoutStyle::block().width(64.0).height(XS).shrink(0.0))
+                        .label(CONTEXT_USED)
+                        .layout(LayoutStyle::block().width(METER).height(XS).shrink(0.0))
                         .rounded(Radius::Full)
-                        .child(progress(signal(used as f32), 100.0).label("Context used")),
+                        .child(progress(signal(used as f32), 100.0).height(XS)),
                 )
                 .child(quiet(format!("{used}%"))),
         );

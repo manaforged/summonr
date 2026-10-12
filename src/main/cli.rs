@@ -221,6 +221,9 @@ impl Args {
                 "use --here or --worktree, not both".to_string(),
             ));
         }
+        if self.goal.is_some() && self.steps.is_some() {
+            return Err(Error::Config("use --goal or --steps, not both".to_string()));
+        }
         if let Some(mode) = [
             ("--goal", self.goal.is_some()),
             ("--steps", self.steps.is_some()),

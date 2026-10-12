@@ -123,7 +123,7 @@ fn bridge(options: Options) -> Result<i32> {
 fn pair(code: &str) -> Result<i32> {
     let now = crate::cron::now();
     let pending = store::update(|state| state.pair(code, now))?
-        .ok_or_else(|| Error::Config(format!("no pending pairing with code `{code}`")))?;
+        .ok_or_else(|| Error::Setup(format!("no pending pairing with code `{code}`")))?;
     println!("paired Telegram user {}", pending.user);
     if let Some(token) = token()? {
         let bot = Bot::new(&token)?;

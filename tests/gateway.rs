@@ -262,4 +262,34 @@ fn an_oversized_body_gets_a_readable_413_and_bad_tokens_are_explained() {
         .unwrap();
     let text = String::from_utf8_lossy(&output.stderr);
     assert!(text.contains("USER_ID is a number"), "{text}");
+    let output = summonr(home.path())
+        .args(["gateway", "pair", "12345"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&output.stderr);
+    assert!(text.contains("no pending pairing with code"), "{text}");
+    assert!(!text.contains("configuration error"), "{text}");
+}
+
+#[test]
+fn a_local_run_leaves_the_webhook_window_open() {
+    let home = tempfile::tempdir().unwrap();
+    let token = job(home.path(), "hook", &["--manual"], "hi");
+    let output = summonr(home.path())
+        .args(["cron", "run", "hook"])
+        .output()
+        .unwrap();
+    let log = cron(home.path(), &["log", "hook"]);
+    assert!(!log.contains("no runs yet"), "{output:?} {log}");
+    let (server, port) = serve(home.path());
+    let fired = post(port, "POST", "/run/hook", Some(&token), "");
+    let again = post(port, "POST", "/run/hook", Some(&token), "");
+    stop(server);
+    assert!(fired.starts_with("HTTP/1.1 202"), "{fired}");
+    assert!(fired.contains("\"slot\":"), "{fired}");
+    assert!(
+        fired.contains("\"log\":\"summonr cron log hook\""),
+        "{fired}"
+    );
+    assert!(again.starts_with("HTTP/1.1 429"), "{again}");
 }

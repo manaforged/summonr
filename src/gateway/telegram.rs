@@ -133,7 +133,7 @@ impl Bot {
         Ok(Self {
             http: crate::credentials::session(
                 summonr_auth::builder(wait, limits.connect()),
-                limits.retry_policy(),
+                limits.retry_policy(crate::limits::Reach::Remote),
             )?,
             token: token.to_string(),
         })
@@ -179,7 +179,7 @@ impl Bot {
             return Ok(result);
         }
         match reply.error_code.unwrap_or_else(|| i64::from(status)) {
-            UNAUTHORIZED => Err(Error::Config(REJECTED.to_string())),
+            UNAUTHORIZED => Err(Error::Setup(REJECTED.to_string())),
             NOT_FOUND if method == Method::GetMe => Err(Error::Config(MALFORMED.to_string())),
             CONFLICT => Err(Error::Config(TAKEN.to_string())),
             code => Err(Error::Tool(format!("telegram {name}: HTTP {code}"))),
@@ -242,7 +242,7 @@ fn well_formed(token: &str) -> bool {
 
 fn send_policy() -> leyline::RetryPolicy {
     crate::limits::limits()
-        .retry_policy()
+        .retry_policy(crate::limits::Reach::Remote)
         .retry_on([leyline::RetryTrigger::Status(TOO_MANY)])
         .allow_non_idempotent(true)
 }

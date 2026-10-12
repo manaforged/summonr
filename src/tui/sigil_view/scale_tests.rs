@@ -27,6 +27,7 @@ mod mention;
 mod modals;
 mod mode;
 mod picker;
+mod reflow;
 mod secret;
 mod settings;
 mod thinking;

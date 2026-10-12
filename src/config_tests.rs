@@ -152,3 +152,19 @@ fn an_old_hotkey_table_that_binds_ctrl_n_still_loads() {
     assert_eq!(prefs.hotkeys.action('n'), Some(crate::prefs::Hotkey::Pane));
     assert_eq!(prefs.hotkeys.chord('n'), Some(crate::prefs::Hotkey::Fold));
 }
+
+#[test]
+fn a_save_writes_only_the_settings_that_changed() {
+    let (_dir, path) = written("default = \"zai\"\n");
+    let mut prefs = crate::prefs::load_from(&path).unwrap();
+    crate::prefs::save_in(&path, &prefs).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text, "default = \"zai\"\n");
+    prefs.layout = "chat | mcp 40%".to_string();
+    crate::prefs::save_in(&path, &prefs).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("layout = \"chat | mcp 40%\""), "{text}");
+    for key in ["theme", "fps", "splash", "hotkeys"] {
+        assert!(!text.contains(key), "{key}: {text}");
+    }
+}

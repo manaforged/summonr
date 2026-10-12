@@ -115,7 +115,7 @@ fn a_filled_form_is_checked_per_field_and_sent_after_review() {
             app.form
                 .peek()
                 .unwrap()
-                .lines()
+                .shown("")
                 .iter()
                 .any(|line| line.contains("Name is required"))
         );
@@ -125,17 +125,17 @@ fn a_filled_form_is_checked_per_field_and_sent_after_review() {
             app.form
                 .peek()
                 .unwrap()
-                .lines()
+                .shown("")
                 .iter()
                 .any(|line| line.contains("out of range"))
         );
         typed(&app, "7");
         assert_eq!(app.draft.peek(), "");
-        let lines = app.form.peek().unwrap().lines();
+        let lines = app.form.peek().unwrap().shown("");
         assert!(lines.iter().any(|line| line == "❯ 1. Red"), "{lines:?}");
         typed(&app, "2");
         let form = app.form.peek().unwrap();
-        let review = form.lines().join("\n");
+        let review = form.shown("").join("\n");
         assert!(review.contains("Color: Green"), "{review}");
         assert!(form.stage == crate::tui::sigil_view::app::Stage::Review);
         app.form_reply(Reply::Send);
@@ -175,7 +175,7 @@ fn model_question_picks_with_arrows_and_sends_without_review() {
             )],
         };
         let (app, mut receiver) = opened(workspace.path(), form);
-        let lines = app.form.peek().unwrap().lines();
+        let lines = app.form.peek().unwrap().shown("");
         assert_eq!(lines[0], "The model asks");
         assert!(app.form_move(1));
         assert!(app.form_move(1));
@@ -223,7 +223,7 @@ fn model_question_toggles_several_and_takes_a_typed_answer() {
         assert!(app.form_toggle());
         assert!(app.form_move(2));
         assert!(app.form_toggle());
-        let lines = app.form.peek().unwrap().lines();
+        let lines = app.form.peek().unwrap().shown("");
         assert!(
             lines.iter().any(|line| line == "❯ [x] Windows"),
             "{lines:?}"
@@ -264,5 +264,40 @@ fn a_question_gives_back_the_unsent_draft_when_it_closes() {
         }));
         app.form_reply(Reply::Cancel);
         assert_eq!(app.draft.peek(), "my draft");
+    });
+}
+
+#[test]
+fn a_typed_answer_shows_inside_the_question_picker() {
+    Runtime::scope("form-typed-answer", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let form = Form {
+            server: None,
+            message: "Zero".to_owned(),
+            fields: vec![question(
+                "Which zero values should trigger the ValueError?",
+                FieldKind::Choice {
+                    options: choices(&["only 0", "0 and 0.0"]),
+                    custom: true,
+                },
+            )],
+        };
+        let (app, _receiver) = opened(workspace.path(), form);
+        app.replace("any zero, and also reject NaN divisors".to_owned());
+        let Some(crate::tui::sigil_view::chat::panels::Band::Form { lines, .. }) =
+            crate::tui::sigil_view::chat::panels::band(&app)
+        else {
+            panic!("no question band");
+        };
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "❯ any zero, and also reject NaN divisors"),
+            "{lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.starts_with("❯ 1.")),
+            "{lines:?}"
+        );
     });
 }

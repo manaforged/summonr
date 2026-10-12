@@ -154,7 +154,11 @@ fn a_job_reads_as_plain_lines() {
     let hint = token.replace(secret, "<token>");
     assert!(hint.contains("Authorization: Bearer $TOKEN"), "{hint}");
     assert!(hint.contains("/run/nightly"), "{hint}");
-    assert_eq!(token.matches(secret).count(), 1, "the token is printed once");
+    assert_eq!(
+        token.matches(secret).count(),
+        1,
+        "the token is printed once"
+    );
     let (_, bad) = run(
         home.path(),
         &["add", "y", "--every", "1h", "-p", "hi", "--notify", "loud"],
@@ -240,4 +244,31 @@ fn a_run_that_cannot_start_is_recorded_as_an_error() {
     let (_, log) = run(home.path(), &["log", "lost"]);
     assert!(log.contains("error"), "{log}");
     assert!(!log.contains("running"), "{log}");
+}
+
+#[test]
+fn a_job_names_the_endpoint_it_runs_on_and_unknown_jobs_are_not_config_errors() {
+    let home = tempfile::tempdir().unwrap();
+    let (_, added) = run(home.path(), &["add", "bare", "--every", "1h", "-p", "hi"]);
+    assert!(added.contains("endpoint none set up"), "{added}");
+    std::fs::create_dir_all(home.path().join(".summonr")).unwrap();
+    std::fs::write(
+        home.path().join(".summonr/config.toml"),
+        "[endpoint.local]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\napi_key = \"k\"\n",
+    )
+    .unwrap();
+    let (_, show) = run(home.path(), &["show", "bare"]);
+    assert!(show.contains("endpoint: local ("), "{show}");
+    let (_, added) = run(
+        home.path(),
+        &["add", "pinned", "--every", "1h", "-p", "hi", "-e", "local"],
+    );
+    assert!(
+        added.contains("endpoint local\n") || added.ends_with("endpoint local"),
+        "{added}"
+    );
+    let (code, missing) = run(home.path(), &["pause", "nosuch"]);
+    assert_ne!(code, 0);
+    assert!(missing.contains("no cron job named `nosuch`"), "{missing}");
+    assert!(!missing.contains("configuration error"), "{missing}");
 }

@@ -56,8 +56,7 @@ pub(crate) fn prefix(id: &str, key: &str) -> bool {
 
 #[must_use]
 pub fn short(id: &str) -> &str {
-    let short = Some(id.trim_start_matches('0')).filter(|short| !short.is_empty());
-    short.map_or(id, |short| short.get(..12).unwrap_or(short))
+    id.get(..12).unwrap_or(id)
 }
 
 const PREVIEW_WIDTH: usize = 72;

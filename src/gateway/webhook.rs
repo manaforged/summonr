@@ -267,7 +267,7 @@ fn fire(name: &str, body: &[u8]) -> Answer {
     let job = match store::get(name) {
         Ok(job) if job.paused => return Status::Paused.into(),
         Ok(job) => job,
-        Err(Error::Config(_)) => return Status::NotFound.into(),
+        Err(Error::Setup(_)) => return Status::NotFound.into(),
         Err(_) => return Status::Failed.into(),
     };
     match runner::fire(name, (!body.is_empty()).then_some(body)) {
@@ -285,7 +285,7 @@ fn fire(name: &str, body: &[u8]) -> Answer {
             retry: Some(runner::cooldown(&job, crate::cron::now()).unwrap_or(1)),
             ..Status::TooMany.into()
         },
-        Err(Error::Config(_)) => Status::NotFound.into(),
+        Err(Error::Config(_) | Error::Setup(_)) => Status::NotFound.into(),
         Err(_) => Status::Failed.into(),
     }
 }

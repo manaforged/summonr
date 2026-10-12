@@ -248,6 +248,28 @@ async fn a_goal_selected_from_the_command_line_runs_its_check_and_asks_the_judge
 }
 
 #[tokio::test]
+async fn the_judge_refuses_a_gamed_pass_and_contradictory_tests_stop_the_goal() {
+    let mut run = session([
+        Reply::Text("I made add stateful so both tests pass"),
+        Reply::Text(
+            r#"{"verdict": "impossible", "reason": "test_five and test_six expect 5 and 6 for add(2, 3)"}"#,
+        ),
+    ]);
+    run.loop_
+        .select_goal("make the tests pass", &["true".to_string()])
+        .unwrap();
+    run.loop_.turn("make the tests pass").await.unwrap();
+    let sent = run.sent.lock().unwrap().clone();
+    let system = &sent[1][0].content;
+    assert!(system.contains("hidden state, call order"), "{system}");
+    assert!(
+        system.contains("reply `impossible` and name both tests"),
+        "{system}"
+    );
+    assert_ne!(run.loop_.work_progress().unwrap().exit_code(), Some(0));
+}
+
+#[tokio::test]
 async fn steps_selected_from_the_command_line_run_the_completion_check() {
     let mut run = session([Reply::Text("done")]);
     run.loop_

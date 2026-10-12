@@ -16,6 +16,9 @@ pub(super) const EMPTY: &str =
 pub(super) const UNSCHEDULED: &str =
     "not scheduled yet: run `summonr cron install` once so jobs fire";
 pub(super) const NO_RUNS: &str = "no runs yet";
+const NOT_INSTALLED: &str = "installed: no (run `summonr cron install`)";
+const NO_ENDPOINT: &str = "none set up; run `summonr login NAME`";
+const FIRST_SET_UP: &str = "first set up";
 
 pub(super) fn when(zoned: Option<Zoned>) -> String {
     zoned.map_or_else(
@@ -47,11 +50,47 @@ fn next(job: &Job) -> String {
 
 pub(super) fn added(verb: &str, job: &Job) -> String {
     format!(
-        "{verb} {}: {}, next {}",
+        "{verb} {}: {}, next {}, endpoint {}",
         job.name,
         schedule_label(job),
-        next(job)
+        next(job),
+        endpoint(job)
     )
+}
+
+fn endpoint(job: &Job) -> String {
+    if let Some(name) = &job.endpoint {
+        return name.clone();
+    }
+    match crate::endpoint::resolve(None, None, crate::endpoint::Need::Key) {
+        Ok(found) => {
+            let pick = crate::endpoint::chosen_by(None, None)
+                .map_or_else(|| FIRST_SET_UP.to_string(), |pick| pick.to_string());
+            format!("{} ({pick}; pin one with -e)", found.name)
+        }
+        Err(_) => NO_ENDPOINT.to_string(),
+    }
+}
+
+pub(super) fn status(
+    installed: Option<&std::path::Path>,
+    jobs: usize,
+    next: Option<Zoned>,
+) -> String {
+    let (head, next) = match installed {
+        Some(path) => (format!("installed: {}", path.display()), when(next)),
+        None => (
+            NOT_INSTALLED.to_string(),
+            match next {
+                Some(at) => format!(
+                    "nothing fires until you run `summonr cron install`; would fire at {}",
+                    when(Some(at))
+                ),
+                None => when(None),
+            },
+        ),
+    };
+    format!("{head}\njobs: {jobs}\nnext: {next}")
 }
 
 pub(super) fn table(jobs: &[Job], header: bool) -> String {
@@ -143,7 +182,7 @@ pub(super) fn show(job: &Job) -> String {
         },
         format!("directory: {}", tilde(&job.dir)),
     ];
-    optional(&mut lines, "endpoint", job.endpoint.as_deref());
+    lines.push(format!("endpoint: {}", endpoint(job)));
     optional(&mut lines, "model", job.model.as_deref());
     lines.push(format!("budget: {}", budget(job)));
     lines.push(format!(

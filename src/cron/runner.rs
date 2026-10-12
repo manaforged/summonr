@@ -7,7 +7,7 @@ use jiff::{Timestamp, Zoned};
 
 use super::report::{self, Report};
 use super::schedule::{self, Schedule};
-use super::store::{self, Job, Outcome, Run, Task};
+use super::store::{self, Job, Origin, Outcome, Run, Task};
 use crate::durable::store as durable;
 use crate::error::{Error, Result};
 
@@ -111,6 +111,7 @@ fn expire(job: &mut Job, slot: i64, now: i64) {
         started: now,
         job: None,
         outcome: Outcome::Expired,
+        origin: Origin::Local,
     });
     job.paused = job.paused || at_slot(job).is_some();
 }
@@ -127,7 +128,12 @@ fn launch(name: &str, slot: i64, started: i64, payload: Option<&Path>) -> Result
 
 pub(crate) fn cooldown(job: &Job, now: i64) -> Option<u64> {
     let gap = i64::try_from(crate::limits::limits().gateway_fire_secs).unwrap_or(i64::MAX);
-    let last = job.runs.iter().map(|run| run.started).max()?;
+    let last = job
+        .runs
+        .iter()
+        .filter(|run| run.origin == Origin::Webhook)
+        .map(|run| run.started)
+        .max()?;
     let left = last.saturating_add(gap).saturating_sub(now);
     u64::try_from(left).ok().filter(|left| *left > 0)
 }
@@ -146,6 +152,7 @@ pub(crate) fn fire(name: &str, payload: Option<&[u8]>) -> Result<i64> {
             started: now,
             job: None,
             outcome: Outcome::Running,
+            origin: Origin::Webhook,
         });
         Ok(job.dir.clone())
     })?;

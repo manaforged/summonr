@@ -7,7 +7,7 @@ impl<P: Provider> Loop<P> {
             && self.work_progress()?.kind == crate::WorkKind::Single
         {
             let paths = self.session.enter_verify().map_err(super::session_err)?;
-            let receipt = Receipt::new(paths, Vec::new(), snapshot, events);
+            let receipt = Receipt::unchecked(paths, snapshot, events);
             let verdict = self
                 .session
                 .prepare_verdict(true)
@@ -151,9 +151,7 @@ impl<P: Provider> Loop<P> {
         if !verdict.passed {
             return Ok(Decision::Automatic);
         }
-        let decision = self
-            .goal_decision(reply, receipt, events, emit, usage)
-            .await?;
+        let decision = self.goal_decision(reply, receipt, emit, usage).await?;
         if reviewed || !matches!(decision, Decision::Automatic) {
             *verdict = self.verdict(checks, events, emit)?;
         }
@@ -172,9 +170,8 @@ impl<P: Provider> Loop<P> {
         self.session.enter_review().map_err(super::session_err)?;
         let objective = self.session.objective().map_err(super::session_err)?;
         let evidence = verify::summary(paths, checks);
-        let before = usage.clone();
         let reviewed = review::outcome(self, &objective, reply, &evidence, paths, usage).await;
-        self.seat_usage(workflow::Role::Review, &before, usage, events, emit)?;
+        self.sync_usage(emit);
         let (review, heading) = match reviewed {
             Ok(review) => (review, "review findings:\n"),
             Err(why) => (
@@ -207,16 +204,14 @@ impl<P: Provider> Loop<P> {
         &mut self,
         reply: &str,
         evidence: &str,
-        events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Decision> {
         let Some(objective) = self.session.goal_objective().map_err(super::session_err)? else {
             return Ok(Decision::Automatic);
         };
-        let before = usage.clone();
         let decision = goal::decision(self, &objective, reply, evidence, usage).await;
-        self.seat_usage(workflow::Role::Judge, &before, usage, events, emit)?;
+        self.sync_usage(emit);
         Ok(decision)
     }
 

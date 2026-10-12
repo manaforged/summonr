@@ -56,7 +56,14 @@ impl Receipt {
             text: String::new(),
         };
         tally(events, &mut receipt);
-        receipt.text = render(&receipt);
+        receipt.text = render(&receipt, true);
+        receipt
+    }
+
+    #[must_use]
+    pub(crate) fn unchecked(changes: Vec<String>, snapshot: String, events: &[Event]) -> Self {
+        let mut receipt = Self::new(changes, Vec::new(), snapshot, events);
+        receipt.text = render(&receipt, false);
         receipt
     }
 
@@ -64,7 +71,7 @@ impl Receipt {
     pub(crate) fn aborted(snapshot: String, events: &[Event]) -> Self {
         let mut receipt = Self::new(Vec::new(), Vec::new(), snapshot, events);
         receipt.aborted = true;
-        receipt.text = render(&receipt);
+        receipt.text = render(&receipt, true);
         receipt
     }
 }
@@ -260,7 +267,7 @@ fn tally_read(value: &serde_json::Value, receipt: &mut Receipt) -> Option<String
         .map(str::to_string)
 }
 
-fn render(receipt: &Receipt) -> String {
+fn render(receipt: &Receipt, checked: bool) -> String {
     let cap = crate::limits::limits().receipt_items_max;
     let mut text = format!(
         "Turn receipt · {}\n- Started at: {}",
@@ -284,6 +291,10 @@ fn render(receipt: &Receipt) -> String {
     if !receipt.changes.is_empty() {
         let names: Vec<String> = receipt.changes.iter().map(|change| code(change)).collect();
         text.push_str(&format!("\n- Changed: {}", capped(&names, cap, ", ")));
+    }
+    if !checked {
+        text.push_str("\n- Verification: not run");
+        return text;
     }
     let checks = summary(&[], &receipt.checks);
     if let Some(at) = checks.find("\n- Verification:") {

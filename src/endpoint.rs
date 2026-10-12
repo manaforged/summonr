@@ -134,7 +134,7 @@ impl Endpoint {
     }
 }
 
-fn local(url: &str) -> bool {
+pub(crate) fn local(url: &str) -> bool {
     match url::Url::parse(url).ok().as_ref().and_then(url::Url::host) {
         Some(url::Host::Ipv4(ip)) => {
             let [first, second, ..] = ip.octets();

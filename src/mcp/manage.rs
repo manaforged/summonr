@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use toml_edit::{Array, InlineTable, Item, Table, value};
 
 use crate::config;
@@ -54,8 +56,16 @@ pub fn add(name: &str, launch: &McpLaunch) -> Result<String> {
     )))
 }
 
-pub fn remove(name: &str) -> Result<bool> {
-    config::remove_named(&config::path()?, config::Section::Mcp, name)
+pub fn remove(workspace: &Path, name: &str) -> Result<bool> {
+    let key = super::config::servers(workspace)
+        .ok()
+        .and_then(|found| found.servers.into_iter().find(|server| server.name == name))
+        .map(|server| server.key);
+    let removed = config::remove_named(&config::path()?, config::Section::Mcp, name)?;
+    if removed && let Some(key) = key {
+        super::catalog::forget(&key);
+    }
+    Ok(removed)
 }
 
 fn pairs(pairs: &[(String, String)]) -> InlineTable {

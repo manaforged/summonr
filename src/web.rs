@@ -269,7 +269,7 @@ fn client() -> Result<Session> {
     crate::credentials::session(
         http_builder(),
         crate::limits::limits()
-            .retry_policy()
+            .retry_policy(crate::limits::Reach::Remote)
             .retry_on([leyline::RetryTrigger::ConnectionError]),
     )
 }
@@ -291,7 +291,7 @@ pub(super) fn fetch_targets(host: &str) -> std::result::Result<Vec<std::net::Soc
 pub(super) fn pinned_session(host: &str, addrs: &[std::net::SocketAddr]) -> Result<Session> {
     crate::credentials::session(
         http_builder().dns(DnsConfig::new().resolve_host(host, addrs.iter().copied())),
-        crate::limits::limits().retry_policy(),
+        crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
     )
 }
 

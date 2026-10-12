@@ -151,10 +151,11 @@ pub(crate) fn guidance(files: &[MemoryFile]) -> String {
             .unwrap_or_default()
     };
     format!(
-        "Memory: project memory is {project} and user memory is {user}. Save a durable fact to project memory with edit or write (write creates a missing file): a user correction, a stable preference, a non-obvious project fact, or a pointer to an outside resource. Put cross-project preferences in user memory. Never save task state or what git already records. Start each entry with its date (YYYY-MM-DD). Read the file before you change it; use edit for one entry, never rewrite the whole file from memory. Keep the file under {cap} bytes. Never delete entries the user did not ask you to remove. When the file is over the cap, ask the user which entries to drop before pruning; never prune with a shell command. After saving, tell the user in one line what you saved and where. Check a remembered fact against the code before you act on it; delete it when wrong.",
+        "Memory: project memory is {project} and user memory is {user}. Save a durable fact to project memory with edit or write (write creates a missing file): a user correction, a stable preference, a non-obvious project fact, or a pointer to an outside resource. Put cross-project preferences in user memory. Never save task state or what git already records. Start each entry with its date (YYYY-MM-DD); today is {today}. Read the file before you change it; use edit for one entry, never rewrite the whole file from memory. Keep the file under {cap} bytes. Never delete entries the user did not ask you to remove. When the file is over the cap, ask the user which entries to drop before pruning; never prune with a shell command. After saving, tell the user in one line what you saved and where. Check a remembered fact against the code before you act on it; delete it when wrong.",
         project = path(Scope::Project),
         user = path(Scope::User),
         cap = crate::limits::limits().memory_bytes,
+        today = jiff::Zoned::now().date(),
     )
 }
 

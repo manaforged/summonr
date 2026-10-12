@@ -140,7 +140,7 @@ pub(crate) fn http() -> Result<leyline::Session> {
             crate::limits::limits().auth(),
             crate::limits::limits().connect(),
         ),
-        crate::limits::limits().retry_policy(),
+        crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
     )
 }
 

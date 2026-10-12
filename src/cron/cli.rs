@@ -286,10 +286,7 @@ fn log(name: &str, show: Show) -> Result<i32> {
 }
 
 fn status() -> Result<i32> {
-    match super::install::status()? {
-        Some(path) => println!("installed: {}", path.display()),
-        None => println!("installed: no (run `summonr cron install`)"),
-    }
+    let installed = super::install::status()?;
     let jobs = store::load()?;
     let now = super::now();
     let next = jobs
@@ -297,7 +294,5 @@ fn status() -> Result<i32> {
         .filter(|job| !job.paused)
         .filter_map(|job| runner::next_fire(job, now))
         .min_by_key(Zoned::timestamp);
-    println!("jobs: {}", jobs.len());
-    println!("next: {}", view::when(next));
-    Ok(0)
+    say(view::status(installed.as_deref(), jobs.len(), next))
 }

@@ -46,6 +46,14 @@ pub(crate) enum Outcome {
     Expired,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Origin {
+    #[default]
+    Local,
+    Webhook,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Run {
     pub slot: i64,
@@ -53,6 +61,8 @@ pub(crate) struct Run {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job: Option<String>,
     pub outcome: Outcome,
+    #[serde(default)]
+    pub origin: Origin,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -296,6 +306,7 @@ pub(crate) fn settle(
                 started,
                 job: None,
                 outcome: Outcome::Running,
+                origin: Origin::Local,
             });
         }
         if let Some(run) = job.runs.iter_mut().find(|run| run.slot == slot) {
@@ -313,5 +324,5 @@ fn read(path: &Path) -> Result<Vec<Job>> {
 }
 
 pub(super) fn unknown(name: &str) -> Error {
-    Error::Config(format!("no cron job named `{name}`"))
+    Error::Setup(format!("no cron job named `{name}`"))
 }

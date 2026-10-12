@@ -22,6 +22,9 @@ impl App {
             self.pane_focus.set(false);
         }
         self.layout.set(layout);
+        if layout.secondary.is_some() {
+            self.splash.set(false);
+        }
         if opened {
             self.load();
         }

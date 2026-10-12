@@ -25,7 +25,7 @@ pub(in crate::tui::sigil_view) fn band(app: &App) -> Option<Band> {
     }
     if let Some(state) = app.form.get() {
         return Some(Band::Form {
-            lines: state.lines(),
+            lines: state.shown(&app.draft.get()),
             review: state.stage == crate::tui::sigil_view::app::Stage::Review,
         });
     }

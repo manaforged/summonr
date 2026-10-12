@@ -4,6 +4,8 @@ use crate::catalog::Model;
 use crate::endpoint::State;
 use crate::recent::Seat;
 
+const CURRENT: &str = "current";
+
 pub(super) enum ModelRow {
     Header(String),
     Provider(String, usize),
@@ -21,10 +23,15 @@ pub(super) fn list_rows(
     let mut rows = Vec::with_capacity(choices.len() + 8);
     let (mut attention, mut setup) = (Vec::new(), Vec::new());
     let mut start = 0;
-    for (title, count) in ["current", "favorites", "recent"].into_iter().zip(counts) {
+    for (title, count) in [CURRENT, "favorites", "recent"].into_iter().zip(counts) {
         let end = (start + count).min(choices.len());
         if end > start {
-            rows.push(ModelRow::Header(title.to_string()));
+            let title = if rows.is_empty() && title == CURRENT {
+                format!("{title} · {}", choices[start].endpoint)
+            } else {
+                title.to_string()
+            };
+            rows.push(ModelRow::Header(title));
             rows.extend((start..end).map(ModelRow::Seat));
         }
         start = end;
@@ -113,3 +120,7 @@ pub(super) const fn action(state: State) -> &'static str {
         State::Ready | State::NoKey | State::Checking | State::Loading => "↵ use",
     }
 }
+
+#[cfg(test)]
+#[path = "rows_tests.rs"]
+mod tests;

@@ -64,7 +64,7 @@ type DeltaFn = Arc<dyn Fn(&str) + Send + Sync>;
 pub use client::Client;
 pub(crate) use client::input_cap;
 #[cfg(test)]
-pub(crate) use client::response_failure;
+pub(crate) use client::{response_failure, unreachable_message};
 #[cfg(test)]
 pub(crate) use message::Checked;
 pub(crate) use message::{

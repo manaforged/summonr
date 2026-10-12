@@ -19,6 +19,10 @@ impl Mark {
             Self::Plain => ' ',
         }
     }
+
+    pub(in crate::tui::sigil_view) const fn settled(self) -> bool {
+        matches!(self, Self::Done | Self::Plain)
+    }
 }
 
 impl From<TodoStatus> for Mark {

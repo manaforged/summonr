@@ -316,7 +316,7 @@ fn a_question_gives_back_the_unsent_draft_when_it_closes() {
 }
 
 #[test]
-fn a_typed_answer_shows_inside_the_question_picker() {
+fn a_typed_answer_shows_once_and_the_picker_points_to_it() {
     Runtime::scope("form-typed-answer", || {
         let workspace = tempfile::tempdir().unwrap();
         let form = Form {
@@ -340,8 +340,14 @@ fn a_typed_answer_shows_inside_the_question_picker() {
         assert!(
             lines
                 .iter()
-                .any(|line| line == "❯ any zero, and also reject NaN divisors"),
+                .any(|line| line.starts_with("your typed answer below")),
             "{lines:?}"
+        );
+        assert!(
+            !lines
+                .iter()
+                .any(|line| line.contains("reject NaN divisors")),
+            "the answer shows twice: {lines:?}"
         );
         assert!(
             !lines.iter().any(|line| line.starts_with("❯ 1.")),

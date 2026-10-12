@@ -8,6 +8,8 @@ use super::*;
 use crate::prefs::Hotkeys;
 use crate::tui::sigil_view::ui::{Hints, Key};
 
+const TYPED_BELOW: &str = "your typed answer below replaces the choices · ↵ sends it";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Stage {
     Filling,
@@ -161,7 +163,7 @@ impl FormState {
                 }));
             }
             if !typed.is_empty() {
-                lines.push(format!("❯ {typed}"));
+                lines.push(TYPED_BELOW.to_string());
             }
             lines.push(facts(field));
         }

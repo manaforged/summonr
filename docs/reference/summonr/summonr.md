@@ -436,6 +436,7 @@
 
 | Method | Description |
 | --- | --- |
+| <code>changes(&amp;self) -&gt; <a href="#result">Result</a>&lt;Vec&lt;String&gt;&gt;</code> |  |
 | <code>unchanged(&amp;self) -&gt; <a href="#result">Result</a>&lt;bool&gt;</code> |  |
 
 **Fields**

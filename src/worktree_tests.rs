@@ -313,6 +313,6 @@ fn a_worktree_holding_only_summonr_state_is_unchanged() {
     std::fs::write(tree.path.join(".summonr/jobs/1.log"), "check output").unwrap();
     assert!(tree.unchanged().unwrap());
     std::fs::write(tree.path.join("note.txt"), "edit").unwrap();
-    assert!(!tree.unchanged().unwrap());
+    assert_eq!(tree.changes().unwrap(), vec!["note.txt".to_string()]);
     drop(tree.remove());
 }

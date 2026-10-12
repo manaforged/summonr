@@ -256,7 +256,7 @@ fn edit() -> ToolDefinition {
 fn write() -> ToolDefinition {
     tool(
         "write",
-        "Create or overwrite one file, or several at once with files.",
+        "Create or overwrite one file (path and content), or several at once with files.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -276,10 +276,6 @@ fn write() -> ToolDefinition {
                     }
                 }
             },
-            "anyOf": [
-                {"required": ["path", "content"]},
-                {"required": ["files"]}
-            ],
             "additionalProperties": false
         }),
     )

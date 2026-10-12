@@ -885,19 +885,23 @@ pub summonr::AuthInfo::model: alloc::string::String
 pub summonr::AuthInfo::name: alloc::string::String
 pub summonr::AuthInfo::own: bool
 pub summonr::AuthInfo::plan: alloc::string::String
+pub summonr::AuthInfo::provider: alloc::string::String
 pub summonr::AuthInfo::setup: alloc::string::String
 pub summonr::AuthInfo::source: core::option::Option<summonr::secret::Source>
 impl summonr::AuthInfo
 pub fn summonr::AuthInfo::catalog_line(&self, name: usize, state: usize) -> alloc::string::String
 pub fn summonr::AuthInfo::catalog_rank(&self) -> u8
 pub fn summonr::AuthInfo::catalog_title(&self) -> &'static str
-pub fn summonr::AuthInfo::display_name(&self) -> alloc::string::String
 pub fn summonr::AuthInfo::dual(&self) -> bool
+pub fn summonr::AuthInfo::key_action(&self) -> &'static str
 pub fn summonr::AuthInfo::keyless(&self) -> bool
+pub fn summonr::AuthInfo::matches(&self, query: &str) -> bool
+pub fn summonr::AuthInfo::paste_key(&self) -> bool
 pub fn summonr::AuthInfo::plan(&self) -> bool
 pub fn summonr::AuthInfo::state(&self) -> alloc::string::String
 pub fn summonr::AuthInfo::status(&self) -> alloc::string::String
 pub fn summonr::AuthInfo::stored(&self) -> bool
+pub fn summonr::AuthInfo::title(&self) -> &str
 pub fn summonr::AuthInfo::unmodeled(&self) -> bool
 impl core::clone::Clone for summonr::AuthInfo
 impl core::cmp::Eq for summonr::AuthInfo
@@ -1116,6 +1120,7 @@ pub summonr::Tree::path: std::path::PathBuf
 pub summonr::Tree::primary: std::path::PathBuf
 pub summonr::Tree::snapshot: core::option::Option<alloc::string::String>
 impl summonr::Tree
+pub fn summonr::Tree::changes(&self) -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
 pub fn summonr::Tree::unchanged(&self) -> summonr::Result<bool>
 impl core::clone::Clone for summonr::Tree
 impl core::cmp::Eq for summonr::Tree

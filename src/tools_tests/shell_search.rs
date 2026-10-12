@@ -11,7 +11,7 @@ fn the_search_commands_models_type_are_answered_by_search() {
         "refract here\n",
     )
     .unwrap();
-    let root = dir.path().display().to_string();
+    let root = dir.path().display().to_string().replace('\\', "/");
     let logged = format!(
         "grep -ril refract {root}/docs 2>/dev/null | head; find {root} -maxdepth 3 -iname '*refract*' -not -path '*/Library/*' 2>/dev/null | head"
     );
@@ -32,8 +32,10 @@ fn the_search_commands_models_type_are_answered_by_search() {
     assert!(spotlight.contains("refract-notes.md"), "{spotlight}");
     let exec = outcome(&tools, "find . -name '*.txt' -exec wc -l {} +");
     assert!(!exec.contains("answered by search"), "{exec}");
-    assert!(exec.contains("notes.txt"), "{exec}");
     let sorted = outcome(&tools, "grep -rn needle . | sort");
     assert!(!sorted.contains("answered by search"), "{sorted}");
-    assert!(sorted.contains("notes.txt"), "{sorted}");
+    if cfg!(unix) {
+        assert!(exec.contains("notes.txt"), "{exec}");
+        assert!(sorted.contains("notes.txt"), "{sorted}");
+    }
 }

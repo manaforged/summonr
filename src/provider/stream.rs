@@ -28,6 +28,7 @@ impl Client {
                 self.stream_wire::<super::wire::responses::Wire>(request, partial)
                     .await
             }
+            crate::endpoint::Wire::AgentSdk => self.stream_agent(request, partial).await,
             crate::endpoint::Wire::Completions | crate::endpoint::Wire::Decisions => {
                 self.stream_wire::<super::wire::completions::Wire>(request, partial)
                     .await
@@ -41,7 +42,7 @@ impl Client {
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         let body = self.request(request, true)?;
-        let route = self.cache_header.as_ref().map(|_| request.prefix_hash());
+        let route = self.cache_header.as_ref().map(|_| request.session.clone());
         let model = body.model().map(str::to_string);
         let bytes = body.to_bytes()?;
         drop(body);
@@ -128,7 +129,7 @@ impl Client {
         ))
     }
 
-    fn apply(
+    pub(super) fn apply(
         &self,
         request: &CompletionRequest<'_>,
         sizes: &mut (usize, usize),

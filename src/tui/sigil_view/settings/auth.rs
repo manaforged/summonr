@@ -30,6 +30,14 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
         event.stop_propagation();
         app.key_entry();
     }));
+    bindings.extend(alt("r", |app, event| {
+        event.stop_propagation();
+        app.toggle_route(crate::endpoint::Toggle::Region);
+    }));
+    bindings.extend(alt("a", |app, event| {
+        event.stop_propagation();
+        app.toggle_route(crate::endpoint::Toggle::Access);
+    }));
     bindings
 }
 
@@ -109,18 +117,15 @@ fn listing_hints(app: &App) -> Hints {
     if !stacked {
         hints = hints.key(Key::UpDown, "move");
     }
-    hints = hints.key(
-        Key::Enter,
-        if choice.login.signs_in() {
-            "sign in"
-        } else if choice.keyless() {
-            "set a key"
-        } else {
-            "open"
-        },
-    );
-    if choice.dual() && choice.env.is_none() {
+    hints = hints.key(Key::Enter, choice.key_action());
+    if choice.paste_key() {
         hints = hints.key(Key::Fixed("alt+k"), "paste a key");
+    }
+    if let Some(region) = choice.switch(crate::endpoint::Toggle::Region) {
+        hints = hints.key(Key::Fixed("alt+r"), region);
+    }
+    if let Some(access) = choice.switch(crate::endpoint::Toggle::Access) {
+        hints = hints.key(Key::Fixed("alt+a"), access);
     }
     if choice.stored() {
         hints = hints.key(Key::Fixed("alt+d"), "sign out");
@@ -264,7 +269,7 @@ fn sections(
                 .unwrap_or(0);
         }
         lookup.push((
-            row.display_name(),
+            row.title().to_string(),
             chip(row, states.get(&row.name)),
             Some(index),
         ));

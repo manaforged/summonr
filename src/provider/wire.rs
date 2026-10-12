@@ -17,7 +17,7 @@ pub(crate) fn headers(wire: crate::endpoint::Wire) -> &'static [(&'static str, &
         crate::endpoint::Wire::Gemini => gemini::Wire::headers(),
         crate::endpoint::Wire::Responses => responses::Wire::headers(),
         crate::endpoint::Wire::Completions => completions::Wire::headers(),
-        crate::endpoint::Wire::Decisions => &[],
+        crate::endpoint::Wire::Decisions | crate::endpoint::Wire::AgentSdk => &[],
     }
 }
 
@@ -34,7 +34,7 @@ const WEB_IMAGES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/web
 
 pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
     match wire {
-        crate::endpoint::Wire::Anthropic => ImageBudget {
+        crate::endpoint::Wire::Anthropic | crate::endpoint::Wire::AgentSdk => ImageBudget {
             types: WEB_IMAGES,
             count: 100,
             each: 10_000_000,

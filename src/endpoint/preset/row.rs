@@ -21,6 +21,8 @@ pub(super) struct Row {
     #[serde(default)]
     model: String,
     #[serde(default)]
+    login_model: Option<String>,
+    #[serde(default)]
     env_keys: Vec<String>,
     #[serde(default)]
     default_key: Option<String>,
@@ -65,7 +67,13 @@ pub(super) struct Row {
     #[serde(default)]
     start: Option<String>,
     #[serde(default)]
-    key_from: Option<String>,
+    key_from: Vec<String>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    region: Option<super::super::Region>,
+    #[serde(default)]
+    replaces: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -188,12 +196,13 @@ impl Row {
         self.check_env_keys(&name)?;
         let missing = self.missing(&name);
         let reasoning = self.reasoning.spec(&name)?;
-        if self.key_from.as_deref() == Some(name.as_str()) {
+        if self.key_from.contains(&name) {
             return Err(format!("`{name}` reads its key from itself"));
         }
         Ok(Preset {
             models_url: leak_str(self.models_url.as_deref()),
             model: self.model,
+            login_model: self.login_model,
             env_keys: leak_list(&self.env_keys),
             default_key: leak_str(self.default_key.as_deref()),
             missing,
@@ -217,6 +226,9 @@ impl Row {
             label: self.label,
             start: self.start,
             key_from: self.key_from,
+            provider: self.provider.unwrap_or_else(|| name.clone()),
+            region: self.region,
+            replaces: self.replaces,
             name,
             base_url,
         })

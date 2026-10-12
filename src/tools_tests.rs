@@ -17,6 +17,9 @@ mod search;
 mod search_power;
 #[path = "tools_tests/shell_search.rs"]
 mod shell_search;
+#[cfg(windows)]
+#[path = "tools_tests/windows.rs"]
+mod windows;
 
 #[test]
 fn empty_run_command_arguments_are_a_tool_error() {
@@ -82,6 +85,17 @@ fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
     }
     let tools = ToolRegistry::with_policy_and_search(dir.path(), Policy::builtin(), None).unwrap();
     (dir, tools)
+}
+
+fn past_the_wait() -> String {
+    format!(
+        "sleep {}; echo finished",
+        crate::limits::limits().command_wait_secs + 1
+    )
+}
+
+fn per_shell(bash: &'static str, powershell: &'static str) -> &'static str {
+    if cfg!(windows) { powershell } else { bash }
 }
 
 fn run(tools: &ToolRegistry, name: &str, arguments: serde_json::Value) -> String {

@@ -39,9 +39,14 @@ fn an_endpoint_without_a_ttl_takes_the_limits_default() {
 #[test]
 fn tests_load_the_built_in_limits_with_the_test_overlay() {
     let built = Limits::built_in();
-    assert_eq!(limits().job_wait_secs, 1);
-    assert_eq!(limits().command_wait_secs, 1);
-    assert_eq!(limits().command_kill_secs, 4);
+    let (job, wait, kill) = if cfg!(windows) {
+        (30, 30, 60)
+    } else {
+        (1, 1, 4)
+    };
+    assert_eq!(limits().job_wait_secs, job);
+    assert_eq!(limits().command_wait_secs, wait);
+    assert_eq!(limits().command_kill_secs, kill);
     assert_eq!(limits().keychain(), Duration::from_millis(600));
     assert_eq!(limits().mcp_call(), built.mcp_call());
     assert_ne!(built.job_wait_secs, limits().job_wait_secs);

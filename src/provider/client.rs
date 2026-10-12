@@ -4,6 +4,7 @@ use leyline::http::StatusCode;
 mod admit;
 mod classify;
 mod encode;
+mod headers;
 mod login;
 mod meta;
 
@@ -55,6 +56,7 @@ pub struct Client {
     pub(super) prompt_cache_key: bool,
     pub(super) cache_ttl: crate::endpoint::CacheTtl,
     pub(super) cache_header: Option<String>,
+    pub(super) agent: Option<agent::Seat>,
     pub(super) wire: Wire,
     pub(super) reasoning: Reasoning,
     pub(super) idle: Option<Duration>,
@@ -118,6 +120,9 @@ impl Client {
         client.name.clone_from(&endpoint.name);
         client.cache_ttl = endpoint.cache_ttl;
         client.cache_header.clone_from(&endpoint.cache_header);
+        if endpoint.wire == Wire::AgentSdk {
+            client.agent = Some(agent::Seat::new(base, &endpoint.env));
+        }
         client.reasoning.clone_from(&endpoint.reasoning);
         Ok(client)
     }
@@ -202,6 +207,11 @@ impl Client {
                     "a classify endpoint does not run sessions".to_string(),
                 ));
             }
+            Wire::AgentSdk => {
+                return Err(Error::Config(
+                    "a Claude Code seat sends no HTTP request".to_string(),
+                ));
+            }
         };
         let completions = self.wire == Wire::Completions;
         let messages = if completions {
@@ -224,11 +234,10 @@ impl Client {
     }
 
     fn extend_body(&self, body: &mut Body<'_>, request: &CompletionRequest<'_>) {
-        if self.prompt_cache_key && !self.auth.is_login() {
-            body.set("prompt_cache_key", json!(request.prefix_hash()));
+        if self.prompt_cache_key || self.plan_responses() {
+            body.set("prompt_cache_key", json!(request.session));
         }
-        if self.wire == Wire::Responses
-            && self.auth.is_login()
+        if self.plan_responses()
             && let Some(tools) = body.take("tools")
         {
             body.set("tools", json!([wire::responses::namespace(tools)]));
@@ -248,33 +257,6 @@ impl Client {
     ) -> Result<Value> {
         let bytes = self.request(request, stream)?.to_bytes()?;
         Ok(serde_json::from_slice(&bytes)?)
-    }
-
-    pub(super) fn headers(&self, session: Option<&str>) -> Vec<(&str, std::borrow::Cow<'_, str>)> {
-        let mut headers: Vec<_> = self
-            .headers
-            .iter()
-            .filter(|(key, _)| {
-                let posted = session.is_some();
-                !(posted && key == "content-type"
-                    || self.opencode
-                        && (key == "x-opencode-request" || posted && key == "x-opencode-session"))
-            })
-            .map(|(key, value)| (key.as_str(), std::borrow::Cow::Borrowed(value.as_str())))
-            .collect();
-        if self.opencode {
-            if let Some(session) = session {
-                headers.push((
-                    "x-opencode-session",
-                    std::borrow::Cow::Owned(session.to_string()),
-                ));
-            }
-            headers.push((
-                "x-opencode-request",
-                std::borrow::Cow::Owned(uuid::Uuid::now_v7().to_string()),
-            ));
-        }
-        headers
     }
 
     pub(super) fn url_for<W: wire::Chat>(&self, model: &str, stream: bool) -> String {
@@ -373,7 +355,12 @@ impl Provider for Client {
         &'a self,
         request: &'a CompletionRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-        Box::pin(async move { self.stream(request, &mut Partial::default()).await })
+        Box::pin(async move {
+            if self.wire == Wire::AgentSdk {
+                return self.complete_agent(request).await;
+            }
+            self.stream(request, &mut Partial::default()).await
+        })
     }
 
     fn stream<'a>(

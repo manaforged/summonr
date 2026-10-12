@@ -303,3 +303,16 @@ fn a_rename_into_a_cache_path_is_not_thrown_away() {
     assert!(result.is_err_and(|error| error.to_string().contains("a.c")));
     assert!(tree.path.join("__pycache__/a.c").exists());
 }
+
+#[test]
+fn a_worktree_holding_only_summonr_state_is_unchanged() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    assert!(tree.unchanged().unwrap());
+    std::fs::create_dir_all(tree.path.join(".summonr/jobs")).unwrap();
+    std::fs::write(tree.path.join(".summonr/jobs/1.log"), "check output").unwrap();
+    assert!(tree.unchanged().unwrap());
+    std::fs::write(tree.path.join("note.txt"), "edit").unwrap();
+    assert_eq!(tree.changes().unwrap(), vec!["note.txt".to_string()]);
+    drop(tree.remove());
+}

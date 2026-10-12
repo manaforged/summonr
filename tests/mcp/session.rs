@@ -24,6 +24,7 @@ pub(crate) fn a_plain_worktree_turn_lands_its_changes_without_running_a_check() 
     for args in [
         vec!["config", "user.name", "Test"],
         vec!["config", "user.email", "test@example.invalid"],
+        vec!["config", "core.autocrlf", "false"],
         vec!["add", "."],
         vec!["commit", "-qm", "fixture: record initial files"],
     ] {
@@ -82,6 +83,7 @@ fn commit_all(session: &Session) {
     for args in [
         vec!["config", "user.name", "Test"],
         vec!["config", "user.email", "test@example.invalid"],
+        vec!["config", "core.autocrlf", "false"],
         vec!["add", "."],
         vec!["commit", "-qm", "fixture: record initial files"],
     ] {
@@ -95,6 +97,7 @@ fn commit_all(session: &Session) {
 }
 
 pub(crate) fn a_failed_worktree_run_without_changes_says_so() {
+    let budget = crate::support::slow(2).to_string();
     let session = Session::new();
     with_check(&session, "exit 1");
     commit_all(&session);
@@ -107,7 +110,7 @@ pub(crate) fn a_failed_worktree_run_without_changes_says_so() {
             "--goal",
             "finish",
             "--max-secs",
-            "2",
+            &budget,
             "--json",
         ],
     );
@@ -119,7 +122,7 @@ pub(crate) fn a_failed_worktree_run_without_changes_says_so() {
 
 pub(crate) fn a_goal_run_reports_the_judge_usage_once() {
     let session = Session::new();
-    with_check(&session, "true");
+    with_check(&session, "exit 0");
     let model = Model::start(vec![
         Step::Text("fixed"),
         Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
@@ -135,7 +138,7 @@ pub(crate) fn a_goal_run_reports_the_judge_usage_once() {
 
 pub(crate) fn a_print_run_says_its_check_was_not_run() {
     let session = Session::new();
-    with_check(&session, "true");
+    with_check(&session, "exit 0");
     let result = session.run(&Model::start(vec![Step::Text("hi")]), "", &["--json"]);
     assert_eq!(result.code, Some(0), "{}", result.stdout);
     let receipt = events(&result.stdout)
@@ -193,13 +196,19 @@ pub(crate) fn a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code
     )
     .expect("write the failing check");
     let model = Model::start(vec![Step::After(
-        Duration::from_secs(2),
+        Duration::from_secs(crate::support::slow(2)),
         Box::new(Step::Text("too late")),
     )]);
     let result = session.run(
         &model,
         "",
-        &["--goal", "finish the task", "--max-secs", "1", "--json"],
+        &[
+            "--goal",
+            "finish the task",
+            "--max-secs",
+            &crate::support::slow(1).to_string(),
+            "--json",
+        ],
     );
     assert_eq!(result.code, Some(2), "{}", result.stdout);
     let events = events(&result.stdout);

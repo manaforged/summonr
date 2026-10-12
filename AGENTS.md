@@ -19,6 +19,8 @@ export ANTHROPIC_API_KEY=...
 summonr anthropic -p "say hi"
 ```
 
+With a Claude Pro or Max plan, sign in to Claude Code with `claude auth login` and use the `claude` endpoint: `summonr claude -p "say hi"`. summonr runs Claude Code for each turn and keeps its own tools, policy, and checks.
+
 `summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoints` lists every endpoint with its key status. Add any OpenAI-compatible server with `summonr login NAME --url URL [--model M]`, and remove it with `summonr logout NAME --remove`. The same server can be one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
 
 ## Drive it from a script
@@ -56,7 +58,7 @@ summonr cron log nightly      # what the last run did and whether the check pass
 
 `summonr cron add NAME --manual -p PROMPT` with `summonr cron token NAME` and `summonr gateway webhook` starts a job from `POST /run/NAME`. `summonr gateway telegram` drives sessions from a paired Telegram chat.
 
-Run unattended goals with `--sandbox`: without it the model can change files outside the workspace, including tools the check calls. Useful flags: `--sandbox` to contain shell commands, `--worktree` to work in a separate git worktree (on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch; on failure it keeps the worktree), and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
+On macOS and Linux, run unattended goals with `--sandbox`: without it the model can change files outside the workspace, including tools the check calls. Windows release builds have no sandbox yet, and `--sandbox` exits 1 there. Useful flags: `--sandbox` to contain shell commands, `--worktree` to work in a separate git worktree (on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch; on failure it keeps the worktree), and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
 
 ## Give it project instructions
 

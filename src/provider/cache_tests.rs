@@ -108,7 +108,7 @@ fn claude_through_a_completions_host_marks_its_cache_breakpoints() {
 }
 
 #[test]
-fn grok_routes_every_request_to_its_cache_with_the_prefix_hash() {
+fn grok_routes_every_request_of_a_session_to_its_cache() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let mut grok = endpoint("grok", "grok-4.6");
     grok.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
@@ -166,8 +166,8 @@ fn grok_routes_every_request_to_its_cache_with_the_prefix_hash() {
         !headers.is_empty(),
         "no request reached the server: {failure}"
     );
-    let want = format!("x-grok-conv-id: {}", request.prefix_hash()).to_ascii_lowercase();
-    assert!(headers.contains(&want), "{headers}");
+    assert!(headers.contains("x-grok-conv-id: s\r\n"), "{headers}");
+    assert!(headers.contains("\"prompt_cache_key\":\"s\""), "{headers}");
 }
 
 #[test]
@@ -272,5 +272,30 @@ fn mistral_gets_an_assistant_turn_between_a_tool_result_and_a_steer() {
     assert_eq!(
         roles("zai", "glm-5.3-flash"),
         ["system", "user", "assistant", "tool", "user"]
+    );
+}
+
+#[test]
+fn responses_login_uses_session_affinity() {
+    let seat = crate::endpoint::login_seat("openai").unwrap();
+    let client = Client::connect(&seat).unwrap();
+    let messages = tool_round();
+    let request = CompletionRequest::new(
+        "session-7".to_string(),
+        seat.model.clone(),
+        &messages,
+        &[],
+        None,
+        false,
+        None,
+    );
+    let body = client.request_body(&request, true).unwrap();
+    assert_eq!(body["prompt_cache_key"], "session-7", "{body}");
+    let headers = client.headers(Some("session-7"));
+    assert!(
+        headers
+            .iter()
+            .any(|(name, value)| *name == "session-id" && value == "session-7"),
+        "{headers:?}"
     );
 }

@@ -104,6 +104,16 @@ fn assemble(
     Ok((loop_, goal_checks, workflow))
 }
 
+const LISTED: usize = 3;
+
+fn listed(changes: &[String]) -> String {
+    let shown = changes[..changes.len().min(LISTED)].join(", ");
+    match changes.len().saturating_sub(LISTED) {
+        0 => shown,
+        more => format!("{shown} and {more} more"),
+    }
+}
+
 fn land(
     tree: &summonr::Tree,
     code: i32,
@@ -112,10 +122,13 @@ fn land(
     session_path: &std::path::Path,
 ) -> i32 {
     if code != 0 {
-        let state = if tree.unchanged().unwrap_or(false) {
-            "the run made no changes there"
-        } else {
-            "the run's files are there, uncommitted"
+        let state = match tree.changes() {
+            Ok(changes) if changes.is_empty() => "the run made no changes there".to_string(),
+            Ok(changes) => format!(
+                "the run's files are there, uncommitted: {}",
+                listed(&changes)
+            ),
+            Err(error) => format!("its changes could not be read: {error}"),
         };
         eprintln!(
             "worktree kept {} ({}): {state}",

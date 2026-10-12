@@ -36,6 +36,7 @@ const SECRET_DIRS: &[&str] = &[
 ];
 
 pub(crate) fn protected_read(path: &Path) -> bool {
+    let path = dunce::simplified(path);
     if let Some(name) = path.file_name().and_then(|name| name.to_str())
         && (name.starts_with(".env.")
             || name.starts_with("credentials.")
@@ -47,6 +48,7 @@ pub(crate) fn protected_read(path: &Path) -> bool {
 }
 
 pub(crate) fn holds_protected(path: &Path) -> bool {
+    let path = dunce::simplified(path);
     protected_dirs().iter().any(|dir| dir.starts_with(path))
 }
 

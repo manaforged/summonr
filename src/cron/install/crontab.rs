@@ -1,19 +1,20 @@
 use std::path::{Path, PathBuf};
 
+use super::TickEnv;
 use crate::error::Result;
 
 const CRON_MARKER: &str = "# summonr-cron";
 #[cfg(unix)]
 const CRONTAB_PATH: &str = "crontab";
 
-pub(crate) fn cron_line(exe: &Path, path: &str, home: Option<&str>) -> String {
-    let home = home
-        .map(|h| format!("{}={} ", super::HOME_VAR, crate::shell::quote(h)))
-        .unwrap_or_default();
+pub(crate) fn cron_line(exe: &Path, env: TickEnv<'_>) -> String {
+    let vars: String = env
+        .vars()
+        .into_iter()
+        .map(|(key, value)| format!("{key}={} ", crate::shell::quote(value)))
+        .collect();
     let command = format!(
-        "{}={} {home}{} cron tick",
-        super::PATH_VAR,
-        crate::shell::quote(path),
+        "{vars}{} cron tick",
         crate::shell::quote(&exe.display().to_string())
     );
     format!("* * * * * {} {CRON_MARKER}", command.replace('%', "\\%"))
@@ -38,9 +39,9 @@ fn has_line(text: &str) -> bool {
 }
 
 #[cfg(unix)]
-pub(crate) fn install(exe: &Path, path: &str, home: Option<&str>) -> Result<PathBuf> {
+pub(crate) fn install(exe: &Path, env: TickEnv<'_>) -> Result<PathBuf> {
     let mut text = crontab_without(&current());
-    text.push_str(&cron_line(exe, path, home));
+    text.push_str(&cron_line(exe, env));
     text.push('\n');
     super::run("crontab", &["-"], Some(&text))?;
     Ok(PathBuf::from(CRONTAB_PATH))

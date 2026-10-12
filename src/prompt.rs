@@ -80,6 +80,9 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
             parts.push(crate::memory::guidance(&files));
         }
     }
+    if !(trust && memory) {
+        parts.push(crate::memory::DISABLED.to_string());
+    }
     if !images {
         parts.push(
             "The model does not accept image input. Do not attach images; describe them or ask the user for text instead."

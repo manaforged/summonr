@@ -105,3 +105,28 @@ fn a_workspace_system_file_keeps_the_preamble() {
     );
     assert!(prompt.contains("WORKSPACE RULE"), "{prompt}");
 }
+
+#[test]
+fn a_session_without_memory_is_told_nothing_persists() {
+    let work = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let off = compose(
+        work.path(),
+        Some(home.path()),
+        Sources {
+            trust: true,
+            ..Sources::default()
+        },
+    );
+    assert!(off.contains(crate::memory::DISABLED), "{off}");
+    let on = compose(
+        work.path(),
+        Some(home.path()),
+        Sources {
+            trust: true,
+            memory: true,
+            ..Sources::default()
+        },
+    );
+    assert!(!on.contains(crate::memory::DISABLED), "{on}");
+}

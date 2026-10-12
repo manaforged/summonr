@@ -10,6 +10,8 @@ const BASE: &str = "https://api.telegram.org/bot";
 pub(crate) const MESSAGE_MAX: usize = 4096;
 const TYPING: &str = "typing";
 const UNAUTHORIZED: i64 = 401;
+const NOT_FOUND: i64 = 404;
+const MALFORMED: &str = "that does not look like a Telegram bot token (it should look like 123456789:AA...); copy it from @BotFather";
 const CONFLICT: i64 = 409;
 const TOO_MANY: u16 = 429;
 const UPDATE_KINDS: &str = "[\"message\"]";
@@ -121,6 +123,10 @@ pub(crate) struct Bot {
 
 impl Bot {
     pub(crate) fn new(token: &str) -> Result<Self> {
+        let token = token.trim();
+        if !well_formed(token) {
+            return Err(Error::Config(MALFORMED.to_string()));
+        }
         let limits = crate::limits::limits();
         let wait = Duration::from_secs(
             limits
@@ -132,7 +138,7 @@ impl Bot {
                 summonr_auth::builder(wait, limits.connect()),
                 limits.retry_policy(),
             )?,
-            token: token.trim().to_string(),
+            token: token.to_string(),
         })
     }
 
@@ -178,6 +184,9 @@ impl Bot {
             (true | false, Some(_) | None) => {
                 match reply.error_code.unwrap_or_else(|| i64::from(status)) {
                     UNAUTHORIZED => Err(Error::Config(REJECTED.to_string())),
+                    NOT_FOUND if method == Method::GetMe => {
+                        Err(Error::Config(MALFORMED.to_string()))
+                    }
                     CONFLICT => Err(Error::Config(TAKEN.to_string())),
                     code => Err(Error::Tool(format!("telegram {name}: HTTP {code}"))),
                 }
@@ -228,6 +237,15 @@ impl Bot {
         .await
         .map(drop)
     }
+}
+
+fn well_formed(token: &str) -> bool {
+    token.split_once(':').is_some_and(|(id, secret)| {
+        !id.is_empty()
+            && id.bytes().all(|byte| byte.is_ascii_digit())
+            && !secret.is_empty()
+            && secret.bytes().all(|byte| byte.is_ascii_graphic())
+    })
 }
 
 fn send_policy() -> leyline::RetryPolicy {

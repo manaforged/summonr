@@ -6,7 +6,7 @@ use super::args::{self, Show, Spec, USAGE, usage};
 use super::report;
 use super::runner;
 use super::schedule;
-use super::store::{self, Job, Notify};
+use super::store::{self, Job, Notify, Outcome};
 use super::view;
 use crate::error::{Error, Result};
 
@@ -68,8 +68,9 @@ fn run_now(name: &str, show: Show) -> Result<i32> {
 
 fn token(name: &str) -> Result<i32> {
     super::guard()?;
+    let rotated = store::token(name).is_some();
     let token = store::rotate_token(name)?;
-    eprintln!("{}", view::token_help(name, &token));
+    eprintln!("{}", view::token_help(name, &token, rotated));
     say(token)
 }
 
@@ -214,16 +215,44 @@ fn edit(name: &str, spec: &Spec) -> Result<i32> {
 
 fn remove(name: &str) -> Result<i32> {
     super::guard()?;
-    let dir = store::update(|jobs| {
+    let job = store::update(|jobs| {
         let index = jobs
             .iter()
             .position(|job| job.name == name)
             .ok_or_else(|| Error::Config(format!("no cron job named `{name}`")))?;
-        Ok(jobs.remove(index).dir)
+        Ok(jobs.remove(index))
     })?;
+    let stopped = stop_running(&job);
     store::forget_token(name)?;
-    store::remove_payloads(&dir, name)?;
+    store::remove_payloads(&job.dir, name)?;
+    store::remove_run_lock(name)?;
+    if stopped {
+        println!("stopped the running run");
+    }
     say(format!("removed {name}"))
+}
+
+fn stop_running(job: &Job) -> bool {
+    let Some(id) = job
+        .runs
+        .iter()
+        .rev()
+        .find(|run| run.outcome == Outcome::Running)
+        .and_then(|run| run.job.as_deref())
+    else {
+        return false;
+    };
+    let Ok(record) = crate::jobs::load(&job.dir, id) else {
+        return false;
+    };
+    let running = crate::jobs::status(&job.dir, &record)
+        .is_ok_and(|status| status.state == crate::jobs::JobState::Running);
+    if !running {
+        return false;
+    }
+    let mut group = crate::tools::command::ProcessGroup::new(record.pid, record.sandbox);
+    group.disarm();
+    group.terminate()
 }
 
 fn set_paused(name: &str, paused: bool) -> Result<i32> {
@@ -283,11 +312,13 @@ fn log(name: &str, show: Show) -> Result<i32> {
     }
     if let Some(run) = job.runs.iter().rev().find(|run| run.job.is_some()) {
         let text = if show.raw {
-            report::raw(&job, run)?
+            Some(report::raw(&job, run)?)
         } else {
-            report::render(&job, run, &tz)
+            report::render(&job, run)
         };
-        println!("\n{text}");
+        if let Some(text) = text {
+            println!("\n{text}");
+        }
     }
     Ok(0)
 }

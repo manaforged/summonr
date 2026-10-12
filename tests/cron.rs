@@ -1,10 +1,18 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+fn quiet<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut args = args.to_vec();
+    if args.first() == Some(&"add") && !args.contains(&"--notify") {
+        args.extend(["--notify", "never"]);
+    }
+    args
+}
+
 fn cron(home: &Path, env: &[(&str, &str)], args: &[&str]) -> (i32, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
         .arg("cron")
-        .args(args)
+        .args(quiet(args))
         .current_dir(home)
         .env_clear()
         .env("HOME", home)
@@ -295,4 +303,17 @@ fn a_run_that_cannot_start_is_recorded_as_an_error() {
     let (_, log) = cron(home.path(), &[], &["log", "lost"]);
     assert!(log.contains("error"), "{log}");
     assert!(!log.contains("running"), "{log}");
+}
+
+#[test]
+fn the_short_endpoint_flag_works_in_cron() {
+    let home = tempfile::tempdir().unwrap();
+    let (code, text) = cron(
+        home.path(),
+        &[],
+        &["add", "e", "--every", "1h", "-e", "zai", "-p", "hi"],
+    );
+    assert_eq!(code, 0, "{text}");
+    let (_, list) = cron(home.path(), &[], &["list", "--json"]);
+    assert!(list.contains("\"endpoint\":\"zai\""), "{list}");
 }

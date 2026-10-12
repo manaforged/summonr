@@ -10,6 +10,7 @@ const TOKEN_PREFIX: &str = "cron:";
 const TOKEN_BYTES: usize = 32;
 const PAYLOAD_SUFFIX: &str = "body";
 const DASH: char = '-';
+const RUNS: &str = "runs";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -125,6 +126,14 @@ pub(crate) fn name<T: Serialize>(value: &T) -> String {
 
 pub(crate) fn dir() -> Result<PathBuf> {
     Ok(crate::prompt::summonr_home()?.join("cron"))
+}
+
+pub(crate) fn run_lock(name: &str) -> Result<PathBuf> {
+    Ok(dir()?.join(RUNS).join(name))
+}
+
+pub(crate) fn remove_run_lock(name: &str) -> Result<()> {
+    remove_quiet(&store::lock_path(&run_lock(name)?))
 }
 
 pub(crate) fn payload_path(workspace: &Path, name: &str, slot: i64) -> PathBuf {

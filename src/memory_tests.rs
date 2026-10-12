@@ -121,3 +121,18 @@ fn look_alike_repository_paths_get_separate_memory() {
     assert_ne!(project(&dash), project(&under));
     assert_eq!(project(&dash), project(&dash));
 }
+
+#[test]
+fn well_known_token_shapes_are_hidden() {
+    let github = format!("gh{}_{}", "p", "A1b2".repeat(9));
+    let aws = format!("AK{}{}", "IA", "QWERTYUIOP123456");
+    let anthropic = format!("sk-{}-api03-{}", "ant", "z9".repeat(20));
+    let slack = format!("xo{}-{}", "xb", "1234567890-abcdefghij");
+    let text = one(&format!(
+        "- tokens {github} {aws} {anthropic} {slack} end\n"
+    ));
+    for secret in [&github, &aws, &anthropic, &slack] {
+        assert!(!text.contains(secret.as_str()), "{secret} leaked: {text}");
+    }
+    assert!(text.contains("[secret]"), "{text}");
+}

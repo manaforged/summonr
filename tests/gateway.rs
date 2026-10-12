@@ -18,8 +18,20 @@ fn summonr(home: &Path) -> Command {
     command
 }
 
+fn quiet<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut args = args.to_vec();
+    if args.first() == Some(&"add") && !args.contains(&"--notify") {
+        args.extend(["--notify", "never"]);
+    }
+    args
+}
+
 fn cron(home: &Path, args: &[&str]) -> String {
-    let output = summonr(home).arg("cron").args(args).output().unwrap();
+    let output = summonr(home)
+        .arg("cron")
+        .args(quiet(args))
+        .output()
+        .unwrap();
     assert!(output.status.success(), "{output:?}");
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
@@ -176,8 +188,13 @@ fn the_webhook_stops_on_sigterm_and_a_slow_client_blocks_nobody() {
         .unwrap()
         .to_string();
     let (mut server, port) = serve(home.path());
-    let mut stalled = TcpStream::connect(("127.0.0.1", port)).unwrap();
-    stalled.write_all(b"POST /run/s HTTP/1.1\r\n").unwrap();
+    let stalled: Vec<TcpStream> = (0..12)
+        .map(|_| {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            stream.write_all(b"POST /run/s HTTP/1.1\r\n").unwrap();
+            stream
+        })
+        .collect();
     let started = Instant::now();
     let fired = post(port, "POST", "/run/s", Some(&token), "{}");
     assert!(fired.starts_with("HTTP/1.1 202"), "{fired}");
@@ -220,4 +237,47 @@ fn every_gateway_command_answers_help() {
         assert!(output.status.success(), "{words:?}");
         assert!(text.starts_with("usage:"), "{words:?}: {text}");
     }
+}
+
+#[test]
+fn an_oversized_body_gets_a_readable_413_and_bad_tokens_are_explained() {
+    let home = tempfile::tempdir().unwrap();
+    cron(home.path(), &["add", "big", "--manual", "-p", "hi"]);
+    let token = cron(home.path(), &["token", "big"])
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    let (mut server, port) = serve(home.path());
+    let body = "x".repeat(70_000);
+    let reply = post(port, "POST", "/run/big", Some(&token), &body);
+    drop(server.kill());
+    drop(server.wait());
+    assert!(reply.starts_with("HTTP/1.1 413"), "{reply}");
+    assert!(reply.contains("{\"error\""), "{reply}");
+    let mut setup = summonr(home.path())
+        .args(["gateway", "setup", "telegram"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    setup
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"not a token\n")
+        .unwrap();
+    let output = setup.wait_with_output().unwrap();
+    let text = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        text.contains("does not look like a Telegram bot token"),
+        "{text}"
+    );
+    let output = summonr(home.path())
+        .args(["gateway", "unpair", "abc"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&output.stderr);
+    assert!(text.contains("USER_ID is a number"), "{text}");
 }

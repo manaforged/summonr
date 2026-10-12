@@ -4,7 +4,9 @@ pub(crate) const FILE: &str = "MEMORY.md";
 const DIR: &str = "memory";
 const GIT_DIR: &str = ".git";
 const KEY_NAME_CHARS: usize = 40;
+const OVER: &str = "; only the newest part loads; ask me to read and tidy it";
 const REPORT_END: &str = "Ask me to remember something, or edit a file above; changes to these files apply to new sessions. `memory = false` under [modules] turns memory off.";
+pub(crate) const DISABLED: &str = "Memory is off in this session, so nothing you save persists; if the user asks you to remember something, say so instead of writing a file.";
 pub const OFF: &str = "memory is off: `memory = false` under [modules] in ~/.summonr/config.toml. Turn it on in /settings or with `memory = true`; it applies to new sessions. Sessions started with --no-trust also load no memory.\n";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,8 +132,13 @@ fn status(file: &MemoryFile, cap: usize) -> String {
         .map(str::trim_start)
         .filter(|line| line.starts_with("- ") || line.starts_with(|c: char| c.is_ascii_digit()))
         .count();
+    let over = if file.bytes > u64::try_from(cap).unwrap_or(u64::MAX) {
+        OVER
+    } else {
+        ""
+    };
     format!(
-        "{} of {cap} bytes, {}",
+        "{} of {cap} bytes, {}{over}",
         file.bytes,
         crate::text::plural(entries, "entry")
     )
@@ -146,7 +153,7 @@ pub(crate) fn guidance(files: &[MemoryFile]) -> String {
             .unwrap_or_default()
     };
     format!(
-        "Memory: project memory is {project} and user memory is {user}. Save a durable fact to project memory with edit or write (write creates a missing file): a user correction, a stable preference, a non-obvious project fact, or a pointer to an outside resource. Put cross-project preferences in user memory. Never save task state or what git already records. Start each entry with its date (YYYY-MM-DD). Read the file before you change it; use edit for one entry, never rewrite the whole file from memory. Prune the file to keep it under {cap} bytes. After saving, tell the user in one line what you saved and where. Check a remembered fact against the code before you act on it; delete it when wrong.",
+        "Memory: project memory is {project} and user memory is {user}. Save a durable fact to project memory with edit or write (write creates a missing file): a user correction, a stable preference, a non-obvious project fact, or a pointer to an outside resource. Put cross-project preferences in user memory. Never save task state or what git already records. Start each entry with its date (YYYY-MM-DD). Read the file before you change it; use edit for one entry, never rewrite the whole file from memory. Keep the file under {cap} bytes. Never delete entries the user did not ask you to remove. When the file is over the cap, ask the user which entries to drop before pruning; never prune with a shell command. After saving, tell the user in one line what you saved and where. Check a remembered fact against the code before you act on it; delete it when wrong.",
         project = path(Scope::Project),
         user = path(Scope::User),
         cap = crate::limits::limits().memory_bytes,

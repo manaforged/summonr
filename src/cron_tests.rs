@@ -6,13 +6,21 @@ use jiff::civil::DateTime;
 use jiff::tz::TimeZone;
 
 use super::install::crontab::{cron_line, crontab_without};
-use super::install::{domains, plist, units};
+use super::install::{TickEnv, domains, plist, units};
 use super::refuse;
 use super::runner::{Due, due};
 use super::schedule::parse;
 use super::store::{Job, Notify, Outcome, Task};
 
 const CHICAGO: &str = "America/Chicago";
+
+fn bare(path: &str) -> TickEnv<'_> {
+    TickEnv {
+        path,
+        home: None,
+        summonr_home: None,
+    }
+}
 
 fn at(text: &str) -> Zoned {
     text.parse::<DateTime>()
@@ -206,17 +214,24 @@ fn the_launch_agent_escapes_paths() {
         Path::new("/Apps/A&B/summonr"),
         60,
         Path::new("/h/.summonr/cron/tick.log"),
-        "/usr/bin:/bin",
-        Some("/h/.summonr"),
+        TickEnv {
+            path: "/usr/bin:/bin",
+            home: Some("/h"),
+            summonr_home: Some("/h/.summonr"),
+        },
     );
     assert!(text.contains("<string>/Apps/A&amp;B/summonr</string>\n    <string>cron</string>\n    <string>tick</string>"));
     assert!(text.contains("<integer>60</integer>"));
     assert!(text.contains("<key>SUMMONR_HOME</key>"));
+    assert!(
+        text.contains("<key>HOME</key>\n    <string>/h</string>"),
+        "{text}"
+    );
 }
 
 #[test]
 fn the_crontab_line_is_quoted_and_replaceable() {
-    let line = cron_line(Path::new("/opt/it's/summonr"), "/usr/bin", None);
+    let line = cron_line(Path::new("/opt/it's/summonr"), bare("/usr/bin"));
     assert_eq!(
         line,
         "* * * * * PATH='/usr/bin' '/opt/it'\\''s/summonr' cron tick # summonr-cron"
@@ -227,7 +242,7 @@ fn the_crontab_line_is_quoted_and_replaceable() {
 
 #[test]
 fn the_systemd_timer_fires_each_minute() {
-    let (service, timer) = units(Path::new("/bin/summonr"), 60, "/usr/bin", None);
+    let (service, timer) = units(Path::new("/bin/summonr"), 60, bare("/usr/bin"));
     assert!(service.contains("ExecStart=\"/bin/summonr\" cron tick"));
     assert!(service.contains("Environment=\"PATH=/usr/bin\""));
     assert!(timer.contains("OnCalendar=*-*-* *:*:00"));
@@ -271,6 +286,17 @@ fn every_day_stays_on_local_midnight_across_daylight_saving() {
 
 #[test]
 fn the_crontab_line_escapes_percent_signs() {
-    let line = cron_line(Path::new("/opt/100%/summonr"), "/usr/bin", None);
+    let line = cron_line(Path::new("/opt/100%/summonr"), bare("/usr/bin"));
     assert!(line.contains("'/opt/100\\%/summonr'"), "{line}");
+}
+
+#[test]
+fn the_crontab_line_records_home_for_the_job() {
+    let env = TickEnv {
+        path: "/usr/bin",
+        home: Some("/Users/frankie"),
+        summonr_home: None,
+    };
+    let line = cron_line(Path::new("/bin/summonr"), env);
+    assert!(line.contains("HOME='/Users/frankie'"), "{line}");
 }

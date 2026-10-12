@@ -13,7 +13,8 @@ const CONTENT_LENGTH: &str = "content-length";
 const TRANSFER_ENCODING: &str = "transfer-encoding";
 const MAX_HEADERS: usize = 32;
 const CHUNK: usize = 4096;
-const IN_FLIGHT: usize = 8;
+const IN_FLIGHT: usize = 32;
+const DRAIN_BYTES: usize = 1 << 20;
 const POST: &str = "POST";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,6 +98,13 @@ struct Head {
     rest: Vec<u8>,
 }
 
+#[derive(Default)]
+struct Trace {
+    method: String,
+    path: String,
+    job: Option<String>,
+}
+
 struct Conn<'a> {
     stream: &'a mut TcpStream,
     deadline: Instant,
@@ -140,7 +148,9 @@ pub(crate) fn serve(port: u16) -> Result<i32> {
             .name("webhook".to_string())
             .spawn(move || work(&listener))?;
     }
-    super::block(crate::interrupted())
+    let stopped = super::block(crate::interrupted());
+    eprintln!("webhook listener on port {bound} stopped");
+    stopped
 }
 
 fn work(listener: &TcpListener) {
@@ -178,16 +188,46 @@ pub(crate) fn decide(
 }
 
 fn handle(stream: &mut TcpStream) -> Answer {
+    let limits = crate::limits::limits();
+    let start = Instant::now();
     let mut conn = Conn {
         stream,
-        deadline: Instant::now() + Duration::from_secs(crate::limits::limits().gateway_read_secs),
+        deadline: start + Duration::from_secs(limits.gateway_head_secs),
     };
-    accept(&mut conn).unwrap_or_else(Answer::from)
+    let mut trace = Trace::default();
+    let answer = accept(&mut conn, &mut trace, start).unwrap_or_else(Answer::from);
+    log(&trace, answer.status);
+    answer
 }
 
-fn accept(conn: &mut Conn<'_>) -> std::result::Result<Answer, Status> {
+fn log(trace: &Trace, status: Status) {
+    let method = if trace.method.is_empty() {
+        "-"
+    } else {
+        &trace.method
+    };
+    let path = if trace.path.is_empty() {
+        "-"
+    } else {
+        &trace.path
+    };
+    let job = trace
+        .job
+        .as_deref()
+        .map_or_else(String::new, |job| format!(" (job {job})"));
+    eprintln!("{method} {path} -> {}{job}", status.line());
+}
+
+fn accept(
+    conn: &mut Conn<'_>,
+    trace: &mut Trace,
+    start: Instant,
+) -> std::result::Result<Answer, Status> {
     let head = head(conn)?;
     let path = head.path.split('?').next().unwrap_or_default();
+    trace.method = head.method.chars().filter(char::is_ascii_graphic).collect();
+    trace.path = path.chars().filter(char::is_ascii_graphic).collect();
+    conn.deadline = start + Duration::from_secs(crate::limits::limits().gateway_read_secs);
     let routed = path
         .strip_prefix(ROUTE)
         .is_some_and(|name| store::check_name(name).is_ok());
@@ -203,7 +243,11 @@ fn accept(conn: &mut Conn<'_>) -> std::result::Result<Answer, Status> {
         return Err(Status::LengthRequired);
     }
     let body = body(conn, head)?;
-    Ok(fire(&name, &body))
+    let answer = fire(&name, &body);
+    if answer.status == Status::Accepted {
+        trace.job = Some(name);
+    }
+    Ok(answer)
 }
 
 fn fire(name: &str, body: &[u8]) -> Answer {
@@ -284,6 +328,7 @@ fn parts(parsed: &httparse::Request<'_, '_>, rest: Vec<u8>) -> std::result::Resu
 
 fn body(conn: &mut Conn<'_>, head: Head) -> std::result::Result<Vec<u8>, Status> {
     if head.length > crate::limits::limits().gateway_body_bytes {
+        drain(conn, head.length.saturating_sub(head.rest.len()));
         return Err(Status::TooLarge);
     }
     let mut body = head.rest;
@@ -294,6 +339,17 @@ fn body(conn: &mut Conn<'_>, head: Head) -> std::result::Result<Vec<u8>, Status>
     }
     body.truncate(head.length);
     Ok(body)
+}
+
+fn drain(conn: &mut Conn<'_>, declared: usize) {
+    let mut left = declared.min(DRAIN_BYTES);
+    let mut chunk = [0u8; CHUNK];
+    while left > 0 {
+        let Ok(count) = conn.read(&mut chunk[..left.min(CHUNK)]) else {
+            return;
+        };
+        left = left.saturating_sub(count);
+    }
 }
 
 fn respond(stream: &mut TcpStream, answer: &Answer) -> std::io::Result<()> {

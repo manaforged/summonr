@@ -48,10 +48,14 @@ pub(crate) fn keep(dir: &Path, prefix: &str, suffix: &str, bytes: &[u8]) -> io::
         .map_err(|error| error.error)
 }
 
-pub fn lock(path: &Path, wait: bool) -> io::Result<Option<File>> {
+pub(crate) fn lock_path(path: &Path) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
     name.push(".lock");
-    let name = PathBuf::from(name);
+    PathBuf::from(name)
+}
+
+pub fn lock(path: &Path, wait: bool) -> io::Result<Option<File>> {
+    let name = lock_path(path);
     std::fs::create_dir_all(parent(&name))?;
     let file = OpenOptions::new()
         .create(true)

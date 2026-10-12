@@ -30,6 +30,8 @@ const LOG_FILE: &str = "tick.log";
 const HOME_VAR: &str = "SUMMONR_HOME";
 #[cfg(any(unix, test))]
 const PATH_VAR: &str = "PATH";
+#[cfg(any(unix, test))]
+const USER_HOME_VAR: &str = "HOME";
 #[cfg(any(target_os = "linux", windows, test))]
 const MINUTE_SECS: u64 = 60;
 #[cfg(target_os = "linux")]
@@ -52,24 +54,36 @@ impl Installed {
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
-pub(crate) fn plist(
-    exe: &Path,
-    every_secs: u64,
-    log: &Path,
-    path: &str,
-    home: Option<&str>,
-) -> String {
-    let mut env = format!(
-        "    <key>{PATH_VAR}</key>\n    <string>{}</string>\n",
-        xml(path)
-    );
-    if let Some(home) = home {
-        env.push_str(&format!(
-            "    <key>{HOME_VAR}</key>\n    <string>{}</string>\n",
-            xml(home)
-        ));
+#[cfg(any(unix, test))]
+#[derive(Clone, Copy)]
+pub(crate) struct TickEnv<'a> {
+    pub path: &'a str,
+    pub home: Option<&'a str>,
+    pub summonr_home: Option<&'a str>,
+}
+
+#[cfg(any(unix, test))]
+impl<'a> TickEnv<'a> {
+    pub(crate) fn vars(self) -> Vec<(&'static str, &'a str)> {
+        let mut vars = vec![(PATH_VAR, self.path)];
+        vars.extend(self.home.map(|home| (USER_HOME_VAR, home)));
+        vars.extend(self.summonr_home.map(|home| (HOME_VAR, home)));
+        vars
     }
+}
+
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn plist(exe: &Path, every_secs: u64, log: &Path, env: TickEnv<'_>) -> String {
+    let env: String = env
+        .vars()
+        .into_iter()
+        .map(|(key, value)| {
+            format!(
+                "    <key>{key}</key>\n    <string>{}</string>\n",
+                xml(value)
+            )
+        })
+        .collect();
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>Label</key>\n  <string>{LABEL}</string>\n  <key>ProgramArguments</key>\n  <array>\n    <string>{}</string>\n    <string>cron</string>\n    <string>tick</string>\n  </array>\n  <key>StartInterval</key>\n  <integer>{every_secs}</integer>\n  <key>RunAtLoad</key>\n  <false/>\n  <key>StandardOutPath</key>\n  <string>{log}</string>\n  <key>StandardErrorPath</key>\n  <string>{log}</string>\n  <key>EnvironmentVariables</key>\n  <dict>\n{env}  </dict>\n</dict>\n</plist>\n",
         xml(&exe.display().to_string()),
@@ -78,22 +92,12 @@ pub(crate) fn plist(
 }
 
 #[cfg(any(target_os = "linux", test))]
-pub(crate) fn units(
-    exe: &Path,
-    every_secs: u64,
-    path: &str,
-    home: Option<&str>,
-) -> (String, String) {
-    let mut env = format!(
-        "Environment={}\n",
-        systemd_quote(&format!("{PATH_VAR}={path}"))
-    );
-    if let Some(home) = home {
-        env.push_str(&format!(
-            "Environment={}\n",
-            systemd_quote(&format!("{HOME_VAR}={home}"))
-        ));
-    }
+pub(crate) fn units(exe: &Path, every_secs: u64, env: TickEnv<'_>) -> (String, String) {
+    let env: String = env
+        .vars()
+        .into_iter()
+        .map(|(key, value)| format!("Environment={}\n", systemd_quote(&format!("{key}={value}"))))
+        .collect();
     let service = format!(
         "[Unit]\nDescription=summonr cron tick\n\n[Service]\nType=oneshot\nKillMode=process\nExecStart={} cron tick\n{env}",
         systemd_quote(&exe.display().to_string())
@@ -139,8 +143,34 @@ fn env_path() -> String {
 }
 
 #[cfg(unix)]
-fn env_home() -> Option<String> {
-    std::env::var(HOME_VAR).ok().filter(|h| !h.is_empty())
+fn env_var(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|value| !value.is_empty())
+}
+
+#[cfg(unix)]
+struct OwnedEnv {
+    path: String,
+    home: Option<String>,
+    summonr_home: Option<String>,
+}
+
+#[cfg(unix)]
+impl OwnedEnv {
+    fn current() -> Self {
+        Self {
+            path: env_path(),
+            home: env_var(USER_HOME_VAR),
+            summonr_home: env_var(HOME_VAR),
+        }
+    }
+
+    fn view(&self) -> TickEnv<'_> {
+        TickEnv {
+            path: &self.path,
+            home: self.home.as_deref(),
+            summonr_home: self.summonr_home.as_deref(),
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -216,11 +246,8 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let home = env_home();
-    crate::durable::store::write(
-        &file,
-        plist(exe, every_secs, &log, &env_path(), home.as_deref()),
-    )?;
+    let env = OwnedEnv::current();
+    crate::durable::store::write(&file, plist(exe, every_secs, &log, env.view()))?;
     bootout();
     let mut failures = Vec::new();
     for (index, domain) in domains(uid()).into_iter().enumerate() {
@@ -235,7 +262,7 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
         }
     }
     std::fs::remove_file(&file)?;
-    crontab::install(exe, &env_path(), home.as_deref())
+    crontab::install(exe, env.view())
         .map(|path| Installed::new(path, Some(FULL_DISK_NOTE)))
         .map_err(|error| match error {
             Error::Config(text) => Error::Config(format!("{}; {text}", failures.join("; "))),
@@ -286,13 +313,13 @@ fn linger_note() -> Option<&'static str> {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
-    let home = env_home();
+    let env = OwnedEnv::current();
     if has_systemd() {
         let (service_path, timer_path) = unit_paths()?;
         if let Some(dir) = timer_path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let (service, timer) = units(exe, every_secs, &env_path(), home.as_deref());
+        let (service, timer) = units(exe, every_secs, env.view());
         crate::durable::store::write(&service_path, service)?;
         crate::durable::store::write(&timer_path, timer)?;
         run("systemctl", &["--user", "daemon-reload"], None)?;
@@ -303,7 +330,7 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
         )?;
         return Ok(Installed::new(timer_path, linger_note()));
     }
-    crontab::install(exe, &env_path(), home.as_deref()).map(|path| Installed::new(path, None))
+    crontab::install(exe, env.view()).map(|path| Installed::new(path, None))
 }
 
 #[cfg(target_os = "linux")]

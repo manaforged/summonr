@@ -24,7 +24,7 @@ pub fn run(
         ["telegram", flags @ ..] => bridge(options(flags, cwd)?),
         ["pair"] => Err(misuse("pair needs the code the bot sent you")),
         ["pair", code] => pair(code),
-        ["unpair", user] => unpair(number(user)?),
+        ["unpair", user] => unpair(user_id(user)?),
         ["status"] => status(),
         ["webhook", rest @ ..] => webhook(rest),
         [..] => Err(misuse(&format!(
@@ -43,6 +43,7 @@ fn asks_help(words: &[&str]) -> bool {
 fn webhook(words: &[&str]) -> Result<i32> {
     match words {
         [] => super::webhook::serve(crate::limits::limits().gateway_port),
+        ["--port"] => Err(misuse("--port needs a value")),
         ["--port", port] => super::webhook::serve(number(port)?),
         [..] => Err(misuse(&format!(
             "unknown webhook option `{}`",
@@ -58,6 +59,14 @@ fn misuse(what: &str) -> Error {
 fn number<T: std::str::FromStr<Err = std::num::ParseIntError>>(text: &str) -> Result<T> {
     text.parse()
         .map_err(|error| misuse(&format!("expected a number, got `{text}`: {error}")))
+}
+
+fn user_id(text: &str) -> Result<i64> {
+    text.parse().ok().ok_or_else(|| {
+        Error::Config(
+            "USER_ID is a number; `summonr gateway status` lists paired users".to_string(),
+        )
+    })
 }
 
 fn options(words: &[&str], cwd: &Path) -> Result<Options> {

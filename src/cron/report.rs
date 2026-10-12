@@ -1,15 +1,12 @@
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
-use jiff::tz::TimeZone;
-
-use super::runner;
-use super::store::{self, Job, Outcome, Run};
-use super::view;
+use super::store::{Job, Outcome, Run};
 use crate::Event;
 use crate::error::Result;
 
 const NO_ANSWER: &str = "(no answer)";
+const STILL_RUNNING: &str = "still running";
 const CHECK_FAILED: &str = "check failed";
 
 #[derive(Default)]
@@ -93,24 +90,25 @@ pub(super) fn log_file(job: &Job, run: &Run) -> Option<PathBuf> {
     Some(crate::jobs::log_path(&job.dir, &record))
 }
 
-pub(super) fn render(job: &Job, run: &Run, tz: &TimeZone) -> String {
-    let head = format!(
-        "{}  {}",
-        view::when(runner::zoned(run.slot, tz)),
-        store::name(&run.outcome)
-    );
-    let Some(log) = log_file(job, run) else {
-        return head;
-    };
+pub(super) fn render(job: &Job, run: &Run) -> Option<String> {
+    let log = log_file(job, run)?;
     let report = Report::read(&log);
-    let mut lines = vec![head, String::new()];
-    lines.push(report.text.clone().unwrap_or_else(|| NO_ANSWER.to_string()));
+    let fallback = match run.outcome {
+        Outcome::Running => STILL_RUNNING,
+        Outcome::Done
+        | Outcome::CheckFailed
+        | Outcome::Unfinished
+        | Outcome::Error
+        | Outcome::Overlap
+        | Outcome::Expired => NO_ANSWER,
+    };
+    let mut lines = vec![report.text.clone().unwrap_or_else(|| fallback.to_string())];
     lines.push(String::new());
     if let Some(verdict) = report.verdict() {
         lines.push(verdict);
     }
     lines.push(format!("log: {}", log.display()));
-    lines.join("\n")
+    Some(lines.join("\n"))
 }
 
 pub(super) fn raw(job: &Job, run: &Run) -> Result<String> {

@@ -104,7 +104,7 @@ impl ProcessGroup {
         }
     }
 
-    pub(super) fn disarm(&mut self) {
+    pub(crate) fn disarm(&mut self) {
         self.armed = false;
     }
 }

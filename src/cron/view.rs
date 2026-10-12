@@ -194,10 +194,15 @@ pub(super) fn installed(path: &std::path::Path, note: Option<&str>) -> String {
     }
 }
 
-pub(super) fn token_help(name: &str, token: &str) -> String {
+pub(super) fn token_help(name: &str, token: &str, rotated: bool) -> String {
     let port = crate::limits::limits().gateway_port;
+    let lead = if rotated {
+        "rotated: the old token no longer works\n"
+    } else {
+        ""
+    };
     format!(
-        "Shown once. Fire the job with:\n  curl -X POST -H 'Authorization: Bearer {token}' http://127.0.0.1:{port}/run/{name}\nafter starting `summonr gateway webhook`."
+        "{lead}Shown once. Fire the job with:\n  curl -X POST -H 'Authorization: Bearer {token}' http://127.0.0.1:{port}/run/{name}\nafter starting `summonr gateway webhook` (use --port N if you started the listener on another port)."
     )
 }
 

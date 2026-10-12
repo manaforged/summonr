@@ -29,12 +29,13 @@ pub(crate) fn an_idle_server_stops_and_starts_again_on_the_next_call() {
     let model = Model::start(vec![
         Step::Call("fixture1__echo", json!({"text": "one"})),
         Step::After(
-            Duration::from_secs(3),
+            Duration::from_secs(crate::support::slow(3)),
             Box::new(Step::Call("fixture1__echo", json!({"text": "two"}))),
         ),
         Step::Text("ok"),
     ]);
-    session.run(&model, &session.server("fixture1", "idle_secs = 1"), &[]);
+    let idle = format!("idle_secs = {}", crate::support::slow(1));
+    session.run(&model, &session.server("fixture1", &idle), &[]);
     assert_eq!(
         session.starts("fixture1"),
         3,
@@ -158,10 +159,14 @@ pub(crate) fn a_tool_list_that_never_ends_is_refused() {
 
 pub(crate) fn a_server_that_never_answers_is_given_up_at_its_timeout() {
     let session = Session::new();
-    let config = session.server_env("fixture1", ", MCP_FIXTURE_MUTE = '1'", "timeout_secs = 1");
+    let secs = crate::support::slow(1);
+    let timeout = format!("timeout_secs = {secs}");
+    let config = session.server_env("fixture1", ", MCP_FIXTURE_MUTE = '1'", &timeout);
     let outcome = session.run(&Model::start(vec![Step::Text("ok")]), &config, &["--json"]);
     assert!(
-        outcome.stdout.contains("`initialize` got no reply in 1s"),
+        outcome
+            .stdout
+            .contains(&format!("`initialize` got no reply in {secs}s")),
         "{}",
         outcome.stdout
     );

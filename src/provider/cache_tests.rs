@@ -274,3 +274,28 @@ fn mistral_gets_an_assistant_turn_between_a_tool_result_and_a_steer() {
         ["system", "user", "assistant", "tool", "user"]
     );
 }
+
+#[test]
+fn responses_login_uses_session_affinity() {
+    let seat = crate::endpoint::login_seat("openai").unwrap();
+    let client = Client::connect(&seat).unwrap();
+    let messages = tool_round();
+    let request = CompletionRequest::new(
+        "session-7".to_string(),
+        seat.model.clone(),
+        &messages,
+        &[],
+        None,
+        false,
+        None,
+    );
+    let body = client.request_body(&request, true).unwrap();
+    assert_eq!(body["prompt_cache_key"], "session-7", "{body}");
+    let headers = client.headers(Some("session-7"));
+    assert!(
+        headers
+            .iter()
+            .any(|(name, value)| *name == "session-id" && value == "session-7"),
+        "{headers:?}"
+    );
+}

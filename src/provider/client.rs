@@ -4,6 +4,7 @@ use leyline::http::StatusCode;
 mod admit;
 mod classify;
 mod encode;
+mod headers;
 mod login;
 mod meta;
 
@@ -224,11 +225,12 @@ impl Client {
     }
 
     fn extend_body(&self, body: &mut Body<'_>, request: &CompletionRequest<'_>) {
-        if self.prompt_cache_key && !self.auth.is_login() {
+        if self.plan_responses() {
+            body.set("prompt_cache_key", json!(request.session));
+        } else if self.prompt_cache_key {
             body.set("prompt_cache_key", json!(request.prefix_hash()));
         }
-        if self.wire == Wire::Responses
-            && self.auth.is_login()
+        if self.plan_responses()
             && let Some(tools) = body.take("tools")
         {
             body.set("tools", json!([wire::responses::namespace(tools)]));
@@ -248,33 +250,6 @@ impl Client {
     ) -> Result<Value> {
         let bytes = self.request(request, stream)?.to_bytes()?;
         Ok(serde_json::from_slice(&bytes)?)
-    }
-
-    pub(super) fn headers(&self, session: Option<&str>) -> Vec<(&str, std::borrow::Cow<'_, str>)> {
-        let mut headers: Vec<_> = self
-            .headers
-            .iter()
-            .filter(|(key, _)| {
-                let posted = session.is_some();
-                !(posted && key == "content-type"
-                    || self.opencode
-                        && (key == "x-opencode-request" || posted && key == "x-opencode-session"))
-            })
-            .map(|(key, value)| (key.as_str(), std::borrow::Cow::Borrowed(value.as_str())))
-            .collect();
-        if self.opencode {
-            if let Some(session) = session {
-                headers.push((
-                    "x-opencode-session",
-                    std::borrow::Cow::Owned(session.to_string()),
-                ));
-            }
-            headers.push((
-                "x-opencode-request",
-                std::borrow::Cow::Owned(uuid::Uuid::now_v7().to_string()),
-            ));
-        }
-        headers
     }
 
     pub(super) fn url_for<W: wire::Chat>(&self, model: &str, stream: bool) -> String {

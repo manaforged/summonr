@@ -90,7 +90,7 @@ pub(super) fn pane(
         text("↵ ", Token::Accent11),
         text(primary(choice, state), Token::OnSurface),
     ]));
-    if choice.dual() && choice.env.is_none() {
+    if choice.key && choice.env.is_none() {
         nodes.push(heading(vec![
             text("alt+k ", Token::Accent11),
             text("paste an API key", Token::OnSurface),

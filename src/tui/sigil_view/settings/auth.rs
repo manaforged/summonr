@@ -113,13 +113,13 @@ fn listing_hints(app: &App) -> Hints {
         Key::Enter,
         if choice.login.signs_in() {
             "sign in"
-        } else if choice.keyless() {
-            "set a key"
+        } else if choice.stored() {
+            "replace the key"
         } else {
-            "open"
+            "set a key"
         },
     );
-    if choice.dual() && choice.env.is_none() {
+    if choice.key && choice.env.is_none() {
         hints = hints.key(Key::Fixed("alt+k"), "paste a key");
     }
     if choice.stored() {

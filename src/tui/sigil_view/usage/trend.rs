@@ -35,12 +35,12 @@ pub(super) fn trend(report: &Report, metric: Metric) -> NodeBuilder {
                     format!("· {unit} · since {}", report.first),
                     palette().dim,
                 )),
-            container()
-                .layout(LayoutStyle::block().fill_width())
-                .child(panel().padding(16.0).child(column(
+            container().layout(LayoutStyle::block().fill_width()).child(
+                panel().padding(16.0).child(column(
                     vec![plot(report, peak, divisor, &colors), label_row(&labels)],
                     8.0,
-                ))),
+                )),
+            ),
         ],
         8.0,
     )

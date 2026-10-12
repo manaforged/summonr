@@ -17,6 +17,8 @@ pub(crate) use listing::window;
 pub use listing::{parse, tokens};
 
 pub(crate) use registry::enrich;
+#[cfg(test)]
+pub(crate) use registry::serves;
 pub use registry::refresh_registry;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]

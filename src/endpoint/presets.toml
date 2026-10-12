@@ -75,7 +75,7 @@ provider = "alibaba"
 region = "intl"
 label = "Qwen coding plan, international"
 base_url = "https://coding-intl.dashscope.aliyuncs.com/v1"
-model = "qwen3-coder-next"
+model = "qwen3.7-plus"
 env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
 opencode_ids = ["alibaba-coding-plan"]
 plan = true
@@ -86,7 +86,7 @@ provider = "alibaba"
 region = "cn"
 label = "Qwen coding plan, China"
 base_url = "https://coding.dashscope.aliyuncs.com/v1"
-model = "qwen3-coder-next"
+model = "qwen3.7-plus"
 env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
 opencode_ids = ["alibaba-coding-plan-cn"]
 plan = true
@@ -97,7 +97,7 @@ provider = "alibaba"
 region = "intl"
 label = "Qwen API, international"
 base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-model = "qwen3-coder-plus"
+model = "qwen3.7-plus"
 env_keys = ["DASHSCOPE_API_KEY"]
 opencode_ids = ["alibaba"]
 
@@ -107,7 +107,7 @@ provider = "alibaba"
 region = "cn"
 label = "Qwen API, China"
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-model = "qwen3-coder-plus"
+model = "qwen3.7-plus"
 env_keys = ["DASHSCOPE_API_KEY"]
 opencode_ids = ["alibaba-cn"]
 
@@ -120,7 +120,7 @@ base_url = "https://api.kimi.com/coding/v1"
 model = "k3"
 env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"]
 missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
-aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-for-coding" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
+aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
 cli_token = "kimi-code"
 opencode_ids = ["kimi-code-plan-cn", "moonshotai-cn"]
 plan = true
@@ -139,7 +139,7 @@ model = "k3"
 env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"]
 cli_token = "kimi-code"
 missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
-aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-for-coding" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
+aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
 opencode_ids = ["kimi-code-plan-global", "moonshotai"]
 plan = true
 
@@ -150,10 +150,10 @@ off = "unsupported"
 [[preset]]
 name = "grok"
 base_url = "https://api.x.ai/v1"
-model = "grok-4.6"
+model = "grok-4.7"
 env_keys = ["XAI_API_KEY", "GROK_API_KEY"]
 missing = "run `summonr login NAME` to sign in with SuperGrok or paste a key, or set XAI_API_KEY"
-aliases = { "grok" = "grok-4.6", "grok-4-6" = "grok-4.6", "grok4.6" = "grok-4.6" }
+aliases = { "grok" = "grok-4.7", "grok-4-7" = "grok-4.7", "grok4.7" = "grok-4.7", "grok-4-6" = "grok-4.6", "grok4.6" = "grok-4.6" }
 oauth = "supergrok"
 opencode_ids = ["xai"]
 prompt_cache_key = true
@@ -165,7 +165,7 @@ off = "unsupported"
 [[preset]]
 name = "deepseek"
 base_url = "https://api.deepseek.com/v1"
-model = "deepseek-v4-flash"
+model = "deepseek-flash"
 env_keys = ["DEEPSEEK_API_KEY"]
 opencode_ids = ["deepseek"]
 
@@ -176,7 +176,7 @@ off = "disabled"
 [[preset]]
 name = "copilot"
 base_url = "https://api.githubcopilot.com"
-model = "gpt-4o"
+model = "gpt-5.3-codex"
 missing = "run `summonr login copilot`"
 oauth = "copilot"
 headers = { "Editor-Version" = "vscode/1.95.3", "Editor-Plugin-Version" = "copilot-chat/0.24.1", "Copilot-Integration-Id" = "vscode-chat" }
@@ -189,7 +189,7 @@ host_only = true
 [[preset]]
 name = "openai"
 base_url = "https://api.openai.com/v1"
-model = "gpt-4o"
+model = "gpt-6-astra"
 env_keys = ["OPENAI_API_KEY"]
 missing = "run `summonr login NAME` to sign in with ChatGPT or paste a key, or set OPENAI_API_KEY"
 oauth = "chatgpt"
@@ -218,10 +218,10 @@ host_only = true
 name = "anthropic"
 provider = "anthropic"
 base_url = "https://api.anthropic.com/v1/"
-model = "claude-sonnet-5"
+model = "claude-opus-5-5"
 env_keys = ["ANTHROPIC_API_KEY"]
 missing = "run `summonr login anthropic`, set ANTHROPIC_API_KEY, or run a Claude plan with `summonr claude`"
-aliases = { "sonnet" = "claude-sonnet-5", "claude" = "claude-sonnet-5" }
+aliases = { "sonnet" = "claude-sonnet-5-5", "opus" = "claude-opus-5-5", "claude" = "claude-opus-5-5" }
 opencode_ids = ["anthropic"]
 wire = "anthropic"
 
@@ -258,7 +258,7 @@ off = "unsupported"
 [[preset]]
 name = "gemini"
 base_url = "https://generativelanguage.googleapis.com/v1beta/"
-model = "gemini-2.5-flash"
+model = "gemini-3.8-flash"
 env_keys = ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
 missing = "run `summonr login NAME` or set GEMINI_API_KEY or GOOGLE_API_KEY"
 aliases = { "flash" = "gemini-2.5-flash", "pro" = "gemini-2.5-pro" }
@@ -323,7 +323,7 @@ cache_ttl = "5m"
 name = "tencent-plan"
 label = "Tencent coding plan (China)"
 base_url = "https://api.lkeap.cloud.tencent.com/coding/v3"
-model = "hunyuan-2.0-thinking"
+model = "tc-code-latest"
 env_keys = ["TENCENT_CODING_PLAN_API_KEY"]
 opencode_ids = ["tencent-coding-plan"]
 plan = true
@@ -336,7 +336,7 @@ host_only = true
 name = "volcengine-plan"
 label = "Volcengine coding plan (China)"
 base_url = "https://ark.cn-beijing.volces.com/api/coding/v3"
-model = "doubao-seed-2.1-turbo"
+model = "doubao-seed-evolving"
 env_keys = ["ARK_CODING_PLAN_API_KEY"]
 opencode_ids = ["volcengine-coding-plan"]
 plan = true

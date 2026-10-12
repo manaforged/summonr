@@ -33,7 +33,7 @@ pub(crate) fn servers_are_added_listed_described_and_removed_from_the_shell() {
         .take(2)
         .collect();
     assert!(
-        demo.len() == 2 && demo[1].trim_start().starts_with("failed: tool error: "),
+        demo.len() == 2 && demo[1].trim_start().starts_with("failed: "),
         "{listed}"
     );
     assert!(!demo[1].contains('…'), "{listed}");

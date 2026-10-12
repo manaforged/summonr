@@ -48,6 +48,7 @@ pub(in crate::provider) struct Run {
     pub(super) text: String,
     pub(super) reasoning: String,
     pub(super) sizes: (usize, usize),
+    _prompt: Option<tempfile::NamedTempFile>,
     pub(super) calls: Vec<(String, super::super::Usage)>,
     pub(super) metered: bool,
     pub(super) spent: (u32, u32),
@@ -90,7 +91,15 @@ impl Run {
     }
 
     async fn open(seat: &Seat, spec: Spec<'_>) -> Result<Self> {
-        let args = arguments(&spec);
+        let prompt = match spec.system {
+            Some(system) => {
+                let mut file = tempfile::NamedTempFile::new()?;
+                std::io::Write::write_all(&mut file, system.as_bytes())?;
+                Some(file)
+            }
+            None => None,
+        };
+        let args = arguments(&spec, prompt.as_ref().map(tempfile::NamedTempFile::path));
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let cwd = std::env::current_dir()?;
         let process = crate::rpc::start(&crate::rpc::Launch {
@@ -99,7 +108,7 @@ impl Run {
             env: &seat.env,
             cwd: &cwd,
             sandbox: None,
-            base: crate::rpc::Env::Clean,
+            base: crate::rpc::Env::Inherit,
             stderr: crate::rpc::Stderr::Pipe,
         })
         .map_err(|error| {
@@ -130,6 +139,7 @@ impl Run {
             text: String::new(),
             reasoning: String::new(),
             sizes: (0, 0),
+            _prompt: prompt,
             calls: Vec::new(),
             metered: false,
             spent: (0, 0),
@@ -256,7 +266,7 @@ pub(super) async fn models(seat: &Seat) -> Result<Vec<crate::catalog::Model>> {
     Ok(models)
 }
 
-fn arguments(spec: &Spec<'_>) -> Vec<String> {
+fn arguments(spec: &Spec<'_>, prompt: Option<&std::path::Path>) -> Vec<String> {
     let mut args: Vec<String> = [
         "-p",
         "--output-format",
@@ -282,8 +292,11 @@ fn arguments(spec: &Spec<'_>) -> Vec<String> {
     if !spec.model.is_empty() {
         args.extend(["--model".to_string(), spec.model.to_string()]);
     }
-    if let Some(system) = spec.system {
-        args.extend(["--system-prompt".to_string(), system.to_string()]);
+    if let Some(prompt) = prompt {
+        args.extend([
+            "--system-prompt-file".to_string(),
+            prompt.display().to_string(),
+        ]);
     }
     if let Some(effort) = spec.effort {
         args.extend(["--effort".to_string(), level(effort).to_string()]);

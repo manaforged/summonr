@@ -43,6 +43,12 @@ impl Seat {
         }
     }
 
+    fn forget(&self, session: &str) {
+        if let Ok(mut threads) = self.threads.lock() {
+            threads.remove(session);
+        }
+    }
+
     fn thread(&self, session: &str) -> Option<String> {
         self.threads.lock().ok()?.get(session).cloned()
     }
@@ -67,7 +73,23 @@ impl Client {
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         let seat = self.seat()?;
-        let mut run = match seat.take(&request.session) {
+        let step = self.turn(seat, request, partial).await;
+        if step.is_err() {
+            seat.forget(&request.session);
+        }
+        step
+    }
+
+    async fn turn(
+        &self,
+        seat: &Seat,
+        request: &CompletionRequest<'_>,
+        partial: &mut Partial,
+    ) -> Result<AssistantMessage> {
+        let held = seat
+            .take(&request.session)
+            .filter(|run| !run.abandoned(request.messages));
+        let mut run = match held {
             Some(mut run) => {
                 run.answer(request.messages).await?;
                 run
@@ -124,6 +146,14 @@ fn opening(messages: &[Message], replay: bool) -> Vec<Message> {
         .max(start);
     let mut out = messages[split..].to_vec();
     let earlier = &messages[start..split];
+    if !replay && out.is_empty() {
+        let asked = messages
+            .iter()
+            .rposition(|message| message.role == Role::User)
+            .unwrap_or(start);
+        let tail: String = messages[asked..].iter().map(transcript_line).collect();
+        return vec![Message::user(format!("{tail}\nContinue."))];
+    }
     if !replay || earlier.is_empty() {
         return out;
     }

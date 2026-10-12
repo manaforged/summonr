@@ -30,7 +30,7 @@ say '{"type":"result","subtype":"success","is_error":false,"result":"done","usag
 take
 "#;
 
-fn read_tool() -> crate::provider::ToolDefinition {
+pub(super) fn read_tool() -> crate::provider::ToolDefinition {
     crate::tools::tool(
         "read",
         "Read a file.",
@@ -38,7 +38,7 @@ fn read_tool() -> crate::provider::ToolDefinition {
     )
 }
 
-fn ask<'a>(
+pub(super) fn ask<'a>(
     messages: &'a [Message],
     tools: &'a [crate::provider::ToolDefinition],
 ) -> CompletionRequest<'a> {
@@ -64,7 +64,7 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"o
 IFS= read -r line
 "#;
 
-fn seat_at(dir: &std::path::Path, script: &str) -> Client {
+pub(super) fn seat_at(dir: &std::path::Path, script: &str) -> Client {
     let stub = dir.join("claude");
     std::fs::write(&stub, script).unwrap();
     std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -75,7 +75,7 @@ fn seat_at(dir: &std::path::Path, script: &str) -> Client {
     Client::connect(&seat).unwrap()
 }
 
-fn said(dir: &std::path::Path) -> Vec<String> {
+pub(super) fn said(dir: &std::path::Path) -> Vec<String> {
     std::fs::read_to_string(dir.join("claude.log"))
         .unwrap()
         .lines()
@@ -203,7 +203,6 @@ async fn a_plan_turn_runs_summonr_tools_through_the_sdk_bridge() {
         ["--tools", ""],
         ["--permission-prompt-tool", "stdio"],
         ["--model", "claude-opus-5-5"],
-        ["--system-prompt", "sys"],
         ["--input-format", "stream-json"],
     ] {
         assert!(
@@ -234,3 +233,6 @@ async fn a_plan_turn_runs_summonr_tools_through_the_sdk_bridge() {
     assert_eq!(called["result"]["content"][0]["text"], "1:file text");
     assert_eq!(called["result"]["isError"], false);
 }
+
+#[path = "agent_tests/recover_tests.rs"]
+mod recover;

@@ -3,9 +3,13 @@
 A coding agent for any model, in your terminal or a desktop window, written in Rust.
 
 - **Light**: 24 MB peak in our [Terminal-Bench 2.1 run](#benchmarks), where four other harnesses peaked between 146 and 505 MB.
+- **Sessions that talk**: message any running session with `@name`, even one on a different model or provider. [Try it](#coordinate-work-live).
+- **Browses like you**: searches and page visits look like Chrome, so sites let it in like they let you in. No search key.
 - **Any model**: 42 built-in endpoints, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
-- **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.
 - **Batteries included**: web search, a real browser, MCP servers, and parallel child agents in one binary.
+- **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.
+- **Works while you're away**: schedule a goal for 3 a.m. with `summonr cron`, fire one from a webhook, or text it from Telegram. It tells you whether the check passed.
+- **Remembers**: tell it a preference once and every later session in that repository knows it. The notes are plain Markdown you can edit.
 - **Contained**: `--sandbox` runs shell commands under Seatbelt on macOS and bubblewrap on Linux.
 
 [Docs](docs/guide/README.md) | [Reference](docs/guide/reference.md) | [Scripting API](docs/api.md) | [Benchmarks](#benchmarks)
@@ -139,6 +143,23 @@ model = "qwen3"
 
 Optional capabilities are compiled modules; `summonr modules` lists them. You extend summonr outside the process with a skill file, an MCP server, a hook, or a CLI on `PATH`. `summonr install PATH` installs a plugin in the Claude Code layout: its skills, MCP servers, hooks, and `bin/`. See [Extending summonr](docs/guide/extending.md).
 
+## Coordinate work live
+
+Your sessions can message each other with `@name`, even when they run different models. Start two in separate terminals in your project:
+
+```sh
+summonr anthropic --name builder
+summonr openai --name tests
+```
+
+In the builder, type:
+
+```text
+@tests I'm updating the parser. Can you cover the edge cases?
+```
+
+It lands in the tests session's inbox, and the tests session replies with `@builder`. Type `@` to pick a live session, or open `/pane peers` to see who is running. Claude Code, Codex, or a script can join through `summonr mail`; see [Mail](docs/guide/reference.md#mail).
+
 ## Benchmarks
 
 Terminal-Bench 2.1, 86 tasks, one pass, GLM 5.3 Flash at high effort through z.ai, every harness on its defaults. Runs `tb21-zai-1002d` (summonr, pi), `tb21-zai-1002f` (OpenCode, Hermes), and `tb21-zai-1003a` (OMP), 2026-10-02 to 2026-10-03; arms from different runs did not run side by side.
@@ -163,11 +184,11 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 - Six identical results from the same call end the turn. The terminal UI asks first.
 - The `mcp` module is on by default. A server starts on its first tool call, stops after two idle minutes, and runs inside `--sandbox` when that is on. A server with more than 8 KB of tool schemas is reached through one `mcp` tool, so large servers do not fill the prompt. `/server:prompt` runs a server prompt, `@server:uri` attaches a server resource, and a server can ask you to fill a form during a call. A reply over 4 MiB is dropped, and output over 50 KB is cut with the full text saved to a file. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` server runs only after you set `enabled = true` for it.
 - A project can turn a module off. A project can't turn a module on.
-- A trusted workspace supplies `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` as instructions; `--no-trust` ignores all three.
+- A trusted workspace supplies `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` as instructions, and your own `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` apply everywhere; `--no-trust` ignores the workspace files.
 - `summonr export` writes Markdown. summonr doesn't import transcripts from other tools.
 - There is no in-process package loader, `dlopen`, or guest scripting. Write a skill, an MCP server, a hook, or a CLI.
 - Search is the `search` tool: contents or file names under any readable path. There is no built-in code graph.
-- There is no memory between sessions.
+- Memory is two Markdown files per repository and user, loaded into the prompt; there is no vector store or background extraction.
 - Config is under `~/.summonr`.
 - On a headless Linux host, the keychain may not answer at startup. Set `secrets = "file"` in `~/.summonr/config.toml`, or pass keys through the environment.
 

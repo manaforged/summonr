@@ -234,10 +234,8 @@ impl Client {
     }
 
     fn extend_body(&self, body: &mut Body<'_>, request: &CompletionRequest<'_>) {
-        if self.plan_responses() {
+        if self.prompt_cache_key || self.plan_responses() {
             body.set("prompt_cache_key", json!(request.session));
-        } else if self.prompt_cache_key {
-            body.set("prompt_cache_key", json!(request.prefix_hash()));
         }
         if self.plan_responses()
             && let Some(tools) = body.take("tools")

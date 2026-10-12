@@ -42,7 +42,7 @@ impl Client {
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         let body = self.request(request, true)?;
-        let route = self.cache_header.as_ref().map(|_| request.prefix_hash());
+        let route = self.cache_header.as_ref().map(|_| request.session.clone());
         let model = body.model().map(str::to_string);
         let bytes = body.to_bytes()?;
         drop(body);

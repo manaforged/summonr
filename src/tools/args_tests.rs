@@ -30,3 +30,19 @@ fn every_tool_schema_root_is_a_plain_object() {
         "string"
     );
 }
+
+#[test]
+fn a_field_every_branch_requires_stays_required() {
+    let folded = tool(
+        "srv__edit",
+        "",
+        serde_json::json!({"anyOf": [
+            {"type": "object", "properties": {"path": {"type": "string"}, "old": {"type": "string"}}, "required": ["path", "old"]},
+            {"type": "object", "properties": {"path": {"type": "string"}, "line": {"type": "integer"}}, "required": ["path", "line"]}
+        ]}),
+    );
+    assert_eq!(
+        folded.function.parameters["required"],
+        serde_json::json!(["path"])
+    );
+}

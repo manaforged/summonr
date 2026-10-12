@@ -12,6 +12,7 @@ pub(super) struct Preset {
     pub(super) base_url: String,
     pub(super) models_url: Option<&'static str>,
     pub(super) model: String,
+    pub(super) login_model: Option<String>,
     pub(super) env_keys: &'static [&'static str],
     pub(super) default_key: Option<&'static str>,
     pub(super) missing: String,

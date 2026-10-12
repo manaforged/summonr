@@ -210,6 +210,10 @@ fn overlapping_search_paths_report_each_file_once() {
 
 #[test]
 fn search_ignores_case_lists_linked_files_and_says_what_it_skipped() {
+    #[cfg_attr(
+        not(unix),
+        allow(unused_variables, reason = "the linked fixtures need unix symlinks")
+    )]
     let (dir, tools) = workspace(&[
         ("pricing.md", "Ledgerpro charges per seat\n"),
         ("libz.1.dylib", "z\n"),

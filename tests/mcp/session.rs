@@ -24,6 +24,7 @@ pub(crate) fn a_plain_worktree_turn_lands_its_changes_without_running_a_check() 
     for args in [
         vec!["config", "user.name", "Test"],
         vec!["config", "user.email", "test@example.invalid"],
+        vec!["config", "core.autocrlf", "false"],
         vec!["add", "."],
         vec!["commit", "-qm", "fixture: record initial files"],
     ] {
@@ -82,6 +83,7 @@ fn commit_all(session: &Session) {
     for args in [
         vec!["config", "user.name", "Test"],
         vec!["config", "user.email", "test@example.invalid"],
+        vec!["config", "core.autocrlf", "false"],
         vec!["add", "."],
         vec!["commit", "-qm", "fixture: record initial files"],
     ] {
@@ -119,7 +121,7 @@ pub(crate) fn a_failed_worktree_run_without_changes_says_so() {
 
 pub(crate) fn a_goal_run_reports_the_judge_usage_once() {
     let session = Session::new();
-    with_check(&session, "true");
+    with_check(&session, "exit 0");
     let model = Model::start(vec![
         Step::Text("fixed"),
         Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
@@ -135,7 +137,7 @@ pub(crate) fn a_goal_run_reports_the_judge_usage_once() {
 
 pub(crate) fn a_print_run_says_its_check_was_not_run() {
     let session = Session::new();
-    with_check(&session, "true");
+    with_check(&session, "exit 0");
     let result = session.run(&Model::start(vec![Step::Text("hi")]), "", &["--json"]);
     assert_eq!(result.code, Some(0), "{}", result.stdout);
     let receipt = events(&result.stdout)

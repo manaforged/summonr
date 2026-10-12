@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 
 use super::TickEnv;
+#[cfg(unix)]
 use crate::error::Result;
 
 const CRON_MARKER: &str = "# summonr-cron";

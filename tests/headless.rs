@@ -2,8 +2,10 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
 fn pause(wait: Duration) {
     let until = Instant::now() + wait;
     while let Some(left) = until

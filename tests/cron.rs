@@ -189,7 +189,11 @@ fn a_cron_run_cannot_change_jobs_even_through_run_command() {
         .args([
             "tool",
             "run_command",
-            r#"{"command":"echo cron=$SUMMONR_CRON"}"#,
+            if cfg!(windows) {
+                r#"{"command":"echo cron=$env:SUMMONR_CRON"}"#
+            } else {
+                r#"{"command":"echo cron=$SUMMONR_CRON"}"#
+            },
         ])
         .current_dir(home.path())
         .env("HOME", home.path())

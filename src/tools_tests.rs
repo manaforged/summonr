@@ -17,6 +17,9 @@ mod search;
 mod search_power;
 #[path = "tools_tests/shell_search.rs"]
 mod shell_search;
+#[cfg(windows)]
+#[path = "tools_tests/windows.rs"]
+mod windows;
 
 #[test]
 fn empty_run_command_arguments_are_a_tool_error() {

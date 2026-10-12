@@ -27,6 +27,7 @@ pub(super) struct Preset {
     pub(super) assistant_after_tool: bool,
     pub(super) cache_ttl: Option<CacheTtl>,
     pub(super) cache_header: Option<String>,
+    pub(super) cache_marks: bool,
     pub(super) cli_token: Option<CliToken>,
     pub(super) opencode_oauth: bool,
     pub(super) env_default: bool,

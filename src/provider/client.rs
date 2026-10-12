@@ -62,6 +62,7 @@ pub struct Client {
     pub(super) prompt_cache_key: bool,
     pub(super) cache_ttl: crate::endpoint::CacheTtl,
     pub(super) cache_header: Option<String>,
+    pub(super) cache_marks: bool,
     pub(super) agent: Option<agent::Seat>,
     pub(super) wire: Wire,
     pub(super) reasoning: Reasoning,
@@ -126,6 +127,7 @@ impl Client {
         client.name.clone_from(&endpoint.name);
         client.cache_ttl = endpoint.cache_ttl;
         client.cache_header.clone_from(&endpoint.cache_header);
+        client.cache_marks = endpoint.cache_marks;
         if endpoint.wire == Wire::AgentSdk {
             client.agent = Some(agent::Seat::new(base, &endpoint.env));
         }
@@ -224,7 +226,7 @@ impl Client {
             Some(serde_json::to_vec(&Messages {
                 list: call.messages,
                 keep_reasoning: self.keeps_reasoning(),
-                cached: call.traits.family == wire::traits::Family::Anthropic,
+                cached: self.cache_marks || call.traits.family == wire::traits::Family::Anthropic,
                 assistant_after_tool: self.assistant_after_tool,
             })?)
         } else {

@@ -51,6 +51,8 @@ pub(super) struct Row {
     #[serde(default)]
     cache_header: Option<String>,
     #[serde(default)]
+    cache_marks: bool,
+    #[serde(default)]
     cli_token: Option<String>,
     #[serde(default = "yes")]
     opencode_oauth: bool,
@@ -217,6 +219,7 @@ impl Row {
             assistant_after_tool: self.assistant_after_tool,
             cache_ttl: self.cache_ttl,
             cache_header: self.cache_header,
+            cache_marks: self.cache_marks,
             cli_token,
             opencode_oauth: self.opencode_oauth,
             env_default: self.env_default,

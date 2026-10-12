@@ -93,6 +93,7 @@ plan = true
 
 [[preset]]
 name = "dashscope"
+cache_marks = true
 provider = "alibaba"
 region = "intl"
 label = "Qwen API, international"
@@ -103,6 +104,7 @@ opencode_ids = ["alibaba"]
 
 [[preset]]
 name = "dashscope-cn"
+cache_marks = true
 provider = "alibaba"
 region = "cn"
 label = "Qwen API, China"
@@ -206,6 +208,7 @@ off = "unsupported"
 
 [[preset]]
 name = "openrouter"
+cache_header = "x-session-id"
 base_url = "https://openrouter.ai/api/v1"
 model = "openai/gpt-4o"
 env_keys = ["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"]
@@ -353,7 +356,7 @@ host_only = true
 [[preset]]
 name = "ollama"
 label = "Ollama on this machine"
-start = "ollama serve"
+start = "OLLAMA_CONTEXT_LENGTH=65536 ollama serve"
 base_url = "http://127.0.0.1:11434/v1"
 model = ""
 default_key = "ollama"
@@ -414,6 +417,7 @@ off = "none"
 
 [[preset]]
 name = "mistral"
+prompt_cache_key = true
 base_url = "https://api.mistral.ai/v1"
 model = ""
 env_keys = ["MISTRAL_API_KEY"]
@@ -426,6 +430,7 @@ off = "none"
 
 [[preset]]
 name = "fireworks"
+cache_header = "x-session-affinity"
 base_url = "https://api.fireworks.ai/inference/v1"
 model = ""
 env_keys = ["FIREWORKS_API_KEY"]

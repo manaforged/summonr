@@ -90,6 +90,9 @@ mod tests;
 #[cfg(test)]
 #[path = "provider/cache_tests.rs"]
 mod cache_tests;
+#[cfg(test)]
+#[path = "provider/host_cache_tests.rs"]
+mod host_cache_tests;
 
 #[cfg(test)]
 #[path = "provider/scripted.rs"]

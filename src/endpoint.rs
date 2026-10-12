@@ -53,6 +53,7 @@ pub struct Endpoint {
     pub assistant_after_tool: bool,
     pub cache_ttl: CacheTtl,
     pub cache_header: Option<String>,
+    pub cache_marks: bool,
     pub(crate) reasoning: Reasoning,
 }
 

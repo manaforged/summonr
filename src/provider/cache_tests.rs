@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use super::{Client, CompletionRequest, Effort, Message, Partial, Role, ToolCall, ToolFunction};
 use crate::endpoint::{CacheTtl, Endpoint};
 
-fn endpoint(name: &str, model: &str) -> Endpoint {
+pub(super) fn endpoint(name: &str, model: &str) -> Endpoint {
     let mut endpoint =
         crate::endpoint::resolve(Some(name), Some(model), crate::Need::Config).unwrap();
     endpoint.api_key = Some("k".to_string());
@@ -36,7 +36,7 @@ fn tool_round() -> Vec<Message> {
     ]
 }
 
-fn body(endpoint: &Endpoint, messages: &[Message], effort: Option<Effort>) -> Value {
+pub(super) fn body(endpoint: &Endpoint, messages: &[Message], effort: Option<Effort>) -> Value {
     let request = CompletionRequest::new(
         "s".to_string(),
         endpoint.model.clone(),
@@ -107,7 +107,7 @@ fn claude_through_a_completions_host_marks_its_cache_breakpoints() {
     assert_eq!(other["messages"][1]["content"], "hi");
 }
 
-fn sent(mut endpoint: Endpoint, request: &CompletionRequest<'_>) -> String {
+pub(super) fn sent(mut endpoint: Endpoint, request: &CompletionRequest<'_>) -> String {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     endpoint.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
     endpoint.oauth = None;
@@ -154,7 +154,7 @@ fn sent(mut endpoint: Endpoint, request: &CompletionRequest<'_>) -> String {
     seen
 }
 
-fn plain<'a>(
+pub(super) fn plain<'a>(
     model: &str,
     messages: &'a [Message],
     effort: Option<Effort>,

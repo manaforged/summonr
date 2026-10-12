@@ -174,6 +174,7 @@ pub(super) fn builtin(name: &str) -> Option<Endpoint> {
         assistant_after_tool: row.assistant_after_tool,
         cache_ttl: row.cache_ttl.unwrap_or(crate::limits::limits().cache_ttl),
         cache_header: row.cache_header.clone(),
+        cache_marks: row.cache_marks,
         reasoning: reasoning::from_preset(Some(row)),
     })
 }

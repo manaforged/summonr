@@ -132,6 +132,7 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
             .and_then(|preset| preset.cache_ttl)
             .unwrap_or(crate::limits::limits().cache_ttl),
         cache_header: hosted(base).and_then(|preset| preset.cache_header.clone()),
+        cache_marks: hosted(base).is_some_and(|preset| preset.cache_marks),
         reasoning: reasoning::from_preset(hosted(base)),
     }
 }
@@ -261,6 +262,7 @@ pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
             .or_else(|| preset.and_then(|preset| preset.cache_ttl))
             .unwrap_or(crate::limits::limits().cache_ttl),
         cache_header: preset.and_then(|preset| preset.cache_header.clone()),
+        cache_marks: preset.is_some_and(|preset| preset.cache_marks),
         reasoning: reasoning::from_preset(preset),
         wire: row.wire.unwrap_or(Wire::Completions),
     })

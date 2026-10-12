@@ -30,7 +30,7 @@ plugin host or a second name for `skill`, `mcp`, or `run_command`.
 
 ## Model-facing jobs
 
-The tool schemas. Six core, seven behind a module, a workspace file, or a person at the session.
+The tool schemas. Six core, seven behind a module, a workspace file, or a person at the session. Every schema, MCP ones included, passes `tools::args::tool`, which folds a root `anyOf`, `oneOf`, or `allOf` into one `type: object` root, because xAI and other providers reject a union root.
 
 | Job | Where | Gating |
 | --- | --- | --- |

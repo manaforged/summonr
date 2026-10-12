@@ -338,11 +338,15 @@ fn a_typed_answer_shows_once_and_the_picker_points_to_it() {
             panic!("no question band");
         };
         assert!(
-            lines.iter().any(|line| line.starts_with("your typed answer below")),
+            lines
+                .iter()
+                .any(|line| line.starts_with("your typed answer below")),
             "{lines:?}"
         );
         assert!(
-            !lines.iter().any(|line| line.contains("reject NaN divisors")),
+            !lines
+                .iter()
+                .any(|line| line.contains("reject NaN divisors")),
             "the answer shows twice: {lines:?}"
         );
         assert!(

@@ -48,8 +48,6 @@ Endpoints carry the rest of what a provider needs, so a new provider is config, 
 - `[…auth.authorize_params]` and `[…auth.token_params]` add provider parameters to the two requests.
 - `[…auth.claim_headers]` maps a header name to a claim read from the token, so an account id travels on every request.
 
-Set `SUMMONR_NO_BROWSER=1` to print the link instead of opening it.
-
 `config.example.toml` carries ready endpoints for other subscriptions. The `claude-pro` endpoint is off: Anthropic's terms do not allow a third-party app to sign in with a Claude Pro or Max subscription.
 
 An endpoint can offer both a sign-in and a key. `summonr login NAME` then asks which one; `--key` skips the question. A stored sign-in wins over any key, and `summonr logout NAME` returns the endpoint to its key. `auth.label` names the subscription in that question.
@@ -58,7 +56,7 @@ An endpoint can offer both a sign-in and a key. `summonr login NAME` then asks w
 
 `grok` offers a SuperGrok or X Premium+ sign-in next to `XAI_API_KEY`, through the device flow at `auth.x.ai`.
 
-Keys live in `~/.summonr/credentials.toml`, a sealed ChaCha20-Poly1305 blob (mode 0600, written through a rename). `cat` of `credentials.toml` shows ciphertext. File mode stores the 32-byte wrap key in `credentials.wrap` beside that file. On macOS, when `credentials.toml` already exists, summonr can copy the wrap key out of the login keychain into `credentials.wrap`. A missing wrap key is an error and leaves `config.toml` untouched. The key prompt disables echo and stores the key; `summonr login NAME --key` skips the method question on a row that offers both, and storing a key signs that row out of its plan. `summonr logout NAME` forgets the key and any login token, says what it removed (`Signed out of NAME` for a sign-in token, `Removed the stored key for NAME` for a key, or that nothing was stored; on an endpoint that needs no key, it says nothing was stored), and names the key that applies next. A plaintext `api_key` in `config.toml` is moved into that file the first time summonr runs, and it says so once. Resolution order is the host's environment variable, the store, peer stores, `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message; only local and keyless endpoints run without one. `--key` is refused on a row that only signs in, such as `copilot`.
+Keys live in `~/.summonr/credentials.toml`, a plain TOML file with mode 0600, written through a rename. Only your account can read it. A sealed file from an earlier build is decrypted with its `credentials.wrap` key and rewritten as plain TOML the first time summonr reads it; after that, `credentials.wrap` is no longer used. The key prompt disables echo and stores the key; `summonr login NAME --key` skips the method question on a row that offers both, and storing a key signs that row out of its plan. `summonr logout NAME` forgets the key and any login token, says what it removed (`Signed out of NAME` for a sign-in token, `Removed the stored key for NAME` for a key, or that nothing was stored; on an endpoint that needs no key, it says nothing was stored), and names the key that applies next. A plaintext `api_key` in `config.toml` is moved into that file the first time summonr runs, and it says so once. Resolution order is the host's environment variable, the store, peer stores, `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message; only local and keyless endpoints run without one. `--key` is refused on a row that only signs in, such as `copilot`.
 
 Peer stores are read live: OpenCode's `~/.local/share/opencode/auth.json` lends `type: "api"` keys, plus unexpired `type: "oauth"` access tokens on bearer endpoints; Kimi's `~/.kimi-code/credentials/kimi-code.json` lends its unexpired token. A peer key reports as `key · opencode` or `key · kimi-code` in `summonr login`. A stored `summonr login NAME` key wins over a peer key; `summonr logout NAME` returns the endpoint to the peer. Configured endpoints whose `base_url` host matches a built-in share that built-in's peer mapping.
 
@@ -103,6 +101,24 @@ retain_days = 90
 | `--no-splash` | Skip the startup banner. |
 | `--inline` | Keep the transcript in terminal scrollback, with the composer pinned at the bottom. |
 | `--here` | Work in this checkout. This is the default; it cannot be combined with `--worktree`. |
+| `--model NAME` | Use model NAME on the endpoint instead of its default. |
+| `--effort LEVEL` | Set the reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. See Reasoning effort. |
+| `-w`, `--workflow NAME` | Seat each step from `[workflows.NAME]`. |
+| `--json` | Print JSON: one event per line with `-p`, `--goal`, and `--steps`, and JSON output from `diff`, `worktrees`, `mcp`, and `classify`. |
+| `--session ID` | Resume a session by id, short id, prefix, or name. |
+| `--name TEXT` | Name this session. |
+| `--goal TEXT` | Work toward TEXT across turns until the check passes and the judge says `done`. |
+| `--steps PLAN.md` | Run each item under `## Steps` in PLAN.md and gate it on its check. |
+| `--max-tokens N` | Session token budget. A breach stops the run. |
+| `--max-secs N` | Session wall-clock budget in seconds. A breach stops the run. |
+| `--sandbox` | Contain shell commands. Writes stay under the workspace and extra writable roots. |
+| `--no-sandbox` | Run uncontained, even with `on = true` under `[sandbox]`. |
+| `--add-dir DIR` | Add an extra writable root. Repeatable. |
+| `--strict` | Allow only the commands listed in `policy.toml`. |
+| `--worktree` | Isolate this session in a git worktree. |
+| `--gui` | Open the desktop window. Needs a build with `--features gui`. |
+| `-h`, `--help` | Show the help. |
+| `-V`, `--version` | Show the version. |
 
 The last of a pair (`--trust`/`--no-trust`, `--net`/`--no-net`) wins. An option that takes a value rejects a value that starts with `-`: `--name -x` is an error, not the name `-x`.
 
@@ -111,6 +127,53 @@ The last of a pair (`--trust`/`--no-trust`, `--net`/`--no-net`) wins. An option 
 ```sh
 git diff | summonr kimi -p
 ```
+
+### Subcommands
+
+| Command | Job |
+| --- | --- |
+| `resume [ID\|NAME]` | Resume a session; with no argument, the last one in this directory. |
+| `sessions [--grep TEXT]` | List sessions, or search their text. |
+| `export [ID\|NAME] [--digest]` | Print a session as Markdown; `--digest` prints the condensed form that `classify --review` reads. |
+| `profile [ID\|NAME]` | Time and tokens of one session. `--all` totals every session, and `--last N` only the newest N. |
+| `diff [PATH]` | Changes against the base. Takes `--stat`, `--json`, and `--turn N\|last`. |
+| `worktrees [prune] [--json]` | List summonr worktrees, or remove the ones that are gone. |
+| `endpoints` | List endpoints, their models, and each key state. |
+| `login [NAME]` | List keys and plans, or sign in to NAME. Takes `--key`, `--url URL`, `--model NAME`, and `--default`. |
+| `logout NAME [--remove]` | Forget the stored key or token; `--remove` deletes an endpoint you added. |
+| `workflows` | List saved workflows. |
+| `modules` | List the built-in modules. |
+| `mcp list\|get NAME [--json]` | List MCP servers with their state and tool counts, or show one server and its tools. |
+| `mcp add NAME -- CMD [ARGS]` | Add a stdio server; `--env K=V` sets its environment. `mcp add NAME --url URL` adds an HTTP server; `--header K=V` adds a request header. Both flags repeat. |
+| `mcp remove NAME` | Remove an MCP server from `~/.summonr/config.toml`. |
+| `install PATH [--list]` | Install a directory of extras; `--list` shows installed plugins. |
+| `uninstall NAME` | Remove an installed plugin. |
+| `doctor [--logs]` | Report crashed runs; `--logs` lists the run logs. |
+| `acp` | Serve the Agent Client Protocol on stdio. |
+| `mail` | Peer mail between sessions: `agents`, `send`, `inbox`, `board`. See Mail. |
+| `tool NAME [JSON]` | Run one tool with JSON arguments (default `{}`) in this directory and print the result. Exits 1 when the tool fails. `--sandbox` contains it. |
+| `classify --set NAME [STATE]` | Answer a named question set about STATE, read from arguments or stdin. |
+| `classify --questions @FILE [STATE]` | Answer the questions in FILE. |
+| `classify --noul QUESTION [STATE]` | Answer a yes/no question. Repeatable. |
+| `classify --patch` | Rank the files of the working patch by risk. |
+| `classify --review --session ID` | Review a session. |
+| `classify --set NAME --eval FILE` | Score a question set against labeled cases in FILE. `--json` prints answers and probabilities, and `--gate N` sets the confidence floor for every `classify` form. |
+| `cron add NAME SCHEDULE TASK` | Add a job. SCHEDULE is `--cron EXPR`, `--every 30m`, `--at TIME`, or `--manual`; TASK is `-p PROMPT` or `--goal GOAL`. Takes `--dir`, `-e`/`--endpoint`, `--model`, `--tz`, `--max-secs`, `--max-tokens`, `--worktree`, `--chat`, `--notify never\|failure\|always`, and `--mail SESSION`. See Cron. |
+| `cron edit NAME [FLAGS]` | Change a job with the same flags as `add`. |
+| `cron list [--json]` | List jobs. |
+| `cron show NAME` | Show one job. |
+| `cron run NAME [--raw]` | Run a job now. |
+| `cron log NAME [--last N] [--raw]` | Past runs, then the last run's answer, verdict, and log path. |
+| `cron pause NAME`, `cron resume NAME` | Stop or restart a job's schedule. |
+| `cron remove NAME` | Delete a job and its token. |
+| `cron token NAME` | Print a new webhook token for a job; the old one stops working. |
+| `cron install`, `cron uninstall`, `cron status` | Register or remove the OS tick that starts due jobs, or say whether it is installed and when the next job fires. |
+| `gateway setup telegram` | Store the Telegram bot token. |
+| `gateway telegram` | Run the Telegram bridge. Takes `--endpoint E`, `--model M`, and `--dir D`. See Gateway. |
+| `gateway pair CODE` | Allow the Telegram account that received CODE. |
+| `gateway unpair USER_ID` | Remove a paired account, its chat, and its queued messages. |
+| `gateway status` | List paired accounts. |
+| `gateway webhook [--port N]` | Listen on `127.0.0.1` (port `gateway_port`) for `POST /run/NAME`. |
 
 ### Config keys
 
@@ -175,6 +238,8 @@ cache_ttl = "5m"
 | `model_probe_secs` | `8` | Model list request timeout. |
 | `web_search_secs` | `15` | Web search timeout. |
 | `search_secs` | `20` | Time one `search` call walks and scans before it returns what it found. |
+| `search_index_after_ms` | `1000` | A name search outside the workspace that walks at least this long builds a file index in the background. |
+| `search_index_secs` | `300` | Age at which a file index is rebuilt. |
 | `web_connect_secs` | `8` | Web connect timeout. |
 | `web_fetch_secs` | `20` | Web fetch timeout. |
 | `web_body_bytes` | `1048576` | Largest web response body. |
@@ -186,12 +251,15 @@ cache_ttl = "5m"
 | `mcp_idle_secs` | `120` | MCP idle stop when a server sets none. |
 | `lsp_idle_secs` | `300` | Language-server idle stop. |
 | `servers_max` | `8` | MCP and language servers live at once; past it the least recently used idle one stops. |
+| `receipt_items_max` | `5` | Failures and changed files listed in an expanded turn receipt. |
 | `closest_percent` | `34` | A name is offered as the closest match only when it differs by at most this percent of the name length. |
 | `typo_min_chars` | `3` | An endpoint name with at least this many characters also gets a hint for one changed, added, or removed character, or two swapped adjacent characters. |
 | `diff_split_min_cols` | `100` | Narrowest diff pane that shows hunks side by side; a narrower pane shows the unified diff. |
 | `mcp_progress_stretch` | `4` | Progress can extend an MCP call up to this multiple of its timeout. |
 | `mcp_cancel_write_secs` | `1` | Time to write an MCP cancel. |
 | `mcp_close_grace_ms` | `500` | After closing a stdio MCP server's input, how long summonr waits for it to exit before it stops the process. |
+| `image_side_px` | `2000` | Longest side of an image sent to the model; a larger image is scaled down. |
+| `image_bytes` | `5000000` | Largest image sent to the model; a larger one is re-encoded to fit. |
 | `mcp_log_max_bytes` | `1048576` | MCP log size before rotation. |
 | `mcp_frame_max_bytes` | `4194304` | Largest MCP reply. |
 | `mcp_stderr_tail_bytes` | `2048` | MCP stderr kept for diagnostics. |
@@ -224,12 +292,31 @@ cache_ttl = "5m"
 | `read_line_limit` | `1000` | Largest `read` line limit. |
 | `paste_fold_lines` | `8` | A paste of this many lines folds. |
 | `paste_fold_chars` | `1000` | A paste of this many characters folds. |
+| `cron_tick_secs` | `60` | Interval at which the OS runs `summonr cron tick` after `summonr cron install`. |
+| `cron_budget_secs` | `1800` | Time budget of a cron run that sets no `--max-secs`. |
+| `cron_runs_kept` | `50` | Runs kept per cron job; older runs and their saved webhook bodies are deleted. |
+| `cron_catchup_secs` | `604800` | A missed cron time older than this is logged as expired instead of run. |
+| `cron_fail_pause` | `3` | Failed cron runs in a row before the job pauses itself. |
+| `memory_bytes` | `25000` | Bytes of each memory file loaded into a session. |
+| `gateway_poll_secs` | `50` | Long-poll wait of each Telegram update request. |
+| `gateway_pair_secs` | `3600` | Lifetime of a Telegram pairing code. |
+| `gateway_port` | `8765` | Port `summonr gateway webhook` listens on without `--port`. |
+| `gateway_body_bytes` | `65536` | Largest webhook body; a larger one answers `413`. |
+| `gateway_fire_secs` | `60` | A second webhook fire of one job within this time answers `429`. |
+| `gateway_head_secs` | `2` | Time a webhook client has to send its headers. |
+| `gateway_read_secs` | `10` | Time a webhook request has to finish; a slower one answers `408`. |
+| `gateway_stop_secs` | `5` | After `/stop` in a chat, wait this long before the remaining commands are killed. |
 
 ### Environment variables
 
 | Variable | Effect |
 | --- | --- |
 | `SUMMONR_HOME` | summonr home directory. Default `~/.summonr`. |
+| `SUMMONR_ENDPOINT` | Endpoint to start on when none is named on the command line. |
+| `SUMMONR_MODEL` | Model to start on when `--model` is not given. |
+| `SUMMONR_SECRETS` | Credential store: `file` (the default) or `keychain`. Overrides `secrets` in `config.toml`. |
+| `SUMMONR_MAIL` | `off` hides this session from peer mail and turns off the mail tools. |
+| `SUMMONR_PLUGIN_ROOT`, `SUMMONR_PLUGIN_DATA` | Set by summonr for a plugin's hooks: the plugin directory and its data directory. |
 | `SUMMONR_BASE_URL` | Use this OpenAI-compatible base URL as the endpoint when no endpoint is named. |
 | `SUMMONR_API_KEY` | API key for `SUMMONR_BASE_URL`. |
 | `SUMMONR_MAX_TOKENS` | `max_tokens` sent with `SUMMONR_BASE_URL`. |
@@ -457,7 +544,7 @@ When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`, such
 | `/exit` | quit summonr |
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort |
 | `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
-| `/workflow [NAME]` | choose models for plan, work, and review |
+| `/workflow [NAME]` | choose models for scout, work, and review |
 | `/login [NAME]` | sign in to a provider or store its key. Rows sit under `ready`, `needs attention`, and `not set up`; at 96 columns or more a detail pane shows the row's key, sign-in, models, and actions |
 | `/auto` | return to auto mode |
 | `/goal TEXT` | work toward an objective across turns |
@@ -516,8 +603,8 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | --- | --- | --- |
 | `read` | always | File, directory, or image |
 | `search` | always | Contents (`pattern`) or files by name (`name`, `glob`) under any readable path; ignores case; `newer`, `group`, `offset`, `word`; content search skips files over 1 MiB |
-| `edit` | not plan | Change or move a file; hashes from `read`; `edits` for a batch |
-| `write` | not plan | New or empty files; `files` for several |
+| `edit` | always | Change or move a file; hashes from `read`; `edits` for a batch |
+| `write` | always | New or empty files; `files` for several |
 | `run_command` | always | Sandbox; `workdir` / `background` / `job` / `kill`; full log path |
 | `todo` | `/steps`, `/goal`, `--steps`, `--goal` | Replaces the Work todo list; status `pending`, `active`, or `done` |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
@@ -663,6 +750,7 @@ jobs:
         with:
           persist-credentials: false
       - run: curl -fsSL https://summonr.dev/install.sh | sh
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
       - name: Work on the request
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

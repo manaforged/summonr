@@ -42,6 +42,15 @@ First stable release.
 - A `--steps` item that says ``Run `CMD` `` gets `CMD` as its own check.
 - A hook table takes `matcher`, with the syntax of a Claude Code `hooks.json` matcher, checked against the tool name in the hook's dialect.
 - The composer header shows `model (effort) · endpoint`.
+- `summonr cron` runs a prompt or a goal on a schedule, headless, in the directory you add it from: cron expressions, `--every`, a one-time `--at`, or `--manual`. `summonr cron install` registers a once-a-minute tick with launchd on macOS, a systemd user timer on Linux, or Task Scheduler on Windows, and falls back to a crontab line where those are not available. `summonr cron log NAME` shows each run's outcome, final answer, and check verdict.
+- `summonr cron token NAME` and `summonr gateway webhook` start a job from `POST /run/NAME` on a loopback port. The request body reaches the run as untrusted data, and the run is sandboxed.
+- `summonr gateway telegram` drives sessions from a private Telegram chat. Each account pairs with a code you confirm on the machine, each chat is one session, and `/new`, `/status`, and `/stop` control it. `cron add --chat` sends job results to paired chats.
+- Memory between sessions: user and project `MEMORY.md` files under `~/.summonr/memory/` load into every trusted session, and the model saves facts there when you ask it to remember. `/memory` shows the files and their size, and `memory = false` under `[modules]` turns memory off.
+- The `browser` module (off by default) adds a `browser` tool that drives a real Chrome in its own profile under `~/.summonr/browser/profiles`: clicks, forms, tabs, screenshots, and a visible `login` window. Logins persist between sessions, and `web` renders a page through it when the page needs JavaScript.
+- Web search tries Bing, then DuckDuckGo, Yahoo, and Brave. An engine that blocks or rate-limits rests for its `Retry-After` or cooldown, and the search moves to the next engine at once.
+- The model can call `ask` to put one to four questions to you in a picker, each with up to four options or a typed answer.
+- When the same tool call, or the same cycle of up to three calls, returns the same result `repeat_nudge` times in a row (default 5), summonr adds a note to the result asking the model to change approach. The call still runs; `repeat_nudge = 0` turns the note off.
+- `alt+enter` inserts a newline, so Shift+Return works in macOS Terminal.
 
 ### Changed
 
@@ -53,16 +62,16 @@ First stable release.
 - `summonr diff --turn N` writes the `--stat` summary line to stderr before the patch.
 - An approval prompt reads `<command> — <reason>`.
 - In `--steps --json`, a step's `start` event carries `check`: the step's `Run` commands joined with ` && `, or null.
-- Enter on a suggestion runs it, prompt rows too; Tab completes. With an empty composer and no running turn, `esc` closes the open side pane. Accepting a plan prints the check the work uses. A review note opens under its hunk header. Task cards use workspace-relative paths, a kept child checkout shows how to remove it, and with no usable endpoint the composer header reads `no provider · /login`.
+- Enter on a suggestion runs it, prompt rows too; Tab completes. With an empty composer and no running turn, `esc` closes the open side pane. A review note opens under its hunk header. Task cards use workspace-relative paths, a kept child checkout shows how to remove it, and with no usable endpoint the composer header reads `no provider · /login`.
 - Sign-in tokens are stored apart from API keys, so signing in no longer overwrites a key. A sign-in made with an earlier build is not read; sign in again once.
 - Every dialog, inline prompt, and key hint is built from one UI kit: dialogs share one frame and always end in their key hints, approval and form prompts look the same in the terminal and the desktop window, and hints show your own key bindings with one separator style.
 - Commands run without a prompt, sandboxed or not. Only irreversible destruction asks first: wiping the system, home, or project root, `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and dropped tables, including inside a heredoc fed to a shell. `sudo`, force pushes, pipes into a shell, git discards, and protected-path writes no longer ask; `confirm = "risky"` in `policy.toml` brings those prompts back. `--strict` refuses the whole list, and your own `[policy] deny` rules stay hard refusals under `--sandbox` or `--strict`.
 - summonr starts when its home is not writable, such as inside another tool's sandbox: the session lives in the temp directory, says so, and does not resume. A keychain key that cannot move to the key file still works.
 - macOS release binaries are Apple silicon only. The TLS stack does not build for Intel Macs, so `install.sh` stops there with a clear message instead of a failed download.
 - Tool calls take one line each: `● Read path 1-40`, `● Run command` with its output under `⎿`, and `● Explored 3 files, 1 search` for a run of reads. A failed call turns the dot red and names its exit code. An edit shows its diff right under the call, split or unified.
-- Research children run shell commands in a read-only sandbox, so they can run checks and scripts instead of replicating them with reads; `read` with `op=search` takes `paths` to search several paths.
+- Research children run shell commands in a read-only sandbox, so they can run checks and scripts instead of replicating them with reads.
 - Child tasks: children the turn waits on show inline under their task call, one line each with their latest action, and fold to their result when done; background children run in a strip above the composer and report in the transcript when they finish. `ctrl+a` lists every child with its id, access, time, and tokens.
-- During a turn, `enter` queues a message and `enter` on an empty composer sends the queue into the running turn. Command suggestions work during a turn; settings and pages open at once, and other commands run when the turn ends.
+- Command suggestions work during a turn; settings and pages open at once, and other commands run when the turn ends.
 - `notify = "off" | "turn" | "all"` (the Notify row in `/settings`): desktop notifications when a turn ends and, with `all`, when an approval waits, only while the terminal is not focused.
 - Three themes: `space`, `nord`, and `dawn`, a low-glare light theme; `theme = "auto"` picks `space` or `dawn` from the terminal background. Configs that name a retired theme still load.
 - `ctrl+n` folds every thinking block, then every tool output, then shows them all again; `tools = "hidden"` keeps only the call lines.
@@ -79,13 +88,13 @@ First stable release.
 - Seat order: the endpoint argument, `SUMMONR_ENDPOINT`, `default` in `config.toml`, the last seat used, then the first endpoint that is set up. A seat is remembered in `recent.json` only after a turn succeeds, and the old `last_endpoint` key is removed on the next save. A `default` or last-used endpoint that is gone or has no key prints one note and falls back. Effort is remembered per seat; a reasoning model with no effort set uses `high`.
 - DeepSeek and z.ai GLM receive earlier reasoning on every turn, as both vendors require.
 - In `--goal` and `--steps`, the check decides the exit code: a run that stops short runs the check once at exit and exits 2 when it fails, even after a budget ran out. The `work` event's `checks_failed` and the `verify` events now agree.
-- The plan is saved as `plan.md` in the session directory instead of `.summonr/plan.md` in the workspace.
 - Lower startup time, memory, and per-turn overhead: model facts come from the local catalog, requests are encoded once per turn, and waits no longer poll.
 - The approval prompt shows the whole command, wrapped, and says why it needs approval, for example `a destructive command because …`.
 - `summonr diff --turn N` reads `turn N of session <short id>`, and its JSON adds `session`.
 - A child whose edits conflict with the parent shows as a conflict with its kept checkout (`kept <repo>-deltas/<id>: conflicts with the parent`), not as failed. summonr never deletes a kept checkout. A child row names the plugin agent it runs as.
 - Hunk review marks live in the repository's git directory, `.git/summonr/review.json`.
-- In plan mode the model ends with the plan and does not ask for permission; `/plan accept` or a short reply accepts it.
+- `enter` during a turn sends the message into the running turn, which the model reads after its current tool calls. While an approval or question is open, the message waits instead, and messages still waiting when the turn ends form one next turn, in the order sent.
+- Compaction first clears the oldest tool output until the context reaches `elide_percent` of the window, and asks the model for a summary only when that is not enough.
 
 ### Fixed
 
@@ -105,13 +114,13 @@ First stable release.
 - The deferred `mcp` tool accepts arguments as an object, a JSON string, or fields beside `tool`.
 - The model cannot write `.summonr/check.toml` or `.summonr/policy.toml`; a check file that changes during a run gets a note, and the check loaded at start stays in force. A file that summonr's own output is redirected to never counts as a change.
 - `summonr diff` and child landings never include generated caches (`__pycache__`, `*.pyc`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`) or summonr state under `.summonr/`, even without a `.gitignore`.
-- A child never inherits goal or steps mode, a child of a plan-mode parent is read-only, and a child's first message names only its own checkout.
+- A child never inherits goal or steps mode, and a child's first message names only its own checkout.
 - A local server needs no `api_key`. When `ollama` or `lmstudio` is not running, the error gives the start command and, with no model set, lists the server's models. `summonr logout NAME` says what it removed. A closest-name hint appears only within `closest_percent` of the name length.
 - An unknown slash command names the closest command and never runs another one. One `esc` closes `/login` and `/model`, and the `ctx` meter hides when the context window is unknown.
 - `--goal` and `--steps` from the command line run the completion check and the goal judge. Before, a goal that was already met could repeat turns until its budget ran out.
 - Dragging across the transcript in a terminal copies exactly the text crossed, in either direction, and the footer says "copied N lines". Before, the first character was dropped, a drag toward the start copied nothing, and nothing confirmed the copy.
 - Links in replies open on click, a dropped file lands only in the pane under the pointer, and loading older messages keeps the message you were reading in place.
-- Review follow-ups: `xargs -I {} sh -c {}` is seen by the ask gate; a failed attempt's partial reply is no longer sent back as the last message; the password dialog names the program that really asked; a hook's process group is stopped only on timeout; compaction keeps a later message that repeats the turn's first prompt and says when it starts.
+- Commands, hooks, and sessions: `xargs -I {} sh -c {}` is seen by the ask gate; a failed attempt's partial reply is no longer sent back as the last message; the password dialog names the program that really asked; a hook's process group is stopped only on timeout; compaction keeps a later message that repeats the turn's first prompt and says when it starts.
 - Terminal UI polish: the approval and form bands render on their own rows instead of over the footer; approvals list their keys (y allow · Y always · n deny); `?` in an empty composer opens the shortcuts and `↑` brings back a draft cleared with ctrl+c; counts read "1 hunk" and "3 hunks"; long times read 12m34s; key hints follow your hotkeys; pane titles ellipsize instead of hiding the close button, and a narrow terminal says how wide panes need; Nord and Dawn hints and code blocks are readable; empty states, separators, and wording match across panes, search, usage, and messages.
 - Terminal UI: tool output can no longer move the cursor or ring the bell; typing y or n while an approval waits goes into the draft; ctrl+a and ctrl+x select and cut in a non-empty composer on Linux and Windows, and ctrl+u, ctrl+k, and ctrl+w can no longer be bound as hotkeys; child lines render the same in the strip and the transcript.
 - Tools: a pre-tool hook that fails or times out blocks the call and its helpers are stopped; tags on lines longer than 8 KB match their edits; MCP over HTTP delivers progress as it arrives, refuses an event over the frame cap, and cancels a stopped call on the server.
@@ -122,7 +131,6 @@ First stable release.
 - Providers dialog: probe results fill each row's models without opening Models first and update its status in place, so rows no longer move while the dialog is open; Enter works on a keyless row, and a local row such as `ollama` reads "none needed" for its key instead of asking for one; a login or logout on the active seat applies at once; a key pasted on `openai` is checked against the API, not the ChatGPT sign-in; a stream failure keeps its error message.
 - A stream that sends only keep-alives fails after the idle timeout and is retried, instead of holding the turn.
 - A hook that writes more than 64 KB no longer stalls the tool call.
-- Leaving plan mode removes the sandbox plan mode turned on.
 - A failed compaction summary retries after 8 rounds.
 - A file whose change time moved is hashed again for undo snapshots.
 - A closed stdout or stderr pipe ends summonr quietly and leaves no crash report for the next run.
@@ -136,6 +144,7 @@ First stable release.
 - `~/.summonr` is created with mode `0700`, and existing directories are tightened to it.
 - A non-empty `policy.toml` in an uncontained session warns at startup that its rules are not enforced.
 - `Endpoint` debug output shows only whether a key or header is set, never its value.
+- `~/.summonr/credentials.toml` is plain TOML with mode 0600, readable only by your account. A sealed file from an earlier build is rewritten as plain TOML the first time summonr reads it.
 
 ## 0.1.0-rc.1 - 2026-09-23
 
@@ -198,7 +207,6 @@ First stable release.
 | --- | --- |
 | `/auth` | `/login` |
 | `/quit` | `/exit` |
-| `/effort` | `/model` |
 | `/rollback` | `/undo files` |
 | `/branch` | `/fork` |
 | `/tree` | `/resume` |

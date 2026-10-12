@@ -1120,6 +1120,7 @@ pub summonr::Tree::path: std::path::PathBuf
 pub summonr::Tree::primary: std::path::PathBuf
 pub summonr::Tree::snapshot: core::option::Option<alloc::string::String>
 impl summonr::Tree
+pub fn summonr::Tree::changes(&self) -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
 pub fn summonr::Tree::unchanged(&self) -> summonr::Result<bool>
 impl core::clone::Clone for summonr::Tree
 impl core::cmp::Eq for summonr::Tree

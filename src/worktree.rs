@@ -142,10 +142,8 @@ fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
             start,
         ],
     )?;
-    let path = path.canonicalize().unwrap_or(path);
-    let primary = primary
-        .canonicalize()
-        .unwrap_or_else(|_| primary.to_path_buf());
+    let path = dunce::canonicalize(&path).unwrap_or(path);
+    let primary = dunce::canonicalize(primary).unwrap_or_else(|_| primary.to_path_buf());
     let tree = Tree {
         primary,
         path,
@@ -207,8 +205,12 @@ impl Tree {
     }
 
     pub fn unchanged(&self) -> Result<bool> {
+        Ok(self.changes()?.is_empty())
+    }
+
+    pub fn changes(&self) -> Result<Vec<String>> {
         if !self.path.exists() {
-            return Ok(true);
+            return Ok(Vec::new());
         }
         let base = self.snapshot.as_deref().unwrap_or("HEAD");
         let diff = crate::diff::git_paths(&self.path, &["diff", "--name-only", "-z", base])?;
@@ -217,9 +219,10 @@ impl Tree {
             &["ls-files", "-z", "--others", "--exclude-standard"],
         )?;
         Ok(diff
-            .iter()
-            .chain(&untracked)
-            .all(|path| crate::diff::ignored::hidden(path)))
+            .into_iter()
+            .chain(untracked)
+            .filter(|path| !crate::diff::ignored::hidden(path))
+            .collect())
     }
 }
 

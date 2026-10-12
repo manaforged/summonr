@@ -190,8 +190,16 @@ fn spawn(name: &str, slot: i64, payload: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn exec(name: &str, slot: i64, payload: Option<&Path>) -> Result<i32> {
-    let job = store::get(name)?;
+pub(crate) fn exec(
+    name: &str,
+    slot: i64,
+    payload: Option<&Path>,
+    notify: Option<super::store::Notify>,
+) -> Result<i32> {
+    let mut job = store::get(name)?;
+    if let Some(notify) = notify {
+        job.notify = notify;
+    }
     let started = super::now();
     let Some(_guard) = durable::lock(&store::run_lock(name)?, false)? else {
         store::settle(name, slot, started, |run| run.outcome = Outcome::Overlap)?;

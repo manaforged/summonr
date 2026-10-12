@@ -164,7 +164,7 @@ git diff | summonr kimi -p
 | `cron edit NAME [FLAGS]` | Change a job with the same flags as `add`. |
 | `cron list [--json]` | List jobs. |
 | `cron show NAME` | Show one job, including the endpoint its runs use. |
-| `cron run NAME [--raw]` | Run a job now. |
+| `cron run NAME [--raw] [--notify never\|failure\|always]` | Run a job now; `--notify` overrides the job's setting for this run. |
 | `cron log NAME [--last N] [--raw]` | Past runs, then the last run's answer, verdict, and log path. |
 | `cron pause NAME`, `cron resume NAME` | Stop or restart a job's schedule. |
 | `cron remove NAME` | Delete a job and its token. |

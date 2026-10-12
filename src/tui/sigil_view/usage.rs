@@ -125,7 +125,7 @@ fn page(app: &App, width: f32) -> Vec<NodeBuilder> {
         return nodes;
     }
     nodes.push(cards(&report));
-    nodes.push(trend(&report, metric, width));
+    nodes.push(trend(&report, metric));
     nodes.push(bottom(&report, metric, width));
     nodes
 }

@@ -1,8 +1,9 @@
-use sigil::prelude::Paint;
 use sigil::prelude::{
     AlignItems, FlexWrap, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone,
     container, heatmap, panel, progress, signal, sparkline,
 };
+use sigil::prelude::{Paint, WidgetLayoutExt};
+use sigil::widgets::SparkMark;
 
 use super::super::canvas::{self, blend, palette};
 use super::report::{Metric, Report, hit, turn_secs};
@@ -11,6 +12,7 @@ use crate::provider::{compact, dollars};
 use crate::session::Total;
 
 const MODEL_ROWS: usize = 8;
+const SPARK_POINTS: usize = 24;
 const PLACE_CELLS: usize = 26;
 const PLACE_NAME_CELLS: usize = 20;
 const NAME_CELLS: usize = 24;
@@ -98,25 +100,28 @@ fn card(title: &str, value: String, visual: Option<NodeBuilder>, note: String) -
         .child(wrapped(note, palette.dim));
     container()
         .layout(
-            LayoutStyle::block()
+            LayoutStyle::flex_column()
                 .grow(1.0)
                 .shrink(1.0)
                 .min_size(0.0, 0.0),
         )
-        .child(panel().title(title).padding(16.0).child(body))
+        .child(panel().title(title).padding(16.0).grow(1.0).child(body))
+}
+
+fn peaks(columns: &[f64], points: usize) -> Vec<f32> {
+    let per = columns.len().div_ceil(points.max(1)).max(1);
+    columns
+        .chunks(per)
+        .map(|chunk| chunk.iter().copied().fold(0.0_f64, f64::max) as f32)
+        .collect()
 }
 
 pub(super) fn cards(report: &Report) -> NodeBuilder {
     let total = &report.total;
-    let trend = sparkline(
-        report
-            .columns
-            .iter()
-            .map(|value| *value as f32)
-            .collect::<Vec<f32>>(),
-    )
-    .tone(Tone::Primary)
-    .rows(1);
+    let trend = sparkline(peaks(&report.columns, SPARK_POINTS))
+        .tone(Tone::Primary)
+        .mark(SparkMark::Braille)
+        .rows(1);
     let cache = progress(signal(report.cache_hit() as f32), 100.0).tone(Tone::Success);
     let cost = total.cost.map_or_else(|| "–".to_string(), dollars);
     let priced = if total.cost.is_some() {

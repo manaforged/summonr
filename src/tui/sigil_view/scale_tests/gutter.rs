@@ -19,11 +19,7 @@ fn chrome_rows_start_at_the_gutter() {
     for cols in [40, 110, 200] {
         let seen = std::cell::RefCell::new(None);
         let full = frame_with(busy_info(), cols, 40, State::Busy, |app| {
-            app.update(Msg::Event(Event::ToolCall {
-                id: "todo".to_owned(),
-                name: "todo".to_owned(),
-                arguments: TODO.to_owned(),
-            }));
+            app.update(Msg::Event(super::composer_todos::todo(TODO)));
             let (chat, side) = app.layout.get().split(cols);
             seen.replace(Some(if side == 0 { cols } else { chat + 1 }));
         });

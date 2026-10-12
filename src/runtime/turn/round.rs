@@ -195,9 +195,8 @@ impl<P: Provider> Loop<P> {
             return Ok(());
         }
         let objective = self.session.objective().map_err(super::session_err)?;
-        let before = usage.clone();
         let brief = scout::brief(self, &objective, usage).await;
-        self.seat_usage(workflow::Role::Scout, &before, usage, events, emit)?;
+        self.sync_usage(emit);
         let brief = match brief {
             Ok(brief) => brief,
             Err(error) => {
@@ -233,6 +232,12 @@ impl<P: Provider> Loop<P> {
         self.prepare_work(&input.text, &commands)?;
         let harness = self.harness_note(&self.work_progress()?);
         if !self.note_sent(&harness) {
+            if input.source.is_none() {
+                input.source = Some(crate::provider::Source {
+                    text: input.text.clone(),
+                    images: input.images.len(),
+                });
+            }
             input.text = decorate(&harness, &input.text);
         }
         self.session
@@ -285,3 +290,7 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "round_tests.rs"]
+mod tests;

@@ -68,91 +68,61 @@ fn after<T>(command: &str, keys: Vec<ShellEvent>, read: impl FnOnce(&App) -> T) 
 }
 
 #[test]
-fn shift_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
+fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
     use crate::tui::Cmd;
     use crossterm::event::{KeyCode, KeyEvent as TerminalKey, KeyModifiers};
 
-    Runtime::scope("composer-line-break", || {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let (commands, mut sent) = unbounded_channel();
-        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
-        app.resize(160, 40);
-        app.update(crate::tui::Msg::User("Earlier message".to_owned()));
-        app.replace("first".to_owned());
-        let mut host = Host::cells();
-        let tree = app.clone();
-        host.mount(move || root(tree));
-        let mut screen = Screen::new(160, 40);
-        let mut router = EventRouter::new();
-        for _ in 0..2 {
-            screen
-                .frame(&mut host, &mut router, [], (160, 40))
-                .expect("focus the composer");
-        }
-        let events =
-            [
-                sigil::terminal::map_key(&TerminalKey::new(KeyCode::Enter, KeyModifiers::SHIFT))
-                    .expect("map Shift+Enter"),
+    for modifier in [KeyModifiers::SHIFT, KeyModifiers::ALT] {
+        Runtime::scope("composer-line-break", || {
+            let workspace = tempfile::tempdir().expect("workspace");
+            let (commands, mut sent) = unbounded_channel();
+            let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+            assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
+            app.resize(160, 40);
+            app.update(crate::tui::Msg::User("Earlier message".to_owned()));
+            app.replace("first".to_owned());
+            let mut host = Host::cells();
+            let tree = app.clone();
+            host.mount(move || root(tree));
+            let mut screen = Screen::new(160, 40);
+            let mut router = EventRouter::new();
+            for _ in 0..2 {
+                screen
+                    .frame(&mut host, &mut router, [], (160, 40))
+                    .expect("focus the composer");
+            }
+            let events = [
+                sigil::terminal::map_key(&TerminalKey::new(KeyCode::Enter, modifier))
+                    .expect("map the line-break chord"),
             ];
-        screen
-            .frame(&mut host, &mut router, events, (160, 40))
-            .expect("insert the line break");
-        assert_eq!(app.draft.peek(), "first\n");
-        assert_eq!(app.caret.peek(), 6);
-        assert!(sent.try_recv().is_err(), "Shift+Enter submitted the draft");
-        screen
-            .frame(&mut host, &mut router, [press("second")], (160, 40))
-            .expect("type the second line");
-        assert_eq!(app.draft.peek(), "first\nsecond");
-        screen
-            .frame(
-                &mut host,
-                &mut router,
-                [sigil::terminal::key_down(sigil::prelude::Key::Enter)],
-                (160, 40),
-            )
-            .expect("submit with plain Enter");
-        let Cmd::Submit(input) = sent.try_recv().expect("submitted input") else {
-            panic!("plain Enter did not submit the draft");
-        };
-        assert_eq!(input.text, "first\nsecond");
-        assert!(app.draft.peek().is_empty());
-    });
-}
-
-#[test]
-fn alt_enter_line_break_keeps_the_draft_unsent() {
-    use crossterm::event::{KeyCode, KeyEvent as TerminalKey, KeyModifiers};
-
-    Runtime::scope("composer-alt-line-break", || {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let (commands, mut sent) = unbounded_channel();
-        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        drop(sent.try_recv());
-        app.resize(160, 40);
-        app.replace("first".to_owned());
-        let mut host = Host::cells();
-        let tree = app.clone();
-        host.mount(move || root(tree));
-        let mut screen = Screen::new(160, 40);
-        let mut router = EventRouter::new();
-        for _ in 0..2 {
             screen
-                .frame(&mut host, &mut router, [], (160, 40))
-                .expect("focus the composer");
-        }
-        let events =
-            [
-                sigil::terminal::map_key(&TerminalKey::new(KeyCode::Enter, KeyModifiers::ALT))
-                    .expect("map Alt+Enter"),
-            ];
-        screen
-            .frame(&mut host, &mut router, events, (160, 40))
-            .expect("insert the line break");
-        assert_eq!(app.draft.peek(), "first\n");
-        assert!(sent.try_recv().is_err(), "Alt+Enter submitted the draft");
-    });
+                .frame(&mut host, &mut router, events, (160, 40))
+                .expect("insert the line break");
+            assert_eq!(app.draft.peek(), "first\n", "{modifier:?}");
+            assert_eq!(app.caret.peek(), 6);
+            assert!(
+                sent.try_recv().is_err(),
+                "{modifier:?}+Enter submitted the draft"
+            );
+            screen
+                .frame(&mut host, &mut router, [press("second")], (160, 40))
+                .expect("type the second line");
+            assert_eq!(app.draft.peek(), "first\nsecond");
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    [sigil::terminal::key_down(sigil::prelude::Key::Enter)],
+                    (160, 40),
+                )
+                .expect("submit with plain Enter");
+            let Cmd::Submit(input) = sent.try_recv().expect("submitted input") else {
+                panic!("plain Enter did not submit the draft");
+            };
+            assert_eq!(input.text, "first\nsecond");
+            assert!(app.draft.peek().is_empty());
+        });
+    }
 }
 
 #[test]

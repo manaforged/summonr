@@ -27,20 +27,12 @@ pub(super) enum LoginGroup {
 }
 
 impl LoginGroup {
-    const fn heading(self) -> &'static str {
+    const fn title(self) -> &'static str {
         match self {
             Self::Key => "API keys",
             Self::Plan => "Coding plans",
-            Self::Decide => "Decisions",
-            Self::Local => "Local",
-        }
-    }
-
-    const fn title(self) -> &'static str {
-        match self {
             Self::Decide => "Decisions  (summonr classify / Jev)",
             Self::Local => "Local  (no key)",
-            Self::Key | Self::Plan => self.heading(),
         }
     }
 }
@@ -62,11 +54,6 @@ impl AuthInfo {
             "" => self.name.clone(),
             plan => format!("{} · {plan}", self.name),
         }
-    }
-
-    #[must_use]
-    pub fn catalog_heading(&self) -> &'static str {
-        self.listed().heading()
     }
 
     fn listed(&self) -> LoginGroup {

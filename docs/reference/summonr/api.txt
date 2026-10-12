@@ -185,6 +185,9 @@ impl core::marker::StructuralPartialEq for summonr::classify::Usage
 impl<'de> serde_core::de::Deserialize<'de> for summonr::classify::Usage
 pub async fn summonr::classify::ask(endpoint: &summonr::Endpoint, state: &serde_json::value::Value, questions: &alloc::collections::btree::map::BTreeMap<alloc::string::String, summonr::classify::Question>) -> summonr::Result<summonr::classify::Decision>
 pub fn summonr::classify::budget(endpoint: &summonr::Endpoint, questions: &alloc::collections::btree::map::BTreeMap<alloc::string::String, summonr::classify::Question>) -> usize
+pub mod summonr::cron
+pub mod summonr::cron::cli
+pub fn summonr::cron::cli::run(args: &[alloc::string::String], cwd: &std::path::Path) -> summonr::Result<i32>
 pub mod summonr::diff
 pub enum summonr::diff::TurnId
 pub summonr::diff::TurnId::Last
@@ -229,11 +232,38 @@ pub fn summonr::diff::stats(root: &std::path::Path) -> summonr::Result<summonr::
 pub fn summonr::diff::turn_patch(root: &std::path::Path, session: &str, id: summonr::diff::TurnId, path: core::option::Option<&str>) -> summonr::Result<alloc::string::String>
 pub fn summonr::diff::turn_stats(root: &std::path::Path, session: &str, id: summonr::diff::TurnId) -> summonr::Result<summonr::diff::Diff>
 pub fn summonr::diff::turns(journal: &std::path::Path) -> summonr::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>
+pub mod summonr::gateway
+pub mod summonr::gateway::cli
+pub fn summonr::gateway::cli::run(args: &[alloc::string::String], cwd: &std::path::Path, read_secret: &dyn core::ops::function::Fn(&str) -> summonr::Result<alloc::string::String>) -> summonr::Result<i32>
 pub mod summonr::limits
 pub fn summonr::limits::log_retain() -> core::time::Duration
 pub mod summonr::mail
 pub mod summonr::mail::cli
 pub fn summonr::mail::cli::run(args: &[alloc::string::String], cwd: &std::path::Path) -> summonr::Result<i32>
+pub mod summonr::memory
+pub enum summonr::memory::Scope
+pub summonr::memory::Scope::Project
+pub summonr::memory::Scope::User
+impl summonr::memory::Scope
+pub const fn summonr::memory::Scope::label(self) -> &'static str
+impl core::clone::Clone for summonr::memory::Scope
+impl core::cmp::Eq for summonr::memory::Scope
+impl core::cmp::PartialEq for summonr::memory::Scope
+impl core::fmt::Debug for summonr::memory::Scope
+impl core::marker::Copy for summonr::memory::Scope
+impl core::marker::StructuralPartialEq for summonr::memory::Scope
+pub struct summonr::memory::MemoryFile
+pub summonr::memory::MemoryFile::bytes: u64
+pub summonr::memory::MemoryFile::path: std::path::PathBuf
+pub summonr::memory::MemoryFile::scope: summonr::memory::Scope
+impl core::clone::Clone for summonr::memory::MemoryFile
+impl core::cmp::Eq for summonr::memory::MemoryFile
+impl core::cmp::PartialEq for summonr::memory::MemoryFile
+impl core::fmt::Debug for summonr::memory::MemoryFile
+impl core::marker::StructuralPartialEq for summonr::memory::MemoryFile
+pub const summonr::memory::OFF: &str
+pub fn summonr::memory::files(home: &std::path::Path, workspace: &std::path::Path) -> alloc::vec::Vec<summonr::memory::MemoryFile>
+pub fn summonr::memory::report(files: &[summonr::memory::MemoryFile]) -> alloc::string::String
 pub mod summonr::modules
 pub enum summonr::modules::ModuleId
 pub summonr::modules::ModuleId::Browser
@@ -241,6 +271,7 @@ pub summonr::modules::ModuleId::Jobs
 pub summonr::modules::ModuleId::Lsp
 pub summonr::modules::ModuleId::Mail
 pub summonr::modules::ModuleId::Mcp
+pub summonr::modules::ModuleId::Memory
 pub summonr::modules::ModuleId::Search
 pub summonr::modules::ModuleId::Skills
 pub summonr::modules::ModuleId::Task
@@ -540,6 +571,7 @@ pub summonr::Event::Aborted::code: summonr::AbortCode
 pub summonr::Event::Aborted::reason: alloc::string::String
 pub summonr::Event::Approval
 pub summonr::Event::Approval::detail: core::option::Option<alloc::string::String>
+pub summonr::Event::Approval::dialog: u64
 pub summonr::Event::Approval::persist: bool
 pub summonr::Event::Assistant
 pub summonr::Event::Assistant::text: alloc::string::String
@@ -549,6 +581,7 @@ pub summonr::Event::Child::id: alloc::string::String
 pub summonr::Event::Delta
 pub summonr::Event::Delta::text: alloc::string::String
 pub summonr::Event::Elicit
+pub summonr::Event::Elicit::dialog: u64
 pub summonr::Event::Elicit::form: core::option::Option<summonr::McpForm>
 pub summonr::Event::Mail
 pub summonr::Event::Mail::from: alloc::string::String
@@ -753,6 +786,7 @@ impl<'a> core::marker::Copy for summonr::ProfileScope<'a>
 pub enum summonr::ProviderFailureKind
 pub summonr::ProviderFailureKind::Authentication
 pub summonr::ProviderFailureKind::ContextOverflow
+pub summonr::ProviderFailureKind::Empty
 pub summonr::ProviderFailureKind::Http
 pub summonr::ProviderFailureKind::Malformed
 pub summonr::ProviderFailureKind::MalformedToolCall
@@ -795,6 +829,7 @@ pub summonr::SlashCommand::Help
 pub summonr::SlashCommand::History
 pub summonr::SlashCommand::Login
 pub summonr::SlashCommand::Mcp
+pub summonr::SlashCommand::Memory
 pub summonr::SlashCommand::Model
 pub summonr::SlashCommand::Name
 pub summonr::SlashCommand::New
@@ -853,7 +888,6 @@ pub summonr::AuthInfo::plan: alloc::string::String
 pub summonr::AuthInfo::setup: alloc::string::String
 pub summonr::AuthInfo::source: core::option::Option<summonr::secret::Source>
 impl summonr::AuthInfo
-pub fn summonr::AuthInfo::catalog_heading(&self) -> &'static str
 pub fn summonr::AuthInfo::catalog_line(&self, name: usize, state: usize) -> alloc::string::String
 pub fn summonr::AuthInfo::catalog_rank(&self) -> u8
 pub fn summonr::AuthInfo::catalog_title(&self) -> &'static str
@@ -896,6 +930,7 @@ pub async fn summonr::Client::login(endpoint: &summonr::Endpoint, prompt: &mut s
 impl core::clone::Clone for summonr::Client
 pub struct summonr::Endpoint
 pub summonr::Endpoint::api_key: core::option::Option<alloc::string::String>
+pub summonr::Endpoint::assistant_after_tool: bool
 pub summonr::Endpoint::base_url: core::option::Option<alloc::string::String>
 pub summonr::Endpoint::body: core::option::Option<serde_json::value::Value>
 pub summonr::Endpoint::cache_header: core::option::Option<alloc::string::String>
@@ -949,7 +984,7 @@ pub fn summonr::Loop<P>::set_context_window(&mut self, window: core::option::Opt
 pub fn summonr::Loop<P>::set_effort(&mut self, effort: core::option::Option<summonr::Effort>)
 pub fn summonr::Loop<P>::set_env(&mut self, env: impl core::iter::traits::collect::IntoIterator<Item = (alloc::string::String, alloc::string::String)>)
 pub fn summonr::Loop<P>::set_images(&mut self, model_images: bool, vision: core::option::Option<summonr::Endpoint>)
-pub fn summonr::Loop<P>::set_modules(&mut self, switches: &summonr::modules::Switches)
+pub fn summonr::Loop<P>::set_modules(&mut self, switches: &summonr::modules::Switches) -> summonr::Result<()>
 pub fn summonr::Loop<P>::verify_commands(&self) -> &[alloc::string::String]
 pub fn summonr::Loop<P>::with_interactive(self) -> Self
 pub fn summonr::Loop<P>::with_sandbox(self, network: summonr::Network) -> summonr::Result<Self>
@@ -1065,6 +1100,7 @@ impl core::fmt::Debug for summonr::ServerStatus
 impl serde_core::ser::Serialize for summonr::ServerStatus
 pub struct summonr::Sources
 pub summonr::Sources::images: bool
+pub summonr::Sources::memory: bool
 pub summonr::Sources::skills: bool
 pub summonr::Sources::trust: bool
 impl core::clone::Clone for summonr::Sources
@@ -1079,6 +1115,8 @@ pub summonr::Tree::branch: alloc::string::String
 pub summonr::Tree::path: std::path::PathBuf
 pub summonr::Tree::primary: std::path::PathBuf
 pub summonr::Tree::snapshot: core::option::Option<alloc::string::String>
+impl summonr::Tree
+pub fn summonr::Tree::unchanged(&self) -> summonr::Result<bool>
 impl core::clone::Clone for summonr::Tree
 impl core::cmp::Eq for summonr::Tree
 impl core::cmp::PartialEq for summonr::Tree
@@ -1103,6 +1141,7 @@ pub summonr::Usage::prompt_tokens: u32
 pub summonr::Usage::reasoning_tokens: u32
 impl summonr::Usage
 pub fn summonr::Usage::add(&mut self, other: &Self)
+pub fn summonr::Usage::clamp(count: u64) -> u32
 impl core::clone::Clone for summonr::Usage
 impl core::cmp::Eq for summonr::Usage
 impl core::cmp::PartialEq for summonr::Usage
@@ -1133,6 +1172,7 @@ pub summonr::WorkProgress::objective: alloc::string::String
 pub summonr::WorkProgress::phase: summonr::durable::work::progress::WorkPhase
 pub summonr::WorkProgress::reason: core::option::Option<alloc::string::String>
 pub summonr::WorkProgress::rounds: u32
+pub summonr::WorkProgress::todos: alloc::vec::Vec<summonr::tools::todo::Todo>
 pub summonr::WorkProgress::total: usize
 pub summonr::WorkProgress::touched: alloc::vec::Vec<alloc::string::String>
 impl summonr::WorkProgress
@@ -1171,6 +1211,7 @@ pub fn summonr::goal_prompt(objective: &str, gates: &[alloc::string::String], ro
 pub fn summonr::in_git(path: &std::path::Path) -> bool
 pub fn summonr::index_files(root: &std::path::Path) -> i32
 pub fn summonr::install_plugin(src: &std::path::Path) -> summonr::Result<alloc::string::String>
+pub async fn summonr::interrupted() -> i32
 pub fn summonr::is_endpoint(token: &str) -> bool
 pub fn summonr::last_for(workspace: &std::path::Path) -> summonr::Result<core::option::Option<summonr::session::SessionInfo>>
 pub fn summonr::list_plugins() -> summonr::Result<alloc::string::String>
@@ -1183,7 +1224,7 @@ pub fn summonr::logout(name: &str) -> summonr::Result<alloc::string::String>
 pub fn summonr::mcp_add(name: &str, launch: &summonr::McpLaunch) -> summonr::Result<alloc::string::String>
 pub fn summonr::mcp_call_label(name: &str, arguments: &str) -> alloc::string::String
 pub async fn summonr::mcp_probe(workspace: &std::path::Path, name: &str) -> summonr::Result<usize>
-pub fn summonr::mcp_remove(name: &str) -> summonr::Result<bool>
+pub fn summonr::mcp_remove(workspace: &std::path::Path, name: &str) -> summonr::Result<bool>
 pub fn summonr::mcp_status(workspace: &std::path::Path, board: core::option::Option<&summonr::McpBoard>) -> summonr::Result<alloc::vec::Vec<summonr::ServerStatus>>
 pub fn summonr::parse_command(line: &str) -> core::option::Option<summonr::SlashCommand>
 pub fn summonr::profile(scope: summonr::ProfileScope<'_>) -> summonr::Result<alloc::string::String>

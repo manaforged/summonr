@@ -134,14 +134,14 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn harness_note(&self, progress: &WorkProgress) -> String {
-        let mut note = String::new();
+        let mut parts = Vec::new();
         if let Some(reason) = self.session.last_close_reason() {
-            note.push_str(&format!(
+            parts.push(format!(
                 "Harness: the previous turn stopped early ({reason}). Address the user's \
-                 message directly before resuming tool work.\n\n"
+                 message directly before resuming tool work."
             ));
         }
-        note.push_str(&harness_section(&Harness {
+        parts.push(harness_section(&Harness {
             mode: self.mode,
             checks: self.verify.as_deref().unwrap_or_default(),
             sandbox: self
@@ -155,23 +155,26 @@ impl<P: Provider> Loop<P> {
             children: self.task_available(),
         }));
         if progress.kind == WorkKind::Goal {
-            note.push_str(&format!(
-                "\n\nHarness objective (verbatim, this is what must be met):\n{}",
+            parts.push(format!(
+                "Harness objective (verbatim, this is what must be met):\n{}",
                 progress.objective
             ));
         }
         if progress.kind != WorkKind::Single && !progress.ledger.is_empty() {
-            note.push_str(
-                "\n\nHarness ledger ([x] done, [/] this step, [ ] later, [!] blocked):\n",
-            );
-            note.push_str(&progress.ledger.join("\n"));
+            parts.push(format!(
+                "{}\n{}",
+                crate::durable::work::Work::ledger_legend(),
+                progress.ledger.join("\n")
+            ));
         }
         if self.seat_model(workflow::Role::Review).is_some() {
-            note.push_str(
-                "\n\nHarness: a reviewer reads the change after the completion check and can send it back.",
+            parts.push(
+                "Harness: a reviewer reads the change after the completion check and can send it back."
+                    .to_string(),
             );
         }
-        note
+        parts.retain(|part| !part.is_empty());
+        parts.join("\n\n")
     }
 
     pub(super) fn note_sent(&self, harness: &str) -> bool {

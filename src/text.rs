@@ -3,7 +3,7 @@ use std::hash::Hasher;
 use sigil::app::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
-const IRREGULAR: &[(&str, &str)] = &[("child", "children")];
+const IRREGULAR: &[(&str, &str)] = &[("child", "children"), ("entry", "entries")];
 
 pub(crate) fn plural(count: usize, word: &str) -> String {
     if count == 1 {
@@ -140,6 +140,11 @@ pub(crate) fn hide_key_echo(text: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+#[must_use]
+pub(crate) fn squash(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[must_use]

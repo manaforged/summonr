@@ -8,6 +8,10 @@ use super::{domain_match, host_of};
 use crate::error::{Error, Result};
 use crate::text::ellipsize;
 
+mod markup;
+
+use markup::{attr, decode, element, plain, tag};
+
 const SNIPPET_MAX: usize = 280;
 const TITLE_MAX: usize = 120;
 const ENGINES: &str = include_str!("engines.toml");
@@ -23,16 +27,23 @@ pub(super) struct Engine {
     url: String,
     query: String,
     block: String,
-    link: String,
-    #[serde(default)]
+    link: Option<String>,
+    link_in: Option<Container>,
     title: Option<String>,
     snippet: String,
-    #[serde(default)]
     unwrap: Option<String>,
     #[serde(default)]
+    carrier: Carrier,
+    unwrap_prefix: Option<String>,
+    #[serde(default)]
+    encoding: Encoding,
     freshness: Option<Freshness>,
     #[serde(default)]
     hosts: Vec<String>,
+    block_status: Vec<u16>,
+    #[serde(default)]
+    block_markers: Vec<String>,
+    cooldown_secs: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
@@ -55,6 +66,29 @@ impl Window {
             ))
         })
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Container {
+    Tag(String),
+    Class(String),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Carrier {
+    #[default]
+    Query,
+    Path,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Encoding {
+    #[default]
+    Url,
+    Base64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,15 +135,61 @@ impl Engine {
         let Some(param) = &self.unwrap else {
             return Some(absolute);
         };
-        let inner = Url::parse(&absolute)
-            .ok()?
-            .query_pairs()
-            .find(|(key, _)| key == param)
-            .map(|(_, value)| value.into_owned());
-        match inner {
-            Some(inner) => result_url(inner),
-            None => Some(absolute),
+        let parsed = Url::parse(&absolute).ok()?;
+        let inner = match self.carrier {
+            Carrier::Query => parsed
+                .query_pairs()
+                .find(|(key, _)| key == param)
+                .map(|(_, value)| value.into_owned()),
+            Carrier::Path => parsed.path_segments().and_then(|mut segments| {
+                let value = segments.find_map(|segment| {
+                    segment
+                        .strip_prefix(param.as_str())
+                        .and_then(|rest| rest.strip_prefix('='))
+                })?;
+                url::form_urlencoded::parse(format!("v={value}").as_bytes())
+                    .next()
+                    .map(|(_, decoded)| decoded.into_owned())
+            }),
+        };
+        let Some(inner) = inner else {
+            return Some(absolute);
+        };
+        let inner = match &self.unwrap_prefix {
+            Some(prefix) => inner.strip_prefix(prefix.as_str())?.to_string(),
+            None => inner,
+        };
+        match self.encoding {
+            Encoding::Url => result_url(inner),
+            Encoding::Base64 => {
+                use base64::Engine as _;
+                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(inner.trim_end_matches('='))
+                    .ok()?;
+                result_url(String::from_utf8(bytes).ok()?)
+            }
         }
+    }
+
+    fn anchor<'a>(&self, block: &'a str) -> Option<&'a str> {
+        match (&self.link_in, &self.link) {
+            (Some(Container::Tag(name)), _) => tag(tag(block, name)?, "a"),
+            (Some(Container::Class(class)), _) => tag(element(block, class)?, "a"),
+            (None, Some(link)) => element(block, link),
+            (None, None) => None,
+        }
+    }
+
+    pub(super) fn blocked(&self, status: u16, body: &str) -> bool {
+        self.block_status.contains(&status)
+            || self
+                .block_markers
+                .iter()
+                .any(|marker| body.contains(marker.as_str()))
+    }
+
+    pub(super) fn cooldown(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.cooldown_secs)
     }
 
     fn own(&self, url: &str) -> bool {
@@ -126,7 +206,7 @@ pub(super) fn parse_page(html: &str, engine: &Engine) -> Vec<Hit> {
 }
 
 fn page_hit(block: &str, engine: &Engine) -> Option<Hit> {
-    let anchor = element(block, &engine.link)?;
+    let anchor = engine.anchor(block)?;
     let href = attr(&anchor[..anchor.find('>')? + 1], "href")?;
     let url = engine.target(href)?;
     if engine.own(&url) {
@@ -150,59 +230,6 @@ fn page_hit(block: &str, engine: &Engine) -> Option<Hit> {
     })
 }
 
-fn element<'a>(html: &'a str, class: &str) -> Option<&'a str> {
-    let marker = "class=\"";
-    let mut from = 0;
-    while let Some(relative) = html[from..].find(marker) {
-        let start = from + relative + marker.len();
-        let end = start + html[start..].find('"')?;
-        if html[start..end]
-            .split_whitespace()
-            .any(|token| token == class)
-        {
-            let open = html[..start].rfind('<')?;
-            return Some(&html[open..closing(html, open)?]);
-        }
-        from = end;
-    }
-    None
-}
-
-fn closing(html: &str, open: usize) -> Option<usize> {
-    let rest = &html[open + 1..];
-    let name = &rest[..rest.find(|c: char| c.is_whitespace() || c == '>' || c == '/')?];
-    let opener = format!("<{name}");
-    let closer = format!("</{name}>");
-    let mut depth = 0usize;
-    let mut at = open;
-    loop {
-        let close = at + html[at..].find(&closer)?;
-        let next = html[at..close].find(&opener).map(|index| at + index);
-        match next {
-            Some(index) => {
-                at = index + opener.len();
-                if html[at..].starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/') {
-                    depth += 1;
-                }
-            }
-            None => {
-                at = close + closer.len();
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(at);
-                }
-            }
-        }
-    }
-}
-
-fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    let marker = format!(" {name}=\"");
-    let start = tag.find(&marker)? + marker.len();
-    let end = start + tag[start..].find('"')?;
-    Some(&tag[start..end])
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Hit {
     pub(super) title: String,
@@ -212,9 +239,10 @@ pub(super) struct Hit {
 
 fn result_url(raw: String) -> Option<String> {
     let raw = decode(raw.trim());
-    let raw = raw
-        .strip_prefix("//")
-        .map_or(raw.clone(), |rest| format!("https://{rest}"));
+    let raw = match raw.strip_prefix("//") {
+        Some(rest) => format!("https://{rest}"),
+        None => raw,
+    };
     let url = Url::parse(&raw).ok()?;
     matches!(url.scheme(), "http" | "https").then(|| url.to_string())
 }
@@ -235,33 +263,6 @@ pub(super) fn format_hits(query: &str, hits: &[Hit]) -> String {
     }
     out.push_str("\nRead chosen URLs with web_fetch.");
     out
-}
-
-fn plain(html: &str) -> String {
-    let mut out = String::new();
-    let mut tag = false;
-    for ch in html.chars() {
-        match ch {
-            '<' => tag = true,
-            '>' => tag = false,
-            _ if !tag => out.push(ch),
-            _ => {}
-        }
-    }
-    decode(&out)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn decode(text: &str) -> String {
-    text.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#x27;", "'")
-        .replace("&#39;", "'")
-        .replace("&nbsp;", " ")
 }
 
 pub(super) fn flat(text: &str) -> String {

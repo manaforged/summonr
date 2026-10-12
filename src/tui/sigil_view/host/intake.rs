@@ -10,12 +10,8 @@ impl App {
                 let text = text.replace("\r\n", "\n").replace('\r', "\n");
                 if self.secret_active() {
                     self.secret_push(text.lines().next().unwrap_or_default());
-                } else {
-                    match if staged {
-                        Some(true)
-                    } else {
-                        self.stage(&text)
-                    } {
+                } else if !staged {
+                    match self.stage(&text) {
                         Some(true) => staged = true,
                         Some(false) => {}
                         None => events.push(sigil::terminal::paste(&text)),

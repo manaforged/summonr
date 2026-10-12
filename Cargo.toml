@@ -62,7 +62,7 @@ leyline = { workspace = true }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "0b6aa8c1c6693167cadd04ae920c92366757045a", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "a0aa401f3477f79a814991513ffdb89337261914", default-features = false, features = ["terminal", "inspect"] }
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"
@@ -72,9 +72,11 @@ notify = { version = "8", default-features = false, features = ["macos_fsevent"]
 chacha20poly1305 = "0.10"
 libc = "0.2"
 dunce = "1.0"
+jiff = "0.2.38"
+httparse = "1.10"
 
 [patch.crates-io]
-crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "ee9ebdbb0d0e7d49e06a8adfcaa11c3679dca7da" }
+crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "5b1788b58b5d18237ed11f049717975f3168483e" }
 
 [features]
 default = []

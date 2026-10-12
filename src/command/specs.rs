@@ -102,7 +102,13 @@ pub(super) const SPECS: &[CommandSpec] = &[
         Bare,
         Session,
     ),
-    spec("/mcp", "Show MCP servers", SlashCommand::Mcp, Bare, Session),
+    spec(
+        "/mcp",
+        "connected MCP servers and their tools",
+        SlashCommand::Mcp,
+        Bare,
+        Session,
+    ),
     spec(
         "/usage",
         "token spend; session profiles this session",
@@ -115,6 +121,13 @@ pub(super) const SPECS: &[CommandSpec] = &[
         "/agents",
         "list agent sessions on this machine",
         SlashCommand::Agents,
+        Bare,
+        Session,
+    ),
+    spec(
+        "/memory",
+        "show the memory files and their size",
+        SlashCommand::Memory,
         Bare,
         Session,
     ),

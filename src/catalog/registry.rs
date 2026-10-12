@@ -11,7 +11,6 @@ use crate::provider::Price;
 
 const REGISTRY_URL: &str = "https://models.dev/api.json";
 pub(super) const FILE: &str = "models-dev.json";
-const REGISTRY_STALE: u64 = 3600;
 const REGISTRY_SCHEMA: u32 = 3;
 const SNAPSHOT: &str = include_str!("models-dev.json");
 
@@ -98,11 +97,14 @@ pub(super) fn current() -> Arc<Registry> {
 }
 
 pub async fn refresh_registry() -> Result<()> {
+    if crate::config::file().is_ok_and(|file| file.models_catalog == Some(false)) {
+        return Ok(());
+    }
     let cache = shelf::load::<Registry>(FILE)
         .ok()
         .filter(|cache| cache.schema == REGISTRY_SCHEMA)
         .map_or_else(Registry::default, |cache| (*cache).clone());
-    if now().saturating_sub(cache.fetched) < REGISTRY_STALE {
+    if now().saturating_sub(cache.fetched) < crate::limits::limits().models_catalog_secs {
         return Ok(());
     }
     let saved = fetch_registry(&cache.etag).await?.unwrap_or(Registry {

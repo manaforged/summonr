@@ -31,7 +31,7 @@ mod workspace;
 use args::{nonempty_path, object_bool, object_string, object_usize};
 pub(crate) use args::{parse_args, tool};
 use todo::parse_todo;
-pub(crate) use todo::{TodoStatus, todos_from_args};
+pub(crate) use todo::{Todo, TodoStatus, todos_from_args};
 pub(crate) use workspace::search::index::{ENTRY as INDEX_ENTRY, build as build_file_index};
 
 pub(crate) fn blocking<T>(work: impl FnOnce() -> T) -> T {
@@ -71,6 +71,7 @@ pub(crate) struct ToolRegistry {
     model_images: bool,
     vision: Option<crate::endpoint::Endpoint>,
     only: Option<Vec<Builtin>>,
+    standalone: bool,
 }
 
 pub(crate) struct ToolOutput {
@@ -141,6 +142,7 @@ impl ToolRegistry {
             model_images: false,
             vision: None,
             only: None,
+            standalone: false,
         })
     }
 
@@ -153,18 +155,8 @@ impl ToolRegistry {
         self.vision = vision;
     }
 
-    pub(crate) fn set_modules(&mut self, switches: &crate::modules::Switches) {
-        use crate::modules::ModuleId;
-        if !switches.enabled(ModuleId::Search) {
-            self.search = None;
-        } else if self.search.is_none() {
-            self.search = crate::web::Search::discover().ok();
-        }
-        self.set_browser(switches.enabled(ModuleId::Browser));
-        self.language = switches.enabled(ModuleId::Lsp);
-        self.background = switches.enabled(ModuleId::Jobs);
-        self.skills = switches.enabled(ModuleId::Skills);
-        self.probed = std::sync::OnceLock::new();
+    pub(crate) fn set_model_images(&mut self, model_images: bool) {
+        self.model_images = model_images;
     }
 
     pub(crate) fn set_strict(&mut self) {
@@ -190,6 +182,8 @@ impl ToolRegistry {
         child.background = false;
         child.language = self.language;
         child.skills = self.skills;
+        child.search.clone_from(&self.search);
+        child.browser.clone_from(&self.browser);
         child.set_session(session);
         Ok(child)
     }
@@ -258,6 +252,7 @@ impl ToolRegistry {
 
     pub(crate) fn contain_read_only(&mut self) {
         self.policy.set_read_only(true);
+        self.browser = None;
         if self.sandbox.is_none() {
             drop(self.enable_sandbox(sandbox::Network::Allowed));
         }
@@ -331,9 +326,10 @@ pub async fn run_tool(
     let mut tools = ToolRegistry::with_policy_and_search(
         workspace,
         crate::policy::Policy::discover(workspace)?,
-        crate::web::Search::discover().ok(),
+        None,
     )?;
-    tools.set_modules(&crate::modules::Switches::load(workspace)?);
+    tools.standalone = true;
+    tools.set_modules(&crate::modules::Switches::load(workspace)?)?;
     if let Some(network) = sandbox {
         tools.enable_sandbox(network)?;
     }

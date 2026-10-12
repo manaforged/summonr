@@ -50,6 +50,7 @@ pub enum SlashCommand {
     Export,
     View,
     Agents,
+    Memory,
     Permissions,
     Fork,
     Usage,

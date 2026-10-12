@@ -39,6 +39,7 @@ pub use mcp::{
     call_label as mcp_call_label, probe as mcp_probe, remove as mcp_remove, status as mcp_status,
 };
 mod browser;
+pub mod memory;
 pub mod modules;
 mod plugins;
 mod policy;
@@ -64,6 +65,33 @@ pub fn stop_children() {
     tools::command::stop_groups();
 }
 
+#[cfg(unix)]
+pub async fn interrupted() -> i32 {
+    use tokio::signal::unix::{SignalKind, signal};
+    let (Ok(mut interrupt), Ok(mut terminate), Ok(mut hangup)) = (
+        signal(SignalKind::interrupt()),
+        signal(SignalKind::terminate()),
+        signal(SignalKind::hangup()),
+    ) else {
+        return std::future::pending().await;
+    };
+    tokio::select! {
+        _ = interrupt.recv() => 130,
+        _ = terminate.recv() => 143,
+        _ = hangup.recv() => 129,
+    }
+}
+
+#[cfg(not(unix))]
+pub async fn interrupted() -> i32 {
+    if tokio::signal::ctrl_c().await.is_ok() {
+        return 130;
+    }
+    std::future::pending().await
+}
+
+pub mod cron;
+pub mod gateway;
 pub mod mail;
 pub mod prefs;
 pub mod splash;

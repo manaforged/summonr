@@ -3,8 +3,8 @@ use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder};
 
 use super::App;
 use super::body::header;
-use super::ledger::item;
-use crate::tui::sigil_view::chat::todos::{glyph, tally};
+use super::ledger::Mark;
+use crate::tui::sigil_view::chat::todos::tally;
 
 pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
@@ -24,10 +24,10 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
                 .text_color(sigil::prelude::Token::Gray11),
         );
     }
-    for line in lines {
-        let (shown, done) = plan_mark(&line);
+    for row in lines {
+        let done = row.mark == Mark::Done;
         column = column.child(
-            sigil::kernel::text(shown)
+            sigil::kernel::text(row.shown())
                 .wrap()
                 .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
                 .font_size(12.0)
@@ -39,13 +39,4 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
         );
     }
     column
-}
-
-pub(super) fn plan_mark(line: &str) -> (String, bool) {
-    let (mark, rest) = item(line);
-    if mark == ' ' {
-        return (line.to_string(), false);
-    }
-    let pad = &line[..line.len() - line.trim_start().len()];
-    (format!("{pad}{} {rest}", glyph(mark)), mark == '✓')
 }

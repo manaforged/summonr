@@ -10,7 +10,7 @@ mod notify;
 pub(crate) use background::Background;
 pub(crate) use diff::DiffLayout;
 pub use hotkeys::Hotkey;
-pub(crate) use hotkeys::{EditorKey, Hotkeys, available};
+pub(crate) use hotkeys::{EditorKey, Hotkeys};
 pub(crate) use notify::Notify;
 
 pub(crate) const AUTO_THEME: &str = "auto";
@@ -198,7 +198,8 @@ fn reasoning(setting: &config::ReasoningSetting) -> Visibility {
 }
 
 pub(crate) fn save_in(path: &Path, prefs: &Prefs) -> Result<()> {
-    config::save_prefs(path, prefs)
+    let before = from_file(&config::parse(path)?).unwrap_or_default();
+    config::save_prefs(path, &before, prefs)
 }
 
 #[must_use]

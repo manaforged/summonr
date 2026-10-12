@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::SystemTime;
 
 const DEPTH: usize = 3;
@@ -40,6 +40,37 @@ const KEY_BEGIN: &str = "-----BEGIN ";
 const KEY_END: &str = "-----END ";
 const KEY_TAIL: &str = "PRIVATE KEY-----";
 const HIDDEN: &str = "[secret]";
+const TOKENS: &str = include_str!("tokens.toml");
+
+#[derive(serde::Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "lowercase")]
+enum Chars {
+    #[default]
+    Token,
+    Upper,
+}
+
+impl Chars {
+    fn allows(self, c: char) -> bool {
+        match self {
+            Self::Token => c.is_ascii_alphanumeric() || matches!(c, '_' | '-'),
+            Self::Upper => c.is_ascii_uppercase() || c.is_ascii_digit(),
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct Shape {
+    prefix: String,
+    min: usize,
+    #[serde(default)]
+    chars: Chars,
+}
+
+#[derive(serde::Deserialize)]
+struct Shapes {
+    token: Vec<Shape>,
+}
 
 type Stamp = Option<(SystemTime, u64)>;
 
@@ -55,6 +86,12 @@ pub(crate) fn scrub(text: &str, workspace: &Path) -> String {
     let values = known(workspace);
     let text = crate::text::redact(&text, values.iter().map(String::as_str));
     private_keys(&text)
+}
+
+pub(crate) fn scrub_found(text: &str, workspace: &Path) -> String {
+    let found = secrets_in(text);
+    let text = crate::text::redact(text, found.iter().map(String::as_str));
+    scrub(&text, workspace)
 }
 
 fn known(workspace: &Path) -> Arc<Vec<String>> {
@@ -152,7 +189,42 @@ fn secrets_in(text: &str) -> Vec<String> {
         }
     }
     found.extend(text.lines().filter_map(assignment));
+    found.extend(tokens(text));
     found
+}
+
+fn shapes() -> &'static [Shape] {
+    static LOADED: OnceLock<Shapes> = OnceLock::new();
+    &LOADED
+        .get_or_init(|| match toml::from_str(TOKENS) {
+            Ok(shapes) => shapes,
+            Err(error) => panic!("the token shapes table is invalid: {error}"),
+        })
+        .token
+}
+
+fn tokens(text: &str) -> Vec<String> {
+    shapes()
+        .iter()
+        .flat_map(|shape| {
+            text.match_indices(shape.prefix.as_str())
+                .filter_map(move |(start, _)| token_at(text, start, shape))
+        })
+        .collect()
+}
+
+fn token_at(text: &str, start: usize, shape: &Shape) -> Option<String> {
+    let after = start + shape.prefix.len();
+    let boundary = text[..start]
+        .chars()
+        .next_back()
+        .is_none_or(|c| !Chars::Token.allows(c));
+    let run = text[after..]
+        .find(|c: char| !Chars::Token.allows(c))
+        .map_or(text.len(), |end| after + end);
+    let body = &text[after..run];
+    (boundary && body.len() >= shape.min && body.chars().all(|c| shape.chars.allows(c)))
+        .then(|| text[start..run].to_string())
 }
 
 fn assignment(line: &str) -> Option<String> {

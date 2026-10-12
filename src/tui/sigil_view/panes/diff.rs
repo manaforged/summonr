@@ -9,7 +9,7 @@ use super::App;
 use super::body::header;
 use crate::tui::sigil_view::ui::{Hints, Key};
 
-pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
+pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder {
     let model = app.model.get();
     if let Some(path) = app.diff_view.peek() {
         let back = app.clone();
@@ -57,7 +57,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 &app,
                 text.clone(),
                 app.model.get().prefs.diff_layout,
-                app.layout.get().split(app.viewport.get().0).1,
+                crate::tui::sigil_view::chat::entry::Fit::of(cols),
             ));
         }
         let cursor = app.hunk_cursor.peek();
@@ -79,7 +79,16 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
         );
         drop(model);
         for (index, hunk) in hunks.iter().enumerate() {
-            column = column.child(hunk_view(&app, &path, index, hunk, index == cursor));
+            column = column.child(hunk_view(
+                &app,
+                &path,
+                index,
+                hunk,
+                (
+                    index == cursor,
+                    crate::tui::sigil_view::chat::entry::Fit::of(cols),
+                ),
+            ));
         }
         return column;
     }
@@ -124,7 +133,7 @@ fn hunk_view(
     path: &str,
     index: usize,
     hunk: &crate::hunks::Hunk,
-    focused: bool,
+    (focused, fit): (bool, crate::tui::sigil_view::chat::entry::Fit),
 ) -> NodeBuilder {
     let note = app.hunk_note(path, &hunk.id);
     let (verdict, tone) = match note.as_ref().and_then(|note| note.verdict) {
@@ -211,6 +220,6 @@ fn hunk_view(
         app,
         hunk.body().to_string(),
         app.model.get().prefs.diff_layout,
-        app.layout.get().split(app.viewport.get().0).1,
+        fit,
     ))
 }

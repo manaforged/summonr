@@ -35,20 +35,6 @@ fn skip_csi() -> Result<()> {
     }
 }
 
-fn mask_one() -> Result<()> {
-    use std::io::Write as _;
-    eprint!("*");
-    std::io::stderr().flush()?;
-    Ok(())
-}
-
-fn unmask_one() -> Result<()> {
-    use std::io::Write as _;
-    eprint!("\x08 \x08");
-    std::io::stderr().flush()?;
-    Ok(())
-}
-
 fn read_line(prompt: &str) -> Option<String> {
     use std::io::Write as _;
     eprint!("{prompt}: ");
@@ -58,7 +44,7 @@ fn read_line(prompt: &str) -> Option<String> {
     Some(typed)
 }
 
-fn read_secret(prompt: &str) -> Result<String> {
+pub(super) fn read_secret(prompt: &str) -> Result<String> {
     use std::io::Write as _;
     if !std::io::stdin().is_terminal() {
         let mut key = String::new();
@@ -86,14 +72,11 @@ fn masked(key: &mut String) -> Result<Result<()>> {
             b'\r' | b'\n' => return Ok(Ok(())),
             0x03 | 0x04 => return Ok(Err(summonr::Error::Config("cancelled".to_string()))),
             0x7f | 0x08 => {
-                if key.pop().is_some() {
-                    unmask_one()?;
-                }
+                key.pop();
             }
             0x1b => skip_csi()?,
             other if (32..127).contains(&other) => {
                 key.push(other as char);
-                mask_one()?;
             }
             _ => {}
         }
@@ -135,14 +118,15 @@ pub(super) fn print_login_catalog() -> Result<()> {
         }
         println!("  {}", row.catalog_line(name, state));
     }
-    println!("\nsummonr login NAME                         sign in or store a key");
-    println!("summonr login NAME --key                   skip the question and store a key");
-    println!("summonr login NAME --default [--model M]   start on NAME when no endpoint is named");
     println!(
-        "summonr login NAME --url URL [--model M]   add or update your own OpenAI-compatible server"
+        "
+summonr login NAME                         sign in or store a key
+summonr login NAME --key                   skip the question and store a key
+summonr login NAME --default [--model M]   start on NAME when no endpoint is named
+summonr login NAME --url URL [--model M]   add or update your own OpenAI-compatible server
+summonr login NAME --model M               change the model of a server you added
+summonr logout NAME --remove               remove a server you added"
     );
-    println!("summonr login NAME --model M               change the model of a server you added");
-    println!("summonr logout NAME --remove               remove a server you added");
     Ok(())
 }
 

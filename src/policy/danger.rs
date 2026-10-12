@@ -1,6 +1,6 @@
 use std::path::{Component, Path};
 
-use super::shell::{WRAPPERS, interpreter, shell};
+use super::shell::{command_word, interpreter, shell};
 use super::verbs::{Rule, SubRule};
 use super::walk::{Step, heredocs, resolve, walk, without_heredocs};
 use super::{
@@ -47,12 +47,7 @@ fn feeds_shell(opening: &str) -> bool {
     unquoted(head, &["&&", "||", "|", ";", "&"])
         .last()
         .and_then(|segment| {
-            segment
-                .split_whitespace()
-                .map(|word| word.rsplit('/').next().unwrap_or(word))
-                .find(|word| {
-                    !word.contains('=') && !word.starts_with('-') && !WRAPPERS.contains(word)
-                })
+            command_word(segment, false)
                 .map(|word| shell(word) || interpreter(word) || matches!(word, "source" | "."))
         })
         .unwrap_or(false)

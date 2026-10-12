@@ -50,6 +50,7 @@ pub struct Endpoint {
     pub keep_reasoning: bool,
     pub opencode: bool,
     pub prompt_cache_key: bool,
+    pub assistant_after_tool: bool,
     pub cache_ttl: CacheTtl,
     pub cache_header: Option<String>,
     pub(crate) reasoning: Reasoning,
@@ -80,6 +81,7 @@ impl std::fmt::Debug for Endpoint {
             .field("keep_reasoning", &self.keep_reasoning)
             .field("opencode", &self.opencode)
             .field("prompt_cache_key", &self.prompt_cache_key)
+            .field("assistant_after_tool", &self.assistant_after_tool)
             .field("cache_ttl", &self.cache_ttl)
             .field("cache_header", &self.cache_header)
             .field("reasoning", &self.reasoning)
@@ -132,7 +134,7 @@ impl Endpoint {
     }
 }
 
-fn local(url: &str) -> bool {
+pub(crate) fn local(url: &str) -> bool {
     match url::Url::parse(url).ok().as_ref().and_then(url::Url::host) {
         Some(url::Host::Ipv4(ip)) => {
             let [first, second, ..] = ip.octets();

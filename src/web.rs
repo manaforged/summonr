@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use leyline::{
     Browser, CompressionConfig, DnsConfig, Family, RedirectAction, RedirectPolicy, Session,
-    TimeoutConfig,
 };
 use url::Url;
 
@@ -18,8 +19,27 @@ mod results;
 
 pub(crate) use fetch::OUT_MAX;
 use fetch::{check_url, host_blocked, resolves_blocked};
-
 const INERT_SCHEMES: [&str; 3] = ["about", "data", "chrome-error"];
+pub(crate) const PRIVATE_URL_PATTERNS: &[&str] = &[
+    "*://localhost/*",
+    "*://localhost:*/*",
+    "*://localhost./*",
+    "*://localhost.:*/*",
+    "*://*.localhost/*",
+    "*://*.localhost:*/*",
+    "*://*.local/*",
+    "*://*.local:*/*",
+    "*://*.internal/*",
+    "*://*.internal:*/*",
+    "*://127.0.0.1/*",
+    "*://127.0.0.1:*/*",
+    "*://0.0.0.0/*",
+    "*://0.0.0.0:*/*",
+    "*://[::1]/*",
+    "*://[::1]:*/*",
+    "*://metadata.google.internal/*",
+    "*://metadata.google.internal:*/*",
+];
 use results::{Engine, Hit, Window, engines, flat, format_hits, parse_page};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -48,8 +68,32 @@ pub(crate) struct Search {
     count: usize,
     allowed: Vec<String>,
     excluded: Vec<String>,
-    logs: Arc<Mutex<Vec<tempfile::TempDir>>>,
     browser: Arc<Mutex<Option<crate::browser::Browser>>>,
+    rest: Arc<Rest>,
+}
+
+#[derive(Default)]
+pub(crate) struct Rest(Mutex<HashMap<String, Instant>>);
+
+impl Rest {
+    pub(crate) fn block(&self, name: &str, until: Instant) {
+        if let Ok(mut held) = self.0.lock() {
+            held.insert(name.to_string(), until);
+        }
+    }
+
+    pub(crate) fn resting(&self, name: &str, now: Instant) -> bool {
+        self.0
+            .lock()
+            .ok()
+            .and_then(|held| held.get(name).copied())
+            .is_some_and(|until| until > now)
+    }
+}
+
+enum Page {
+    Hits(Vec<results::Hit>),
+    Blocked(Duration),
 }
 
 impl Search {
@@ -64,8 +108,8 @@ impl Search {
             count,
             allowed,
             excluded,
-            logs: Arc::new(Mutex::new(Vec::new())),
             browser: Arc::new(Mutex::new(None)),
+            rest: Arc::default(),
         })
     }
 
@@ -109,17 +153,31 @@ impl Search {
         let freshness = Window::parse(freshness)?;
         let mut failure = None;
         let mut found = None;
+        let mut tried = 0;
         for engine in engines()? {
+            if self.rest.resting(&engine.name, Instant::now()) {
+                continue;
+            }
+            tried += 1;
             match self.page(engine, query, freshness).await {
-                Ok(hits) if !hits.is_empty() => {
+                Ok(Page::Hits(hits)) if !hits.is_empty() => {
                     found = Some((engine, hits));
                     break;
                 }
-                Ok(_) => {}
+                Ok(Page::Hits(_)) => {}
+                Ok(Page::Blocked(wait)) => {
+                    self.rest.block(&engine.name, Instant::now() + wait);
+                }
                 Err(error) => {
                     failure.get_or_insert(error);
                 }
             }
+        }
+        if found.is_none() && failure.is_none() && tried < engines()?.len() {
+            return Err(Error::Tool(
+                "web_search engines are resting after rate limits; try again in a minute"
+                    .to_string(),
+            ));
         }
         let Some((engine, hits)) = found else {
             return match failure {
@@ -139,12 +197,7 @@ impl Search {
         ))
     }
 
-    async fn page(
-        &self,
-        engine: &Engine,
-        query: &str,
-        freshness: Option<Window>,
-    ) -> Result<Vec<Hit>> {
+    async fn page(&self, engine: &Engine, query: &str, freshness: Option<Window>) -> Result<Page> {
         let url = engine.request(query, freshness)?;
         let response = self
             .http()?
@@ -154,10 +207,17 @@ impl Search {
             .await
             .map_err(|error| Error::Tool(format!("web_search {} failed: {error}", engine.name)))?;
         let status = response.status();
+        let wait = response
+            .header("retry-after")
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .map_or_else(|| engine.cooldown(), Duration::from_secs);
         let body = response
             .text()
             .await
             .map_err(|error| Error::Tool(format!("web_search {} failed: {error}", engine.name)))?;
+        if engine.blocked(status.as_u16(), &body) {
+            return Ok(Page::Blocked(wait));
+        }
         if !status.is_success() {
             return Err(Error::Tool(format!(
                 "web_search {} HTTP {status}: {}",
@@ -165,7 +225,7 @@ impl Search {
                 crate::text::ellipsize(&flat(&body), 200)
             )));
         }
-        Ok(parse_page(&body, engine))
+        Ok(Page::Hits(parse_page(&body, engine)))
     }
 
     fn filter_hits(&self, hits: Vec<Hit>) -> Vec<Hit> {
@@ -188,27 +248,30 @@ impl Search {
 }
 
 fn http_builder() -> leyline::SessionBuilder {
-    Session::builder()
-        .browser(Browser::latest(Family::Chrome))
-        .timeout(
-            TimeoutConfig::new()
-                .total(crate::limits::limits().web_search())
-                .connect(crate::limits::limits().web_connect()),
-        )
-        .compression(CompressionConfig::new().max_body_size(crate::limits::limits().web_body_bytes))
-        .redirect(RedirectPolicy::custom(|attempt| {
-            if attempt.previous.len() >= crate::limits::limits().web_redirect_max
-                || !safe_redirect(attempt.url)
-            {
-                RedirectAction::Stop
-            } else {
-                RedirectAction::Follow
-            }
-        }))
+    summonr_auth::builder(
+        crate::limits::limits().web_search(),
+        crate::limits::limits().web_connect(),
+    )
+    .browser(Browser::latest(Family::Chrome))
+    .compression(CompressionConfig::new().max_body_size(crate::limits::limits().web_body_bytes))
+    .redirect(RedirectPolicy::custom(|attempt| {
+        if attempt.previous.len() >= crate::limits::limits().web_redirect_max
+            || !safe_redirect(attempt.url)
+        {
+            RedirectAction::Stop
+        } else {
+            RedirectAction::Follow
+        }
+    }))
 }
 
 fn client() -> Result<Session> {
-    crate::credentials::session(http_builder())
+    crate::credentials::session(
+        http_builder(),
+        crate::limits::limits()
+            .retry_policy(crate::limits::Reach::Remote)
+            .retry_on([leyline::RetryTrigger::ConnectionError]),
+    )
 }
 
 pub(super) fn fetch_targets(host: &str) -> std::result::Result<Vec<std::net::SocketAddr>, ()> {
@@ -228,6 +291,7 @@ pub(super) fn fetch_targets(host: &str) -> std::result::Result<Vec<std::net::Soc
 pub(super) fn pinned_session(host: &str, addrs: &[std::net::SocketAddr]) -> Result<Session> {
     crate::credentials::session(
         http_builder().dns(DnsConfig::new().resolve_host(host, addrs.iter().copied())),
+        crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
     )
 }
 

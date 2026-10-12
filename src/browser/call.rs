@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -74,7 +74,10 @@ pub(super) fn parse(arguments: &str) -> Result<Call> {
         .map_err(invalid)
 }
 
-pub(super) async fn guard(action: charm::Action, workspace: &Path) -> Result<charm::Action> {
+pub(super) async fn guard(
+    action: charm::Action,
+    resolve: &(dyn Fn(&str) -> Result<PathBuf> + Send + Sync),
+) -> Result<charm::Action> {
     use charm::{Action, TabAction};
     Ok(match action {
         Action::Navigate { url } => Action::Navigate {
@@ -85,29 +88,13 @@ pub(super) async fn guard(action: charm::Action, workspace: &Path) -> Result<cha
         }
         Action::Upload { target, files } => Action::Upload {
             target,
-            files: inside(workspace, files)?,
+            files: files
+                .iter()
+                .map(|file| resolve(&file.to_string_lossy()))
+                .collect::<Result<Vec<PathBuf>>>()?,
         },
         other => other,
     })
-}
-
-fn inside(workspace: &Path, files: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
-    files
-        .into_iter()
-        .map(|file| {
-            let path = workspace.join(&file).canonicalize().map_err(|error| {
-                Error::Tool(format!("{TOOL} upload {}: {error}", file.display()))
-            })?;
-            if path.starts_with(workspace) {
-                Ok(path)
-            } else {
-                Err(Error::Tool(format!(
-                    "{TOOL} upload takes files inside the workspace, not {}",
-                    file.display()
-                )))
-            }
-        })
-        .collect()
 }
 
 fn invalid(error: serde_json::Error) -> Error {

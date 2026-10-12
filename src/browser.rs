@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
@@ -27,7 +27,7 @@ pub(crate) struct Live {
 
 pub(crate) struct Settings {
     name: String,
-    profile: PathBuf,
+    profile: Option<PathBuf>,
     headed: bool,
     chrome: Option<PathBuf>,
     events: charm::Events,
@@ -65,8 +65,30 @@ impl Browser {
             live: Arc::new(Mutex::new(None)),
             settings: Arc::new(Settings {
                 name: name.to_string(),
-                profile,
+                profile: Some(profile),
                 headed: raw.headed.unwrap_or(false),
+                chrome: raw.chrome.clone(),
+                events,
+                timing: launch::timing(),
+                out_max: crate::web::OUT_MAX,
+            }),
+        })
+    }
+
+    pub(crate) fn ephemeral() -> Result<Self> {
+        let raw = &crate::config::file()?.browser;
+        let events = raw
+            .events
+            .map_or_else(charm::Events::all, |events| charm::Events {
+                page: events.page,
+                runtime: events.runtime,
+            });
+        Ok(Self {
+            live: Arc::new(Mutex::new(None)),
+            settings: Arc::new(Settings {
+                name: String::new(),
+                profile: None,
+                headed: false,
                 chrome: raw.chrome.clone(),
                 events,
                 timing: launch::timing(),
@@ -78,7 +100,7 @@ impl Browser {
     pub(crate) async fn call(
         &self,
         arguments: &str,
-        workspace: &Path,
+        resolve: &(dyn Fn(&str) -> Result<PathBuf> + Send + Sync),
         session: Option<&str>,
     ) -> Result<String> {
         let call = call::parse(arguments)?;
@@ -93,7 +115,7 @@ impl Browser {
                 extras::run(page, extra, &shots, out_max).await
             }
             Call::Act(action, report) => {
-                let action = call::guard(action, workspace).await?;
+                let action = call::guard(action, resolve).await?;
                 let out_max = self.settings.out_max;
                 let page = self.ready(&mut live).await?;
                 extras::act(page, action, report, out_max).await
@@ -105,7 +127,7 @@ impl Browser {
         out
     }
 
-    pub(crate) async fn render(&self, url: &Url) -> Result<String> {
+    pub(crate) async fn render(&self, url: &Url, format: crate::web::Format) -> Result<String> {
         let mut live = self.live.lock().await;
         let out_max = self.settings.out_max;
         let page = self.ready(&mut live).await?;
@@ -113,10 +135,12 @@ impl Browser {
         if let Some(blocked) = extras::guard(page).await? {
             return Err(Error::Tool(blocked));
         }
-        let text = page
-            .text(charm::TextFormat::Markdown, out_max)
-            .await
-            .map_err(fail)?;
+        let text = match format {
+            crate::web::Format::Markdown => page.text(charm::TextFormat::Markdown, out_max).await,
+            crate::web::Format::Text => page.text(charm::TextFormat::Text, out_max).await,
+            crate::web::Format::Html => page.content().await,
+        }
+        .map_err(fail)?;
         Ok(format!("{RENDERED_NOTE}\n{text}"))
     }
 

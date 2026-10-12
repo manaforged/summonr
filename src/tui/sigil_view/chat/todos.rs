@@ -4,7 +4,7 @@ use sigil::prelude::{
     container, list_row_with,
 };
 
-use super::panes::ledger::item;
+use super::panes::ledger::{LedgerRow, Mark};
 use super::{App, Model, Pane, canvas};
 use crate::tui::sigil_view::ui::pick;
 
@@ -25,7 +25,7 @@ fn view(app: &App, cols: u16) -> Option<TodosView> {
     let layout = app.layout.get();
     if cols == 0
         || (layout.secondary == Some(Pane::Ledger) && layout.split(cols).1 > 0)
-        || model.ledger.iter().all(|line| item(line).0 == '✓')
+        || model.ledger.iter().all(|row| row.mark.settled())
         || app.commands.open(&draft, caret, &model)
     {
         return None;
@@ -35,18 +35,9 @@ fn view(app: &App, cols: u16) -> Option<TodosView> {
     let current = model
         .ledger
         .iter()
-        .map(|line| item(line))
-        .find(|(mark, _)| *mark == '●')
-        .or_else(|| {
-            model
-                .ledger
-                .iter()
-                .map(|line| item(line))
-                .find(|(mark, _)| *mark != '✓')
-        });
-    let detail = current.map_or(String::new(), |(mark, text)| {
-        format!("{} {text}", glyph(mark))
-    });
+        .find(|row| row.mark == Mark::Active)
+        .or_else(|| model.ledger.iter().find(|row| row.mark != Mark::Done));
+    let detail = current.map_or(String::new(), row_text);
     let rows = if expanded {
         let count = visible_rows(&model, height);
         let start = model
@@ -57,10 +48,7 @@ fn view(app: &App, cols: u16) -> Option<TodosView> {
             .iter()
             .skip(start)
             .take(count)
-            .map(|task| {
-                let (mark, text) = item(task);
-                (mark == '●', format!("{} {text}", glyph(mark)))
-            })
+            .map(|row| (row.mark == Mark::Active, row_text(row)))
             .collect()
     } else {
         Vec::new()
@@ -136,23 +124,17 @@ fn panel(app: App, view: TodosView) -> NodeBuilder {
     })
 }
 
-pub(in crate::tui::sigil_view) fn tally(ledger: &[String]) -> (usize, usize) {
-    let listed = ledger
+pub(in crate::tui::sigil_view) fn tally(ledger: &[LedgerRow]) -> (usize, usize) {
+    ledger
         .iter()
-        .map(|line| item(line).0)
-        .filter(|mark| *mark != ' ');
-    let (done, total) = listed.fold((0, 0), |(done, total), mark| {
-        (done + usize::from(mark == '✓'), total + 1)
-    });
-    (done, total)
+        .filter(|row| row.mark != Mark::Plain)
+        .fold((0, 0), |(done, total), row| {
+            (done + usize::from(row.mark == Mark::Done), total + 1)
+        })
 }
 
-pub(in crate::tui::sigil_view) fn glyph(mark: char) -> char {
-    match mark {
-        '●' => '▸',
-        '○' => '◦',
-        other => other,
-    }
+fn row_text(row: &LedgerRow) -> String {
+    format!("{} {}", row.mark.glyph(), row.text)
 }
 
 fn visible_rows(model: &Model, rows: u16) -> usize {
@@ -169,7 +151,7 @@ impl App {
             .peek()
             .ledger
             .iter()
-            .all(|line| item(line).0 == '✓')
+            .all(|row| row.mark.settled())
         {
             self.toggle_pane(Pane::Ledger);
             return;
@@ -179,7 +161,7 @@ impl App {
             model.todos_offset = model
                 .ledger
                 .iter()
-                .position(|line| item(line).0 == '●')
+                .position(|row| row.mark == Mark::Active)
                 .unwrap_or(0)
                 .saturating_sub(1);
         });

@@ -97,7 +97,7 @@ pub(in crate::tui::sigil_view) fn entry_markdown(entry: &Entry) -> String {
         Entry::System(text) => format!("> {text}"),
         Entry::Error(text) => format!("**Error:** {text}"),
         Entry::Chart(rounds) => super::app::presentation::stats(rounds),
-        Entry::Image { label, .. } => format!("   {label}"),
+        Entry::Image { .. } => "[attached image]".to_string(),
     }
 }
 
@@ -128,15 +128,6 @@ pub(in crate::tui::sigil_view) fn linked(text: &str) -> Vec<String> {
         rest = &target[close + 1..];
     }
     paths
-}
-
-pub(in crate::tui::sigil_view) fn itemized(line: &str) -> bool {
-    let text = line.trim_start();
-    text.starts_with("[x] ")
-        || text.starts_with("[/] ")
-        || text.starts_with("[ ] ")
-        || text.starts_with("[!] ")
-        || text.chars().next().is_some_and(|c| c.is_ascii_digit()) && text.contains(". ")
 }
 
 pub(in crate::tui::sigil_view) fn preview(bytes: &[u8]) -> Result<ImageSource, String> {

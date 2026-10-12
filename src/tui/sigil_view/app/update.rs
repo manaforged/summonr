@@ -40,70 +40,51 @@ impl App {
     }
 
     fn apply_msg(&self, msg: Msg) {
-        let reveal_plan = self.prepare(&msg);
+        self.prepare(&msg);
         let mut alive = true;
         self.model_mut(|model| alive = model.apply(msg));
         if !alive {
             self.quit.set(true);
         }
-        if reveal_plan {
-            self.reveal_plan();
-        }
     }
 
-    fn prepare(&self, msg: &Msg) -> bool {
+    fn prepare(&self, msg: &Msg) {
         match msg {
-            Msg::Event(crate::Event::Work { progress }) => {
-                let reveal = self.model.get().ledger.is_empty()
-                    && progress
-                        .ledger
-                        .iter()
-                        .any(|line| crate::tui::sigil_view::model::itemized(line));
-                self.load();
-                reveal
+            Msg::Event(crate::Event::Work { .. }) => self.load(),
+            Msg::Event(crate::Event::Approval {
+                detail,
+                persist,
+                dialog,
+            }) => {
+                self.approval.set(detail.clone().map(|detail| Asked {
+                    detail,
+                    persist: *persist,
+                    dialog: *dialog,
+                }));
             }
-            Msg::Event(crate::Event::ToolCall {
-                name, arguments, ..
-            }) if crate::tools::Builtin::is(name, crate::tools::Builtin::Todo) => {
-                crate::tools::todos_from_args(arguments).is_ok_and(|items| !items.is_empty())
-            }
-            Msg::Event(crate::Event::Child { event, .. }) => matches!(
-                event.as_ref(),
-                crate::Event::ToolCall { name, .. } if crate::tools::Builtin::is(name, crate::tools::Builtin::Todo)
-            ),
-            Msg::Event(crate::Event::Approval { detail, persist }) => {
-                self.approval
-                    .set(detail.clone().map(|detail| (detail, *persist)));
-                false
-            }
-            Msg::Event(crate::Event::Elicit { form }) => {
-                self.form_open(form.clone());
-                false
+            Msg::Event(crate::Event::Elicit { form, dialog }) => {
+                self.form_open(form.clone(), *dialog);
             }
             Msg::Diff(_) => {
                 if let Some(path) = self.diff_view.peek() {
                     self.model_mut(|model| model.patch = None);
                     drop(self.cmd.send(Cmd::Patch(self.root(), path)));
                 }
-                false
             }
             Msg::Reset => {
                 self.approval.set(None);
-                self.form.set(None);
-                false
+                self.form_close();
             }
             Msg::Busy(None) => {
                 self.approval.set(None);
-                self.form.set(None);
+                self.form_close();
                 self.secret_finish(false);
                 drop(self.cmd.send(Cmd::Offers));
-                false
             }
             Msg::Changed(paths) => {
                 self.changed_files(paths);
-                false
             }
-            _ => false,
+            _ => {}
         }
     }
 
@@ -280,24 +261,15 @@ impl App {
         self.workflow.seats.set(seats);
     }
 
-    pub(in crate::tui::sigil_view) fn reveal_plan(&self) {
-        let layout = self.layout.peek();
-        if layout.secondary.is_some() || self.viewport.peek().0 < 120 {
-            return;
-        }
-        self.layout.set(Layout {
-            secondary: Some(Pane::Ledger),
-            share: 20,
-        });
-        self.refresh();
-    }
-
     pub(in crate::tui::sigil_view) fn approval_answer(&self, answer: crate::runtime::GrantAnswer) {
+        let Some(asked) = self.approval.peek() else {
+            return;
+        };
         self.approval.set(None);
-        self.steer_answer(answer.token().to_string());
+        self.steer_answer(asked.dialog, answer.token().to_string());
     }
 
-    pub(in crate::tui::sigil_view) fn steer_answer(&self, text: String) {
-        drop(self.cmd.send(Cmd::Steer(UserInput::from(text))));
+    pub(in crate::tui::sigil_view) fn steer_answer(&self, dialog: u64, text: String) {
+        drop(self.cmd.send(Cmd::Answer(dialog, text)));
     }
 }

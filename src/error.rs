@@ -9,6 +9,7 @@ pub enum ProviderFailureKind {
     ContextOverflow,
     MalformedToolCall,
     Malformed,
+    Empty,
     Http,
 }
 

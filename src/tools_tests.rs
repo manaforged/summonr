@@ -52,6 +52,29 @@ fn todo_accepts_the_todos_key_models_actually_send() {
     assert_eq!(items[0].status, TodoStatus::Active);
 }
 
+#[test]
+fn a_standalone_registry_keeps_its_spill_directory() {
+    let (dir, mut tools) = workspace(&[]);
+    tools.standalone = true;
+    let output = tools
+        .fit_output(Ok(ToolOutput::ok("x".repeat(80_000))))
+        .unwrap();
+    assert!(output.text.contains("[full output:"), "{}", output.text);
+    let path = output
+        .text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("[full output: "))
+        .and_then(|rest| rest.split(' ').next())
+        .map(std::path::PathBuf::from)
+        .unwrap();
+    drop(tools);
+    drop(dir);
+    let expected = crate::prompt::summonr_home().unwrap().join("spill");
+    assert!(path.starts_with(&expected), "{path:?}");
+    assert!(path.exists(), "{path:?}");
+    std::fs::remove_file(path).unwrap();
+}
+
 fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
     let dir = tempfile::tempdir().unwrap();
     for (name, text) in files {

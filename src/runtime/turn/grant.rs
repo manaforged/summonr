@@ -42,16 +42,14 @@ impl<P: Provider> Loop<P> {
             return Ok(GrantAnswer::Deny);
         };
         let status: String = detail.chars().take(160).collect();
-        let _blocked = self.herdr.blocked(&status);
-        self.push_event(
-            events,
-            emit,
-            Event::Approval {
+        let (dialog, input) = self
+            .dialog(&shared, &status, events, emit, |dialog| Event::Approval {
                 detail: Some(detail),
                 persist,
-            },
-        )?;
-        let decision = match self.answer(&shared).await {
+                dialog,
+            })
+            .await?;
+        let decision = match input {
             Some(input) => match parse_decision(input.text.trim(), persist) {
                 Some(decision) => decision,
                 None => {
@@ -67,6 +65,7 @@ impl<P: Provider> Loop<P> {
             Event::Approval {
                 detail: None,
                 persist: false,
+                dialog,
             },
         )?;
         Ok(decision)

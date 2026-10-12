@@ -30,6 +30,7 @@ pub(crate) struct Traits {
     pub(crate) replay: bool,
     pub(crate) preserved: bool,
     pub(crate) tool_stream: bool,
+    pub(crate) tool_images: bool,
 }
 
 struct Row {
@@ -45,6 +46,7 @@ const NONE: Traits = Traits {
     replay: false,
     preserved: false,
     tool_stream: false,
+    tool_images: false,
 };
 
 const fn row(
@@ -63,6 +65,7 @@ const fn row(
             replay: false,
             preserved: false,
             tool_stream: false,
+            tool_images: false,
         },
     }
 }
@@ -83,6 +86,7 @@ const fn signed(
             replay: false,
             preserved: false,
             tool_stream: false,
+            tool_images: true,
         },
     }
 }

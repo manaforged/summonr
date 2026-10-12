@@ -1,32 +1,79 @@
 use super::*;
 
-pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
+pub(crate) fn save_prefs(path: &Path, before: &Prefs, prefs: &Prefs) -> Result<()> {
     update(path, |document| {
-        document["theme"] = value(&prefs.theme);
-        document["background"] = value(prefs.background.name());
-        document["notify"] = value(prefs.notify.name());
-        document["splash"] = value(prefs.splash);
-        document["animations"] = value(prefs.animations);
-        document["fps"] = value(i64::from(prefs.fps));
-        document["reasoning"] = value(prefs.reasoning.name());
-        document["receipts"] = value(prefs.receipts.name());
-        document["tools"] = value(prefs.tools.name());
-        document["diff_layout"] = value(prefs.diff_layout.name());
-        document["mail"] = value(prefs.mail);
-        document.as_table_mut().remove("bus");
-        for key in ["plan_mode", "ban_comments", "ban_tests"] {
-            document.as_table_mut().remove(key);
+        let changed = [
+            ("theme", before.theme != prefs.theme, value(&prefs.theme)),
+            (
+                "background",
+                before.background != prefs.background,
+                value(prefs.background.name()),
+            ),
+            (
+                "notify",
+                before.notify != prefs.notify,
+                value(prefs.notify.name()),
+            ),
+            ("splash", before.splash != prefs.splash, value(prefs.splash)),
+            (
+                "animations",
+                before.animations != prefs.animations,
+                value(prefs.animations),
+            ),
+            ("fps", before.fps != prefs.fps, value(i64::from(prefs.fps))),
+            (
+                "reasoning",
+                before.reasoning != prefs.reasoning,
+                value(prefs.reasoning.name()),
+            ),
+            (
+                "receipts",
+                before.receipts != prefs.receipts,
+                value(prefs.receipts.name()),
+            ),
+            (
+                "tools",
+                before.tools != prefs.tools,
+                value(prefs.tools.name()),
+            ),
+            (
+                "diff_layout",
+                before.diff_layout != prefs.diff_layout,
+                value(prefs.diff_layout.name()),
+            ),
+            ("mail", before.mail != prefs.mail, value(prefs.mail)),
+            (
+                "layout",
+                before.layout != prefs.layout,
+                value(&prefs.layout),
+            ),
+            ("hotkeys", before.hotkeys != prefs.hotkeys, hotkeys(prefs)),
+        ];
+        let mut wrote = false;
+        for (key, differs, item) in changed {
+            if differs {
+                document[key] = item;
+                wrote = true;
+            }
         }
-        document["layout"] = value(&prefs.layout);
-        let mut hotkeys = toml_edit::InlineTable::new();
-        for (action, binding) in prefs.hotkeys.entries() {
-            hotkeys.insert(action.name(), binding.into());
+        if document.as_table_mut().remove("bus").is_some() {
+            document["mail"] = value(prefs.mail);
+            wrote = true;
         }
-        document["hotkeys"] = toml_edit::Item::Value(toml_edit::Value::InlineTable(hotkeys));
-        document.as_table_mut().remove("last_endpoint");
-        Ok(true)
+        for key in ["plan_mode", "ban_comments", "ban_tests", "last_endpoint"] {
+            wrote |= document.as_table_mut().remove(key).is_some();
+        }
+        Ok(wrote)
     })
     .map(drop)
+}
+
+fn hotkeys(prefs: &Prefs) -> toml_edit::Item {
+    let mut hotkeys = toml_edit::InlineTable::new();
+    for (action, binding) in prefs.hotkeys.entries() {
+        hotkeys.insert(action.name(), binding.into());
+    }
+    toml_edit::Item::Value(toml_edit::Value::InlineTable(hotkeys))
 }
 
 pub(crate) fn remove_key(path: &Path, name: &str) -> Result<bool> {

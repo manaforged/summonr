@@ -201,7 +201,7 @@ fn read_image(path: &Path) -> Result<Option<(Image, ImageSource)>, String> {
     if bytes.len() > IMAGES_MAX_BYTES {
         return Err("image exceeds the 10 MB limit".to_string());
     }
-    let Some(media_type) = crate::tools::image_type(&bytes) else {
+    let Some(_) = crate::tools::image_type(&bytes) else {
         return if image::ImageFormat::from_path(path).is_ok() {
             Err("expected a PNG, JPEG, GIF, or WebP image".to_string())
         } else {
@@ -209,11 +209,12 @@ fn read_image(path: &Path) -> Result<Option<(Image, ImageSource)>, String> {
         };
     };
     let source = preview(&bytes)?;
-    Ok(Some((Image::encode(media_type, &bytes), source)))
+    let image = Image::fit(&bytes).map_err(|error| error.to_string())?;
+    Ok(Some((image, source)))
 }
 
 fn image_from_bytes(bytes: &[u8]) -> Option<(Image, ImageSource)> {
-    let media = crate::tools::image_type(bytes)?;
+    crate::tools::image_type(bytes)?;
     let source = preview(bytes).ok()?;
-    Some((Image::encode(media, bytes), source))
+    Some((Image::fit(bytes).ok()?, source))
 }

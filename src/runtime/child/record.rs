@@ -45,13 +45,13 @@ pub(super) fn accounting_at(path: &Path) -> Result<(u64, Usage)> {
             } => {
                 usage.prompt_tokens = usage
                     .prompt_tokens
-                    .saturating_add(u32::try_from(meter.input).unwrap_or(u32::MAX));
+                    .saturating_add(Usage::clamp(meter.input));
                 usage.completion_tokens = usage
                     .completion_tokens
-                    .saturating_add(u32::try_from(meter.output).unwrap_or(u32::MAX));
+                    .saturating_add(Usage::clamp(meter.output));
                 usage.cached_tokens = usage
                     .cached_tokens
-                    .saturating_add(u32::try_from(meter.cached).unwrap_or(u32::MAX));
+                    .saturating_add(Usage::clamp(meter.cached));
             }
             _ => {}
         }

@@ -33,36 +33,43 @@ impl Browser {
 
     pub(super) async fn open(&self, headed: bool) -> Result<Live> {
         let settings = &self.settings;
-        profile_dir(&settings.profile)?;
         let base = match &settings.chrome {
             Some(path) => charm::Launch::new(path),
             None => charm::Launch::installed().map_err(fail)?,
         };
         let mut launch = base
-            .profile(&settings.profile)
             .timing(settings.timing)
             .events(settings.events)
             .dialogs(charm::DialogPolicy::default());
+        if let Some(profile) = &settings.profile {
+            profile_dir(profile)?;
+            launch = launch.profile(profile);
+        }
         if headed {
             launch = launch.headed();
         }
-        match charm::Session::launch(launch).await {
-            Ok(session) => Ok(Live { session, headed }),
-            Err(charm::Error::ProfileInUse { .. }) => self.attach().await,
-            Err(error) => Err(fail(error)),
-        }
+        let mut live = match charm::Session::launch(launch).await {
+            Ok(session) => Live { session, headed },
+            Err(charm::Error::ProfileInUse { .. }) => self.attach().await?,
+            Err(error) => return Err(fail(error)),
+        };
+        arm(&mut live.session).await?;
+        Ok(live)
     }
 
     async fn attach(&self) -> Result<Live> {
         let settings = &self.settings;
-        let file = settings.profile.join(ACTIVE_PORT);
+        let profile = settings.profile.as_ref().ok_or_else(|| {
+            Error::Tool("browser: the ephemeral profile cannot be reattached".to_string())
+        })?;
+        let file = profile.join(ACTIVE_PORT);
         let port = std::fs::read_to_string(&file)
             .ok()
             .and_then(|text| text.lines().next().and_then(|line| line.trim().parse().ok()))
             .ok_or_else(|| {
                 Error::Tool(format!(
-                    "browser: profile {} is open in another Chrome without remote debugging; close that Chrome and call again",
-                    settings.profile.display()
+                "browser: profile {} is open in another Chrome without remote debugging; close that Chrome and call again",
+                profile.display()
                 ))
             })?;
         let mut session = charm::Session::connect(charm::Endpoint::Port(port), settings.timing)
@@ -77,6 +84,19 @@ impl Browser {
             headed: true,
         })
     }
+}
+
+async fn arm(session: &mut charm::Session) -> Result<()> {
+    for pattern in crate::web::PRIVATE_URL_PATTERNS {
+        session
+            .route(
+                charm::UrlMatch::Glob((*pattern).to_string()),
+                charm::RouteAction::Abort(charm::ErrorReason::BlockedByClient),
+            )
+            .await
+            .map_err(fail)?;
+    }
+    Ok(())
 }
 
 pub(super) async fn close(live: &mut Option<Live>) -> Result<String> {

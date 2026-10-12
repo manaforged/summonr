@@ -10,7 +10,7 @@ use serde_json::json;
 
 #[path = "diagnostics/runs.rs"]
 mod runs;
-use runs::*;
+use runs::{lock_path, runs, sweep};
 
 pub(super) struct Log {
     path: PathBuf,

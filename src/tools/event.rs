@@ -86,11 +86,15 @@ pub enum Event {
     },
     Elicit {
         form: Option<crate::mcp::Form>,
+        #[serde(default)]
+        dialog: u64,
     },
     Approval {
         detail: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         persist: bool,
+        #[serde(default)]
+        dialog: u64,
     },
     Verify {
         command: String,
@@ -144,6 +148,17 @@ pub enum AbortCode {
     Cancelled,
     #[default]
     Error,
+}
+
+impl AbortCode {
+    #[must_use]
+    pub(crate) fn child_scope(self) -> crate::child::ChildScope {
+        if self == Self::Cancelled {
+            crate::child::ChildScope::Foreground
+        } else {
+            crate::child::ChildScope::All
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

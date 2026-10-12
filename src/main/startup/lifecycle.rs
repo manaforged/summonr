@@ -1,7 +1,6 @@
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use summonr::{Client, Endpoint, Event, Loop, Result, finish_worktree, splash, workflow};
 
@@ -113,8 +112,13 @@ fn land(
     session_path: &std::path::Path,
 ) -> i32 {
     if code != 0 {
+        let state = if tree.unchanged().unwrap_or(false) {
+            "the run made no changes there"
+        } else {
+            "the run's files are there, uncommitted"
+        };
         eprintln!(
-            "worktree kept {} ({}): the run's files are there, uncommitted",
+            "worktree kept {} ({}): {state}",
             tree.path.display(),
             tree.branch
         );
@@ -241,6 +245,13 @@ async fn dispatch(
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Stream {
+    Idle,
+    Reasoning,
+    Answer,
+}
+
 fn channels(tui: bool) -> Ui {
     if tui {
         let (ui, inbox) = summonr::tui::channel();
@@ -281,21 +292,25 @@ pub(super) fn provider(
             });
         });
     } else {
-        let thinking = Arc::new(AtomicBool::new(false));
-        let text_state = thinking.clone();
+        let stream = Arc::new(Mutex::new(Stream::Idle));
+        let text_state = stream.clone();
         provider = provider.on_delta(move |text| {
-            text_state.store(false, Ordering::Relaxed);
+            *text_state.lock().unwrap_or_else(PoisonError::into_inner) = Stream::Answer;
             print!("{text}");
             drop(std::io::stdout().flush());
         });
-        let reasoning_state = thinking.clone();
+        let reasoning_state = stream.clone();
         provider = provider.on_reasoning(move |_| {
-            if !reasoning_state.swap(true, Ordering::Relaxed) {
+            let mut state = reasoning_state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if *state == Stream::Idle {
+                *state = Stream::Reasoning;
                 eprintln!("\n… reasoning");
             }
         });
         provider = provider.on_tool(move |_| {
-            thinking.store(false, Ordering::Relaxed);
+            *stream.lock().unwrap_or_else(PoisonError::into_inner) = Stream::Idle;
         });
     }
     Ok(provider)

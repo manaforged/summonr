@@ -28,6 +28,11 @@ pub(crate) fn run(
     ui_rx: UnboundedReceiver<Msg>,
     factory: Factory,
 ) -> Result<i32> {
+    let farewell = ui_tx.clone();
+    let signals = tokio::spawn(async move {
+        crate::interrupted().await;
+        drop(farewell.send(Msg::Bye));
+    });
     let Started {
         commands: cmd_tx,
         inbox: ui_rx,
@@ -41,6 +46,7 @@ pub(crate) fn run(
             super::canvas::window_cells();
             let app = App::new(info.clone(), workspace.clone(), commands.clone());
             app.resize(160, 50);
+            app.load();
             app.refresh();
             app.animate();
             if let Some(ui_rx) = inbox.borrow_mut().take() {
@@ -56,6 +62,7 @@ pub(crate) fn run(
             root(app)
         })
     });
+    signals.abort();
     stop(worker, &cmd_tx, crate::limits::limits().worker_stop());
     opened.map_err(|error| Error::Tool(format!("the window failed: {error}")))?;
     Ok(0)

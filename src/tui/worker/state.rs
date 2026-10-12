@@ -20,6 +20,17 @@ impl Worker {
             loop_.mcp_board(),
             ui.clone(),
         );
+        let levels = match crate::endpoint::resolve(
+            Some(&info.endpoint),
+            Some(loop_.model()),
+            crate::endpoint::Need::Config,
+        ) {
+            Ok(endpoint) => endpoint.reasoning.levels_for(loop_.model()),
+            Err(error) => {
+                drop(ui.send(Msg::Failed(error.to_string())));
+                Vec::new()
+            }
+        };
         Self {
             home,
             reader,
@@ -41,7 +52,7 @@ impl Worker {
             last_peers: None,
             workflow: info.workflow.unwrap_or_default(),
             dial: None,
-            levels: Vec::new(),
+            levels,
         }
     }
 
@@ -66,15 +77,16 @@ impl Worker {
             && let Some(next) = self.followups.pop_front()
         {
             self.carried -= 1;
-            announce(&self.ui, &self.steering, &self.followups);
+            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
             return Some(Cmd::Submit(next));
         }
         self.carried = 0;
         if let Some(command) = self.deferred.pop_front() {
+            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
             return Some(command);
         }
         if let Some(next) = self.followups.pop_front() {
-            announce(&self.ui, &self.steering, &self.followups);
+            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
             return Some(Cmd::Submit(next));
         }
         let command = self.cmd.recv().await?;

@@ -22,6 +22,12 @@ impl Access {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ChildScope {
+    All,
+    Foreground,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct ChildRecord {
     pub(crate) version: u8,
@@ -33,6 +39,8 @@ pub(crate) struct ChildRecord {
     pub(crate) depth: u8,
     #[serde(default)]
     pub(crate) access: Access,
+    #[serde(default)]
+    pub(crate) background: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) call: Option<String>,
     pub(crate) state: ChildState,
@@ -102,6 +110,7 @@ impl ChildRecord {
             && self.workspace == other.workspace
             && self.depth == other.depth
             && self.access == other.access
+            && self.background == other.background
     }
 }
 

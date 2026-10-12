@@ -1,12 +1,15 @@
 use super::*;
 use leyline::http::StatusCode;
 
+mod admit;
 mod classify;
 mod encode;
 mod login;
 mod meta;
 
 use encode::*;
+#[cfg(test)]
+pub(crate) use meta::unreachable_message;
 pub(crate) use meta::{input_cap, plan_usage, response_failure};
 
 fn fixed_headers<'a>(raw: impl Iterator<Item = (&'a String, &'a String)>) -> Vec<(String, String)> {
@@ -46,6 +49,8 @@ pub struct Client {
     pub(super) headers: Vec<(String, String)>,
     pub(super) opencode: bool,
     pub(super) keep_reasoning: bool,
+    pub(super) assistant_after_tool: bool,
+    pub(super) images: bool,
     pub(super) name: String,
     pub(super) prompt_cache_key: bool,
     pub(super) cache_ttl: crate::endpoint::CacheTtl,
@@ -108,6 +113,8 @@ impl Client {
         )?;
         client.keep_reasoning =
             endpoint.keep_reasoning || wire::traits::traits(&endpoint.model).replay;
+        client.images = crate::catalog::accepts_images(endpoint);
+        client.assistant_after_tool = endpoint.assistant_after_tool;
         client.name.clone_from(&endpoint.name);
         client.cache_ttl = endpoint.cache_ttl;
         client.cache_header.clone_from(&endpoint.cache_header);
@@ -172,18 +179,23 @@ impl Client {
     ) -> Result<Body<'a>> {
         let reasoning = &self.reasoning;
         let cache = self.cache_ttl;
+        let admitted = self.admit(request);
+        let call = &CompletionRequest {
+            messages: &admitted,
+            ..request.clone()
+        };
         let wired = match self.wire {
             Wire::Anthropic => {
-                <wire::anthropic::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
+                <wire::anthropic::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
             }
             Wire::Gemini => {
-                <wire::gemini::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
+                <wire::gemini::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
             }
             Wire::Responses => {
-                <wire::responses::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
+                <wire::responses::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
             }
             Wire::Completions => {
-                <wire::completions::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
+                <wire::completions::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
             }
             Wire::Decisions => {
                 return Err(Error::Config(
@@ -194,9 +206,10 @@ impl Client {
         let completions = self.wire == Wire::Completions;
         let messages = if completions {
             Some(serde_json::to_vec(&Messages {
-                list: request.messages,
+                list: call.messages,
                 keep_reasoning: self.keeps_reasoning(),
-                cached: request.traits.family == wire::traits::Family::Anthropic,
+                cached: call.traits.family == wire::traits::Family::Anthropic,
+                assistant_after_tool: self.assistant_after_tool,
             })?)
         } else {
             wired.messages
@@ -268,6 +281,14 @@ impl Client {
         format!("{}{}", self.base, W::path(model, stream))
     }
 
+    fn reach(&self) -> crate::limits::Reach {
+        if crate::endpoint::local(&self.base) {
+            crate::limits::Reach::Local
+        } else {
+            crate::limits::Reach::Remote
+        }
+    }
+
     pub(super) fn attach(
         &self,
         request: leyline::RequestBuilder,
@@ -280,7 +301,7 @@ impl Client {
             .apply(request.header("user-agent", summonr_auth::AGENT), token)
             .retry(
                 crate::limits::limits()
-                    .retry_policy()
+                    .retry_policy(self.reach())
                     .allow_non_idempotent(true),
             );
         for (key, value) in wire::headers(self.wire) {
@@ -342,6 +363,10 @@ impl Client {
 impl Provider for Client {
     fn keeps_reasoning(&self) -> bool {
         self.opencode || self.keep_reasoning
+    }
+
+    fn takes_images(&self) -> bool {
+        self.images
     }
 
     fn complete<'a>(

@@ -28,7 +28,10 @@ pub(crate) enum Frame {
 }
 
 pub(crate) fn parse(line: &str) -> Result<Frame> {
-    let mut value: Value = serde_json::from_str(line)?;
+    frame(serde_json::from_str(line)?)
+}
+
+pub(crate) fn frame(mut value: Value) -> Result<Frame> {
     let mut take = |key: &str| value.get_mut(key).map(Value::take);
     let method = take("method");
     let id = take("id");
@@ -50,6 +53,13 @@ pub(crate) fn parse(line: &str) -> Result<Frame> {
         }),
         (None, None) => Err(Error::Tool("frame has neither method nor id".to_string())),
     }
+}
+
+pub(crate) fn oversize(method: &str) -> Error {
+    Error::Tool(format!(
+        "a reply to `{method}` was over {} MiB; summonr dropped it",
+        crate::limits::limits().mcp_frame_max_bytes / (1024 * 1024)
+    ))
 }
 
 pub(crate) fn outcome(method: &str, result: Option<Value>, error: Option<Value>) -> Result<Value> {

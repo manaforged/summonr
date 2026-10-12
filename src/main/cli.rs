@@ -6,6 +6,8 @@ use flags::{COMMANDS, Input, SCOPED, SWITCHES, VALUES};
 mod flags;
 #[path = "cli/mcp.rs"]
 mod mcp;
+#[path = "cli/typo.rs"]
+mod typo;
 
 pub(super) use mcp::McpCommand;
 
@@ -16,6 +18,7 @@ pub(super) struct Args {
     pub(super) json: bool,
     pub(super) list: bool,
     pub(super) list_sessions: bool,
+    pub(super) grep: Option<String>,
     pub(super) logs: bool,
     pub(super) doctor: bool,
     pub(super) export: bool,
@@ -26,6 +29,8 @@ pub(super) struct Args {
     pub(super) list_workflows: bool,
     pub(super) list_modules: bool,
     pub(super) mail: Option<Vec<String>>,
+    pub(super) cron: Option<Vec<String>>,
+    pub(super) gateway: Option<Vec<String>>,
     pub(super) tool: Option<Vec<String>>,
     pub(super) mcp: Option<McpCommand>,
     pub(super) acp: bool,
@@ -87,7 +92,9 @@ enum Step {
 }
 
 fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
-    let mut input: Input = args.into_iter().collect::<Vec<_>>().into_iter().peekable();
+    let words: Vec<String> = args.into_iter().collect();
+    typo::refuse(&words)?;
+    let mut input: Input = words.into_iter().peekable();
     let mut args = Args {
         trust: true,
         network: true,
@@ -204,10 +211,18 @@ impl Args {
     }
 
     fn check(&self) -> Result<()> {
+        if self.grep.is_some() && !self.list_sessions {
+            return Err(Error::Config(
+                "--grep works with `summonr sessions`".to_string(),
+            ));
+        }
         if self.here && self.worktree {
             return Err(Error::Config(
                 "use --here or --worktree, not both".to_string(),
             ));
+        }
+        if self.goal.is_some() && self.steps.is_some() {
+            return Err(Error::Config("use --goal or --steps, not both".to_string()));
         }
         if let Some(mode) = [
             ("--goal", self.goal.is_some()),

@@ -188,19 +188,16 @@ fn in_progress(root: &Path) -> bool {
     let Some(target) = file_for(root) else {
         return false;
     };
-    let stem = target
-        .file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let Ok(entries) = target.parent().map_or_else(
-        || Err(std::io::Error::other("no index folder")),
-        std::fs::read_dir,
-    ) else {
+    let Some(Ok(entries)) = target.parent().map(std::fs::read_dir) else {
         return false;
     };
+    let prefix = format!(
+        "{}.",
+        target.file_stem().unwrap_or_default().to_string_lossy()
+    );
     entries.filter_map(Result::ok).any(|entry| {
         let name = entry.file_name().to_string_lossy().into_owned();
-        name.starts_with(&format!("{stem}.")) && name.ends_with(".tmp") && !aged(&entry)
+        name.starts_with(&prefix) && name.ends_with(".tmp") && !aged(&entry)
     })
 }
 

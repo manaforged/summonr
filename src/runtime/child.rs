@@ -54,6 +54,10 @@ impl Spawned {
     pub(super) fn abort(&self) {
         self.handle.abort();
     }
+
+    pub(super) fn background(&self) -> bool {
+        self.record.background
+    }
 }
 
 mod batch;

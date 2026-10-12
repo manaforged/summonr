@@ -110,7 +110,10 @@ impl SessionDriver {
         {
             self.checkpoint()?;
         }
-        self.interrupt_children("process stopped before the child finished")?;
+        self.interrupt_children(
+            "process stopped before the child finished",
+            crate::child::ChildScope::All,
+        )?;
         Ok(())
     }
 

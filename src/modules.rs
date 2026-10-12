@@ -14,6 +14,7 @@ pub enum ModuleId {
     Mcp,
     Mail,
     Browser,
+    Memory,
 }
 
 impl ModuleId {
@@ -28,6 +29,7 @@ impl ModuleId {
             Self::Mcp => "mcp",
             Self::Mail => "mail",
             Self::Browser => "browser",
+            Self::Memory => "memory",
         }
     }
 
@@ -59,7 +61,7 @@ pub struct Module {
     pub default: bool,
 }
 
-pub(crate) const ALL: [Module; 8] = [
+pub(crate) const ALL: [Module; 9] = [
     Module {
         id: ModuleId::Search,
         summary: "the web tool (search, fetch) through Leyline with a browser identity",
@@ -99,6 +101,11 @@ pub(crate) const ALL: [Module; 8] = [
         id: ModuleId::Browser,
         summary: "drive a real Chrome: snapshot, click, type, tabs, logins kept",
         default: false,
+    },
+    Module {
+        id: ModuleId::Memory,
+        summary: "user and project memory files loaded into every trusted session",
+        default: true,
     },
 ];
 

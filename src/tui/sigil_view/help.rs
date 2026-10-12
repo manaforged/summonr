@@ -60,7 +60,7 @@ fn lines(app: &App, query: &str) -> Vec<String> {
 
 fn row_cells(cols: u16) -> usize {
     let cell = canvas::cell().w;
-    let dialog = canvas::dialog_width(cols, canvas::DIALOG_CELLS) / cell;
+    let dialog = Size::Normal.width(cols) / cell;
     let padding = (DIALOG_PADDING / cell).ceil();
     ((dialog - padding).max(0.0) as usize).saturating_sub(ROW_MARKER)
 }

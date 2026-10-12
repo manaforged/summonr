@@ -141,8 +141,8 @@ impl App {
             Some(Overlay::Help) => self.help.open.set(false),
             Some(Overlay::Search) => self.search.open.set(false),
             Some(Overlay::Sessions) => self.sessions.open.set(false),
-            Some(Overlay::Auth) => self.close_auth(),
-            Some(Overlay::Model) => self.close_model(),
+            Some(Overlay::Auth) => self.cancel_auth(),
+            Some(Overlay::Model) => self.cancel_model_edit(),
             Some(Overlay::Effort) => self.effort.open.set(false),
             Some(Overlay::Workflow) => self.close_workflow(),
             Some(Overlay::Hotkeys) => self.close_hotkey(),
@@ -152,14 +152,6 @@ impl App {
             None => return false,
         }
         true
-    }
-
-    fn close_auth(&self) {
-        self.cancel_auth();
-    }
-
-    fn close_model(&self) {
-        self.cancel_model_edit();
     }
 
     fn close_hotkey(&self) {

@@ -1,3 +1,4 @@
+use sigil::kernel::TextContent;
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, PathNode, Tone, WidgetLayoutExt,
     container, dot, list_row, section_label, sidebar, spacer,
@@ -11,6 +12,10 @@ use crate::tui::hub::{Live, Open, Status};
 const RAIL: f32 = 252.0;
 const PREVIEW_CELLS: usize = 36;
 const RECENT: usize = 8;
+const SECTION_GAP: f32 = 12.0;
+pub(super) const NEW_SESSION: &str = "New session";
+pub(super) const UNTITLED: &str = "Untitled";
+pub(super) const LEDGER: &str = "Ledger";
 
 pub(super) fn rail(app: App) -> NodeBuilder {
     let mut column = container().label("Panes").layout(
@@ -27,7 +32,7 @@ pub(super) fn rail(app: App) -> NodeBuilder {
         (Pane::Worktrees, "Worktrees"),
         (Pane::Jobs, "Jobs"),
         (Pane::Peers, "Peers"),
-        (Pane::Ledger, "Plan"),
+        (Pane::Ledger, LEDGER),
     ] {
         let toggle = app.clone();
         column = column.child(
@@ -64,8 +69,14 @@ fn glyph(pane: Pane) -> PathNode {
     }
 }
 
-fn section(title: &'static str) -> NodeBuilder {
-    section_label(title)
+fn section(title: impl Into<TextContent>) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .padding_top(SECTION_GAP),
+        )
+        .child(section_label(title))
 }
 
 fn sessions(app: &App) -> NodeBuilder {
@@ -87,7 +98,7 @@ fn sessions(app: &App) -> NodeBuilder {
             let live = live.get();
             let mut rows = vec![new_session(&open)];
             for project in projects(&live) {
-                rows.push(section_label(project.clone()));
+                rows.push(section(project.clone()));
                 rows.extend(
                     live.iter()
                         .filter(|entry| project_of(entry) == project)
@@ -110,7 +121,7 @@ fn sessions(app: &App) -> NodeBuilder {
 
 fn new_session(app: &App) -> NodeBuilder {
     let open = app.clone();
-    list_row(false, "New session", "")
+    list_row(false, NEW_SESSION, "")
         .child(icons::plus())
         .pointer_down(move |event| {
             open.open_session(Open::New);
@@ -138,7 +149,7 @@ fn project_of(entry: &Live) -> String {
 
 fn live_row(app: &App, entry: &Live) -> NodeBuilder {
     let title = if entry.title.trim().is_empty() {
-        "New session".to_string()
+        UNTITLED.to_string()
     } else {
         crate::text::ellipsize(entry.title.trim(), PREVIEW_CELLS)
     };
@@ -160,7 +171,7 @@ fn past_row(app: &App, info: &session::SessionInfo) -> NodeBuilder {
         .clone()
         .unwrap_or_else(|| crate::text::ellipsize(info.preview.trim(), PREVIEW_CELLS));
     let title = if title.trim().is_empty() {
-        "untitled".to_string()
+        UNTITLED.to_string()
     } else {
         title
     };

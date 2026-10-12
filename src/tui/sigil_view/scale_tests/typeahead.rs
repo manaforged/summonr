@@ -66,20 +66,44 @@ fn mention_typeahead_keeps_peer_details() {
 }
 
 #[test]
-fn enter_queues_a_message_mid_turn_and_an_immediate_enter_sends_it() {
+fn steering_enter_mid_turn_sends_the_message_into_the_running_turn() {
     use super::super::app::App;
     use crate::tui::{Activity, Cmd, Msg};
-    sigil::reactive::Runtime::scope("queue-then-send", || {
+    sigil::reactive::Runtime::scope("steer-now", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.update(Msg::Busy(Some(Activity::Turn)));
-        app.replace("also check the tests".to_owned());
-        app.submit();
+        app.replace("stop, check the tests instead".to_owned());
         app.submit();
         let sent: Vec<Cmd> = std::iter::from_fn(|| sent.try_recv().ok()).collect();
         assert!(
-            matches!(sent.as_slice(), [.., Cmd::Queue(input), Cmd::SteerQueued] if input.text == "also check the tests"),
+            matches!(sent.as_slice(), [.., Cmd::Steer(input)] if input.text == "stop, check the tests instead"),
+            "{} commands sent",
+            sent.len()
+        );
+    });
+}
+
+#[test]
+fn steering_waits_in_the_queue_while_an_approval_is_open() {
+    use super::super::app::App;
+    use crate::tui::{Activity, Cmd, Msg};
+    sigil::reactive::Runtime::scope("steer-approval", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Event(crate::Event::Approval {
+            detail: Some("rm -rf build".to_owned()),
+            persist: false,
+            dialog: 1,
+        }));
+        app.replace("yes".to_owned());
+        app.submit();
+        let sent: Vec<Cmd> = std::iter::from_fn(|| sent.try_recv().ok()).collect();
+        assert!(
+            matches!(sent.as_slice(), [.., Cmd::Queue(input)] if input.text == "yes"),
             "{} commands sent",
             sent.len()
         );
@@ -104,6 +128,7 @@ fn enter_on_an_empty_composer_never_answers_a_pending_approval() {
         app.update(Msg::Event(crate::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
             persist: false,
+            dialog: 1,
         }));
         app.submit();
         let steered = std::iter::from_fn(|| sent.try_recv().ok())
@@ -137,4 +162,25 @@ fn up_brings_back_a_draft_cleared_with_ctrl_c() {
         seen = (cleared, app.draft.peek());
     });
     assert_eq!(seen, (String::new(), "half written thought".to_owned()));
+}
+
+#[test]
+fn enter_on_an_empty_composer_sends_queued_messages_into_the_turn() {
+    use super::super::app::App;
+    use crate::tui::{Activity, Cmd, Msg};
+    sigil::reactive::Runtime::scope("queue-steer", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Queued {
+            steering: 0,
+            queued: 1,
+        });
+        app.submit();
+        let steered = std::iter::from_fn(|| sent.try_recv().ok())
+            .filter(|command| matches!(command, Cmd::SteerQueued))
+            .count();
+        assert_eq!(steered, 1);
+    });
 }

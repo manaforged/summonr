@@ -168,16 +168,17 @@ impl<P: Provider> Loop<P> {
         self
     }
 
-    pub fn set_modules(&mut self, switches: &crate::modules::Switches) {
+    pub fn set_modules(&mut self, switches: &crate::modules::Switches) -> Result<()> {
         use crate::modules::ModuleId;
         if self.catalog_frozen {
-            return;
+            return Ok(());
         }
-        self.tools.set_modules(switches);
+        self.tools.set_modules(switches)?;
         self.tasks = switches.enabled(ModuleId::Task);
         self.mail_module = switches.enabled(ModuleId::Mail);
         self.switch_mcp(switches.enabled(ModuleId::Mcp));
         self.schema = None;
+        Ok(())
     }
 
     #[must_use]

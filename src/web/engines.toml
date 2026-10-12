@@ -1,4 +1,26 @@
 [[engine]]
+name = "bing"
+url = "https://www.bing.com/search"
+query = "q"
+block = "class=\"b_algo\""
+link_in = { tag = "h2" }
+snippet = "b_caption"
+unwrap = "u"
+unwrap_prefix = "a1"
+encoding = "base64"
+hosts = ["bing.com"]
+block_status = [429]
+cooldown_secs = 60
+
+[engine.freshness]
+param = "filters"
+
+[engine.freshness.values]
+day = 'ex1:"ez1"'
+week = 'ex1:"ez2"'
+month = 'ex1:"ez3"'
+
+[[engine]]
 name = "duckduckgo"
 url = "https://html.duckduckgo.com/html/"
 query = "q"
@@ -7,6 +29,9 @@ link = "result__a"
 snippet = "result__snippet"
 unwrap = "uddg"
 hosts = ["duckduckgo.com"]
+block_status = [202, 429]
+block_markers = ["anomaly-modal"]
+cooldown_secs = 60
 
 [engine.freshness]
 param = "df"
@@ -17,6 +42,20 @@ week = "w"
 month = "m"
 
 [[engine]]
+name = "yahoo"
+url = "https://search.yahoo.com/search"
+query = "p"
+block = "algo-sr"
+link_in = { class = "compTitle" }
+title = "title"
+snippet = "compText"
+unwrap = "RU"
+carrier = "path"
+hosts = ["yahoo.com"]
+block_status = [429, 500]
+cooldown_secs = 60
+
+[[engine]]
 name = "brave"
 url = "https://search.brave.com/search"
 query = "q"
@@ -25,6 +64,8 @@ link = "l1"
 title = "search-snippet-title"
 snippet = "generic-snippet"
 hosts = ["brave.com"]
+block_status = [429]
+cooldown_secs = 60
 
 [engine.freshness]
 param = "tf"

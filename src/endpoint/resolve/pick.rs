@@ -52,8 +52,7 @@ pub(crate) fn choose(
 }
 
 fn remembered(file: &File, last: Option<(String, String)>) -> Chosen {
-    let config =
-        config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path));
+    let config = config_shown();
     let candidates = [
         file.default
             .clone()

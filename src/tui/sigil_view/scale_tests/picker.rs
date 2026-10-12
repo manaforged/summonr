@@ -253,3 +253,21 @@ fn the_model_picker_fills_a_tall_terminal() {
         screen.join("\n")
     );
 }
+
+#[test]
+fn every_resume_row_keeps_its_id_project_and_model_under_a_long_title() {
+    let lines = frame_with(busy_info(), 100, 30, State::Idle, |app| {
+        app.open_sessions(false);
+        let mut long = session("1a12e62c7e670000", None);
+        long.preview =
+            "Add sub, mul, and a safe div that raises ValueError on zero to calc.py".to_string();
+        long.model = Some("glm-5.3-flash".to_string());
+        let mut short = session("2b23f73d8f780000", None);
+        short.preview = "say hi".to_string();
+        app.update(Msg::Sessions(Ok(vec![(long, true), (short, true)])));
+    });
+    let screen = lines.join("\n");
+    let first = super::find(&lines, "Add sub").expect("first session row");
+    assert!(lines[first].contains("1a12e62c"), "{screen}");
+    assert!(lines[first].contains("· work"), "{screen}");
+}

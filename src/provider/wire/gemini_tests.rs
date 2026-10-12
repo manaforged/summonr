@@ -305,3 +305,28 @@ fn cached_tokens_stay_in_the_prompt_and_thoughts_count_as_output() {
     assert_eq!(used.cached_tokens, 90_000);
     assert_eq!(used.completion_tokens, 208);
 }
+
+#[test]
+fn a_finish_that_cut_or_rejected_the_reply_is_an_error_not_an_answer() {
+    for reason in [
+        "MISSING_THOUGHT_SIGNATURE",
+        "MALFORMED_RESPONSE",
+        "TOO_MANY_TOOL_CALLS",
+        "UNEXPECTED_TOOL_CALL",
+        "LANGUAGE",
+        "IMAGE_PROHIBITED_CONTENT",
+        "ESCALATION",
+        "PUP_LIMITED_DISABLED",
+    ] {
+        let mut reply = <Reply as Accumulate>::new("gemini-2.5-flash");
+        reply
+            .on(r#"{"candidates":[{"content":{"role":"model","parts":[{"text":"Half"}]}}]}"#)
+            .unwrap();
+        let frame = format!(r#"{{"candidates":[{{"finishReason":"{reason}"}}]}}"#);
+        let error = reply
+            .on(&frame)
+            .err()
+            .unwrap_or_else(|| panic!("{reason} passed"));
+        assert!(error.to_string().contains(reason), "{reason}: {error}");
+    }
+}

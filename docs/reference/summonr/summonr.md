@@ -66,6 +66,7 @@
 | [`in_git`](#in_git) | fn |  |
 | [`index_files`](#index_files) | fn |  |
 | [`install_plugin`](#install_plugin) | fn |  |
+| [`interrupted`](#interrupted) | fn |  |
 | [`is_endpoint`](#is_endpoint) | fn |  |
 | [`last_for`](#last_for) | fn |  |
 | [`list_plugins`](#list_plugins) | fn |  |
@@ -111,7 +112,6 @@
 
 | Method | Description |
 | --- | --- |
-| <code>catalog_heading(&amp;self) -&gt; &amp;'static str</code> |  |
 | <code>catalog_line(&amp;self, name: usize, state: usize) -&gt; String</code> |  |
 | <code>catalog_rank(&amp;self) -&gt; u8</code> |  |
 | <code>catalog_title(&amp;self) -&gt; &amp;'static str</code> |  |
@@ -195,6 +195,7 @@
 | Field | Description |
 | --- | --- |
 | <code>api_key: Option&lt;String&gt;</code> |  |
+| <code>assistant_after_tool: bool</code> |  |
 | <code>base_url: Option&lt;String&gt;</code> |  |
 | <code>body: Option&lt;Value&gt;</code> |  |
 | <code>cache_header: Option&lt;String&gt;</code> |  |
@@ -250,7 +251,7 @@
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_effort(&amp;mut self, effort: Option&lt;<a href="#effort">Effort</a>&gt;)</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_env(&amp;mut self, env: impl IntoIterator&lt;Item = (String, String)&gt;)</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_images(&amp;mut self, model_images: bool, vision: Option&lt;<a href="#endpoint">Endpoint</a>&gt;)</code> |  |
-| <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_modules(&amp;mut self, switches: &amp;<a href="summonr-modules.html#switches">Switches</a>)</code> |  |
+| <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_modules(&amp;mut self, switches: &amp;<a href="summonr-modules.html#switches">Switches</a>) -&gt; <a href="#result">Result</a>&lt;()&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::verify_commands(&amp;self) -&gt; &amp;[String]</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_interactive(self) -&gt; Self</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_sandbox(self, network: <a href="#network">Network</a>) -&gt; <a href="#result">Result</a>&lt;Self&gt;</code> |  |
@@ -408,6 +409,7 @@
 | Field | Description |
 | --- | --- |
 | <code>images: bool</code> |  |
+| <code>memory: bool</code> |  |
 | <code>skills: bool</code> |  |
 | <code>trust: bool</code> |  |
 
@@ -425,6 +427,12 @@
 
 
 ### `Tree`
+
+**Methods**
+
+| Method | Description |
+| --- | --- |
+| <code>unchanged(&amp;self) -&gt; <a href="#result">Result</a>&lt;bool&gt;</code> |  |
 
 **Fields**
 
@@ -462,6 +470,7 @@
 | Method | Description |
 | --- | --- |
 | <code>add(&amp;mut self, other: &amp;Self)</code> |  |
+| <code>clamp(count: u64) -&gt; u32</code> |  |
 
 **Fields**
 
@@ -511,6 +520,7 @@
 | <code>phase: durable::work::progress::WorkPhase</code> |  |
 | <code>reason: Option&lt;String&gt;</code> |  |
 | <code>rounds: u32</code> |  |
+| <code>todos: Vec&lt;tools::todo::Todo&gt;</code> |  |
 | <code>total: usize</code> |  |
 | <code>touched: Vec&lt;String&gt;</code> |  |
 
@@ -633,11 +643,13 @@
 | <code>Aborted::code: <a href="#abortcode">AbortCode</a></code> |  |
 | <code>Aborted::reason: String</code> |  |
 | <code>Approval::detail: Option&lt;String&gt;</code> |  |
+| <code>Approval::dialog: u64</code> |  |
 | <code>Approval::persist: bool</code> |  |
 | <code>Assistant::text: String</code> |  |
 | <code>Child::event: Box&lt;<a href="#event">Event</a>&gt;</code> |  |
 | <code>Child::id: String</code> |  |
 | <code>Delta::text: String</code> |  |
+| <code>Elicit::dialog: u64</code> |  |
 | <code>Elicit::form: Option&lt;<a href="#mcpform">McpForm</a>&gt;</code> |  |
 | <code>Mail::from: String</code> |  |
 | <code>Mail::text: String</code> |  |
@@ -921,6 +933,7 @@
 | --- | --- |
 | <code>Authentication</code> |  |
 | <code>ContextOverflow</code> |  |
+| <code>Empty</code> |  |
 | <code>Http</code> |  |
 | <code>Malformed</code> |  |
 | <code>MalformedToolCall</code> |  |
@@ -972,6 +985,7 @@
 | <code>History</code> |  |
 | <code>Login</code> |  |
 | <code>Mcp</code> |  |
+| <code>Memory</code> |  |
 | <code>Model</code> |  |
 | <code>Name</code> |  |
 | <code>New</code> |  |
@@ -1146,6 +1160,11 @@
 <pre>pub fn <a href="#install_plugin">install_plugin</a>(src: &amp;Path) -&gt; <a href="#result">Result</a>&lt;String&gt;</pre>
 
 
+### `interrupted`
+
+<pre>pub async fn <a href="#interrupted">interrupted</a>() -&gt; i32</pre>
+
+
 ### `is_endpoint`
 
 <pre>pub fn <a href="#is_endpoint">is_endpoint</a>(token: &amp;str) -&gt; bool</pre>
@@ -1208,7 +1227,7 @@
 
 ### `mcp_remove`
 
-<pre>pub fn <a href="#mcp_remove">mcp_remove</a>(name: &amp;str) -&gt; <a href="#result">Result</a>&lt;bool&gt;</pre>
+<pre>pub fn <a href="#mcp_remove">mcp_remove</a>(workspace: &amp;Path, name: &amp;str) -&gt; <a href="#result">Result</a>&lt;bool&gt;</pre>
 
 
 ### `mcp_status`

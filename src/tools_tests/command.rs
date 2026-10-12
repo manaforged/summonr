@@ -52,10 +52,12 @@ fn a_command_past_the_wait_limit_keeps_running_as_a_job() {
         (crate::modules::ModuleId::Skills, false),
     ]
     .into();
-    tools.set_modules(&crate::modules::Switches::from_maps(
-        &user,
-        &std::collections::BTreeMap::new(),
-    ));
+    tools
+        .set_modules(&crate::modules::Switches::from_maps(
+            &user,
+            &std::collections::BTreeMap::new(),
+        ))
+        .expect("module setup");
     tools.set_session("s1");
     let started = run(
         &tools,
@@ -105,10 +107,12 @@ fn a_cat_with_a_workdir_reads_from_that_directory() {
 fn a_command_that_cannot_become_a_job_outlives_the_job_wait() {
     let (_dir, mut tools) = workspace(&[]);
     let user = [(crate::modules::ModuleId::Jobs, false)].into();
-    tools.set_modules(&crate::modules::Switches::from_maps(
-        &user,
-        &std::collections::BTreeMap::new(),
-    ));
+    tools
+        .set_modules(&crate::modules::Switches::from_maps(
+            &user,
+            &std::collections::BTreeMap::new(),
+        ))
+        .expect("module setup");
     tools.set_session("s1");
     let output = run(
         &tools,

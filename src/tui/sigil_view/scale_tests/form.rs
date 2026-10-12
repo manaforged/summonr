@@ -83,7 +83,10 @@ fn opened(workspace: &std::path::Path, form: Form) -> (App, UnboundedReceiver<Cm
     let (commands, receiver) = unbounded_channel();
     let app = App::new(busy_info(), workspace.to_owned(), commands);
     app.resize(100, 30);
-    app.update(Msg::Event(Event::Elicit { form: Some(form) }));
+    app.update(Msg::Event(Event::Elicit {
+        form: Some(form),
+        dialog: 1,
+    }));
     (app, receiver)
 }
 
@@ -95,7 +98,7 @@ fn typed(app: &App, text: &str) {
 fn sent(receiver: &mut UnboundedReceiver<Cmd>) -> FormAnswer {
     loop {
         match receiver.try_recv() {
-            Ok(Cmd::Steer(input)) => return serde_json::from_str(&input.text).unwrap(),
+            Ok(Cmd::Answer(_, text)) => return serde_json::from_str(&text).unwrap(),
             Ok(_other) => {}
             Err(error) => panic!("no answer was sent: {error}"),
         }
@@ -112,7 +115,7 @@ fn a_filled_form_is_checked_per_field_and_sent_after_review() {
             app.form
                 .peek()
                 .unwrap()
-                .lines()
+                .shown("")
                 .iter()
                 .any(|line| line.contains("Name is required"))
         );
@@ -122,17 +125,17 @@ fn a_filled_form_is_checked_per_field_and_sent_after_review() {
             app.form
                 .peek()
                 .unwrap()
-                .lines()
+                .shown("")
                 .iter()
                 .any(|line| line.contains("out of range"))
         );
         typed(&app, "7");
         assert_eq!(app.draft.peek(), "");
-        let lines = app.form.peek().unwrap().lines();
+        let lines = app.form.peek().unwrap().shown("");
         assert!(lines.iter().any(|line| line == "❯ 1. Red"), "{lines:?}");
         typed(&app, "2");
         let form = app.form.peek().unwrap();
-        let review = form.lines().join("\n");
+        let review = form.shown("").join("\n");
         assert!(review.contains("Color: Green"), "{review}");
         assert!(form.stage == crate::tui::sigil_view::app::Stage::Review);
         app.form_reply(Reply::Send);
@@ -172,7 +175,7 @@ fn model_question_picks_with_arrows_and_sends_without_review() {
             )],
         };
         let (app, mut receiver) = opened(workspace.path(), form);
-        let lines = app.form.peek().unwrap().lines();
+        let lines = app.form.peek().unwrap().shown("");
         assert_eq!(lines[0], "The model asks");
         assert!(app.form_move(1));
         assert!(app.form_move(1));
@@ -220,7 +223,7 @@ fn model_question_toggles_several_and_takes_a_typed_answer() {
         assert!(app.form_toggle());
         assert!(app.form_move(2));
         assert!(app.form_toggle());
-        let lines = app.form.peek().unwrap().lines();
+        let lines = app.form.peek().unwrap().shown("");
         assert!(
             lines.iter().any(|line| line == "❯ [x] Windows"),
             "{lines:?}"
@@ -241,6 +244,60 @@ fn model_question_toggles_several_and_takes_a_typed_answer() {
         assert_eq!(
             serde_json::Value::Object(sent(&mut receiver).content.unwrap()),
             json!({"Shell": "zsh"})
+        );
+    });
+}
+
+#[test]
+fn a_question_gives_back_the_unsent_draft_when_it_closes() {
+    Runtime::scope("form-draft", || {
+        let workspace = tempfile::tempdir().unwrap();
+        std::fs::create_dir(workspace.path().join(".git")).unwrap();
+        std::fs::write(workspace.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(100, 30);
+        app.replace("my draft".to_owned());
+        app.update(Msg::Event(Event::Elicit {
+            form: Some(form()),
+            dialog: 1,
+        }));
+        app.form_reply(Reply::Cancel);
+        assert_eq!(app.draft.peek(), "my draft");
+    });
+}
+
+#[test]
+fn a_typed_answer_shows_inside_the_question_picker() {
+    Runtime::scope("form-typed-answer", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let form = Form {
+            server: None,
+            message: "Zero".to_owned(),
+            fields: vec![question(
+                "Which zero values should trigger the ValueError?",
+                FieldKind::Choice {
+                    options: choices(&["only 0", "0 and 0.0"]),
+                    custom: true,
+                },
+            )],
+        };
+        let (app, _receiver) = opened(workspace.path(), form);
+        app.replace("any zero, and also reject NaN divisors".to_owned());
+        let Some(crate::tui::sigil_view::chat::panels::Band::Form { lines, .. }) =
+            crate::tui::sigil_view::chat::panels::band(&app)
+        else {
+            panic!("no question band");
+        };
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "❯ any zero, and also reject NaN divisors"),
+            "{lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.starts_with("❯ 1.")),
+            "{lines:?}"
         );
     });
 }

@@ -1,4 +1,5 @@
 use super::log::{Line, Usage};
+use crate::provider::Usage as Tokens;
 use crate::tools::Event;
 
 fn usage_event(usage: &Usage, prefix_hash: String, cost: Option<f64>) -> Option<Event> {
@@ -6,10 +7,10 @@ fn usage_event(usage: &Usage, prefix_hash: String, cost: Option<f64>) -> Option<
         return None;
     }
     Some(Event::Usage {
-        prompt_tokens: u32::try_from(usage.input).unwrap_or(u32::MAX),
-        completion_tokens: u32::try_from(usage.output).unwrap_or(u32::MAX),
-        reasoning_tokens: u32::try_from(usage.reasoning).unwrap_or(u32::MAX),
-        cached_tokens: u32::try_from(usage.cached).unwrap_or(u32::MAX),
+        prompt_tokens: Tokens::clamp(usage.input),
+        completion_tokens: Tokens::clamp(usage.output),
+        reasoning_tokens: Tokens::clamp(usage.reasoning),
+        cached_tokens: Tokens::clamp(usage.cached),
         millis: Some(usage.millis),
         prefix_hash,
         cost,

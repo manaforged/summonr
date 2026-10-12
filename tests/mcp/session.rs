@@ -69,6 +69,83 @@ pub(crate) fn a_plain_worktree_turn_lands_its_changes_without_running_a_check() 
     );
 }
 
+fn with_check(session: &Session, check: &str) {
+    std::fs::create_dir_all(session.work.path().join(".summonr")).expect("check directory");
+    std::fs::write(
+        session.work.path().join(".summonr/check.toml"),
+        format!("check = '{check}'\n"),
+    )
+    .expect("write the check");
+}
+
+fn commit_all(session: &Session) {
+    for args in [
+        vec!["config", "user.name", "Test"],
+        vec!["config", "user.email", "test@example.invalid"],
+        vec!["add", "."],
+        vec!["commit", "-qm", "fixture: record initial files"],
+    ] {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(session.work.path())
+            .status()
+            .expect("run fixture git");
+        assert!(status.success());
+    }
+}
+
+pub(crate) fn a_failed_worktree_run_without_changes_says_so() {
+    let session = Session::new();
+    with_check(&session, "exit 1");
+    commit_all(&session);
+    let model = Model::start(vec![]);
+    let result = session.run(
+        &model,
+        "",
+        &[
+            "--worktree",
+            "--goal",
+            "finish",
+            "--max-secs",
+            "2",
+            "--json",
+        ],
+    );
+    assert_eq!(result.code, Some(2), "{}", result.stdout);
+    let stderr = crate::support::read(&session.file("stderr"));
+    assert!(stderr.contains("the run made no changes there"), "{stderr}");
+    assert!(!stderr.contains("uncommitted"), "{stderr}");
+}
+
+pub(crate) fn a_goal_run_reports_the_judge_usage_once() {
+    let session = Session::new();
+    with_check(&session, "true");
+    let model = Model::start(vec![
+        Step::Text("fixed"),
+        Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
+    ]);
+    let result = session.run(&model, "", &["--goal", "fix it", "--json"]);
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    let usage = events(&result.stdout)
+        .iter()
+        .filter(|event| event["type"] == "usage")
+        .count();
+    assert_eq!(usage, model.requests().len(), "{}", result.stdout);
+}
+
+pub(crate) fn a_print_run_says_its_check_was_not_run() {
+    let session = Session::new();
+    with_check(&session, "true");
+    let result = session.run(&Model::start(vec![Step::Text("hi")]), "", &["--json"]);
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    let receipt = events(&result.stdout)
+        .into_iter()
+        .find(|event| event["type"] == "receipt")
+        .unwrap_or_else(|| panic!("{}", result.stdout));
+    let text = receipt["receipt"]["text"].as_str().unwrap_or_default();
+    assert!(text.contains("Verification: not run"), "{text}");
+}
+
 pub(crate) fn forking_a_named_session_keeps_the_original_transcript() {
     let session = Session::new();
     let original = session.run(

@@ -199,3 +199,14 @@ fn reasoning_left_out_of_completion_tokens_counts_as_output() {
     .unwrap();
     assert_eq!(included.completion_tokens, 1196);
 }
+
+#[test]
+fn an_alibaba_cache_creation_counts_as_a_cache_write() {
+    let usage: crate::provider::Usage = serde_json::from_value(serde_json::json!({
+        "prompt_tokens": 2000,
+        "completion_tokens": 10,
+        "prompt_tokens_details": {"cached_tokens": 0, "cache_creation_input_tokens": 500},
+    }))
+    .unwrap();
+    assert_eq!(usage.cache_write_tokens, 500);
+}

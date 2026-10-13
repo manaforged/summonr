@@ -247,3 +247,15 @@ fn a_tool_result_carries_its_images() {
         ])
     );
 }
+
+#[test]
+fn a_completed_response_reports_its_cache_writes() {
+    let reply = stream(&[json!({"type": "response.completed", "response": {
+        "status": "completed",
+        "output": [{"type": "message", "content": [{"type": "output_text", "text": "Hi"}]}],
+        "usage": {"input_tokens": 12000, "output_tokens": 10,
+            "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 12000}},
+    }})])
+    .unwrap();
+    assert_eq!(reply.usage.cache_write_tokens, 12000);
+}

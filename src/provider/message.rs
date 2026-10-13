@@ -262,7 +262,7 @@ struct UsageWire {
 struct PromptDetails {
     #[serde(default)]
     cached_tokens: u32,
-    #[serde(default)]
+    #[serde(default, alias = "cache_creation_input_tokens")]
     cache_write_tokens: u32,
 }
 

@@ -45,9 +45,9 @@ Options:
   -e, --endpoint NAME  endpoint: {endpoints}
       --model NAME     override the endpoint model
       --effort LEVEL   none, minimal, low, medium, high, xhigh, or max
-  -w, --workflow NAME  seat each step from [workflows.NAME]
+  -w, --workflow NAME  pick each role's endpoint from [workflows.NAME]
   -p, --print          run one prompt and exit
-      --json           print JSON (with -p, diff, worktrees, mcp, classify)
+      --json           print JSON (with -p, diff, worktrees, mcp, classify, cron list)
   -c, --continue       resume the last session here
       --session ID     resume a session by id, prefix, or name
       --fork           copy the resumed session before continuing
@@ -60,6 +60,8 @@ Options:
       --add-dir DIR    extra writable root (repeatable)
       --strict         allow only commands listed in policy.toml
       --no-trust       ignore workspace SYSTEM.md, AGENTS.md, CLAUDE.md
+      --trust, --net   on by default; the last of a pair wins
+      --here           work in this checkout (default; not with --worktree)
       --no-verify      skip the .summonr/check.toml gate
       --worktree       isolate this session in a git worktree
       --max-tokens N   session token budget; a breach stops the run

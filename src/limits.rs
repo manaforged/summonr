@@ -46,6 +46,13 @@ impl Limits {
             ]),
         }
     }
+
+    pub(crate) fn retry_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
+        retry_after.map_or_else(
+            || self.retry_policy(Reach::Remote).backoff(retries),
+            |secs| Duration::from_secs(secs).min(self.retry_after_max()),
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

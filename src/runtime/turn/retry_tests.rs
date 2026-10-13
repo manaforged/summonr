@@ -9,6 +9,7 @@ use crate::runtime::Loop;
 struct Fault {
     kind: ProviderFailureKind,
     partial: bool,
+    fails: usize,
     sent: Mutex<Vec<Vec<Message>>>,
 }
 
@@ -27,9 +28,9 @@ impl Provider for Fault {
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
         let mut sent = self.sent.lock().expect("captured requests");
         sent.push(request.messages.to_vec());
-        let first = sent.len() == 1;
+        let failing = sent.len() <= self.fails;
         drop(sent);
-        let reply = if first {
+        let reply = if failing {
             if self.partial {
                 partial.text = "saved partial reply".to_string();
             }
@@ -38,7 +39,7 @@ impl Provider for Fault {
                 status: None,
                 message: "fixture failure".to_string(),
                 partial_output: self.partial,
-                retry_after: None,
+                retry_after: (self.fails > 1).then_some(0),
             }))
         } else {
             Ok(AssistantMessage {
@@ -54,6 +55,14 @@ async fn run(
     kind: ProviderFailureKind,
     partial: bool,
 ) -> (bool, usize, Vec<crate::durable::log::Line>) {
+    run_failing(kind, partial, 1).await
+}
+
+async fn run_failing(
+    kind: ProviderFailureKind,
+    partial: bool,
+    fails: usize,
+) -> (bool, usize, Vec<crate::durable::log::Line>) {
     let workspace = tempfile::tempdir().expect("workspace");
     let home = tempfile::tempdir().expect("session home");
     let driver =
@@ -62,6 +71,7 @@ async fn run(
     let provider = Fault {
         kind,
         partial,
+        fails,
         sent: Mutex::new(Vec::new()),
     };
     let mut loop_ =
@@ -101,4 +111,18 @@ async fn a_cut_stream_retries_once_and_preserves_interrupted_text() {
     assert_eq!(attempts, 2);
     assert!(lines.iter().any(|line| matches!(line, crate::durable::log::Line::Interrupted { text, .. } if text == "saved partial reply")), "{lines:?}");
     assert!(lines.iter().any(|line| matches!(line, crate::durable::log::Line::Assistant { text, .. } if text == "recovered")), "{lines:?}");
+}
+
+#[tokio::test]
+async fn an_overloaded_stream_retries_up_to_the_transport_limit() {
+    let limit = crate::limits::limits().retry_limit as usize;
+    let (ok, attempts, _) = run_failing(ProviderFailureKind::Server, true, limit).await;
+    assert!(
+        ok,
+        "a stream that keeps failing with a server error recovers within the limit"
+    );
+    assert_eq!(attempts, limit + 1);
+    let (ok, attempts, _) = run_failing(ProviderFailureKind::Server, true, limit + 1).await;
+    assert!(!ok);
+    assert_eq!(attempts, limit + 1);
 }

@@ -122,7 +122,7 @@ fn flying(cols: u16, rows: u16, beat: f64, seed: u64) -> Vec<Spot> {
         let depth = match (seed >> 28) % 8 {
             0..=4 => 0,
             5 | 6 => 1,
-            _ => 2,
+            7.. => 2,
         };
         let travel = f64::from(SPEED[depth]) * beat;
         let x = (f64::from(seed % 10_000) / 10_000.0 * wide - travel).rem_euclid(wide);

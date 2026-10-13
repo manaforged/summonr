@@ -59,33 +59,24 @@ impl AuthInfo {
         self.routes.iter().find(|route| route.name == self.name)
     }
 
-    pub(crate) fn region_line(&self) -> Option<String> {
-        let region = self.current()?.region?;
-        let other = self
-            .routes
-            .iter()
-            .filter_map(|route| route.region)
-            .find(|other| *other != region);
-        Some(match other {
-            Some(other) => format!("{}  ·  alt+r {}", region.label(), other.label()),
-            None => region.label().to_string(),
-        })
-    }
-
-    pub(crate) fn access_line(&self) -> Option<String> {
-        let current = self.current()?;
+    pub(crate) fn options(&self, toggle: super::Toggle) -> Option<(Vec<&'static str>, usize)> {
+        let label = |route: &super::Route| match toggle {
+            super::Toggle::Region => route.region.map(super::Region::label),
+            super::Toggle::Access => Some(route.access.label()),
+        };
         if self.routes.len() < 2 {
             return None;
         }
-        let other = self
+        let mine = label(self.current()?)?;
+        let mut seen = std::collections::BTreeSet::new();
+        let labels: Vec<&'static str> = self
             .routes
             .iter()
-            .map(|route| route.access)
-            .find(|access| *access != current.access);
-        Some(match other {
-            Some(other) => format!("{}  ·  alt+a {}", current.access.label(), other.label()),
-            None => current.access.label().to_string(),
-        })
+            .filter_map(label)
+            .filter(|name| seen.insert(*name))
+            .collect();
+        let active = labels.iter().position(|name| *name == mine)?;
+        Some((labels, active))
     }
 
     pub(crate) fn switch(&self, toggle: super::Toggle) -> Option<&'static str> {

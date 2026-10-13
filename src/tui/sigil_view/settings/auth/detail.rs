@@ -1,11 +1,12 @@
-use sigil::prelude::{NodeBuilder, Token};
+use sigil::prelude::{NodeBuilder, Token, WidgetLayoutExt, effect, segmented, signal};
 
 use super::super::models::{price, tone};
 use super::App;
 use crate::AuthInfo;
-use crate::endpoint::State;
+use crate::endpoint::{State, Toggle};
+use crate::tui::sigil_view::canvas;
 use crate::tui::sigil_view::look::Look;
-use crate::tui::sigil_view::ui::{blank, field as kv, heading, part as text};
+use crate::tui::sigil_view::ui::{alt_label, blank, field as kv, heading, part as text};
 
 const CONTEXT: usize = 8;
 const PRICE: usize = 16;
@@ -51,11 +52,10 @@ pub(super) fn pane(
     if choice.login.signs_in() {
         nodes.push(kv("sign-in", login_line(choice), Token::OnSurface));
     }
-    if let Some(region) = choice.region_line() {
-        nodes.push(kv("region", region, Token::OnSurface));
-    }
-    if let Some(access) = choice.access_line() {
-        nodes.push(kv("access", access, Token::OnSurface));
+    for (name, toggle) in [("region", Toggle::Region), ("access", Toggle::Access)] {
+        if let Some(options) = choice.options(toggle) {
+            nodes.push(route_choice(app, name, toggle, options));
+        }
     }
     let models = models(app, &choice.name);
     if !models.is_empty() {
@@ -98,17 +98,38 @@ pub(super) fn pane(
     ]));
     if choice.paste_key() {
         nodes.push(heading(vec![
-            text("alt+k ", Token::Accent11),
+            text(format!("{} ", alt_label('k')), Token::Accent11),
             text("paste an API key", Token::OnSurface),
         ]));
     }
     if choice.stored() {
         nodes.push(heading(vec![
-            text("alt+d ", Token::Accent11),
+            text(format!("{} ", alt_label('d')), Token::Accent11),
             text("sign out", Token::OnSurface),
         ]));
     }
     nodes
+}
+
+fn route_choice(
+    app: &App,
+    name: &str,
+    toggle: Toggle,
+    (labels, active): (Vec<&'static str>, usize),
+) -> NodeBuilder {
+    let picked = signal(active);
+    let flip = app.clone();
+    effect(move || {
+        if picked.get() != active {
+            flip.toggle_route(toggle);
+        }
+    });
+    let labels = labels.into_iter().map(str::to_owned).collect();
+    kv(name, String::new(), Token::OnSurface).child(
+        segmented(picked, labels)
+            .height(canvas::cell().h)
+            .label(name),
+    )
 }
 
 fn key_line(choice: &AuthInfo, state: &str) -> Option<String> {

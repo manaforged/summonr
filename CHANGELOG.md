@@ -6,6 +6,7 @@ First stable release.
 
 ### Added
 
+- `/login` shows a provider's region and its coding plan or API key as buttons in the detail pane; `alt+r` and `alt+a` still switch them from the keyboard. On macOS, key hints name `⌥` for alt. The model picker leaves out a provider that does not answer, and its list and the provider list scroll only when the selection leaves the view, so hovering a row no longer moves the list.
 - On the Responses API, tools no longer say `strict: false`, so OpenAI normalizes them to strict when it can, as its function-calling guide recommends. Reasoning models ask for a summary and encrypted reasoning even at the default effort, so their reasoning shows and replays.
 - Gemini returns thought summaries at the default effort, and a tool-result image reaches a Gemini function response only as PNG, JPEG, or WebP, the types Google accepts there; a HEIC or HEIF screenshot from a tool is named as omitted instead of failing the request.
 - OpenRouter (`x-session-id`), Fireworks (`x-session-affinity`), and Mistral (`prompt_cache_key`) get the per-session cache hint their docs name, and DashScope pay-as-you-go rows send explicit `cache_control` breakpoints. When Ollama is not running, summonr names `OLLAMA_CONTEXT_LENGTH=65536 ollama serve`, since Ollama's 4k default context silently drops a coding agent's tools.

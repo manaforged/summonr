@@ -97,6 +97,13 @@ summonr login grok         # sign in with SuperGrok or X Premium+, or paste a ke
 summonr openai
 ```
 
+A Claude Pro or Max plan runs through your own Claude Code. Sign in there once, and summonr starts it for each turn:
+
+```sh
+claude auth login
+summonr claude
+```
+
 Run one prompt and exit:
 
 ```sh
@@ -123,7 +130,7 @@ Next commands:
 - `summonr export` writes a session as Markdown.
 - `summonr endpoints` lists every endpoint with its key status.
 
-Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `qwen-plan`, `dashscope`, `kimi`, `minimax-plan`, `tencent-plan`, `volcengine-plan`, `nvidia`, `huggingface`, `cohere`, `perplexity`, `ollama`, `lmstudio`, `openrouter`, `copilot`, `together`, `fireworks`, `deepinfra`, and more: every coding plan and inference host is one row in the provider table (`src/endpoint/presets.toml`). Add any OpenAI-compatible server with one command:
+Built-in providers include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `zai`, `alibaba`, `kimi`, `minimax`, `tencent-plan`, `volcengine-plan`, `nvidia`, `huggingface`, `cohere`, `ollama`, `lmstudio`, `openrouter`, `copilot`, `together`, `fireworks`, `deepinfra`, and more, all in one table (`src/endpoint/presets.toml`). A provider with a China region or a coding plan lists once; in `/login`, its details let you pick the region and the plan or the API key. Add any OpenAI-compatible server with one command:
 
 ```sh
 summonr login local --url http://127.0.0.1:8080/v1   # picks the model when the server lists one

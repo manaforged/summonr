@@ -1,5 +1,5 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container, signal,
     virtual_list,
 };
 
@@ -119,16 +119,16 @@ fn listing_hints(app: &App) -> Hints {
     }
     hints = hints.key(Key::Enter, choice.key_action());
     if choice.paste_key() {
-        hints = hints.key(Key::Fixed("alt+k"), "paste a key");
+        hints = hints.key(Key::Alt('k'), "paste a key");
     }
     if let Some(region) = choice.switch(crate::endpoint::Toggle::Region) {
-        hints = hints.key(Key::Fixed("alt+r"), region);
+        hints = hints.key(Key::Alt('r'), region);
     }
     if let Some(access) = choice.switch(crate::endpoint::Toggle::Access) {
-        hints = hints.key(Key::Fixed("alt+a"), access);
+        hints = hints.key(Key::Alt('a'), access);
     }
     if choice.stored() {
-        hints = hints.key(Key::Fixed("alt+d"), "sign out");
+        hints = hints.key(Key::Alt('d'), "sign out");
     }
     if stacked {
         return hints.key(Key::Esc, "back");
@@ -157,7 +157,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         return vec![group("No providers match.")];
     };
     let states = app.picker.groups.get();
-    let (lookup, shown, header) = sections(&rows, &states, selected);
+    let (lookup, shown) = sections(&rows, &states, selected);
     let chrome = LIST_CHROME
         + if split(app) {
             0
@@ -165,13 +165,6 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
             NARROW_NOTE_ROWS as u16
         };
     let visible = canvas::list_rows(canvas::picker_rows(app.viewport.get().1), chrome);
-    let anchor = if shown < visible {
-        0
-    } else if shown - header < visible {
-        header
-    } else {
-        shown + 1 - visible
-    };
     let state = chip(choice, states.get(&choice.name));
     let list = container().layout(LayoutStyle::block().fill_width()).child(
         virtual_list(
@@ -184,7 +177,8 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         .row_height(canvas::overlay_list_row())
         .height(canvas::overlay_list_row() * visible as f32)
         .viewport_height(canvas::overlay_list_row() * visible as f32)
-        .scroll_into_view(anchor),
+        .scroll_bind(app.auth.scroll)
+        .follow_row(signal(shown)),
     );
     if !split(app) {
         let wide = span(app).saturating_sub(10);
@@ -253,9 +247,9 @@ fn sections(
     rows: &[AuthInfo],
     states: &std::collections::BTreeMap<String, State>,
     selected: usize,
-) -> (Vec<Row>, usize, usize) {
+) -> (Vec<Row>, usize) {
     let mut lookup: Vec<Row> = Vec::new();
-    let (mut shown, mut header) = (0, 0);
+    let mut shown = 0;
     for (index, row) in rows.iter().enumerate() {
         let tier = section(row);
         if index == 0 || tier != section(&rows[index - 1]) {
@@ -263,10 +257,6 @@ fn sections(
         }
         if index == selected {
             shown = lookup.len();
-            header = lookup
-                .iter()
-                .rposition(|(_, _, index)| index.is_none())
-                .unwrap_or(0);
         }
         lookup.push((
             row.title().to_string(),
@@ -274,7 +264,7 @@ fn sections(
             Some(index),
         ));
     }
-    (lookup, shown, header)
+    (lookup, shown)
 }
 
 fn entry(app: App, name: &str, chip: &str, index: usize, active: bool) -> NodeBuilder {

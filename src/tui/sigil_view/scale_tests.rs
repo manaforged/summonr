@@ -65,6 +65,18 @@ fn paint(
     state: State,
     setup: impl FnOnce(&App),
 ) -> sigil::terminal::Grid {
+    paint_steps(base, (cols, rows), state, setup, &[])
+        .pop()
+        .expect("frame")
+}
+
+fn paint_steps(
+    base: Info,
+    (cols, rows): (u16, u16),
+    state: State,
+    setup: impl FnOnce(&App),
+    steps: &[&dyn Fn(&App)],
+) -> Vec<sigil::terminal::Grid> {
     Runtime::scope("summonr-scale", || {
         let workspace = tempfile::tempdir().expect("workspace");
         std::fs::create_dir(workspace.path().join(".git")).expect("git dir");
@@ -101,15 +113,24 @@ fn paint(
         host.mount(move || root(tree));
         let mut screen = Screen::new(cols, rows);
         let mut router = EventRouter::new();
-        for _ in 0..2 {
+        let mut settle = || {
+            for _ in 0..2 {
+                screen
+                    .frame(&mut host, &mut router, [], (cols, rows))
+                    .expect("frame");
+            }
             screen
                 .frame(&mut host, &mut router, [], (cols, rows))
-                .expect("frame");
+                .expect("frame")
+                .clone()
+        };
+        let mut grids = vec![settle()];
+        for step in steps {
+            step(&app);
+            app.refresh();
+            grids.push(settle());
         }
-        screen
-            .frame(&mut host, &mut router, [], (cols, rows))
-            .expect("frame")
-            .clone()
+        grids
     })
 }
 
@@ -124,6 +145,13 @@ fn frame_with(
         .text()
         .lines()
         .map(str::to_owned)
+        .collect()
+}
+
+fn screens(cols: u16, rows: u16, setup: impl FnOnce(&App), steps: &[&dyn Fn(&App)]) -> Vec<String> {
+    paint_steps(busy_info(), (cols, rows), State::Idle, setup, steps)
+        .iter()
+        .map(sigil::terminal::Grid::text)
         .collect()
 }
 

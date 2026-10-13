@@ -5,7 +5,7 @@ A coding agent for any model, in your terminal or a desktop window, written in R
 - **Light**: 24 MB peak in our [Terminal-Bench 2.1 run](#benchmarks), where four other harnesses peaked between 146 and 505 MB.
 - **Sessions that talk**: message any running session with `@name`, even one on a different model or provider. [Try it](#coordinate-work-live).
 - **Browses like you**: searches and page visits look like Chrome, so sites let it in like they let you in. No search key.
-- **Any model**: 42 built-in endpoints, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
+- **Any model**: 41 built-in endpoints, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
 - **Batteries included**: web search, a real browser, MCP servers, and parallel child agents in one binary.
 - **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.
 - **Works while you're away**: schedule a goal for 3 a.m. with `summonr cron`, fire one from a webhook, or text it from Telegram. It tells you whether the check passed.

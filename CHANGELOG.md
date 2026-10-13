@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-First stable release.
+First public release.
 
 ### Added
 

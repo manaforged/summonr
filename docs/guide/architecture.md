@@ -1,6 +1,6 @@
 # Architecture
 
-summonr is a terminal coding agent. `summonr NAME` selects a configured endpoint; `summonr` uses your default. The connector owns HTTP and SSE (`src/provider.rs`) and credentials (`src/credentials.rs`, `src/endpoint/auth.rs`, and `crates/auth`). Completions seats (including `zen`, `go`, and `opencode`) speak OpenAI `chat/completions`. Anthropic Messages and Gemini use their own wires in `src/provider/wire/anthropic.rs` and `src/provider/wire/gemini.rs`.
+summonr is a terminal coding agent. `summonr NAME` selects a configured endpoint; `summonr` uses your default. The connector owns HTTP and SSE (`src/provider.rs`) and credentials (`src/credentials.rs`, `src/endpoint/auth.rs`, and `crates/auth`). Completions seats (including `opencode-zen`, `go`, and `opencode`) speak OpenAI `chat/completions`. Anthropic Messages and Gemini use their own wires in `src/provider/wire/anthropic.rs` and `src/provider/wire/gemini.rs`.
 
 Reasoning text uses `reasoning_content`. Provider continuation data stays on the tool call in the session log. Anthropic tool turns preserve their ordered content blocks, including signed thinking and redacted thinking. Gemini tool calls retain their thought signatures. Native continuation data is reused only for the matching wire and model and is omitted from Completions requests. User images are sent through all three wires.
 

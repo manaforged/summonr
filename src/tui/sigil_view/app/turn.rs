@@ -35,10 +35,7 @@ impl App {
 
     fn submit_text(&self) -> String {
         let mut text = self.expand_pastes(&self.draft.peek());
-        if let Some((line, note)) = crate::command::renamed(&text) {
-            if let Some(note) = note {
-                self.push_entry(Entry::System(note));
-            }
+        if let Some(line) = crate::command::alias(&text) {
             text = line;
         }
         text

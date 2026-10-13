@@ -16,8 +16,10 @@ mod plugins;
 mod policy;
 #[path = "mcp/protocol.rs"]
 mod protocol;
+#[cfg(unix)]
 #[path = "mcp/search_index.rs"]
 mod search_index;
+#[cfg(unix)]
 #[path = "mcp/secrets.rs"]
 mod secrets;
 #[path = "mcp/session.rs"]

@@ -269,7 +269,7 @@ fn apply_combined(target: &Path, start: &str, combined: &[u8], deltas: bool) -> 
     if current != start || (!deltas && !dirty.is_empty()) {
         return Err(Error::Config(format!(
             "the parent tracked files changed before reconciliation; child {} were kept",
-            if deltas { "deltas" } else { "worktrees" }
+            if deltas { "checkouts" } else { "worktrees" }
         )));
     }
     if !combined.is_empty() {

@@ -35,6 +35,7 @@ pub(crate) struct Launch<'a> {
     pub(crate) program: &'a str,
     pub(crate) args: &'a [&'a str],
     pub(crate) env: &'a [(String, String)],
+    pub(crate) unset: &'a [&'a str],
     pub(crate) cwd: &'a Path,
     pub(crate) sandbox: Option<(&'a Sandbox, Access)>,
     pub(crate) base: Env,
@@ -72,6 +73,9 @@ pub(crate) fn start(launch: &Launch<'_>) -> Result<Process> {
         command
             .env_clear()
             .envs(crate::tools::command::command_env());
+    }
+    for key in launch.unset {
+        command.env_remove(key);
     }
     command.envs(launch.env.iter().map(|(key, value)| (key, value)));
     let mut child = command

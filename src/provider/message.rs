@@ -243,6 +243,8 @@ struct UsageWire {
     #[serde(default)]
     completion_tokens: u32,
     #[serde(default)]
+    total_tokens: Option<u32>,
+    #[serde(default)]
     reasoning_tokens: u32,
     #[serde(default)]
     cached_tokens: u32,
@@ -260,7 +262,7 @@ struct UsageWire {
 struct PromptDetails {
     #[serde(default)]
     cached_tokens: u32,
-    #[serde(default)]
+    #[serde(default, alias = "cache_creation_input_tokens")]
     cache_write_tokens: u32,
 }
 
@@ -276,14 +278,26 @@ impl From<UsageWire> for Usage {
             .prompt_tokens_details
             .map(|details| (details.cached_tokens, details.cache_write_tokens))
             .unwrap_or_default();
+        let reasoning = wire
+            .completion_tokens_details
+            .map(|details| details.reasoning_tokens)
+            .unwrap_or_default()
+            .max(wire.reasoning_tokens);
+        let apart = reasoning > 0
+            && wire.total_tokens
+                == Some(
+                    wire.prompt_tokens
+                        .saturating_add(wire.completion_tokens)
+                        .saturating_add(reasoning),
+                );
         Self {
             prompt_tokens: wire.prompt_tokens,
-            completion_tokens: wire.completion_tokens,
-            reasoning_tokens: wire
-                .completion_tokens_details
-                .map(|details| details.reasoning_tokens)
-                .unwrap_or_default()
-                .max(wire.reasoning_tokens),
+            completion_tokens: if apart {
+                wire.completion_tokens.saturating_add(reasoning)
+            } else {
+                wire.completion_tokens
+            },
+            reasoning_tokens: reasoning,
             cached_tokens: nested
                 .max(wire.cached_tokens)
                 .max(wire.prompt_cache_hit_tokens),

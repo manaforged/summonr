@@ -86,6 +86,10 @@ fn popup(app: &App, width: usize) -> Option<Popup> {
     })
 }
 
+pub(in crate::tui::sigil_view) fn height(app: &App, width: usize) -> u16 {
+    popup(app, width).map_or(0, |popup| popup.rows.len() as u16 + 4)
+}
+
 pub(in crate::tui::sigil_view) fn widget(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
     let popup = sigil::reactive::derived(move || popup(&update, width));

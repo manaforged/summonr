@@ -4,9 +4,9 @@ A coding agent for any model, in your terminal or a desktop window, written in R
 
 - **Light**: 24 MB peak in our [Terminal-Bench 2.1 run](#benchmarks), where four other harnesses peaked between 146 and 505 MB.
 - **Sessions that talk**: message any running session with `@name`, even one on a different model or provider. [Try it](#coordinate-work-live).
-- **Browses like you**: searches and page visits look like Chrome, so sites let it in like they let you in. No search key.
-- **Any model**: 42 built-in endpoints, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
-- **Batteries included**: web search, a real browser, MCP servers, and parallel child agents in one binary.
+- **Browses like you**: searches and page visits look like Chrome, so sites let it in like they let you in. No search key. Turn it on with `search = true` under `[modules]`.
+- **Any model**: 41 built-in endpoints, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
+- **One binary**: web search, a real browser, MCP servers, and parallel child agents.
 - **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.
 - **Works while you're away**: schedule a goal for 3 a.m. with `summonr cron`, fire one from a webhook, or text it from Telegram. It tells you whether the check passed.
 - **Remembers**: tell it a preference once and every later session in that repository knows it. The notes are plain Markdown you can edit.
@@ -68,7 +68,7 @@ Docs: [user guide](docs/guide/README.md), [reference](docs/guide/reference.md), 
 
 ## Sandbox
 
-`--sandbox` uses Seatbelt on macOS and bubblewrap on Linux. Windows AppContainer is unfinished and needs a `--features windows-sandbox` build. Git for Windows and user-installed toolchains stay blocked, so don't treat `--sandbox` as containment on Windows.
+`--sandbox` uses Seatbelt on macOS and bubblewrap on Linux. Windows release builds have no sandbox yet, and `--sandbox` exits 1 there. The AppContainer sandbox in a `--features windows-sandbox` build is unfinished: it blocks Git for Windows and user-installed toolchains.
 
 ## Desktop window
 
@@ -97,6 +97,13 @@ summonr login grok         # sign in with SuperGrok or X Premium+, or paste a ke
 summonr openai
 ```
 
+A Claude Pro or Max plan runs through your own Claude Code. Sign in there once, and summonr starts it for each turn:
+
+```sh
+claude auth login
+summonr claude
+```
+
 Run one prompt and exit:
 
 ```sh
@@ -116,14 +123,14 @@ summonr anthropic --goal "make cargo test pass"
 Next commands:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
-- Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; turn it off in the Modules rows of `/settings` or with `task = false` under `[modules]` in `~/.summonr/config.toml`.
-- An implement child works in `<repo>-deltas/<id>`, a checkout beside the repo. It shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects. It does not add a branch. Sharing those directories skips a second copy of the build cache. It does not limit how many checks run at once. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk, shows as a conflict, and the other children still land. summonr never deletes a kept checkout. A research child stays in the directory you launched. `--worktree` still isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`.
+- Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the parent's endpoint and model unless the workflow assigns the role elsewhere; turn it off in the Modules rows of `/settings` or with `task = false` under `[modules]` in `~/.summonr/config.toml`.
+- An implement child works in `<repo>-children/<id>`, a checkout beside the repo. It shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects. It does not add a branch. Sharing those directories skips a second copy of the build cache. It does not limit how many checks run at once. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk, shows as a conflict, and the other children still land. summonr never deletes a kept checkout. A research child stays in the directory you launched. `--worktree` still isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`.
 - A `[mcp.NAME]` table in `~/.summonr/config.toml` connects an MCP server. The server starts on its first tool call and stops when idle.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
 - `summonr export` writes a session as Markdown.
 - `summonr endpoints` lists every endpoint with its key status.
 
-Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `qwen-plan`, `dashscope`, `kimi`, `minimax-plan`, `tencent-plan`, `volcengine-plan`, `nvidia`, `huggingface`, `cohere`, `perplexity`, `ollama`, `lmstudio`, `openrouter`, `copilot`, `together`, `fireworks`, `deepinfra`, and more: every coding plan and inference host is one row in the provider table (`src/endpoint/presets.toml`). Add any OpenAI-compatible server with one command:
+Built-in providers include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `zai`, `alibaba`, `kimi`, `minimax`, `tencent-plan`, `volcengine-plan`, `nvidia`, `huggingface`, `cohere`, `ollama`, `lmstudio`, `openrouter`, `copilot`, `together`, `fireworks`, `deepinfra`, and more, all in one table (`src/endpoint/presets.toml`). A provider with a China region or a coding plan lists once; in `/login`, its details let you pick the region and the plan or the API key. Add any OpenAI-compatible server with one command:
 
 ```sh
 summonr login local --url http://127.0.0.1:8080/v1   # picks the model when the server lists one
@@ -162,7 +169,7 @@ It lands in the tests session's inbox, and the tests session replies with `@buil
 
 ## Benchmarks
 
-Terminal-Bench 2.1, 86 tasks, one pass, GLM 5.3 Flash at high effort through z.ai, every harness on its defaults. Runs `tb21-zai-1002d` (summonr, pi), `tb21-zai-1002f` (OpenCode, Hermes), and `tb21-zai-1003a` (OMP), 2026-10-02 to 2026-10-03; arms from different runs did not run side by side.
+Terminal-Bench 2.1, 86 tasks, one pass, GLM 5.3 Flash at high effort through z.ai, every harness on its defaults. Three runs, 2026-10-02 to 2026-10-03, listed in [BENCHMARKS.md](BENCHMARKS.md); arms from different runs did not run side by side.
 
 | Harness | Version | Tasks solved | Mean memory | Peak memory | Median input tokens, solved tasks | Median input tokens, all tasks | Median time, solved tasks |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -181,7 +188,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 ## Limits
 
 - Commands run without a prompt. Only irreversible destruction asks first: wiping the system, home, or project root, `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and dropped database tables. `-p` never runs those. Set `confirm = "risky"` in `~/.summonr/policy.toml` to also ask before force pushes, `sudo`, pipes into a shell, and history rewrites; `--strict` refuses that whole list. Under `--sandbox` or `--strict`, your own `policy.toml` deny rules are hard refusals.
-- Six identical results from the same call end the turn. The terminal UI asks first.
+- When one call, or a cycle of up to three calls, returns the same result five times in a row, summonr adds a note to the result that tells the model to change its approach. The turn goes on.
 - The `mcp` module is on by default. A server starts on its first tool call, stops after two idle minutes, and runs inside `--sandbox` when that is on. A server with more than 8 KB of tool schemas is reached through one `mcp` tool, so large servers do not fill the prompt. `/server:prompt` runs a server prompt, `@server:uri` attaches a server resource, and a server can ask you to fill a form during a call. A reply over 4 MiB is dropped, and output over 50 KB is cut with the full text saved to a file. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` server runs only after you set `enabled = true` for it.
 - A project can turn a module off. A project can't turn a module on.
 - A trusted workspace supplies `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` as instructions, and your own `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` apply everywhere; `--no-trust` ignores the workspace files.

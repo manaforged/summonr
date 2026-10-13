@@ -99,18 +99,25 @@ fn an_incomplete_reply_with_a_call_stays_a_length_stop() {
 }
 
 #[test]
-fn reasoning_asks_for_a_summary_and_encrypted_content_only_with_effort() {
+fn a_reasoning_model_always_asks_for_a_summary_and_encrypted_content() {
     let messages = vec![message(Role::User, "hi")];
     let with = request(&ask(&messages, Some(Effort::High)), true).unwrap();
     assert_eq!(with["reasoning"]["summary"], "auto");
     assert_eq!(with["include"][0], "reasoning.encrypted_content");
-    let without = request(&ask(&messages, None), true).unwrap();
-    assert!(without.get("include").is_none());
-    assert!(without.get("reasoning").is_none());
+    let default = request(&ask(&messages, None), true).unwrap();
+    assert_eq!(default["reasoning"]["summary"], "auto", "{default}");
+    assert!(default["reasoning"].get("effort").is_none(), "{default}");
+    assert_eq!(default["include"][0], "reasoning.encrypted_content");
+    let mut chat = ask(&messages, None);
+    chat.model = "gpt-4o".to_string();
+    chat.traits = crate::provider::traits("gpt-4o");
+    let plain = request(&chat, true).unwrap();
+    assert!(plain.get("reasoning").is_none(), "{plain}");
+    assert!(plain.get("include").is_none(), "{plain}");
 }
 
 #[test]
-fn a_function_tool_is_declared_not_strict() {
+fn a_function_tool_opts_out_of_strict_mode() {
     let messages = vec![message(Role::User, "hi")];
     let tools = vec![ToolDefinition {
         kind: ToolKind::Function,
@@ -123,7 +130,7 @@ fn a_function_tool_is_declared_not_strict() {
     let mut call = ask(&messages, None);
     call.tools = &tools;
     let body = request(&call, true).unwrap();
-    assert_eq!(body["tools"][0]["strict"], false);
+    assert_eq!(body["tools"][0]["strict"], json!(false), "{body}");
     assert_eq!(body["tools"][0]["name"], "read");
 }
 
@@ -135,8 +142,38 @@ fn a_system_note_after_the_first_turn_is_a_developer_message() {
         message(Role::System, "plan note"),
     ];
     let body = request(&ask(&messages, None), true).unwrap();
-    assert_eq!(body["instructions"], "be terse");
-    assert_eq!(body["input"][1]["role"], "developer");
+    assert_eq!(body["input"][0]["content"][0]["text"], "be terse");
+    assert_eq!(body["input"][2]["role"], "developer");
+    assert!(
+        body["input"][2]["content"][0]
+            .get("prompt_cache_breakpoint")
+            .is_none(),
+        "{body}"
+    );
+}
+
+#[test]
+fn fixed_prompt_is_a_plain_developer_block() {
+    let messages = vec![
+        message(Role::System, "be terse"),
+        message(Role::System, "use tools"),
+        message(Role::User, "hi"),
+    ];
+    let call = ask(&messages, None).with_model("gpt-6.1-sol".to_string());
+    let body = request(&call, true).unwrap();
+    assert!(body.get("instructions").is_none(), "{body}");
+    assert_eq!(body["input"][0]["role"], "developer");
+    assert_eq!(
+        body["input"][0]["content"][0]["text"],
+        "be terse\nuse tools"
+    );
+    assert!(
+        body["input"][0]["content"][0]
+            .get("prompt_cache_breakpoint")
+            .is_none(),
+        "{body}"
+    );
+    assert_eq!(body["input"][1]["role"], "user");
 }
 
 #[test]
@@ -209,4 +246,16 @@ fn a_tool_result_carries_its_images() {
             {"type": "input_image", "image_url": "data:image/png;base64,cG5nIGJ5dGVz"}
         ])
     );
+}
+
+#[test]
+fn a_completed_response_reports_its_cache_writes() {
+    let reply = stream(&[json!({"type": "response.completed", "response": {
+        "status": "completed",
+        "output": [{"type": "message", "content": [{"type": "output_text", "text": "Hi"}]}],
+        "usage": {"input_tokens": 12000, "output_tokens": 10,
+            "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 12000}},
+    }})])
+    .unwrap();
+    assert_eq!(reply.usage.cache_write_tokens, 12000);
 }

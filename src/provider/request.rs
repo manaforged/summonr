@@ -98,10 +98,22 @@ impl Effort {
 
     #[must_use]
     pub(crate) fn clamp(self, levels: &[Self]) -> Self {
+        self.rounded(levels, false)
+    }
+
+    #[must_use]
+    pub(crate) fn rounded(self, levels: &[Self], up: bool) -> Self {
         levels
             .iter()
             .copied()
-            .min_by_key(|level| ((*level as u8).abs_diff(self as u8), *level))
+            .min_by_key(|level| {
+                let lean = if up {
+                    u8::MAX - *level as u8
+                } else {
+                    *level as u8
+                };
+                ((*level as u8).abs_diff(self as u8), lean)
+            })
             .unwrap_or(self)
     }
 
@@ -322,4 +334,5 @@ pub struct FunctionDefinition {
 pub struct Partial {
     pub text: String,
     pub reasoning: String,
+    pub usage: Option<super::Usage>,
 }

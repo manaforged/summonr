@@ -97,8 +97,12 @@ async fn a_child_gets_its_brief_and_its_own_tools() {
         run.assignment
     );
     assert!(
-        run.assignment
-            .contains(&dirs[0].path().display().to_string()),
+        run.assignment.contains(
+            &dunce::canonicalize(dirs[0].path())
+                .unwrap()
+                .display()
+                .to_string()
+        ),
         "{}",
         run.assignment
     );
@@ -160,11 +164,11 @@ fn an_assignment_names_the_childs_checkout_not_the_parent() {
     let text = super::super::brief::rebase_paths(
         "In the current workspace (/w/app), fix /w/app/src/a.rs; leave /w/app-old alone",
         std::path::Path::new("/w/app"),
-        std::path::Path::new("/w/app-deltas/1"),
+        std::path::Path::new("/w/app-children/1"),
     );
     assert_eq!(
         text,
-        "In the current workspace (/w/app-deltas/1), fix /w/app-deltas/1/src/a.rs; leave /w/app-old alone"
+        "In the current workspace (/w/app-children/1), fix /w/app-children/1/src/a.rs; leave /w/app-old alone"
     );
 }
 

@@ -8,6 +8,7 @@ async fn seen(base: Env) -> String {
         program: "sh",
         args: &["-c", "printf %s \"${CARGO_MANIFEST_DIR:-unset}\""],
         env: &[],
+        unset: &[],
         cwd: dir.path(),
         sandbox: None,
         base,
@@ -39,6 +40,7 @@ async fn a_read_only_server_cannot_write_its_workspace() {
             program: "sh",
             args: &["-c", &script],
             env: &[],
+            unset: &[],
             cwd: dir.path(),
             sandbox: Some((&sandbox, access)),
             base: Env::Clean,
@@ -55,4 +57,23 @@ async fn a_read_only_server_cannot_write_its_workspace() {
         dir.path().join("write").exists(),
         "the writable sandbox refused"
     );
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dropping_a_client_returns_before_the_close_grace() {
+    let dir = tempfile::tempdir().unwrap();
+    let client = crate::rpc::client::Client::spawn(&crate::rpc::client::Spawn {
+        program: "sh",
+        args: &["-c", "while :; do sleep 1; done"],
+        env: &[],
+        cwd: dir.path(),
+        sandbox: None,
+        wait: std::time::Duration::from_secs(5),
+    })
+    .unwrap();
+    let started = std::time::Instant::now();
+    drop(client);
+    let grace = crate::limits::limits().mcp_close_grace();
+    assert!(started.elapsed() < grace / 2, "{:?}", started.elapsed());
 }

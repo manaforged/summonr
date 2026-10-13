@@ -4,7 +4,7 @@ const MAIL_PER_ROUND: usize = 5;
 
 #[derive(Default)]
 struct RetryState {
-    retried: bool,
+    retries: u32,
     continued: bool,
     repairs: usize,
     overflows: usize,
@@ -147,7 +147,10 @@ impl<P: Provider> Loop<P> {
             role,
         } = failed;
         let failure = error.provider_failure();
-        let retryable = !state.retried && failure.is_some_and(retryable_failure);
+        let retryable = state.retries < crate::limits::limits().retry_limit
+            && failure.is_some_and(retryable_failure);
+        let wait = failure
+            .map(|failure| crate::limits::limits().retry_wait(failure.retry_after, state.retries));
         let kind = failure.map(|failure| failure.kind);
         self.record_failure(attempt, &error, started, messages, events, emit)?;
         if self.round_abort().is_some() {
@@ -188,6 +191,9 @@ impl<P: Provider> Loop<P> {
             return Ok(true);
         }
         self.retry_or_fall_back(error, retryable, role, state, events, emit)?;
+        if retryable && let Some(wait) = wait {
+            tokio::time::sleep(wait).await;
+        }
         Ok(true)
     }
 
@@ -205,16 +211,18 @@ impl<P: Provider> Loop<P> {
             if self.seats.contains_key(&role) || !self.fall_back(&text, events, emit)? {
                 return Err(error);
             }
-            state.retried = false;
+            state.retries = 0;
             return Ok(());
         }
-        state.retried = true;
+        state.retries += 1;
         self.push_event(
             events,
             emit,
             Event::Note {
                 text: format!(
-                    "stream cut; retrying once: {}",
+                    "stream cut; retry {} of {}: {}",
+                    state.retries,
+                    crate::limits::limits().retry_limit,
                     text.lines().next().unwrap_or("unknown")
                 ),
             },

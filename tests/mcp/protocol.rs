@@ -92,10 +92,14 @@ pub(crate) fn progress_reaches_the_event_stream() {
 pub(crate) fn progress_keeps_a_slow_call_alive() {
     let session = Session::new();
     let model = Model::start(vec![
-        Step::Call("fixture1__progress", json!({"ms": 600})),
+        Step::Call(
+            "fixture1__progress",
+            json!({"ms": crate::support::slow(1) * 600}),
+        ),
         Step::Text("ok"),
     ]);
-    session.run(&model, &session.server("fixture1", "timeout_secs = 1"), &[]);
+    let timeout = format!("timeout_secs = {}", crate::support::slow(1));
+    session.run(&model, &session.server("fixture1", &timeout), &[]);
     assert!(
         model.tool_results()[0].contains("progressed"),
         "{:?}",
@@ -124,7 +128,7 @@ pub(crate) fn an_aborted_call_is_cancelled() {
     session.run(
         &model,
         &session.server("fixture1", ""),
-        &["--max-secs", "5"],
+        &["--max-secs", &crate::support::slow(5).to_string()],
     );
     drop(
         session.received_until("fixture1", Duration::from_secs(5), |received| {

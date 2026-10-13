@@ -104,7 +104,9 @@ fn a_hosted_model_window_comes_from_local_data_without_a_request() {
 #[test]
 fn a_client_lists_models_from_the_models_base_not_the_chat_base() {
     let mut endpoint =
-        crate::endpoint::resolve(Some("perplexity"), None, crate::Need::Config).unwrap();
+        crate::endpoint::resolve(Some("deepseek"), None, crate::Need::Config).unwrap();
+    endpoint.base_url = Some("https://api.perplexity.ai".to_string());
+    endpoint.models_url = Some("https://api.perplexity.ai/v1".to_string());
     endpoint.api_key = Some("k".to_string());
     let client = Client::connect(&endpoint).unwrap();
     assert_eq!(client.base.as_str(), "https://api.perplexity.ai");

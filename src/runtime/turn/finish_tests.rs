@@ -168,7 +168,8 @@ async fn an_unreachable_reviewer_fails_the_turn_and_says_why_once() {
 
 #[tokio::test]
 async fn a_turn_that_leaves_a_job_running_is_deferred_not_verified() {
-    let mut run = session([background("sleep 5"), Reply::Text("started it")]);
+    let sleep = format!("sleep {}", crate::limits::limits().job_wait_secs + 4);
+    let mut run = session([background(&sleep), Reply::Text("started it")]);
     goal(&mut run, []);
     let turn = run.loop_.turn("go").await.unwrap();
     assert!(turn.checks.is_empty(), "{:?}", turn.checks);
@@ -234,12 +235,12 @@ async fn a_goal_selected_from_the_command_line_runs_its_check_and_asks_the_judge
         Reply::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
     ]);
     run.loop_
-        .select_goal("make the tests pass", &["true".to_string()])
+        .select_goal("make the tests pass", &["exit 0".to_string()])
         .unwrap();
     let turn = run.loop_.turn("make the tests pass").await.unwrap();
     assert!(
         turn.events.iter().any(
-            |event| matches!(event, Event::Verify { command, passed: true } if command == "true")
+            |event| matches!(event, Event::Verify { command, passed: true } if command == "exit 0")
         ),
         "{:?}",
         closing(&turn)
@@ -256,7 +257,7 @@ async fn the_judge_refuses_a_gamed_pass_and_contradictory_tests_stop_the_goal() 
         ),
     ]);
     run.loop_
-        .select_goal("make the tests pass", &["true".to_string()])
+        .select_goal("make the tests pass", &["exit 0".to_string()])
         .unwrap();
     run.loop_.turn("make the tests pass").await.unwrap();
     let sent = run.sent.lock().unwrap().clone();
@@ -274,12 +275,12 @@ async fn the_judge_refuses_a_gamed_pass_and_contradictory_tests_stop_the_goal() 
 async fn steps_selected_from_the_command_line_run_the_completion_check() {
     let mut run = session([Reply::Text("done")]);
     run.loop_
-        .select_steps("## Steps\n\n1. Ship it\n", &["true".to_string()])
+        .select_steps("## Steps\n\n1. Ship it\n", &["exit 0".to_string()])
         .unwrap();
     let turn = run.loop_.turn("Ship it").await.unwrap();
     assert!(
         turn.events.iter().any(
-            |event| matches!(event, Event::Verify { command, passed: true } if command == "true")
+            |event| matches!(event, Event::Verify { command, passed: true } if command == "exit 0")
         ),
         "{:?}",
         closing(&turn)
@@ -288,7 +289,7 @@ async fn steps_selected_from_the_command_line_run_the_completion_check() {
 
 #[tokio::test]
 async fn a_goal_that_stops_short_exits_on_its_check() {
-    for (check, code) in [("false", 2), ("true", 3)] {
+    for (check, code) in [("exit 1", 2), ("exit 0", 3)] {
         let mut run = stalled(check);
         run.loop_.turn("make the tests pass").await.unwrap();
         let exit = run

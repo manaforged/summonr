@@ -86,4 +86,4 @@ case ":$PATH:" in
 esac
 echo "Update: curl -fsSL $installer | sh"
 echo "Uninstall: rm $dir/summonr"
-echo "Next: run summonr, then /login to pick a provider and paste a key."
+echo "Next: run summonr, then /login to pick a provider and add a key or sign in to a plan."

@@ -1,0 +1,19 @@
+n_attempts: 5
+n_concurrent_trials: 2
+timeout_multiplier: 1.0
+environment:
+  type: docker
+  mounts:
+    - {type: bind, source: "${LOGINS}/.summonr", target: /opt/auth/summonr}
+agents:
+  - name: codex
+    n_concurrent: 1
+    model_name: openai/gpt-6.1-sol
+    kwargs: {version: "${codex}", reasoning_effort: high}
+    env: {CODEX_AUTH_JSON_PATH: "${LOGINS}/.codex/auth.json"}
+  - import_path: summonr_agent:Summonr
+    n_concurrent: 1
+    model_name: openai/gpt-6.1-sol
+    kwargs: {binary: "${SUMMONR}", reasoning_effort: high}
+datasets:
+  - {name: terminal-bench/terminal-bench-2-1, ref: latest}

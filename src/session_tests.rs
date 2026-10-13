@@ -44,6 +44,25 @@ fn historical_usage_excludes_estimates_and_keeps_legacy_charges() {
 }
 
 #[test]
+fn historical_usage_keeps_the_cost_each_turn_recorded() {
+    let home = tempfile::tempdir().expect("journal home");
+    let dir =
+        crate::durable::log::sessions_dir(home.path()).join("000000000000000018d2297ad34281e1");
+    std::fs::create_dir_all(&dir).expect("session directory");
+    std::fs::write(dir.join("session.jsonl"), concat!(
+        "{\"kind\":\"session\",\"id\":\"000000000000000018d2297ad34281e1\",\"model\":\"m\",\"system\":\"\",\"workspace\":\"/work\"}\n",
+        "{\"kind\":\"assistant\",\"text\":\"a\",\"model\":\"m\",\"cost\":0.5,\"usage\":{\"input\":1000,\"output\":5,\"cached\":0,\"millis\":20}}\n",
+        "{\"kind\":\"assistant\",\"text\":\"b\",\"model\":\"m\",\"usage\":{\"input\":1000000,\"output\":0,\"cached\":0,\"millis\":20}}\n"
+    )).expect("write cost journal");
+    let price: crate::provider::Price =
+        serde_json::from_value(serde_json::json!({"input": 1.0, "output": 1.0})).unwrap();
+    let prices = std::collections::BTreeMap::from([("m".to_string(), price)]);
+    let rows = spend(home.path(), &[], &prices).expect("historical usage");
+    let cost: f64 = rows.iter().filter_map(|row| row.cost).sum();
+    assert!((cost - 1.5).abs() < 1e-9, "{cost}");
+}
+
+#[test]
 fn user_text_strips_the_harness_note() {
     assert_eq!(
         user_text(

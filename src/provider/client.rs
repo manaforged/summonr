@@ -4,6 +4,7 @@ use leyline::http::StatusCode;
 mod admit;
 mod classify;
 mod encode;
+mod headers;
 mod login;
 mod meta;
 
@@ -38,6 +39,12 @@ fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+pub(super) struct Routing<'a> {
+    pub(super) cache: Option<&'a str>,
+    pub(super) beta: Option<(&'static str, &'static str)>,
+}
+
 #[derive(Clone)]
 pub struct Client {
     pub(super) http: leyline::Session,
@@ -55,6 +62,8 @@ pub struct Client {
     pub(super) prompt_cache_key: bool,
     pub(super) cache_ttl: crate::endpoint::CacheTtl,
     pub(super) cache_header: Option<String>,
+    pub(super) cache_marks: bool,
+    pub(super) agent: Option<agent::Seat>,
     pub(super) wire: Wire,
     pub(super) reasoning: Reasoning,
     pub(super) idle: Option<Duration>,
@@ -118,6 +127,14 @@ impl Client {
         client.name.clone_from(&endpoint.name);
         client.cache_ttl = endpoint.cache_ttl;
         client.cache_header.clone_from(&endpoint.cache_header);
+        client.cache_marks = endpoint.cache_marks;
+        if endpoint.wire == Wire::AgentSdk {
+            client.agent = Some(agent::Seat::new(
+                base,
+                &endpoint.env,
+                crate::endpoint::env_unset(&endpoint.name),
+            ));
+        }
         client.reasoning.clone_from(&endpoint.reasoning);
         Ok(client)
     }
@@ -202,13 +219,18 @@ impl Client {
                     "a classify endpoint does not run sessions".to_string(),
                 ));
             }
+            Wire::AgentSdk => {
+                return Err(Error::Config(
+                    "a Claude Code seat sends no HTTP request".to_string(),
+                ));
+            }
         };
         let completions = self.wire == Wire::Completions;
         let messages = if completions {
             Some(serde_json::to_vec(&Messages {
                 list: call.messages,
                 keep_reasoning: self.keeps_reasoning(),
-                cached: call.traits.family == wire::traits::Family::Anthropic,
+                cached: self.cache_marks || call.traits.family == wire::traits::Family::Anthropic,
                 assistant_after_tool: self.assistant_after_tool,
             })?)
         } else {
@@ -224,11 +246,10 @@ impl Client {
     }
 
     fn extend_body(&self, body: &mut Body<'_>, request: &CompletionRequest<'_>) {
-        if self.prompt_cache_key && !self.auth.is_login() {
-            body.set("prompt_cache_key", json!(request.prefix_hash()));
+        if self.prompt_cache_key || self.plan_responses() {
+            body.set("prompt_cache_key", json!(request.session));
         }
-        if self.wire == Wire::Responses
-            && self.auth.is_login()
+        if self.plan_responses()
             && let Some(tools) = body.take("tools")
         {
             body.set("tools", json!([wire::responses::namespace(tools)]));
@@ -248,33 +269,6 @@ impl Client {
     ) -> Result<Value> {
         let bytes = self.request(request, stream)?.to_bytes()?;
         Ok(serde_json::from_slice(&bytes)?)
-    }
-
-    pub(super) fn headers(&self, session: Option<&str>) -> Vec<(&str, std::borrow::Cow<'_, str>)> {
-        let mut headers: Vec<_> = self
-            .headers
-            .iter()
-            .filter(|(key, _)| {
-                let posted = session.is_some();
-                !(posted && key == "content-type"
-                    || self.opencode
-                        && (key == "x-opencode-request" || posted && key == "x-opencode-session"))
-            })
-            .map(|(key, value)| (key.as_str(), std::borrow::Cow::Borrowed(value.as_str())))
-            .collect();
-        if self.opencode {
-            if let Some(session) = session {
-                headers.push((
-                    "x-opencode-session",
-                    std::borrow::Cow::Owned(session.to_string()),
-                ));
-            }
-            headers.push((
-                "x-opencode-request",
-                std::borrow::Cow::Owned(uuid::Uuid::now_v7().to_string()),
-            ));
-        }
-        headers
     }
 
     pub(super) fn url_for<W: wire::Chat>(&self, model: &str, stream: bool) -> String {
@@ -322,10 +316,10 @@ impl Client {
         body: Vec<u8>,
         model: Option<&str>,
         session: &str,
-        route: Option<&str>,
+        routing: Routing<'_>,
         stream: bool,
     ) -> Result<leyline::Response> {
-        let response = self.post_json(url, body, session, route, stream).await?;
+        let response = self.post_json(url, body, session, routing, stream).await?;
         let status = response.status();
         if status.is_success() {
             return Ok(response);
@@ -341,15 +335,18 @@ impl Client {
         url: &str,
         body: Vec<u8>,
         session: &str,
-        route: Option<&str>,
+        routing: Routing<'_>,
         stream: bool,
     ) -> Result<leyline::Response> {
         let token = self.token().await?;
         let mut request = self
             .attach(self.http.post(url), &token, Some(session))
             .header("content-type", "application/json");
-        if let (Some(name), Some(value)) = (&self.cache_header, route) {
+        if let (Some(name), Some(value)) = (&self.cache_header, routing.cache) {
             request = request.header(name.as_str(), value);
+        }
+        if let Some((name, value)) = routing.beta {
+            request = request.header(name, value);
         }
         let request = request.body(body);
         let request = if stream { request.stream() } else { request };
@@ -373,7 +370,12 @@ impl Provider for Client {
         &'a self,
         request: &'a CompletionRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-        Box::pin(async move { self.stream(request, &mut Partial::default()).await })
+        Box::pin(async move {
+            if self.wire == Wire::AgentSdk {
+                return self.complete_agent(request).await;
+            }
+            self.stream(request, &mut Partial::default()).await
+        })
     }
 
     fn stream<'a>(

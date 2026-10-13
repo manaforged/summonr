@@ -146,3 +146,40 @@ fn only_gemini_3_takes_a_tool_result_image_inside_the_function_response() {
     assert!(!older.contains("inlineData"), "{older}");
     assert!(older.contains("[image omitted: "), "{older}");
 }
+
+#[test]
+fn a_heic_tool_result_never_reaches_a_gemini_function_response() {
+    let heic = Image::encode("image/heic", b"....ftypheic");
+    let mut messages = vec![Message::user("look")];
+    messages.extend(tool_round(vec![heic]));
+    let sent = body(
+        &endpoint("gemini", "gemini-3.8-flash", Some(true)),
+        &messages,
+    );
+    assert!(!sent.contains("inlineData"), "{sent}");
+    assert!(sent.contains("[image omitted: "), "{sent}");
+    let shown = body(
+        &endpoint("gemini", "gemini-3.8-flash", Some(true)),
+        &[pictured(
+            "look",
+            vec![Image::encode("image/heic", b"....ftypheic")],
+        )],
+    );
+    assert!(
+        shown.contains("image/heic"),
+        "a user image may still be HEIC: {shown}"
+    );
+}
+
+#[test]
+fn gemini_at_default_effort_asks_for_thought_summaries() {
+    let sent = body(
+        &endpoint("gemini", "gemini-3.8-flash", None),
+        &[Message::user("hi")],
+    );
+    let sent: serde_json::Value = serde_json::from_str(&sent).unwrap();
+    assert_eq!(
+        sent["generationConfig"]["thinkingConfig"]["includeThoughts"], true,
+        "{sent}"
+    );
+}

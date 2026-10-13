@@ -30,12 +30,12 @@ fn repo() -> (tempfile::TempDir, std::path::PathBuf) {
 }
 
 #[test]
-fn an_implement_child_checks_out_beside_the_repo_not_as_a_git_worktree() {
+fn an_implement_child_checks_out_in_repo_children() {
     let (_root, primary) = repo();
     let tree = super::open_delta(&primary).unwrap();
     assert_eq!(
         tree.path.parent().unwrap().file_name().unwrap(),
-        "repo-deltas"
+        "repo-children"
     );
     let listed = crate::diff::git_env(&primary, &[], &["worktree", "list", "--porcelain"]).unwrap();
     assert!(!listed.contains(&*tree.path.to_string_lossy()), "{listed}");
@@ -302,4 +302,17 @@ fn a_rename_into_a_cache_path_is_not_thrown_away() {
     let result = super::finish(&tree, "move a.c", &[]);
     assert!(result.is_err_and(|error| error.to_string().contains("a.c")));
     assert!(tree.path.join("__pycache__/a.c").exists());
+}
+
+#[test]
+fn a_worktree_holding_only_summonr_state_is_unchanged() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    assert!(tree.unchanged().unwrap());
+    std::fs::create_dir_all(tree.path.join(".summonr/jobs")).unwrap();
+    std::fs::write(tree.path.join(".summonr/jobs/1.log"), "check output").unwrap();
+    assert!(tree.unchanged().unwrap());
+    std::fs::write(tree.path.join("note.txt"), "edit").unwrap();
+    assert_eq!(tree.changes().unwrap(), vec!["note.txt".to_string()]);
+    drop(tree.remove());
 }

@@ -51,7 +51,7 @@ fn flat_patch(text: &str, op: &Value) -> Result<Option<Patch>> {
         )
         .map(Some);
     }
-    if op.get("tag").is_some() {
+    if optional_tag(op)?.is_some() {
         return tag_patch(text, op);
     }
     Ok(None)
@@ -79,8 +79,9 @@ fn tag_patch(text: &str, op: &Value) -> Result<Option<Patch>> {
 
 fn optional_tag(value: &Value) -> Result<Option<&str>> {
     match value.get("tag") {
-        None => Ok(None),
-        Some(Value::String(tag)) if !tag.trim().is_empty() => Ok(Some(tag)),
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(tag)) if tag.trim().is_empty() => Ok(None),
+        Some(Value::String(tag)) => Ok(Some(tag)),
         Some(_) => Err(Error::Tool("tag must be a non-empty string".to_string())),
     }
 }

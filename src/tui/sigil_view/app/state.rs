@@ -23,6 +23,7 @@ pub(in crate::tui::sigil_view) struct ModelPicker {
     pub(in crate::tui::sigil_view) cancel: Rc<RefCell<Option<oneshot::Sender<()>>>>,
     pub(in crate::tui::sigil_view) target: Signal<Option<usize>>,
     pub(in crate::tui::sigil_view) focus: Signal<u64>,
+    pub(in crate::tui::sigil_view) scroll: Signal<f32>,
 }
 
 impl ModelPicker {
@@ -48,6 +49,7 @@ impl ModelPicker {
             cancel: Rc::new(RefCell::new(None)),
             target: signal(None),
             focus: signal(0),
+            scroll: signal(0.0),
         }
     }
 }
@@ -94,6 +96,7 @@ pub(in crate::tui::sigil_view) struct AuthDialog {
     pub(in crate::tui::sigil_view) focus: Signal<u64>,
     pub(in crate::tui::sigil_view) key: Signal<String>,
     pub(in crate::tui::sigil_view) caret: Signal<usize>,
+    pub(in crate::tui::sigil_view) scroll: Signal<f32>,
 }
 
 impl AuthDialog {
@@ -108,6 +111,7 @@ impl AuthDialog {
             focus: signal(0),
             key: signal(String::new()),
             caret: signal(0),
+            scroll: signal(0.0),
         }
     }
 }

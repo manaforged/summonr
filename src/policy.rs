@@ -331,12 +331,7 @@ pub(crate) fn protected_write(path: &Path) -> bool {
             return true;
         }
     }
-    let Some(home) = crate::config::home_dir() else {
-        return false;
-    };
-    [".ssh", ".gnupg", ".summonr"]
-        .into_iter()
-        .any(|dir| path.starts_with(home.join(dir)))
+    protected::home_secret(path, &[".ssh", ".gnupg", ".summonr"])
 }
 
 mod blocks;

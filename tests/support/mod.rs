@@ -6,11 +6,70 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+mod runner;
+
+pub(crate) use runner::harness;
+
 pub(crate) mod fixture;
 pub(crate) mod http;
 mod model;
 
 pub(crate) use model::{Model, Step};
+
+const WINDOWS_SLOWDOWN: u64 = 5;
+const FINISH_SECS: u64 = 90;
+
+pub(crate) fn slow(secs: u64) -> u64 {
+    if cfg!(windows) {
+        secs * WINDOWS_SLOWDOWN
+    } else {
+        secs
+    }
+}
+
+const PROFILE_DIRS: &[&str] = &["AppData/Local", "AppData/Roaming"];
+const TAIL_LINES: usize = 6;
+
+#[cfg(windows)]
+fn children(pid: u32) -> String {
+    let script = format!(
+        "function T($p, $d) {{ Get-CimInstance Win32_Process -Filter \"ParentProcessId=$p\" | ForEach-Object {{ ('  ' * $d) + \"$($_.ProcessId) $($_.Name) $($_.CommandLine)\"; T $_.ProcessId ($d + 1) }} }}; T {pid} 0"
+    );
+    Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+#[cfg(unix)]
+fn children(pid: u32) -> String {
+    Command::new("pgrep")
+        .args(["-l", "-P", &pid.to_string()])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default()
+}
+const TAIL_LINE_CHARS: usize = 300;
+
+fn tail(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(TAIL_LINES)..]
+        .iter()
+        .map(|line| line.chars().take(TAIL_LINE_CHARS).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn journals(home: &Path) -> String {
+    std::fs::read_dir(home.join("sessions"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| tail(&read(&entry.path().join("session.jsonl"))))
+        .collect::<Vec<_>>()
+        .join("\n--\n")
+}
 
 pub(crate) fn pause(wait: Duration) {
     let until = Instant::now() + wait;
@@ -48,8 +107,14 @@ impl Session {
     }
 
     pub(crate) fn with_files(files: &Path) -> Self {
+        let home = tempfile::tempdir().unwrap();
+        if cfg!(windows) {
+            for dir in PROFILE_DIRS {
+                std::fs::create_dir_all(home.path().join(dir)).unwrap();
+            }
+        }
         Self {
-            home: tempfile::tempdir().unwrap(),
+            home,
             work: repository(),
             files: tempfile::tempdir_in(files).unwrap(),
         }
@@ -136,9 +201,16 @@ impl Session {
             if let Some(status) = child.try_wait().unwrap() {
                 break status;
             }
-            if started.elapsed() > Duration::from_secs(90) {
+            if started.elapsed() > Duration::from_secs(slow(FINISH_SECS)) {
+                let tree = children(child.id());
                 drop(child.kill());
-                panic!("summonr did not finish: {}", read(&stderr));
+                panic!(
+                    "summonr did not finish: {}\nstdout ends: {}\njournal ends: {}\nchildren: {}",
+                    read(&stderr),
+                    tail(&read(&stdout)),
+                    journals(self.home.path()),
+                    tree
+                );
             }
             if !interrupted
                 && options
@@ -212,59 +284,6 @@ pub(crate) fn read(path: &Path) -> String {
 
 pub(crate) fn fixture() -> PathBuf {
     std::env::current_exe().unwrap()
-}
-
-pub(crate) fn harness(tests: &[(&'static str, fn())]) {
-    let mut filters = Vec::new();
-    let mut skips = Vec::new();
-    let mut exact = false;
-    let mut list = false;
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--list" => list = true,
-            "--exact" => exact = true,
-            "--skip" => skips.extend(args.next()),
-            "--test-threads" | "--color" | "--format" | "-Z" => drop(args.next()),
-            flag if flag.starts_with('-') => {}
-            filter => filters.push(filter.to_string()),
-        }
-    }
-    let matches = |name: &str, pattern: &String| {
-        if exact {
-            name == pattern
-        } else {
-            name.contains(pattern.as_str())
-        }
-    };
-    let chosen: Vec<_> = tests
-        .iter()
-        .filter(|(name, _)| {
-            filters.is_empty() || filters.iter().any(|filter| matches(name, filter))
-        })
-        .filter(|(name, _)| !skips.iter().any(|skip| matches(name, skip)))
-        .collect();
-    if list {
-        for (name, _) in &chosen {
-            println!("{name}: test");
-        }
-        return;
-    }
-    let running: Vec<_> = chosen
-        .into_iter()
-        .map(|(name, test)| (*name, thread::spawn(*test)))
-        .collect();
-    let mut failed = 0;
-    let total = running.len();
-    for (name, run) in running {
-        let passed = run.join().is_ok();
-        println!("test {name} ... {}", if passed { "ok" } else { "FAILED" });
-        failed += usize::from(!passed);
-    }
-    println!("test result: {} passed; {failed} failed", total - failed);
-    if failed > 0 {
-        std::process::exit(1);
-    }
 }
 
 pub(crate) fn advertised(request: &Value) -> Vec<String> {

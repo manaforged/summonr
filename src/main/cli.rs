@@ -300,10 +300,6 @@ fn unknown(name: &str, tail: &str) -> Error {
     ))
 }
 
-fn renamed(old: &str, new: &str) {
-    eprintln!("summonr: renamed: use `summonr {new}` instead of `summonr {old}`");
-}
-
 fn named(token: &str) -> bool {
     !token.is_empty()
         && token.len() <= 40

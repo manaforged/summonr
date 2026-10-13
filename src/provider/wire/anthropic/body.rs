@@ -48,7 +48,11 @@ pub(crate) fn body(
             .is_some_and(Part::thought);
     let mut head = Map::new();
     head.insert("model".to_string(), json!(call.model));
-    let most = call.max_output_tokens.unwrap_or(16_000);
+    let ceiling = match call.traits.output {
+        0 => 16_000,
+        known => known,
+    };
+    let most = call.max_output_tokens.unwrap_or(ceiling);
     head.insert("max_tokens".to_string(), json!(most));
     if !system.is_empty() {
         head.insert("system".to_string(), Value::Array(system));
@@ -105,6 +109,9 @@ fn think(
     let plan = reasoning.plan(call.traits);
     let thinking = call.traits.thinking;
     match plan.step(call.effort) {
+        Step::Default if call.traits.bound => {
+            body.insert("thinking".to_string(), adaptive(call));
+        }
         Step::Default => {}
         Step::Off(off) => {
             if let Some((key, value)) = off.fragment() {
@@ -124,7 +131,7 @@ fn think(
             let budget = plan.budget(level, most);
             match thinking {
                 Thinking::Adaptive => {
-                    body.insert("thinking".to_string(), json!({"type": "adaptive"}));
+                    body.insert("thinking".to_string(), adaptive(call));
                 }
                 Thinking::Budgeted | Thinking::EffortBudget if (1024..most).contains(&budget) => {
                     body.insert(
@@ -139,6 +146,18 @@ fn think(
                 | Thinking::None => {}
             }
         }
+    }
+}
+
+fn adaptive(call: &CompletionRequest<'_>) -> Value {
+    if call.traits.bound {
+        json!({
+            "type": "adaptive",
+            "display": "summarized",
+            "block_binding": {"prefix_mismatch_behavior": "drop_block"},
+        })
+    } else {
+        json!({"type": "adaptive"})
     }
 }
 

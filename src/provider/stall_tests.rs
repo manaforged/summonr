@@ -117,6 +117,39 @@ async fn a_done_sentinel_without_a_finish_reason_is_not_a_finished_reply() {
     assert_eq!(partial.text, "hihi");
 }
 
+fn dropped(first: &'static str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        read_request(&mut socket);
+        let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n";
+        drop(socket.write_all(format!("{head}{}", chunk(first)).as_bytes()));
+        drop(socket.shutdown(std::net::Shutdown::Both));
+    });
+    base
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_finished_reply_survives_a_dropped_connection() {
+    let finished =
+        "data: {\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\n";
+    let (reply, _) = run(dropped(finished)).await;
+    let reply = reply.expect("a finished reply is not a cut");
+    assert_eq!(reply.content.as_deref(), Some("done"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cut_reply_keeps_the_usage_already_reported() {
+    let counted = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}],\"usage\":{\"prompt_tokens\":150000,\"completion_tokens\":3}}\n\n";
+    let (reply, partial) = run(dropped(counted)).await;
+    assert!(reply.is_err(), "{reply:?}");
+    assert_eq!(
+        partial.usage.map(|usage| usage.prompt_tokens),
+        Some(150_000)
+    );
+}
+
 fn read_request(socket: &mut TcpStream) {
     let mut request = Vec::new();
     let mut buf = [0u8; 65536];

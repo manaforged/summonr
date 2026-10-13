@@ -3,10 +3,15 @@ use super::space::STAR_BRIGHT;
 use super::*;
 use sigil::prelude::Paint;
 
-pub(in crate::tui::sigil_view) fn compose(cells: &mut [Cell], cols: u16, rows: u16, app: &App) {
+pub(in crate::tui::sigil_view) fn compose(
+    cells: &mut [Cell],
+    cols: u16,
+    rows: u16,
+    app: &App,
+) -> [u16; 4] {
     let width = usize::from(cols);
     if width == 0 || rows == 0 {
-        return;
+        return [0; 4];
     }
     let model = app.model.get();
     let facts = facts(&model, app);
@@ -72,6 +77,7 @@ pub(in crate::tui::sigil_view) fn compose(cells: &mut [Cell], cols: u16, rows: u
     fill_bg(cells, cols, card);
     frame(cells, cols, card);
     drop(model);
+    card
 }
 
 pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'static str, String)> {
@@ -165,13 +171,22 @@ pub(in crate::tui::sigil_view) fn bloom(
     }
 }
 
-pub(in crate::tui::sigil_view) fn scene_row(cells: &[Cell]) -> NodeBuilder {
-    let mut row = container().layout(
-        LayoutStyle::flex_row()
-            .height(metrics().h)
-            .fill_width()
-            .gap(0.0),
-    );
+pub(in crate::tui::sigil_view) fn placed(x: u16, y: u16, cells: &[Cell]) -> NodeBuilder {
+    runs(
+        container().layout(
+            LayoutStyle::flex_row()
+                .position(Position::Absolute)
+                .inset_left(f32::from(x) * metrics().w)
+                .inset_top(f32::from(y) * metrics().h)
+                .width(cells.len() as f32 * metrics().w)
+                .height(metrics().h)
+                .gap(0.0),
+        ),
+        cells,
+    )
+}
+
+fn runs(mut parent: NodeBuilder, cells: &[Cell]) -> NodeBuilder {
     let mut start = 0;
     while start < cells.len() {
         let cell = &cells[start];
@@ -184,31 +199,31 @@ pub(in crate::tui::sigil_view) fn scene_row(cells: &[Cell]) -> NodeBuilder {
         {
             end += 1;
         }
-        let text: String = cells[start..end]
-            .iter()
-            .map(|cell| cell.text.as_str())
-            .collect();
-        let surface = shown(cell.bg, palette().base);
-        let ink = shown(cell.fg, palette().text);
-        let weight = if cell.bold { 700 } else { 400 };
-        row = row.child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .width((end - start) as f32 * metrics().w)
-                        .height(metrics().h),
-                )
-                .bg(surface)
-                .child(
-                    sigil::kernel::text(text)
-                        .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface)
-                        .font_family(sigil::prelude::FontFamily::Mono)
-                        .font_weight(weight)
-                        .text_color(ink),
-                ),
-        );
+        parent = parent.child(run(&cells[start..end]));
         start = end;
     }
-    row
+    parent
+}
+
+fn run(cells: &[Cell]) -> NodeBuilder {
+    let cell = &cells[0];
+    let text: String = cells.iter().map(|cell| cell.text.as_str()).collect();
+    let surface = shown(cell.bg, palette().base);
+    let ink = shown(cell.fg, palette().text);
+    let weight = if cell.bold { 700 } else { 400 };
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .width(cells.len() as f32 * metrics().w)
+                .height(metrics().h),
+        )
+        .bg(surface)
+        .child(
+            sigil::kernel::text(text)
+                .nowrap()
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_family(sigil::prelude::FontFamily::Mono)
+                .font_weight(weight)
+                .text_color(ink),
+        )
 }

@@ -25,9 +25,10 @@ fn thinking(call: &CompletionRequest<'_>, reasoning: &Reasoning) -> Option<Value
         (Thinking::Level, Step::Level(level)) => {
             Some(json!({"thinkingLevel": level.as_str(), "includeThoughts": thoughts}))
         }
-        (Thinking::Budget | Thinking::Level, Step::Default) | (Thinking::Level, Step::Off(_)) => {
-            None
+        (Thinking::Budget | Thinking::Level, Step::Default) => {
+            Some(json!({"includeThoughts": true}))
         }
+        (Thinking::Level, Step::Off(_)) => None,
         (
             Thinking::Adaptive | Thinking::Budgeted | Thinking::EffortBudget | Thinking::None,
             Step::Default | Step::Level(_) | Step::Off(_),

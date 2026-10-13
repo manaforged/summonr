@@ -3,8 +3,10 @@ use crate::provider::ToolDefinition;
 use super::{ToolRegistry, tool};
 
 mod browser;
+mod patch;
 mod search;
 use browser::browser;
+pub(crate) use patch::shaped;
 use search::search;
 
 impl ToolRegistry {
@@ -161,6 +163,7 @@ pub(crate) const RETIRED: &[(&str, &str, Option<&str>)] = &[
     ("grep", "search", None),
     ("glob", "search", None),
     ("show_image", "read", Some("image")),
+    ("apply_patch", "edit", None),
     ("edit_file", "edit", None),
     ("replace_text", "edit", None),
     ("replace_texts", "edit", Some("sequence")),
@@ -256,7 +259,7 @@ fn edit() -> ToolDefinition {
 fn write() -> ToolDefinition {
     tool(
         "write",
-        "Create or overwrite one file, or several at once with files.",
+        "Create or overwrite one file (path and content), or several at once with files.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -276,10 +279,6 @@ fn write() -> ToolDefinition {
                     }
                 }
             },
-            "anyOf": [
-                {"required": ["path", "content"]},
-                {"required": ["files"]}
-            ],
             "additionalProperties": false
         }),
     )

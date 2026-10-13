@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, NodeEventsExt, Tone, WidgetLayoutExt,
-    container, virtual_list,
+    container, signal, virtual_list,
 };
 
 use super::super::{App, canvas};
@@ -13,7 +13,7 @@ use crate::catalog::Model;
 use crate::endpoint::State;
 use crate::recent::Seat;
 use crate::tui::sigil_view::app::{Facet, Mark};
-use crate::tui::sigil_view::ui::{group, slotted};
+use crate::tui::sigil_view::ui::{alt_label, group, slotted};
 
 pub(super) struct View {
     pub(super) choices: Rc<Vec<Seat>>,
@@ -96,9 +96,9 @@ impl View {
         let toggle = app.clone();
         let noun = if count == 1 { "model" } else { "models" };
         group(if self.older {
-            format!("▾ hide {count} older {noun} · alt+o")
+            format!("▾ hide {count} older {noun} · {}", alt_label('o'))
         } else {
-            format!("▸ show {count} older {noun} · alt+o")
+            format!("▸ show {count} older {noun} · {}", alt_label('o'))
         })
         .pointer_down(move |event| {
             toggle.toggle_older_models();
@@ -115,10 +115,10 @@ pub(super) fn list(
     (rows, visible): (Vec<ModelRow>, usize),
 ) -> NodeBuilder {
     let selected = view.selected;
-    let top = rows
+    let shown = rows
         .iter()
         .position(|row| matches!(row, ModelRow::Seat(at) | ModelRow::Fix(at) if *at == selected))
-        .map_or(0, |at| (at + 1).saturating_sub(visible));
+        .unwrap_or(0);
     let source = app.clone();
     let height = canvas::overlay_list_row() * visible as f32;
     container().layout(LayoutStyle::block().fill_width()).child(
@@ -148,7 +148,8 @@ pub(super) fn list(
         .row_height(canvas::overlay_list_row())
         .height(height)
         .viewport_height(height)
-        .scroll_into_view(top),
+        .scroll_bind(app.picker.scroll)
+        .follow_row(signal(shown)),
     )
 }
 

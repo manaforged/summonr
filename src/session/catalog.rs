@@ -34,7 +34,7 @@ pub(crate) fn latest_in(
 
 pub(crate) fn roots(workspace: &Path) -> Vec<String> {
     let mut want = vec![workspace.display().to_string()];
-    let Ok(canonical) = workspace.canonicalize() else {
+    let Ok(canonical) = dunce::canonicalize(workspace) else {
         return want;
     };
     want.push(canonical.display().to_string());

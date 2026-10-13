@@ -48,6 +48,7 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         assistant_after_tool: false,
         cache_ttl: crate::limits::limits().cache_ttl,
         cache_header: None,
+        cache_marks: false,
     }
 }
 

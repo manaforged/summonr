@@ -40,6 +40,7 @@ table! {
     job_wait_secs: u64,
     command_wait_secs: u64,
     command_kill_secs: u64,
+    agent_park_secs: u64,
     grant_wait_secs: u64,
     job_poll_start_secs: u64,
     job_poll_cap_secs: u64,

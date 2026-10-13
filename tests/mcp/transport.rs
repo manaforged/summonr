@@ -9,9 +9,11 @@ pub(crate) fn a_call_with_no_reply_is_cancelled_at_the_timeout() {
         Step::Call("fixture1__hang", json!({})),
         Step::Text("ok"),
     ]);
-    session.run(&model, &session.server("fixture1", "timeout_secs = 1"), &[]);
+    let secs = crate::support::slow(1);
+    let timeout = format!("timeout_secs = {secs}");
+    session.run(&model, &session.server("fixture1", &timeout), &[]);
     assert!(
-        model.tool_results()[0].contains("no reply in 1s"),
+        model.tool_results()[0].contains(&format!("no reply in {secs}s")),
         "{:?}",
         model.tool_results()
     );
@@ -27,14 +29,19 @@ pub(crate) fn a_timed_out_reply_does_not_break_the_next_call() {
     let model = Model::start(vec![
         Step::Call(
             "fixture1__split",
-            json!({"bytes": 10 * 1024 * 1024, "ms": 3500}),
+            json!({"bytes": 10 * 1024 * 1024, "ms": crate::support::slow(3) * 1000 + 500}),
         ),
         Step::Call("fixture1__echo", json!({"text": "after"})),
         Step::Text("ok"),
     ]);
-    session.run(&model, &session.server("fixture1", "timeout_secs = 3"), &[]);
+    let secs = crate::support::slow(3);
+    let timeout = format!("timeout_secs = {secs}");
+    session.run(&model, &session.server("fixture1", &timeout), &[]);
     let results = model.tool_results();
-    assert!(results[0].contains("no reply in 3s"), "{results:?}");
+    assert!(
+        results[0].contains(&format!("no reply in {secs}s")),
+        "{results:?}"
+    );
     assert!(results[1].contains("after"), "{results:?}");
 }
 
@@ -46,10 +53,12 @@ pub(crate) fn a_request_the_server_does_not_read_times_out() {
         Step::Call("fixture1__echo", json!({"text": "after"})),
         Step::Text("ok"),
     ]);
-    session.run(&model, &session.server("fixture1", "timeout_secs = 1"), &[]);
+    let secs = crate::support::slow(1);
+    let timeout = format!("timeout_secs = {secs}");
+    session.run(&model, &session.server("fixture1", &timeout), &[]);
     let results = model.tool_results();
     assert!(
-        results[1].contains("no reply in 1s"),
+        results[1].contains(&format!("no reply in {secs}s")),
         "{}",
         results[1].chars().take(200).collect::<String>()
     );
@@ -83,7 +92,14 @@ pub(crate) fn a_remote_reply_on_a_stream_held_open_returns_at_once() {
         Step::Call("remote__echo", json!({})),
         Step::Text("ok"),
     ]);
-    session.run(&model, &remote.config("remote", "timeout_secs = 5"), &[]);
+    session.run(
+        &model,
+        &remote.config(
+            "remote",
+            &format!("timeout_secs = {}", crate::support::slow(5)),
+        ),
+        &[],
+    );
     assert!(
         model.tool_results()[0].contains("remote x"),
         "{:?}",

@@ -32,6 +32,17 @@ pub(crate) struct UsageMeta {
 }
 
 impl Usage {
+    pub(crate) fn measured(usage: &crate::provider::Usage, millis: u64) -> Self {
+        Self {
+            input: u64::from(usage.prompt_tokens),
+            output: u64::from(usage.completion_tokens),
+            reasoning: u64::from(usage.reasoning_tokens),
+            cached: u64::from(usage.cached_tokens),
+            written: u64::from(usage.cache_write_tokens),
+            millis,
+        }
+    }
+
     fn tokens(self) -> u64 {
         self.input.saturating_add(self.output)
     }

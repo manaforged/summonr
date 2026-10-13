@@ -27,17 +27,18 @@ impl<P: Provider> Loop<P> {
         if self.ask_available() {
             definitions.push(super::turn::ask_definition());
         }
-        definitions
+        crate::tools::shaped(definitions, crate::provider::traits(&self.model).patch)
     }
 
     pub(super) fn advertised_tools(&mut self) -> Arc<Advertised> {
-        if let Some(advertised) = &self.schema {
+        let patch = crate::provider::traits(&self.model).patch;
+        if let Some(advertised) = self.schema.as_ref().filter(|cached| cached.patch == patch) {
             return Arc::clone(advertised);
         }
         let tools = self.tool_definitions();
         let json = crate::provider::ToolsJson::encode(&tools);
         drop(self.session.note_schema(json.len() as u64));
-        let advertised = Arc::new(Advertised { tools, json });
+        let advertised = Arc::new(Advertised { tools, json, patch });
         self.schema = Some(Arc::clone(&advertised));
         advertised
     }
@@ -219,4 +220,5 @@ fn board_list(mailbox: &crate::mail::Mailbox, workspace: &Path) -> Result<String
 pub(crate) struct Advertised {
     pub(crate) tools: Vec<crate::provider::ToolDefinition>,
     pub(crate) json: crate::provider::ToolsJson,
+    pub(crate) patch: bool,
 }

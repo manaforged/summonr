@@ -1,11 +1,12 @@
 use super::*;
 
 #[test]
-fn room_is_rejected_instead_of_run_as_a_prompt() {
-    match parse_from(["room", "serve"].map(String::from)) {
-        Ok(args) => panic!("`room serve` parsed as the prompt {:?}", args.prompt),
-        Err(error) => assert!(error.to_string().contains("summonr mail"), "{error}"),
-    }
+fn old_verbs_are_prompts_not_commands() {
+    let args = parse_from(["auth"].map(String::from)).unwrap();
+    assert!(!args.login);
+    assert_eq!(args.prompt, ["auth"]);
+    let args = parse_from(["logs"].map(String::from)).unwrap();
+    assert!(!args.logs);
 }
 
 #[test]

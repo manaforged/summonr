@@ -1,6 +1,7 @@
 use crate::command::Category;
 use crate::prefs::{Hotkey, Hotkeys};
 use crate::provider::Effort;
+use crate::tui::sigil_view::ui::alt_label;
 
 pub(crate) fn help_text(keys: &Hotkeys) -> String {
     let specs: Vec<_> = crate::command_specs()
@@ -43,8 +44,8 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             format!("  {:<12} newline", keys.label(Hotkey::Newline)),
             format!("  {:<12} edit the draft in $EDITOR", keys.label(Hotkey::Editor)),
             "  ctrl+z/y     undo or redo the draft".to_string(),
-            "  alt+←/→      word left or right · alt+b/f the same".to_string(),
-            "  ctrl+w       delete the word before the caret · alt+d after".to_string(),
+            format!("  {:<12} word left or right · {}/{} the same", format!("{}/{}", alt_label('←'), alt_label('→')), alt_label('b'), alt_label('f')),
+            format!("  ctrl+w       delete the word before the caret · {} after", alt_label('d')),
             "  ctrl+u/k     delete to the line start or end".to_string(),
             "  ctrl+a/e     line start or end".to_string(),
             "  ctrl+b/f     one character left or right".to_string(),
@@ -74,8 +75,8 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "  in a pane    ↑↓ move · ←→ collapse/expand or hunks/list · enter · right-click menu · esc".to_string(),
             "  view         → on a file or /view PATH · o opens in $EDITOR · e edits in place".to_string(),
             "  diff         t last turn only · c copy the patch".to_string(),
-            "  sessions     ↑↓ · enter resume · tab scope · alt+d twice deletes · esc".to_string(),
-            "  models       ↑↓ · enter use · alt+p favorite · alt+o older · alt+d default · F5 refresh".to_string(),
+            format!("  sessions     ↑↓ · enter resume · tab scope · {} twice deletes · esc", alt_label('d')),
+            format!("  models       ↑↓ · enter use · {} favorite · {} older · {} default · F5 refresh", alt_label('p'), alt_label('o'), alt_label('d')),
             "  workflow     ↑↓ role · enter seat · d driving · ←→ saved · s save".to_string(),
         ],
     );

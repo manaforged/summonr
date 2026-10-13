@@ -1,4 +1,5 @@
 use super::resolve::{choose, closest, from_file, hosted};
+use super::{AuthInfo, LoginFlow, LoginGroup, Source};
 
 fn row(name: &str, base_url: &str) -> super::Endpoint {
     let file: crate::config::File = toml::from_str(&format!(
@@ -6,6 +7,63 @@ fn row(name: &str, base_url: &str) -> super::Endpoint {
     ))
     .unwrap();
     from_file(&file, name).unwrap()
+}
+
+#[test]
+fn enter_label_names_what_enter_does_per_provider_state() {
+    let pinned = info(
+        true,
+        Some(Source::Env),
+        Some("ANTHROPIC_API_KEY"),
+        LoginFlow::Key,
+    );
+    assert_eq!(pinned.key_action(), "unset the env key");
+    assert!(!pinned.paste_key());
+    let stored = info(true, Some(Source::File), None, LoginFlow::Key);
+    assert_eq!(stored.key_action(), "replace the key");
+    assert!(stored.paste_key());
+    let peer = info(true, Some(Source::Peer("opencode")), None, LoginFlow::Key);
+    assert_eq!(peer.key_action(), "set a key");
+    assert!(peer.paste_key());
+    let missing = info(true, None, None, LoginFlow::Key);
+    assert_eq!(missing.key_action(), "set a key");
+    assert!(missing.paste_key());
+    let plan = info(true, Some(Source::Keychain), None, LoginFlow::Browser);
+    assert_eq!(plan.key_action(), "sign in");
+    assert!(plan.paste_key());
+}
+
+#[test]
+fn paste_key_offer_follows_the_key_and_env_fields() {
+    assert!(info(true, None, None, LoginFlow::Key).paste_key());
+    assert!(!info(false, None, None, LoginFlow::Key).paste_key());
+    assert!(!info(true, None, Some("OPENAI_API_KEY"), LoginFlow::Key).paste_key());
+}
+
+fn info(
+    key: bool,
+    source: Option<Source>,
+    env: Option<&'static str>,
+    login: LoginFlow,
+) -> AuthInfo {
+    AuthInfo {
+        provider: String::new(),
+        routes: Vec::new(),
+        name: "lab".to_string(),
+        flow: LoginFlow::Key,
+        login,
+        key,
+        plan: String::new(),
+        configured: source.is_some(),
+        source,
+        setup: String::new(),
+        env,
+        model: "m".to_string(),
+        base_url: None,
+        own: false,
+        env_hint: None,
+        group: LoginGroup::Key,
+    }
 }
 
 #[test]
@@ -30,8 +88,11 @@ fn a_public_host_that_only_mentions_localhost_needs_a_key() {
 #[test]
 fn a_custom_row_matches_the_preset_with_the_longest_base_url() {
     assert_eq!(hosted("https://opencode.ai/zen/go/v1").unwrap().name, "go");
-    assert_eq!(hosted("https://opencode.ai/zen/v1").unwrap().name, "zen");
-    assert!(hosted("https://opencode.ai.evil.example/zen/v1").is_none());
+    assert_eq!(
+        hosted("https://opencode.ai/inference/v1").unwrap().name,
+        "opencode-zen"
+    );
+    assert!(hosted("https://opencode.ai.evil.example/inference/v1").is_none());
 }
 
 #[test]
@@ -171,15 +232,9 @@ fn the_new_endpoints_point_at_their_hosts() {
         Some("https://api.minimax.io/anthropic/v1")
     );
     assert_eq!(minimax.wire, super::Wire::Anthropic);
-    let perplexity = super::keys::builtin("perplexity").unwrap();
-    assert_eq!(
-        perplexity.base_url.as_deref(),
-        Some("https://api.perplexity.ai")
-    );
-    assert_eq!(
-        perplexity.models_url.as_deref(),
-        Some("https://api.perplexity.ai/v1"),
-        "perplexity serves its model list under /v1 and chat without it"
+    assert!(
+        super::keys::builtin("perplexity").is_none(),
+        "perplexity runs no user tools"
     );
     let lmstudio = super::keys::builtin("lmstudio").unwrap();
     assert!(lmstudio.keyless(), "lmstudio is a local server");
@@ -227,6 +282,8 @@ fn a_key_row_with_a_plan_sign_in_lists_under_coding_plans_by_its_plan_name() {
     for (name, plan) in [("openai", "ChatGPT"), ("grok", "SuperGrok")] {
         let endpoint = super::keys::builtin(name).unwrap();
         let info = super::AuthInfo {
+            provider: name.to_string(),
+            routes: Vec::new(),
             name: name.to_string(),
             flow: super::LoginFlow::default(),
             login: endpoint
@@ -251,8 +308,42 @@ fn a_key_row_with_a_plan_sign_in_lists_under_coding_plans_by_its_plan_name() {
             group: super::login_group(name, &endpoint),
         };
         assert_eq!(info.catalog_title(), "Coding plans", "{name}");
-        assert!(info.display_name().contains(plan), "{name}");
+        assert_eq!(
+            info.title(),
+            name,
+            "the plan belongs in the notes, not the title"
+        );
+        assert!(
+            info.matches(&plan.to_lowercase()),
+            "{name} is found by its plan"
+        );
         assert!(info.catalog_line(16, 16).contains(plan), "{name}");
         assert!(!info.plan(), "{name} keeps key pricing");
     }
+}
+
+#[test]
+fn every_default_model_is_current_in_the_bundled_catalog() {
+    for preset in super::preset::presets() {
+        if preset.model.is_empty() || preset.model == "default" {
+            continue;
+        }
+        for model in std::iter::once(&preset.model).chain(preset.login_model.as_ref()) {
+            if let Some(current) = crate::catalog::serves(preset.opencode_ids, model) {
+                assert!(
+                    current,
+                    "{} defaults to {model}, which its catalog providers do not list as current",
+                    preset.name
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_chatgpt_sign_in_and_gemini_aliases_reach_current_models() {
+    let openai = super::preset::preset("openai").unwrap();
+    assert_eq!(openai.login_model.as_deref(), Some("gpt-6.1-sol"));
+    let flash = super::resolve(Some("gemini"), Some("flash"), crate::Need::Config).unwrap();
+    assert_eq!(flash.model, "gemini-3.8-flash");
 }

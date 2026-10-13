@@ -36,6 +36,7 @@ const SECRET_DIRS: &[&str] = &[
 ];
 
 pub(crate) fn protected_read(path: &Path) -> bool {
+    let path = dunce::simplified(path);
     if let Some(name) = path.file_name().and_then(|name| name.to_str())
         && (name.starts_with(".env.")
             || name.starts_with("credentials.")
@@ -43,11 +44,41 @@ pub(crate) fn protected_read(path: &Path) -> bool {
     {
         return true;
     }
-    protected_dirs().iter().any(|dir| path.starts_with(dir))
+    protected_dirs().iter().any(|dir| within(path, dir))
 }
 
 pub(crate) fn holds_protected(path: &Path) -> bool {
-    protected_dirs().iter().any(|dir| dir.starts_with(path))
+    protected_dirs().iter().any(|dir| within(dir, path))
+}
+
+pub(crate) fn home_secret(path: &Path, dirs: &[&str]) -> bool {
+    crate::config::home_dir().is_some_and(|home| secret_under(path, &home, dirs))
+        || crate::prompt::summonr_home()
+            .ok()
+            .is_some_and(|summonr| within(path, &summonr))
+}
+
+pub(crate) fn secret_under(path: &Path, home: &Path, dirs: &[&str]) -> bool {
+    let real = home.canonicalize().ok().filter(|real| real != home);
+    let homes: Vec<PathBuf> = std::iter::once(home.to_path_buf()).chain(real).collect();
+    let guarded: Vec<PathBuf> = homes
+        .iter()
+        .flat_map(|home| dirs.iter().map(move |dir| home.join(dir)))
+        .collect();
+    guarded.iter().any(|dir| within(path, dir))
+}
+
+fn within(path: &Path, dir: &Path) -> bool {
+    folded(path).starts_with(folded(dir))
+}
+
+fn folded(path: &Path) -> PathBuf {
+    let plain = dunce::simplified(path);
+    if cfg!(windows) {
+        PathBuf::from(plain.to_string_lossy().to_lowercase())
+    } else {
+        plain.to_path_buf()
+    }
 }
 
 type Dirs = (Option<PathBuf>, Option<PathBuf>, Arc<Vec<PathBuf>>);
@@ -77,3 +108,7 @@ fn protected_dirs() -> Arc<Vec<PathBuf>> {
     *cache = Some((home, summonr, Arc::clone(&dirs)));
     dirs
 }
+
+#[cfg(test)]
+#[path = "protected_tests.rs"]
+mod tests;

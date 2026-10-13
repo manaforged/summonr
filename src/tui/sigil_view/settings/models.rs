@@ -97,12 +97,12 @@ fn hints(app: &App) -> Hints {
         .count();
     let mut hints = Hints::new()
         .key(Key::Enter, "use")
-        .key(Key::Fixed("alt+p"), "favorite");
+        .key(Key::Alt('p'), "favorite");
     if app.picker.target.get().is_none() {
-        hints = hints.key(Key::Fixed("alt+d"), "default");
+        hints = hints.key(Key::Alt('d'), "default");
     }
     hints
-        .key(Key::Fixed("alt+o"), "older")
+        .key(Key::Alt('o'), "older")
         .key(Key::Fixed("F5"), "refresh")
         .right(match (app.picker.loading.get() && checking > 0, total) {
             (true, _) => format!("checking {checking}…"),

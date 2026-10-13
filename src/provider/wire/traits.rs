@@ -31,6 +31,9 @@ pub(crate) struct Traits {
     pub(crate) preserved: bool,
     pub(crate) tool_stream: bool,
     pub(crate) tool_images: bool,
+    pub(crate) bound: bool,
+    pub(crate) output: u32,
+    pub(crate) patch: bool,
 }
 
 struct Row {
@@ -47,6 +50,9 @@ const NONE: Traits = Traits {
     preserved: false,
     tool_stream: false,
     tool_images: false,
+    bound: false,
+    output: 0,
+    patch: false,
 };
 
 const fn row(
@@ -66,6 +72,9 @@ const fn row(
             preserved: false,
             tool_stream: false,
             tool_images: false,
+            bound: false,
+            output: 0,
+            patch: false,
         },
     }
 }
@@ -87,6 +96,9 @@ const fn signed(
             preserved: false,
             tool_stream: false,
             tool_images: true,
+            bound: false,
+            output: 0,
+            patch: false,
         },
     }
 }
@@ -100,6 +112,37 @@ const fn claude(row: Row) -> Row {
         parts: row.parts,
         traits: Traits {
             family: Family::Anthropic,
+            ..row.traits
+        },
+    }
+}
+
+const fn bound(output: u32, row: Row) -> Row {
+    Row {
+        parts: row.parts,
+        traits: Traits {
+            bound: true,
+            output,
+            ..row.traits
+        },
+    }
+}
+
+const fn sized(output: u32, row: Row) -> Row {
+    Row {
+        parts: row.parts,
+        traits: Traits {
+            output,
+            ..row.traits
+        },
+    }
+}
+
+const fn patched(row: Row) -> Row {
+    Row {
+        parts: row.parts,
+        traits: Traits {
+            patch: true,
             ..row.traits
         },
     }

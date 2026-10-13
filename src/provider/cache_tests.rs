@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use super::{Client, CompletionRequest, Effort, Message, Partial, Role, ToolCall, ToolFunction};
 use crate::endpoint::{CacheTtl, Endpoint};
 
-fn endpoint(name: &str, model: &str) -> Endpoint {
+pub(super) fn endpoint(name: &str, model: &str) -> Endpoint {
     let mut endpoint =
         crate::endpoint::resolve(Some(name), Some(model), crate::Need::Config).unwrap();
     endpoint.api_key = Some("k".to_string());
@@ -36,7 +36,7 @@ fn tool_round() -> Vec<Message> {
     ]
 }
 
-fn body(endpoint: &Endpoint, messages: &[Message], effort: Option<Effort>) -> Value {
+pub(super) fn body(endpoint: &Endpoint, messages: &[Message], effort: Option<Effort>) -> Value {
     let request = CompletionRequest::new(
         "s".to_string(),
         endpoint.model.clone(),
@@ -107,12 +107,10 @@ fn claude_through_a_completions_host_marks_its_cache_breakpoints() {
     assert_eq!(other["messages"][1]["content"], "hi");
 }
 
-#[test]
-fn grok_routes_every_request_to_its_cache_with_the_prefix_hash() {
+pub(super) fn sent(mut endpoint: Endpoint, request: &CompletionRequest<'_>) -> String {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let mut grok = endpoint("grok", "grok-4.6");
-    grok.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
-    grok.oauth = None;
+    endpoint.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
+    endpoint.oauth = None;
     let heard = std::thread::spawn(move || {
         let (mut socket, _) = listener.accept().unwrap();
         let mut seen = Vec::new();
@@ -143,31 +141,85 @@ fn grok_routes_every_request_to_its_cache_with_the_prefix_hash() {
             .unwrap();
         String::from_utf8_lossy(&seen).to_ascii_lowercase()
     });
-    let messages = [Message::system("sys"), Message::user("hi")];
-    let request = CompletionRequest::new(
-        "s".to_string(),
-        grok.model.clone(),
-        &messages,
-        &[],
-        Some(1_000),
-        false,
-        None,
-    );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     let _context = runtime.enter();
-    let client = Client::connect(&grok).unwrap();
-    let outcome = runtime.block_on(client.complete_stream(&request, &mut Partial::default()));
+    let client = Client::connect(&endpoint).unwrap();
+    let outcome = runtime.block_on(client.complete_stream(request, &mut Partial::default()));
     let failure = outcome.unwrap_err().to_string();
-    let headers = heard.join().unwrap();
-    assert!(
-        !headers.is_empty(),
-        "no request reached the server: {failure}"
+    let seen = heard.join().unwrap();
+    assert!(!seen.is_empty(), "no request reached the server: {failure}");
+    seen
+}
+
+pub(super) fn plain<'a>(
+    model: &str,
+    messages: &'a [Message],
+    effort: Option<Effort>,
+) -> CompletionRequest<'a> {
+    CompletionRequest::new(
+        "s".to_string(),
+        model.to_string(),
+        messages,
+        &[],
+        None,
+        false,
+        effort,
+    )
+}
+
+#[test]
+fn grok_routes_every_request_of_a_session_to_its_cache() {
+    let messages = [Message::system("sys"), Message::user("hi")];
+    let headers = sent(
+        endpoint("grok", "grok-4.6"),
+        &plain("grok-4.6", &messages, None),
     );
-    let want = format!("x-grok-conv-id: {}", request.prefix_hash()).to_ascii_lowercase();
-    assert!(headers.contains(&want), "{headers}");
+    assert!(headers.contains("x-grok-conv-id: s\r\n"), "{headers}");
+    assert!(headers.contains("\"prompt_cache_key\":\"s\""), "{headers}");
+}
+
+#[test]
+fn current_claude_models_bind_thinking_and_ask_for_the_full_output() {
+    let messages = tool_round();
+    for (model, effort) in [
+        ("claude-opus-5-5", None),
+        ("claude-haiku-5-5", Some(Effort::High)),
+    ] {
+        let seen = sent(
+            endpoint("anthropic", model),
+            &plain(model, &messages, effort),
+        );
+        assert!(
+            seen.contains("anthropic-beta: thinking-binding-controls-2026-08-01"),
+            "{model}: {seen}"
+        );
+        assert!(
+            seen.contains("\"prefix_mismatch_behavior\":\"drop_block\""),
+            "{model}: {seen}"
+        );
+        assert!(
+            seen.contains("\"display\":\"summarized\""),
+            "{model}: {seen}"
+        );
+        assert!(seen.contains("\"max_tokens\":128000"), "{model}: {seen}");
+    }
+    let haiku = sent(
+        endpoint("anthropic", "claude-haiku-5-5"),
+        &plain("claude-haiku-5-5", &messages, Some(Effort::High)),
+    );
+    assert!(haiku.contains("\"effort\":\"high\""), "{haiku}");
+    let older = sent(
+        endpoint("anthropic", "claude-opus-4-8"),
+        &plain("claude-opus-4-8", &messages, Some(Effort::High)),
+    );
+    assert!(
+        !older.contains("anthropic-beta: thinking-binding"),
+        "{older}"
+    );
+    assert!(!older.contains("block_binding"), "{older}");
 }
 
 #[test]
@@ -182,6 +234,45 @@ fn kimi_k3_sends_back_its_reasoning_after_a_tool_call() {
             "{model}: {sent}"
         );
     }
+}
+
+#[test]
+fn kimi_code_and_minimax_send_back_their_reasoning_and_off_means_what_each_vendor_accepts() {
+    for (name, model) in [
+        ("kimi", "kimi-for-coding"),
+        ("kimi", "kimi-for-coding-highspeed"),
+        ("minimax", "MiniMax-M3"),
+    ] {
+        let mut messages = tool_round();
+        messages[2].reasoning = Some("read the file first".to_string());
+        let sent = body(&endpoint(name, model), &messages, None);
+        assert_eq!(
+            sent["messages"][2]["reasoning_content"], "read the file first",
+            "{model}: {sent}"
+        );
+    }
+    let glm = body(
+        &endpoint("zai", "glm-5.3"),
+        &tool_round(),
+        Some(Effort::None),
+    );
+    assert!(
+        glm.get("thinking")
+            .is_none_or(|thinking| thinking["type"] != "disabled"),
+        "{glm}"
+    );
+    let minimax = body(
+        &endpoint("minimax", "MiniMax-M3"),
+        &tool_round(),
+        Some(Effort::None),
+    );
+    assert!(minimax.get("thinking").is_none(), "{minimax}");
+    let qwen = body(
+        &endpoint("alibaba", "qwen3.7-plus"),
+        &tool_round(),
+        Some(Effort::None),
+    );
+    assert_eq!(qwen["enable_thinking"], false, "{qwen}");
 }
 
 #[test]
@@ -272,5 +363,30 @@ fn mistral_gets_an_assistant_turn_between_a_tool_result_and_a_steer() {
     assert_eq!(
         roles("zai", "glm-5.3-flash"),
         ["system", "user", "assistant", "tool", "user"]
+    );
+}
+
+#[test]
+fn responses_login_uses_session_affinity() {
+    let seat = crate::endpoint::login_seat("openai").unwrap();
+    let client = Client::connect(&seat).unwrap();
+    let messages = tool_round();
+    let request = CompletionRequest::new(
+        "session-7".to_string(),
+        seat.model.clone(),
+        &messages,
+        &[],
+        None,
+        false,
+        None,
+    );
+    let body = client.request_body(&request, true).unwrap();
+    assert_eq!(body["prompt_cache_key"], "session-7", "{body}");
+    let headers = client.headers(Some("session-7"));
+    assert!(
+        headers
+            .iter()
+            .any(|(name, value)| *name == "session-id" && value == "session-7"),
+        "{headers:?}"
     );
 }

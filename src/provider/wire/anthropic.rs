@@ -19,7 +19,10 @@ mod event;
 mod part;
 mod stream;
 
+pub(crate) use event::Counted;
 pub(crate) use stream::Stream;
+
+const BINDING: &str = "thinking-binding-controls-2026-08-01";
 
 pub(crate) struct Wire;
 
@@ -32,6 +35,10 @@ impl Chat for Wire {
 
     fn headers() -> &'static [(&'static str, &'static str)] {
         &[("anthropic-version", "2023-06-01")]
+    }
+
+    fn beta(call: &CompletionRequest<'_>) -> Option<(&'static str, &'static str)> {
+        call.traits.bound.then_some(("anthropic-beta", BINDING))
     }
 
     fn body(

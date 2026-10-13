@@ -53,8 +53,13 @@ fn verdicts(
     for (message, reasons) in messages.iter().zip(verdicts.iter_mut()).rev() {
         for (image, reason) in message.images.iter().zip(reasons.iter_mut()).rev() {
             let size = image.data.len();
+            let allowed = if message.role == Role::Tool {
+                budget.tool_types
+            } else {
+                budget.types
+            };
             // complexity: bounded by the five media types a wire names
-            let typed = budget.types.contains(&image.media_type.as_str());
+            let typed = allowed.contains(&image.media_type.as_str());
             *reason = if !seen {
                 Some("the active model does not accept image input".to_string())
             } else if message.role == Role::Tool && !budget.tool_images {

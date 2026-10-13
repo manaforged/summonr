@@ -142,8 +142,38 @@ fn a_system_note_after_the_first_turn_is_a_developer_message() {
         message(Role::System, "plan note"),
     ];
     let body = request(&ask(&messages, None), true).unwrap();
-    assert_eq!(body["instructions"], "be terse");
-    assert_eq!(body["input"][1]["role"], "developer");
+    assert_eq!(body["input"][0]["content"][0]["text"], "be terse");
+    assert_eq!(body["input"][2]["role"], "developer");
+    assert!(
+        body["input"][2]["content"][0]
+            .get("prompt_cache_breakpoint")
+            .is_none(),
+        "{body}"
+    );
+}
+
+#[test]
+fn fixed_prompt_is_a_plain_developer_block() {
+    let messages = vec![
+        message(Role::System, "be terse"),
+        message(Role::System, "use tools"),
+        message(Role::User, "hi"),
+    ];
+    let call = ask(&messages, None).with_model("gpt-6.1-sol".to_string());
+    let body = request(&call, true).unwrap();
+    assert!(body.get("instructions").is_none(), "{body}");
+    assert_eq!(body["input"][0]["role"], "developer");
+    assert_eq!(
+        body["input"][0]["content"][0]["text"],
+        "be terse\nuse tools"
+    );
+    assert!(
+        body["input"][0]["content"][0]
+            .get("prompt_cache_breakpoint")
+            .is_none(),
+        "{body}"
+    );
+    assert_eq!(body["input"][1]["role"], "user");
 }
 
 #[test]

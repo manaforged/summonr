@@ -46,13 +46,9 @@ pub(crate) fn body(
     reasoning: &Reasoning,
     stream: bool,
 ) -> crate::error::Result<Value> {
-    let (instructions, input) = input(call)?;
     let mut body = Map::new();
     body.insert("model".to_string(), json!(call.model));
-    body.insert("input".to_string(), Value::Array(input));
-    if !instructions.is_empty() {
-        body.insert("instructions".to_string(), json!(instructions));
-    }
+    body.insert("input".to_string(), Value::Array(input(call)?));
     if !call.tools.is_empty() {
         body.insert("tools".to_string(), Value::Array(tools(call)));
     }
@@ -67,22 +63,20 @@ pub(crate) fn body(
     Ok(Value::Object(body))
 }
 
-fn input(call: &CompletionRequest<'_>) -> crate::error::Result<(String, Vec<Value>)> {
-    let mut instructions = String::new();
+fn input(call: &CompletionRequest<'_>) -> crate::error::Result<Vec<Value>> {
+    let fixed: Vec<&str> = call
+        .messages
+        .iter()
+        .take_while(|message| message.role == Role::System)
+        .map(|message| message.content.as_str())
+        .collect();
     let mut input: Vec<Value> = Vec::new();
-    for message in call.messages {
+    if !fixed.is_empty() {
+        input.push(developer(&fixed.join("\n")));
+    }
+    for message in &call.messages[fixed.len()..] {
         match message.role {
-            Role::System if !input.is_empty() => input.push(json!({
-                "type": "message",
-                "role": "developer",
-                "content": [{"type": "input_text", "text": message.content}],
-            })),
-            Role::System => {
-                if !instructions.is_empty() {
-                    instructions.push('\n');
-                }
-                instructions.push_str(&message.content);
-            }
+            Role::System => input.push(developer(&message.content)),
             Role::User => input.push(json!({
                 "type": "message",
                 "role": "user",
@@ -96,7 +90,15 @@ fn input(call: &CompletionRequest<'_>) -> crate::error::Result<(String, Vec<Valu
             })),
         }
     }
-    Ok((instructions, input))
+    Ok(input)
+}
+
+fn developer(text: &str) -> Value {
+    json!({
+        "type": "message",
+        "role": "developer",
+        "content": [{"type": "input_text", "text": text}],
+    })
 }
 
 fn effort(body: &mut Map<String, Value>, call: &CompletionRequest<'_>, reasoning: &Reasoning) {

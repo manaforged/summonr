@@ -105,12 +105,14 @@ struct Record {
 }
 
 impl Record {
-    fn charge(self) -> Option<(String, Usage)> {
+    fn charge(self) -> Option<(String, Usage, Option<f64>)> {
         match self.line {
-            log::Line::Assistant { model, usage, .. } => Some((model, usage)),
-            log::Line::Charge { model, usage, .. } if self.reported != Some(false) => {
-                Some((model, usage))
-            }
+            log::Line::Assistant {
+                model, usage, cost, ..
+            } => Some((model, usage, cost)),
+            log::Line::Charge {
+                model, usage, cost, ..
+            } if self.reported != Some(false) => Some((model, usage, cost)),
             _ => None,
         }
     }
@@ -137,7 +139,7 @@ pub(crate) fn spend(
                 continue;
             }
             let stamp = record.at;
-            let Some((model, usage)) = record.charge() else {
+            let Some((model, usage, stored)) = record.charge() else {
                 continue;
             };
             if usage.input == 0 && usage.output == 0 {
@@ -165,8 +167,13 @@ pub(crate) fn spend(
             row.input = row.input.saturating_add(usage.input);
             row.cached = row.cached.saturating_add(usage.cached);
             row.output = row.output.saturating_add(usage.output);
-            if let (Some(cost), Some(price)) = (row.cost.as_mut(), prices.get(&model)) {
-                *cost += price.cost(usage.input, usage.output, usage.cached, usage.written);
+            let charge = stored.or_else(|| {
+                prices
+                    .get(&model)
+                    .map(|price| price.cost(usage.input, usage.output, usage.cached, usage.written))
+            });
+            if let Some(charge) = charge {
+                *row.cost.get_or_insert(0.0) += charge;
             }
         }
         if let Some(row) = latest.and_then(|key| totals.get_mut(&key)) {

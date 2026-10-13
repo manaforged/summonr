@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn an asciicast from tui-record.py into compact screen frames for a web player.
 
-usage: cast-frames.py RUN.cast OUT.json [--gap SECONDS] [--tick CELLS] [--fast FACTOR] [--fast-from SECONDS] [--base RRGGBB] [--fg RRGGBB]
+usage: cast-frames.py RUN.cast OUT.json [--from SECONDS] [--gap SECONDS] [--tick CELLS] [--fast FACTOR] [--fast-from SECONDS] [--base RRGGBB] [--fg RRGGBB]
 
 The cast is replayed through pyte. Output events that arrive within 40 ms
 are one frame. Each frame stores only the cells that changed, as runs of
@@ -10,7 +10,9 @@ is capped at --gap seconds, and a frame that changes no more than --tick
 cells, such as a spinner, plays --fast times quicker once the recording
 passes --fast-from seconds, so typing before then keeps its pace. Cells
 with no background take --base, and cells with the default foreground
-take --fg.
+take --fg. --from drops everything before that point in the recording:
+the first frame is the whole screen as it stood then, so a replay can open
+mid-session.
 """
 import argparse, json
 
@@ -67,6 +69,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("cast")
     parser.add_argument("out")
+    parser.add_argument("--from", dest="cut", type=float, default=0.0)
     parser.add_argument("--gap", type=float, default=1.2)
     parser.add_argument("--tick", type=int, default=0)
     parser.add_argument("--fast", type=float, default=1.0)
@@ -80,14 +83,16 @@ def main():
     stream = pyte.ByteStream(screen)
     events = [json.loads(line) for line in lines[1:]]
     styles, index, frames = [], {}, []
-    previous, clock, last_time, pending_at = None, 0.0, 0.0, None
+    previous, clock, last_time, pending_at = None, 0.0, args.cut, None
     for at, kind, data in events + [[None, "o", ""]]:
+        if pending_at is not None and pending_at < args.cut and (at is None or at - pending_at > 0.04):
+            pending_at = None
         if pending_at is not None and (at is None or at - pending_at > 0.04):
             current = snapshot(screen, args.fg, args.base)
             changed = runs(previous, current, head["width"], styles, index)
             if changed:
                 cells = sum(len(run[3]) for run in changed)
-                step = min(pending_at - last_time, args.gap)
+                step = 0.0 if previous is None else min(pending_at - last_time, args.gap)
                 quick = cells <= args.tick and pending_at >= args.fast_from
                 clock += step / args.fast if quick else step
                 last_time = pending_at

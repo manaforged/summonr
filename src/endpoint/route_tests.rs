@@ -189,3 +189,63 @@ fn a_provider_table_overlays_its_route_and_the_route_table_wins() {
     let off = super::provider_names(&file("[endpoint.claude-pro]\nmodel = \"x\"\n"));
     assert!(!off.iter().any(|name| name == "claude-pro"), "{off:?}");
 }
+
+#[test]
+fn a_provider_named_row_keeps_its_route_wire() {
+    let proxy = file("[endpoint.anthropic]\nbase_url = \"https://proxy.corp/anthropic/v1\"\n");
+    let route = pick(&proxy, "anthropic");
+    assert_ne!(route, "anthropic", "the row took over the provider name");
+    let endpoint = super::super::resolve::seat(&proxy, &route).unwrap();
+    assert_eq!(endpoint.wire, crate::endpoint::Wire::Anthropic);
+    let own = file(
+        "[endpoint.anthropic]\nbase_url = \"https://proxy.corp/v1\"\nwire = \"completions\"\nmodel = \"m\"\n",
+    );
+    assert_eq!(pick(&own, "anthropic"), "anthropic");
+}
+
+#[test]
+fn an_unknown_provider_key_warns_instead_of_failing() {
+    let typo = file("[provider.zai]\nregon = \"cn\"\n");
+    assert!(typo.provider["zai"].other.contains_key("regon"));
+    assert_eq!(pick(&typo, "zai"), pick(&file(""), "zai"));
+}
+
+#[test]
+fn a_signed_in_plan_route_is_ready() {
+    let route = super::presets()
+        .find(|preset| preset.name == "grok")
+        .expect("grok route");
+    assert!(
+        !super::ready(&file(""), route),
+        "grok is ready before any sign-in"
+    );
+    let slot = crate::credentials::login_slot("grok");
+    crate::secret::set(&slot, "token").unwrap();
+    let ready = super::ready(&file(""), route);
+    crate::secret::forget(&slot).unwrap();
+    assert!(ready, "a stored sign-in does not make its route ready");
+}
+
+#[test]
+fn retired_names_keep_their_env_keys() {
+    let route = super::super::preset::preset("zai-intl").unwrap();
+    for key in [
+        "ZAI_CODING_API_KEY",
+        "GLM_CODING_API_KEY",
+        "ZAI_API_KEY",
+        "GLM_API_KEY",
+    ] {
+        assert!(
+            route.env_keys.contains(&key),
+            "zai-intl no longer reads {key}"
+        );
+    }
+}
+
+#[test]
+fn logout_names_the_key_left_after_removal() {
+    crate::secret::set("deepseek", "sk-stored").unwrap();
+    let said = super::super::logout("deepseek").unwrap();
+    assert!(said.starts_with("✓ Removed the stored key"), "{said}");
+    assert!(!said.contains("It now uses the"), "{said}");
+}

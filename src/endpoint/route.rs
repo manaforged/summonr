@@ -20,13 +20,14 @@ pub(crate) enum Access {
     Plan,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 pub(crate) struct Choice {
     #[serde(default)]
     pub(crate) region: Option<Region>,
     #[serde(default)]
     pub(crate) access: Option<Access>,
+    #[serde(flatten, default)]
+    pub(crate) other: BTreeMap<String, toml::Value>,
 }
 
 impl Region {
@@ -54,7 +55,7 @@ impl Preset {
         if self.plan { Access::Plan } else { Access::Key }
     }
 
-    fn fits(&self, choice: Choice) -> bool {
+    fn fits(&self, choice: &Choice) -> bool {
         choice
             .region
             .is_none_or(|region| self.region == Some(region))
@@ -101,10 +102,11 @@ pub(super) fn provider_of(route: &str) -> &str {
 }
 
 pub(super) fn pick(file: &File, name: &str) -> String {
-    let owned = file
-        .endpoint
-        .get(name)
-        .is_some_and(|row| row.base_url.is_some() && preset(name).is_none());
+    let owned = file.endpoint.get(name).is_some_and(|row| {
+        row.base_url.is_some()
+            && preset(name).is_none()
+            && (row.wire.is_some() || routes(name).next().is_none())
+    });
     if owned {
         return name.to_string();
     }
@@ -118,7 +120,7 @@ pub(super) fn pick(file: &File, name: &str) -> String {
     let chosen = file
         .provider
         .get(name)
-        .and_then(|choice| options.iter().find(|route| route.fits(*choice)));
+        .and_then(|choice| options.iter().find(|route| route.fits(choice)));
     chosen
         .or_else(|| options.iter().find(|route| ready(file, route)))
         .or_else(|| options.first())
@@ -135,6 +137,7 @@ fn ready(file: &File, route: &Preset) -> bool {
     configured
         || env_key(route.env_keys).is_some()
         || stored(&route.name)
+        || stored(&crate::credentials::login_slot(&route.name))
         || route.key_from.iter().any(|slot| stored(slot))
 }
 
@@ -171,6 +174,7 @@ pub(crate) fn toggle(info: &super::AuthInfo, toggle: Toggle) -> Result<Option<St
         Choice {
             region: next.region,
             access: Some(next.access),
+            ..Choice::default()
         },
     )?;
     Ok(Some(next.name.clone()))
@@ -201,6 +205,7 @@ pub(super) fn choice_for(route: &str) -> Option<(String, Choice)> {
         Choice {
             region: preset.region,
             access: Some(preset.access()),
+            ..Choice::default()
         },
     ))
 }

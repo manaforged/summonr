@@ -55,6 +55,12 @@ pub(super) fn warn_unknown(path: &Path, file: &File) {
                 .keys()
                 .map(move |key| format!("endpoint.{name}.{key}"))
         }))
+        .chain(file.provider.iter().flat_map(|(name, choice)| {
+            choice
+                .other
+                .keys()
+                .map(move |key| format!("provider.{name}.{key}"))
+        }))
         .collect();
     if !unknown.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         eprintln!(

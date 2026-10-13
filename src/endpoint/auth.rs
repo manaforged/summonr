@@ -160,24 +160,30 @@ pub fn logout(name: &str) -> Result<String> {
     let info = auth_info(name)?;
     let file = config::file()?;
     let forgot = forget_key(&super::route::slot(&file, name))?;
-    let head = match forgot {
+    let head = removed(name, forgot, info.source.as_ref())?;
+    let now = match forgot {
+        Forgot::Nothing => info.source,
+        Forgot::Token | Forgot::Key => auth_info(name)?.source,
+    };
+    Ok(match (forgot, now) {
+        (Forgot::Nothing, Some(Source::Peer(_))) | (_, None) => head,
+        (_, Some(source)) => format!("{head} It now uses the {} key.", source.label()),
+    })
+}
+
+fn removed(name: &str, forgot: Forgot, source: Option<&Source>) -> Result<String> {
+    Ok(match forgot {
         Forgot::Token => format!("✓ Signed out of {name}."),
         Forgot::Key => format!("✓ Removed the stored key for {name}."),
         Forgot::Nothing if resolve(Some(name), None, Need::Config)?.keyless() => format!(
             "{name} needs no key, so nothing was stored. `summonr logout {name} --remove` deletes the endpoint."
         ),
-        Forgot::Nothing => match info.source {
+        Forgot::Nothing => match source {
             Some(Source::Peer(peer)) => format!(
                 "Nothing is stored for {name}; it reads the {peer} key. `summonr login {name} --key` stores a replacement."
             ),
-            Some(_) => format!("Nothing is stored for {name}."),
-            None => format!("Nothing is stored for {name}."),
+            Some(_) | None => format!("Nothing is stored for {name}."),
         },
-    };
-    Ok(match (forgot, info.source) {
-        (Forgot::Nothing, Some(Source::Peer(_))) => head,
-        (_, Some(source)) => format!("{head} It now uses the {} key.", source.label()),
-        (_, None) => head,
     })
 }
 

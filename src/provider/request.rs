@@ -322,4 +322,5 @@ pub struct FunctionDefinition {
 pub struct Partial {
     pub text: String,
     pub reasoning: String,
+    pub usage: Option<super::Usage>,
 }

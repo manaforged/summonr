@@ -84,3 +84,32 @@ fn steering_a_typed_steer_exports_whole_as_the_users_message() {
         "{exported}"
     );
 }
+
+#[test]
+fn a_cut_reply_records_the_usage_the_provider_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver.prepare_turn_work("task", &[]).unwrap();
+    driver.start_input(&UserInput::from("task")).unwrap();
+    let exposure = Exposure {
+        max_input_tokens: 9,
+        max_output_tokens: 9,
+    };
+    let attempt = driver.start_provider("model", exposure).unwrap();
+    driver.partial.usage = Some(crate::provider::Usage {
+        prompt_tokens: 150_000,
+        ..Default::default()
+    });
+    driver
+        .fail_provider(attempt, "stream cut", 5, true)
+        .unwrap();
+    let text = std::fs::read_to_string(driver.log.path()).unwrap();
+    let charge = text
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|line| line["kind"] == "charge")
+        .next_back()
+        .unwrap();
+    assert_eq!(charge["reported"], true, "{charge}");
+    assert_eq!(charge["usage"]["input"], 150_000, "{charge}");
+}

@@ -87,6 +87,9 @@ impl Accumulate for Stream {
     fn spill(&mut self, partial: &mut Partial) {
         partial.text.push_str(&self.text);
         partial.reasoning.push_str(&self.thinking);
+        if self.usage != Usage::default() {
+            partial.usage = Some(self.usage.clone());
+        }
     }
 }
 

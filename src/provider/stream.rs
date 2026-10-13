@@ -74,12 +74,17 @@ impl Client {
         };
         let mut heard = std::time::Instant::now();
         while let Some(chunk) = bytes.next().await {
-            let chunk = chunk.map_err(|error| {
-                cut(Error::provider(
-                    ProviderFailureKind::Transport,
-                    error.to_string(),
-                ))
-            })?;
+            let done = state.state.as_ref().is_some_and(|stream| stream.finished());
+            let chunk = match chunk {
+                Ok(chunk) => chunk,
+                Err(_) if done => break,
+                Err(error) => {
+                    return Err(cut(Error::provider(
+                        ProviderFailureKind::Transport,
+                        error.to_string(),
+                    )));
+                }
+            };
             if let Some(sink) = &sink {
                 sink.write("chunk", &String::from_utf8_lossy(&chunk));
             }

@@ -6,6 +6,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+mod runner;
+
+pub(crate) use runner::harness;
+
 pub(crate) mod fixture;
 pub(crate) mod http;
 mod model;
@@ -198,13 +202,14 @@ impl Session {
                 break status;
             }
             if started.elapsed() > Duration::from_secs(slow(FINISH_SECS)) {
+                let tree = children(child.id());
                 drop(child.kill());
                 panic!(
                     "summonr did not finish: {}\nstdout ends: {}\njournal ends: {}\nchildren: {}",
                     read(&stderr),
                     tail(&read(&stdout)),
                     journals(self.home.path()),
-                    children(child.id())
+                    tree
                 );
             }
             if !interrupted
@@ -279,64 +284,6 @@ pub(crate) fn read(path: &Path) -> String {
 
 pub(crate) fn fixture() -> PathBuf {
     std::env::current_exe().unwrap()
-}
-
-pub(crate) fn harness(tests: &[(&'static str, fn())]) {
-    let mut filters = Vec::new();
-    let mut skips = Vec::new();
-    let mut exact = false;
-    let mut list = false;
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--list" => list = true,
-            "--exact" => exact = true,
-            "--skip" => skips.extend(args.next()),
-            "--test-threads" | "--color" | "--format" | "-Z" => drop(args.next()),
-            flag if flag.starts_with('-') => {}
-            filter => filters.push(filter.to_string()),
-        }
-    }
-    let matches = |name: &str, pattern: &String| {
-        if exact {
-            name == pattern
-        } else {
-            name.contains(pattern.as_str())
-        }
-    };
-    let chosen: Vec<_> = tests
-        .iter()
-        .filter(|(name, _)| {
-            filters.is_empty() || filters.iter().any(|filter| matches(name, filter))
-        })
-        .filter(|(name, _)| !skips.iter().any(|skip| matches(name, skip)))
-        .collect();
-    if list {
-        for (name, _) in &chosen {
-            println!("{name}: test");
-        }
-        return;
-    }
-    let running: Vec<_> = chosen
-        .into_iter()
-        .map(|(name, test)| (*name, thread::spawn(*test)))
-        .collect();
-    let mut failed = 0;
-    let total = running.len();
-    for (name, run) in running {
-        let passed = run.join().is_ok();
-        println!("test {name} ... {}", if passed { "ok" } else { "FAILED" });
-        failed += usize::from(!passed);
-    }
-    println!(
-        "test result: {}. {} passed; {failed} failed; 0 ignored; 0 measured; {} filtered out",
-        if failed == 0 { "ok" } else { "FAILED" },
-        total - failed,
-        tests.len() - total
-    );
-    if failed > 0 {
-        std::process::exit(1);
-    }
 }
 
 pub(crate) fn advertised(request: &Value) -> Vec<String> {

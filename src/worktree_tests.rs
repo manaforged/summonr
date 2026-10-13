@@ -30,12 +30,12 @@ fn repo() -> (tempfile::TempDir, std::path::PathBuf) {
 }
 
 #[test]
-fn an_implement_child_checks_out_beside_the_repo_not_as_a_git_worktree() {
+fn an_implement_child_checks_out_in_repo_children() {
     let (_root, primary) = repo();
     let tree = super::open_delta(&primary).unwrap();
     assert_eq!(
         tree.path.parent().unwrap().file_name().unwrap(),
-        "repo-deltas"
+        "repo-children"
     );
     let listed = crate::diff::git_env(&primary, &[], &["worktree", "list", "--porcelain"]).unwrap();
     assert!(!listed.contains(&*tree.path.to_string_lossy()), "{listed}");

@@ -171,7 +171,7 @@ pub(crate) fn is_delta_of(workspace: &Path, candidate: &Path) -> bool {
     let (Some(name), Some(parent)) = (primary.file_name(), primary.parent()) else {
         return false;
     };
-    let root = parent.join(format!("{}-deltas", name.to_string_lossy()));
+    let root = parent.join(format!("{}-{CHILDREN}", name.to_string_lossy()));
     let root = root.canonicalize().unwrap_or(root);
     let Some(actual) = candidate.parent() else {
         return false;
@@ -275,6 +275,8 @@ fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {
 fn worktree_dir(primary: &Path, id: &str) -> Result<PathBuf> {
     checkout_dir(primary, "worktrees", id)
 }
+
+pub(super) const CHILDREN: &str = "children";
 
 fn checkout_dir(primary: &Path, kind: &str, id: &str) -> Result<PathBuf> {
     let name = primary

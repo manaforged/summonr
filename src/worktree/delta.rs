@@ -3,7 +3,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::{Tree, checkout_dir, new_id};
+use super::{CHILDREN, Tree, checkout_dir, new_id};
 use crate::diff;
 use crate::error::{Error, Result};
 
@@ -17,7 +17,7 @@ pub(super) fn open(primary: &Path) -> Result<Tree> {
     let head = diff::git_env(&primary, &[], &["rev-parse", "HEAD"])?;
     let objects = objects_dir(&primary)?;
     let id = new_id();
-    let path = checkout_dir(&primary, "deltas", &id)?;
+    let path = checkout_dir(&primary, CHILDREN, &id)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

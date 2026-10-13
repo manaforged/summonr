@@ -267,43 +267,6 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
             }
         });
-    let right = app.clone();
-    let left = app.clone();
-    let alt_right = app.clone();
-    let alt_left = app.clone();
-    let shell = shell
-        .key_capture(
-            Shortcut::new(Key::ArrowRight, ModifiersState::empty()),
-            move |event| {
-                if right.cycle_sky(1, true) {
-                    event.stop_propagation();
-                }
-            },
-        )
-        .key_capture(
-            Shortcut::new(Key::ArrowLeft, ModifiersState::empty()),
-            move |event| {
-                if left.cycle_sky(-1, true) {
-                    event.stop_propagation();
-                }
-            },
-        )
-        .key_capture(
-            Shortcut::new(Key::ArrowRight, ModifiersState::ALT),
-            move |event| {
-                if alt_right.cycle_sky(1, false) {
-                    event.stop_propagation();
-                }
-            },
-        )
-        .key_capture(
-            Shortcut::new(Key::ArrowLeft, ModifiersState::ALT),
-            move |event| {
-                if alt_left.cycle_sky(-1, false) {
-                    event.stop_propagation();
-                }
-            },
-        );
     let scroll = app.clone();
     let owner = app.clone();
     let shell = shell

@@ -54,6 +54,11 @@ impl App {
                 });
             }
         });
+        let app = self.clone();
+        effect(move || {
+            let clock = splash.get().then(sigil::animation_runtime::clock);
+            app.sky_clock.set(clock);
+        });
         self.poll();
         let app = self.clone();
         effect(move || {
@@ -110,18 +115,6 @@ impl App {
                 });
             }
         });
-    }
-
-    pub(in crate::tui::sigil_view) fn cycle_sky(&self, step: i8, plain: bool) -> bool {
-        if !self.splash.peek()
-            || self.overlay().is_some()
-            || (plain && !self.draft.peek().is_empty())
-        {
-            return false;
-        }
-        self.sky
-            .update(|sky| *sky = super::super::scene::step_sky(*sky, step));
-        true
     }
 
     fn tick(&self) {

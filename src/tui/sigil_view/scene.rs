@@ -17,30 +17,38 @@ use sigil::prelude::container;
 pub(in crate::tui::sigil_view) use input::prompt_area;
 
 mod logo;
-pub(in crate::tui::sigil_view) use logo::{compose, placed, scene_row};
-pub(in crate::tui::sigil_view) use space::{QUIET, SCRIM, backdrop, moving, step_sky};
+pub(in crate::tui::sigil_view) use logo::{compose, placed};
+pub(in crate::tui::sigil_view) use space::{SCRIM, VOID, moving};
 
 mod galaxy;
 mod input;
 mod space;
 
+pub(in crate::tui::sigil_view) fn fresh_sky() -> u64 {
+    let clock = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos() as u64);
+    clock ^ u64::from(std::process::id()).rotate_left(32)
+}
+
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
-    let sky = app.clone();
     let stars = app.clone();
+    let painter = app.clone();
+    let shape = app.clone();
+    let version = sigil::reactive::derived(move || {
+        let (cols, rows) = shape.viewport.get();
+        (u64::from(cols) << 16) | u64::from(rows)
+    });
+    let beats_per_second = 1.0 / crate::limits::limits().animation().as_secs_f64().max(0.001);
     container()
-        .bg(SCRIM)
+        .bg(VOID)
         .layout(fill(LayoutStyle::flex_column()))
         .child(
-            container()
-                .layout(fill(LayoutStyle::flex_column()))
-                .children_reactive(move || {
-                    let (cols, rows) = sky.viewport.get();
-                    drop(sky.theme_name.get());
-                    backdrop(cols, rows, sky.sky.get())
-                        .chunks(usize::from(cols).max(1))
-                        .map(scene_row)
-                        .collect::<Vec<_>>()
-                }),
+            sigil::widgets::canvas(move |scene, area| {
+                galaxy::paint_sky(scene, area, painter.viewport.peek(), painter.sky);
+            })
+            .redraw_on(version)
+            .layout(fill(LayoutStyle::block())),
         )
         .child(
             container()
@@ -48,12 +56,11 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 .children_reactive(move || {
                     let (cols, rows) = stars.viewport.get();
                     drop(stars.theme_name.get());
-                    let ticks = if stars.model.with(|model| model.prefs.animations) {
-                        stars.ticks.get()
-                    } else {
-                        0
-                    };
-                    moving(cols, rows, ticks, stars.sky.get())
+                    let beats = stars
+                        .sky_clock
+                        .get()
+                        .map_or(0.0, |clock| clock.get() * beats_per_second);
+                    moving(cols, rows, beats, stars.sky)
                         .into_iter()
                         .map(|spot| placed(spot.x, spot.y, &[spot.cell]))
                         .collect::<Vec<_>>()

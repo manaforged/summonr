@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 
-use super::galaxy::{Field, field, starlight};
+use super::galaxy::{Field, field};
 use super::*;
 
 pub(in crate::tui::sigil_view) const SCRIM: Rgba8 = rgb(10, 8, 20);
+
+pub(in crate::tui::sigil_view) const VOID: Rgba8 = rgb(5, 5, 10);
 
 pub(in crate::tui::sigil_view) const PLATE: Rgba8 = rgb(42, 44, 58);
 
@@ -11,62 +13,40 @@ pub(in crate::tui::sigil_view) const STAR_DIM: Rgba8 = rgb(58, 74, 110);
 
 pub(in crate::tui::sigil_view) const STAR_BRIGHT: Rgba8 = rgb(176, 200, 240);
 
-pub(in crate::tui::sigil_view) const QUIET: u8 = 0;
-
-pub(in crate::tui::sigil_view) const HALO: u8 = 1;
-
-pub(in crate::tui::sigil_view) const DUST: u8 = 2;
-
-pub(in crate::tui::sigil_view) fn sky_name(sky: u8) -> &'static str {
-    match sky % 3 {
-        HALO => "halo",
-        DUST => "dust",
-        _ => "quiet",
-    }
-}
-
-pub(in crate::tui::sigil_view) fn step_sky(sky: u8, step: i8) -> u8 {
-    (i16::from(sky) + i16::from(step)).rem_euclid(3) as u8
-}
-
+#[derive(Clone)]
 pub(in crate::tui::sigil_view) struct Spot {
     pub(in crate::tui::sigil_view) x: u16,
     pub(in crate::tui::sigil_view) y: u16,
     pub(in crate::tui::sigil_view) cell: Cell,
 }
 
-struct Look {
-    dust: f32,
-    flying: f32,
-    glow: f32,
-    halo: bool,
-}
-
-fn look(sky: u8) -> Look {
-    let dust = sky % 3 == DUST;
-    Look {
-        dust: if dust { 1.6 } else { 1.0 },
-        flying: if dust { 1.5 } else { 1.0 },
-        glow: if dust { 1.15 } else { 1.0 },
-        halo: sky % 3 == HALO,
-    }
-}
+const FLYING: f32 = 1.5;
 
 const WARM: Rgba8 = rgb(214, 176, 122);
 
 const FLARE: Rgba8 = rgb(244, 246, 255);
 
-const DUST_BASE: f32 = 0.006;
+const STAR_AREA: u32 = 60;
 
-const DUST_BAND: f32 = 0.45;
+const SPEED: [f32; 3] = [0.08, 0.2, 0.45];
 
-const STAR_AREA: u32 = 40;
+const LIGHT: [f32; 3] = [0.52, 0.8, 1.0];
 
-const SPEED: [f32; 3] = [0.05, 0.12, 0.3];
-
-const FLY: [Rgba8; 3] = [rgb(70, 82, 120), rgb(130, 148, 196), rgb(214, 224, 250)];
+const TEMPERATURE: [Rgba8; 5] = [
+    rgb(255, 226, 190),
+    rgb(196, 214, 255),
+    rgb(236, 238, 248),
+    rgb(236, 238, 248),
+    rgb(220, 228, 255),
+];
 
 const SLOPE: f32 = 0.18;
+
+const TWINKLE_EVERY: u32 = 8;
+
+const TWINKLE_RATE: f64 = 0.09;
+
+const TWINKLE: [f32; 3] = [0.45, 0.72, 1.0];
 
 const FLY_SEED: u16 = 0x51f7;
 
@@ -79,8 +59,6 @@ const METEOR_FLIGHT: u64 = 48;
 const TRAIL: u16 = 20;
 
 const TRAIL_STEP: f32 = 0.62;
-
-const GLOW: f32 = 0.22;
 
 const DOT: [u8; 8] = [0x01, 0x08, 0x02, 0x10, 0x04, 0x20, 0x40, 0x80];
 
@@ -101,134 +79,115 @@ struct Flight {
 }
 
 #[cfg(test)]
-pub(in crate::tui::sigil_view) fn space(cols: u16, rows: u16, ticks: u64, sky: u8) -> Vec<Cell> {
-    let mut cells = backdrop(cols, rows, sky);
-    for spot in moving(cols, rows, ticks, sky) {
+pub(in crate::tui::sigil_view) fn space(cols: u16, rows: u16, ticks: u64, seed: u64) -> Vec<Cell> {
+    let mut cells = backdrop(cols, rows, seed);
+    for spot in moving(cols, rows, ticks as f64, seed) {
         set(&mut cells, cols, spot.x, spot.y, spot.cell);
     }
     cells
 }
 
-pub(in crate::tui::sigil_view) fn backdrop(cols: u16, rows: u16, sky: u8) -> Vec<Cell> {
-    let mut cells: Vec<Cell> = field(cols, rows, look(sky).glow)
+#[cfg(test)]
+pub(in crate::tui::sigil_view) fn backdrop(cols: u16, rows: u16, seed: u64) -> Vec<Cell> {
+    field(cols, rows, seed)
         .iter()
         .map(|haze| {
             let text = if haze.top == haze.bottom { " " } else { "▀" };
             cell(text, haze.top, haze.bottom, false)
         })
-        .collect();
-    for star in dust(cols, rows, sky) {
-        set(&mut cells, cols, star.x, star.y, star.cell);
-    }
-    cells
+        .collect()
 }
 
-pub(in crate::tui::sigil_view) fn moving(cols: u16, rows: u16, ticks: u64, sky: u8) -> Vec<Spot> {
-    let mut spots = flying(cols, rows, ticks, sky);
-    sparkle(&mut spots, cols, rows, ticks, sky);
-    meteor(&mut spots, cols, rows, ticks, sky);
+pub(in crate::tui::sigil_view) fn moving(cols: u16, rows: u16, beat: f64, seed: u64) -> Vec<Spot> {
+    let mut spots = flying(cols, rows, beat, seed);
+    sparkle(&mut spots, cols, rows, beat.max(0.0) as u64, seed);
+    meteor(&mut spots, cols, rows, beat, seed);
     spots
 }
 
-fn dust(cols: u16, rows: u16, sky: u8) -> Vec<Spot> {
-    let look = look(sky);
-    let field = field(cols, rows, look.glow);
-    let mut spots = Vec::new();
-    for y in 0..rows {
-        for x in 0..cols {
-            let haze = &field[index(cols, x, y)];
-            let seed = hash(x, y);
-            let chance = (DUST_BASE + DUST_BAND * haze.density.max(0.0).powf(1.4)) * look.dust;
-            if (seed % 10_000) as f32 >= chance * 10_000.0 {
-                continue;
-            }
-            let roll = (seed >> 14) % 1000;
-            let warm = haze.core > 0.25 && roll.is_multiple_of(2);
-            let light = starlight(haze.hue);
-            let (glyph, color) = match roll {
-                930.. => ("•", if warm { rgb(232, 204, 160) } else { light }),
-                640.. => (
-                    "∙",
-                    if warm {
-                        rgb(210, 180, 146)
-                    } else {
-                        blend(STAR_DIM, light, 0.7)
-                    },
-                ),
-                _ => ("·", blend(STAR_DIM, light, 0.3 + 0.5 * haze.density)),
-            };
-            spots.push(spot(x, y, glyph, color, under(haze), false));
-        }
-    }
-    spots
-}
-
-fn flying(cols: u16, rows: u16, ticks: u64, sky: u8) -> Vec<Spot> {
+fn flying(cols: u16, rows: u16, beat: f64, seed: u64) -> Vec<Spot> {
     if cols == 0 || rows == 0 {
         return Vec::new();
     }
-    let look = look(sky);
-    let field = field(cols, rows, look.glow);
-    let wide = f32::from(cols) * 2.0;
-    let tall = f32::from(rows) * 4.0;
-    let count =
-        ((u32::from(cols) * u32::from(rows) / STAR_AREA).max(8) as f32 * look.flying) as u32;
-    let mut lit: BTreeMap<(u16, u16), (u8, usize)> = BTreeMap::new();
+    let field = field(cols, rows, seed);
+    let wide = f64::from(cols) * 2.0;
+    let tall = f64::from(rows) * 4.0;
+    let count = ((u32::from(cols) * u32::from(rows) / STAR_AREA).max(8) as f32 * FLYING) as u32;
+    let mut lit: BTreeMap<(u16, u16), (u8, Rgba8, usize)> = BTreeMap::new();
     for star in 0..count {
-        let seed = hash(star as u16, (star >> 16) as u16 ^ FLY_SEED);
-        let depth = (seed >> 28) as usize % SPEED.len();
-        let travel = SPEED[depth] * ticks as f32;
-        let x0 = (seed % 10_000) as f32 / 10_000.0 * wide;
-        let y0 = ((seed >> 14) % 10_000) as f32 / 10_000.0 * tall;
-        for tail in 0..depth.max(1) {
-            let x = (x0 - travel + tail as f32).rem_euclid(wide);
-            let y = (y0 + travel * SLOPE).rem_euclid(tall);
-            let at = ((x / 2.0) as u16, (y / 4.0) as u16);
-            let dot = DOT[(y as usize % 4) * 2 + x as usize % 2];
-            let shade = depth - tail.min(depth);
-            let entry = lit.entry(at).or_insert((0, shade));
-            *entry = (entry.0 | dot, entry.1.max(shade));
-        }
+        let seed = hash(
+            star as u16 ^ seed as u16,
+            (star >> 16) as u16 ^ FLY_SEED ^ (seed >> 16) as u16,
+        );
+        let depth = match (seed >> 28) % 8 {
+            0..=4 => 0,
+            5 | 6 => 1,
+            _ => 2,
+        };
+        let travel = f64::from(SPEED[depth]) * beat;
+        let x = (f64::from(seed % 10_000) / 10_000.0 * wide - travel).rem_euclid(wide);
+        let y = (f64::from((seed >> 14) % 10_000) / 10_000.0 * tall + travel * f64::from(SLOPE))
+            .rem_euclid(tall);
+        let colour = blend(
+            VOID,
+            TEMPERATURE[(seed >> 20) as usize % 5],
+            LIGHT[depth] * twinkle(seed, beat),
+        );
+        let at = cell_of(x, y, cols, rows);
+        let dot = DOT[(y as usize % 4) * 2 + x as usize % 2];
+        let entry = lit.entry(at).or_insert((0, colour, depth));
+        *entry = if depth >= entry.2 {
+            (entry.0 | dot, colour, depth)
+        } else {
+            (entry.0 | dot, entry.1, entry.2)
+        };
     }
     lit.into_iter()
-        .map(|((x, y), (bits, shade))| {
-            let bg = under(&field[index(cols, x, y)]);
-            let glyph = if look.halo && shade + 1 == SPEED.len() {
-                "•"
-            } else {
-                braille(bits)
-            };
-            spot(x, y, glyph, FLY[shade], bg, false)
+        .map(|((x, y), (bits, colour, _))| {
+            spot(
+                x,
+                y,
+                braille(bits),
+                colour,
+                under(&field[index(cols, x, y)]),
+                false,
+            )
         })
         .collect()
 }
 
-fn sparkle(spots: &mut Vec<Spot>, cols: u16, rows: u16, ticks: u64, sky: u8) {
-    if !(4..20).contains(&(ticks % SKY_PERIOD)) {
+fn twinkle(seed: u32, beat: f64) -> f32 {
+    if !(seed >> 8).is_multiple_of(TWINKLE_EVERY) {
+        return 1.0;
+    }
+    let phase = f64::from(seed % 997) / 997.0 * std::f64::consts::TAU;
+    let wave = (beat * TWINKLE_RATE + phase).sin() * 0.5 + 0.5;
+    TWINKLE[((wave * TWINKLE.len() as f64) as usize).min(TWINKLE.len() - 1)]
+}
+
+fn sparkle(spots: &mut Vec<Spot>, cols: u16, rows: u16, ticks: u64, seed: u64) {
+    if !(4..20).contains(&(ticks % SKY_PERIOD)) || cols == 0 || rows == 0 {
         return;
     }
     let cycle = (ticks / SKY_PERIOD) as u16;
-    let picked = dust(cols, rows, sky)
-        .into_iter()
-        .min_by_key(|star| (hash(star.x.wrapping_add(cycle), star.y), star.x, star.y));
-    if let Some(star) = picked {
-        let bg = star.cell.bg;
-        spots.push(Spot {
-            cell: Cell {
-                bg,
-                ..cell("✦", STAR_BRIGHT, SCRIM, true)
-            },
-            ..star
-        });
-    }
+    let x = (hash(cycle, 0x0101 ^ seed as u16) % u32::from(cols)) as u16;
+    let y = (hash(cycle, 0x0202 ^ seed as u16) % u32::from(rows)) as u16;
+    let field = field(cols, rows, seed);
+    spots.push(spot(
+        x,
+        y,
+        "✦",
+        STAR_BRIGHT,
+        under(&field[index(cols, x, y)]),
+        true,
+    ));
 }
 
-fn meteor(spots: &mut Vec<Spot>, cols: u16, rows: u16, ticks: u64, sky: u8) {
-    let Some(flight) = flight(cols, rows, ticks) else {
+fn meteor(spots: &mut Vec<Spot>, cols: u16, rows: u16, beat: f64, seed: u64) {
+    let Some(flight) = flight(cols, rows, beat, seed) else {
         return;
     };
-    let look = look(sky);
-    let field = field(cols, rows, look.glow);
+    let field = field(cols, rows, seed);
     let head = inside(cols, rows, flight.x, flight.y);
     let mut trail: BTreeMap<(u16, u16), (u8, Rgba8)> = BTreeMap::new();
     for step in (1..TRAIL).rev() {
@@ -248,8 +207,14 @@ fn meteor(spots: &mut Vec<Spot>, cols: u16, rows: u16, ticks: u64, sky: u8) {
         *entry = (entry.0 | dot, fg);
     }
     for ((x, y), (bits, fg)) in trail {
-        let bg = under(&field[index(cols, x, y)]);
-        spots.push(spot(x, y, braille(bits), fg, bg, false));
+        spots.push(spot(
+            x,
+            y,
+            braille(bits),
+            fg,
+            under(&field[index(cols, x, y)]),
+            false,
+        ));
     }
     if let Some((x, y)) = head {
         spots.push(spot(
@@ -260,29 +225,17 @@ fn meteor(spots: &mut Vec<Spot>, cols: u16, rows: u16, ticks: u64, sky: u8) {
             under(&field[index(cols, x, y)]),
             true,
         ));
-        if look.halo {
-            glow(spots, &field, cols, x, y);
-        }
     }
 }
 
-fn glow(spots: &mut Vec<Spot>, field: &[Field], cols: u16, x: u16, y: u16) {
-    for nx in [x.checked_sub(1), x.checked_add(1).filter(|&nx| nx < cols)]
-        .into_iter()
-        .flatten()
-    {
-        let lifted = blend(under(&field[index(cols, nx, y)]), STAR_BRIGHT, GLOW);
-        spots.push(spot(nx, y, " ", lifted, lifted, false));
-    }
-}
-
-fn flight(cols: u16, rows: u16, ticks: u64) -> Option<Flight> {
-    let phase = ticks % METEOR_CYCLE;
-    if phase >= METEOR_FLIGHT || cols == 0 || rows == 0 {
+fn flight(cols: u16, rows: u16, beat: f64, seed: u64) -> Option<Flight> {
+    let phase = (beat.max(0.0) % METEOR_CYCLE as f64) as f32;
+    if phase >= METEOR_FLIGHT as f32 || cols == 0 || rows == 0 {
         return None;
     }
-    let t = phase as f32 / METEOR_FLIGHT as f32;
-    let lane = LANES[(ticks / METEOR_CYCLE) as usize % LANES.len()];
+    let t = phase / METEOR_FLIGHT as f32;
+    let lane =
+        LANES[((beat.max(0.0) / METEOR_CYCLE as f64) as usize + seed as usize) % LANES.len()];
     let dx = (lane[2] - lane[0]) * f32::from(cols);
     let dy = (lane[3] - lane[1]) * f32::from(rows);
     let span = (dx * dx + dy * dy).sqrt().max(1.0);
@@ -292,6 +245,13 @@ fn flight(cols: u16, rows: u16, ticks: u64) -> Option<Flight> {
         ux: dx / span,
         uy: dy / span,
     })
+}
+
+fn cell_of(x: f64, y: f64, cols: u16, rows: u16) -> (u16, u16) {
+    (
+        ((x / 2.0) as u16).min(cols.saturating_sub(1)),
+        ((y / 4.0) as u16).min(rows.saturating_sub(1)),
+    )
 }
 
 fn inside(cols: u16, rows: u16, x: f32, y: f32) -> Option<(u16, u16)> {

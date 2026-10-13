@@ -74,18 +74,6 @@ pub(in crate::tui::sigil_view) fn compose(
             palette().gray,
         );
     }
-    write(
-        cells,
-        cols,
-        facts_x,
-        facts_y + facts.len() as u16,
-        &format!(
-            "{:<8} {}   ← →",
-            "sky",
-            super::space::sky_name(app.sky.get())
-        ),
-        palette().dim,
-    );
     fill_bg(cells, cols, card);
     frame(cells, cols, card);
     drop(model);
@@ -181,18 +169,6 @@ pub(in crate::tui::sigil_view) fn bloom(
     } else {
         STAR_BRIGHT
     }
-}
-
-pub(in crate::tui::sigil_view) fn scene_row(cells: &[Cell]) -> NodeBuilder {
-    runs(
-        container().layout(
-            LayoutStyle::flex_row()
-                .height(metrics().h)
-                .fill_width()
-                .gap(0.0),
-        ),
-        cells,
-    )
 }
 
 pub(in crate::tui::sigil_view) fn placed(x: u16, y: u16, cells: &[Cell]) -> NodeBuilder {

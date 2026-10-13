@@ -230,38 +230,43 @@ fn a_server_prompt_line_is_sent_as_a_turn_and_an_unknown_command_is_not() {
     });
 }
 
-#[test]
-fn splash_arrows_cycle_the_sky() {
-    use sigil::Host;
-    use sigil::events::{
-        EventRouter, KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
-        ShellEvent,
-    };
-    use sigil::terminal::Screen;
+fn splash_screen(cols: u16, rows: u16) -> (App, sigil::Host, sigil::terminal::Screen) {
+    let workspace = tempfile::tempdir().unwrap();
+    let (commands, _receiver) = unbounded_channel();
+    let app = App::new(info(), workspace.path().to_owned(), commands);
+    app.model_mut(|model| model.prefs.animations = true);
+    app.splash.set(true);
+    app.splash_revealed.set(true);
+    app.resize(cols, rows);
+    app.animate();
+    let mut host = sigil::Host::cells();
+    let tree = app.clone();
+    host.mount(move || root(tree));
+    (app, host, sigil::terminal::Screen::new(cols, rows))
+}
 
-    Runtime::scope("splash-sky", || {
-        let workspace = tempfile::tempdir().unwrap();
-        let (commands, _receiver) = unbounded_channel();
-        let app = App::new(info(), workspace.path().to_owned(), commands);
-        app.splash.set(true);
-        app.resize(80, 24);
-        let mut host = Host::cells();
-        let tree = app.clone();
-        host.mount(move || root(tree));
-        let mut screen = Screen::new(80, 24);
-        let mut router = EventRouter::new();
-        screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
-        let right = ShellEvent::Key(KeyEvent::new(KeyEventInit {
-            key: LogicalKey::named(sigil::prelude::Key::ArrowRight),
-            physical: PhysicalKey::Unidentified,
-            modifiers: ModifiersState::empty(),
-            repeat: false,
-            phase: KeyPhase::Down,
-            text: None,
-        }));
-        screen
-            .frame(&mut host, &mut router, [right], (80, 24))
-            .unwrap();
-        assert_eq!(app.sky.peek(), super::super::space::HALO);
+#[test]
+fn a_model_change_on_the_splash_keeps_the_star_clock() {
+    Runtime::scope("splash-clock", || {
+        let (app, mut host, mut screen) = splash_screen(80, 24);
+        let mut router = sigil::events::EventRouter::new();
+        screen.set_dt(0.1);
+        let mut frames = |count: usize| {
+            for _ in 0..count {
+                screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+            }
+        };
+        frames(5);
+        let clock = app.sky_clock.peek().expect("a splash clock");
+        let before = clock.peek();
+        app.model_mut(|model| model.prefs.reasoning = crate::prefs::Visibility::Expanded);
+        frames(5);
+        let after = app.sky_clock.peek().expect("a splash clock");
+        assert!(after == clock, "a model change replaced the star clock");
+        assert!(
+            after.peek() > before,
+            "the star clock went back from {before} to {}",
+            after.peek()
+        );
     });
 }

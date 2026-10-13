@@ -1,5 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use Argument::{Bare, Text, Value};
 use Category::{Developer, Files, Model, Session, Settings};
 
@@ -95,8 +93,6 @@ mod specs;
 
 use specs::{ALIASES, SPECS};
 
-static NOTED: AtomicU64 = AtomicU64::new(0);
-
 #[must_use]
 pub const fn command_specs() -> &'static [CommandSpec] {
     SPECS
@@ -133,22 +129,18 @@ pub(crate) fn server_prompt(line: &str) -> bool {
         .is_some_and(|name| name.contains(':'))
 }
 
-pub(crate) fn renamed(line: &str) -> Option<(String, Option<String>)> {
+pub(crate) fn alias(line: &str) -> Option<String> {
     let line = line.trim();
     let (head, tail) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
-    let index = ALIASES.iter().position(|(name, _)| *name == head)?;
-    let target = ALIASES[index].1;
+    let (_, target) = ALIASES.iter().find(|(name, _)| *name == head)?;
     let bare = SPECS
         .iter()
-        .any(|spec| spec.name == target && spec.argument == Bare);
-    let expanded = if bare || tail.trim().is_empty() {
-        target.to_string()
+        .any(|spec| spec.name == *target && spec.argument == Bare);
+    Some(if bare || tail.trim().is_empty() {
+        (*target).to_string()
     } else {
         format!("{target} {}", tail.trim())
-    };
-    let bit = 1_u64 << index;
-    let first = NOTED.fetch_or(bit, Ordering::Relaxed) & bit == 0;
-    Some((expanded, first.then(|| format!("renamed: use {target}"))))
+    })
 }
 
 pub(crate) fn argument(line: &str) -> Result<Option<&str>, String> {

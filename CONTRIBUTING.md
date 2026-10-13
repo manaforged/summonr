@@ -4,12 +4,14 @@ Issues are welcome. Pull requests are by invitation: open an issue first, and se
 
 ## Build
 
-You need Rust. `rust-toolchain.toml` pins the version, and rustup downloads it on the first build. The default build also needs Git, CMake, and a C and C++ compiler. `--sandbox` on Linux needs bubblewrap.
+You need Rust 1.98. `rust-toolchain.toml` pins the version, and rustup downloads it on the first build. The default build also needs Git, CMake, and a C and C++ compiler. `--sandbox` on Linux needs bubblewrap.
 
 ```sh
 cargo build --locked
 cargo run --locked -- anthropic
 ```
+
+`scripts/summon-dev` runs a release build that it rebuilds when the source changes. With a Sigil checkout at `../sigil`, it builds against that checkout and puts `Cargo.lock` back afterwards. Link it onto your `PATH` as `summonr` to work on summonr and Sigil together.
 
 ## Check
 

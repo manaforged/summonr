@@ -15,7 +15,7 @@
 - [TUI API](guide/internals/tui.md)
 - [Glossary](guide/internals/glossary.md)
 
-# API reference
+# Crate reference (internal, unsupported)
 
 <!-- truesight:pages summonr-auth -->
 

@@ -3,7 +3,7 @@ use std::vec::IntoIter;
 
 use summonr::{Error, Result};
 
-use super::{Args, exit_help, mcp, renamed, value};
+use super::{Args, exit_help, mcp, value};
 
 pub(super) type Input = Peekable<IntoIter<String>>;
 pub(super) type Run = fn(&mut Args, &mut Input) -> Result<()>;
@@ -114,14 +114,10 @@ pub(super) const VALUES: [Valued; 12] = [
     },
 ];
 
-pub(super) const COMMANDS: [(&str, Run); 26] = [
+pub(super) const COMMANDS: [(&str, Run); 22] = [
     ("endpoints", |args, _| on(&mut args.list)),
     ("sessions", |args, _| on(&mut args.list_sessions)),
     ("resume", Args::resume),
-    ("logs", |args, _| {
-        renamed("logs", "doctor --logs");
-        on(&mut args.logs)
-    }),
     ("doctor", |args, _| on(&mut args.doctor)),
     ("classify", |args, _| on(&mut args.classify)),
     ("export", |args, _| on(&mut args.export)),
@@ -130,17 +126,7 @@ pub(super) const COMMANDS: [(&str, Run); 26] = [
     ("modules", |args, _| on(&mut args.list_modules)),
     ("install", |args, _| on(&mut args.add)),
     ("uninstall", |args, _| on(&mut args.uninstall)),
-    ("add", |args, _| {
-        renamed("add", "install");
-        on(&mut args.add)
-    }),
     ("acp", |args, _| on(&mut args.acp)),
-    ("room", |_, _| {
-        Err(Error::Config(
-            "`summonr room` was removed; agent sessions share mail through `summonr mail`"
-                .to_string(),
-        ))
-    }),
     ("mail", |args, input| {
         some(&mut args.mail, input.by_ref().collect())
     }),
@@ -155,10 +141,6 @@ pub(super) const COMMANDS: [(&str, Run); 26] = [
     }),
     ("mcp", |args, input| some(&mut args.mcp, mcp::parse(input)?)),
     ("login", |args, _| on(&mut args.login)),
-    ("auth", |args, _| {
-        renamed("auth", "login");
-        on(&mut args.login)
-    }),
     ("logout", |args, _| on(&mut args.logout)),
     ("worktrees", |args, _| on(&mut args.list_worktrees)),
     ("diff", |args, _| on(&mut args.diff)),

@@ -74,7 +74,7 @@ def controls_of(request):
 def request_fields(calls):
     return {
         "requests": len(calls),
-        "errors": sum(row["status"] >= 400 for row in calls),
+        "errors": sum(row["status"] >= 400 or row.get("finish_reason") == "failed" for row in calls),
         "cut": sum(1 for row in calls if row.get("cut_off") and not row.get("usage")),
         "rate_limited": sum(row["status"] == 429 for row in calls),
         "effort": sorted({effort_of(row["request"]) for row in calls}),

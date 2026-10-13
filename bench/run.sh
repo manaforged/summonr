@@ -40,7 +40,8 @@ esac
 if [ -n "$envfile" ]; then
   [ -f "$root/$envfile" ] || { echo "missing $root/$envfile" >&2; exit 1; }
 else
-  [ -d "$root/seats" ] || { echo "missing $root/seats: plan logins for $vendor" >&2; exit 1; }
+  logins=${BENCH_LOGINS:-$HOME}
+  [ -d "$logins/.summonr" ] || { echo "missing $logins/.summonr: plan logins for $vendor" >&2; exit 1; }
 fi
 export BENCH_PROVIDER=${BENCH_PROVIDER:-$vendor} BENCH_MODEL=$model
 export BENCH_PROXY=${BENCH_PROXY:-http://host.docker.internal:$port}
@@ -131,7 +132,13 @@ for rep in $(seq 1 "$repeats"); do
 done > "$root/jobs/$run/order.txt"
 
 mounts='{"type":"bind","source":"'"$root"'/tools","target":"/opt/bench","read_only":true}'
-[ -n "$envfile" ] || mounts+=',{"type":"bind","source":"'"$(readlink -f "$root/seats")"'","target":"/opt/seats","read_only":true}'
+if [ -z "$envfile" ]; then
+  for tool in summonr codex grok claude; do
+    if [ -d "$logins/.$tool" ]; then
+      mounts+=',{"type":"bind","source":"'"$(readlink -f "$logins/.$tool")"'","target":"/opt/logins/'"$tool"'"}'
+    fi
+  done
+fi
 mounts="[$mounts]"
 trial() {
   local task=$1 harness=$2 rep=$3

@@ -30,7 +30,7 @@ impl ToolRegistry {
             || args
                 .get("paths")
                 .and_then(Value::as_array)
-                .is_some_and(|paths| paths.iter().any(|path| super::args::named_value(path)));
+                .is_some_and(|paths| paths.iter().any(super::args::named_value));
         let op = super::args::named(&args, "op").filter(|op| !(*op == "help" && target));
         if let Some(paths) = args
             .get("paths")

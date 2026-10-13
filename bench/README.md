@@ -40,10 +40,9 @@ python3 table.py board-tb21 --subject summonr --tasks tasks-eval.txt
 
 ## Plan vendors
 
-A plan vendor has no env file. Its proxy forwards each arm's own `Authorization` header and counts usage, and `seats/` holds bench-only logins that every trial mounts read-only at `/opt/seats`: `claude.env` (`CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`), `codex/auth.json`, `grok/.grok/`, and `summonr/` (`SUMMONR_SECRETS=file` logins for `openai` and `grok`). Use separate logins, not your own: a trial that refreshes a token can rotate it. The arms of a pair can reach different hosts, so a vendor row maps path prefixes to upstreams with `--route NAME=URL`: Codex sends to `/chatgpt` (`chatgpt.com/backend-api/codex`), Grok Build to `/grokcli` (`cli-chat-proxy.grok.com`), and summonr to the row's upstream (`api.openai.com`, `api.x.ai`). Both Claude arms run Claude Code against `api.anthropic.com`. The harness links each credential into the agent's log folder and deletes it when the agent exits, so job folders keep no token.
+A plan vendor has no env file. Its proxy forwards each arm's own `Authorization` header and counts usage, and every trial mounts the host account's own logins read-write at `/opt/logins`: `~/.summonr` (`openai` and `grok`), `~/.codex`, `~/.grok`, and `~/.claude`. `BENCH_LOGINS` names another home. Trials link the credential files instead of copying them, so a refresh in one trial reaches every other trial and the host keeps a live login. The arms of a pair can reach different hosts, so a vendor row maps path prefixes to upstreams with `--route NAME=URL`: Codex sends to `/chatgpt` (`chatgpt.com/backend-api/codex`), Grok Build to `/grokcli` (`cli-chat-proxy.grok.com`), and summonr to the row's upstream (`api.openai.com`, `api.x.ai`). Both Claude arms run Claude Code against `api.anthropic.com`. The harness removes each link when the agent exits, so job folders keep no token.
 
 ```
-ln -s /path/to/seats seats
 BENCH_VENDOR=claude BENCH_REPEATS=1 ./run.sh plan-claude-smoke tasks-tune.txt summonr claude
 BENCH_VENDOR=chatgpt BENCH_REPEATS=1 ./run.sh plan-chatgpt-smoke tasks-tune.txt summonr codex
 BENCH_VENDOR=supergrok BENCH_REPEATS=1 ./run.sh plan-supergrok-smoke tasks-tune.txt summonr grok

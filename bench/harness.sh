@@ -29,18 +29,26 @@ if [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
   cp "$tools/cacert.pem" /etc/ssl/certs/ca-certificates.crt 2>/dev/null || export SSL_CERT_FILE=$tools/cacert.pem
 fi
 mkdir -p "$logs"
-seats=${BENCH_SEATS:-/opt/seats}
+logins=${BENCH_LOGINS:-/opt/logins}
 
-seat() {
-  mkdir -p "$home/seats/$1" "$3"
-  cp "$seats/$1/$2" "$home/seats/$1/$2"
-  ln -sf "$home/seats/$1/$2" "$3/$2"
+share() {
+  local dir=$1 dest=$2
+  shift 2
+  mkdir -p "$dest"
+  for file in "$@"; do
+    ln -sfn "$logins/$dir/$file" "$dest/$file"
+  done
+}
+
+restore() {
+  local dir
+  for dir in "$logins"/*/; do
+    find "$dir" -maxdepth 1 -newer "$home" ! -user "$(stat -c %u "$dir")" -exec chown --reference="$dir" {} + 2>/dev/null || true
+  done
 }
 
 claude_seat() {
-  set -a
-  . "$seats/claude.env"
-  set +a
+  [ -d "$logins/claude" ] && share claude "$home/.claude" .credentials.json
   export ANTHROPIC_BASE_URL=${BENCH_BASE%/v1} PATH="$tools/claude/bin:$PATH"
 }
 
@@ -63,9 +71,9 @@ summonr | summonr-*)
   elif [ -n "$pick" ]; then
     printf '[endpoint.%s]\nbase_url = "%s"\nmodel = "%s"\n' "$pick" "$BENCH_BASE" "$BENCH_MODEL" > "$logs/$name/config.toml"
   fi
-  if [ -d "$seats/summonr" ] && [ "$pick" != claude ]; then
-    seat summonr credentials.toml "$logs/$name"
-    seat summonr credentials.wrap "$logs/$name"
+  if [ -d "$logins/summonr" ] && [ "$pick" != claude ]; then
+    mkdir -p "$logins/summonr/locks"
+    share summonr "$logs/$name" credentials.toml credentials.wrap credentials.lock locks
     export SUMMONR_SECRETS=file
   elif [ "$pick" = openai ]; then
     printf '%s\n' "$key" | HOME=$home SUMMONR_HOME=$logs/$name "$tools/$name/bin/summonr" login openai --key >/dev/null
@@ -77,8 +85,8 @@ summonr | summonr-*)
 codex)
   mkdir -p "$logs/codex"
   base=$BENCH_BASE auth="env_key=\"BENCH_API_KEY\""
-  if [ -d "$seats/codex" ]; then
-    seat codex auth.json "$logs/codex"
+  if [ -d "$logins/codex" ]; then
+    share codex "$logs/codex" auth.json
     base=${BENCH_BASE%/v1}/chatgpt auth="requires_openai_auth=true"
   fi
   HOME=$home CODEX_HOME=$logs/codex BENCH_API_KEY=$key \
@@ -96,8 +104,7 @@ claude)
     ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"} -- "$prompt" </dev/null
   ;;
 grok)
-  cp -R "$seats/grok/.grok" "$home/.grok"
-  HOME=$home GROK_DISABLE_AUTOUPDATER=1 GROK_CLI_CHAT_PROXY_BASE_URL=${BENCH_BASE%/v1}/grokcli/v1 \
+  HOME=$home GROK_AUTH_PATH=$logins/grok/auth.json GROK_DISABLE_AUTOUPDATER=1 GROK_CLI_CHAT_PROXY_BASE_URL=${BENCH_BASE%/v1}/grokcli/v1 \
     "$tools/grok/bin/grok" --single "$prompt" --output-format streaming-json -m "$BENCH_MODEL" --always-approve \
     --debug-file "$logs/grok-debug.log" ${BENCH_EFFORT:+--reasoning-effort "$BENCH_EFFORT"} </dev/null
   ;;
@@ -205,5 +212,6 @@ while kill -0 "$pid" 2>/dev/null; do
 done
 status=0
 wait "$pid" || status=$?
-find "$logs" \( -name credentials.toml -o -name credentials.wrap -o -name auth.json \) -delete
+find "$logs" \( -name credentials.toml -o -name credentials.wrap -o -name credentials.lock -o -name locks -o -name auth.json \) -type l -delete
+restore
 exit "$status"

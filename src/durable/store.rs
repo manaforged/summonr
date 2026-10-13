@@ -17,7 +17,8 @@ enum Durability {
 }
 
 pub(crate) fn write(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
-    prepare(path, bytes.as_ref(), false, Durability::Synced)?.commit()
+    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    prepare(&target, bytes.as_ref(), false, Durability::Synced)?.commit()
 }
 
 pub(crate) fn read_or_empty(path: &Path) -> io::Result<String> {
@@ -141,3 +142,7 @@ fn sync_dir(path: &Path) -> io::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(all(test, unix))]
+#[path = "store_tests.rs"]
+mod tests;

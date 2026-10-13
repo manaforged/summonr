@@ -44,7 +44,7 @@ if [ -n \"\$HERMES\" ] && [ -n \"\$UV\" ]; then
   rm -rf hermes hermes-python uv && mkdir -p uv
   curl -fsSL https://github.com/astral-sh/uv/releases/download/\$UV/uv-x86_64-unknown-linux-gnu.tar.gz | tar -xz --strip-components=1 -C uv
   git clone --quiet --depth 1 --branch \$HERMES https://github.com/NousResearch/hermes-agent hermes
-  (cd hermes && UV_PYTHON_INSTALL_DIR=/opt/bench/hermes-python ../uv/uv sync --quiet --frozen --python 3.12)
+  (cd hermes && UV_PYTHON_INSTALL_DIR=/opt/bench/hermes-python ../uv/uv sync --quiet --frozen --python 3.14)
 fi
 if [ -n \"\$BUN\" ]; then
   rm -rf bun /tmp/bun.zip && mkdir -p bun
@@ -67,7 +67,7 @@ fi
 if [ -x "$out/summonr/bin/summonr" ]; then
   echo "summonr_version $("$out/summonr/bin/summonr" --version | awk '{print $2}')" >> "$out/versions.txt"
 fi
-pi=$(pin pi) opencode2=$(pin opencode2) omp=$(pin omp) codex=$(pin codex)
+pi=$(pin pi) opencode2=$(pin opencode2) omp=$(pin omp) codex=$(pin codex) claude=$(pin claude) grok=$(pin grok)
 if [ -x "$out/node/bin/node" ] && [ -n "$pi" ]; then
   PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/pi" "@earendil-works/pi-coding-agent@$pi"
   echo "node $("$out/node/bin/node" --version | tr -d v)" >> "$out/versions.txt"
@@ -91,6 +91,16 @@ if [ -x "$out/node/bin/node" ] && [ -n "$codex" ]; then
   cp -R "$platform/vendor/x86_64-unknown-linux-musl" "$out/codex"
   rm -rf "$out/codex-npm"
   echo "codex $("$out/codex/bin/codex" --version | awk '{print $2}')" >> "$out/versions.txt"
+fi
+if [ -x "$out/node/bin/node" ] && [ -n "$claude" ]; then
+  rm -rf "$out/claude"
+  PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/claude" "@anthropic-ai/claude-code@$claude"
+  echo "claude $("$out/claude/bin/claude" --version | awk '{print $1}')" >> "$out/versions.txt"
+fi
+if [ -x "$out/node/bin/node" ] && [ -n "$grok" ]; then
+  rm -rf "$out/grok"
+  PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/grok" "@xai-official/grok@$grok"
+  echo "grok $(PATH="$out/node/bin:$PATH" "$out/grok/bin/grok" --version | awk '{print $2}')" >> "$out/versions.txt"
 fi
 if [ -n "$hermes" ]; then
   [ -x "$out/hermes/.venv/bin/hermes" ] || { echo "missing tool entrypoint: hermes/.venv/bin/hermes" >&2; exit 1; }

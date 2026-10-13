@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import subprocess
 import json
 import re
 import threading
@@ -72,7 +73,7 @@ def shape(body):
         "temperature": body.get("temperature"),
         "top_p": body.get("top_p"),
         "max_tokens": body.get("max_tokens") or body.get("max_completion_tokens") or body.get("max_output_tokens"),
-        "reasoning_effort": body.get("reasoning_effort") or (body.get("reasoning") or {}).get("effort"),
+        "reasoning_effort": body.get("reasoning_effort") or (body.get("reasoning") or body.get("output_config") or {}).get("effort"),
         "thinking": body.get("thinking"),
         "tool_stream": body.get("tool_stream"),
         "messages": len(messages),
@@ -83,17 +84,17 @@ def shape(body):
     }
 
 
-def normalize(usage):
-    if not usage or "input_tokens" not in usage and "output_tokens" not in usage:
-        return usage
-    if "input_tokens_details" in usage or "output_tokens_details" in usage:
-        return {
-            **usage,
-            "prompt_tokens": usage.get("input_tokens") or 0,
-            "completion_tokens": usage.get("output_tokens") or 0,
-            "prompt_tokens_details": usage.get("input_tokens_details") or {},
-            "completion_tokens_details": usage.get("output_tokens_details") or {},
-        }
+def responses_usage(usage):
+    return {
+        **usage,
+        "prompt_tokens": usage.get("input_tokens") or 0,
+        "completion_tokens": usage.get("output_tokens") or 0,
+        "prompt_tokens_details": usage.get("input_tokens_details") or {},
+        "completion_tokens_details": usage.get("output_tokens_details") or {},
+    }
+
+
+def anthropic_usage(usage):
     read = usage.get("cache_read_input_tokens") or 0
     prompt = (usage.get("input_tokens") or 0) + read + (usage.get("cache_creation_input_tokens") or 0)
     return {
@@ -101,7 +102,34 @@ def normalize(usage):
         "prompt_tokens": prompt,
         "completion_tokens": usage.get("output_tokens") or 0,
         "prompt_tokens_details": {"cached_tokens": read},
+        "completion_tokens_details": {"reasoning_tokens": (usage.get("output_tokens_details") or {}).get("thinking_tokens")},
     }
+
+
+def fold_reasoning(usage):
+    reasoning = ((usage or {}).get("completion_tokens_details") or {}).get("reasoning_tokens") or 0
+    if not reasoning or usage.get("total_tokens") != (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0) + reasoning:
+        return usage
+    return {**usage, "completion_tokens": (usage.get("completion_tokens") or 0) + reasoning, "reasoning_folded": reasoning}
+
+
+def normalize(usage):
+    if not usage or "input_tokens" not in usage and "output_tokens" not in usage:
+        return usage
+    anthropic = "cache_read_input_tokens" in usage or "cache_creation_input_tokens" in usage
+    if not anthropic and ("input_tokens_details" in usage or "output_tokens_details" in usage):
+        return responses_usage(usage)
+    return anthropic_usage(usage)
+
+
+def decoded(raw, encoding):
+    if encoding != "zstd":
+        return raw
+    try:
+        from compression import zstd
+    except ImportError:
+        return subprocess.run(["zstd", "-dcq"], input=raw, capture_output=True, check=True).stdout
+    return zstd.decompress(raw)
 
 
 def stream_chunks(raw):
@@ -143,7 +171,7 @@ def usage_from_stream(raw):
         model = chunk.get("model") or frame_body(chunk).get("model") or model
         usage = merge_usage(usage, chunk)
         finish = finish_of(chunk, finish)
-    return normalize(usage), model, finish
+    return fold_reasoning(normalize(usage)), model, finish
 
 
 def stall_tail(raw, latency, error):
@@ -159,7 +187,7 @@ def usage_from_body(raw):
         return None, None, None
     choices = body.get("choices") or [{}]
     finish = choices[0].get("finish_reason") or body.get("stop_reason") or body.get("status")
-    return normalize(body.get("usage")), body.get("model"), finish
+    return fold_reasoning(normalize(body.get("usage"))), body.get("model"), finish
 
 
 def cached(usage):
@@ -172,7 +200,7 @@ def cached(usage):
 
 class Proxy(BaseHTTPRequestHandler):
     upstream = ""
-    anthropic = ""
+    routes = {}
     strip = []
     log = None
     lock = threading.Lock()
@@ -207,11 +235,11 @@ class Proxy(BaseHTTPRequestHandler):
             self.groups[group] = (index, now)
         return index
 
-    def prepare(self, raw, label, path, index):
-        if not raw or not path.endswith(("/chat/completions", "/messages", "/responses")):
+    def prepare(self, raw, label, path, index, url, encoding):
+        if not raw or not path.partition("?")[0].endswith(("/chat/completions", "/messages", "/responses")):
             return raw, None
-        body = json.loads(raw)
-        host = urllib.parse.urlsplit(self.upstreams[index]).hostname
+        body = json.loads(decoded(raw, encoding))
+        host = urllib.parse.urlsplit(url).hostname
         dropped = [field for field in self.drops.get(host, ()) if field in body]
         record = {"label": label, "key": index, "upstream": host, "dropped": dropped, "request": shape(body), "usage_requested": False}
         for field in dropped:
@@ -220,14 +248,17 @@ class Proxy(BaseHTTPRequestHandler):
         if path.endswith("/chat/completions") and body.get("stream") and not options.get("include_usage"):
             body["stream_options"] = {**options, "include_usage": True}
             record["usage_requested"] = True
-        if dropped or record["usage_requested"]:
+        if encoding:
+            record["dropped"], record["usage_requested"] = [], False
+        elif dropped or record["usage_requested"]:
             raw = json.dumps(body).encode()
         return raw, record
 
     def target(self, path, index):
         upstream = self.upstreams[index]
-        if path.startswith("/anthropic") and self.anthropic:
-            return self.anthropic + path[len("/anthropic") :]
+        for name, url in self.routes.items():
+            if path.startswith(f"/{name}/"):
+                return url + path[len(name) + 1 :]
         if re.search(r"/v\d+$", upstream) and path.startswith("/v1/"):
             return upstream + path[len("/v1") :]
         return upstream + path
@@ -254,6 +285,8 @@ class Proxy(BaseHTTPRequestHandler):
     def upstream_headers(self, key, index, label):
         headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
         for name in headers:
+            if key is None:
+                break
             if name.lower() == "authorization":
                 headers[name] = f"Bearer {key}"
             elif name.lower() == "x-api-key":
@@ -278,13 +311,15 @@ class Proxy(BaseHTTPRequestHandler):
         key = self.keys[index]
         length = int(self.headers.get("Content-Length") or 0)
         try:
-            raw, record = self.prepare(self.rfile.read(length) if length else None, label, path, index)
-        except json.JSONDecodeError as error:
+            url = self.target(path, index)
+            encoding = (self.headers.get("Content-Encoding") or "").strip().lower()
+            raw, record = self.prepare(self.rfile.read(length) if length else None, label, path, index, url, encoding)
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError, subprocess.CalledProcessError) as error:
             self.send_error(400, f"request body is not JSON: {error}")
             return
         self.dump_body(raw, record, label)
         headers = self.upstream_headers(key, index, label)
-        request = urllib.request.Request(self.target(path, index), data=raw, method=method, headers=headers)
+        request = urllib.request.Request(url, data=raw, method=method, headers=headers)
         started = time.time()
         try:
             response = urllib.request.urlopen(request, timeout=900)
@@ -332,16 +367,16 @@ def main():
     parser.add_argument("--port", type=int, default=8094)
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--upstream", default="https://api.deepseek.com")
-    parser.add_argument("--anthropic", default="https://api.deepseek.com/anthropic")
+    parser.add_argument("--route", action="append", default=[])
     parser.add_argument("--log", required=True)
     parser.add_argument("--strip", action="append", default=[])
-    parser.add_argument("--key-env", action="append", required=True)
+    parser.add_argument("--key-env", action="append", default=[])
     parser.add_argument("--dump")
     parser.add_argument("--drop", action="append", default=[])
     args = parser.parse_args()
     routes = [entry.partition("=") for entry in args.key_env]
-    Proxy.keys = [os.environ.get(name) or parser.error(f"{name} is not set") for name, _, _ in routes]
-    Proxy.upstreams = [(url or args.upstream).rstrip("/") for _, _, url in routes]
+    Proxy.keys = [os.environ.get(name) or parser.error(f"{name} is not set") for name, _, _ in routes] or [None]
+    Proxy.upstreams = [(url or args.upstream).rstrip("/") for _, _, url in routes] or [args.upstream.rstrip("/")]
     Proxy.groups = {}
     Proxy.drops = {}
     for entry in args.drop:
@@ -349,7 +384,7 @@ def main():
         Proxy.drops.setdefault(host, []).extend(filter(None, fields.split(",")))
     Proxy.dump = args.dump
     Proxy.upstream = args.upstream.rstrip("/")
-    Proxy.anthropic = args.anthropic.rstrip("/")
+    Proxy.routes = {name: url.rstrip("/") for name, _, url in (entry.partition("=") for entry in args.route)}
     Proxy.strip = [prefix.rstrip("/") for prefix in args.strip]
     Proxy.log = open(args.log, "a")
     ThreadingHTTPServer((args.bind, args.port), Proxy).serve_forever()

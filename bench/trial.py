@@ -5,7 +5,8 @@ from pathlib import Path
 
 from stats import covered, hit_tokens, miss_tokens, seconds
 
-SOURCES = rb"terminal-bench|tbench|marginlab|laude-institute|harbor-framework"
+SOURCES = rb"\b(?:terminal-bench|tbench|marginlab|laude-institute|harbor-framework)"
+VENDOR_FILES = {"cache", "plugins", "__pycache__"}
 VOID = re.compile(rb"https?:(?:\\?/){2}[^\s\"'<>]*(?:" + SOURCES + rb")|github\.com[:/](?:laude-institute|harbor-framework)", re.I)
 WARN = re.compile(rb"/logs/verifier|reward\.txt|/solution/|/tests/test|terminal-bench(?!-canary)|tbench\.ai|marginlab\.ai|laude-institute|harbor-framework", re.I)
 GRADER = re.compile(rb"uvx: command not found|/root/\.local/bin/env: No such file")
@@ -15,7 +16,7 @@ MEMORY = ("agent", "tree", "harness", "agent_avg", "tree_avg", "harness_avg")
 def suspect(agent):
     void, warn = set(), set()
     for path in agent.rglob("*"):
-        if path.is_file() and path.name != "instruction.txt":
+        if path.is_file() and path.name != "instruction.txt" and not VENDOR_FILES & set(path.relative_to(agent).parts):
             try:
                 raw = path.read_bytes()
             except OSError:

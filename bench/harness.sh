@@ -29,6 +29,20 @@ if [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
   cp "$tools/cacert.pem" /etc/ssl/certs/ca-certificates.crt 2>/dev/null || export SSL_CERT_FILE=$tools/cacert.pem
 fi
 mkdir -p "$logs"
+seats=${BENCH_SEATS:-/opt/seats}
+
+seat() {
+  mkdir -p "$home/seats/$1" "$3"
+  cp "$seats/$1/$2" "$home/seats/$1/$2"
+  ln -sf "$home/seats/$1/$2" "$3/$2"
+}
+
+claude_seat() {
+  set -a
+  . "$seats/claude.env"
+  set +a
+  export ANTHROPIC_BASE_URL=${BENCH_BASE%/v1} PATH="$tools/claude/bin:$PATH"
+}
 
 agent() {
 case "$name" in
@@ -37,11 +51,24 @@ summonr | summonr-*)
   if [ -n "${BENCH_KEEP_REASONING:-}" ]; then
     export SUMMONR_KEEP_REASONING=1
   fi
-  pick=""
-  if [ "$provider" = openai ]; then
-    printf '[endpoint.openai]\nbase_url = "%s"\nmodel = "%s"\n' "$BENCH_BASE" "$BENCH_MODEL" > "$logs/$name/config.toml"
+  case "$provider" in
+  openai | chatgpt) pick=openai ;;
+  supergrok) pick=grok ;;
+  claude) pick=claude ;;
+  *) pick="" ;;
+  esac
+  if [ "$pick" = claude ]; then
+    claude_seat
+    printf '[endpoint.claude]\nmodel = "%s"\n' "$BENCH_MODEL" > "$logs/$name/config.toml"
+  elif [ -n "$pick" ]; then
+    printf '[endpoint.%s]\nbase_url = "%s"\nmodel = "%s"\n' "$pick" "$BENCH_BASE" "$BENCH_MODEL" > "$logs/$name/config.toml"
+  fi
+  if [ -d "$seats/summonr" ] && [ "$pick" != claude ]; then
+    seat summonr credentials.toml "$logs/$name"
+    seat summonr credentials.wrap "$logs/$name"
+    export SUMMONR_SECRETS=file
+  elif [ "$pick" = openai ]; then
     printf '%s\n' "$key" | HOME=$home SUMMONR_HOME=$logs/$name "$tools/$name/bin/summonr" login openai --key >/dev/null
-    pick=openai
   fi
   HOME=$home SUMMONR_HOME=$logs/$name SUMMONR_BASE_URL=$BENCH_BASE SUMMONR_MODEL=$BENCH_MODEL SUMMONR_API_KEY=$key \
     SUMMONR_MAX_TOKENS=$max_tokens \
@@ -49,11 +76,30 @@ summonr | summonr-*)
   ;;
 codex)
   mkdir -p "$logs/codex"
+  base=$BENCH_BASE auth="env_key=\"BENCH_API_KEY\""
+  if [ -d "$seats/codex" ]; then
+    seat codex auth.json "$logs/codex"
+    base=${BENCH_BASE%/v1}/chatgpt auth="requires_openai_auth=true"
+  fi
   HOME=$home CODEX_HOME=$logs/codex BENCH_API_KEY=$key \
     "$tools/codex/bin/codex" exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -m "$BENCH_MODEL" \
     ${BENCH_EFFORT:+-c "model_reasoning_effort=$BENCH_EFFORT"} -c model_provider=bench \
-    -c "model_providers.bench={name=\"bench\",base_url=\"$BENCH_BASE\",env_key=\"BENCH_API_KEY\",wire_api=\"responses\",supports_websockets=false,supports_standalone_web_search=true}" \
+    -c "model_providers.bench={name=\"bench\",base_url=\"$base\",$auth,wire_api=\"responses\",supports_websockets=false,supports_standalone_web_search=true}" \
     -- "$prompt" </dev/null
+  ;;
+claude)
+  claude_seat
+  HOME=$home ANTHROPIC_MODEL=$BENCH_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL=$BENCH_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL=$BENCH_MODEL \
+    ANTHROPIC_DEFAULT_HAIKU_MODEL=$BENCH_MODEL CLAUDE_CODE_SUBAGENT_MODEL=$BENCH_MODEL \
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 \
+    "$tools/claude/bin/claude" -p --dangerously-skip-permissions --output-format json --model "$BENCH_MODEL" \
+    ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"} -- "$prompt" </dev/null
+  ;;
+grok)
+  cp -R "$seats/grok/.grok" "$home/.grok"
+  HOME=$home GROK_DISABLE_AUTOUPDATER=1 GROK_CLI_CHAT_PROXY_BASE_URL=${BENCH_BASE%/v1}/grokcli/v1 \
+    "$tools/grok/bin/grok" --single "$prompt" --output-format streaming-json -m "$BENCH_MODEL" --always-approve \
+    --debug-file "$logs/grok-debug.log" ${BENCH_EFFORT:+--reasoning-effort "$BENCH_EFFORT"} </dev/null
   ;;
 pi)
   mkdir -p "$home/pi"
@@ -157,4 +203,7 @@ while kill -0 "$pid" 2>/dev/null; do
   fi
   sleep 0.5
 done
-wait "$pid"
+status=0
+wait "$pid" || status=$?
+find "$logs" \( -name credentials.toml -o -name credentials.wrap -o -name auth.json \) -delete
+exit "$status"

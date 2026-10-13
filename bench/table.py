@@ -10,8 +10,16 @@ from paired import ci, log_ratios
 from stats import cell, fmt, requests, wilson
 from trial import trials
 
-RATES = {"deepseek": {"hit": 0.006, "miss": 0.30, "output": 1.20}}
-RATE_CARD = {"deepseek": "DeepSeek Flash peak list price (cache hit $0.006, miss $0.30, output $1.20 per 1M tokens), api-docs.deepseek.com/quick_start/pricing, 2026-09-19; off-peak is half; list price, not plan spend"}
+RATES = {
+    "deepseek": {"hit": 0.006, "miss": 0.30, "output": 1.20},
+    "chatgpt": {"hit": 0.10, "miss": 2.00, "output": 10.00},
+    "supergrok": {"hit": 0.50, "miss": 2.00, "output": 6.00},
+}
+RATE_CARD = {
+    "deepseek": "DeepSeek Flash peak list price (cache hit $0.006, miss $0.30, output $1.20 per 1M tokens), api-docs.deepseek.com/quick_start/pricing, 2026-09-19; off-peak is half; list price, not plan spend",
+    "chatgpt": "gpt-6.1-sol API list price (cached input $0.10, input $2.00, output $10.00 per 1M tokens), openai.com/index/introducing-gpt-6-1-sol, 2026-10-12; cache writes priced as input; list price, not plan spend",
+    "supergrok": "grok-4.7 API list price under 200K-token prompts (cached input $0.50, input $2.00, output $6.00 per 1M tokens), x.ai/api, 2026-10-12; list price, not plan spend",
+}
 PAIRED = [
     ("input tokens", "prompt"),
     ("uncached input", "miss"),
@@ -292,9 +300,9 @@ def load(args, rates):
     return [row for row in rows if row["task"] not in broken]
 
 
-def refuse(rows, pin):
+def refuse(rows, pin, side=()):
     checks = [
-        (f"response model is not the pinned {pin}", {f'{row["harness"]}: {model}' for row in rows for model in row["models"] if model != pin}),
+        (f"response model is not the pinned {pin}", {f'{row["harness"]}: {model}' for row in rows for model in row["models"] if model != pin and not model.startswith(f"{pin}-") and model not in side}),
         ("solved with no request in the proxy log (proxy bypassed or wrong --proxy file)", {row["harness"] for row in rows if row["requests"] == 0 and row["reward"] == 1.0}),
         ("requests succeeded but the proxy log holds no token usage for", {row["harness"] for row in rows if row["requests"] > row["errors"] + row["cut"] and row["prompt"] == 0}),
     ]
@@ -375,7 +383,7 @@ def main():
     if not pin:
         raise SystemExit("run.txt records no pinned model")
     rows = load(args, rates)
-    refuse(rows, pin)
+    refuse(rows, pin, [model for model in info.get("side_models", "-").split() if model != "-"])
     report(args, info, infos, rows, vendor, rates)
     if args.csv:
         write_csv(args.csv, rows)

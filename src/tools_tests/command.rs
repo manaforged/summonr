@@ -24,7 +24,7 @@ fn output_under_the_budget_comes_back_whole_with_no_log_note() {
     let text = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "seq 1 300"}),
+        serde_json::json!({"command": per_shell("seq 1 300", "1..300")}),
     );
     assert!(text.contains("\n150\n") && text.contains("300"), "{text}");
     assert!(!text.contains("read the full output"), "{text}");
@@ -62,7 +62,7 @@ fn a_command_past_the_wait_limit_keeps_running_as_a_job() {
     let started = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "sleep 2; echo finished"}),
+        serde_json::json!({"command": past_the_wait()}),
     );
     let id = started
         .lines()
@@ -83,7 +83,7 @@ fn a_long_output_line_reaches_the_model_whole() {
     let text = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "printf 'x%.0s' $(seq 1 2000); echo"}),
+        serde_json::json!({"command": per_shell("printf 'x%.0s' $(seq 1 2000); echo", "'x' * 2000")}),
     );
     assert!(!text.contains("clipped"), "{text}");
     assert!(!text.contains("full output"), "{text}");
@@ -117,7 +117,7 @@ fn a_command_that_cannot_become_a_job_outlives_the_job_wait() {
     let output = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "sleep 2; echo finished"}),
+        serde_json::json!({"command": past_the_wait()}),
     );
     assert!(output.starts_with("exit 0"), "{output}");
     assert!(output.contains("finished"), "{output}");
@@ -218,7 +218,7 @@ fn a_command_in_another_workdir_is_judged_from_that_directory() {
 
 #[test]
 fn a_timed_out_command_is_a_change_only_when_it_can_write() {
-    let (dir, tools) = workspace(&[]);
+    let (dir, tools) = workspace(&[("keep.txt", "x\n")]);
     let timed_out = |command: &str| {
         let call = ToolCall {
             id: "t1".to_string(),
@@ -226,7 +226,7 @@ fn a_timed_out_command_is_a_change_only_when_it_can_write() {
             function: ToolFunction {
                 checked: Default::default(),
                 name: "run_command".to_string(),
-                arguments: serde_json::json!({"command": command, "timeout_secs": 1}).to_string(),
+                arguments: serde_json::json!({"command": command, "timeout_secs": if cfg!(windows) { 10 } else { 1 }}).to_string(),
             },
             continuation: None,
         };
@@ -238,14 +238,32 @@ fn a_timed_out_command_is_a_change_only_when_it_can_write() {
             .block_on(tools.execute_outcome(&call))
             .unwrap()
     };
-    let search = timed_out("mdfind -name zzq 2>/dev/null; locate zzq 2>&1; tail -f /dev/null");
+    let search = timed_out(per_shell(
+        "mdfind -name zzq 2>/dev/null; locate zzq 2>&1; tail -f /dev/null",
+        "cat -Wait keep.txt",
+    ));
     assert!(search.text.contains("timed out"), "{}", search.text);
     assert!(!search.mutated, "{}", search.text);
     assert!(!search.text.contains("may have changed"), "{}", search.text);
     for (command, file) in [
-        ("tail -f /dev/null > out.txt", "out.txt"),
-        ("tail -f /dev/null > 1", "1"),
-        ("tail -f /dev/null 3> fd.txt", "fd.txt"),
+        (
+            per_shell(
+                "tail -f /dev/null > out.txt",
+                "cat -Wait keep.txt > out.txt",
+            ),
+            "out.txt",
+        ),
+        (
+            per_shell("tail -f /dev/null > 1", "cat -Wait keep.txt > 1"),
+            "1",
+        ),
+        (
+            per_shell(
+                "tail -f /dev/null 3> fd.txt",
+                "cat -Wait keep.txt 3> fd.txt",
+            ),
+            "fd.txt",
+        ),
     ] {
         let redirected = timed_out(command);
         assert!(redirected.mutated, "{command}: {}", redirected.text);
@@ -267,7 +285,7 @@ fn a_failed_command_that_wrote_a_file_is_a_change() {
         function: ToolFunction {
             checked: Default::default(),
             name: "run_command".to_string(),
-            arguments: serde_json::json!({"command": "printf changed > changed.txt; exit 1"})
+            arguments: serde_json::json!({"command": per_shell("printf changed > changed.txt; exit 1", "Set-Content -Path changed.txt -Value changed; exit 1")})
                 .to_string(),
         },
         continuation: None,
@@ -332,7 +350,10 @@ fn approval_toggle_gates_execution_and_preserves_one_shot_command_approval() {
     use super::super::command::Approval;
 
     let (dir, mut tools) = workspace(&[]);
-    let command = "git clean -fdn; printf approved > ran.txt";
+    let command = per_shell(
+        "git clean -fdn; printf approved > ran.txt",
+        "git clean -fdn; Set-Content -NoNewline -Path ran.txt -Value approved",
+    );
     assert!(tools.toggle_approval());
     let asked = outcome(&tools, command);
     assert!(asked.contains("needs the user's approval"), "{asked}");

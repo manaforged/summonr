@@ -3,6 +3,8 @@ use super::*;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuthInfo {
     pub name: String,
+    pub provider: String,
+    pub(crate) routes: Vec<super::Route>,
     pub flow: LoginFlow,
     pub login: LoginFlow,
     pub key: bool,
@@ -49,11 +51,49 @@ impl AuthInfo {
     }
 
     #[must_use]
-    pub fn display_name(&self) -> String {
-        match self.plan.as_str() {
-            "" => self.name.clone(),
-            plan => format!("{} · {plan}", self.name),
+    pub fn title(&self) -> &str {
+        &self.provider
+    }
+
+    fn current(&self) -> Option<&super::Route> {
+        self.routes.iter().find(|route| route.name == self.name)
+    }
+
+    pub(crate) fn options(&self, toggle: super::Toggle) -> Option<(Vec<&'static str>, usize)> {
+        let label = |route: &super::Route| match toggle {
+            super::Toggle::Region => route.region.map(super::Region::label),
+            super::Toggle::Access => Some(route.access.label()),
+        };
+        if self.routes.len() < 2 {
+            return None;
         }
+        let mine = label(self.current()?)?;
+        let mut seen = std::collections::BTreeSet::new();
+        let labels: Vec<&'static str> = self
+            .routes
+            .iter()
+            .filter_map(label)
+            .filter(|name| seen.insert(*name))
+            .collect();
+        let active = labels.iter().position(|name| *name == mine)?;
+        Some((labels, active))
+    }
+
+    pub(crate) fn switch(&self, toggle: super::Toggle) -> Option<&'static str> {
+        let current = self.current()?;
+        self.routes.iter().find_map(|route| match toggle {
+            super::Toggle::Region => route
+                .region
+                .filter(|region| current.region != Some(*region))
+                .map(super::Region::label),
+            super::Toggle::Access => (route.access != current.access).then(|| route.access.label()),
+        })
+    }
+
+    #[must_use]
+    pub fn matches(&self, query: &str) -> bool {
+        let text = format!("{} {} {}", self.provider, self.name, self.plan).to_lowercase();
+        query.split_whitespace().all(|word| text.contains(word))
     }
 
     fn listed(&self) -> LoginGroup {
@@ -134,5 +174,23 @@ impl AuthInfo {
                     self.source,
                     Some(Source::Keychain | Source::File | Source::Config)
                 ))
+    }
+
+    #[must_use]
+    pub fn key_action(&self) -> &'static str {
+        if self.login.signs_in() {
+            "sign in"
+        } else if self.env.is_some() {
+            "unset the env key"
+        } else if self.stored() {
+            "replace the key"
+        } else {
+            "set a key"
+        }
+    }
+
+    #[must_use]
+    pub fn paste_key(&self) -> bool {
+        self.key && self.env.is_none()
     }
 }

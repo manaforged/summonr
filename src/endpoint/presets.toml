@@ -1,118 +1,150 @@
 [[preset]]
-name = "zai"
-label = "Z.ai coding plan (international), GLM-5.3 Flash; same key as glm-intl"
-key_from = "glm-intl"
+name = "zai-intl"
+key_from = ["zai", "glm-intl"]
+env_default = true
+replaces = ["glm-intl"]
+provider = "zai"
+region = "intl"
+label = "GLM coding plan, international"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
-env_keys = ["ZAI_API_KEY", "ZAI_CODING_API_KEY", "ZHIPU_API_KEY"]
+env_keys = ["ZAI_CODING_API_KEY", "ZAI_API_KEY", "ZHIPU_API_KEY", "GLM_CODING_API_KEY", "GLM_API_KEY"]
 missing = "run `summonr login NAME` or set ZAI_API_KEY"
 opencode_ids = ["zai-coding-plan", "zai"]
 plan = true
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "unsupported"
 
 [[preset]]
 name = "zai-cn"
-label = "BigModel coding plan (China), GLM-5.3 Flash; same key as glm"
-key_from = "glm"
+key_from = ["glm"]
+replaces = ["glm"]
+provider = "zai"
+region = "cn"
+label = "GLM coding plan, China"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3-flash"
-env_keys = ["ZAI_CODING_CN_API_KEY", "GLM_CODING_API_KEY", "GLM_API_KEY"]
+env_keys = [
+    "ZAI_CODING_CN_API_KEY",
+    "GLM_CODING_API_KEY",
+    "GLM_API_KEY",
+    "ZAI_CODING_API_KEY",
+    "ZAI_API_KEY",
+]
 missing = "run `summonr login NAME` or set ZAI_CODING_CN_API_KEY"
 opencode_ids = ["zhipuai-coding-plan", "zhipuai"]
 plan = true
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "unsupported"
 
 [[preset]]
-name = "glm"
-label = "BigModel coding plan (China), GLM-5.3; same key as zai-cn"
-key_from = "zai-cn"
-base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
+name = "zai-api"
+provider = "zai"
+region = "intl"
+label = "GLM API, international"
+base_url = "https://api.z.ai/api/paas/v4"
 model = "glm-5.3"
-env_keys = [
-    "GLM_CODING_API_KEY",
-    "ZAI_CODING_API_KEY",
-    "GLM_API_KEY",
-    "ZAI_API_KEY",
-]
-missing = "run `summonr login NAME` or set GLM_CODING_API_KEY"
-opencode_ids = ["zhipuai-coding-plan", "zhipuai", "zai-coding-plan", "zai"]
-plan = true
-
-[[preset]]
-name = "glm-intl"
-label = "Z.ai coding plan (international), GLM-5.3; same key as zai"
-key_from = "zai"
-base_url = "https://api.z.ai/api/coding/paas/v4"
-model = "glm-5.3"
-env_keys = [
-    "ZAI_CODING_API_KEY",
-    "GLM_CODING_API_KEY",
-    "ZAI_API_KEY",
-    "GLM_API_KEY",
-]
-missing = "run `summonr login NAME` or set ZAI_CODING_API_KEY"
-opencode_ids = ["zai-coding-plan", "zai"]
-env_default = true
-plan = true
+env_keys = ["ZAI_API_KEY", "ZHIPU_API_KEY"]
+opencode_ids = ["zai"]
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "unsupported"
+
+[[preset]]
+name = "zai-cn-api"
+provider = "zai"
+region = "cn"
+label = "GLM API, China"
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+model = "glm-5.3"
+env_keys = ["GLM_API_KEY"]
+opencode_ids = ["zhipuai"]
+
+[preset.reasoning]
+levels = []
+off = "unsupported"
 
 [[preset]]
 name = "qwen-plan"
-label = "Alibaba coding plan (international)"
+provider = "alibaba"
+region = "intl"
+label = "Qwen coding plan, international"
 base_url = "https://coding-intl.dashscope.aliyuncs.com/v1"
-model = "qwen3-coder-next"
+model = "qwen3.7-plus"
 env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
 opencode_ids = ["alibaba-coding-plan"]
 plan = true
 
 [[preset]]
 name = "qwen-plan-cn"
-label = "Alibaba coding plan (China)"
+provider = "alibaba"
+region = "cn"
+label = "Qwen coding plan, China"
 base_url = "https://coding.dashscope.aliyuncs.com/v1"
-model = "qwen3-coder-next"
+model = "qwen3.7-plus"
 env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
 opencode_ids = ["alibaba-coding-plan-cn"]
 plan = true
 
 [[preset]]
 name = "dashscope"
-label = "Alibaba DashScope API (international)"
+cache_marks = true
+provider = "alibaba"
+region = "intl"
+label = "Qwen API, international"
 base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-model = "qwen3-coder-plus"
+model = "qwen3.7-plus"
 env_keys = ["DASHSCOPE_API_KEY"]
 opencode_ids = ["alibaba"]
 
 [[preset]]
 name = "dashscope-cn"
-label = "Alibaba DashScope API (China)"
+cache_marks = true
+provider = "alibaba"
+region = "cn"
+label = "Qwen API, China"
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-model = "qwen3-coder-plus"
+model = "qwen3.7-plus"
 env_keys = ["DASHSCOPE_API_KEY"]
 opencode_ids = ["alibaba-cn"]
 
 [[preset]]
-name = "kimi"
+name = "kimi-cn"
+key_from = ["kimi"]
+label = "Kimi Code, China"
+provider = "kimi"
+region = "cn"
 base_url = "https://api.kimi.com/coding/v1"
 model = "k3"
-env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"]
+env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY"]
 missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
-aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-for-coding" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
+aliases = { "kimi-k3" = "k3", "k3" = "k3" }
 cli_token = "kimi-code"
-opencode_ids = [
-    "kimi-code-plan-global",
-    "kimi-code-plan-cn",
-    "moonshotai",
-    "moonshotai-cn",
-]
+opencode_ids = ["kimi-code-plan-cn", "moonshotai-cn"]
+plan = true
+
+[preset.reasoning]
+levels = ["low", "high", "max"]
+off = "unsupported"
+
+[[preset]]
+name = "kimi-intl"
+key_from = ["kimi"]
+label = "Kimi Code, international"
+provider = "kimi"
+region = "intl"
+base_url = "https://api.kimi.ai/coding/v1"
+model = "k3"
+env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY"]
+cli_token = "kimi-code"
+missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
+aliases = { "kimi-k3" = "k3", "k3" = "k3" }
+opencode_ids = ["kimi-code-plan-global", "moonshotai"]
 plan = true
 
 [preset.reasoning]
@@ -122,10 +154,10 @@ off = "unsupported"
 [[preset]]
 name = "grok"
 base_url = "https://api.x.ai/v1"
-model = "grok-4.6"
+model = "grok-4.7"
 env_keys = ["XAI_API_KEY", "GROK_API_KEY"]
 missing = "run `summonr login NAME` to sign in with SuperGrok or paste a key, or set XAI_API_KEY"
-aliases = { "grok" = "grok-4.6", "grok-4-6" = "grok-4.6", "grok4.6" = "grok-4.6" }
+aliases = { "grok" = "grok-4.7", "grok-4-7" = "grok-4.7", "grok4.7" = "grok-4.7", "grok-4-6" = "grok-4.6", "grok4.6" = "grok-4.6" }
 oauth = "supergrok"
 opencode_ids = ["xai"]
 prompt_cache_key = true
@@ -136,8 +168,8 @@ off = "unsupported"
 
 [[preset]]
 name = "deepseek"
-base_url = "https://api.deepseek.com/v1"
-model = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com"
+model = "deepseek-flash"
 env_keys = ["DEEPSEEK_API_KEY"]
 opencode_ids = ["deepseek"]
 
@@ -148,7 +180,7 @@ off = "disabled"
 [[preset]]
 name = "copilot"
 base_url = "https://api.githubcopilot.com"
-model = "gpt-4o"
+model = "gpt-5.3-codex"
 missing = "run `summonr login copilot`"
 oauth = "copilot"
 headers = { "Editor-Version" = "vscode/1.95.3", "Editor-Plugin-Version" = "copilot-chat/0.24.1", "Copilot-Integration-Id" = "vscode-chat" }
@@ -161,7 +193,8 @@ host_only = true
 [[preset]]
 name = "openai"
 base_url = "https://api.openai.com/v1"
-model = "gpt-4o"
+model = "gpt-6-astra"
+login_model = "gpt-6.1-sol"
 env_keys = ["OPENAI_API_KEY"]
 missing = "run `summonr login NAME` to sign in with ChatGPT or paste a key, or set OPENAI_API_KEY"
 oauth = "chatgpt"
@@ -175,6 +208,7 @@ off = "unsupported"
 
 [[preset]]
 name = "openrouter"
+cache_header = "x-session-id"
 base_url = "https://openrouter.ai/api/v1"
 model = "openai/gpt-4o"
 env_keys = ["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"]
@@ -187,16 +221,20 @@ off = "none"
 host_only = true
 
 [[preset]]
-name = "anthropic"
+name = "anthropic-api"
+key_from = ["anthropic"]
+provider = "anthropic"
 base_url = "https://api.anthropic.com/v1/"
-model = "claude-sonnet-5"
+model = "claude-opus-5-5"
 env_keys = ["ANTHROPIC_API_KEY"]
-aliases = { "sonnet" = "claude-sonnet-5", "claude" = "claude-sonnet-5" }
+missing = "run `summonr login anthropic-api`, set ANTHROPIC_API_KEY, or run a Claude plan with `summonr claude`"
+aliases = { "sonnet" = "claude-sonnet-5-5", "opus" = "claude-opus-5-5", "claude" = "claude-opus-5-5" }
 opencode_ids = ["anthropic"]
 wire = "anthropic"
 
 [[preset]]
 name = "claude-pro"
+provider = "anthropic"
 base_url = "https://api.anthropic.com/v1/"
 model = "claude-sonnet-5"
 missing = "run `summonr login claude-pro` to sign in with a Claude Pro or Max plan"
@@ -209,45 +247,69 @@ off = true
 wire = "anthropic"
 
 [[preset]]
+name = "claude"
+provider = "anthropic"
+label = "Claude plan through Claude Code"
+base_url = "claude"
+model = "default"
+default_key = "claude-code"
+env_unset = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
+missing = "install Claude Code and run `claude auth login`"
+opencode_ids = ["anthropic"]
+plan = true
+wire = "agent-sdk"
+
+[preset.reasoning]
+levels = ["low", "medium", "high", "xhigh", "max"]
+off = "unsupported"
+
+[[preset]]
 name = "gemini"
 base_url = "https://generativelanguage.googleapis.com/v1beta/"
-model = "gemini-2.5-flash"
+model = "gemini-3.8-flash"
 env_keys = ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
 missing = "run `summonr login NAME` or set GEMINI_API_KEY or GOOGLE_API_KEY"
-aliases = { "flash" = "gemini-2.5-flash", "pro" = "gemini-2.5-pro" }
+aliases = { "flash" = "gemini-3.8-flash", "pro" = "gemini-3.1-pro-preview" }
 opencode_ids = ["google"]
 wire = "gemini"
 
 [[preset]]
-name = "minimax"
-label = "MiniMax API (international)"
+name = "minimax-api"
+key_from = ["minimax"]
+provider = "minimax"
+region = "intl"
+label = "MiniMax API, international"
 base_url = "https://api.minimax.io/v1"
 model = "MiniMax-M3"
-env_keys = ["MINIMAX_API_KEY", "MINIMAX_CODE_API_KEY"]
-opencode_ids = ["minimax-coding-plan", "minimax"]
+env_keys = ["MINIMAX_API_KEY"]
+opencode_ids = ["minimax"]
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "omit"
 
 [[preset]]
 name = "minimax-cn"
-label = "MiniMax API (China)"
+provider = "minimax"
+region = "cn"
+label = "MiniMax API, China"
 base_url = "https://api.minimax.cn/v1"
 model = "MiniMax-M3"
-env_keys = ["MINIMAX_CN_API_KEY", "MINIMAX_CODE_CN_API_KEY"]
-opencode_ids = ["minimax-cn-coding-plan", "minimax-cn"]
+env_keys = ["MINIMAX_CN_API_KEY"]
+opencode_ids = ["minimax-cn"]
 
 [preset.reasoning]
 levels = []
-off = "disabled"
+off = "omit"
 
 [[preset]]
 name = "minimax-plan"
-label = "MiniMax coding plan (international)"
+provider = "minimax"
+region = "intl"
+label = "MiniMax coding plan, international"
 base_url = "https://api.minimax.io/anthropic/v1"
-model = "MiniMax-M3"
-env_keys = ["MINIMAX_API_KEY"]
+model = "MiniMax-M3.1-Flash-Preview"
+env_keys = ["MINIMAX_CODE_API_KEY", "MINIMAX_API_KEY"]
 opencode_ids = ["minimax-coding-plan"]
 plan = true
 wire = "anthropic"
@@ -255,10 +317,12 @@ cache_ttl = "5m"
 
 [[preset]]
 name = "minimax-cn-plan"
-label = "MiniMax coding plan (China)"
+provider = "minimax"
+region = "cn"
+label = "MiniMax coding plan, China"
 base_url = "https://api.minimax.cn/anthropic/v1"
-model = "MiniMax-M3"
-env_keys = ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]
+model = "MiniMax-M3.1-Flash-Preview"
+env_keys = ["MINIMAX_CODE_CN_API_KEY", "MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]
 opencode_ids = ["minimax-cn-coding-plan"]
 plan = true
 wire = "anthropic"
@@ -268,7 +332,7 @@ cache_ttl = "5m"
 name = "tencent-plan"
 label = "Tencent coding plan (China)"
 base_url = "https://api.lkeap.cloud.tencent.com/coding/v3"
-model = "hunyuan-2.0-thinking"
+model = "tc-code-latest"
 env_keys = ["TENCENT_CODING_PLAN_API_KEY"]
 opencode_ids = ["tencent-coding-plan"]
 plan = true
@@ -281,7 +345,7 @@ host_only = true
 name = "volcengine-plan"
 label = "Volcengine coding plan (China)"
 base_url = "https://ark.cn-beijing.volces.com/api/coding/v3"
-model = "doubao-seed-2.1-turbo"
+model = "doubao-seed-evolving"
 env_keys = ["ARK_CODING_PLAN_API_KEY"]
 opencode_ids = ["volcengine-coding-plan"]
 plan = true
@@ -293,7 +357,7 @@ host_only = true
 [[preset]]
 name = "ollama"
 label = "Ollama on this machine"
-start = "ollama serve"
+start = "OLLAMA_CONTEXT_LENGTH=65536 ollama serve"
 base_url = "http://127.0.0.1:11434/v1"
 model = ""
 default_key = "ollama"
@@ -354,6 +418,7 @@ off = "none"
 
 [[preset]]
 name = "mistral"
+prompt_cache_key = true
 base_url = "https://api.mistral.ai/v1"
 model = ""
 env_keys = ["MISTRAL_API_KEY"]
@@ -366,6 +431,7 @@ off = "none"
 
 [[preset]]
 name = "fireworks"
+cache_header = "x-session-affinity"
 base_url = "https://api.fireworks.ai/inference/v1"
 model = ""
 env_keys = ["FIREWORKS_API_KEY"]
@@ -382,8 +448,11 @@ opencode_ids = ["deepinfra"]
 off = "none"
 
 [[preset]]
-name = "siliconflow"
-label = "SiliconFlow API (international)"
+name = "siliconflow-intl"
+key_from = ["siliconflow"]
+provider = "siliconflow"
+region = "intl"
+label = "SiliconFlow, international"
 base_url = "https://api.siliconflow.com/v1"
 model = ""
 env_keys = ["SILICONFLOW_API_KEY"]
@@ -391,7 +460,9 @@ opencode_ids = ["siliconflow"]
 
 [[preset]]
 name = "siliconflow-cn"
-label = "SiliconFlow API (China)"
+provider = "siliconflow"
+region = "cn"
+label = "SiliconFlow, China"
 base_url = "https://api.siliconflow.cn/v1"
 model = ""
 env_keys = ["SILICONFLOW_CN_API_KEY"]
@@ -424,6 +495,7 @@ off = "none"
 
 [[preset]]
 name = "perplexity"
+off = true
 base_url = "https://api.perplexity.ai"
 models_url = "https://api.perplexity.ai/v1"
 model = "sonar-pro"
@@ -434,7 +506,7 @@ opencode_ids = ["perplexity"]
 name = "muse"
 base_url = "https://api.meta.ai/v1"
 model = "muse-spark-1.3"
-env_keys = ["META_API_KEY", "MODEL_API_KEY"]
+env_keys = ["MODEL_API_KEY", "META_MODEL_API_KEY", "META_API_KEY"]
 opencode_ids = ["meta"]
 
 [preset.reasoning]
@@ -442,17 +514,19 @@ levels = ["minimal", "low", "medium", "high", "xhigh"]
 off = "unsupported"
 
 [[preset]]
-name = "zen"
-base_url = "https://opencode.ai/zen/v1"
+name = "opencode-zen"
+key_from = ["opencode", "zen"]
+replaces = ["zen"]
+provider = "opencode"
+base_url = "https://opencode.ai/inference/v1"
 model = "glm-5.3-flash"
 env_keys = ["OPENCODE_API_KEY"]
-missing = "run `summonr login zen`, set OPENCODE_API_KEY, or `opencode auth login`"
+missing = "run `summonr login opencode-zen`, set OPENCODE_API_KEY, or `opencode auth login`"
 opencode = true
 opencode_ids = ["opencode"]
-plan = true
-
 [[preset]]
 name = "go"
+provider = "opencode"
 base_url = "https://opencode.ai/zen/go/v1"
 model = "glm-5.3-flash"
 env_keys = ["OPENCODE_GO_API_KEY", "OPENCODE_API_KEY"]
@@ -461,12 +535,3 @@ opencode = true
 opencode_ids = ["opencode-go"]
 plan = true
 
-[[preset]]
-name = "opencode"
-base_url = "https://opencode.ai/zen/v1"
-model = "glm-5.3-flash"
-env_keys = ["OPENCODE_API_KEY"]
-missing = "run `summonr login opencode`, set OPENCODE_API_KEY, or `opencode auth login`"
-opencode = true
-opencode_ids = ["opencode"]
-plan = true

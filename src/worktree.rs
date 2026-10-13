@@ -142,10 +142,8 @@ fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
             start,
         ],
     )?;
-    let path = path.canonicalize().unwrap_or(path);
-    let primary = primary
-        .canonicalize()
-        .unwrap_or_else(|_| primary.to_path_buf());
+    let path = dunce::canonicalize(&path).unwrap_or(path);
+    let primary = dunce::canonicalize(primary).unwrap_or_else(|_| primary.to_path_buf());
     let tree = Tree {
         primary,
         path,
@@ -173,7 +171,7 @@ pub(crate) fn is_delta_of(workspace: &Path, candidate: &Path) -> bool {
     let (Some(name), Some(parent)) = (primary.file_name(), primary.parent()) else {
         return false;
     };
-    let root = parent.join(format!("{}-deltas", name.to_string_lossy()));
+    let root = parent.join(format!("{}-{CHILDREN}", name.to_string_lossy()));
     let root = root.canonicalize().unwrap_or(root);
     let Some(actual) = candidate.parent() else {
         return false;
@@ -207,22 +205,24 @@ impl Tree {
     }
 
     pub fn unchanged(&self) -> Result<bool> {
+        Ok(self.changes()?.is_empty())
+    }
+
+    pub fn changes(&self) -> Result<Vec<String>> {
         if !self.path.exists() {
-            return Ok(true);
+            return Ok(Vec::new());
         }
-        let Some(snapshot) = &self.snapshot else {
-            return Ok(!dirty(&self.path)?);
-        };
-        let diff = crate::diff::git_env(&self.path, &[], &["diff", "--name-only", snapshot])?;
-        if !diff.is_empty() {
-            return Ok(false);
-        }
-        let untracked = crate::diff::git_env(
+        let base = self.snapshot.as_deref().unwrap_or("HEAD");
+        let diff = crate::diff::git_paths(&self.path, &["diff", "--name-only", "-z", base])?;
+        let untracked = crate::diff::git_paths(
             &self.path,
-            &[],
-            &["ls-files", "--others", "--exclude-standard"],
+            &["ls-files", "-z", "--others", "--exclude-standard"],
         )?;
-        Ok(untracked.is_empty())
+        Ok(diff
+            .into_iter()
+            .chain(untracked)
+            .filter(|path| !crate::diff::ignored::hidden(path))
+            .collect())
     }
 }
 
@@ -275,6 +275,8 @@ fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {
 fn worktree_dir(primary: &Path, id: &str) -> Result<PathBuf> {
     checkout_dir(primary, "worktrees", id)
 }
+
+pub(super) const CHILDREN: &str = "children";
 
 fn checkout_dir(primary: &Path, kind: &str, id: &str) -> Result<PathBuf> {
     let name = primary

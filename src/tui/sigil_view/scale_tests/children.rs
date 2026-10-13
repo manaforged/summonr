@@ -128,7 +128,7 @@ fn a_child_in_its_own_checkout_shows_paths_from_that_checkout() {
                 access: crate::child::Access::Implement,
                 call: "t1".to_owned(),
                 background: false,
-                workspace: "/w/repo-deltas/abc".to_owned(),
+                workspace: "/w/repo-children/abc".to_owned(),
                 agent: String::new(),
             }),
         }));
@@ -138,13 +138,13 @@ fn a_child_in_its_own_checkout_shows_paths_from_that_checkout() {
             Event::ToolCall {
                 id: "c".to_owned(),
                 name: "read".to_owned(),
-                arguments: r#"{"path":"/w/repo-deltas/abc/src/lib.rs"}"#.to_owned(),
+                arguments: r#"{"path":"/w/repo-children/abc/src/lib.rs"}"#.to_owned(),
             },
         );
     })
     .join("\n");
     assert!(shown.contains("Read src/lib.rs"), "{shown}");
-    assert!(!shown.contains("repo-deltas"), "{shown}");
+    assert!(!shown.contains("repo-children"), "{shown}");
 }
 
 #[test]
@@ -156,14 +156,14 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
         parent: IDS[1].parse().unwrap(),
         assignment: "Fix the parser. Keep the tests.".to_owned(),
         model: "m".to_owned(),
-        workspace: "/w/repo-deltas/abc".into(),
+        workspace: "/w/repo-children/abc".into(),
         depth: 1,
         access: crate::child::Access::Implement,
         background: false,
         call: Some("t9".to_owned()),
         state: ChildState::Completed(ChildResult {
             text: "Parser fixed; 4 tests pass.".to_owned(),
-            changed_paths: vec!["/w/repo-deltas/abc/src/parse.rs".to_owned()],
+            changed_paths: vec!["/w/repo-children/abc/src/parse.rs".to_owned()],
             changed_paths_total: 1,
             rounds: 3,
             usage: crate::provider::Usage::default(),
@@ -193,7 +193,7 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
     assert!(shown.contains("Parser fixed; 4 tests pass."), "{shown}");
     assert!(shown.contains("src/parse.rs"), "{shown}");
     assert!(
-        !shown.contains("\"status\"") && !shown.contains("repo-deltas"),
+        !shown.contains("\"status\"") && !shown.contains("repo-children"),
         "{shown}"
     );
 }

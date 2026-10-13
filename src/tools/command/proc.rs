@@ -245,6 +245,19 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
         "APPDATA",
         "ProgramFiles",
         "ProgramFiles(x86)",
+        "ProgramW6432",
+        "CommonProgramFiles",
+        "CommonProgramFiles(x86)",
+        "ProgramData",
+        "ALLUSERSPROFILE",
+        "PSModulePath",
+        "windir",
+        "SystemDrive",
+        "COMPUTERNAME",
+        "USERNAME",
+        "PROCESSOR_ARCHITECTURE",
+        "NUMBER_OF_PROCESSORS",
+        "OS",
     ];
     let mut env: Vec<_> = KEEP
         .iter()

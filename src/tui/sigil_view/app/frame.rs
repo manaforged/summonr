@@ -54,6 +54,11 @@ impl App {
                 });
             }
         });
+        let app = self.clone();
+        effect(move || {
+            let clock = splash.get().then(sigil::animation_runtime::clock);
+            app.sky_clock.set(clock);
+        });
         self.poll();
         let app = self.clone();
         effect(move || {

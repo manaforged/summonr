@@ -53,7 +53,8 @@ impl App {
             self.sessions.note("");
         } else {
             self.sessions.note(&format!(
-                "alt+d again deletes {}",
+                "{} again deletes {}",
+                crate::tui::sigil_view::ui::alt_label('d'),
                 crate::session::short(&info.id)
             ));
         }

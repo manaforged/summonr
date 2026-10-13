@@ -177,6 +177,7 @@ impl SessionDriver {
         millis: u64,
         billable: bool,
     ) -> Result<(), DriverError> {
+        let reported = self.partial.usage.take();
         if !self.partial.text.is_empty() || !self.partial.reasoning.is_empty() {
             self.append(Line::Interrupted {
                 text: self.partial.text.clone(),
@@ -194,15 +195,18 @@ impl SessionDriver {
             (0, 0)
         };
         self.append(Line::Charge {
-            reported: false,
-            usage: Usage {
-                input,
-                output,
-                reasoning: 0,
-                cached: 0,
-                written: 0,
-                millis,
-            },
+            reported: reported.is_some(),
+            usage: reported.map_or(
+                Usage {
+                    input,
+                    output,
+                    reasoning: 0,
+                    cached: 0,
+                    written: 0,
+                    millis,
+                },
+                |usage| Usage::measured(&usage, millis),
+            ),
             note: diagnostic.to_string(),
             model: round.model,
             prefix_hash: String::new(),

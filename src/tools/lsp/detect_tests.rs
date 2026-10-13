@@ -3,7 +3,7 @@ use super::*;
 fn plugin_claiming(extensions: &[&str]) -> Server {
     Server {
         key: "demo:all".to_string(),
-        argv: vec!["sh".to_string()],
+        argv: vec![std::env::current_exe().unwrap().display().to_string()],
         env: BTreeMap::new(),
         languages: extensions
             .iter()

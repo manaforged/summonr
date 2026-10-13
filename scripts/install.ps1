@@ -13,7 +13,7 @@ function Fail($Message) {
 
 $Arch = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment').PROCESSOR_ARCHITECTURE
 if ($Arch -ne 'AMD64') {
-    Fail "unsupported CPU $Arch. Only x64 Windows is supported. See $Releases for available builds."
+    Fail "unsupported CPU $Arch. summonr ships an x64 build for Windows only. See $Releases for every build."
 }
 
 $Name = "summonr-$Target"
@@ -65,4 +65,4 @@ if ($Entries -notcontains $Dir) {
 }
 Write-Host "Update: irm $Installer | iex"
 Write-Host "Uninstall: Remove-Item `"$Exe`""
-Write-Host 'Next: run summonr, then /login to pick a provider and paste a key.'
+Write-Host 'Next: run summonr, then /login to pick a provider and add a key or sign in to a plan.'

@@ -13,6 +13,8 @@ pub(crate) const fn seconds(value: u64) -> Duration {
 const BUILT_IN: &str = include_str!("limits.toml");
 #[cfg(test)]
 const TEST: &str = include_str!("limits_test.toml");
+#[cfg(test)]
+const TEST_WINDOWS: &str = include_str!("limits_test_windows.toml");
 
 fn parse<T: serde::de::DeserializeOwned>(text: &str, name: &str) -> T {
     match toml::from_str(text) {
@@ -44,6 +46,13 @@ impl Limits {
             ]),
         }
     }
+
+    pub(crate) fn retry_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
+        retry_after.map_or_else(
+            || self.retry_policy(Reach::Remote).backoff(retries),
+            |secs| Duration::from_secs(secs).min(self.retry_after_max()),
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,7 +75,12 @@ fn load() -> Limits {
 
 #[cfg(test)]
 fn load() -> Limits {
-    Limits::built_in().overlay(&parse(TEST, "test"))
+    let test = Limits::built_in().overlay(&parse(TEST, "test"));
+    if cfg!(windows) {
+        test.overlay(&parse(TEST_WINDOWS, "windows test"))
+    } else {
+        test
+    }
 }
 
 pub(crate) fn limits() -> &'static Limits {

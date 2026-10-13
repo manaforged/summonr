@@ -21,7 +21,11 @@ pub(super) struct Row {
     #[serde(default)]
     model: String,
     #[serde(default)]
+    login_model: Option<String>,
+    #[serde(default)]
     env_keys: Vec<String>,
+    #[serde(default)]
+    env_unset: Vec<String>,
     #[serde(default)]
     default_key: Option<String>,
     #[serde(default)]
@@ -49,6 +53,8 @@ pub(super) struct Row {
     #[serde(default)]
     cache_header: Option<String>,
     #[serde(default)]
+    cache_marks: bool,
+    #[serde(default)]
     cli_token: Option<String>,
     #[serde(default = "yes")]
     opencode_oauth: bool,
@@ -65,7 +71,13 @@ pub(super) struct Row {
     #[serde(default)]
     start: Option<String>,
     #[serde(default)]
-    key_from: Option<String>,
+    key_from: Vec<String>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    region: Option<super::super::Region>,
+    #[serde(default)]
+    replaces: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -165,7 +177,12 @@ impl Row {
     }
 
     fn check_env_keys(&self, name: &str) -> Checked<()> {
-        match self.env_keys.iter().find(|key| !env_key_ok(key)) {
+        match self
+            .env_keys
+            .iter()
+            .chain(&self.env_unset)
+            .find(|key| !env_key_ok(key))
+        {
             Some(key) => Err(format!("`{name}` lists env key `{key}`")),
             None => Ok(()),
         }
@@ -188,13 +205,15 @@ impl Row {
         self.check_env_keys(&name)?;
         let missing = self.missing(&name);
         let reasoning = self.reasoning.spec(&name)?;
-        if self.key_from.as_deref() == Some(name.as_str()) {
+        if self.key_from.contains(&name) {
             return Err(format!("`{name}` reads its key from itself"));
         }
         Ok(Preset {
             models_url: leak_str(self.models_url.as_deref()),
             model: self.model,
+            login_model: self.login_model,
             env_keys: leak_list(&self.env_keys),
+            env_unset: leak_list(&self.env_unset),
             default_key: leak_str(self.default_key.as_deref()),
             missing,
             aliases: leak_pairs(self.aliases),
@@ -208,6 +227,7 @@ impl Row {
             assistant_after_tool: self.assistant_after_tool,
             cache_ttl: self.cache_ttl,
             cache_header: self.cache_header,
+            cache_marks: self.cache_marks,
             cli_token,
             opencode_oauth: self.opencode_oauth,
             env_default: self.env_default,
@@ -217,6 +237,9 @@ impl Row {
             label: self.label,
             start: self.start,
             key_from: self.key_from,
+            provider: self.provider.unwrap_or_else(|| name.clone()),
+            region: self.region,
+            replaces: self.replaces,
             name,
             base_url,
         })

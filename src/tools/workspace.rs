@@ -24,7 +24,14 @@ use list::{format_directory, format_tree};
 impl ToolRegistry {
     pub(super) fn read(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("read", arguments)?;
-        let op = args.get("op").and_then(Value::as_str);
+        let target = ["path", "pattern"]
+            .iter()
+            .any(|field| super::args::named(&args, field).is_some())
+            || args
+                .get("paths")
+                .and_then(Value::as_array)
+                .is_some_and(|paths| paths.iter().any(super::args::named_value));
+        let op = super::args::named(&args, "op").filter(|op| !(*op == "help" && target));
         if let Some(paths) = args
             .get("paths")
             .and_then(Value::as_array)
@@ -85,7 +92,9 @@ impl ToolRegistry {
 
     pub(super) async fn edit_file(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("edit", arguments)?;
-        if args.get("op").and_then(Value::as_str) == Some("help") {
+        if super::args::named(&args, "op") == Some("help")
+            && super::args::named(&args, "path").is_none()
+        {
             return Ok(ToolOutput::ok(super::help::EDIT.to_string()));
         }
         self.apply_edit("edit", &args).await
@@ -289,11 +298,31 @@ mod tests;
 
 fn edited_text(original: &str, args: &Value) -> Result<(String, bool)> {
     let sequence = args.get("op").and_then(Value::as_str) == Some("sequence");
-    match args.get("edits").and_then(Value::as_array) {
+    let flat = ["old", "new"]
+        .iter()
+        .any(|field| super::args::named(args, field).is_some());
+    let edits = args
+        .get("edits")
+        .and_then(Value::as_array)
+        .filter(|ops| !(flat && ops.iter().all(blank_edit)));
+    if flat && edits.is_some() {
+        return Err(Error::Tool(
+            "edit got both top-level old/new and edits; send one edit as old/new or every edit in edits".to_string(),
+        ));
+    }
+    match edits {
         Some(ops) if ops.is_empty() => Err(Error::Tool("edits is empty".to_string())),
         Some(ops) if sequence => edit::apply_sequence(original, ops),
         Some(ops) => edit::apply_many(original, ops),
         None => edit::apply_one(original, args)
             .map_err(|error| edit::edit_error_context(error, original, args)),
     }
+}
+
+fn blank_edit(op: &Value) -> bool {
+    op.as_object().is_none_or(|fields| {
+        fields
+            .values()
+            .all(|value| !super::args::named_value(value) && value.as_bool() != Some(true))
+    })
 }

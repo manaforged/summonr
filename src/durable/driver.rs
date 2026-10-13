@@ -316,7 +316,7 @@ pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(Policy, String
 }
 
 pub(crate) fn canonical(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 #[cfg(test)]

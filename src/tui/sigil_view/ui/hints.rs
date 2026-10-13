@@ -17,6 +17,7 @@ pub(in crate::tui) enum Key {
     Space,
     UpDown,
     Hotkey(Hotkey),
+    Alt(char),
     Fixed(&'static str),
 }
 
@@ -30,9 +31,18 @@ impl Key {
             Self::Space => "space".to_string(),
             Self::UpDown => "↑↓".to_string(),
             Self::Hotkey(action) => keys.label(action),
+            Self::Alt(key) => alt_label(key),
             Self::Fixed(chord) => chord.to_string(),
         }
     }
+}
+
+#[must_use]
+pub(in crate::tui) fn alt_label(key: char) -> String {
+    let chord = format!("alt+{key}");
+    chord
+        .parse::<sigil::events::Shortcut>()
+        .map_or(chord, |shortcut| shortcut.label())
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

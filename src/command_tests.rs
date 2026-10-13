@@ -1,23 +1,22 @@
-use super::{SlashCommand, argument, command_specs, parse_command, renamed};
+use super::{SlashCommand, alias, argument, command_specs, parse_command};
 
 #[test]
-fn an_old_command_name_runs_its_replacement_and_says_so() {
-    let (line, note) = renamed("/rollback 3").unwrap();
-    assert_eq!(line, "/undo files 3");
-    assert_eq!(note.as_deref(), Some("renamed: use /undo files"));
+fn an_alias_runs_its_target_quietly() {
+    assert_eq!(alias("/rollback 3").as_deref(), Some("/undo files 3"));
+    assert_eq!(alias("/quit").as_deref(), Some("/exit"));
     assert_eq!(parse_command("/rollback 3"), parse_command("/undo files 3"));
 }
 
 #[test]
 fn a_current_command_is_not_rewritten() {
-    assert!(renamed("/undo").is_none());
+    assert!(alias("/undo").is_none());
     assert_eq!(parse_command("/login"), Some(SlashCommand::Login));
 }
 
 #[test]
 fn approve_is_not_a_command() {
     assert_eq!(parse_command("/approve"), None);
-    assert!(renamed("/approve").is_none());
+    assert!(alias("/approve").is_none());
     let permissions = command_specs()
         .iter()
         .find(|spec| spec.name == "/permissions")

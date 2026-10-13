@@ -50,9 +50,24 @@ jobs:
       - name: tests
         run: cargo test --workspace --locked
 
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Rust toolchain
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          save-if: 'false'
+      - name: tests
+        run: cargo test --workspace --locked
+
   build:
     name: build ${{ matrix.target }}
-    needs: test
+    needs: [test, macos]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     permissions:

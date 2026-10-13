@@ -165,6 +165,8 @@ struct Detail {
     reasoning_tokens: Option<u64>,
     #[serde(default)]
     cached_tokens: Option<u64>,
+    #[serde(default)]
+    cache_write_tokens: Option<u64>,
 }
 
 impl Counted {
@@ -181,7 +183,10 @@ impl Counted {
                 self.input_tokens_details
                     .and_then(|detail| detail.cached_tokens),
             ),
-            cache_write_tokens: 0,
+            cache_write_tokens: field(
+                self.input_tokens_details
+                    .and_then(|detail| detail.cache_write_tokens),
+            ),
         }
     }
 }

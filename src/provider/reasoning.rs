@@ -47,6 +47,7 @@ pub(crate) enum Off {
     BetweenTools,
     #[serde(rename = "chat_template_kwargs")]
     TemplateKwarg,
+    EnableThinking,
     Unsupported,
 }
 
@@ -58,6 +59,7 @@ impl Off {
             Self::TemplateKwarg => {
                 Some(("chat_template_kwargs", json!({"enable_thinking": false})))
             }
+            Self::EnableThinking => Some(("enable_thinking", json!(false))),
             Self::Omit | Self::EffortNone | Self::Unsupported => None,
         }
     }
@@ -74,11 +76,20 @@ pub(crate) enum EffortField {
 pub(crate) struct Scale {
     pub(crate) levels: &'static [Effort],
     pub(crate) off: Off,
+    pub(crate) up: bool,
 }
 
 impl Scale {
     pub(crate) const fn new(levels: &'static [Effort], off: Off) -> Self {
-        Self { levels, off }
+        Self {
+            levels,
+            off,
+            up: false,
+        }
+    }
+
+    pub(crate) const fn upward(self) -> Self {
+        Self { up: true, ..self }
     }
 }
 
@@ -124,6 +135,7 @@ pub(crate) struct Plan<'a> {
     pub(crate) field: EffortField,
     pub(crate) levels: &'a [Effort],
     pub(crate) off: Off,
+    pub(crate) up: bool,
 }
 
 impl Reasoning {
@@ -146,6 +158,7 @@ impl Reasoning {
                 .off
                 .or(row.map(|scale| scale.off))
                 .unwrap_or(self.spec.scale.off),
+            up: self.levels.is_none() && row.is_some_and(|scale| scale.up),
         }
     }
 }
@@ -156,7 +169,7 @@ impl Plan<'_> {
             None => Step::Default,
             Some(Effort::None) => self.disabled(),
             Some(_) if self.levels.is_empty() => Step::Default,
-            Some(level) => Step::Level(level.clamp(self.levels)),
+            Some(level) => Step::Level(level.rounded(self.levels, self.up)),
         }
     }
 
@@ -164,7 +177,10 @@ impl Plan<'_> {
         match self.off {
             Off::Omit => Step::Default,
             Off::EffortNone => Step::Level(Effort::None),
-            Off::ThinkingDisabled | Off::BetweenTools | Off::TemplateKwarg => Step::Off(self.off),
+            Off::ThinkingDisabled
+            | Off::BetweenTools
+            | Off::TemplateKwarg
+            | Off::EnableThinking => Step::Off(self.off),
             Off::Unsupported => self
                 .levels
                 .iter()

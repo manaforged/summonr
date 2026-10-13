@@ -13,6 +13,7 @@ summary_retry_rounds = 8
 job_wait_secs = 120
 command_wait_secs = 120
 command_kill_secs = 3600
+agent_park_secs = 3600
 grant_wait_secs = 600
 job_poll_start_secs = 1
 job_poll_cap_secs = 2

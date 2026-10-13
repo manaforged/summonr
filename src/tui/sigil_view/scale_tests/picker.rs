@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::super::app::App;
-use super::{State, busy_info, frame_with};
+use super::{State, busy_info, frame_with, screens};
 use crate::catalog::Model;
 use crate::recent::Seat;
 use crate::tui::Msg;
@@ -30,7 +30,11 @@ fn a_session_delete_confirmation_is_visible_with_existing_rows() {
         ])));
         app.delete_session();
     });
-    assert!(screen.contains("alt+d again deletes first"), "{screen}");
+    let notice = format!(
+        "{} again deletes first",
+        crate::tui::sigil_view::ui::alt_label('d')
+    );
+    assert!(screen.contains(&notice), "{screen}");
 }
 
 #[test]
@@ -282,4 +286,42 @@ fn the_session_filter_is_one_labelled_row_above_the_list() {
     let field = super::find(&lines, super::super::ui::FILTER_HINT).expect(&screen);
     let row = super::find(&lines, "Session first").expect(&screen);
     assert!(row > field && row - field <= 2, "{screen}");
+}
+
+fn first_model(screen: &str) -> Option<String> {
+    screen.lines().find_map(|line| {
+        line.split_whitespace()
+            .find(|word| word.starts_with("model-"))
+            .map(str::to_owned)
+    })
+}
+
+#[test]
+fn moving_back_up_the_model_list_keeps_the_page_in_place() {
+    let ids: Vec<String> = (0..40).map(|at| format!("model-{at:02}")).collect();
+    let rows: Vec<(&str, Option<u64>)> = ids.iter().map(|id| (id.as_str(), None)).collect();
+    let shots = screens(
+        100,
+        30,
+        |app| open(app, &rows, 0),
+        &[
+            &|app: &App| (0..30).for_each(|_| assert!(app.overlay_move(1))),
+            &|app: &App| assert!(app.overlay_move(-1)),
+        ],
+    );
+    let down = first_model(&shots[1]);
+    assert_ne!(down.as_deref(), Some("model-00"), "{}", shots[1]);
+    assert_eq!(down, first_model(&shots[2]), "{}\n{}", shots[1], shots[2]);
+}
+
+#[test]
+fn alt_hints_name_the_option_key_on_macos() {
+    let screen = picker(140, |app| open(app, &[("fresh-model", None)], 0));
+    let favorite = if cfg!(target_os = "macos") {
+        "⌥P favorite"
+    } else {
+        "Alt+P favorite"
+    };
+    assert!(screen.contains(favorite), "{screen}");
+    assert!(!screen.contains("alt+p"), "{screen}");
 }

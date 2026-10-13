@@ -94,6 +94,7 @@ impl Conn {
             program,
             args: &args,
             env: &launch.env,
+            unset: &[],
             cwd: workspace,
             sandbox: sandbox.zip(access),
             base,

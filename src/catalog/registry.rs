@@ -89,6 +89,29 @@ pub(super) fn snapshot() -> Arc<Registry> {
     }))
 }
 
+#[cfg(test)]
+pub(crate) fn serves(providers: &[&str], model: &str) -> Option<bool> {
+    let registry = snapshot();
+    let by_id: BTreeMap<&str, &ProviderMeta> = registry
+        .providers
+        .iter()
+        .map(|provider| (provider.id.as_str(), provider))
+        .collect();
+    let known: Vec<&ProviderMeta> = providers
+        .iter()
+        .filter_map(|id| by_id.get(id).copied())
+        .collect();
+    if known.is_empty() {
+        return None;
+    }
+    Some(known.iter().any(|provider| {
+        provider
+            .models
+            .get(model)
+            .is_some_and(|meta| !meta.deprecated)
+    }))
+}
+
 pub(super) fn current() -> Arc<Registry> {
     shelf::load::<Registry>(FILE)
         .ok()

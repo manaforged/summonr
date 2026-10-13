@@ -17,7 +17,7 @@ pub(crate) use event::{Abort, Hold, Kept};
 pub use event::{AbortCode, Event};
 mod catalog;
 mod dedup;
-pub(crate) use catalog::{Builtin, readonly, retired_op};
+pub(crate) use catalog::{Builtin, readonly, retired_op, shaped};
 pub(crate) use dedup::read_span;
 pub(crate) mod command;
 mod lsp;

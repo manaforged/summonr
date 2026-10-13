@@ -10,11 +10,13 @@ use serde_json::{Value, json};
 
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
+mod agent;
 mod capture;
 pub(crate) mod stream;
 pub(crate) mod think;
 mod wire;
 pub(crate) use wire::boundary;
+pub(crate) use wire::traits::traits;
 
 use crate::endpoint::Wire;
 pub(crate) use summonr_auth::Auth;
@@ -88,6 +90,9 @@ mod tests;
 #[cfg(test)]
 #[path = "provider/cache_tests.rs"]
 mod cache_tests;
+#[cfg(test)]
+#[path = "provider/host_cache_tests.rs"]
+mod host_cache_tests;
 
 #[cfg(test)]
 #[path = "provider/scripted.rs"]

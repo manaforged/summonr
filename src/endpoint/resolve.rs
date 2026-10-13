@@ -63,6 +63,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
     };
     let mut endpoint = seat(&file, &chosen).ok_or_else(|| unknown(&chosen))?;
 
+    let model_flag_unset = model_flag.is_none();
     if let Some(model) = model_flag {
         endpoint.model = named_model(&endpoint.name, &model);
     } else if need.model() && endpoint.model.is_empty() {
@@ -82,7 +83,16 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
         endpoint.overlay_model(spec);
     }
 
-    fill_key(endpoint, need.key())
+    let mut endpoint = fill_key(endpoint, need.key())?;
+    if model_flag_unset
+        && endpoint.oauth.is_some()
+        && let Some(row) = super::preset::preset(&endpoint.name)
+        && endpoint.model == row.model
+        && let Some(model) = &row.login_model
+    {
+        endpoint.model.clone_from(model);
+    }
+    Ok(endpoint)
 }
 
 fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
@@ -122,6 +132,7 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
             .and_then(|preset| preset.cache_ttl)
             .unwrap_or(crate::limits::limits().cache_ttl),
         cache_header: hosted(base).and_then(|preset| preset.cache_header.clone()),
+        cache_marks: hosted(base).is_some_and(|preset| preset.cache_marks),
         reasoning: reasoning::from_preset(hosted(base)),
     }
 }
@@ -207,7 +218,14 @@ fn cost(name: &str, other: &str) -> usize {
 }
 
 pub(super) fn seat(file: &File, chosen: &str) -> Option<Endpoint> {
+    let typed = chosen;
+    let chosen = &super::route::pick(file, typed);
     let mut endpoint = builtin(chosen).or_else(|| from_file(file, chosen))?;
+    if chosen != typed
+        && let Some(row) = file.endpoint.get(typed)
+    {
+        endpoint.overlay(row);
+    }
     if let Some(row) = file.endpoint.get(chosen) {
         endpoint.overlay(row);
     }
@@ -244,6 +262,7 @@ pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
             .or_else(|| preset.and_then(|preset| preset.cache_ttl))
             .unwrap_or(crate::limits::limits().cache_ttl),
         cache_header: preset.and_then(|preset| preset.cache_header.clone()),
+        cache_marks: preset.is_some_and(|preset| preset.cache_marks),
         reasoning: reasoning::from_preset(preset),
         wire: row.wire.unwrap_or(Wire::Completions),
     })

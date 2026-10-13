@@ -2,6 +2,35 @@
 
 Harness-level comparison. Model, tasks, and endpoint match; the runs were not simultaneous. Task is the sampling unit, repeats are correlated trials, and differences are paired and bootstrapped.
 
+## Terminal-Bench 2.1 on plan sign-in: summonr against Codex, 2026-10-13
+
+87 tasks, one pass each, `gpt-6.1-sol` at high effort, both harnesses signed in with a ChatGPT plan, run side by side by `bench/run.sh` as `tb21-chatgpt-1013h` (summonr 0.1.0, Codex 0.162.1). Every request went through the logging proxy, which counts tokens and time. Two tasks are dropped for both harnesses because their verifier could not install its tools: qemu-alpine-ssh, qemu-startup. Cost is priced at the API list price ($2.00 input, $0.10 cached input, $10.00 output per 1M tokens), not plan spend. Intervals are 95% Wilson for solved and bootstrap medians (10,000 resamples) elsewhere.
+
+| Harness | Solved\* | Cost / solved | Input tokens / task | Uncached input / task | Output tokens / task | Cache hit | Cost / task | Time / task | First request |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Codex | 68/87 (78%, 68%–86%) | $0.210 | 202,276 | 26,922 | 3,825 | 91.9% | $0.109 | 160 s | 14,368 |
+| summonr | 67/87 (77%, 67%–85%) | $0.144 | 51,373 | 18,047 | 2,973 | 85.9% | $0.071 | 161 s | 1,534 |
+
+| Harness | Mean agent RSS | Peak agent RSS | Mean harness RSS | Peak harness RSS |
+| --- | ---: | ---: | ---: | ---: |
+| Codex | 180 MB | 239 MB | 204 MB | 282 MB |
+| summonr | 25 MB | 26 MB | 25 MB | 26 MB |
+
+Paired over the 87 tasks, summonr / Codex, geometric mean; below 1 means summonr used less.
+
+| Solved difference | Input tokens | Uncached input | Output tokens | Cost | Time |
+| --- | --- | --- | --- | --- | --- |
+| -0.01 (-0.09–0.08) | 0.28 (0.22–0.35) | 0.72 (0.62–0.84) | 0.78 (0.63–0.94) | 0.65 (0.54–0.77) | 0.91 (0.72–1.13) |
+
+\* Provider errors ended 9 tasks before the harness could finish them. OpenAI's cybersecurity filter refused break-filter-js-from-html and vulnerable-secret for both harnesses. Capacity errors ended 3 Codex tasks ("Selected model is at capacity") and 4 summonr tasks ("servers are currently overloaded"). The table counts all 9 as failures. Four Codex solves are voided because its web search reached published Terminal-Bench solutions; the scanner removes any solve whose trial reached a dataset source.
+
+What the run shows:
+
+- The two harnesses solved the same number of tasks within the interval.
+- summonr sent 0.28x the input tokens and cost 0.65x as much per task at list price. Its first request is 1,534 tokens against Codex's 14,368.
+- summonr ran in 25 MB against Codex's 180 MB.
+- Time per task is even.
+
 ## Terminal-Bench 2.1, 2026-10-02 to 2026-10-03
 
 86 tasks, one pass each, GLM 5.3 Flash (`glm-5.3-flash`) at high effort through z.ai, every harness on its defaults, run by `bench/run.sh` with the method in [`bench/README.md`](bench/README.md). Three runs: `tb21-zai-1002d` (summonr 0.1.0-rc.1 at 74e08fbc, pi 1.0.0), `tb21-zai-1002f` (OpenCode 2.0.22, Hermes v2026.9.24), and `tb21-zai-1003a` (OMP 18.4.12). Arms from different runs did not run side by side; tasks, model, effort, and dataset match. Three tasks are dropped for every harness because their verifier could not install its tools: path-tracing-reverse, qemu-alpine-ssh, qemu-startup. Cost is not priced for this vendor; tokens only. Intervals are 95% Wilson for solved and bootstrap medians (10,000 resamples) elsewhere.

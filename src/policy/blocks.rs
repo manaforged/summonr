@@ -7,14 +7,7 @@ pub(super) enum Block {
 }
 
 pub(super) fn locate(word: &str, workspace: &Path) -> PathBuf {
-    crate::config::expand_tilde(word).unwrap_or_else(|| {
-        let path = Path::new(word);
-        if path.has_root() {
-            path.to_path_buf()
-        } else {
-            workspace.join(path)
-        }
-    })
+    crate::config::expand_tilde(word).unwrap_or_else(|| workspace.join(word))
 }
 
 pub(super) fn path_word(word: &str) -> &str {

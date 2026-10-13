@@ -147,7 +147,14 @@ pub(crate) fn guidance(files: &[MemoryFile]) -> String {
         files
             .iter()
             .find(|file| file.scope == scope)
-            .map(|file| file.path.display().to_string())
+            .map(|file| {
+                let empty = if file.bytes == 0 {
+                    " (empty, nothing to read)"
+                } else {
+                    ""
+                };
+                format!("{}{empty}", file.path.display())
+            })
             .unwrap_or_default()
     };
     format!(

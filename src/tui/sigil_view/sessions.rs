@@ -305,7 +305,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 .key(Key::UpDown, "move")
                 .key(Key::Enter, "resume")
                 .key(Key::Tab, "scope")
-                .key(Key::Fixed("alt+d"), "delete")
+                .key(Key::Alt('d'), "delete")
                 .key(Key::Esc, "close")
                 .right(count)
         })

@@ -28,6 +28,7 @@ pub(super) fn wire_name(wire: Wire) -> &'static str {
         Wire::Responses => "responses",
         Wire::Completions => "completions",
         Wire::Decisions => "decisions",
+        Wire::AgentSdk => "agent-sdk",
     }
 }
 

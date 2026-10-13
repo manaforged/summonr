@@ -6,10 +6,15 @@ use crate::provider::Spec;
 
 pub(super) struct Preset {
     pub(super) name: String,
+    pub(super) provider: String,
+    pub(super) region: Option<super::Region>,
+    pub(super) replaces: Vec<String>,
     pub(super) base_url: String,
     pub(super) models_url: Option<&'static str>,
     pub(super) model: String,
+    pub(super) login_model: Option<String>,
     pub(super) env_keys: &'static [&'static str],
+    pub(super) env_unset: &'static [&'static str],
     pub(super) default_key: Option<&'static str>,
     pub(super) missing: String,
     pub(super) aliases: &'static [(String, String)],
@@ -23,6 +28,7 @@ pub(super) struct Preset {
     pub(super) assistant_after_tool: bool,
     pub(super) cache_ttl: Option<CacheTtl>,
     pub(super) cache_header: Option<String>,
+    pub(super) cache_marks: bool,
     pub(super) cli_token: Option<CliToken>,
     pub(super) opencode_oauth: bool,
     pub(super) env_default: bool,
@@ -31,7 +37,7 @@ pub(super) struct Preset {
     pub(super) opencode_ids: &'static [&'static str],
     pub(super) label: Option<String>,
     pub(super) start: Option<String>,
-    pub(super) key_from: Option<String>,
+    pub(super) key_from: Vec<String>,
 }
 
 pub(super) struct CliToken {
@@ -147,6 +153,7 @@ fn wire(value: &str) -> std::result::Result<Wire, String> {
         "responses" => Ok(Wire::Responses),
         "anthropic" => Ok(Wire::Anthropic),
         "gemini" => Ok(Wire::Gemini),
+        "agent-sdk" => Ok(Wire::AgentSdk),
         other => Err(format!("unknown wire `{other}`")),
     }
 }
@@ -171,15 +178,13 @@ pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
         seen.push(name.clone());
         rows.push(row.into_preset(name, base_url)?);
     }
-    if let Some(row) = rows.iter().find(|row| {
-        row.key_from
-            .as_ref()
-            .is_some_and(|peer| !seen.contains(peer))
-    }) {
-        return Err(format!(
-            "`{}` reads its key from an unknown preset",
-            row.name
-        ));
+    let names: std::collections::BTreeSet<&str> = seen.iter().map(String::as_str).collect();
+    let retired: std::collections::BTreeSet<&str> = rows
+        .iter()
+        .flat_map(|row| row.replaces.iter().map(String::as_str))
+        .collect();
+    if let Some(old) = retired.iter().find(|old| names.contains(*old)) {
+        return Err(format!("`{old}` is retired but is still a preset"));
     }
     Ok(rows)
 }
@@ -192,6 +197,12 @@ pub(super) fn listed() -> &'static [Preset] {
         Ok(rows) => rows,
         Err(error) => panic!("the built-in provider table is invalid: {error}"),
     })
+}
+
+impl Preset {
+    pub(super) const fn keyless(&self) -> bool {
+        self.default_key.is_some() && self.env_keys.is_empty() && self.oauth.is_none()
+    }
 }
 
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {
@@ -207,6 +218,11 @@ pub(crate) fn catalog_providers() -> impl Iterator<Item = &'static str> {
         .iter()
         .filter(|preset| !preset.off)
         .flat_map(|preset| preset.opencode_ids.iter().copied())
+}
+
+#[must_use]
+pub(crate) fn env_unset(name: &str) -> &'static [&'static str] {
+    preset(name).map_or(&[], |preset| preset.env_unset)
 }
 
 #[must_use]

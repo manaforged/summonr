@@ -240,7 +240,21 @@ fn skippable(error: &io::Error) -> bool {
     matches!(
         error.kind(),
         io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
-    )
+    ) || locked(error)
+}
+
+#[cfg(windows)]
+fn locked(error: &io::Error) -> bool {
+    use windows_sys::Win32::Foundation::{ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION};
+    error
+        .raw_os_error()
+        .and_then(|code| u32::try_from(code).ok())
+        .is_some_and(|code| [ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION].contains(&code))
+}
+
+#[cfg(not(windows))]
+fn locked(_: &io::Error) -> bool {
+    false
 }
 
 fn at(path: &Path, error: io::Error) -> io::Error {
@@ -347,3 +361,7 @@ fn own_outputs() -> Vec<(u64, u64)> {
 #[cfg(all(test, unix))]
 #[path = "tree_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "tree_windows_tests.rs"]
+mod windows_tests;

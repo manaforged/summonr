@@ -172,30 +172,50 @@ pub(super) fn rejected_openai(app: &App) {
 }
 
 #[test]
-fn enter_on_an_offline_provider_retries_it_instead_of_seating_it() {
-    let sent = sent(
-        |app| {
-            open(
-                app,
-                vec![(
+fn an_offline_provider_is_left_out_of_the_model_picker() {
+    let screen = screen(160, 40, |app| {
+        open(
+            app,
+            vec![
+                (
                     Seat::new("ollama", "gpt-oss:20b"),
                     Model::named("gpt-oss:20b"),
-                )],
-                &[("ollama", Reach::Offline)],
-            );
-            select(app, "ollama");
-        },
-        App::commit_model_edit,
-    );
-    assert!(
-        !sent
+                ),
+                (Seat::new("deepseek", "ds-flash"), Model::named("ds-flash")),
+            ],
+            &[("ollama", Reach::Offline), ("deepseek", Reach::Ready)],
+        );
+    });
+    assert!(!screen.contains("ollama"), "{screen}");
+    assert!(!screen.contains("offline"), "{screen}");
+    assert!(screen.contains("ds-flash"), "{screen}");
+}
+
+#[test]
+fn a_provider_with_regions_and_plans_shows_both_as_choices() {
+    let zai = |app: &App| {
+        app.replace("/login".to_owned());
+        app.submit();
+        let at = app
+            .filtered_auth()
             .iter()
-            .any(|command| matches!(command, Cmd::SetSeat(..) | Cmd::SetModel(..))),
-        "seated an offline provider"
+            .position(|row| row.provider == "zai")
+            .expect("zai row");
+        app.auth.sel.set(at);
+    };
+    let screen = screen(200, 60, zai);
+    let regions = ["[international]", "[China]"];
+    let plans = ["[coding plan]", "[API key]"];
+    for [one, other] in [regions, plans] {
+        let shown = |label: &str| screen.contains(label);
+        let bare = |label: &str| label.trim_matches(['[', ']']).to_owned();
+        assert!(shown(one) != shown(other), "{screen}");
+        assert!(shown(&bare(one)) && shown(&bare(other)), "{screen}");
+    }
+    assert!(
+        !screen.contains("alt+r") && !screen.contains("alt+a"),
+        "{screen}"
     );
-    assert!(sent.iter().any(
-        |command| matches!(command, Cmd::ListModels { only: Some(name), .. } if name == "ollama")
-    ));
 }
 
 #[test]

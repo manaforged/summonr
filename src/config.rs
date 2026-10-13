@@ -18,6 +18,8 @@ pub(crate) struct File {
     #[serde(default)]
     pub endpoint: BTreeMap<String, Endpoint>,
     #[serde(default)]
+    pub provider: BTreeMap<String, crate::endpoint::Choice>,
+    #[serde(default)]
     pub search: Search,
     #[serde(default)]
     pub browser: Browser,
@@ -328,7 +330,7 @@ pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
 
 pub(crate) use edit::{
     Section, remove_key, remove_named, sandbox_entry, save_default_seat, save_default_workflow,
-    save_module, save_named, save_prefs, save_sandbox_write, save_workflow,
+    save_module, save_named, save_prefs, save_provider, save_sandbox_write, save_workflow,
 };
 
 #[cfg(test)]

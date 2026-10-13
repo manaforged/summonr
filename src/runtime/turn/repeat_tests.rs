@@ -74,7 +74,7 @@ async fn the_same_call_and_result_gets_one_nudge_on_the_last_repeat_and_still_ru
 
 #[tokio::test]
 async fn the_same_call_with_a_changing_result_is_never_nudged() {
-    let results = results(&[vec!["echo x >> n.txt && wc -c < n.txt"; repeats()]]).await;
+    let results = results(&[vec!["echo x >> n.txt; cat n.txt"; repeats()]]).await;
     assert_eq!(nudged(&results), vec![false; repeats()], "{results:?}");
 }
 

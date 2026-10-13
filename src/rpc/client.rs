@@ -21,8 +21,8 @@ pub(crate) use process::{Access, Env, Launch, Process, Stderr, start};
 const SECRET_MIN: usize = 8;
 
 pub(crate) struct Client {
-    _group: Option<ProcessGroup>,
-    child: Child,
+    group: Option<ProcessGroup>,
+    child: Option<Child>,
     stdin: Option<ChildStdin>,
     reader: BufReader<ChildStdout>,
     pending: Vec<u8>,
@@ -59,6 +59,7 @@ impl Client {
             program: launch.program,
             args: launch.args,
             env: launch.env,
+            unset: &[],
             cwd: launch.cwd,
             sandbox: launch
                 .sandbox
@@ -71,8 +72,8 @@ impl Client {
             .stderr
             .map(|pipe| tokio::spawn(tail(pipe, Arc::clone(&stderr))));
         Ok(Self {
-            _group: process.group,
-            child: process.child,
+            group: process.group,
+            child: Some(process.child),
             stdin: Some(process.stdin),
             reader: BufReader::new(process.stdout),
             pending: Vec::new(),
@@ -95,7 +96,7 @@ impl Client {
     }
 
     pub(crate) fn pid(&self) -> Option<u32> {
-        self.child.id()
+        self.child.as_ref().and_then(Child::id)
     }
 
     pub(crate) fn set_wait(&mut self, wait: Duration) {
@@ -253,7 +254,11 @@ impl Client {
     }
 
     pub(crate) fn alive(&mut self) -> bool {
-        !self.broken && matches!(self.child.try_wait(), Ok(None))
+        !self.broken
+            && self
+                .child
+                .as_mut()
+                .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
     }
 
     async fn settle_stderr(&mut self) -> Result<()> {
@@ -300,14 +305,15 @@ impl Drop for Client {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
-        if runtime.runtime_flavor() != tokio::runtime::RuntimeFlavor::MultiThread {
+        let (Some(mut child), group) = (self.child.take(), self.group.take()) else {
             return;
-        }
+        };
         let grace = crate::limits::limits().mcp_close_grace();
-        let child = &mut self.child;
-        let _exited = tokio::task::block_in_place(|| {
-            runtime.block_on(crate::supervise::exited_within(child, grace))
-        });
+        drop(runtime.spawn(async move {
+            crate::supervise::exited_within(&mut child, grace).await;
+            drop(group);
+            drop(child);
+        }));
     }
 }
 
@@ -324,7 +330,7 @@ fn frame_line(value: &Value) -> Result<String> {
     Ok(line)
 }
 
-async fn tail(mut pipe: ChildStderr, keep: Arc<Mutex<Vec<u8>>>) {
+pub(crate) async fn tail(mut pipe: ChildStderr, keep: Arc<Mutex<Vec<u8>>>) {
     let mut chunk = [0_u8; 1024];
     while let Ok(read) = pipe.read(&mut chunk).await {
         if read == 0 {

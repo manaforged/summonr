@@ -308,17 +308,18 @@ impl App {
         let facts = self.picker.facts.peek();
         let choices = self.picker.choices.peek();
         let (held, rest) = choices.split_at(listed.min(choices.len()));
+        let groups = self.picker.groups.peek();
+        let offline = |seat: &Seat| groups.get(&seat.endpoint) == Some(&State::Offline);
         let served: Vec<(&Seat, Option<&crate::catalog::Model>)> = rest
             .iter()
             .map(|seat| (seat, facts.get(seat)))
-            .filter(|(_, fact)| fact.is_none_or(|fact| fact.usable()))
+            .filter(|(seat, fact)| !offline(seat) && fact.is_none_or(|fact| fact.usable()))
             .collect();
         let shelf: Vec<(&str, &crate::catalog::Model)> = served
             .iter()
             .filter_map(|(seat, fact)| Some((seat.endpoint.as_str(), (*fact)?)))
             .collect();
         let mut current = crate::catalog::current(&shelf).into_iter();
-        let groups = self.picker.groups.peek();
         let mut fixes = std::collections::BTreeSet::new();
         let mut hidden = 0;
         let mut kept = Vec::new();

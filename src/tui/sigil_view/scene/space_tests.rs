@@ -188,3 +188,27 @@ fn splash_has_one_brief_sparkle_every_two_seconds_with_quiet_gaps() {
     assert_eq!(onsets, [154, 204, 254, 304, 354, 404]);
     assert_eq!(lit_frames, 96);
 }
+
+#[test]
+fn the_galaxy_haze_mixes_cosmic_hues() {
+    let cells = super::backdrop(120, 36, super::QUIET);
+    let colours: Vec<(i32, i32, i32)> = cells
+        .iter()
+        .flat_map(|cell| [cell.fg, cell.bg])
+        .filter_map(|ink| match ink {
+            Ink::Exact(colour) => Some((
+                i32::from(colour.r),
+                i32::from(colour.g),
+                i32::from(colour.b),
+            )),
+            _ => None,
+        })
+        .collect();
+    let teal = colours.iter().any(|&(r, g, b)| g > r + 10 && b > r + 10);
+    let rose = colours.iter().any(|&(r, g, b)| r > g + 20 && r > b);
+    let gold = colours.iter().any(|&(r, g, b)| r > b + 30 && g > b);
+    assert!(
+        teal && rose && gold,
+        "teal {teal}, rose {rose}, gold {gold}"
+    );
+}

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::galaxy::{Field, field};
+use super::galaxy::{Field, field, starlight};
 use super::*;
 
 pub(in crate::tui::sigil_view) const SCRIM: Rgba8 = rgb(10, 8, 20);
@@ -144,24 +144,18 @@ fn dust(cols: u16, rows: u16, sky: u8) -> Vec<Spot> {
             }
             let roll = (seed >> 14) % 1000;
             let warm = haze.core > 0.25 && roll.is_multiple_of(2);
+            let light = starlight(haze.hue);
             let (glyph, color) = match roll {
-                930.. => (
-                    "•",
-                    if warm {
-                        rgb(210, 190, 160)
-                    } else {
-                        rgb(170, 186, 230)
-                    },
-                ),
+                930.. => ("•", if warm { rgb(232, 204, 160) } else { light }),
                 640.. => (
                     "∙",
                     if warm {
-                        rgb(200, 176, 150)
+                        rgb(210, 180, 146)
                     } else {
-                        rgb(130, 144, 196)
+                        blend(STAR_DIM, light, 0.7)
                     },
                 ),
-                _ => ("·", blend(STAR_DIM, rgb(190, 170, 160), haze.density)),
+                _ => ("·", blend(STAR_DIM, light, 0.3 + 0.5 * haze.density)),
             };
             spots.push(spot(x, y, glyph, color, under(haze), false));
         }

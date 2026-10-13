@@ -148,6 +148,7 @@ fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
                 "name": tool.function.name,
                 "description": tool.function.description,
                 "parameters": tool.function.parameters,
+                "strict": false,
             })
         })
         .collect()

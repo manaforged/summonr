@@ -117,7 +117,7 @@ fn a_reasoning_model_always_asks_for_a_summary_and_encrypted_content() {
 }
 
 #[test]
-fn a_function_tool_leaves_strict_to_the_api() {
+fn a_function_tool_opts_out_of_strict_mode() {
     let messages = vec![message(Role::User, "hi")];
     let tools = vec![ToolDefinition {
         kind: ToolKind::Function,
@@ -130,7 +130,7 @@ fn a_function_tool_leaves_strict_to_the_api() {
     let mut call = ask(&messages, None);
     call.tools = &tools;
     let body = request(&call, true).unwrap();
-    assert!(body["tools"][0].get("strict").is_none(), "{body}");
+    assert_eq!(body["tools"][0]["strict"], json!(false), "{body}");
     assert_eq!(body["tools"][0]["name"], "read");
 }
 

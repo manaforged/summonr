@@ -36,17 +36,28 @@ python3 table.py board-tb21 --subject summonr --tasks tasks-eval.txt
 
 `jobs/<run>/run.txt` records seed, model, k, dataset tree hash, task-list hash, harness.sh hash, summonr binary sha256 and source commit. Rerunning a run id aborts on any recorded mismatch (seed, vendor, provider, model, effort, repeats, timeout multiplier, harness.sh, dataset, tasks, summonr binary, summonr commit, tools manifest). A summonr built from a tree with uncommitted changes records its commit as `<sha>-dirty`. `table.py` refuses a run without `run.txt`, a run in which any arm's response model is not the pinned model, a run in which an arm's requests succeeded but the proxy log holds no token usage for it, and a run in which a trial solved its task with no request in the proxy log. `table.py RUN [RUN...]` combines runs when vendor, provider, model, effort, dataset, task list, and timeout multiplier match and no harness appears twice, and says the arms did not run side by side. It prints each arm's version, then reliability (pass@1 / pass@k / pass^k), all / solved / failed cuts, paired ratios, and effort honored per harness, measured from proxy request bodies. A URL or GitHub path to a dataset source (terminal-bench, tbench, marginlab, laude-institute, harbor-framework) voids the solve; a bare source name or a verifier path (/logs/verifier, reward.txt, /solution/, /tests/test) is a warn. A stream the agent closed before its usage frame counts under "Cut streams"; its tokens are not in the totals.
 
+
 `tools.sh` installs the Pi, OpenCode (`@opencode/cli`), Hermes, OMP (`@oh-my-pi/pi-coding-agent`, run on Bun), Codex (`@openai/codex`, its linux-x64 native binary and bundled `rg`), Claude Code (`@anthropic-ai/claude-code`), Grok Build (`@xai-official/grok`), Bun, and uv versions that `tools.lock` pins and records them, the summonr version, and Node in `versions.txt`; Hermes installs inside the tools container so its paths match the `/opt/tools` mount, and the container hands `tools/` back to the invoking user. `run.txt` records every arm's version, a resume with any other version aborts, and `table.py` prints each arm's version under the run line; `run.txt` records the Pi version, and a resume with another aborts. A trial whose `result.json` has no verifier result (the host stopped it) moves aside and runs again on resume. `./restart-bench.sh RUN_SUFFIX [VENDOR...]` stops any running board, removes Harbor containers and the Docker networks that stopped trials left behind, moves its own checkout to `origin/main`, rebuilds summonr from it, and starts the named boards (default `zai deepseek`) as `tb21-VENDOR-RUN_SUFFIX`. The bench runs in the product checkout; `jobs`, `logs`, `datasets`, and `tools` may be links to a data disk. The firewall lets only 172.16.0.0/12 reach the proxy, so the host's Docker `default-address-pools` must stay inside that range. The proxy logs `nudged` on the request that follows a reasoning nudge.
 
-## Plan vendors
+## Plan pairs
 
-A plan vendor has no env file. Its proxy forwards each arm's own `Authorization` header and counts usage, and every trial mounts the host account's own logins read-write at `/opt/auth`: `~/.summonr` (`openai` and `grok`), `~/.codex`, `~/.grok`, and `~/.claude`. `BENCH_LOGINS` names another home. Trials link the credential files instead of copying them, so a refresh in one trial reaches every other trial and the host keeps a live login. The arms of a pair can reach different hosts, so a vendor row maps path prefixes to upstreams with `--route NAME=URL`: Codex sends to `/chatgpt` (`chatgpt.com/backend-api/codex`), Grok Build to `/grokcli` (`cli-chat-proxy.grok.com`), and summonr to the row's upstream (`api.openai.com`, `api.x.ai`). Both Claude arms run Claude Code against `api.anthropic.com`. The harness removes each link when the agent exits, so job folders keep no token.
+A plan pair runs the way the Terminal-Bench 2.1 leaderboard runs: `harbor run -d terminal-bench/terminal-bench-2-1 -k 5` with the task instructions unchanged, internet on, `timeout_multiplier` 1.0, and no resource or timeout overrides ([terminal-bench-2-1](https://github.com/harbor-framework/terminal-bench-2-1), [leaderboard rules](https://huggingface.co/datasets/harborframework/terminal-bench-2-leaderboard)). `board.sh RUN PAIR` renders `pairs/PAIR.yaml` into one Harbor job that holds both arms, so their trials interleave under the same provider load, one trial at a time per arm, and checks the hub dataset against `dataset.lock` first. Rerunning a run id resumes the Harbor job.
+
+| Pair | Vendor arm | summonr arm |
+| --- | --- | --- |
+| `chatgpt` | Harbor's `codex` agent, ChatGPT sign-in from `~/.codex/auth.json` | `summonr_agent:Summonr`, `openai` endpoint |
+| `supergrok` | `grok_plan:GrokPlan`: Harbor's `grok-build` agent signed in with SuperGrok | `summonr_agent:Summonr`, `grok` endpoint |
+
+Vendor arms keep Harbor's defaults; Grok Build's server-side web search stays off, as in Harbor. `tools.lock` pins each CLI version. `GrokPlan` changes only sign-in: Harbor's `grok-build` takes an xAI API key. The summonr arm uploads the build at `tools/summonr/bin/summonr` (`BENCH_SUMMONR`) and writes an ATIF `agent/trajectory.json` like the built-in agents. summonr and Grok Build access tokens expire within hours, so trials mount `~/.summonr` and `~/.grok` read-write at `/opt/auth` and link the credential files, and a refresh in one trial reaches the others. Codex tokens last ten days, so Harbor's copy of `auth.json` per trial is safe; sign in again before a run if the login is older than a day.
+
+Token counts come from each agent's `result.json` (`n_input_tokens`, `n_cache_tokens`, `n_output_tokens`), as on the leaderboard. The `rss:Rss` job plugin samples each agent's process tree from the host every 0.5 s between agent start and end and writes `memory.txt` into the trial folder. Before publishing, `harbor analyze -r judge.toml jobs/RUN` judges every passing trial for reward hacking and for looking up the task's solution; a flagged trial scores 0, as on the leaderboard ([integrity update](https://www.tbench.ai/news/leaderboard-integrity-update)). `trial.py`'s URL scan stays as a first pass.
 
 ```
-BENCH_VENDOR=claude BENCH_REPEATS=1 ./run.sh plan-claude-smoke tasks-tune.txt summonr claude
-BENCH_VENDOR=chatgpt BENCH_REPEATS=1 ./run.sh plan-chatgpt-smoke tasks-tune.txt summonr codex
-BENCH_VENDOR=supergrok BENCH_REPEATS=1 ./run.sh plan-supergrok-smoke tasks-tune.txt summonr grok
+./board.sh tb21-chatgpt-1014a chatgpt
+python3 table.py tb21-chatgpt-1014a --subject summonr
 ```
+
+The Claude pair still runs through `run.sh` (`BENCH_VENDOR=claude`).
 
 ## Fairness
 

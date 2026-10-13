@@ -8,7 +8,7 @@ from pathlib import Path
 
 from paired import ci, log_ratios
 from stats import cell, fmt, requests, wilson
-from trial import trials
+from trial import standard, trials
 
 RATES = {
     "deepseek": {"hit": 0.006, "miss": 0.30, "output": 1.20},
@@ -64,7 +64,7 @@ def rate(passed, total):
 
 
 def share(part, whole, spec):
-    return format(part / whole, spec) if whole else "–"
+    return format(part / whole, spec) if whole and part is not None else "–"
 
 
 def column(rows, key, digits=0):
@@ -72,7 +72,8 @@ def column(rows, key, digits=0):
 
 
 def total(rows, key):
-    return sum(row[key] for row in rows)
+    values = [row[key] for row in rows if row[key] is not None]
+    return sum(values) if values else None
 
 
 def table_row(values):
@@ -193,7 +194,9 @@ def honored(mine, want):
 
 def cold_hit(mine):
     firsts = [row for row in mine if row["first_prompt"]]
-    return sum(row["first_hit"] or 0 for row in firsts) / max(1, sum(row["first_prompt"] for row in firsts))
+    if not firsts:
+        return "–"
+    return f"{sum(row['first_hit'] or 0 for row in firsts) / sum(row['first_prompt'] for row in firsts):.1%}"
 
 
 def failures_text(mine):
@@ -207,10 +210,10 @@ def breakdown_line(harness, mine, want):
     return table_row([
         harness,
         share(model, agent, ".0%"),
-        share(agent - model, agent, ".0%"),
+        share(None if model is None else agent - model, agent, ".0%"),
         share(total(mine, "reasoning"), total(mine, "output"), ".0%"),
-        f"{cold_hit(mine):.1%}",
-        fmt(max(row["max_prompt"] for row in mine)),
+        cold_hit(mine),
+        fmt(max((row["max_prompt"] for row in mine if row["max_prompt"] is not None), default=None)),
         total(mine, "errors"),
         total(mine, "cut"),
         total(mine, "rate_limited"),
@@ -279,7 +282,8 @@ def arguments():
 def gather(args, rates):
     rows, shared = [], {}
     for run in args.runs:
-        found = trials(args.jobs, run, requests(args.proxy or [Path(args.jobs).parent / "logs" / f"{run}.jsonl"]), rates)
+        logs = [] if standard(args.jobs, run) else args.proxy or [Path(args.jobs).parent / "logs" / f"{run}.jsonl"]
+        found = trials(args.jobs, run, requests(logs), rates)
         rows += [{**row, "run": run} for row in found]
     for row in rows:
         if shared.setdefault(row["harness"], row["run"]) != row["run"]:
@@ -304,7 +308,7 @@ def refuse(rows, pin, side=()):
     checks = [
         (f"response model is not the pinned {pin}", {f'{row["harness"]}: {model}' for row in rows for model in row["models"] if model != pin and not model.startswith(f"{pin}-") and model not in side}),
         ("solved with no request in the proxy log (proxy bypassed or wrong --proxy file)", {row["harness"] for row in rows if row["requests"] == 0 and row["reward"] == 1.0}),
-        ("requests succeeded but the proxy log holds no token usage for", {row["harness"] for row in rows if row["requests"] > row["errors"] + row["cut"] and row["prompt"] == 0}),
+        ("requests succeeded but no token usage was recorded for", {row["harness"] for row in rows if row["requests"] > row["errors"] + row["cut"] and row["prompt"] == 0}),
     ]
     for message, found in checks:
         if found:
@@ -352,7 +356,8 @@ def report(args, info, infos, rows, vendor, rates):
     if len(args.runs) > 1:
         print("Combined runs: arms from different runs did not run side by side; tasks, model, effort, and dataset match.")
     run_of = {row["harness"]: row["run"] for row in rows}
-    print("Versions: " + ", ".join(f"{harness} {version_of(infos[run_of[harness]], harness)}" for harness in order(rows)) + ".")
+    seen = {row["harness"]: row.get("version") for row in rows if row.get("version")}
+    print("Versions: " + ", ".join(f"{harness} {seen.get(harness) or version_of(infos[run_of[harness]], harness)}" for harness in order(rows)) + ".")
     print(cost_note(vendor, rates) + " Intervals: 95% Wilson for solved, bootstrap median (10,000 resamples, seed 20260916) elsewhere. A URL to a dataset source voids the solve; a source name or verifier path is a warn.")
     sections = [
         ("Reliability (task-level; pass@k = any of k, pass^k = all k)\n", lambda: reliability(rows)),

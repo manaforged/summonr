@@ -93,8 +93,8 @@ def time_fields(data, calls):
     }
 
 
-def memory_fields(agent):
-    path = agent / "memory.txt"
+def memory_fields(folder):
+    path = folder / "memory.txt"
     values = {}
     if path.exists():
         values = dict(line.split() for line in path.read_text().splitlines() if line.strip())
@@ -133,5 +133,83 @@ def trial_row(result, run, by_label, rates):
     }
 
 
+def step_usage(trajectory):
+    usage = []
+    for step in trajectory.get("steps", []):
+        metrics = step.get("metrics")
+        if step.get("source") == "agent" and metrics:
+            usage.append({
+                "prompt_tokens": metrics.get("prompt_tokens") or 0,
+                "completion_tokens": metrics.get("completion_tokens") or 0,
+                "prompt_tokens_details": {"cached_tokens": metrics.get("cached_tokens") or 0},
+            })
+    return usage
+
+
+def standard_tokens(context, trajectory, rates):
+    usage = step_usage(trajectory)
+    prompt = context.get("n_input_tokens") or 0
+    hit = context.get("n_cache_tokens") or 0
+    output = context.get("n_output_tokens") or 0
+    first = usage[0] if usage else {}
+    return {
+        "prompt": prompt,
+        "hit": hit,
+        "miss": prompt - hit,
+        "session_prompt": sum(u["prompt_tokens"] for u in usage[1:]) if usage else None,
+        "session_hit": sum(hit_tokens(u) for u in usage[1:]) if usage else None,
+        "output": output,
+        "reasoning": None,
+        "cost": price(hit, prompt - hit, output, rates),
+        "first_hit": hit_tokens(first) if usage else None,
+        "first_prompt": first.get("prompt_tokens"),
+        "max_prompt": max((u["prompt_tokens"] for u in usage), default=None),
+    }
+
+
+def standard_row(result, rates):
+    data = json.loads(result.read_text())
+    folder = result.parent
+    agent = folder / "agent"
+    path = agent / "trajectory.json"
+    trajectory = json.loads(path.read_text()) if path.is_file() else {}
+    steps = [step for step in trajectory.get("steps", []) if step.get("source") == "agent"]
+    effort = (dig(data, "config", "agent", "kwargs") or {}).get("reasoning_effort")
+    model = dig(data, "agent_info", "model_info", "name")
+    void, warn = suspect(agent)
+    verifier = folder / "verifier" / "test-stdout.txt"
+    return {
+        "harness": data["agent_info"]["name"],
+        "version": data["agent_info"].get("version"),
+        "task": data["task_name"].split("/")[-1],
+        "trial": data["trial_name"],
+        "checksum": data.get("task_checksum"),
+        "reward": dig(data, "verifier_result", "rewards", "reward"),
+        "exception": dig(data, "exception_info", "exception_type"),
+        "exit": None,
+        "agent_seconds": seconds(data.get("agent_execution")),
+        "model_seconds": None,
+        "other_seconds": None,
+        **memory_fields(folder),
+        "requests": len(steps),
+        "errors": 0,
+        "cut": 0,
+        "rate_limited": 0,
+        "effort": [f"{effort}/None"] if effort else [],
+        "controls": [],
+        "models": [model] if model else [],
+        **standard_tokens(data.get("agent_result") or {}, trajectory, rates),
+        "void": void,
+        "warn": warn,
+        "grader": verifier.is_file() and bool(GRADER.search(verifier.read_bytes())),
+    }
+
+
+def standard(jobs, run):
+    return Path(jobs, run, "job.yaml").is_file()
+
+
 def trials(jobs, run, by_label, rates):
+    if standard(jobs, run):
+        return [standard_row(result, rates) for result in sorted(Path(jobs, run).glob("*/result.json"))]
     return [trial_row(result, run, by_label, rates) for result in sorted(Path(jobs, run).glob("*/*/result.json"))]

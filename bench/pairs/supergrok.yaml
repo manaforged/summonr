@@ -1,0 +1,19 @@
+n_attempts: 5
+n_concurrent_trials: 2
+timeout_multiplier: 1.0
+environment:
+  type: docker
+  mounts:
+    - {type: bind, source: "${LOGINS}/.summonr", target: /opt/auth/summonr}
+    - {type: bind, source: "${LOGINS}/.grok", target: /opt/auth/grok}
+agents:
+  - import_path: grok_plan:GrokPlan
+    n_concurrent: 1
+    model_name: xai/grok-4.7
+    kwargs: {version: "${grok}", reasoning_effort: high}
+  - import_path: summonr_agent:Summonr
+    n_concurrent: 1
+    model_name: xai/grok-4.7
+    kwargs: {binary: "${SUMMONR}", reasoning_effort: high}
+datasets:
+  - {name: terminal-bench/terminal-bench-2-1, ref: latest}

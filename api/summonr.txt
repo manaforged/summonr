@@ -938,6 +938,7 @@ pub summonr::Endpoint::assistant_after_tool: bool
 pub summonr::Endpoint::base_url: core::option::Option<alloc::string::String>
 pub summonr::Endpoint::body: core::option::Option<serde_json::value::Value>
 pub summonr::Endpoint::cache_header: core::option::Option<alloc::string::String>
+pub summonr::Endpoint::cache_marks: bool
 pub summonr::Endpoint::cache_ttl: summonr::endpoint::CacheTtl
 pub summonr::Endpoint::compact_tokens: core::option::Option<u32>
 pub summonr::Endpoint::context_window: core::option::Option<u32>

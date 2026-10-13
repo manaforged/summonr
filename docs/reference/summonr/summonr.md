@@ -203,6 +203,7 @@
 | <code>base_url: Option&lt;String&gt;</code> |  |
 | <code>body: Option&lt;Value&gt;</code> |  |
 | <code>cache_header: Option&lt;String&gt;</code> |  |
+| <code>cache_marks: bool</code> |  |
 | <code>cache_ttl: endpoint::CacheTtl</code> |  |
 | <code>compact_tokens: Option&lt;u32&gt;</code> |  |
 | <code>context_window: Option&lt;u32&gt;</code> |  |

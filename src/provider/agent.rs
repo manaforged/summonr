@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use super::{AssistantMessage, Client, CompletionRequest, Message, Partial, Role};
 use crate::error::{Error, Result};
@@ -16,19 +17,78 @@ use step::Step;
 pub(super) struct Seat {
     program: String,
     env: Vec<(String, String)>,
-    runs: Arc<Mutex<HashMap<String, Run>>>,
-    threads: Arc<Mutex<HashMap<String, String>>>,
+    unset: &'static [&'static str],
+    runs: Arc<Mutex<HashMap<String, (Instant, Run)>>>,
+    threads: Arc<Mutex<HashMap<String, Known>>>,
     gates: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
+#[derive(Clone)]
+struct Known {
+    id: String,
+    seen: Seen,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Seen {
+    count: usize,
+    digest: u64,
+}
+
+impl Seen {
+    fn of(messages: &[Message]) -> Self {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let spoken: Vec<&Message> = messages
+            .iter()
+            .filter(|message| message.role != Role::System)
+            .collect();
+        for message in &spoken {
+            std::hash::Hash::hash(&transcript_line(message), &mut hasher);
+        }
+        Self {
+            count: spoken.len(),
+            digest: std::hash::Hasher::finish(&hasher),
+        }
+    }
+
+    fn extended_by(self, messages: &[Message]) -> bool {
+        let spoken: Vec<Message> = messages
+            .iter()
+            .filter(|message| message.role != Role::System)
+            .take(self.count)
+            .cloned()
+            .collect();
+        spoken.len() == self.count && Self::of(&spoken) == self
+    }
+}
+
+struct Forget<'a> {
+    seat: &'a Seat,
+    session: &'a str,
+    armed: bool,
+}
+
+impl Drop for Forget<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.seat.forget(self.session);
+        }
+    }
+}
+
 impl Seat {
-    pub(super) fn new(program: &str, env: &std::collections::BTreeMap<String, String>) -> Self {
+    pub(super) fn new(
+        program: &str,
+        env: &std::collections::BTreeMap<String, String>,
+        unset: &'static [&'static str],
+    ) -> Self {
         Self {
             program: program.to_string(),
             env: env
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect(),
+            unset,
             runs: Arc::default(),
             threads: Arc::default(),
             gates: Arc::default(),
@@ -36,12 +96,14 @@ impl Seat {
     }
 
     fn take(&self, session: &str) -> Option<Run> {
-        self.runs.lock().ok()?.remove(session)
+        self.runs.lock().ok()?.remove(session).map(|(_, run)| run)
     }
 
     fn keep(&self, session: &str, run: Run) {
         if let Ok(mut runs) = self.runs.lock() {
-            runs.insert(session.to_string(), run);
+            let limit = crate::limits::limits().agent_park();
+            runs.retain(|_, (parked, _)| parked.elapsed() < limit);
+            runs.insert(session.to_string(), (Instant::now(), run));
         }
     }
 
@@ -58,13 +120,24 @@ impl Seat {
         }
     }
 
-    fn thread(&self, session: &str) -> Option<String> {
-        self.threads.lock().ok()?.get(session).cloned()
+    fn thread(&self, session: &str, messages: &[Message]) -> Option<String> {
+        let known = self.threads.lock().ok()?.get(session).cloned()?;
+        if known.seen.extended_by(messages) {
+            return Some(known.id);
+        }
+        self.forget(session);
+        None
     }
 
-    fn remember(&self, session: &str, id: &str) {
+    fn remember(&self, session: &str, id: &str, messages: &[Message]) {
         if let Ok(mut threads) = self.threads.lock() {
-            threads.insert(session.to_string(), id.to_string());
+            threads.insert(
+                session.to_string(),
+                Known {
+                    id: id.to_string(),
+                    seen: Seen::of(messages),
+                },
+            );
         }
     }
 }
@@ -84,10 +157,13 @@ impl Client {
         let seat = self.seat()?;
         let gate = seat.gate(&request.session);
         let _turn = gate.lock().await;
+        let mut forget = Forget {
+            seat,
+            session: &request.session,
+            armed: true,
+        };
         let step = self.turn(seat, request, partial).await;
-        if step.is_err() {
-            seat.forget(&request.session);
-        }
+        forget.armed = step.is_err();
         step
     }
 
@@ -106,7 +182,7 @@ impl Client {
                 run
             }
             None => {
-                let known = seat.thread(&request.session);
+                let known = seat.thread(&request.session, request.messages);
                 let thread = match &known {
                     Some(id) => Thread::Resume(id.clone()),
                     None => Thread::Start(uuid::Uuid::now_v7().to_string()),
@@ -117,7 +193,7 @@ impl Client {
         };
         let step = run.next(self, request, partial).await;
         if let Some(id) = run.recorded() {
-            seat.remember(&request.session, id);
+            seat.remember(&request.session, id, request.messages);
         }
         match step? {
             Step::Paused(message) => {

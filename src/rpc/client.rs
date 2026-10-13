@@ -59,6 +59,7 @@ impl Client {
             program: launch.program,
             args: launch.args,
             env: launch.env,
+            unset: &[],
             cwd: launch.cwd,
             sandbox: launch
                 .sandbox

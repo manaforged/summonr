@@ -290,7 +290,7 @@ pub(crate) use keys::peer_token;
 use keys::*;
 pub use preset::label;
 use preset::preset;
-pub(crate) use preset::{catalog_providers, provider_ids, start_command};
+pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
 pub(crate) use resolve::default_seat;
 pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
 use resolve::{hosted, seat};

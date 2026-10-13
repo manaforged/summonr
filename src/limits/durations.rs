@@ -25,6 +25,10 @@ impl Limits {
         secs(self.retry_after_max_secs)
     }
 
+    pub(crate) fn agent_park(&self) -> Duration {
+        secs(self.agent_park_secs)
+    }
+
     pub(crate) fn stream_idle(&self) -> Duration {
         secs(self.stream_idle_secs)
     }

@@ -236,3 +236,139 @@ async fn a_plan_turn_runs_summonr_tools_through_the_sdk_bridge() {
 
 #[path = "agent_tests/recover_tests.rs"]
 mod recover;
+
+fn runs(dir: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(dir.join("claude.args"))
+        .unwrap_or_default()
+        .split("===\n")
+        .filter(|block| !block.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn claude_code_never_sees_an_api_key() {
+    let unset = crate::endpoint::env_unset("claude");
+    for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
+        assert!(unset.contains(&key), "{key} reaches Claude Code");
+    }
+    let cwd = std::env::current_dir().unwrap();
+    let mut process = crate::rpc::start(&crate::rpc::Launch {
+        program: "sh",
+        args: &["-c", "printf %s \"${HOME-absent}\""],
+        env: &[],
+        unset: &["HOME"],
+        cwd: &cwd,
+        sandbox: None,
+        base: crate::rpc::Env::Inherit,
+        stderr: crate::rpc::Stderr::Discard,
+    })
+    .unwrap();
+    let mut seen = String::new();
+    tokio::io::AsyncReadExt::read_to_string(&mut process.stdout, &mut seen)
+        .await
+        .unwrap();
+    assert_eq!(seen, "absent", "an unset variable was inherited");
+}
+
+const SECOND_HANGS: &str = r#"#!/bin/sh
+n=$(cat "$0.n" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$0.n"
+{ printf '%s\n' "$@"; echo ===; } >> "$0.args"
+take() { IFS= read -r line; printf '%s\n' "$line" >> "$0.log"; }
+take
+printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{}}}'
+take
+if [ "$n" = 2 ]; then sleep 20; fi
+printf '%s\n' '{"type":"assistant","message":{"id":"m","content":[{"type":"text","text":"ok"}]}}'
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"ok","usage":{}}'
+IFS= read -r line
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_turn_forgets_the_claude_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let client = seat_at(dir.path(), SECOND_HANGS);
+    let mut messages = vec![Message::system("sys"), Message::user("first")];
+    client
+        .stream(&ask(&messages, &[]), &mut Partial::default())
+        .await
+        .unwrap();
+    let mut answered = Message::user("ok");
+    answered.role = Role::Assistant;
+    messages.push(answered);
+    messages.push(Message::user("second"));
+    let cancelled = tokio::time::timeout(
+        std::time::Duration::from_millis(800),
+        client.stream(&ask(&messages, &[]), &mut Partial::default()),
+    )
+    .await;
+    assert!(cancelled.is_err(), "the hanging turn finished");
+    messages.push(Message::user("third"));
+    client
+        .stream(&ask(&messages, &[]), &mut Partial::default())
+        .await
+        .unwrap();
+    let runs = runs(dir.path());
+    assert_eq!(runs.len(), 3, "{runs:?}");
+    assert!(runs[1].contains("--resume"), "{}", runs[1]);
+    assert!(
+        !runs[2].contains("--resume"),
+        "the cancelled thread was resumed: {}",
+        runs[2]
+    );
+}
+
+const MALFORMED: &str = r#"#!/bin/sh
+take() { IFS= read -r line; printf '%s\n' "$line" >> "$0.log"; }
+take
+printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{}}}'
+take
+printf '%s\n' '{"type":"control_request","request_id":"x","request":{"subtype":"mcp_message","server_name":"summonr"}}'
+sleep 20
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_malformed_control_request_fails_the_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let client = seat_at(dir.path(), MALFORMED);
+    let messages = vec![Message::system("sys"), Message::user("hi")];
+    let turn = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        client.stream(&ask(&messages, &[]), &mut Partial::default()),
+    )
+    .await
+    .expect("the turn waited on an unanswerable request");
+    let error = turn.expect_err("a malformed control request passed");
+    assert!(error.to_string().contains("mcp_message"), "{error}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rewritten_history_starts_a_fresh_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let client = seat_at(dir.path(), PLAIN);
+    let mut first = vec![Message::system("sys"), Message::user("long history")];
+    client
+        .stream(&ask(&first, &[]), &mut Partial::default())
+        .await
+        .unwrap();
+    first.truncate(1);
+    first.push(Message::user("summary of the work so far"));
+    first.push(Message::user("next"));
+    client
+        .stream(&ask(&first, &[]), &mut Partial::default())
+        .await
+        .unwrap();
+    let runs = runs(dir.path());
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    assert!(
+        !runs[1].contains("--resume"),
+        "a compacted history resumed the old thread: {}",
+        runs[1]
+    );
+    let sent = said(dir.path());
+    assert!(
+        sent[1].contains("summary of the work so far"),
+        "{}",
+        sent[1]
+    );
+}

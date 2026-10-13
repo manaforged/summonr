@@ -253,6 +253,7 @@ label = "Claude plan through Claude Code"
 base_url = "claude"
 model = "default"
 default_key = "claude-code"
+env_unset = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
 missing = "install Claude Code and run `claude auth login`"
 opencode_ids = ["anthropic"]
 plan = true

@@ -25,6 +25,8 @@ pub(super) struct Row {
     #[serde(default)]
     env_keys: Vec<String>,
     #[serde(default)]
+    env_unset: Vec<String>,
+    #[serde(default)]
     default_key: Option<String>,
     #[serde(default)]
     missing: Option<String>,
@@ -175,7 +177,12 @@ impl Row {
     }
 
     fn check_env_keys(&self, name: &str) -> Checked<()> {
-        match self.env_keys.iter().find(|key| !env_key_ok(key)) {
+        match self
+            .env_keys
+            .iter()
+            .chain(&self.env_unset)
+            .find(|key| !env_key_ok(key))
+        {
             Some(key) => Err(format!("`{name}` lists env key `{key}`")),
             None => Ok(()),
         }
@@ -206,6 +213,7 @@ impl Row {
             model: self.model,
             login_model: self.login_model,
             env_keys: leak_list(&self.env_keys),
+            env_unset: leak_list(&self.env_unset),
             default_key: leak_str(self.default_key.as_deref()),
             missing,
             aliases: leak_pairs(self.aliases),

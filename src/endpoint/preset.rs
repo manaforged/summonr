@@ -14,6 +14,7 @@ pub(super) struct Preset {
     pub(super) model: String,
     pub(super) login_model: Option<String>,
     pub(super) env_keys: &'static [&'static str],
+    pub(super) env_unset: &'static [&'static str],
     pub(super) default_key: Option<&'static str>,
     pub(super) missing: String,
     pub(super) aliases: &'static [(String, String)],
@@ -217,6 +218,11 @@ pub(crate) fn catalog_providers() -> impl Iterator<Item = &'static str> {
         .iter()
         .filter(|preset| !preset.off)
         .flat_map(|preset| preset.opencode_ids.iter().copied())
+}
+
+#[must_use]
+pub(crate) fn env_unset(name: &str) -> &'static [&'static str] {
+    preset(name).map_or(&[], |preset| preset.env_unset)
 }
 
 #[must_use]

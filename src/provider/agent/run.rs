@@ -106,6 +106,7 @@ impl Run {
             program: &seat.program,
             args: &args,
             env: &seat.env,
+            unset: seat.unset,
             cwd: &cwd,
             sandbox: None,
             base: crate::rpc::Env::Inherit,
@@ -196,8 +197,18 @@ impl Run {
             if self.reader.read_line(&mut line).await? == 0 {
                 return Err(self.exited(""));
             }
-            if let Ok(frame) = serde_json::from_str::<Frame>(&line) {
-                return Ok(frame);
+            match serde_json::from_str::<Frame>(&line) {
+                Ok(frame) => return Ok(frame),
+                Err(error) => {
+                    if let Some(subtype) = unanswerable(&line) {
+                        return Err(Error::provider(
+                            ProviderFailureKind::Malformed,
+                            format!(
+                                "Claude Code sent a {subtype} control request summonr could not read: {error}"
+                            ),
+                        ));
+                    }
+                }
             }
         }
     }
@@ -264,6 +275,16 @@ pub(super) async fn models(seat: &Seat) -> Result<Vec<crate::catalog::Model>> {
         ));
     }
     Ok(models)
+}
+
+fn unanswerable(line: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(line).ok()?;
+    (value["type"] == "control_request").then(|| {
+        value["request"]["subtype"]
+            .as_str()
+            .unwrap_or("unnamed")
+            .to_string()
+    })
 }
 
 fn arguments(spec: &Spec<'_>, prompt: Option<&std::path::Path>) -> Vec<String> {

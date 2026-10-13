@@ -11,8 +11,8 @@ case "$provider" in
 zai*) max_tokens=${BENCH_MAX_TOKENS:-131072} ;;
 *) max_tokens=${BENCH_MAX_TOKENS:-384000} ;;
 esac
-tools=${BENCH_TOOLS:-/opt/bench}
-home=$(mktemp -d /tmp/bench-home.XXXXXX)
+tools=${BENCH_TOOLS:-/opt/tools}
+home=$(mktemp -d /tmp/agent-home.XXXXXX)
 logs=${BENCH_LOGS:-/logs/agent}
 host=${BENCH_BASE%/v1}
 if [[ $BENCH_BASE == *host.docker.internal* ]]; then
@@ -29,7 +29,7 @@ if [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
   cp "$tools/cacert.pem" /etc/ssl/certs/ca-certificates.crt 2>/dev/null || export SSL_CERT_FILE=$tools/cacert.pem
 fi
 mkdir -p "$logs"
-logins=${BENCH_LOGINS:-/opt/logins}
+logins=${BENCH_LOGINS:-/opt/auth}
 
 share() {
   local dir=$1 dest=$2
@@ -84,15 +84,15 @@ summonr | summonr-*)
   ;;
 codex)
   mkdir -p "$logs/codex"
-  base=$BENCH_BASE auth="env_key=\"BENCH_API_KEY\""
+  base=$BENCH_BASE auth="env_key=\"AGENT_API_KEY\""
   if [ -d "$logins/codex" ]; then
     share codex "$logs/codex" auth.json
     base=${BENCH_BASE%/v1}/chatgpt auth="requires_openai_auth=true"
   fi
-  HOME=$home CODEX_HOME=$logs/codex BENCH_API_KEY=$key \
+  HOME=$home CODEX_HOME=$logs/codex AGENT_API_KEY=$key \
     "$tools/codex/bin/codex" exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -m "$BENCH_MODEL" \
-    ${BENCH_EFFORT:+-c "model_reasoning_effort=$BENCH_EFFORT"} -c model_provider=bench \
-    -c "model_providers.bench={name=\"bench\",base_url=\"$base\",$auth,wire_api=\"responses\",supports_websockets=false,supports_standalone_web_search=true}" \
+    ${BENCH_EFFORT:+-c "model_reasoning_effort=$BENCH_EFFORT"} -c model_provider=proxy \
+    -c "model_providers.proxy={name=\"proxy\",base_url=\"$base\",$auth,wire_api=\"responses\",supports_websockets=false,supports_standalone_web_search=true}" \
     -- "$prompt" </dev/null
   ;;
 claude)
@@ -114,18 +114,18 @@ pi)
   deepseek)
     piprovider=$provider
     cat > "$home/pi/models.json" <<EOF
-{"providers": {"$provider": {"baseUrl": "$host", "apiKey": "\$BENCH_API_KEY", "models": [{"id":"$BENCH_MODEL","name":"$BENCH_MODEL","api":"openai-completions","baseUrl":"$host","provider":"$provider","reasoning":true,"input":["text"],"cost":{"input":0.3,"output":1.2,"cacheRead":0.006,"cacheWrite":0},"contextWindow":1000000,"maxTokens":$max_tokens,"compat":{"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens","requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},"thinkingLevelMap":{"minimal":null,"low":"low","medium":null,"high":"high","max":"max"}}]}}}
+{"providers": {"$provider": {"baseUrl": "$host", "apiKey": "\$AGENT_API_KEY", "models": [{"id":"$BENCH_MODEL","name":"$BENCH_MODEL","api":"openai-completions","baseUrl":"$host","provider":"$provider","reasoning":true,"input":["text"],"cost":{"input":0.3,"output":1.2,"cacheRead":0.006,"cacheWrite":0},"contextWindow":1000000,"maxTokens":$max_tokens,"compat":{"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens","requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},"thinkingLevelMap":{"minimal":null,"low":"low","medium":null,"high":"high","max":"max"}}]}}}
 EOF
     ;;
   *)
     piprovider=$provider
     [ "$provider" = ocgo ] && piprovider=opencode-go
     cat > "$home/pi/models.json" <<EOF
-{"providers": {"$piprovider": {"baseUrl": "$BENCH_BASE", "apiKey": "\$BENCH_API_KEY", "modelOverrides": {"$BENCH_MODEL": {"maxTokens": $max_tokens}}}}}
+{"providers": {"$piprovider": {"baseUrl": "$BENCH_BASE", "apiKey": "\$AGENT_API_KEY", "modelOverrides": {"$BENCH_MODEL": {"maxTokens": $max_tokens}}}}}
 EOF
     ;;
   esac
-  HOME=$home PI_CODING_AGENT_DIR=$home/pi DEEPSEEK_API_KEY=$key BENCH_API_KEY=$key \
+  HOME=$home PI_CODING_AGENT_DIR=$home/pi DEEPSEEK_API_KEY=$key AGENT_API_KEY=$key \
     "$tools/node/bin/node" "$tools/pi/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" \
     --print --mode json --provider "$piprovider" --model "$BENCH_MODEL" ${BENCH_EFFORT:+--thinking "$BENCH_EFFORT"} -- "$prompt" </dev/null
   ;;
@@ -135,10 +135,10 @@ opencode2)
   *) ocprovider=$provider ;;
   esac
   mkdir -p "$home/.config/opencode"
-  printf '{"$schema": "https://opencode.ai/config.json", "provider": {"%s": {"options": {"baseURL": "%s", "apiKey": "{env:BENCH_API_KEY}"}}}}\n' \
+  printf '{"$schema": "https://opencode.ai/config.json", "provider": {"%s": {"options": {"baseURL": "%s", "apiKey": "{env:AGENT_API_KEY}"}}}}\n' \
     "$ocprovider" "$BENCH_BASE" > "$home/.config/opencode/opencode.json"
   HOME=$home XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share XDG_STATE_HOME=$home/.local/state XDG_CACHE_HOME=$home/.cache \
-    BENCH_API_KEY=$key \
+    AGENT_API_KEY=$key \
     "$tools/opencode/bin/opencode2" run --standalone --auto --format json \
     --model "$ocprovider/$BENCH_MODEL${BENCH_EFFORT:+#$BENCH_EFFORT}" -- "$prompt" </dev/null
   ;;
@@ -189,6 +189,7 @@ memory() {
     }' /proc/[0-9]*/status 2>/dev/null
 }
 
+export -n "${!BENCH_@}"
 agent &
 pid=$!
 peak_own=0

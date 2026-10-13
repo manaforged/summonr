@@ -1,1 +1,1 @@
-In bench/harness.sh, change the default tools directory from /opt/bench to /opt/agent (the line assigning tools= when BENCH_TOOLS is unset). Do not change anything else.
+In bench/harness.sh, change the default tools directory from /opt/tools to /opt/agent (the line assigning tools= when BENCH_TOOLS is unset). Do not change anything else.

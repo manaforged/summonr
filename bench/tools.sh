@@ -17,14 +17,14 @@ here=$(cd "$(dirname "$0")" && pwd)
 pin() { awk -v k="$1" '$1==k{print $2}' "$here/tools.lock"; }
 hermes=$(pin hermes) uv=$(pin uv) bun=$(pin bun)
 
-docker run --rm -v "$out":/opt/bench \
+docker run --rm -v "$out":/opt/tools \
   -e HERMES="$hermes" -e UV="$uv" -e BUN="$bun" -e OWNER="$(id -u):$(id -g)" \
   ${src:+-v "$src":/src:ro} \
   ${sigil:+-v "$sigil":/sigil:ro} \
   -v "$HOME/.cargo/git:/root/.cargo/git" \
   -v "$HOME/.cargo/registry:/root/.cargo/registry" \
   -v "$HOME/.ssh:/root/.ssh:ro" \
-  -w /opt/bench debian:bookworm bash -euo pipefail -c "
+  -w /opt/tools debian:bookworm bash -euo pipefail -c "
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
 apt-get update -qq >/dev/null
 apt-get install -y -qq curl ca-certificates git openssh-client unzip make cmake clang libclang-dev g++ pkg-config libssl-dev >/dev/null
@@ -37,21 +37,21 @@ if [ -d /src ]; then
   curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable >/dev/null
   . /root/.cargo/env
   cargo build --manifest-path /src/Cargo.toml --release --locked --target-dir /tmp/summonr-target
-  install -D -m 755 /tmp/summonr-target/release/summonr /opt/bench/summonr/bin/summonr
+  install -D -m 755 /tmp/summonr-target/release/summonr /opt/tools/summonr/bin/summonr
 fi
 install -m 644 /etc/ssl/certs/ca-certificates.crt cacert.pem
 if [ -n \"\$HERMES\" ] && [ -n \"\$UV\" ]; then
   rm -rf hermes hermes-python uv && mkdir -p uv
   curl -fsSL https://github.com/astral-sh/uv/releases/download/\$UV/uv-x86_64-unknown-linux-gnu.tar.gz | tar -xz --strip-components=1 -C uv
   git clone --quiet --depth 1 --branch \$HERMES https://github.com/NousResearch/hermes-agent hermes
-  (cd hermes && UV_PYTHON_INSTALL_DIR=/opt/bench/hermes-python ../uv/uv sync --quiet --frozen --python 3.14)
+  (cd hermes && UV_PYTHON_INSTALL_DIR=/opt/tools/hermes-python ../uv/uv sync --quiet --frozen --python 3.14)
 fi
 if [ -n \"\$BUN\" ]; then
   rm -rf bun /tmp/bun.zip && mkdir -p bun
   curl -fsSL -o /tmp/bun.zip https://github.com/oven-sh/bun/releases/download/bun-v\$BUN/bun-linux-x64.zip
   unzip -q -j /tmp/bun.zip -d bun && chmod 755 bun/bun
 fi
-chown -R \"\$OWNER\" /opt/bench
+chown -R \"\$OWNER\" /opt/tools
 "
 
 if [ -n "$src" ] && [ ! -x "$out/summonr/bin/summonr" ]; then

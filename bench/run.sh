@@ -131,11 +131,11 @@ for rep in $(seq 1 "$repeats"); do
   done
 done > "$root/jobs/$run/order.txt"
 
-mounts='{"type":"bind","source":"'"$root"'/tools","target":"/opt/bench","read_only":true}'
+mounts='{"type":"bind","source":"'"$root"'/tools","target":"/opt/tools","read_only":true}'
 if [ -z "$envfile" ]; then
   for tool in summonr codex grok claude; do
     if [ -d "$logins/.$tool" ]; then
-      mounts+=',{"type":"bind","source":"'"$(readlink -f "$logins/.$tool")"'","target":"/opt/logins/'"$tool"'"}'
+      mounts+=',{"type":"bind","source":"'"$(readlink -f "$logins/.$tool")"'","target":"/opt/auth/'"$tool"'"}'
     fi
   done
 fi

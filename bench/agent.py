@@ -57,7 +57,7 @@ class Bench(BaseAgent):
             if env.get(name):
                 variables[name] = env[name]
         command = (
-            f"bash /opt/bench/harness.sh {shlex.quote(harness)} {prompt}"
+            f"bash /opt/tools/harness.sh {shlex.quote(harness)} {prompt}"
             f" > /logs/agent/{harness}.out 2> /logs/agent/{harness}.err;"
             f" echo $? > /logs/agent/exit"
         )

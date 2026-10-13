@@ -45,9 +45,27 @@ build() {
         cargo build --manifest-path "$root/Cargo.toml" --release --bin summonr "$@" >&2
 }
 
+hold() {
+    mkdir -p "$target" || return 1
+    while ! mkdir "$target/build.lock" 2>/dev/null; do
+        owner=$(cat "$target/build.lock/pid" 2>/dev/null)
+        if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+            rm -rf "$target/build.lock"
+            continue
+        fi
+        sleep 1
+    done
+    echo $$ >"$target/build.lock/pid"
+}
+
+release() {
+    rm -rf "$target/build.lock"
+}
+
 local_build() {
-    mkdir -p "$target" && cp -p "$root/Cargo.lock" "$target/Cargo.lock.pin" || return 1
-    trap 'cp -p "$target/Cargo.lock.pin" "$root/Cargo.lock"; exit 1' HUP INT TERM
+    cargo fetch --manifest-path "$root/Cargo.toml" >/dev/null 2>&1
+    cp -p "$root/Cargo.lock" "$target/Cargo.lock.pin" || return 1
+    trap 'cp -p "$target/Cargo.lock.pin" "$root/Cargo.lock"; release; exit 1' HUP INT TERM
     build --config "$patch"
     status=$?
     cp -p "$target/Cargo.lock.pin" "$root/Cargo.lock"
@@ -55,6 +73,7 @@ local_build() {
     return $status
 }
 
+hold
 if stale; then
     if [ -n "$patch" ]; then
         local_build
@@ -64,6 +83,7 @@ if stale; then
         printf '%s\n' "$head" >"$built" ||
         echo "summonr: the build failed; starting the previous build" >&2
 fi
+release
 
 [ -x "$bin" ] || exit 1
 exec "$bin" "$@"

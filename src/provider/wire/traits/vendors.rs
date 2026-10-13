@@ -6,7 +6,11 @@ pub(super) const ROWS: &[Row] = &[
     zai(scaled(&["glm-5.3"], LOW_HIGH_MAX, Unsupported)),
     zai(scaled(&["glm-5.2"], ALL_POSITIVE, EffortNone)),
     zai(scaled(&["glm-"], NO_EFFORT, ThinkingDisabled)),
-    replayed(scaled(&["deepseek"], LOW_HIGH_MAX, ThinkingDisabled)),
+    replayed(upward(scaled(
+        &["deepseek"],
+        LOW_HIGH_MAX,
+        ThinkingDisabled,
+    ))),
     replayed(scaled(
         &["kimi-for-coding-highspeed"],
         NO_EFFORT,
@@ -28,3 +32,16 @@ pub(super) const ROWS: &[Row] = &[
     scaled(&["qwen3.", "plus"], STANDARD, EnableThinking),
     scaled(&["qwen3.", "max"], STANDARD, EnableThinking),
 ];
+
+const fn upward(row: Row) -> Row {
+    Row {
+        parts: row.parts,
+        traits: super::Traits {
+            scale: match row.traits.scale {
+                Some(scale) => Some(scale.upward()),
+                None => None,
+            },
+            ..row.traits
+        },
+    }
+}

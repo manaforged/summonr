@@ -32,6 +32,10 @@ fn deepseek_turns_thinking_off_with_its_switch_not_an_effort_value() {
 fn deepseek_gets_only_a_level_it_documents() {
     assert_eq!(
         body("deepseek", "deepseek-flash", Some(Effort::Medium))["reasoning_effort"],
+        "high"
+    );
+    assert_eq!(
+        body("deepseek", "deepseek-flash", Some(Effort::Low))["reasoning_effort"],
         "low"
     );
     assert_eq!(

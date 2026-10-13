@@ -254,7 +254,7 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
             model
                 .entries
                 .iter()
-                .filter(|entry| matches!(entry, Entry::Tool { name, .. } if name == "Background"))
+                .filter(|entry| matches!(entry, Entry::Tool { name, .. } if name == "Subagent"))
                 .count(),
             1
         );

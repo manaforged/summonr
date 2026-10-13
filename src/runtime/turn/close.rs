@@ -99,10 +99,7 @@ impl<P: Provider> Loop<P> {
             events,
             emit,
             Event::Note {
-                text: format!(
-                    "stopped {} background child(ren) the turn left running",
-                    killed.len()
-                ),
+                text: format!("stopped {} subagent(s) the turn left running", killed.len()),
             },
         )
     }

@@ -77,7 +77,7 @@ fn children_the_turn_waits_on_sit_under_their_task_call() {
         shown.contains("Check the docs against the code") && shown.contains("4 findings"),
         "{shown}"
     );
-    assert!(!shown.contains("background"), "{shown}");
+    assert!(!shown.contains("subagent"), "{shown}");
 }
 
 #[test]
@@ -107,11 +107,11 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
     .join("\n");
     assert_eq!(running, "1");
     assert!(
-        done.contains("● Task Benchmark startup and RSS") && done.contains("background"),
+        done.contains("● Task Benchmark startup and RSS") && done.contains("subagent"),
         "{done}"
     );
     assert!(
-        done.contains("● Background Benchmark startup and RSS"),
+        done.contains("● Subagent Benchmark startup and RSS"),
         "{done}"
     );
     assert!(done.contains("startup 0.28 s"), "{done}");
@@ -332,6 +332,6 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         assert!(model.busy_since.is_some());
         assert!(model.entries.iter().any(|entry| matches!(entry,
             Entry::Tool { name, output, .. }
-                if name == "Background" && output == "still finishes")));
+                if name == "Subagent" && output == "still finishes")));
     });
 }

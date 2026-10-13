@@ -68,7 +68,7 @@ fn line(agent: &Agent, lead: &str, app: &App, detail: bool) -> NodeBuilder {
             button("Clear")
                 .ghost()
                 .size(ControlSize::Compact)
-                .accessible(format!("Clear background task {}", agent.title))
+                .accessible(format!("Clear subagent {}", agent.title))
                 .activate(move || clear.clear_agent(&id)),
         );
     }
@@ -141,7 +141,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 );
             }
             for agent in &rows {
-                let lead = format!("{:<10}", if agent.background { "background" } else { "" });
+                let lead = format!("{:<10}", if agent.background { "subagent" } else { "" });
                 nodes.push(line(agent, &lead, &app, expanded));
             }
             nodes

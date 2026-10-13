@@ -152,7 +152,7 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
         } else {
             crate::text::plural(kids.len(), "child")
         };
-        let detail = "background".to_string();
+        let detail = "subagent".to_string();
         return Some(header(
             &state_of(&kids),
             call_line("Task", &what, Some((detail, Look::xs(Token::Gray10))), true),

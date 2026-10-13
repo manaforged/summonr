@@ -112,7 +112,7 @@ impl Model {
             let agent = agent.clone();
             self.entries.push(Entry::Tool {
                 id: String::new(),
-                name: "Background".to_string(),
+                name: "Subagent".to_string(),
                 arg: format!(
                     "{} · {} · {} tok",
                     agent.title,

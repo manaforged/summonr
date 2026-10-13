@@ -41,7 +41,15 @@ pub(crate) fn kill_job(workspace: &Path, id: &str) -> Result<crate::jobs::Status
 impl ToolRegistry {
     pub(super) async fn run_command(&self, arguments: &str) -> Result<ToolOutput> {
         let args: serde_json::Value = parse_args("run_command", arguments)?;
-        if args.get("op").and_then(serde_json::Value::as_str) == Some("help") {
+        let named = |key| {
+            args.get(key)
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|value| !value.is_empty())
+        };
+        if args.get("op").and_then(serde_json::Value::as_str) == Some("help")
+            && !named("command")
+            && !named("job")
+        {
             return Ok(ToolOutput::ok(super::help::RUN_COMMAND.to_string()));
         }
         let locked = self.policy.is_read_only();

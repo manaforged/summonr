@@ -377,3 +377,24 @@ fn approval_toggle_gates_execution_and_preserves_one_shot_command_approval() {
         "approved"
     );
 }
+
+#[test]
+fn a_command_runs_when_the_model_fills_op_with_help() {
+    let (_dir, tools) = workspace(&[]);
+    let filled = run(
+        &tools,
+        "run_command",
+        serde_json::json!({
+            "op": "help",
+            "command": "echo filled",
+            "background": false,
+            "job": "",
+            "kill": false,
+            "timeout_secs": 120,
+        }),
+    );
+    assert!(filled.contains("filled"), "{filled}");
+    assert!(!filled.starts_with("run_command reference."), "{filled}");
+    let help = run(&tools, "run_command", serde_json::json!({"op": "help"}));
+    assert!(help.starts_with("run_command reference."), "{help}");
+}

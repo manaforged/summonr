@@ -91,6 +91,17 @@ pub(in crate::tools) fn nonempty_path<'a>(args: &'a Value, tool_name: &str) -> R
         .ok_or_else(|| Error::Tool(format!("{tool_name} requires a non-empty path")))
 }
 
+pub(in crate::tools) fn named<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+}
+
+pub(in crate::tools) fn named_value(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| !text.trim().is_empty())
+}
+
 pub(in crate::tools) fn object_usize(value: &Value, field: &str) -> Option<usize> {
     value
         .get(field)

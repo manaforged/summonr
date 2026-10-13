@@ -58,6 +58,11 @@ impl ToolRegistry {
             .and_then(serde_json::Value::as_str)
             .filter(|id| !id.is_empty())
         {
+            if named("command") {
+                return Err(Error::Tool(format!(
+                    "run_command got both job `{id}` and a command; send job to poll or stop it, or command to start one"
+                )));
+            }
             return self.poll_job(&args, id, locked).await;
         }
         self.launch_command(&args, locked).await
@@ -289,7 +294,9 @@ impl ToolRegistry {
 
 fn launch_mode(args: &serde_json::Value) -> Result<(bool, Option<u64>)> {
     let background = object_bool(args, "background");
-    let explicit = object_usize(args, "timeout_secs").and_then(|secs| u64::try_from(secs).ok());
+    let explicit = object_usize(args, "timeout_secs")
+        .filter(|secs| *secs > 0)
+        .and_then(|secs| u64::try_from(secs).ok());
     if background && explicit.is_some() {
         return Err(Error::Tool(
             "timeout_secs applies to foreground commands; drop it or background, then stop a job with run_command {\"job\":ID,\"kill\":true}".to_string(),

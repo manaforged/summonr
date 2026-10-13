@@ -5,7 +5,7 @@ use super::*;
 impl ToolRegistry {
     pub(in crate::tools) async fn lsp(&self, arguments: &str) -> Result<ToolOutput> {
         let args = parse_args("lsp", arguments)?;
-        match args.get("op").and_then(Value::as_str) {
+        match super::super::args::named(&args, "op") {
             Some("diagnostics") => return self.diagnostics(arguments).await,
             Some("definition") => return self.definition(arguments).await,
             Some(operation) => {
@@ -13,8 +13,13 @@ impl ToolRegistry {
             }
             None => {}
         }
-        if args.get("line").is_some()
-            || args.get("character").is_some()
+        let placed = |field| {
+            args.get(field)
+                .and_then(Value::as_u64)
+                .is_some_and(|n| n > 0)
+        };
+        if placed("line")
+            || placed("character")
             || args.get("references").and_then(Value::as_bool) == Some(true)
             || args
                 .get("new_name")

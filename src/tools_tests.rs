@@ -7,6 +7,8 @@ use crate::policy::Policy;
 mod browser;
 #[path = "tools_tests/command.rs"]
 mod command;
+#[path = "tools_tests/defaults.rs"]
+mod defaults;
 #[path = "tools_tests/edit.rs"]
 mod edit;
 #[path = "tools_tests/read.rs"]

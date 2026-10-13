@@ -107,8 +107,7 @@ fn a_cut_reply_records_the_usage_the_provider_reported() {
     let charge = text
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|line| line["kind"] == "charge")
-        .next_back()
+        .rfind(|line| line["kind"] == "charge")
         .unwrap();
     assert_eq!(charge["reported"], true, "{charge}");
     assert_eq!(charge["usage"]["input"], 150_000, "{charge}");

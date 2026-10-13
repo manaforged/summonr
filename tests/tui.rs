@@ -2,6 +2,7 @@
 
 use std::io::{Read, Write};
 use std::path::Path;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -17,6 +18,7 @@ struct Terminal {
     master: Box<dyn MasterPty + Send>,
     writer: Writer,
     screen: Arc<Mutex<vt100::Parser>>,
+    output: Receiver<()>,
 }
 
 impl Drop for Terminal {
@@ -61,6 +63,7 @@ impl Terminal {
         let writer: Writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
         let screen = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
         let (parser, replies) = (Arc::clone(&screen), Arc::clone(&writer));
+        let (painted, output) = channel();
         std::thread::spawn(move || {
             let mut chunk = [0_u8; 65536];
             while let Ok(read) = reader.read(&mut chunk) {
@@ -71,6 +74,9 @@ impl Terminal {
                 if !reply.is_empty() {
                     drop(replies.lock().unwrap().write_all(&reply));
                 }
+                if painted.send(()).is_err() {
+                    break;
+                }
             }
         });
         Self {
@@ -78,6 +84,7 @@ impl Terminal {
             master: pair.master,
             writer,
             screen,
+            output,
         }
     }
 
@@ -110,19 +117,19 @@ impl Terminal {
     }
 
     fn settle(&self, what: &str, ready: impl Fn(&Splash) -> bool) -> Splash {
+        let steady = Duration::from_millis(300);
         let deadline = Instant::now() + Duration::from_secs(30);
         let mut last = None;
-        let mut steady = 0;
+        let mut since = Instant::now();
         loop {
             let rows = self.rows();
             let splash = Splash::read(&rows).filter(&ready);
             let place = splash.as_ref().map(Splash::place);
-            steady = if place.is_some() && place == last {
-                steady + 1
-            } else {
-                0
-            };
-            if steady >= 3
+            if place.is_none() || place != last {
+                since = Instant::now();
+            }
+            let held = since.elapsed();
+            if held >= steady
                 && let Some(splash) = splash
             {
                 return splash;
@@ -133,7 +140,13 @@ impl Terminal {
                 rows.join("\n")
             );
             last = place;
-            std::thread::sleep(Duration::from_millis(100));
+            let wait = self.output.recv_timeout(steady.saturating_sub(held));
+            assert_ne!(
+                wait,
+                Err(RecvTimeoutError::Disconnected),
+                "summonr exited before {what} showed:\n{}",
+                rows.join("\n")
+            );
         }
     }
 }

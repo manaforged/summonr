@@ -126,3 +126,16 @@ fn well_known_token_shapes_are_hidden() {
     }
     assert!(text.contains("[secret]"), "{text}");
 }
+
+#[test]
+fn guidance_says_an_empty_memory_has_nothing_to_read() {
+    let (home, work) = with_user_memory("- 2026-10-13 a stored fact\n");
+    let text = guidance(&files(home.path(), work.path()));
+    let project = project(home.path(), work.path()).display().to_string();
+    assert!(
+        text.contains(&format!("{project} (empty, nothing to read)")),
+        "{text}"
+    );
+    let user = home.path().join(DIR).join(FILE).display().to_string();
+    assert!(!text.contains(&format!("{user} (empty")), "{text}");
+}

@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+
+use super::galaxy::{Field, field};
 use super::*;
 
 pub(in crate::tui::sigil_view) const SCRIM: Rgba8 = rgb(10, 8, 20);
@@ -5,8 +8,6 @@ pub(in crate::tui::sigil_view) const SCRIM: Rgba8 = rgb(10, 8, 20);
 pub(in crate::tui::sigil_view) const PLATE: Rgba8 = rgb(42, 44, 58);
 
 pub(in crate::tui::sigil_view) const STAR_DIM: Rgba8 = rgb(58, 74, 110);
-
-pub(in crate::tui::sigil_view) const STAR_MID: Rgba8 = rgb(120, 148, 200);
 
 pub(in crate::tui::sigil_view) const STAR_BRIGHT: Rgba8 = rgb(176, 200, 240);
 
@@ -28,9 +29,15 @@ pub(in crate::tui::sigil_view) fn step_sky(sky: u8, step: i8) -> u8 {
     (i16::from(sky) + i16::from(step)).rem_euclid(3) as u8
 }
 
+pub(in crate::tui::sigil_view) struct Spot {
+    pub(in crate::tui::sigil_view) x: u16,
+    pub(in crate::tui::sigil_view) y: u16,
+    pub(in crate::tui::sigil_view) cell: Cell,
+}
+
 struct Look {
-    far_every: u32,
-    near_every: u32,
+    dust: f32,
+    flying: f32,
     glow: f32,
     halo: bool,
 }
@@ -38,8 +45,8 @@ struct Look {
 fn look(sky: u8) -> Look {
     let dust = sky % 3 == DUST;
     Look {
-        far_every: if dust { 14 } else { FAR_EVERY },
-        near_every: if dust { 64 } else { NEAR_EVERY },
+        dust: if dust { 1.6 } else { 1.0 },
+        flying: if dust { 1.5 } else { 1.0 },
         glow: if dust { 1.15 } else { 1.0 },
         halo: sky % 3 == HALO,
     }
@@ -49,15 +56,19 @@ const WARM: Rgba8 = rgb(214, 176, 122);
 
 const FLARE: Rgba8 = rgb(244, 246, 255);
 
-const FAR_EVERY: u32 = 30;
+const DUST_BASE: f32 = 0.006;
 
-const GLOW: f32 = 0.22;
+const DUST_BAND: f32 = 0.45;
 
-const FAR_DRIFT: u64 = 62;
+const STAR_AREA: u32 = 40;
 
-const NEAR_EVERY: u32 = 96;
+const SPEED: [f32; 3] = [0.05, 0.12, 0.3];
 
-const NEAR_DRIFT: u64 = 28;
+const FLY: [Rgba8; 3] = [rgb(70, 82, 120), rgb(130, 148, 196), rgb(214, 224, 250)];
+
+const SLOPE: f32 = 0.18;
+
+const FLY_SEED: u16 = 0x51f7;
 
 const SKY_PERIOD: u64 = 50;
 
@@ -68,6 +79,8 @@ const METEOR_FLIGHT: u64 = 48;
 const TRAIL: u16 = 20;
 
 const TRAIL_STEP: f32 = 0.62;
+
+const GLOW: f32 = 0.22;
 
 const DOT: [u8; 8] = [0x01, 0x08, 0x02, 0x10, 0x04, 0x20, 0x40, 0x80];
 
@@ -87,102 +100,143 @@ struct Flight {
     uy: f32,
 }
 
+#[cfg(test)]
 pub(in crate::tui::sigil_view) fn space(cols: u16, rows: u16, ticks: u64, sky: u8) -> Vec<Cell> {
-    let look = look(sky);
-    let mut cells = backdrop(cols, rows, look.glow);
-    stars(&mut cells, cols, rows, ticks, &look);
-    meteor(&mut cells, cols, rows, ticks, look.halo);
-    cells
-}
-
-fn backdrop(cols: u16, rows: u16, glow: f32) -> Vec<Cell> {
-    let field = super::galaxy::field(cols, rows, glow);
-    let mut cells = Vec::with_capacity(field.len());
-    for sky in field.iter() {
-        cells.push(Cell {
-            text: if sky.dots == 0 {
-                " ".into()
-            } else {
-                braille(sky.dots).to_string().into()
-            },
-            fg: ink(sky.fg),
-            bg: ink(sky.bg),
-            bold: false,
-            italic: false,
-            ..Cell::blank()
-        });
+    let mut cells = backdrop(cols, rows, sky);
+    for spot in moving(cols, rows, ticks, sky) {
+        set(&mut cells, cols, spot.x, spot.y, spot.cell);
     }
     cells
 }
 
-fn stars(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64, look: &Look) {
-    layer(cells, cols, rows, ticks, look, false);
-    layer(cells, cols, rows, ticks, look, true);
-    sparkle(cells, cols, rows, ticks);
+pub(in crate::tui::sigil_view) fn backdrop(cols: u16, rows: u16, sky: u8) -> Vec<Cell> {
+    let mut cells: Vec<Cell> = field(cols, rows, look(sky).glow)
+        .iter()
+        .map(|haze| {
+            let text = if haze.top == haze.bottom { " " } else { "▀" };
+            cell(text, haze.top, haze.bottom, false)
+        })
+        .collect();
+    for star in dust(cols, rows, sky) {
+        set(&mut cells, cols, star.x, star.y, star.cell);
+    }
+    cells
 }
 
-fn layer(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64, look: &Look, near: bool) {
-    let drift = (ticks / if near { NEAR_DRIFT } else { FAR_DRIFT }) as u16;
-    let every = if near {
-        look.near_every
-    } else {
-        look.far_every
-    };
-    let lift = if near { 0.42 } else { 0.0 };
+pub(in crate::tui::sigil_view) fn moving(cols: u16, rows: u16, ticks: u64, sky: u8) -> Vec<Spot> {
+    let mut spots = flying(cols, rows, ticks, sky);
+    sparkle(&mut spots, cols, rows, ticks, sky);
+    meteor(&mut spots, cols, rows, ticks, sky);
+    spots
+}
+
+fn dust(cols: u16, rows: u16, sky: u8) -> Vec<Spot> {
+    let look = look(sky);
+    let field = field(cols, rows, look.glow);
+    let mut spots = Vec::new();
     for y in 0..rows {
         for x in 0..cols {
-            let n = hash(x.wrapping_add(drift), y);
-            if !n.is_multiple_of(every) {
+            let haze = &field[index(cols, x, y)];
+            let seed = hash(x, y);
+            let chance = (DUST_BASE + DUST_BAND * haze.density.max(0.0).powf(1.4)) * look.dust;
+            if (seed % 10_000) as f32 >= chance * 10_000.0 {
                 continue;
             }
-            let color = if near {
-                blend(tone(n), STAR_BRIGHT, lift)
-            } else {
-                fg_of(cells, cols, x, y)
+            let roll = (seed >> 14) % 1000;
+            let warm = haze.core > 0.25 && roll.is_multiple_of(2);
+            let (glyph, color) = match roll {
+                930.. => (
+                    "•",
+                    if warm {
+                        rgb(210, 190, 160)
+                    } else {
+                        rgb(170, 186, 230)
+                    },
+                ),
+                640.. => (
+                    "∙",
+                    if warm {
+                        rgb(200, 176, 150)
+                    } else {
+                        rgb(130, 144, 196)
+                    },
+                ),
+                _ => ("·", blend(STAR_DIM, rgb(190, 170, 160), haze.density)),
             };
-            put(cells, cols, x, y, "·", color, near);
-            if near && look.halo && (n >> 20) % 8 < 2 {
-                glow(cells, cols, rows, x, y, STAR_BRIGHT);
-            }
+            spots.push(spot(x, y, glyph, color, under(haze), false));
         }
     }
+    spots
 }
 
-fn tone(n: u32) -> Rgba8 {
-    match (n >> 20) % 8 {
-        0 => WARM,
-        1 => rgb(186, 206, 230),
-        2 | 3 => STAR_MID,
-        _ => STAR_DIM,
+fn flying(cols: u16, rows: u16, ticks: u64, sky: u8) -> Vec<Spot> {
+    if cols == 0 || rows == 0 {
+        return Vec::new();
     }
+    let look = look(sky);
+    let field = field(cols, rows, look.glow);
+    let wide = f32::from(cols) * 2.0;
+    let tall = f32::from(rows) * 4.0;
+    let count =
+        ((u32::from(cols) * u32::from(rows) / STAR_AREA).max(8) as f32 * look.flying) as u32;
+    let mut lit: BTreeMap<(u16, u16), (u8, usize)> = BTreeMap::new();
+    for star in 0..count {
+        let seed = hash(star as u16, (star >> 16) as u16 ^ FLY_SEED);
+        let depth = (seed >> 28) as usize % SPEED.len();
+        let travel = SPEED[depth] * ticks as f32;
+        let x0 = (seed % 10_000) as f32 / 10_000.0 * wide;
+        let y0 = ((seed >> 14) % 10_000) as f32 / 10_000.0 * tall;
+        for tail in 0..depth.max(1) {
+            let x = (x0 - travel + tail as f32).rem_euclid(wide);
+            let y = (y0 + travel * SLOPE).rem_euclid(tall);
+            let at = ((x / 2.0) as u16, (y / 4.0) as u16);
+            let dot = DOT[(y as usize % 4) * 2 + x as usize % 2];
+            let shade = depth - tail.min(depth);
+            let entry = lit.entry(at).or_insert((0, shade));
+            *entry = (entry.0 | dot, entry.1.max(shade));
+        }
+    }
+    lit.into_iter()
+        .map(|((x, y), (bits, shade))| {
+            let bg = under(&field[index(cols, x, y)]);
+            let glyph = if look.halo && shade + 1 == SPEED.len() {
+                "•"
+            } else {
+                braille(bits)
+            };
+            spot(x, y, glyph, FLY[shade], bg, false)
+        })
+        .collect()
 }
 
-fn sparkle(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64) {
+fn sparkle(spots: &mut Vec<Spot>, cols: u16, rows: u16, ticks: u64, sky: u8) {
     if !(4..20).contains(&(ticks % SKY_PERIOD)) {
         return;
     }
-    let drift = (ticks / FAR_DRIFT) as u16;
     let cycle = (ticks / SKY_PERIOD) as u16;
-    let mut best: Option<(u32, u16, u16)> = None;
-    for y in 0..rows {
-        for x in 0..cols {
-            let n = hash(x.wrapping_add(drift), y);
-            if !n.is_multiple_of(FAR_EVERY) {
-                continue;
-            }
-            let candidate = (hash(x.wrapping_add(cycle), y), x, y);
-            best = Some(best.map_or(candidate, |current| current.min(candidate)));
-        }
-    }
-    if let Some((_, x, y)) = best {
-        put(cells, cols, x, y, "✦", STAR_BRIGHT, true);
+    let picked = dust(cols, rows, sky)
+        .into_iter()
+        .min_by_key(|star| (hash(star.x.wrapping_add(cycle), star.y), star.x, star.y));
+    if let Some(star) = picked {
+        let bg = star.cell.bg;
+        spots.push(Spot {
+            cell: Cell {
+                bg,
+                ..cell("✦", STAR_BRIGHT, SCRIM, true)
+            },
+            ..star
+        });
     }
 }
 
-fn meteor(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64, halo: bool) {
+fn meteor(spots: &mut Vec<Spot>, cols: u16, rows: u16, ticks: u64, sky: u8) {
     let Some(flight) = flight(cols, rows, ticks) else {
         return;
     };
+    let look = look(sky);
+    let field = field(cols, rows, look.glow);
+    let head = inside(cols, rows, flight.x, flight.y);
+    let mut trail: BTreeMap<(u16, u16), (u8, Rgba8)> = BTreeMap::new();
     for step in (1..TRAIL).rev() {
         let along = f32::from(step) * TRAIL_STEP;
         let fade = 1.0 - f32::from(step) / f32::from(TRAIL);
@@ -191,47 +245,40 @@ fn meteor(cells: &mut [Cell], cols: u16, rows: u16, ticks: u64, halo: bool) {
         } else {
             blend(STAR_DIM, WARM, fade)
         };
-        plot_dot(
-            cells,
-            cols,
-            rows,
-            flight.x - flight.ux * along,
-            flight.y - flight.uy * along,
-            fg,
-        );
+        let (x, y) = (flight.x - flight.ux * along, flight.y - flight.uy * along);
+        let Some(at) = inside(cols, rows, x, y).filter(|at| Some(*at) != head) else {
+            continue;
+        };
+        let dot = DOT[((y.fract() * 4.0) as usize).min(3) * 2 + usize::from(x.fract() >= 0.5)];
+        let entry = trail.entry(at).or_insert((0, fg));
+        *entry = (entry.0 | dot, fg);
     }
-    if (0.0..f32::from(cols)).contains(&flight.x) && (0.0..f32::from(rows)).contains(&flight.y) {
-        put(
-            cells,
-            cols,
-            flight.x as u16,
-            flight.y as u16,
+    for ((x, y), (bits, fg)) in trail {
+        let bg = under(&field[index(cols, x, y)]);
+        spots.push(spot(x, y, braille(bits), fg, bg, false));
+    }
+    if let Some((x, y)) = head {
+        spots.push(spot(
+            x,
+            y,
             "✦",
             FLARE,
+            under(&field[index(cols, x, y)]),
             true,
-        );
-        if halo {
-            glow(cells, cols, rows, flight.x as u16, flight.y as u16, FLARE);
+        ));
+        if look.halo {
+            glow(spots, &field, cols, x, y);
         }
     }
 }
 
-fn glow(cells: &mut [Cell], cols: u16, rows: u16, x: u16, y: u16, color: Rgba8) {
-    for dx in [-1, 1] {
-        let nx = i32::from(x) + dx;
-        let ny = i32::from(y);
-        if nx < 0 || ny < 0 || nx >= i32::from(cols) || ny >= i32::from(rows) {
-            continue;
-        }
-        let index = ny as usize * usize::from(cols) + nx as usize;
-        let Some(cell) = cells.get_mut(index) else {
-            continue;
-        };
-        let bg = match cell.bg {
-            Ink::Exact(color) => color,
-            _ => SCRIM,
-        };
-        cell.bg = ink(blend(bg, color, GLOW));
+fn glow(spots: &mut Vec<Spot>, field: &[Field], cols: u16, x: u16, y: u16) {
+    for nx in [x.checked_sub(1), x.checked_add(1).filter(|&nx| nx < cols)]
+        .into_iter()
+        .flatten()
+    {
+        let lifted = blend(under(&field[index(cols, nx, y)]), STAR_BRIGHT, GLOW);
+        spots.push(spot(nx, y, " ", lifted, lifted, false));
     }
 }
 
@@ -253,77 +300,46 @@ fn flight(cols: u16, rows: u16, ticks: u64) -> Option<Flight> {
     })
 }
 
-fn plot_dot(cells: &mut [Cell], cols: u16, rows: u16, x: f32, y: f32, fg: Rgba8) {
-    if x < 0.0 || y < 0.0 || x >= f32::from(cols) || y >= f32::from(rows) {
-        return;
-    }
-    let ix = x as u16;
-    let iy = y as u16;
-    let subx = usize::from(x.fract() >= 0.5);
-    let suby = ((y.fract() * 4.0) as usize).min(3);
-    let index = usize::from(iy) * usize::from(cols) + usize::from(ix);
-    let Some(cell) = cells.get_mut(index) else {
-        return;
-    };
-    if cell.text == "✦" {
-        return;
-    }
-    let bits = braille_bits(&cell.text).unwrap_or(0) | DOT[suby * 2 + subx];
-    cell.text = braille(bits).to_string().into();
-    cell.fg = ink(fg);
-    cell.bold = false;
+fn inside(cols: u16, rows: u16, x: f32, y: f32) -> Option<(u16, u16)> {
+    (x >= 0.0 && y >= 0.0 && x < f32::from(cols) && y < f32::from(rows))
+        .then_some((x as u16, y as u16))
 }
 
-fn braille(bits: u8) -> char {
-    char::from_u32(0x2800 | u32::from(bits)).unwrap_or('·')
-}
-
-fn braille_bits(text: &str) -> Option<u8> {
-    let code = u32::from(text.chars().next()?);
-    (0x2800..=0x28FF)
-        .contains(&code)
-        .then_some((code & 0xFF) as u8)
+fn braille(bits: u8) -> &'static str {
+    const DOTS: &str = "⠀⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿⡀⡁⡂⡃⡄⡅⡆⡇⡈⡉⡊⡋⡌⡍⡎⡏⡐⡑⡒⡓⡔⡕⡖⡗⡘⡙⡚⡛⡜⡝⡞⡟⡠⡡⡢⡣⡤⡥⡦⡧⡨⡩⡪⡫⡬⡭⡮⡯⡰⡱⡲⡳⡴⡵⡶⡷⡸⡹⡺⡻⡼⡽⡾⡿⢀⢁⢂⢃⢄⢅⢆⢇⢈⢉⢊⢋⢌⢍⢎⢏⢐⢑⢒⢓⢔⢕⢖⢗⢘⢙⢚⢛⢜⢝⢞⢟⢠⢡⢢⢣⢤⢥⢦⢧⢨⢩⢪⢫⢬⢭⢮⢯⢰⢱⢲⢳⢴⢵⢶⢷⢸⢹⢺⢻⢼⢽⢾⢿⣀⣁⣂⣃⣄⣅⣆⣇⣈⣉⣊⣋⣌⣍⣎⣏⣐⣑⣒⣓⣔⣕⣖⣗⣘⣙⣚⣛⣜⣝⣞⣟⣠⣡⣢⣣⣤⣥⣦⣧⣨⣩⣪⣫⣬⣭⣮⣯⣰⣱⣲⣳⣴⣵⣶⣷⣸⣹⣺⣻⣼⣽⣾⣿";
+    let at = usize::from(bits) * 3;
+    &DOTS[at..at + 3]
 }
 
 fn lerp(from: f32, to: f32, t: f32) -> f32 {
     from + (to - from) * t
 }
 
-fn put(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &'static str, fg: Rgba8, bold: bool) {
-    if x >= cols {
-        return;
-    }
-    let bg = bg_of(cells, cols, x, y);
-    set(
-        cells,
-        cols,
+fn under(haze: &Field) -> Rgba8 {
+    blend(haze.top, haze.bottom, 0.5)
+}
+
+fn index(cols: u16, x: u16, y: u16) -> usize {
+    usize::from(y) * usize::from(cols) + usize::from(x)
+}
+
+fn spot(x: u16, y: u16, text: &'static str, fg: Rgba8, bg: Rgba8, bold: bool) -> Spot {
+    Spot {
         x,
         y,
-        Cell {
-            text: text.into(),
-            fg: ink(fg),
-            bg: ink(bg),
-            bold,
-            italic: false,
-            ..Cell::blank()
-        },
-    );
+        cell: cell(text, fg, bg, bold),
+    }
 }
 
-fn fg_of(cells: &[Cell], cols: u16, x: u16, y: u16) -> Rgba8 {
-    let index = usize::from(y) * usize::from(cols) + usize::from(x);
-    if let Some(Ink::Exact(color)) = cells.get(index).map(|cell| cell.fg) {
-        return color;
+fn cell(text: &'static str, fg: Rgba8, bg: Rgba8, bold: bool) -> Cell {
+    Cell {
+        text: text.into(),
+        fg: ink(fg),
+        bg: ink(bg),
+        bold,
+        italic: false,
+        ..Cell::blank()
     }
-    STAR_DIM
-}
-
-fn bg_of(cells: &[Cell], cols: u16, x: u16, y: u16) -> Rgba8 {
-    let index = usize::from(y) * usize::from(cols) + usize::from(x);
-    if let Some(Ink::Exact(color)) = cells.get(index).map(|cell| cell.bg) {
-        return color;
-    }
-    SCRIM
 }
 
 pub(in crate::tui::sigil_view) fn hash(x: u16, y: u16) -> u32 {

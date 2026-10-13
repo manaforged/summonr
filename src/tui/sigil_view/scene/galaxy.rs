@@ -3,22 +3,14 @@ use std::rc::Rc;
 
 use super::*;
 
-const HAZE: [Rgba8; 6] = [
+const HAZE: [Rgba8; 7] = [
     rgb(10, 8, 20),
-    rgb(13, 11, 27),
-    rgb(18, 15, 35),
-    rgb(25, 20, 45),
-    rgb(36, 28, 56),
-    rgb(56, 42, 66),
-];
-
-const DUST: [Rgba8; 6] = [
-    rgb(44, 48, 82),
-    rgb(62, 64, 104),
-    rgb(86, 84, 128),
-    rgb(116, 108, 150),
-    rgb(160, 140, 156),
-    rgb(214, 184, 156),
+    rgb(14, 11, 28),
+    rgb(19, 15, 37),
+    rgb(26, 20, 47),
+    rgb(36, 27, 58),
+    rgb(50, 37, 68),
+    rgb(70, 52, 78),
 ];
 
 const TILT: f32 = -0.48;
@@ -31,12 +23,16 @@ const RIFT: [f32; 3] = [0.04, 0.08, 0.8];
 
 const FILAMENT: f32 = 0.06;
 
-const SEED: u16 = 977;
+const DITHER: f32 = 0.9;
 
+const DITHER_SEED: u16 = 0x2f1;
+
+#[derive(Clone, Copy)]
 pub(super) struct Field {
-    pub(super) bg: Rgba8,
-    pub(super) fg: Rgba8,
-    pub(super) dots: u8,
+    pub(super) top: Rgba8,
+    pub(super) bottom: Rgba8,
+    pub(super) density: f32,
+    pub(super) core: f32,
 }
 
 type Cached = ((u16, u16, u32), Rc<[Field]>);
@@ -59,33 +55,45 @@ pub(super) fn field(cols: u16, rows: u16, glow: f32) -> Rc<[Field]> {
     })
 }
 
+struct Sample {
+    shade: f32,
+    clump: f32,
+    core: f32,
+}
+
 fn draw(cols: u16, rows: u16, glow: f32) -> Vec<Field> {
     let mut cells = Vec::with_capacity(usize::from(cols) * usize::from(rows));
-    let half = f32::from(rows.max(1)) / 2.0;
-    let (sin, cos) = TILT.sin_cos();
     for y in 0..rows {
         for x in 0..cols {
-            let px = (f32::from(x) + 0.5 - f32::from(cols) / 2.0) * 0.5 / half;
-            let py = (f32::from(y) + 0.5 - half) / half;
-            let along = px * cos + py * sin;
-            let across = py * cos - px * sin;
-            let shade = glow * light(along, across) * (1.0 - 0.7 * lanes(along, across, px, py));
-            let level = level(shade);
-            let density = shade * (0.3 + 0.7 * fbm(px * 3.0, py * 3.0));
+            let upper = sample(cols, rows, f32::from(x), f32::from(y) - 0.25, glow);
+            let lower = sample(cols, rows, f32::from(x), f32::from(y) + 0.25, glow);
+            let row = y.wrapping_mul(2);
             cells.push(Field {
-                bg: HAZE[level],
-                fg: DUST[level],
-                dots: dots(x, y, density),
+                top: haze(upper.shade * (0.75 + 0.25 * upper.clump), x, row),
+                bottom: haze(lower.shade * (0.75 + 0.25 * lower.clump), x, row + 1),
+                density: upper.shade * upper.clump,
+                core: upper.core,
             });
         }
     }
     cells
 }
 
-fn light(along: f32, across: f32) -> f32 {
+fn sample(cols: u16, rows: u16, x: f32, y: f32, glow: f32) -> Sample {
+    let half = f32::from(rows.max(1)) / 2.0;
+    let px = (x + 0.5 - f32::from(cols) / 2.0) * 0.5 / half;
+    let py = (y + 0.5 - half) / half;
+    let (sin, cos) = TILT.sin_cos();
+    let along = px * cos + py * sin;
+    let across = py * cos - px * sin;
     let band = (-(across / WIDTH).powi(2)).exp() * (0.7 + 0.3 * (-(along / 1.6).powi(2)).exp());
     let core = (-((along - CORE[0]) / CORE[1]).powi(2) - (across / CORE[2]).powi(2)).exp();
-    (band * 0.7 + core * 0.6).min(1.0)
+    let light = (band * 0.7 + core * 0.6).min(1.0) * glow;
+    Sample {
+        shade: light * (1.0 - 0.75 * lanes(along, across, px, py)),
+        clump: 0.35 + 0.65 * fbm(px * 3.0, py * 3.0),
+        core,
+    }
 }
 
 fn lanes(along: f32, across: f32, px: f32, py: f32) -> f32 {
@@ -97,20 +105,11 @@ fn lanes(along: f32, across: f32, px: f32, py: f32) -> f32 {
     rift.max(filament * 0.85)
 }
 
-fn level(value: f32) -> usize {
-    ((value * HAZE.len() as f32).max(0.0) as usize).min(HAZE.len() - 1)
-}
-
-fn dots(x: u16, y: u16, density: f32) -> u8 {
-    let chance = (density.powf(1.5) * 1.25).min(0.92) * 1000.0;
-    (0..8u16).fold(0, |bits, bit| {
-        let roll = super::space::hash(x.wrapping_mul(8).wrapping_add(bit), y ^ SEED) % 1000;
-        if (roll as f32) < chance {
-            bits | 1 << bit
-        } else {
-            bits
-        }
-    })
+fn haze(shade: f32, x: u16, row: u16) -> Rgba8 {
+    let roll = super::space::hash(x, row ^ DITHER_SEED) % 1000;
+    let jitter = (roll as f32 / 1000.0 - 0.5) * DITHER;
+    let level = (shade * (HAZE.len() - 1) as f32 + jitter).round().max(0.0) as usize;
+    HAZE[level.min(HAZE.len() - 1)]
 }
 
 fn fbm(x: f32, y: f32) -> f32 {

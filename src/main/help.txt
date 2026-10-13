@@ -70,7 +70,7 @@ Options:
   -h, --help           show this help
   -V, --version        show the version
 
-Exit codes: 0 ok · 1 harness error · 2 check failed · 3 stopped short with no failing check
+Exit codes: 0 ok · 1 harness error · 2 check failed · 3 stopped short: no check, or the goal is unmet
 
 Interactive commands (/help in the interface lists the keys):
 {commands}
@@ -78,7 +78,7 @@ Interactive commands (/help in the interface lists the keys):
 Classify:
   summonr classify --set NAME [STATE]       sets: {sets}
   summonr classify --questions @FILE [STATE]
-  summonr classify --noul QUESTION [STATE]  a yes/no question; repeatable
+  summonr classify --noul QUESTION [STATE]  a yes/no question, answered as a probability; repeatable
   summonr classify --patch                  rank the files of the working patch
   summonr classify --review --session ID
   summonr classify --set NAME --eval FILE

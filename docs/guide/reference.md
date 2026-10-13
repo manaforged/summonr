@@ -175,7 +175,7 @@ git diff | summonr kimi -p
 | `tool NAME [JSON]` | Run one tool with JSON arguments (default `{}`) in this directory and print the result. Exits 1 when the tool fails. `--sandbox` contains it. |
 | `classify --set NAME [STATE]` | Answer a named question set about STATE, read from arguments or stdin. |
 | `classify --questions @FILE [STATE]` | Answer the questions in FILE. |
-| `classify --noul QUESTION [STATE]` | Answer a yes/no question. Repeatable. |
+| `classify --noul QUESTION [STATE]` | Answer a yes/no question as a probability from 0 to 1. Repeatable. |
 | `classify --patch` | Rank the files of the working patch by risk. |
 | `classify --review --session ID` | Review a session. |
 | `classify --set NAME --eval FILE` | Score a question set against labeled cases in FILE. `--json` prints answers and probabilities, and `--gate N` sets the confidence floor for every `classify` form. |

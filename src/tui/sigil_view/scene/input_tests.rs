@@ -114,7 +114,7 @@ fn splash_composer_grows_for_multiline_and_wrapped_prompts_without_leaving() {
             app.edit(draft);
             assert!(app.splash.peek(), "typing left the splash");
             let shown = render(&app, 80, 24);
-            assert!(header(&shown).expect("composer header") < top, "{shown}");
+            assert_eq!(header(&shown), Some(top), "{shown}");
             assert!(shown.contains("first"), "{shown}");
             let tail = if draft.contains('\n') {
                 "second"
@@ -128,6 +128,40 @@ fn splash_composer_grows_for_multiline_and_wrapped_prompts_without_leaving() {
             assert!(shown.contains(tail), "{shown}");
             app.resize(80, 24);
         }
+    });
+}
+
+#[test]
+fn a_long_splash_draft_grows_down_under_the_card() {
+    Runtime::scope("splash-draft-grows-down", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(info(), workspace.path().to_owned(), commands);
+        app.splash.set(true);
+        app.splash_revealed.set(true);
+        let rows = |text: &str, mark: &str| text.lines().position(|line| line.contains(mark));
+        for (cols, height) in [(120_u16, 40_u16), (223, 67)] {
+            app.resize(cols, height);
+            app.edit("first");
+            let single = render(&app, cols, height);
+            let top = rows(&single, "● auto").expect("single-line composer");
+            app.edit(&format!("{}tail", "breath of fire pixel style ".repeat(8)));
+            let shown = render(&app, cols, height);
+            let card = rows(&shown, "╰").expect("card bottom");
+            let header = rows(&shown, "● auto").expect("composer header");
+            assert_eq!(header, top, "{shown}");
+            assert!(header > card, "{shown}");
+            assert!(shown.contains("tail"), "{shown}");
+            app.edit("/");
+            let listed = render(&app, cols, height);
+            assert!(listed.contains("/compact"), "{listed}");
+            assert_eq!(rows(&listed, "● auto"), Some(top), "{listed}");
+        }
+        app.resize(80, 24);
+        app.edit(&format!("{}tail", "line\n".repeat(30)));
+        let shown = render(&app, 80, 24);
+        assert!(shown.contains("tail"), "{shown}");
+        assert!(rows(&shown, "● auto").is_some(), "{shown}");
     });
 }
 

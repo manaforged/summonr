@@ -75,6 +75,10 @@ dunce = "1.0"
 jiff = "0.2.38"
 httparse = "1.10"
 
+[target.'cfg(unix)'.dev-dependencies]
+portable-pty = "0.9"
+vt100 = "0.16"
+
 [patch.crates-io]
 crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "5b1788b58b5d18237ed11f049717975f3168483e" }
 

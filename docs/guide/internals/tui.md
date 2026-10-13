@@ -49,7 +49,7 @@ and actions in `app/adjust.rs`.
 | --- | --- | --- |
 | Prompt editor | `view/surface.rs::editor`, Sigil `text_edit` | transcript and splash; auto height with a viewport-bounded scroll area |
 | Inline composer | `chat/surface.rs::inline_layer` | inline transcript and splash; shared command completion, composer, and footer |
-| Splash placement | `scene/input.rs::prompt_area` | `view/splash.rs`; bottom-anchored composer grows upward over the backdrop |
+| Splash placement | `scene/input.rs::prompt_area` | `view/splash.rs`; the composer holds its row under the card, grows down, and moves up only when it reaches the bottom of the screen |
 
 Typing, wrapping, newlines, and resizing do not dismiss the splash. A transcript entry or explicit navigation does.
 

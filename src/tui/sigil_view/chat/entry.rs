@@ -38,7 +38,7 @@ mod tools;
 mod verb;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use super::surface::{Content, content};
-pub(in crate::tui::sigil_view) use steps::{Slot, slot};
+pub(in crate::tui::sigil_view) use steps::{Slot, slot, subagents};
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use tools::glyph;
 pub(in crate::tui::sigil_view) use tools::workspace_relative;

@@ -53,7 +53,7 @@ impl<P: Provider> Loop<P> {
     pub(crate) fn fork_at(&mut self, turn: Option<usize>) -> Result<String> {
         if !self.spawned.is_empty() {
             return Err(Error::Config(
-                "Collect or stop background agents before branching".to_string(),
+                "Collect or stop subagents before branching".to_string(),
             ));
         }
         let path = self.session.fork(turn).map_err(super::session_err)?;

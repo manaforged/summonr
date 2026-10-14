@@ -3,13 +3,13 @@ use super::{State, busy_info, frame_with};
 use crate::tools::Event;
 use crate::tui::Msg;
 
-const IDS: [&str; 3] = [
+pub(super) const IDS: [&str; 3] = [
     "01a104ac000000000000000000001111",
     "01a104ac000000000000000000002222",
     "01a104ac000000000000000000003333",
 ];
 
-fn spawn(app: &App, id: &str, assignment: &str, background: bool) {
+pub(super) fn spawn(app: &App, id: &str, assignment: &str, background: bool) {
     app.update(Msg::Event(Event::Child {
         id: id.to_owned(),
         event: Box::new(Event::Spawned {
@@ -23,14 +23,14 @@ fn spawn(app: &App, id: &str, assignment: &str, background: bool) {
     }));
 }
 
-fn act(app: &App, id: &str, event: Event) {
+pub(super) fn act(app: &App, id: &str, event: Event) {
     app.update(Msg::Event(Event::Child {
         id: id.to_owned(),
         event: Box::new(event),
     }));
 }
 
-fn task_call(app: &App) {
+pub(super) fn task_call(app: &App) {
     app.update(Msg::Event(Event::ToolCall {
         id: "t1".to_owned(),
         name: "task".to_owned(),
@@ -68,16 +68,16 @@ fn children_the_turn_waits_on_sit_under_their_task_call() {
     })
     .join("\n");
     assert!(
-        shown.contains("● Task 2 children") || shown.contains("○ Task 2 children"),
+        shown.contains("◆ Subagent running: “Find duplicated helpers”"),
         "{shown}"
     );
-    assert!(shown.contains("Find duplicated helpers"), "{shown}");
     assert!(shown.contains("Read src/main.rs"), "{shown}");
     assert!(
-        shown.contains("Check the docs against the code") && shown.contains("4 findings"),
+        shown.contains("◆ Subagent completed in")
+            && shown.contains("“Check the docs against the code”"),
         "{shown}"
     );
-    assert!(!shown.contains("background"), "{shown}");
+    assert!(!shown.contains("subagent"), "{shown}");
 }
 
 #[test]
@@ -105,16 +105,11 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
         );
     })
     .join("\n");
-    assert_eq!(running, "1");
+    assert_eq!(running, "2", "the Subagents header and one row");
     assert!(
-        done.contains("● Task Benchmark startup and RSS") && done.contains("background"),
+        done.contains("◆ Subagent completed in") && done.contains("“Benchmark startup and RSS”"),
         "{done}"
     );
-    assert!(
-        done.contains("● Background Benchmark startup and RSS"),
-        "{done}"
-    );
-    assert!(done.contains("startup 0.28 s"), "{done}");
 }
 
 #[test]
@@ -233,13 +228,19 @@ fn a_child_that_recovers_from_a_failed_command_reads_done_and_one_that_aborts_re
         );
     })
     .join("\n");
-    assert!(shown.contains("1 done · 1 failed"), "{shown}");
-    assert!(shown.contains("parser fixed"), "{shown}");
+    assert!(
+        shown.contains("◆ Subagent completed in") && shown.contains("“Fix the parser”"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("◆ Subagent failed after") && shown.contains("“Fix the lexer”"),
+        "{shown}"
+    );
 }
 
 #[test]
 fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
-    use super::super::{chat::panels, model::Entry, view::root};
+    use super::super::{chat::panels, view::root};
     use crate::tui::{Activity, Cmd};
     use sigil::{Host, events::EventRouter, reactive::Runtime, terminal::Screen};
     use tokio::sync::mpsc::{error::TryRecvError, unbounded_channel};
@@ -253,6 +254,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         app.update(Msg::Busy(Some(Activity::Turn)));
         spawn(&app, IDS[0], "Keep the parent working", true);
         spawn(&app, IDS[1], "Foreground child", false);
+        app.toggle_agents();
         let mut host = Host::cells();
         let tree = app.clone();
         host.mount(move || root(tree));
@@ -290,6 +292,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         assert_eq!(model.agents.len(), 2);
         assert!(!model.agents[0].done);
         drop(model);
+        app.toggle_agents();
         assert_eq!(panels::strip_rows(&app), 0);
         act(
             &app,
@@ -330,8 +333,6 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         assert_eq!(model.agents[0].cost, 0.25);
         assert!(model.agents[0].done);
         assert!(model.busy_since.is_some());
-        assert!(model.entries.iter().any(|entry| matches!(entry,
-            Entry::Tool { name, output, .. }
-                if name == "Background" && output == "still finishes")));
+        assert_eq!(model.agents[0].last, "still finishes");
     });
 }

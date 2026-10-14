@@ -4,29 +4,39 @@ fn braille(text: &str) -> bool {
         .is_some_and(|glyph| ('\u{2800}'..='\u{28ff}').contains(&glyph))
 }
 
+fn star(text: &str) -> bool {
+    braille(text) || text == "·" || text == "•"
+}
+
 #[test]
-fn splash_stars_move_a_fraction_of_a_cell_every_tick() {
+fn splash_stars_hold_still_and_only_twinkle() {
     let (cols, rows) = (200_u16, 60_u16);
     let frame = |tick| super::space(cols, rows, tick, 0);
-    let mut ticks_with_motion = 0;
-    let mut nudged = 0;
-    for tick in 100..112 {
-        let now = frame(tick);
-        let next = frame(tick + 1);
-        if now.iter().zip(&next).any(|(a, b)| a != b) {
-            ticks_with_motion += 1;
-        }
-        nudged += now
+    let first = frame(125);
+    let places = |cells: &[super::Cell]| {
+        cells
             .iter()
-            .zip(&next)
-            .filter(|(a, b)| braille(&a.text) && braille(&b.text) && a.text != b.text)
+            .enumerate()
+            .filter(|(_, cell)| star(&cell.text))
+            .map(|(at, cell)| (at, cell.text.clone()))
+            .collect::<Vec<_>>()
+    };
+    let mut twinkled = 0;
+    for tick in [126, 145, 175, 225, 325] {
+        let later = frame(tick);
+        assert_eq!(places(&first), places(&later), "stars moved by tick {tick}");
+        twinkled += first
+            .iter()
+            .zip(&later)
+            .filter(|(a, b)| a.fg != b.fg)
             .count();
     }
     assert!(
-        ticks_with_motion >= 9,
-        "only {ticks_with_motion} of 12 ticks moved"
+        places(&first).len() >= 300,
+        "only {} stars",
+        places(&first).len()
     );
-    assert!(nudged > 0, "no star moved within its cell");
+    assert!(twinkled > 0, "no star twinkled");
 }
 
 #[test]
@@ -59,7 +69,7 @@ fn splash_meteor_is_a_fading_streak() {
     };
     assert_eq!(head(200), 0, "a meteor outside its flight");
     assert_eq!(head(24), 1, "meteor head");
-    let streak = super::moving(96, 28, 24.0, 0).len() - super::flying(96, 28, 24.0, 0).len();
+    let streak = super::moving(96, 28, 24.0, 0).len() - super::twinkling(96, 28, 24.0, 0).len();
     assert!(streak >= 8, "streak cells {streak}");
 }
 
@@ -104,50 +114,175 @@ fn splash_has_one_brief_sparkle_every_two_seconds_with_quiet_gaps() {
 }
 
 #[test]
-fn splash_stars_glide_between_whole_beats() {
-    let at = |beat: f64| {
-        super::flying(200, 60, beat, 0)
-            .into_iter()
-            .map(|spot| (spot.x, spot.y, spot.cell.text.to_string()))
-            .collect::<Vec<_>>()
-    };
-    let moved_off_beat = (1..16)
-        .filter(|step| step % 4 != 0)
-        .any(|step| at(100.0 + f64::from(step) / 4.0) != at(100.0 + f64::from(step - 1) / 4.0));
-    assert!(moved_off_beat, "stars only move on whole beats");
+fn the_stars_crowd_the_band_and_range_in_brightness() {
+    let (cols, rows) = (223_u16, 67_u16);
+    for seed in 0..4 {
+        let haze = super::backdrop(cols, rows, seed);
+        let sky = super::space(cols, rows, 300, seed);
+        let (mut band, mut open) = ([0_u32; 2], [0_u32; 2]);
+        for (under, cell) in haze.iter().zip(&sky) {
+            let glow = (lit(under.fg) + lit(under.bg)) / 2.0;
+            let tally = if glow > 150.0 {
+                &mut band
+            } else if glow < 40.0 {
+                &mut open
+            } else {
+                continue;
+            };
+            tally[0] += 1;
+            tally[1] += u32::from(star(&cell.text));
+        }
+        let density = |[cells, stars]: [u32; 2]| stars as f32 / cells.max(1) as f32;
+        assert!(
+            density(band) >= 1.4 * density(open),
+            "sky {seed}: {:.3} stars per band cell against {:.3} in open sky",
+            density(band),
+            density(open)
+        );
+        let count = |glyph: &str| sky.iter().filter(|cell| cell.text == glyph).count();
+        let faint = sky.iter().filter(|cell| braille(&cell.text)).count();
+        let bright = count("·") + count("•");
+        assert!(
+            faint >= 5 * bright && bright >= 10 && count("•") >= 1,
+            "sky {seed}: {faint} faint, {} bright, {} brilliant stars",
+            count("·"),
+            count("•")
+        );
+    }
 }
 
-#[test]
-fn a_star_at_the_wrap_edge_stays_on_screen() {
-    assert_eq!(super::cell_of(240.0, 144.0, 120, 36), (119, 35));
-    assert_eq!(super::cell_of(0.0, 0.0, 120, 36), (0, 0));
+fn lit(ink: sigil::terminal::Ink) -> f32 {
+    match ink {
+        sigil::terminal::Ink::Exact(c) => f32::from(c.r) + f32::from(c.g) + f32::from(c.b),
+        _ => 0.0,
+    }
 }
 
 #[test]
 fn the_galaxy_dust_paints_in_few_colours_and_long_runs() {
     let (cols, rows) = (223_u16, 67_u16);
-    let cells = super::backdrop(cols, rows, 0);
-    let shades: std::collections::BTreeSet<String> = cells
-        .iter()
-        .flat_map(|cell| [format!("{:?}", cell.fg), format!("{:?}", cell.bg)])
-        .collect();
-    assert!(shades.len() <= 40, "the haze uses {} colours", shades.len());
-    assert!(
-        shades.len() >= 6,
-        "the haze is flat: {} colours",
-        shades.len()
-    );
-    let changes: usize = cells
-        .chunks(usize::from(cols))
-        .map(|row| row.windows(2).filter(|pair| pair[0] != pair[1]).count())
-        .sum();
-    let per_row = changes / usize::from(rows);
-    assert!(per_row <= 40, "{per_row} colour changes per row");
+    for seed in 0..10 {
+        let cells = super::backdrop(cols, rows, seed);
+        let shades: std::collections::BTreeSet<String> = cells
+            .iter()
+            .flat_map(|cell| [format!("{:?}", cell.fg), format!("{:?}", cell.bg)])
+            .collect();
+        assert!(
+            (6..=40).contains(&shades.len()),
+            "sky {seed}: the haze uses {} colours",
+            shades.len()
+        );
+        let changes: usize = cells
+            .chunks(usize::from(cols))
+            .map(|row| row.windows(2).filter(|pair| pair[0] != pair[1]).count())
+            .sum();
+        let per_row = changes / usize::from(rows);
+        assert!(
+            per_row <= 40,
+            "sky {seed}: {per_row} colour changes per row"
+        );
+    }
     let stars = super::space(cols, rows, 30, 0)
         .iter()
         .filter(|cell| braille(&cell.text))
         .count();
     assert!(stars >= 150, "only {stars} stars");
+}
+
+#[test]
+fn the_galaxy_dust_streaks_along_the_band() {
+    let (cols, rows, window) = (223_usize, 67_usize, 12_usize);
+    let mut total = 0.0;
+    for seed in 0..9 {
+        let cells = super::backdrop(cols as u16, rows as u16, seed);
+        let light = |x: usize, y: usize| {
+            let cell = &cells[y / 2 * cols + x];
+            lit(if y.is_multiple_of(2) {
+                cell.fg
+            } else {
+                cell.bg
+            })
+        };
+        let (mut sum, mut weight) = (0.0_f32, 0.0_f32);
+        for top in (1..rows * 2 - window).step_by(window) {
+            for left in (1..cols - window).step_by(window) {
+                let (mut xx, mut xy, mut yy) = (0.0_f32, 0.0_f32, 0.0_f32);
+                for y in top..top + window {
+                    for x in left..left + window {
+                        if light(x, y) <= 40.0 {
+                            continue;
+                        }
+                        let gx = (light(x + 1, y) - light(x - 1, y)) / 2.0;
+                        let gy = (light(x, y + 1) - light(x, y - 1)) / 2.0;
+                        (xx, xy, yy) = (xx + gx * gx, xy + gx * gy, yy + gy * gy);
+                    }
+                }
+                if xx + yy > 0.0 {
+                    let coherence =
+                        (((xx - yy).powi(2) + 4.0 * xy * xy).sqrt() / (xx + yy)).powi(2);
+                    (sum, weight) = (sum + coherence * (xx + yy), weight + xx + yy);
+                }
+            }
+        }
+        total += sum / weight;
+    }
+    let coherence = total / 9.0;
+    assert!(
+        coherence >= 0.3,
+        "dust coherence {coherence:.3}, the haze reads as round blobs"
+    );
+}
+
+#[test]
+fn the_galaxy_band_shifts_hue_along_its_length() {
+    for seed in 0..8 {
+        let (mut lit, mut blue, mut plum) = (0, 0, 0);
+        for cell in super::backdrop(223, 67, seed) {
+            for ink in [cell.fg, cell.bg] {
+                let sigil::terminal::Ink::Exact(c) = ink else {
+                    continue;
+                };
+                let (r, g, b) = (u32::from(c.r), u32::from(c.g), u32::from(c.b));
+                if r + g + b <= 90 {
+                    continue;
+                }
+                lit += 1;
+                blue += usize::from(g >= r + 8);
+                plum += usize::from(r >= g + 10 && b > r);
+            }
+        }
+        assert!(
+            blue * 25 >= lit,
+            "sky {seed}: {blue} of {lit} lit half cells are blue"
+        );
+        assert!(
+            plum * 10 >= lit,
+            "sky {seed}: {plum} of {lit} lit half cells are plum"
+        );
+    }
+}
+
+#[test]
+fn every_launch_spreads_dust_across_the_frame() {
+    let (cols, rows) = (223_usize, 67_usize);
+    for seed in 0..10 {
+        let cells = super::backdrop(cols as u16, rows as u16, seed);
+        let shows = |x: usize, y: usize| {
+            let cell = &cells[y * cols + x];
+            lit(cell.fg) > 90.0 || lit(cell.bg) > 90.0
+        };
+        let sides = [
+            (0..rows).filter(|y| shows(0, *y)).count(),
+            (0..rows).filter(|y| shows(cols - 1, *y)).count(),
+            (0..cols).filter(|x| shows(*x, 0)).count(),
+            (0..cols).filter(|x| shows(*x, rows - 1)).count(),
+        ];
+        let reached = sides.iter().filter(|count| **count >= 2).count();
+        assert!(
+            reached >= 2,
+            "sky {seed}: dust reaches {reached} frame edges {sides:?}, a whole galaxy sits inside"
+        );
+    }
 }
 
 #[test]

@@ -280,6 +280,9 @@ pub(crate) trait Accumulate {
     fn finished(&self) -> bool {
         false
     }
+    fn thinking(&self) -> bool {
+        false
+    }
 }
 
 pub(crate) trait Chat {

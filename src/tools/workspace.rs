@@ -18,6 +18,7 @@ pub(in crate::tools) mod search;
 mod spans;
 mod write;
 
+pub(crate) use apply_patch::patch_files;
 pub(crate) use image::{IMAGES_MAX_BYTES, attach, image_type};
 use list::{format_directory, format_tree};
 

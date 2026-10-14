@@ -2,7 +2,7 @@ use sigil::prelude::{AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Tok
 
 use super::super::{Agent, App, Call};
 use super::preview;
-use super::tools::{call_line, glyph, header, workspace_relative};
+use super::tools::{call_line, header, workspace_relative};
 use super::tree::{branch, label, tree};
 use crate::child::{ChildRecord, ChildState};
 use crate::tools::{Hold, Kept};
@@ -16,100 +16,68 @@ fn task_title(kid: &Agent, roots: &[String]) -> String {
     Agent::title_of(&workspace_relative(&kid.assignment, roots))
 }
 
-fn state_of(kids: &[&Agent]) -> ToolState {
-    if kids.iter().any(|kid| !kid.done) {
-        ToolState::Running
-    } else if kids.iter().any(|kid| kid.failed) {
-        ToolState::Failed
-    } else {
-        ToolState::Ok
-    }
-}
-
-fn totals(kids: &[&Agent]) -> String {
-    let running = kids.iter().filter(|kid| !kid.done).count();
-    let failed = kids.iter().filter(|kid| kid.failed).count();
-    let tokens: u64 = kids.iter().map(|kid| kid.tokens).sum();
-    let clock = kids
-        .iter()
-        .max_by_key(|kid| kid.elapsed())
-        .map(|kid| kid.clock())
-        .unwrap_or_default();
-    let progress = match (running, failed) {
-        (0, 0) => format!("{} done", kids.len()),
-        (0, failed) => format!("{} done · {failed} failed", kids.len() - failed),
-        (running, _) => format!("{running} running"),
-    };
-    format!(
-        "{progress} · {clock} · {} tok",
-        crate::provider::compact(tokens)
-    )
-}
-
-fn child_row(kid: &Agent, first: bool, parents: &[String], kept: Option<&Kept>) -> NodeBuilder {
-    let roots = &kid.roots(parents);
-    let state = kid.state();
-    let (mark, tone) = match kept {
-        Some(_) => ("●", Look::xs(Token::Warn11)),
-        None => glyph(&state),
-    };
-    let title = match state {
-        ToolState::Ok => Look::xs(Token::Gray11),
-        ToolState::Running | ToolState::Failed => Look::xs(Token::Gray12),
+fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
+    let title = task_title(kid, roots);
+    let (tone, status, doing) = match kid.state() {
+        ToolState::Running => {
+            let last = workspace_relative(&kid.last, roots);
+            let doing = (!last.is_empty()).then(|| format!("· {last}"));
+            (Token::Accent11, format!("running: “{title}”"), doing)
+        }
+        ToolState::Ok => (
+            Token::Success11,
+            format!("completed in {}: “{title}”", kid.clock()),
+            None,
+        ),
+        ToolState::Failed => (
+            Token::Error11,
+            format!("failed after {}: “{title}”", kid.clock()),
+            None,
+        ),
     };
     let mut line = container()
         .layout(
             LayoutStyle::flex_row()
-                .grow(1.0)
+                .fill_width()
                 .gap(8.0)
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(label(mark, tone))
-        .child(
-            label(task_title(kid, roots), title)
-                .ellipsize()
-                .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
-        );
+        .child(label("◆", Look::xs(tone)))
+        .child(label("Subagent", Look::xs(Token::Gray12).bold()));
     if !kid.agent.is_empty() {
         line = line.child(label(kid.agent.clone(), Look::xs(Token::Info11)));
     }
-    line = line.child(label(kid.access.name(), Look::xs(Token::Gray10)));
-    if matches!(state, ToolState::Running) {
-        line = line.child(label(
-            format!(
-                "{} · {} tok",
-                kid.clock(),
-                crate::provider::compact(kid.tokens)
+    line = line.child(
+        label(status, Look::xs(Token::Gray10))
+            .ellipsize()
+            .layout(LayoutStyle::block().shrink(4.0).min_size(0.0, 0.0)),
+    );
+    match doing {
+        Some(doing) => line.child(
+            label(doing, Look::xs(Token::Gray10)).ellipsize().layout(
+                LayoutStyle::block()
+                    .shrink(1.0)
+                    .min_size(0.0, 0.0)
+                    .max_width(super::super::ACTIVITY_SHARE),
             ),
-            Look::xs(Token::Gray10),
-        ));
+        ),
+        None => line,
     }
-    let mut rows = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
-        .child(branch(first, line));
-    if let Some(kept) = kept {
-        rows = rows.child(branch(
-            false,
-            label(
-                format!("  {}", kept_line(kept, parents)),
-                Look::xs(Token::Warn11),
-            )
-            .ellipsize(),
-        ));
-    }
-    if !kid.last.is_empty() {
-        let look = if matches!(state, ToolState::Failed) {
-            Look::xs(Token::Error11)
-        } else {
-            Look::xs(Token::Gray10)
-        };
-        rows = rows.child(branch(
-            false,
-            label(format!("  {}", workspace_relative(&kid.last, roots)), look).ellipsize(),
-        ));
-    }
-    rows
+}
+
+pub(super) fn starting_card() -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .gap(8.0)
+                .min_size(0.0, 0.0)
+                .align_items(AlignItems::Center),
+        )
+        .child(label("◆", Look::xs(Token::Accent11)))
+        .child(label("Subagent", Look::xs(Token::Gray12).bold()))
+        .child(label("starting…", Look::xs(Token::Gray10)))
 }
 
 fn kept_line(kept: &Kept, roots: &[String]) -> String {
@@ -146,44 +114,20 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
     if kids.is_empty() {
         return None;
     }
-    if kids.iter().all(|kid| kid.background) {
-        let what = if kids.len() == 1 {
-            task_title(kids[0], &kids[0].roots(&app.roots))
-        } else {
-            crate::text::plural(kids.len(), "child")
-        };
-        let detail = "background".to_string();
-        return Some(header(
-            &state_of(&kids),
-            call_line("Task", &what, Some((detail, Look::xs(Token::Gray10))), true),
-        ));
-    }
     let receipt = model.child_receipt(call);
     let kept = receipt.as_ref().and_then(|record| {
         let tag = crate::child::tag(&record.id.to_string());
         kept_of(record).map(|kept| (tag, kept))
     });
-    let head = match kids.as_slice() {
-        [kid] => task_title(kid, &kid.roots(&app.roots)),
-        [] | [_, _, ..] => crate::text::plural(kids.len(), "child"),
-    };
-    let mut card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
-        .child(header(
-            &state_of(&kids),
-            call_line(
-                "Task",
-                &head,
-                Some((totals(&kids), Look::xs(Token::Gray10))),
+    let mut card = container().layout(LayoutStyle::flex_column().fill_width().gap(0.0));
+    for kid in kids {
+        card = card.child(subagent_line(kid, &kid.roots(&app.roots)));
+        if let Some((_, kept)) = kept.as_ref().filter(|(tag, _)| *tag == kid.id) {
+            card = card.child(branch(
                 true,
-            ),
-        ));
-    for (at, kid) in kids.iter().enumerate() {
-        let held = kept
-            .as_ref()
-            .filter(|(tag, _)| *tag == kid.id)
-            .map(|(_, kept)| *kept);
-        card = card.child(child_row(kid, at == 0, &app.roots, held));
+                label(kept_line(kept, &app.roots), Look::xs(Token::Warn11)).ellipsize(),
+            ));
+        }
     }
     Some(card)
 }

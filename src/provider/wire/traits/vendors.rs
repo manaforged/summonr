@@ -1,6 +1,8 @@
 use super::{Row, replayed, scaled, zai};
 use crate::provider::Off::{EffortNone, EnableThinking, Omit, ThinkingDisabled, Unsupported};
-use crate::provider::levels::{ALL_POSITIVE, EXTENDED, LOW_HIGH_MAX, NO_EFFORT, STANDARD};
+use crate::provider::levels::{
+    ALL_POSITIVE, EXTENDED, LOW_HIGH_MAX, MINIMAL_XHIGH, NO_EFFORT, STANDARD,
+};
 
 pub(super) const ROWS: &[Row] = &[
     zai(scaled(&["glm-5.3"], LOW_HIGH_MAX, Unsupported)),
@@ -31,6 +33,7 @@ pub(super) const ROWS: &[Row] = &[
     replayed(scaled(&["minimax-m"], NO_EFFORT, Omit)),
     scaled(&["qwen3.", "plus"], STANDARD, EnableThinking),
     scaled(&["qwen3.", "max"], STANDARD, EnableThinking),
+    scaled(&["muse-", "-contributor"], MINIMAL_XHIGH, Unsupported),
 ];
 
 const fn upward(row: Row) -> Row {

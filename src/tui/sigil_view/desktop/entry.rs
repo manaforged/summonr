@@ -34,13 +34,7 @@ fn version(app: &App, index: usize) -> Version {
             .unwrap_or_default()
             .iter()
             .enumerate()
-            .map(|(offset, entry)| {
-                content(
-                    entry,
-                    busy && range.start + offset + 1 == last,
-                    &model.prefs,
-                )
-            })
+            .map(|(offset, entry)| content(entry, busy && range.start + offset + 1 == last, model))
             .collect();
         (at, items, busy)
     })

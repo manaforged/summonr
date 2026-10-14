@@ -12,7 +12,7 @@ pub fn summonr_home() -> Result<PathBuf> {
         }
         return Ok(PathBuf::from(path));
     }
-    let home = crate::config::home_dir().ok_or_else(|| {
+    let home = user_home().ok_or_else(|| {
         Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
     })?;
     let dir = home.join(".summonr");
@@ -39,6 +39,22 @@ pub fn summonr_home() -> Result<PathBuf> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(dir.clone());
     Ok(dir)
+}
+
+#[cfg(not(test))]
+pub(crate) fn user_home() -> Option<PathBuf> {
+    crate::config::home_dir()
+}
+
+#[cfg(test)]
+pub(crate) fn user_home() -> Option<PathBuf> {
+    static HOME: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    Some(
+        HOME.get_or_init(|| {
+            std::env::temp_dir().join(format!("summonr-tests-{}", std::process::id()))
+        })
+        .clone(),
+    )
 }
 
 #[derive(Clone, Copy, Default)]

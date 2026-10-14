@@ -21,3 +21,5 @@ pub(super) use sigil::app::cell_width;
 #[cfg(feature = "gui")]
 pub(super) use surface::transcript;
 pub(super) use surface::{inline_layer, layer};
+
+const ACTIVITY_SHARE: sigil::layout::Dimension = sigil::layout::Dimension::Percent(0.4);

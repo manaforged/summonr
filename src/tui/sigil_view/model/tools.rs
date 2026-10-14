@@ -8,6 +8,10 @@ impl Model {
         name: String,
         arguments: String,
     ) {
+        if polls_child(&name, &arguments) {
+            self.live_tool = Some((name, String::new()));
+            return;
+        }
         let arg = tool_arg(&arguments);
         if self.group(&id, &name, arg.clone()) {
             self.live_tool = Some((name, arg));
@@ -27,7 +31,9 @@ impl Model {
     }
 
     fn group(&mut self, id: &str, name: &str, arg: String) -> bool {
-        if crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits) {
+        if crate::tools::Builtin::of(name)
+            .is_some_and(|kind| kind.edits() || kind == crate::tools::Builtin::Task)
+        {
             return false;
         }
         enum Tail {
@@ -216,4 +222,12 @@ impl Model {
             .collect::<Vec<_>>()
             .join("\n\n")
     }
+}
+
+fn polls_child(name: &str, arguments: &str) -> bool {
+    crate::tools::Builtin::is(name, crate::tools::Builtin::Task)
+        && serde_json::from_str::<serde_json::Value>(arguments).is_ok_and(|value| {
+            value.get("child").is_some()
+                && value.get("kill").and_then(serde_json::Value::as_bool) != Some(true)
+        })
 }

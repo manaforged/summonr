@@ -26,7 +26,7 @@ class GrokPlan(GrokBuild):
         try:
             await self.exec_as_agent(
                 environment,
-                command=self._build_run_script(shlex.quote(instruction)),
+                command=self._build_run_script(shlex.quote(instruction)).replace("--single ", "--single=", 1),
                 env=env,
             )
         finally:

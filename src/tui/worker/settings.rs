@@ -63,6 +63,7 @@ impl Worker {
                     .is_none()
                     .then(|| (provider.clone(), endpoint.model.clone()));
                 self.use_endpoint(endpoint, provider);
+                self.remember_seat();
                 self.send_settings();
                 if let Some((provider, model)) = probe {
                     self.loop_

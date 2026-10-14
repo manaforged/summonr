@@ -54,10 +54,10 @@ pub(crate) fn choose(
 fn remembered(file: &File, last: Option<(String, String)>) -> Chosen {
     let config = config_shown();
     let candidates = [
+        last.map(|(name, model)| (name, Some(model), Pick::LastUsed)),
         file.default
             .clone()
             .map(|name| (name, file.default_model.clone(), Pick::Default)),
-        last.map(|(name, model)| (name, Some(model), Pick::LastUsed)),
     ];
     let mut notes = Vec::new();
     let mut found = (None, None, None);

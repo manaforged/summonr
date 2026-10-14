@@ -107,6 +107,12 @@ fn respond() -> Vec<(Shortcut, Handler)> {
                 app.approval_answer(crate::runtime::GrantAnswer::Deny);
             }
         }),
+        (Key::F2.into(), |app, event| {
+            if app.splash.peek() {
+                event.stop_propagation();
+                app.splash_mark.set(app.splash_mark.peek().next());
+            }
+        }),
         (Key::F5.into(), |app, event| {
             if !app.options_active() && !app.view_edit.peek() {
                 event.stop_propagation();

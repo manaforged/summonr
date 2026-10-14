@@ -1,4 +1,4 @@
-use super::logo::{cover, facts, layout};
+use super::logo::{cover, facts, fitting, layout};
 use super::space::{PLATE, SCRIM, set};
 use super::*;
 
@@ -11,7 +11,7 @@ pub(in crate::tui::sigil_view) const FACTS_MS: u64 = 560;
 pub(in crate::tui::sigil_view) fn prompt_area(app: &App, cols: u16, rows: u16) -> [u16; 3] {
     let model = app.model.get();
     let facts = facts(&model, app);
-    let [body_width, body_rows] = cover(crate::splash::logo(), &facts);
+    let [body_width, body_rows] = cover(fitting(app.splash_mark.get(), rows, &facts), &facts);
     let [_, _, input_x, input_y, input_width] = layout(cols, rows, body_width, body_rows);
     [input_x, input_y, input_width]
 }

@@ -17,7 +17,9 @@ use sigil::prelude::container;
 pub(in crate::tui::sigil_view) use input::prompt_area;
 
 mod logo;
+mod mark;
 pub(in crate::tui::sigil_view) use logo::{compose, placed};
+pub(in crate::tui::sigil_view) use mark::Mark;
 pub(in crate::tui::sigil_view) use space::{SCRIM, VOID, moving};
 
 mod galaxy;

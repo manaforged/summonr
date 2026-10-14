@@ -157,7 +157,7 @@ fn the_galaxy_dust_streaks_along_the_band() {
         let cells = super::backdrop(cols as u16, rows as u16, seed);
         let light = |x: usize, y: usize| {
             let cell = &cells[y / 2 * cols + x];
-            match if y % 2 == 0 { cell.fg } else { cell.bg } {
+            match if y.is_multiple_of(2) { cell.fg } else { cell.bg } {
                 sigil::terminal::Ink::Exact(c) => f32::from(c.r) + f32::from(c.g) + f32::from(c.b),
                 _ => 0.0,
             }

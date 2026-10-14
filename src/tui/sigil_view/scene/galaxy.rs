@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use sigil::geometry::{Point, Rect};
-use sigil::scene::{SceneBuilder, SceneRectStyle};
+use sigil::scene::{GlyphRun, SceneBuilder, SceneRectStyle};
+use sigil::style::TextStyle;
 
 use super::*;
 
@@ -358,5 +359,20 @@ pub(in crate::tui::sigil_view) fn paint_sky(
             top + cell.h / 2.0,
             cell.h / 2.0,
         );
+    }
+    for star in super::stars::still(cols, rows, seed) {
+        let at = Point::new(
+            area.origin.x + f32::from(star.x) * cell.w,
+            area.origin.y + f32::from(star.y) * cell.h,
+        );
+        let rect = Rect::new(at, cell.w, cell.h);
+        scene.draw_rect(rect, SceneRectStyle::solid(star.bg));
+        scene.draw_glyph_run(GlyphRun::new(
+            rect,
+            star.text,
+            star.fg,
+            TextStyle::default(),
+            10_000,
+        ));
     }
 }

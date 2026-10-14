@@ -23,6 +23,7 @@ pub(in crate::tui::sigil_view) use space::{SCRIM, VOID, moving};
 mod galaxy;
 mod input;
 mod space;
+mod stars;
 
 pub(in crate::tui::sigil_view) fn fresh_sky() -> u64 {
     let clock = std::time::SystemTime::now()

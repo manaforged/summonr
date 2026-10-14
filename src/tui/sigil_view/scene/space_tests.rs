@@ -4,29 +4,31 @@ fn braille(text: &str) -> bool {
         .is_some_and(|glyph| ('\u{2800}'..='\u{28ff}').contains(&glyph))
 }
 
+fn star(text: &str) -> bool {
+    braille(text) || text == "·" || text == "•"
+}
+
 #[test]
-fn splash_stars_move_a_fraction_of_a_cell_every_tick() {
+fn splash_stars_hold_still_and_only_twinkle() {
     let (cols, rows) = (200_u16, 60_u16);
     let frame = |tick| super::space(cols, rows, tick, 0);
-    let mut ticks_with_motion = 0;
-    let mut nudged = 0;
-    for tick in 100..112 {
-        let now = frame(tick);
-        let next = frame(tick + 1);
-        if now.iter().zip(&next).any(|(a, b)| a != b) {
-            ticks_with_motion += 1;
-        }
-        nudged += now
+    let first = frame(125);
+    let places = |cells: &[super::Cell]| {
+        cells
             .iter()
-            .zip(&next)
-            .filter(|(a, b)| braille(&a.text) && braille(&b.text) && a.text != b.text)
-            .count();
+            .enumerate()
+            .filter(|(_, cell)| star(&cell.text))
+            .map(|(at, cell)| (at, cell.text.clone()))
+            .collect::<Vec<_>>()
+    };
+    let mut twinkled = 0;
+    for tick in [126, 145, 175, 225, 325] {
+        let later = frame(tick);
+        assert_eq!(places(&first), places(&later), "stars moved by tick {tick}");
+        twinkled += first.iter().zip(&later).filter(|(a, b)| a.fg != b.fg).count();
     }
-    assert!(
-        ticks_with_motion >= 9,
-        "only {ticks_with_motion} of 12 ticks moved"
-    );
-    assert!(nudged > 0, "no star moved within its cell");
+    assert!(places(&first).len() >= 300, "only {} stars", places(&first).len());
+    assert!(twinkled > 0, "no star twinkled");
 }
 
 #[test]
@@ -59,7 +61,7 @@ fn splash_meteor_is_a_fading_streak() {
     };
     assert_eq!(head(200), 0, "a meteor outside its flight");
     assert_eq!(head(24), 1, "meteor head");
-    let streak = super::moving(96, 28, 24.0, 0).len() - super::flying(96, 28, 24.0, 0).len();
+    let streak = super::moving(96, 28, 24.0, 0).len() - super::twinkling(96, 28, 24.0, 0).len();
     assert!(streak >= 8, "streak cells {streak}");
 }
 
@@ -104,23 +106,41 @@ fn splash_has_one_brief_sparkle_every_two_seconds_with_quiet_gaps() {
 }
 
 #[test]
-fn splash_stars_glide_between_whole_beats() {
-    let at = |beat: f64| {
-        super::flying(200, 60, beat, 0)
-            .into_iter()
-            .map(|spot| (spot.x, spot.y, spot.cell.text.to_string()))
-            .collect::<Vec<_>>()
-    };
-    let moved_off_beat = (1..16)
-        .filter(|step| step % 4 != 0)
-        .any(|step| at(100.0 + f64::from(step) / 4.0) != at(100.0 + f64::from(step - 1) / 4.0));
-    assert!(moved_off_beat, "stars only move on whole beats");
-}
-
-#[test]
-fn a_star_at_the_wrap_edge_stays_on_screen() {
-    assert_eq!(super::cell_of(240.0, 144.0, 120, 36), (119, 35));
-    assert_eq!(super::cell_of(0.0, 0.0, 120, 36), (0, 0));
+fn the_stars_crowd_the_band_and_range_in_brightness() {
+    let (cols, rows) = (223_u16, 67_u16);
+    for seed in 0..4 {
+        let haze = super::backdrop(cols, rows, seed);
+        let sky = super::space(cols, rows, 300, seed);
+        let (mut band, mut open) = ([0_u32; 2], [0_u32; 2]);
+        for (under, cell) in haze.iter().zip(&sky) {
+            let glow = (lit(under.fg) + lit(under.bg)) / 2.0;
+            let tally = if glow > 150.0 {
+                &mut band
+            } else if glow < 40.0 {
+                &mut open
+            } else {
+                continue;
+            };
+            tally[0] += 1;
+            tally[1] += u32::from(star(&cell.text));
+        }
+        let density = |[cells, stars]: [u32; 2]| stars as f32 / cells.max(1) as f32;
+        assert!(
+            density(band) >= 1.4 * density(open),
+            "sky {seed}: {:.3} stars per band cell against {:.3} in open sky",
+            density(band),
+            density(open)
+        );
+        let count = |glyph: &str| sky.iter().filter(|cell| cell.text == glyph).count();
+        let faint = sky.iter().filter(|cell| braille(&cell.text)).count();
+        let bright = count("·") + count("•");
+        assert!(
+            faint >= 5 * bright && bright >= 10 && count("•") >= 1,
+            "sky {seed}: {faint} faint, {} bright, {} brilliant stars",
+            count("·"),
+            count("•")
+        );
+    }
 }
 
 fn lit(ink: sigil::terminal::Ink) -> f32 {

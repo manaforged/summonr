@@ -111,6 +111,7 @@ impl Stream {
                 if let Some(item) = &frame.item {
                     self.item(item)?;
                 }
+                return Ok(vec![Delta::Progress]);
             }
             FrameKind::Failed => {
                 return Err(failed(
@@ -137,9 +138,9 @@ impl Stream {
             Some(item) if item.shape == Shape::FunctionCall => vec![self.added(item)],
             Some(item) if item.shape == Shape::Message => {
                 self.phase(item);
-                Vec::new()
+                vec![Delta::Progress]
             }
-            _ => Vec::new(),
+            _ => vec![Delta::Progress],
         }
     }
 

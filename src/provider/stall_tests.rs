@@ -42,7 +42,12 @@ fn server(first: &'static str, filler: &'static str, rounds: usize, last: &'stat
 }
 
 async fn run(base: String) -> (Result<AssistantMessage>, Partial) {
+    run_on(base, crate::endpoint::Wire::Completions).await
+}
+
+async fn run_on(base: String, wire: crate::endpoint::Wire) -> (Result<AssistantMessage>, Partial) {
     let mut client = Client::new("k", base).unwrap();
+    client.wire = wire;
     client.idle = Some(Duration::from_secs(1));
     let messages = [Message::user("hi".to_string())];
     let request = CompletionRequest::new(
@@ -104,6 +109,20 @@ async fn a_long_tool_argument_stream_is_not_cut_as_silence() {
     assert_eq!(message.tool_calls.len(), 1);
     assert_eq!(message.tool_calls[0].function.name, "write");
     assert!(message.tool_calls[0].function.arguments.ends_with("{}"));
+}
+
+#[tokio::test]
+async fn a_long_silent_reasoning_stretch_is_not_cut_as_silence() {
+    let first = "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"reasoning\",\"id\":\"rs_0\",\"summary\":[]}}\n\n";
+    let filler = "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"reasoning\",\"id\":\"rs_0\",\"summary\":[]}}\n\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"reasoning\",\"id\":\"rs_1\",\"summary\":[]}}\n\n";
+    let last = "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"id\":\"msg_0\",\"role\":\"assistant\",\"content\":[]}}\n\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_0\",\"delta\":\"done\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n";
+    let (outcome, _) = run_on(
+        server(first, filler, 30, last),
+        crate::endpoint::Wire::Responses,
+    )
+    .await;
+    let message = outcome.expect("reasoning item frames are progress, not silence");
+    assert_eq!(message.content.as_deref(), Some("done"));
 }
 
 #[tokio::test]

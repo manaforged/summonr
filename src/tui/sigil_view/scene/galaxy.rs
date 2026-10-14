@@ -14,6 +14,14 @@ const ROSE: Rgba8 = rgb(98, 46, 80);
 
 const GOLD: Rgba8 = rgb(150, 120, 86);
 
+const ZONES: [[Rgba8; 2]; 3] = [
+    [rgb(40, 64, 100), rgb(104, 140, 178)],
+    [BAND, STARLIGHT],
+    [rgb(80, 50, 98), rgb(156, 116, 172)],
+];
+
+const HUE: [f32; 3] = [0.7, 0.5, 0.04];
+
 const LEVELS: f32 = 8.0;
 
 const WANDER: f32 = 0.14;
@@ -103,6 +111,7 @@ struct Sample {
     shade: f32,
     glow: f32,
     nebula: f32,
+    hue: f32,
 }
 
 fn draw(cols: u16, rows: u16, shape: &Shape) -> Vec<Field> {
@@ -148,6 +157,7 @@ fn sample(cols: u16, rows: u16, x: f32, y: f32, shape: &Shape) -> Sample {
         shade: light * (1.0 - 0.8 * dust),
         glow: bulge * (1.0 - 0.6 * dust),
         nebula: nebula * profile * (0.45 + dust),
+        hue: fbm(wx * HUE[0] + 90.0, wy * HUE[1], 3),
     }
 }
 
@@ -164,9 +174,24 @@ fn dust(along: f32, across: f32, width: f32, (u, x, y): (f32, f32, f32), bulge: 
 fn haze(sample: &Sample) -> Rgba8 {
     let shade = ((0.72 * sample.shade).clamp(0.0, 1.0) * LEVELS).round() / LEVELS;
     let warm = ((sample.glow * 1.6).clamp(0.0, 1.0) * 2.0).round() / 2.0;
-    let rose = if sample.nebula > NEBULA { 0.75 } else { 0.0 };
-    let tint = blend(BAND, STARLIGHT, ((shade - 0.375) * 1.6).clamp(0.0, 1.0));
-    let tint = blend(blend(tint, ROSE, rose), GOLD, warm * (shade * 1.5).min(1.0));
+    let ramp = ((shade - 0.375) * 1.6).clamp(0.0, 1.0);
+    let zone = match sample.hue - 0.5 {
+        _ if shade <= 0.25 => 1,
+        offset if offset < -HUE[2] => 0,
+        offset if offset > HUE[2] => 2,
+        _ => 1,
+    };
+    let tint = if warm > 0.0 {
+        blend(
+            blend(BAND, STARLIGHT, ramp),
+            GOLD,
+            warm * (shade * 1.5).min(1.0),
+        )
+    } else if sample.nebula > NEBULA {
+        blend(BAND, ROSE, 0.75)
+    } else {
+        blend(ZONES[zone][0], ZONES[zone][1], ramp)
+    };
     blend(VOID, tint, shade)
 }
 

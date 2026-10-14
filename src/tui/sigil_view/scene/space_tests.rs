@@ -182,6 +182,35 @@ fn the_galaxy_dust_streaks_along_the_band() {
 }
 
 #[test]
+fn the_galaxy_band_shifts_hue_along_its_length() {
+    for seed in [0, 1, 2, 5] {
+        let (mut lit, mut blue, mut plum) = (0, 0, 0);
+        for cell in super::backdrop(223, 67, seed) {
+            for ink in [cell.fg, cell.bg] {
+                let sigil::terminal::Ink::Exact(c) = ink else {
+                    continue;
+                };
+                let (r, g, b) = (u32::from(c.r), u32::from(c.g), u32::from(c.b));
+                if r + g + b <= 90 {
+                    continue;
+                }
+                lit += 1;
+                blue += usize::from(g >= r + 8);
+                plum += usize::from(r >= g + 10 && b > r);
+            }
+        }
+        assert!(
+            blue * 25 >= lit,
+            "sky {seed}: {blue} of {lit} lit half cells are blue"
+        );
+        assert!(
+            plum * 10 >= lit,
+            "sky {seed}: {plum} of {lit} lit half cells are plum"
+        );
+    }
+}
+
+#[test]
 fn the_band_carries_nebula_clouds() {
     let cells = super::backdrop(223, 67, 5);
     let rose = cells

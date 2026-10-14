@@ -16,7 +16,9 @@ pub(in crate::tui::sigil_view) fn compose(
     let model = app.model.get();
     let facts = facts(&model, app);
     let logo = crate::splash::logo();
-    let [body_width, body_rows] = cover(logo, &facts);
+    let mark = fitting(app.splash_mark.get(), rows, &facts);
+    let [mark_width, mark_rows] = super::mark::size(mark);
+    let [body_width, body_rows] = cover(mark, &facts);
     let [body_x, body_y, _, _, _] = layout(cols, rows, body_width, body_rows);
     let card_x = body_x.saturating_sub(3);
     let card_y = body_y.saturating_sub(2);
@@ -36,10 +38,13 @@ pub(in crate::tui::sigil_view) fn compose(
         u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
     };
     let facts_visible = elapsed >= FACTS_MS;
-    let logo_width = crate::splash::logo_width() as u16;
-    let logo_x = body_x + body_width.saturating_sub(logo_width) / 2;
+    let logo_x = body_x + body_width.saturating_sub(mark_width) / 2;
     let facts_x = body_x;
-    for (row, text) in logo.iter().enumerate() {
+    for (row, text) in logo
+        .iter()
+        .enumerate()
+        .filter(|_| mark == super::Mark::Banner)
+    {
         let width = text.chars().count();
         let shown = reveal_chars(row, width, elapsed);
         for (col, glyph) in text.chars().take(shown).enumerate() {
@@ -55,7 +60,7 @@ pub(in crate::tui::sigil_view) fn compose(
             }
         }
     }
-    let facts_y = body_y + logo.len() as u16 + 1;
+    let facts_y = body_y + mark_rows + 1;
     for (row, (label, value)) in facts.iter().enumerate().filter(|_| facts_visible) {
         write(
             cells,
@@ -75,6 +80,9 @@ pub(in crate::tui::sigil_view) fn compose(
         );
     }
     fill_bg(cells, cols, card);
+    if mark != super::Mark::Banner {
+        super::mark::paint(cells, cols, logo_x, body_y, mark, elapsed);
+    }
     frame(cells, cols, card);
     drop(model);
     card
@@ -103,8 +111,20 @@ pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'stat
     facts
 }
 
-pub(in crate::tui::sigil_view) fn cover(logo: &[&str; 6], facts: &[(&str, String)]) -> [u16; 2] {
-    let logo_width = crate::splash::logo_width() as u16;
+pub(in crate::tui::sigil_view) fn fitting(
+    mark: super::Mark,
+    rows: u16,
+    facts: &[(&str, String)],
+) -> super::Mark {
+    if cover(mark, facts)[1] + 7 <= rows {
+        mark
+    } else {
+        super::Mark::Banner
+    }
+}
+
+pub(in crate::tui::sigil_view) fn cover(mark: super::Mark, facts: &[(&str, String)]) -> [u16; 2] {
+    let [logo_width, logo_rows] = super::mark::size(mark);
     let facts_width = facts
         .iter()
         .map(|(label, value)| format!("{label:<8} {value}").chars().count() as u16)
@@ -112,7 +132,7 @@ pub(in crate::tui::sigil_view) fn cover(logo: &[&str; 6], facts: &[(&str, String
         .unwrap_or(20);
     [
         logo_width.max(facts_width),
-        logo.len() as u16 + facts.len() as u16 + 2,
+        logo_rows + facts.len() as u16 + 2,
     ]
 }
 

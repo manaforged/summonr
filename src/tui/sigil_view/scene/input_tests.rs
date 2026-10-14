@@ -304,3 +304,43 @@ fn a_model_change_on_the_splash_keeps_the_star_clock() {
         );
     });
 }
+
+fn named(key: sigil::prelude::Key) -> sigil::events::ShellEvent {
+    use sigil::events::{
+        KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
+    };
+    sigil::events::ShellEvent::Key(KeyEvent::new(KeyEventInit {
+        key: LogicalKey::named(key),
+        physical: PhysicalKey::Unidentified,
+        modifiers: ModifiersState::empty(),
+        repeat: false,
+        phase: KeyPhase::Down,
+        text: None,
+    }))
+}
+
+#[test]
+fn f2_on_the_splash_cycles_the_s_mark_through_lines_pixels_and_the_banner() {
+    Runtime::scope("splash-mark", || {
+        let (_app, mut host, mut screen) = splash_screen(120, 40);
+        let mut router = sigil::events::EventRouter::new();
+        let mut shown = |events: Vec<sigil::events::ShellEvent>| {
+            screen
+                .frame(&mut host, &mut router, events, (120, 40))
+                .unwrap();
+            screen.frame(&mut host, &mut router, [], (120, 40)).unwrap();
+            screen.text()
+        };
+        let lines = shown(vec![]);
+        assert!(
+            lines.contains('┏') && lines.contains('┛') && lines.contains('┌'),
+            "{lines}"
+        );
+        let pixels = shown(vec![named(sigil::prelude::Key::F2)]);
+        assert!(pixels.contains('▀') && !pixels.contains('┏'), "{pixels}");
+        let banner = shown(vec![named(sigil::prelude::Key::F2)]);
+        assert!(banner.contains("███████╗"), "{banner}");
+        let again = shown(vec![named(sigil::prelude::Key::F2)]);
+        assert!(again.contains('┏'), "{again}");
+    });
+}

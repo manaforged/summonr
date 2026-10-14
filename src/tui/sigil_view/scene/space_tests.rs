@@ -153,7 +153,7 @@ fn the_galaxy_dust_paints_in_few_colours_and_long_runs() {
 #[test]
 fn the_galaxy_dust_streaks_along_the_band() {
     let (cols, rows) = (223_usize, 67_usize);
-    for seed in [0, 1, 2, 5] {
+    for seed in [0, 2, 3, 5] {
         let cells = super::backdrop(cols as u16, rows as u16, seed);
         let light = |x: usize, y: usize| {
             let cell = &cells[y / 2 * cols + x];
@@ -183,7 +183,7 @@ fn the_galaxy_dust_streaks_along_the_band() {
 
 #[test]
 fn the_galaxy_band_shifts_hue_along_its_length() {
-    for seed in [0, 1, 2, 5] {
+    for seed in [0, 2, 3, 5] {
         let (mut lit, mut blue, mut plum) = (0, 0, 0);
         for cell in super::backdrop(223, 67, seed) {
             for ink in [cell.fg, cell.bg] {
@@ -208,6 +208,40 @@ fn the_galaxy_band_shifts_hue_along_its_length() {
             "sky {seed}: {plum} of {lit} lit half cells are plum"
         );
     }
+}
+
+#[test]
+fn launches_draw_both_bands_and_whole_galaxies() {
+    let (cols, rows) = (223_usize, 67_usize);
+    let (mut whole, mut crossing) = (Vec::new(), Vec::new());
+    for seed in 0..9 {
+        let cells = super::backdrop(cols as u16, rows as u16, seed);
+        let lit = |index: usize| {
+            [cells[index].fg, cells[index].bg].into_iter().any(|ink| {
+                matches!(ink, sigil::terminal::Ink::Exact(c)
+                    if u32::from(c.r) + u32::from(c.g) + u32::from(c.b) > 90)
+            })
+        };
+        let edge: Vec<usize> = (0..cells.len())
+            .filter(|index| {
+                let (x, y) = (index % cols, index / cols);
+                x == 0 || y == 0 || x == cols - 1 || y == rows - 1
+            })
+            .collect();
+        let edge_lit = edge.iter().filter(|index| lit(**index)).count();
+        let all_lit = (0..cells.len()).filter(|index| lit(*index)).count();
+        if edge_lit * 100 <= edge.len() && all_lit > 1000 {
+            whole.push(seed);
+        }
+        if edge_lit * 20 >= edge.len() {
+            crossing.push(seed);
+        }
+    }
+    assert!(
+        !whole.is_empty(),
+        "no sky holds a whole galaxy in the frame"
+    );
+    assert!(!crossing.is_empty(), "no sky draws a band across the frame");
 }
 
 #[test]

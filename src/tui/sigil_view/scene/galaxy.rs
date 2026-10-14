@@ -6,6 +6,12 @@ use sigil::scene::{SceneBuilder, SceneRectStyle};
 
 use super::*;
 
+use spiral::Disk;
+
+mod spiral;
+
+const FORMS: [f32; 2] = [0.5, 0.4];
+
 const BAND: Rgba8 = rgb(58, 56, 96);
 
 const STARLIGHT: Rgba8 = rgb(112, 120, 168);
@@ -78,6 +84,12 @@ struct Shape {
     bend: f32,
     width: f32,
     offset: f32,
+    form: Form,
+}
+
+enum Form {
+    Band(Option<Disk>),
+    Spiral(Disk),
 }
 
 impl Shape {
@@ -95,6 +107,11 @@ impl Shape {
             0.0
         };
         let (sin, cos) = ((roll(1) - 0.5) * 1.8 + flip).sin_cos();
+        let form = if roll(18) > FORMS[0] {
+            Form::Spiral(Disk::of(&roll, false))
+        } else {
+            Form::Band((roll(19) > FORMS[1]).then(|| Disk::of(&roll, true)))
+        };
         Self {
             sin,
             cos,
@@ -103,6 +120,7 @@ impl Shape {
             bend: (roll(5) - 0.5) * 0.5,
             width: 0.8 + 0.4 * roll(6),
             offset: roll(7) * 97.0,
+            form,
         }
     }
 }
@@ -133,6 +151,22 @@ fn sample(cols: u16, rows: u16, x: f32, y: f32, shape: &Shape) -> Sample {
     let half = f32::from(rows.max(1)) / 2.0;
     let px = (x + 0.5 - f32::from(cols) / 2.0) * 0.5 / half;
     let py = (y + 0.5 - half) / half;
+    match &shape.form {
+        Form::Spiral(disk) => spiral::sample(px, py, shape, disk),
+        Form::Band(companion) => {
+            let near = band(px, py, shape);
+            match companion
+                .as_ref()
+                .map(|disk| spiral::sample(px, py, shape, disk))
+            {
+                Some(far) if far.shade > near.shade => far,
+                _ => near,
+            }
+        }
+    }
+}
+
+fn band(px: f32, py: f32, shape: &Shape) -> Sample {
     let along = px * shape.cos + py * shape.sin;
     let drift = WANDER * (fbm(along * 0.8 + shape.offset, 1.7, 3) - 0.5) * 2.0;
     let across = py * shape.cos - px * shape.sin - drift - shape.shift - shape.bend * along * along;

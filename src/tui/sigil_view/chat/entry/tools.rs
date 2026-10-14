@@ -200,11 +200,6 @@ pub(super) fn tool_card(
     {
         return card.pointer_up(flip(app, index, at));
     }
-    if Builtin::is(name, Builtin::Task)
-        && let Some(card) = super::children::poll_card(app, call)
-    {
-        return card;
-    }
     let shown = workspace_relative(&call.arg, &app.roots);
     let (verb, arg) = verb(name, &shown);
     let output = preview::plain(&call.output);

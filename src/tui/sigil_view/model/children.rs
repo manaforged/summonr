@@ -108,23 +108,6 @@ impl Model {
         }
         agent.done |= done;
         agent.failed |= failed;
-        if finished && agent.background {
-            let agent = agent.clone();
-            self.entries.push(Entry::Tool {
-                id: String::new(),
-                name: "Subagent".to_string(),
-                arg: format!(
-                    "{} · {} · {} tok",
-                    agent.title,
-                    agent.clock(),
-                    crate::provider::compact(agent.tokens)
-                ),
-                state: agent.state(),
-                output: agent.last,
-                expanded: false,
-                patch: None,
-            });
-        }
         if finished {
             self.child_todos(&tag, &[]);
         }

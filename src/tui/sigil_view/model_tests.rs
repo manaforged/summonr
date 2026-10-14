@@ -250,13 +250,5 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
         assert_eq!(model.agents[0].tokens, 7);
         assert_eq!(model.agents[0].cost, 0.25);
         assert!(model.busy_since.is_some());
-        assert_eq!(
-            model
-                .entries
-                .iter()
-                .filter(|entry| matches!(entry, Entry::Tool { name, .. } if name == "Subagent"))
-                .count(),
-            1
-        );
     }
 }

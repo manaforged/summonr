@@ -31,7 +31,9 @@ impl Model {
     }
 
     fn group(&mut self, id: &str, name: &str, arg: String) -> bool {
-        if crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits) {
+        if crate::tools::Builtin::of(name)
+            .is_some_and(|kind| kind.edits() || kind == crate::tools::Builtin::Task)
+        {
             return false;
         }
         enum Tail {

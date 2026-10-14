@@ -1,6 +1,6 @@
 use super::*;
 
-const TITLE_CHARS: usize = 72;
+const TITLE_CHARS: usize = 56;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::tui::sigil_view) struct Agent {
@@ -44,11 +44,12 @@ impl Agent {
 
     pub(in crate::tui::sigil_view) fn title_of(assignment: &str) -> String {
         let line = assignment.lines().next().unwrap_or_default().trim();
-        let sentence = line
-            .match_indices(". ")
-            .next()
-            .map_or(line, |(at, _)| &line[..at]);
-        crate::text::ellipsize(sentence.trim_end_matches('.'), TITLE_CHARS).to_string()
+        let clause = [". ", ": ", " (", ", ", " — "]
+            .iter()
+            .filter_map(|mark| line.find(mark))
+            .min()
+            .map_or(line, |at| &line[..at]);
+        crate::text::ellipsize(clause.trim_end_matches('.'), TITLE_CHARS).to_string()
     }
 
     pub(in crate::tui::sigil_view) fn roots(&self, roots: &[String]) -> Vec<String> {

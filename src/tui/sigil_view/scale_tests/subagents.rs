@@ -105,3 +105,62 @@ fn subagents_read_as_one_line_each_that_flips_when_done() {
         "polls and spawns draw no Task card: {shown}"
     );
 }
+
+#[test]
+fn subagents_spawned_by_separate_calls_each_get_their_own_line() {
+    let assignments = [
+        "Fix total() in pricing.py to round to cents (two decimals). Keep it scoped.",
+        "Add --dry-run flag to cli.py that prints what it would charge, clearly marked.",
+        "Document CLI in README.md: positional prices, --tax, and --dry-run.",
+    ];
+    let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
+        for (at, (id, assignment)) in IDS.iter().zip(assignments).enumerate() {
+            let call = format!("s{at}");
+            app.update(Msg::Event(Event::ToolCall {
+                id: call.clone(),
+                name: "task".to_owned(),
+                arguments: r#"{"background":true}"#.to_owned(),
+            }));
+            app.update(Msg::Event(Event::Child {
+                id: (*id).to_owned(),
+                event: Box::new(Event::Spawned {
+                    assignment: assignment.to_owned(),
+                    access: crate::child::Access::Implement,
+                    call: call.clone(),
+                    background: true,
+                    workspace: String::new(),
+                    agent: String::new(),
+                }),
+            }));
+            app.update(Msg::Event(Event::ToolResult {
+                id: call,
+                success: true,
+                mutated: false,
+                output: format!("started child {id}\nstate: running"),
+                millis: None,
+                patch: None,
+            }));
+        }
+        act(
+            app,
+            IDS[0],
+            Event::ToolCall {
+                id: "c".to_owned(),
+                name: "read".to_owned(),
+                arguments: r#"{"path":"pricing.py"}"#.to_owned(),
+            },
+        );
+    })
+    .join("\n");
+    assert_eq!(shown.matches("◆ Subagent running").count(), 3, "{shown}");
+    assert!(!shown.contains("started child"), "{shown}");
+    assert!(
+        shown.contains("“Fix total() in pricing.py to round to cents”"),
+        "{shown}"
+    );
+    assert!(shown.contains("“Document CLI in README.md”"), "{shown}");
+    assert!(
+        shown.contains("Read pricing.py"),
+        "the panel keeps room for the action: {shown}"
+    );
+}

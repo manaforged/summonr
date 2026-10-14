@@ -249,3 +249,8 @@ fn logout_names_the_key_left_after_removal() {
     assert!(said.starts_with("✓ Removed the stored key"), "{said}");
     assert!(!said.contains("It now uses the"), "{said}");
 }
+
+#[test]
+fn the_account_environment_supplies_no_keys_to_tests() {
+    assert_eq!(super::super::keys::env_key(&["PATH", "HOME"]), None);
+}

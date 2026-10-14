@@ -118,7 +118,7 @@ pub(crate) fn peer_token(name: &str) -> Option<String> {
 }
 
 fn opencode_peer(ids: &[&str], bearer: bool) -> Option<String> {
-    let home = crate::config::home_dir()?;
+    let home = crate::prompt::user_home()?;
     let path = home.join(".local/share/opencode/auth.json");
     let store: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
@@ -196,7 +196,7 @@ pub(super) fn named_model(endpoint: &str, model: &str) -> String {
 }
 
 pub(super) fn kimi_cli_token() -> Option<String> {
-    let home = crate::config::home_dir()?;
+    let home = crate::prompt::user_home()?;
     let path = home.join(".kimi-code/credentials/kimi-code.json");
     let value: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
@@ -214,12 +214,18 @@ pub(super) fn kimi_cli_token() -> Option<String> {
         .map(str::to_string)
 }
 
+#[cfg(not(test))]
 pub(super) fn env_key(names: &[&str]) -> Option<String> {
     names.iter().find_map(|name| {
         std::env::var(name)
             .ok()
             .filter(|value| !value.trim().is_empty())
     })
+}
+
+#[cfg(test)]
+pub(super) fn env_key(_names: &[&str]) -> Option<String> {
+    None
 }
 
 pub(super) fn trim_slash(url: &str) -> String {

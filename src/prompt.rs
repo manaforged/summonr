@@ -42,12 +42,12 @@ pub fn summonr_home() -> Result<PathBuf> {
 }
 
 #[cfg(not(test))]
-fn user_home() -> Option<PathBuf> {
+pub(crate) fn user_home() -> Option<PathBuf> {
     crate::config::home_dir()
 }
 
 #[cfg(test)]
-fn user_home() -> Option<PathBuf> {
+pub(crate) fn user_home() -> Option<PathBuf> {
     static HOME: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     Some(
         HOME.get_or_init(|| {

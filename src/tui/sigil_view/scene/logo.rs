@@ -3,6 +3,8 @@ use super::space::STAR_BRIGHT;
 use super::*;
 use sigil::prelude::Paint;
 
+const COMPOSER_ROWS: u16 = 7;
+
 pub(in crate::tui::sigil_view) fn compose(
     cells: &mut [Cell],
     cols: u16,
@@ -116,7 +118,8 @@ pub(in crate::tui::sigil_view) fn fitting(
     rows: u16,
     facts: &[(&str, String)],
 ) -> super::Mark {
-    if cover(mark, facts)[1] + 7 <= rows {
+    let input_y = layout(0, rows, 0, cover(mark, facts)[1])[3];
+    if input_y + COMPOSER_ROWS <= rows {
         mark
     } else {
         super::Mark::Banner

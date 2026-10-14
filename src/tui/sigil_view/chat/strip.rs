@@ -20,19 +20,18 @@ fn mark(agent: &Agent) -> (&'static str, Look) {
     }
 }
 
-fn line(agent: &Agent, lead: &str, app: &App, detail: bool) -> NodeBuilder {
+fn line(agent: &Agent, app: &App, detail: bool) -> NodeBuilder {
     let (glyph, tone) = mark(agent);
     let access = agent.access.name();
     let meta = if detail {
         format!(
-            "{} · {access} · {} · {} tok",
-            agent.id,
+            "{access} · {} · {} tok",
             agent.clock(),
             crate::provider::compact(agent.tokens)
         )
     } else {
         format!(
-            "{access} · {} · {} tok",
+            "{} · {} tok",
             agent.clock(),
             crate::provider::compact(agent.tokens)
         )
@@ -45,7 +44,6 @@ fn line(agent: &Agent, lead: &str, app: &App, detail: bool) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(text(lead.to_string(), Look::xs(Token::Gray10)))
         .child(text(glyph, tone))
         .child(
             text(agent.title.clone(), Look::xs(Token::Gray12))
@@ -54,11 +52,16 @@ fn line(agent: &Agent, lead: &str, app: &App, detail: bool) -> NodeBuilder {
         )
         .child(
             text(
-                super::entry::workspace_relative(&agent.last, &app.roots),
+                super::entry::workspace_relative(&agent.last, &agent.roots(&app.roots)),
                 Look::xs(Token::Gray10),
             )
             .ellipsize()
-            .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
+            .layout(
+                LayoutStyle::block()
+                    .grow(1.0)
+                    .shrink(8.0)
+                    .min_size(0.0, 0.0),
+            ),
         )
         .child(text(meta, Look::xs(Token::Gray10)));
     if agent.background {
@@ -141,8 +144,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 );
             }
             for agent in &rows {
-                let lead = format!("{:<10}", if agent.background { "subagent" } else { "" });
-                nodes.push(line(agent, &lead, &app, expanded));
+                nodes.push(line(agent, &app, expanded));
             }
             nodes
         })

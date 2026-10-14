@@ -188,6 +188,32 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
     Some(card)
 }
 
+pub(super) fn poll_card(app: &App, call: &Call) -> Option<NodeBuilder> {
+    let tag = crate::child::tag(&call.arg);
+    let model = app.model.get();
+    let kid = model.agents.iter().find(|kid| kid.id == tag)?;
+    let state = kid.state();
+    let word = match state {
+        ToolState::Running => "running",
+        ToolState::Ok => "done",
+        ToolState::Failed => "failed",
+    };
+    let detail = format!(
+        "{word} · {} · {} tok",
+        kid.clock(),
+        crate::provider::compact(kid.tokens)
+    );
+    Some(header(
+        &state,
+        call_line(
+            "Task",
+            &task_title(kid, &kid.roots(&app.roots)),
+            Some((detail, Look::xs(Token::Gray10))),
+            true,
+        ),
+    ))
+}
+
 fn receipt_state(state: &ChildState) -> (ToolState, &'static str) {
     match state {
         ChildState::Running => (ToolState::Running, "running"),

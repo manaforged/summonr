@@ -335,7 +335,7 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         });
-    let picked = ["path", "command", "name", "query", "url"]
+    let picked = ["path", "command", "name", "query", "url", "child"]
         .iter()
         .find_map(|name| field(name))
         .map(str::to_string)

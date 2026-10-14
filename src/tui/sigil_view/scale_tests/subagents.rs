@@ -332,3 +332,35 @@ fn a_spawn_result_before_its_subagent_shows_a_starting_line_not_raw_output() {
     assert!(!shown.contains("started child"), "{shown}");
     assert!(shown.contains("◆ Subagent starting"), "{shown}");
 }
+
+#[test]
+fn a_narrow_subagent_row_keeps_its_activity_and_names_a_listing_as_a_directory() {
+    let shown = frame_with(busy_info(), 84, 25, State::Busy, |app| {
+        task_call(app);
+        spawn(
+            app,
+            IDS[0],
+            "Add --dry-run flag to cli.py that prints what it would charge.",
+            true,
+        );
+        act(
+            app,
+            IDS[0],
+            Event::ToolCall {
+                id: "c".to_owned(),
+                name: "read".to_owned(),
+                arguments: r#"{"path":".","op":"list"}"#.to_owned(),
+            },
+        );
+    });
+    let rows: Vec<&String> = shown
+        .iter()
+        .filter(|line| line.trim_start().starts_with("○ Subagent"))
+        .collect();
+    assert!(!rows.is_empty(), "{}", shown.join("\n"));
+    for row in rows {
+        assert!(row.contains("· Read ./"), "{row}");
+        assert!(!row.contains("· …"), "{row}");
+    }
+    assert!(!shown.join("\n").contains(". list"), "{}", shown.join("\n"));
+}

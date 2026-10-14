@@ -55,7 +55,7 @@ fn line(agent: &Agent, app: &App, detail: bool) -> NodeBuilder {
         .child(
             text(agent.title.clone(), Look::xs(Token::Gray12))
                 .ellipsize()
-                .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
+                .layout(LayoutStyle::block().shrink(4.0).min_size(0.0, 0.0)),
         )
         .child(
             text(format!("· {doing}"), Look::xs(Token::Gray10))
@@ -63,7 +63,7 @@ fn line(agent: &Agent, app: &App, detail: bool) -> NodeBuilder {
                 .layout(
                     LayoutStyle::block()
                         .grow(1.0)
-                        .shrink(8.0)
+                        .shrink(1.0)
                         .min_size(0.0, 0.0),
                 ),
         )

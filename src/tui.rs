@@ -311,6 +311,7 @@ enum ToolState {
 }
 
 const QUIET_OPS: [&str; 2] = ["file", "sequence"];
+const LISTING_OPS: [&str; 1] = ["list"];
 
 pub(crate) fn tool_arg(arguments: &str) -> String {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) else {
@@ -351,7 +352,12 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
         }
     }
     if let Some(op) = field("op").filter(|op| !QUIET_OPS.contains(op)) {
-        picked.push_str(&format!(" {op}"));
+        if LISTING_OPS.contains(&op) {
+            let dir = picked.trim_end_matches('/');
+            picked = format!("{}/", if dir.is_empty() { "." } else { dir });
+        } else {
+            picked.push_str(&format!(" {op}"));
+        }
     }
     if value.get("references").and_then(serde_json::Value::as_bool) == Some(true) {
         picked.push_str(" refs");

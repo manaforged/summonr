@@ -90,7 +90,12 @@ impl Client {
             }
             let parsed = frames.push(&chunk, W::sentinel()).map_err(cut)?;
             let produced = self.take(&mut state, &parsed, request).map_err(cut)?;
-            self.heard(&mut heard, produced == 0).map_err(cut)?;
+            let thinking = state
+                .state
+                .as_ref()
+                .is_some_and(super::wire::Accumulate::thinking);
+            self.heard(&mut heard, produced == 0 && !thinking)
+                .map_err(cut)?;
             if frames.ended() {
                 break;
             }

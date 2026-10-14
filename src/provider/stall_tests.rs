@@ -126,6 +126,19 @@ async fn a_long_silent_reasoning_stretch_is_not_cut_as_silence() {
 }
 
 #[tokio::test]
+async fn keep_alives_during_an_open_reasoning_item_are_not_silence() {
+    let first = "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"reasoning\",\"id\":\"rs_0\",\"summary\":[]}}\n\n";
+    let last = "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"reasoning\",\"id\":\"rs_0\",\"summary\":[]}}\n\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"message\",\"id\":\"msg_0\",\"role\":\"assistant\",\"content\":[]}}\n\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_0\",\"delta\":\"done\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n";
+    let (outcome, _) = run_on(
+        server(first, ": keep-alive\n\n", 30, last),
+        crate::endpoint::Wire::Responses,
+    )
+    .await;
+    let message = outcome.expect("a model that is still reasoning has not stalled");
+    assert_eq!(message.content.as_deref(), Some("done"));
+}
+
+#[tokio::test]
 async fn a_done_sentinel_without_a_finish_reason_is_not_a_finished_reply() {
     let last = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n";
     let (outcome, partial) = run(server(GREETING, GREETING, 1, last)).await;

@@ -24,6 +24,7 @@ pub(crate) struct Stream {
     usage: Usage,
     stop: StopReason,
     done: bool,
+    reasoning: bool,
 }
 
 impl Accumulate for Stream {
@@ -84,6 +85,10 @@ impl Accumulate for Stream {
         self.done
     }
 
+    fn thinking(&self) -> bool {
+        self.reasoning
+    }
+
     fn spill(&mut self, partial: &mut Partial) {
         partial.text.push_str(&self.text);
         partial.reasoning.push_str(&self.thinking);
@@ -136,6 +141,10 @@ impl Stream {
     fn opened(&mut self, item: Option<&Item<'_>>) -> Vec<Delta> {
         match item {
             Some(item) if item.shape == Shape::FunctionCall => vec![self.added(item)],
+            Some(item) if item.shape == Shape::Reasoning => {
+                self.reasoning = true;
+                vec![Delta::Progress]
+            }
             Some(item) if item.shape == Shape::Message => {
                 self.phase(item);
                 vec![Delta::Progress]
@@ -216,6 +225,7 @@ impl Stream {
     fn item(&mut self, item: &Item<'_>) -> crate::error::Result<()> {
         match item.shape {
             Shape::Reasoning => {
+                self.reasoning = false;
                 if let Some(content) = item.encrypted_content.as_deref() {
                     self.signatures.push(content.to_string());
                 }

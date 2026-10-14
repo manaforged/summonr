@@ -371,3 +371,26 @@ fn a_narrow_subagent_row_keeps_its_activity_and_names_a_listing_as_a_directory()
     }
     assert!(!shown.join("\n").contains(". list"), "{}", shown.join("\n"));
 }
+
+#[test]
+fn a_long_subagent_activity_leaves_the_task_title_readable() {
+    let shown = frame_with(busy_info(), 84, 25, State::Busy, |app| {
+        task_call(app);
+        spawn(app, IDS[0], "Add --dry-run flag to cli.py.", true);
+        let paths = r#"{"paths":["cli.py","pricing.py","test_pricing.py","README.md"]}"#;
+        let call = Event::ToolCall {
+            id: "c".to_owned(),
+            name: "read".to_owned(),
+            arguments: paths.to_owned(),
+        };
+        act(app, IDS[0], call);
+    });
+    let rows: Vec<&String> = shown
+        .iter()
+        .filter(|line| line.contains("Subagent") && line.contains("· Read cli.py"))
+        .collect();
+    assert!(rows.len() >= 2, "{}", shown.join("\n"));
+    for row in rows {
+        assert!(row.contains("Add --dry-run flag"), "{row}");
+    }
+}

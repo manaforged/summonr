@@ -55,9 +55,12 @@ fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
     );
     match doing {
         Some(doing) => line.child(
-            label(doing, Look::xs(Token::Gray10))
-                .ellipsize()
-                .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
+            label(doing, Look::xs(Token::Gray10)).ellipsize().layout(
+                LayoutStyle::block()
+                    .shrink(1.0)
+                    .min_size(0.0, 0.0)
+                    .max_width(super::super::ACTIVITY_SHARE),
+            ),
         ),
         None => line,
     }

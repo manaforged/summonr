@@ -64,7 +64,8 @@ fn line(agent: &Agent, app: &App, detail: bool) -> NodeBuilder {
                     LayoutStyle::block()
                         .grow(1.0)
                         .shrink(1.0)
-                        .min_size(0.0, 0.0),
+                        .min_size(0.0, 0.0)
+                        .max_width(super::ACTIVITY_SHARE),
                 ),
         )
         .child(text(meta, Look::xs(Token::Gray10)));

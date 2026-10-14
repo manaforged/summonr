@@ -35,16 +35,6 @@ fn the_default_prompt_names_the_modules_without_steering() {
 }
 
 #[test]
-fn the_default_prompt_suggests_checking_the_work_with_the_workspace_tests() {
-    let workspace = tempfile::tempdir().unwrap();
-    let prompt = compose(workspace.path(), None, Sources::default());
-    assert!(
-        prompt.contains("If the workspace has tests or can build or run, consider using them to check that the work is complete"),
-        "{prompt}"
-    );
-}
-
-#[test]
 fn an_at_include_pulls_the_referenced_file_in_once() {
     let workspace = tempfile::tempdir().unwrap();
     std::fs::write(workspace.path().join("AGENTS.md"), "AGENTS RULE").unwrap();

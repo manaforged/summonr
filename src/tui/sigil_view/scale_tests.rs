@@ -26,6 +26,7 @@ mod mcp;
 mod mention;
 mod modals;
 mod mode;
+mod paths;
 mod picker;
 mod reflow;
 mod secret;

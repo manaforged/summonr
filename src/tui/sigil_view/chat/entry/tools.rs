@@ -202,7 +202,11 @@ pub(super) fn tool_card(
     }
     let shown = workspace_relative(&call.arg, &app.roots);
     let (verb, arg) = verb(name, &shown);
-    let output = preview::plain(&call.output);
+    let output = preview::plain(&call.output)
+        .lines()
+        .map(|line| workspace_relative(line, &app.roots))
+        .collect::<Vec<_>>()
+        .join("\n");
     let detail = detail(name, call, &output);
     let card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))

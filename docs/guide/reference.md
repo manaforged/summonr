@@ -410,7 +410,7 @@ Other built-in endpoints:
 | `deepseek` | `minimal` to `max` | `thinking` type `disabled` |
 | `kimi-cn`, `kimi-intl` | `k3` and `kimi-for-coding`: `low`, `high`, `max`. `kimi-k2` models and `kimi-for-coding-highspeed`: no effort setting. | `k3`: sends `low`. `kimi-for-coding` and `kimi-k2.6`: `thinking` type `disabled`. Others: sends nothing. Every Kimi Code model gets its reasoning back between tool calls. |
 | `grok` | `grok-4.7` and `grok-4.6`: `low` to `xhigh`. Others: `low`, `medium`, `high`. | sends the lowest level |
-| `muse` | `minimal` to `xhigh` | sends `minimal` |
+| `muse` | `minimal` to `max`; `-contributor` models stop at `xhigh` | sends `minimal` |
 | `mistral` | `high` | sends `none` |
 | `cerebras`, `deepinfra`, `ollama` | `low`, `medium`, `high` | sends `none` |
 | `openrouter` | `minimal` to `xhigh`, sent as `reasoning` with an `effort` key | sends `none` |

@@ -280,3 +280,17 @@ fn glm_keeps_its_reasoning_and_streams_tool_arguments() {
     );
     assert_eq!(sent["tool_stream"], true, "{sent}");
 }
+
+#[test]
+fn muse_asks_the_responses_api_for_max_effort_and_its_reasoning_back() {
+    let sent = body("muse", "muse-wonder-1.0", Some(Effort::Max));
+    assert_eq!(sent["reasoning"]["effort"], "max", "{sent}");
+    assert_eq!(sent["include"][0], "reasoning.encrypted_content", "{sent}");
+    assert!(sent.get("messages").is_none(), "{sent}");
+}
+
+#[test]
+fn muse_contributor_models_cap_at_xhigh() {
+    let sent = body("muse", "muse-spark-1.3-contributor", Some(Effort::Max));
+    assert_eq!(sent["reasoning"]["effort"], "xhigh", "{sent}");
+}

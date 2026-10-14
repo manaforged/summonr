@@ -149,7 +149,10 @@ fn the_galaxy_dust_paints_in_few_colours_and_long_runs() {
             .map(|row| row.windows(2).filter(|pair| pair[0] != pair[1]).count())
             .sum();
         let per_row = changes / usize::from(rows);
-        assert!(per_row <= 40, "sky {seed}: {per_row} colour changes per row");
+        assert!(
+            per_row <= 40,
+            "sky {seed}: {per_row} colour changes per row"
+        );
     }
     let stars = super::space(cols, rows, 30, 0)
         .iter()
@@ -166,7 +169,11 @@ fn the_galaxy_dust_streaks_along_the_band() {
         let cells = super::backdrop(cols as u16, rows as u16, seed);
         let light = |x: usize, y: usize| {
             let cell = &cells[y / 2 * cols + x];
-            lit(if y.is_multiple_of(2) { cell.fg } else { cell.bg })
+            lit(if y.is_multiple_of(2) {
+                cell.fg
+            } else {
+                cell.bg
+            })
         };
         let (mut sum, mut weight) = (0.0_f32, 0.0_f32);
         for top in (1..rows * 2 - window).step_by(window) {

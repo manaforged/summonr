@@ -183,8 +183,8 @@ fn band(px: f32, py: f32, shape: &Shape) -> Sample {
     let course = &shape.course;
     let along = px * shape.cos + py * shape.sin;
     let drift = WANDER * (fbm(along * 0.8 + shape.offset, 1.7, 3) - 0.5) * 2.0;
-    let curve = course.arc * along * along
-        + course.wave[0] * (along * course.wave[1] + shape.offset).sin();
+    let curve =
+        course.arc * along * along + course.wave[0] * (along * course.wave[1] + shape.offset).sin();
     let across = py * shape.cos - px * shape.sin - drift - shape.shift - curve;
     let (u, v) = (along * STRETCH[0] + shape.offset, across * STRETCH[1]);
     let (wx, wy) = (

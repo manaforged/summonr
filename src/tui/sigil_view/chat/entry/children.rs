@@ -57,6 +57,20 @@ fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
     )
 }
 
+pub(super) fn starting_card() -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .gap(8.0)
+                .min_size(0.0, 0.0)
+                .align_items(AlignItems::Center),
+        )
+        .child(label("◆", Look::xs(Token::Accent11)))
+        .child(label("Subagent", Look::xs(Token::Gray12).bold()))
+        .child(label("starting…", Look::xs(Token::Gray10)))
+}
+
 fn kept_line(kept: &Kept, roots: &[String]) -> String {
     let checkout = roots
         .iter()

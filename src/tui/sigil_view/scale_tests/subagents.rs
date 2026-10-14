@@ -310,3 +310,25 @@ fn consecutive_subagent_lines_sit_on_consecutive_rows() {
         shown.join("\n")
     );
 }
+
+#[test]
+fn a_spawn_result_before_its_subagent_shows_a_starting_line_not_raw_output() {
+    let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
+        app.update(Msg::Event(Event::ToolCall {
+            id: "call_a".to_owned(),
+            name: "task".to_owned(),
+            arguments: r#"{"assignment":"Round total to cents.","background":true}"#.to_owned(),
+        }));
+        app.update(Msg::Event(Event::ToolResult {
+            id: "call_a".to_owned(),
+            success: true,
+            mutated: false,
+            output: format!("started child {}\nstate: running\npoll with task", IDS[0]),
+            millis: None,
+            patch: None,
+        }));
+    })
+    .join("\n");
+    assert!(!shown.contains("started child"), "{shown}");
+    assert!(shown.contains("◆ Subagent starting"), "{shown}");
+}

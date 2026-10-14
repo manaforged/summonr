@@ -281,6 +281,7 @@ const DEFAULT: &str = "You are an expert coding assistant running inside summonr
 - Tool schemas are the full callable surface; modules add more when on: web (search, fetch), mail (agents, send, inbox, board), MCP servers, skills, LSP, background jobs, child tasks
 - A listed tool you cannot see is a module that is off (`summonr modules` lists them; ask the user to enable) or on with nothing installed: skills need a SKILL.md under `~/.summonr/skills/<name>/`, MCP needs `summonr mcp add NAME -- CMD`, web needs a provider. Name the exact step instead of hunting the harness
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
+- If the workspace has tests or can build or run, consider using them to check that the work is complete
 - write is for new files and complete rewrites
 - Be concise in your responses
 </rules>";

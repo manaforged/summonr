@@ -107,3 +107,12 @@ fn a_session_without_memory_is_told_nothing_persists() {
     );
     assert!(!on.contains(crate::memory::DISABLED), "{on}");
 }
+
+#[test]
+fn tests_never_read_the_users_summonr_home() {
+    if std::env::var_os("SUMMONR_HOME").is_some() {
+        return;
+    }
+    let real = crate::config::home_dir().expect("home").join(".summonr");
+    assert_ne!(super::summonr_home().expect("summonr home"), real);
+}

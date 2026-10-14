@@ -330,6 +330,14 @@ fn header(line: &str) -> Option<(&'static Header, &str)> {
     })
 }
 
+pub(crate) fn patch_files(patch: &str) -> Vec<&str> {
+    patch
+        .lines()
+        .filter_map(|line| header(line.strip_suffix('\r').unwrap_or(line)))
+        .map(|(_, path)| path)
+        .collect()
+}
+
 fn parse(patch: &str) -> Result<Vec<Section>> {
     let mut parser = Parser::default();
     for raw in patch.lines() {

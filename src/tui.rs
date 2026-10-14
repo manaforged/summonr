@@ -341,6 +341,7 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
         .find_map(|name| field(name))
         .map(str::to_string)
         .or(paths)
+        .or_else(|| field("patch").map(|patch| crate::tools::patch_files(patch).join(", ")))
         .unwrap_or_default();
     let mut picked = after_cd(&picked)
         .split_whitespace()

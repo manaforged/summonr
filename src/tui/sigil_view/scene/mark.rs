@@ -119,8 +119,8 @@ fn bars(bar: i32, gap: i32) -> [i32; 6] {
 }
 
 fn stack(built: i32) -> Grid {
-    let (width, vert) = (14, 3);
-    let y = bars(2, 1);
+    let (width, vert) = (27, 5);
+    let y = bars(3, 2);
     let outline = [
         (0, y[0]),
         (width, y[0]),
@@ -282,3 +282,7 @@ fn pixels(built: i32) -> Grid {
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "mark_tests.rs"]
+mod tests;

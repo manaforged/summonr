@@ -355,9 +355,16 @@ fn a_narrow_subagent_row_keeps_its_activity_and_names_a_listing_as_a_directory()
     });
     let rows: Vec<&String> = shown
         .iter()
-        .filter(|line| line.trim_start().starts_with("○ Subagent"))
+        .filter(|line| {
+            let line = line.trim_start();
+            line.starts_with("○ Subagent") || line.starts_with("◆ Subagent")
+        })
         .collect();
-    assert!(!rows.is_empty(), "{}", shown.join("\n"));
+    assert!(
+        rows.iter().any(|row| row.contains('○')) && rows.iter().any(|row| row.contains('◆')),
+        "{}",
+        shown.join("\n")
+    );
     for row in rows {
         assert!(row.contains("· Read ./"), "{row}");
         assert!(!row.contains("· …"), "{row}");

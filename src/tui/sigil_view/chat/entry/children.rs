@@ -18,23 +18,21 @@ fn task_title(kid: &Agent, roots: &[String]) -> String {
 
 fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
     let title = task_title(kid, roots);
-    let (tone, status) = match kid.state() {
+    let (tone, status, doing) = match kid.state() {
         ToolState::Running => {
             let last = workspace_relative(&kid.last, roots);
-            let doing = if last.is_empty() {
-                String::new()
-            } else {
-                format!(" · {last}")
-            };
-            (Token::Accent11, format!("running: “{title}”{doing}"))
+            let doing = (!last.is_empty()).then(|| format!("· {last}"));
+            (Token::Accent11, format!("running: “{title}”"), doing)
         }
         ToolState::Ok => (
             Token::Success11,
             format!("completed in {}: “{title}”", kid.clock()),
+            None,
         ),
         ToolState::Failed => (
             Token::Error11,
             format!("failed after {}: “{title}”", kid.clock()),
+            None,
         ),
     };
     let mut line = container()
@@ -50,11 +48,19 @@ fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
     if !kid.agent.is_empty() {
         line = line.child(label(kid.agent.clone(), Look::xs(Token::Info11)));
     }
-    line.child(
+    line = line.child(
         label(status, Look::xs(Token::Gray10))
             .ellipsize()
-            .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
-    )
+            .layout(LayoutStyle::block().shrink(4.0).min_size(0.0, 0.0)),
+    );
+    match doing {
+        Some(doing) => line.child(
+            label(doing, Look::xs(Token::Gray10))
+                .ellipsize()
+                .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
+        ),
+        None => line,
+    }
 }
 
 pub(super) fn starting_card() -> NodeBuilder {

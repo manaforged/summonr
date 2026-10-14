@@ -284,3 +284,29 @@ fn spawn_on(app: &App, id: &str, call: &str, assignment: &str) {
         }),
     }));
 }
+
+#[test]
+fn consecutive_subagent_lines_sit_on_consecutive_rows() {
+    let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
+        for (id, call) in IDS.iter().zip(["call_a", "call_b", "call_c"]) {
+            app.update(Msg::Event(Event::ToolCall {
+                id: call.to_owned(),
+                name: "task".to_owned(),
+                arguments: r#"{"background":true}"#.to_owned(),
+            }));
+            spawn_on(app, id, call, "Round total to cents.");
+        }
+    });
+    let rows: Vec<usize> = shown
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.contains("◆ Subagent"))
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(rows.len(), 3, "{}", shown.join("\n"));
+    assert!(
+        rows.windows(2).all(|pair| pair[1] == pair[0] + 1),
+        "{}",
+        shown.join("\n")
+    );
+}

@@ -214,6 +214,9 @@ fn slot_marks(model: &Model, index: usize) -> (entry::Slot, Vec<Content>) {
 }
 
 fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
+    let stacked = app
+        .model
+        .with(|model| model.entries.get(range.start).is_some_and(entry::subagents));
     let rows = app.model.with(|model| {
         let last = model.entries.len();
         let prefs = model.prefs.clone();
@@ -233,7 +236,7 @@ fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
         LayoutStyle::flex_column()
             .fill_width()
             .min_size(0.0, 0.0)
-            .gap(canvas::cell().h),
+            .gap(if stacked { 0.0 } else { canvas::cell().h }),
     );
     for (at, item, live, prefs) in rows {
         if let Some(item) = item {

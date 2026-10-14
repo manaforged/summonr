@@ -107,9 +107,9 @@ pub(in crate::tui::sigil_view) fn inline_layer(
         .child(canvas::gutter(footer::footer_bar(app, width)))
 }
 
-pub(in crate::tui::sigil_view) type Content = (usize, u8, bool, Prefs);
+pub(in crate::tui::sigil_view) type Content = (usize, u8, bool, Prefs, u64);
 
-pub(in crate::tui::sigil_view) fn content(entry: &Entry, live: bool, prefs: &Prefs) -> Content {
+pub(in crate::tui::sigil_view) fn content(entry: &Entry, live: bool, model: &Model) -> Content {
     let (size, state) = match entry {
         Entry::Assistant { text, done } => (text.len(), u8::from(*done)),
         Entry::Thinking(text) => (text.len(), 0),
@@ -144,7 +144,29 @@ pub(in crate::tui::sigil_view) fn content(entry: &Entry, live: bool, prefs: &Pre
         | Entry::Chart(_)
         | Entry::Image { .. } => (0, 0),
     };
-    (size, state, live, prefs.clone())
+    (
+        size,
+        state,
+        live,
+        model.prefs.clone(),
+        children(entry, model),
+    )
+}
+
+fn children(entry: &Entry, model: &Model) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let Entry::Tool { id, .. } = entry else {
+        return 0;
+    };
+    let mut hasher = std::hash::DefaultHasher::new();
+    for kid in model
+        .agents
+        .iter()
+        .filter(|kid| !id.is_empty() && kid.call == *id)
+    {
+        (&kid.id, &kid.last, kid.done, kid.failed, kid.secs).hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
@@ -186,7 +208,7 @@ fn slot_marks(model: &Model, index: usize) -> (entry::Slot, Vec<Content>) {
         .unwrap_or_default()
         .iter()
         .enumerate()
-        .map(|(offset, item)| content(item, live && range.start + offset + 1 == last, &model.prefs))
+        .map(|(offset, item)| content(item, live && range.start + offset + 1 == last, model))
         .collect();
     (at, mark)
 }

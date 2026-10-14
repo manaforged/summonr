@@ -30,6 +30,7 @@ mod picker;
 mod reflow;
 mod secret;
 mod settings;
+mod subagents;
 mod thinking;
 mod typeahead;
 mod typing;

@@ -146,9 +146,22 @@ def step_usage(trajectory):
     return usage
 
 
-def standard_tokens(context, trajectory, rates):
+def unreported(agent):
+    path = agent / "summonr.txt"
+    last = 0
+    if path.is_file():
+        for line in path.read_text(errors="replace").splitlines():
+            if '"unreported"' in line:
+                try:
+                    last = json.loads(line).get("tokens") or 0
+                except json.JSONDecodeError:
+                    pass
+    return last
+
+
+def standard_tokens(context, trajectory, rates, extra=0):
     usage = step_usage(trajectory)
-    prompt = context.get("n_input_tokens") or 0
+    prompt = (context.get("n_input_tokens") or 0) + extra
     hit = context.get("n_cache_tokens") or 0
     output = context.get("n_output_tokens") or 0
     first = usage[0] if usage else {}
@@ -198,7 +211,7 @@ def standard_row(result, rates):
         "effort": [f"{effort}/None"] if effort else [],
         "controls": [],
         "models": [model] if model else [],
-        **standard_tokens(data.get("agent_result") or {}, trajectory, rates),
+        **standard_tokens(data.get("agent_result") or {}, trajectory, rates, unreported(agent)),
         "void": void,
         "warn": warn,
         "grader": verifier.is_file() and bool(GRADER.search(verifier.read_bytes())),

@@ -123,26 +123,34 @@ fn a_star_at_the_wrap_edge_stays_on_screen() {
     assert_eq!(super::cell_of(0.0, 0.0, 120, 36), (0, 0));
 }
 
+fn lit(ink: sigil::terminal::Ink) -> f32 {
+    match ink {
+        sigil::terminal::Ink::Exact(c) => f32::from(c.r) + f32::from(c.g) + f32::from(c.b),
+        _ => 0.0,
+    }
+}
+
 #[test]
 fn the_galaxy_dust_paints_in_few_colours_and_long_runs() {
     let (cols, rows) = (223_u16, 67_u16);
-    let cells = super::backdrop(cols, rows, 0);
-    let shades: std::collections::BTreeSet<String> = cells
-        .iter()
-        .flat_map(|cell| [format!("{:?}", cell.fg), format!("{:?}", cell.bg)])
-        .collect();
-    assert!(shades.len() <= 40, "the haze uses {} colours", shades.len());
-    assert!(
-        shades.len() >= 6,
-        "the haze is flat: {} colours",
-        shades.len()
-    );
-    let changes: usize = cells
-        .chunks(usize::from(cols))
-        .map(|row| row.windows(2).filter(|pair| pair[0] != pair[1]).count())
-        .sum();
-    let per_row = changes / usize::from(rows);
-    assert!(per_row <= 40, "{per_row} colour changes per row");
+    for seed in 0..10 {
+        let cells = super::backdrop(cols, rows, seed);
+        let shades: std::collections::BTreeSet<String> = cells
+            .iter()
+            .flat_map(|cell| [format!("{:?}", cell.fg), format!("{:?}", cell.bg)])
+            .collect();
+        assert!(
+            (6..=40).contains(&shades.len()),
+            "sky {seed}: the haze uses {} colours",
+            shades.len()
+        );
+        let changes: usize = cells
+            .chunks(usize::from(cols))
+            .map(|row| row.windows(2).filter(|pair| pair[0] != pair[1]).count())
+            .sum();
+        let per_row = changes / usize::from(rows);
+        assert!(per_row <= 40, "sky {seed}: {per_row} colour changes per row");
+    }
     let stars = super::space(cols, rows, 30, 0)
         .iter()
         .filter(|cell| braille(&cell.text))
@@ -152,38 +160,47 @@ fn the_galaxy_dust_paints_in_few_colours_and_long_runs() {
 
 #[test]
 fn the_galaxy_dust_streaks_along_the_band() {
-    let (cols, rows) = (223_usize, 67_usize);
-    for seed in [0, 2, 3, 5] {
+    let (cols, rows, window) = (223_usize, 67_usize, 12_usize);
+    let mut total = 0.0;
+    for seed in 0..9 {
         let cells = super::backdrop(cols as u16, rows as u16, seed);
         let light = |x: usize, y: usize| {
             let cell = &cells[y / 2 * cols + x];
-            match if y.is_multiple_of(2) { cell.fg } else { cell.bg } {
-                sigil::terminal::Ink::Exact(c) => f32::from(c.r) + f32::from(c.g) + f32::from(c.b),
-                _ => 0.0,
-            }
+            lit(if y.is_multiple_of(2) { cell.fg } else { cell.bg })
         };
-        let (mut xx, mut xy, mut yy) = (0.0_f32, 0.0_f32, 0.0_f32);
-        for y in 1..rows * 2 - 1 {
-            for x in 1..cols - 1 {
-                if light(x, y) <= 40.0 {
-                    continue;
+        let (mut sum, mut weight) = (0.0_f32, 0.0_f32);
+        for top in (1..rows * 2 - window).step_by(window) {
+            for left in (1..cols - window).step_by(window) {
+                let (mut xx, mut xy, mut yy) = (0.0_f32, 0.0_f32, 0.0_f32);
+                for y in top..top + window {
+                    for x in left..left + window {
+                        if light(x, y) <= 40.0 {
+                            continue;
+                        }
+                        let gx = (light(x + 1, y) - light(x - 1, y)) / 2.0;
+                        let gy = (light(x, y + 1) - light(x, y - 1)) / 2.0;
+                        (xx, xy, yy) = (xx + gx * gx, xy + gx * gy, yy + gy * gy);
+                    }
                 }
-                let gx = (light(x + 1, y) - light(x - 1, y)) / 2.0;
-                let gy = (light(x, y + 1) - light(x, y - 1)) / 2.0;
-                (xx, xy, yy) = (xx + gx * gx, xy + gx * gy, yy + gy * gy);
+                if xx + yy > 0.0 {
+                    let coherence =
+                        (((xx - yy).powi(2) + 4.0 * xy * xy).sqrt() / (xx + yy)).powi(2);
+                    (sum, weight) = (sum + coherence * (xx + yy), weight + xx + yy);
+                }
             }
         }
-        let coherence = (((xx - yy).powi(2) + 4.0 * xy * xy).sqrt() / (xx + yy)).powi(2);
-        assert!(
-            coherence >= 0.18,
-            "sky {seed}: dust coherence {coherence:.3}, the haze reads as round blobs"
-        );
+        total += sum / weight;
     }
+    let coherence = total / 9.0;
+    assert!(
+        coherence >= 0.3,
+        "dust coherence {coherence:.3}, the haze reads as round blobs"
+    );
 }
 
 #[test]
 fn the_galaxy_band_shifts_hue_along_its_length() {
-    for seed in [0, 2, 3, 5] {
+    for seed in 0..8 {
         let (mut lit, mut blue, mut plum) = (0, 0, 0);
         for cell in super::backdrop(223, 67, seed) {
             for ink in [cell.fg, cell.bg] {
@@ -211,37 +228,26 @@ fn the_galaxy_band_shifts_hue_along_its_length() {
 }
 
 #[test]
-fn launches_draw_both_bands_and_whole_galaxies() {
+fn every_launch_spreads_dust_across_the_frame() {
     let (cols, rows) = (223_usize, 67_usize);
-    let (mut whole, mut crossing) = (Vec::new(), Vec::new());
-    for seed in 0..9 {
+    for seed in 0..10 {
         let cells = super::backdrop(cols as u16, rows as u16, seed);
-        let lit = |index: usize| {
-            [cells[index].fg, cells[index].bg].into_iter().any(|ink| {
-                matches!(ink, sigil::terminal::Ink::Exact(c)
-                    if u32::from(c.r) + u32::from(c.g) + u32::from(c.b) > 90)
-            })
+        let shows = |x: usize, y: usize| {
+            let cell = &cells[y * cols + x];
+            lit(cell.fg) > 90.0 || lit(cell.bg) > 90.0
         };
-        let edge: Vec<usize> = (0..cells.len())
-            .filter(|index| {
-                let (x, y) = (index % cols, index / cols);
-                x == 0 || y == 0 || x == cols - 1 || y == rows - 1
-            })
-            .collect();
-        let edge_lit = edge.iter().filter(|index| lit(**index)).count();
-        let all_lit = (0..cells.len()).filter(|index| lit(*index)).count();
-        if edge_lit * 100 <= edge.len() && all_lit > 1000 {
-            whole.push(seed);
-        }
-        if edge_lit * 20 >= edge.len() {
-            crossing.push(seed);
-        }
+        let sides = [
+            (0..rows).filter(|y| shows(0, *y)).count(),
+            (0..rows).filter(|y| shows(cols - 1, *y)).count(),
+            (0..cols).filter(|x| shows(*x, 0)).count(),
+            (0..cols).filter(|x| shows(*x, rows - 1)).count(),
+        ];
+        let reached = sides.iter().filter(|count| **count >= 2).count();
+        assert!(
+            reached >= 2,
+            "sky {seed}: dust reaches {reached} frame edges {sides:?}, a whole galaxy sits inside"
+        );
     }
-    assert!(
-        !whole.is_empty(),
-        "no sky holds a whole galaxy in the frame"
-    );
-    assert!(!crossing.is_empty(), "no sky draws a band across the frame");
 }
 
 #[test]

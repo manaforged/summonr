@@ -6,12 +6,6 @@ use sigil::scene::{SceneBuilder, SceneRectStyle};
 
 use super::*;
 
-use spiral::Disk;
-
-mod spiral;
-
-const FORMS: [f32; 2] = [0.5, 0.4];
-
 const BAND: Rgba8 = rgb(58, 56, 96);
 
 const STARLIGHT: Rgba8 = rgb(112, 120, 168);
@@ -40,9 +34,23 @@ const WARP: [f32; 2] = [0.8, 1.1];
 
 const RAGGED: f32 = 0.1;
 
-const GRAIN: [f32; 3] = [9.0, 7.0, 0.24];
+const GRAIN: [f32; 3] = [9.0, 7.0, 0.18];
 
-const BULGE: [f32; 2] = [0.5, 0.24];
+const ARC: f32 = 0.45;
+
+const WAVE: [f32; 3] = [0.35, 1.2, 1.6];
+
+const PINCH: [f32; 2] = [0.6, 0.35];
+
+const SWELL: [f32; 2] = [1.35, 3.0];
+
+const FORK: [f32; 5] = [0.35, 1.6, 0.18, 0.22, 0.6];
+
+const CLOUDS: [f32; 4] = [0.25, 0.5, 0.56, 3.2];
+
+const PLUMES: [f32; 4] = [0.25, 0.45, 0.42, 2.6];
+
+const BULGE: [f32; 3] = [0.5, 0.24, 0.35];
 
 const LANE: [f32; 3] = [0.22, 0.025, 0.03];
 
@@ -81,15 +89,25 @@ struct Shape {
     cos: f32,
     shift: f32,
     core: f32,
-    bend: f32,
     width: f32,
     offset: f32,
-    form: Form,
+    course: Course,
 }
 
-enum Form {
-    Band(Option<Disk>),
-    Spiral(Disk),
+struct Course {
+    arc: f32,
+    wave: [f32; 2],
+    pinch: f32,
+    fork: Option<Fork>,
+    clouds: f32,
+    plumes: f32,
+}
+
+struct Fork {
+    split: f32,
+    side: f32,
+    slope: f32,
+    back: bool,
 }
 
 impl Shape {
@@ -107,20 +125,27 @@ impl Shape {
             0.0
         };
         let (sin, cos) = ((roll(1) - 0.5) * 1.8 + flip).sin_cos();
-        let form = if roll(18) > FORMS[0] {
-            Form::Spiral(Disk::of(&roll, false))
-        } else {
-            Form::Band((roll(19) > FORMS[1]).then(|| Disk::of(&roll, true)))
-        };
+        let fork = (roll(34) > FORK[0]).then(|| Fork {
+            split: (roll(35) - 0.5) * FORK[1],
+            side: if roll(36) > 0.5 { 1.0 } else { -1.0 },
+            slope: FORK[2] + FORK[3] * roll(37),
+            back: roll(38) > 0.5,
+        });
         Self {
             sin,
             cos,
             shift: (roll(3) - 0.5) * 0.6,
             core: (roll(4) - 0.5) * 1.8,
-            bend: (roll(5) - 0.5) * 0.5,
             width: 0.8 + 0.4 * roll(6),
             offset: roll(7) * 97.0,
-            form,
+            course: Course {
+                arc: (roll(30) - 0.5) * ARC,
+                wave: [(roll(31) - 0.5) * WAVE[0], WAVE[1] + WAVE[2] * roll(32)],
+                pinch: PINCH[0] + PINCH[1] * roll(33),
+                fork,
+                clouds: CLOUDS[0] + CLOUDS[1] * roll(39),
+                plumes: PLUMES[0] + PLUMES[1] * roll(40),
+            },
         }
     }
 }
@@ -151,39 +176,31 @@ fn sample(cols: u16, rows: u16, x: f32, y: f32, shape: &Shape) -> Sample {
     let half = f32::from(rows.max(1)) / 2.0;
     let px = (x + 0.5 - f32::from(cols) / 2.0) * 0.5 / half;
     let py = (y + 0.5 - half) / half;
-    match &shape.form {
-        Form::Spiral(disk) => spiral::sample(px, py, shape, disk),
-        Form::Band(companion) => {
-            let near = band(px, py, shape);
-            match companion
-                .as_ref()
-                .map(|disk| spiral::sample(px, py, shape, disk))
-            {
-                Some(far) if far.shade > near.shade => far,
-                _ => near,
-            }
-        }
-    }
+    band(px, py, shape)
 }
 
 fn band(px: f32, py: f32, shape: &Shape) -> Sample {
+    let course = &shape.course;
     let along = px * shape.cos + py * shape.sin;
     let drift = WANDER * (fbm(along * 0.8 + shape.offset, 1.7, 3) - 0.5) * 2.0;
-    let across = py * shape.cos - px * shape.sin - drift - shape.shift - shape.bend * along * along;
+    let curve = course.arc * along * along
+        + course.wave[0] * (along * course.wave[1] + shape.offset).sin();
+    let across = py * shape.cos - px * shape.sin - drift - shape.shift - curve;
     let (u, v) = (along * STRETCH[0] + shape.offset, across * STRETCH[1]);
     let (wx, wy) = (
         u + WARP[1] * (fbm(u * WARP[0] + 3.0, v * WARP[0] + 7.0, 3) - 0.5),
         v + WARP[1] * (fbm(u * WARP[0] - 5.0, v * WARP[0] + 1.0, 3) - 0.5),
     );
-    let width = WIDTH * shape.width * (0.65 + 0.7 * fbm(u * 0.7 + 9.0, 2.0, 3));
+    let swell = ((fbm(u * 0.55 + 9.0, 2.0, 3) - 0.5) * SWELL[1] + 0.5).clamp(0.0, 1.0);
+    let width = WIDTH * shape.width * (course.pinch + (SWELL[0] - course.pinch) * swell);
     let ragged = across + RAGGED * (fbm(wx * 3.0 + 70.0, wy * 3.0, 4) - 0.5);
-    let profile = gauss(ragged / width);
+    let profile = streams((along, across, ragged), width, (u, wx, wy), course);
     let clouds = ((fbm(wx * 1.7, wy * 2.4, 5) - 0.3) * 1.8).clamp(0.0, 1.0);
     let grain = 1.0 - GRAIN[2] / 2.0 + GRAIN[2] * noise(wx * GRAIN[0] + 5.0, wy * GRAIN[1]);
     let stars = profile * (0.38 + 0.72 * clouds) * grain + gauss(across / 0.9) * 0.05;
     let (bu, bv) = ((along - shape.core) / BULGE[0], across / BULGE[1]);
     let edge = 0.45 + 1.1 * fbm(wx * 2.2 + 40.0, wy * 2.2, 4);
-    let bulge = (-(bu * bu + bv * bv) / edge).exp();
+    let bulge = (-(bu * bu + bv * bv) / edge).exp() * (BULGE[2] + (1.0 - BULGE[2]) * swell);
     let dust = dust(along, across, width, (u, wx, wy), bulge);
     let light = (stars * 0.85 + bulge * 0.95).min(1.0) * 1.15;
     let nebula = ((fbm(wx * 2.6 + 50.0, wy * 3.4, 4) - 0.5) * 4.0).clamp(0.0, 1.0);
@@ -193,6 +210,36 @@ fn band(px: f32, py: f32, shape: &Shape) -> Sample {
         nebula: nebula * profile * (0.45 + dust),
         hue: fbm(wx * HUE[0] + 90.0, wy * HUE[1], 3),
     }
+}
+
+fn streams(
+    (along, across, ragged): (f32, f32, f32),
+    width: f32,
+    (u, x, y): (f32, f32, f32),
+    course: &Course,
+) -> f32 {
+    let main = gauss(ragged / width);
+    let branch = course.fork.as_ref().map_or(0.0, |fork| {
+        let beyond = if fork.back {
+            fork.split - along
+        } else {
+            along - fork.split
+        };
+        if beyond <= 0.0 {
+            return 0.0;
+        }
+        let off = fork.side * beyond * fork.slope * (1.0 + FORK[4] * beyond);
+        let breadth = width * (0.45 + 0.35 * fbm(u * 0.9 + 21.0, 4.0, 3));
+        gauss((ragged - off) / breadth)
+            * (beyond * 2.5).min(1.0)
+            * (0.55 + 0.45 * fbm(x * 1.3 + 5.0, y, 3))
+    });
+    let patch = ((fbm(x * 0.9 + 140.0, y * 0.7 + 3.0, 4) - CLOUDS[2]) * 4.0).clamp(0.0, 1.0);
+    let clouds = patch * gauss(across / (width * CLOUDS[3])) * (1.0 - main) * course.clouds * 2.2;
+    let plume = ((ridged(x * 1.1 + 13.0, y * 0.6 - 9.0) - PLUMES[2]) * 1.8).clamp(0.0, 1.0)
+        * gauss(across / (width * PLUMES[3]))
+        * course.plumes;
+    main.max(branch).max(clouds).max(plume * 0.7)
 }
 
 fn dust(along: f32, across: f32, width: f32, (u, x, y): (f32, f32, f32), bulge: f32) -> f32 {

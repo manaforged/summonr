@@ -146,17 +146,32 @@ def step_usage(trajectory):
     return usage
 
 
-def unreported(agent):
+def summonr_events(agent):
     path = agent / "summonr.txt"
-    last = 0
-    if path.is_file():
-        for line in path.read_text(errors="replace").splitlines():
-            if '"unreported"' in line:
-                try:
-                    last = json.loads(line).get("tokens") or 0
-                except json.JSONDecodeError:
-                    pass
-    return last
+    if not path.is_file():
+        return None
+    events = []
+    for line in path.read_text(errors="replace").splitlines():
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    return events
+
+
+def unreported(events):
+    return next((event.get("tokens") or 0 for event in reversed(events or []) if event.get("type") == "unreported"), 0)
+
+
+def faults(events):
+    if events is None:
+        return {"errors": None, "cut": None, "rate_limited": None}
+    cuts = [event.get("text", "") for event in events if event.get("type") == "note" and event.get("text", "").startswith("stream cut")]
+    return {
+        "errors": sum(1 for event in events if event.get("type") == "aborted" and event.get("code") == "error"),
+        "cut": len(cuts),
+        "rate_limited": sum(1 for text in cuts if "HTTP 429" in text),
+    }
 
 
 def standard_tokens(context, trajectory, rates, extra=0):
@@ -190,6 +205,7 @@ def standard_row(result, rates):
     effort = (dig(data, "config", "agent", "kwargs") or {}).get("reasoning_effort")
     model = dig(data, "agent_info", "model_info", "name")
     void, warn = suspect(agent)
+    events = summonr_events(agent)
     verifier = folder / "verifier" / "test-stdout.txt"
     return {
         "harness": data["agent_info"]["name"],
@@ -205,13 +221,11 @@ def standard_row(result, rates):
         "other_seconds": None,
         **memory_fields(folder),
         "requests": len(steps),
-        "errors": 0,
-        "cut": 0,
-        "rate_limited": 0,
+        **faults(events),
         "effort": [f"{effort}/None"] if effort else [],
         "controls": [],
         "models": [model] if model else [],
-        **standard_tokens(data.get("agent_result") or {}, trajectory, rates, unreported(agent)),
+        **standard_tokens(data.get("agent_result") or {}, trajectory, rates, unreported(events)),
         "void": void,
         "warn": warn,
         "grader": verifier.is_file() and bool(GRADER.search(verifier.read_bytes())),

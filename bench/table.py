@@ -214,9 +214,9 @@ def breakdown_line(harness, mine, want):
         share(total(mine, "reasoning"), total(mine, "output"), ".0%"),
         cold_hit(mine),
         fmt(max((row["max_prompt"] for row in mine if row["max_prompt"] is not None), default=None)),
-        total(mine, "errors"),
-        total(mine, "cut"),
-        total(mine, "rate_limited"),
+        fmt(total(mine, "errors")),
+        fmt(total(mine, "cut")),
+        fmt(total(mine, "rate_limited")),
         ", ".join(sorted({effort for row in mine for effort in row["effort"]})),
         honored(mine, want),
         "; ".join(sorted({control for row in mine for control in row["controls"]})),
@@ -308,7 +308,7 @@ def refuse(rows, pin, side=()):
     checks = [
         (f"response model is not the pinned {pin}", {f'{row["harness"]}: {model}' for row in rows for model in row["models"] if model != pin and not model.startswith(f"{pin}-") and model not in side}),
         ("solved with no request in the proxy log (proxy bypassed or wrong --proxy file)", {row["harness"] for row in rows if row["requests"] == 0 and row["reward"] == 1.0}),
-        ("requests succeeded but no token usage was recorded for", {row["harness"] for row in rows if row["requests"] > row["errors"] + row["cut"] and row["prompt"] == 0}),
+        ("requests succeeded but no token usage was recorded for", {row["harness"] for row in rows if row["requests"] > (row["errors"] or 0) + (row["cut"] or 0) and row["prompt"] == 0}),
     ]
     for message, found in checks:
         if found:

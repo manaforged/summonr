@@ -248,6 +248,6 @@ fn model_label(model: String) -> NodeBuilder {
                 .ellipsize()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
+                .text_color(sigil::prelude::Token::Gray12),
         )
 }

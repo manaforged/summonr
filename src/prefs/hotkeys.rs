@@ -65,8 +65,23 @@ impl Hotkey {
     }
 }
 
-const PREVIOUS: [char; Hotkey::ALL.len()] = [
-    'o', 'j', 'g', 'e', 'l', 'a', 'x', 'b', 't', 'p', 'f', 'r', 'n',
+type Map = ([char; Hotkey::ALL.len()], [bool; Hotkey::ALL.len()]);
+
+const FORMER: [Map; 2] = [
+    (
+        [
+            'o', 'j', 'g', 'e', 'l', 'a', 'x', 'b', 't', 'p', 'f', 'r', 'n',
+        ],
+        [false; Hotkey::ALL.len()],
+    ),
+    (
+        [
+            'o', 'j', 'g', 'e', 't', 'a', 'd', 'y', 't', 'b', 'f', 'r', 'n',
+        ],
+        [
+            true, false, false, true, false, true, true, true, true, true, true, false, true,
+        ],
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,7 +97,7 @@ impl Default for Hotkeys {
                 'o', 'j', 'g', 'e', 't', 'a', 'd', 'y', 't', 'b', 'f', 'r', 'n',
             ],
             leader: [
-                true, false, false, true, false, true, true, true, true, true, true, false, true,
+                false, false, false, true, false, true, true, true, true, true, true, false, true,
             ],
         }
     }
@@ -307,9 +322,12 @@ fn label_of(leader: bool, key: char) -> String {
 
 fn previous_default(rows: &BTreeMap<String, String>) -> bool {
     rows.len() == Hotkey::ALL.len()
-        && Hotkey::ALL.into_iter().all(|action| {
-            rows.get(action.name())
-                .is_some_and(|binding| binding == &format!("ctrl+{}", PREVIOUS[action.index()]))
+        && FORMER.iter().any(|(keys, leader)| {
+            Hotkey::ALL.into_iter().all(|action| {
+                let index = action.index();
+                rows.get(action.name())
+                    .is_some_and(|binding| *binding == label_of(leader[index], keys[index]))
+            })
         })
 }
 
@@ -335,23 +353,5 @@ fn one_letter(text: &str) -> Option<char> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{EditorKey, Hotkey, Hotkeys, available};
-
-    #[test]
-    fn editor_line_keys_cannot_be_bound() {
-        for key in ['u', 'k', 'w', 'a', 'b', 'e', 'f', 'l', 'n', 'p', 'x'] {
-            assert!(!available(key));
-            assert!(!Hotkeys::default().assign(Hotkey::Fold, key, false));
-        }
-    }
-
-    #[test]
-    fn select_all_and_cut_reach_a_non_empty_composer_off_macos() {
-        let off_mac = !cfg!(target_os = "macos");
-        assert_eq!(EditorKey::yields('a', false), off_mac);
-        assert_eq!(EditorKey::yields('x', false), off_mac);
-        assert!(!EditorKey::yields('a', true));
-        assert!(!EditorKey::yields('o', false));
-    }
-}
+#[path = "hotkeys_tests.rs"]
+mod tests;

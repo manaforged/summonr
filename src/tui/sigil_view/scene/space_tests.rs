@@ -25,9 +25,17 @@ fn splash_stars_hold_still_and_only_twinkle() {
     for tick in [126, 145, 175, 225, 325] {
         let later = frame(tick);
         assert_eq!(places(&first), places(&later), "stars moved by tick {tick}");
-        twinkled += first.iter().zip(&later).filter(|(a, b)| a.fg != b.fg).count();
+        twinkled += first
+            .iter()
+            .zip(&later)
+            .filter(|(a, b)| a.fg != b.fg)
+            .count();
     }
-    assert!(places(&first).len() >= 300, "only {} stars", places(&first).len());
+    assert!(
+        places(&first).len() >= 300,
+        "only {} stars",
+        places(&first).len()
+    );
     assert!(twinkled > 0, "no star twinkled");
 }
 

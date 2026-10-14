@@ -10,10 +10,15 @@ pub(in crate::tui::sigil_view) enum Slot {
     Member,
 }
 
-fn step(entry: &Entry) -> bool {
-    match entry {
-        Entry::Tool { name, .. } => !Builtin::is(name, Builtin::Task),
-        Entry::ToolGroup { name, .. } => !Builtin::is(name, Builtin::Task),
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Run {
+    Steps,
+    Subagents,
+}
+
+fn run(entry: &Entry) -> Option<Run> {
+    let name = match entry {
+        Entry::Tool { name, .. } | Entry::ToolGroup { name, .. } => name,
         Entry::User(_)
         | Entry::Thinking(_)
         | Entry::Receipt(_)
@@ -24,20 +29,29 @@ fn step(entry: &Entry) -> bool {
         | Entry::System(_)
         | Entry::Error(_)
         | Entry::Chart(_)
-        | Entry::Image { .. } => false,
-    }
+        | Entry::Image { .. } => return None,
+    };
+    Some(if Builtin::is(name, Builtin::Task) {
+        Run::Subagents
+    } else {
+        Run::Steps
+    })
+}
+
+pub(in crate::tui::sigil_view) fn subagents(entry: &Entry) -> bool {
+    run(entry) == Some(Run::Subagents)
 }
 
 pub(in crate::tui::sigil_view) fn slot(entries: &[Entry], index: usize) -> Slot {
-    if !entries.get(index).is_some_and(step) {
+    let Some(kind) = entries.get(index).and_then(run) else {
         return Slot::Single;
-    }
-    if index > 0 && step(&entries[index - 1]) {
+    };
+    if index > 0 && run(&entries[index - 1]) == Some(kind) {
         return Slot::Member;
     }
     let end = entries[index..]
         .iter()
-        .position(|entry| !step(entry))
+        .position(|entry| run(entry) != Some(kind))
         .map_or(entries.len(), |offset| index + offset);
     Slot::Lead(index..end)
 }
@@ -113,7 +127,7 @@ mod tests {
                 Slot::Member,
                 Slot::Single,
                 Slot::Lead(6..7),
-                Slot::Single,
+                Slot::Lead(7..8),
                 Slot::Lead(8..9),
             ]
         );

@@ -49,3 +49,39 @@ async fn startup_effort_reaches_the_composer_before_a_model_switch() {
     assert_eq!(settings[1].effort, Some(Effort::High));
     assert_eq!(settings[1].levels, settings[0].levels);
 }
+
+#[tokio::test]
+async fn a_model_switch_becomes_the_last_used_seat() {
+    let home = tempfile::tempdir().expect("summonr home");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let client = Client::new("test", "http://127.0.0.1:9/v1").expect("local client");
+    let driver = SessionDriver::open(home.path(), workspace.path(), "gpt-5.4", "system", None)
+        .expect("session driver");
+    let loop_ = Loop::open(client, "gpt-5.4", workspace.path(), "system", driver).expect("loop");
+    let info = Info {
+        version: String::new(),
+        model: "gpt-5.4".to_string(),
+        relay: None,
+        session: loop_.session_id(),
+        endpoint: "openai".to_string(),
+        pick: None,
+        prefs: crate::prefs::Prefs::default(),
+        splash: false,
+        inline: false,
+        strict: false,
+        workspace: workspace.path().display().to_string(),
+        workflow: None,
+        config: Some(home.path().join("config.toml")),
+    };
+    let (commands, receiver) = unbounded_channel();
+    let (ui, _inbox) = unbounded_channel();
+    commands
+        .send(Cmd::SetModel("gpt-5.5".to_string()))
+        .expect("set model");
+    commands.send(Cmd::Quit).expect("quit");
+    worker(loop_, receiver, ui, info).await;
+    assert_eq!(
+        crate::recent::load(home.path()).first(),
+        Some(&crate::recent::Seat::new("openai", "gpt-5.5"))
+    );
+}

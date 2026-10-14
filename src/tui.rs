@@ -311,6 +311,7 @@ enum ToolState {
 }
 
 const QUIET_OPS: [&str; 2] = ["file", "sequence"];
+const LISTING_OPS: [&str; 1] = ["list"];
 
 pub(crate) fn tool_arg(arguments: &str) -> String {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) else {
@@ -335,11 +336,12 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         });
-    let picked = ["path", "command", "name", "query", "url"]
+    let picked = ["path", "command", "name", "query", "url", "child"]
         .iter()
         .find_map(|name| field(name))
         .map(str::to_string)
         .or(paths)
+        .or_else(|| field("patch").map(|patch| crate::tools::patch_files(patch).join(", ")))
         .unwrap_or_default();
     let mut picked = after_cd(&picked)
         .split_whitespace()
@@ -351,7 +353,12 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
         }
     }
     if let Some(op) = field("op").filter(|op| !QUIET_OPS.contains(op)) {
-        picked.push_str(&format!(" {op}"));
+        if LISTING_OPS.contains(&op) {
+            let dir = picked.trim_end_matches('/');
+            picked = format!("{}/", if dir.is_empty() { "." } else { dir });
+        } else {
+            picked.push_str(&format!(" {op}"));
+        }
     }
     if value.get("references").and_then(serde_json::Value::as_bool) == Some(true) {
         picked.push_str(" refs");

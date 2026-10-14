@@ -10,7 +10,7 @@ use crate::tui::sigil_view::model::Agent;
 fn card(kid: &Agent) -> NodeBuilder {
     let (dot, tone) = glyph(&kid.state());
     let mode = if kid.background {
-        "background"
+        "subagent"
     } else {
         "foreground"
     };

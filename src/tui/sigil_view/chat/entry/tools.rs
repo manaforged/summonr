@@ -33,6 +33,7 @@ pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]
                 .find_map(|root| {
                     let rest = path.strip_prefix(root.as_str())?;
                     match rest.strip_prefix(['/', std::path::MAIN_SEPARATOR]) {
+                        Some("") => Some(format!("{lead}./")),
                         Some(inner) => Some(format!("{lead}{inner}")),
                         None if rest.is_empty()
                             || rest.starts_with(['"', '\'', ')', ']', ',', '.', ':', ';']) =>
@@ -200,9 +201,19 @@ pub(super) fn tool_card(
     {
         return card.pointer_up(flip(app, index, at));
     }
+    if Builtin::is(name, Builtin::Task)
+        && call.arg.is_empty()
+        && !matches!(call.state, ToolState::Failed)
+    {
+        return super::children::starting_card();
+    }
     let shown = workspace_relative(&call.arg, &app.roots);
     let (verb, arg) = verb(name, &shown);
-    let output = preview::plain(&call.output);
+    let output = preview::plain(&call.output)
+        .lines()
+        .map(|line| workspace_relative(line, &app.roots))
+        .collect::<Vec<_>>()
+        .join("\n");
     let detail = detail(name, call, &output);
     let card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))

@@ -21,6 +21,13 @@ pub(crate) mod levels {
     ];
     pub(crate) const MINIMAL_UP: &[Effort] =
         &[Effort::Minimal, Effort::Low, Effort::Medium, Effort::High];
+    pub(crate) const MINIMAL_XHIGH: &[Effort] = &[
+        Effort::Minimal,
+        Effort::Low,
+        Effort::Medium,
+        Effort::High,
+        Effort::XHigh,
+    ];
     pub(crate) const ALL_POSITIVE: &[Effort] = &[
         Effort::Minimal,
         Effort::Low,

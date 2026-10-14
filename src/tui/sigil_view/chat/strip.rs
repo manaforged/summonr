@@ -20,22 +20,27 @@ fn mark(agent: &Agent) -> (&'static str, Look) {
     }
 }
 
-fn line(agent: &Agent, lead: &str, app: &App, detail: bool) -> NodeBuilder {
+fn line(agent: &Agent, app: &App, detail: bool) -> NodeBuilder {
     let (glyph, tone) = mark(agent);
-    let access = agent.access.name();
     let meta = if detail {
         format!(
-            "{} · {access} · {} · {} tok",
-            agent.id,
+            "{} · {} · {} tok",
+            agent.access.name(),
             agent.clock(),
             crate::provider::compact(agent.tokens)
         )
     } else {
         format!(
-            "{access} · {} · {} tok",
+            "{} · {} tok",
             agent.clock(),
             crate::provider::compact(agent.tokens)
         )
+    };
+    let last = super::entry::workspace_relative(&agent.last, &agent.roots(&app.roots));
+    let doing = if last.is_empty() {
+        "starting".to_string()
+    } else {
+        last
     };
     let mut line = container()
         .layout(
@@ -45,30 +50,33 @@ fn line(agent: &Agent, lead: &str, app: &App, detail: bool) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(text(lead.to_string(), Look::xs(Token::Gray10)))
         .child(text(glyph, tone))
+        .child(text("Subagent", Look::xs(Token::Accent11)))
         .child(
             text(agent.title.clone(), Look::xs(Token::Gray12))
                 .ellipsize()
-                .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
+                .layout(LayoutStyle::block().shrink(4.0).min_size(0.0, 0.0)),
         )
         .child(
-            text(
-                super::entry::workspace_relative(&agent.last, &app.roots),
-                Look::xs(Token::Gray10),
-            )
-            .ellipsize()
-            .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
+            text(format!("· {doing}"), Look::xs(Token::Gray10))
+                .ellipsize()
+                .layout(
+                    LayoutStyle::block()
+                        .grow(1.0)
+                        .shrink(1.0)
+                        .min_size(0.0, 0.0)
+                        .max_width(super::ACTIVITY_SHARE),
+                ),
         )
         .child(text(meta, Look::xs(Token::Gray10)));
-    if agent.background {
+    if detail && agent.background {
         let clear = app.clone();
         let id = agent.id.clone();
         line = line.child(
             button("Clear")
                 .ghost()
                 .size(ControlSize::Compact)
-                .accessible(format!("Clear background task {}", agent.title))
+                .accessible(format!("Clear subagent {}", agent.title))
                 .activate(move || clear.clear_agent(&id)),
         );
     }
@@ -90,8 +98,8 @@ fn shown(app: &App) -> (bool, Vec<Agent>) {
 }
 
 pub(in crate::tui::sigil_view) fn rows(app: &App) -> usize {
-    let (expanded, rows) = shown(app);
-    rows.len() + usize::from(expanded && !rows.is_empty())
+    let (_, rows) = shown(app);
+    rows.len() + usize::from(!rows.is_empty())
 }
 
 pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder {
@@ -114,24 +122,24 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
         .children_reactive(move || {
             let (expanded, rows) = view.get();
             let mut nodes = Vec::new();
-            if expanded && !rows.is_empty() {
-                let tokens: u64 = rows.iter().map(|agent| agent.tokens).sum();
+            if !rows.is_empty() {
                 let toggle = app.clone();
-                let close = Hints::new()
-                    .key(Key::Hotkey(crate::prefs::Hotkey::Agents), "closes")
+                let hint = Hints::new()
+                    .key(
+                        Key::Hotkey(crate::prefs::Hotkey::Agents),
+                        if expanded { "closes" } else { "shows all" },
+                    )
                     .text(&app.model.peek().prefs.hotkeys);
                 nodes.push(
                     container()
                         .layout(LayoutStyle::flex_row().fill_width().gap(8.0))
-                        .child(text("children", Look::xs(Token::Gray12).bold()))
                         .child(text(
-                            format!(
-                                "{} · {} tok · {close}",
-                                rows.len(),
-                                crate::provider::compact(tokens)
-                            ),
+                            if expanded { "▾" } else { "▸" },
                             Look::xs(Token::Gray10),
                         ))
+                        .child(text("Subagents", Look::xs(Token::Gray12).bold()))
+                        .child(text(rows.len().to_string(), Look::xs(Token::Gray10)))
+                        .child(text(hint, Look::xs(Token::Gray9)))
                         .pointer_down(move |event| {
                             if event.button == Some(MouseButton::Left) {
                                 toggle.toggle_agents();
@@ -141,8 +149,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 );
             }
             for agent in &rows {
-                let lead = format!("{:<10}", if agent.background { "background" } else { "" });
-                nodes.push(line(agent, &lead, &app, expanded));
+                nodes.push(line(agent, &app, expanded));
             }
             nodes
         })

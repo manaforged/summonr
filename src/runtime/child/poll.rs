@@ -130,7 +130,7 @@ impl<P: Provider> Loop<P> {
                     events,
                     emit,
                     Event::Note {
-                        text: format!("waiting for {} background child(ren)", self.spawned.len()),
+                        text: format!("waiting for {} subagent(s)", self.spawned.len()),
                     },
                 )?;
             }

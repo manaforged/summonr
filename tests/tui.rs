@@ -170,7 +170,7 @@ fn answer(parser: &mut vt100::Parser, bytes: &[u8]) -> Vec<u8> {
 #[derive(Debug)]
 struct Splash {
     rows: Vec<String>,
-    card_bottom: usize,
+    card_bottom: Option<usize>,
     prompt: usize,
     workdir: Option<usize>,
 }
@@ -179,14 +179,14 @@ impl Splash {
     fn read(rows: &[String]) -> Option<Self> {
         Some(Self {
             rows: rows.to_vec(),
-            card_bottom: rows.iter().position(|row| row.contains('╰'))?,
+            card_bottom: rows.iter().position(|row| row.contains('╰')),
             prompt: rows.iter().rposition(|row| row.contains('❯'))?,
             workdir: rows.iter().position(|row| row.contains("workdir")),
         })
     }
 
     fn place(&self) -> [Option<usize>; 3] {
-        [Some(self.card_bottom), Some(self.prompt), self.workdir]
+        [self.card_bottom, Some(self.prompt), self.workdir]
     }
 
     fn shows(&self, text: &str) -> bool {
@@ -205,7 +205,7 @@ fn the_splash_prompt_holds_its_row_under_the_card_while_typing() {
         let terminal = Terminal::open(home.path(), cols, rows);
         let idle = terminal.settle("the splash", |splash| splash.workdir.is_some());
         assert!(
-            idle.prompt > idle.card_bottom,
+            idle.card_bottom.is_some_and(|bottom| idle.prompt > bottom),
             "{cols}x{rows}\n{}",
             idle.screen()
         );
@@ -241,7 +241,9 @@ fn a_resized_splash_keeps_the_draft_under_the_card() {
     });
     let at = format!("100x30 after resize\n{}", resized.screen());
     assert!(
-        resized.prompt > resized.card_bottom,
+        resized
+            .card_bottom
+            .is_some_and(|bottom| resized.prompt > bottom),
         "the draft covered the card: {at}"
     );
     assert!(

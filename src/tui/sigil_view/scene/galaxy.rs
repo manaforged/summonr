@@ -8,25 +8,33 @@ use super::*;
 
 const BAND: Rgba8 = rgb(58, 56, 96);
 
-const LEVELS: f32 = 8.0;
-
-const GOLD: Rgba8 = rgb(118, 96, 78);
+const STARLIGHT: Rgba8 = rgb(112, 120, 168);
 
 const ROSE: Rgba8 = rgb(98, 46, 80);
 
-const WIDE: [f32; 2] = [0.9, 0.05];
+const GOLD: Rgba8 = rgb(150, 120, 86);
+
+const LEVELS: f32 = 8.0;
 
 const WANDER: f32 = 0.14;
 
 const WIDTH: f32 = 0.42;
 
-const CORE: [f32; 2] = [0.42, 0.24];
+const STRETCH: [f32; 2] = [1.2, 2.2];
 
-const GLOW: f32 = 1.15;
+const WARP: [f32; 2] = [0.8, 1.1];
 
-const RIFT: [f32; 3] = [0.04, 0.1, 0.55];
+const RAGGED: f32 = 0.1;
 
-const FILAMENT: f32 = 0.11;
+const GRAIN: [f32; 3] = [9.0, 7.0, 0.24];
+
+const BULGE: [f32; 2] = [0.5, 0.24];
+
+const LANE: [f32; 3] = [0.22, 0.025, 0.03];
+
+const FILAMENT: [f32; 2] = [0.4, 0.55];
+
+const NEBULA: f32 = 0.45;
 
 #[derive(Clone, Copy)]
 pub(super) struct Field {
@@ -93,8 +101,7 @@ impl Shape {
 
 struct Sample {
     shade: f32,
-    clump: f32,
-    core: f32,
+    glow: f32,
     nebula: f32,
 }
 
@@ -118,56 +125,80 @@ fn sample(cols: u16, rows: u16, x: f32, y: f32, shape: &Shape) -> Sample {
     let px = (x + 0.5 - f32::from(cols) / 2.0) * 0.5 / half;
     let py = (y + 0.5 - half) / half;
     let along = px * shape.cos + py * shape.sin;
-    let (nx, ny, na) = (px + shape.offset, py - shape.offset, along + shape.offset);
-    let drift = WANDER * (fbm(na * 0.8 + 3.0, 1.7) - 0.5) * 2.0;
+    let drift = WANDER * (fbm(along * 0.8 + shape.offset, 1.7, 3) - 0.5) * 2.0;
     let across = py * shape.cos - px * shape.sin - drift - shape.shift - shape.bend * along * along;
-    let width = WIDTH * shape.width * (0.6 + 0.8 * fbm(na * 1.1 + 7.0, 4.1));
-    let patches = 0.35 + 0.65 * fbm(na * 1.7 + 11.0, across * 2.5 + 2.0);
-    let fray = (0.6 + 0.8 * fbm(nx * 4.2 + 13.0, ny * 4.2)).min(1.0);
-    let band = (-(across / width).powi(2)).exp() * patches * fray;
-    let core = (-((along - shape.core) / CORE[0]).powi(2) - (across / CORE[1]).powi(2)).exp();
-    let wide = (-(across / WIDE[0]).powi(2)).exp() * WIDE[1];
-    let cloud = clouds(across, width, nx, ny);
-    let light = (band * 0.8 + wide + core * 0.6 + cloud * 0.5).min(1.0) * GLOW;
+    let (u, v) = (along * STRETCH[0] + shape.offset, across * STRETCH[1]);
+    let (wx, wy) = (
+        u + WARP[1] * (fbm(u * WARP[0] + 3.0, v * WARP[0] + 7.0, 3) - 0.5),
+        v + WARP[1] * (fbm(u * WARP[0] - 5.0, v * WARP[0] + 1.0, 3) - 0.5),
+    );
+    let width = WIDTH * shape.width * (0.65 + 0.7 * fbm(u * 0.7 + 9.0, 2.0, 3));
+    let ragged = across + RAGGED * (fbm(wx * 3.0 + 70.0, wy * 3.0, 4) - 0.5);
+    let profile = gauss(ragged / width);
+    let clouds = ((fbm(wx * 1.7, wy * 2.4, 5) - 0.3) * 1.8).clamp(0.0, 1.0);
+    let grain = 1.0 - GRAIN[2] / 2.0 + GRAIN[2] * noise(wx * GRAIN[0] + 5.0, wy * GRAIN[1]);
+    let stars = profile * (0.38 + 0.72 * clouds) * grain + gauss(across / 0.9) * 0.05;
+    let (bu, bv) = ((along - shape.core) / BULGE[0], across / BULGE[1]);
+    let edge = 0.45 + 1.1 * fbm(wx * 2.2 + 40.0, wy * 2.2, 4);
+    let bulge = (-(bu * bu + bv * bv) / edge).exp();
+    let dust = dust(along, across, width, (u, wx, wy), bulge);
+    let light = (stars * 0.85 + bulge * 0.95).min(1.0) * 1.15;
+    let nebula = ((fbm(wx * 2.6 + 50.0, wy * 3.4, 4) - 0.5) * 4.0).clamp(0.0, 1.0);
     Sample {
-        shade: light * (1.0 - 0.75 * lanes(na, across, width, nx, ny)),
-        clump: 0.35 + 0.65 * fbm(nx * 2.2, ny * 2.2),
-        core,
-        nebula: (cloud / (band * 0.8 + cloud + 0.05)).min(1.0),
+        shade: light * (1.0 - 0.8 * dust),
+        glow: bulge * (1.0 - 0.6 * dust),
+        nebula: nebula * profile * (0.45 + dust),
     }
 }
 
-fn clouds(across: f32, width: f32, x: f32, y: f32) -> f32 {
-    let near = (-(across / (width * 1.5)).powi(2)).exp();
-    let body = ((fbm(x * 1.8 + 31.0, y * 1.8 - 17.0) - 0.5) * 3.0).max(0.0);
-    let glow = 0.6 + 0.6 * fbm(x * 3.5 + 3.0, y * 3.5 + 9.0);
-    let dust = ((fbm(x * 2.6 + 40.0, y * 2.6) - 0.6) * 3.0).clamp(0.0, 1.0);
-    (body * near * glow * (1.0 - 0.7 * dust)).min(1.0)
-}
-
-fn lanes(along: f32, across: f32, width: f32, px: f32, py: f32) -> f32 {
-    let center = RIFT[0] + 0.05 * (along * 2.7 + 1.0).sin();
-    let breadth = RIFT[1] * (0.6 + 0.8 * fbm(px * 2.0 + 11.0, py * 2.0));
-    let broken = ((fbm(along * 2.2 + 5.0, 3.3) - 0.4) * 3.0).clamp(0.0, 1.0);
-    let rift = (-((across - center) / breadth).powi(2)).exp() * RIFT[2] * broken;
-    let ridge = (fbm(px * 2.4 + 5.0, py * 2.4 - 3.0) - 0.5).abs();
-    let filament = (1.0 - ridge / FILAMENT).max(0.0) * (-(across / width).powi(2)).exp();
-    rift.max(filament * 0.5)
+fn dust(along: f32, across: f32, width: f32, (u, x, y): (f32, f32, f32), bulge: f32) -> f32 {
+    let wobble = 0.04 * (along * 2.3).sin() + 0.05 * (fbm(u * 1.5 + 60.0, 1.0, 3) - 0.5);
+    let breadth = width * LANE[0] + LANE[1] + LANE[2] * fbm(x * 2.0 + 80.0, y, 3);
+    let broken = ((fbm(x * 0.9 + 11.0, y * 2.4, 5) - 0.34) * 2.4).clamp(0.0, 1.0);
+    let rift = gauss((across - 0.02 - wobble) / breadth) * broken * (1.0 + 0.5 * bulge);
+    let ridge = ((ridged(x * 2.0 + 30.0, y * 2.0 - 4.0) - FILAMENT[0]) * 1.6).clamp(0.0, 1.0);
+    let filament = ridge * gauss(across / (width * 1.4)) * FILAMENT[1];
+    (rift * 0.85).max(filament).min(1.0)
 }
 
 fn haze(sample: &Sample) -> Rgba8 {
-    let step = |value: f32, steps: f32| (value.clamp(0.0, 1.0) * steps).round() / steps;
-    let shade = step(0.72 * sample.shade * (0.75 + 0.25 * sample.clump), LEVELS);
-    let tint = blend(
-        blend(BAND, ROSE, step(sample.nebula, 2.0) * 0.7),
-        GOLD,
-        step(sample.core, 3.0) * 0.75,
-    );
+    let shade = ((0.72 * sample.shade).clamp(0.0, 1.0) * LEVELS).round() / LEVELS;
+    let warm = ((sample.glow * 1.6).clamp(0.0, 1.0) * 2.0).round() / 2.0;
+    let rose = if sample.nebula > NEBULA { 0.75 } else { 0.0 };
+    let tint = blend(BAND, STARLIGHT, ((shade - 0.375) * 1.6).clamp(0.0, 1.0));
+    let tint = blend(blend(tint, ROSE, rose), GOLD, warm * (shade * 1.5).min(1.0));
     blend(VOID, tint, shade)
 }
 
-fn fbm(x: f32, y: f32) -> f32 {
-    (noise(x, y) * 4.0 + noise(x * 2.1, y * 2.1) * 2.0 + noise(x * 4.3, y * 4.3)) / 7.0
+fn gauss(x: f32) -> f32 {
+    (-x * x).exp()
+}
+
+fn fbm(mut x: f32, mut y: f32, octaves: u8) -> f32 {
+    let (mut sum, mut weight, mut total) = (0.0, 1.0, 0.0);
+    for octave in 0..octaves {
+        let at = f32::from(octave);
+        sum += noise(x + at * 17.3, y - at * 9.1) * weight;
+        total += weight;
+        weight *= 0.5;
+        (x, y) = (x * 2.03, y * 2.03);
+    }
+    sum / total
+}
+
+fn ridged(mut x: f32, mut y: f32) -> f32 {
+    let (mut sum, mut weight, mut total, mut gain) = (0.0, 1.0, 0.0, 1.0);
+    for octave in 0..4_u8 {
+        let at = f32::from(octave);
+        let ridge = 1.0 - (2.0 * noise(x + at * 23.1, y + at * 5.7) - 1.0).abs();
+        let ridge = ridge * ridge * gain;
+        gain = (ridge * 1.6).clamp(0.0, 1.0);
+        sum += ridge * weight;
+        total += weight;
+        weight *= 0.55;
+        (x, y) = (x * 2.1, y * 2.1);
+    }
+    sum / total
 }
 
 fn noise(x: f32, y: f32) -> f32 {

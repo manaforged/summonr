@@ -151,6 +151,37 @@ fn the_galaxy_dust_paints_in_few_colours_and_long_runs() {
 }
 
 #[test]
+fn the_galaxy_dust_streaks_along_the_band() {
+    let (cols, rows) = (223_usize, 67_usize);
+    for seed in [0, 1, 2, 5] {
+        let cells = super::backdrop(cols as u16, rows as u16, seed);
+        let light = |x: usize, y: usize| {
+            let cell = &cells[y / 2 * cols + x];
+            match if y % 2 == 0 { cell.fg } else { cell.bg } {
+                sigil::terminal::Ink::Exact(c) => f32::from(c.r) + f32::from(c.g) + f32::from(c.b),
+                _ => 0.0,
+            }
+        };
+        let (mut xx, mut xy, mut yy) = (0.0_f32, 0.0_f32, 0.0_f32);
+        for y in 1..rows * 2 - 1 {
+            for x in 1..cols - 1 {
+                if light(x, y) <= 40.0 {
+                    continue;
+                }
+                let gx = (light(x + 1, y) - light(x - 1, y)) / 2.0;
+                let gy = (light(x, y + 1) - light(x, y - 1)) / 2.0;
+                (xx, xy, yy) = (xx + gx * gx, xy + gx * gy, yy + gy * gy);
+            }
+        }
+        let coherence = (((xx - yy).powi(2) + 4.0 * xy * xy).sqrt() / (xx + yy)).powi(2);
+        assert!(
+            coherence >= 0.18,
+            "sky {seed}: dust coherence {coherence:.3}, the haze reads as round blobs"
+        );
+    }
+}
+
+#[test]
 fn the_band_carries_nebula_clouds() {
     let cells = super::backdrop(223, 67, 5);
     let rose = cells

@@ -108,13 +108,13 @@ pub(in crate::tui::sigil_view) fn compose(
 }
 
 fn wordmark(cells: &mut [Cell], cols: u16, [x, y]: [u16; 2], elapsed: u64) {
-    let accent = palette().accent;
+    let face = palette().text;
     for (row, text) in crate::splash::logo().iter().enumerate() {
         let width = text.chars().count();
         let shown = reveal_chars(row, width, elapsed);
         for (col, glyph) in text.chars().take(shown).enumerate() {
             let at = [x + col as u16, y + row as u16];
-            let ink = bloom(row, col, width, elapsed, accent);
+            let ink = bloom(row, col, width, elapsed, face);
             if glyph == SOLID {
                 solid(cells, cols, at, ink);
             } else if glyph != ' ' {
@@ -231,14 +231,14 @@ pub(in crate::tui::sigil_view) fn bloom(
     col: usize,
     width: usize,
     elapsed: u64,
-    accent: Rgba8,
+    settled: Rgba8,
 ) -> Rgba8 {
     let appeared = row as u64 * ROW_MS + col as u64 * ROW_WIPE_MS / width.max(1) as u64;
     let age = elapsed.saturating_sub(appeared);
     if age >= 450 {
-        accent
+        settled
     } else if age >= 150 {
-        rgb(120, 148, 200)
+        blend(STAR_BRIGHT, settled, 0.5)
     } else {
         STAR_BRIGHT
     }

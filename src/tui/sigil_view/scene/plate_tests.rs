@@ -150,7 +150,7 @@ fn splash_window_tints_the_composer_instead_of_covering_the_sky() {
 }
 
 #[test]
-fn a_wide_splash_sets_the_wordmark_beside_the_s_in_solid_cells() {
+fn a_wide_splash_sets_the_wordmark_beside_the_s_in_solid_white_cells() {
     Runtime::scope("splash-lockup", || {
         let (_app, mut host, mut screen) = splash_screen(120, 40);
         let mut router = sigil::events::EventRouter::new();
@@ -161,7 +161,7 @@ fn a_wide_splash_sets_the_wordmark_beside_the_s_in_solid_cells() {
             .clone();
         let text = grid.text();
         assert!(!text.contains('█'), "{text}");
-        let accent = sigil::terminal::Ink::Exact(super::palette().accent);
+        let white = sigil::terminal::Ink::Exact(super::palette().text);
         let face = text
             .lines()
             .position(|line| line.contains('┏'))
@@ -174,7 +174,7 @@ fn a_wide_splash_sets_the_wordmark_beside_the_s_in_solid_cells() {
         let solid = (face..face + 12)
             .flat_map(|row| (0..120).map(move |col| (col, row)))
             .filter(|&(col, row)| {
-                col > s_right && grid.get(col, row).is_some_and(|cell| cell.bg == accent)
+                col > s_right && grid.get(col, row).is_some_and(|cell| cell.bg == white)
             })
             .count();
         assert!(solid > 60, "wordmark cells beside the S: {solid}\n{text}");

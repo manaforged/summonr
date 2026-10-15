@@ -1,9 +1,57 @@
 use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, dim_rect, fill_bg, frame, overlay, write};
-use super::space::STAR_BRIGHT;
+use super::space::{PLATE, STAR_BRIGHT};
 use super::*;
 use sigil::prelude::Paint;
 
 const COMPOSER_ROWS: u16 = 7;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::tui::sigil_view) enum Card {
+    Lockup,
+    Mark,
+    Banner,
+}
+
+impl Card {
+    const fn mark(self) -> super::Mark {
+        match self {
+            Self::Lockup | Self::Mark => super::Mark::Lines,
+            Self::Banner => super::Mark::Banner,
+        }
+    }
+}
+
+const LOCKUP_GAP: u16 = 5;
+const WORD_GAP: u16 = 2;
+const LOCKUP_MARGIN: u16 = 10;
+const FACT_LABEL: u16 = 9;
+
+struct Placed {
+    mark: [u16; 2],
+    word: Option<[u16; 2]>,
+    facts: [u16; 2],
+}
+
+fn place(card: Card, [body_x, body_y]: [u16; 2], [body_width, body_rows]: [u16; 2]) -> Placed {
+    let [mark_width, mark_rows] = super::mark::size(card.mark());
+    if card == Card::Lockup {
+        let word_rows = crate::splash::logo().len() as u16;
+        let column = word_rows + WORD_GAP;
+        let top = body_y + body_rows.saturating_sub(column + 4) / 2;
+        let right = body_x + mark_width + LOCKUP_GAP;
+        return Placed {
+            mark: [body_x, body_y + body_rows.saturating_sub(mark_rows) / 2],
+            word: Some([right, top]),
+            facts: [right, top + column],
+        };
+    }
+    Placed {
+        mark: [body_x + body_width.saturating_sub(mark_width) / 2, body_y],
+        word: (card == Card::Banner)
+            .then_some([body_x + body_width.saturating_sub(mark_width) / 2, body_y]),
+        facts: [body_x, body_y + mark_rows + 1],
+    }
+}
 
 pub(in crate::tui::sigil_view) fn compose(
     cells: &mut [Cell],
@@ -17,10 +65,8 @@ pub(in crate::tui::sigil_view) fn compose(
     }
     let model = app.model.get();
     let facts = facts(&model, app);
-    let logo = crate::splash::logo();
-    let mark = fitting(rows, &facts);
-    let [mark_width, mark_rows] = super::mark::size(mark);
-    let [body_width, body_rows] = cover(mark, &facts);
+    let card_kind = fitting(cols, rows, &facts);
+    let [body_width, body_rows] = cover(card_kind, &facts);
     let [body_x, body_y, _, _, _] = layout(cols, rows, body_width, body_rows);
     let card_x = body_x.saturating_sub(3);
     let card_y = body_y.saturating_sub(2);
@@ -31,7 +77,6 @@ pub(in crate::tui::sigil_view) fn compose(
         (body_rows + 3).min(rows.saturating_sub(card_y)),
     ];
     dim_rect(cells, cols, card, true);
-    let accent = palette().accent;
     let revealed =
         app.splash_revealed.peek() || !model.prefs.animations || !app.draft.peek().is_empty();
     let elapsed = if revealed {
@@ -39,58 +84,66 @@ pub(in crate::tui::sigil_view) fn compose(
     } else {
         u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
     };
-    let facts_visible = elapsed >= FACTS_MS;
-    let logo_x = body_x + body_width.saturating_sub(mark_width) / 2;
-    let facts_x = body_x;
-    for (row, text) in logo
-        .iter()
-        .enumerate()
-        .filter(|_| mark == super::Mark::Banner)
-    {
-        let width = text.chars().count();
-        let shown = reveal_chars(row, width, elapsed);
-        for (col, glyph) in text.chars().take(shown).enumerate() {
-            if glyph != ' ' {
-                overlay(
-                    cells,
-                    cols,
-                    logo_x + col as u16,
-                    body_y + row as u16,
-                    &glyph.to_string(),
-                    bloom(row, col, width, elapsed, accent),
-                );
-            }
-        }
-    }
-    let facts_y = body_y + mark_rows + 1;
-    for (row, (label, value)) in facts.iter().enumerate().filter(|_| facts_visible) {
-        write(
-            cells,
-            cols,
-            facts_x,
-            facts_y + row as u16,
-            &format!("{label:<8} "),
-            palette().dim,
-        );
-        write(
-            cells,
-            cols,
-            facts_x + 9,
-            facts_y + row as u16,
-            value,
-            palette().gray,
-        );
+    let placed = place(card_kind, [body_x, body_y], [body_width, body_rows]);
+    let value_width = usize::from(match card_kind {
+        Card::Lockup => (crate::splash::logo_width() as u16).saturating_sub(FACT_LABEL),
+        Card::Mark | Card::Banner => body_width.saturating_sub(FACT_LABEL),
+    });
+    for (row, (label, value)) in facts.iter().enumerate().filter(|_| elapsed >= FACTS_MS) {
+        let [x, y] = placed.facts;
+        let y = y + row as u16;
+        write(cells, cols, x, y, &format!("{label:<8} "), palette().dim);
+        let value = crate::text::ellipsize_start(value, value_width);
+        write(cells, cols, x + FACT_LABEL, y, &value, palette().gray);
     }
     fill_bg(cells, cols, card);
-    if mark != super::Mark::Banner {
+    if let Some(at) = placed.word {
+        wordmark(cells, cols, at, elapsed);
+    }
+    if card_kind.mark() == super::Mark::Lines {
         let clock = model.prefs.animations.then(|| {
             u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
         });
-        super::mark::paint(cells, cols, [logo_x, body_y], mark, elapsed, clock);
+        super::mark::paint(cells, cols, placed.mark, super::Mark::Lines, elapsed, clock);
     }
     frame(cells, cols, card);
     drop(model);
     card
+}
+
+fn wordmark(cells: &mut [Cell], cols: u16, [x, y]: [u16; 2], elapsed: u64) {
+    let accent = palette().accent;
+    for (row, text) in crate::splash::logo().iter().enumerate() {
+        let width = text.chars().count();
+        let shown = reveal_chars(row, width, elapsed);
+        for (col, glyph) in text.chars().take(shown).enumerate() {
+            let at = [x + col as u16, y + row as u16];
+            let ink = bloom(row, col, width, elapsed, accent);
+            if glyph == SOLID {
+                solid(cells, cols, at, ink);
+            } else if glyph != ' ' {
+                overlay(
+                    cells,
+                    cols,
+                    at[0],
+                    at[1],
+                    &glyph.to_string(),
+                    blend(ink, PLATE, SHADE),
+                );
+            }
+        }
+    }
+}
+
+const SOLID: char = '█';
+const SHADE: f32 = 0.45;
+
+fn solid(cells: &mut [Cell], cols: u16, [x, y]: [u16; 2], ink: Rgba8) {
+    let index = usize::from(y) * usize::from(cols) + usize::from(x);
+    if let Some(cell) = cells.get_mut(index) {
+        cell.text = " ".into();
+        cell.bg = super::ink(ink);
+    }
 }
 
 pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'static str, String)> {
@@ -116,22 +169,35 @@ pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'stat
     facts
 }
 
-pub(in crate::tui::sigil_view) fn fitting(rows: u16, facts: &[(&str, String)]) -> super::Mark {
-    let input_y = layout(0, rows, 0, cover(super::Mark::Lines, facts)[1])[3];
-    if input_y + COMPOSER_ROWS <= rows {
-        super::Mark::Lines
+pub(in crate::tui::sigil_view) fn fitting(cols: u16, rows: u16, facts: &[(&str, String)]) -> Card {
+    let fits = |card: Card| {
+        let input_y = layout(0, rows, 0, cover(card, facts)[1])[3];
+        input_y + COMPOSER_ROWS <= rows
+    };
+    if fits(Card::Lockup) && cover(Card::Lockup, facts)[0] + LOCKUP_MARGIN <= cols {
+        Card::Lockup
+    } else if fits(Card::Mark) {
+        Card::Mark
     } else {
-        super::Mark::Banner
+        Card::Banner
     }
 }
 
-pub(in crate::tui::sigil_view) fn cover(mark: super::Mark, facts: &[(&str, String)]) -> [u16; 2] {
-    let [logo_width, logo_rows] = super::mark::size(mark);
+pub(in crate::tui::sigil_view) fn cover(card: Card, facts: &[(&str, String)]) -> [u16; 2] {
+    let [logo_width, logo_rows] = super::mark::size(card.mark());
     let facts_width = facts
         .iter()
         .map(|(label, value)| format!("{label:<8} {value}").chars().count() as u16)
         .max()
         .unwrap_or(20);
+    if card == Card::Lockup {
+        let word_width = crate::splash::logo_width() as u16;
+        let word_rows = crate::splash::logo().len() as u16;
+        return [
+            logo_width + LOCKUP_GAP + word_width,
+            logo_rows.max(word_rows + WORD_GAP + facts.len() as u16),
+        ];
+    }
     [
         logo_width.max(facts_width),
         logo_rows + facts.len() as u16 + 2,

@@ -71,7 +71,13 @@ fn the_splash_card_covers_the_stars() {
         for row in y0..=y1 {
             for col in x0..=x1 {
                 let cell = at(col, row);
-                assert!(plate(cell), "card hole at {col},{row} bg={:?}", cell.bg);
+                let wordmark =
+                    matches!(cell.bg, Ink::Exact(colour) if colour == super::palette().accent);
+                assert!(
+                    plate(cell) || wordmark,
+                    "card hole at {col},{row} bg={:?}",
+                    cell.bg
+                );
                 assert_ne!(cell.text, "✦", "star shows through the card at {col},{row}");
             }
         }

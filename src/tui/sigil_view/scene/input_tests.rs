@@ -340,3 +340,28 @@ fn the_splash_keeps_the_line_stack_s_when_f2_is_pressed() {
         }
     });
 }
+
+#[test]
+fn the_splash_composer_sits_on_the_card_plate() {
+    Runtime::scope("splash-composer", || {
+        let (_app, mut host, mut screen) = splash_screen(120, 40);
+        let mut router = sigil::events::EventRouter::new();
+        screen.frame(&mut host, &mut router, [], (120, 40)).unwrap();
+        let grid = screen
+            .frame(&mut host, &mut router, [], (120, 40))
+            .unwrap()
+            .clone();
+        let (col, row) = (0..40)
+            .flat_map(|row| (0..120).map(move |col| (col, row)))
+            .find(|&(col, row)| grid.get(col, row).is_some_and(|cell| cell.text == "❯"))
+            .expect("prompt on the splash");
+        for at in col + 2..col + 30 {
+            let cell = grid.get(at, row).expect("composer cell");
+            assert!(
+                matches!(cell.bg, Ink::Exact(colour) if colour == super::PLATE),
+                "composer cell {at},{row} bg={:?}",
+                cell.bg
+            );
+        }
+    });
+}

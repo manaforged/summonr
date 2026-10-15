@@ -33,6 +33,8 @@ pub(super) fn layer(app: App) -> NodeBuilder {
 fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
     let cell = canvas::cell();
     let spacer = app.clone();
+    let mut plate = surface::theme(&app.theme_name.peek(), app.backdrop.peek());
+    plate.register_token("surface", ThemeValue::Color(scene::PLATE));
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -56,6 +58,8 @@ fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
         .child(
             container()
                 .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
+                .bg(scene::PLATE)
+                .theme(plate)
                 .child(chat::inline_layer(app.clone(), width, surface::editor(app))),
         )
 }

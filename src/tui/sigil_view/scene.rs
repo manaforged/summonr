@@ -20,7 +20,7 @@ mod logo;
 mod mark;
 pub(in crate::tui::sigil_view) use logo::{compose, placed};
 pub(in crate::tui::sigil_view) use mark::Mark;
-pub(in crate::tui::sigil_view) use space::{SCRIM, VOID, moving};
+pub(in crate::tui::sigil_view) use space::{PLATE, SCRIM, VOID, moving};
 
 mod galaxy;
 mod input;

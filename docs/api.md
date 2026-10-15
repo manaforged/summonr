@@ -54,6 +54,8 @@ summonr anthropic --goal "make cargo test pass" --max-secs 1800 --json
 echo $?
 ```
 
+summonr ignores its own output files when it checks whether the workspace changed. When another program writes the file, as PowerShell does for `>` and `tee` does in a pipe, write it outside the workspace; otherwise the growing file counts as a change and the goal cannot finish.
+
 ## Jobs to commands
 
 | Job | Command or flag |

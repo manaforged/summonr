@@ -99,7 +99,7 @@ keyring = { version = "3", features = ["windows-native", "sync-secret-service", 
 
 [target.'cfg(windows)'.dependencies]
 process-wrap = { version = "9.1", default-features = false, features = ["job-object", "tokio1"] }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 
 [lints.rust]
 unsafe_code = "deny"

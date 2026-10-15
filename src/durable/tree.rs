@@ -89,7 +89,7 @@ fn mark(
     path: &Path,
     name: &str,
     previous: Option<&Snapshot>,
-    own: &[(u64, u64)],
+    own: &[Own],
 ) -> io::Result<Option<(Entry, Stamp)>> {
     let metadata = match path.symlink_metadata() {
         Ok(metadata) => metadata,
@@ -99,7 +99,7 @@ fn mark(
     if !metadata.is_file() && !metadata.is_symlink() {
         return Ok(None);
     }
-    if identity(&metadata).is_some_and(|id| own.contains(&id)) {
+    if is_own(path, &metadata, own) {
         return Ok(None);
     }
     let modified = metadata
@@ -308,55 +308,12 @@ fn device_of(_: &Metadata) -> Option<u64> {
     None
 }
 
-pub(crate) fn own_files(root: &Path) -> Vec<String> {
-    let own = own_outputs();
-    if own.is_empty() {
-        return Vec::new();
-    }
-    listing(root)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|relative| {
-            root.join(relative)
-                .symlink_metadata()
-                .ok()
-                .and_then(|metadata| identity(&metadata))
-                .is_some_and(|id| own.contains(&id))
-        })
-        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
-        .collect()
-}
+mod own;
 
-#[cfg(unix)]
-fn identity(metadata: &Metadata) -> Option<(u64, u64)> {
-    use std::os::unix::fs::MetadataExt;
-    Some((metadata.dev(), metadata.ino()))
-}
-
-#[cfg(not(unix))]
-fn identity(_: &Metadata) -> Option<(u64, u64)> {
-    None
-}
-
-#[cfg(unix)]
-fn own_outputs() -> Vec<(u64, u64)> {
-    use std::os::fd::AsFd;
-    [
-        std::io::stdout().as_fd().try_clone_to_owned(),
-        std::io::stderr().as_fd().try_clone_to_owned(),
-    ]
-    .into_iter()
-    .flatten()
-    .filter_map(|fd| std::fs::File::from(fd).metadata().ok())
-    .filter(Metadata::is_file)
-    .filter_map(|metadata| identity(&metadata))
-    .collect()
-}
-
-#[cfg(not(unix))]
-fn own_outputs() -> Vec<(u64, u64)> {
-    Vec::new()
-}
+#[cfg(all(test, unix))]
+use own::identity;
+pub(crate) use own::own_files;
+use own::{Own, is_own, own_outputs};
 
 #[cfg(all(test, unix))]
 #[path = "tree_tests.rs"]

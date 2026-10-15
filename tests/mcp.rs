@@ -111,6 +111,7 @@ fn main() {
         session::a_plain_worktree_turn_lands_its_changes_without_running_a_check,
         session::a_failed_worktree_run_without_changes_says_so,
         session::a_goal_run_reports_the_judge_usage_once,
+        session::a_goal_run_whose_output_lands_in_the_workspace_still_passes,
         session::a_print_run_says_its_check_was_not_run,
         session::forking_a_named_session_keeps_the_original_transcript,
         session::a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code,

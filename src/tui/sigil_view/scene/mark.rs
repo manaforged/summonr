@@ -1,37 +1,22 @@
 use super::space::PLATE;
 use super::*;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Mark {
-    #[default]
     Lines,
-    Pixel,
     Banner,
-}
-
-impl Mark {
-    pub(in crate::tui::sigil_view) fn next(self) -> Self {
-        match self {
-            Self::Lines => Self::Pixel,
-            Self::Pixel => Self::Banner,
-            Self::Banner => Self::Lines,
-        }
-    }
 }
 
 const LAYERS: i32 = 5;
 const STEP_MS: u64 = 90;
-const LAP_MS: u64 = 4_000;
-const SWEEP_MS: u64 = 10_000;
-const SWEEP_RUN_MS: u64 = 1_600;
-const SWEEP_FROM_MS: u64 = 2_000;
-const TAIL_PERCENT: usize = 12;
+const LAP_MS: u64 = 8_000;
+const TAIL_PERCENT: usize = 10;
+const SHIMMER: f32 = 0.35;
 
 #[derive(Clone, Copy)]
 struct Glyph {
     text: char,
     fg: Rgba8,
-    bg: Option<Rgba8>,
 }
 
 struct Lines {
@@ -97,9 +82,6 @@ pub(super) fn paint(
                 let mut buffer = [0; 4];
                 cell.text = (&*glyph.text.encode_utf8(&mut buffer)).into();
                 cell.fg = ink(glyph.fg);
-                if let Some(bg) = glyph.bg {
-                    cell.bg = ink(bg);
-                }
             }
         }
     }
@@ -109,7 +91,6 @@ fn draw(mark: Mark, elapsed: u64, clock: Option<u64>) -> Grid {
     let built = i32::try_from(elapsed / STEP_MS).unwrap_or(i32::MAX);
     match mark {
         Mark::Lines => stack(built, clock),
-        Mark::Pixel => pixels(built),
         Mark::Banner => Vec::new(),
     }
 }
@@ -155,40 +136,16 @@ fn stack(built: i32, clock: Option<u64>) -> Grid {
             &outline,
             (layer * 2, LAYERS - layer),
             &LIGHT,
-            lit(depth(layer), clock, layer),
+            depth(layer),
         );
     }
     if built > LAYERS {
-        stroke(
-            &mut grid,
-            &outline,
-            (0, LAYERS),
-            &HEAVY,
-            lit(palette().text, clock, 0),
-        );
+        stroke(&mut grid, &outline, (0, LAYERS), &HEAVY, palette().text);
         if let Some(clock) = clock {
             orbit(&mut grid, &outline, (0, LAYERS), clock);
         }
     }
     grid
-}
-
-fn lit(base: Rgba8, clock: Option<u64>, layer: i32) -> Rgba8 {
-    clock.map_or(base, |clock| {
-        blend(base, palette().accent, sweep(clock, layer))
-    })
-}
-
-fn sweep(clock: u64, layer: i32) -> f32 {
-    let Some(since) = clock.checked_sub(SWEEP_FROM_MS) else {
-        return 0.0;
-    };
-    let run = (since % SWEEP_MS) as f32 / SWEEP_RUN_MS as f32;
-    if run > 1.2 {
-        return 0.0;
-    }
-    let offset = (LAYERS + 2) as f32 * run - (LAYERS - layer) as f32;
-    0.8 * (-offset * offset / 2.0).exp()
 }
 
 fn orbit(grid: &mut Grid, outline: &[(i32, i32)], (ox, oy): (i32, i32), clock: u64) {
@@ -201,7 +158,7 @@ fn orbit(grid: &mut Grid, outline: &[(i32, i32)], (ox, oy): (i32, i32), clock: u
     let tail = (cells * TAIL_PERCENT / 100).max(3);
     for back in 0..tail {
         let (x, y) = path[(head + cells - back) % cells];
-        let strength = 1.0 - back as f32 / tail as f32;
+        let strength = SHIMMER * (1.0 - back as f32 / tail as f32);
         if let Some(Some(glyph)) = usize::try_from(oy + y)
             .ok()
             .and_then(|row| grid.get_mut(row))
@@ -264,7 +221,7 @@ fn stroke(grid: &mut Grid, outline: &[(i32, i32)], (ox, oy): (i32, i32), lines: 
             }
         }
     }
-    let glyph = |text| Some(Glyph { text, fg, bg: None });
+    let glyph = |text| Some(Glyph { text, fg });
     for at in 0..outline.len() {
         let (px, py) = outline[(at + outline.len() - 1) % outline.len()];
         let (x0, y0) = outline[at];
@@ -296,68 +253,6 @@ fn stroke(grid: &mut Grid, outline: &[(i32, i32)], (ox, oy): (i32, i32), lines: 
         };
         put(grid, ox + x0, oy + y0, glyph(lines.corners[corner]));
     }
-}
-
-fn pixels(built: i32) -> Grid {
-    let (width, vert) = (20, 4);
-    let y = bars(4, 3);
-    let on = |x: i32, row: i32| {
-        (y[0]..y[1]).contains(&row)
-            || (y[1]..y[2]).contains(&row) && x < vert
-            || (y[2]..y[3]).contains(&row)
-            || (y[3]..y[4]).contains(&row) && x >= width - vert
-            || (y[4]..y[5]).contains(&row)
-    };
-    let tall = y[5] + LAYERS;
-    let mut dots = vec![vec![None; (width + LAYERS) as usize]; tall as usize];
-    let mut lay = |shift: (i32, i32), fg: Rgba8| {
-        for row in 0..y[5] {
-            for x in (0..width).filter(|&x| on(x, row)) {
-                dots[(row + shift.1) as usize][(x + shift.0) as usize] = Some(fg);
-            }
-        }
-    };
-    for layer in (1..=LAYERS).rev().filter(|layer| LAYERS - layer < built) {
-        lay((layer, LAYERS - layer), depth(layer));
-    }
-    if built > LAYERS {
-        lay((0, LAYERS), palette().text);
-    }
-    (0..(tall + 1) / 2)
-        .map(|row| {
-            (0..width + LAYERS)
-                .map(|x| {
-                    let pick = |dy: i32| {
-                        dots.get((2 * row + dy) as usize)
-                            .and_then(|line| line[x as usize])
-                    };
-                    match (pick(0), pick(1)) {
-                        (Some(top), Some(bottom)) if top == bottom => Some(Glyph {
-                            text: '█',
-                            fg: top,
-                            bg: None,
-                        }),
-                        (Some(top), Some(bottom)) => Some(Glyph {
-                            text: '▀',
-                            fg: top,
-                            bg: Some(bottom),
-                        }),
-                        (Some(top), None) => Some(Glyph {
-                            text: '▀',
-                            fg: top,
-                            bg: None,
-                        }),
-                        (None, Some(bottom)) => Some(Glyph {
-                            text: '▄',
-                            fg: bottom,
-                            bg: None,
-                        }),
-                        (None, None) => None,
-                    }
-                })
-                .collect()
-        })
-        .collect()
 }
 
 #[cfg(test)]

@@ -320,7 +320,7 @@ fn named(key: sigil::prelude::Key) -> sigil::events::ShellEvent {
 }
 
 #[test]
-fn f2_on_the_splash_cycles_the_s_mark_through_lines_pixels_and_the_banner() {
+fn the_splash_keeps_the_line_stack_s_when_f2_is_pressed() {
     Runtime::scope("splash-mark", || {
         let (_app, mut host, mut screen) = splash_screen(120, 40);
         let mut router = sigil::events::EventRouter::new();
@@ -331,16 +331,12 @@ fn f2_on_the_splash_cycles_the_s_mark_through_lines_pixels_and_the_banner() {
             screen.frame(&mut host, &mut router, [], (120, 40)).unwrap();
             screen.text()
         };
-        let lines = shown(vec![]);
-        assert!(
-            lines.contains('┏') && lines.contains('┛') && lines.contains('┌'),
-            "{lines}"
-        );
-        let pixels = shown(vec![named(sigil::prelude::Key::F2)]);
-        assert!(pixels.contains('▀') && !pixels.contains('┏'), "{pixels}");
-        let banner = shown(vec![named(sigil::prelude::Key::F2)]);
-        assert!(banner.contains("███████╗"), "{banner}");
-        let again = shown(vec![named(sigil::prelude::Key::F2)]);
-        assert!(again.contains('┏'), "{again}");
+        for events in [vec![], vec![named(sigil::prelude::Key::F2)]] {
+            let shown = shown(events);
+            assert!(
+                shown.contains('┏') && shown.contains('┛') && shown.contains('┌'),
+                "{shown}"
+            );
+        }
     });
 }

@@ -18,7 +18,7 @@ pub(in crate::tui::sigil_view) fn compose(
     let model = app.model.get();
     let facts = facts(&model, app);
     let logo = crate::splash::logo();
-    let mark = fitting(app.splash_mark.get(), rows, &facts);
+    let mark = fitting(rows, &facts);
     let [mark_width, mark_rows] = super::mark::size(mark);
     let [body_width, body_rows] = cover(mark, &facts);
     let [body_x, body_y, _, _, _] = layout(cols, rows, body_width, body_rows);
@@ -116,14 +116,10 @@ pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'stat
     facts
 }
 
-pub(in crate::tui::sigil_view) fn fitting(
-    mark: super::Mark,
-    rows: u16,
-    facts: &[(&str, String)],
-) -> super::Mark {
-    let input_y = layout(0, rows, 0, cover(mark, facts)[1])[3];
+pub(in crate::tui::sigil_view) fn fitting(rows: u16, facts: &[(&str, String)]) -> super::Mark {
+    let input_y = layout(0, rows, 0, cover(super::Mark::Lines, facts)[1])[3];
     if input_y + COMPOSER_ROWS <= rows {
-        mark
+        super::Mark::Lines
     } else {
         super::Mark::Banner
     }

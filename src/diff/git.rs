@@ -63,10 +63,15 @@ pub(crate) fn git_output(
         && !output.stdout.is_empty();
     if !output.status.success() && !different {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Config(format!(
-            "git {} failed: {}",
-            args.first().unwrap_or(&""),
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
             stderr.trim()
+        };
+        return Err(Error::Config(format!(
+            "git {} failed: {detail}",
+            args.first().unwrap_or(&"")
         )));
     }
     Ok(output.stdout)

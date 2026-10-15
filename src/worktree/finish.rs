@@ -5,7 +5,6 @@ use super::{COMMIT_MAX, Tree, dirty};
 const SUBJECT_MAX: usize = 60;
 
 pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<String>> {
-    let mut committed = Vec::new();
     if dirty(&tree.path)? {
         let tracked = crate::diff::git_paths(&tree.path, &["ls-files", "-z"])?;
         let tracked: std::collections::HashSet<&str> = tracked.iter().map(String::as_str).collect();
@@ -24,12 +23,15 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             let mut args = vec!["--literal-pathspecs", "add", "--all", "--"];
             args.extend(small.iter().copied());
             crate::diff::git_env(&tree.path, &[], &args)?;
-            crate::diff::git_env(
-                &tree.path,
-                &[],
-                &["commit", "-q", "-m", &subject(objective)],
-            )?;
-            committed = small.iter().map(|path| (*path).to_string()).collect();
+            let staged =
+                crate::diff::git_paths(&tree.path, &["diff", "--cached", "--name-only", "-z"])?;
+            if !staged.is_empty() {
+                crate::diff::git_env(
+                    &tree.path,
+                    &[],
+                    &["commit", "-q", "-m", &subject(objective)],
+                )?;
+            }
         }
         let leftover = leftover(&tree.path)?;
         if !leftover.is_empty() {
@@ -41,7 +43,7 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             )));
         }
     }
-    let big: Vec<String> = crate::diff::git_paths(
+    let changed = crate::diff::git_paths(
         &tree.primary,
         &[
             "diff",
@@ -49,12 +51,14 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             "-z",
             &format!("{}..{}", tree.base, tree.branch),
         ],
-    )?
-    .into_iter()
-    .filter(|path| {
-        std::fs::metadata(tree.path.join(path)).is_ok_and(|meta| meta.len() > COMMIT_MAX)
-    })
-    .collect();
+    )?;
+    let big: Vec<&str> = changed
+        .iter()
+        .map(String::as_str)
+        .filter(|path| {
+            std::fs::metadata(tree.path.join(path)).is_ok_and(|meta| meta.len() > COMMIT_MAX)
+        })
+        .collect();
     if !big.is_empty() {
         return Err(Error::Config(format!(
             "files over {COMMIT_MAX} bytes on {}: {}; remove them from the branch before it can merge",
@@ -76,7 +80,7 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
         &["merge", "--ff-only", "--", &tree.branch],
     )?;
     tree.remove()?;
-    Ok(committed)
+    Ok(changed)
 }
 
 fn leftover(root: &std::path::Path) -> Result<Vec<String>> {

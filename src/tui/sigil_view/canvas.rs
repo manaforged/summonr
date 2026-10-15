@@ -1,7 +1,6 @@
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sigil::app::cell_width;
 use sigil::events::ScrollDelta;
 use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
@@ -9,7 +8,6 @@ use sigil::prelude::NodeBuilder;
 use sigil::prelude::Rgba8;
 use sigil::prelude::Tone;
 use sigil::prelude::container;
-use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
     let channel = |a: u8, b: u8| {
@@ -178,43 +176,4 @@ pub(super) fn scroll_lines(delta: ScrollDelta) -> f32 {
         return 0.0;
     };
     point.y
-}
-
-pub(super) fn write_at(
-    cells: &mut [Cell],
-    width: usize,
-    left: usize,
-    row: usize,
-    text: &str,
-    fg: Rgba8,
-) {
-    let room = width.saturating_sub(left);
-    let start = row.saturating_mul(width).saturating_add(left);
-    let Some(row) = cells.get_mut(start..start.saturating_add(room)) else {
-        return;
-    };
-    let bg = palette().base;
-    let cell = |text: &str| Cell {
-        text: text.into(),
-        fg: ink(fg),
-        bg: ink(bg),
-        bold: false,
-        italic: false,
-        ..Cell::blank()
-    };
-    let mut x = 0;
-    for grapheme in text.graphemes(true) {
-        let step = cell_width(grapheme);
-        if x >= room || x.saturating_add(step) > room {
-            return;
-        }
-        if step == 0 {
-            continue;
-        }
-        row[x] = cell(grapheme);
-        for pad in 1..step {
-            row[x + pad] = cell("");
-        }
-        x += step;
-    }
 }

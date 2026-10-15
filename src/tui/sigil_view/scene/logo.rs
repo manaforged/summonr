@@ -1,4 +1,4 @@
-use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, dim_rect, fill_bg, frame, overlay, write};
+use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, glass, overlay};
 use super::space::{PLATE, STAR_BRIGHT};
 use super::*;
 use sigil::prelude::Paint;
@@ -67,16 +67,14 @@ pub(in crate::tui::sigil_view) fn compose(
     let facts = facts(&model, app);
     let card_kind = fitting(cols, rows, &facts);
     let [body_width, body_rows] = cover(card_kind, &facts);
-    let [body_x, body_y, _, _, _] = layout(cols, rows, body_width, body_rows);
-    let card_x = body_x.saturating_sub(3);
-    let card_y = body_y.saturating_sub(2);
+    let [body_x, body_y, card_x, card_y, card_width] = layout(cols, rows, body_width, body_rows);
     let card = [
-        card_x,
-        card_y,
-        (body_width + 6).min(cols.saturating_sub(card_x)),
-        (body_rows + 3).min(rows.saturating_sub(card_y)),
+        card_x + 1,
+        card_y + 1,
+        card_width.saturating_sub(2),
+        (body_rows + 1).min(rows.saturating_sub(card_y + 1)),
     ];
-    dim_rect(cells, cols, card, true);
+    glass(cells, cols, card);
     let revealed =
         app.splash_revealed.peek() || !model.prefs.animations || !app.draft.peek().is_empty();
     let elapsed = if revealed {
@@ -92,11 +90,10 @@ pub(in crate::tui::sigil_view) fn compose(
     for (row, (label, value)) in facts.iter().enumerate().filter(|_| elapsed >= FACTS_MS) {
         let [x, y] = placed.facts;
         let y = y + row as u16;
-        write(cells, cols, x, y, &format!("{label:<8} "), palette().dim);
+        overlay(cells, cols, x, y, label, palette().dim);
         let value = crate::text::ellipsize_start(value, value_width);
-        write(cells, cols, x + FACT_LABEL, y, &value, palette().gray);
+        overlay(cells, cols, x + FACT_LABEL, y, &value, palette().gray);
     }
-    fill_bg(cells, cols, card);
     if let Some(at) = placed.word {
         wordmark(cells, cols, at, elapsed);
     }
@@ -106,7 +103,6 @@ pub(in crate::tui::sigil_view) fn compose(
         });
         super::mark::paint(cells, cols, placed.mark, super::Mark::Lines, elapsed, clock);
     }
-    frame(cells, cols, card);
     drop(model);
     card
 }
@@ -170,10 +166,7 @@ pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'stat
 }
 
 pub(in crate::tui::sigil_view) fn fitting(cols: u16, rows: u16, facts: &[(&str, String)]) -> Card {
-    let fits = |card: Card| {
-        let input_y = layout(0, rows, 0, cover(card, facts)[1])[3];
-        input_y + COMPOSER_ROWS <= rows
-    };
+    let fits = |card: Card| cover(card, facts)[1] + 2 + COMPOSER_ROWS <= rows;
     if fits(Card::Lockup) && cover(Card::Lockup, facts)[0] + LOCKUP_MARGIN <= cols {
         Card::Lockup
     } else if fits(Card::Mark) {
@@ -210,24 +203,16 @@ pub(in crate::tui::sigil_view) fn layout(
     body_width: u16,
     body_rows: u16,
 ) -> [u16; 5] {
-    let gutter = if cols > 40 {
-        16
-    } else if cols > 28 {
-        8
-    } else {
-        2
-    };
-    let input_width = cols.saturating_sub(gutter).min(72);
-    let total = body_rows + 5;
+    let top = rows.saturating_sub(body_rows + 2 + COMPOSER_ROWS) / 2;
     let body_x = cols.saturating_sub(body_width) / 2;
-    let input_x = cols.saturating_sub(input_width) / 2;
-    let (body_y, input_y) = if rows >= total + 2 {
-        let top = rows.saturating_sub(total) / 2;
-        (top, top + body_rows + 2)
-    } else {
-        (rows.saturating_sub(body_rows) / 2, rows.saturating_sub(3))
-    };
-    [body_x, body_y, input_x, input_y, input_width]
+    let card_x = body_x.saturating_sub(3);
+    [
+        body_x,
+        top + 2,
+        card_x,
+        top,
+        (body_width + 6).min(cols.saturating_sub(card_x)),
+    ]
 }
 
 pub(in crate::tui::sigil_view) fn reveal_chars(row: usize, len: usize, elapsed: u64) -> usize {

@@ -101,16 +101,3 @@ fn fill(style: LayoutStyle) -> LayoutStyle {
         .fill_height()
         .gap(0.0)
 }
-
-pub(in crate::tui::sigil_view) fn frame_row(cols: u16, [left, right]: [char; 2]) -> NodeBuilder {
-    let run: String = std::iter::once(left)
-        .chain(std::iter::repeat_n(
-            '─',
-            usize::from(cols.saturating_sub(2)),
-        ))
-        .chain(std::iter::once(right))
-        .collect();
-    container()
-        .bg(PLATE)
-        .child(sigil::kernel::text(run).nowrap().text_color(palette().gray))
-}

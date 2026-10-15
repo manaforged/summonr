@@ -63,23 +63,18 @@ fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
         )
         .child(
             container()
-                .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
-                .theme(clear)
-                .child(scene::frame_row(width + 2, ['╭', '╮']))
-                .child(
-                    container()
-                        .layout(
-                            LayoutStyle::flex_column()
-                                .fill_width()
-                                .padding_x(cell.w)
-                                .padding_bottom(cell.h),
-                        )
-                        .border_left(1)
-                        .border_right(1)
-                        .border_color(sigil::prelude::Token::Gray8)
-                        .bg(scene::PLATE)
-                        .child(chat::inline_layer(app.clone(), width, surface::editor(app))),
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .shrink(0.0)
+                        .padding_x(cell.w)
+                        .padding_bottom(cell.h),
                 )
-                .child(scene::frame_row(width + 2, ['╰', '╯'])),
+                .border_w(1)
+                .rounded(sigil::prelude::Radius::Md)
+                .border_color(sigil::prelude::Token::Gray8)
+                .bg(scene::PLATE)
+                .theme(clear)
+                .child(chat::inline_layer(app.clone(), width, surface::editor(app))),
         )
 }

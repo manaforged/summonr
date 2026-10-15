@@ -1,6 +1,6 @@
 #![expect(
     unsafe_code,
-    reason = "AppContainer, ACL, desktop, and process attributes have no safe standard-library API"
+    reason = "Restricted tokens, ACLs, desktops, and process attributes have no safe standard-library API"
 )]
 
 use std::ffi::{OsStr, OsString, c_void};
@@ -14,24 +14,25 @@ use std::ptr::{null, null_mut};
 use dunce::simplified;
 use windows_sys::Win32::Foundation::{
     DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ALREADY_EXISTS, ERROR_INVALID_PARAMETER,
-    GetLastError, HANDLE, LocalFree, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    GENERIC_ALL, GetLastError, HANDLE, LocalFree, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Security::Authorization::{
-    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-    EXPLICIT_ACCESS_W, GRANT_ACCESS, GetNamedSecurityInfoW, GetSecurityInfo, REVOKE_ACCESS,
-    SE_FILE_OBJECT, SE_WINDOW_OBJECT, SetEntriesInAclW, SetNamedSecurityInfoW, SetSecurityInfo,
-    TRUSTEE_IS_SID, TRUSTEE_W,
-};
-use windows_sys::Win32::Security::Isolation::{
-    CreateAppContainerProfile, DeleteAppContainerProfile,
+    ACCESS_MODE, ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
+    DENY_ACCESS, EXPLICIT_ACCESS_W, GRANT_ACCESS, GetNamedSecurityInfoW, GetSecurityInfo,
+    REVOKE_ACCESS, SE_FILE_OBJECT, SE_WINDOW_OBJECT, SetEntriesInAclW, SetNamedSecurityInfoW,
+    SetSecurityInfo, TRUSTEE_IS_SID, TRUSTEE_W,
 };
 use windows_sys::Win32::Security::{
-    CONTAINER_INHERIT_ACE, CreateWellKnownSid, DACL_SECURITY_INFORMATION, FreeSid,
-    OBJECT_INHERIT_ACE, PSID, SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES, SID_AND_ATTRIBUTES,
-    WinCapabilityInternetClientSid, WinCapabilityPrivateNetworkClientServerSid,
+    ACCESS_ALLOWED_ACE, ACL, ACL_SIZE_INFORMATION, AclSizeInformation, CONTAINER_INHERIT_ACE,
+    CreateRestrictedToken, DACL_SECURITY_INFORMATION, DISABLE_MAX_PRIVILEGE, EqualSid, GetAce,
+    GetAclInformation, GetLengthSid, GetTokenInformation, INHERITED_ACE, OBJECT_INHERIT_ACE, PSID,
+    SECURITY_ATTRIBUTES, SID_AND_ATTRIBUTES, SetTokenInformation, TOKEN_ADJUST_DEFAULT,
+    TOKEN_ASSIGN_PRIMARY, TOKEN_DEFAULT_DACL, TOKEN_DUPLICATE, TOKEN_GROUPS, TOKEN_QUERY,
+    TokenDefaultDacl, TokenGroups, WRITE_RESTRICTED,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    DELETE, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_GENERIC_WRITE, READ_CONTROL,
+    DELETE, FILE_APPEND_DATA, FILE_DELETE_CHILD, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ,
+    FILE_GENERIC_WRITE, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FILE_WRITE_EA, READ_CONTROL,
     STANDARD_RIGHTS_REQUIRED, WRITE_DAC,
 };
 use windows_sys::Win32::System::Console::{
@@ -49,15 +50,16 @@ use windows_sys::Win32::System::StationsAndDesktops::{
     GetProcessWindowStation, GetUserObjectInformationW, HDESK, HWINSTA, SetProcessWindowStation,
     UOI_NAME,
 };
-use windows_sys::Win32::System::SystemServices::SE_GROUP_ENABLED;
+use windows_sys::Win32::System::SystemServices::{
+    ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE, SE_GROUP_LOGON_ID,
+};
 use windows_sys::Win32::System::Threading::{
-    CREATE_UNICODE_ENVIRONMENT, CreateMutexW, CreateProcessW, DeleteProcThreadAttributeList,
+    CREATE_UNICODE_ENVIRONMENT, CreateMutexW, CreateProcessAsUserW, DeleteProcThreadAttributeList,
     EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
-    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
-    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
-    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_INFORMATION, PROCESS_SYNCHRONIZE,
-    ReleaseMutex, STARTF_USESTDHANDLES, STARTUPINFOEXW, UpdateProcThreadAttribute,
-    WaitForMultipleObjects, WaitForSingleObject,
+    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess, OpenProcessToken,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
+    PROCESS_SYNCHRONIZE, ReleaseMutex, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+    UpdateProcThreadAttribute, WaitForMultipleObjects, WaitForSingleObject,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     WINSTA_ACCESSGLOBALATOMS, WINSTA_CREATEDESKTOP, WINSTA_ENUMDESKTOPS, WINSTA_ENUMERATE,
@@ -67,54 +69,86 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 mod acl;
 mod launch;
 mod proc;
+mod token;
 
 use acl::*;
 use launch::*;
 use proc::*;
 pub(crate) use proc::{stop, wait};
+use token::*;
+pub(crate) const NETWORK_UNSUPPORTED: &str = "--no-net needs macOS Seatbelt or Linux bubblewrap; the Windows sandbox contains writes and keeps the network on";
+
 pub fn entry(args: &[OsString]) -> crate::Result<i32> {
     execute(args).map_err(|error| crate::Error::Tool(format!("Windows sandbox: {error}")))
 }
 
-fn execute(args: &[OsString]) -> io::Result<i32> {
-    if args.len() < 7 {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "incomplete sandbox invocation",
-        ));
+struct Invocation<'a> {
+    workspace: PathBuf,
+    cwd: PathBuf,
+    readonly: bool,
+    write: Vec<PathBuf>,
+    executable: &'a Path,
+    args: &'a [OsString],
+}
+
+impl<'a> Invocation<'a> {
+    fn parse(args: &'a [OsString]) -> io::Result<Self> {
+        if args.len() < 7 {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "incomplete sandbox invocation",
+            ));
+        }
+        if flag(&args[3])? {
+            return Err(Error::new(ErrorKind::Unsupported, NETWORK_UNSUPPORTED));
+        }
+        Ok(Self {
+            workspace: Path::new(&args[0]).canonicalize()?,
+            cwd: Path::new(&args[1]).canonicalize()?,
+            readonly: flag(&args[2])?,
+            write: write_paths(&args[4])?,
+            executable: Path::new(&args[6]),
+            args: &args[7..],
+        })
     }
+}
+
+fn execute(args: &[OsString]) -> io::Result<i32> {
+    let invocation = Invocation::parse(args)?;
     let job = job(std::process::id())?;
     let parent = parent_process(&args[5])?;
-    let workspace = Path::new(&args[0]).canonicalize()?;
-    let cwd = Path::new(&args[1]).canonicalize()?;
-    let readonly = flag(&args[2])?;
-    let deny_network = flag(&args[3])?;
-    let write = write_paths(&args[4])?;
-    let executable = Path::new(&args[6]);
+    let code = contain(&invocation, &job, parent.as_ref())?;
+    drop(job);
+    Ok(code as i32)
+}
+
+fn contain(
+    run: &Invocation<'_>,
+    job: &OwnedHandle,
+    parent: Option<&OwnedHandle>,
+) -> io::Result<u32> {
     let temp = tempfile::Builder::new()
         .prefix("summonr-sandbox-")
         .tempdir()?;
-    let name = sandbox_name(temp.path());
-    let profile = sandbox_profile(&name, &workspace, readonly, temp.path(), &write)?;
-    let desktop = Desktop::create(&profile, &name)
+    let roots = grant_roots(&run.workspace, run.readonly, &run.write)?;
+    let restricted = restricted(&roots)?;
+    acl(temp.path(), restricted.logon.ptr(), MODIFY, GRANT_ACCESS)?;
+    let desktop = Desktop::create(restricted.logon.ptr(), &sandbox_name(temp.path()))
         .map_err(|error| Error::other(format!("sandbox desktop: {error}")))?;
     let streams = std_streams()?;
     let handles: Vec<HANDLE> = streams.iter().map(AsRawHandle::as_raw_handle).collect();
     let process = launch(&Launch {
-        profile: &profile,
+        token: &restricted.token,
         desktop: &desktop,
         handles: &handles,
-        job: &job,
-        deny_network,
-        executable,
+        job,
+        executable: run.executable,
         temp: temp.path(),
-        workspace: &workspace,
-        cwd: &cwd,
-        args: &args[7..],
+        workspace: &run.workspace,
+        cwd: &run.cwd,
+        args: run.args,
     })?;
-    let code = wait_exit(&process, parent.as_ref(), &job)?;
-    drop(job);
-    Ok(code as i32)
+    wait_exit(&process, parent, job)
 }
 
 fn parent_process(arg: &OsStr) -> io::Result<Option<OwnedHandle>> {
@@ -150,20 +184,34 @@ fn sandbox_name(temp: &Path) -> String {
     )
 }
 
-fn sandbox_profile(
-    name: &str,
-    workspace: &Path,
-    readonly: bool,
-    temp: &Path,
-    write: &[PathBuf],
-) -> io::Result<Profile> {
-    let mut profile = Profile::create(name)?;
-    profile.grant(workspace, if readonly { READ } else { MODIFY })?;
-    profile.grant(temp, MODIFY)?;
-    for path in write {
-        profile.grant(path, MODIFY)?;
+fn grant_roots(workspace: &Path, readonly: bool, write: &[PathBuf]) -> io::Result<Vec<Sid>> {
+    let roots: Vec<&Path> = (!readonly)
+        .then_some(workspace)
+        .into_iter()
+        .chain(write.iter().map(PathBuf::as_path))
+        .collect();
+    let mut sids = Vec::with_capacity(roots.len());
+    for root in roots {
+        let sid = Sid::for_path(root);
+        grant(root, &sid, MODIFY, GRANT_ACCESS)?;
+        sids.push(sid);
     }
-    Ok(profile)
+    if !readonly {
+        let sid = Sid::for_path(workspace);
+        for path in crate::policy::guarded_git_paths(workspace) {
+            grant(&path, &sid, GUARD, DENY_ACCESS)?;
+        }
+    }
+    Ok(sids)
+}
+
+fn grant(path: &Path, sid: &Sid, mask: u32, mode: ACCESS_MODE) -> io::Result<()> {
+    acl(path, sid.ptr(), mask, mode).map_err(|error| {
+        Error::new(
+            error.kind(),
+            format!("cannot grant sandbox access to {}: {error}", path.display()),
+        )
+    })
 }
 
 fn std_streams() -> io::Result<[OwnedHandle; 3]> {

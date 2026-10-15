@@ -2,8 +2,22 @@ use crate::policy::Grant;
 
 use super::ToolRegistry;
 
+const SANDBOX_DENIED: [&str; 3] = [
+    "Operation not permitted",
+    "Access is denied",
+    "Access to the path",
+];
+
+fn sandbox_denied(raw: &str) -> bool {
+    SANDBOX_DENIED.iter().any(|marker| raw.contains(marker))
+}
+
+fn permission_denied(raw: &str) -> bool {
+    sandbox_denied(raw) || raw.contains("Permission denied")
+}
+
 pub(super) fn read_only_note(read_only: bool, raw: &str) -> String {
-    if read_only && raw.contains("Operation not permitted") {
+    if read_only && sandbox_denied(raw) {
         "\nthis session runs the shell read-only. Report what to change in your reply.".to_string()
     } else {
         String::new()
@@ -11,8 +25,7 @@ pub(super) fn read_only_note(read_only: bool, raw: &str) -> String {
 }
 
 pub(super) fn sandbox_grant(registry: &ToolRegistry, command: &str, raw: &str) -> Option<Grant> {
-    let eperm = raw.contains("Operation not permitted") || raw.contains("Permission denied");
-    let sandbox_denied = raw.contains("Operation not permitted");
+    let eperm = permission_denied(raw);
     if eperm
         && let Some(grant) = crate::policy::outside_write(
             command,
@@ -30,7 +43,7 @@ pub(super) fn sandbox_grant(registry: &ToolRegistry, command: &str, raw: &str) -
     {
         return Some(Grant::Network);
     }
-    if registry.has_sandbox() && sandbox_denied {
+    if registry.has_sandbox() && sandbox_denied(raw) {
         return Some(Grant::Command(command.to_string()));
     }
     None
@@ -84,8 +97,7 @@ pub(super) fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: 
                 .to_string()
         }
         Some(Grant::Danger { .. }) => String::new(),
-        None if registry.has_sandbox()
-            && (raw.contains("Operation not permitted") || raw.contains("Permission denied")) =>
+        None if registry.has_sandbox() && permission_denied(raw) =>
         {
             if registry.denies_network() {
                 "\nnote: the OS sandbox denied this command (network is off, or the write is outside the writable roots).\n"

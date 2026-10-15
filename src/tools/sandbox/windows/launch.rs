@@ -1,11 +1,10 @@
 use super::*;
 
 pub(super) struct Launch<'a> {
-    pub(super) profile: &'a Profile,
+    pub(super) token: &'a OwnedHandle,
     pub(super) desktop: &'a Desktop,
     pub(super) handles: &'a [HANDLE],
     pub(super) job: &'a OwnedHandle,
-    pub(super) deny_network: bool,
     pub(super) executable: &'a Path,
     pub(super) temp: &'a Path,
     pub(super) workspace: &'a Path,
@@ -15,24 +14,6 @@ pub(super) struct Launch<'a> {
 
 pub(super) fn launch(launch: &Launch<'_>) -> io::Result<OwnedHandle> {
     let handles = launch.handles;
-    let mut network = network(launch.deny_network)?;
-    let mut capabilities: Vec<SID_AND_ATTRIBUTES> = network
-        .iter_mut()
-        .map(|sid| SID_AND_ATTRIBUTES {
-            Sid: sid.as_mut_ptr().cast(),
-            Attributes: SE_GROUP_ENABLED as u32,
-        })
-        .collect();
-    let security = SECURITY_CAPABILITIES {
-        AppContainerSid: launch.profile.sid,
-        Capabilities: if capabilities.is_empty() {
-            null_mut()
-        } else {
-            capabilities.as_mut_ptr()
-        },
-        CapabilityCount: capabilities.len() as u32,
-        Reserved: 0,
-    };
     let mut attributes = Attributes::new()?;
     let jobs = [launch.job.as_raw_handle()];
     let mut startup = STARTUPINFOEXW::default();
@@ -47,11 +28,12 @@ pub(super) fn launch(launch: &Launch<'_>) -> io::Result<OwnedHandle> {
     let environment = environment(launch.temp, launch.workspace, launch.cwd)?;
     let cwd = wide(launch.cwd)?;
     let mut command = command(launch.executable.as_os_str(), launch.args)?;
-    // SAFETY: Every attribute value, string, stream handle, and the job outlive CreateProcessW; JOB_LIST assigns containment before child code runs.
+    // SAFETY: Every attribute value, string, stream handle, the token, and the job outlive CreateProcessAsUserW; JOB_LIST assigns containment before child code runs.
     unsafe {
-        set_attributes(&mut attributes, &security, handles, &jobs)?;
+        set_attributes(&mut attributes, handles, &jobs)?;
         startup.lpAttributeList = attributes.pointer();
-        let created = CreateProcessW(
+        let created = CreateProcessAsUserW(
+            launch.token.as_raw_handle(),
             exe.as_ptr(),
             command.as_mut_ptr(),
             null(),
@@ -63,7 +45,7 @@ pub(super) fn launch(launch: &Launch<'_>) -> io::Result<OwnedHandle> {
             &startup.StartupInfo,
             &mut process,
         );
-        boolean(created).map_err(|error| Error::other(format!("CreateProcessW: {error}")))?;
+        boolean(created).map_err(|error| Error::other(format!("CreateProcessAsUserW: {error}")))?;
     }
     // SAFETY: A successful CreateProcessW transfers these two distinct handles to the caller.
     let (process, thread) = unsafe {
@@ -78,16 +60,10 @@ pub(super) fn launch(launch: &Launch<'_>) -> io::Result<OwnedHandle> {
 
 fn set_attributes(
     attributes: &mut Attributes,
-    security: &SECURITY_CAPABILITIES,
     handles: &[HANDLE],
     jobs: &[HANDLE; 1],
 ) -> io::Result<()> {
     for (kind, pointer, size) in [
-        (
-            PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-            (security as *const SECURITY_CAPABILITIES).cast(),
-            size_of::<SECURITY_CAPABILITIES>(),
-        ),
         (
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
             handles.as_ptr().cast(),
@@ -99,7 +75,7 @@ fn set_attributes(
             size_of::<HANDLE>(),
         ),
     ] {
-        // SAFETY: The caller keeps security, handles, and jobs alive until CreateProcessW returns and the attribute list is deleted.
+        // SAFETY: The caller keeps handles and jobs alive until CreateProcessW returns and the attribute list is deleted.
         boolean(unsafe {
             UpdateProcThreadAttribute(
                 attributes.pointer(),

@@ -10,7 +10,7 @@ use super::Sandbox;
 pub(super) fn discover(workspace: &Path, deny_network: bool, write: &[PathBuf]) -> Result<Sandbox> {
     let _ = (workspace, deny_network, write);
     Err(Error::Config(
-        "--sandbox needs macOS Seatbelt, Linux bubblewrap, or a windows-sandbox build".to_string(),
+        "--sandbox needs macOS Seatbelt, Linux bubblewrap, or Windows".to_string(),
     ))
 }
 
@@ -39,6 +39,11 @@ fn temp_dir() -> Result<PathBuf> {
 
 #[cfg(all(windows, sandboxed))]
 fn build(workspace: PathBuf, deny_network: bool, write: Vec<PathBuf>) -> Result<Sandbox> {
+    if deny_network {
+        return Err(Error::Config(
+            super::windows::NETWORK_UNSUPPORTED.to_string(),
+        ));
+    }
     let executable = std::env::current_exe()?;
     #[cfg(test)]
     let executable = executable

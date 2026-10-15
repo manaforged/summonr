@@ -1,4 +1,4 @@
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 use std::path::{Path, PathBuf};
 
 pub(crate) const GIT_DIR: &str = ".git";
@@ -13,7 +13,7 @@ pub(crate) const GIT_GUARDS: &[&str] = &[
     "packed-refs",
     "logs",
 ];
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 const GIT_DATA: &[&str] = &["objects", "refs", "logs", "lfs"];
 
 pub(super) fn guarded_git_part(parts: &[&str]) -> bool {
@@ -29,7 +29,7 @@ pub(super) fn guarded_git_part(parts: &[&str]) -> bool {
     })
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 #[must_use]
 pub(crate) fn guarded_git_paths(workspace: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
@@ -37,7 +37,7 @@ pub(crate) fn guarded_git_paths(workspace: &Path) -> Vec<PathBuf> {
     found
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn collect(dir: &Path, found: &mut Vec<PathBuf>) {
     found.extend(
         GIT_GUARDS
@@ -53,7 +53,7 @@ fn collect(dir: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn collect_module(dir: &Path, found: &mut Vec<PathBuf>) {
     if !dir.is_dir() {
         return;

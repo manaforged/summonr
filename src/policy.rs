@@ -347,7 +347,7 @@ pub(crate) use blocks::{
 use paths::*;
 use shell::*;
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) use git::guarded_git_paths;
 #[cfg(any(target_os = "macos", test))]
 pub(crate) use git::guarded_git_regex;

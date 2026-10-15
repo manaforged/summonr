@@ -1,7 +1,13 @@
 use super::*;
 
-pub(super) const READ: u32 = FILE_GENERIC_READ | FILE_GENERIC_EXECUTE;
-pub(super) const MODIFY: u32 = READ | FILE_GENERIC_WRITE | DELETE;
+pub(super) const MODIFY: u32 =
+    FILE_GENERIC_READ | FILE_GENERIC_EXECUTE | FILE_GENERIC_WRITE | DELETE;
+pub(super) const GUARD: u32 = FILE_WRITE_DATA
+    | FILE_APPEND_DATA
+    | FILE_WRITE_EA
+    | FILE_WRITE_ATTRIBUTES
+    | FILE_DELETE_CHILD
+    | DELETE;
 pub(super) const DESKTOP_ALL: u32 = STANDARD_RIGHTS_REQUIRED
     | DESKTOP_READOBJECTS
     | DESKTOP_CREATEWINDOW
@@ -13,7 +19,7 @@ pub(super) const DESKTOP_ALL: u32 = STANDARD_RIGHTS_REQUIRED
     | DESKTOP_WRITEOBJECTS
     | DESKTOP_SWITCHDESKTOP;
 
-pub(super) struct Local(*mut c_void);
+pub(super) struct Local(pub(super) *mut c_void);
 
 impl Drop for Local {
     fn drop(&mut self) {
@@ -22,76 +28,7 @@ impl Drop for Local {
     }
 }
 
-pub(super) struct Profile {
-    name: Vec<u16>,
-    pub(super) sid: PSID,
-    grants: Vec<PathBuf>,
-}
-
-impl Profile {
-    pub(super) fn create(name: &str) -> io::Result<Self> {
-        let name = wide(name)?;
-        let mut sid = null_mut();
-        // SAFETY: The name buffers are terminated, and sid is a valid output pointer.
-        let result = unsafe {
-            CreateAppContainerProfile(
-                name.as_ptr(),
-                name.as_ptr(),
-                name.as_ptr(),
-                null(),
-                0,
-                &mut sid,
-            )
-        };
-        if result < 0 {
-            return Err(Error::other(format!(
-                "CreateAppContainerProfile failed: {result:#x}"
-            )));
-        }
-        Ok(Self {
-            name,
-            sid,
-            grants: Vec::new(),
-        })
-    }
-
-    pub(super) fn grant(&mut self, path: &Path, mask: u32) -> io::Result<()> {
-        if self.grants.iter().any(|granted| granted == path) {
-            return Ok(());
-        }
-        acl(path, self.sid, mask, false).map_err(|error| {
-            Error::new(
-                error.kind(),
-                format!("cannot grant sandbox access to {}: {error}", path.display()),
-            )
-        })?;
-        self.grants.push(path.to_path_buf());
-        Ok(())
-    }
-}
-
-impl Drop for Profile {
-    fn drop(&mut self) {
-        for path in self.grants.iter().rev() {
-            if let Err(error) = acl(path, self.sid, 0, true) {
-                eprintln!(
-                    "sandbox: cannot remove temporary access to {}: {error}",
-                    path.display()
-                );
-            }
-        }
-        // SAFETY: This guard owns the profile and SID returned by CreateAppContainerProfile.
-        unsafe {
-            let result = DeleteAppContainerProfile(self.name.as_ptr());
-            if result < 0 {
-                eprintln!("sandbox: cannot delete AppContainer profile: {result:#x}");
-            }
-            FreeSid(self.sid);
-        }
-    }
-}
-
-pub(super) fn acl(path: &Path, sid: PSID, mask: u32, revoke: bool) -> io::Result<()> {
+pub(super) fn acl(path: &Path, sid: PSID, mask: u32, mode: ACCESS_MODE) -> io::Result<()> {
     let _lock = Lock::acquire()?;
     let path = wide(path)?;
     let mut descriptor = null_mut();
@@ -110,9 +47,12 @@ pub(super) fn acl(path: &Path, sid: PSID, mask: u32, revoke: bool) -> io::Result
         )
     })?;
     let _descriptor = Local(descriptor);
+    if mode != REVOKE_ACCESS && present(old, sid, mask, mode)? {
+        return Ok(());
+    }
     let entry = EXPLICIT_ACCESS_W {
         grfAccessPermissions: mask,
-        grfAccessMode: if revoke { REVOKE_ACCESS } else { GRANT_ACCESS },
+        grfAccessMode: mode,
         grfInheritance: OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE,
         Trustee: TRUSTEE_W {
             TrusteeForm: TRUSTEE_IS_SID,
@@ -121,10 +61,10 @@ pub(super) fn acl(path: &Path, sid: PSID, mask: u32, revoke: bool) -> io::Result
         },
     };
     let mut updated = null_mut();
-    // SAFETY: The profile owns sid, descriptor owns old, and entry lives through this call.
+    // SAFETY: sid outlives this call, descriptor owns old, and entry lives through this call.
     status(unsafe { SetEntriesInAclW(1, &entry, old, &mut updated) })?;
     let updated = Local(updated.cast());
-    // SAFETY: updated owns the DACL. Propagation is limited to the explicitly granted directory.
+    // SAFETY: updated owns the DACL; Windows propagates the inheritable entry to existing children.
     status(unsafe {
         SetNamedSecurityInfoW(
             path.as_ptr(),
@@ -138,6 +78,44 @@ pub(super) fn acl(path: &Path, sid: PSID, mask: u32, revoke: bool) -> io::Result
     })
 }
 
+fn present(dacl: *mut ACL, sid: PSID, mask: u32, mode: ACCESS_MODE) -> io::Result<bool> {
+    if dacl.is_null() {
+        return Ok(false);
+    }
+    let kind = if mode == DENY_ACCESS {
+        ACCESS_DENIED_ACE_TYPE
+    } else {
+        ACCESS_ALLOWED_ACE_TYPE
+    } as u8;
+    let mut info = ACL_SIZE_INFORMATION::default();
+    // SAFETY: dacl belongs to a live security descriptor, and info is correctly sized.
+    boolean(unsafe {
+        GetAclInformation(
+            dacl,
+            (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
+        )
+    })?;
+    for index in 0..info.AceCount {
+        let mut ace = null_mut();
+        // SAFETY: index is below AceCount, and ace receives a pointer into dacl.
+        boolean(unsafe { GetAce(dacl, index, &mut ace) })?;
+        // SAFETY: Allowed and denied ACEs share this layout, with the SID starting at SidStart.
+        let found = unsafe {
+            let ace = &*ace.cast::<ACCESS_ALLOWED_ACE>();
+            ace.Header.AceType == kind
+                && u32::from(ace.Header.AceFlags) & INHERITED_ACE == 0
+                && ace.Mask & mask == mask
+                && EqualSid((&raw const ace.SidStart).cast_mut().cast(), sid) != 0
+        };
+        if found {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub(super) struct Desktop {
     station: HWINSTA,
     desktop: HDESK,
@@ -146,21 +124,21 @@ pub(super) struct Desktop {
 }
 
 impl Desktop {
-    pub(super) fn create(profile: &Profile, name: &str) -> io::Result<Self> {
+    pub(super) fn create(sid: PSID, name: &str) -> io::Result<Self> {
         let mut text = null_mut();
-        // SAFETY: profile owns its SID, and text receives a LocalAlloc string.
-        boolean(unsafe { ConvertSidToStringSidW(profile.sid, &mut text) })?;
+        // SAFETY: The caller owns sid for the desktop's lifetime, and text receives a LocalAlloc string.
+        boolean(unsafe { ConvertSidToStringSidW(sid, &mut text) })?;
         let text = Local(text.cast());
         let mut len = 0;
         // SAFETY: ConvertSidToStringSidW returns a terminated UTF-16 string.
-        let sid = unsafe {
+        let sddl_sid = unsafe {
             let ptr = text.0.cast::<u16>();
             while *ptr.add(len) != 0 {
                 len += 1;
             }
             String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len))
         };
-        let sddl = wide(format!("D:(A;;GA;;;OW)(A;;GA;;;SY)(A;;GA;;;{sid})"))?;
+        let sddl = wide(format!("D:(A;;GA;;;OW)(A;;GA;;;SY)(A;;GA;;;{sddl_sid})"))?;
         let mut descriptor = null_mut();
         // SAFETY: sddl is terminated and descriptor is a valid output pointer.
         boolean(unsafe {
@@ -182,7 +160,7 @@ impl Desktop {
             station: null_mut(),
             desktop: null_mut(),
             name: Vec::new(),
-            sid: profile.sid,
+            sid,
         };
         // SAFETY: Runs only in the sandbox subprocess; both UI objects have explicit ACLs and owned handles, and the station is restored.
         unsafe {
@@ -198,7 +176,7 @@ impl Desktop {
                     Error::last_os_error()
                 )));
             }
-            station_acl(desktop.station, profile.sid, false)?;
+            station_acl(desktop.station, sid, false)?;
             let original = GetProcessWindowStation();
             boolean(SetProcessWindowStation(desktop.station))?;
             desktop.desktop = CreateDesktopW(

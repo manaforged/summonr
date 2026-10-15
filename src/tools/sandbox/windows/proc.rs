@@ -1,5 +1,7 @@
 use super::*;
 
+const ATTRIBUTES: u32 = 2;
+
 pub(super) struct Attributes(Vec<usize>);
 
 impl Attributes {
@@ -7,14 +9,14 @@ impl Attributes {
         let mut size = 0;
         // SAFETY: The first call only obtains a size; the second receives aligned, owned storage.
         unsafe {
-            InitializeProcThreadAttributeList(null_mut(), 3, 0, &mut size);
+            InitializeProcThreadAttributeList(null_mut(), ATTRIBUTES, 0, &mut size);
             if size == 0 {
                 return Err(Error::last_os_error());
             }
             let mut storage = vec![0; size.div_ceil(size_of::<usize>())];
             boolean(InitializeProcThreadAttributeList(
                 storage.as_mut_ptr().cast(),
-                3,
+                ATTRIBUTES,
                 0,
                 &mut size,
             ))?;
@@ -153,25 +155,4 @@ pub(super) fn stdio(kind: u32) -> io::Result<OwnedHandle> {
         ))?;
         Ok(OwnedHandle::from_raw_handle(duplicate))
     }
-}
-
-pub(super) fn network(deny: bool) -> io::Result<Vec<Vec<u32>>> {
-    if deny {
-        return Ok(Vec::new());
-    }
-    [
-        WinCapabilityInternetClientSid,
-        WinCapabilityPrivateNetworkClientServerSid,
-    ]
-    .into_iter()
-    .map(|kind| {
-        let mut sid = vec![0_u32; 17];
-        let mut len = 68;
-        // SAFETY: A 68-byte aligned buffer holds SECURITY_MAX_SID_SIZE bytes.
-        boolean(unsafe {
-            CreateWellKnownSid(kind, null_mut(), sid.as_mut_ptr().cast(), &mut len)
-        })?;
-        Ok(sid)
-    })
-    .collect()
 }

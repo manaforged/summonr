@@ -68,7 +68,7 @@ Docs: [user guide](docs/guide/README.md), [reference](docs/guide/reference.md), 
 
 ## Sandbox
 
-`--sandbox` uses Seatbelt on macOS and bubblewrap on Linux. Windows release builds have no sandbox yet, and `--sandbox` exits 1 there. The AppContainer sandbox in a `--features windows-sandbox` build is unfinished: it blocks Git for Windows and user-installed toolchains.
+`--sandbox` contains shell commands. It is off by default. Commands read what your account can read and write only to the workspace, temporary storage, and folders you add with `--add-dir`. It uses Seatbelt on macOS, bubblewrap on Linux, and a write-restricted token on Windows. `--no-net` also cuts the network on macOS and Linux.
 
 ## Desktop window
 

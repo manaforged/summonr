@@ -142,9 +142,9 @@ fn a_contained_read_only_registry_runs_read_commands_and_refuses_writes() {
     let counted = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "wc -l notes.txt"}),
+        serde_json::json!({"command": "cat notes.txt"}),
     );
-    assert!(counted.contains("2 notes.txt"), "{counted}");
+    assert!(counted.contains("two"), "{counted}");
     let call = ToolCall {
         id: "t2".to_string(),
         kind: ToolKind::Function,
@@ -163,6 +163,20 @@ fn a_contained_read_only_registry_runs_read_commands_and_refuses_writes() {
             .block_on(tools.execute_outcome(&call)),
     );
     assert!(!dir.path().join("made.txt").exists());
+}
+
+#[cfg(sandboxed)]
+#[test]
+fn a_windows_access_denial_in_a_contained_command_reads_as_a_sandbox_denial() {
+    let (_dir, mut tools) = workspace(&[]);
+    tools.enable_sandbox(crate::Network::Allowed).unwrap();
+    for message in ["Access is denied", "Access to the path is denied"] {
+        let result = outcome(&tools, &format!("echo '{message}'"));
+        assert!(
+            result.contains("note: the OS sandbox denied"),
+            "{message}: {result}"
+        );
+    }
 }
 
 #[test]

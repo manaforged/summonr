@@ -101,3 +101,14 @@ fn fill(style: LayoutStyle) -> LayoutStyle {
         .fill_height()
         .gap(0.0)
 }
+
+pub(in crate::tui::sigil_view) fn plate_edge(cols: u16, glyph: char) -> NodeBuilder {
+    let run: String = std::iter::once(' ')
+        .chain(std::iter::repeat_n(
+            glyph,
+            usize::from(cols.saturating_sub(2)),
+        ))
+        .chain(std::iter::once(' '))
+        .collect();
+    container().child(sigil::kernel::text(run).nowrap().text_color(PLATE))
+}

@@ -33,16 +33,22 @@ pub(super) fn layer(app: App) -> NodeBuilder {
 fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
     let cell = canvas::cell();
     let spacer = app.clone();
-    let mut plate = surface::theme(&app.theme_name.peek(), app.backdrop.peek());
-    plate.register_token("surface", ThemeValue::Color(scene::PLATE));
+    let mut clear = surface::theme(&app.theme_name.peek(), app.backdrop.peek());
+    clear.register_token(
+        "surface",
+        ThemeValue::Color(Rgba8 {
+            a: 0,
+            ..scene::PLATE
+        }),
+    );
     container()
         .layout(
             LayoutStyle::flex_column()
                 .position(Position::Absolute)
-                .inset_left(f32::from(x) * cell.w)
+                .inset_left(f32::from(x.saturating_sub(1)) * cell.w)
                 .inset_top(0.0)
-                .width(f32::from(width) * cell.w)
-                .height(f32::from(rows) * cell.h)
+                .width(f32::from(width + 2) * cell.w)
+                .height(f32::from(rows + 2) * cell.h)
                 .min_size(0.0, 0.0),
         )
         .child(
@@ -51,15 +57,26 @@ fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
                 .children_reactive(move || {
                     let list =
                         suggest::widget::height(&spacer, canvas::inner_cols(usize::from(width)));
-                    let top = y.saturating_sub(list).min(rows.saturating_sub(4));
+                    let top = y.saturating_sub(list + 1).min(rows.saturating_sub(6));
                     vec![container().layout(LayoutStyle::block().height(f32::from(top) * cell.h))]
                 }),
         )
         .child(
             container()
                 .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
-                .bg(scene::PLATE)
-                .theme(plate)
-                .child(chat::inline_layer(app.clone(), width, surface::editor(app))),
+                .theme(clear)
+                .child(scene::plate_edge(width + 2, '▄'))
+                .child(
+                    container()
+                        .layout(
+                            LayoutStyle::flex_column()
+                                .fill_width()
+                                .padding_x(cell.w)
+                                .padding_bottom(cell.h),
+                        )
+                        .bg(scene::PLATE)
+                        .child(chat::inline_layer(app.clone(), width, surface::editor(app))),
+                )
+                .child(scene::plate_edge(width + 2, '▀')),
         )
 }

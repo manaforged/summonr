@@ -95,7 +95,7 @@ impl<P: Provider> Loop<P> {
     }
 
     fn grant_blocked(&self, grant: &Grant, asked: &[Grant]) -> bool {
-        (self.tools.is_read_only() && !matches!(grant, Grant::Network)) || asked.contains(grant)
+        self.tools.is_read_only() || asked.contains(grant)
     }
 
     async fn ask_grant(
@@ -133,14 +133,6 @@ impl<P: Provider> Loop<P> {
                 self.tools.approve_once(Approval::Policy)?;
                 return Ok(());
             }
-            Grant::Command(command) => {
-                self.tools.approve_once(Approval::Uncontained)?;
-                format!("running this command without the sandbox: {command}")
-            }
-            Grant::Network => {
-                self.set_network(crate::Network::Allowed)?;
-                "network allowed for this session".to_string()
-            }
         };
         self.push_event(events, emit, Event::Note { text })?;
         Ok(())
@@ -153,12 +145,12 @@ impl<P: Provider> Loop<P> {
             return Ok(text);
         }
         Ok(
-            match crate::config::save_sandbox_write(
+            match crate::config::save_write_root(
                 &crate::config::path()?,
-                &crate::config::sandbox_entry(path),
+                &crate::config::write_root_entry(path),
             ) {
                 Ok(()) => format!(
-                    "writes allowed under {} and saved to [sandbox] write",
+                    "writes allowed under {} and saved to write_roots",
                     path.display()
                 ),
                 Err(error) => format!("{text}; standing grant not saved: {error}"),

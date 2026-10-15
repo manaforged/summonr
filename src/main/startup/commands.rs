@@ -309,6 +309,11 @@ pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
             let kept = summonr::mcp_add(name, launch)?;
             let count = summonr::mcp_probe(&workspace()?, name)
                 .await
+                .and_then(|count| {
+                    count.ok_or_else(|| {
+                        summonr::Error::Config(format!("no MCP server named {name}"))
+                    })
+                })
                 .map_err(|error| {
                     summonr::Error::Setup(format!(
                         "{name}: not reachable: {error}\nkept in {kept}; fix the command or run `summonr mcp remove {name}`"

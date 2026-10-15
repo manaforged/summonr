@@ -42,7 +42,7 @@ pub(crate) fn servers(workspace: &Path) -> Vec<Server> {
         .collect()
 }
 
-fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
+pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
     let Ok(entries) =
         serde_json::from_value::<BTreeMap<String, Entry>>(read_json(&plugin.dir.join(FILE)))
     else {

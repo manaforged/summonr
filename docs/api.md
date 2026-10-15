@@ -1,6 +1,6 @@
 # summonr API map
 
-For agents and tools that run summonr as a child process. The commands, flags, exit codes, and JSON shapes on this page are the supported surface. The Rust items in the `summonr` library crate are public to the binary only. Do not link against them. The subcommand `askpass` and the flags `--sandbox-exec` and `--profile-tui` are internal entry points. Do not call them.
+For agents and tools that run summonr as a child process. The commands, flags, exit codes, and JSON shapes on this page are the supported surface. The Rust items in the `summonr` library crate are public to the binary only. Do not link against them. The subcommand `askpass` and the flag `--profile-tui` are internal entry points. Do not call them.
 
 Binary: `summonr`. Source of truth: `src/main/cli.rs`.
 
@@ -60,7 +60,7 @@ echo $?
 | --- | --- |
 | Pick an endpoint or model | `-e NAME` or a leading `NAME`; `--model NAME`; `--effort none\|minimal\|low\|medium\|high\|xhigh\|max` |
 | Set a budget | `--max-tokens N`, `--max-secs N` |
-| Contain shell commands | `--sandbox`; `--no-net` denies sockets and needs `--sandbox`; `--add-dir DIR` adds a writable root |
+| Add a writable root under `--strict` | `--add-dir DIR` |
 | Allow only listed commands | `--strict` with `policy.toml` |
 | Ignore workspace `AGENTS.md` | `--no-trust` |
 | Skip the check gate for one run | `--no-verify` |
@@ -162,7 +162,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 ## Conventions
 
 - User config is under `~/.summonr`. Set `SUMMONR_HOME` to move it.
-  - `~/.summonr/config.toml`: endpoints, `[modules]`, `[mcp.NAME]`, `[hooks]`, `[sandbox]`, `[workflows.NAME]`.
+  - `~/.summonr/config.toml`: endpoints, `[modules]`, `[mcp.NAME]`, `[hooks]`, `write_roots`, `[workflows.NAME]`.
   - `~/.summonr/policy.toml`: command and write policy.
   - `~/.summonr/credentials.toml`: stored keys.
   - `~/.summonr/sessions/<id>/session.jsonl`: the session log.
@@ -177,7 +177,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - Memory files: `~/.summonr/memory/MEMORY.md` (user) and `~/.summonr/memory/<name>-<hash>/MEMORY.md` (project; the folder is named for the repository and a hash of its first commit, or of its path outside git) load into every trusted session unless `memory = false` under `[modules]`.
 - A cron run sets `SUMMONR_CRON` to the job name. Inside it, `summonr cron add`, `edit`, and `remove` exit 1.
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
-- The sandbox is off by default, so an unattended `--goal` run can read and run anything your account can. Run CI and other unattended goals with `--sandbox`. In a noninteractive run, sandbox escape, network grants, and writes outside the workspace are denied; `--no-net` stays in force after a command failure. Auto mode asks before it grants an extra write root.
+- summonr has no sandbox, so an unattended `--goal` run can read and run anything your account can. Run CI and other unattended goals in a container. In a noninteractive run, irreversible commands are refused, and under `--strict` so are writes outside the writable roots. Auto mode asks before it grants an extra write root.
 - `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root are read only when the workspace is trusted. A home `SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it.
 
 The [reference](guide/reference.md) has every flag and config key. [Extending summonr](guide/extending.md) covers skills, MCP servers, hooks, and CLIs.

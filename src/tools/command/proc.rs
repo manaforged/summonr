@@ -11,7 +11,6 @@ use tokio::process::Command;
 use crate::error::{Error, Result};
 
 use super::ToolOutput;
-use crate::tools::sandbox::{CommandMode, Sandbox};
 
 pub(super) struct StartedCommand {
     pub(super) id: String,
@@ -28,7 +27,6 @@ pub(super) type CommandChild = Child;
 pub(super) struct CommandChild {
     child: Box<dyn ChildWrapper>,
     kill_on_drop: bool,
-    sandbox: bool,
 }
 
 #[cfg(windows)]
@@ -42,14 +40,6 @@ impl CommandChild {
     }
 
     fn start_kill(&mut self) -> std::io::Result<()> {
-        #[cfg(sandboxed)]
-        if self.sandbox {
-            return self.child.id().map_or(Ok(()), |pid| {
-                crate::tools::sandbox::windows::stop(pid).map(drop)
-            });
-        }
-        #[cfg(not(sandboxed))]
-        let _ = self.sandbox;
         self.child.start_kill()
     }
 }
@@ -68,23 +58,18 @@ impl Drop for CommandChild {
 pub(crate) struct ProcessGroup {
     pid: u32,
     armed: bool,
-    sandbox: bool,
 }
 
-static GROUPS: Mutex<Vec<(u32, bool)>> = Mutex::new(Vec::new());
+static GROUPS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
-fn groups() -> MutexGuard<'static, Vec<(u32, bool)>> {
+fn groups() -> MutexGuard<'static, Vec<u32>> {
     GROUPS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl ProcessGroup {
-    pub(crate) fn new(pid: u32, sandbox: bool) -> Self {
-        groups().push((pid, sandbox));
-        Self {
-            pid,
-            armed: true,
-            sandbox,
-        }
+    pub(crate) fn new(pid: u32) -> Self {
+        groups().push(pid);
+        Self { pid, armed: true }
     }
 
     pub(crate) fn terminate(&self) -> bool {
@@ -106,30 +91,28 @@ impl ProcessGroup {
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
         let mut live = groups();
-        if let Some(at) = live.iter().position(|group| group.0 == self.pid) {
+        if let Some(at) = live.iter().position(|group| *group == self.pid) {
             live.swap_remove(at);
         }
         drop(live);
         if self.armed {
-            kill_group(self.pid, self.sandbox);
+            kill_group(self.pid);
         }
     }
 }
 
 pub(crate) fn stop_groups() {
     let taken = std::mem::take(&mut *groups());
-    for (pid, sandbox) in taken {
-        kill_group(pid, sandbox);
+    for pid in taken {
+        kill_group(pid);
     }
 }
 
 pub(super) fn spawn_command(
     env: &[(String, String)],
-    sandbox: Option<&Sandbox>,
     script: &str,
     log_path: &std::path::Path,
     background: bool,
-    read_only: bool,
     cwd: &std::path::Path,
 ) -> Result<CommandChild> {
     let log = std::fs::File::create(log_path)
@@ -140,21 +123,10 @@ pub(super) fn spawn_command(
     let shell = crate::shell::program()?;
     let args = crate::shell::arguments(script, cwd);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut cmd = if let Some(sandbox) = sandbox {
-        let mode = if read_only {
-            CommandMode::ReadOnly
-        } else if background {
-            CommandMode::Background
-        } else {
-            CommandMode::Session
-        };
-        sandbox.command(&shell, &args, cwd, mode)
-    } else {
-        let mut cmd = Command::new(&shell);
-        cmd.args(&args).current_dir(cwd);
-        cmd
-    };
-    cmd.env_clear()
+    let mut cmd = Command::new(&shell);
+    cmd.args(&args)
+        .current_dir(cwd)
+        .env_clear()
         .envs(command_env())
         .envs(crate::askpass::env())
         .envs(env.iter().cloned())
@@ -169,23 +141,12 @@ pub(super) fn spawn_command(
     #[cfg(unix)]
     let child = cmd.spawn();
     #[cfg(windows)]
-    let child = if sandbox.is_some() {
-        cmd.kill_on_drop(false);
-        if background && sandbox.is_some() {
-            cmd.env("SUMMONR_SANDBOX_DETACHED", "1");
-        }
-        cmd.spawn().map(|child| CommandChild {
-            child: Box::new(child),
-            kill_on_drop: !background,
-            sandbox: sandbox.is_some(),
-        })
-    } else {
+    let child = {
         let mut command = CommandWrap::from(cmd);
         command.wrap(JobObject);
         command.spawn().map(|child| CommandChild {
             child,
             kill_on_drop: !background,
-            sandbox: false,
         })
     };
     child.map_err(|error| Error::Tool(format!("cannot start command: {error}")))
@@ -283,16 +244,7 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
     env
 }
 
-pub(in crate::tools) fn kill_group(pid: u32, sandbox: bool) {
-    #[cfg(all(windows, sandboxed))]
-    if sandbox {
-        if let Err(error) = crate::tools::sandbox::windows::stop(pid) {
-            eprintln!("sandbox cleanup failed: {error}");
-        }
-        return;
-    }
-    #[cfg(not(all(windows, sandboxed)))]
-    let _ = sandbox;
+pub(in crate::tools) fn kill_group(pid: u32) {
     #[cfg(unix)]
     signal(pid, libc::SIGKILL);
     #[cfg(windows)]
@@ -319,7 +271,7 @@ pub(super) fn stop_command(child: &mut CommandChild, pid: u32) -> std::io::Resul
     #[cfg(unix)]
     {
         let _ = child;
-        kill_group(pid, false);
+        kill_group(pid);
         Ok(())
     }
     #[cfg(windows)]
@@ -345,16 +297,7 @@ pub(super) async fn wait_shell(
 pub(super) fn stop_job(workspace: &std::path::Path, record: &crate::jobs::Record) -> Result<()> {
     let exit = crate::jobs::exit_path(workspace, &record.id);
     if crate::jobs::alive_since(record.pid, record.started) {
-        #[cfg(all(windows, sandboxed))]
-        if record.sandbox {
-            if let Some(helper) = crate::tools::sandbox::windows::stop(record.pid)? {
-                crate::tools::sandbox::windows::wait(&helper)?;
-            }
-        } else {
-            kill_group(record.pid, false);
-        }
-        #[cfg(not(all(windows, sandboxed)))]
-        kill_group(record.pid, record.sandbox);
+        kill_group(record.pid);
     }
     if !exit.is_file() {
         crate::jobs::write_killed(&exit)?;

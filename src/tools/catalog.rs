@@ -71,7 +71,7 @@ impl ToolRegistry {
             }
             Builtin::Skill => self.skills,
             Builtin::Lsp => self.language,
-            Builtin::RunCommand => !self.policy.is_read_only() || self.sandbox.is_some(),
+            Builtin::RunCommand => !self.policy.is_read_only(),
             Builtin::Web => self.search.is_some(),
             Builtin::Browser => self.browser.is_some() && !self.policy.is_read_only(),
             Builtin::Task => false,

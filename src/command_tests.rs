@@ -21,8 +21,8 @@ fn approve_is_not_a_command() {
         .iter()
         .find(|spec| spec.name == "/permissions")
         .expect("permissions");
-    assert_eq!(permissions.usage, "[net|write]");
-    assert_eq!(permissions.description, "sandbox network and write paths");
+    assert_eq!(permissions.usage, "[write]");
+    assert_eq!(permissions.description, "extra write paths for --strict");
 }
 
 #[test]

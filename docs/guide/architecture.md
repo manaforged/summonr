@@ -31,7 +31,7 @@ The advertised schema is `src/tools/catalog.rs`. Dispatch still accepts the old 
 | `search` | Contents (`pattern`) or file names (`glob`) under any readable path |
 | `edit` | Hash-anchored replace, insert, delete, or a batch |
 | `write` | Create or overwrite |
-| `run_command` | Sandboxed shell |
+| `run_command` | Shell |
 | `todo` | The itemized step list summonr tracks, in steps and goal runs |
 
 On when the module is on: `skill`, `lsp`, `web` (the `search` module, off by default), `task` (interactive sessions only), `ask` (interactive sessions only, not in children), and the mail tools `agents`, `send`, `inbox`, and `board`. `task` is on by default and `mail` is off by default; `/settings` switches either.

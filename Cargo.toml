@@ -83,9 +83,8 @@ vt100 = "0.16"
 crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "5b1788b58b5d18237ed11f049717975f3168483e" }
 
 [features]
-default = ["windows-sandbox"]
+default = []
 gui = ["sigil/desktop"]
-windows-sandbox = []
 
 [profile.release]
 lto = "fat"
@@ -100,8 +99,7 @@ keyring = { version = "3", features = ["windows-native", "sync-secret-service", 
 
 [target.'cfg(windows)'.dependencies]
 process-wrap = { version = "9.1", default-features = false, features = ["job-object", "tokio1"] }
-sha2 = { workspace = true }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Memory", "Win32_System_StationsAndDesktops", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [lints.rust]
 unsafe_code = "deny"

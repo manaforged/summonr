@@ -245,8 +245,7 @@ fn start_child(
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let child = command.spawn()?;
     let command = format!("summonr cron exec {name}");
-    let mut record = crate::jobs::stamp(&id, child.id(), &command, workspace, false, None)?;
-    record.sandbox = payload.is_some();
+    let record = crate::jobs::stamp(&id, child.id(), &command, workspace, false, None)?;
     crate::jobs::write(&record_path, &record)?;
     store::settle(name, slot, started, |run| run.job = Some(id.clone()))?;
     Ok((child, exit, log))
@@ -302,9 +301,6 @@ fn argv(job: &Job, payload: Option<&Path>) -> Vec<String> {
     if job.worktree {
         args.push("--worktree".to_string());
     }
-    if payload.is_some() {
-        args.push("--sandbox".to_string());
-    }
     let (flags, text) = match &job.task {
         Task::Prompt(prompt) => (["-p", "--"].as_slice(), prompt),
         Task::Goal(goal) => (["--goal"].as_slice(), goal),
@@ -346,7 +342,7 @@ pub(super) fn stop_running(job: &Job) -> bool {
     if !running {
         return false;
     }
-    let mut group = crate::tools::command::ProcessGroup::new(record.pid, record.sandbox);
+    let mut group = crate::tools::command::ProcessGroup::new(record.pid);
     group.disarm();
     group.terminate()
 }

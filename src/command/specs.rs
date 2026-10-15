@@ -220,12 +220,12 @@ pub(super) const SPECS: &[CommandSpec] = &[
     ),
     spec(
         "/permissions",
-        "sandbox network and write paths",
+        "extra write paths for --strict",
         SlashCommand::Permissions,
         Text,
         Settings,
     )
-    .usage("[net|write]"),
+    .usage("[write]"),
     spec(
         "/help",
         "list commands and keys",
@@ -251,7 +251,6 @@ pub(super) const ALIASES: &[(&str, &str)] = &[
     ("/session", "/status"),
     ("/stats", "/status"),
     ("/profile", "/usage session"),
-    ("/net", "/permissions net"),
     ("/write", "/permissions write"),
     ("/layout", "/pane"),
     ("/theme", "/settings"),

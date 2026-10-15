@@ -3,12 +3,7 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=Cargo.toml");
-    println!("cargo::rustc-check-cfg=cfg(sandboxed)");
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    let windows = std::env::var_os("CARGO_FEATURE_WINDOWS_SANDBOX").is_some();
-    if os == "macos" || os == "linux" || (os == "windows" && windows) {
-        println!("cargo:rustc-cfg=sandboxed");
-    }
     if os == "windows" {
         let flag = match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
             Ok("msvc") => format!("/STACK:{MAIN_STACK}"),

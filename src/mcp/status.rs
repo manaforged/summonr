@@ -131,7 +131,8 @@ fn row(server: &Server, hub: Option<&Hub>, live: &[Live]) -> ServerStatus {
             server.allow.as_ref().is_none_or(|allow| {
                 item.get("name")
                     .and_then(Value::as_str)
-                    .is_some_and(|name| allow.iter().any(|entry| entry == name))
+                    // complexity: bounded by a BTreeSet lookup, O(log n)
+                    .is_some_and(|name| allow.contains(name))
             })
         })
         .collect();

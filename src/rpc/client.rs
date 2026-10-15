@@ -11,12 +11,11 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use super::{Notice, agreed, hello, notification, request};
 use crate::error::{Error, Result};
 use crate::tools::command::ProcessGroup;
-use crate::tools::sandbox::Sandbox;
 
 mod process;
 mod reply;
 
-pub(crate) use process::{Access, Env, Launch, Process, Stderr, start};
+pub(crate) use process::{Env, Launch, Process, Stderr, start};
 
 const SECRET_MIN: usize = 8;
 
@@ -49,7 +48,6 @@ pub(crate) struct Spawn<'a> {
     pub(crate) args: &'a [&'a str],
     pub(crate) env: &'a [(String, String)],
     pub(crate) cwd: &'a Path,
-    pub(crate) sandbox: Option<&'a Sandbox>,
     pub(crate) wait: Duration,
 }
 
@@ -61,9 +59,6 @@ impl Client {
             env: launch.env,
             unset: &[],
             cwd: launch.cwd,
-            sandbox: launch
-                .sandbox
-                .map(|sandbox| (sandbox, process::Access::Write)),
             base: process::Env::Clean,
             stderr: process::Stderr::Pipe,
         })?;

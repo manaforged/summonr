@@ -8,20 +8,15 @@ use super::output::output;
 use super::{Hub, McpUpdate};
 use crate::error::{Error, Result};
 use crate::provider::{Source, UserInput};
-use crate::tools::sandbox::Sandbox;
 
 impl Hub {
-    pub(crate) async fn expand(
-        &self,
-        input: UserInput,
-        sandbox: Option<&Sandbox>,
-    ) -> Result<UserInput> {
+    pub(crate) async fn expand(&self, input: UserInput) -> Result<UserInput> {
         let original = input.text.clone();
         let mut text = input.text;
         let mut images = input.images;
         let before = images.len();
         if let Some((link, name, rest)) = self.prompt_of(&original) {
-            let (body, found) = prompt(link, &name, &rest, sandbox).await?;
+            let (body, found) = prompt(link, &name, &rest).await?;
             text = body;
             images.extend(found);
         }
@@ -30,7 +25,7 @@ impl Hub {
             let Some((link, uri)) = self.resource_of(word) else {
                 continue;
             };
-            let (body, found) = resource(link, uri, sandbox).await?;
+            let (body, found) = resource(link, uri).await?;
             attached.push_str(&format!("\n--- {} ---\n{body}\n", &word[1..]));
             images.extend(found);
         }
@@ -86,7 +81,6 @@ async fn prompt(
     link: &Arc<Link>,
     name: &str,
     rest: &str,
-    sandbox: Option<&Sandbox>,
 ) -> Result<(String, Vec<crate::provider::Image>)> {
     let listing = link.listing();
     let declared = listing
@@ -106,7 +100,6 @@ async fn prompt(
         .request(
             "prompts/get",
             json!({"name": name, "arguments": arguments}),
-            sandbox,
             &mut |_: McpUpdate| {},
         )
         .await?;
@@ -153,16 +146,11 @@ fn bind(declared: &Value, rest: &str) -> std::result::Result<Map<String, Value>,
     Ok(bound)
 }
 
-async fn resource(
-    link: &Arc<Link>,
-    uri: &str,
-    sandbox: Option<&Sandbox>,
-) -> Result<(String, Vec<crate::provider::Image>)> {
+async fn resource(link: &Arc<Link>, uri: &str) -> Result<(String, Vec<crate::provider::Image>)> {
     let mut result = link
         .request(
             "resources/read",
             json!({"uri": uri}),
-            sandbox,
             &mut |_: McpUpdate| {},
         )
         .await?;

@@ -18,8 +18,6 @@ pub(crate) struct Record {
     pub workspace: String,
     pub started: u64,
     pub background: bool,
-    #[serde(default)]
-    pub sandbox: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -231,7 +229,6 @@ pub(crate) fn stamp(
         workspace: workspace.display().to_string(),
         started,
         background,
-        sandbox: false,
         session,
         log: None,
     })

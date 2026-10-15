@@ -146,7 +146,7 @@ pub(crate) fn write_denied(path: &str) -> String {
         );
     }
     format!(
-        "write to `{path}` is outside the writable roots; add {} to [sandbox] write in ~/.summonr/config.toml, or /permissions write {}",
+        "write to `{path}` is outside the writable roots; add {} to write_roots in ~/.summonr/config.toml, or /permissions write {}",
         dir.display(),
         dir.display()
     )
@@ -173,20 +173,6 @@ fn grant_from_message(message: &str) -> Option<Grant> {
     write_grant(expand_path(dir))
 }
 
-pub(crate) fn outside_write(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Grant> {
-    match write_block(
-        &walk::walk(command, workspace, workspace, roots),
-        workspace,
-        roots,
-    ) {
-        Some(Block::Outside(path)) => write_grant(write_directory(&path)),
-        Some(Block::Protected(path)) => {
-            write_grant(write_directory(&locate(&path, workspace).to_string_lossy()))
-        }
-        None => None,
-    }
-}
-
 fn rooted(path: &Path) -> bool {
     path.is_absolute() || path.has_root()
 }
@@ -200,37 +186,4 @@ fn write_grant(path: PathBuf) -> Option<Grant> {
     } else {
         Grant::Write(path)
     })
-}
-
-#[derive(Clone, Copy)]
-enum WriteRoot {
-    CargoHome,
-    NpmCache,
-    GoPath,
-}
-
-const IMPLICIT_WRITES: &[(&str, WriteRoot)] = &[
-    ("cargo", WriteRoot::CargoHome),
-    ("rustup", WriteRoot::CargoHome),
-    ("npm", WriteRoot::NpmCache),
-    ("npx", WriteRoot::NpmCache),
-    ("pnpm", WriteRoot::NpmCache),
-    ("yarn", WriteRoot::NpmCache),
-    ("bun", WriteRoot::NpmCache),
-    ("go", WriteRoot::GoPath),
-];
-
-#[must_use]
-pub(crate) fn implicit_write(command: &str) -> Option<PathBuf> {
-    let verb = first_verb(command)?;
-    let home = crate::config::home_dir()?;
-    let (_, root) = IMPLICIT_WRITES.iter().find(|(name, _)| *name == verb)?;
-    let dir = match root {
-        WriteRoot::CargoHome => home.join(".cargo"),
-        WriteRoot::NpmCache => home.join(".npm"),
-        WriteRoot::GoPath => std::env::var_os("GOPATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join("go")),
-    };
-    (!protected_write(&dir)).then_some(dir)
 }

@@ -104,6 +104,7 @@ impl<P: Provider> Loop<P> {
         let herdr =
             crate::herdr::Reporter::discover(&session.id().to_string(), workspace, &model, depth);
         let config = crate::config::file()?;
+        crate::plugins::warn_unknown_off(&config.plugins.off);
         Ok(Self {
             provider,
             model,
@@ -206,22 +207,6 @@ impl<P: Provider> Loop<P> {
         self.tools.set_images(model_images, vision);
     }
 
-    pub fn with_sandbox(mut self, network: crate::Network) -> Result<Self> {
-        self.tools.enable_sandbox(network)?;
-        Ok(self)
-    }
-
-    pub(crate) fn set_network(&mut self, network: crate::Network) -> Result<()> {
-        if self.tools.has_sandbox() {
-            self.tools.enable_sandbox(network)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn allow_network_once(&self) {
-        self.tools.allow_network_once();
-    }
-
     pub fn allow_path(&mut self, path: &str) -> Result<()> {
         self.tools.allow_path(crate::policy::expand_path(path))
     }
@@ -229,16 +214,6 @@ impl<P: Provider> Loop<P> {
     #[must_use]
     pub(crate) fn write_roots(&self) -> Vec<String> {
         self.tools.write_roots()
-    }
-
-    #[must_use]
-    pub(crate) fn has_sandbox(&self) -> bool {
-        self.tools.has_sandbox()
-    }
-
-    #[must_use]
-    pub(crate) fn denies_network(&self) -> bool {
-        self.tools.denies_network()
     }
 
     #[must_use]

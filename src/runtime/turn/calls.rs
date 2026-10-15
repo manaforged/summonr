@@ -135,11 +135,10 @@ impl<P: Provider> Loop<P> {
             }
             Err(error) => return Ok(Err(error)),
         };
-        let sandbox = self.tools.sandbox();
         let policy = self.tools.policy().clone();
         let (sender, mut updates) = tokio::sync::mpsc::unbounded_channel();
         let mut report = move |update| drop(sender.send(update));
-        let running = hub.call(&alias, arguments, &policy, sandbox.as_ref(), &mut report);
+        let running = hub.call(&alias, arguments, &policy, &mut report);
         tokio::pin!(running);
         let output = loop {
             tokio::select! {

@@ -6,7 +6,6 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 use crate::policy::Policy;
 use crate::tools::ToolOutput;
-use crate::tools::sandbox::Sandbox;
 
 mod catalog;
 mod config;
@@ -63,7 +62,7 @@ pub struct Hub {
 }
 
 impl Hub {
-    pub(crate) async fn connect(workspace: PathBuf, sandbox: Option<Sandbox>) -> Self {
+    pub(crate) async fn connect(workspace: PathBuf) -> Self {
         let (found, failed) = match config::servers(&workspace) {
             Ok(found) => (found, None),
             Err(error) => (
@@ -76,10 +75,9 @@ impl Hub {
         };
         let opened = futures::future::join_all(found.servers.into_iter().map(|server| {
             let workspace = workspace.clone();
-            let sandbox = sandbox.as_ref();
             async move {
                 let name = server.name.clone();
-                Link::open(server, workspace, sandbox)
+                Link::open(server, workspace)
                     .await
                     .map_err(|error| (name, error.to_string()))
             }
@@ -138,13 +136,12 @@ impl Hub {
         alias: &str,
         arguments: Value,
         policy: &Policy,
-        sandbox: Option<&Sandbox>,
         report: &mut (dyn FnMut(McpUpdate) + Send),
     ) -> Result<ToolOutput> {
         let (link, item) = self
             .find(alias)
             .ok_or_else(|| Error::Tool(format!("unknown tool `{alias}`")))?;
-        let gate = Gate { policy, sandbox };
+        let gate = Gate { policy };
         let called = link.call_tool(item, arguments, &gate, report).await?;
         let mut shown = output(called.value, true);
         if called.changed {

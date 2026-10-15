@@ -10,7 +10,6 @@ A coding agent for any model, in your terminal or a desktop window, written in R
 - **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.
 - **Works while you're away**: schedule a goal for 3 a.m. with `summonr cron`, fire one from a webhook, or text it from Telegram. It tells you whether the check passed.
 - **Remembers**: tell it a preference once and every later session in that repository knows it. The notes are plain Markdown you can edit.
-- **Contained**: `--sandbox` runs shell commands under Seatbelt on macOS and bubblewrap on Linux.
 
 [Docs](docs/guide/README.md) | [Reference](docs/guide/reference.md) | [Scripting API](docs/api.md) | [Benchmarks](#benchmarks)
 
@@ -65,10 +64,6 @@ To update, run the installer again. To uninstall, delete the binary: `~/.local/b
 To skip the prompt, set a key such as `ANTHROPIC_API_KEY` and run `summonr anthropic`.
 
 Docs: [user guide](docs/guide/README.md), [reference](docs/guide/reference.md), and [docs/api.md](docs/api.md) for a coding agent that drives summonr.
-
-## Sandbox
-
-`--sandbox` contains shell commands. It is off by default. Commands read what your account can read and write only to the workspace, temporary storage, and folders you add with `--add-dir`. It uses Seatbelt on macOS, bubblewrap on Linux, and a write-restricted token on Windows. `--no-net` also cuts the network on macOS and Linux.
 
 ## Desktop window
 
@@ -187,9 +182,9 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 
 ## Limits
 
-- Commands run without a prompt. Only irreversible destruction asks first: wiping the system, home, or project root, `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and dropped database tables. `-p` never runs those. Set `confirm = "risky"` in `~/.summonr/policy.toml` to also ask before force pushes, `sudo`, pipes into a shell, and history rewrites; `--strict` refuses that whole list. Under `--sandbox` or `--strict`, your own `policy.toml` deny rules are hard refusals.
+- Commands run as your account, without a prompt and without a sandbox; run summonr in a container to contain it. Only irreversible destruction asks first: wiping the system, home, or project root, `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and dropped database tables. `-p` never runs those. Set `confirm = "risky"` in `~/.summonr/policy.toml` to also ask before force pushes, `sudo`, pipes into a shell, and history rewrites; `--strict` refuses that whole list. Under `--strict`, your own `policy.toml` deny rules are hard refusals.
 - When one call, or a cycle of up to three calls, returns the same result five times in a row, summonr adds a note to the result that tells the model to change its approach. The turn goes on.
-- The `mcp` module is on by default. A server starts on its first tool call, stops after two idle minutes, and runs inside `--sandbox` when that is on. A server with more than 8 KB of tool schemas is reached through one `mcp` tool, so large servers do not fill the prompt. `/server:prompt` runs a server prompt, `@server:uri` attaches a server resource, and a server can ask you to fill a form during a call. A reply over 4 MiB is dropped, and output over 50 KB is cut with the full text saved to a file. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` server runs only after you set `enabled = true` for it.
+- The `mcp` module is on by default. A server starts on its first tool call, stops after two idle minutes. A server with more than 8 KB of tool schemas is reached through one `mcp` tool, so large servers do not fill the prompt. `/server:prompt` runs a server prompt, `@server:uri` attaches a server resource, and a server can ask you to fill a form during a call. A reply over 4 MiB is dropped, and output over 50 KB is cut with the full text saved to a file. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` server runs only after you set `enabled = true` for it.
 - A project can turn a module off. A project can't turn a module on.
 - A trusted workspace supplies `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` as instructions, and your own `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` apply everywhere; `--no-trust` ignores the workspace files.
 - `summonr export` writes Markdown. summonr doesn't import transcripts from other tools.

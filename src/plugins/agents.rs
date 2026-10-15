@@ -95,7 +95,7 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     Some(out)
 }
 
-fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
+pub(super) fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
     let Ok(entries) = std::fs::read_dir(plugin.dir.join(DIR)) else {
         return Vec::new();
     };

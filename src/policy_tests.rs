@@ -170,16 +170,6 @@ fn a_variable_that_names_a_protected_path_is_caught_by_both_checks() {
 }
 
 #[test]
-fn package_managers_write_to_their_own_cache() {
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap();
-    assert_eq!(implicit_write("npx tsc"), Some(home.join(".npm")));
-    assert_eq!(implicit_write("rustup update"), Some(home.join(".cargo")));
-    assert_eq!(implicit_write("ls -la"), None);
-}
-
-#[test]
 fn strict_refuses_an_allowed_verb_that_destroys_work() {
     let mut policy = Policy::builtin();
     policy.overlay(File {
@@ -238,29 +228,6 @@ fn git_metadata_is_protected_and_objects_are_not() {
     ] {
         assert!(!protected_write(Path::new(path)), "{path}");
     }
-    assert_eq!(
-        guarded_git_regex("/w.s"),
-        "^/w\\.s/\\.git/(modules/.+/)?(hooks|config|commondir|HEAD|index|refs|packed-refs|logs)(/.*)?$"
-    );
-}
-
-#[test]
-fn guarded_git_paths_finds_submodule_hooks_on_disk() {
-    let root = tempfile::tempdir().unwrap();
-    let module = root.path().join(".git/modules/lib");
-    std::fs::create_dir_all(module.join("hooks")).unwrap();
-    std::fs::write(module.join("HEAD"), "ref: refs/heads/main").unwrap();
-    std::fs::write(module.join("config"), "").unwrap();
-    std::fs::create_dir_all(root.path().join(".git/hooks")).unwrap();
-    let found = guarded_git_paths(root.path());
-    for path in [
-        ".git/hooks",
-        ".git/modules/lib/hooks",
-        ".git/modules/lib/config",
-    ] {
-        assert!(found.contains(&root.path().join(path)), "{path}: {found:?}");
-    }
-    assert!(!found.contains(&root.path().join(".git/config")));
 }
 
 #[test]

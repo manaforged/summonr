@@ -197,24 +197,6 @@ pub(crate) fn a_server_behind_a_wrapper_leaves_no_process_behind() {
     assert!(left.is_empty(), "servers left running: {left:?}");
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub(crate) fn a_sandboxed_server_behind_a_wrapper_leaves_no_process_behind() {
-    let session = Session::new();
-    let marker = format!("sandboxed-{}", std::process::id());
-    let model = Model::start(vec![
-        Step::Call("fixture1__echo", json!({"text": "x"})),
-        Step::After(Duration::from_secs(3), Box::new(Step::Text("ok"))),
-    ]);
-    session.run(&model, &wrapped(&session, &marker), &["--sandbox"]);
-    assert!(
-        model.tool_results()[0].contains('x'),
-        "{:?}",
-        model.tool_results()
-    );
-    let left = crate::support::survivors(&marker);
-    assert!(left.is_empty(), "servers left running: {left:?}");
-}
-
 #[cfg(unix)]
 pub(crate) fn ctrl_c_stops_the_servers() {
     let session = Session::new();

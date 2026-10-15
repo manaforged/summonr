@@ -10,6 +10,8 @@ mod lifecycle;
 mod manage;
 #[path = "mcp/output.rs"]
 mod output;
+#[path = "mcp/plugin_install.rs"]
+mod plugin_install;
 #[path = "mcp/plugins.rs"]
 mod plugins;
 #[path = "mcp/policy.rs"]
@@ -59,8 +61,6 @@ fn main() {
         lifecycle::a_server_that_never_answers_is_given_up_at_its_timeout,
         #[cfg(unix)]
         lifecycle::a_server_behind_a_wrapper_leaves_no_process_behind,
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        lifecycle::a_sandboxed_server_behind_a_wrapper_leaves_no_process_behind,
         #[cfg(unix)]
         lifecycle::ctrl_c_stops_the_servers,
         manage::servers_are_added_listed_described_and_removed_from_the_shell,
@@ -77,7 +77,20 @@ fn main() {
         plugins::a_chatty_hook_does_not_stall_the_call,
         #[cfg(unix)]
         plugins::plugin_settings_and_data_are_handled,
-        plugins::a_legacy_bundle_installs_as_a_plugin,
+        plugins::a_legacy_bundle_installs_and_an_unreachable_server_fails_it,
+        plugin_install::plugin_install_refuses_a_tree_that_adds_nothing,
+        plugin_install::plugin_install_keeps_the_copy_when_json_does_not_parse,
+        plugin_install::plugin_reinstall_keeps_plugin_data,
+        plugin_install::plugin_unknown_off_warns_without_blocking_list_or_session_start,
+        plugin_install::plugin_uninstall_removes_an_unknown_off_name,
+        plugin_install::plugin_install_skips_a_server_turned_off_in_config,
+        plugin_install::plugin_install_counts_only_language_servers_that_load,
+        #[cfg(unix)]
+        plugin_install::plugin_user_config_reaches_the_server,
+        #[cfg(unix)]
+        plugin_install::plugin_user_env_replaces_the_server_env,
+        #[cfg(unix)]
+        plugin_install::plugin_non_command_hook_is_skipped_and_does_not_run,
         #[cfg(unix)]
         plugins::a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home,
         #[cfg(unix)]
@@ -109,14 +122,6 @@ fn main() {
         policy::an_unapproved_project_server_is_named,
         policy::a_tuning_table_keeps_a_project_server_waiting,
         policy::a_zero_timeout_is_refused,
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        policy::a_server_runs_inside_the_sandbox,
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        policy::a_headless_sandbox_refuses_a_write_outside_its_roots,
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        policy::a_sandboxed_command_cannot_write_outside_roots_without_approval,
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        policy::a_no_network_session_does_not_enable_shell_networking,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         policy::a_relocated_summonr_home_stays_protected_from_read_and_search,
         #[cfg(unix)]

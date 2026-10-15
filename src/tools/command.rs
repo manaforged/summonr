@@ -9,7 +9,6 @@ pub(super) mod digest;
 mod native;
 mod native_search;
 pub(super) mod proc;
-mod rewrite;
 mod run;
 
 pub(crate) use digest::searchish;
@@ -22,7 +21,6 @@ use run::Wait;
 #[derive(Clone, Copy)]
 pub(crate) enum Approval {
     Policy,
-    Uncontained,
 }
 
 pub(crate) fn exit_code(output: &str) -> Option<i32> {
@@ -70,7 +68,6 @@ impl ToolRegistry {
 
     async fn launch_command(&self, args: &serde_json::Value, locked: bool) -> Result<ToolOutput> {
         let restricted = self.policy.restricts_writes();
-        let read_only = locked || restricted;
         let command = object_string(args, "command")?;
         let (background, explicit) = launch_mode(args)?;
         let approval = self.take_approval()?;
@@ -82,13 +79,13 @@ impl ToolRegistry {
         let wait = if background {
             Wait::Background
         } else {
-            Wait::chosen(explicit, self.can_detach(read_only))
+            Wait::chosen(explicit, self.can_detach(locked))
         };
-        let started = self.start_command(command, wait, read_only, approval, cwd)?;
+        let started = self.start_command(command, wait, cwd)?;
         if background {
             return Ok(background_result(started));
         }
-        self.wait_command(started, command, wait, read_only).await
+        self.wait_command(started, command, wait).await
     }
 
     fn shortcut(
@@ -147,20 +144,14 @@ impl ToolRegistry {
     }
 
     fn check_launch(&self, locked: bool, restricted: bool, background: bool) -> Result<()> {
-        if restricted && self.sandbox.is_none() {
+        if restricted {
             return Err(Error::Denied(
-                "a restricted write policy requires the command sandbox for shell inspection"
-                    .to_string(),
+                "a restricted write policy does not run shell commands".to_string(),
             ));
         }
-        if (locked || restricted) && background {
+        if locked && background {
             return Err(Error::Denied(
-                if locked {
-                    "A read-only session does not permit background commands"
-                } else {
-                    "restricted write policy does not permit background commands"
-                }
-                .to_string(),
+                "A read-only session does not permit background commands".to_string(),
             ));
         }
         if background && !self.background {

@@ -134,19 +134,12 @@ fn the_full_output_note_counts_every_line_of_a_large_log() {
     assert_eq!(spill::full_output_note(&log, false, None), "");
 }
 
-#[cfg(sandboxed)]
 #[test]
-fn a_contained_read_only_registry_runs_read_commands_and_refuses_writes() {
+fn a_read_only_registry_has_no_shell() {
     let (dir, mut tools) = workspace(&[("notes.txt", "one\ntwo\n")]);
     tools.contain_read_only();
-    let counted = run(
-        &tools,
-        "run_command",
-        serde_json::json!({"command": "cat notes.txt"}),
-    );
-    assert!(counted.contains("two"), "{counted}");
     let call = ToolCall {
-        id: "t2".to_string(),
+        id: "t1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
             checked: Default::default(),
@@ -155,28 +148,16 @@ fn a_contained_read_only_registry_runs_read_commands_and_refuses_writes() {
         },
         continuation: None,
     };
-    drop(
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(tools.execute_outcome(&call)),
-    );
+    let result = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call));
+    let Err(error) = result else {
+        panic!("a read-only registry ran a shell command");
+    };
+    assert!(error.to_string().contains("unavailable"), "{error}");
     assert!(!dir.path().join("made.txt").exists());
-}
-
-#[cfg(sandboxed)]
-#[test]
-fn a_windows_access_denial_in_a_contained_command_reads_as_a_sandbox_denial() {
-    let (_dir, mut tools) = workspace(&[]);
-    tools.enable_sandbox(crate::Network::Allowed).unwrap();
-    for message in ["Access is denied", "Access to the path is denied"] {
-        let result = outcome(&tools, &format!("echo '{message}'"));
-        assert!(
-            result.contains("note: the OS sandbox denied"),
-            "{message}: {result}"
-        );
-    }
 }
 
 #[test]

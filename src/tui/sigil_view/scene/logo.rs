@@ -1,4 +1,4 @@
-use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, dim_rect, overlay, plate, write};
+use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, dim_rect, fill_bg, frame, overlay, write};
 use super::space::STAR_BRIGHT;
 use super::*;
 use sigil::prelude::Paint;
@@ -21,13 +21,13 @@ pub(in crate::tui::sigil_view) fn compose(
     let mark = fitting(rows, &facts);
     let [mark_width, mark_rows] = super::mark::size(mark);
     let [body_width, body_rows] = cover(mark, &facts);
-    let [body_x, body_y, input_x, _, input_width] = layout(cols, rows, body_width, body_rows);
-    let card_x = input_x.saturating_sub(1);
+    let [body_x, body_y, _, _, _] = layout(cols, rows, body_width, body_rows);
+    let card_x = body_x.saturating_sub(3);
     let card_y = body_y.saturating_sub(2);
     let card = [
         card_x,
         card_y,
-        (input_width + 2).min(cols.saturating_sub(card_x)),
+        (body_width + 6).min(cols.saturating_sub(card_x)),
         (body_rows + 3).min(rows.saturating_sub(card_y)),
     ];
     dim_rect(cells, cols, card, true);
@@ -81,13 +81,14 @@ pub(in crate::tui::sigil_view) fn compose(
             palette().gray,
         );
     }
+    fill_bg(cells, cols, card);
     if mark != super::Mark::Banner {
         let clock = model.prefs.animations.then(|| {
             u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
         });
         super::mark::paint(cells, cols, [logo_x, body_y], mark, elapsed, clock);
     }
-    plate(cells, cols, card);
+    frame(cells, cols, card);
     drop(model);
     card
 }
@@ -150,11 +151,7 @@ pub(in crate::tui::sigil_view) fn layout(
     } else {
         2
     };
-    let input_width = cols
-        .saturating_sub(gutter)
-        .min(72)
-        .max(body_width + 4)
-        .min(cols.saturating_sub(2));
+    let input_width = cols.saturating_sub(gutter).min(72);
     let total = body_rows + 5;
     let body_x = cols.saturating_sub(body_width) / 2;
     let input_x = cols.saturating_sub(input_width) / 2;

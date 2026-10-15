@@ -102,18 +102,15 @@ fn fill(style: LayoutStyle) -> LayoutStyle {
         .gap(0.0)
 }
 
-pub(in crate::tui::sigil_view) fn plate_edge() -> NodeBuilder {
-    let cell = metrics();
+pub(in crate::tui::sigil_view) fn frame_row(cols: u16, [left, right]: [char; 2]) -> NodeBuilder {
+    let run: String = std::iter::once(left)
+        .chain(std::iter::repeat_n(
+            '─',
+            usize::from(cols.saturating_sub(2)),
+        ))
+        .chain(std::iter::once(right))
+        .collect();
     container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(cell.h)
-                .padding_x(cell.w),
-        )
-        .child(
-            container()
-                .layout(LayoutStyle::block().grow(1.0).fill_height())
-                .bg(PLATE),
-        )
+        .bg(PLATE)
+        .child(sigil::kernel::text(run).nowrap().text_color(palette().gray))
 }

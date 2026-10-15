@@ -52,21 +52,27 @@ fn the_splash_card_covers_the_stars() {
             panic!("splash card missing");
         };
         assert!(x1 > x0 + 1 && y1 > y0 + 1, "splash card is a sliver");
+        let edge =
+            |cell: &Cell| matches!(cell.fg, Ink::Exact(colour) if colour == super::palette().gray);
         let at = |col: usize, row: usize| &cells[row * usize::from(cols) + col];
-        let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
+        assert_eq!(at(x0, y0).text, "╭", "top left");
+        assert_eq!(at(x1, y0).text, "╮", "top right");
+        assert_eq!(at(x0, y1).text, "╰", "bottom left");
+        assert_eq!(at(x1, y1).text, "╯", "bottom right");
+        for col in x0 + 1..x1 {
+            assert_eq!(at(col, y0).text, "─", "top edge {col}");
+            assert_eq!(at(col, y1).text, "─", "bottom edge {col}");
+            assert!(edge(at(col, y0)), "top edge colour {col}");
+        }
+        for row in y0 + 1..y1 {
+            assert_eq!(at(x0, row).text, "│", "left edge {row}");
+            assert_eq!(at(x1, row).text, "│", "right edge {row}");
+        }
         for row in y0..=y1 {
             for col in x0..=x1 {
                 let cell = at(col, row);
-                assert!(
-                    !["▄", "▀"].contains(&cell.text.as_str()),
-                    "edge glyph at {col},{row}"
-                );
+                assert!(plate(cell), "card hole at {col},{row} bg={:?}", cell.bg);
                 assert_ne!(cell.text, "✦", "star shows through the card at {col},{row}");
-                if corners.contains(&(col, row)) {
-                    assert!(!plate(cell), "corner {col},{row} is filled");
-                } else {
-                    assert!(plate(cell), "card hole at {col},{row} bg={:?}", cell.bg);
-                }
             }
         }
     });
@@ -141,7 +147,7 @@ fn a_long_splash_draft_grows_down_under_the_card() {
             let top = rows(&single, "● auto").expect("single-line composer");
             app.edit(&format!("{}tail", "breath of fire pixel style ".repeat(8)));
             let shown = render(&app, cols, height);
-            let card = rows(&shown, "workdir").expect("card bottom");
+            let card = rows(&shown, "╰").expect("card bottom");
             let header = rows(&shown, "● auto").expect("composer header");
             assert_eq!(header, top, "{shown}");
             assert!(header > card, "{shown}");
@@ -330,6 +336,31 @@ fn the_splash_keeps_the_line_stack_s_when_f2_is_pressed() {
             assert!(
                 shown.contains('┏') && shown.contains('┛') && shown.contains('┌'),
                 "{shown}"
+            );
+        }
+    });
+}
+
+#[test]
+fn the_splash_composer_sits_on_the_card_plate() {
+    Runtime::scope("splash-composer", || {
+        let (_app, mut host, mut screen) = splash_screen(120, 40);
+        let mut router = sigil::events::EventRouter::new();
+        screen.frame(&mut host, &mut router, [], (120, 40)).unwrap();
+        let grid = screen
+            .frame(&mut host, &mut router, [], (120, 40))
+            .unwrap()
+            .clone();
+        let (col, row) = (0..40)
+            .flat_map(|row| (0..120).map(move |col| (col, row)))
+            .find(|&(col, row)| grid.get(col, row).is_some_and(|cell| cell.text == "❯"))
+            .expect("prompt on the splash");
+        for at in col + 2..col + 30 {
+            let cell = grid.get(at, row).expect("composer cell");
+            assert!(
+                matches!(cell.bg, Ink::Exact(colour) if colour == super::PLATE),
+                "composer cell {at},{row} bg={:?}",
+                cell.bg
             );
         }
     });

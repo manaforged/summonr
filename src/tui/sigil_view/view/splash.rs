@@ -65,7 +65,7 @@ fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
             container()
                 .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
                 .theme(clear)
-                .child(scene::plate_edge())
+                .child(scene::frame_row(width + 2, ['╭', '╮']))
                 .child(
                     container()
                         .layout(
@@ -74,9 +74,12 @@ fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
                                 .padding_x(cell.w)
                                 .padding_bottom(cell.h),
                         )
+                        .border_left(1)
+                        .border_right(1)
+                        .border_color(sigil::prelude::Token::Gray8)
                         .bg(scene::PLATE)
                         .child(chat::inline_layer(app.clone(), width, surface::editor(app))),
                 )
-                .child(scene::plate_edge()),
+                .child(scene::frame_row(width + 2, ['╰', '╯'])),
         )
 }

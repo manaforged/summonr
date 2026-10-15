@@ -83,7 +83,10 @@ pub(in crate::tui::sigil_view) fn compose(
     }
     fill_bg(cells, cols, card);
     if mark != super::Mark::Banner {
-        super::mark::paint(cells, cols, logo_x, body_y, mark, elapsed);
+        let clock = model.prefs.animations.then(|| {
+            u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
+        });
+        super::mark::paint(cells, cols, [logo_x, body_y], mark, elapsed, clock);
     }
     frame(cells, cols, card);
     drop(model);

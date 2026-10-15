@@ -77,7 +77,8 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     drop(app.theme_name.get());
                     let _backdrop = app.backdrop.get();
                     let _draft = app.draft.get();
-                    if !app.splash_revealed.get() {
+                    let moving = app.splash.get() && app.model.with(|model| model.prefs.animations);
+                    if !app.splash_revealed.get() || moving {
                         let _reveal = app.ticks.get();
                     }
                     let mut cells = vec![Cell::blank(); usize::from(cols) * usize::from(rows)];

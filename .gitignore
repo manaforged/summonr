@@ -1,18 +1,9 @@
 /target/
-/off/
-docs/plans/
-docs/specs/
-docs/decisions/
-docs/reviews/
 docs/book/
-docs/guide/internals/function-map.md
 /.cargo/config.toml
 .DS_Store
 __pycache__/
-.crucible/
-.crucible.json
 .summonr/
-/mines/
 .ruff_cache/
 .env
 *.env
@@ -23,5 +14,3 @@ __pycache__/
 .vscode/
 .wrangler/
 coverage/
-.mage/
-.claude/

@@ -60,33 +60,14 @@ pub(in crate::tui::sigil_view) fn plate(cells: &mut [Cell], cols: u16, area: [u1
     let (right, bottom) = (x + width - 1, y + height - 1);
     for row in y..=bottom {
         for col in x..=right {
-            let edge = [row == y, row == bottom, col == x, col == right];
-            let glyph = match edge {
-                [true, _, true, _]
-                | [true, _, _, true]
-                | [_, true, true, _]
-                | [_, true, _, true] => None,
-                [true, ..] => Some("▄"),
-                [_, true, ..] => Some("▀"),
-                _ => {
-                    let index = usize::from(row) * usize::from(cols) + usize::from(col);
-                    if let Some(cell) = cells.get_mut(index) {
-                        cell.bg = ink(PLATE);
-                    }
-                    continue;
-                }
-            };
-            set(
-                cells,
-                cols,
-                col,
-                row,
-                glyph.map_or_else(Cell::blank, |glyph| Cell {
-                    text: glyph.into(),
-                    fg: ink(PLATE),
-                    ..Cell::blank()
-                }),
-            );
+            if (row == y || row == bottom) && (col == x || col == right) {
+                set(cells, cols, col, row, Cell::blank());
+                continue;
+            }
+            let index = usize::from(row) * usize::from(cols) + usize::from(col);
+            if let Some(cell) = cells.get_mut(index) {
+                cell.bg = ink(PLATE);
+            }
         }
     }
 }

@@ -102,13 +102,18 @@ fn fill(style: LayoutStyle) -> LayoutStyle {
         .gap(0.0)
 }
 
-pub(in crate::tui::sigil_view) fn plate_edge(cols: u16, glyph: char) -> NodeBuilder {
-    let run: String = std::iter::once(' ')
-        .chain(std::iter::repeat_n(
-            glyph,
-            usize::from(cols.saturating_sub(2)),
-        ))
-        .chain(std::iter::once(' '))
-        .collect();
-    container().child(sigil::kernel::text(run).nowrap().text_color(PLATE))
+pub(in crate::tui::sigil_view) fn plate_edge() -> NodeBuilder {
+    let cell = metrics();
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .height(cell.h)
+                .padding_x(cell.w),
+        )
+        .child(
+            container()
+                .layout(LayoutStyle::block().grow(1.0).fill_height())
+                .bg(PLATE),
+        )
 }

@@ -48,7 +48,7 @@ fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
                 .inset_left(f32::from(x.saturating_sub(1)) * cell.w)
                 .inset_top(0.0)
                 .width(f32::from(width + 2) * cell.w)
-                .height(f32::from(rows + 2) * cell.h)
+                .height(f32::from(rows + 3) * cell.h)
                 .min_size(0.0, 0.0),
         )
         .child(
@@ -57,7 +57,7 @@ fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
                 .children_reactive(move || {
                     let list =
                         suggest::widget::height(&spacer, canvas::inner_cols(usize::from(width)));
-                    let top = y.saturating_sub(list + 1).min(rows.saturating_sub(6));
+                    let top = y.saturating_sub(list).min(rows.saturating_sub(6));
                     vec![container().layout(LayoutStyle::block().height(f32::from(top) * cell.h))]
                 }),
         )
@@ -65,7 +65,7 @@ fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
             container()
                 .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
                 .theme(clear)
-                .child(scene::plate_edge(width + 2, '▄'))
+                .child(scene::plate_edge())
                 .child(
                     container()
                         .layout(
@@ -77,6 +77,6 @@ fn composer(app: App, rows: u16, [x, y, width]: [u16; 3]) -> NodeBuilder {
                         .bg(scene::PLATE)
                         .child(chat::inline_layer(app.clone(), width, surface::editor(app))),
                 )
-                .child(scene::plate_edge(width + 2, '▀')),
+                .child(scene::plate_edge()),
         )
 }

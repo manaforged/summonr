@@ -52,22 +52,21 @@ fn the_splash_card_covers_the_stars() {
             panic!("splash card missing");
         };
         assert!(x1 > x0 + 1 && y1 > y0 + 1, "splash card is a sliver");
-        let edge = |cell: &Cell| matches!(cell.fg, Ink::Exact(colour) if colour == super::PLATE);
         let at = |col: usize, row: usize| &cells[row * usize::from(cols) + col];
-        for (col, row) in [(x0, y0 - 1), (x1, y0 - 1), (x0, y1 + 1), (x1, y1 + 1)] {
-            assert_eq!(at(col, row).text, " ", "corner {col},{row}");
-            assert!(!plate(at(col, row)), "corner {col},{row}");
-        }
-        for col in x0 + 1..x1 {
-            assert_eq!(at(col, y0 - 1).text, "▄", "top edge {col}");
-            assert_eq!(at(col, y1 + 1).text, "▀", "bottom edge {col}");
-            assert!(edge(at(col, y0 - 1)), "top edge colour {col}");
-        }
+        let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
         for row in y0..=y1 {
             for col in x0..=x1 {
                 let cell = at(col, row);
-                assert!(plate(cell), "card hole at {col},{row} bg={:?}", cell.bg);
+                assert!(
+                    !["▄", "▀"].contains(&cell.text.as_str()),
+                    "edge glyph at {col},{row}"
+                );
                 assert_ne!(cell.text, "✦", "star shows through the card at {col},{row}");
+                if corners.contains(&(col, row)) {
+                    assert!(!plate(cell), "corner {col},{row} is filled");
+                } else {
+                    assert!(plate(cell), "card hole at {col},{row} bg={:?}", cell.bg);
+                }
             }
         }
     });

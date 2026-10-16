@@ -4,7 +4,7 @@ A coding agent for any model, in your terminal or a desktop window, written in R
 
 - **Light**: 27 MB while it works in our [Terminal-Bench 2.1 runs](#benchmarks), against 146 MB for Grok Build and 276 MB for Codex.
 - **Sessions that talk**: message any running session with `@name`, even one on a different model or provider. [Try it](#coordinate-work-live).
-- **Uses the web**: drives the Chrome, Edge, or Brave you already have, in its own profile that keeps your logins, and searches and reads pages without an API key. Turn on `browser` and `search` under `[modules]`.
+- **Your own browser**: drives the Chrome, Edge, or Brave installed on your machine, in a profile of its own; sign in once and it stays signed in. Search and page reads need no API key. Turn on `browser` and `search` under `[modules]`.
 - **Any model**: 41 built-in endpoints, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
 - **One binary**: web search, a real browser, MCP servers, and parallel child agents.
 - **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.

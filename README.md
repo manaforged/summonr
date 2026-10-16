@@ -176,7 +176,7 @@ GLM 5.3 Flash through z.ai, one try on each of 86 tasks; OpenCode ran in a later
 
 | Agent | Resolution rate | Input tokens | Memory |
 | --- | ---: | ---: | ---: |
-| summonr 0.1.0-rc.1 | 73.3% | 194,193 | 24 MB |
+| summonr 0.1.0 | 73.3% | 194,193 | 24 MB |
 | pi 1.0.0 | 72.1% | 212,337 | 134 MB |
 | OpenCode 2.0.22 | 67.4% | 253,726 | 394 MB |
 

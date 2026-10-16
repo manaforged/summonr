@@ -78,13 +78,13 @@ What the run shows:
 - On the trials it missed, summonr used more input than Grok Build.
 - summonr ran in 27 MB against Grok Build's 146 MB.
 
-## Terminal-Bench 2.1 on GLM 5.3 Flash: summonr 0.1.0-rc.1 against pi 1.0.0 and OpenCode 2.0.22
+## Terminal-Bench 2.1 on GLM 5.3 Flash: summonr 0.1.0 against pi 1.0.0 and OpenCode 2.0.22
 
 86 tasks, one try each, `glm-5.3-flash` at high effort through z.ai, every harness on its defaults, run by `bench/run.sh`. summonr and pi ran in one job; OpenCode ran in a later job on the same tasks, model, effort, and dataset. Three tasks are dropped for every harness because their verifier could not install its tools: path-tracing-reverse, qemu-alpine-ssh, qemu-startup. Tokens only; this vendor is not priced. Intervals are 95% Wilson for solved and bootstrap medians elsewhere. The solved cut counts only the tasks that harness solved; the all cut counts all 86.
 
 | Agent | Resolution rate | Input tokens, solved | Input tokens, all | Output tokens, solved | Output tokens, all | Time, solved | Time, all |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| summonr 0.1.0-rc.1 | 73.3% (63/86, 63%–81%) | 95,271 | 194,193 | 8,231 | 12,920 | 219 s | 470 s |
+| summonr 0.1.0 | 73.3% (63/86, 63%–81%) | 95,271 | 194,193 | 8,231 | 12,920 | 219 s | 470 s |
 | pi 1.0.0 | 72.1% (62/86, 62%–80%) | 240,762 | 212,337 | 15,226 | 15,310 | 368 s | 410 s |
 | OpenCode 2.0.22 | 67.4% (58/86, 57%–76%) | 228,578 | 253,726 | 12,364 | 17,756 | 341 s | 567 s |
 

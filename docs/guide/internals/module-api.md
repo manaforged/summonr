@@ -50,7 +50,7 @@ The tool schemas. Six core, seven behind a module, a workspace file, or a person
 | `<server>__<tool>`, `mcp` | `mcp/defer.rs` `Hub::definitions` | `mcp` module on; project servers need approval; a read-only research child does not treat `readOnlyHint` as read-only; a server over `MCP_DEFER_BYTES` of schemas is listed under `mcp` |
 | `agents`, `send`, `inbox`, `board` | `mail/tools.rs::definitions` | `mail` module on, or `SUMMONR_MAIL` set to anything but `off`; the session must be on the roster; `board` set and `send` are off in a read-only research child |
 
-A read-only research child is offered `read`, `search`, `run_command`, `skill`, and `web` when `search` is on, plus the
+A read-only research child keeps the parent's tool list and can call `read`, `search`, `skill`, and `web` when `search` is on, plus the
 mail tools when mail is on; `send` and `board` set refuse there.
 
 Peer mail has no server. Other agent CLIs reach the same files through

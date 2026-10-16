@@ -49,7 +49,7 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             "diff",
             "--name-only",
             "-z",
-            &format!("{}..{}", tree.base, tree.branch),
+            &format!("{}...{}", tree.base, tree.branch),
         ],
     )?;
     let big: Vec<&str> = changed

@@ -338,3 +338,18 @@ fn a_worktree_holding_only_summonr_state_is_unchanged() {
     assert_eq!(tree.changes().unwrap(), vec!["note.txt".to_string()]);
     drop(tree.remove());
 }
+
+#[test]
+fn a_large_file_changed_only_on_the_moved_base_does_not_block_the_run() {
+    let (_root, primary) = repo();
+    let big = "x".repeat(6 * 1024 * 1024);
+    std::fs::write(primary.join("data.bin"), &big).unwrap();
+    git(&primary, &["add", "data.bin"]);
+    git(&primary, &["commit", "-q", "-m", "data"]);
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(primary.join("data.bin"), format!("{big}y")).unwrap();
+    git(&primary, &["commit", "-q", "-am", "base moves"]);
+    std::fs::write(tree.path.join("calc.py"), "x = 1\n").unwrap();
+    let error = super::finish(&tree, "add calc", &["calc.py".to_string()]).unwrap_err();
+    assert!(!error.to_string().contains("data.bin"), "{error}");
+}

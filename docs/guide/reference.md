@@ -643,7 +643,7 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | `board` | `mail` module | `action` get, set, or list; `key`, `value` |
 | `mcp` | an MCP server has over 8 KB of tool schemas | Lists those servers' tool names; `query` returns matching tools with schemas; `tool` and `arguments` call one |
 
-The old names (`read_file`, `list_dir`, `grep`, `glob`, `show_image`, `write_file`, `replace_text`, `replace_lines`, `insert_after`, `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`, `definition`, `web_search`, and `web_fetch`) still execute and are not advertised. A read-only research child is offered `read`, `search`, and `run_command`, plus `skill` and, with `search` on, `web`; not `edit`, `write`, or `todo`.
+The old names (`read_file`, `list_dir`, `grep`, `glob`, `show_image`, `write_file`, `replace_text`, `replace_lines`, `insert_after`, `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`, `definition`, `web_search`, and `web_fetch`) still execute and are not advertised. A read-only research child keeps the parent's tool list, so its first request reuses the parent's prompt cache. It can call `read`, `search`, `skill`, and, with `search` on, `web`; `run_command`, `edit`, and `write` are refused when called.
 
 ## Modules
 

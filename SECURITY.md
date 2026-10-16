@@ -23,6 +23,10 @@ summonr sends no telemetry. It connects only to:
 - The search engines the web tools use, when the model searches the web or fetches a page.
 - MCP servers, hooks, and gateways that you configure, such as Telegram for `summonr gateway telegram`.
 
+## Local files
+
+summonr keeps its keys in `~/.summonr/credentials.toml` (mode 0600). To reuse a sign-in you already have, it also reads OpenCode's `~/.local/share/opencode/auth.json` and Kimi Code's `~/.kimi-code/credentials/kimi-code.json` when they exist. It never writes them, and a key you store with `summonr login` wins over theirs.
+
 ## Scope
 
 In scope: the `summonr` binary, its command and write policy, its credential storage, and the release artifacts on GitHub.

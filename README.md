@@ -160,27 +160,27 @@ Terminal-Bench 2.1, at high effort, with every agent in a pair on the same model
 
 GPT-6.1 Sol on a ChatGPT plan:
 
-| Agent | Resolution rate | Input tokens | Cost | Memory |
+| Agent | Resolution rate | Input tokens per solved task | Cost per trial | Memory |
 | --- | ---: | ---: | ---: | ---: |
-| summonr 0.1.0 | 85.8% | 58,351 | $0.078 | 27 MB |
-| Codex 0.162.1 | 79.0% | 194,802 | $0.105 | 276 MB |
+| summonr 0.1.0 | 85.8% | 58,976 | $0.078 | 27 MB |
+| Codex 0.162.1 | 79.0% | 182,691 | $0.105 | 276 MB |
 
 Grok 4.7 on a SuperGrok plan:
 
-| Agent | Resolution rate | Input tokens | Memory |
+| Agent | Resolution rate | Input tokens per solved task | Memory |
 | --- | ---: | ---: | ---: |
-| summonr 0.1.0 | 74.2% | 579,764 | 27 MB |
-| Grok Build 1.0.52 | 70.4% | 820,158 | 146 MB |
+| summonr 0.1.0 | 74.2% | 373,831 | 27 MB |
+| Grok Build 1.0.52 | 70.4% | 803,466 | 146 MB |
 
 GLM 5.3 Flash through z.ai, one try on each of 86 tasks; OpenCode ran in a later job than summonr and pi:
 
-| Agent | Resolution rate | Input tokens | Memory |
+| Agent | Resolution rate | Input tokens per solved task | Memory |
 | --- | ---: | ---: | ---: |
-| summonr 0.1.0 | 73.3% | 194,193 | 24 MB |
-| pi 1.0.0 | 72.1% | 212,337 | 134 MB |
-| OpenCode 2.0.22 | 67.4% | 253,726 | 394 MB |
+| summonr 0.1.0 | 73.3% | 95,271 | 24 MB |
+| pi 1.0.0 | 72.1% | 240,762 | 134 MB |
+| OpenCode 2.0.22 | 67.4% | 228,578 | 394 MB |
 
-Medians per trial, as each agent reported them; cost at API list price. Method and caveats: [`BENCHMARKS.md`](BENCHMARKS.md).
+Medians, as each agent reported them: input over the tasks that agent solved, cost per trial at API list price. Method and caveats: [`BENCHMARKS.md`](BENCHMARKS.md).
 
 The first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Six core tools are advertised every round (`read`, `search`, `edit`, `write`, `run_command`, `todo`), plus `ask` in an interactive session and the modules you turned on. MCP schemas join the prefix only for servers you configure.
 

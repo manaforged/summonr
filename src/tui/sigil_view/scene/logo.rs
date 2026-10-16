@@ -32,15 +32,23 @@ struct Placed {
     facts: [u16; 2],
 }
 
-fn place(card: Card, [body_x, body_y]: [u16; 2], [body_width, body_rows]: [u16; 2]) -> Placed {
+fn place(
+    card: Card,
+    [body_x, body_y]: [u16; 2],
+    [body_width, body_rows]: [u16; 2],
+    facts: u16,
+) -> Placed {
     let [mark_width, mark_rows] = super::mark::size(card.mark());
     if card == Card::Lockup {
-        let word_rows = crate::splash::logo().len() as u16;
-        let column = word_rows + WORD_GAP;
-        let top = body_y + body_rows.saturating_sub(column + 4) / 2;
+        let column = crate::splash::logo().len() as u16 + WORD_GAP;
+        let text_rows = column + facts;
+        let mark_top = body_rows.saturating_sub(mark_rows) / 2;
+        let layers = super::mark::LAYERS as u16;
+        let face = mark_top + layers + mark_rows.saturating_sub(layers + text_rows) / 2;
+        let top = body_y + face.min(body_rows.saturating_sub(text_rows));
         let right = body_x + mark_width + LOCKUP_GAP;
         return Placed {
-            mark: [body_x, body_y + body_rows.saturating_sub(mark_rows) / 2],
+            mark: [body_x, body_y + mark_top],
             word: Some([right, top]),
             facts: [right, top + column],
         };
@@ -82,7 +90,12 @@ pub(in crate::tui::sigil_view) fn compose(
     } else {
         u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
     };
-    let placed = place(card_kind, [body_x, body_y], [body_width, body_rows]);
+    let placed = place(
+        card_kind,
+        [body_x, body_y],
+        [body_width, body_rows],
+        facts.len() as u16,
+    );
     let value_width = usize::from(match card_kind {
         Card::Lockup => (crate::splash::logo_width() as u16).saturating_sub(FACT_LABEL),
         Card::Mark | Card::Banner => body_width.saturating_sub(FACT_LABEL),

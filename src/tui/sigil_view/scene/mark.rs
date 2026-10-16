@@ -7,7 +7,7 @@ pub(in crate::tui::sigil_view) enum Mark {
     Banner,
 }
 
-const LAYERS: i32 = 5;
+pub(super) const LAYERS: i32 = 5;
 const STEP_MS: u64 = 90;
 const LAP_MS: u64 = 8_000;
 const TAIL_PERCENT: usize = 10;

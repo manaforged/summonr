@@ -180,3 +180,46 @@ fn a_wide_splash_sets_the_wordmark_beside_the_s_in_solid_white_cells() {
         assert!(solid > 60, "wordmark cells beside the S: {solid}\n{text}");
     });
 }
+
+#[test]
+fn a_wide_splash_centers_the_wordmark_and_facts_on_the_face_of_the_s() {
+    Runtime::scope("splash-center", || {
+        let (_app, mut host, mut screen) = splash_screen(160, 48);
+        let mut router = sigil::events::EventRouter::new();
+        screen.frame(&mut host, &mut router, [], (160, 48)).unwrap();
+        let grid = screen
+            .frame(&mut host, &mut router, [], (160, 48))
+            .unwrap()
+            .clone();
+        let text = grid.text();
+        let lines: Vec<&str> = text.lines().collect();
+        let face_top = lines.iter().position(|line| line.contains('┏')).unwrap();
+        let face_bottom = lines.iter().rposition(|line| line.contains('┗')).unwrap();
+        let white = sigil::terminal::Ink::Exact(super::palette().text);
+        let word_left = (0..160)
+            .find(|&col| {
+                (face_top..face_bottom)
+                    .any(|row| grid.get(col, row).is_some_and(|cell| cell.bg == white))
+            })
+            .unwrap_or_else(|| panic!("no wordmark:\n{text}"));
+        let inked = |row: usize| {
+            grid.get(word_left, row)
+                .is_some_and(|cell| cell.bg == white || !cell.text.trim().is_empty())
+        };
+        let text_top = (0..48)
+            .find(|&row| {
+                grid.get(word_left, row)
+                    .is_some_and(|cell| cell.bg == white)
+            })
+            .unwrap();
+        let text_bottom = (text_top..face_bottom + 2)
+            .rev()
+            .find(|&row| inked(row))
+            .unwrap();
+        let offset = (text_top + text_bottom).abs_diff(face_top + face_bottom);
+        assert!(
+            offset <= 2,
+            "text rows {text_top}..={text_bottom}, face rows {face_top}..={face_bottom}\n{text}"
+        );
+    });
+}

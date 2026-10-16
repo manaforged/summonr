@@ -224,7 +224,7 @@ pub(crate) fn a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code
     )
     .expect("write the failing check");
     let model = Model::start(vec![Step::After(
-        Duration::from_secs(crate::support::slow(2)),
+        Duration::from_secs(crate::support::slow(6)),
         Box::new(Step::Text("too late")),
     )]);
     let result = session.run(
@@ -234,7 +234,7 @@ pub(crate) fn a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code
             "--goal",
             "finish the task",
             "--max-secs",
-            &crate::support::slow(1).to_string(),
+            &crate::support::slow(3).to_string(),
             "--json",
         ],
     );

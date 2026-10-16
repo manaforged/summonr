@@ -196,7 +196,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 - Search is the `search` tool: contents or file names under any readable path. There is no built-in code graph.
 - Memory is two Markdown files per repository and user, loaded into the prompt; there is no vector store or background extraction.
 - Config is under `~/.summonr`.
-- On a headless Linux host, the keychain may not answer at startup. Set `secrets = "file"` in `~/.summonr/config.toml`, or pass keys through the environment.
+- Keys are stored in `~/.summonr/credentials.toml` by default. If you set `secrets = "keychain"` on a headless Linux host, the keychain may not answer at startup; keep the file store or pass keys through the environment.
 
 ## Docs
 

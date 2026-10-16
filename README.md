@@ -172,9 +172,7 @@ Grok 4.7 on a SuperGrok plan:
 | summonr 0.1.0 | 74.2% | 579,764 | 27 MB |
 | Grok Build 1.0.52 | 70.4% | 820,158 | 146 MB |
 
-Tokens and cost are medians per trial, from each agent's own usage report; cost is at API list price. The Grok pair has no cost column, because grok-4.7 doubles its rate on prompts of 200K tokens or more and Grok Build's prompt sizes are not recorded. The judge pass that rechecks every solve has not run yet.
-
-Intervals, paired ratios, voided solves, and method: [`BENCHMARKS.md`](BENCHMARKS.md) and [summonr.dev/benchmarks](https://summonr.dev/benchmarks).
+Medians per trial, as each agent reported them; cost at API list price. Method and caveats: [`BENCHMARKS.md`](BENCHMARKS.md).
 
 The first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Six core tools are advertised every round (`read`, `search`, `edit`, `write`, `run_command`, `todo`), plus `ask` in an interactive session and the modules you turned on. MCP schemas join the prefix only for servers you configure.
 

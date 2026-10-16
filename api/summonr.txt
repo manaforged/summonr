@@ -349,7 +349,6 @@ pub summonr::secret::Source::Config
 pub summonr::secret::Source::Env
 pub summonr::secret::Source::File
 pub summonr::secret::Source::Keychain
-pub summonr::secret::Source::Peer(&'static str)
 impl summonr::secret::Source
 pub fn summonr::secret::Source::label(self) -> &'static str
 impl core::clone::Clone for summonr::secret::Source

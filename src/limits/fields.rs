@@ -103,7 +103,6 @@ table! {
     repeat_nudge: usize,
     edit_hunk_rows: usize,
     display_patch_lines: usize,
-    token_expiry_skew_secs: u64,
     read_line_limit: usize,
     paste_fold_lines: usize,
     paste_fold_chars: usize,

@@ -177,8 +177,4 @@ impl Limits {
     pub(crate) fn repeat_window(&self) -> Duration {
         secs(self.repeat_window_secs)
     }
-
-    pub(crate) fn token_expiry_skew(&self) -> Duration {
-        secs(self.token_expiry_skew_secs)
-    }
 }

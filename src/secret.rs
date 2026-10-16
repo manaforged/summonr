@@ -35,7 +35,6 @@ pub enum Source {
     File,
     Config,
     Builtin,
-    Peer(&'static str),
 }
 
 impl Source {
@@ -47,7 +46,6 @@ impl Source {
             Self::File => "file",
             Self::Config => "config (plaintext)",
             Self::Builtin => "built-in",
-            Self::Peer(name) => name,
         }
     }
 }

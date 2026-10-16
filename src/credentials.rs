@@ -105,9 +105,6 @@ pub(crate) fn auth(endpoint: &Endpoint) -> Result<Auth> {
             .clone()
             .filter(|key| !key.trim().is_empty())
         {
-            Some(_) if matches!(endpoint.source, Some(secret::Source::Peer(_))) => {
-                Method::Peer(crate::endpoint::peer_token, endpoint.name.clone())
-            }
             Some(key) => Method::Key(key),
             None if endpoint.keyless() => Method::Key("local".to_string()),
             None => Method::Key(String::new()),
@@ -116,7 +113,7 @@ pub(crate) fn auth(endpoint: &Endpoint) -> Result<Auth> {
     let carrier = match (&method, endpoint.oauth.as_ref().and_then(named_scheme)) {
         (Method::Login(_), Some(named)) => named,
         (Method::Login(_), None) => Scheme::Bearer,
-        (Method::Key(_) | Method::Peer(..), _) => scheme(endpoint.wire),
+        (Method::Key(_), _) => scheme(endpoint.wire),
     };
     Ok(Auth::new(method, carrier, &endpoint.name, keeper()))
 }

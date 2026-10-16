@@ -171,7 +171,7 @@ impl Worker {
             None | Some("") => {
                 let roots = self.loop_.write_roots();
                 let list = if roots.is_empty() {
-                    "no extra write paths; /permissions write PATH persists to [sandbox] write"
+                    "no extra write paths; /permissions write PATH persists to write_roots"
                         .to_string()
                 } else {
                     roots.join(" · ")
@@ -199,7 +199,7 @@ impl Worker {
             self.persist_grant(path);
         } else if protected {
             self.system(&format!(
-                "writes allowed under {path} for this session; a protected path is never saved to [sandbox] write"
+                "writes allowed under {path} for this session; a protected path is never saved to write_roots"
             ));
         } else {
             self.system(&format!("writes allowed under {path} for this session"));
@@ -208,14 +208,14 @@ impl Worker {
 
     fn persist_grant(&self, path: &str) {
         let saved = crate::config::path().and_then(|config| {
-            crate::config::save_sandbox_write(
+            crate::config::save_write_root(
                 &config,
-                &crate::config::sandbox_entry(&crate::policy::expand_path(path)),
+                &crate::config::write_root_entry(&crate::policy::expand_path(path)),
             )
         });
         match saved {
             Ok(()) => self.system(&format!(
-                "writes allowed under {path} and saved to [sandbox] write"
+                "writes allowed under {path} and saved to write_roots"
             )),
             Err(error) => self.system(&format!(
                 "writes allowed under {path} for this session; standing grant not saved: {error}"

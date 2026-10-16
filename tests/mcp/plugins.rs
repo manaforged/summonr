@@ -177,7 +177,7 @@ pub(crate) fn two_pre_tool_hooks_both_run_in_order() {
     );
 }
 
-pub(crate) fn a_legacy_bundle_installs_as_a_plugin() {
+pub(crate) fn a_legacy_bundle_installs_and_an_unreachable_server_fails_it() {
     let session = Session::new();
     let bundle = session.files.path().join("demo");
     write(
@@ -185,7 +185,10 @@ pub(crate) fn a_legacy_bundle_installs_as_a_plugin() {
         "[mcp.bundled]\ncommand = \"bundled-mcp\"\n",
     );
     let (installed, text) = session.cli(&["install", &bundle.display().to_string()]);
-    assert!(installed, "{text}");
+    assert!(!installed, "{text}");
+    assert!(text.contains("demo-bundled: not reachable:"), "{text}");
+    assert!(text.contains("kept in"), "{text}");
+    assert!(session.home.path().join("plugins/demo").is_dir(), "{text}");
     let (_, listed) = session.cli(&["mcp", "list"]);
     assert!(listed.contains("demo-bundled"), "{listed}");
 }
@@ -224,7 +227,9 @@ pub(crate) fn plugin_settings_and_data_are_handled() {
     let installed = install(&session, &plugin_with(&session, &json!({}), &env, manifest));
     assert!(installed.contains("skipped\tuserConfig"), "{installed}");
     assert!(
-        installed.contains("warning\tmcp fx uses ${user_config.*}"),
+        installed.contains(
+            "warning\tmcp fx uses ${user_config.api_token}; set [mcp.demo-fx.user_config] or env in [mcp.demo-fx]"
+        ),
         "{installed}"
     );
     let model = Model::start(vec![

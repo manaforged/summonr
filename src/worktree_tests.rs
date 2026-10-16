@@ -252,6 +252,28 @@ fn a_worktree_run_commits_its_edits_without_caches_under_a_whole_word_subject() 
     );
 }
 
+#[test]
+fn a_worktree_run_whose_agent_already_committed_still_lands() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(
+        tree.path.join("calc.py"),
+        "def add(a, b):\n    return a + b\n",
+    )
+    .unwrap();
+    git(&tree.path, &["add", "calc.py"]);
+    git(&tree.path, &["commit", "-q", "-m", "agent commit"]);
+    std::fs::create_dir(tree.path.join("__pycache__")).unwrap();
+    std::fs::write(
+        tree.path.join("__pycache__/calc.cpython-312.pyc"),
+        "bytecode",
+    )
+    .unwrap();
+    let landed = super::finish(&tree, "fix calc", &["calc.py".to_string()]);
+    assert!(landed.is_ok(), "{landed:?}");
+    assert!(on_main(&primary).contains("calc.py"));
+}
+
 fn tracked(primary: &Path, path: &str) {
     if let Some(dir) = Path::new(path).parent() {
         std::fs::create_dir_all(primary.join(dir)).unwrap();
@@ -315,4 +337,19 @@ fn a_worktree_holding_only_summonr_state_is_unchanged() {
     std::fs::write(tree.path.join("note.txt"), "edit").unwrap();
     assert_eq!(tree.changes().unwrap(), vec!["note.txt".to_string()]);
     drop(tree.remove());
+}
+
+#[test]
+fn a_large_file_changed_only_on_the_moved_base_does_not_block_the_run() {
+    let (_root, primary) = repo();
+    let big = "x".repeat(6 * 1024 * 1024);
+    std::fs::write(primary.join("data.bin"), &big).unwrap();
+    git(&primary, &["add", "data.bin"]);
+    git(&primary, &["commit", "-q", "-m", "data"]);
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(primary.join("data.bin"), format!("{big}y")).unwrap();
+    git(&primary, &["commit", "-q", "-am", "base moves"]);
+    std::fs::write(tree.path.join("calc.py"), "x = 1\n").unwrap();
+    let error = super::finish(&tree, "add calc", &["calc.py".to_string()]).unwrap_err();
+    assert!(!error.to_string().contains("data.bin"), "{error}");
 }

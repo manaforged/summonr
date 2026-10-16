@@ -10,7 +10,6 @@ use crate::error::{Error, Result};
 use crate::policy::Policy;
 use crate::rpc::Notice;
 use crate::supervise::{self, ServerKind, Slot};
-use crate::tools::sandbox::Sandbox;
 
 use super::catalog::{self, Listing};
 use super::config::Server;
@@ -33,15 +32,11 @@ pub(super) struct Link {
 }
 
 impl Link {
-    pub(super) async fn open(
-        server: Server,
-        workspace: PathBuf,
-        sandbox: Option<&Sandbox>,
-    ) -> Result<Arc<Self>> {
+    pub(super) async fn open(server: Server, workspace: PathBuf) -> Result<Arc<Self>> {
         let slot: Slot<Conn> = Arc::new(Mutex::new(None));
         let listing = match catalog::load(&server.key) {
             Some(listing) => listing,
-            None => Self::list(&server, &workspace, sandbox, &slot).await?,
+            None => Self::list(&server, &workspace, &slot).await?,
         };
         let started = AtomicBool::new(slot.lock().await.is_some());
         let tools = listing
@@ -52,6 +47,7 @@ impl Link {
                 server
                     .allow
                     .as_ref()
+                    // complexity: bounded by a BTreeSet lookup, O(log n)
                     .is_none_or(|allow| allow.contains(&tool.name))
             })
             .collect();
@@ -70,11 +66,10 @@ impl Link {
     pub(super) async fn list(
         server: &Server,
         workspace: &std::path::Path,
-        sandbox: Option<&Sandbox>,
         slot: &Slot<Conn>,
     ) -> Result<Listing> {
         let mut held = slot.lock().await;
-        let conn = held.insert(Conn::open(server, workspace, sandbox).await?);
+        let conn = held.insert(Conn::open(server, workspace).await?);
         supervise::register(ServerKind::Mcp, &server.name, conn.pid(), server.idle, slot);
         let listing = conn.listing().await?;
         catalog::save(&server.key, &listing);
@@ -94,7 +89,7 @@ impl Link {
     ) -> Result<Called> {
         gate.policy.tool(&tool.alias, false)?;
         let mut slot = self.conn.lock().await;
-        self.ensure(&mut slot, gate.sandbox).await?;
+        self.ensure(&mut slot).await?;
         self.offered(tool)?;
         let params = json!({"name": tool.name, "arguments": arguments});
         let (value, changed) = self
@@ -107,11 +102,10 @@ impl Link {
         self: &Arc<Self>,
         method: &str,
         params: Value,
-        sandbox: Option<&Sandbox>,
         report: &mut (dyn FnMut(McpUpdate) + Send),
     ) -> Result<Value> {
         let mut slot = self.conn.lock().await;
-        self.ensure(&mut slot, sandbox).await?;
+        self.ensure(&mut slot).await?;
         self.exchange(&mut slot, method, params, report)
             .await
             .map(|(value, _)| value)
@@ -144,19 +138,12 @@ impl Link {
         catalog::load(&self.server.key).unwrap_or_default()
     }
 
-    async fn ensure(
-        self: &Arc<Self>,
-        slot: &mut Option<Conn>,
-        sandbox: Option<&Sandbox>,
-    ) -> Result<()> {
-        if !slot
-            .as_mut()
-            .is_none_or(|conn| !conn.alive() || !conn.runs_in(sandbox))
-        {
+    async fn ensure(self: &Arc<Self>, slot: &mut Option<Conn>) -> Result<()> {
+        if !slot.as_mut().is_none_or(|conn| !conn.alive()) {
             return Ok(());
         }
         *slot = None;
-        let mut conn = Conn::open(&self.server, &self.workspace, sandbox)
+        let mut conn = Conn::open(&self.server, &self.workspace)
             .await
             .inspect_err(|error| self.note(error))?;
         self.started.store(true, Ordering::Relaxed);
@@ -284,7 +271,6 @@ impl Link {
 
 pub(super) struct Gate<'a> {
     pub(super) policy: &'a Policy,
-    pub(super) sandbox: Option<&'a Sandbox>,
 }
 
 #[derive(Clone, Copy, Default)]

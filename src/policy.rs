@@ -34,9 +34,7 @@ pub(crate) struct Policy {
 pub(crate) enum Grant {
     Write(PathBuf),
     Guarded(PathBuf),
-    Command(String),
     Danger { command: String, reason: String },
-    Network,
 }
 
 impl Grant {
@@ -45,14 +43,12 @@ impl Grant {
         match self {
             Self::Write(path) => path.display().to_string(),
             Self::Guarded(path) => format!("protected path {}", path.display()),
-            Self::Command(command) => format!("a shell command without the sandbox: {command}"),
             Self::Danger { command, reason } => {
                 format!(
                     "{command} — {}",
                     reason.strip_prefix("it ").unwrap_or(reason)
                 )
             }
-            Self::Network => "network".to_string(),
         }
     }
 }
@@ -85,7 +81,7 @@ impl Policy {
             policy.overlay_file(&home.join("policy.toml"))?;
         }
         policy.overlay_file(&workspace.join(".summonr/policy.toml"))?;
-        policy.roots = crate::config::file()?.sandbox.paths();
+        policy.roots = crate::config::file()?.write_root_paths();
         Ok(policy)
     }
 
@@ -301,19 +297,6 @@ impl Policy {
     }
 }
 
-pub(crate) fn first_verb(command: &str) -> Option<String> {
-    let word = command
-        .split_whitespace()
-        .find(|word| !word.contains('='))?;
-    let name = word
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(word)
-        .trim_matches(['\'', '"', '`'])
-        .to_ascii_lowercase();
-    Some(name.strip_suffix(".exe").unwrap_or(&name).to_string())
-}
-
 pub(crate) fn protected_write(path: &Path) -> bool {
     let unix = path.to_string_lossy().replace('\\', "/");
     let parts: Vec<&str> = unix.split('/').filter(|part| !part.is_empty()).collect();
@@ -341,16 +324,10 @@ mod shell;
 mod verbs;
 
 use blocks::*;
-pub(crate) use blocks::{
-    grant_from_error, implicit_write, outside_hint, outside_write, reads_only, write_denied,
-};
+pub(crate) use blocks::{grant_from_error, outside_hint, reads_only, write_denied};
 use paths::*;
 use shell::*;
 
-#[cfg(any(target_os = "linux", test))]
-pub(crate) use git::guarded_git_paths;
-#[cfg(any(target_os = "macos", test))]
-pub(crate) use git::guarded_git_regex;
 pub(crate) use paths::{expand_path, split_segments, unquoted};
 #[cfg(all(test, unix))]
 pub(crate) use shell::running_as_root;

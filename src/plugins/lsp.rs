@@ -42,14 +42,15 @@ pub(crate) fn servers(workspace: &Path) -> Vec<Server> {
         .collect()
 }
 
-fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
-    let Ok(entries) =
-        serde_json::from_value::<BTreeMap<String, Entry>>(read_json(&plugin.dir.join(FILE)))
-    else {
+pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
+    let Ok(entries) = serde_json::from_value::<BTreeMap<String, serde_json::Value>>(read_json(
+        &plugin.dir.join(FILE),
+    )) else {
         return Vec::new();
     };
     entries
         .into_iter()
+        .filter_map(|(name, entry)| Some((name, serde_json::from_value::<Entry>(entry).ok()?)))
         .map(|(name, entry)| {
             let expand = |text: &String| plugin.expand(text, workspace);
             Server {

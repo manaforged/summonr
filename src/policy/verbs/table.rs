@@ -7,7 +7,6 @@ const BASE: Verb = Verb {
     name: "",
     read: Read::Never,
     search: Search::No,
-    network: false,
     write: Write::None,
     cwd: Cwd::Stays,
     native: None,
@@ -21,10 +20,6 @@ const READ: Verb = Verb {
 };
 const SEARCH: Verb = Verb {
     search: Search::Contents,
-    ..BASE
-};
-const NETWORK: Verb = Verb {
-    network: true,
     ..BASE
 };
 const DESTROYS: Verb = Verb {
@@ -211,26 +206,6 @@ pub(super) const VERBS: &[Verb] = &[
         name: "locate",
         search: Search::Names,
         ..READ
-    },
-    Verb {
-        name: "curl",
-        ..NETWORK
-    },
-    Verb {
-        name: "wget",
-        ..NETWORK
-    },
-    Verb {
-        name: "ssh",
-        ..NETWORK
-    },
-    Verb {
-        name: "scp",
-        ..NETWORK
-    },
-    Verb {
-        name: "sftp",
-        ..NETWORK
     },
     Verb {
         name: "rm",

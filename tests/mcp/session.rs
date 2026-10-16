@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::support::{Model, Session, Step};
+use crate::support::{Model, Options, Session, Step};
 
 fn events(stdout: &str) -> Vec<Value> {
     stdout
@@ -136,6 +136,34 @@ pub(crate) fn a_goal_run_reports_the_judge_usage_once() {
     assert_eq!(usage, model.requests().len(), "{}", result.stdout);
 }
 
+pub(crate) fn a_goal_run_whose_output_lands_in_the_workspace_still_passes() {
+    let session = Session::new();
+    let work = session.files.path();
+    let git = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(work)
+        .status()
+        .expect("git init");
+    assert!(git.success());
+    std::fs::create_dir_all(work.join(".summonr")).expect("check directory");
+    std::fs::write(work.join(".summonr/check.toml"), "check = 'exit 0'\n")
+        .expect("write the check");
+    let model = Model::start(vec![
+        Step::Text("fixed"),
+        Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
+    ]);
+    let result = session.run_with(
+        &model,
+        "",
+        &["--goal", "fix it", "--json"],
+        &Options {
+            work: Some(work),
+            ..Options::default()
+        },
+    );
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+}
+
 pub(crate) fn a_print_run_says_its_check_was_not_run() {
     let session = Session::new();
     with_check(&session, "exit 0");
@@ -196,7 +224,7 @@ pub(crate) fn a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code
     )
     .expect("write the failing check");
     let model = Model::start(vec![Step::After(
-        Duration::from_secs(crate::support::slow(2)),
+        Duration::from_secs(crate::support::slow(6)),
         Box::new(Step::Text("too late")),
     )]);
     let result = session.run(
@@ -206,7 +234,7 @@ pub(crate) fn a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code
             "--goal",
             "finish the task",
             "--max-secs",
-            &crate::support::slow(1).to_string(),
+            &crate::support::slow(3).to_string(),
             "--json",
         ],
     );

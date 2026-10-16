@@ -45,7 +45,7 @@ fn select<'a>(command: &str, lines: Vec<Cow<'a, str>>) -> Vec<Cow<'a, str>> {
 }
 
 pub(crate) fn searchish(command: &str) -> bool {
-    super::rewrite::segment_verbs(command).any(|verb| {
+    segment_verbs(command).any(|verb| {
         crate::policy::verb_row(&verb).is_some_and(|row| row.search != crate::policy::Search::No)
     })
 }
@@ -131,4 +131,10 @@ fn ends_block(lines: &[Cow<'_, str>], index: usize) -> bool {
     lines[index].trim_start().is_empty()
         && index + 1 < lines.len()
         && !lines[index + 1].trim_start().starts_with(' ')
+}
+
+fn segment_verbs(command: &str) -> impl Iterator<Item = String> {
+    crate::policy::split_segments(command)
+        .into_iter()
+        .filter_map(|segment| crate::policy::verb(&crate::policy::argv(&segment)))
 }

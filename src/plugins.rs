@@ -1,9 +1,10 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::hooks::{Dialect, Hook, HookEvent, Hooks, Matcher};
 use crate::prompt::summonr_home;
 use crate::skills;
@@ -13,7 +14,7 @@ pub(crate) mod commands;
 pub(crate) mod lsp;
 mod manage;
 
-pub use manage::{install, list, uninstall};
+pub use manage::{Installed, check_servers, install, list, uninstall};
 
 pub(super) const MANIFEST: &str = ".claude-plugin/plugin.json";
 const ROOTS: [&str; 2] = ["${CLAUDE_PLUGIN_ROOT}", "${SUMMONR_PLUGIN_ROOT}"];
@@ -68,6 +69,29 @@ impl Plugin {
         }
     }
 
+    pub(super) fn declared(&self, key: &str) -> Vec<PathBuf> {
+        self.paths(key)
+    }
+
+    fn hook_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![self.dir.join("hooks/hooks.json")];
+        files.extend(self.paths("hooks"));
+        let mut seen = BTreeSet::new();
+        files.retain(|file| seen.insert(file.clone()));
+        files
+    }
+
+    pub(super) fn skipped_mods(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        for file in self.hook_files() {
+            note_mods(&read_json(&file), &mut lines);
+        }
+        if let Some(inline) = self.manifest.get("hooks").filter(|value| value.is_object()) {
+            note_mods(&serde_json::json!({ "hooks": inline }), &mut lines);
+        }
+        lines
+    }
+
     pub(crate) fn skill_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = vec![self.dir.join("skills")];
         dirs.extend(self.paths("skills"));
@@ -118,9 +142,7 @@ impl Plugin {
 
     pub(crate) fn hooks(&self) -> Hooks {
         let mut hooks = Hooks::default();
-        let mut files = vec![self.dir.join("hooks/hooks.json")];
-        files.extend(self.paths("hooks"));
-        for file in files {
+        for file in self.hook_files() {
             self.claude_hooks(&read_json(&file), &mut hooks);
         }
         if let Some(inline) = self.manifest.get("hooks").filter(|value| value.is_object()) {
@@ -175,11 +197,85 @@ impl Plugin {
     }
 }
 
+fn note_mods(file: &Value, lines: &mut Vec<String>) {
+    for event in HookEvent::ALL {
+        let Some(groups) = file["hooks"][event.claude()].as_array() else {
+            continue;
+        };
+        for group in groups {
+            let Some(handlers) = group["hooks"].as_array() else {
+                continue;
+            };
+            for handler in handlers {
+                if handler["type"] == "command" {
+                    continue;
+                }
+                let kind = handler["type"].as_str().unwrap_or("hook");
+                lines.push(format!(
+                    "skipped\t{} {kind} (summonr runs command hooks only)",
+                    event.claude()
+                ));
+            }
+        }
+    }
+}
+
 pub(super) fn read_json(path: &Path) -> Value {
     std::fs::read_to_string(path)
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or(Value::Null)
+}
+
+pub(super) fn json_file(path: &Path) -> Result<Value> {
+    let Some(text) = read_text(path)? else {
+        return Ok(Value::Null);
+    };
+    serde_json::from_str(&text)
+        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))
+}
+
+pub(super) fn require_tree(plugin: &Plugin) -> Result<()> {
+    for path in [
+        plugin.dir.join(".mcp.json"),
+        plugin.dir.join("hooks/hooks.json"),
+        plugin.dir.join(".lsp.json"),
+    ] {
+        json_file(&path)?;
+    }
+    parsed(&plugin.dir.join("mcp.toml"), |text| {
+        toml::from_str::<toml::Value>(text)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })?;
+    parsed(&plugin.dir.join("hooks.toml"), |text| {
+        toml::from_str::<Hooks>(text)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })?;
+    for path in plugin.declared("mcpServers") {
+        json_file(&path)?;
+    }
+    for path in plugin.declared("hooks") {
+        json_file(&path)?;
+    }
+    Ok(())
+}
+
+fn parsed(path: &Path, parse: impl FnOnce(&str) -> std::result::Result<(), String>) -> Result<()> {
+    let Some(text) = read_text(path)? else {
+        return Ok(());
+    };
+    parse(&text).map_err(|error| Error::Config(format!("{}: {error}", path.display())))
+}
+
+fn read_text(path: &Path) -> Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(text) if text.trim().is_empty() => Ok(None),
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(Error::Config(format!("{}: {error}", path.display()))),
+    }
 }
 
 pub(super) fn root() -> Result<PathBuf> {
@@ -221,6 +317,38 @@ pub(crate) fn enabled() -> Vec<Plugin> {
         .collect()
 }
 
+static WARNED_OFF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn unknown_off(off: &[String]) -> Option<String> {
+    if off.is_empty() {
+        return None;
+    }
+    let installed = installed();
+    let known: BTreeSet<&str> = installed
+        .iter()
+        .map(|plugin| plugin.name.as_str())
+        .collect();
+    let unknown: Vec<&str> = off
+        .iter()
+        .filter(|name| !known.contains(name.as_str()))
+        .map(String::as_str)
+        .collect();
+    (!unknown.is_empty()).then(|| {
+        format!(
+            "[plugins] off names plugins that are not installed: {}; `summonr uninstall NAME` removes the name",
+            unknown.join(", ")
+        )
+    })
+}
+
+pub(crate) fn warn_unknown_off(off: &[String]) {
+    if let Some(note) = unknown_off(off)
+        && !WARNED_OFF.swap(true, std::sync::atomic::Ordering::Relaxed)
+    {
+        eprintln!("summonr: {note}");
+    }
+}
+
 pub(crate) fn bin_path_prefix() -> Option<String> {
     let mut dirs: Vec<PathBuf> = summonr_home()
         .ok()
@@ -244,3 +372,7 @@ pub(crate) fn bin_path_prefix() -> Option<String> {
             .join(sep),
     )
 }
+
+#[cfg(test)]
+#[path = "plugins_tests.rs"]
+mod tests;

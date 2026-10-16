@@ -10,7 +10,6 @@ use crate::workflow;
 use std::future::Future;
 use std::time::Duration;
 
-use crate::Network;
 use crate::mail::{envelope, is_mail_tool};
 use crate::policy::Grant;
 use crate::prompt::{Harness, harness_section};

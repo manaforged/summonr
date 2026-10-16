@@ -1,6 +1,5 @@
 import json
 from collections import defaultdict
-import math
 import random
 import statistics
 from datetime import datetime
@@ -12,16 +11,6 @@ def seconds(span):
     start = datetime.fromisoformat(span["started_at"].replace("Z", "+00:00"))
     end = datetime.fromisoformat(span["finished_at"].replace("Z", "+00:00"))
     return (end - start).total_seconds()
-
-
-def wilson(passed, total, z=1.96):
-    if total == 0:
-        return (0.0, 0.0)
-    p = passed / total
-    denominator = 1 + z * z / total
-    center = (p + z * z / (2 * total)) / denominator
-    margin = z * math.sqrt(p * (1 - p) / total + z * z / (4 * total * total)) / denominator
-    return (max(0.0, center - margin), min(1.0, center + margin))
 
 
 def interval(values, seed=20260916, samples=10000):

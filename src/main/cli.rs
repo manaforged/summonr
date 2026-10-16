@@ -38,9 +38,7 @@ pub(super) struct Args {
     pub(super) fork: bool,
     pub(super) trust: bool,
     pub(super) strict: bool,
-    pub(super) sandbox: Option<bool>,
     pub(super) add_dir: Vec<String>,
-    pub(super) network: bool,
     pub(super) no_verify: bool,
     pub(super) no_splash: bool,
     pub(super) inline: bool,
@@ -97,7 +95,6 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
     let mut input: Input = words.into_iter().peekable();
     let mut args = Args {
         trust: true,
-        network: true,
         ..Args::default()
     };
     let mut command_position = true;

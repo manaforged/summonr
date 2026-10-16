@@ -53,7 +53,7 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "  ctrl+l       redraw the screen".to_string(),
             "  ↑↓           recall prompts at the first or last line".to_string(),
             "  @path        attach text or an image".to_string(),
-            "  !cmd         run in the sandbox and send the output; !!cmd runs only".to_string(),
+            "  !cmd         run and send the output; !!cmd runs only".to_string(),
             format!(
                 "  a paste of {}+ lines or {}+ characters folds into [pasted N lines #k] until sent",
                 crate::limits::limits().paste_fold_lines,

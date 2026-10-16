@@ -10,6 +10,10 @@ PROCESSES = {
     "codex": ("codex",),
     "grok-build": ("grok",),
     "claude-code": ("claude",),
+    "pi": ("pi",),
+    "hermes": ("hermes",),
+    "opencode2": ("opencode2", "opencode"),
+    "omp": ("omp",),
 }
 SHELL = re.compile(r"^(ba|da|z|k|a)?sh$")
 INTERVAL = 0.5
@@ -52,7 +56,7 @@ def sample(group, names):
         children.setdefault(proc["parent"], []).append(pid)
 
     def mine(proc):
-        return any(word.startswith(names) for word in [proc["name"], *proc["argv"]])
+        return any(word == name or word.startswith((f"{name}-", f"{name}.")) for word in [proc["name"], *proc["argv"]] for name in names)
 
     own = tree = helpers = 0
     stack = [(pid, False, False) for pid, proc in procs.items() if proc["parent"] not in procs]

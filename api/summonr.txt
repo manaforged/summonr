@@ -754,17 +754,6 @@ impl core::cmp::Eq for summonr::Need
 impl core::cmp::PartialEq for summonr::Need
 impl core::marker::Copy for summonr::Need
 impl core::marker::StructuralPartialEq for summonr::Need
-pub enum summonr::Network
-pub summonr::Network::Allowed
-pub summonr::Network::Denied
-impl summonr::Network
-pub const fn summonr::Network::allowed(allow: bool) -> Self
-impl core::clone::Clone for summonr::Network
-impl core::cmp::Eq for summonr::Network
-impl core::cmp::PartialEq for summonr::Network
-impl core::fmt::Debug for summonr::Network
-impl core::marker::Copy for summonr::Network
-impl core::marker::StructuralPartialEq for summonr::Network
 pub enum summonr::Pick
 pub summonr::Pick::Default
 pub summonr::Pick::Env
@@ -964,6 +953,10 @@ impl core::clone::Clone for summonr::Endpoint
 impl core::cmp::PartialEq for summonr::Endpoint
 impl core::fmt::Debug for summonr::Endpoint
 impl core::marker::StructuralPartialEq for summonr::Endpoint
+pub struct summonr::InstalledPlugin
+pub summonr::InstalledPlugin::dir: std::path::PathBuf
+pub summonr::InstalledPlugin::name: alloc::string::String
+pub summonr::InstalledPlugin::report: alloc::string::String
 pub struct summonr::Loop<P>
 impl<P: summonr::provider::Provider> summonr::Loop<P>
 pub fn summonr::Loop<P>::abandon_work(&mut self, reason: &str) -> summonr::Result<()>
@@ -992,7 +985,6 @@ pub fn summonr::Loop<P>::set_images(&mut self, model_images: bool, vision: core:
 pub fn summonr::Loop<P>::set_modules(&mut self, switches: &summonr::modules::Switches) -> summonr::Result<()>
 pub fn summonr::Loop<P>::verify_commands(&self) -> &[alloc::string::String]
 pub fn summonr::Loop<P>::with_interactive(self) -> Self
-pub fn summonr::Loop<P>::with_sandbox(self, network: summonr::Network) -> summonr::Result<Self>
 pub fn summonr::Loop<P>::with_strict(self) -> Self
 pub fn summonr::Loop<P>::with_unrestricted_commands(self) -> Self
 pub fn summonr::Loop<P>::apply_workflow(&mut self, workflow: &summonr::workflow::Workflow, resolve: impl core::ops::function::FnMut(&summonr::workflow::Seat) -> summonr::Result<(P, summonr::Endpoint)>) -> summonr::Result<()>
@@ -1201,6 +1193,7 @@ pub fn summonr::auth_info(name: &str) -> summonr::Result<summonr::AuthInfo>
 pub fn summonr::check_commands(workspace: &std::path::Path) -> summonr::Result<core::option::Option<alloc::vec::Vec<alloc::string::String>>>
 pub fn summonr::check_config() -> summonr::Result<()>
 pub async fn summonr::check_key(name: &str, key: &str) -> summonr::Result<summonr::secret::Source>
+pub async fn summonr::check_plugin_servers(installed: &summonr::InstalledPlugin, workspace: &std::path::Path) -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
 pub fn summonr::classify_endpoint() -> core::option::Option<alloc::string::String>
 pub fn summonr::closest_endpoint<'a>(name: &str, names: &'a [alloc::string::String], near: summonr::EndpointNear) -> core::option::Option<&'a str>
 pub const fn summonr::command_specs() -> &'static [summonr::command::CommandSpec]
@@ -1216,7 +1209,7 @@ pub fn summonr::finish_worktree(tree: &summonr::Tree, objective: &str, paths: &[
 pub fn summonr::goal_prompt(objective: &str, gates: &[alloc::string::String], round: u32) -> alloc::string::String
 pub fn summonr::in_git(path: &std::path::Path) -> bool
 pub fn summonr::index_files(root: &std::path::Path) -> i32
-pub fn summonr::install_plugin(src: &std::path::Path) -> summonr::Result<alloc::string::String>
+pub fn summonr::install_plugin(src: &std::path::Path) -> summonr::Result<summonr::InstalledPlugin>
 pub async fn summonr::interrupted() -> i32
 pub fn summonr::is_endpoint(token: &str) -> bool
 pub fn summonr::last_for(workspace: &std::path::Path) -> summonr::Result<core::option::Option<summonr::session::SessionInfo>>
@@ -1229,7 +1222,7 @@ pub fn summonr::login_seat(name: &str) -> summonr::Result<summonr::Endpoint>
 pub fn summonr::logout(name: &str) -> summonr::Result<alloc::string::String>
 pub fn summonr::mcp_add(name: &str, launch: &summonr::McpLaunch) -> summonr::Result<alloc::string::String>
 pub fn summonr::mcp_call_label(name: &str, arguments: &str) -> alloc::string::String
-pub async fn summonr::mcp_probe(workspace: &std::path::Path, name: &str) -> summonr::Result<usize>
+pub async fn summonr::mcp_probe(workspace: &std::path::Path, name: &str) -> summonr::Result<core::option::Option<usize>>
 pub fn summonr::mcp_remove(name: &str) -> summonr::Result<bool>
 pub fn summonr::mcp_status(workspace: &std::path::Path, board: core::option::Option<&summonr::McpBoard>) -> summonr::Result<alloc::vec::Vec<summonr::ServerStatus>>
 pub fn summonr::parse_command(line: &str) -> core::option::Option<summonr::SlashCommand>
@@ -1239,8 +1232,7 @@ pub fn summonr::remove_endpoint(name: &str) -> summonr::Result<alloc::string::St
 pub fn summonr::resolve_endpoint(name: core::option::Option<&str>, model: core::option::Option<&str>, need: summonr::Need) -> summonr::Result<summonr::Endpoint>
 pub fn summonr::resolve_session(id: &str) -> summonr::Result<std::path::PathBuf>
 pub fn summonr::revision() -> &'static str
-pub async fn summonr::run_tool(workspace: impl core::convert::AsRef<std::path::Path>, name: &str, arguments: &str, sandbox: core::option::Option<summonr::Network>) -> summonr::Result<summonr::ToolResult>
-pub fn summonr::sandbox_on() -> summonr::Result<bool>
+pub async fn summonr::run_tool(workspace: impl core::convert::AsRef<std::path::Path>, name: &str, arguments: &str) -> summonr::Result<summonr::ToolResult>
 pub fn summonr::set_default_endpoint(name: &str, model: core::option::Option<&str>) -> summonr::Result<alloc::string::String>
 pub fn summonr::short(id: &str) -> &str
 pub fn summonr::stop_children()
@@ -1248,7 +1240,7 @@ pub fn summonr::summonr_home() -> summonr::Result<std::path::PathBuf>
 pub fn summonr::sweep_worktrees(cwd: &std::path::Path) -> summonr::Result<alloc::vec::Vec<std::path::PathBuf>>
 pub fn summonr::system_prompt(workspace: &std::path::Path, sources: summonr::Sources) -> alloc::string::String
 pub fn summonr::tilde(path: &std::path::Path) -> alloc::string::String
-pub fn summonr::uninstall_plugin(name: &str) -> summonr::Result<bool>
+pub fn summonr::uninstall_plugin(plugin_name: &str) -> summonr::Result<bool>
 pub fn summonr::vision_endpoint() -> summonr::Result<core::option::Option<summonr::Endpoint>>
 pub fn summonr::worktree_status(cwd: &std::path::Path) -> summonr::Result<alloc::vec::Vec<summonr::worktree::Status>>
 pub type summonr::McpBoard = alloc::sync::Arc<std::sync::poison::mutex::Mutex<alloc::sync::Weak<summonr::mcp::Hub>>>

@@ -26,6 +26,8 @@ pub(crate) struct Entry {
     pub idle_secs: Option<u64>,
     pub keep_alive: Option<bool>,
     pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub user_config: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,7 +49,7 @@ pub(crate) struct Server {
     pub name: String,
     pub launch: Launch,
     pub key: String,
-    pub allow: Option<Vec<String>>,
+    pub allow: Option<std::collections::BTreeSet<String>>,
     pub idle: Option<Duration>,
     pub wait: Duration,
 }
@@ -60,6 +62,9 @@ impl Entry {
             self.idle_secs = top.idle_secs.or(self.idle_secs);
             self.keep_alive = top.keep_alive.or(self.keep_alive);
             self.timeout_secs = top.timeout_secs.or(self.timeout_secs);
+            self.env.extend(top.env);
+            self.headers.extend(top.headers);
+            self.user_config.extend(top.user_config);
             return;
         }
         let enabled = top.enabled.or(self.enabled);
@@ -87,7 +92,7 @@ impl Entry {
                     .unwrap_or_default(),
             )
         );
-        let allow = self.tools.clone();
+        let allow = self.tools.clone().map(|tools| tools.into_iter().collect());
         let idle = (self.keep_alive != Some(true)).then(|| {
             self.idle_secs
                 .map_or(crate::limits::limits().mcp_idle(), Duration::from_secs)
@@ -106,11 +111,13 @@ impl Entry {
     }
 
     fn launch(self) -> Option<Launch> {
+        let user_config = self.user_config;
+        let fill = |text: &str| expand(&substitute(text, &user_config));
         if let Some(url) = self.url {
             let mut headers: Vec<(String, String)> = self
                 .headers
-                .into_iter()
-                .map(|(key, value)| (key, expand(&value)))
+                .iter()
+                .map(|(key, value)| (key.clone(), fill(value)))
                 .collect();
             if let Some(var) = self.bearer_token_env_var
                 && let Ok(token) = std::env::var(var)
@@ -118,24 +125,25 @@ impl Entry {
                 headers.push(("Authorization".to_string(), format!("Bearer {token}")));
             }
             return Some(Launch::Http {
-                url: expand(&url),
+                url: fill(&url),
                 headers,
                 auth: self.auth.map(|auth| {
                     Box::new(crate::config::OAuth {
-                        client_secret: auth.client_secret.as_deref().map(expand),
-                        refresh_token: auth.refresh_token.as_deref().map(expand),
+                        client_secret: auth.client_secret.as_deref().map(&fill),
+                        refresh_token: auth.refresh_token.as_deref().map(&fill),
                         ..auth
                     })
                 }),
             });
         }
+        let command = self.command?;
         Some(Launch::Stdio {
-            command: expand(&self.command?),
-            args: self.args.iter().map(|arg| expand(arg)).collect(),
+            command: fill(&command),
+            args: self.args.iter().map(|arg| fill(arg)).collect(),
             env: self
                 .env
-                .into_iter()
-                .map(|(key, value)| (key, expand(&value)))
+                .iter()
+                .map(|(key, value)| (key.clone(), fill(value)))
                 .collect(),
         })
     }
@@ -303,6 +311,26 @@ fn toml_map(value: Option<&toml::Value>) -> BTreeMap<String, Entry> {
         .flatten()
         .filter_map(|(name, entry)| Some((name.clone(), entry.clone().try_into().ok()?)))
         .collect()
+}
+
+fn substitute(text: &str, config: &BTreeMap<String, String>) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    let needle = "${user_config.";
+    while let Some(start) = rest.find(needle) {
+        let after = &rest[start + needle.len()..];
+        let Some(end) = after.find('}') else {
+            break;
+        };
+        out.push_str(&rest[..start]);
+        match config.get(&after[..end]) {
+            Some(value) => out.push_str(value),
+            None => out.push_str(&rest[start..start + needle.len() + end + 1]),
+        }
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn expand(text: &str) -> String {

@@ -170,6 +170,7 @@ fn answer(parser: &mut vt100::Parser, bytes: &[u8]) -> Vec<u8> {
 #[derive(Debug)]
 struct Splash {
     rows: Vec<String>,
+    card_top: Option<usize>,
     card_bottom: Option<usize>,
     prompt: usize,
     workdir: Option<usize>,
@@ -179,6 +180,7 @@ impl Splash {
     fn read(rows: &[String]) -> Option<Self> {
         Some(Self {
             rows: rows.to_vec(),
+            card_top: rows.iter().position(|row| row.contains('╭')),
             card_bottom: rows.iter().position(|row| row.contains('╰')),
             prompt: rows.iter().rposition(|row| row.contains('❯'))?,
             workdir: rows.iter().position(|row| row.contains("workdir")),
@@ -187,6 +189,12 @@ impl Splash {
 
     fn place(&self) -> [Option<usize>; 3] {
         [self.card_bottom, Some(self.prompt), self.workdir]
+    }
+
+    fn composer_inside(&self) -> bool {
+        self.card_top.is_some_and(|top| top < self.prompt)
+            && self.card_bottom.is_some_and(|bottom| self.prompt < bottom)
+            && self.workdir.is_some_and(|row| row < self.prompt)
     }
 
     fn shows(&self, text: &str) -> bool {
@@ -199,26 +207,23 @@ impl Splash {
 }
 
 #[test]
-fn the_splash_prompt_holds_its_row_under_the_card_while_typing() {
+fn the_splash_prompt_holds_its_row_inside_the_window_while_typing() {
     for (cols, rows) in SIZES {
         let home = tempfile::tempdir().unwrap();
         let terminal = Terminal::open(home.path(), cols, rows);
         let idle = terminal.settle("the splash", |splash| splash.workdir.is_some());
-        assert!(
-            idle.card_bottom.is_some_and(|bottom| idle.prompt > bottom),
-            "{cols}x{rows}\n{}",
-            idle.screen()
-        );
+        assert!(idle.composer_inside(), "{cols}x{rows}\n{}", idle.screen());
 
         terminal.send(DRAFT.as_bytes());
         let typed = terminal.settle("the wrapped draft", |splash| splash.shows("tail"));
         let at = format!("{cols}x{rows} draft\n{}", typed.screen());
         assert_eq!(typed.prompt, idle.prompt, "the prompt moved: {at}");
-        assert_eq!(typed.card_bottom, idle.card_bottom, "the card moved: {at}");
+        assert_eq!(typed.card_top, idle.card_top, "the window moved: {at}");
         assert_eq!(
             typed.workdir, idle.workdir,
             "the draft covered the card: {at}"
         );
+        assert!(typed.composer_inside(), "the draft left the window: {at}");
 
         terminal.send(&[0x7f; DRAFT.len()]);
         terminal.send(b"/");
@@ -229,7 +234,7 @@ fn the_splash_prompt_holds_its_row_under_the_card_while_typing() {
 }
 
 #[test]
-fn a_resized_splash_keeps_the_draft_under_the_card() {
+fn a_resized_splash_keeps_the_draft_inside_the_window() {
     let home = tempfile::tempdir().unwrap();
     let terminal = Terminal::open(home.path(), 223, 67);
     terminal.settle("the splash", |splash| splash.workdir.is_some());
@@ -240,16 +245,7 @@ fn a_resized_splash_keeps_the_draft_under_the_card() {
         splash.shows("tail") && splash.rows.iter().all(|row| row.chars().count() <= 100)
     });
     let at = format!("100x30 after resize\n{}", resized.screen());
-    assert!(
-        resized
-            .card_bottom
-            .is_some_and(|bottom| resized.prompt > bottom),
-        "the draft covered the card: {at}"
-    );
-    assert!(
-        resized.workdir.is_some(),
-        "the draft covered the card: {at}"
-    );
+    assert!(resized.composer_inside(), "the draft left the window: {at}");
 
     terminal.send(b" more");
     let typed = terminal.settle("typing after the resize", |splash| {

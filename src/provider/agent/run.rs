@@ -108,7 +108,6 @@ impl Run {
             env: &seat.env,
             unset: seat.unset,
             cwd: &cwd,
-            sandbox: None,
             base: crate::rpc::Env::Inherit,
             stderr: crate::rpc::Stderr::Pipe,
         })

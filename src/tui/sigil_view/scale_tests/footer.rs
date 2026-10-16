@@ -1,4 +1,4 @@
-use super::{State, busy_info, composer_top, find, frame_with};
+use super::{State, busy_info, composer_top, find, frame_with, paint};
 use crate::tools::Event;
 use crate::tui::Msg;
 
@@ -185,4 +185,29 @@ fn a_meter_card_opens_on_a_click_and_closes_on_a_click_outside() {
         (true, true, false),
         "open, after a click inside and moving away, after a click outside"
     );
+}
+
+#[test]
+fn the_model_reads_in_the_same_ink_as_the_workspace_path() {
+    let info = crate::tui::Info {
+        workspace: "projects/demo".to_owned(),
+        ..busy_info()
+    };
+    let grid = paint(info, 110, 34, State::Idle, |_| {});
+    let shown = grid.text();
+    let lines: Vec<&str> = shown.lines().collect();
+    let ink = |needle: &str| {
+        let row = lines
+            .iter()
+            .rposition(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} on screen:\n{shown}"));
+        let cells: Vec<String> = (0..grid.cols())
+            .filter_map(|col| grid.get(col, row).map(|cell| cell.text.to_string()))
+            .collect();
+        let col = (0..cells.len())
+            .find(|&col| cells[col..].concat().starts_with(needle) && !cells[col].is_empty())
+            .unwrap_or_else(|| panic!("{needle} cells in row {row}"));
+        grid.get(col, row).map(|cell| cell.fg)
+    };
+    assert_eq!(ink("stub-model"), ink("projects/demo"), "{shown}");
 }

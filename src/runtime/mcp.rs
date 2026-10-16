@@ -24,7 +24,7 @@ impl<P: Provider> Loop<P> {
         if !std::mem::take(&mut self.mcp_wanted) || self.catalog_frozen {
             return Ok(());
         }
-        let hub = crate::mcp::Hub::connect(self.workspace.clone(), self.tools.sandbox()).await;
+        let hub = crate::mcp::Hub::connect(self.workspace.clone()).await;
         for text in hub.notes.clone() {
             self.push_event(events, emit, Event::Note { text })?;
         }
@@ -59,7 +59,7 @@ impl<P: Provider> Loop<P> {
         } else {
             self.expand_command(input)
         };
-        hub.expand(input, self.tools.sandbox().as_ref()).await
+        hub.expand(input).await
     }
 
     fn expand_command(&self, input: UserInput) -> UserInput {

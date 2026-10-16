@@ -63,7 +63,8 @@ else
 fi
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT INT TERM
+trap 'rm -rf "$work"' EXIT
+trap 'exit 130' INT TERM
 
 echo "Downloading $asset ($version)"
 fetch "$base/$asset" "$work/$asset" || fail "cannot download $base/$asset. See $releases for available builds."

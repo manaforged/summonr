@@ -161,7 +161,7 @@ fn configure(
     args: &Args,
     check: Option<Vec<String>>,
 ) -> Result<Loop<Client>> {
-    loop_ = contain(loop_, args)?;
+    loop_ = loop_.with_unrestricted_commands();
     for dir in &args.add_dir {
         loop_.allow_path(dir)?;
     }
@@ -171,7 +171,7 @@ fn configure(
     if loop_.policy_inert() {
         eprintln!(
             "summonr: a policy.toml sets command or write rules, but this session is \
-             uncontained; pass --sandbox or --strict to enforce it"
+             unrestricted; pass --strict to enforce it"
         );
     }
     if let Some(check) = check {
@@ -181,18 +181,6 @@ fn configure(
         loop_ = loop_.with_budget(budget)?;
     }
     Ok(loop_)
-}
-
-fn contain(loop_: Loop<Client>, args: &Args) -> Result<Loop<Client>> {
-    if args.sandbox.map_or_else(summonr::sandbox_on, Ok)? {
-        return loop_.with_sandbox(summonr::Network::allowed(args.network));
-    }
-    if !args.network {
-        return Err(summonr::Error::Config(
-            "--no-net needs the sandbox: pass --sandbox".to_string(),
-        ));
-    }
-    Ok(loop_.with_unrestricted_commands())
 }
 
 fn budget(args: &Args) -> Option<Budget> {

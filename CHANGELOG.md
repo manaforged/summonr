@@ -13,7 +13,7 @@ First public release.
 - Providers with several regions or plans (`zai`, `alibaba`, `kimi`, `minimax`, `siliconflow`, `anthropic`, `opencode`) list once. Each region and plan is a route; `summonr NAME` takes the provider or a route name such as `zai-cn`.
 - `summonr login NAME --url URL [--model M]` adds your own OpenAI-compatible server, and `summonr logout NAME --remove` deletes it. `summonr login NAME --default` makes an endpoint the default.
 - `summonr login openai` offers Sign in with ChatGPT, and `summonr login grok` offers a SuperGrok or X Premium+ sign-in, next to an API key. Sign-ins are stored apart from keys.
-- The `claude` endpoint runs a Claude Pro or Max plan through your own Claude Code (`claude auth login`). summonr never reads the token, Claude Code never sees an `ANTHROPIC_API_KEY` from your environment, and summonr's tools, policy, sandbox, and checks apply as on any other endpoint.
+- The `claude` endpoint runs a Claude Pro or Max plan through your own Claude Code (`claude auth login`). summonr never reads the token, Claude Code never sees an `ANTHROPIC_API_KEY` from your environment, and summonr's tools, policy, and checks apply as on any other endpoint.
 - Default models follow each vendor's current list, and each vendor gets the reasoning, caching, and tool settings its docs name, such as `apply_patch` edits for GPT-5, GPT-6, and Codex models.
 
 #### The terminal interface
@@ -51,7 +51,7 @@ First public release.
 ### Security
 
 - Secret values from `.env` files, cloud credential files, and private keys show as `[secret]` in every tool result.
-- Writes to `~/.ssh`, `~/.gnupg`, and `~/.summonr` are refused in every path form, including Windows verbatim paths and a symlinked home.
-- The model cannot write `.summonr/check.toml` or `.summonr/policy.toml`.
+- Under `--strict`, writes to `~/.ssh`, `~/.gnupg`, and `~/.summonr` are refused in any path form, such as a Windows verbatim path or a symlinked home. Without it, summonr runs as your account with no sandbox.
+- The `edit` and `write` tools never change `.summonr/check.toml` or `.summonr/policy.toml`.
 - `~/.summonr` is created with mode `0700`, and `~/.summonr/credentials.toml` with mode `0600`.
 - A plan sign-in must return the nonce summonr sent, and a workspace `SYSTEM.md` loads only when the workspace is trusted.

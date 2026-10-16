@@ -60,15 +60,6 @@ jobs:
       - name: cargo clippy
         if: steps.deps.outputs.ok == 'true'
         run: cargo clippy ${{ steps.scope.outputs.args }} --all-targets --locked --no-deps -- -D warnings
-      - name: sandbox
-        if: steps.deps.outputs.ok == 'true'
-        run: |
-          if ! bwrap --ro-bind / / true 2>/dev/null; then
-            sudo apt-get update -q
-            sudo apt-get install -yq bubblewrap
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
-          bwrap --ro-bind / / true
       - name: cargo test
         if: steps.deps.outputs.ok == 'true'
         run: |

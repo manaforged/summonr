@@ -10,6 +10,8 @@ pub(in crate::tui::sigil_view) const VOID: Rgba8 = rgb(5, 5, 10);
 
 pub(in crate::tui::sigil_view) const PLATE: Rgba8 = rgb(42, 44, 58);
 
+pub(in crate::tui::sigil_view) const GLASS: f32 = 0.62;
+
 pub(in crate::tui::sigil_view) const STAR_DIM: Rgba8 = rgb(58, 74, 110);
 
 pub(in crate::tui::sigil_view) const STAR_BRIGHT: Rgba8 = rgb(176, 200, 240);

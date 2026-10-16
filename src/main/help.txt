@@ -54,13 +54,10 @@ Options:
       --name TEXT      name this session
       --steps PLAN.md  run each step under `## Steps` and gate on its check
       --goal TEXT      work toward TEXT across turns
-      --sandbox        contain commands; writes stay under the roots
-      --no-sandbox     run uncontained, even with [sandbox] on = true
-      --no-net         deny sandboxed network (needs the sandbox)
-      --add-dir DIR    extra writable root (repeatable)
+      --add-dir DIR    extra writable root under --strict (repeatable)
       --strict         allow only commands listed in policy.toml
       --no-trust       ignore workspace SYSTEM.md, AGENTS.md, CLAUDE.md
-      --trust, --net   on by default; the last of a pair wins
+      --trust          on by default; the last of --trust and --no-trust wins
       --here           work in this checkout (default; not with --worktree)
       --no-verify      skip the .summonr/check.toml gate
       --worktree       isolate this session in a git worktree
@@ -87,4 +84,4 @@ Classify:
   --json prints answers and probabilities; --gate N sets the confidence floor.
   State comes from arguments or stdin.
 
-Keys, sandbox, and policy: https://github.com/manaforged/summonr/blob/main/docs/guide/reference.md
+Keys and policy: https://github.com/manaforged/summonr/blob/main/docs/guide/reference.md

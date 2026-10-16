@@ -9,14 +9,6 @@ mod startup;
 
 fn main() {
     guard_sigpipe();
-    #[cfg(all(windows, feature = "windows-sandbox"))]
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|arg| arg == "--sandbox-exec")
-    {
-        let args: Vec<_> = std::env::args_os().skip(2).collect();
-        std::process::exit(summonr::sandbox_entry(&args).unwrap_or_else(|error| fail(&error)));
-    }
     if std::env::args_os()
         .nth(1)
         .is_some_and(|arg| arg == summonr::INDEX_ENTRY)

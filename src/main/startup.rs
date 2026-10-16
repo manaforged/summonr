@@ -80,7 +80,7 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if let Some(code) = account(&args).await {
         return code;
     }
-    if let Some(code) = listing(&args) {
+    if let Some(code) = listing(&args).await {
         return code;
     }
     launch(&args, log, &adopted).await
@@ -110,7 +110,7 @@ async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32
         return in_cwd(&|cwd| summonr::gateway::cli::run(words, cwd, &login::read_secret));
     }
     if let Some(tool) = &args.tool {
-        return Some(tool::run(args, tool).await);
+        return Some(tool::run(tool).await);
     }
     if !args.acp {
         return None;
@@ -206,7 +206,7 @@ fn logout(args: &Args) -> Result<i32> {
     Ok(0)
 }
 
-fn listing(args: &Args) -> Option<Result<i32>> {
+async fn listing(args: &Args) -> Option<Result<i32>> {
     let done = |result: Result<()>| Some(result.map(|()| 0));
     if args.list_sessions {
         return done(match args.grep.as_deref() {
@@ -234,7 +234,7 @@ fn listing(args: &Args) -> Option<Result<i32>> {
         return Some(uninstall(args));
     }
     if args.add {
-        return Some(add(args));
+        return Some(add(args).await);
     }
     if args.list_worktrees {
         return done(manage_worktrees(args));
@@ -260,7 +260,7 @@ fn profile(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn add(args: &Args) -> Result<i32> {
+async fn add(args: &Args) -> Result<i32> {
     if args.add_list {
         println!("{}", summonr::list_plugins()?);
         return Ok(0);
@@ -270,7 +270,12 @@ fn add(args: &Args) -> Result<i32> {
             "summonr install PATH  (or install --list)".to_string(),
         ));
     };
-    println!("{}", summonr::install_plugin(std::path::Path::new(path))?);
+    let installed = summonr::install_plugin(std::path::Path::new(path))?;
+    println!("{}", installed.report);
+    for line in summonr::check_plugin_servers(&installed, &workspace()?).await? {
+        println!("{line}");
+    }
+    println!("restart summonr to load it");
     Ok(0)
 }
 

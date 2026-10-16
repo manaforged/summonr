@@ -3,7 +3,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::error::{Error, Result};
 
-use super::{ToolRegistry, sandbox};
+use super::ToolRegistry;
 
 pub(super) fn volume_unmounted(path: &Path) -> bool {
     let mut parts = path.components();
@@ -60,15 +60,6 @@ impl ToolRegistry {
         Ok(self.lexical(path)?.exists())
     }
 
-    pub(crate) fn enable_sandbox(&mut self, network: sandbox::Network) -> Result<()> {
-        self.sandbox = Some(sandbox::Sandbox::discover(
-            &self.workspace,
-            network,
-            &self.policy.write_roots(),
-        )?);
-        Ok(())
-    }
-
     pub(crate) fn allow_path(&mut self, path: PathBuf) -> Result<()> {
         if !path.exists() {
             if volume_unmounted(&path) {
@@ -98,10 +89,6 @@ impl ToolRegistry {
         }
         self.policy.allow_path(resolved);
         self.roots = roots(&self.policy);
-        if self.sandbox.is_some() {
-            let network = sandbox::Network::allowed(!self.denies_network());
-            self.enable_sandbox(network)?;
-        }
         Ok(())
     }
 

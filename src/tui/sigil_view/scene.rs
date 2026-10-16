@@ -3,8 +3,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) use super::app::App;
 
-use super::canvas::write_at;
-use super::canvas::{Cell, Ink, blend, cell as metrics, ink, palette, rgb, shown};
+use super::canvas::{Cell, blend, cell as metrics, ink, palette, rgb, shown};
 use super::model::Model;
 use sigil::layout::Position;
 use sigil::prelude::LayoutBuilderExt;
@@ -14,13 +13,13 @@ use sigil::prelude::Paint;
 use sigil::prelude::Rgba8;
 use sigil::prelude::container;
 
-pub(in crate::tui::sigil_view) use input::prompt_area;
+pub(in crate::tui::sigil_view) use input::window_area;
 
 mod logo;
 mod mark;
 pub(in crate::tui::sigil_view) use logo::{compose, placed};
 pub(in crate::tui::sigil_view) use mark::Mark;
-pub(in crate::tui::sigil_view) use space::{SCRIM, VOID, moving};
+pub(in crate::tui::sigil_view) use space::{GLASS, PLATE, SCRIM, VOID, moving};
 
 mod galaxy;
 mod input;
@@ -77,7 +76,8 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     drop(app.theme_name.get());
                     let _backdrop = app.backdrop.get();
                     let _draft = app.draft.get();
-                    if !app.splash_revealed.get() {
+                    let moving = app.splash.get() && app.model.with(|model| model.prefs.animations);
+                    if !app.splash_revealed.get() || moving {
                         let _reveal = app.ticks.get();
                     }
                     let mut cells = vec![Cell::blank(); usize::from(cols) * usize::from(rows)];

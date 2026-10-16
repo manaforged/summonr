@@ -117,7 +117,6 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
 pub(crate) struct Harness<'a> {
     pub(crate) mode: crate::RunMode,
     pub(crate) checks: &'a [String],
-    pub(crate) sandbox: Option<crate::Network>,
     pub(crate) children: bool,
 }
 
@@ -126,7 +125,6 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     let &Harness {
         mode,
         checks,
-        sandbox,
         children,
     } = harness;
     let mut parts = vec![
@@ -137,16 +135,6 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
         }
         .to_string(),
     ];
-    if let Some(network) = sandbox {
-        let access = if network == crate::Network::Allowed {
-            "allowed"
-        } else {
-            "denied"
-        };
-        parts.push(format!(
-            "Shell commands run in the OS sandbox with network {access}. Writes stay under the workspace and [sandbox] write roots."
-        ));
-    }
     #[cfg(windows)]
     parts.push(
         "Shell commands use Windows PowerShell. Use PowerShell syntax and native Windows programs."

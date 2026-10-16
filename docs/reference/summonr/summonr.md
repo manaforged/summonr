@@ -6,6 +6,7 @@
 | [`Budget`](#budget) | struct |  |
 | [`Client`](#client) | struct |  |
 | [`Endpoint`](#endpoint) | struct |  |
+| [`InstalledPlugin`](#installedplugin) | struct |  |
 | [`Loop`](#loop) | struct |  |
 | [`McpChoice`](#mcpchoice) | struct |  |
 | [`McpField`](#mcpfield) | struct |  |
@@ -34,7 +35,6 @@
 | [`McpTextFormat`](#mcptextformat) | enum |  |
 | [`McpTransport`](#mcptransport) | enum |  |
 | [`Need`](#need) | enum |  |
-| [`Network`](#network) | enum |  |
 | [`Pick`](#pick) | enum |  |
 | [`ProfileScope`](#profilescope) | enum |  |
 | [`ProviderFailureKind`](#providerfailurekind) | enum |  |
@@ -50,6 +50,7 @@
 | [`check_commands`](#check_commands) | fn |  |
 | [`check_config`](#check_config) | fn |  |
 | [`check_key`](#check_key) | fn |  |
+| [`check_plugin_servers`](#check_plugin_servers) | fn |  |
 | [`classify_endpoint`](#classify_endpoint) | fn |  |
 | [`closest_endpoint`](#closest_endpoint) | fn |  |
 | [`command_specs`](#command_specs) | fn |  |
@@ -89,7 +90,6 @@
 | [`resolve_session`](#resolve_session) | fn |  |
 | [`revision`](#revision) | fn |  |
 | [`run_tool`](#run_tool) | fn |  |
-| [`sandbox_on`](#sandbox_on) | fn |  |
 | [`set_default_endpoint`](#set_default_endpoint) | fn |  |
 | [`short`](#short) | fn |  |
 | [`stop_children`](#stop_children) | fn |  |
@@ -227,6 +227,17 @@
 **Trait implementations:** <code>Clone</code>, <code>PartialEq</code>, <code>Debug</code>, <code>StructuralPartialEq</code>
 
 
+### `InstalledPlugin`
+
+**Fields**
+
+| Field | Description |
+| --- | --- |
+| <code>dir: PathBuf</code> |  |
+| <code>name: String</code> |  |
+| <code>report: String</code> |  |
+
+
 ### `Loop`
 
 **Methods**
@@ -259,7 +270,6 @@
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_modules(&amp;mut self, switches: &amp;<a href="summonr-modules.html#switches">Switches</a>) -&gt; <a href="#result">Result</a>&lt;()&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::verify_commands(&amp;self) -&gt; &amp;[String]</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_interactive(self) -&gt; Self</code> |  |
-| <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_sandbox(self, network: <a href="#network">Network</a>) -&gt; <a href="#result">Result</a>&lt;Self&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_strict(self) -&gt; Self</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_unrestricted_commands(self) -&gt; Self</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::apply_workflow(&amp;mut self, workflow: &amp;<a href="summonr-workflow.html#workflow">Workflow</a>, resolve: impl FnMut(&amp;<a href="summonr-workflow.html#seat">Seat</a>) -&gt; <a href="#result">Result</a>&lt;(P, <a href="#endpoint">Endpoint</a>)&gt;) -&gt; <a href="#result">Result</a>&lt;()&gt;</code> |  |
@@ -886,24 +896,6 @@
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Copy</code>, <code>StructuralPartialEq</code>
 
 
-### `Network`
-
-**Methods**
-
-| Method | Description |
-| --- | --- |
-| <code>const allowed(allow: bool) -&gt; Self</code> |  |
-
-**Variants**
-
-| Variant | Description |
-| --- | --- |
-| <code>Allowed</code> |  |
-| <code>Denied</code> |  |
-
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>
-
-
 ### `Pick`
 
 **Variants**
@@ -1086,6 +1078,11 @@
 <pre>pub async fn <a href="#check_key">check_key</a>(name: &amp;str, key: &amp;str) -&gt; <a href="#result">Result</a>&lt;<a href="summonr-secret.html#source">Source</a>&gt;</pre>
 
 
+### `check_plugin_servers`
+
+<pre>pub async fn <a href="#check_plugin_servers">check_plugin_servers</a>(installed: &amp;<a href="#installedplugin">InstalledPlugin</a>, workspace: &amp;Path) -&gt; <a href="#result">Result</a>&lt;Vec&lt;String&gt;&gt;</pre>
+
+
 ### `classify_endpoint`
 
 <pre>pub fn <a href="#classify_endpoint">classify_endpoint</a>() -&gt; Option&lt;String&gt;</pre>
@@ -1163,7 +1160,7 @@
 
 ### `install_plugin`
 
-<pre>pub fn <a href="#install_plugin">install_plugin</a>(src: &amp;Path) -&gt; <a href="#result">Result</a>&lt;String&gt;</pre>
+<pre>pub fn <a href="#install_plugin">install_plugin</a>(src: &amp;Path) -&gt; <a href="#result">Result</a>&lt;<a href="#installedplugin">InstalledPlugin</a>&gt;</pre>
 
 
 ### `interrupted`
@@ -1228,7 +1225,7 @@
 
 ### `mcp_probe`
 
-<pre>pub async fn <a href="#mcp_probe">mcp_probe</a>(workspace: &amp;Path, name: &amp;str) -&gt; <a href="#result">Result</a>&lt;usize&gt;</pre>
+<pre>pub async fn <a href="#mcp_probe">mcp_probe</a>(workspace: &amp;Path, name: &amp;str) -&gt; <a href="#result">Result</a>&lt;Option&lt;usize&gt;&gt;</pre>
 
 
 ### `mcp_remove`
@@ -1278,12 +1275,7 @@
 
 ### `run_tool`
 
-<pre>pub async fn <a href="#run_tool">run_tool</a>(workspace: impl AsRef&lt;Path&gt;, name: &amp;str, arguments: &amp;str, sandbox: Option&lt;<a href="#network">Network</a>&gt;) -&gt; <a href="#result">Result</a>&lt;<a href="#toolresult">ToolResult</a>&gt;</pre>
-
-
-### `sandbox_on`
-
-<pre>pub fn <a href="#sandbox_on">sandbox_on</a>() -&gt; <a href="#result">Result</a>&lt;bool&gt;</pre>
+<pre>pub async fn <a href="#run_tool">run_tool</a>(workspace: impl AsRef&lt;Path&gt;, name: &amp;str, arguments: &amp;str) -&gt; <a href="#result">Result</a>&lt;<a href="#toolresult">ToolResult</a>&gt;</pre>
 
 
 ### `set_default_endpoint`
@@ -1323,7 +1315,7 @@
 
 ### `uninstall_plugin`
 
-<pre>pub fn <a href="#uninstall_plugin">uninstall_plugin</a>(name: &amp;str) -&gt; <a href="#result">Result</a>&lt;bool&gt;</pre>
+<pre>pub fn <a href="#uninstall_plugin">uninstall_plugin</a>(plugin_name: &amp;str) -&gt; <a href="#result">Result</a>&lt;bool&gt;</pre>
 
 
 ### `vision_endpoint`

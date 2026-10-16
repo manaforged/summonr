@@ -1,82 +1,6 @@
 use crate::tui::sigil_view::{app::App, profile::info, view::root};
 use sigil::reactive::Runtime;
-use sigil::terminal::{Cell, Ink};
 use tokio::sync::mpsc::unbounded_channel;
-
-#[test]
-fn the_splash_card_is_a_solid_plate() {
-    let mut cells = vec![Cell::blank(); 32];
-    super::dim_rect(&mut cells, 8, [0, 0, 8, 4], true);
-    assert!(cells.iter().all(|cell| matches!(
-        cell.bg,
-        Ink::Exact(colour) if colour == super::PLATE
-    )));
-}
-
-#[test]
-fn the_splash_card_covers_the_stars() {
-    Runtime::scope("splash-plate", || {
-        let workspace = tempfile::tempdir().unwrap();
-        std::fs::create_dir(workspace.path().join(".git")).unwrap();
-        std::fs::write(workspace.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
-        let (commands, _receiver) = unbounded_channel();
-        let app = App::new(info(), workspace.path().to_owned(), commands);
-        app.splash_revealed.set(true);
-        let cols = 80_u16;
-        let rows = 24_u16;
-        let mut cells = vec![
-            Cell {
-                text: "✦".into(),
-                fg: Ink::Exact(super::SCRIM),
-                bg: Ink::Exact(super::SCRIM),
-                ..Cell::blank()
-            };
-            usize::from(cols) * usize::from(rows)
-        ];
-        super::super::compose(&mut cells, cols, rows, &app);
-        let plate = |cell: &Cell| matches!(cell.bg, Ink::Exact(colour) if colour == super::PLATE);
-        let mut bounds: Option<(usize, usize, usize, usize)> = None;
-        for row in 0..usize::from(rows) {
-            for col in 0..usize::from(cols) {
-                let cell = &cells[row * usize::from(cols) + col];
-                if !plate(cell) {
-                    continue;
-                }
-                bounds = Some(match bounds {
-                    None => (col, row, col, row),
-                    Some((x0, y0, x1, y1)) => (x0.min(col), y0.min(row), x1.max(col), y1.max(row)),
-                });
-            }
-        }
-        let Some((x0, y0, x1, y1)) = bounds else {
-            panic!("splash card missing");
-        };
-        assert!(x1 > x0 + 1 && y1 > y0 + 1, "splash card is a sliver");
-        let edge =
-            |cell: &Cell| matches!(cell.fg, Ink::Exact(colour) if colour == super::palette().gray);
-        let at = |col: usize, row: usize| &cells[row * usize::from(cols) + col];
-        assert_eq!(at(x0, y0).text, "╭", "top left");
-        assert_eq!(at(x1, y0).text, "╮", "top right");
-        assert_eq!(at(x0, y1).text, "╰", "bottom left");
-        assert_eq!(at(x1, y1).text, "╯", "bottom right");
-        for col in x0 + 1..x1 {
-            assert_eq!(at(col, y0).text, "─", "top edge {col}");
-            assert_eq!(at(col, y1).text, "─", "bottom edge {col}");
-            assert!(edge(at(col, y0)), "top edge colour {col}");
-        }
-        for row in y0 + 1..y1 {
-            assert_eq!(at(x0, row).text, "│", "left edge {row}");
-            assert_eq!(at(x1, row).text, "│", "right edge {row}");
-        }
-        for row in y0..=y1 {
-            for col in x0..=x1 {
-                let cell = at(col, row);
-                assert!(plate(cell), "card hole at {col},{row} bg={:?}", cell.bg);
-                assert_ne!(cell.text, "✦", "star shows through the card at {col},{row}");
-            }
-        }
-    });
-}
 
 fn render(app: &App, cols: u16, rows: u16) -> String {
     let mut host = sigil::Host::cells();
@@ -147,10 +71,11 @@ fn a_long_splash_draft_grows_down_under_the_card() {
             let top = rows(&single, "● auto").expect("single-line composer");
             app.edit(&format!("{}tail", "breath of fire pixel style ".repeat(8)));
             let shown = render(&app, cols, height);
-            let card = rows(&shown, "╰").expect("card bottom");
+            let facts = rows(&shown, "session").expect("card facts");
             let header = rows(&shown, "● auto").expect("composer header");
+            let bottom = rows(&shown, "╰").expect("window bottom");
             assert_eq!(header, top, "{shown}");
-            assert!(header > card, "{shown}");
+            assert!(facts < header && header < bottom, "{shown}");
             assert!(shown.contains("tail"), "{shown}");
             app.edit("/");
             let listed = render(&app, cols, height);
@@ -264,7 +189,7 @@ fn a_server_prompt_line_is_sent_as_a_turn_and_an_unknown_command_is_not() {
     });
 }
 
-fn splash_screen(cols: u16, rows: u16) -> (App, sigil::Host, sigil::terminal::Screen) {
+pub(super) fn splash_screen(cols: u16, rows: u16) -> (App, sigil::Host, sigil::terminal::Screen) {
     let workspace = tempfile::tempdir().unwrap();
     let (commands, _receiver) = unbounded_channel();
     let app = App::new(info(), workspace.path().to_owned(), commands);
@@ -320,7 +245,7 @@ fn named(key: sigil::prelude::Key) -> sigil::events::ShellEvent {
 }
 
 #[test]
-fn f2_on_the_splash_cycles_the_s_mark_through_lines_pixels_and_the_banner() {
+fn the_splash_keeps_the_line_stack_s_when_f2_is_pressed() {
     Runtime::scope("splash-mark", || {
         let (_app, mut host, mut screen) = splash_screen(120, 40);
         let mut router = sigil::events::EventRouter::new();
@@ -331,16 +256,12 @@ fn f2_on_the_splash_cycles_the_s_mark_through_lines_pixels_and_the_banner() {
             screen.frame(&mut host, &mut router, [], (120, 40)).unwrap();
             screen.text()
         };
-        let lines = shown(vec![]);
-        assert!(
-            lines.contains('┏') && lines.contains('┛') && lines.contains('┌'),
-            "{lines}"
-        );
-        let pixels = shown(vec![named(sigil::prelude::Key::F2)]);
-        assert!(pixels.contains('▀') && !pixels.contains('┏'), "{pixels}");
-        let banner = shown(vec![named(sigil::prelude::Key::F2)]);
-        assert!(banner.contains("███████╗"), "{banner}");
-        let again = shown(vec![named(sigil::prelude::Key::F2)]);
-        assert!(again.contains('┏'), "{again}");
+        for events in [vec![], vec![named(sigil::prelude::Key::F2)]] {
+            let shown = shown(events);
+            assert!(
+                shown.contains('┏') && shown.contains('┛') && shown.contains('┌'),
+                "{shown}"
+            );
+        }
     });
 }

@@ -8,7 +8,6 @@ use super::config::{Launch, Server};
 use super::http;
 use crate::error::{Error, Result};
 use crate::rpc::{self, Client, Notice};
-use crate::tools::sandbox::Sandbox;
 
 const STATELESS: &str = "2026-07-28";
 const LIST_PAGES: usize = 64;
@@ -16,7 +15,6 @@ const LIST_PAGES: usize = 64;
 pub(super) struct Conn {
     transport: Transport,
     stateless: bool,
-    sandbox: Option<Sandbox>,
     offers: Value,
 }
 
@@ -26,11 +24,7 @@ enum Transport {
 }
 
 impl Conn {
-    pub(super) async fn open(
-        server: &Server,
-        workspace: &Path,
-        sandbox: Option<&Sandbox>,
-    ) -> Result<Self> {
+    pub(super) async fn open(server: &Server, workspace: &Path) -> Result<Self> {
         let transport = match &server.launch {
             Launch::Stdio { command, args, env } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -39,7 +33,6 @@ impl Conn {
                     args: &args,
                     env,
                     cwd: workspace,
-                    sandbox,
                     wait: crate::limits::limits().mcp_open().min(server.wait),
                 })?))
             }
@@ -57,7 +50,6 @@ impl Conn {
         let mut conn = Self {
             transport,
             stateless: false,
-            sandbox: sandbox.cloned(),
             offers: json!({"tools": {}}),
         };
         let agreed = match &mut conn.transport {
@@ -80,13 +72,6 @@ impl Conn {
                 Ok(())
             }
             Transport::Http(http) => http.set_wait(wait),
-        }
-    }
-
-    pub(super) fn runs_in(&self, sandbox: Option<&Sandbox>) -> bool {
-        match &self.transport {
-            Transport::Stdio(_) => self.sandbox.as_ref() == sandbox,
-            Transport::Http(_) => true,
         }
     }
 

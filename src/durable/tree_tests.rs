@@ -83,3 +83,21 @@ fn a_file_summonr_writes_its_own_output_to_is_not_a_change() {
     assert!(mark(&events, "events.jsonl", None, &own).unwrap().is_none());
     assert!(mark(&code, "a.txt", None, &own).unwrap().is_some());
 }
+
+#[test]
+fn bytecode_a_check_writes_does_not_change_the_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let git = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    assert!(git.success());
+    std::fs::write(root.join("calc.py"), "def add(a, b):\n    return a + b\n").unwrap();
+    let before = snapshot(root, None, None).unwrap();
+    std::fs::create_dir(root.join("__pycache__")).unwrap();
+    std::fs::write(root.join("__pycache__/calc.cpython-312.pyc"), "bytecode").unwrap();
+    let after = snapshot(root, None, Some(&before)).unwrap();
+    assert!(before == after, "a generated cache changed the snapshot");
+}

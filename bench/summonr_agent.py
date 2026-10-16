@@ -1,8 +1,10 @@
+import hashlib
 import json
 import shlex
 from pathlib import Path, PurePosixPath
 from typing import Any, override
 
+import level
 from harbor.agents.capabilities import AgentCapabilities
 from harbor.agents.installed.base import BaseInstalledAgent, CliFlag, with_prompt_template
 from harbor.environments.base import BaseEnvironment
@@ -20,13 +22,14 @@ from harbor.models.trajectories import (
 from harbor.models.trial.paths import EnvironmentPaths
 from harbor.utils.trajectory_utils import format_trajectory_json
 
-ENDPOINTS = {"openai": "openai", "xai": "grok"}
+ENDPOINTS = {"openai": "openai", "xai": "grok", "zai": "zai"}
 LOGINS = PurePosixPath("/opt/auth/summonr")
 LOGIN_FILES = ("credentials.toml", "credentials.wrap", "credentials.lock", "locks")
 BINARY = "/usr/local/bin/summonr"
 
 
 class Summonr(BaseInstalledAgent):
+    DEFAULT_SETUP_TIMEOUT_SEC = level.SETUP_TIMEOUT_SEC
     capabilities = AgentCapabilities(atif=True)
 
     _OUTPUT_FILENAME = "summonr.txt"
@@ -41,11 +44,14 @@ class Summonr(BaseInstalledAgent):
         ),
     ]
 
-    def __init__(self, *args, binary: str | None = None, **kwargs):
+    def __init__(self, *args, binary: str | None = None, binary_sha256: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         if not binary or not Path(binary).is_file():
             raise ValueError(f"binary must name a summonr build on the host, got {binary!r}")
+        if not binary_sha256:
+            raise ValueError("binary_sha256 must pin the summonr build for the whole job")
         self._binary = Path(binary)
+        self._binary_sha256 = binary_sha256
 
     @staticmethod
     @override
@@ -62,9 +68,14 @@ class Summonr(BaseInstalledAgent):
 
     @override
     async def install(self, environment: BaseEnvironment) -> None:
-        await self.ensure_system_dependencies(environment, ("ca_certificates", "git"))
+        found = hashlib.sha256(self._binary.read_bytes()).hexdigest()
+        if found != self._binary_sha256:
+            raise ValueError(f"{self._binary} has sha256 {found}, but the job pins {self._binary_sha256}")
+        await self.exec_as_root(environment, command=level.record())
+        await level.install(self, environment)
         await environment.upload_file(self._binary, BINARY)
         await self.exec_as_root(environment, command=f"chmod 755 {BINARY} && {BINARY} --version")
+        await self.exec_as_agent(environment, command=level.snapshot())
 
     def _endpoint(self) -> tuple[str, str]:
         provider, _, model = (self.model_name or "").partition("/")
@@ -80,7 +91,8 @@ class Summonr(BaseInstalledAgent):
         home = (EnvironmentPaths.agent_dir / "summonr").as_posix()
         marker = f"{home}/.started"
         links = " ".join(f"ln -sfn {LOGINS / name} {home}/{name};" for name in LOGIN_FILES)
-        config = f'[endpoint.{endpoint}]\nmodel = "{model}"\n'
+        base, key = self._get_env("BENCH_BASE"), self._get_env("BENCH_KEY")
+        config = f'[endpoint.{endpoint}]\nmodel = "{model}"\n' + (f'base_url = "{level.per_trial(base, self.logs_dir.parent.name)}"\n' if base else "") + (f'api_key = "{key}"\n' if base and key else "")
         await self.exec_as_agent(
             environment,
             command=(
@@ -89,7 +101,7 @@ class Summonr(BaseInstalledAgent):
             ),
         )
         flags = self.build_cli_flags()
-        env = {"SUMMONR_HOME": home, "SUMMONR_SECRETS": "file"}
+        env = {**self.extra_env, "SUMMONR_HOME": home, "SUMMONR_SECRETS": "file"}
         try:
             await self.exec_as_agent(
                 environment,
@@ -197,3 +209,10 @@ class Summonr(BaseInstalledAgent):
         context.n_cache_tokens = metrics.total_cached_tokens
         context.n_output_tokens = metrics.total_completion_tokens
         context.cost_usd = metrics.total_cost_usd
+
+
+class SummonrControl(Summonr):
+    @staticmethod
+    @override
+    def name() -> str:
+        return "summonr-control"

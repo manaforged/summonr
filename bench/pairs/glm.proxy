@@ -1,0 +1,5 @@
+port 8095
+upstream https://api.z.ai/api/coding/paas/v4
+envfile glm.env
+keyenv ZAI_API_KEY
+route anthropic=https://api.z.ai/api/anthropic

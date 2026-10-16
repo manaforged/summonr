@@ -259,7 +259,6 @@ async fn claude_code_never_sees_an_api_key() {
         env: &[],
         unset: &["HOME"],
         cwd: &cwd,
-        sandbox: None,
         base: crate::rpc::Env::Inherit,
         stderr: crate::rpc::Stderr::Discard,
     })

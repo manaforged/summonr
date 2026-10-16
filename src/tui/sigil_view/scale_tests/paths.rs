@@ -35,7 +35,7 @@ fn a_root_listing_and_a_patch_name_what_they_touch() {
         app.update(Msg::Event(Event::ToolCall {
             id: "l1".to_owned(),
             name: "read".to_owned(),
-            arguments: format!(r#"{{"op":"list","path":"{root}","depth":2}}"#),
+            arguments: serde_json::json!({ "op": "list", "path": root, "depth": 2 }).to_string(),
         }));
         let patch = format!(
             "*** Begin Patch\n*** Update File: {root}/pricing.py\n@@\n-a\n+b\n*** End Patch"

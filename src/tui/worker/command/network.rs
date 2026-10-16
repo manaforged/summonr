@@ -1,35 +1,6 @@
 use super::*;
 
 impl Worker {
-    pub(in crate::tui::worker) fn network(&mut self, argument: Option<&str>) -> bool {
-        match argument.map(str::trim) {
-            None | Some("") => {
-                let state = if !self.loop_.has_sandbox() {
-                    "sandbox off; commands already have network"
-                } else if self.loop_.denies_network() {
-                    "network denied in the sandbox: /permissions net on, or net once"
-                } else {
-                    "network allowed for this session; /permissions net off denies it again"
-                };
-                self.system(state);
-            }
-            Some("on") => match self.loop_.set_network(crate::Network::Allowed) {
-                Ok(()) => self.system("network allowed for this session"),
-                Err(error) => self.fail(&error.to_string()),
-            },
-            Some("off") => match self.loop_.set_network(crate::Network::Denied) {
-                Ok(()) => self.system("network denied for this session"),
-                Err(error) => self.fail(&error.to_string()),
-            },
-            Some("once") => {
-                self.loop_.allow_network_once();
-                self.system("network allowed for the next command");
-            }
-            Some(_) => self.system("/permissions net on | off | once"),
-        }
-        true
-    }
-
     pub(in crate::tui::worker) async fn login(&mut self, name: &str) -> bool {
         let endpoint = match crate::endpoint::login_seat(name) {
             Ok(endpoint) => endpoint,
@@ -133,11 +104,10 @@ impl Worker {
                 .map_or((text, None), |(topic, rest)| (topic, Some(rest.trim())))
         });
         match topic {
-            "" => self.network(None) && self.write(None),
-            "net" => self.network(rest),
+            "" => self.write(None),
             "write" => self.write(rest),
             other => {
-                self.fail(&format!("/permissions takes net or write, not `{other}`"));
+                self.fail(&format!("/permissions takes write, not `{other}`"));
                 true
             }
         }

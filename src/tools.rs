@@ -22,7 +22,6 @@ pub(crate) use dedup::read_span;
 pub(crate) mod command;
 mod lsp;
 mod paths;
-pub(crate) mod sandbox;
 mod search;
 mod spill;
 mod todo;
@@ -54,7 +53,6 @@ pub(crate) struct ToolRegistry {
     search: Option<Search>,
     browser: Option<crate::browser::Browser>,
     env: Vec<(String, String)>,
-    sandbox: Option<sandbox::Sandbox>,
     background: bool,
     language: bool,
     skills: bool,
@@ -67,7 +65,6 @@ pub(crate) struct ToolRegistry {
     spill_dir: std::sync::OnceLock<tempfile::TempDir>,
     launches: lsp::Launches,
     roots: Vec<paths::Root>,
-    network_once: std::sync::atomic::AtomicBool,
     approved_once: std::sync::Mutex<Option<command::Approval>>,
     model_images: bool,
     vision: Option<crate::endpoint::Endpoint>,
@@ -128,7 +125,6 @@ impl ToolRegistry {
             search,
             browser: None,
             env: Vec::new(),
-            sandbox: None,
             background: true,
             language: true,
             skills: true,
@@ -138,7 +134,6 @@ impl ToolRegistry {
             read_ranges: std::sync::Mutex::new(std::collections::HashMap::new()),
             spill_dir: std::sync::OnceLock::new(),
             launches: lsp::Launches::default(),
-            network_once: std::sync::atomic::AtomicBool::new(false),
             approved_once: std::sync::Mutex::new(None),
             model_images: false,
             vision: None,
@@ -175,11 +170,6 @@ impl ToolRegistry {
     pub(crate) fn child_at(&self, workspace: &Path, session: &str) -> Result<Self> {
         let mut child = Self::with_policy_and_search(workspace, self.policy.clone(), None)?;
         child.env.clone_from(&self.env);
-        child.sandbox = self
-            .sandbox
-            .as_ref()
-            .map(|sandbox| sandbox.at(&child.workspace))
-            .transpose()?;
         child.background = false;
         child.language = self.language;
         child.skills = self.skills;
@@ -187,11 +177,6 @@ impl ToolRegistry {
         child.browser.clone_from(&self.browser);
         child.set_session(session);
         Ok(child)
-    }
-
-    pub(crate) fn allow_network_once(&self) {
-        self.network_once
-            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub(crate) fn approve_once(&self, approval: command::Approval) -> Result<()> {
@@ -211,16 +196,6 @@ impl ToolRegistry {
             .take())
     }
 
-    pub(crate) fn has_sandbox(&self) -> bool {
-        self.sandbox.is_some()
-    }
-
-    pub(crate) fn denies_network(&self) -> bool {
-        self.sandbox
-            .as_ref()
-            .is_some_and(sandbox::Sandbox::denies_network)
-    }
-
     pub(crate) fn is_strict(&self) -> bool {
         self.policy.strict
     }
@@ -237,10 +212,6 @@ impl ToolRegistry {
         &self.policy
     }
 
-    pub(crate) fn sandbox(&self) -> Option<sandbox::Sandbox> {
-        self.sandbox.clone()
-    }
-
     pub(crate) fn set_session(&self, id: &str) {
         if let Ok(mut session) = self.session.lock() {
             *session = Some(id.to_string());
@@ -254,9 +225,6 @@ impl ToolRegistry {
     pub(crate) fn contain_read_only(&mut self) {
         self.policy.set_read_only(true);
         self.browser = None;
-        if self.sandbox.is_none() {
-            drop(self.enable_sandbox(sandbox::Network::Allowed));
-        }
     }
 
     pub(crate) fn restrict_to(&mut self, names: &[String]) {
@@ -321,7 +289,6 @@ pub async fn run_tool(
     workspace: impl AsRef<Path>,
     name: &str,
     arguments: &str,
-    sandbox: Option<sandbox::Network>,
 ) -> Result<ToolResult> {
     let workspace = workspace.as_ref();
     let mut tools = ToolRegistry::with_policy_and_search(
@@ -331,9 +298,6 @@ pub async fn run_tool(
     )?;
     tools.standalone = true;
     tools.set_modules(&crate::modules::Switches::load(workspace)?)?;
-    if let Some(network) = sandbox {
-        tools.enable_sandbox(network)?;
-    }
     let call = ToolCall {
         id: "cli".to_string(),
         kind: ToolKind::Function,

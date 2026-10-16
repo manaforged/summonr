@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import http.client
 import os
 import subprocess
 import json
@@ -10,6 +11,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import upstream
 
 DROP = {"host", "content-length", "accept-encoding", "connection", "transfer-encoding"}
 
@@ -271,7 +274,7 @@ class Proxy(BaseHTTPRequestHandler):
                 chunks.append(chunk)
                 self.wfile.write(chunk)
                 self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError, OSError) as error:
+        except (OSError, http.client.HTTPException) as error:
             return first, chunks, f"cut off: {type(error).__name__}"
         return first, chunks, None
 
@@ -322,13 +325,14 @@ class Proxy(BaseHTTPRequestHandler):
         request = urllib.request.Request(url, data=raw, method=method, headers=headers)
         started = time.time()
         try:
-            response = urllib.request.urlopen(request, timeout=900)
+            response = self.opener.open(request, timeout=upstream.READ_SECONDS)
             status = response.status
         except urllib.error.HTTPError as error:
             response, status = error, error.code
-        except urllib.error.URLError as error:
-            self.send_error(502, str(error.reason))
-            self.write(record, started, None, 502, b"", str(error.reason))
+        except (OSError, http.client.HTTPException) as error:
+            reason = str(getattr(error, "reason", None) or f"{type(error).__name__}: {error}")
+            self.write(record, started, None, 502, b"", reason)
+            self.send_error(502, reason)
             return
         self.answer(response, status, record, started)
 
@@ -373,6 +377,7 @@ def main():
     parser.add_argument("--key-env", action="append", default=[])
     parser.add_argument("--dump")
     parser.add_argument("--drop", action="append", default=[])
+    parser.add_argument("--connect-timeout", type=float, default=30.0)
     args = parser.parse_args()
     routes = [entry.partition("=") for entry in args.key_env]
     Proxy.keys = [os.environ.get(name) or parser.error(f"{name} is not set") for name, _, _ in routes] or [None]
@@ -383,6 +388,7 @@ def main():
         host, _, fields = entry.partition("=")
         Proxy.drops.setdefault(host, []).extend(filter(None, fields.split(",")))
     Proxy.dump = args.dump
+    Proxy.opener = upstream.opener(args.connect_timeout)
     Proxy.upstream = args.upstream.rstrip("/")
     Proxy.routes = {name: url.rstrip("/") for name, _, url in (entry.partition("=") for entry in args.route)}
     Proxy.strip = [prefix.rstrip("/") for prefix in args.strip]

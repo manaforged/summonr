@@ -4,7 +4,7 @@ Issues are welcome. Pull requests are by invitation: open an issue first, and se
 
 ## Build
 
-You need Rust 1.98. `rust-toolchain.toml` pins the version, and rustup downloads it on the first build. The default build also needs Git, CMake, and a C and C++ compiler. `--sandbox` on Linux needs bubblewrap.
+You need Rust 1.98. `rust-toolchain.toml` pins the version, and rustup downloads it on the first build. The default build also needs Git, CMake, and a C and C++ compiler.
 
 ```sh
 cargo build --locked

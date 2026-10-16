@@ -144,14 +144,6 @@ impl<P: Provider> Loop<P> {
         parts.push(harness_section(&Harness {
             mode: self.mode,
             checks: self.verify.as_deref().unwrap_or_default(),
-            sandbox: self
-                .tools
-                .has_sandbox()
-                .then_some(if self.denies_network() {
-                    Network::Denied
-                } else {
-                    Network::Allowed
-                }),
             children: self.task_available(),
         }));
         if progress.kind == WorkKind::Goal {

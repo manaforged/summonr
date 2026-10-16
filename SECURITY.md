@@ -25,6 +25,6 @@ summonr sends no telemetry. It connects only to:
 
 ## Scope
 
-In scope: the `summonr` binary, its sandbox (`--sandbox`), its credential storage, and the release artifacts on GitHub.
+In scope: the `summonr` binary, its command and write policy, its credential storage, and the release artifacts on GitHub.
 
 Out of scope: model output, and model providers' own services.

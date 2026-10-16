@@ -62,7 +62,7 @@ leyline = { workspace = true }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "15aa4e2340bffa3906e58e653ed6d545f000f509", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "89725929a9524298b453dd693dc7aa7d6a3c91a1", default-features = false, features = ["terminal", "inspect"] }
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"
@@ -85,7 +85,6 @@ crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "5b1788
 [features]
 default = []
 gui = ["sigil/desktop"]
-windows-sandbox = []
 
 [profile.release]
 lto = "fat"
@@ -100,7 +99,7 @@ keyring = { version = "3", features = ["windows-native", "sync-secret-service", 
 
 [target.'cfg(windows)'.dependencies]
 process-wrap = { version = "9.1", default-features = false, features = ["job-object", "tokio1"] }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Isolation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Memory", "Win32_System_StationsAndDesktops", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 
 [lints.rust]
 unsafe_code = "deny"

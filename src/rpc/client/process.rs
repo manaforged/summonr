@@ -5,7 +5,6 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 
 use crate::error::{Error, Result};
 use crate::tools::command::ProcessGroup;
-use crate::tools::sandbox::{CommandMode, Sandbox};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Env {
@@ -14,21 +13,9 @@ pub(crate) enum Env {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Access {
-    Write,
-    Read,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Stderr {
     Pipe,
     Discard,
-}
-
-impl Access {
-    pub(crate) fn from_read_only(read_only: bool) -> Self {
-        if read_only { Self::Read } else { Self::Write }
-    }
 }
 
 pub(crate) struct Launch<'a> {
@@ -37,7 +24,6 @@ pub(crate) struct Launch<'a> {
     pub(crate) env: &'a [(String, String)],
     pub(crate) unset: &'a [&'a str],
     pub(crate) cwd: &'a Path,
-    pub(crate) sandbox: Option<(&'a Sandbox, Access)>,
     pub(crate) base: Env,
     pub(crate) stderr: Stderr,
 }
@@ -51,22 +37,8 @@ pub(crate) struct Process {
 }
 
 pub(crate) fn start(launch: &Launch<'_>) -> Result<Process> {
-    let mut command = match launch.sandbox {
-        Some((sandbox, access)) => sandbox.command(
-            launch.program,
-            launch.args,
-            launch.cwd,
-            match access {
-                Access::Read => CommandMode::ReadOnly,
-                Access::Write => CommandMode::Session,
-            },
-        ),
-        None => {
-            let mut command = Command::new(launch.program);
-            command.args(launch.args).current_dir(launch.cwd);
-            command
-        }
-    };
+    let mut command = Command::new(launch.program);
+    command.args(launch.args).current_dir(launch.cwd);
     #[cfg(unix)]
     command.process_group(0);
     if launch.base == Env::Clean {
@@ -97,9 +69,7 @@ pub(crate) fn start(launch: &Launch<'_>) -> Result<Process> {
         .take()
         .ok_or_else(|| Error::Tool("child has no stdout".to_string()))?;
     let stderr = child.stderr.take();
-    let group = child
-        .id()
-        .map(|pid| ProcessGroup::new(pid, launch.sandbox.is_some()));
+    let group = child.id().map(ProcessGroup::new);
     Ok(Process {
         child,
         stdin,

@@ -31,3 +31,23 @@ fn a_plugin_lsp_file_becomes_servers_with_its_root_env_and_languages() {
     assert!(server.handles(Path::new("App.svelte")));
     assert!(!server.handles(Path::new("main.rs")));
 }
+
+#[test]
+fn an_lsp_entry_without_a_command_does_not_hide_the_others() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join(FILE),
+        serde_json::json!({
+            "pyls": {"command": "pylsp", "extensionToLanguage": {".py": "python"}},
+            "broken": {"extensionToLanguage": {".x": "x"}}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let plugin = Plugin::at("py".to_string(), dir.path().to_owned());
+    let keys: Vec<String> = of(&plugin, dir.path())
+        .into_iter()
+        .map(|server| server.key)
+        .collect();
+    assert_eq!(keys, ["py:pyls"]);
+}

@@ -42,7 +42,7 @@ pub(crate) struct File {
     #[serde(default)]
     pub lsp: Lsp,
     #[serde(default)]
-    pub sandbox: Sandbox,
+    pub write_roots: Vec<String>,
     pub workflow: Option<String>,
     #[serde(default)]
     pub workflows: BTreeMap<String, BTreeMap<String, SeatRow>>,
@@ -82,18 +82,10 @@ pub(crate) enum ReasoningSetting {
     Text(String),
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct Sandbox {
-    #[serde(default)]
-    pub on: bool,
-    #[serde(default)]
-    pub write: Vec<String>,
-}
-
-impl Sandbox {
-    pub(crate) fn paths(&self) -> Vec<PathBuf> {
+impl File {
+    pub(crate) fn write_root_paths(&self) -> Vec<PathBuf> {
         let home = home_dir();
-        self.write
+        self.write_roots
             .iter()
             .map(|path| match (path.strip_prefix("~/"), &home) {
                 (Some(rest), Some(home)) => home.join(rest),
@@ -290,10 +282,6 @@ pub fn check() -> Result<()> {
     file().map(drop)
 }
 
-pub fn sandbox_on() -> Result<bool> {
-    Ok(file()?.sandbox.on)
-}
-
 pub(crate) fn parse(path: &Path) -> Result<File> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
@@ -329,8 +317,9 @@ pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
 }
 
 pub(crate) use edit::{
-    Section, remove_key, remove_named, sandbox_entry, save_default_seat, save_default_workflow,
-    save_module, save_named, save_prefs, save_provider, save_sandbox_write, save_workflow,
+    Section, drop_plugin_off, remove_key, remove_named, save_default_seat, save_default_workflow,
+    save_module, save_named, save_prefs, save_provider, save_workflow, save_write_root,
+    write_root_entry,
 };
 
 #[cfg(test)]

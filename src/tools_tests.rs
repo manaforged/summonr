@@ -252,3 +252,26 @@ async fn the_model_cannot_write_the_check_file_in_any_mode() {
         "check = \"false\"\n"
     );
 }
+
+#[test]
+fn the_command_tool_does_not_claim_a_sandbox_the_session_lacks() {
+    let (_dir, tools) = workspace(&[]);
+    let run = tools
+        .definitions()
+        .into_iter()
+        .find(|tool| tool.function.name == "run_command")
+        .unwrap();
+    assert!(
+        !run.function.description.to_lowercase().contains("sandbox"),
+        "{}",
+        run.function.description
+    );
+}
+
+#[test]
+fn a_read_only_registry_keeps_the_parent_tool_list() {
+    let (_dir, mut tools) = workspace(&[]);
+    let parent = names(&tools);
+    tools.contain_read_only();
+    assert_eq!(names(&tools), parent);
+}

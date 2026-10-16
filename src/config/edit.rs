@@ -218,7 +218,9 @@ pub fn tilde(path: &Path) -> String {
     path.display().to_string()
 }
 
-pub(crate) fn sandbox_entry(path: &Path) -> String {
+const WRITE_ROOTS: &str = "write_roots";
+
+pub(crate) fn write_root_entry(path: &Path) -> String {
     let entry = tilde(path);
     if entry == "~" {
         "~/".to_string()
@@ -227,20 +229,18 @@ pub(crate) fn sandbox_entry(path: &Path) -> String {
     }
 }
 
-pub(crate) fn save_sandbox_write(path: &Path, dir: &str) -> Result<()> {
+pub(crate) fn save_write_root(path: &Path, dir: &str) -> Result<()> {
     let entry = if Path::new(dir).is_absolute() {
-        sandbox_entry(Path::new(dir))
+        write_root_entry(Path::new(dir))
     } else {
         dir.to_string()
     };
     update(path, |document| {
-        let existing = document
-            .get("sandbox")
-            .and_then(|sandbox| sandbox.get("write"));
+        let existing = document.get(WRITE_ROOTS);
         if existing.is_some_and(|item| !item.is_none() && item.as_array().is_none()) {
-            return Err(Error::Config(
-                "config.toml: [sandbox] write must be an array".to_string(),
-            ));
+            return Err(Error::Config(format!(
+                "config.toml: {WRITE_ROOTS} must be an array"
+            )));
         }
         let mut array = existing
             .and_then(toml_edit::Item::as_array)
@@ -252,11 +252,23 @@ pub(crate) fn save_sandbox_write(path: &Path, dir: &str) -> Result<()> {
         {
             array.push(entry.as_str());
         }
-        document["sandbox"]["write"] = toml_edit::Item::Value(toml_edit::Value::Array(array));
-        if let Some(table) = document["sandbox"].as_table_mut() {
-            table.set_implicit(true);
-        }
+        document[WRITE_ROOTS] = toml_edit::Item::Value(toml_edit::Value::Array(array));
         Ok(true)
     })
     .map(drop)
+}
+
+pub(crate) fn drop_plugin_off(path: &Path, name: &str) -> Result<bool> {
+    update(path, |document| {
+        let Some(array) = document
+            .get_mut("plugins")
+            .and_then(|item| item.get_mut("off"))
+            .and_then(toml_edit::Item::as_array_mut)
+        else {
+            return Ok(false);
+        };
+        let before = array.len();
+        array.retain(|value| value.as_str() != Some(name));
+        Ok(array.len() != before)
+    })
 }

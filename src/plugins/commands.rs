@@ -118,7 +118,7 @@ fn bare(all: &[Command], name: &str) -> bool {
         && crate::parse_command(&format!("/{name}")).is_none()
 }
 
-fn load(plugin: &Plugin) -> Vec<Command> {
+pub(super) fn load(plugin: &Plugin) -> Vec<Command> {
     let Ok(entries) = std::fs::read_dir(plugin.dir.join(DIR)) else {
         return Vec::new();
     };

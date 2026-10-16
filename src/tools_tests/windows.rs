@@ -26,3 +26,15 @@ fn commands_keep_the_powershell_module_path() {
         "{kept:?}"
     );
 }
+
+#[test]
+fn a_native_command_that_writes_stderr_keeps_its_own_exit_code() {
+    let (_dir, tools) = workspace(&[]);
+    let quiet = outcome(&tools, "cmd /c \"echo note 1>&2\"");
+    assert!(quiet.starts_with("exit 0"), "{quiet}");
+    assert!(quiet.contains("note"), "{quiet}");
+    let blank = outcome(&tools, "cmd /c \"echo. 1>&2\"");
+    assert!(!blank.contains("RemoteException"), "{blank}");
+    let failed = outcome(&tools, "cmd /c \"echo boom 1>&2 & exit 3\"");
+    assert!(failed.starts_with("exit 3"), "{failed}");
+}

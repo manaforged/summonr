@@ -119,7 +119,7 @@ pub(crate) async fn turn(
 ) -> Result<(Option<String>, String)> {
     let session = store::load()?.session(chat).map(str::to_string);
     let mut child = spawn(options, session.as_deref(), text)?;
-    let mut group = child.id().map(|pid| ProcessGroup::new(pid, false));
+    let mut group = child.id().map(ProcessGroup::new);
     let errors = tokio::spawn(tail(child.stderr.take()));
     let stdout = child
         .stdout

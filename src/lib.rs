@@ -100,8 +100,8 @@ pub mod tui;
 pub mod workflow;
 
 pub use command::{SlashCommand, command_specs, parse_command};
+pub use config::check as check_config;
 pub use config::tilde;
-pub use config::{check as check_config, sandbox_on};
 pub use durable::store::lock as lock_file;
 pub use durable::work::{WorkKind, WorkProgress};
 pub use endpoint::{
@@ -116,7 +116,10 @@ pub use endpoint::{
 pub use error::{Error, ProviderFailureKind, Result};
 pub use goal::prompt as goal_prompt;
 pub use jobs::live as live_jobs;
-pub use plugins::{install as install_plugin, list as list_plugins, uninstall as uninstall_plugin};
+pub use plugins::{
+    Installed as InstalledPlugin, check_servers as check_plugin_servers, install as install_plugin,
+    list as list_plugins, uninstall as uninstall_plugin,
+};
 pub use prompt::{Sources, summonr_home, system_prompt};
 pub(crate) use provider::dollars;
 pub use provider::{Client, Effort, Usage, UserInput};
@@ -126,9 +129,6 @@ pub use session::{
     ProfileScope, export as export_session, last_for, list as list_sessions, profile,
     prune as prune_sessions, resolve_id as resolve_session, short,
 };
-pub use tools::sandbox::Network;
-#[cfg(all(windows, feature = "windows-sandbox"))]
-pub use tools::sandbox::windows::entry as sandbox_entry;
 
 pub const INDEX_ENTRY: &str = tools::INDEX_ENTRY;
 

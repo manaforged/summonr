@@ -46,25 +46,17 @@ fi
 export BENCH_PROVIDER=${BENCH_PROVIDER:-$vendor} BENCH_MODEL=$model
 export BENCH_PROXY=${BENCH_PROXY:-http://host.docker.internal:$port}
 
-mkdir -p "$root/logs"
-pkill -f "proxy.py .*--port $port " || true
-for _ in $(seq 50); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || break; sleep 0.2; done
-keys=()
+extra=()
 if [ -n "$envfile" ]; then
-  for name in $(grep -oE "^${keyenv}(_[0-9]+)?=" "$root/$envfile" | tr -d =); do keys+=(--key-env "$name"); done
   for route in "${routes[@]}"; do
-    grep -q "^${route%%=*}=" "$root/$envfile" && keys+=(--key-env "$route")
+    grep -q "^${route%%=*}=" "$root/$envfile" && extra+=(--key-env "$route")
   done
 fi
-dropargs=()
-for drop in "${drops[@]}"; do dropargs+=(--drop "$drop"); done
+for drop in "${drops[@]}"; do extra+=(--drop "$drop"); done
 [ -n "$anthropic" ] && paths+=("anthropic=$anthropic")
-for path in "${paths[@]}"; do dropargs+=(--route "$path"); done
-(set -a; [ -z "$envfile" ] || . "$root/$envfile"; set +a
-  exec setsid nohup python3 "$root/proxy.py" --bind 0.0.0.0 --port "$port" "${keys[@]}" "${dropargs[@]}" --log "$root/logs/$run.jsonl" ${BENCH_DUMP:+--dump "$root/logs/$run.bodies"} \
-    --upstream "$upstream" >> "$root/logs/proxy-$run.out" 2>&1 < /dev/null) &
-for _ in $(seq 50); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break; sleep 0.2; done
-(exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || { echo "proxy did not start on $port: see logs/proxy-$run.out" >&2; exit 1; }
+for path in "${paths[@]}"; do extra+=(--route "$path"); done
+. "$root/proxy-start.sh"
+start_proxy "$run" "$port" "$upstream" "$envfile" "${keyenv:-}" "${extra[@]}"
 
 mkdir -p "$root/jobs/$run"
 if [ -d "$dataset" ]; then

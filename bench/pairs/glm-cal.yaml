@@ -1,0 +1,27 @@
+n_attempts: 1
+n_concurrent_trials: 6
+timeout_multiplier: 1.0
+environment:
+  type: docker
+  kwargs: {extra_hosts: "host.docker.internal:host-gateway"}
+agents:
+  - import_path: claude_agent:Claude
+    n_concurrent: 2
+    override_timeout_sec: 21600
+    model_name: anthropic/glm-5.3-flash
+    kwargs: {version: "2.1.207"}
+    env: {ANTHROPIC_API_KEY: "$${ZAI_API_KEY}", BENCH_BASE: "${BENCH_PROXY}/claude/anthropic", CLAUDE_CODE_MAX_OUTPUT_TOKENS: "65536"}
+  - import_path: pi_agent:Pi
+    n_concurrent: 2
+    override_timeout_sec: 21600
+    model_name: zai/glm-5.3-flash
+    kwargs: {version: "${pi}", reasoning_effort: max}
+    env: {ZAI_API_KEY: "$${ZAI_API_KEY}", BENCH_BASE: "${BENCH_PROXY}/pi/v1"}
+  - import_path: summonr_agent:Summonr
+    n_concurrent: 2
+    override_timeout_sec: 21600
+    model_name: zai/glm-5.3-flash
+    kwargs: {binary: "${SUMMONR}", binary_sha256: "${SUMMONR_SHA256}", reasoning_effort: max}
+    env: {ZAI_API_KEY: "$${ZAI_API_KEY}", BENCH_KEY: "$${ZAI_API_KEY}", BENCH_BASE: "${BENCH_PROXY}/summonr/v1"}
+datasets:
+  - {name: terminal-bench/terminal-bench-2-1, ref: latest}

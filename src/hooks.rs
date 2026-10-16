@@ -213,9 +213,7 @@ impl Hook {
         let mut child = command
             .spawn()
             .map_err(|error| format!("hook `{}` did not start: {error}", self.command))?;
-        let group = child
-            .id()
-            .map(|pid| crate::tools::command::ProcessGroup::new(pid, false));
+        let group = child.id().map(crate::tools::command::ProcessGroup::new);
         let text = body.to_string();
         let work = async move {
             let stdin = child.stdin.take();

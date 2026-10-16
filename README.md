@@ -156,7 +156,7 @@ It lands in the tests session's inbox, and the tests session replies with `@buil
 
 ## Benchmarks
 
-Terminal-Bench 2.1, all 89 tasks, 3 trials each. Each pair ran side by side on the same plan and model, at high effort.
+Terminal-Bench 2.1, at high effort, with every agent in a pair on the same model. The plan pairs ran all 89 tasks side by side, 3 trials each.
 
 GPT-6.1 Sol on a ChatGPT plan:
 
@@ -171,6 +171,14 @@ Grok 4.7 on a SuperGrok plan:
 | --- | ---: | ---: | ---: |
 | summonr 0.1.0 | 74.2% | 579,764 | 27 MB |
 | Grok Build 1.0.52 | 70.4% | 820,158 | 146 MB |
+
+GLM 5.3 Flash through z.ai, one try on each of 86 tasks; OpenCode ran in a later job than summonr and pi:
+
+| Agent | Resolution rate | Input tokens | Memory |
+| --- | ---: | ---: | ---: |
+| summonr 0.1.0-rc.1 | 73.3% | 194,193 | 24 MB |
+| pi 1.0.0 | 72.1% | 212,337 | 134 MB |
+| OpenCode 2.0.22 | 67.4% | 253,726 | 394 MB |
 
 Medians per trial, as each agent reported them; cost at API list price. Method and caveats: [`BENCHMARKS.md`](BENCHMARKS.md).
 

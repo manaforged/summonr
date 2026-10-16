@@ -1,6 +1,6 @@
 # Benchmarks
 
-Harness-level comparison: summonr against a vendor's own agent, both signed in to the vendor's plan, running its model at high effort, side by side in one job (`bench/board.sh`). Each pair runs 3 trials of every task, fewer than the leaderboard's 5, so these are not leaderboard submissions. Resolution rate is the mean over all trials with a 95% bootstrap interval over tasks. Task is the sampling unit, trials of a task are correlated, and differences are paired and bootstrapped over tasks (10,000 resamples). Token counts are the usage each harness reported. Cost is the API list price, not plan spend. A solve whose trial reached a published Terminal-Bench solution is voided and counts as a miss. The judge pass (`harbor analyze -r judge.toml`) has not run on either job. These runs used Terminal-Bench 2.1 with the bench as it was before commit 74d490c6, which moved it to Terminal-Bench 4.0; they were scored with `bench/table.py` at dbf2e1b2.
+Harness-level comparisons on Terminal-Bench 2.1. The first two put summonr against a vendor's own agent, both signed in to the vendor's plan, running its model at high effort, side by side in one job (`bench/board.sh`); the last puts it against two open-source agents on GLM 5.3 Flash. Each plan pair runs 3 trials of every task, fewer than the leaderboard's 5, so these are not leaderboard submissions. Resolution rate is the mean over all trials with a 95% bootstrap interval over tasks. Task is the sampling unit, trials of a task are correlated, and differences are paired and bootstrapped over tasks (10,000 resamples). Token counts are the usage each harness reported. Cost is the API list price, not plan spend. A solve whose trial reached a published Terminal-Bench solution is voided and counts as a miss. The judge pass (`harbor analyze -r judge.toml`) has not run on either job. These runs used Terminal-Bench 2.1 with the bench as it was before commit 74d490c6, which moved it to Terminal-Bench 4.0; they were scored with `bench/table.py` at dbf2e1b2.
 
 ## Terminal-Bench 2.1 on a ChatGPT plan: summonr 0.1.0 against Codex 0.162.1
 
@@ -77,6 +77,36 @@ What the run shows:
 - summonr sent 0.56x the input tokens per solved trial and took 0.74x the time.
 - On the trials it missed, summonr used more input than Grok Build.
 - summonr ran in 27 MB against Grok Build's 146 MB.
+
+## Terminal-Bench 2.1 on GLM 5.3 Flash: summonr 0.1.0-rc.1 against pi 1.0.0 and OpenCode 2.0.22
+
+86 tasks, one try each, `glm-5.3-flash` at high effort through z.ai, every harness on its defaults, run by `bench/run.sh`. summonr and pi ran in one job; OpenCode ran in a later job on the same tasks, model, effort, and dataset. Three tasks are dropped for every harness because their verifier could not install its tools: path-tracing-reverse, qemu-alpine-ssh, qemu-startup. Tokens only; this vendor is not priced. Intervals are 95% Wilson for solved and bootstrap medians elsewhere. The solved cut counts only the tasks that harness solved; the all cut counts all 86.
+
+| Agent | Resolution rate | Input tokens, solved | Input tokens, all | Output tokens, solved | Output tokens, all | Time, solved | Time, all |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| summonr 0.1.0-rc.1 | 73.3% (63/86, 63%–81%) | 95,271 | 194,193 | 8,231 | 12,920 | 219 s | 470 s |
+| pi 1.0.0 | 72.1% (62/86, 62%–80%) | 240,762 | 212,337 | 15,226 | 15,310 | 368 s | 410 s |
+| OpenCode 2.0.22 | 67.4% (58/86, 57%–76%) | 228,578 | 253,726 | 12,364 | 17,756 | 341 s | 567 s |
+
+| Agent | Mean agent RSS | Mean harness RSS |
+| --- | ---: | ---: |
+| summonr | 24 MB | – |
+| pi | 134 MB | – |
+| OpenCode | 86 MB | 394 MB |
+
+Harness RSS adds every helper the harness started without a shell; OpenCode's own server brings it to 394 MB. Paired over the 86 tasks, summonr / other, geometric mean:
+
+| Other | Solved difference | Input tokens | Output tokens | Time |
+| --- | --- | --- | --- | --- |
+| pi | 0.01 (-0.10–0.12) | 0.94 (0.76–1.17) | 0.86 (0.72–0.99) | 0.99 (0.89–1.11) |
+| OpenCode | 0.06 (-0.02–0.14) | 0.74 (0.57–1.00) | 0.86 (0.74–1.06) | 0.77 (0.68–0.87) |
+
+What the run shows:
+
+- The three resolution rates are the same within the interval.
+- On the tasks each agent solved, summonr used the fewest input tokens, 95,271 against 228,578 and 240,762.
+- Across all 86 tasks the input gap narrows to 0.94 against pi and 0.74 against OpenCode, because summonr's failed tasks ran long.
+- summonr ran in 24 MB against pi's 134 MB and OpenCode's 394 MB.
 
 ## Suite layout
 

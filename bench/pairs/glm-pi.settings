@@ -1,0 +1,5 @@
+# arm effort max_tokens temperature, as sent
+opencode2 max/enabled 131072 None
+opencode2 max/enabled None None
+pi max/enabled 131072 None
+summonr max/enabled None None

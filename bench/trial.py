@@ -7,6 +7,7 @@ from stats import covered, hit_tokens, miss_tokens, seconds
 
 SOURCES = rb"\b(?:terminal-bench|tbench|marginlab|laude-institute|harbor-framework)"
 VENDOR_FILES = {"cache", "plugins", "__pycache__"}
+DATABASE = b"SQLite format 3\0"
 VOID = re.compile(rb"https?:(?:\\?/){2}[^\s\"'<>]*(?:" + SOURCES + rb")|github\.com[:/](?:laude-institute|harbor-framework)", re.I)
 WARN = re.compile(rb"/logs/verifier|reward\.txt|/solution/|/tests/test|terminal-bench(?!-canary)|tbench\.ai|marginlab\.ai|laude-institute|harbor-framework", re.I)
 GRADER = re.compile(rb"uvx: command not found|/root/\.local/bin/env: No such file")
@@ -21,9 +22,19 @@ def suspect(agent):
                 raw = path.read_bytes()
             except OSError:
                 continue
+            if raw.startswith(DATABASE):
+                continue
             void.update(match.group().decode().lower() for match in VOID.finditer(raw))
             warn.update(match.group().decode().lower() for match in WARN.finditer(raw))
     return sorted(void), sorted(warn)
+
+
+def judged(folder):
+    path = folder / "analysis.json"
+    if not path.is_file():
+        return False, []
+    checks = json.loads(path.read_text()).get("checks") or {}
+    return True, sorted(f"judge:{name}" for name, check in checks.items() if str(check.get("outcome", "")).lower() == "fail")
 
 
 def dig(value, *keys):
@@ -42,6 +53,17 @@ def price(hit, miss, output, rates):
     return (hit * rates["hit"] + miss * rates["miss"] + output * rates["output"]) / 1_000_000
 
 
+def tier(rates, prompt):
+    long = rates.get("long")
+    return long if long and prompt >= long["at"] else rates
+
+
+def priced(usage, rates):
+    if not rates:
+        return None
+    return sum(price(hit_tokens(u), miss_tokens(u), u.get("completion_tokens", 0), tier(rates, u.get("prompt_tokens", 0))) for u in usage)
+
+
 def token_fields(calls, rates):
     usage = [row.get("usage") or {} for row in calls]
     first = usage[0] if usage else {}
@@ -56,7 +78,7 @@ def token_fields(calls, rates):
         "session_hit": sum(hit_tokens(u) for u in usage[1:]),
         "output": output,
         "reasoning": sum(reasoning_tokens(u) for u in usage),
-        "cost": price(hit, miss, output, rates),
+        "cost": priced(usage, rates),
         "first_hit": hit_tokens(first),
         "first_prompt": first.get("prompt_tokens"),
         "max_prompt": max((u.get("prompt_tokens", 0) for u in usage), default=0),
@@ -64,7 +86,8 @@ def token_fields(calls, rates):
 
 
 def effort_of(request):
-    return f'{request.get("reasoning_effort")}/{(request.get("thinking") or {}).get("type")}'
+    thinking = request.get("thinking")
+    return f'{request.get("reasoning_effort")}/{thinking.get("type") if isinstance(thinking, dict) else thinking}'
 
 
 def controls_of(request):
@@ -114,6 +137,7 @@ def trial_row(result, run, by_label, rates):
     agent = result.parent / "agent"
     exit_file = agent / "exit"
     void, warn = suspect(agent)
+    seen, verdicts = judged(result.parent)
     verifier = result.parent / "verifier" / "test-stdout.txt"
     return {
         "harness": harness,
@@ -127,8 +151,9 @@ def trial_row(result, run, by_label, rates):
         **memory_fields(agent),
         **request_fields(calls),
         **token_fields(calls, rates),
-        "void": void,
+        "void": void + verdicts,
         "warn": warn,
+        "judged": seen,
         "grader": verifier.is_file() and bool(GRADER.search(verifier.read_bytes())),
     }
 
@@ -188,14 +213,14 @@ def standard_tokens(context, trajectory, rates, extra=0):
         "session_hit": sum(hit_tokens(u) for u in usage[1:]) if usage else None,
         "output": output,
         "reasoning": None,
-        "cost": price(hit, prompt - hit, output, rates),
+        "cost": (priced(usage, rates) if usage else None) if rates and rates.get("long") else price(hit, prompt - hit, output, rates),
         "first_hit": hit_tokens(first) if usage else None,
         "first_prompt": first.get("prompt_tokens"),
         "max_prompt": max((u["prompt_tokens"] for u in usage), default=None),
     }
 
 
-def standard_row(result, rates):
+def standard_row(result, rates, by_label):
     data = json.loads(result.read_text())
     folder = result.parent
     agent = folder / "agent"
@@ -205,6 +230,7 @@ def standard_row(result, rates):
     effort = (dig(data, "config", "agent", "kwargs") or {}).get("reasoning_effort")
     model = dig(data, "agent_info", "model_info", "name")
     void, warn = suspect(agent)
+    seen, verdicts = judged(folder)
     events = summonr_events(agent)
     verifier = folder / "verifier" / "test-stdout.txt"
     return {
@@ -217,6 +243,7 @@ def standard_row(result, rates):
         "exception": dig(data, "exception_info", "exception_type"),
         "exit": None,
         "agent_seconds": seconds(data.get("agent_execution")),
+        "window": tuple((data.get("agent_execution") or {}).get(key) for key in ("started_at", "finished_at")),
         "model_seconds": None,
         "other_seconds": None,
         **memory_fields(folder),
@@ -225,11 +252,20 @@ def standard_row(result, rates):
         "effort": [f"{effort}/None"] if effort else [],
         "controls": [],
         "models": [model] if model else [],
-        **standard_tokens(data.get("agent_result") or {}, trajectory, rates, unreported(events)),
-        "void": void,
+        **proxied(standard_tokens(data.get("agent_result") or {}, trajectory, rates, unreported(events)), by_label, data["trial_name"], rates),
+        "void": void + verdicts,
         "warn": warn,
+        "judged": seen,
         "grader": verifier.is_file() and bool(GRADER.search(verifier.read_bytes())),
     }
+
+
+def proxied(reported, by_label, trial, rates):
+    told = {"reported_prompt": reported["prompt"], "reported_output": reported["output"]}
+    if by_label is None:
+        return {**reported, **told}
+    calls = by_label.get(trial, [])
+    return {**token_fields(calls, rates), **request_fields(calls), **told}
 
 
 def standard(jobs, run):
@@ -238,5 +274,5 @@ def standard(jobs, run):
 
 def trials(jobs, run, by_label, rates):
     if standard(jobs, run):
-        return [standard_row(result, rates) for result in sorted(Path(jobs, run).glob("*/result.json"))]
+        return [standard_row(result, rates, by_label) for result in sorted(Path(jobs, run).glob("*/result.json"))]
     return [trial_row(result, run, by_label, rates) for result in sorted(Path(jobs, run).glob("*/*/result.json"))]

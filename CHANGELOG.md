@@ -51,7 +51,7 @@ First public release.
 ### Security
 
 - Secret values from `.env` files, cloud credential files, and private keys show as `[secret]` in every tool result.
-- Writes to `~/.ssh`, `~/.gnupg`, and `~/.summonr` are refused in every path form, including Windows verbatim paths and a symlinked home.
-- The model cannot write `.summonr/check.toml` or `.summonr/policy.toml`.
+- Under `--strict`, writes to `~/.ssh`, `~/.gnupg`, and `~/.summonr` are refused in any path form, such as a Windows verbatim path or a symlinked home. Without it, summonr runs as your account with no sandbox.
+- The `edit` and `write` tools never change `.summonr/check.toml` or `.summonr/policy.toml`.
 - `~/.summonr` is created with mode `0700`, and `~/.summonr/credentials.toml` with mode `0600`.
 - A plan sign-in must return the nonce summonr sent, and a workspace `SYSTEM.md` loads only when the workspace is trusted.

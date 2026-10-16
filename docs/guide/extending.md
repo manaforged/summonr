@@ -2,7 +2,7 @@
 
 Optional capabilities are compiled modules. `summonr modules` lists them with their state. A project may turn a module off. A project can't turn a module on.
 
-You extend summonr outside the process, with files and child processes. This keeps the 18 MB RSS of a `-p` print run and the short first-round prefix. There is no in-process package loader and no marketplace.
+You extend summonr outside the process, with files and child processes. This keeps summonr's memory small (27 MB in our benchmark runs) and its first-round prefix short. There is no in-process package loader and no marketplace.
 
 After the first model round, the advertised tool list and the skill catalog stay frozen until the process exits. A module switch in `/settings` still writes the config for the next process.
 

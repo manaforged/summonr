@@ -52,7 +52,14 @@ impl Overlay {
         }
     }
 
+    const fn modal(self) -> bool {
+        !matches!(self, Self::Effort | Self::Context | Self::Cache)
+    }
+
     pub(in crate::tui::sigil_view) fn layer(self, app: App) -> Option<sigil::prelude::NodeBuilder> {
+        if !self.modal() {
+            return None;
+        }
         let keys = self.keys();
         let owner = app.clone();
         let node = match self {
@@ -81,6 +88,10 @@ impl App {
         Overlay::STACK
             .into_iter()
             .find(|overlay| overlay.open(self).get())
+    }
+
+    pub(in crate::tui::sigil_view) fn covered(&self) -> bool {
+        self.overlay().is_some_and(Overlay::modal)
     }
 
     pub(in crate::tui::sigil_view) fn options_active(&self) -> bool {

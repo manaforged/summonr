@@ -38,7 +38,7 @@ impl App {
             sigil::reactive::derived(move || app.model.with(|model| model.busy_since.is_some()));
         let app = self.clone();
         let splash = sigil::reactive::derived(move || {
-            (app.splash.get() && app.model.with(|model| model.prefs.animations))
+            (app.splash.get() && app.model.with(|model| model.prefs.animations) && !app.covered())
                 || !app.splash_revealed.get()
         });
         let app = self.clone();

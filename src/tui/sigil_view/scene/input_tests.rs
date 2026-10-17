@@ -230,6 +230,36 @@ fn a_model_change_on_the_splash_keeps_the_star_clock() {
     });
 }
 
+#[test]
+fn a_covering_overlay_pauses_the_splash_clock() {
+    Runtime::scope("splash-covered", || {
+        let (app, mut host, mut screen) = splash_screen(80, 24);
+        let mut router = sigil::events::EventRouter::new();
+        let mut frames = |count: usize| {
+            for _ in 0..count {
+                screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+            }
+        };
+        frames(3);
+        assert!(
+            app.sky_clock.peek().is_some(),
+            "the open splash has no clock"
+        );
+        app.auth.open.set(true);
+        frames(3);
+        assert!(
+            app.sky_clock.peek().is_none(),
+            "the splash still animates under the providers dialog"
+        );
+        app.auth.open.set(false);
+        frames(3);
+        assert!(
+            app.sky_clock.peek().is_some(),
+            "closing the dialog left the splash still"
+        );
+    });
+}
+
 fn named(key: sigil::prelude::Key) -> sigil::events::ShellEvent {
     use sigil::events::{
         KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,

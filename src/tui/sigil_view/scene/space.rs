@@ -238,9 +238,12 @@ pub(in crate::tui::sigil_view) fn hash(x: u16, y: u16) -> u32 {
 #[path = "space_tests.rs"]
 mod tests;
 
+pub(in crate::tui::sigil_view) fn slot(cols: u16, x: u16, y: u16) -> Option<usize> {
+    (x < cols).then(|| usize::from(y) * usize::from(cols) + usize::from(x))
+}
+
 pub(in crate::tui::sigil_view) fn set(cells: &mut [Cell], cols: u16, x: u16, y: u16, cell: Cell) {
-    let index = usize::from(y) * usize::from(cols) + usize::from(x);
-    if let Some(slot) = cells.get_mut(index) {
+    if let Some(slot) = slot(cols, x, y).and_then(|index| cells.get_mut(index)) {
         *slot = cell;
     }
 }

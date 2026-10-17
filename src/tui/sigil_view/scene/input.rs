@@ -1,4 +1,4 @@
-use super::logo::{cover, facts, fitting, layout};
+use super::logo::{body, facts, fitting, layout};
 use super::space::{GLASS, PLATE, set};
 use super::*;
 
@@ -11,7 +11,7 @@ pub(in crate::tui::sigil_view) const FACTS_MS: u64 = 560;
 pub(in crate::tui::sigil_view) fn window_area(app: &App, cols: u16, rows: u16) -> [u16; 4] {
     let model = app.model.get();
     let facts = facts(&model, app);
-    let [body_width, body_rows] = cover(fitting(cols, rows, &facts), &facts);
+    let [body_width, body_rows] = body(cols, fitting(cols, rows, &facts), &facts);
     let [_, _, x, y, width] = layout(cols, rows, body_width, body_rows);
     [x, y, width, body_rows + 2]
 }

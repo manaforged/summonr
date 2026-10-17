@@ -265,3 +265,37 @@ fn the_splash_keeps_the_line_stack_s_when_f2_is_pressed() {
         }
     });
 }
+
+#[test]
+fn a_long_workdir_on_a_narrow_splash_stays_on_its_row() {
+    Runtime::scope("splash-narrow", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let mut details = info();
+        details.workspace = format!("~/{}", "deep/".repeat(40));
+        let app = App::new(details, workspace.path().to_owned(), commands);
+        app.splash.set(true);
+        app.splash_revealed.set(true);
+        let (cols, rows) = (60_u16, 30_u16);
+        app.resize(cols, rows);
+        let mut cells = vec![
+            crate::tui::sigil_view::canvas::Cell::blank();
+            usize::from(cols) * usize::from(rows)
+        ];
+        crate::tui::sigil_view::scene::compose(&mut cells, cols, rows, &app);
+        let lines: Vec<String> = cells
+            .chunks(usize::from(cols))
+            .map(|row| row.iter().map(|cell| cell.text.to_string()).collect())
+            .collect();
+        let at = lines
+            .iter()
+            .position(|line| line.contains("workdir"))
+            .unwrap_or_else(|| panic!("{}", lines.join("\n")));
+        assert!(lines[at].contains('…'), "{}", lines.join("\n"));
+        assert!(
+            !lines[at + 1].trim_start().starts_with("deep"),
+            "{}",
+            lines.join("\n")
+        );
+    });
+}

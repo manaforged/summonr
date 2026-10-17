@@ -74,7 +74,7 @@ pub(in crate::tui::sigil_view) fn compose(
     let model = app.model.get();
     let facts = facts(&model, app);
     let card_kind = fitting(cols, rows, &facts);
-    let [body_width, body_rows] = cover(card_kind, &facts);
+    let [body_width, body_rows] = body(cols, card_kind, &facts);
     let [body_x, body_y, card_x, card_y, card_width] = layout(cols, rows, body_width, body_rows);
     let card = [
         card_x,
@@ -148,8 +148,7 @@ const SOLID: char = '█';
 const SHADE: f32 = 0.45;
 
 fn solid(cells: &mut [Cell], cols: u16, [x, y]: [u16; 2], ink: Rgba8) {
-    let index = usize::from(y) * usize::from(cols) + usize::from(x);
-    if let Some(cell) = cells.get_mut(index) {
+    if let Some(cell) = super::space::slot(cols, x, y).and_then(|index| cells.get_mut(index)) {
         cell.text = " ".into();
         cell.bg = super::ink(ink);
     }
@@ -187,6 +186,15 @@ pub(in crate::tui::sigil_view) fn fitting(cols: u16, rows: u16, facts: &[(&str, 
     } else {
         Card::Banner
     }
+}
+
+pub(in crate::tui::sigil_view) fn body(
+    cols: u16,
+    card: Card,
+    facts: &[(&str, String)],
+) -> [u16; 2] {
+    let [width, rows] = cover(card, facts);
+    [width.min(cols.saturating_sub(6)), rows]
 }
 
 pub(in crate::tui::sigil_view) fn cover(card: Card, facts: &[(&str, String)]) -> [u16; 2] {

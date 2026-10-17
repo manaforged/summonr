@@ -76,9 +76,8 @@ pub(super) fn paint(
     for (row, line) in draw(mark, elapsed, clock).iter().enumerate() {
         for (col, glyph) in line.iter().enumerate() {
             let Some(glyph) = glyph else { continue };
-            let index =
-                usize::from(y + row as u16) * usize::from(cols) + usize::from(x + col as u16);
-            if let Some(cell) = cells.get_mut(index) {
+            let at = super::space::slot(cols, x + col as u16, y + row as u16);
+            if let Some(cell) = at.and_then(|index| cells.get_mut(index)) {
                 let mut buffer = [0; 4];
                 cell.text = (&*glyph.text.encode_utf8(&mut buffer)).into();
                 cell.fg = ink(glyph.fg);

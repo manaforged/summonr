@@ -23,6 +23,12 @@ pub(crate) enum Approval {
     Policy,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rewrite {
+    Native,
+    Exact,
+}
+
 pub(crate) fn exit_code(output: &str) -> Option<i32> {
     output
         .lines()
@@ -63,16 +69,30 @@ impl ToolRegistry {
             }
             return self.poll_job(&args, id, locked).await;
         }
-        self.launch_command(&args, locked).await
+        self.launch_command(&args, locked, Rewrite::Native).await
     }
 
-    async fn launch_command(&self, args: &serde_json::Value, locked: bool) -> Result<ToolOutput> {
+    pub(crate) async fn run_check(&self, command: &str) -> Result<ToolOutput> {
+        let args = serde_json::json!({
+            "command": command,
+            "timeout_secs": crate::limits::limits().verify_timeout_secs,
+        });
+        self.launch_command(&args, self.policy.is_read_only(), Rewrite::Exact)
+            .await
+    }
+
+    async fn launch_command(
+        &self,
+        args: &serde_json::Value,
+        locked: bool,
+        rewrite: Rewrite,
+    ) -> Result<ToolOutput> {
         let restricted = self.policy.restricts_writes();
         let command = object_string(args, "command")?;
         let (background, explicit) = launch_mode(args)?;
         let approval = self.take_approval()?;
         let cwd = self.command_dir(args)?;
-        if let Some(output) = self.shortcut(args, command, &cwd, approval.is_some())? {
+        if let Some(output) = self.shortcut(args, command, &cwd, approval.is_some(), rewrite)? {
             return Ok(output);
         }
         self.check_launch(locked, restricted, background)?;
@@ -94,9 +114,13 @@ impl ToolRegistry {
         command: &str,
         cwd: &Path,
         approved: bool,
+        rewrite: Rewrite,
     ) -> Result<Option<ToolOutput>> {
         if let Some(output) = self.gate_command(command, cwd, approved)? {
             return Ok(Some(output));
+        }
+        if rewrite == Rewrite::Exact {
+            return Ok(None);
         }
         let workdir = args
             .get("workdir")

@@ -42,7 +42,7 @@ impl<P: Provider> Loop<P> {
                     },
                 },
                 Some(Observation::Stdout(expected)) => {
-                    let result = self.tools.execute_outcome(&verify_call(&command)).await;
+                    let result = self.tools.run_check(&command).await;
                     let mut outcome = verify::outcome(&command, &result);
                     if outcome.passed && !outcome.output.contains(expected.as_str()) {
                         outcome.passed = false;
@@ -54,7 +54,7 @@ impl<P: Provider> Loop<P> {
                     outcome
                 }
                 None => {
-                    let result = self.tools.execute_outcome(&verify_call(&command)).await;
+                    let result = self.tools.run_check(&command).await;
                     verify::outcome(&command, &result)
                 }
             };

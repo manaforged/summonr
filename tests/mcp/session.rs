@@ -164,6 +164,7 @@ pub(crate) fn a_goal_run_whose_output_lands_in_the_workspace_still_passes() {
     assert_eq!(result.code, Some(0), "{}", result.stdout);
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) fn a_failing_grep_check_does_not_complete_a_goal() {
     let session = Session::new();
     let work = session.files.path();

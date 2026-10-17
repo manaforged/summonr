@@ -2,15 +2,35 @@
 
 | Item | Kind | Description |
 | --- | --- | --- |
+| [`Listing`](#listing) | struct |  |
 | [`Model`](#model) | struct |  |
 | [`Cost`](#cost) | enum |  |
 | [`accepts_images`](#accepts_images) | fn |  |
 | [`current`](#current) | fn |  |
+| [`listing`](#listing-1) | fn |  |
 | [`parse`](#parse) | fn |  |
 | [`refresh_registry`](#refresh_registry) | fn |  |
 | [`tokens`](#tokens) | fn |  |
 
 ## Structs
+
+### `Listing`
+
+**Methods**
+
+| Method | Description |
+| --- | --- |
+| <code>stale(&amp;self) -&gt; bool</code> |  |
+
+**Fields**
+
+| Field | Description |
+| --- | --- |
+| <code>fetched: u64</code> |  |
+| <code>models: Vec&lt;<a href="#model">Model</a>&gt;</code> |  |
+
+**Trait implementations:** <code>Clone</code>, <code>Default</code>, <code>Debug</code>, <code>Serialize</code>, <code>Deserialize&lt;'de&gt;</code>
+
 
 ### `Model`
 
@@ -66,6 +86,11 @@
 ### `current`
 
 <pre>pub fn <a href="#current">current</a>(models: &amp;[(&amp;str, &amp;<a href="#model">Model</a>)]) -&gt; Vec&lt;bool&gt;</pre>
+
+
+### `listing`
+
+<pre>pub fn <a href="#listing-1">listing</a>(endpoint: &amp;str) -&gt; Option&lt;<a href="#listing">Listing</a>&gt;</pre>
 
 
 ### `parse`

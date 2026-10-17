@@ -12,13 +12,13 @@
 
 ## summonr 0.1.0
 
-- [Every public item, one per line](reference/summonr/api.txt): 1246 lines
+- [Every public item, one per line](reference/summonr/api.txt): 1260 lines
 - [API overview](reference/summonr/index.html): tasks, modules, features, and examples
 - [API changes by release](reference/summonr/changes.html)
-- [summonr](reference/summonr/summonr.html): 525 items
+- [summonr](reference/summonr/summonr.html): 528 items
 - [summonr::acp](reference/summonr/summonr-acp.html): 1 items
 - [summonr::askpass](reference/summonr/summonr-askpass.html): 5 items
-- [summonr::catalog](reference/summonr/summonr-catalog.html): 24 items
+- [summonr::catalog](reference/summonr/summonr-catalog.html): 29 items
 - [summonr::child](reference/summonr/summonr-child.html): 5 items
 - [summonr::classify](reference/summonr/summonr-classify.html): 38 items
 - [summonr::classify::digest](reference/summonr/summonr-classify-digest.html): 1 items

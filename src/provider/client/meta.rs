@@ -255,6 +255,14 @@ impl Client {
 
     pub async fn discover(endpoint: &crate::Endpoint) -> Result<Vec<Model>> {
         if endpoint.wire == Wire::AgentSdk {
+            let program = endpoint.base_url.as_deref().unwrap_or_default();
+            if !std::path::Path::new(program).is_file()
+                && crate::askpass::on_path(program).is_none()
+            {
+                return Err(Error::Config(format!(
+                    "{program} not found; install Claude Code and run `claude auth login`"
+                )));
+            }
             return Ok(crate::catalog::listing(&endpoint.name).map_or_else(
                 || crate::catalog::offered(&endpoint.name, Cost::Plan),
                 |listing| listing.models,

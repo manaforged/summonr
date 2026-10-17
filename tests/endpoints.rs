@@ -209,3 +209,19 @@ fn listing_never_starts_claude_code() {
         "{checked}"
     );
 }
+
+#[test]
+fn a_check_says_when_claude_code_is_missing() {
+    let home = Home::new();
+    home.config(
+        "models_catalog = false\n[provider.anthropic]\naccess = \"plan\"\n[endpoint.claude]\nbase_url = \"/nonexistent/claude\"\n",
+    );
+    let checked = home.list(&["--all", "--check"]);
+    assert!(
+        checked
+            .lines()
+            .any(|line| line.contains("/nonexistent/claude not found")
+                && line.contains("install Claude Code")),
+        "{checked}"
+    );
+}

@@ -1,4 +1,4 @@
-const ANSWERED: [u16; 4] = [200, 400, 401, 403];
+const ANSWERED: [u16; 5] = [200, 400, 401, 403, 429];
 
 fn hosted(base: &str) -> bool {
     url::Url::parse(base).is_ok_and(|url| {

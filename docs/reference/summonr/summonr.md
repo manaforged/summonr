@@ -192,6 +192,7 @@
 
 | Method | Description |
 | --- | --- |
+| <code>effort_for(&amp;self, explicit: Option&lt;<a href="#effort">Effort</a>&gt;) -&gt; Option&lt;<a href="#effort">Effort</a>&gt;</code> |  |
 | <code>keyless(&amp;self) -&gt; bool</code> |  |
 
 **Fields**
@@ -254,6 +255,7 @@
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::workspace(&amp;self) -&gt; &amp;Path</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::allow_path(&amp;mut self, path: &amp;str) -&gt; <a href="#result">Result</a>&lt;()&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::budget(&amp;self) -&gt; &amp;<a href="#budget">Budget</a></code> |  |
+| <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::choose_effort(&amp;mut self, effort: Option&lt;<a href="#effort">Effort</a>&gt;)</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::context_window(&amp;self) -&gt; Option&lt;u32&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::effort(&amp;self) -&gt; Option&lt;<a href="#effort">Effort</a>&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::fork_path(provider: P, model: impl Into&lt;String&gt;, workspace: impl AsRef&lt;Path&gt;, system_prompt: impl Into&lt;String&gt;, source: &amp;Path) -&gt; <a href="#result">Result</a>&lt;Self&gt;</code> |  |
@@ -272,6 +274,7 @@
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_interactive(self) -&gt; Self</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_strict(self) -&gt; Self</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_unrestricted_commands(self) -&gt; Self</code> |  |
+| <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::apply_endpoint(&amp;mut self, endpoint: &amp;<a href="#endpoint">Endpoint</a>)</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::apply_workflow(&amp;mut self, workflow: &amp;<a href="summonr-workflow.html#workflow">Workflow</a>, resolve: impl FnMut(&amp;<a href="summonr-workflow.html#seat">Seat</a>) -&gt; <a href="#result">Result</a>&lt;(P, <a href="#endpoint">Endpoint</a>)&gt;) -&gt; <a href="#result">Result</a>&lt;()&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::history_len(&amp;self) -&gt; usize</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::name(&amp;self) -&gt; Option&lt;String&gt;</code> |  |
@@ -279,7 +282,7 @@
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::session_id(&amp;self) -&gt; String</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::session_path(&amp;self) -&gt; &amp;Path</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_compact_tokens(&amp;mut self, tokens: Option&lt;u32&gt;)</code> |  |
-| <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_fallbacks(&amp;mut self, fallbacks: impl IntoIterator&lt;Item = (P, String)&gt;)</code> |  |
+| <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_fallbacks(&amp;mut self, fallbacks: impl IntoIterator&lt;Item = (P, <a href="#endpoint">Endpoint</a>)&gt;)</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_name(&amp;mut self, name: &amp;str) -&gt; <a href="#result">Result</a>&lt;()&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_price(&amp;mut self, price: Option&lt;provider::request::Price&gt;)</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_budget(self, budget: <a href="#budget">Budget</a>) -&gt; <a href="#result">Result</a>&lt;Self&gt;</code> |  |
@@ -1110,7 +1113,7 @@
 
 ### `endpoint_fallbacks`
 
-<pre>pub fn <a href="#endpoint_fallbacks">endpoint_fallbacks</a>&lt;P&gt;(endpoint: &amp;<a href="#endpoint">Endpoint</a>, connect: impl FnMut(&amp;<a href="#endpoint">Endpoint</a>) -&gt; <a href="#result">Result</a>&lt;P&gt;) -&gt; (Vec&lt;(P, String)&gt;, Vec&lt;String&gt;)</pre>
+<pre>pub fn <a href="#endpoint_fallbacks">endpoint_fallbacks</a>&lt;P&gt;(endpoint: &amp;<a href="#endpoint">Endpoint</a>, connect: impl FnMut(&amp;<a href="#endpoint">Endpoint</a>) -&gt; <a href="#result">Result</a>&lt;P&gt;) -&gt; (Vec&lt;(P, <a href="#endpoint">Endpoint</a>)&gt;, Vec&lt;String&gt;)</pre>
 
 
 ### `endpoint_label`

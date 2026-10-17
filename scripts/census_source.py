@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKIP = re.compile(r"(^|/)(tests|[a-z0-9_]+_tests)/|_tests\.rs$|tests\.rs$")
-CFG_TEST = re.compile(r"(?m)^\s*#\[cfg\(test\)\]\s*$")
+CFG_TEST = re.compile(r"(?m)^[ \t]*#\[cfg\(((?:[^()]|\([^()]*\))*)\)\][ \t]*")
 
 
 def rust_files() -> list[Path]:
@@ -70,14 +70,46 @@ def block_end(text: str, start: int) -> int:
     return n
 
 
+def is_test(predicate: str) -> bool:
+    """A cfg predicate that holds only in test builds."""
+    bare = re.sub(r"not\([^()]*\)", "", predicate)
+    return re.search(r"\btest\b", bare) is not None and not predicate.startswith("any(")
+
+
+def item_end(text: str, start: int) -> int:
+    """Index just past the item that begins at `start`: a field or
+    initializer ends at a top-level `,`, a statement at `;`, a braced item
+    when its block closes, and nothing runs past a `}` it did not open."""
+    depth = 0
+    i = start
+    n = len(text)
+    while i < n:
+        j = skip_token(text, i)
+        if j != i:
+            i = j
+            continue
+        c = text[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if depth == 0:
+                return i
+            depth -= 1
+            if depth == 0 and c == "}":
+                return i + 1
+        elif depth == 0 and c in ",;":
+            return i + 1
+        i += 1
+    return n
+
+
 def production(text: str) -> str:
-    """The text with every `#[cfg(test)]` item blanked, line count kept."""
+    """The text with every test-only item blanked, line count kept."""
     out = text
     for m in reversed(list(CFG_TEST.finditer(text))):
-        start = m.end()
-        semi = text.find(";", start)
-        brace = text.find("{", start)
-        end = semi + 1 if semi >= 0 and (brace < 0 or semi < brace) else block_end(text, start)
+        if not is_test(m.group(1)):
+            continue
+        end = item_end(text, m.end())
         span = out[m.start():end]
         out = out[: m.start()] + "\n" * span.count("\n") + out[end:]
     return out

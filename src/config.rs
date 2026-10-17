@@ -251,7 +251,7 @@ fn update(path: &Path, change: impl FnOnce(&mut DocumentMut) -> Result<bool>) ->
         .map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))?;
     let changed = change(&mut document)?;
     if changed {
-        store::write(path, document.to_string())?;
+        store::write(path, document.to_string(), store::Durability::Synced)?;
         drop(PARSED.write().map(|mut cached| *cached = None));
     }
     drop(held);

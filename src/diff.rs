@@ -8,10 +8,12 @@ use crate::worktree;
 
 mod git;
 pub(crate) mod ignored;
+mod layout;
 mod turn;
 
 use git::{git, numstat_row};
 pub(crate) use git::{git_env, git_output, git_paths};
+pub(crate) use layout::{Layout, STATE_DIR, inside_git, layout};
 pub use turn::{TurnId, turn_patch, turn_stats};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -61,10 +63,7 @@ impl Diff {
 }
 
 fn named(root: &Path) -> Result<String> {
-    Ok(worktree::list(root)?
-        .into_iter()
-        .find(|tree| tree.path == root)
-        .map_or_else(|| "HEAD".to_string(), |tree| tree.base))
+    Ok(worktree::tree_at(root).map_or_else(|| "HEAD".to_string(), |tree| tree.base))
 }
 
 fn base(root: &Path) -> Result<Option<String>> {
@@ -107,7 +106,7 @@ fn reference(root: &Path, base: Option<&str>) -> Result<String> {
 }
 
 pub(crate) fn snapshot(root: &Path) -> String {
-    if !root.ancestors().any(|path| path.join(".git").exists()) {
+    if !inside_git(root) {
         return "non-Git workspace".to_string();
     }
     let Ok((head, base, count)) = dirty(root) else {

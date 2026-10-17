@@ -153,7 +153,7 @@ fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
     };
     let recorded = (|| {
         let record = base_record(&tree.primary, &id)?;
-        store::write(&record, format!("{base}\n"))?;
+        store::write(&record, format!("{base}\n"), store::Durability::Synced)?;
         Ok(())
     })();
     if let Err(error) = recorded {
@@ -252,6 +252,16 @@ pub fn list(cwd: &Path) -> Result<Vec<Tree>> {
             tree
         })
         .collect())
+}
+
+pub fn tree_at(cwd: &Path) -> Option<Tree> {
+    if !crate::diff::inside_git(cwd) {
+        return None;
+    }
+    if crate::diff::layout(cwd).is_some_and(|layout| layout.git_dir == layout.common) {
+        return None;
+    }
+    locate(cwd, cwd).ok().flatten()
 }
 
 fn locate(primary: &Path, cwd: &Path) -> Result<Option<Tree>> {

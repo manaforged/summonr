@@ -62,7 +62,11 @@ fn save(root: &Path, marks: &Marks) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    store::write(&path, serde_json::to_string_pretty(marks)?)?;
+    store::write(
+        &path,
+        serde_json::to_string_pretty(marks)?,
+        store::Durability::Renamed,
+    )?;
     Ok(())
 }
 

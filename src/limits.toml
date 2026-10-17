@@ -60,6 +60,7 @@ lsp_request_secs = 30
 lsp_check_secs = 5
 log_retain_days = 14
 session_retain_days = 30
+session_prune_secs = 86400
 job_retain_days = 7
 speed_window_secs = 3
 reader_window_ms = 400

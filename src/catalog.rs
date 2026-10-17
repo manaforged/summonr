@@ -183,8 +183,8 @@ fn now() -> u64 {
         .unwrap_or_default()
 }
 
-pub(crate) fn cached() -> BTreeMap<String, Listing> {
-    (*listings()).clone()
+pub(crate) fn cached() -> Arc<BTreeMap<String, Listing>> {
+    listings()
 }
 
 #[must_use]
@@ -242,7 +242,11 @@ pub(crate) fn remember(name: &str, models: Vec<Model>) -> Result<()> {
             fetched: now(),
         },
     );
-    crate::durable::store::write(&path, serde_json::to_string(&all)?)?;
+    crate::durable::store::write(
+        &path,
+        serde_json::to_string(&all)?,
+        crate::durable::store::Durability::Renamed,
+    )?;
     shelf::store(&path, all);
     drop(held);
     Ok(())

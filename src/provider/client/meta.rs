@@ -231,8 +231,8 @@ impl Client {
                         .any(|word| lower.contains(word))) =>
             {
                 let known: Vec<String> = crate::catalog::cached()
-                    .remove(&self.name)
-                    .map(|listing| listing.models.into_iter().map(|row| row.id).collect())
+                    .get(&self.name)
+                    .map(|listing| listing.models.iter().map(|row| row.id.clone()).collect())
                     .unwrap_or_default();
                 let hint = crate::endpoint::closest(model, &known, crate::endpoint::Near::Relative)
                     .map_or_else(String::new, |near| format!("did you mean `{near}`? "));

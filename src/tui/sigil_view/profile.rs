@@ -13,7 +13,7 @@ use tokio::time::sleep;
 
 use super::app::App;
 use super::view::root;
-use crate::durable::store::write;
+use crate::durable::store::{Durability, write};
 use crate::error::{Error, Result};
 use crate::prefs::{FPS_DEFAULT, FPS_MAX, FPS_MIN, Prefs};
 use crate::tools::Event;
@@ -164,8 +164,16 @@ async fn capture(options: &Options) -> Result<()> {
         .map_err(|error| Error::Tool(error.to_string()))?;
     let mut ansi = Vec::new();
     render(&mut ansi, &Grid::new(0, 0), grid, ColorDepth::Truecolor)?;
-    write(&options.output.with_extension("ansi"), ansi)?;
-    write(&options.output.with_extension("txt"), grid.text())?;
+    write(
+        &options.output.with_extension("ansi"),
+        ansi,
+        Durability::Renamed,
+    )?;
+    write(
+        &options.output.with_extension("txt"),
+        grid.text(),
+        Durability::Renamed,
+    )?;
     Ok(())
 }
 

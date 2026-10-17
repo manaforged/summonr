@@ -87,6 +87,7 @@ table! {
     lsp_check_secs: u64,
     log_retain_days: u64,
     session_retain_days: u64,
+    session_prune_secs: u64,
     job_retain_days: u64,
     speed_window_secs: u64,
     reader_window_ms: u64,

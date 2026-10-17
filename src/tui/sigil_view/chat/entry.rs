@@ -215,7 +215,13 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
             }
             let file = format!("summonr-image-{id}.{}", kind.unwrap_or("png"));
             let path = std::env::temp_dir().join(file);
-            if crate::durable::store::write(&path, &bytes).is_ok() {
+            if crate::durable::store::write(
+                &path,
+                &bytes,
+                crate::durable::store::Durability::Renamed,
+            )
+            .is_ok()
+            {
                 drop(std::process::Command::new("open").arg(&path).spawn());
             }
         });

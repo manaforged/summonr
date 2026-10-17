@@ -144,7 +144,7 @@ impl Log {
                 "code": code,
                 "error": error,
             }),
-            true,
+            false,
         ) {
             eprintln!("summonr: cannot write the diagnostic exit record: {source}");
         }

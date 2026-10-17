@@ -147,7 +147,11 @@ pub async fn refresh_registry() -> Result<()> {
         ..cache
     });
     let path = summonr_home()?.join(FILE);
-    crate::durable::store::write(&path, serde_json::to_string(&saved)?)?;
+    crate::durable::store::write(
+        &path,
+        serde_json::to_string(&saved)?,
+        crate::durable::store::Durability::Renamed,
+    )?;
     shelf::store(&path, saved);
     Ok(())
 }

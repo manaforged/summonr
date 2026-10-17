@@ -11,14 +11,18 @@ pub(crate) struct Staged<'a> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Durability {
+pub(crate) enum Durability {
     Synced,
     Renamed,
 }
 
-pub(crate) fn write(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
+pub(crate) fn write(
+    path: &Path,
+    bytes: impl AsRef<[u8]>,
+    durability: Durability,
+) -> io::Result<()> {
     let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    prepare(&target, bytes.as_ref(), false, Durability::Synced)?.commit()
+    prepare(&target, bytes.as_ref(), false, durability)?.commit()
 }
 
 pub(crate) fn read_or_empty(path: &Path) -> io::Result<String> {

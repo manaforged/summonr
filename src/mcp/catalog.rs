@@ -51,7 +51,11 @@ pub(super) fn save(key: &str, listing: &Listing) {
         return;
     }
     if let (Some(path), Ok(text)) = (file(key, LISTING), serde_json::to_string(listing)) {
-        drop(crate::durable::store::write(&path, text));
+        drop(crate::durable::store::write(
+            &path,
+            text,
+            crate::durable::store::Durability::Renamed,
+        ));
     }
 }
 
@@ -60,6 +64,7 @@ pub(super) fn fail(key: &str, error: &str) {
         drop(crate::durable::store::write(
             &path,
             error.lines().next().unwrap_or_default(),
+            crate::durable::store::Durability::Renamed,
         ));
     }
 }

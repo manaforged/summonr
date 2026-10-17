@@ -9,14 +9,17 @@ use super::health::Health;
 
 pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
     let home = crate::prompt::summonr_home()?;
-    let mut sessions = crate::session::catalog::list_in(&home)?;
-    if let Some(last) = last {
-        let skip = sessions.len().saturating_sub(last);
-        sessions.drain(..skip);
-    }
+    let mut paths: Vec<_> = crate::session::catalog::ids_in(&home)?
+        .into_iter()
+        .rev()
+        .map(|(_, path)| path)
+        .filter(|path| path.is_file())
+        .take(last.unwrap_or(usize::MAX))
+        .collect();
+    paths.reverse();
     let mut totals = Totals::default();
-    for session in &sessions {
-        let lines = match log::read(&session.path) {
+    for path in &paths {
+        let lines = match log::read(path) {
             Ok(lines) => lines,
             Err(_) => {
                 totals.skipped += 1;

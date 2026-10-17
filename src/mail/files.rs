@@ -36,7 +36,7 @@ pub(crate) fn read_board(dir: &Path, cwd: &Path) -> Result<Vec<(String, String, 
             })
             .collect::<Vec<_>>()
             .join("\n");
-        store::write(&path, format!("{folded}\n"))?;
+        store::write(&path, format!("{folded}\n"), store::Durability::Synced)?;
     }
     Ok(board)
 }
@@ -74,7 +74,7 @@ pub(crate) fn take_inbox(dir: &Path, id: &str) -> Result<Vec<Mail>> {
     let path = inbox_path(dir, id);
     let _lock = store::lock(&path, true)?;
     let mail = parse_inbox(&store::read_or_empty(&path)?);
-    store::write(&path, "")?;
+    store::write(&path, "", store::Durability::Synced)?;
     Ok(mail)
 }
 

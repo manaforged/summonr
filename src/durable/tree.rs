@@ -26,6 +26,8 @@ pub(crate) struct Snapshot {
     taken: u64,
     #[serde(default)]
     stamps: BTreeMap<String, Stamp>,
+    #[serde(skip)]
+    hashed: usize,
 }
 
 impl PartialEq for Snapshot {
@@ -42,6 +44,7 @@ impl Snapshot {
             files,
             taken: 0,
             stamps: BTreeMap::new(),
+            hashed: 0,
         }
     }
 }
@@ -63,6 +66,7 @@ pub(crate) fn snapshot(
         .as_secs();
     let mut files = BTreeMap::new();
     let mut stamps = BTreeMap::new();
+    let mut hashed = 0;
     let own = own_outputs();
     for relative in listing(root)? {
         let path = root.join(&relative);
@@ -73,7 +77,8 @@ pub(crate) fn snapshot(
         if crate::policy::workspace_control(&relative) || crate::diff::ignored::hidden(&name) {
             continue;
         }
-        if let Some((entry, stamp)) = mark(&path, &name, previous, &own)? {
+        if let Some((entry, stamp, fresh)) = mark(&path, &name, previous, &own)? {
+            hashed += usize::from(fresh);
             stamps.insert(name.clone(), stamp);
             files.insert(name, entry);
         }
@@ -82,7 +87,42 @@ pub(crate) fn snapshot(
         files,
         taken,
         stamps,
+        hashed,
     })
+}
+
+#[cfg(test)]
+fn remembered_at(_: &Path) -> Option<PathBuf> {
+    None
+}
+
+#[cfg(not(test))]
+fn remembered_at(root: &Path) -> Option<PathBuf> {
+    const CACHE_DIR: &str = "cache";
+    const TREES_DIR: &str = "trees";
+    let key = crate::text::fnv64(root.to_string_lossy().as_bytes());
+    crate::prompt::summonr_home().ok().map(|home| {
+        home.join(CACHE_DIR)
+            .join(TREES_DIR)
+            .join(format!("{key}.json"))
+    })
+}
+
+pub(crate) fn remembered(root: &Path) -> Option<Snapshot> {
+    serde_json::from_slice(&std::fs::read(remembered_at(root)?).ok()?).ok()
+}
+
+pub(crate) fn remember(root: &Path, snapshot: &Snapshot) {
+    if snapshot.hashed == 0 {
+        return;
+    }
+    if let (Some(path), Ok(bytes)) = (remembered_at(root), serde_json::to_vec(snapshot)) {
+        drop(crate::durable::store::write(
+            &path,
+            bytes,
+            crate::durable::store::Durability::Renamed,
+        ));
+    }
 }
 
 fn mark(
@@ -90,7 +130,7 @@ fn mark(
     name: &str,
     previous: Option<&Snapshot>,
     own: &[Own],
-) -> io::Result<Option<(Entry, Stamp)>> {
+) -> io::Result<Option<(Entry, Stamp, bool)>> {
     let metadata = match path.symlink_metadata() {
         Ok(metadata) => metadata,
         Err(error) if skippable(&error) => return Ok(None),
@@ -123,7 +163,11 @@ fn mark(
             Err(error) => return Err(at(path, error)),
         },
     };
-    Ok(Some((Entry(metadata.len(), modified, mark), stamp)))
+    Ok(Some((
+        Entry(metadata.len(), modified, mark),
+        stamp,
+        reused.is_none(),
+    )))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -202,18 +246,20 @@ pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
 }
 
 pub(crate) fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
-    if let Ok(output) = crate::diff::git_output(
-        root,
-        &[],
-        &[
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-        ],
-        None,
-    ) {
+    if crate::diff::inside_git(root)
+        && let Ok(output) = crate::diff::git_output(
+            root,
+            &[],
+            &[
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ],
+            None,
+        )
+    {
         return Ok(output
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty())

@@ -69,9 +69,7 @@ pub(super) fn isolate(
             let workspace = recorded
                 .or_else(|| journal_workspace(path))
                 .unwrap_or_else(|| cwd.to_path_buf());
-            let tree = list_worktrees(&workspace)
-                .ok()
-                .and_then(|trees| trees.into_iter().find(|tree| tree.path == workspace));
+            let tree = summonr::worktree_at(&workspace);
             Ok((workspace, tree, action))
         }
         SessionAction::Create if args.worktree => {
@@ -92,10 +90,7 @@ pub(super) fn isolate(
 }
 
 fn journal_workspace(path: &Path) -> Option<PathBuf> {
-    list_sessions()
-        .ok()?
-        .into_iter()
-        .find(|info| info.path == path)?
+    summonr::session_info(path.to_path_buf())
         .cwd
         .map(PathBuf::from)
 }

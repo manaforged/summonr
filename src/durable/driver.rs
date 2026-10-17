@@ -75,8 +75,12 @@ pub(crate) struct SessionDriver {
     next: u64,
     pending: Vec<Line>,
     saved: AtomicU64,
+    base: Option<base::Pending>,
+    fresh: bool,
+    last: Option<Snapshot>,
 }
 
+mod base;
 mod children;
 mod session;
 mod turns;
@@ -209,36 +213,37 @@ impl SessionDriver {
     }
 
     fn execute(&mut self) -> Result<(), DriverError> {
-        let previous = self.work.as_ref().and_then(|work| {
-            work.candidate
-                .as_ref()
-                .map(|candidate| &candidate.snapshot)
-                .or(work.base.as_ref())
-        });
-        let base = self.snapshot(previous)?;
         self.work
             .as_mut()
             .ok_or(DriverError::NoWork)?
-            .execute(base)?;
+            .execute(None)?;
+        self.begin_base();
         self.checkpoint()
     }
 
-    fn snapshot(&self, previous: Option<&Snapshot>) -> Result<Snapshot, DriverError> {
-        let sessions = self
-            .log
+    fn sessions_dir(&self) -> Option<PathBuf> {
+        self.log
             .path()
             .parent()
             .and_then(Path::parent)
-            .map(canonical);
+            .map(canonical)
+    }
+
+    fn snapshot(&mut self, previous: Option<&Snapshot>) -> Result<Snapshot, DriverError> {
+        let sessions = self.sessions_dir();
+        let previous = previous.or(self.last.as_ref());
         let capture = || tree::snapshot(&self.workspace, sessions.as_deref(), previous);
         let threaded = tokio::runtime::Handle::try_current().is_ok_and(|handle| {
             handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
         });
-        Ok(if threaded {
+        let snapshot = if threaded {
             tokio::task::block_in_place(capture)
         } else {
             capture()
-        }?)
+        }?;
+        tree::remember(&self.workspace, &snapshot);
+        self.last = Some(snapshot.clone());
+        Ok(snapshot)
     }
 
     fn checkpoint(&self) -> Result<(), DriverError> {

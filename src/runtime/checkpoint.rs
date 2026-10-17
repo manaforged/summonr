@@ -19,9 +19,17 @@ impl<P: Provider> Loop<P> {
         let workspace = self.workspace.clone();
         let points = (self.depth == 0).then(|| self.checkpoints().cloned());
         let task = tokio::task::spawn_blocking(move || {
+            let capture = std::thread::spawn(move || {
+                points
+                    .flatten()
+                    .and_then(|points| points.capture().err())
+                    .map(|error| error.to_string())
+            });
             let snapshot = crate::diff::snapshot(&workspace);
-            let skipped = points.flatten().and_then(|points| points.capture().err());
-            (snapshot, skipped.map(|error| error.to_string()))
+            let skipped = capture
+                .join()
+                .unwrap_or_else(|payload| std::panic::resume_unwind(payload));
+            (snapshot, skipped)
         });
         (Some(task), String::new())
     }

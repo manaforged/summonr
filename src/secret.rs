@@ -230,7 +230,11 @@ impl Store {
             std::fs::create_dir_all(parent)?;
             tighten_dir(parent)?;
         }
-        Ok(store::write(&self.file, document.to_string().as_bytes())?)
+        Ok(store::write(
+            &self.file,
+            document.to_string().as_bytes(),
+            store::Durability::Synced,
+        )?)
     }
 
     fn wrap(&self) -> Result<[u8; KEY_LEN]> {

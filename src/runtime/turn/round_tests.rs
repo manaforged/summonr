@@ -73,7 +73,9 @@ async fn a_fallback_to_a_blind_model_folds_the_next_attached_image() {
     loop_.set_images(true, None);
     let fallback = Scripted::new([Reply::Text("ok"), Reply::Text("ok")]);
     let sent = fallback.sent();
-    loop_.set_fallbacks([(fallback, "glm-5.3".to_string())]);
+    let second =
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Need::Config).unwrap();
+    loop_.set_fallbacks([(fallback, second)], None);
     loop_
         .turn_with(UserInput::from("hi"), |_| {})
         .await
@@ -147,4 +149,45 @@ async fn an_empty_reply_is_continued_once_instead_of_failing_the_turn() {
     let bodies = bodies.lock().unwrap();
     assert_eq!(bodies.len(), 2);
     assert!(bodies[1].contains("Please continue"), "{}", bodies[1]);
+}
+
+#[tokio::test]
+async fn a_fallback_takes_its_endpoint_settings_and_price() {
+    use crate::provider::{Effort, Price};
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let primary = Scripted::new([Reply::Fail("the primary is down")]);
+    let mut loop_ = blind_session(workspace.path(), home.path(), primary);
+    loop_.set_price(Some(Price {
+        input: 1.0,
+        output: 1.0,
+        cached: 0.0,
+        cache_write: None,
+    }));
+    loop_.set_context_window(Some(262_144));
+    loop_.set_compact_tokens(Some(200_000));
+    loop_.set_effort(Some(Effort::Low));
+    let mut second =
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Need::Config).unwrap();
+    let price = Price {
+        input: 9.0,
+        output: 9.0,
+        cached: 0.0,
+        cache_write: None,
+    };
+    second.price = Some(price);
+    second.context_window = Some(4_096);
+    second.compact_tokens = Some(3_000);
+    second.effort = Some(Effort::High);
+    let fallback = Scripted::new([Reply::Text("ok")]);
+    loop_.set_fallbacks([(fallback, second)], None);
+    loop_
+        .turn_with(UserInput::from("hi"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(loop_.model(), "glm-5.3");
+    assert_eq!(loop_.price, Some(price));
+    assert_eq!(loop_.context_window(), Some(4_096));
+    assert_eq!(loop_.compact_tokens, Some(3_000));
+    assert_eq!(loop_.effort(), Some(Effort::High));
 }

@@ -121,7 +121,11 @@ pub struct Loop<P> {
     mail_module: bool,
     mcp: Option<Arc<crate::mcp::Hub>>,
     checkpoints: Option<crate::checkpoint::Checkpoints>,
-    fallbacks: VecDeque<(P, String)>,
+    fallbacks: VecDeque<(
+        P,
+        crate::endpoint::Endpoint,
+        Option<crate::provider::Effort>,
+    )>,
     hooks: crate::hooks::Hooks,
     compact_tokens: Option<u32>,
     mcp_wanted: bool,

@@ -16,8 +16,30 @@ impl<P: Provider> Loop<P> {
         self.compact_tokens = tokens;
     }
 
-    pub fn set_fallbacks(&mut self, fallbacks: impl IntoIterator<Item = (P, String)>) {
-        self.fallbacks = fallbacks.into_iter().collect();
+    pub fn set_fallbacks(
+        &mut self,
+        fallbacks: impl IntoIterator<Item = (P, crate::endpoint::Endpoint)>,
+        explicit: Option<crate::provider::Effort>,
+    ) {
+        self.fallbacks = fallbacks
+            .into_iter()
+            .map(|(provider, endpoint)| {
+                let effort = endpoint.effort_for(explicit);
+                (provider, endpoint, effort)
+            })
+            .collect();
+    }
+
+    pub fn apply_endpoint(
+        &mut self,
+        endpoint: &crate::endpoint::Endpoint,
+        effort: Option<crate::provider::Effort>,
+    ) {
+        self.set_context_window(endpoint.context_window);
+        self.set_compact_tokens(endpoint.compact_tokens);
+        self.set_effort(effort);
+        self.set_price(endpoint.price);
+        self.set_env(endpoint.env.clone());
     }
 
     pub(crate) fn set_seat(

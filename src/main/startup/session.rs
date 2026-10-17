@@ -142,15 +142,7 @@ pub(super) fn build(
     if let Some(name) = &args.name {
         loop_.set_name(name)?;
     }
-    loop_.set_context_window(endpoint.context_window);
-    loop_.set_compact_tokens(endpoint.compact_tokens);
-    loop_.set_effort(
-        args.effort
-            .or(endpoint.effort)
-            .or_else(|| summonr::default_effort(&endpoint.name, &endpoint.model)),
-    );
-    loop_.set_price(endpoint.price);
-    loop_.set_env(endpoint.env.clone());
+    loop_.apply_endpoint(endpoint, endpoint.effort_for(args.effort));
     loop_.set_images(images, summonr::vision_endpoint()?);
     loop_.set_modules(&switches)?;
     configure(loop_, args, check)

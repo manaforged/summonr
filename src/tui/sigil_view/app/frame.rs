@@ -9,11 +9,7 @@ impl App {
             if !model.entries.is_empty() {
                 self.splash.set(false);
             }
-            self.header.set(model.header());
             self.status.set(model.status_line(&self.info));
-            self.settings
-                .set(settings_text(&model.snapshot, &model.prefs));
-            self.facts.set(model.facts(&self.info));
             self.theme_name.set(model.prefs.theme.clone());
             self.backdrop.set(model.prefs.background);
         });

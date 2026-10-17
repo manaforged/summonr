@@ -1,24 +1,8 @@
-use crate::prefs::Prefs;
-use crate::tui::{Activity, Info, Round, Snapshot};
+use crate::tui::{Activity, Info, Round};
 
 use super::model::Model;
 
 impl Model {
-    pub(super) fn header(&self) -> String {
-        let relay = self
-            .snapshot
-            .relay
-            .as_deref()
-            .map_or_else(String::new, |relay| format!(" · {relay}"));
-        let mode = self.snapshot.mode_name();
-        format!(
-            "summonr  {}{}   session {}   {mode}",
-            self.snapshot.model,
-            relay,
-            crate::session::short(&self.session),
-        )
-    }
-
     pub(super) fn status_line(&self, info: &Info) -> String {
         let total = self.prompt_tokens + self.completion_tokens;
         let activity = self.busy_since.map_or_else(
@@ -53,38 +37,6 @@ impl Model {
             .checked_div(self.prompt_tokens)
             .unwrap_or_default()
     }
-
-    pub(super) fn facts(&self, info: &Info) -> String {
-        let relay = self
-            .snapshot
-            .relay
-            .as_deref()
-            .map_or_else(String::new, |relay| format!(" · {relay}"));
-        let mut rows = vec![
-            format!("summonr  {}", info.version),
-            format!("   model  {}{relay}", self.snapshot.model),
-            format!(" session  {}", crate::session::short(&self.session)),
-            format!(" workdir  {}", info.workspace),
-        ];
-        if self.snapshot.strict {
-            rows.push("  policy  strict".to_string());
-        }
-        rows.join("\n")
-    }
-}
-
-pub(super) fn settings_text(snapshot: &Snapshot, prefs: &Prefs) -> String {
-    format!(
-        "mode      {}\nverify    {}\nendpoint  {}\nmodel     {}\ntheme     {}\nreasoning {}\ntools     {}\nmail      {}",
-        snapshot.mode_name(),
-        snapshot.verify.as_deref().unwrap_or("off"),
-        snapshot.endpoint,
-        snapshot.model,
-        prefs.theme,
-        prefs.reasoning.name(),
-        prefs.tools.name(),
-        if prefs.mail { "on" } else { "off" },
-    )
 }
 
 pub(in crate::tui::sigil_view) fn stats(rounds: &[Round]) -> String {

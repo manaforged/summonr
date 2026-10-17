@@ -72,7 +72,7 @@ summonr loads no third-party code into its process. Add capability from outside:
 
 | Add | How |
 | --- | --- |
-| A skill | `~/.summonr/skills/NAME/SKILL.md` |
+| A skill | `~/.summonr/skills/NAME/SKILL.md`; Claude Code skills in `~/.claude/skills` and `.claude/skills` load as they are |
 | An MCP server | `summonr mcp add NAME -- CMD`, or a `[mcp.NAME]` table in `~/.summonr/config.toml` |
 | A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
 | A CLI | Any program on `PATH`; the model calls it through `run_command` |

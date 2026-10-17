@@ -10,6 +10,7 @@ mod catalog;
 mod export;
 mod profile;
 mod prune;
+mod sidecar;
 mod usage;
 
 pub use catalog::{info, last_for, list, resolve_id, short};

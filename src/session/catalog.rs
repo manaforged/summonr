@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::sidecar::Sidecar;
 use super::{Prompt, SessionInfo, Summary, user_text};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line};
@@ -285,28 +285,15 @@ pub fn info(path: PathBuf) -> SessionInfo {
 
 const INDEX_FILE: &str = "index.json";
 
-struct Index {
-    path: PathBuf,
-    entries: BTreeMap<String, Summary>,
-    dirty: bool,
-}
+struct Index(Sidecar<Summary>);
 
 impl Index {
     fn load(home: &Path) -> Self {
-        let path = log::sessions_dir(home).join(INDEX_FILE);
-        let entries = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
-        Self {
-            path,
-            entries,
-            dirty: false,
-        }
+        Self(Sidecar::load(home, INDEX_FILE))
     }
 
     fn summary(&mut self, id: &str, path: &Path) -> Option<Summary> {
-        if let Some(summary) = self.entries.get(id)
+        if let Some(summary) = self.0.get(id)
             && (summary.settled() || summary.open_bytes() == file_bytes(path))
         {
             return Some(summary.clone());
@@ -314,20 +301,12 @@ impl Index {
         let bytes = file_bytes(path)?;
         let (mut summary, settled) = Summary::peek(path);
         summary.mark_open((!settled).then_some(bytes));
-        self.entries.insert(id.to_string(), summary.clone());
-        self.dirty = true;
+        self.0.put(id, summary.clone());
         Some(summary)
     }
 
-    fn save(mut self, live: &[(String, PathBuf)]) {
-        if !self.dirty {
-            return;
-        }
-        let live: BTreeSet<&str> = live.iter().map(|(id, _)| id.as_str()).collect();
-        self.entries.retain(|id, _| live.contains(id.as_str()));
-        if let Ok(bytes) = serde_json::to_vec(&self.entries) {
-            drop(store::write(&self.path, bytes, store::Durability::Renamed));
-        }
+    fn save(self, live: &[(String, PathBuf)]) {
+        self.0.save(live.iter().map(|(id, _)| id.as_str()));
     }
 }
 

@@ -185,3 +185,26 @@ fn a_listed_session_is_not_read_again_once_it_has_a_first_prompt() {
     assert_eq!(again[0].preview, "find the slow startup");
     assert_eq!(again[0].cwd.as_deref(), Some("/work/alpha"));
 }
+
+#[test]
+fn usage_reads_an_unchanged_journal_once() {
+    let home = tempfile::tempdir().unwrap();
+    let id = "000000000000000018d2297ad34281e4";
+    let journal = crate::durable::log::sessions_dir(home.path())
+        .join(id)
+        .join("session.jsonl");
+    std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+    let body = format!(
+        "{}\n{}\n",
+        r#"{"kind":"session","id":"000000000000000018d2297ad34281e4","model":"glm","system":"","workspace":"/work/gamma"}"#,
+        r#"{"kind":"assistant","text":"ok","usage":{"input":120,"output":7,"cached":60,"millis":900},"model":"glm","at":3600000}"#
+    );
+    std::fs::write(&journal, &body).unwrap();
+    let prices = std::collections::BTreeMap::new();
+    let first = spend(home.path(), &[], &prices).unwrap();
+    assert_eq!(first.iter().map(|row| row.input).sum::<u64>(), 120);
+    std::fs::write(&journal, " ".repeat(body.len())).unwrap();
+    let again = spend(home.path(), &[], &prices).unwrap();
+    assert_eq!(again.iter().map(|row| row.input).sum::<u64>(), 120);
+    assert_eq!(again.len(), first.len());
+}

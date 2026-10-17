@@ -1,4 +1,4 @@
-use super::space::PLATE;
+use super::space::{PLATE, Plate};
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,7 +13,7 @@ const LAP_MS: u64 = 8_000;
 const TAIL_PERCENT: usize = 10;
 const SHIMMER: f32 = 0.35;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Glyph {
     text: char,
     fg: Rgba8,
@@ -65,31 +65,65 @@ pub(super) fn size(mark: Mark) -> [u16; 2] {
     [grid.first().map_or(0, Vec::len) as u16, grid.len() as u16]
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::tui::sigil_view) struct Shimmer {
+    at: [u16; 2],
+    grid: Grid,
+    path: Vec<(i32, i32)>,
+}
+
+impl Shimmer {
+    pub(super) fn apply(&self, plate: &mut Plate, clock: u64, lit: &mut Vec<[u16; 2]>) {
+        for (x, y, strength) in trail(&self.path, clock) {
+            let (col, row) = (x, LAYERS + y);
+            let Some(Some(glyph)) = usize::try_from(row)
+                .ok()
+                .and_then(|row| self.grid.get(row))
+                .zip(usize::try_from(col).ok())
+                .and_then(|(line, col)| line.get(col))
+            else {
+                continue;
+            };
+            let at = [self.at[0] + col as u16, self.at[1] + row as u16];
+            if let Some(cell) = plate.cell(at) {
+                cell.fg = ink(blend(glyph.fg, palette().accent, strength));
+                lit.push(at);
+            }
+        }
+    }
+}
+
 pub(super) fn paint(
-    cells: &mut [Cell],
-    cols: u16,
+    plate: &mut Plate,
     [x, y]: [u16; 2],
     mark: Mark,
     elapsed: u64,
-    clock: Option<u64>,
-) {
-    for (row, line) in draw(mark, elapsed, clock).iter().enumerate() {
+) -> Option<Shimmer> {
+    let grid = draw(mark, elapsed, None);
+    for (row, line) in grid.iter().enumerate() {
         for (col, glyph) in line.iter().enumerate() {
             let Some(glyph) = glyph else { continue };
-            let at = super::space::slot(cols, x + col as u16, y + row as u16);
-            if let Some(cell) = at.and_then(|index| cells.get_mut(index)) {
+            if let Some(cell) = plate.cell([x + col as u16, y + row as u16]) {
                 let mut buffer = [0; 4];
                 cell.text = (&*glyph.text.encode_utf8(&mut buffer)).into();
                 cell.fg = ink(glyph.fg);
             }
         }
     }
+    (mark == Mark::Lines && built(elapsed) > LAYERS).then(|| Shimmer {
+        at: [x, y],
+        grid,
+        path: perimeter(&outline()),
+    })
+}
+
+fn built(elapsed: u64) -> i32 {
+    i32::try_from(elapsed / STEP_MS).unwrap_or(i32::MAX)
 }
 
 fn draw(mark: Mark, elapsed: u64, clock: Option<u64>) -> Grid {
-    let built = i32::try_from(elapsed / STEP_MS).unwrap_or(i32::MAX);
     match mark {
-        Mark::Lines => stack(built, clock),
+        Mark::Lines => stack(built(elapsed), clock),
         Mark::Banner => Vec::new(),
     }
 }
@@ -110,10 +144,12 @@ fn bars(bar: i32, gap: i32) -> [i32; 6] {
     ]
 }
 
-fn stack(built: i32, clock: Option<u64>) -> Grid {
-    let (width, vert) = (27, 5);
+const WIDTH: i32 = 27;
+
+fn outline() -> [(i32, i32); 12] {
+    let (width, vert) = (WIDTH, 5);
     let y = bars(3, 2);
-    let outline = [
+    [
         (0, y[0]),
         (width, y[0]),
         (width, y[1]),
@@ -126,7 +162,12 @@ fn stack(built: i32, clock: Option<u64>) -> Grid {
         (width - vert, y[4]),
         (width - vert, y[3]),
         (0, y[3]),
-    ];
+    ]
+}
+
+fn stack(built: i32, clock: Option<u64>) -> Grid {
+    let (width, y) = (WIDTH, bars(3, 2));
+    let outline = outline();
     let mut grid: Grid =
         vec![vec![None; (width + 1 + LAYERS * 2) as usize]; (y[5] + 1 + LAYERS) as usize];
     for layer in (1..=LAYERS).rev().filter(|layer| LAYERS - layer < built) {
@@ -148,16 +189,7 @@ fn stack(built: i32, clock: Option<u64>) -> Grid {
 }
 
 fn orbit(grid: &mut Grid, outline: &[(i32, i32)], (ox, oy): (i32, i32), clock: u64) {
-    let path = perimeter(outline);
-    let cells = path.len();
-    if cells == 0 {
-        return;
-    }
-    let head = (clock % LAP_MS) as usize * cells / LAP_MS as usize;
-    let tail = (cells * TAIL_PERCENT / 100).max(3);
-    for back in 0..tail {
-        let (x, y) = path[(head + cells - back) % cells];
-        let strength = SHIMMER * (1.0 - back as f32 / tail as f32);
+    for (x, y, strength) in trail(&perimeter(outline), clock) {
         if let Some(Some(glyph)) = usize::try_from(oy + y)
             .ok()
             .and_then(|row| grid.get_mut(row))
@@ -167,6 +199,22 @@ fn orbit(grid: &mut Grid, outline: &[(i32, i32)], (ox, oy): (i32, i32), clock: u
             glyph.fg = blend(glyph.fg, palette().accent, strength);
         }
     }
+}
+
+fn trail(path: &[(i32, i32)], clock: u64) -> impl Iterator<Item = (i32, i32, f32)> + '_ {
+    let cells = path.len();
+    let (head, tail) = if cells == 0 {
+        (0, 0)
+    } else {
+        (
+            (clock % LAP_MS) as usize * cells / LAP_MS as usize,
+            (cells * TAIL_PERCENT / 100).max(3),
+        )
+    };
+    (0..tail).map(move |back| {
+        let (x, y) = path[(head + cells - back) % cells];
+        (x, y, SHIMMER * (1.0 - back as f32 / tail as f32))
+    })
 }
 
 fn perimeter(outline: &[(i32, i32)]) -> Vec<(i32, i32)> {

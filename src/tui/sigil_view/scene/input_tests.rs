@@ -278,13 +278,10 @@ fn a_long_workdir_on_a_narrow_splash_stays_on_its_row() {
         app.splash_revealed.set(true);
         let (cols, rows) = (60_u16, 30_u16);
         app.resize(cols, rows);
-        let mut cells = vec![
-            crate::tui::sigil_view::canvas::Cell::blank();
-            usize::from(cols) * usize::from(rows)
-        ];
-        crate::tui::sigil_view::scene::compose(&mut cells, cols, rows, &app);
-        let lines: Vec<String> = cells
-            .chunks(usize::from(cols))
+        let plate = crate::tui::sigil_view::scene::compose(cols, rows, &app).plate;
+        let lines: Vec<String> = plate
+            .cells
+            .chunks(usize::from(plate.area[2]))
             .map(|row| row.iter().map(|cell| cell.text.to_string()).collect())
             .collect();
         let at = lines

@@ -267,12 +267,56 @@ pub(in crate::tui::sigil_view) fn hash(x: u16, y: u16) -> u32 {
 #[path = "space_tests.rs"]
 mod tests;
 
-pub(in crate::tui::sigil_view) fn slot(cols: u16, x: u16, y: u16) -> Option<usize> {
+#[cfg(test)]
+fn slot(cols: u16, x: u16, y: u16) -> Option<usize> {
     (x < cols).then(|| usize::from(y) * usize::from(cols) + usize::from(x))
 }
 
-pub(in crate::tui::sigil_view) fn set(cells: &mut [Cell], cols: u16, x: u16, y: u16, cell: Cell) {
+#[cfg(test)]
+fn set(cells: &mut [Cell], cols: u16, x: u16, y: u16, cell: Cell) {
     if let Some(slot) = slot(cols, x, y).and_then(|index| cells.get_mut(index)) {
         *slot = cell;
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(in crate::tui::sigil_view) struct Plate {
+    pub(in crate::tui::sigil_view) area: [u16; 4],
+    pub(in crate::tui::sigil_view) cells: Vec<Cell>,
+}
+
+impl Plate {
+    pub(super) fn new(area: [u16; 4], fill: Cell) -> Self {
+        Self {
+            area,
+            cells: vec![fill; usize::from(area[2]) * usize::from(area[3])],
+        }
+    }
+
+    fn slot(&self, [x, y]: [u16; 2]) -> Option<usize> {
+        let [left, top, width, height] = self.area;
+        let (col, row) = (x.checked_sub(left)?, y.checked_sub(top)?);
+        (col < width && row < height)
+            .then(|| usize::from(row) * usize::from(width) + usize::from(col))
+    }
+
+    pub(super) fn at(&self, at: [u16; 2]) -> Option<&Cell> {
+        self.slot(at).and_then(|index| self.cells.get(index))
+    }
+
+    pub(super) fn cell(&mut self, at: [u16; 2]) -> Option<&mut Cell> {
+        self.slot(at).and_then(|index| self.cells.get_mut(index))
+    }
+
+    pub(super) fn row(&self, index: u16) -> Option<(u16, u16, Vec<Cell>)> {
+        let [x, y, width, height] = self.area;
+        (index < height).then(|| {
+            let start = usize::from(index) * usize::from(width);
+            (
+                x,
+                y + index,
+                self.cells[start..start + usize::from(width)].to_vec(),
+            )
+        })
     }
 }

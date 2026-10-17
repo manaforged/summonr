@@ -228,8 +228,7 @@ fn a_wide_splash_centers_the_wordmark_and_facts_on_the_face_of_the_s() {
 fn the_splash_glass_reaches_the_window_frame() {
     Runtime::scope("splash-glass-edge", || {
         let (app, _host, _screen) = splash_screen(120, 40);
-        let mut cells = vec![crate::tui::sigil_view::canvas::Cell::blank(); 120 * 40];
-        let card = super::compose(&mut cells, 120, 40, &app);
+        let card = super::compose(120, 40, &app).plate.area;
         let window = super::window_area(&app, 120, 40);
         assert_eq!(
             (card[0], card[1], card[2]),

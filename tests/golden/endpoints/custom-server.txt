@@ -1,0 +1,2 @@
+lab  m  127.0.0.1:PORT  ready · no key needed · 2 models
+28 more not set up · summonr endpoints --all

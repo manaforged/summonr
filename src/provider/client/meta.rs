@@ -254,13 +254,13 @@ impl Client {
     }
 
     pub async fn discover(endpoint: &crate::Endpoint) -> Result<Vec<Model>> {
-        let client = Self::connect(endpoint)?;
         if endpoint.wire == Wire::AgentSdk {
-            let mut models = client.agent_models().await?;
-            crate::catalog::enrich(&endpoint.name, None, &mut models);
-            crate::catalog::remember(&endpoint.name, models.clone())?;
-            return Ok(models);
+            return Ok(crate::catalog::listing(&endpoint.name).map_or_else(
+                || crate::catalog::offered(&endpoint.name, Cost::Plan),
+                |listing| listing.models,
+            ));
         }
+        let client = Self::connect(endpoint)?;
         let covered = match crate::endpoint::auth_info(&endpoint.name) {
             _ if endpoint.oauth.is_some() => Cost::Plan,
             Ok(info) if info.plan() => Cost::Plan,

@@ -91,7 +91,19 @@ pub(super) fn snapshot() -> Arc<Registry> {
 
 #[cfg(test)]
 pub(crate) fn serves(providers: &[&str], model: &str) -> Option<bool> {
-    let registry = snapshot();
+    serves_in(&snapshot(), providers, model)
+}
+
+#[cfg(test)]
+pub(crate) async fn serves_live() -> Result<impl Fn(&[&str], &str) -> Option<bool>> {
+    let registry = fetch_registry("")
+        .await?
+        .ok_or_else(|| crate::error::Error::Config("models.dev sent no catalog".to_string()))?;
+    Ok(move |providers: &[&str], model: &str| serves_in(&registry, providers, model))
+}
+
+#[cfg(test)]
+fn serves_in(registry: &Registry, providers: &[&str], model: &str) -> Option<bool> {
     let by_id: BTreeMap<&str, &ProviderMeta> = registry
         .providers
         .iter()
@@ -182,6 +194,27 @@ fn authority(url: &str) -> Option<String> {
         url.host_str()?,
         url.port_or_known_default()?
     ))
+}
+
+pub(crate) fn offered(endpoint: &str, cost: Cost) -> Vec<Model> {
+    let registry = current();
+    let by_id: BTreeMap<&str, &ProviderMeta> = registry
+        .providers
+        .iter()
+        .map(|provider| (provider.id.as_str(), provider))
+        .collect();
+    crate::endpoint::provider_ids(endpoint)
+        .iter()
+        .filter_map(|id| by_id.get(id))
+        .flat_map(|provider| provider.models.iter())
+        .filter(|(_, meta)| !meta.deprecated)
+        .map(|(id, meta)| {
+            let mut model = Model::named(id.clone());
+            model.apply(meta);
+            model.cost = cost;
+            model
+        })
+        .collect()
 }
 
 pub(crate) fn enrich(endpoint: &str, base_url: Option<&str>, models: &mut [Model]) {

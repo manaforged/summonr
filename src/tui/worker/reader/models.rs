@@ -10,6 +10,13 @@ use crate::prompt::summonr_home;
 use crate::provider::Client;
 use crate::recent::{self, Seat};
 
+fn due(name: &str, only: Option<&str>) -> bool {
+    only.map_or_else(
+        || crate::catalog::listing(name).is_none_or(|listing| listing.stale()),
+        |only| only == name,
+    )
+}
+
 fn waiting(ready: &[endpoint::Endpoint], errors: &mut Vec<String>) -> Vec<(String, String, State)> {
     let Ok(names) = endpoint::names() else {
         return Vec::new();
@@ -209,7 +216,7 @@ impl Reader {
         let mut registry = Some(tokio::spawn(crate::catalog::refresh_registry()));
         let mut pending: FuturesUnordered<_> = endpoints
             .iter()
-            .filter(|endpoint| checked(&endpoint.name))
+            .filter(|endpoint| due(&endpoint.name, only.as_deref()))
             .map(
                 |endpoint| async move { (endpoint.name.clone(), Client::discover(endpoint).await) },
             )

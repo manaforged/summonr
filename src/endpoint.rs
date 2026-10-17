@@ -308,5 +308,9 @@ pub use server::{add_server, remove_server, set_default};
 mod tests;
 
 #[cfg(test)]
+#[path = "endpoint/contract_tests.rs"]
+mod contract_tests;
+
+#[cfg(test)]
 #[path = "endpoint/effort_tests.rs"]
 mod effort_tests;

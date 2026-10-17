@@ -16,10 +16,10 @@ mod shelf;
 pub(crate) use listing::window;
 pub use listing::{parse, tokens};
 
-pub(crate) use registry::enrich;
 pub use registry::refresh_registry;
+pub(crate) use registry::{enrich, offered};
 #[cfg(test)]
-pub(crate) use registry::serves;
+pub(crate) use registry::{serves, serves_live};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -74,7 +74,6 @@ pub struct Model {
 }
 
 impl Model {
-    #[cfg(test)]
     pub(crate) fn named(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -163,11 +162,18 @@ pub fn current(models: &[(&str, &Model)]) -> Vec<bool> {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub(crate) struct Listing {
+pub struct Listing {
     #[serde(default)]
     pub models: Vec<Model>,
     #[serde(default)]
     pub fetched: u64,
+}
+
+impl Listing {
+    #[must_use]
+    pub fn stale(&self) -> bool {
+        now().saturating_sub(self.fetched) >= crate::limits::limits().models_listing_secs
+    }
 }
 
 fn now() -> u64 {
@@ -179,6 +185,11 @@ fn now() -> u64 {
 
 pub(crate) fn cached() -> BTreeMap<String, Listing> {
     (*listings()).clone()
+}
+
+#[must_use]
+pub fn listing(endpoint: &str) -> Option<Listing> {
+    listings().get(endpoint).cloned()
 }
 
 fn listings() -> Arc<BTreeMap<String, Listing>> {

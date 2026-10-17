@@ -1,74 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use summonr::{
-    Client, EndpointState as State, Result, last_for, list_sessions, resolve_session, splash,
-    sweep_worktrees, workflow,
-};
+use summonr::{Result, last_for, list_sessions, resolve_session, sweep_worktrees, workflow};
 
 use crate::cli::{Args, McpCommand};
-
-pub(super) async fn probe_endpoints() -> Result<()> {
-    if let Err(error) = summonr::catalog::refresh_registry().await {
-        eprintln!("summonr: models.dev catalog not refreshed: {error}");
-    }
-    let names = summonr::endpoint_names_ordered()?;
-    let rows = futures::future::join_all(names.iter().map(|name| async move {
-        let (model, host, status) = probe_endpoint(name).await;
-        (name, model, host, status)
-    }))
-    .await;
-    let width = |column: fn(&(&String, String, String, String)) -> usize| {
-        rows.iter().map(column).max().unwrap_or(0)
-    };
-    let name_w = width(|row| row.0.chars().count());
-    let model_w = width(|row| row.1.chars().count());
-    let host_w = width(|row| row.2.chars().count());
-    for (name, model, host, status) in &rows {
-        println!("{name:<name_w$}  {model:<model_w$}  {host:<host_w$}  {status}");
-    }
-    Ok(())
-}
-
-async fn probe_endpoint(name: &str) -> (String, String, String) {
-    let info = summonr::auth_info(name).ok();
-    let seat = summonr::resolve_endpoint(Some(name), None, summonr::Need::Model).ok();
-    let model = seat
-        .as_ref()
-        .map_or_else(String::new, |seat| seat.model.clone());
-    let base = seat.as_ref().and_then(|seat| seat.base_url.clone());
-    let host = base.as_deref().map_or_else(String::new, |base| {
-        splash::host_of(Some(base)).unwrap_or(base).to_string()
-    });
-    let status = match (
-        &info,
-        summonr::resolve_endpoint(Some(name), None, summonr::Need::Seat),
-    ) {
-        (Some(info), _) if !info.configured && !info.keyless() => {
-            format!("{} · {}", info.state(), info.setup)
-        }
-        (Some(_), Err(_)) if seat.is_none() => format!(
-            "{} · run `summonr {name} --model NAME` or set model in config.toml",
-            State::NeedsModel
-        ),
-        (_, Err(error)) => format!("{} · {error}", State::Error),
-        (_, Ok(endpoint)) if endpoint.base_url.is_none() => "adapter".to_string(),
-        (_, Ok(endpoint)) => {
-            let key = endpoint
-                .source
-                .map_or_else(String::new, |source| format!(" · key: {}", source.label()));
-            match Client::discover(&endpoint).await {
-                Ok(models) => format!(
-                    "{} · {} model{}{key}",
-                    State::Ready,
-                    models.len(),
-                    if models.len() == 1 { "" } else { "s" }
-                ),
-                Err(error) => format!("{} · {error}{key}", Client::state(&error)),
-            }
-        }
-    };
-    (model, host, status)
-}
 
 pub(super) fn session_path(args: &Args) -> Result<PathBuf> {
     match args.prompt.first() {

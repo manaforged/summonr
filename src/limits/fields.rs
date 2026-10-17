@@ -54,6 +54,7 @@ table! {
     search_secs: u64,
     search_index_secs: u64,
     models_catalog_secs: u64,
+    models_listing_secs: u64,
     search_index_after_ms: u64,
     web_connect_secs: u64,
     web_fetch_secs: u64,

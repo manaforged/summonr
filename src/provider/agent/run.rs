@@ -152,6 +152,7 @@ impl Run {
         }))
         .await?;
         run.handshake().await?;
+        keep_listing(&seat.name, &run.ready);
         Ok(run)
     }
 
@@ -240,19 +241,11 @@ impl Run {
     }
 }
 
-pub(super) async fn models(seat: &Seat) -> Result<Vec<crate::catalog::Model>> {
-    let run = Run::open(
-        seat,
-        Spec {
-            model: "",
-            system: None,
-            effort: None,
-            tools: &[],
-            thread: Thread::Once,
-        },
-    )
-    .await?;
-    let ready: Ready = serde_json::from_value(run.ready.clone()).unwrap_or_default();
+fn keep_listing(name: &str, ready: &Value) {
+    if crate::catalog::listing(name).is_some_and(|listing| !listing.stale()) {
+        return;
+    }
+    let ready: Ready = serde_json::from_value(ready.clone()).unwrap_or_default();
     let mut models: Vec<crate::catalog::Model> = ready
         .models
         .into_iter()
@@ -268,12 +261,10 @@ pub(super) async fn models(seat: &Seat) -> Result<Vec<crate::catalog::Model>> {
     models.sort_by(|left, right| left.id.cmp(&right.id));
     models.dedup_by(|left, right| left.id == right.id);
     if models.is_empty() {
-        return Err(Error::provider(
-            ProviderFailureKind::Malformed,
-            "Claude Code listed no models",
-        ));
+        return;
     }
-    Ok(models)
+    crate::catalog::enrich(name, None, &mut models);
+    drop(crate::catalog::remember(name, models));
 }
 
 fn unanswerable(line: &str) -> Option<String> {

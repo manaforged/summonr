@@ -1,0 +1,3 @@
+deepseek   deepseek-flash   api.deepseek.com   ready · key: DEEPSEEK_API_KEY
+anthropic  claude-opus-5-5  api.anthropic.com  ready · key: ANTHROPIC_API_KEY
+26 more not set up · summonr endpoints --all

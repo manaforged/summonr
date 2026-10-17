@@ -15,6 +15,7 @@ use step::Step;
 
 #[derive(Clone)]
 pub(super) struct Seat {
+    name: String,
     program: String,
     env: Vec<(String, String)>,
     unset: &'static [&'static str],
@@ -77,18 +78,16 @@ impl Drop for Forget<'_> {
 }
 
 impl Seat {
-    pub(super) fn new(
-        program: &str,
-        env: &std::collections::BTreeMap<String, String>,
-        unset: &'static [&'static str],
-    ) -> Self {
+    pub(super) fn new(endpoint: &crate::Endpoint, program: &str) -> Self {
         Self {
+            name: endpoint.name.clone(),
             program: program.to_string(),
-            env: env
+            env: endpoint
+                .env
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect(),
-            unset,
+            unset: crate::endpoint::env_unset(&endpoint.name),
             runs: Arc::default(),
             threads: Arc::default(),
             gates: Arc::default(),
@@ -214,10 +213,6 @@ impl Client {
         match run.next(self, request, &mut Partial::default()).await? {
             Step::Paused(message) | Step::Done(message) => Ok(message),
         }
-    }
-
-    pub(super) async fn agent_models(&self) -> Result<Vec<crate::catalog::Model>> {
-        run::models(self.seat()?).await
     }
 }
 

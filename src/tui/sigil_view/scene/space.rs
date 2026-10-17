@@ -3,6 +3,9 @@ use std::collections::BTreeMap;
 use super::galaxy::{Field, field};
 use super::stars::bright;
 use super::*;
+use sigil::geometry::{Point, Rect};
+use sigil::scene::{GlyphRun, SceneBuilder, SceneRectStyle};
+use sigil::style::TextStyle;
 
 pub(in crate::tui::sigil_view) const SCRIM: Rgba8 = rgb(10, 8, 20);
 
@@ -16,7 +19,7 @@ pub(in crate::tui::sigil_view) const STAR_DIM: Rgba8 = rgb(58, 74, 110);
 
 pub(in crate::tui::sigil_view) const STAR_BRIGHT: Rgba8 = rgb(176, 200, 240);
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub(in crate::tui::sigil_view) struct Spot {
     pub(in crate::tui::sigil_view) x: u16,
     pub(in crate::tui::sigil_view) y: u16,
@@ -84,6 +87,32 @@ pub(in crate::tui::sigil_view) fn moving(cols: u16, rows: u16, beat: f64, seed: 
     sparkle(&mut spots, cols, rows, beat.max(0.0) as u64, seed);
     meteor(&mut spots, cols, rows, beat, seed);
     spots
+}
+
+pub(super) fn paint_spots(scene: &mut SceneBuilder, area: Rect, spots: &[Spot]) {
+    let cell = metrics();
+    for spot in spots {
+        let at = Point::new(
+            area.origin.x + f32::from(spot.x) * cell.w,
+            area.origin.y + f32::from(spot.y) * cell.h,
+        );
+        let rect = Rect::new(at, cell.w, cell.h);
+        scene.draw_rect(
+            rect,
+            SceneRectStyle::solid(shown(spot.cell.bg, palette().base)),
+        );
+        let style = TextStyle {
+            font_weight: if spot.cell.bold { 700 } else { 400 },
+            ..TextStyle::default()
+        };
+        scene.draw_glyph_run(GlyphRun::new(
+            rect,
+            spot.cell.text.as_str(),
+            shown(spot.cell.fg, palette().text),
+            style,
+            10_000,
+        ));
+    }
 }
 
 fn twinkling(cols: u16, rows: u16, beat: f64, seed: u64) -> Vec<Spot> {

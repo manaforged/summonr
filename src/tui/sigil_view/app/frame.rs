@@ -2,6 +2,15 @@ use sigil::prelude::{effect, interval};
 
 use super::*;
 
+fn sky_clock() -> sigil::prelude::Signal<f64> {
+    let seconds = sigil::prelude::signal(0.0_f64);
+    let start = std::time::Instant::now();
+    interval(crate::limits::limits().animation(), move || {
+        seconds.set(start.elapsed().as_secs_f64())
+    });
+    seconds
+}
+
 impl App {
     pub(in crate::tui::sigil_view) fn refresh(&self) {
         batch(|| {
@@ -52,8 +61,7 @@ impl App {
         });
         let app = self.clone();
         effect(move || {
-            let clock = splash.get().then(sigil::animation_runtime::clock);
-            app.sky_clock.set(clock);
+            app.sky_clock.set(splash.get().then(sky_clock));
         });
         self.poll();
         let app = self.clone();

@@ -37,7 +37,9 @@ mod tools;
 #[cfg(feature = "gui")]
 mod verb;
 #[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use super::surface::{Content, content};
+pub(in crate::tui::sigil_view) use live::{Content, content};
+pub(in crate::tui::sigil_view) use live::{Mark, Prose, mark};
+mod live;
 pub(in crate::tui::sigil_view) use steps::{Slot, slot, subagents};
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use tools::glyph;
@@ -85,7 +87,7 @@ pub(in crate::tui::sigil_view) fn row(
         Entry::ToolGroup { name, calls } => {
             tools::group_card(&name, &calls, tools, layout, app, index)
         }
-        entry => passive(entry, live, prefs, app),
+        entry => passive(entry, live, prefs, app, index),
     }
 }
 
@@ -102,7 +104,7 @@ fn blank(entry: &Entry) -> bool {
     )
 }
 
-fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
+fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> NodeBuilder {
     if blank(&entry) {
         return container();
     }
@@ -120,13 +122,23 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
                     .font_size(14.0)
                     .text_color(sigil::prelude::Token::Gray12),
             ),
-        Entry::Assistant { text: body, .. } => assistant(body, app),
-        Entry::Thinking(body) => {
-            collapse::collapsible(&body, "thinking", prefs.reasoning, app, true, live)
-        }
-        Entry::Receipt(body) => {
-            collapse::collapsible(&body, "receipt", prefs.receipts, app, false, false)
-        }
+        Entry::Assistant { .. } => assistant(live::text_of(app.model, index), app),
+        Entry::Thinking(_) => collapse::collapsible(
+            live::text_of(app.model, index),
+            "thinking",
+            prefs.reasoning,
+            app,
+            true,
+            live,
+        ),
+        Entry::Receipt(body) => collapse::collapsible(
+            sigil::prelude::signal(body),
+            "receipt",
+            prefs.receipts,
+            app,
+            false,
+            false,
+        ),
         Entry::Verify { command, passed } => verify(&command, passed),
         Entry::Mail { from, text: body } => prose(
             &format!("{from}: {body}"),
@@ -161,10 +173,9 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
     }
 }
 
-fn assistant(body: String, app: &App) -> NodeBuilder {
+fn assistant(body: sigil::prelude::Signal<String>, app: &App) -> NodeBuilder {
     let copy_app = app.clone();
-    let copied = body.clone();
-    let shown = reply::body(&body, app);
+    let shown = reply::body(body, app);
     wrap(
         container()
             .layout(
@@ -179,7 +190,7 @@ fn assistant(body: String, app: &App) -> NodeBuilder {
                     .child(shown),
             )
             .child(
-                icon_button("⧉", move || copy_app.copy.set(Some(copied.clone())))
+                icon_button("⧉", move || copy_app.copy.set(Some(body.peek())))
                     .ghost()
                     .accessible("Copy reply"),
             ),

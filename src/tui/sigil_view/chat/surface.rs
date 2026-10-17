@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use sigil::prelude::IntoNode;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, container, effect, empty_state,
-    fragment, node, signal, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Signal, container, effect,
+    empty_state, fragment, node, signal, virtual_list,
 };
 use sigil::reactive::untrack;
 use sigil::reactive::{defer, derived};
@@ -14,9 +14,8 @@ use super::entry;
 use super::footer;
 use super::panels;
 use super::todos;
-use super::{App, Entry, Model, canvas};
+use super::{App, Model, canvas};
 use crate::prefs::Prefs;
-use crate::tui::ToolState;
 
 pub(in crate::tui::sigil_view) fn layer(
     app: App,
@@ -40,12 +39,15 @@ pub(in crate::tui::sigil_view) fn layer(
                 transcript_app,
                 (canvas::GUTTER, canvas::cell().h),
                 move || {
-                    let _redraw = hint_app.model.get();
-                    let hint = if hint_app.unseated() {
-                        "ask anything · /login · @file · !cmd · /help"
-                    } else {
-                        "ask anything · @file · !cmd · /help"
-                    };
+                    let probe = hint_app.clone();
+                    let hint = derived(move || {
+                        probe.model.with(|_| ());
+                        if probe.unseated() {
+                            "ask anything · /login · @file · !cmd · /help"
+                        } else {
+                            "ask anything · @file · !cmd · /help"
+                        }
+                    });
                     empty_state(env!("CARGO_PKG_NAME"), hint)
                 },
             )
@@ -107,69 +109,7 @@ pub(in crate::tui::sigil_view) fn inline_layer(
         .child(canvas::gutter(footer::footer_bar(app, width)))
 }
 
-pub(in crate::tui::sigil_view) type Content = (usize, u8, bool, Prefs, u64);
-
-pub(in crate::tui::sigil_view) fn content(entry: &Entry, live: bool, model: &Model) -> Content {
-    let (size, state) = match entry {
-        Entry::Assistant { text, done } => (text.len(), u8::from(*done)),
-        Entry::Thinking(text) => (text.len(), 0),
-        Entry::Tool {
-            state,
-            output,
-            expanded,
-            ..
-        } => (
-            output.len(),
-            u8::from(!matches!(state, ToolState::Running))
-                + u8::from(matches!(state, ToolState::Failed))
-                + u8::from(*expanded) * 4,
-        ),
-        Entry::ToolGroup { calls, .. } => {
-            let size: usize = calls.iter().map(|call| call.output.len()).sum();
-            let mut state = 0_u8;
-            for call in calls {
-                state |= u8::from(!matches!(call.state, ToolState::Running));
-                state |= u8::from(matches!(call.state, ToolState::Failed)) * 2;
-                state |= u8::from(call.expanded) * 4;
-            }
-            (size, state)
-        }
-        Entry::User(_)
-        | Entry::Receipt(_)
-        | Entry::Verify { .. }
-        | Entry::Mail { .. }
-        | Entry::Aborted(_)
-        | Entry::System(_)
-        | Entry::Error(_)
-        | Entry::Chart(_)
-        | Entry::Image { .. } => (0, 0),
-    };
-    (
-        size,
-        state,
-        live,
-        model.prefs.clone(),
-        children(entry, model),
-    )
-}
-
-fn children(entry: &Entry, model: &Model) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let Entry::Tool { id, .. } = entry else {
-        return 0;
-    };
-    let mut hasher = std::hash::DefaultHasher::new();
-    for kid in model
-        .agents
-        .iter()
-        .filter(|kid| !id.is_empty() && kid.call == *id)
-    {
-        (&kid.id, &kid.last, kid.done, kid.failed, kid.secs).hash(&mut hasher);
-    }
-    hasher.finish()
-}
-
-fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
+fn row(app: App, index: usize, spacing: (f32, f32), prefs: Signal<Prefs>) -> NodeBuilder {
     #[cfg(feature = "gui")]
     if canvas::is_window() {
         return super::super::desktop::entry::row(app, index, spacing);
@@ -181,6 +121,7 @@ fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
         .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
         .children_reactive(move || {
             let (at, _) = current.get();
+            prefs.with(|_| ());
             untrack(|| match at {
                 entry::Slot::Member => vec![
                     container().layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0)),
@@ -193,7 +134,7 @@ fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
         })
 }
 
-fn slot_marks(model: &Model, index: usize) -> (entry::Slot, Vec<Content>) {
+fn slot_marks(model: &Model, index: usize) -> (entry::Slot, Vec<entry::Mark>) {
     let at = entry::slot(&model.entries, index);
     let range = match &at {
         entry::Slot::Lead(range) => range.clone(),
@@ -208,7 +149,14 @@ fn slot_marks(model: &Model, index: usize) -> (entry::Slot, Vec<Content>) {
         .unwrap_or_default()
         .iter()
         .enumerate()
-        .map(|(offset, item)| content(item, live && range.start + offset + 1 == last, model))
+        .map(|(offset, item)| {
+            entry::mark(
+                item,
+                live && range.start + offset + 1 == last,
+                model,
+                entry::Prose::Patch,
+            )
+        })
         .collect();
     (at, mark)
 }
@@ -217,20 +165,19 @@ fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
     let stacked = app
         .model
         .with(|model| model.entries.get(range.start).is_some_and(entry::subagents));
-    let rows = app.model.with(|model| {
+    let (prefs, rows) = app.model.with(|model| {
         let last = model.entries.len();
-        let prefs = model.prefs.clone();
         let live_turn = model.busy_since.is_some();
-        range
+        let rows = range
             .map(|at| {
                 (
                     at,
                     model.entries.get(at).cloned(),
                     live_turn && at + 1 == last,
-                    prefs.clone(),
                 )
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        (model.prefs.clone(), rows)
     });
     let mut column = container().layout(
         LayoutStyle::flex_column()
@@ -238,7 +185,7 @@ fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
             .min_size(0.0, 0.0)
             .gap(if stacked { 0.0 } else { canvas::cell().h }),
     );
-    for (at, item, live, prefs) in rows {
+    for (at, item, live) in rows {
         if let Some(item) = item {
             column = column.child(entry::row(item, live, &prefs, app, at));
         }
@@ -304,6 +251,7 @@ pub(in crate::tui::sigil_view) fn transcript(
         }
     });
     let empty_now = sigil::reactive::derived(move || keys.get().is_empty());
+    let prefs = derived(move || model.with(|model| model.prefs.clone()));
     fragment().children_reactive(move || {
         if empty_now.get() {
             return vec![
@@ -333,7 +281,7 @@ pub(in crate::tui::sigil_view) fn transcript(
                 )
                 .child(
                     virtual_list(keys, move |index, _: &u64| {
-                        row(live.clone(), index, spacing)
+                        row(live.clone(), index, spacing, prefs)
                     })
                     .key_by(|_, key| *key)
                     .measured()

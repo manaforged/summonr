@@ -94,7 +94,7 @@ fn assemble(
     for note in skipped {
         eprintln!("summonr: {note}");
     }
-    loop_.set_fallbacks(fallbacks, args.effort);
+    loop_.set_fallbacks(fallbacks);
     if let Some(probe) = probe {
         loop_.set_context_probe(probe);
     }

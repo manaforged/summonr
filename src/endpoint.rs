@@ -123,7 +123,6 @@ impl Endpoint {
         explicit
             .or(self.effort)
             .or_else(|| crate::recent::default_effort(&self.name, &self.model))
-            .map(|effort| effort.clamp(&self.reasoning.levels_for(&self.model)))
     }
 
     #[must_use]

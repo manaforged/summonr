@@ -95,7 +95,7 @@ where
         for note in skipped {
             eprintln!("summonr: {note}");
         }
-        session.set_fallbacks(fallbacks, None);
+        session.set_fallbacks(fallbacks);
         let id = session.session_id();
         drop(tag.set(id.clone()));
         self.sessions.insert(id.clone(), session);

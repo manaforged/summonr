@@ -371,3 +371,14 @@ fn another_tools_credential_files_are_never_read() {
         );
     }
 }
+
+#[test]
+fn an_explicit_effort_reaches_the_provider_unchanged() {
+    use crate::provider::Effort;
+    let endpoint = super::resolve(Some("deepseek"), None, crate::Need::Config).unwrap();
+    assert_eq!(endpoint.effort_for(Some(Effort::None)), Some(Effort::None));
+    assert_eq!(
+        endpoint.effort_for(Some(Effort::Medium)),
+        Some(Effort::Medium)
+    );
+}

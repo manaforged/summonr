@@ -75,7 +75,7 @@ async fn a_fallback_to_a_blind_model_folds_the_next_attached_image() {
     let sent = fallback.sent();
     let second =
         crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Need::Config).unwrap();
-    loop_.set_fallbacks([(fallback, second)], None);
+    loop_.set_fallbacks([(fallback, second)]);
     loop_
         .turn_with(UserInput::from("hi"), |_| {})
         .await
@@ -180,7 +180,7 @@ async fn a_fallback_takes_its_endpoint_settings_and_price() {
     second.compact_tokens = Some(3_000);
     second.effort = Some(Effort::High);
     let fallback = Scripted::new([Reply::Text("ok")]);
-    loop_.set_fallbacks([(fallback, second)], None);
+    loop_.set_fallbacks([(fallback, second)]);
     loop_
         .turn_with(UserInput::from("hi"), |_| {})
         .await
@@ -190,4 +190,23 @@ async fn a_fallback_takes_its_endpoint_settings_and_price() {
     assert_eq!(loop_.context_window(), Some(4_096));
     assert_eq!(loop_.compact_tokens, Some(3_000));
     assert_eq!(loop_.effort(), Some(Effort::High));
+}
+
+#[tokio::test]
+async fn a_fallback_keeps_the_effort_the_user_chose_later() {
+    use crate::provider::Effort;
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let primary = Scripted::new([Reply::Fail("the primary is down")]);
+    let mut loop_ = blind_session(workspace.path(), home.path(), primary);
+    let mut second =
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Need::Config).unwrap();
+    second.effort = Some(Effort::Low);
+    loop_.set_fallbacks([(Scripted::new([Reply::Text("ok")]), second)]);
+    loop_.choose_effort(Some(Effort::Max));
+    loop_
+        .turn_with(UserInput::from("hi"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(loop_.effort(), Some(Effort::Max));
 }

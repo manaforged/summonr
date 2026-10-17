@@ -338,12 +338,12 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<bool> {
-        let Some((provider, endpoint, effort)) = self.fallbacks.pop_front() else {
+        let Some((provider, endpoint)) = self.fallbacks.pop_front() else {
             return Ok(false);
         };
         let from = self.model.clone();
         self.set_provider(provider, endpoint.model.clone());
-        self.apply_endpoint(&endpoint, effort);
+        self.apply_endpoint(&endpoint);
         self.push_event(
             events,
             emit,

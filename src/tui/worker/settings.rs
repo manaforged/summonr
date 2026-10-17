@@ -294,12 +294,14 @@ impl Worker {
         for note in skipped {
             self.fail(&note);
         }
-        self.loop_.set_fallbacks(fallbacks, self.dial);
+        self.loop_.set_fallbacks(fallbacks);
         self.relay = crate::splash::host_of(endpoint.base_url.as_deref()).map(str::to_string);
         self.endpoint = endpoint.name.clone();
         self.levels = endpoint.reasoning.levels_for(&endpoint.model);
-        self.loop_
-            .apply_endpoint(&endpoint, endpoint.effort_for(self.dial));
+        self.loop_.choose_effort(self.dial);
+        self.loop_.apply_endpoint(&endpoint);
+        let effort = self.loop_.effort().map(|effort| effort.clamp(&self.levels));
+        self.loop_.set_effort(effort);
         self.loop_.set_provider(provider, endpoint.model);
     }
 

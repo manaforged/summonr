@@ -142,7 +142,8 @@ pub(super) fn build(
     if let Some(name) = &args.name {
         loop_.set_name(name)?;
     }
-    loop_.apply_endpoint(endpoint, endpoint.effort_for(args.effort));
+    loop_.choose_effort(args.effort);
+    loop_.apply_endpoint(endpoint);
     loop_.set_images(images, summonr::vision_endpoint()?);
     loop_.set_modules(&switches)?;
     configure(loop_, args, check)

@@ -56,28 +56,35 @@ const UUID_TIME_SHIFT: u32 = 80;
 
 pub(super) fn grep_sessions(pattern: &str) -> Result<()> {
     let needle = pattern.to_lowercase();
+    let sessions: Vec<_> = list_sessions()?.into_iter().rev().collect();
+    let width = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let mut shown = 0;
-    for info in list_sessions()?.into_iter().rev() {
-        let Ok(text) = summonr::export_session(&info.path) else {
-            continue;
-        };
-        for line in text
-            .lines()
-            .filter(|line| line.to_lowercase().contains(&needle))
-        {
-            if shown == GREP_LINES {
-                println!("… more matches; narrow the pattern");
-                return Ok(());
+    for batch in sessions.chunks(width) {
+        let found: Vec<Vec<String>> = std::thread::scope(|scope| {
+            let searches: Vec<_> = batch
+                .iter()
+                .map(|info| scope.spawn(|| matching(&info.path, &needle)))
+                .collect();
+            searches
+                .into_iter()
+                .map(|search| search.join().unwrap_or_default())
+                .collect()
+        });
+        for (info, lines) in batch.iter().zip(found) {
+            for line in lines {
+                if shown == GREP_LINES {
+                    println!("… more matches; narrow the pattern");
+                    return Ok(());
+                }
+                println!(
+                    "{}\t{}\t{}\t{}",
+                    summonr::short(&info.id),
+                    started(&info.id),
+                    info.cwd.as_deref().unwrap_or("-"),
+                    line
+                );
+                shown += 1;
             }
-            let line: String = line.trim().chars().take(GREP_WIDTH).collect();
-            println!(
-                "{}\t{}\t{}\t{}",
-                summonr::short(&info.id),
-                started(&info.id),
-                info.cwd.as_deref().unwrap_or("-"),
-                line
-            );
-            shown += 1;
         }
     }
     if shown == 0 {
@@ -85,6 +92,16 @@ pub(super) fn grep_sessions(pattern: &str) -> Result<()> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+fn matching(journal: &Path, needle: &str) -> Vec<String> {
+    let Ok(text) = summonr::export_session(journal) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter(|line| line.to_lowercase().contains(needle))
+        .map(|line| line.trim().chars().take(GREP_WIDTH).collect())
+        .collect()
 }
 
 fn started(id: &str) -> String {

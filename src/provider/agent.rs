@@ -106,6 +106,36 @@ impl Seat {
         }
     }
 
+    fn reusable(&self, mut run: Run, request: &CompletionRequest<'_>) -> Option<Run> {
+        if !run.fits(request) {
+            return None;
+        }
+        if !run.pending.is_empty() {
+            return Some(run);
+        }
+        let asked = request
+            .messages
+            .last()
+            .is_some_and(|message| message.role == Role::User);
+        (asked && self.grown(&request.session, request.messages)).then_some(run)
+    }
+
+    fn grown(&self, session: &str, messages: &[Message]) -> bool {
+        let Some(seen) = self
+            .threads
+            .lock()
+            .ok()
+            .and_then(|threads| threads.get(session).map(|known| known.seen))
+        else {
+            return false;
+        };
+        let spoken = messages
+            .iter()
+            .filter(|message| message.role != Role::System)
+            .count();
+        spoken > seen.count && seen.extended_by(messages)
+    }
+
     fn gate(&self, session: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.gates.lock().map_or_else(
             |_| Arc::default(),
@@ -174,7 +204,8 @@ impl Client {
     ) -> Result<AssistantMessage> {
         let held = seat
             .take(&request.session)
-            .filter(|run| !run.abandoned(request.messages));
+            .filter(|run| !run.abandoned(request.messages))
+            .and_then(|run| seat.reusable(run, request));
         let mut run = match held {
             Some(mut run) => {
                 run.answer(request.messages).await?;
@@ -195,11 +226,10 @@ impl Client {
             seat.remember(&request.session, id, request.messages);
         }
         match step? {
-            Step::Paused(message) => {
+            Step::Paused(message) | Step::Done(message) => {
                 seat.keep(&request.session, run);
                 Ok(message)
             }
-            Step::Done(message) => Ok(message),
         }
     }
 

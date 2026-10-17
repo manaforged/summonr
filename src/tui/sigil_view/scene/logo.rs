@@ -77,10 +77,10 @@ pub(in crate::tui::sigil_view) fn compose(
     let [body_width, body_rows] = cover(card_kind, &facts);
     let [body_x, body_y, card_x, card_y, card_width] = layout(cols, rows, body_width, body_rows);
     let card = [
-        card_x + 1,
-        card_y + 1,
-        card_width.saturating_sub(2),
-        (body_rows + 1).min(rows.saturating_sub(card_y + 1)),
+        card_x,
+        card_y,
+        card_width,
+        (body_rows + 2).min(rows.saturating_sub(card_y)),
     ];
     glass(cells, cols, card);
     let revealed =

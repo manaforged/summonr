@@ -15,19 +15,8 @@ pub(crate) struct Checkpoints {
 
 impl Checkpoints {
     pub(crate) fn open(workspace: &Path, session: &str) -> Option<Self> {
-        if !crate::diff::inside_git(workspace) {
-            return None;
-        }
+        let dir = crate::diff::state_dir(workspace)?;
         let layout = crate::diff::layout(workspace);
-        let git_dir = match &layout {
-            Some(layout) => layout.git_dir.clone(),
-            None => PathBuf::from(
-                git_env(workspace, &[], &["rev-parse", "--absolute-git-dir"])
-                    .ok()?
-                    .trim(),
-            ),
-        };
-        let dir = git_dir.join(crate::diff::STATE_DIR);
         std::fs::create_dir_all(&dir).ok()?;
         let index = dir.join(format!("{session}.index"));
         if !index.exists() {

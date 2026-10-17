@@ -44,10 +44,8 @@ pub(crate) enum Op {
 const FILE: &str = "review.json";
 
 fn file(root: &Path) -> PathBuf {
-    crate::diff::git_env(root, &[], &["rev-parse", "--absolute-git-dir"]).map_or_else(
-        |_| root.join(".summonr").join(FILE),
-        |dir| PathBuf::from(dir.trim()).join("summonr").join(FILE),
-    )
+    crate::diff::state_dir(root)
+        .map_or_else(|| root.join(".summonr").join(FILE), |dir| dir.join(FILE))
 }
 
 pub(crate) fn load(root: &Path) -> Marks {

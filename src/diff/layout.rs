@@ -79,3 +79,18 @@ pub(crate) fn layout(root: &Path) -> Option<Layout> {
 fn overridden() -> bool {
     GIT_ENV.iter().any(|name| std::env::var_os(name).is_some())
 }
+
+pub(crate) fn state_dir(root: &Path) -> Option<PathBuf> {
+    if !inside_git(root) {
+        return None;
+    }
+    let git_dir = match layout(root) {
+        Some(layout) => layout.git_dir,
+        None => PathBuf::from(
+            super::git_env(root, &[], &["rev-parse", "--absolute-git-dir"])
+                .ok()?
+                .trim(),
+        ),
+    };
+    Some(git_dir.join(STATE_DIR))
+}

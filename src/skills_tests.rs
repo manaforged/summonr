@@ -36,3 +36,19 @@ fn claude_code_skills_join_the_catalog_and_load() {
             .contains("project body")
     );
 }
+
+#[test]
+fn a_skill_with_a_binary_body_still_lists() {
+    let workspace = tempfile::tempdir().unwrap();
+    let skill = workspace.path().join(".claude/skills/probe-binary-skill");
+    std::fs::create_dir_all(&skill).unwrap();
+    let mut body =
+        b"---\nname: probe-binary-skill\ndescription: listed from its frontmatter\n---\n".to_vec();
+    body.extend([0xff, 0xfe, 0x00, 0xc3, 0x28]);
+    std::fs::write(skill.join("SKILL.md"), body).unwrap();
+    let catalog = super::catalog(workspace.path()).unwrap_or_default();
+    assert!(
+        catalog.contains("probe-binary-skill: listed from its frontmatter"),
+        "{catalog}"
+    );
+}

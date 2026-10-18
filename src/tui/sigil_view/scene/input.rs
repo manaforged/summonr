@@ -62,3 +62,7 @@ mod tests;
 #[cfg(test)]
 #[path = "plate_tests.rs"]
 mod plate_tests;
+
+#[cfg(test)]
+#[path = "idle_tests.rs"]
+mod idle_tests;

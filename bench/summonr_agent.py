@@ -31,7 +31,7 @@ BINARY = "/usr/local/bin/summonr"
 
 class Summonr(BaseInstalledAgent):
     DEFAULT_SETUP_TIMEOUT_SEC = level.SETUP_TIMEOUT_SEC
-    capabilities = AgentCapabilities(atif=True)
+    capabilities = AgentCapabilities(atif=True, skills=True, mcp_servers=True)
 
     _OUTPUT_FILENAME = "summonr.txt"
     _instruction = ""
@@ -95,11 +95,15 @@ class Summonr(BaseInstalledAgent):
         links = " ".join(f"ln -sfn {logins / name} {home}/{name};" for name in LOGIN_FILES)
         base, key = self._get_env("BENCH_BASE"), self._get_env("BENCH_KEY")
         config = f'[endpoint.{endpoint}]\nmodel = "{model}"\n' + (f'base_url = "{level.per_trial(base, self.logs_dir.parent.name)}"\n' if base else "") + (f'api_key = "{key}"\n' if base and key else "")
+        for server in self.mcp_servers:
+            launch = f"command = {json.dumps(server.command)}\nargs = {json.dumps(server.args)}\n" if server.transport == "stdio" else f"url = {json.dumps(server.url)}\n"
+            config += f"[mcp.{server.name}]\n{launch}"
+        skills = f"mkdir -p {home}/skills && cp -r {shlex.quote(self.skills_dir)}/* {home}/skills/ 2>/dev/null; " if self.skills_dir else ""
         await self.exec_as_agent(
             environment,
             command=(
                 f"mkdir -p {home} {logins}/locks && touch {marker} && "
-                f"printf %s {shlex.quote(config)} > {home}/config.toml && {links}"
+                f"printf %s {shlex.quote(config)} > {home}/config.toml && {links} {skills}true"
             ),
         )
         flags = self.build_cli_flags()

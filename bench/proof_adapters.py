@@ -16,6 +16,7 @@ import omp_agent
 import pi_agent
 import summonr_agent
 from harbor.environments.docker.docker import DockerEnvironment
+from harbor.models.task.config import MCPServerConfig
 
 INSTRUCTION = "- You are given a PyTorch state dictionary."
 
@@ -138,6 +139,24 @@ class ImageUser(unittest.TestCase):
                     self.assertNotIn("/opt/lent", " ".join(command for command, _ in root) + " ".join(str(env) for _, env in root))
                     owned = {"summonr": "ln -sfn /opt/auth/summonr/credentials.toml ", "grok": "/opt/auth/grok/auth.json"}[name]
                     self.assertTrue(any(owned in command or owned in env.values() for command, env in root), root)
+
+
+class Skills(unittest.TestCase):
+    def test_summonr_gets_the_task_skills_and_mcp_servers_like_the_vendor_harnesses(self):
+        with tempfile.NamedTemporaryFile() as binary:
+            options = {
+                "model_name": "openai/gpt-6.1-sol",
+                "binary": binary.name,
+                "binary_sha256": hashlib.sha256(b"").hexdigest(),
+                "skills_dir": "/app/barber-shop-site/.agents/skills",
+                "mcp_servers": [MCPServerConfig(name="playwright", transport="sse", url="http://playwright-mcp:3080/sse")],
+            }
+            commands = " ".join(command for command, _ in login_commands(summonr_agent.Summonr, None, **options))
+        capabilities = summonr_agent.Summonr.capabilities
+        self.assertTrue(capabilities.skills and capabilities.mcp_servers)
+        self.assertIn("cp -r /app/barber-shop-site/.agents/skills/* /logs/agent/summonr/skills/", commands)
+        self.assertIn('[mcp.playwright]\nurl = "http://playwright-mcp:3080/sse"\n', commands)
+
 
 if __name__ == "__main__":
     unittest.main()

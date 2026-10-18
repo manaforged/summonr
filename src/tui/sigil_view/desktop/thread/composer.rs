@@ -43,6 +43,10 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
             }
             focus.update(|n| *n += 1);
         })
+        .child(chat::suggest::widget(
+            app.clone(),
+            (COLUMN / chat::canvas::cell().w) as usize,
+        ))
         .child(
             container()
                 .layout(
@@ -67,6 +71,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                         })
                         .submit(move |_| submit.submit())
                         .focus_when(focus)
+                        .autofocus()
                         .layout(LayoutStyle::flex_column().fill_width().height(72.0))
                         .font_size(BODY)
                         .text_color(Token::OnSurface),

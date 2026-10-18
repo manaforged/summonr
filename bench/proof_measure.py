@@ -50,7 +50,7 @@ def harbor_trial(job, name, task, arm="pi", reward=1.0, ran=True, snapshot=None,
         "trial_name": name,
         "task_checksum": checksum,
         "config": {"agent": {"kwargs": {"reasoning_effort": "high"}}},
-        "verifier_result": {"rewards": {"reward": reward}},
+        "verifier_result": {"rewards": {"reward": reward}} if reward is not None else None,
         "agent_result": {"n_input_tokens": 5000, "n_output_tokens": 100},
         "agent_execution": {"started_at": "2026-10-15T00:00:00Z", "finished_at": "2026-10-15T00:01:00Z"} if ran else None,
         "exception_info": {"exception_type": exception} if exception else None,
@@ -130,6 +130,26 @@ class Reruns(Bench):
         harbor_trial(self.job, "fix-git__b3", "fix-git", exception="NetworkConnectionError")
         by_label = {"fix-git__b1": [call("fix-git__b1")], "fix-git__b2": [call("fix-git__b2")], "fix-git__b3": [call("fix-git__b3"), {**call("fix-git__b3"), "status": 502}]}
         self.assertEqual(rerun.eligible(self.job, by_label), [("fix-git__b3", "NetworkConnectionError")])
+
+    def test_a_resume_sets_aside_unfinished_and_verifier_cut_trials(self):
+        harbor_trial(self.job, "fix-git__c1", "fix-git")
+        harbor_trial(self.job, "fix-git__c2", "fix-git", reward=None)
+        harbor_trial(self.job, "fix-git__c3", "fix-git", reward=None, exception="AgentTimeoutError")
+        (self.job / "fix-git__c4" / "agent").mkdir(parents=True)
+        harbor_trial(self.job, "fix-git__c5", "fix-git")
+        (self.job / "fix-git__c5" / "result.json").write_text("")
+        harbor_trial(self.job, "fix-git__c6", "fix-git", exception="AgentSetupTimeoutError")
+        calls = {name: [call(name)] for name in ("fix-git__c1", "fix-git__c2", "fix-git__c3")}
+        rerun.set_aside(self.job, calls, rerun=True)
+        self.assertEqual(sorted(path.name for path in (self.jobs / "run1.rerun").iterdir()), ["fix-git__c2", "fix-git__c4", "fix-git__c5", "fix-git__c6"])
+        self.assertEqual((self.job / "run.txt").read_text(), "dropped fix-git__c2\ndropped fix-git__c4\ndropped fix-git__c5\nrerun fix-git__c6 AgentSetupTimeoutError\n")
+        self.assertEqual(sorted(path.name for path in self.job.iterdir() if path.is_dir()), ["fix-git__c1", "fix-git__c3"])
+
+    def test_pairs_pin_the_dataset_as_a_ref_harbor_reads(self):
+        for pair in sorted((HERE / "pairs").glob("*.yaml")):
+            datasets = pair.read_text().split("\ndatasets:\n", 1)[1]
+            self.assertNotIn("version:", datasets, pair.name)
+            self.assertIn("ref:", datasets, pair.name)
 
     def test_calls_from_a_dropped_or_rerun_trial_are_not_orphans(self):
         harbor_trial(self.job, "fix-git__a1", "fix-git")

@@ -16,4 +16,4 @@ agents:
     model_name: xai/grok-4.7
     kwargs: {binary: "${SUMMONR}", binary_sha256: "${SUMMONR_SHA256}", reasoning_effort: high}
 datasets:
-  - {name: terminal-bench/terminal-bench, version: "4.0.0"}
+  - {name: terminal-bench/terminal-bench, ref: "4.0.0"}

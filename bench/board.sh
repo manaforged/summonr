@@ -24,7 +24,7 @@ fi
 
 fetch=$(mktemp -d)
 trap 'rm -rf "$fetch"' EXIT
-spec=$(python3 -c 'import re, sys; name, version = re.search(r"\{name: ([^,}\s]+)(?:, version: \"?([^,}\"\s]+))?", open(sys.argv[1]).read()).groups(); print(f"{name}@{version}" if version else name)' "$template")
+spec=$(python3 -c 'import re, sys; name, ref = re.search(r"\{name: ([^,}\s]+)(?:, ref: \"?([^,}\"\s]+))?", open(sys.argv[1]).read()).groups(); print(f"{name}@{ref}" if ref not in (None, "latest") else name)' "$template")
 dataset=${spec##*/}
 harbor download "$spec" -o "$fetch" > /dev/null
 got=$(cd "$fetch/${dataset%@*}" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
@@ -34,14 +34,7 @@ bench="$(git -C "$root" rev-parse --short=12 HEAD)$([ -z "$(git -C "$root" statu
 
 if [ -d "$dir" ]; then
   echo "resume $(date -u +%FT%TZ) bench $bench" >> "$dir/run.txt"
-  for trial in "$dir"/*/; do [ -f "$trial/result.json" ] || echo "dropped $(basename "$trial")" >> "$dir/run.txt"; done
-  if [ -n "${BENCH_RERUN:-}" ]; then
-    mkdir -p "$jobs/$run.rerun"
-    python3 "$root/rerun.py" "$dir" "$root/logs/$run.jsonl" | while read -r name kind; do
-      echo "rerun $name $kind" >> "$dir/run.txt"
-      mv "$dir/$name" "$jobs/$run.rerun/"
-    done
-  fi
+  python3 "$root/rerun.py" "$dir" "$root/logs/$run.jsonl" ${BENCH_RERUN:+--rerun}
   exec harbor job resume -p "$dir" --plugin rss:Rss
 fi
 

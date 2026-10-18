@@ -136,6 +136,9 @@ fn usage_counts_each_session_once_and_keeps_its_workspace() {
     assert_eq!(alpha.iter().map(|row| row.input).sum::<u64>(), 400);
     assert_eq!(alpha.iter().map(|row| row.millis).sum::<u64>(), 4000);
     assert_eq!(rows.iter().map(|row| row.sessions).sum::<u64>(), 2);
+    let mut hours: Vec<u64> = alpha.iter().map(|row| row.hour).collect();
+    hours.sort_unstable();
+    assert_eq!(hours, [3600, 7200]);
     let latest = alpha.iter().max_by_key(|row| row.hour).unwrap();
     assert_eq!(
         latest.sessions, 1,
@@ -144,6 +147,13 @@ fn usage_counts_each_session_once_and_keeps_its_workspace() {
     assert!(
         rows.iter()
             .any(|row| row.workspace == "/work/beta" && row.turns == 1)
+    );
+    let roots = ["/work/alpha".to_string()];
+    let scoped = spend(home.path(), &roots, &std::collections::BTreeMap::new()).unwrap();
+    assert!(
+        scoped
+            .iter()
+            .all(|row| row.local == (row.workspace == "/work/alpha"))
     );
 }
 
@@ -203,6 +213,7 @@ fn usage_reads_an_unchanged_journal_once() {
     let prices = std::collections::BTreeMap::new();
     let first = spend(home.path(), &[], &prices).unwrap();
     assert_eq!(first.iter().map(|row| row.input).sum::<u64>(), 120);
+    assert_eq!(first.iter().map(|row| row.cached).sum::<u64>(), 60);
     std::fs::write(&journal, format!("{}\n", " ".repeat(body.len() - 1))).unwrap();
     let again = spend(home.path(), &[], &prices).unwrap();
     assert_eq!(again.iter().map(|row| row.input).sum::<u64>(), 120);
@@ -293,4 +304,36 @@ fn usage_counts_an_appended_turn_once() {
         grown.iter().map(|row| &row.model).collect::<Vec<_>>()
     );
     assert_eq!(total(&spend(home.path(), &[], &prices).unwrap()), 150);
+}
+
+#[test]
+fn pruning_is_due_once_per_period() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(crate::durable::log::sessions_dir(home.path())).unwrap();
+    let period = std::time::Duration::from_secs(3600);
+    let now = std::time::SystemTime::now();
+    assert!(super::prune::due(home.path(), period, now));
+    let soon = now + std::time::Duration::from_secs(1);
+    assert!(!super::prune::due(home.path(), period, soon));
+    assert!(super::prune::due(home.path(), period, now + period * 2));
+}
+
+#[test]
+fn usage_skips_turns_that_used_no_tokens() {
+    let home = tempfile::tempdir().unwrap();
+    let id = "000000000000000018d2297ad34281e8";
+    let journal = crate::durable::log::sessions_dir(home.path())
+        .join(id)
+        .join("session.jsonl");
+    std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+    let body = [
+        r#"{"kind":"session","id":"000000000000000018d2297ad34281e8","model":"glm","system":"","workspace":"/work/theta"}"#,
+        r#"{"kind":"assistant","text":"","usage":{"input":0,"output":0,"cached":0,"millis":5},"model":"glm","at":3600000}"#,
+        r#"{"kind":"assistant","text":"ok","usage":{"input":0,"output":7,"cached":0,"millis":5},"model":"glm","at":3600000}"#,
+    ]
+    .join("\n");
+    std::fs::write(&journal, body + "\n").unwrap();
+    let rows = spend(home.path(), &[], &std::collections::BTreeMap::new()).unwrap();
+    assert_eq!(rows.iter().map(|row| row.turns).sum::<u64>(), 1);
+    assert_eq!(rows.iter().map(|row| row.output).sum::<u64>(), 7);
 }

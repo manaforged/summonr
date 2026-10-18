@@ -36,7 +36,16 @@ fn cron(home: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
-fn serve(home: &Path) -> (Child, u16) {
+struct Server(Child);
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        drop(self.0.kill());
+        drop(self.0.wait());
+    }
+}
+
+fn serve(home: &Path) -> (Server, u16) {
     let mut child = summonr(home)
         .args(["gateway", "webhook", "--port", "0"])
         .stdout(Stdio::piped())
@@ -48,7 +57,7 @@ fn serve(home: &Path) -> (Child, u16) {
         .read_line(&mut line)
         .unwrap();
     let port = line.trim().rsplit(':').next().unwrap().parse().unwrap();
-    (child, port)
+    (Server(child), port)
 }
 
 fn bodies(workspace: &Path) -> Vec<std::path::PathBuf> {
@@ -96,11 +105,6 @@ fn job(home: &Path, name: &str, schedule: &[&str], prompt: &str) -> String {
         .to_string()
 }
 
-fn stop(mut server: Child) {
-    drop(server.kill());
-    drop(server.wait());
-}
-
 #[test]
 fn a_webhook_fires_its_cron_job_once_with_the_token() {
     let home = tempfile::tempdir().unwrap();
@@ -127,7 +131,7 @@ fn a_webhook_fires_its_cron_job_once_with_the_token() {
         ),
     );
     assert!(chunked.starts_with("HTTP/1.1 411"), "{chunked}");
-    stop(server);
+    drop(server);
 
     let saved = bodies(home.path());
     assert_eq!(saved.len(), 1);
@@ -153,7 +157,7 @@ fn removing_a_job_forgets_its_webhook_token() {
     cron(home.path(), &["add", "gone", "--every", "1d", "-p", "hi"]);
     let (server, port) = serve(home.path());
     let reply = post(port, "POST", "/run/gone", Some(&token), "");
-    stop(server);
+    drop(server);
     assert!(reply.starts_with("HTTP/1.1 401"), "{reply}");
 }
 
@@ -163,7 +167,7 @@ fn a_query_string_still_reaches_the_job_and_removal_deletes_payloads() {
     let token = job(home.path(), "q", &["--every", "1d"], "hi");
     let (server, port) = serve(home.path());
     let fired = post(port, "POST", "/run/q?source=ci", Some(&token), "{}");
-    stop(server);
+    drop(server);
     assert!(fired.starts_with("HTTP/1.1 202"), "{fired}");
     assert_eq!(bodies(home.path()).len(), 1);
     cron(home.path(), &["remove", "q"]);
@@ -192,13 +196,13 @@ fn the_webhook_stops_on_sigterm_and_a_slow_client_blocks_nobody() {
         started.elapsed()
     );
     let status = Command::new("kill")
-        .args(["-TERM", &server.id().to_string()])
+        .args(["-TERM", &server.0.id().to_string()])
         .status()
         .unwrap();
     assert!(status.success());
     let started = Instant::now();
     let code = loop {
-        if let Some(status) = server.try_wait().unwrap() {
+        if let Some(status) = server.0.try_wait().unwrap() {
             break status.code();
         }
         assert!(started.elapsed() < Duration::from_secs(5), "still running");
@@ -234,7 +238,7 @@ fn an_oversized_body_gets_a_readable_413_and_bad_tokens_are_explained() {
     let (server, port) = serve(home.path());
     let body = "x".repeat(70_000);
     let reply = post(port, "POST", "/run/big", Some(&token), &body);
-    stop(server);
+    drop(server);
     assert!(reply.starts_with("HTTP/1.1 413"), "{reply}");
     assert!(reply.contains("{\"error\""), "{reply}");
     let mut setup = summonr(home.path())
@@ -284,7 +288,7 @@ fn a_local_run_leaves_the_webhook_window_open() {
     let (server, port) = serve(home.path());
     let fired = post(port, "POST", "/run/hook", Some(&token), "");
     let again = post(port, "POST", "/run/hook", Some(&token), "");
-    stop(server);
+    drop(server);
     assert!(fired.starts_with("HTTP/1.1 202"), "{fired}");
     assert!(fired.contains("\"slot\":"), "{fired}");
     assert!(
@@ -292,4 +296,23 @@ fn a_local_run_leaves_the_webhook_window_open() {
         "{fired}"
     );
     assert!(again.starts_with("HTTP/1.1 429"), "{again}");
+}
+
+#[test]
+fn a_panicking_test_leaves_no_webhook_server() {
+    let home = tempfile::tempdir().unwrap();
+    let pid = std::panic::catch_unwind(|| {
+        let (server, _port) = serve(home.path());
+        let pid = server.0.id();
+        std::panic::panic_any(pid);
+    })
+    .unwrap_err()
+    .downcast::<u32>()
+    .map(|pid| *pid)
+    .unwrap();
+    let alive = Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .is_ok_and(|status| status.success());
+    assert!(!alive, "webhook server {pid} outlived its test");
 }

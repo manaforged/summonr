@@ -65,3 +65,23 @@ fn a_page_command_on_the_start_screen_opens_its_pane() {
         );
     });
 }
+
+#[test]
+fn a_refresh_leaves_the_start_screen_once_the_transcript_has_an_entry() {
+    sigil::reactive::Runtime::scope("summonr-refresh", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let base = Info {
+            splash: true,
+            ..busy_info()
+        };
+        let app = super::App::new(base, workspace.path().to_owned(), commands);
+        app.resize(160, 40);
+        app.refresh();
+        assert!(app.splash.peek());
+        app.update(Msg::System("checked the workspace".to_owned()));
+        assert!(app.splash.peek(), "the update itself left the start screen");
+        app.refresh();
+        assert!(!app.splash.peek());
+    });
+}

@@ -118,3 +118,14 @@ fn a_plan_listing_names_models_by_slug() {
     assert_eq!(rows[0].id, "gpt-6.1-sol");
     assert_eq!(rows[0].display.as_deref(), Some("GPT-6.1 Sol"));
 }
+
+#[test]
+fn a_claude_plan_offers_models_without_a_listing() {
+    let offered = super::registry::offered("claude", super::Cost::Plan);
+    assert!(!offered.is_empty());
+    assert!(
+        offered.iter().all(|model| model.id.starts_with("claude-")),
+        "{:?}",
+        offered.iter().map(|model| &model.id).collect::<Vec<_>>()
+    );
+}

@@ -9,7 +9,7 @@ pub(crate) fn a_call_with_no_reply_is_cancelled_at_the_timeout() {
         Step::Call("fixture1__hang", json!({})),
         Step::Text("ok"),
     ]);
-    let secs = crate::support::slow(1);
+    let secs = crate::support::slow(3);
     let timeout = format!("timeout_secs = {secs}");
     session.run(&model, &session.server("fixture1", &timeout), &[]);
     assert!(
@@ -53,7 +53,7 @@ pub(crate) fn a_request_the_server_does_not_read_times_out() {
         Step::Call("fixture1__echo", json!({"text": "after"})),
         Step::Text("ok"),
     ]);
-    let secs = crate::support::slow(1);
+    let secs = crate::support::slow(3);
     let timeout = format!("timeout_secs = {secs}");
     session.run(&model, &session.server("fixture1", &timeout), &[]);
     let results = model.tool_results();

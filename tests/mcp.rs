@@ -116,6 +116,7 @@ fn main() {
         session::a_failed_worktree_run_without_changes_says_so,
         session::a_goal_run_reports_the_judge_usage_once,
         session::a_goal_met_without_tools_in_a_repository_passes,
+        session::a_session_resumed_by_id_from_another_folder_runs_in_its_own_workspace,
         session::a_goal_run_whose_output_lands_in_the_workspace_still_passes,
         session::a_print_run_says_its_check_was_not_run,
         #[cfg(any(target_os = "macos", target_os = "linux"))]

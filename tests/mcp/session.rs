@@ -312,3 +312,34 @@ pub(crate) fn a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code
                     .is_some_and(|text| text.contains("finish the task")))
     );
 }
+
+pub(crate) fn a_session_resumed_by_id_from_another_folder_runs_in_its_own_workspace() {
+    let session = Session::new();
+    let first = session.run(&Model::start(vec![Step::Text("done")]), "", &["--json"]);
+    assert_eq!(first.code, Some(0), "{}", first.stdout);
+    let id = events(&first.stdout)[0]["id"]
+        .as_str()
+        .expect("session id")
+        .to_string();
+    let elsewhere = tempfile::tempdir().expect("another folder");
+    let model = Model::start(vec![
+        Step::Call("run_command", json!({"command": "pwd"})),
+        Step::Text("ok"),
+    ]);
+    let resumed = session.run_with(
+        &model,
+        "",
+        &["--session", &id, "--json"],
+        &Options {
+            work: Some(elsewhere.path()),
+            ..Options::default()
+        },
+    );
+    assert_eq!(resumed.code, Some(0), "{}", resumed.stdout);
+    let workspace = dunce::canonicalize(session.work.path()).expect("workspace");
+    assert!(
+        model.tool_results()[0].contains(&*workspace.to_string_lossy()),
+        "{:?}",
+        model.tool_results()
+    );
+}

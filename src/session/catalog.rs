@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::{Prompt, SessionInfo, user_text};
+use super::sidecar::Sidecar;
+use super::{Prompt, SessionInfo, Summary, user_text};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line};
 use crate::durable::store;
@@ -22,14 +23,20 @@ pub(crate) fn latest_in(
     skip: Option<&str>,
 ) -> Result<Option<SessionInfo>> {
     let want = roots(workspace);
-    Ok(list_in(home)?.into_iter().rev().find(|info| {
-        skip != Some(info.id.as_str())
-            && info.depth == 0
-            && info
-                .cwd
-                .as_deref()
-                .is_some_and(|cwd| want.iter().any(|root| root == cwd))
-    }))
+    let sessions = ids_in(home)?;
+    let mut index = Index::load(home);
+    let found = sessions
+        .iter()
+        .rev()
+        .filter(|(id, _)| skip != Some(id.as_str()))
+        .find_map(|(id, path)| {
+            let summary = index.summary(id, path)?;
+            summary
+                .here(&want)
+                .then(|| summary.into_info(id.clone(), path.clone()))
+        });
+    index.save(&sessions);
+    Ok(found)
 }
 
 pub(crate) fn roots(workspace: &Path) -> Vec<String> {
@@ -38,6 +45,18 @@ pub(crate) fn roots(workspace: &Path) -> Vec<String> {
         return want;
     };
     want.push(canonical.display().to_string());
+    if !crate::diff::inside_git(&canonical) {
+        return want;
+    }
+    if let Some(layout) = crate::diff::layout(&canonical) {
+        want.extend(
+            layout
+                .checkouts()
+                .into_iter()
+                .map(|path| path.display().to_string()),
+        );
+        return want;
+    }
     if let Ok(primary) = crate::worktree::primary(&canonical) {
         want.push(primary.display().to_string());
         if let Ok(trees) = crate::worktree::list(&primary) {
@@ -79,7 +98,11 @@ pub(crate) fn set_name(path: &Path, name: &str) -> Result<()> {
             "a session name is one non-empty line".to_string(),
         ));
     }
-    store::write(&log::name_path(path), format!("{name}\n"))?;
+    store::write(
+        &log::name_path(path),
+        format!("{name}\n"),
+        store::Durability::Synced,
+    )?;
     Ok(())
 }
 
@@ -92,24 +115,23 @@ pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
     if id.is_empty() {
         return Err(Error::Config("session id is empty".to_string()));
     }
-    let sessions = list_in(home)?;
-    if let Some(named) = sessions.iter().rev().find(|info| {
-        info.name
-            .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case(id))
-    }) {
-        return Ok(named.path.clone());
-    }
     if let Ok(session) = id.parse() {
         let exact = log::session_path(home, session);
         if exact.is_file() {
             return Ok(exact);
         }
     }
+    let sessions = ids_in(home)?;
+    if let Some((_, named)) = sessions.iter().rev().find(|(_, path)| {
+        name_of(path).is_some_and(|name| name.eq_ignore_ascii_case(id)) && path.is_file()
+    }) {
+        return Ok(named.clone());
+    }
     let hits: Vec<PathBuf> = sessions
         .into_iter()
-        .filter(|info| prefix(&info.id, id) || (id.len() >= 5 && info.id.ends_with(id)))
-        .map(|info| info.path)
+        .filter(|(session, _)| prefix(session, id) || (id.len() >= 5 && session.ends_with(id)))
+        .map(|(_, path)| path)
+        .filter(|path| path.is_file())
         .collect();
     match hits.as_slice() {
         [only] => Ok(only.clone()),
@@ -130,10 +152,11 @@ pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
     let dir = if !id.is_empty() && exact.is_dir() {
         exact
     } else {
-        let hits: Vec<PathBuf> = list_in(home)?
+        let hits: Vec<PathBuf> = ids_in(home)?
             .into_iter()
-            .filter(|info| prefix(&info.id, id))
-            .map(|info| info.path)
+            .filter(|(session, _)| prefix(session, id))
+            .map(|(_, path)| path)
+            .filter(|path| path.is_file())
             .collect();
         match hits.as_slice() {
             [only] => only
@@ -226,84 +249,70 @@ pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt
 }
 
 pub(crate) fn list_in(home: &Path) -> Result<Vec<SessionInfo>> {
+    let sessions = ids_in(home)?;
+    let mut index = Index::load(home);
+    let infos = sessions
+        .iter()
+        .filter_map(|(id, path)| Some(index.summary(id, path)?.into_info(id.clone(), path.clone())))
+        .collect();
+    index.save(&sessions);
+    Ok(infos)
+}
+
+pub(crate) fn ids_in(home: &Path) -> Result<Vec<(String, PathBuf)>> {
     let dir = log::sessions_dir(home);
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
+    let mut ids: Vec<(String, PathBuf)> = std::fs::read_dir(dir)?
         .filter_map(std::result::Result::ok)
         .filter_map(|entry| {
             let id: SessionId = entry.file_name().to_str()?.parse().ok()?;
-            Some(log::session_path(home, id))
+            Some((id.to_string(), log::session_path(home, id)))
         })
-        .filter(|path| path.is_file())
         .collect();
-    paths.sort();
-    Ok(paths.into_iter().map(info).collect())
+    ids.sort();
+    Ok(ids)
 }
 
-fn info(path: PathBuf) -> SessionInfo {
+#[must_use]
+pub fn info(path: PathBuf) -> SessionInfo {
     let id = log::parse_path(&path)
         .map(|session| session.to_string())
         .unwrap_or_default();
-    let (cwd, model, preview, parent, depth) = peek(&path);
-    let name = name_of(&path);
-    SessionInfo {
-        id,
-        path,
-        cwd,
-        model,
-        preview,
-        name,
-        parent,
-        depth,
+    Summary::peek(&path).0.into_info(id, path)
+}
+
+const INDEX_FILE: &str = "index.json";
+
+struct Index(Sidecar<Summary>);
+
+impl Index {
+    fn load(home: &Path) -> Self {
+        Self(Sidecar::load(home, INDEX_FILE))
+    }
+
+    fn summary(&mut self, id: &str, path: &Path) -> Option<Summary> {
+        if let Some(summary) = self.0.get(id)
+            && (summary.settled() || summary.open_bytes() == file_bytes(path))
+        {
+            return Some(summary.clone());
+        }
+        let bytes = file_bytes(path)?;
+        let (mut summary, settled) = Summary::peek(path);
+        summary.mark_open((!settled).then_some(bytes));
+        self.0.put(id, summary.clone());
+        Some(summary)
+    }
+
+    fn save(self, live: &[(String, PathBuf)]) {
+        self.0.save(live.iter().map(|(id, _)| id.as_str()));
     }
 }
 
-type Peek = (Option<String>, Option<String>, String, Option<String>, u8);
-
-fn peek(path: &Path) -> Peek {
-    const PEEK_LINES: usize = 64;
-    if let Ok(head) = log::head(path, PEEK_LINES) {
-        let (info, found) = peek_lines(&head);
-        if found {
-            return info;
-        }
-    }
-    match log::scan(path) {
-        Ok(lines) => {
-            let lines: Vec<Line> = lines.collect();
-            peek_lines(&lines).0
-        }
-        Err(_) => (None, None, String::new(), None, 0),
-    }
-}
-
-fn peek_lines(lines: &[Line]) -> (Peek, bool) {
-    let mut cwd = None;
-    let mut model = None;
-    let mut parent = None;
-    let mut depth = 0;
-    for line in lines {
-        match line {
-            Line::Session {
-                workspace,
-                model: name,
-                parent: recorded_parent,
-                depth: recorded_depth,
-                ..
-            } => {
-                cwd = Some(workspace.display().to_string());
-                model = Some(name.clone());
-                parent = recorded_parent.map(|id| id.to_string());
-                depth = *recorded_depth;
-            }
-            Line::User { text, source, .. } if !text.is_empty() => {
-                let info = (cwd, model, preview(text, source.as_deref()), parent, depth);
-                return (info, true);
-            }
-            _ => {}
-        }
-    }
-    ((cwd, model, String::new(), parent, depth), false)
+fn file_bytes(path: &Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .ok()
+        .filter(std::fs::Metadata::is_file)
+        .map(|meta| meta.len())
 }

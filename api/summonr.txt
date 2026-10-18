@@ -22,6 +22,16 @@ impl core::marker::Copy for summonr::catalog::Cost
 impl core::marker::StructuralPartialEq for summonr::catalog::Cost
 impl serde_core::ser::Serialize for summonr::catalog::Cost
 impl<'de> serde_core::de::Deserialize<'de> for summonr::catalog::Cost
+pub struct summonr::catalog::Listing
+pub summonr::catalog::Listing::fetched: u64
+pub summonr::catalog::Listing::models: alloc::vec::Vec<summonr::catalog::Model>
+impl summonr::catalog::Listing
+pub fn summonr::catalog::Listing::stale(&self) -> bool
+impl core::clone::Clone for summonr::catalog::Listing
+impl core::default::Default for summonr::catalog::Listing
+impl core::fmt::Debug for summonr::catalog::Listing
+impl serde_core::ser::Serialize for summonr::catalog::Listing
+impl<'de> serde_core::de::Deserialize<'de> for summonr::catalog::Listing
 pub struct summonr::catalog::Model
 pub summonr::catalog::Model::about: core::option::Option<alloc::string::String>
 pub summonr::catalog::Model::context: core::option::Option<u32>
@@ -46,6 +56,7 @@ impl serde_core::ser::Serialize for summonr::catalog::Model
 impl<'de> serde_core::de::Deserialize<'de> for summonr::catalog::Model
 pub fn summonr::catalog::accepts_images(endpoint: &summonr::Endpoint) -> bool
 pub fn summonr::catalog::current(models: &[(&str, &summonr::catalog::Model)]) -> alloc::vec::Vec<bool>
+pub fn summonr::catalog::listing(endpoint: &str) -> core::option::Option<summonr::catalog::Listing>
 pub fn summonr::catalog::parse(value: &serde_json::value::Value, fallback: summonr::catalog::Cost) -> alloc::vec::Vec<summonr::catalog::Model>
 pub async fn summonr::catalog::refresh_registry() -> summonr::Result<()>
 pub fn summonr::catalog::tokens(value: &serde_json::value::Value) -> core::option::Option<u32>
@@ -349,7 +360,6 @@ pub summonr::secret::Source::Config
 pub summonr::secret::Source::Env
 pub summonr::secret::Source::File
 pub summonr::secret::Source::Keychain
-pub summonr::secret::Source::Peer(&'static str)
 impl summonr::secret::Source
 pub fn summonr::secret::Source::label(self) -> &'static str
 impl core::clone::Clone for summonr::secret::Source
@@ -948,6 +958,7 @@ pub summonr::Endpoint::prompt_cache_key: bool
 pub summonr::Endpoint::source: core::option::Option<summonr::secret::Source>
 pub summonr::Endpoint::wire: summonr::endpoint::Wire
 impl summonr::Endpoint
+pub fn summonr::Endpoint::effort_for(&self, explicit: core::option::Option<summonr::Effort>) -> core::option::Option<summonr::Effort>
 pub fn summonr::Endpoint::keyless(&self) -> bool
 impl core::clone::Clone for summonr::Endpoint
 impl core::cmp::PartialEq for summonr::Endpoint
@@ -969,6 +980,7 @@ pub fn summonr::Loop<P>::touched_at(path: &std::path::Path) -> alloc::vec::Vec<a
 pub fn summonr::Loop<P>::workspace(&self) -> &std::path::Path
 pub fn summonr::Loop<P>::allow_path(&mut self, path: &str) -> summonr::Result<()>
 pub fn summonr::Loop<P>::budget(&self) -> &summonr::Budget
+pub fn summonr::Loop<P>::choose_effort(&mut self, effort: core::option::Option<summonr::Effort>)
 pub fn summonr::Loop<P>::context_window(&self) -> core::option::Option<u32>
 pub fn summonr::Loop<P>::effort(&self) -> core::option::Option<summonr::Effort>
 pub fn summonr::Loop<P>::fork_path(provider: P, model: impl core::convert::Into<alloc::string::String>, workspace: impl core::convert::AsRef<std::path::Path>, system_prompt: impl core::convert::Into<alloc::string::String>, source: &std::path::Path) -> summonr::Result<Self>
@@ -987,6 +999,7 @@ pub fn summonr::Loop<P>::verify_commands(&self) -> &[alloc::string::String]
 pub fn summonr::Loop<P>::with_interactive(self) -> Self
 pub fn summonr::Loop<P>::with_strict(self) -> Self
 pub fn summonr::Loop<P>::with_unrestricted_commands(self) -> Self
+pub fn summonr::Loop<P>::apply_endpoint(&mut self, endpoint: &summonr::Endpoint)
 pub fn summonr::Loop<P>::apply_workflow(&mut self, workflow: &summonr::workflow::Workflow, resolve: impl core::ops::function::FnMut(&summonr::workflow::Seat) -> summonr::Result<(P, summonr::Endpoint)>) -> summonr::Result<()>
 pub fn summonr::Loop<P>::history_len(&self) -> usize
 pub fn summonr::Loop<P>::name(&self) -> core::option::Option<alloc::string::String>
@@ -994,7 +1007,7 @@ pub fn summonr::Loop<P>::next_step(&self, steps: &[summonr::steps::Step], plan_p
 pub fn summonr::Loop<P>::session_id(&self) -> alloc::string::String
 pub fn summonr::Loop<P>::session_path(&self) -> &std::path::Path
 pub fn summonr::Loop<P>::set_compact_tokens(&mut self, tokens: core::option::Option<u32>)
-pub fn summonr::Loop<P>::set_fallbacks(&mut self, fallbacks: impl core::iter::traits::collect::IntoIterator<Item = (P, alloc::string::String)>)
+pub fn summonr::Loop<P>::set_fallbacks(&mut self, fallbacks: impl core::iter::traits::collect::IntoIterator<Item = (P, summonr::Endpoint)>)
 pub fn summonr::Loop<P>::set_name(&mut self, name: &str) -> summonr::Result<()>
 pub fn summonr::Loop<P>::set_price(&mut self, price: core::option::Option<summonr::provider::request::Price>)
 pub fn summonr::Loop<P>::with_budget(self, budget: summonr::Budget) -> summonr::Result<Self>
@@ -1199,7 +1212,7 @@ pub fn summonr::closest_endpoint<'a>(name: &str, names: &'a [alloc::string::Stri
 pub const fn summonr::command_specs() -> &'static [summonr::command::CommandSpec]
 pub fn summonr::default_effort(endpoint: &str, model: &str) -> core::option::Option<summonr::Effort>
 pub fn summonr::endpoint_chosen_by(name: core::option::Option<&str>, model: core::option::Option<&str>) -> core::option::Option<summonr::Pick>
-pub fn summonr::endpoint_fallbacks<P>(endpoint: &summonr::Endpoint, connect: impl core::ops::function::FnMut(&summonr::Endpoint) -> summonr::Result<P>) -> (alloc::vec::Vec<(P, alloc::string::String)>, alloc::vec::Vec<alloc::string::String>)
+pub fn summonr::endpoint_fallbacks<P>(endpoint: &summonr::Endpoint, connect: impl core::ops::function::FnMut(&summonr::Endpoint) -> summonr::Result<P>) -> (alloc::vec::Vec<(P, summonr::Endpoint)>, alloc::vec::Vec<alloc::string::String>)
 pub fn summonr::endpoint_label(name: &str) -> core::option::Option<&'static str>
 pub fn summonr::endpoint_names() -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
 pub fn summonr::endpoint_names_ordered() -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
@@ -1233,6 +1246,7 @@ pub fn summonr::resolve_endpoint(name: core::option::Option<&str>, model: core::
 pub fn summonr::resolve_session(id: &str) -> summonr::Result<std::path::PathBuf>
 pub fn summonr::revision() -> &'static str
 pub async fn summonr::run_tool(workspace: impl core::convert::AsRef<std::path::Path>, name: &str, arguments: &str) -> summonr::Result<summonr::ToolResult>
+pub fn summonr::session_info(path: std::path::PathBuf) -> summonr::session::SessionInfo
 pub fn summonr::set_default_endpoint(name: &str, model: core::option::Option<&str>) -> summonr::Result<alloc::string::String>
 pub fn summonr::short(id: &str) -> &str
 pub fn summonr::stop_children()
@@ -1242,6 +1256,7 @@ pub fn summonr::system_prompt(workspace: &std::path::Path, sources: summonr::Sou
 pub fn summonr::tilde(path: &std::path::Path) -> alloc::string::String
 pub fn summonr::uninstall_plugin(plugin_name: &str) -> summonr::Result<bool>
 pub fn summonr::vision_endpoint() -> summonr::Result<core::option::Option<summonr::Endpoint>>
+pub fn summonr::worktree_at(cwd: &std::path::Path) -> core::option::Option<summonr::Tree>
 pub fn summonr::worktree_status(cwd: &std::path::Path) -> summonr::Result<alloc::vec::Vec<summonr::worktree::Status>>
 pub type summonr::McpBoard = alloc::sync::Arc<std::sync::poison::mutex::Mutex<alloc::sync::Weak<summonr::mcp::Hub>>>
 pub type summonr::Result<T> = core::result::Result<T, summonr::Error>

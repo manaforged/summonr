@@ -119,6 +119,13 @@ pub enum LoginFlow {
 
 impl Endpoint {
     #[must_use]
+    pub fn effort_for(&self, explicit: Option<Effort>) -> Option<Effort> {
+        explicit
+            .or(self.effort)
+            .or_else(|| crate::recent::default_effort(&self.name, &self.model))
+    }
+
+    #[must_use]
     pub fn keyless(&self) -> bool {
         match preset(&self.name) {
             Some(row) => row.keyless(),
@@ -286,20 +293,23 @@ pub(crate) use auth::{ready, step};
 pub use choice::{Need, Pick};
 pub use info::AuthInfo;
 use info::LoginGroup;
-pub(crate) use keys::peer_token;
 use keys::*;
 pub use preset::label;
 use preset::preset;
 pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
 pub(crate) use resolve::default_seat;
+use resolve::hosted;
 pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
-use resolve::{hosted, seat};
 pub(crate) use route::{Choice, Region, Route, Toggle, remembered, select, toggle};
 pub use server::{add_server, remove_server, set_default};
 
 #[cfg(test)]
 #[path = "endpoint_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "endpoint/contract_tests.rs"]
+mod contract_tests;
 
 #[cfg(test)]
 #[path = "endpoint/effort_tests.rs"]

@@ -76,8 +76,6 @@ mod state;
 
 pub(super) use state::{AuthDialog, HotkeyDialog, ModelPicker, WorkflowDialog};
 
-use presentation::settings_text;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Overlay {
     Secret,
@@ -128,11 +126,8 @@ pub(super) struct App {
     pub(super) editor_focus: Signal<u64>,
     recalled: Signal<Option<(usize, String, usize)>>,
     cleared: Signal<Option<String>>,
-    pub(super) header: Signal<String>,
     pub(super) status: Signal<String>,
     pub(super) notice: Signal<Option<Notice>>,
-    pub(super) settings: Signal<String>,
-    pub(super) facts: Signal<String>,
     pub(super) settings_open: Signal<bool>,
     pub(super) context_open: Signal<bool>,
     pub(super) cache_open: Signal<bool>,
@@ -249,11 +244,8 @@ impl App {
             editor_focus: signal(0),
             recalled: signal(None),
             cleared: signal(None),
-            header: signal(String::new()),
             status: signal(String::new()),
             notice: signal(None),
-            settings: signal(String::new()),
-            facts: signal(String::new()),
             settings_open: signal(false),
             context_open: signal(false),
             cache_open: signal(false),

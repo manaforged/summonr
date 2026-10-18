@@ -190,3 +190,20 @@ fn a_reverted_hunk_reaches_the_next_turn_once() {
     );
     assert!(drain(dir.path()).is_none());
 }
+
+#[test]
+fn review_marks_live_in_the_repository_state() {
+    let plain = tempfile::tempdir().unwrap();
+    assert_eq!(file(plain.path()), plain.path().join(".summonr").join(FILE));
+    let repo = tempfile::tempdir().unwrap();
+    assert!(
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(repo.path())
+            .status()
+            .unwrap()
+            .success()
+    );
+    let git = dunce::canonicalize(repo.path().join(".git")).unwrap();
+    assert_eq!(file(repo.path()), git.join("summonr").join(FILE));
+}

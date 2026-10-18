@@ -9,12 +9,12 @@ pub use pick::{ordered_names, set_up};
 pub fn fallbacks<P>(
     endpoint: &Endpoint,
     mut connect: impl FnMut(&Endpoint) -> Result<P>,
-) -> (Vec<(P, String)>, Vec<String>) {
+) -> (Vec<(P, Endpoint)>, Vec<String>) {
     let mut ready = Vec::new();
     let mut skipped = Vec::new();
     for name in &endpoint.fallback {
         match resolve(Some(name), None, Need::Seat)
-            .and_then(|fallback| Ok((connect(&fallback)?, fallback.model)))
+            .and_then(|fallback| Ok((connect(&fallback)?, fallback)))
         {
             Ok(pair) => ready.push(pair),
             Err(error) => skipped.push(format!("fallback {name} skipped: {error}")),

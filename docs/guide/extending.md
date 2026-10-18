@@ -8,7 +8,7 @@ After the first model round, the advertised tool list and the skill catalog stay
 
 ## Add a skill
 
-Write a `SKILL.md` under `~/.summonr/skills/<name>/` or `.summonr/skills/<name>/`. The model loads it with the `skill` tool. The body arrives as a later tool result.
+Write a `SKILL.md` under `~/.summonr/skills/<name>/` or `.summonr/skills/<name>/`. Claude Code skills work as they are: summonr also reads `~/.claude/skills/`, `.claude/skills/` in the workspace, and `~/.agents/skills/`. The model loads it with the `skill` tool. The body arrives as a later tool result.
 
 ## Add an MCP server
 

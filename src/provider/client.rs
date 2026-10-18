@@ -129,11 +129,7 @@ impl Client {
         client.cache_header.clone_from(&endpoint.cache_header);
         client.cache_marks = endpoint.cache_marks;
         if endpoint.wire == Wire::AgentSdk {
-            client.agent = Some(agent::Seat::new(
-                base,
-                &endpoint.env,
-                crate::endpoint::env_unset(&endpoint.name),
-            ));
+            client.agent = Some(agent::Seat::new(endpoint, base));
         }
         client.reasoning.clone_from(&endpoint.reasoning);
         Ok(client)

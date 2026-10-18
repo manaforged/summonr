@@ -69,9 +69,7 @@ pub(super) fn isolate(
             let workspace = recorded
                 .or_else(|| journal_workspace(path))
                 .unwrap_or_else(|| cwd.to_path_buf());
-            let tree = list_worktrees(&workspace)
-                .ok()
-                .and_then(|trees| trees.into_iter().find(|tree| tree.path == workspace));
+            let tree = summonr::worktree_at(&workspace);
             Ok((workspace, tree, action))
         }
         SessionAction::Create if args.worktree => {
@@ -92,10 +90,7 @@ pub(super) fn isolate(
 }
 
 fn journal_workspace(path: &Path) -> Option<PathBuf> {
-    list_sessions()
-        .ok()?
-        .into_iter()
-        .find(|info| info.path == path)?
+    summonr::session_info(path.to_path_buf())
         .cwd
         .map(PathBuf::from)
 }
@@ -142,15 +137,8 @@ pub(super) fn build(
     if let Some(name) = &args.name {
         loop_.set_name(name)?;
     }
-    loop_.set_context_window(endpoint.context_window);
-    loop_.set_compact_tokens(endpoint.compact_tokens);
-    loop_.set_effort(
-        args.effort
-            .or(endpoint.effort)
-            .or_else(|| summonr::default_effort(&endpoint.name, &endpoint.model)),
-    );
-    loop_.set_price(endpoint.price);
-    loop_.set_env(endpoint.env.clone());
+    loop_.choose_effort(args.effort);
+    loop_.apply_endpoint(endpoint);
     loop_.set_images(images, summonr::vision_endpoint()?);
     loop_.set_modules(&switches)?;
     configure(loop_, args, check)

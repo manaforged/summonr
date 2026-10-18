@@ -143,9 +143,7 @@ async fn checked(name: &str, key: &str) -> std::result::Result<String, (String, 
         crate::secret::Source::Keychain => "the keychain",
         crate::secret::Source::File => "credentials.toml",
         crate::secret::Source::Config => "config.toml",
-        crate::secret::Source::Env
-        | crate::secret::Source::Builtin
-        | crate::secret::Source::Peer(_) => source.label(),
+        crate::secret::Source::Env | crate::secret::Source::Builtin => source.label(),
     };
     Ok(format!("✓ Saved the {name} key in {store}."))
 }

@@ -122,9 +122,8 @@ region = "cn"
 base_url = "https://api.kimi.com/coding/v1"
 model = "k3"
 env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY"]
-missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
+missing = "run `summonr login NAME` or set KIMI_CODING_API_KEY"
 aliases = { "kimi-k3" = "k3", "k3" = "k3" }
-cli_token = "kimi-code"
 opencode_ids = ["kimi-code-plan-cn", "moonshotai-cn"]
 plan = true
 
@@ -141,8 +140,7 @@ region = "intl"
 base_url = "https://api.kimi.ai/coding/v1"
 model = "k3"
 env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY"]
-cli_token = "kimi-code"
-missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
+missing = "run `summonr login NAME` or set KIMI_CODING_API_KEY"
 aliases = { "kimi-k3" = "k3", "k3" = "k3" }
 opencode_ids = ["kimi-code-plan-global", "moonshotai"]
 plan = true
@@ -198,7 +196,6 @@ login_model = "gpt-6.1-sol"
 env_keys = ["OPENAI_API_KEY"]
 missing = "run `summonr login NAME` to sign in with ChatGPT or paste a key, or set OPENAI_API_KEY"
 oauth = "chatgpt"
-opencode_oauth = false
 opencode_ids = ["openai"]
 prompt_cache_key = true
 wire = "responses"
@@ -522,7 +519,7 @@ provider = "opencode"
 base_url = "https://opencode.ai/inference/v1"
 model = "glm-5.3-flash"
 env_keys = ["OPENCODE_API_KEY"]
-missing = "run `summonr login opencode-zen`, set OPENCODE_API_KEY, or `opencode auth login`"
+missing = "run `summonr login opencode-zen` or set OPENCODE_API_KEY"
 opencode = true
 opencode_ids = ["opencode"]
 [[preset]]
@@ -531,7 +528,7 @@ provider = "opencode"
 base_url = "https://opencode.ai/zen/go/v1"
 model = "glm-5.3-flash"
 env_keys = ["OPENCODE_GO_API_KEY", "OPENCODE_API_KEY"]
-missing = "run `summonr login go`, set OPENCODE_GO_API_KEY, or `opencode auth login`"
+missing = "run `summonr login go` or set OPENCODE_GO_API_KEY"
 opencode = true
 opencode_ids = ["opencode-go"]
 plan = true

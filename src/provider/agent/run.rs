@@ -53,6 +53,7 @@ pub(in crate::provider) struct Run {
     pub(super) metered: bool,
     pub(super) spent: (u32, u32),
     ready: Value,
+    shape: u64,
 }
 
 impl Drop for Run {
@@ -84,6 +85,7 @@ impl Run {
             thread,
         };
         let mut run = Self::open(seat, spec).await?;
+        run.shape = shape(request);
         for message in input {
             run.send(&bridge::user(message)).await?;
         }
@@ -144,6 +146,7 @@ impl Run {
             metered: false,
             spent: (0, 0),
             ready: Value::Null,
+            shape: 0,
         };
         run.send(&json!({
             "type": "control_request",
@@ -152,6 +155,7 @@ impl Run {
         }))
         .await?;
         run.handshake().await?;
+        keep_listing(&seat.name, &run.ready);
         Ok(run)
     }
 
@@ -184,6 +188,10 @@ impl Run {
                 | Frame::Other => {}
             }
         }
+    }
+
+    pub(super) fn fits(&mut self, request: &CompletionRequest<'_>) -> bool {
+        self.shape == shape(request) && matches!(self.child.try_wait(), Ok(None))
     }
 
     pub(super) fn recorded(&self) -> Option<&str> {
@@ -240,19 +248,23 @@ impl Run {
     }
 }
 
-pub(super) async fn models(seat: &Seat) -> Result<Vec<crate::catalog::Model>> {
-    let run = Run::open(
-        seat,
-        Spec {
-            model: "",
-            system: None,
-            effort: None,
-            tools: &[],
-            thread: Thread::Once,
-        },
-    )
-    .await?;
-    let ready: Ready = serde_json::from_value(run.ready.clone()).unwrap_or_default();
+fn shape(request: &CompletionRequest<'_>) -> u64 {
+    let system = request
+        .messages
+        .first()
+        .filter(|message| message.role == Role::System)
+        .map(|message| message.content.as_str());
+    let spec = json!([request.model, system, request.effort, request.tools]);
+    let mut hasher = crate::text::Fnv64::default();
+    std::hash::Hasher::write(&mut hasher, spec.to_string().as_bytes());
+    std::hash::Hasher::finish(&hasher)
+}
+
+fn keep_listing(name: &str, ready: &Value) {
+    if crate::catalog::listing(name).is_some_and(|listing| !listing.stale()) {
+        return;
+    }
+    let ready: Ready = serde_json::from_value(ready.clone()).unwrap_or_default();
     let mut models: Vec<crate::catalog::Model> = ready
         .models
         .into_iter()
@@ -268,12 +280,10 @@ pub(super) async fn models(seat: &Seat) -> Result<Vec<crate::catalog::Model>> {
     models.sort_by(|left, right| left.id.cmp(&right.id));
     models.dedup_by(|left, right| left.id == right.id);
     if models.is_empty() {
-        return Err(Error::provider(
-            ProviderFailureKind::Malformed,
-            "Claude Code listed no models",
-        ));
+        return;
     }
-    Ok(models)
+    crate::catalog::enrich(name, None, &mut models);
+    drop(crate::catalog::remember(name, models));
 }
 
 fn unanswerable(line: &str) -> Option<String> {

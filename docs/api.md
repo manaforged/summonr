@@ -21,7 +21,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS (shared pages excluded, so lower than RSS) and the peak resident set on Linux |
 | `summonr diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
 | `summonr worktrees [--json]`, `summonr worktrees prune [--json]` | List session worktrees, or drop records of missing directories and print the removed paths |
-| `summonr endpoints` | Probe every endpoint and show its key status |
+| `summonr endpoints [--all] [--check]` | List the endpoints that are set up and their key source, offline; `--all` adds the rest, `--check` asks each for its models |
 | `summonr login [NAME] [--key]`, `summonr logout NAME` | List, store, or forget keys and subscription sign-ins |
 | `summonr login NAME --url URL [--model M]`, `summonr logout NAME --remove` | Add or update your own OpenAI-compatible server, or remove it |
 | `summonr modules` | List compiled modules and their state |
@@ -169,7 +169,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
   - `~/.summonr/credentials.toml`: stored keys.
   - `~/.summonr/sessions/<id>/session.jsonl`: the session log.
   - `~/.summonr/skills/<name>/SKILL.md`, `~/.summonr/bin/<name>/`.
-- Key lookup order: the endpoint's environment variable, then `credentials.toml`, then peer stores (`~/.local/share/opencode/auth.json`, `~/.kimi-code/credentials/kimi-code.json`), then `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message unless it is local or keyless. `SUMMONR_API_KEY` applies only with `SUMMONR_BASE_URL`.
+- Key lookup order: the endpoint's environment variable, then `credentials.toml`, then `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message unless it is local or keyless. `SUMMONR_API_KEY` applies only with `SUMMONR_BASE_URL`.
 - `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`. Use one key, not both. The checks decide exit code 2. The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. If the check file changes during a run anyway, summonr restores it, a `note` event says so, and the run keeps the check it loaded at start.
 - A file that summonr's own stdout or stderr is redirected to, for example `--json > ci/events.jsonl` inside the repository, never counts as a change.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't widen it.

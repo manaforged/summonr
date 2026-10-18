@@ -15,6 +15,7 @@ use step::Step;
 
 #[derive(Clone)]
 pub(super) struct Seat {
+    name: String,
     program: String,
     env: Vec<(String, String)>,
     unset: &'static [&'static str],
@@ -77,18 +78,16 @@ impl Drop for Forget<'_> {
 }
 
 impl Seat {
-    pub(super) fn new(
-        program: &str,
-        env: &std::collections::BTreeMap<String, String>,
-        unset: &'static [&'static str],
-    ) -> Self {
+    pub(super) fn new(endpoint: &crate::Endpoint, program: &str) -> Self {
         Self {
+            name: endpoint.name.clone(),
             program: program.to_string(),
-            env: env
+            env: endpoint
+                .env
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect(),
-            unset,
+            unset: crate::endpoint::env_unset(&endpoint.name),
             runs: Arc::default(),
             threads: Arc::default(),
             gates: Arc::default(),
@@ -105,6 +104,36 @@ impl Seat {
             runs.retain(|_, (parked, _)| parked.elapsed() < limit);
             runs.insert(session.to_string(), (Instant::now(), run));
         }
+    }
+
+    fn reusable(&self, mut run: Run, request: &CompletionRequest<'_>) -> Option<Run> {
+        if !run.fits(request) {
+            return None;
+        }
+        if !run.pending.is_empty() {
+            return Some(run);
+        }
+        let asked = request
+            .messages
+            .last()
+            .is_some_and(|message| message.role == Role::User);
+        (asked && self.grown(&request.session, request.messages)).then_some(run)
+    }
+
+    fn grown(&self, session: &str, messages: &[Message]) -> bool {
+        let Some(seen) = self
+            .threads
+            .lock()
+            .ok()
+            .and_then(|threads| threads.get(session).map(|known| known.seen))
+        else {
+            return false;
+        };
+        let spoken = messages
+            .iter()
+            .filter(|message| message.role != Role::System)
+            .count();
+        spoken > seen.count && seen.extended_by(messages)
     }
 
     fn gate(&self, session: &str) -> Arc<tokio::sync::Mutex<()>> {
@@ -175,7 +204,8 @@ impl Client {
     ) -> Result<AssistantMessage> {
         let held = seat
             .take(&request.session)
-            .filter(|run| !run.abandoned(request.messages));
+            .filter(|run| !run.abandoned(request.messages))
+            .and_then(|run| seat.reusable(run, request));
         let mut run = match held {
             Some(mut run) => {
                 run.answer(request.messages).await?;
@@ -196,11 +226,10 @@ impl Client {
             seat.remember(&request.session, id, request.messages);
         }
         match step? {
-            Step::Paused(message) => {
+            Step::Paused(message) | Step::Done(message) => {
                 seat.keep(&request.session, run);
                 Ok(message)
             }
-            Step::Done(message) => Ok(message),
         }
     }
 
@@ -214,10 +243,6 @@ impl Client {
         match run.next(self, request, &mut Partial::default()).await? {
             Step::Paused(message) | Step::Done(message) => Ok(message),
         }
-    }
-
-    pub(super) async fn agent_models(&self) -> Result<Vec<crate::catalog::Model>> {
-        run::models(self.seat()?).await
     }
 }
 

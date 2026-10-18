@@ -160,7 +160,7 @@ pub(crate) fn fire(name: &str, payload: Option<&[u8]>) -> Result<i64> {
         Some(body) => {
             crate::jobs::prepare(&dir)?;
             let path = store::payload_path(&dir, name, now);
-            durable::write(&path, body)?;
+            durable::write(&path, body, durable::Durability::Renamed)?;
             Some(path)
         }
         None => None,
@@ -215,7 +215,7 @@ pub(crate) fn exec(
     };
     let code = child.wait()?.code();
     match code {
-        Some(code) => durable::write(&exit, format!("{code}\n"))?,
+        Some(code) => durable::write(&exit, format!("{code}\n"), durable::Durability::Renamed)?,
         None => crate::jobs::write_killed(&exit)?,
     }
     conclude(&job, slot, started, code, Some(&log))?;

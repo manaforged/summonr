@@ -1,3 +1,4 @@
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -9,16 +10,8 @@ use crate::text::FENCE;
 #[must_use]
 pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     let mut rows = Vec::new();
-    collect(
-        summonr_home()
-            .ok()
-            .as_deref()
-            .map(|home| home.join("skills")),
-        &mut rows,
-    );
-    collect(Some(workspace.join(".summonr/skills")), &mut rows);
-    for dir in plugin_dirs() {
-        collect(Some(dir), &mut rows);
+    for root in roots(workspace) {
+        collect(root, &mut rows);
     }
     if rows.is_empty() {
         return None;
@@ -46,21 +39,9 @@ pub(crate) fn load(workspace: &Path, name: &str) -> Result<String> {
             "skill names are letters, digits, `-`, and `_` only".to_string(),
         ));
     }
-    let mut candidates = Vec::new();
-    if let Ok(home) = summonr_home() {
-        candidates.push(home.join("skills").join(name).join("SKILL.md"));
-        candidates.push(home.join("skills").join(format!("{name}.md")));
-    }
-    candidates.push(
-        workspace
-            .join(".summonr/skills")
-            .join(name)
-            .join("SKILL.md"),
-    );
-    candidates.push(workspace.join(".summonr/skills").join(format!("{name}.md")));
-    for dir in plugin_dirs() {
-        candidates.push(dir.join(name).join("SKILL.md"));
-    }
+    let candidates = roots(workspace)
+        .into_iter()
+        .flat_map(|root| [root.join(name).join(SKILL), root.join(format!("{name}.md"))]);
     for path in candidates {
         if let Ok(text) = std::fs::read_to_string(&path)
             && !text.trim().is_empty()
@@ -78,10 +59,7 @@ pub(crate) fn valid(name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
-fn collect(root: Option<PathBuf>, rows: &mut Vec<(String, String)>) {
-    let Some(root) = root else {
-        return;
-    };
+fn collect(root: PathBuf, rows: &mut Vec<(String, String)>) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
     };
@@ -99,7 +77,7 @@ fn collect(root: Option<PathBuf>, rows: &mut Vec<(String, String)>) {
         };
         rows.push((
             name,
-            std::io::read_to_string(handle)
+            head(std::io::BufReader::new(handle))
                 .map(|text| summary(&text))
                 .unwrap_or_default(),
         ));
@@ -116,6 +94,31 @@ fn skill_file(path: PathBuf, dir: bool) -> Option<(String, PathBuf)> {
         return Some((name, path));
     }
     None
+}
+
+fn head(mut reader: impl BufRead) -> Option<String> {
+    let mut text = String::new();
+    let mut line = Vec::new();
+    let mut fenced = false;
+    loop {
+        line.clear();
+        if reader.read_until(b'\n', &mut line).ok()? == 0 {
+            return Some(text);
+        }
+        let piece = std::str::from_utf8(&line).ok()?;
+        text.push_str(piece);
+        let trimmed = piece.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if fenced || trimmed != FENCE {
+            if !fenced || trimmed == FENCE {
+                return Some(text);
+            }
+            continue;
+        }
+        fenced = true;
+    }
 }
 
 fn summary(text: &str) -> String {
@@ -137,9 +140,29 @@ fn heading(line: &str) -> String {
         .collect()
 }
 
+fn roots(workspace: &Path) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = summonr_home()
+        .ok()
+        .map(|home| home.join("skills"))
+        .into_iter()
+        .collect();
+    if let Some(home) = crate::prompt::user_home() {
+        roots.push(home.join(".claude/skills"));
+        roots.push(home.join(".agents/skills"));
+    }
+    roots.push(workspace.join(".summonr/skills"));
+    roots.push(workspace.join(".claude/skills"));
+    roots.extend(plugin_dirs());
+    roots
+}
+
 fn plugin_dirs() -> Vec<PathBuf> {
     crate::plugins::enabled()
         .iter()
         .flat_map(crate::plugins::Plugin::skill_dirs)
         .collect()
 }
+
+#[cfg(test)]
+#[path = "skills_tests.rs"]
+mod tests;

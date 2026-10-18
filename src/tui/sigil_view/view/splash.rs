@@ -72,14 +72,12 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
                 .layout(
                     LayoutStyle::flex_column()
                         .shrink(0.0)
-                        .margin_x(cell.w)
-                        .margin_bottom(cell.h)
-                        .padding_x(cell.w)
-                        .padding_bottom(cell.h)
+                        .padding_x(cell.w * 2.0)
+                        .padding_bottom(cell.h * 2.0)
                         .overflow(sigil::layout::Overflow::Hidden),
                 )
                 .bg(tint)
-                .child(blank(width.saturating_sub(2), rows.saturating_sub(y)))
+                .child(blank(width, rows.saturating_sub(y)))
                 .child(chat::inline_layer(app.clone(), inner, surface::editor(app))),
         )
         .child(

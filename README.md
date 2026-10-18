@@ -4,7 +4,7 @@ A coding agent for any model, in your terminal or a desktop window, written in R
 
 - **Light**: 27 MB while it works in our [Terminal-Bench 2.1 runs](#benchmarks), against 146 MB for Grok Build and 276 MB for Codex.
 - **Sessions that talk**: message any running session with `@name`, even one on a different model or provider. [Try it](#coordinate-work-live).
-- **Browses like you**: searches and page visits look like Chrome, so sites let it in like they let you in. No search key. Turn it on with `search = true` under `[modules]`.
+- **Your own browser**: drives the Chrome, Edge, or Brave installed on your machine, in a profile of its own; sign in once and it stays signed in. Search and page reads need no API key. Turn on `browser` and `search` under `[modules]`.
 - **Any model**: 41 built-in endpoints, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
 - **One binary**: web search, a real browser, MCP servers, and parallel child agents.
 - **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.
@@ -156,25 +156,31 @@ It lands in the tests session's inbox, and the tests session replies with `@buil
 
 ## Benchmarks
 
-Terminal-Bench 2.1, all 89 tasks, 3 trials each. Each pair ran side by side on the same plan and model, at high effort.
+Terminal-Bench 2.1, at high effort, with every agent in a pair on the same model. The plan pairs ran all 89 tasks side by side, 3 trials each.
 
 GPT-6.1 Sol on a ChatGPT plan:
 
-| Agent | Resolution rate | Input tokens | Cost | Memory |
+| Agent | Resolution rate | Input tokens per solved task | Cost per trial | Memory |
 | --- | ---: | ---: | ---: | ---: |
-| summonr 0.1.0 | 85.8% | 58,351 | $0.078 | 27 MB |
-| Codex 0.162.1 | 79.0% | 194,802 | $0.105 | 276 MB |
+| summonr 0.1.0 | 85.8% | 58,976 | $0.078 | 27 MB |
+| Codex 0.162.1 | 79.0% | 182,691 | $0.105 | 276 MB |
 
 Grok 4.7 on a SuperGrok plan:
 
-| Agent | Resolution rate | Input tokens | Memory |
+| Agent | Resolution rate | Input tokens per solved task | Memory |
 | --- | ---: | ---: | ---: |
-| summonr 0.1.0 | 74.2% | 579,764 | 27 MB |
-| Grok Build 1.0.52 | 70.4% | 820,158 | 146 MB |
+| summonr 0.1.0 | 74.2% | 373,831 | 27 MB |
+| Grok Build 1.0.52 | 70.4% | 803,466 | 146 MB |
 
-Tokens and cost are medians per trial, from each agent's own usage report; cost is at API list price. The Grok pair has no cost column, because grok-4.7 doubles its rate on prompts of 200K tokens or more and Grok Build's prompt sizes are not recorded. The judge pass that rechecks every solve has not run yet.
+GLM 5.3 Flash through z.ai, one try on each of 86 tasks; OpenCode ran in a later job than summonr and pi:
 
-Intervals, paired ratios, voided solves, and method: [`BENCHMARKS.md`](BENCHMARKS.md) and [summonr.dev/benchmarks](https://summonr.dev/benchmarks).
+| Agent | Resolution rate | Input tokens per solved task | Memory |
+| --- | ---: | ---: | ---: |
+| summonr 0.1.0 | 73.3% | 95,271 | 24 MB |
+| pi 1.0.0 | 72.1% | 240,762 | 134 MB |
+| OpenCode 2.0.22 | 67.4% | 228,578 | 394 MB |
+
+Medians, as each agent reported them: input over the tasks that agent solved, cost per trial at API list price. Method and caveats: [`BENCHMARKS.md`](BENCHMARKS.md).
 
 The first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Six core tools are advertised every round (`read`, `search`, `edit`, `write`, `run_command`, `todo`), plus `ask` in an interactive session and the modules you turned on. MCP schemas join the prefix only for servers you configure.
 
@@ -190,7 +196,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 - Search is the `search` tool: contents or file names under any readable path. There is no built-in code graph.
 - Memory is two Markdown files per repository and user, loaded into the prompt; there is no vector store or background extraction.
 - Config is under `~/.summonr`.
-- On a headless Linux host, the keychain may not answer at startup. Set `secrets = "file"` in `~/.summonr/config.toml`, or pass keys through the environment.
+- Keys are stored in `~/.summonr/credentials.toml` by default. If you set `secrets = "keychain"` on a headless Linux host, the keychain may not answer at startup; keep the file store or pass keys through the environment.
 
 ## Docs
 

@@ -35,7 +35,6 @@ pub enum Source {
     File,
     Config,
     Builtin,
-    Peer(&'static str),
 }
 
 impl Source {
@@ -47,7 +46,6 @@ impl Source {
             Self::File => "file",
             Self::Config => "config (plaintext)",
             Self::Builtin => "built-in",
-            Self::Peer(name) => name,
         }
     }
 }
@@ -232,7 +230,11 @@ impl Store {
             std::fs::create_dir_all(parent)?;
             tighten_dir(parent)?;
         }
-        Ok(store::write(&self.file, document.to_string().as_bytes())?)
+        Ok(store::write(
+            &self.file,
+            document.to_string().as_bytes(),
+            store::Durability::Synced,
+        )?)
     }
 
     fn wrap(&self) -> Result<[u8; KEY_LEN]> {

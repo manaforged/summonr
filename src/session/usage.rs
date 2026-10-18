@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use serde::Deserialize;
+mod charges;
 
+use self::charges::{Charge, Journals};
 use super::catalog::list_in;
-use crate::durable::log::{self, Usage};
 use crate::error::Result;
 use crate::provider::Price;
 
@@ -94,93 +94,81 @@ pub(crate) struct Spend {
     pub sessions: u64,
 }
 
-#[derive(Deserialize)]
-struct Record {
-    #[serde(default)]
-    at: u64,
-    #[serde(default)]
-    reported: Option<bool>,
-    #[serde(flatten)]
-    line: log::Line,
-}
-
-impl Record {
-    fn charge(self) -> Option<(String, Usage, Option<f64>)> {
-        match self.line {
-            log::Line::Assistant {
-                model, usage, cost, ..
-            } => Some((model, usage, cost)),
-            log::Line::Charge {
-                model, usage, cost, ..
-            } if self.reported != Some(false) => Some((model, usage, cost)),
-            _ => None,
-        }
-    }
-}
-
 pub(crate) fn spend(
     home: &Path,
     roots: &[String],
     prices: &BTreeMap<String, Price>,
 ) -> Result<Vec<Spend>> {
     let mut totals: BTreeMap<(String, u64, String), Spend> = BTreeMap::new();
-    for info in list_in(home)?.into_iter().filter(|info| info.depth == 0) {
-        let Ok(records) = log::records::<Record>(&info.path) else {
+    let sessions: Vec<_> = list_in(home)?
+        .into_iter()
+        .filter(|info| info.depth == 0)
+        .collect();
+    let mut journals = Journals::load(home);
+    for info in &sessions {
+        let Some(entry) = journals.entry(info) else {
             continue;
         };
         let local = info.cwd.as_ref().is_some_and(|cwd| roots.contains(cwd));
         let workspace = info.cwd.clone().unwrap_or_default();
-        let fallback = modified(&info.path);
+        let fallback = if entry.undated {
+            modified(&info.path)
+        } else {
+            0
+        };
         let mut latest = None;
-        let mut current = info.model.clone().unwrap_or_default();
-        for record in records {
-            if let log::Line::Session { model, .. } = &record.line {
-                current.clone_from(model);
-                continue;
-            }
-            let stamp = record.at;
-            let Some((model, usage, stored)) = record.charge() else {
-                continue;
-            };
-            if usage.input == 0 && usage.output == 0 {
-                continue;
-            }
-            let model = if model.is_empty() {
-                current.clone()
+        for charge in &entry.charges {
+            let model = charge
+                .0
+                .clone()
+                .unwrap_or_else(|| info.model.clone().unwrap_or_default());
+            let at = if charge.1 == 0 {
+                fallback
             } else {
-                model
+                charge.1 / 1000
             };
-            let at = if stamp == 0 { fallback } else { stamp / 1000 };
-            let hour = at - at % HOUR;
-            let key = (model.clone(), hour, workspace.clone());
+            let key = (model, at - at % HOUR, workspace.clone());
             latest = Some(key.clone());
-            let row = totals.entry(key).or_insert_with(|| Spend {
-                cost: prices.get(&model).map(|_| 0.0),
-                model: model.clone(),
-                hour,
-                local,
-                workspace: workspace.clone(),
-                ..Spend::default()
-            });
-            row.turns += 1;
-            row.millis = row.millis.saturating_add(usage.millis);
-            row.input = row.input.saturating_add(usage.input);
-            row.cached = row.cached.saturating_add(usage.cached);
-            row.output = row.output.saturating_add(usage.output);
-            let charge = stored.or_else(|| {
-                prices
-                    .get(&model)
-                    .map(|price| price.cost(usage.input, usage.output, usage.cached, usage.written))
-            });
-            if let Some(charge) = charge {
-                *row.cost.get_or_insert(0.0) += charge;
-            }
+            add(&mut totals, key, local, charge, prices);
         }
         if let Some(row) = latest.and_then(|key| totals.get_mut(&key)) {
             row.sessions += 1;
         }
     }
+    journals.save(&sessions.iter().map(|info| info.id.as_str()).collect());
     Ok(totals.into_values().collect())
+}
+
+fn add(
+    totals: &mut BTreeMap<(String, u64, String), Spend>,
+    key: (String, u64, String),
+    local: bool,
+    charge: &Charge,
+    prices: &BTreeMap<String, Price>,
+) {
+    let price = prices.get(&key.0);
+    let row = totals
+        .entry(key)
+        .or_insert_with_key(|(model, hour, workspace)| Spend {
+            cost: price.map(|_| 0.0),
+            model: model.clone(),
+            hour: *hour,
+            local,
+            workspace: workspace.clone(),
+            ..Spend::default()
+        });
+    let usage = charge.usage();
+    row.turns += 1;
+    row.millis = row.millis.saturating_add(usage.millis);
+    row.input = row.input.saturating_add(usage.input);
+    row.cached = row.cached.saturating_add(usage.cached);
+    row.output = row.output.saturating_add(usage.output);
+    let cost = charge.cost().or_else(|| {
+        price.map(|price| price.cost(usage.input, usage.output, usage.cached, usage.written))
+    });
+    if let Some(cost) = cost {
+        *row.cost.get_or_insert(0.0) += cost;
+    }
 }
 
 fn modified(path: &Path) -> u64 {

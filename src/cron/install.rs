@@ -223,7 +223,11 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
         std::fs::create_dir_all(dir)?;
     }
     let env = OwnedEnv::current();
-    crate::durable::store::write(&file, plist(exe, every_secs, &log, env.view()))?;
+    crate::durable::store::write(
+        &file,
+        plist(exe, every_secs, &log, env.view()),
+        crate::durable::store::Durability::Synced,
+    )?;
     bootout();
     let mut failures = Vec::new();
     for (index, domain) in domains(uid()).into_iter().enumerate() {
@@ -293,8 +297,16 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
             std::fs::create_dir_all(dir)?;
         }
         let (service, timer) = units(exe, every_secs, env.view());
-        crate::durable::store::write(&service_path, service)?;
-        crate::durable::store::write(&timer_path, timer)?;
+        crate::durable::store::write(
+            &service_path,
+            service,
+            crate::durable::store::Durability::Synced,
+        )?;
+        crate::durable::store::write(
+            &timer_path,
+            timer,
+            crate::durable::store::Durability::Synced,
+        )?;
         run("systemctl", &["--user", "daemon-reload"], None)?;
         run(
             "systemctl",

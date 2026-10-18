@@ -55,10 +55,6 @@ pub(super) struct Row {
     #[serde(default)]
     cache_marks: bool,
     #[serde(default)]
-    cli_token: Option<String>,
-    #[serde(default = "yes")]
-    opencode_oauth: bool,
-    #[serde(default)]
     env_default: bool,
     #[serde(default)]
     plan: bool,
@@ -91,10 +87,6 @@ struct ReasoningRow {
     off: Option<Off>,
     #[serde(default)]
     host_only: bool,
-}
-
-fn yes() -> bool {
-    true
 }
 
 type Checked<T> = std::result::Result<T, String>;
@@ -157,16 +149,6 @@ impl Row {
             .transpose()
     }
 
-    fn cli_token(&self, name: &str) -> Checked<Option<CliToken>> {
-        self.cli_token
-            .as_deref()
-            .map(|named| {
-                cli_token(named)
-                    .ok_or_else(|| format!("`{name}` names unknown cli token `{named}`"))
-            })
-            .transpose()
-    }
-
     fn wire(&self, name: &str) -> Checked<Wire> {
         match self.wire.as_deref() {
             None => Ok(Wire::Completions),
@@ -200,7 +182,6 @@ impl Row {
 
     pub(super) fn into_preset(self, name: String, base_url: String) -> Checked<Preset> {
         let oauth = self.oauth(&name)?;
-        let cli_token = self.cli_token(&name)?;
         let wire = self.wire(&name)?;
         self.check_env_keys(&name)?;
         let missing = self.missing(&name);
@@ -228,8 +209,6 @@ impl Row {
             cache_ttl: self.cache_ttl,
             cache_header: self.cache_header,
             cache_marks: self.cache_marks,
-            cli_token,
-            opencode_oauth: self.opencode_oauth,
             env_default: self.env_default,
             plan: self.plan,
             off: self.off,

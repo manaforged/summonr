@@ -48,7 +48,7 @@ pub(super) fn write_wrap(path: &Path, key: &[u8; KEY_LEN]) -> Result<()> {
         std::fs::create_dir_all(parent)?;
         tighten_dir(parent)?;
     }
-    Ok(store::write(path, key)?)
+    Ok(store::write(path, key, store::Durability::Synced)?)
 }
 
 pub(super) fn decode_wrap_bytes(bytes: &[u8]) -> Result<[u8; KEY_LEN]> {

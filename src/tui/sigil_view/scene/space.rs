@@ -3,6 +3,9 @@ use std::collections::BTreeMap;
 use super::galaxy::{Field, field};
 use super::stars::bright;
 use super::*;
+use sigil::geometry::{Point, Rect};
+use sigil::scene::{GlyphRun, SceneBuilder, SceneRectStyle};
+use sigil::style::TextStyle;
 
 pub(in crate::tui::sigil_view) const SCRIM: Rgba8 = rgb(10, 8, 20);
 
@@ -16,7 +19,7 @@ pub(in crate::tui::sigil_view) const STAR_DIM: Rgba8 = rgb(58, 74, 110);
 
 pub(in crate::tui::sigil_view) const STAR_BRIGHT: Rgba8 = rgb(176, 200, 240);
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub(in crate::tui::sigil_view) struct Spot {
     pub(in crate::tui::sigil_view) x: u16,
     pub(in crate::tui::sigil_view) y: u16,
@@ -84,6 +87,32 @@ pub(in crate::tui::sigil_view) fn moving(cols: u16, rows: u16, beat: f64, seed: 
     sparkle(&mut spots, cols, rows, beat.max(0.0) as u64, seed);
     meteor(&mut spots, cols, rows, beat, seed);
     spots
+}
+
+pub(super) fn paint_spots(scene: &mut SceneBuilder, area: Rect, spots: &[Spot]) {
+    let cell = metrics();
+    for spot in spots {
+        let at = Point::new(
+            area.origin.x + f32::from(spot.x) * cell.w,
+            area.origin.y + f32::from(spot.y) * cell.h,
+        );
+        let rect = Rect::new(at, cell.w, cell.h);
+        scene.draw_rect(
+            rect,
+            SceneRectStyle::solid(shown(spot.cell.bg, palette().base)),
+        );
+        let style = TextStyle {
+            font_weight: if spot.cell.bold { 700 } else { 400 },
+            ..TextStyle::default()
+        };
+        scene.draw_glyph_run(GlyphRun::new(
+            rect,
+            spot.cell.text.as_str(),
+            shown(spot.cell.fg, palette().text),
+            style,
+            10_000,
+        ));
+    }
 }
 
 fn twinkling(cols: u16, rows: u16, beat: f64, seed: u64) -> Vec<Spot> {
@@ -238,9 +267,56 @@ pub(in crate::tui::sigil_view) fn hash(x: u16, y: u16) -> u32 {
 #[path = "space_tests.rs"]
 mod tests;
 
-pub(in crate::tui::sigil_view) fn set(cells: &mut [Cell], cols: u16, x: u16, y: u16, cell: Cell) {
-    let index = usize::from(y) * usize::from(cols) + usize::from(x);
-    if let Some(slot) = cells.get_mut(index) {
+#[cfg(test)]
+fn slot(cols: u16, x: u16, y: u16) -> Option<usize> {
+    (x < cols).then(|| usize::from(y) * usize::from(cols) + usize::from(x))
+}
+
+#[cfg(test)]
+fn set(cells: &mut [Cell], cols: u16, x: u16, y: u16, cell: Cell) {
+    if let Some(slot) = slot(cols, x, y).and_then(|index| cells.get_mut(index)) {
         *slot = cell;
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(in crate::tui::sigil_view) struct Plate {
+    pub(in crate::tui::sigil_view) area: [u16; 4],
+    pub(in crate::tui::sigil_view) cells: Vec<Cell>,
+}
+
+impl Plate {
+    pub(super) fn new(area: [u16; 4], fill: Cell) -> Self {
+        Self {
+            area,
+            cells: vec![fill; usize::from(area[2]) * usize::from(area[3])],
+        }
+    }
+
+    fn slot(&self, [x, y]: [u16; 2]) -> Option<usize> {
+        let [left, top, width, height] = self.area;
+        let (col, row) = (x.checked_sub(left)?, y.checked_sub(top)?);
+        (col < width && row < height)
+            .then(|| usize::from(row) * usize::from(width) + usize::from(col))
+    }
+
+    pub(super) fn at(&self, at: [u16; 2]) -> Option<&Cell> {
+        self.slot(at).and_then(|index| self.cells.get(index))
+    }
+
+    pub(super) fn cell(&mut self, at: [u16; 2]) -> Option<&mut Cell> {
+        self.slot(at).and_then(|index| self.cells.get_mut(index))
+    }
+
+    pub(super) fn row(&self, index: u16) -> Option<(u16, u16, Vec<Cell>)> {
+        let [x, y, width, height] = self.area;
+        (index < height).then(|| {
+            let start = usize::from(index) * usize::from(width);
+            (
+                x,
+                y + index,
+                self.cells[start..start + usize::from(width)].to_vec(),
+            )
+        })
     }
 }

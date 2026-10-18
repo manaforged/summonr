@@ -218,6 +218,9 @@ impl Run {
         } else {
             total
         };
+        self.metered = false;
+        self.rejected = false;
+        self.spent = (0, 0);
         Ok(AssistantMessage {
             content,
             reasoning_content: taken(&mut self.reasoning),

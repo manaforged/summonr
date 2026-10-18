@@ -354,21 +354,3 @@ fn request_chars(messages: &[Message], tool_bytes: usize, reasoning_on_wire: boo
         .sum::<usize>()
         + tool_bytes
 }
-
-fn verify_call(command: &str) -> ToolCall {
-    ToolCall {
-        continuation: None,
-        id: "completion-check".to_string(),
-        kind: ToolKind::Function,
-        function: ToolFunction {
-            checked: Default::default(),
-            name: "run_command".to_string(),
-            arguments: serde_json::json!({
-                "command": command,
-                "timeout_secs": crate::limits::limits().verify_timeout_secs,
-                "fresh": true
-            })
-            .to_string(),
-        },
-    }
-}

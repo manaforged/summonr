@@ -28,7 +28,6 @@ type FooterView = (
 );
 
 fn footer_view(app: &App) -> FooterView {
-    drop(app.status.get());
     let context_open = app.context_open.get();
     let cache_open = app.cache_open.get();
     let model = app.model.get();
@@ -77,6 +76,21 @@ fn elsewhere(live: &[crate::tui::hub::Live]) -> Option<(String, bool)> {
 pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
     let view = sigil::reactive::derived(move || footer_view(&update));
+    let place_app = app.clone();
+    let place =
+        sigil::reactive::derived(move || view.with(|view| place_of(&place_app, view, width)));
+    let shape = sigil::reactive::derived(move || {
+        let (notice, spend, elsewhere, context_pct, cache_pct, open) = view.get();
+        (
+            notice.map(|note| note.kind),
+            spend.is_some(),
+            elsewhere.map(|(_, waiting)| waiting),
+            context_pct,
+            cache_pct,
+            open,
+            place.with(|place| !place.is_empty()),
+        )
+    });
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -84,11 +98,14 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
                 .shrink(0.0)
                 .min_size(0.0, 0.0),
         )
-        .children_reactive(move || vec![footer_row(app.clone(), view.get(), width)])
+        .children_reactive(move || {
+            shape.with(|_| ());
+            sigil::reactive::untrack(|| vec![footer_row(app.clone(), view, place, width)])
+        })
 }
 
-fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
-    let (notice, spend, elsewhere, context_pct, cache_pct, open) = view;
+fn place_of(app: &App, view: &FooterView, width: usize) -> String {
+    let (notice, spend, elsewhere, _, cache_pct, _) = view;
     let taken = cache_pct.map_or(0, |_| 42)
         + elsewhere
             .as_ref()
@@ -99,14 +116,23 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
             .map_or(0, |branch| cell_width(branch) + 4)
         + spend.as_deref().map_or(0, |cost| cell_width(cost) + 2)
         + notice.as_ref().map_or(0, |note| cell_width(&note.text) + 2);
-    let place = crate::text::ellipsize(&app.info.workspace, width.saturating_sub(taken));
+    crate::text::ellipsize(&app.info.workspace, width.saturating_sub(taken))
+}
+
+fn footer_row(
+    app: App,
+    view: sigil::prelude::Signal<FooterView>,
+    place: sigil::prelude::Signal<String>,
+    width: usize,
+) -> NodeBuilder {
+    let (notice, spend, elsewhere, context_pct, cache_pct, open) = view.peek();
     let mut row = container().layout(
         LayoutStyle::flex_row()
             .fill_width()
             .align_items(AlignItems::Center)
             .gap(12.0),
     );
-    if !place.is_empty() {
+    if place.with(|place| !place.is_empty()) {
         row = row.child(
             sigil::kernel::text(place)
                 .nowrap()
@@ -147,27 +173,41 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
             super::super::app::NoticeKind::Failed => sigil::prelude::Token::Error11,
         };
         row = row.child(
-            sigil::kernel::text(note.text)
-                .nowrap()
-                .font_size(12.0)
-                .text_color(tone),
+            sigil::kernel::text(move || {
+                view.with(|view| {
+                    view.0
+                        .as_ref()
+                        .map(|note| note.text.clone())
+                        .unwrap_or_default()
+                })
+            })
+            .nowrap()
+            .font_size(12.0)
+            .text_color(tone),
         );
     }
-    if let Some((note, waiting)) = elsewhere {
+    if let Some((_, waiting)) = elsewhere {
         row = row.child(
-            sigil::kernel::text(note)
-                .nowrap()
-                .font_size(12.0)
-                .text_color(if waiting {
-                    sigil::prelude::Token::Warn11
-                } else {
-                    sigil::prelude::Token::Gray11
-                }),
+            sigil::kernel::text(move || {
+                view.with(|view| {
+                    view.2
+                        .as_ref()
+                        .map(|(note, _)| note.clone())
+                        .unwrap_or_default()
+                })
+            })
+            .nowrap()
+            .font_size(12.0)
+            .text_color(if waiting {
+                sigil::prelude::Token::Warn11
+            } else {
+                sigil::prelude::Token::Gray11
+            }),
         );
     }
-    if let Some(cost) = spend {
+    if spend.is_some() {
         row = row.child(
-            sigil::kernel::text(cost)
+            sigil::kernel::text(move || view.with(|view| view.1.clone().unwrap_or_default()))
                 .nowrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray12),

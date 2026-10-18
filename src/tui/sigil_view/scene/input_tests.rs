@@ -219,6 +219,7 @@ fn a_model_change_on_the_splash_keeps_the_star_clock() {
         let clock = app.sky_clock.peek().expect("a splash clock");
         let before = clock.peek();
         app.model_mut(|model| model.prefs.reasoning = crate::prefs::Visibility::Expanded);
+        std::thread::park_timeout(crate::limits::limits().animation() * 2);
         frames(5);
         let after = app.sky_clock.peek().expect("a splash clock");
         assert!(after == clock, "a model change replaced the star clock");
@@ -226,6 +227,36 @@ fn a_model_change_on_the_splash_keeps_the_star_clock() {
             after.peek() > before,
             "the star clock went back from {before} to {}",
             after.peek()
+        );
+    });
+}
+
+#[test]
+fn a_covering_overlay_pauses_the_splash_clock() {
+    Runtime::scope("splash-covered", || {
+        let (app, mut host, mut screen) = splash_screen(80, 24);
+        let mut router = sigil::events::EventRouter::new();
+        let mut frames = |count: usize| {
+            for _ in 0..count {
+                screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+            }
+        };
+        frames(3);
+        assert!(
+            app.sky_clock.peek().is_some(),
+            "the open splash has no clock"
+        );
+        app.auth.open.set(true);
+        frames(3);
+        assert!(
+            app.sky_clock.peek().is_none(),
+            "the splash still animates under the providers dialog"
+        );
+        app.auth.open.set(false);
+        frames(3);
+        assert!(
+            app.sky_clock.peek().is_some(),
+            "closing the dialog left the splash still"
         );
     });
 }
@@ -263,5 +294,36 @@ fn the_splash_keeps_the_line_stack_s_when_f2_is_pressed() {
                 "{shown}"
             );
         }
+    });
+}
+
+#[test]
+fn a_long_workdir_on_a_narrow_splash_stays_on_its_row() {
+    Runtime::scope("splash-narrow", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let mut details = info();
+        details.workspace = format!("~/{}", "deep/".repeat(40));
+        let app = App::new(details, workspace.path().to_owned(), commands);
+        app.splash.set(true);
+        app.splash_revealed.set(true);
+        let (cols, rows) = (60_u16, 30_u16);
+        app.resize(cols, rows);
+        let plate = crate::tui::sigil_view::scene::compose(cols, rows, &app).plate;
+        let lines: Vec<String> = plate
+            .cells
+            .chunks(usize::from(plate.area[2]))
+            .map(|row| row.iter().map(|cell| cell.text.to_string()).collect())
+            .collect();
+        let at = lines
+            .iter()
+            .position(|line| line.contains("workdir"))
+            .unwrap_or_else(|| panic!("{}", lines.join("\n")));
+        assert!(lines[at].contains('…'), "{}", lines.join("\n"));
+        assert!(
+            !lines[at + 1].trim_start().starts_with("deep"),
+            "{}",
+            lines.join("\n")
+        );
     });
 }

@@ -143,6 +143,7 @@ impl SessionDriver {
             .collect();
         self.answer(round, text, reasoning, usage, tools, meta)?;
         let ids = planned.iter().map(|(call, _)| *call).collect();
+        self.fresh &= planned.is_empty();
         if let Some(turn) = self.turn.as_mut() {
             turn.calls = planned;
         }
@@ -253,6 +254,7 @@ impl SessionDriver {
             footprint_kb: crate::supervise::footprint_kb(None),
         })?;
         self.turn = None;
+        self.fresh = false;
         Ok(())
     }
 
@@ -288,6 +290,7 @@ impl SessionDriver {
             })?;
         }
         self.turn = None;
+        self.fresh = false;
         if let Some(work) = &mut self.work
             && work.interrupt()
         {

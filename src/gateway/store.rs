@@ -145,7 +145,7 @@ pub(crate) fn update<T>(change: impl FnOnce(&mut State) -> T) -> Result<T> {
     let out = change(&mut state);
     let text = toml::to_string(&state)
         .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
-    store::write(&path, text)?;
+    store::write(&path, text, store::Durability::Synced)?;
     Ok(out)
 }
 

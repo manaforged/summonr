@@ -132,7 +132,6 @@
 | --- | --- |
 | <code>Key(String)</code> |  |
 | <code>Login(Box&lt;<a href="#spec">Spec</a>&gt;)</code> |  |
-| <code>Peer(fn(&amp;str) -&gt; Option&lt;String&gt;, String)</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Debug</code>
 

@@ -3,7 +3,7 @@
 
 Two jobs:
 
-1. Census. Every `pub`, `pub(crate)`, `pub(super)` item in `src/` and
+1. Census. Every `pub`, `pub(crate)`, `pub(super)`, `pub(in ...)` item in `src/` and
    `crates/*/src/`, then every function with its body length and how many
    times its name is mentioned, then the line count of every file. Writes `off/functions.tsv` and
    `off/lines.tsv`. Totals only, no rows, on stdout.
@@ -26,12 +26,11 @@ from __future__ import annotations
 import re
 import sys
 from collections import Counter
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-SKIP = re.compile(r"(^|/)(tests/)|_tests\.rs$|tests\.rs$")
+from census_source import ROOT, SKIP, block_end, production, rust_files, source_files, source_text
 ITEM = re.compile(
-    r"^(pub(?:\((crate|super)\))?)\s+(?:async\s+)?(?:unsafe\s+)?"
+    r"^(pub(?:\((?:crate|super|in [^)]+)\))?)\s+"
+    r"(?:const\s+(?=(?:async\s+|unsafe\s+)*fn\b))?(?:async\s+)?(?:unsafe\s+)?"
     r"(fn|struct|enum|trait|type|const|static|use|mod)\s+(.+)$"
 )
 FN = re.compile(
@@ -106,74 +105,16 @@ BASELINE = ROOT / "scripts" / "api-census-baseline.txt"
 CAP = 400
 
 
-def rust_files() -> list[Path]:
-    trees = [ROOT / "src", *sorted((ROOT / "crates").glob("*/src"))]
-    return sorted(p for tree in trees for p in tree.rglob("*.rs"))
-
-
-def source_files() -> list[Path]:
-    return [
-        p
-        for p in rust_files()
-        if not SKIP.search(str(p.relative_to(ROOT)))
-    ]
-
-
-def skip_token(text: str, i: int) -> int:
-    n = len(text)
-    c = text[i]
-    if c == "/" and i + 1 < n and text[i + 1] == "/":
-        j = text.find("\n", i)
-        return n if j < 0 else j
-    if c == '"':
-        j = i + 1
-        while j < n:
-            if text[j] == "\\":
-                j += 2
-                continue
-            if text[j] == '"':
-                break
-            j += 1
-        return j + 1
-    if c == "'":
-        m = re.match(r"'(?:\\.|[^\\'])'", text[i:])
-        if m:
-            return i + m.end()
-    return i
-
-
-def block_end(text: str, start: int) -> int:
-    """Index just past the braced block beginning at or after `start`."""
-    depth = 0
-    seen = False
-    i = start
-    n = len(text)
-    while i < n:
-        j = skip_token(text, i)
-        if j != i:
-            i = j
-            continue
-        c = text[i]
-        if c == "{":
-            depth += 1
-            seen = True
-        elif c == "}":
-            depth -= 1
-            if seen and depth == 0:
-                return i + 1
-        i += 1
-    return n
-
-
 def items() -> list[tuple[str, str, str, str]]:
     rows: list[tuple[str, str, str, str]] = []
     for path in source_files():
         rel = str(path.relative_to(ROOT))
-        for i, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+        for i, line in enumerate(source_text(path).splitlines(), 1):
             m = ITEM.match(line.strip())
             if not m:
                 continue
-            vis, kind, rest = m.group(1), m.group(3), m.group(4)
+            vis, kind, rest = m.group(1), m.group(2), m.group(3)
+            vis = "pub(in)" if vis.startswith("pub(in ") else vis
             name = (
                 rest.split("(", 1)[0].strip()
                 if kind == "fn"
@@ -187,7 +128,7 @@ def items() -> list[tuple[str, str, str, str]]:
 
 
 def functions() -> list[tuple[str, int, str, int, int]]:
-    text = {p: p.read_text(errors="replace") for p in source_files()}
+    text = {p: source_text(p) for p in source_files()}
     blob = "\n".join(text.values())
     rows: list[tuple[str, int, str, int, int]] = []
     for path, body in text.items():
@@ -213,13 +154,21 @@ def tree_lines() -> list[tuple[str, str, int]]:
     rows: list[tuple[str, str, int]] = []
     for path in rust_files():
         rel = str(path.relative_to(ROOT))
-        kind = "test" if SKIP.search(rel) else "source"
-        rows.append((rel, kind, len(path.read_text(errors="replace").splitlines())))
+        text = path.read_text(errors="replace")
+        lines = len(text.splitlines())
+        if SKIP.search(rel):
+            rows.append((rel, "test", lines))
+            continue
+        kept = len([line for line in production(text).splitlines() if line.strip()])
+        inline = lines - kept - len([line for line in text.splitlines() if not line.strip()])
+        rows.append((rel, "source", lines))
+        if inline:
+            rows.append((rel, "inline-test", inline))
     return rows
 
 
 def ratchet(tree: list[tuple[str, str, int]]) -> list[tuple[str, str, int]]:
-    blob = "\n".join(p.read_text(errors="replace") for p in source_files())
+    blob = "\n".join(source_text(p) for p in source_files())
     manifest = (ROOT / "Cargo.toml").read_text(errors="replace")
     doc_source, doc_manifest = delete_rules()
     hits = [
@@ -284,10 +233,11 @@ def summarize_items(rows, fns) -> None:
     pub = sum(1 for r in rows if r[0] == "pub")
     crate = sum(1 for r in rows if r[0] == "pub(crate)")
     sup = sum(1 for r in rows if r[0] == "pub(super)")
+    scoped = sum(1 for r in rows if r[0] == "pub(in)")
     kinds = Counter(r[1] for r in rows)
     orphans = [f for f in fns if f[4] <= 1 and f[2] not in {"main"}]
 
-    print(f"items {len(rows)} (pub {pub}, pub(crate) {crate}, pub(super) {sup})")
+    print(f"items {len(rows)} (pub {pub}, pub(crate) {crate}, pub(super) {sup}, pub(in) {scoped})")
     print("by kind: " + ", ".join(f"{k} {n}" for k, n in kinds.most_common()))
     print(f"functions {len(fns)}, bodies with no other mention {len(orphans)}")
 
@@ -295,11 +245,12 @@ def summarize_items(rows, fns) -> None:
 def summarize_tree(tree) -> None:
     source = [r for r in tree if r[1] == "source"]
     test = [r for r in tree if r[1] == "test"]
+    inline = sum(r[2] for r in tree if r[1] == "inline-test")
     source_lines = sum(r[2] for r in source)
     test_lines = sum(r[2] for r in test)
     print(
         f"lines {source_lines + test_lines}: source {source_lines} in "
-        f"{len(source)} files, test {test_lines} in {len(test)} files"
+        f"{len(source)} files ({inline} of them inline tests), test {test_lines} in {len(test)} files"
     )
     print(f"files over {CAP} lines: {sum(1 for _, k, n in source if n > CAP)}")
 

@@ -160,3 +160,51 @@ fn a_user_paragraph_that_starts_with_harness_stays_in_the_message() {
     let noted = format!("{typed}\n\nHarness state: auto mode. Do only what they asked.");
     assert_eq!(user_text(&noted, None), typed);
 }
+
+#[test]
+fn a_listed_session_is_not_read_again_once_it_has_a_first_prompt() {
+    let home = tempfile::tempdir().unwrap();
+    let sessions = crate::durable::log::sessions_dir(home.path());
+    let id = "000000000000000018d2297ad34281e3";
+    let journal = sessions.join(id).join("session.jsonl");
+    std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+    std::fs::write(
+        &journal,
+        format!(
+            "{}\n{}\n",
+            r#"{"kind":"session","id":"000000000000000018d2297ad34281e3","model":"glm","system":"","workspace":"/work/alpha"}"#,
+            r#"{"kind":"user","text":"find the slow startup","start":true}"#
+        ),
+    )
+    .unwrap();
+    let first = super::catalog::list_in(home.path()).unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].preview, "find the slow startup");
+    std::fs::write(&journal, "{}\n").unwrap();
+    let again = super::catalog::list_in(home.path()).unwrap();
+    assert_eq!(again[0].preview, "find the slow startup");
+    assert_eq!(again[0].cwd.as_deref(), Some("/work/alpha"));
+}
+
+#[test]
+fn usage_reads_an_unchanged_journal_once() {
+    let home = tempfile::tempdir().unwrap();
+    let id = "000000000000000018d2297ad34281e4";
+    let journal = crate::durable::log::sessions_dir(home.path())
+        .join(id)
+        .join("session.jsonl");
+    std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+    let body = format!(
+        "{}\n{}\n",
+        r#"{"kind":"session","id":"000000000000000018d2297ad34281e4","model":"glm","system":"","workspace":"/work/gamma"}"#,
+        r#"{"kind":"assistant","text":"ok","usage":{"input":120,"output":7,"cached":60,"millis":900},"model":"glm","at":3600000}"#
+    );
+    std::fs::write(&journal, &body).unwrap();
+    let prices = std::collections::BTreeMap::new();
+    let first = spend(home.path(), &[], &prices).unwrap();
+    assert_eq!(first.iter().map(|row| row.input).sum::<u64>(), 120);
+    std::fs::write(&journal, " ".repeat(body.len())).unwrap();
+    let again = spend(home.path(), &[], &prices).unwrap();
+    assert_eq!(again.iter().map(|row| row.input).sum::<u64>(), 120);
+    assert_eq!(again.len(), first.len());
+}

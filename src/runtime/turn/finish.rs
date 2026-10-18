@@ -8,10 +8,7 @@ impl<P: Provider> Loop<P> {
         {
             let paths = self.session.enter_verify().map_err(super::session_err)?;
             let receipt = Receipt::unchecked(paths, snapshot, events);
-            let verdict = self
-                .session
-                .prepare_verdict(true)
-                .map_err(super::session_err)?;
+            let verdict = self.session.captured_verdict(true);
             self.session
                 .commit_verdict(verdict, Decision::Automatic, Some(&receipt))
                 .map_err(super::session_err)?;

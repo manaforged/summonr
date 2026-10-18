@@ -15,12 +15,15 @@ pub(crate) struct Checkpoints {
 
 impl Checkpoints {
     pub(crate) fn open(workspace: &Path, session: &str) -> Option<Self> {
-        let dir = git_env(workspace, &[], &["rev-parse", "--absolute-git-dir"]).ok()?;
-        let dir = PathBuf::from(dir.trim()).join("summonr");
+        let dir = crate::diff::state_dir(workspace)?;
+        let layout = crate::diff::layout(workspace);
         std::fs::create_dir_all(&dir).ok()?;
         let index = dir.join(format!("{session}.index"));
         if !index.exists() {
-            seed(workspace, &index);
+            match &layout {
+                Some(layout) => seed_from(workspace, layout, &index),
+                None => seed(workspace, &index),
+            }
         }
         Some(Self {
             root: workspace.to_path_buf(),
@@ -34,7 +37,11 @@ impl Checkpoints {
         let tree = self.tree()?;
         let mut trees = self.trees();
         trees.push(tree);
-        store::write(&self.log, format!("{}\n", trees.join("\n")))?;
+        store::write(
+            &self.log,
+            format!("{}\n", trees.join("\n")),
+            store::Durability::Renamed,
+        )?;
         Ok(())
     }
 
@@ -100,7 +107,11 @@ impl Checkpoints {
             }
         }
         if paths.len() > known {
-            store::write(&self.skip, format!("{}\n", paths.join("\n")))?;
+            store::write(
+                &self.skip,
+                format!("{}\n", paths.join("\n")),
+                store::Durability::Renamed,
+            )?;
         }
         Ok(paths)
     }
@@ -139,6 +150,13 @@ impl Checkpoints {
 
     fn env(&self) -> [(&str, &OsStr); 1] {
         [("GIT_INDEX_FILE", self.index.as_os_str())]
+    }
+}
+
+fn seed_from(workspace: &Path, layout: &crate::diff::Layout, index: &Path) {
+    let at_top = dunce::canonicalize(workspace).is_ok_and(|path| path == layout.top);
+    if at_top && std::fs::copy(layout.index(), index).is_err() {
+        drop(std::fs::remove_file(index));
     }
 }
 

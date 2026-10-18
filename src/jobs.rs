@@ -55,13 +55,8 @@ impl Status {
     }
 }
 
-pub(crate) fn dir(workspace: &Path) -> PathBuf {
-    workspace.join(".summonr").join("jobs")
-}
-
 pub(crate) fn prepare(workspace: &Path) -> Result<(String, PathBuf, PathBuf, PathBuf)> {
-    let root = dir(workspace);
-    std::fs::create_dir_all(&root)?;
+    let root = place::made(workspace)?;
     let ignore = root.join(".gitignore");
     if !ignore.exists() {
         store::write(&ignore, "*\n", store::Durability::Renamed)?;
@@ -102,8 +97,11 @@ pub fn live(workspace: &Path) -> Vec<String> {
         })
         .map(|record| {
             format!(
-                "{} `{}` (pid {}; stop it with run_command job kill, or delete .summonr/jobs/{}.json)",
-                record.id, record.command, record.pid, record.id
+                "{} `{}` (pid {}; stop it with run_command job kill, or delete {})",
+                record.id,
+                record.command,
+                record.pid,
+                dir(workspace).join(format!("{}.json", record.id)).display()
             )
         })
         .collect()
@@ -347,6 +345,10 @@ fn start_secs(pid: u32) -> Option<u64> {
 fn start_secs(_pid: u32) -> Option<u64> {
     None
 }
+
+#[path = "jobs/place.rs"]
+mod place;
+pub(crate) use place::dir;
 
 #[cfg(windows)]
 #[path = "jobs/windows.rs"]

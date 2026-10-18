@@ -252,6 +252,41 @@ fn the_tool_command_runs_a_module_tool_that_is_switched_on() {
 
 #[cfg(unix)]
 #[test]
+fn a_background_command_runs_in_a_workspace_it_cannot_write() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = tempfile::tempdir().unwrap();
+    let workspace = home.path().join("app");
+    std::fs::create_dir_all(home.path().join(".summonr")).unwrap();
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let tool = |args: &str| {
+        let output = isolated(env!("CARGO_BIN_EXE_summonr"), home.path())
+            .current_dir(&workspace)
+            .args(["tool", "run_command", args])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&output.stdout).into_owned()
+            + &String::from_utf8_lossy(&output.stderr);
+        (output.status.success(), text)
+    };
+    let (started, text) = tool(r#"{"command":"echo landed","background":true}"#);
+    let id = text
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .map(str::to_string);
+    let (waited, status) = tool(&format!(
+        r#"{{"job":"{}"}}"#,
+        id.clone().unwrap_or_default()
+    ));
+    std::fs::set_permissions(&workspace, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(started && id.is_some(), "{text}");
+    assert!(waited && status.contains("landed"), "{status}");
+    assert!(!workspace.join(".summonr").exists());
+}
+
+#[cfg(unix)]
+#[test]
 fn a_child_that_exits_before_reading_does_not_end_summonr() {
     let home = tempfile::tempdir().unwrap();
     for index in 0..20 {

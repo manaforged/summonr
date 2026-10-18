@@ -2,6 +2,7 @@ import shlex
 from pathlib import PurePosixPath
 from typing import override
 
+import image_user
 from harbor.agents.installed.base import with_prompt_template
 from harbor.agents.installed.grok_build import GrokBuild
 from harbor.environments.base import BaseEnvironment
@@ -16,8 +17,9 @@ class GrokPlan(GrokBuild):
     @with_prompt_template
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         marker = f"/tmp/.grok-plan-{self._session_id}"
+        logins = await image_user.lend(self, environment, LOGINS)
         env = {
-            "GROK_AUTH_PATH": (LOGINS / "auth.json").as_posix(),
+            "GROK_AUTH_PATH": (logins / "auth.json").as_posix(),
             "GROK_DISABLE_AUTOUPDATER": "1",
             "GROK_LOG_FILE": (EnvironmentPaths.agent_dir / self._CLI_LOG_FILENAME).as_posix(),
             "RUST_LOG": self._get_env("RUST_LOG") or "warn",
@@ -30,6 +32,7 @@ class GrokPlan(GrokBuild):
                 env=env,
             )
         finally:
+            await image_user.give_back(self, environment, LOGINS, logins)
             await self.exec_as_root(
                 environment,
                 command=(

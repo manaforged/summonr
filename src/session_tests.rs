@@ -203,8 +203,94 @@ fn usage_reads_an_unchanged_journal_once() {
     let prices = std::collections::BTreeMap::new();
     let first = spend(home.path(), &[], &prices).unwrap();
     assert_eq!(first.iter().map(|row| row.input).sum::<u64>(), 120);
-    std::fs::write(&journal, " ".repeat(body.len())).unwrap();
+    std::fs::write(&journal, format!("{}\n", " ".repeat(body.len() - 1))).unwrap();
     let again = spend(home.path(), &[], &prices).unwrap();
     assert_eq!(again.iter().map(|row| row.input).sum::<u64>(), 120);
     assert_eq!(again.len(), first.len());
+}
+
+fn torn(line: &str) -> String {
+    format!("{}xx", &line[..line.len() - 2])
+}
+
+#[test]
+fn usage_reads_a_journal_again_after_a_torn_tail_is_healed_to_the_same_size() {
+    let home = tempfile::tempdir().unwrap();
+    let id = "000000000000000018d2297ad34281e5";
+    let journal = crate::durable::log::sessions_dir(home.path())
+        .join(id)
+        .join("session.jsonl");
+    std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+    let head = format!(
+        "{}\n{}\n",
+        r#"{"kind":"session","id":"000000000000000018d2297ad34281e5","model":"glm","system":"","workspace":"/work/delta"}"#,
+        r#"{"kind":"assistant","text":"ok","usage":{"input":120,"output":7,"cached":60,"millis":900},"model":"glm","at":3600000}"#
+    );
+    let next = format!(
+        "{}\n",
+        r#"{"kind":"assistant","text":"on","usage":{"input":30,"output":2,"cached":0,"millis":90},"model":"glm","at":3600000}"#
+    );
+    let prices = std::collections::BTreeMap::new();
+    std::fs::write(&journal, format!("{head}{}", torn(&next))).unwrap();
+    let first = spend(home.path(), &[], &prices).unwrap();
+    assert_eq!(first.iter().map(|row| row.input).sum::<u64>(), 120);
+    std::fs::write(&journal, format!("{head}{next}")).unwrap();
+    let healed = spend(home.path(), &[], &prices).unwrap();
+    assert_eq!(healed.iter().map(|row| row.input).sum::<u64>(), 150);
+}
+
+#[test]
+fn a_listed_session_reads_its_first_prompt_after_a_torn_tail_is_healed() {
+    let home = tempfile::tempdir().unwrap();
+    let id = "000000000000000018d2297ad34281e6";
+    let journal = crate::durable::log::sessions_dir(home.path())
+        .join(id)
+        .join("session.jsonl");
+    std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+    let head = format!(
+        "{}\n",
+        r#"{"kind":"session","id":"000000000000000018d2297ad34281e6","model":"glm","system":"","workspace":"/work/delta"}"#
+    );
+    let prompt = format!(
+        "{}\n",
+        r#"{"kind":"user","text":"trace the leak","start":true}"#
+    );
+    std::fs::write(&journal, format!("{head}{}", torn(&prompt))).unwrap();
+    let first = super::catalog::list_in(home.path()).unwrap();
+    assert_eq!(first[0].preview, "");
+    std::fs::write(&journal, format!("{head}{prompt}")).unwrap();
+    let healed = super::catalog::list_in(home.path()).unwrap();
+    assert_eq!(healed[0].preview, "trace the leak");
+}
+
+#[test]
+fn usage_counts_an_appended_turn_once() {
+    let home = tempfile::tempdir().unwrap();
+    let id = "000000000000000018d2297ad34281e7";
+    let journal = crate::durable::log::sessions_dir(home.path())
+        .join(id)
+        .join("session.jsonl");
+    std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+    let head = format!(
+        "{}\n{}\n",
+        r#"{"kind":"session","id":"000000000000000018d2297ad34281e7","model":"glm","system":"","workspace":"/work/eta"}"#,
+        r#"{"kind":"assistant","text":"ok","usage":{"input":120,"output":7,"cached":60,"millis":900},"model":"","at":3600000}"#
+    );
+    let next = format!(
+        "{}\n",
+        r#"{"kind":"assistant","text":"on","usage":{"input":30,"output":2,"cached":0,"millis":90},"model":"","at":3600000}"#
+    );
+    let prices = std::collections::BTreeMap::new();
+    let total = |rows: &[super::usage::Spend]| rows.iter().map(|row| row.input).sum::<u64>();
+    std::fs::write(&journal, &head).unwrap();
+    assert_eq!(total(&spend(home.path(), &[], &prices).unwrap()), 120);
+    std::fs::write(&journal, format!("{head}{next}")).unwrap();
+    let grown = spend(home.path(), &[], &prices).unwrap();
+    assert_eq!(total(&grown), 150);
+    assert!(
+        grown.iter().all(|row| row.model == "glm"),
+        "{:?}",
+        grown.iter().map(|row| &row.model).collect::<Vec<_>>()
+    );
+    assert_eq!(total(&spend(home.path(), &[], &prices).unwrap()), 150);
 }

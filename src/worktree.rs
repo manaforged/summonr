@@ -13,7 +13,7 @@ pub(crate) use land::{Landing, reconcile_children};
 
 const COMMIT_MAX: u64 = 5 * 1024 * 1024;
 
-fn worktree_id(branch: &str) -> Option<&str> {
+pub(crate) fn worktree_id(branch: &str) -> Option<&str> {
     branch
         .strip_prefix("summonr/")
         .or_else(|| branch.strip_prefix("summon/"))
@@ -350,4 +350,4 @@ fn new_id() -> String {
 
 #[cfg(test)]
 #[path = "worktree_tests.rs"]
-mod tests;
+pub(crate) mod tests;

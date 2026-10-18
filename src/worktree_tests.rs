@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-fn git(dir: &Path, args: &[&str]) {
+pub(crate) fn git(dir: &Path, args: &[&str]) {
     let status = Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -14,7 +14,7 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "{args:?}");
 }
 
-fn repo() -> (tempfile::TempDir, std::path::PathBuf) {
+pub(crate) fn repo() -> (tempfile::TempDir, std::path::PathBuf) {
     let root = tempfile::tempdir().unwrap();
     let primary = root.path().join("repo");
     std::fs::create_dir(&primary).unwrap();

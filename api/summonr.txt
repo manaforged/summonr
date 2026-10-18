@@ -1246,6 +1246,7 @@ pub fn summonr::resolve_endpoint(name: core::option::Option<&str>, model: core::
 pub fn summonr::resolve_session(id: &str) -> summonr::Result<std::path::PathBuf>
 pub fn summonr::revision() -> &'static str
 pub async fn summonr::run_tool(workspace: impl core::convert::AsRef<std::path::Path>, name: &str, arguments: &str) -> summonr::Result<summonr::ToolResult>
+pub fn summonr::session_info(path: std::path::PathBuf) -> summonr::session::SessionInfo
 pub fn summonr::set_default_endpoint(name: &str, model: core::option::Option<&str>) -> summonr::Result<alloc::string::String>
 pub fn summonr::short(id: &str) -> &str
 pub fn summonr::stop_children()
@@ -1255,6 +1256,7 @@ pub fn summonr::system_prompt(workspace: &std::path::Path, sources: summonr::Sou
 pub fn summonr::tilde(path: &std::path::Path) -> alloc::string::String
 pub fn summonr::uninstall_plugin(plugin_name: &str) -> summonr::Result<bool>
 pub fn summonr::vision_endpoint() -> summonr::Result<core::option::Option<summonr::Endpoint>>
+pub fn summonr::worktree_at(cwd: &std::path::Path) -> core::option::Option<summonr::Tree>
 pub fn summonr::worktree_status(cwd: &std::path::Path) -> summonr::Result<alloc::vec::Vec<summonr::worktree::Status>>
 pub type summonr::McpBoard = alloc::sync::Arc<std::sync::poison::mutex::Mutex<alloc::sync::Weak<summonr::mcp::Hub>>>
 pub type summonr::Result<T> = core::result::Result<T, summonr::Error>

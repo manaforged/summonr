@@ -90,6 +90,7 @@
 | [`resolve_session`](#resolve_session) | fn |  |
 | [`revision`](#revision) | fn |  |
 | [`run_tool`](#run_tool) | fn |  |
+| [`session_info`](#session_info) | fn |  |
 | [`set_default_endpoint`](#set_default_endpoint) | fn |  |
 | [`short`](#short) | fn |  |
 | [`stop_children`](#stop_children) | fn |  |
@@ -99,6 +100,7 @@
 | [`tilde`](#tilde) | fn |  |
 | [`uninstall_plugin`](#uninstall_plugin) | fn |  |
 | [`vision_endpoint`](#vision_endpoint) | fn |  |
+| [`worktree_at`](#worktree_at) | fn |  |
 | [`worktree_status`](#worktree_status) | fn |  |
 | [`McpBoard`](#mcpboard) | type |  |
 | [`Result`](#result) | type |  |
@@ -1281,6 +1283,11 @@
 <pre>pub async fn <a href="#run_tool">run_tool</a>(workspace: impl AsRef&lt;Path&gt;, name: &amp;str, arguments: &amp;str) -&gt; <a href="#result">Result</a>&lt;<a href="#toolresult">ToolResult</a>&gt;</pre>
 
 
+### `session_info`
+
+<pre>pub fn <a href="#session_info">session_info</a>(path: PathBuf) -&gt; session::SessionInfo</pre>
+
+
 ### `set_default_endpoint`
 
 <pre>pub fn <a href="#set_default_endpoint">set_default_endpoint</a>(name: &amp;str, model: Option&lt;&amp;str&gt;) -&gt; <a href="#result">Result</a>&lt;String&gt;</pre>
@@ -1324,6 +1331,11 @@
 ### `vision_endpoint`
 
 <pre>pub fn <a href="#vision_endpoint">vision_endpoint</a>() -&gt; <a href="#result">Result</a>&lt;Option&lt;<a href="#endpoint">Endpoint</a>&gt;&gt;</pre>
+
+
+### `worktree_at`
+
+<pre>pub fn <a href="#worktree_at">worktree_at</a>(cwd: &amp;Path) -&gt; Option&lt;<a href="#tree">Tree</a>&gt;</pre>
 
 
 ### `worktree_status`

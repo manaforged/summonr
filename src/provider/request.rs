@@ -263,6 +263,11 @@ impl<'a> CompletionRequest<'a> {
         )
     }
 
+    pub(crate) fn shape_hash(&self) -> String {
+        let effort = self.effort.map_or("", |effort| effort.as_str());
+        crate::text::fnv64(format!("{}\n{effort}", self.prefix_hash()).as_bytes())
+    }
+
     pub(crate) fn prefix_hash(&self) -> String {
         if let Some(prefix_hash) = &self.prefix_hash {
             return prefix_hash.clone();

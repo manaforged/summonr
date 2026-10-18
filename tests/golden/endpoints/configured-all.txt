@@ -1,0 +1,28 @@
+deepseek         deepseek-flash        api.deepseek.com                    ready · key: DEEPSEEK_API_KEY
+anthropic        claude-opus-5-5       api.anthropic.com                   ready · key: ANTHROPIC_API_KEY
+zai              glm-5.3-flash         api.z.ai                            needs key · run `summonr login zai-intl` or set ZAI_API_KEY
+alibaba          qwen3.7-plus          coding-intl.dashscope.aliyuncs.com  needs key · run `summonr login qwen-plan` or set ALIBABA_CODING_PLAN_API_KEY
+kimi             k3                    api.kimi.com                        needs key · run `summonr login kimi-cn` or set KIMI_CODING_API_KEY
+grok             grok-4.7              api.x.ai                            sign in · run `summonr login grok` to sign in with SuperGrok or X Premium+ or paste a key
+copilot          gpt-5.3-codex         api.githubcopilot.com               sign in · run `summonr login copilot` for device authentication
+openai           gpt-6.1-sol           api.openai.com                      sign in · run `summonr login openai` to sign in with ChatGPT Plus or Pro or paste a key
+openrouter       openai/gpt-4o         openrouter.ai                       needs key · run `summonr login openrouter` or set OPENROUTER_API_KEY
+gemini           gemini-3.8-flash      generativelanguage.googleapis.com   needs key · run `summonr login gemini` or set GEMINI_API_KEY or GOOGLE_API_KEY
+minimax          MiniMax-M3            api.minimax.io                      needs key · run `summonr login minimax-api` or set MINIMAX_API_KEY
+tencent-plan     tc-code-latest        api.lkeap.cloud.tencent.com         needs key · run `summonr login tencent-plan` or set TENCENT_CODING_PLAN_API_KEY
+volcengine-plan  doubao-seed-evolving  ark.cn-beijing.volces.com           needs key · run `summonr login volcengine-plan` or set ARK_CODING_PLAN_API_KEY
+ollama                                 127.0.0.1:11434                     needs model · run `summonr ollama --model NAME` or set model in config.toml
+lmstudio                               127.0.0.1:1234                      needs model · run `summonr lmstudio --model NAME` or set model in config.toml
+ollama-cloud                           ollama.com                          needs key · run `summonr login ollama-cloud` or set OLLAMA_API_KEY
+together                               api.together.ai                     needs key · run `summonr login together` or set TOGETHER_API_KEY
+groq                                   api.groq.com                        needs key · run `summonr login groq` or set GROQ_API_KEY
+cerebras                               api.cerebras.ai                     needs key · run `summonr login cerebras` or set CEREBRAS_API_KEY
+mistral                                api.mistral.ai                      needs key · run `summonr login mistral` or set MISTRAL_API_KEY
+fireworks                              api.fireworks.ai                    needs key · run `summonr login fireworks` or set FIREWORKS_API_KEY
+deepinfra                              api.deepinfra.com                   needs key · run `summonr login deepinfra` or set DEEPINFRA_API_KEY
+siliconflow                            api.siliconflow.com                 needs key · run `summonr login siliconflow-intl` or set SILICONFLOW_API_KEY
+nvidia                                 integrate.api.nvidia.com            needs key · run `summonr login nvidia` or set NVIDIA_API_KEY
+huggingface                            router.huggingface.co               needs key · run `summonr login huggingface` or set HF_TOKEN
+cohere           north-mini-code-1-0   api.cohere.ai                       needs key · run `summonr login cohere` or set COHERE_API_KEY
+muse             muse-spark-1.3        api.meta.ai                         needs key · run `summonr login muse` or set MODEL_API_KEY
+opencode         glm-5.3-flash         opencode.ai                         needs key · run `summonr login opencode-zen` or set OPENCODE_API_KEY

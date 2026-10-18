@@ -121,6 +121,7 @@ impl<P: Provider> Loop<P> {
         messages.push(message);
         self.emit_records(events, emit)?;
         self.settle(pre, events, emit).await?;
+        self.session.settle_base().map_err(super::session_err)?;
         self.execute_calls(planned, calls, messages, events, emit, usage)
             .await
     }

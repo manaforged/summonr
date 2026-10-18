@@ -8,7 +8,7 @@ fn write_keeps_a_symlinked_file_shared() {
     std::fs::write(&shared, "old").unwrap();
     std::os::unix::fs::symlink(&shared, &link).unwrap();
 
-    write(&link, "rotated").unwrap();
+    write(&link, "rotated", Durability::Synced).unwrap();
 
     assert!(
         std::fs::symlink_metadata(&link)

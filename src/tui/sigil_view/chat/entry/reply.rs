@@ -1,7 +1,9 @@
+use sigil::kernel::{Cx, IntoNode, NodeId};
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Radius, Token, container,
-    markdown, signal, text,
+    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Token,
+    container, markdown, text,
 };
+use sigil::reactive::derived;
 use sigil::widgets::DiffBuilder;
 
 use super::{patch_of, patch_path, patch_view};
@@ -11,12 +13,14 @@ use crate::tui::sigil_view::look::Look;
 
 const FENCE: &str = "```";
 
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct StatLine {
     path: String,
     added: u32,
     removed: u32,
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
 enum Shown {
     Patch {
         path: Option<String>,
@@ -28,6 +32,7 @@ enum Shown {
     },
 }
 
+#[derive(Clone, PartialEq)]
 enum Part {
     Prose(String),
     Shown(Shown),
@@ -38,21 +43,62 @@ struct Fence {
     lines: Vec<String>,
 }
 
-pub(super) fn body(text: &str, app: &App) -> NodeBuilder {
-    let layout = app.model.get().prefs.diff_layout;
-    let mut column = container().layout(
-        LayoutStyle::flex_column()
-            .fill_width()
-            .gap(8.0)
-            .min_size(0.0, 0.0),
-    );
-    for part in parts(text) {
-        column = match part {
-            Part::Prose(text) => column.child(markdown(signal(text))),
-            Part::Shown(shown) => column.child(paint(shown, app, layout)),
-        };
+enum Piece {
+    Prose(Signal<Vec<Part>>, usize),
+    Shown(Box<(Shown, App, DiffLayout)>),
+}
+
+impl IntoNode for Piece {
+    fn build(self, cx: &mut Cx) -> NodeId {
+        match self {
+            Self::Prose(list, index) => markdown(derived(move || {
+                list.with(|list| match list.get(index) {
+                    Some(Part::Prose(text)) => text.clone(),
+                    _ => String::new(),
+                })
+            }))
+            .build(cx),
+            Self::Shown(shown) => {
+                let (shown, app, layout) = *shown;
+                paint(shown, &app, layout).build(cx)
+            }
+        }
     }
-    column
+}
+
+pub(super) fn body(source: Signal<String>, app: &App) -> NodeBuilder {
+    let layout = app.model.peek().prefs.diff_layout;
+    let list = derived(move || source.with(|text| parts(text)));
+    let app = app.clone();
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .gap(8.0)
+                .min_size(0.0, 0.0),
+        )
+        .children_keyed(move || {
+            list.with(|parts| {
+                parts
+                    .iter()
+                    .enumerate()
+                    .map(|(index, part)| match part {
+                        Part::Prose(_) => ((index, None), Piece::Prose(list, index)),
+                        Part::Shown(shown) => (
+                            (index, Some(fingerprint(shown))),
+                            Piece::Shown(Box::new((shown.clone(), app.clone(), layout))),
+                        ),
+                    })
+                    .collect::<Vec<_>>()
+            })
+        })
+}
+
+fn fingerprint(shown: &Shown) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    shown.hash(&mut hasher);
+    hasher.finish()
 }
 
 pub(super) fn stat_node_of(output: &str) -> Option<NodeBuilder> {

@@ -231,8 +231,8 @@ impl Client {
                         .any(|word| lower.contains(word))) =>
             {
                 let known: Vec<String> = crate::catalog::cached()
-                    .remove(&self.name)
-                    .map(|listing| listing.models.into_iter().map(|row| row.id).collect())
+                    .get(&self.name)
+                    .map(|listing| listing.models.iter().map(|row| row.id.clone()).collect())
                     .unwrap_or_default();
                 let hint = crate::endpoint::closest(model, &known, crate::endpoint::Near::Relative)
                     .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
@@ -254,13 +254,21 @@ impl Client {
     }
 
     pub async fn discover(endpoint: &crate::Endpoint) -> Result<Vec<Model>> {
-        let client = Self::connect(endpoint)?;
         if endpoint.wire == Wire::AgentSdk {
-            let mut models = client.agent_models().await?;
-            crate::catalog::enrich(&endpoint.name, None, &mut models);
-            crate::catalog::remember(&endpoint.name, models.clone())?;
-            return Ok(models);
+            let program = endpoint.base_url.as_deref().unwrap_or_default();
+            if !std::path::Path::new(program).is_file()
+                && crate::askpass::on_path(program).is_none()
+            {
+                return Err(Error::Config(format!(
+                    "{program} not found; install Claude Code and run `claude auth login`"
+                )));
+            }
+            return Ok(crate::catalog::listing(&endpoint.name).map_or_else(
+                || crate::catalog::offered(&endpoint.name, Cost::Plan),
+                |listing| listing.models,
+            ));
         }
+        let client = Self::connect(endpoint)?;
         let covered = match crate::endpoint::auth_info(&endpoint.name) {
             _ if endpoint.oauth.is_some() => Cost::Plan,
             Ok(info) if info.plan() => Cost::Plan,

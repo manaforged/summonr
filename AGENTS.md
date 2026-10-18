@@ -19,9 +19,9 @@ export ANTHROPIC_API_KEY=...
 summonr anthropic -p "say hi"
 ```
 
-With a Claude Pro or Max plan, sign in to Claude Code with `claude auth login` and use the `claude` endpoint: `summonr claude -p "say hi"`. summonr runs Claude Code for each turn and keeps its own tools, policy, and checks.
+With a Claude Pro or Max plan, sign in to Claude Code with `claude auth login` and use the `claude` endpoint: `summonr claude -p "say hi"`. summonr runs your turns through one Claude Code process per session and keeps its own tools, policy, and checks.
 
-`summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoints` lists every endpoint with its key status. Add any OpenAI-compatible server with `summonr login NAME --url URL [--model M]`, and remove it with `summonr logout NAME --remove`. The same server can be one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
+`summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoints` lists the endpoints you have set up and where each key comes from; `--all` shows the rest and `--check` tests each one. Add any OpenAI-compatible server with `summonr login NAME --url URL [--model M]`, and remove it with `summonr logout NAME --remove`. The same server can be one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
 
 ## Drive it from a script
 
@@ -72,7 +72,7 @@ summonr loads no third-party code into its process. Add capability from outside:
 
 | Add | How |
 | --- | --- |
-| A skill | `~/.summonr/skills/NAME/SKILL.md` |
+| A skill | `~/.summonr/skills/NAME/SKILL.md`; Claude Code skills in `~/.claude/skills` and `.claude/skills` load as they are |
 | An MCP server | `summonr mcp add NAME -- CMD`, or a `[mcp.NAME]` table in `~/.summonr/config.toml` |
 | A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
 | A CLI | Any program on `PATH`; the model calls it through `run_command` |

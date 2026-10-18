@@ -284,12 +284,12 @@ fn arguments(
         Some(SlashCommand::Model) => {
             let mut held: Vec<(String, crate::catalog::Model)> = if facts.is_empty() {
                 crate::catalog::cached()
-                    .into_iter()
+                    .iter()
                     .flat_map(|(name, listing)| {
                         listing
                             .models
-                            .into_iter()
-                            .map(move |model| (name.clone(), model))
+                            .iter()
+                            .map(move |model| (name.clone(), model.clone()))
                     })
                     .collect()
             } else {

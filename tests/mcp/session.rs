@@ -164,6 +164,41 @@ pub(crate) fn a_goal_run_whose_output_lands_in_the_workspace_still_passes() {
     assert_eq!(result.code, Some(0), "{}", result.stdout);
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(crate) fn a_failing_grep_check_does_not_complete_a_goal() {
+    let session = Session::new();
+    let work = session.files.path();
+    std::fs::write(work.join("notes.txt"), "present\n").expect("write the fixture");
+    std::fs::create_dir_all(work.join(".summonr")).expect("check directory");
+    std::fs::write(
+        work.join(".summonr/check.toml"),
+        "check = 'grep missing notes.txt'\n",
+    )
+    .expect("write the check");
+    let model = Model::start(vec![
+        Step::Text("fixed"),
+        Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
+    ]);
+    let budget = crate::support::slow(20).to_string();
+    let result = session.run_with(
+        &model,
+        "",
+        &["--goal", "fix it", "--max-secs", &budget, "--json"],
+        &Options {
+            work: Some(work),
+            ..Options::default()
+        },
+    );
+    assert_ne!(result.code, Some(0), "{}", result.stdout);
+    assert!(
+        !events(&result.stdout)
+            .iter()
+            .any(|event| event["type"] == "verify" && event["passed"] == true),
+        "{}",
+        result.stdout
+    );
+}
+
 pub(crate) fn a_print_run_says_its_check_was_not_run() {
     let session = Session::new();
     with_check(&session, "exit 0");

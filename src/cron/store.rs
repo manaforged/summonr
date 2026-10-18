@@ -279,7 +279,9 @@ pub(crate) fn update<T>(change: impl FnOnce(&mut Vec<Job>) -> Result<T>) -> Resu
     trim(&mut jobs)?;
     let text = toml::to_string(&Book { job: jobs })
         .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
-    store::write(&path, text)?;
+    if store::read_or_empty(&path)? != text {
+        store::write(&path, text, store::Durability::Synced)?;
+    }
     Ok(out)
 }
 

@@ -132,6 +132,7 @@ impl Worker {
         match command {
             Cmd::SetEffort(effort) => {
                 self.dial = effort;
+                self.loop_.choose_effort(effort);
                 self.loop_.set_effort(effort);
                 self.send_settings();
             }

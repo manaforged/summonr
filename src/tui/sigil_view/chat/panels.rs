@@ -30,7 +30,8 @@ pub(in crate::tui::sigil_view) fn band(app: &App) -> Option<Band> {
         });
     }
     let attached = app.attached.get();
-    if let Some(status) = busy_status(&app.model.get(), app.ticks.get()) {
+    let tick = app.ticks.get();
+    if let Some(status) = app.model.with(|model| busy_status(model, tick)) {
         return Some(Band::Busy { status, attached });
     }
     (attached > 0).then_some(Band::Attached(attached))
@@ -59,8 +60,8 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
         Band::Form { lines, review } => {
             above(super::form::form_band(app.clone(), width, lines, review))
         }
-        Band::Busy { status, attached } => {
-            let row = busy_row(&crate::text::ellipsize(&status, width));
+        Band::Busy { attached, .. } => {
+            let row = busy_row(app, width);
             if attached == 0 {
                 row
             } else {
@@ -76,7 +77,15 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
 
 pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
-    let active = sigil::reactive::derived(move || band(&update));
+    let active = sigil::reactive::derived(move || {
+        band(&update).map(|band| match band {
+            Band::Busy { attached, .. } => Band::Busy {
+                status: String::new(),
+                attached,
+            },
+            other => other,
+        })
+    });
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -92,8 +101,22 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
         })
 }
 
-fn busy_row(status: &str) -> NodeBuilder {
-    let (spinner, rest) = status.split_at(status.find(' ').unwrap_or(status.len()));
+fn busy_row(app: &App, width: usize) -> NodeBuilder {
+    let probe = app.clone();
+    let status = sigil::reactive::derived(move || {
+        let tick = probe.ticks.get();
+        probe
+            .model
+            .with(|model| busy_status(model, tick))
+            .map(|status| crate::text::ellipsize(&status, width))
+            .unwrap_or_default()
+    });
+    let split = move |head: bool| {
+        status.with(|status| {
+            let (spinner, rest) = status.split_at(status.find(' ').unwrap_or(status.len()));
+            if head { spinner } else { rest }.to_owned()
+        })
+    };
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -102,14 +125,14 @@ fn busy_row(status: &str) -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .child(
-            sigil::kernel::text(spinner.to_owned())
+            sigil::kernel::text(move || split(true))
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Accent),
         )
         .child(
-            sigil::kernel::text(rest.to_owned())
+            sigil::kernel::text(move || split(false))
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)

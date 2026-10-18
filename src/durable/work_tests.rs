@@ -32,7 +32,7 @@ fn todo_marked_done_cannot_finish_a_steps_plan() {
         &["cargo test".to_string()],
     )
     .unwrap();
-    work.execute(shot.clone()).unwrap();
+    work.execute(Some(shot.clone())).unwrap();
     work.apply_todos(vec![
         todo("first", TodoStatus::Done),
         todo("second", TodoStatus::Done),
@@ -50,7 +50,7 @@ fn todo_marked_done_never_overrides_the_goal_judge() {
     let shot = snapshot(dir.path(), None, None).unwrap();
     let mut work = Work::new("make the check pass", Policy::Goal {});
     work.plan = Some("plan".to_string());
-    work.execute(shot.clone()).unwrap();
+    work.execute(Some(shot.clone())).unwrap();
     work.apply_todos(vec![todo("everything", TodoStatus::Done)]);
     work.verify(shot.clone()).unwrap();
     work.verdict(
@@ -122,7 +122,7 @@ fn a_goal_stops_after_three_failed_checks() {
     let shot = snapshot(dir.path(), None, None).unwrap();
     let mut work = Work::new("make the check pass", Policy::Goal {});
     work.plan = Some("plan".to_string());
-    work.execute(shot.clone()).unwrap();
+    work.execute(Some(shot.clone())).unwrap();
     for _ in 0..3 {
         work.verify(shot.clone()).unwrap();
         work.verdict(false, Decision::Automatic).unwrap();
@@ -140,7 +140,7 @@ fn check_file_and_cache_files_are_never_touched_paths() {
     write("calc.py", "a");
     let mut work = Work::new("ship", Policy::Single);
     work.plan = Some("plan".to_string());
-    work.execute(snapshot(dir.path(), None, None).unwrap())
+    work.execute(Some(snapshot(dir.path(), None, None).unwrap()))
         .unwrap();
     write(".summonr/check.toml", "check = \"bb\"\n");
     write("calc.py", "bb");

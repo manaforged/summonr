@@ -5,8 +5,19 @@ impl SessionDriver {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
         }
-        let previous = self.work.as_ref().and_then(|work| work.base.as_ref());
-        let capture = self.snapshot(previous)?;
+        let capture = if self.unchanged_turn() {
+            drop(self.base.take());
+            self.work
+                .as_mut()
+                .ok_or(DriverError::NoWork)?
+                .base
+                .get_or_insert_with(Snapshot::default)
+                .clone()
+        } else {
+            self.settle_base()?;
+            let base = self.work.as_ref().and_then(|work| work.base.clone());
+            self.snapshot(base.as_ref())?
+        };
         let paths = self
             .work
             .as_mut()
@@ -16,18 +27,25 @@ impl SessionDriver {
         Ok(paths)
     }
 
-    pub(crate) fn prepare_verdict(&self, passed: bool) -> Result<Verdict, DriverError> {
+    pub(crate) fn prepare_verdict(&mut self, passed: bool) -> Result<Verdict, DriverError> {
         let candidate = self
             .work
             .as_ref()
             .and_then(|work| work.candidate.as_ref())
-            .map(|candidate| &candidate.snapshot);
-        let now = self.snapshot(candidate)?;
-        let stable = candidate.is_some_and(|candidate| *candidate == now);
+            .map(|candidate| candidate.snapshot.clone());
+        let now = self.snapshot(candidate.as_ref())?;
+        let stable = candidate.is_some_and(|candidate| candidate == now);
         Ok(Verdict {
             passed: passed && stable,
             diagnostic: (!stable).then(|| "workspace changed after candidate capture".to_string()),
         })
+    }
+
+    pub(crate) fn captured_verdict(&self, passed: bool) -> Verdict {
+        Verdict {
+            passed,
+            diagnostic: None,
+        }
     }
 
     pub(crate) fn enter_review(&mut self) -> Result<(), DriverError> {

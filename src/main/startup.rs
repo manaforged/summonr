@@ -2,6 +2,8 @@
 mod classify;
 #[path = "startup/commands.rs"]
 mod commands;
+#[path = "startup/endpoints.rs"]
+mod endpoints;
 #[path = "startup/lifecycle.rs"]
 mod lifecycle;
 #[path = "startup/login.rs"]
@@ -18,7 +20,7 @@ use super::diagnostics;
 use classify::run_classify;
 use commands::{
     adopt, export_session_cmd, grep_sessions, manage_worktrees, mcp, print_diff, print_sessions,
-    print_workflows, probe_endpoints, session_path, workspace,
+    print_workflows, session_path, workspace,
 };
 use lifecycle::launch;
 use login::run_login;
@@ -165,7 +167,7 @@ async fn account(args: &Args) -> Option<Result<i32>> {
         return Some(run_classify(args).await);
     }
     if args.list {
-        return Some(probe_endpoints().await.map(|()| 0));
+        return Some(endpoints::list(args.all, args.live).await.map(|()| 0));
     }
     if let Some(command) = &args.mcp {
         return Some(mcp(command, args.json).await.map(|()| 0));

@@ -1,5 +1,6 @@
 use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, glass, overlay};
-use super::space::{PLATE, STAR_BRIGHT};
+use super::mark::Shimmer;
+use super::space::{PLATE, Plate, STAR_BRIGHT};
 use super::*;
 use sigil::prelude::Paint;
 
@@ -61,28 +62,28 @@ fn place(
     }
 }
 
-pub(in crate::tui::sigil_view) fn compose(
-    cells: &mut [Cell],
-    cols: u16,
-    rows: u16,
-    app: &App,
-) -> [u16; 4] {
-    let width = usize::from(cols);
-    if width == 0 || rows == 0 {
-        return [0; 4];
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(in crate::tui::sigil_view) struct Composed {
+    pub(in crate::tui::sigil_view) plate: Plate,
+    pub(in crate::tui::sigil_view) shimmer: Option<Shimmer>,
+}
+
+pub(in crate::tui::sigil_view) fn compose(cols: u16, rows: u16, app: &App) -> Composed {
+    if cols == 0 || rows == 0 {
+        return Composed::default();
     }
     let model = app.model.get();
     let facts = facts(&model, app);
     let card_kind = fitting(cols, rows, &facts);
-    let [body_width, body_rows] = cover(card_kind, &facts);
+    let [body_width, body_rows] = body(cols, card_kind, &facts);
     let [body_x, body_y, card_x, card_y, card_width] = layout(cols, rows, body_width, body_rows);
     let card = [
-        card_x + 1,
-        card_y + 1,
-        card_width.saturating_sub(2),
-        (body_rows + 1).min(rows.saturating_sub(card_y + 1)),
+        card_x,
+        card_y,
+        card_width,
+        (body_rows + 2).min(rows.saturating_sub(card_y)),
     ];
-    glass(cells, cols, card);
+    let mut plate = glass(card);
     let revealed =
         app.splash_revealed.peek() || !model.prefs.animations || !app.draft.peek().is_empty();
     let elapsed = if revealed {
@@ -103,24 +104,26 @@ pub(in crate::tui::sigil_view) fn compose(
     for (row, (label, value)) in facts.iter().enumerate().filter(|_| elapsed >= FACTS_MS) {
         let [x, y] = placed.facts;
         let y = y + row as u16;
-        overlay(cells, cols, x, y, label, palette().dim);
+        overlay(&mut plate, x, y, label, palette().dim);
         let value = crate::text::ellipsize_start(value, value_width);
-        overlay(cells, cols, x + FACT_LABEL, y, &value, palette().gray);
+        overlay(&mut plate, x + FACT_LABEL, y, &value, palette().gray);
     }
     if let Some(at) = placed.word {
-        wordmark(cells, cols, at, elapsed);
+        wordmark(&mut plate, at, elapsed);
     }
-    if card_kind.mark() == super::Mark::Lines {
-        let clock = model.prefs.animations.then(|| {
-            u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
-        });
-        super::mark::paint(cells, cols, placed.mark, super::Mark::Lines, elapsed, clock);
-    }
+    let shimmer = (card_kind.mark() == super::Mark::Lines)
+        .then(|| super::mark::paint(&mut plate, placed.mark, super::Mark::Lines, elapsed))
+        .flatten()
+        .filter(|_| model.prefs.animations);
     drop(model);
-    card
+    Composed { plate, shimmer }
 }
 
-fn wordmark(cells: &mut [Cell], cols: u16, [x, y]: [u16; 2], elapsed: u64) {
+pub(in crate::tui::sigil_view) fn shimmer_clock(app: &App) -> u64 {
+    u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
+}
+
+fn wordmark(plate: &mut Plate, [x, y]: [u16; 2], elapsed: u64) {
     let face = palette().text;
     for (row, text) in crate::splash::logo().iter().enumerate() {
         let width = text.chars().count();
@@ -129,11 +132,10 @@ fn wordmark(cells: &mut [Cell], cols: u16, [x, y]: [u16; 2], elapsed: u64) {
             let at = [x + col as u16, y + row as u16];
             let ink = bloom(row, col, width, elapsed, face);
             if glyph == SOLID {
-                solid(cells, cols, at, ink);
+                solid(plate, at, ink);
             } else if glyph != ' ' {
                 overlay(
-                    cells,
-                    cols,
+                    plate,
                     at[0],
                     at[1],
                     &glyph.to_string(),
@@ -147,9 +149,8 @@ fn wordmark(cells: &mut [Cell], cols: u16, [x, y]: [u16; 2], elapsed: u64) {
 const SOLID: char = '█';
 const SHADE: f32 = 0.45;
 
-fn solid(cells: &mut [Cell], cols: u16, [x, y]: [u16; 2], ink: Rgba8) {
-    let index = usize::from(y) * usize::from(cols) + usize::from(x);
-    if let Some(cell) = cells.get_mut(index) {
+fn solid(plate: &mut Plate, at: [u16; 2], ink: Rgba8) {
+    if let Some(cell) = plate.cell(at) {
         cell.text = " ".into();
         cell.bg = super::ink(ink);
     }
@@ -187,6 +188,15 @@ pub(in crate::tui::sigil_view) fn fitting(cols: u16, rows: u16, facts: &[(&str, 
     } else {
         Card::Banner
     }
+}
+
+pub(in crate::tui::sigil_view) fn body(
+    cols: u16,
+    card: Card,
+    facts: &[(&str, String)],
+) -> [u16; 2] {
+    let [width, rows] = cover(card, facts);
+    [width.min(cols.saturating_sub(6)), rows]
 }
 
 pub(in crate::tui::sigil_view) fn cover(card: Card, facts: &[(&str, String)]) -> [u16; 2] {
@@ -257,22 +267,48 @@ pub(in crate::tui::sigil_view) fn bloom(
     }
 }
 
-pub(in crate::tui::sigil_view) fn placed(x: u16, y: u16, cells: &[Cell]) -> NodeBuilder {
-    runs(
-        container().layout(
+pub(in crate::tui::sigil_view) type Row = (u16, u16, Vec<Cell>);
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Run {
+    start: usize,
+    width: usize,
+    text: String,
+    surface: Rgba8,
+    ink: Rgba8,
+    bold: bool,
+}
+
+pub(in crate::tui::sigil_view) fn placed(
+    [x, y, width]: [u16; 3],
+    row: sigil::prelude::Signal<Option<Row>>,
+) -> NodeBuilder {
+    container()
+        .layout(
             LayoutStyle::flex_row()
                 .position(Position::Absolute)
                 .inset_left(f32::from(x) * metrics().w)
                 .inset_top(f32::from(y) * metrics().h)
-                .width(cells.len() as f32 * metrics().w)
+                .width(f32::from(width) * metrics().w)
                 .height(metrics().h)
                 .gap(0.0),
-        ),
-        cells,
-    )
+        )
+        .children_keyed(move || {
+            row.with(|row| {
+                row.as_ref()
+                    .map_or_else(Vec::new, |(_, _, cells)| runs(cells))
+            })
+            .into_iter()
+            .map(|run| {
+                let node = node(&run);
+                (run, node)
+            })
+            .collect::<Vec<_>>()
+        })
 }
 
-fn runs(mut parent: NodeBuilder, cells: &[Cell]) -> NodeBuilder {
+fn runs(cells: &[Cell]) -> Vec<Run> {
+    let mut found = Vec::new();
     let mut start = 0;
     while start < cells.len() {
         let cell = &cells[start];
@@ -285,31 +321,37 @@ fn runs(mut parent: NodeBuilder, cells: &[Cell]) -> NodeBuilder {
         {
             end += 1;
         }
-        parent = parent.child(run(&cells[start..end]));
+        found.push(Run {
+            start,
+            width: end - start,
+            text: cells[start..end]
+                .iter()
+                .map(|cell| cell.text.as_str())
+                .collect(),
+            surface: shown(cell.bg, palette().base),
+            ink: shown(cell.fg, palette().text),
+            bold: cell.bold,
+        });
         start = end;
     }
-    parent
+    found
 }
 
-fn run(cells: &[Cell]) -> NodeBuilder {
-    let cell = &cells[0];
-    let text: String = cells.iter().map(|cell| cell.text.as_str()).collect();
-    let surface = shown(cell.bg, palette().base);
-    let ink = shown(cell.fg, palette().text);
-    let weight = if cell.bold { 700 } else { 400 };
+fn node(run: &Run) -> NodeBuilder {
+    let weight = if run.bold { 700 } else { 400 };
     container()
         .layout(
             LayoutStyle::flex_row()
-                .width(cells.len() as f32 * metrics().w)
+                .width(run.width as f32 * metrics().w)
                 .height(metrics().h),
         )
-        .bg(surface)
+        .bg(run.surface)
         .child(
-            sigil::kernel::text(text)
+            sigil::kernel::text(run.text.clone())
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .font_family(sigil::prelude::FontFamily::Mono)
                 .font_weight(weight)
-                .text_color(ink),
+                .text_color(run.ink),
         )
 }

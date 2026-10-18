@@ -258,3 +258,23 @@ fn status_without_the_tick_says_nothing_fires() {
     let on = super::view::status(Some(Path::new("/tick")), 1, Some(next));
     assert!(on.ends_with("next: 2026-12-01 09:00 CST"), "{on}");
 }
+
+#[test]
+fn a_quiet_tick_leaves_the_job_book_alone() {
+    super::store::update(|jobs| {
+        jobs.retain(|job| job.name != "quiet-probe");
+        let mut probe = job("0 3 * * *", 1);
+        probe.name = "quiet-probe".to_string();
+        jobs.push(probe);
+        Ok(())
+    })
+    .unwrap();
+    let book = super::store::dir().unwrap().join("jobs.toml");
+    let before = std::fs::metadata(&book).unwrap().modified().unwrap();
+    super::store::update(|_| Ok(())).unwrap();
+    let after = std::fs::metadata(&book).unwrap().modified().unwrap();
+    assert_eq!(
+        before, after,
+        "an update that changed nothing rewrote the job book"
+    );
+}

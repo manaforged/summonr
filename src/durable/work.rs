@@ -290,9 +290,13 @@ impl Work {
                 Err(error) => return Err(error),
             }
         } else if trees {
-            store::write(&sidecar, serde_json::to_vec(&self.trees())?)?;
+            store::write(
+                &sidecar,
+                serde_json::to_vec(&self.trees())?,
+                store::Durability::Renamed,
+            )?;
         }
-        store::write(path, serde_json::to_vec(self)?)
+        store::write(path, serde_json::to_vec(self)?, store::Durability::Renamed)
     }
 
     fn repair_steps(&mut self) {

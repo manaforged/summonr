@@ -249,7 +249,7 @@ impl Mailbox {
         let Ok(body) = serde_json::to_string(&record) else {
             return;
         };
-        if store::write(&self.record_path(), body).is_err() {
+        if store::write(&self.record_path(), body, store::Durability::Renamed).is_err() {
             return;
         }
         self.last_seen_write(now());

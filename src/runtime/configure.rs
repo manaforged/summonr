@@ -131,6 +131,7 @@ impl<P: Provider> Loop<P> {
             context_window: None,
             probe: None,
             effort: None,
+            chosen_effort: None,
             turn_started: 0,
             summary_wait: 0,
             workspace: dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf()),
@@ -243,6 +244,13 @@ impl<P: Provider> Loop<P> {
 
     pub fn set_effort(&mut self, effort: Option<crate::provider::Effort>) {
         self.effort = effort;
+    }
+
+    pub fn choose_effort(&mut self, effort: Option<crate::provider::Effort>) {
+        self.chosen_effort = effort;
+        if effort.is_some() {
+            self.effort = effort;
+        }
     }
 
     #[must_use]

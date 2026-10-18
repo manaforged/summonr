@@ -64,7 +64,7 @@ pub(crate) fn prepare(workspace: &Path) -> Result<(String, PathBuf, PathBuf, Pat
     std::fs::create_dir_all(&root)?;
     let ignore = root.join(".gitignore");
     if !ignore.exists() {
-        store::write(&ignore, "*\n")?;
+        store::write(&ignore, "*\n", store::Durability::Renamed)?;
     }
     let id = new_id()?;
     Ok((
@@ -76,7 +76,11 @@ pub(crate) fn prepare(workspace: &Path) -> Result<(String, PathBuf, PathBuf, Pat
 }
 
 pub(crate) fn write(path: &Path, record: &Record) -> Result<()> {
-    store::write(path, serde_json::to_string(record)?)?;
+    store::write(
+        path,
+        serde_json::to_string(record)?,
+        store::Durability::Renamed,
+    )?;
     Ok(())
 }
 
@@ -235,7 +239,7 @@ pub(crate) fn stamp(
 }
 
 pub(crate) fn write_killed(path: &Path) -> Result<()> {
-    store::write(path, format!("{KILLED}\n"))?;
+    store::write(path, format!("{KILLED}\n"), store::Durability::Renamed)?;
     Ok(())
 }
 

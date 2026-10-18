@@ -360,7 +360,7 @@ fn the_models_catalog_switch_keeps_endpoints_off_the_network() {
     .unwrap();
     let output = isolated(env!("CARGO_BIN_EXE_summonr"), home)
         .env("SUMMONR_MODELS_URL", &url)
-        .arg("endpoints")
+        .args(["endpoints", "--check"])
         .stdin(Stdio::null())
         .output()
         .unwrap();

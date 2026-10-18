@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use super::galaxy::field;
 use super::space::{DOT, braille, hash, index, under};
@@ -54,33 +56,67 @@ struct Lit {
 }
 
 pub(super) fn still(cols: u16, rows: u16, seed: u64) -> Vec<Shine> {
-    let field = field(cols, rows, seed);
-    catalogue(cols, rows, seed)
-        .into_iter()
-        .filter(|(_, lit)| lit.twinkle.is_none())
-        .map(|((x, y), lit)| shine(x, y, &lit, under(&field[index(cols, x, y)]), 1.0))
+    sky(cols, rows, seed)
+        .iter()
+        .filter(|star| star.lit.twinkle.is_none())
+        .map(|star| shine(star, 1.0))
         .collect()
 }
 
 pub(super) fn twinkling(cols: u16, rows: u16, beat: f64, seed: u64) -> Vec<Shine> {
-    let field = field(cols, rows, seed);
-    catalogue(cols, rows, seed)
-        .into_iter()
-        .filter_map(|((x, y), lit)| {
-            let [period, phase] = lit.twinkle?;
+    sky(cols, rows, seed)
+        .iter()
+        .filter_map(|star| {
+            let [period, phase] = star.lit.twinkle?;
             let wave = 0.5 + 0.5 * (beat as f32 / period * std::f32::consts::TAU + phase).sin();
             let level = TWINKLE[((wave * TWINKLE.len() as f32) as usize).min(TWINKLE.len() - 1)];
-            Some(shine(x, y, &lit, under(&field[index(cols, x, y)]), level))
+            Some(shine(star, level))
         })
         .collect()
 }
 
 pub(super) fn bright(cols: u16, rows: u16, seed: u64) -> Vec<(u16, u16)> {
-    catalogue(cols, rows, seed)
-        .into_iter()
-        .filter(|(_, lit)| GLYPH[lit.size].is_some())
-        .map(|(at, _)| at)
+    sky(cols, rows, seed)
+        .iter()
+        .filter(|star| GLYPH[star.lit.size].is_some())
+        .map(|star| (star.x, star.y))
         .collect()
+}
+
+struct Star {
+    x: u16,
+    y: u16,
+    lit: Lit,
+    bg: Rgba8,
+}
+
+type Cached = ((u16, u16, u64), Rc<[Star]>);
+
+thread_local! {
+    static SKY: RefCell<Option<Cached>> = const { RefCell::new(None) };
+}
+
+fn sky(cols: u16, rows: u16, seed: u64) -> Rc<[Star]> {
+    let key = (cols, rows, seed);
+    SKY.with_borrow_mut(|cached| {
+        if let Some((held, sky)) = cached.as_ref()
+            && *held == key
+        {
+            return sky.clone();
+        }
+        let field = field(cols, rows, seed);
+        let sky: Rc<[Star]> = catalogue(cols, rows, seed)
+            .into_iter()
+            .map(|((x, y), lit)| Star {
+                x,
+                y,
+                lit,
+                bg: under(&field[index(cols, x, y)]),
+            })
+            .collect();
+        *cached = Some((key, sky.clone()));
+        sky
+    })
 }
 
 fn catalogue(cols: u16, rows: u16, seed: u64) -> BTreeMap<(u16, u16), Lit> {
@@ -126,13 +162,13 @@ fn catalogue(cols: u16, rows: u16, seed: u64) -> BTreeMap<(u16, u16), Lit> {
     lit
 }
 
-fn shine(x: u16, y: u16, lit: &Lit, bg: Rgba8, level: f32) -> Shine {
+fn shine(star: &Star, level: f32) -> Shine {
     Shine {
-        x,
-        y,
-        text: GLYPH[lit.size].unwrap_or_else(|| braille(lit.bits)),
-        fg: blend(bg, lit.tint, lit.light * level),
-        bg,
+        x: star.x,
+        y: star.y,
+        text: GLYPH[star.lit.size].unwrap_or_else(|| braille(star.lit.bits)),
+        fg: blend(star.bg, star.lit.tint, star.lit.light * level),
+        bg: star.bg,
     }
 }
 

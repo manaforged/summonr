@@ -62,7 +62,11 @@ fn update(
             None => seat.key(),
         })
         .collect();
-    store::write(&path, serde_json::to_string(&rows)?)?;
+    store::write(
+        &path,
+        serde_json::to_string(&rows)?,
+        store::Durability::Renamed,
+    )?;
     drop(held);
     Ok(())
 }

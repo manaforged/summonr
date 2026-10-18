@@ -17,6 +17,7 @@ pub(super) struct Args {
     pub(super) effort: Option<summonr::Effort>,
     pub(super) json: bool,
     pub(super) list: bool,
+    pub(super) live: bool,
     pub(super) list_sessions: bool,
     pub(super) grep: Option<String>,
     pub(super) logs: bool,
@@ -269,15 +270,16 @@ impl Args {
 }
 
 fn misplaced(option: &str) -> Error {
-    Error::Config(
-        SCOPED
-            .iter()
-            .find(|(flag, ..)| *flag == option)
-            .map_or_else(
-                || format!("unknown option `{option}`"),
-                |(_, verb, ..)| format!("`{option}` works only after `summonr {verb}`"),
-            ),
-    )
+    let verbs: Vec<String> = SCOPED
+        .iter()
+        .filter(|(flag, ..)| *flag == option)
+        .map(|(_, verb, ..)| format!("`summonr {verb}`"))
+        .collect();
+    Error::Config(if verbs.is_empty() {
+        format!("unknown option `{option}`")
+    } else {
+        format!("`{option}` works only after {}", verbs.join(" or "))
+    })
 }
 
 fn unlisted(login: bool) -> &'static str {

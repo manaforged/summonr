@@ -19,7 +19,7 @@ You get a reply within 7 days. After a fix is released, the advisory is publishe
 summonr sends no telemetry. It connects only to:
 
 - The endpoint you run, and the sign-in pages of a provider when you sign in to it.
-- `https://models.dev/api.json` when the `/model` picker or `summonr endpoints` lists models.
+- `https://models.dev/api.json` when the `/model` picker or `summonr endpoints` lists models; `models_catalog = false` in `~/.summonr/config.toml` turns it off.
 - The search engines the web tools use, when the model searches the web or fetches a page.
 - MCP servers, hooks, and gateways that you configure, such as Telegram for `summonr gateway telegram`.
 

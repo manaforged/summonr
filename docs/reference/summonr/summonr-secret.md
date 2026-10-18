@@ -25,7 +25,6 @@
 | <code>Env</code> |  |
 | <code>File</code> |  |
 | <code>Keychain</code> |  |
-| <code>Peer(&amp;'static str)</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>
 

@@ -19,8 +19,24 @@ pub fn prune(keep: Option<&str>) {
             .map_or(crate::limits::limits().session_retain(), |file| {
                 file.sessions.retain()
             });
-        prune_in(&home, retain, keep.as_deref(), SystemTime::now());
+        let period = Duration::from_secs(crate::limits::limits().session_prune_secs);
+        if due(&home, period, SystemTime::now()) {
+            prune_in(&home, retain, keep.as_deref(), SystemTime::now());
+        }
     });
+}
+
+const STAMP_FILE: &str = "pruned";
+
+pub(crate) fn due(home: &Path, period: Duration, now: SystemTime) -> bool {
+    let stamp = log::sessions_dir(home).join(STAMP_FILE);
+    let recent = std::fs::metadata(&stamp)
+        .and_then(|meta| meta.modified())
+        .is_ok_and(|at| now.duration_since(at).is_ok_and(|age| age < period));
+    if recent || !log::sessions_dir(home).is_dir() {
+        return false;
+    }
+    crate::durable::store::write(&stamp, b"", crate::durable::store::Durability::Renamed).is_ok()
 }
 
 pub(crate) fn prune_in(

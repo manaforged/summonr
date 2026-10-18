@@ -126,8 +126,8 @@ pub use provider::{Client, Effort, Usage, UserInput};
 pub use recent::default_effort;
 pub use runtime::{Budget, Loop, RunMode, StepRun, Turn};
 pub use session::{
-    ProfileScope, export as export_session, last_for, list as list_sessions, profile,
-    prune as prune_sessions, resolve_id as resolve_session, short,
+    ProfileScope, export as export_session, info as session_info, last_for, list as list_sessions,
+    profile, prune as prune_sessions, resolve_id as resolve_session, short,
 };
 
 pub const INDEX_ENTRY: &str = tools::INDEX_ENTRY;
@@ -139,7 +139,7 @@ pub use tools::{AbortCode, Event, ToolResult, attach, run_tool};
 pub use verify::{Receipt, check_commands};
 pub use worktree::{
     Tree, add as add_worktree, finish as finish_worktree, in_git, list as list_worktrees,
-    status as worktree_status, sweep as sweep_worktrees,
+    status as worktree_status, sweep as sweep_worktrees, tree_at as worktree_at,
 };
 
 #[must_use]

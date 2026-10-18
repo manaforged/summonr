@@ -22,9 +22,6 @@ fn enter_label_names_what_enter_does_per_provider_state() {
     let stored = info(true, Some(Source::File), None, LoginFlow::Key);
     assert_eq!(stored.key_action(), "replace the key");
     assert!(stored.paste_key());
-    let peer = info(true, Some(Source::Peer("opencode")), None, LoginFlow::Key);
-    assert_eq!(peer.key_action(), "set a key");
-    assert!(peer.paste_key());
     let missing = info(true, None, None, LoginFlow::Key);
     assert_eq!(missing.key_action(), "set a key");
     assert!(missing.paste_key());
@@ -241,7 +238,7 @@ fn the_new_endpoints_point_at_their_hosts() {
 }
 
 #[test]
-fn opencode_peer_ids_follow_the_table() {
+fn catalog_provider_ids_follow_the_table() {
     assert_eq!(
         super::preset::provider_ids("qwen-plan"),
         ["alibaba-coding-plan"]
@@ -345,4 +342,43 @@ fn a_chatgpt_sign_in_and_gemini_aliases_reach_current_models() {
     assert_eq!(openai.login_model.as_deref(), Some("gpt-6.1-sol"));
     let flash = super::resolve(Some("gemini"), Some("flash"), crate::Need::Config).unwrap();
     assert_eq!(flash.model, "gemini-3.8-flash");
+}
+
+#[test]
+fn another_tools_credential_files_are_never_read() {
+    let home = crate::prompt::user_home().expect("test home");
+    let opencode = home.join(".local/share/opencode");
+    std::fs::create_dir_all(&opencode).unwrap();
+    std::fs::write(
+        opencode.join("auth.json"),
+        r#"{"openrouter":{"type":"api","key":"sk-or-from-opencode"},"kimi-code-plan-global":{"type":"api","key":"kimi-from-opencode"}}"#,
+    )
+    .unwrap();
+    let kimi = home.join(".kimi-code/credentials");
+    std::fs::create_dir_all(&kimi).unwrap();
+    std::fs::write(
+        kimi.join("kimi-code.json"),
+        r#"{"access_token":"kimi-from-cli","expires_at":9999999999}"#,
+    )
+    .unwrap();
+    for name in ["openrouter", "kimi-intl"] {
+        let endpoint =
+            super::keys::fill_key(super::keys::builtin(name).expect("built-in"), false).unwrap();
+        let key = endpoint.api_key.unwrap_or_default();
+        assert!(
+            !key.contains("from-opencode") && !key.contains("from-cli"),
+            "{name} took another tool's key: {key}"
+        );
+    }
+}
+
+#[test]
+fn an_explicit_effort_reaches_the_provider_unchanged() {
+    use crate::provider::Effort;
+    let endpoint = super::resolve(Some("deepseek"), None, crate::Need::Config).unwrap();
+    assert_eq!(endpoint.effort_for(Some(Effort::None)), Some(Effort::None));
+    assert_eq!(
+        endpoint.effort_for(Some(Effort::Medium)),
+        Some(Effort::Medium)
+    );
 }

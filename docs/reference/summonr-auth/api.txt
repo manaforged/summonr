@@ -31,7 +31,6 @@ impl<'de> serde_core::de::Deserialize<'de> for summonr_auth::Grant
 pub enum summonr_auth::Method
 pub summonr_auth::Method::Key(alloc::string::String)
 pub summonr_auth::Method::Login(alloc::boxed::Box<summonr_auth::Spec>)
-pub summonr_auth::Method::Peer(fn(&str) -> core::option::Option<alloc::string::String>, alloc::string::String)
 impl core::clone::Clone for summonr_auth::Method
 impl core::fmt::Debug for summonr_auth::Method
 pub enum summonr_auth::Scheme

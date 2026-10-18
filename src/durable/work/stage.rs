@@ -32,7 +32,7 @@ impl Work {
         Ok(())
     }
 
-    pub(crate) fn execute(&mut self, base: Snapshot) -> Result<(), WorkError> {
+    pub(crate) fn execute(&mut self, base: Option<Snapshot>) -> Result<(), WorkError> {
         if self.plan.is_none() {
             return Err(WorkError("Execute requires a selected plan".to_string()));
         }
@@ -41,7 +41,7 @@ impl Work {
         }
         self.active = (!self.steps.is_empty()).then_some(0);
         self.status = Status::Active(Stage::Execute);
-        self.base = Some(base);
+        self.base = base;
         Ok(())
     }
 

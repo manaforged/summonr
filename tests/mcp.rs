@@ -113,6 +113,8 @@ fn main() {
         session::a_goal_run_reports_the_judge_usage_once,
         session::a_goal_run_whose_output_lands_in_the_workspace_still_passes,
         session::a_print_run_says_its_check_was_not_run,
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        session::a_failing_grep_check_does_not_complete_a_goal,
         session::forking_a_named_session_keeps_the_original_transcript,
         session::a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code,
         policy::strict_mode_denies_a_listed_tool_and_runs_an_allowed_one,

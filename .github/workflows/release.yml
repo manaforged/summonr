@@ -116,7 +116,7 @@ jobs:
         id: package
         run: |
           name="summonr-${{ matrix.target }}"
-          dir="target/${{ matrix.target }}/release"
+          dir="${CARGO_TARGET_DIR:-target}/${{ matrix.target }}/release"
           mkdir -p dist "stage/$name"
           cp README.md LICENSE CHANGELOG.md "stage/$name/"
           if [ "${{ runner.os }}" = "Windows" ]; then

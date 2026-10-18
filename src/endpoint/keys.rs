@@ -37,7 +37,7 @@ impl Endpoint {
             return Ok(Some((key, Source::Env)));
         }
         let stored = if custom { own } else { self.stored_key()? };
-        Ok(stored.or_else(|| self.peer_key(row)))
+        Ok(stored)
     }
 
     fn stored_key(&self) -> Result<Option<(String, Source)>> {
@@ -60,17 +60,6 @@ impl Endpoint {
         self.base_url
             .as_deref()
             .is_some_and(|base| trim_slash(base) == trim_slash(&row.base_url))
-    }
-
-    fn peer_key(&self, row: Option<&super::preset::Preset>) -> Option<(String, Source)> {
-        let row = row.filter(|row| self.own_base(row))?;
-        if let Some(cli) = &row.cli_token
-            && let Some(token) = (cli.read)()
-        {
-            return Some((token, Source::Peer(cli.label)));
-        }
-        let bearer = row.opencode_oauth && !matches!(self.wire, Wire::Anthropic | Wire::Gemini);
-        opencode_peer(provider_ids(&row.name), bearer).map(|key| (key, Source::Peer("opencode")))
     }
 }
 
@@ -108,39 +97,6 @@ fn fallback_key(
         endpoint.name,
         missing.replace("NAME", &endpoint.name)
     )))
-}
-
-pub(crate) fn peer_token(name: &str) -> Option<String> {
-    let file = config::file().ok()?;
-    let endpoint = seat(&file, name)?;
-    let row = preset(name).or_else(|| endpoint.base_url.as_deref().and_then(hosted));
-    endpoint.peer_key(row).map(|(key, _)| key)
-}
-
-fn opencode_peer(ids: &[&str], bearer: bool) -> Option<String> {
-    let home = crate::prompt::user_home()?;
-    let path = home.join(".local/share/opencode/auth.json");
-    let store: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-    ids.iter().find_map(|id| {
-        let entry = store.get(*id)?;
-        let token = match entry.get("type").and_then(serde_json::Value::as_str) {
-            Some("api") => entry.get("key"),
-            Some("oauth") if bearer => {
-                let expires = entry.get("expires").and_then(serde_json::Value::as_i64)?;
-                let now = i64::try_from(crate::mail::now()).ok()?.saturating_mul(1000);
-                if expires <= now + skew_millis() {
-                    return None;
-                }
-                entry.get("access")
-            }
-            _other => return None,
-        };
-        token
-            .and_then(serde_json::Value::as_str)
-            .filter(|token| !token.trim().is_empty())
-            .map(str::to_string)
-    })
 }
 
 pub(super) fn builtin(name: &str) -> Option<Endpoint> {
@@ -195,25 +151,6 @@ pub(super) fn named_model(endpoint: &str, model: &str) -> String {
     model.to_string()
 }
 
-pub(super) fn kimi_cli_token() -> Option<String> {
-    let home = crate::prompt::user_home()?;
-    let path = home.join(".kimi-code/credentials/kimi-code.json");
-    let value: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-    let expires = value
-        .get("expires_at")
-        .and_then(serde_json::Value::as_i64)?;
-    let now = i64::try_from(crate::mail::now()).ok()?;
-    if expires <= now + skew_secs() {
-        return None;
-    }
-    value
-        .get("access_token")
-        .and_then(serde_json::Value::as_str)
-        .filter(|token| !token.trim().is_empty())
-        .map(str::to_string)
-}
-
 #[cfg(not(test))]
 pub(super) fn env_key(names: &[&str]) -> Option<String> {
     names.iter().find_map(|name| {
@@ -230,12 +167,4 @@ pub(super) fn env_key(_names: &[&str]) -> Option<String> {
 
 pub(super) fn trim_slash(url: &str) -> String {
     url.trim().trim_end_matches('/').to_string()
-}
-
-fn skew_millis() -> i64 {
-    i64::try_from(crate::limits::limits().token_expiry_skew().as_millis()).unwrap_or(i64::MAX)
-}
-
-fn skew_secs() -> i64 {
-    i64::try_from(crate::limits::limits().token_expiry_skew().as_secs()).unwrap_or(i64::MAX)
 }

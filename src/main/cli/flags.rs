@@ -143,7 +143,7 @@ pub(super) const COMMANDS: [(&str, Run); 22] = [
     ("help", |_, input| exit_help(input.next().as_deref())),
 ];
 
-pub(super) const SCOPED: [Scope; 20] = [
+pub(super) const SCOPED: [Scope; 22] = [
     (
         "--stat",
         "diff",
@@ -168,6 +168,18 @@ pub(super) const SCOPED: [Scope; 20] = [
         |args, _| on(&mut args.all),
     ),
     ("--last", "profile", |args| args.profile, Args::last),
+    (
+        "--all",
+        "endpoints",
+        |args| args.list,
+        |args, _| on(&mut args.all),
+    ),
+    (
+        "--check",
+        "endpoints",
+        |args| args.list,
+        |args, _| on(&mut args.live),
+    ),
     (
         "--list",
         "install",

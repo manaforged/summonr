@@ -20,6 +20,9 @@ impl SessionDriver {
             next: 1,
             pending: Vec::new(),
             saved: AtomicU64::new(0),
+            base: None,
+            fresh: false,
+            last: None,
         };
         driver.append(Line::Session {
             id,
@@ -75,6 +78,9 @@ impl SessionDriver {
             next: 1,
             pending: Vec::new(),
             saved: AtomicU64::new(0),
+            base: None,
+            fresh: false,
+            last: None,
         };
         driver.recover()?;
         Ok(driver)

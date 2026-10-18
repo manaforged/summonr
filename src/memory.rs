@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 pub(crate) const FILE: &str = "MEMORY.md";
 const DIR: &str = "memory";
 const KEY_NAME_CHARS: usize = 40;
+const FIRST_COMMIT: &str = "first-commit";
 const OVER: &str = "; only the newest part loads; ask me to read and tidy it";
 const REPORT_END: &str = "Ask me to remember something, or edit a file above; changes to these files apply to new sessions. `memory = false` under [modules] turns memory off.";
 pub(crate) const DISABLED: &str = "Memory is off in this session, so nothing you save persists; if the user asks you to remember something, say so instead of writing a file.";
@@ -167,11 +168,9 @@ pub(crate) fn guidance(files: &[MemoryFile]) -> String {
 }
 
 fn key(memory: &Path, workspace: &Path) -> String {
-    let root = root(workspace);
-    let identity = crate::diff::git_env(workspace, &[], &["rev-list", "--max-parents=0", "HEAD"])
-        .ok()
-        .and_then(|ids| ids.lines().next().map(str::trim).map(str::to_string))
-        .filter(|id| !id.is_empty())
+    let layout = crate::diff::layout(workspace);
+    let root = root(workspace, layout.as_ref());
+    let identity = first_commit(workspace, layout.as_ref())
         .unwrap_or_else(|| root.to_string_lossy().into_owned());
     let name: String = root
         .file_name()
@@ -200,30 +199,67 @@ fn existing(memory: &Path, hash: &str) -> Option<String> {
         .find(|name| name.ends_with(&suffix))
 }
 
-fn root(workspace: &Path) -> PathBuf {
-    crate::diff::git_env(
-        workspace,
-        &[],
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )
-    .ok()
-    .filter(|dir| !dir.is_empty())
-    .map(PathBuf::from)
-    .map(|common| {
-        if common
-            .file_name()
-            .is_some_and(|name| name == crate::policy::git::GIT_DIR)
-        {
-            common.parent().map_or(common.clone(), Path::to_path_buf)
-        } else {
-            common
-        }
-    })
-    .unwrap_or_else(|| {
-        workspace
-            .canonicalize()
-            .unwrap_or_else(|_| workspace.to_path_buf())
-    })
+fn first_commit(workspace: &Path, layout: Option<&crate::diff::Layout>) -> Option<String> {
+    if !crate::diff::inside_git(workspace) {
+        return None;
+    }
+    let saved = layout.map(|layout| {
+        layout
+            .common
+            .join(crate::diff::STATE_DIR)
+            .join(FIRST_COMMIT)
+    });
+    if let Some(id) = saved
+        .as_deref()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|text| text.trim().to_string())
+        .filter(|id| !id.is_empty())
+    {
+        return Some(id);
+    }
+    let id = crate::diff::git_env(workspace, &[], &["rev-list", "--max-parents=0", "HEAD"])
+        .ok()
+        .and_then(|ids| ids.lines().next().map(str::trim).map(str::to_string))
+        .filter(|id| !id.is_empty())?;
+    if let Some(path) = saved {
+        drop(crate::durable::store::write(
+            &path,
+            format!("{id}\n"),
+            crate::durable::store::Durability::Renamed,
+        ));
+    }
+    Some(id)
+}
+
+fn root(workspace: &Path, layout: Option<&crate::diff::Layout>) -> PathBuf {
+    let common = match layout {
+        Some(layout) => Some(layout.common.clone()),
+        None if crate::diff::inside_git(workspace) => crate::diff::git_env(
+            workspace,
+            &[],
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )
+        .ok()
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from),
+        None => None,
+    };
+    common
+        .map(|common| {
+            if common
+                .file_name()
+                .is_some_and(|name| name == crate::policy::git::GIT_DIR)
+            {
+                common.parent().map_or(common.clone(), Path::to_path_buf)
+            } else {
+                common
+            }
+        })
+        .unwrap_or_else(|| {
+            workspace
+                .canonicalize()
+                .unwrap_or_else(|_| workspace.to_path_buf())
+        })
 }
 
 fn clean(text: &str, workspace: &Path) -> String {

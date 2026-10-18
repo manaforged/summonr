@@ -29,8 +29,6 @@ pub(super) struct Preset {
     pub(super) cache_ttl: Option<CacheTtl>,
     pub(super) cache_header: Option<String>,
     pub(super) cache_marks: bool,
-    pub(super) cli_token: Option<CliToken>,
-    pub(super) opencode_oauth: bool,
     pub(super) env_default: bool,
     pub(super) plan: bool,
     pub(super) off: bool,
@@ -39,16 +37,6 @@ pub(super) struct Preset {
     pub(super) start: Option<String>,
     pub(super) key_from: Vec<String>,
 }
-
-pub(super) struct CliToken {
-    pub(super) label: &'static str,
-    pub(super) read: fn() -> Option<String>,
-}
-
-pub(super) const KIMI_CLI: CliToken = CliToken {
-    label: "kimi-code",
-    read: super::keys::kimi_cli_token,
-};
 
 pub(super) fn env_default() -> Option<&'static Preset> {
     presets().find(|preset| preset.env_default)
@@ -141,10 +129,6 @@ fn login(name: &str) -> Option<fn() -> crate::config::OAuth> {
     .into_iter()
     .find(|(known, _)| *known == name)
     .map(|(_, make)| make)
-}
-
-fn cli_token(name: &str) -> Option<CliToken> {
-    (name == "kimi-code").then_some(KIMI_CLI)
 }
 
 fn wire(value: &str) -> std::result::Result<Wire, String> {

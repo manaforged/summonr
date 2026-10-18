@@ -89,6 +89,33 @@ pub(in crate::tui::sigil_view) fn moving(cols: u16, rows: u16, beat: f64, seed: 
     spots
 }
 
+pub(super) fn sky_wait(cols: u16, rows: u16, beat: f64, seed: u64) -> Option<f64> {
+    if cols == 0 || rows == 0 {
+        return None;
+    }
+    let beat = beat.max(0.0);
+    let tick = beat as u64;
+    let into = tick % SKY_PERIOD;
+    let sparkle = tick - into
+        + match into {
+            0..4 => 4,
+            4..20 => 20,
+            _ => SKY_PERIOD + 4,
+        };
+    let phase = beat % METEOR_CYCLE as f64;
+    let meteor = if phase < METEOR_FLIGHT as f64 {
+        1.0
+    } else {
+        METEOR_CYCLE as f64 - phase
+    };
+    let waits = [
+        Some(sparkle as f64 - beat),
+        Some(meteor),
+        super::stars::twinkle_wait(cols, rows, beat, seed),
+    ];
+    waits.into_iter().flatten().reduce(f64::min)
+}
+
 pub(super) fn paint_spots(scene: &mut SceneBuilder, area: Rect, spots: &[Spot]) {
     let cell = metrics();
     for spot in spots {

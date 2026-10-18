@@ -66,6 +66,7 @@ speed_window_secs = 3
 reader_window_ms = 400
 frame_window_secs = 1
 animation_ms = 40
+wake_margin_ms = 1
 spinner_ms = 100
 splash_reveal_ms = 760
 status_refresh_secs = 1

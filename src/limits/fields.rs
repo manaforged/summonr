@@ -93,6 +93,7 @@ table! {
     reader_window_ms: u64,
     frame_window_secs: u64,
     animation_ms: u64,
+    wake_margin_ms: u64,
     spinner_ms: u64,
     splash_reveal_ms: u64,
     status_refresh_secs: u64,

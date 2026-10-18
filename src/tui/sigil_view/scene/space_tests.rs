@@ -295,3 +295,27 @@ fn the_band_carries_nebula_clouds() {
         .count();
     assert!(rose > 100, "only {rose} half cells carry the nebula tint");
 }
+
+const MARGIN: f64 = 1e-3;
+
+#[test]
+fn the_sky_wakes_no_later_than_its_next_visible_change() {
+    let (cols, rows, seed) = (120, 40, 7);
+    let mut beat = 0.0_f64;
+    while beat < 600.0 {
+        let wait = super::sky_wait(cols, rows, beat, seed).expect("a sky has a next change");
+        let flying = beat % super::METEOR_CYCLE as f64 <= super::METEOR_FLIGHT as f64 + 1.0;
+        if !flying {
+            let now = super::moving(cols, rows, beat + MARGIN, seed);
+            for step in 1..16 {
+                let probe = beat + MARGIN + (wait - MARGIN) * f64::from(step) / 16.0;
+                assert!(
+                    super::moving(cols, rows, probe, seed) == now,
+                    "a star changed at {probe} before the wake at {}",
+                    beat + wait
+                );
+            }
+        }
+        beat += wait + MARGIN;
+    }
+}

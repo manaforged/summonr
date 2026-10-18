@@ -44,10 +44,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let sky = sigil::reactive::derived(move || {
         let (cols, rows) = stars.viewport.get();
         drop(stars.theme_name.get());
-        let beats = stars
-            .sky_clock
-            .get()
-            .map_or(0.0, |clock| clock.get() * beats_per_second);
+        let beats = sky_seconds(&stars) * beats_per_second;
         moving(cols, rows, beats, stars.sky)
     });
     let size = sigil::reactive::derived(move || {
@@ -83,6 +80,27 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         .child(card_rows(card))
 }
 
+fn sky_seconds(app: &App) -> f64 {
+    app.sky_clock.get().map_or(0.0, |clock| clock.get())
+}
+
+pub(in crate::tui::sigil_view) fn next_change(app: &App, seconds: f64) -> std::time::Duration {
+    let animation = crate::limits::limits().animation();
+    if !app.splash_revealed.peek() {
+        return animation;
+    }
+    let per_beat = animation.as_secs_f64().max(0.001);
+    let (cols, rows) = app.viewport.get();
+    let sky =
+        space::sky_wait(cols, rows, seconds / per_beat, app.sky).map(|beats| beats * per_beat);
+    let shimmer = mark::shimmer_wait(logo::shimmer_clock(app)) as f64 / 1000.0;
+    let wait = sky.map_or(shimmer, |sky| sky.min(shimmer));
+    let ticks = (wait / per_beat).ceil().max(1.0);
+    std::time::Duration::try_from_secs_f64(ticks * per_beat).map_or(animation, |wake| {
+        wake + crate::limits::limits().wake_margin()
+    })
+}
+
 fn card(app: App) -> sigil::prelude::Signal<Rc<[Line]>> {
     let reader = app.clone();
     let inputs = sigil::reactive::derived(move || {
@@ -101,7 +119,7 @@ fn card(app: App) -> sigil::prelude::Signal<Rc<[Line]>> {
         let _since = painter.splash_since.get();
         inputs.with(|_| ());
         if !painter.splash_revealed.get() {
-            let _reveal = painter.ticks.get();
+            let _reveal = sky_seconds(&painter);
         }
         generation = generation.wrapping_add(1);
         (
@@ -112,7 +130,7 @@ fn card(app: App) -> sigil::prelude::Signal<Rc<[Line]>> {
     let mut painted = Painted::default();
     sigil::reactive::derived(move || {
         if app.splash.get() && inputs.with(|(_, animations)| *animations) {
-            let _orbit = app.ticks.get();
+            let _orbit = sky_seconds(&app);
         }
         base.with(|(generation, composed)| {
             let mut dirty = painted.settle(*generation, composed);

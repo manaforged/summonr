@@ -153,6 +153,10 @@ impl Limits {
         millis(self.animation_ms)
     }
 
+    pub(crate) fn wake_margin(&self) -> Duration {
+        millis(self.wake_margin_ms)
+    }
+
     pub(crate) fn spinner(&self) -> Duration {
         millis(self.spinner_ms)
     }

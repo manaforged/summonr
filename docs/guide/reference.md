@@ -295,6 +295,7 @@ cache_ttl = "5m"
 | `reader_window_ms` | `400` | Stream batching window. |
 | `frame_window_secs` | `1` | Frame budget window. |
 | `animation_ms` | `40` | Animation frame period. |
+| `wake_margin_ms` | `1` | Delay added after the start screen's next visible change before it wakes. |
 | `spinner_ms` | `100` | Spinner frame period. |
 | `splash_reveal_ms` | `760` | Splash reveal time. |
 | `status_refresh_secs` | `1` | Status line refresh. |

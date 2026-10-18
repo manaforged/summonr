@@ -308,15 +308,15 @@ impl Plate {
         self.slot(at).and_then(|index| self.cells.get_mut(index))
     }
 
+    pub(super) fn cells_of(&self, index: u16) -> Option<&[Cell]> {
+        let [_, _, width, height] = self.area;
+        let start = usize::from(index) * usize::from(width);
+        (index < height).then(|| &self.cells[start..start + usize::from(width)])
+    }
+
     pub(super) fn row(&self, index: u16) -> Option<(u16, u16, Vec<Cell>)> {
-        let [x, y, width, height] = self.area;
-        (index < height).then(|| {
-            let start = usize::from(index) * usize::from(width);
-            (
-                x,
-                y + index,
-                self.cells[start..start + usize::from(width)].to_vec(),
-            )
-        })
+        let [x, y, ..] = self.area;
+        self.cells_of(index)
+            .map(|cells| (x, y + index, cells.to_vec()))
     }
 }

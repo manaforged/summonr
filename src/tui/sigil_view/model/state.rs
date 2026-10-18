@@ -81,6 +81,9 @@ impl Agent {
 #[derive(Clone, Default)]
 pub(in crate::tui::sigil_view) struct Entries {
     pub(super) inner: Vec<Entry>,
+    revs: Vec<u64>,
+    clock: u64,
+    asked: bool,
     pub(in crate::tui::sigil_view) stamp: u64,
 }
 
@@ -89,13 +92,94 @@ impl Entries {
         self.stamp = self.stamp.wrapping_add(1);
     }
 
+    fn tick(&mut self) -> u64 {
+        self.clock = self.clock.wrapping_add(1);
+        self.clock
+    }
+
+    fn sync(&mut self) {
+        while self.revs.len() < self.inner.len() {
+            self.asked |= matches!(self.inner[self.revs.len()], Entry::User(_));
+            let rev = self.tick();
+            self.revs.push(rev);
+        }
+        self.revs.truncate(self.inner.len());
+    }
+
+    fn reask(&mut self) {
+        self.asked = self
+            .inner
+            .iter()
+            .any(|entry| matches!(entry, Entry::User(_)));
+    }
+
+    pub(in crate::tui::sigil_view) fn rev(&self, index: usize) -> u64 {
+        self.revs.get(index).copied().unwrap_or_default()
+    }
+
+    pub(in crate::tui::sigil_view) fn asked(&self) -> bool {
+        self.asked
+            || self
+                .inner
+                .get(self.revs.len()..)
+                .unwrap_or_default()
+                .iter()
+                .any(|entry| matches!(entry, Entry::User(_)))
+    }
+
+    pub(in crate::tui::sigil_view) fn touch(&mut self, index: usize) {
+        self.sync();
+        let rev = self.tick();
+        if let Some(slot) = self.revs.get_mut(index) {
+            *slot = rev;
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn get_mut(&mut self, index: usize) -> Option<&mut Entry> {
+        self.touch(index);
+        self.inner.get_mut(index)
+    }
+
+    pub(in crate::tui::sigil_view) fn last_mut(&mut self) -> Option<&mut Entry> {
+        self.get_mut(self.inner.len().checked_sub(1)?)
+    }
+
     pub(in crate::tui::sigil_view) fn push(&mut self, entry: Entry) {
         self.inner.push(entry);
+        self.sync();
+    }
+
+    pub(in crate::tui::sigil_view) fn insert(&mut self, index: usize, entry: Entry) {
+        self.sync();
+        self.inner.insert(index, entry);
+        self.revs.truncate(index);
+        self.sync();
+    }
+
+    pub(in crate::tui::sigil_view) fn remove(&mut self, index: usize) -> Entry {
+        self.sync();
+        let entry = self.inner.remove(index);
+        self.revs.truncate(index);
+        self.sync();
+        self.reask();
+        entry
+    }
+
+    pub(in crate::tui::sigil_view) fn pop(&mut self) -> Option<Entry> {
+        self.sync();
+        let entry = self.inner.pop();
+        self.sync();
+        if matches!(entry, Some(Entry::User(_))) {
+            self.reask();
+        }
+        entry
     }
 
     pub(in crate::tui::sigil_view) fn clear(&mut self) {
         self.invalidate();
         self.inner.clear();
+        self.revs.clear();
+        self.asked = false;
     }
 }
 

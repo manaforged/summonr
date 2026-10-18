@@ -38,11 +38,6 @@ enum Part {
     Shown(Shown),
 }
 
-struct Fence {
-    opener: String,
-    lines: Vec<String>,
-}
-
 enum Piece {
     Prose(Signal<Vec<Part>>, usize),
     Shown(Box<(Shown, App, DiffLayout)>),
@@ -68,7 +63,8 @@ impl IntoNode for Piece {
 
 pub(super) fn body(source: Signal<String>, app: &App) -> NodeBuilder {
     let layout = app.model.peek().prefs.diff_layout;
-    let list = derived(move || source.with(|text| parts(text)));
+    let stream = std::cell::RefCell::new(Stream::default());
+    let list = derived(move || source.with(|text| stream.borrow_mut().parts(text)));
     let app = app.clone();
     container()
         .layout(
@@ -192,61 +188,112 @@ fn stat_head(row: &StatLine) -> NodeBuilder {
         )
 }
 
+#[cfg(test)]
 fn parts(body: &str) -> Vec<Part> {
-    let mut out = Vec::new();
-    let mut prose = Vec::new();
-    let mut fence = None;
-    for line in body.lines() {
-        fence = match fence.take() {
-            Some(open) => step_fence(open, line, &mut prose, &mut out),
-            None if is_fence(line) => Some(Fence {
-                opener: line.to_string(),
-                lines: Vec::new(),
-            }),
-            None => {
-                prose.push(line.to_string());
-                None
+    let mut parse = Parse::default();
+    parse.feed(body);
+    parse.finish()
+}
+
+#[derive(Clone)]
+struct Fence {
+    opener: String,
+    lines: Vec<String>,
+}
+
+#[derive(Clone, Default)]
+struct Parse {
+    out: Vec<Part>,
+    prose: Option<String>,
+    fence: Option<Fence>,
+}
+
+#[derive(Default)]
+struct Stream {
+    seen: String,
+    parse: Parse,
+}
+
+impl Stream {
+    fn parts(&mut self, text: &str) -> Vec<Part> {
+        if !text.starts_with(self.seen.as_str()) {
+            *self = Self::default();
+        }
+        let whole = text.rfind('\n').map_or(0, |end| end + 1);
+        if whole > self.seen.len() {
+            let fresh = &text[self.seen.len()..whole];
+            self.parse.feed(fresh);
+            self.seen.push_str(fresh);
+        }
+        let mut tail = self.parse.clone();
+        tail.feed(&text[self.seen.len()..]);
+        tail.finish()
+    }
+}
+
+impl Parse {
+    fn feed(&mut self, text: &str) {
+        for line in text.lines() {
+            self.fence = match self.fence.take() {
+                Some(open) => self.step_fence(open, line),
+                None if is_fence(line) => Some(Fence {
+                    opener: line.to_string(),
+                    lines: Vec::new(),
+                }),
+                None => {
+                    self.prose_line(line);
+                    None
+                }
+            };
+        }
+    }
+
+    fn step_fence(&mut self, mut open: Fence, line: &str) -> Option<Fence> {
+        if !is_fence(line) {
+            open.lines.push(line.to_string());
+            return Some(open);
+        }
+        if let Some(shown) = classify(&open.lines.join("\n")) {
+            self.push_prose();
+            self.out.push(Part::Shown(shown));
+        } else {
+            self.unfence(&open);
+            self.prose_line(line);
+        }
+        None
+    }
+
+    fn unfence(&mut self, open: &Fence) {
+        self.prose_line(&open.opener);
+        for line in &open.lines {
+            self.prose_line(line);
+        }
+    }
+
+    fn prose_line(&mut self, line: &str) {
+        match &mut self.prose {
+            Some(text) => {
+                text.push('\n');
+                text.push_str(line);
             }
-        };
+            None => self.prose = Some(line.to_string()),
+        }
     }
-    if let Some(open) = fence {
-        prose.push(open.opener);
-        prose.extend(open.lines);
-    }
-    push_prose(&mut prose, &mut out);
-    out
-}
 
-fn step_fence(
-    mut open: Fence,
-    line: &str,
-    prose: &mut Vec<String>,
-    out: &mut Vec<Part>,
-) -> Option<Fence> {
-    if !is_fence(line) {
-        open.lines.push(line.to_string());
-        return Some(open);
+    fn push_prose(&mut self) {
+        if let Some(text) = self.prose.take()
+            && !text.trim().is_empty()
+        {
+            self.out.push(Part::Prose(text));
+        }
     }
-    let body = open.lines.join("\n");
-    if let Some(shown) = classify(&body) {
-        push_prose(prose, out);
-        out.push(Part::Shown(shown));
-    } else {
-        prose.push(open.opener);
-        prose.extend(open.lines);
-        prose.push(line.to_string());
-    }
-    None
-}
 
-fn push_prose(prose: &mut Vec<String>, out: &mut Vec<Part>) {
-    if prose.is_empty() {
-        return;
-    }
-    let text = prose.join("\n");
-    prose.clear();
-    if !text.trim().is_empty() {
-        out.push(Part::Prose(text));
+    fn finish(mut self) -> Vec<Part> {
+        if let Some(open) = self.fence.take() {
+            self.unfence(&open);
+        }
+        self.push_prose();
+        self.out
     }
 }
 

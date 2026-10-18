@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use sigil::app::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -17,7 +19,7 @@ pub(in crate::tui::sigil_view) use input::window_area;
 
 mod logo;
 mod mark;
-pub(in crate::tui::sigil_view) use logo::{compose, placed};
+pub(in crate::tui::sigil_view) use logo::{Line, compose, placed};
 pub(in crate::tui::sigil_view) use mark::Mark;
 pub(in crate::tui::sigil_view) use space::Plate;
 pub(in crate::tui::sigil_view) use space::{GLASS, PLATE, SCRIM, VOID, moving};
@@ -81,19 +83,21 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         .child(card_rows(card))
 }
 
-fn card(app: App) -> sigil::prelude::Signal<Plate> {
+fn card(app: App) -> sigil::prelude::Signal<Rc<[Line]>> {
     let reader = app.clone();
     let inputs = sigil::reactive::derived(move || {
         let model = reader.model.get();
         (logo::facts(&model, &reader), model.prefs.animations)
     });
+    let typed = app.clone();
+    let blank = sigil::reactive::derived(move || typed.draft.with(String::is_empty));
     let painter = app.clone();
     let mut generation = 0_u64;
     let base = sigil::reactive::derived(move || {
         let (cols, rows) = painter.viewport.get();
         drop(painter.theme_name.get());
         let _backdrop = painter.backdrop.get();
-        let _draft = painter.draft.get();
+        let _blank = blank.get();
         let _since = painter.splash_since.get();
         inputs.with(|_| ());
         if !painter.splash_revealed.get() {
@@ -105,45 +109,95 @@ fn card(app: App) -> sigil::prelude::Signal<Plate> {
             sigil::reactive::untrack(|| compose(cols, rows, &painter)),
         )
     });
-    let mut seen = None;
-    let mut work = Plate::default();
-    let mut lit: Vec<[u16; 2]> = Vec::new();
+    let mut painted = Painted::default();
     sigil::reactive::derived(move || {
         if app.splash.get() && inputs.with(|(_, animations)| *animations) {
             let _orbit = app.ticks.get();
         }
         base.with(|(generation, composed)| {
-            if seen == Some(*generation) {
-                for at in lit.drain(..) {
-                    if let (Some(cell), Some(still)) = (work.cell(at), composed.plate.at(at)) {
-                        cell.clone_from(still);
-                    }
-                }
-            } else {
-                seen = Some(*generation);
-                lit.clear();
-                work.clone_from(&composed.plate);
-            }
+            let mut dirty = painted.settle(*generation, composed);
             if let Some(shimmer) = &composed.shimmer {
-                shimmer.apply(&mut work, logo::shimmer_clock(&app), &mut lit);
+                shimmer.apply(
+                    &mut painted.work,
+                    logo::shimmer_clock(&app),
+                    &mut painted.lit,
+                );
+                dirty.extend(painted.lit.iter().map(|at| at[1]));
             }
+            painted.refresh(dirty);
         });
-        work.clone()
+        Rc::<[Line]>::from(painted.lines.as_slice())
     })
 }
 
-fn card_rows(card: sigil::prelude::Signal<Plate>) -> NodeBuilder {
-    let count = sigil::reactive::derived(move || card.with(|plate| plate.area[3]));
+#[derive(Default)]
+struct Painted {
+    seen: Option<u64>,
+    work: Plate,
+    lit: Vec<[u16; 2]>,
+    lines: Vec<Line>,
+}
+
+impl Painted {
+    fn settle(&mut self, generation: u64, composed: &logo::Composed) -> Vec<u16> {
+        if self.seen == Some(generation) {
+            let mut dirty = Vec::new();
+            for at in self.lit.drain(..) {
+                if let (Some(cell), Some(still)) = (self.work.cell(at), composed.plate.at(at)) {
+                    cell.clone_from(still);
+                    dirty.push(at[1]);
+                }
+            }
+            return dirty;
+        }
+        self.seen = Some(generation);
+        self.lit.clear();
+        self.work.clone_from(&composed.plate);
+        let old = std::mem::take(&mut self.lines);
+        let work = &self.work;
+        self.lines = (0..work.area[3])
+            .filter_map(|index| work.row(index))
+            .enumerate()
+            .map(|(index, row)| match old.get(index) {
+                Some(line) if *line.0 == row => line.clone(),
+                _ => Line(Rc::new(row)),
+            })
+            .collect();
+        Vec::new()
+    }
+
+    fn refresh(&mut self, mut dirty: Vec<u16>) {
+        dirty.sort_unstable();
+        dirty.dedup();
+        for y in dirty {
+            let Some(index) = y.checked_sub(self.work.area[1]) else {
+                continue;
+            };
+            if let (Some(line), Some(cells)) = (
+                self.lines.get_mut(usize::from(index)),
+                self.work.cells_of(index),
+            ) && line.0.2.as_slice() != cells
+            {
+                *line = Line(Rc::new((line.0.0, line.0.1, cells.to_vec())));
+            }
+        }
+    }
+}
+
+fn card_rows(card: sigil::prelude::Signal<Rc<[Line]>>) -> NodeBuilder {
+    let count = sigil::reactive::derived(move || card.with(|lines| lines.len()));
     container()
         .layout(fill(LayoutStyle::block()))
         .children_reactive(move || {
             (0..count.get())
                 .map(|index| {
-                    let row = sigil::reactive::derived(move || card.with(|plate| plate.row(index)));
+                    let row = sigil::reactive::derived(move || {
+                        card.with(|lines| lines.get(index).cloned())
+                    });
                     let frame = sigil::reactive::derived(move || {
                         row.with(|row| {
                             row.as_ref()
-                                .map(|(x, y, cells)| [*x, *y, cells.len() as u16])
+                                .map(|Line(row)| [row.0, row.1, row.2.len() as u16])
                         })
                     });
                     container()

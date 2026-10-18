@@ -269,6 +269,15 @@ pub(in crate::tui::sigil_view) fn bloom(
 
 pub(in crate::tui::sigil_view) type Row = (u16, u16, Vec<Cell>);
 
+#[derive(Clone)]
+pub(in crate::tui::sigil_view) struct Line(pub(in crate::tui::sigil_view) std::rc::Rc<Row>);
+
+impl PartialEq for Line {
+    fn eq(&self, other: &Self) -> bool {
+        std::rc::Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Run {
     start: usize,
@@ -281,7 +290,7 @@ struct Run {
 
 pub(in crate::tui::sigil_view) fn placed(
     [x, y, width]: [u16; 3],
-    row: sigil::prelude::Signal<Option<Row>>,
+    row: sigil::prelude::Signal<Option<Line>>,
 ) -> NodeBuilder {
     container()
         .layout(
@@ -294,16 +303,13 @@ pub(in crate::tui::sigil_view) fn placed(
                 .gap(0.0),
         )
         .children_keyed(move || {
-            row.with(|row| {
-                row.as_ref()
-                    .map_or_else(Vec::new, |(_, _, cells)| runs(cells))
-            })
-            .into_iter()
-            .map(|run| {
-                let node = node(&run);
-                (run, node)
-            })
-            .collect::<Vec<_>>()
+            row.with(|row| row.as_ref().map_or_else(Vec::new, |Line(row)| runs(&row.2)))
+                .into_iter()
+                .map(|run| {
+                    let node = node(&run);
+                    (run, node)
+                })
+                .collect::<Vec<_>>()
         })
 }
 

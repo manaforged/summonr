@@ -122,22 +122,19 @@ pub(in crate::tui::sigil_view) fn flip(
         if event.button != Some(MouseButton::Left) {
             return;
         }
-        app.model_mut(|model| {
-            match call {
-                None => {
-                    if let Some(Entry::Tool { expanded, .. }) = model.entries.get_mut(index) {
-                        *expanded = !*expanded;
-                    }
-                }
-                Some(at) => {
-                    if let Some(Entry::ToolGroup { calls, .. }) = model.entries.get_mut(index)
-                        && let Some(call) = calls.get_mut(at)
-                    {
-                        call.expanded = !call.expanded;
-                    }
+        app.model_mut(|model| match call {
+            None => {
+                if let Some(Entry::Tool { expanded, .. }) = model.entries.get_mut(index) {
+                    *expanded = !*expanded;
                 }
             }
-            model.entries.invalidate();
+            Some(at) => {
+                if let Some(Entry::ToolGroup { calls, .. }) = model.entries.get_mut(index)
+                    && let Some(call) = calls.get_mut(at)
+                {
+                    call.expanded = !call.expanded;
+                }
+            }
         });
         event.stop_propagation();
     }

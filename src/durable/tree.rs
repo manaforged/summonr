@@ -7,6 +7,7 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -20,12 +21,12 @@ const WALK_LIMIT: usize = 20_000;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Snapshot {
-    #[serde(default)]
-    files: BTreeMap<String, Entry>,
+    #[serde(default, with = "shared")]
+    files: Arc<BTreeMap<String, Entry>>,
     #[serde(default)]
     taken: u64,
-    #[serde(default)]
-    stamps: BTreeMap<String, Stamp>,
+    #[serde(default, with = "shared")]
+    stamps: Arc<BTreeMap<String, Stamp>>,
     #[serde(skip)]
     hashed: usize,
 }
@@ -41,9 +42,9 @@ impl Eq for Snapshot {}
 impl Snapshot {
     pub(crate) fn from_files(files: BTreeMap<String, Entry>) -> Self {
         Self {
-            files,
+            files: Arc::new(files),
             taken: 0,
-            stamps: BTreeMap::new(),
+            stamps: Arc::default(),
             hashed: 0,
         }
     }
@@ -57,7 +58,7 @@ impl Hash for Snapshot {
 
 pub(crate) fn snapshot(
     root: &Path,
-    exclude: Option<&Path>,
+    exclude: &[PathBuf],
     previous: Option<&Snapshot>,
 ) -> io::Result<Snapshot> {
     let taken = SystemTime::now()
@@ -70,7 +71,8 @@ pub(crate) fn snapshot(
     let own = own_outputs();
     for relative in listing(root)? {
         let path = root.join(&relative);
-        if exclude.is_some_and(|exclude| path.starts_with(exclude)) {
+        // complexity: bounded by the summonr state directories the driver excludes
+        if exclude.iter().any(|exclude| path.starts_with(exclude)) {
             continue;
         }
         let name = relative.to_string_lossy().replace('\\', "/");
@@ -84,45 +86,11 @@ pub(crate) fn snapshot(
         }
     }
     Ok(Snapshot {
-        files,
+        files: Arc::new(files),
         taken,
-        stamps,
+        stamps: Arc::new(stamps),
         hashed,
     })
-}
-
-#[cfg(test)]
-fn remembered_at(_: &Path) -> Option<PathBuf> {
-    None
-}
-
-#[cfg(not(test))]
-fn remembered_at(root: &Path) -> Option<PathBuf> {
-    const CACHE_DIR: &str = "cache";
-    const TREES_DIR: &str = "trees";
-    let key = crate::text::fnv64(root.to_string_lossy().as_bytes());
-    crate::prompt::summonr_home().ok().map(|home| {
-        home.join(CACHE_DIR)
-            .join(TREES_DIR)
-            .join(format!("{key}.json"))
-    })
-}
-
-pub(crate) fn remembered(root: &Path) -> Option<Snapshot> {
-    serde_json::from_slice(&std::fs::read(remembered_at(root)?).ok()?).ok()
-}
-
-pub(crate) fn remember(root: &Path, snapshot: &Snapshot) {
-    if snapshot.hashed == 0 {
-        return;
-    }
-    if let (Some(path), Ok(bytes)) = (remembered_at(root), serde_json::to_vec(snapshot)) {
-        drop(crate::durable::store::write(
-            &path,
-            bytes,
-            crate::durable::store::Durability::Renamed,
-        ));
-    }
 }
 
 fn mark(
@@ -354,7 +322,11 @@ fn device_of(_: &Metadata) -> Option<u64> {
     None
 }
 
+mod cache;
 mod own;
+
+use cache::shared;
+pub(crate) use cache::{cache_dir, remember, remembered};
 
 #[cfg(all(test, unix))]
 use own::identity;

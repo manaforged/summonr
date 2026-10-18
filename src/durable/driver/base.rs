@@ -17,12 +17,15 @@ impl SessionDriver {
             .or(self.last.as_ref())
             .cloned();
         let workspace = self.workspace.clone();
-        let sessions = self.sessions_dir();
+        let excludes = self.excludes();
+        let cache = self.tree_cache();
         self.base = Some(std::thread::spawn(move || {
-            let previous = previous.or_else(|| tree::remembered(&workspace));
-            let snapshot = tree::snapshot(&workspace, sessions.as_deref(), previous.as_ref())?;
-            tree::remember(&workspace, &snapshot);
-            Ok(snapshot)
+            let previous = previous.or_else(|| {
+                cache
+                    .as_deref()
+                    .and_then(|cache| tree::remembered(cache, &workspace))
+            });
+            tree::snapshot(&workspace, &excludes, previous.as_ref())
         }));
         self.fresh = true;
     }

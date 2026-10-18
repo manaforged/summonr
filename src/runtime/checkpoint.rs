@@ -3,7 +3,10 @@ use crate::checkpoint::Checkpoints;
 use crate::durable::log::{self, Line};
 
 pub(super) type Pretask = (
-    Option<tokio::task::JoinHandle<(String, Option<String>)>>,
+    Option<(
+        tokio::task::JoinHandle<String>,
+        tokio::task::JoinHandle<Option<String>>,
+    )>,
     String,
 );
 
@@ -18,20 +21,14 @@ impl<P: Provider> Loop<P> {
     pub(super) fn checkpoint(&mut self) -> Pretask {
         let workspace = self.workspace.clone();
         let points = (self.depth == 0).then(|| self.checkpoints().cloned());
-        let task = tokio::task::spawn_blocking(move || {
-            let capture = std::thread::spawn(move || {
-                points
-                    .flatten()
-                    .and_then(|points| points.capture().err())
-                    .map(|error| error.to_string())
-            });
-            let snapshot = crate::diff::snapshot(&workspace);
-            let skipped = capture
-                .join()
-                .unwrap_or_else(|payload| std::panic::resume_unwind(payload));
-            (snapshot, skipped)
+        let capture = tokio::task::spawn_blocking(move || {
+            points
+                .flatten()
+                .and_then(|points| points.capture().err())
+                .map(|error| error.to_string())
         });
-        (Some(task), String::new())
+        let snapshot = tokio::task::spawn_blocking(move || crate::diff::snapshot(&workspace));
+        (Some((snapshot, capture)), String::new())
     }
 
     pub(super) async fn settle(
@@ -40,10 +37,10 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<String> {
-        if let Some(task) = pre.0.take() {
-            let (snapshot, skipped) = task.await.map_err(std::io::Error::from)?;
-            pre.1 = snapshot;
-            if let Some(error) = skipped {
+        if let Some((snapshot, capture)) = pre.0.take() {
+            let (snapshot, skipped) = tokio::join!(snapshot, capture);
+            pre.1 = snapshot.map_err(std::io::Error::from)?;
+            if let Some(error) = skipped.map_err(std::io::Error::from)? {
                 let text = format!("checkpoint skipped: {error}");
                 self.push_event(events, emit, Event::Note { text })?;
             }

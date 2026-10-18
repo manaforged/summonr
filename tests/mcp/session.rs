@@ -136,6 +136,24 @@ pub(crate) fn a_goal_run_reports_the_judge_usage_once() {
     assert_eq!(usage, model.requests().len(), "{}", result.stdout);
 }
 
+pub(crate) fn a_goal_met_without_tools_in_a_repository_passes() {
+    let session = Session::new();
+    std::fs::write(session.work.path().join("notes.txt"), "present\n").expect("write the fixture");
+    with_check(&session, "exit 0");
+    commit_all(&session);
+    let model = Model::start(vec![
+        Step::Text("already done"),
+        Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
+    ]);
+    let budget = crate::support::slow(20).to_string();
+    let result = session.run(
+        &model,
+        "",
+        &["--goal", "fix it", "--max-secs", &budget, "--json"],
+    );
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+}
+
 pub(crate) fn a_goal_run_whose_output_lands_in_the_workspace_still_passes() {
     let session = Session::new();
     let work = session.files.path();

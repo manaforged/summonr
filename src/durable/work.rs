@@ -281,8 +281,16 @@ impl Work {
         hasher.finish()
     }
 
+    fn durability(&self) -> store::Durability {
+        match self.policy {
+            Policy::Single => store::Durability::Renamed,
+            Policy::Steps | Policy::Goal { .. } => store::Durability::Synced,
+        }
+    }
+
     pub(crate) fn save(&self, path: &Path, trees: bool) -> io::Result<()> {
         let sidecar = path.with_extension(TREES);
+        let durability = self.durability();
         if trees && self.base.is_none() && self.candidate.is_none() {
             match std::fs::remove_file(&sidecar) {
                 Ok(()) => {}
@@ -290,13 +298,9 @@ impl Work {
                 Err(error) => return Err(error),
             }
         } else if trees {
-            store::write(
-                &sidecar,
-                serde_json::to_vec(&self.trees())?,
-                store::Durability::Renamed,
-            )?;
+            store::write(&sidecar, serde_json::to_vec(&self.trees())?, durability)?;
         }
-        store::write(path, serde_json::to_vec(self)?, store::Durability::Renamed)
+        store::write(path, serde_json::to_vec(self)?, durability)
     }
 
     fn repair_steps(&mut self) {
@@ -325,32 +329,50 @@ impl Work {
     }
 
     pub(crate) fn load(path: &Path) -> io::Result<Option<Self>> {
+        Ok(Self::read(path)?.ok())
+    }
+
+    pub(crate) fn read(path: &Path) -> io::Result<Result<Self, Option<String>>> {
         let mut work: Self = match std::fs::read(path) {
-            Ok(bytes) => serde_json::from_slice(&bytes)?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(work) => work,
+                Err(error) => {
+                    return Ok(Err(Some(format!(
+                        "{} is unreadable ({error}); the session starts without its saved Work",
+                        path.display()
+                    ))));
+                }
+            },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Err(None)),
             Err(error) => return Err(error),
         };
         work.repair_steps();
-        let trees: Trees<Snapshot> = match std::fs::read(path.with_extension(TREES)) {
-            Ok(bytes) => match serde_json::from_slice(&bytes) {
-                Ok(trees) => trees,
-                Err(_) => {
-                    let legacy: Trees<LegacyFiles> = serde_json::from_slice(&bytes)?;
-                    Trees {
-                        base: legacy.base.map(|files| Snapshot::from_files(files.0)),
-                        candidate: legacy.candidate.map(|files| Snapshot::from_files(files.0)),
-                    }
-                }
-            },
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Some(work)),
-            Err(error) => return Err(error),
+        let Some(trees) = read_trees(&path.with_extension(TREES))? else {
+            return Ok(Ok(work));
         };
         work.base = trees.base;
         if let Some(candidate) = &mut work.candidate {
             candidate.snapshot = trees.candidate.unwrap_or_default();
         }
-        Ok(Some(work))
+        Ok(Ok(work))
     }
+}
+
+fn read_trees(path: &Path) -> io::Result<Option<Trees<Snapshot>>> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if let Ok(trees) = serde_json::from_slice(&bytes) {
+        return Ok(Some(trees));
+    }
+    Ok(serde_json::from_slice::<Trees<LegacyFiles>>(&bytes)
+        .ok()
+        .map(|legacy| Trees {
+            base: legacy.base.map(|files| Snapshot::from_files(files.0)),
+            candidate: legacy.candidate.map(|files| Snapshot::from_files(files.0)),
+        }))
 }
 
 #[cfg(test)]

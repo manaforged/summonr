@@ -4,6 +4,8 @@ pub(crate) const FILE: &str = "MEMORY.md";
 const DIR: &str = "memory";
 const KEY_NAME_CHARS: usize = 40;
 const FIRST_COMMIT: &str = "first-commit";
+const SHA1_HEX: usize = 40;
+const SHA256_HEX: usize = 64;
 const OVER: &str = "; only the newest part loads; ask me to read and tidy it";
 const REPORT_END: &str = "Ask me to remember something, or edit a file above; changes to these files apply to new sessions. `memory = false` under [modules] turns memory off.";
 pub(crate) const DISABLED: &str = "Memory is off in this session, so nothing you save persists; if the user asks you to remember something, say so instead of writing a file.";
@@ -213,14 +215,14 @@ fn first_commit(workspace: &Path, layout: Option<&crate::diff::Layout>) -> Optio
         .as_deref()
         .and_then(|path| std::fs::read_to_string(path).ok())
         .map(|text| text.trim().to_string())
-        .filter(|id| !id.is_empty())
+        .filter(|id| object_id(id))
     {
         return Some(id);
     }
     let id = crate::diff::git_env(workspace, &[], &["rev-list", "--max-parents=0", "HEAD"])
         .ok()
         .and_then(|ids| ids.lines().next().map(str::trim).map(str::to_string))
-        .filter(|id| !id.is_empty())?;
+        .filter(|id| object_id(id))?;
     if let Some(path) = saved {
         drop(crate::durable::store::write(
             &path,
@@ -229,6 +231,10 @@ fn first_commit(workspace: &Path, layout: Option<&crate::diff::Layout>) -> Optio
         ));
     }
     Some(id)
+}
+
+fn object_id(id: &str) -> bool {
+    matches!(id.len(), SHA1_HEX | SHA256_HEX) && id.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn root(workspace: &Path, layout: Option<&crate::diff::Layout>) -> PathBuf {

@@ -255,6 +255,7 @@ impl SessionDriver {
         })?;
         self.turn = None;
         self.fresh = false;
+        self.remember_tree();
         Ok(())
     }
 
@@ -291,6 +292,7 @@ impl SessionDriver {
         }
         self.turn = None;
         self.fresh = false;
+        self.remember_tree();
         if let Some(work) = &mut self.work
             && work.interrupt()
         {

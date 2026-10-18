@@ -139,3 +139,18 @@ fn guidance_says_an_empty_memory_has_nothing_to_read() {
     let user = home.path().join(DIR).join(FILE).display().to_string();
     assert!(!text.contains(&format!("{user} (empty")), "{text}");
 }
+
+#[test]
+fn a_torn_first_commit_cache_keeps_the_project_memory() {
+    let home = tempfile::tempdir().unwrap();
+    let (_root, primary) = crate::worktree::tests::repo();
+    let first = project(home.path(), &primary);
+    let cached = primary
+        .join(".git")
+        .join(crate::diff::STATE_DIR)
+        .join(FIRST_COMMIT);
+    std::fs::write(&cached, "abc\n").unwrap();
+    assert_eq!(project(home.path(), &primary), first);
+    let id = std::fs::read_to_string(&cached).unwrap();
+    assert!(object_id(id.trim()), "{id:?}");
+}

@@ -78,6 +78,7 @@ pub(crate) struct SessionDriver {
     base: Option<base::Pending>,
     fresh: bool,
     last: Option<Snapshot>,
+    notice: Option<String>,
 }
 
 mod base;
@@ -221,18 +222,31 @@ impl SessionDriver {
         self.checkpoint()
     }
 
-    fn sessions_dir(&self) -> Option<PathBuf> {
+    fn tree_cache(&self) -> Option<PathBuf> {
+        log::home_of(self.log.path()).map(|home| tree::cache_dir(&canonical(home)))
+    }
+
+    fn excludes(&self) -> Vec<PathBuf> {
         self.log
             .path()
             .parent()
             .and_then(Path::parent)
             .map(canonical)
+            .into_iter()
+            .chain(self.tree_cache())
+            .collect()
+    }
+
+    fn remember_tree(&mut self) {
+        if let (Some(cache), Some(last)) = (self.tree_cache(), self.last.as_mut()) {
+            tree::remember(&cache, &self.workspace, last);
+        }
     }
 
     fn snapshot(&mut self, previous: Option<&Snapshot>) -> Result<Snapshot, DriverError> {
-        let sessions = self.sessions_dir();
+        let excludes = self.excludes();
         let previous = previous.or(self.last.as_ref());
-        let capture = || tree::snapshot(&self.workspace, sessions.as_deref(), previous);
+        let capture = || tree::snapshot(&self.workspace, &excludes, previous);
         let threaded = tokio::runtime::Handle::try_current().is_ok_and(|handle| {
             handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
         });
@@ -241,7 +255,6 @@ impl SessionDriver {
         } else {
             capture()
         }?;
-        tree::remember(&self.workspace, &snapshot);
         self.last = Some(snapshot.clone());
         Ok(snapshot)
     }
@@ -249,8 +262,9 @@ impl SessionDriver {
     fn checkpoint(&self) -> Result<(), DriverError> {
         if let Some(work) = &self.work {
             let mark = work.trees_mark();
-            let trees = self.saved.swap(mark, Ordering::Relaxed) != mark;
+            let trees = self.saved.load(Ordering::Relaxed) != mark;
             work.save(&log::work_path(self.log.path()), trees)?;
+            self.saved.store(mark, Ordering::Relaxed);
         }
         Ok(())
     }
@@ -264,6 +278,10 @@ impl SessionDriver {
 
     pub(crate) fn take_pending(&mut self) -> Vec<Line> {
         std::mem::take(&mut self.pending)
+    }
+
+    pub(crate) fn take_notice(&mut self) -> Option<String> {
+        self.notice.take()
     }
 
     fn take(&mut self) -> u64 {

@@ -219,6 +219,7 @@ fn a_model_change_on_the_splash_keeps_the_star_clock() {
         let clock = app.sky_clock.peek().expect("a splash clock");
         let before = clock.peek();
         app.model_mut(|model| model.prefs.reasoning = crate::prefs::Visibility::Expanded);
+        std::thread::park_timeout(crate::limits::limits().animation() * 2);
         frames(5);
         let after = app.sky_clock.peek().expect("a splash clock");
         assert!(after == clock, "a model change replaced the star clock");

@@ -6,7 +6,7 @@ use std::io::{self, BufRead, Write};
 use std::process;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 mod content;
 mod tools;
@@ -36,7 +36,7 @@ impl Out {
         self.send(&json!({"jsonrpc": "2.0", "id": id, "result": result}));
     }
 
-    fn split(&self, message: &Value, pause: Duration) {
+    fn split(&self, message: &Value, until: Instant) {
         let line = format!("{message}\n");
         let (head, rest) = line.split_at(line.len() / 2);
         let mut stdout = self
@@ -48,7 +48,7 @@ impl Out {
                 .write_all(head.as_bytes())
                 .and_then(|()| stdout.flush()),
         );
-        wait(pause);
+        wait(until.saturating_duration_since(Instant::now()));
         drop(
             stdout
                 .write_all(rest.as_bytes())
@@ -90,9 +90,10 @@ fn call(out: Out, id: Value, params: Value) {
         },
         Tool::Boom => return out.error(&id, -32000, &"e".repeat(bytes)),
         Tool::Split => {
-            let message = json!({"jsonrpc": "2.0", "id": id, "result": text(big_text(bytes))});
             let pause = Duration::from_millis(args.get("ms").and_then(Value::as_u64).unwrap_or(0));
-            thread::spawn(move || out.split(&message, pause));
+            let until = Instant::now() + pause;
+            let message = json!({"jsonrpc": "2.0", "id": id, "result": text(big_text(bytes))});
+            thread::spawn(move || out.split(&message, until));
             return;
         }
         Tool::Roots | Tool::Change | Tool::Progress | Tool::Log | Tool::Ask | Tool::Reprompt => {

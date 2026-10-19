@@ -4,8 +4,8 @@ A coding agent for any model, in your terminal or a desktop window, written in R
 
 - **Light**: 27 MB while it works in our [Terminal-Bench 2.1 runs](#benchmarks), against 146 MB for Grok Build and 276 MB for Codex.
 - **Sessions that talk**: message any running session with `@name`, even one on a different model or provider. [Try it](#coordinate-work-live).
-- **Your own browser**: drives the Chrome, Edge, or Brave installed on your machine, in a profile of its own; sign in once and it stays signed in. Search and page reads need no API key. Turn on `browser` and `search` under `[modules]`.
-- **Any model**: 41 built-in endpoints, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
+- **Your own browser**: uses the Chrome you already have, in its own profile, and stays signed in. Web search needs no API key. Turn on `browser` and `search` under `[modules]`.
+- **Any model**: 28 providers built in, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
 - **One binary**: web search, a real browser, MCP servers, and parallel child agents.
 - **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.
 - **Works while you're away**: schedule a goal for 3 a.m. with `summonr cron`, fire one from a webhook, or text it from Telegram. It tells you whether the check passed.
@@ -82,13 +82,6 @@ summonr login              # every plan and key, with its status
 summonr login openai       # sign in with ChatGPT Plus or Pro, or paste a key
 summonr login grok         # sign in with SuperGrok or X Premium+, or paste a key
 summonr openai
-```
-
-A Claude Pro or Max plan runs through your own Claude Code. Sign in there once, and summonr starts it for each turn:
-
-```sh
-claude auth login
-summonr claude
 ```
 
 Run one prompt and exit:

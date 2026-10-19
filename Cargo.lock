@@ -4185,6 +4185,7 @@ dependencies = [
  "charm-cdp",
  "crossterm",
  "dunce",
+ "fastrand",
  "futures",
  "grep-matcher",
  "grep-regex",

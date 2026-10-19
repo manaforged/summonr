@@ -146,3 +146,7 @@ pub use worktree::{
 pub fn revision() -> &'static str {
     option_env!("SUMMONR_REVISION").unwrap_or("unknown")
 }
+
+#[cfg(test)]
+#[path = "fuzz_tests.rs"]
+pub(crate) mod fuzz_tests;

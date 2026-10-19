@@ -75,6 +75,9 @@ dunce = "1.0"
 jiff = "0.2.38"
 httparse = "1.10"
 
+[dev-dependencies]
+fastrand = "2.5"
+
 [target.'cfg(unix)'.dev-dependencies]
 portable-pty = "0.9"
 vt100 = "0.16"

@@ -97,6 +97,7 @@ pub mod prefs;
 pub mod splash;
 pub mod steps;
 pub mod tui;
+pub mod update;
 pub mod workflow;
 
 pub use command::{SlashCommand, command_specs, parse_command};

@@ -3,7 +3,6 @@ set -eu
 
 repo=manaforged/summonr
 releases="https://github.com/$repo/releases"
-installer="https://summonr.dev/install.sh"
 dir=${SUMMONR_INSTALL_DIR:-$HOME/.local/bin}
 version=${SUMMONR_VERSION:-latest}
 libc=${SUMMONR_LIBC:-musl}
@@ -85,6 +84,6 @@ case ":$PATH:" in
     *":$dir:"*) ;;
     *) echo "Add $dir to PATH: export PATH=\"$dir:\$PATH\"" ;;
 esac
-echo "Update: curl -fsSL $installer | sh"
+echo "Update: summonr update"
 echo "Uninstall: rm $dir/summonr"
 echo "Next: run summonr, then /login to pick a provider and add a key or sign in to a plan."

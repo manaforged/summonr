@@ -238,6 +238,9 @@ async fn listing(args: &Args) -> Option<Result<i32>> {
     if args.uninstall {
         return Some(uninstall(args));
     }
+    if args.update {
+        return Some(update().await);
+    }
     if args.add {
         return Some(add(args).await);
     }
@@ -294,5 +297,23 @@ fn uninstall(args: &Args) -> Result<i32> {
         )));
     }
     println!("removed plugin {name}; restart summonr to unload it");
+    Ok(0)
+}
+
+async fn update() -> Result<i32> {
+    let exe = std::env::current_exe()?.canonicalize()?;
+    let line = match summonr::update::run(&summonr::update::Source::this_build(), &exe).await? {
+        summonr::update::Outcome::Current(version) => {
+            format!("summonr {version} is the latest release")
+        }
+        summonr::update::Outcome::Ahead { latest } => format!(
+            "summonr {} is newer than the latest release, {latest}",
+            env!("CARGO_PKG_VERSION")
+        ),
+        summonr::update::Outcome::Updated { from, to } => {
+            format!("Updated summonr {from} to {to} at {}", exe.display())
+        }
+    };
+    println!("{line}");
     Ok(0)
 }

@@ -9,6 +9,7 @@ First public release.
 #### Install and endpoints
 
 - Release binaries for macOS on Apple silicon, Linux (static musl builds), and Windows x86_64. `curl -fsSL https://summonr.dev/install.sh | sh` installs on macOS and Linux, and `irm https://summonr.dev/install.ps1 | iex` installs on Windows. Every release publishes `SHA256SUMS` and build attestations (`gh attestation verify <file> --repo manaforged/summonr`).
+- `summonr update` replaces an installed binary with the latest release. It checks the archive's SHA-256 and runs the new binary once before the swap.
 - 28 providers built in, from Anthropic and OpenAI to coding plans and local servers, with 41 endpoints counting regions and plan routes. Each endpoint is one `[[preset]]` row in `src/endpoint/presets.toml`. Built-ins include the Qwen, MiniMax, Tencent, and Volcengine coding plans, the DashScope hosts, `nvidia`, `huggingface`, `cohere`, `siliconflow`, `ollama-cloud`, and `lmstudio`.
 - Providers with several regions or plans (`zai`, `alibaba`, `kimi`, `minimax`, `siliconflow`, `anthropic`, `opencode`) list once. Each region and plan is a route; `summonr NAME` takes the provider or a route name such as `zai-cn`.
 - `summonr login NAME --url URL [--model M]` adds your own OpenAI-compatible server, and `summonr logout NAME --remove` deletes it. `summonr login NAME --default` makes an endpoint the default.

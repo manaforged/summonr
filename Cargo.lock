@@ -4203,6 +4203,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "sigil-ui",
  "summonr-auth",
  "tempfile",

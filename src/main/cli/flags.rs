@@ -110,7 +110,7 @@ pub(super) const VALUES: [Valued; 12] = [
     },
 ];
 
-pub(super) const COMMANDS: [(&str, Run); 22] = [
+pub(super) const COMMANDS: [(&str, Run); 23] = [
     ("endpoints", |args, _| on(&mut args.list)),
     ("sessions", |args, _| on(&mut args.list_sessions)),
     ("resume", Args::resume),
@@ -122,6 +122,7 @@ pub(super) const COMMANDS: [(&str, Run); 22] = [
     ("modules", |args, _| on(&mut args.list_modules)),
     ("install", |args, _| on(&mut args.add)),
     ("uninstall", |args, _| on(&mut args.uninstall)),
+    ("update", |args, _| on(&mut args.update)),
     ("acp", |args, _| on(&mut args.acp)),
     ("mail", |args, input| {
         some(&mut args.mail, input.by_ref().collect())

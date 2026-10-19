@@ -164,6 +164,7 @@ git diff | summonr kimi -p
 | `mcp remove NAME` | Remove an MCP server from `~/.summonr/config.toml`. |
 | `install PATH [--list]` | Install a directory of extras; `--list` shows installed plugins. |
 | `uninstall NAME` | Remove an installed plugin. |
+| `update` | Replace this binary with the latest release: download the archive for this platform, check its SHA-256 against the release's `.sha256` file, run the new binary once, then swap it in. A build from source prints the `cargo install` command instead. |
 | `doctor [--logs\|--report]` | Report crashed runs; `--logs` lists the run logs; `--report` prints the last crashed or failed run, with the home folder shown as `~`, to paste into an issue. |
 | `acp` | Serve the Agent Client Protocol on stdio. |
 | `mail` | Peer mail between sessions: `agents`, `send`, `inbox`, `board`. See Mail. |
@@ -252,6 +253,7 @@ cache_ttl = "5m"
 | `verify_timeout_secs` | `600` | Timeout for a check command. |
 | `probe_secs` | `5` | Endpoint probe timeout. |
 | `auth_secs` | `30` | Sign-in request timeout. |
+| `update_secs` | `600` | `summonr update` download timeout. |
 | `model_probe_secs` | `8` | Model list request timeout. |
 | `web_search_secs` | `15` | Web search timeout. |
 | `search_secs` | `20` | Time one `search` call walks and scans before it returns what it found. |

@@ -79,6 +79,7 @@ pub(super) struct Args {
     pub(super) add: bool,
     pub(super) add_list: bool,
     pub(super) uninstall: bool,
+    pub(super) update: bool,
 }
 
 pub(super) fn parse() -> Result<Args> {
@@ -254,6 +255,7 @@ impl Args {
             (self.diff, "diff", 1),
             (self.add, "install", 1),
             (self.uninstall, "uninstall", 1),
+            (self.update, "update", 0),
         ];
         let Some((_, verb, most)) = arity.into_iter().find(|(on, ..)| *on) else {
             return Ok(());

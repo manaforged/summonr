@@ -49,6 +49,7 @@ table! {
     verify_timeout_secs: u64,
     probe_secs: u64,
     auth_secs: u64,
+    update_secs: u64,
     model_probe_secs: u64,
     web_search_secs: u64,
     search_secs: u64,

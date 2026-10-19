@@ -57,7 +57,7 @@ On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with t
 gh attestation verify <file> --repo manaforged/summonr
 ```
 
-To update, run the installer again. To uninstall, delete the binary: `~/.local/bin/summonr` or `%LOCALAPPDATA%\Programs\summonr\bin\summonr.exe`.
+To update, run `summonr update`. To uninstall, delete the binary: `~/.local/bin/summonr` or `%LOCALAPPDATA%\Programs\summonr\bin\summonr.exe`.
 
 ## First run
 

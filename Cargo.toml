@@ -50,6 +50,7 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 thiserror = "2"
+sha2 = { workspace = true }
 tempfile = "3"
 zeroize = "1"
 toml = "0.8"

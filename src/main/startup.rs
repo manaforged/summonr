@@ -92,6 +92,9 @@ async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32
     if args.logs {
         return Some(diagnostics::print_logs(log.map(diagnostics::Log::path)));
     }
+    if args.report {
+        return Some(diagnostics::report(log.map(diagnostics::Log::path)));
+    }
     if args.doctor {
         return Some(diagnostics::doctor(log.map(diagnostics::Log::path)));
     }

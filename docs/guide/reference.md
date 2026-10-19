@@ -164,7 +164,7 @@ git diff | summonr kimi -p
 | `mcp remove NAME` | Remove an MCP server from `~/.summonr/config.toml`. |
 | `install PATH [--list]` | Install a directory of extras; `--list` shows installed plugins. |
 | `uninstall NAME` | Remove an installed plugin. |
-| `doctor [--logs]` | Report crashed runs; `--logs` lists the run logs. |
+| `doctor [--logs\|--report]` | Report crashed runs; `--logs` lists the run logs; `--report` prints the last crashed or failed run, with the home folder shown as `~`, to paste into an issue. |
 | `acp` | Serve the Agent Client Protocol on stdio. |
 | `mail` | Peer mail between sessions: `agents`, `send`, `inbox`, `board`. See Mail. |
 | `tool NAME [JSON]` | Run one tool with JSON arguments (default `{}`) in this directory and print the result. Exits 1 when the tool fails. |

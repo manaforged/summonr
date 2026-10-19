@@ -176,19 +176,76 @@ pub(super) fn doctor(exclude: Option<&Path>) -> summonr::Result<i32> {
         .count();
     println!("version\t{}", env!("CARGO_PKG_VERSION"));
     println!("revision\t{}", summonr::revision());
-    println!(
-        "profile\t{}",
-        if cfg!(debug_assertions) {
-            "debug"
-        } else {
-            "release"
-        }
-    );
+    println!("profile\t{}", profile());
     println!("binary\t{}", binary());
     println!("home\t{}", home.display());
     println!("logs\t{}", dir.display());
     println!("incomplete runs\t{incomplete}");
     Ok(i32::from(incomplete > 0))
+}
+
+pub(super) fn report(exclude: Option<&Path>) -> summonr::Result<i32> {
+    let dir = summonr::summonr_home()?.join("logs");
+    let runs = runs(&dir, exclude)?;
+    let Some(run) = runs.iter().rev().find(|run| {
+        matches!(
+            run.status,
+            RunStatus::Panic | RunStatus::Failed | RunStatus::Incomplete
+        )
+    }) else {
+        println!("no crashed or failed run to report");
+        return Ok(0);
+    };
+    let body = fs::read_to_string(&run.path)?;
+    let name = run.path.file_name().unwrap_or_default().to_string_lossy();
+    println!(
+        "summonr {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        summonr::revision()
+    );
+    println!(
+        "{} {} {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        profile()
+    );
+    println!("run {name} ({})", run.status);
+    println!();
+    print!("{}", hidden(&body));
+    println!();
+    println!(
+        "Read it before you post it: it lists this run's events, with your home folder shown as ~."
+    );
+    Ok(0)
+}
+
+fn hidden(text: &str) -> String {
+    let mut forms: Vec<String> = std::env::home_dir()
+        .into_iter()
+        .flat_map(|home| {
+            let real = home.canonicalize().unwrap_or_else(|_| home.clone());
+            [home, real]
+        })
+        .flat_map(|path| {
+            let plain = path.display().to_string();
+            let escaped = serde_json::to_string(&plain).unwrap_or_default();
+            [escaped.trim_matches('"').to_string(), plain]
+        })
+        .filter(|form| form.len() > 1)
+        .collect();
+    forms.sort_by_key(|form| std::cmp::Reverse(form.len()));
+    forms.dedup();
+    forms.iter().fold(text.to_string(), |text, form| {
+        text.replace(form.as_str(), "~")
+    })
+}
+
+const fn profile() -> &'static str {
+    if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    }
 }
 
 fn hook(path: PathBuf, run: String) {

@@ -34,7 +34,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|token\|install\|uninstall\|status` | Run a prompt or goal on a schedule; `install` adds the once-a-minute OS tick; `token NAME` prints a webhook token |
 | `summonr gateway setup telegram\|telegram\|pair CODE\|unpair ID\|status\|webhook [--port N]` | Drive sessions from a paired Telegram chat, or fire cron jobs from a loopback webhook |
 | `summonr classify ...` | Ask typed questions of a decisions endpoint |
-| `summonr doctor [--logs]` | List per-run JSONL logs, or report incomplete and crashed runs |
+| `summonr doctor [--logs\|--report]` | List per-run JSONL logs, report incomplete and crashed runs, or print the last crashed or failed run with the home folder shown as `~` |
 | `summonr --help`, `summonr --version` | Print help, or the version and revision |
 
 ## Quick paths

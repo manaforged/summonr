@@ -21,6 +21,7 @@ pub(super) struct Args {
     pub(super) list_sessions: bool,
     pub(super) grep: Option<String>,
     pub(super) logs: bool,
+    pub(super) report: bool,
     pub(super) doctor: bool,
     pub(super) export: bool,
     pub(super) profile: bool,

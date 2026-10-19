@@ -143,7 +143,7 @@ pub(super) const COMMANDS: [(&str, Run); 22] = [
     ("help", |_, input| exit_help(input.next().as_deref())),
 ];
 
-pub(super) const SCOPED: [Scope; 22] = [
+pub(super) const SCOPED: [Scope; 23] = [
     (
         "--stat",
         "diff",
@@ -221,6 +221,12 @@ pub(super) const SCOPED: [Scope; 22] = [
         "doctor",
         |args| args.doctor,
         |args, _| on(&mut args.logs),
+    ),
+    (
+        "--report",
+        "doctor",
+        |args| args.doctor,
+        |args, _| on(&mut args.report),
     ),
     (
         "--questions",

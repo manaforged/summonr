@@ -220,7 +220,7 @@ fn a_legacy_tree_sidecar_keeps_its_file_map() {
         .unwrap();
     std::fs::write(
         path.with_extension(super::TREES),
-        "{\"base\":{\"taken\":[1,2,3]},\"candidate\":null}",
+        "{\"base\":{\"a.txt\":[1,2,3]},\"candidate\":null}",
     )
     .unwrap();
     let loaded = Work::load(&path).unwrap().unwrap();

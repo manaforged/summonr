@@ -364,15 +364,13 @@ fn read_trees(path: &Path) -> io::Result<Option<Trees<Snapshot>>> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
-    if let Ok(trees) = serde_json::from_slice(&bytes) {
-        return Ok(Some(trees));
-    }
-    Ok(serde_json::from_slice::<Trees<LegacyFiles>>(&bytes)
-        .ok()
-        .map(|legacy| Trees {
+    if let Ok(legacy) = serde_json::from_slice::<Trees<LegacyFiles>>(&bytes) {
+        return Ok(Some(Trees {
             base: legacy.base.map(|files| Snapshot::from_files(files.0)),
             candidate: legacy.candidate.map(|files| Snapshot::from_files(files.0)),
-        }))
+        }));
+    }
+    Ok(serde_json::from_slice(&bytes).ok())
 }
 
 #[cfg(test)]

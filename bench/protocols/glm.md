@@ -8,7 +8,7 @@ On the same model and the same tasks, how many input tokens and how much memory 
 
 ## Arms
 
-summonr, a second summonr arm as a control, pi, Hermes, OpenCode 2, and OMP, at the versions in `tools.lock` and the summonr build pinned by sha256 in `run.txt` and copied into the job directory. Every arm runs GLM 5.3 Flash through the z.ai GLM Coding Plan at effort `max`, z.ai's recommended setting and the model card's default for benchmark reproduction: summonr `--effort max`, pi and OMP `--thinking max`, OpenCode 2 the `#max` variant, and Hermes `agent.reasoning_effort: max` in the config Harbor writes for it. That config also sets `terminal.timeout: 180` (Hermes's own default) and turns memory and checkpoints off; `hermes_agent` drops Harbor's `delegation.max_iterations: 50` so Hermes's own default of 250 applies, and Hermes has no turn cap.
+summonr, a second summonr arm as a control, pi, Hermes, OpenCode 2, and OMP, at the versions in `tools.lock` and the summonr build pinned by sha256 in `run.txt` and copied into the job directory. Every arm runs GLM 5.3 Flash through the z.ai GLM Coding Plan at effort `high`, the level every bench pair uses: summonr `--effort high`, pi and OMP `--thinking high`, OpenCode 2 the `#high` variant, and Hermes `agent.reasoning_effort: high` in the config Harbor writes for it. That config also sets `terminal.timeout: 180` (Hermes's own default) and turns memory and checkpoints off; `hermes_agent` drops Harbor's `delegation.max_iterations: 50` so Hermes's own default of 250 applies, and Hermes has no turn cap.
 
 ## Tasks and tries
 

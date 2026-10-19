@@ -203,6 +203,7 @@ pub mod summonr::diff
 pub enum summonr::diff::TurnId
 pub summonr::diff::TurnId::Last
 pub summonr::diff::TurnId::Number(usize)
+pub summonr::diff::TurnId::Session
 impl core::clone::Clone for summonr::diff::TurnId
 impl core::cmp::Eq for summonr::diff::TurnId
 impl core::cmp::PartialEq for summonr::diff::TurnId
@@ -238,6 +239,7 @@ impl core::default::Default for summonr::diff::Stat
 impl core::fmt::Debug for summonr::diff::Stat
 impl core::marker::StructuralPartialEq for summonr::diff::Stat
 impl serde_core::ser::Serialize for summonr::diff::Stat
+pub const summonr::diff::SESSION_BASE: &str
 pub fn summonr::diff::patch(root: &std::path::Path, path: core::option::Option<&str>) -> summonr::Result<alloc::string::String>
 pub fn summonr::diff::stats(root: &std::path::Path) -> summonr::Result<summonr::diff::Diff>
 pub fn summonr::diff::turn_patch(root: &std::path::Path, session: &str, id: summonr::diff::TurnId, path: core::option::Option<&str>) -> summonr::Result<alloc::string::String>
@@ -435,6 +437,7 @@ pub mod summonr::tui::hub
 pub enum summonr::tui::hub::Open
 pub summonr::tui::hub::Open::New
 pub summonr::tui::hub::Open::Resume(alloc::string::String)
+pub summonr::tui::hub::Open::Worktree
 impl core::clone::Clone for summonr::tui::hub::Open
 impl core::cmp::Eq for summonr::tui::hub::Open
 impl core::cmp::PartialEq for summonr::tui::hub::Open
@@ -789,6 +792,7 @@ pub summonr::ProviderFailureKind::Empty
 pub summonr::ProviderFailureKind::Http
 pub summonr::ProviderFailureKind::Malformed
 pub summonr::ProviderFailureKind::MalformedToolCall
+pub summonr::ProviderFailureKind::MissingKey
 pub summonr::ProviderFailureKind::RateLimited
 pub summonr::ProviderFailureKind::Server
 pub summonr::ProviderFailureKind::Transport

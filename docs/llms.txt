@@ -12,10 +12,10 @@
 
 ## summonr 0.1.0
 
-- [Every public item, one per line](reference/summonr/api.txt): 1262 lines
+- [Every public item, one per line](reference/summonr/api.txt): 1266 lines
 - [API overview](reference/summonr/index.html): tasks, modules, features, and examples
 - [API changes by release](reference/summonr/changes.html)
-- [summonr](reference/summonr/summonr.html): 530 items
+- [summonr](reference/summonr/summonr.html): 531 items
 - [summonr::acp](reference/summonr/summonr-acp.html): 1 items
 - [summonr::askpass](reference/summonr/summonr-askpass.html): 5 items
 - [summonr::catalog](reference/summonr/summonr-catalog.html): 29 items
@@ -28,7 +28,7 @@
 - [summonr::classify::sweep](reference/summonr/summonr-classify-sweep.html): 2 items
 - [summonr::cron](reference/summonr/summonr-cron.html): 0 items
 - [summonr::cron::cli](reference/summonr/summonr-cron-cli.html): 1 items
-- [summonr::diff](reference/summonr/summonr-diff.html): 20 items
+- [summonr::diff](reference/summonr/summonr-diff.html): 22 items
 - [summonr::gateway](reference/summonr/summonr-gateway.html): 0 items
 - [summonr::gateway::cli](reference/summonr/summonr-gateway-cli.html): 1 items
 - [summonr::limits](reference/summonr/summonr-limits.html): 1 items
@@ -42,5 +42,5 @@
 - [summonr::steps](reference/summonr/summonr-steps.html): 16 items
 - [summonr::supervise](reference/summonr/summonr-supervise.html): 3 items
 - [summonr::tui](reference/summonr/summonr-tui.html): 22 items
-- [summonr::tui::hub](reference/summonr/summonr-tui-hub.html): 4 items
+- [summonr::tui::hub](reference/summonr/summonr-tui-hub.html): 5 items
 - [summonr::workflow](reference/summonr/summonr-workflow.html): 9 items

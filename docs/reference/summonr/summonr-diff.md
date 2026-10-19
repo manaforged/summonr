@@ -10,6 +10,7 @@
 | [`turn_patch`](#turn_patch) | fn |  |
 | [`turn_stats`](#turn_stats) | fn |  |
 | [`turns`](#turns) | fn |  |
+| [`SESSION_BASE`](#session_base) | const |  |
 
 ## Structs
 
@@ -58,6 +59,7 @@
 | --- | --- |
 | <code>Last</code> |  |
 | <code>Number(usize)</code> |  |
+| <code>Session</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>, <code>FromStr</code>
 
@@ -87,6 +89,13 @@
 ### `turns`
 
 <pre>pub fn <a href="#turns">turns</a>(journal: &amp;Path) -&gt; <a href="summonr.html#result">Result</a>&lt;Vec&lt;Vec&lt;String&gt;&gt;&gt;</pre>
+
+
+## Constants
+
+### `SESSION_BASE`
+
+<pre>pub const <a href="#session_base">SESSION_BASE</a>: &amp;str</pre>
 
 
 ---

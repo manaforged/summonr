@@ -9,7 +9,7 @@ Clone, pin, run, print the table. Keys stay out of git.
 This runs a published plan pair the way the Terminal-Bench leaderboard runs: Harbor, the dataset version `dataset.lock` pins, the tasks' own time limits, internet on, and 3 tries per task where the leaderboard asks for 5.
 
 1. Use a Linux host with Docker (Linux containers) and Python 3. Install the Harbor version that `tools.lock` pins: `uv tool install harbor==0.24.0`. `board.sh` refuses any other version.
-2. Check out the summonr commit the published run names in `BENCHMARKS.md`, then build summonr and pin the vendor CLIs: `./tools.sh ./tools ..`. The build runs in a Debian container and needs no keys.
+2. Check out the summonr commit the published run names in `BENCHMARKS.md`, then build summonr and pin the vendor CLIs: `./tools.sh ./tools ..`. The build needs no keys. summonr builds in an Alpine container (`alpine` in `tools.lock`) as a static `x86_64-unknown-linux-musl` binary, the target `install.sh` selects by default, so it starts on task images with any glibc; the vendor CLIs install in a Debian container.
 3. Sign in on the host with your own plans. For `chatgpt`: Codex, so that `~/.codex/auth.json` exists, and `summonr login openai` with the ChatGPT sign-in. For `supergrok`: Grok Build, so that `~/.grok/auth.json` exists, and `summonr login grok` with the SuperGrok sign-in. For `glm`: put `ZAI_API_KEY=...` (a GLM Coding Plan key) in `bench/glm.env`. `board.sh` starts the logging proxy from `pairs/glm.proxy`, the proxy holds the key, and the containers get a placeholder. `BENCH_LOGINS` moves the home these are read from.
 4. Try two tasks first, then run the full set under a new run id:
 

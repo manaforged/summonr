@@ -10,6 +10,38 @@ impl App {
         )
     }
 
+    pub(in crate::tui::sigil_view) fn open_trigger(&self, trigger: char) {
+        self.focus_composer();
+        let draft = self.draft.peek();
+        if trigger == '/' && !draft.is_empty() {
+            return;
+        }
+        let caret = self.caret.peek().min(draft.len());
+        let spaced = draft[..caret]
+            .chars()
+            .next_back()
+            .is_some_and(|before| !before.is_whitespace());
+        let insert = if spaced {
+            format!(" {trigger}")
+        } else {
+            trigger.to_string()
+        };
+        self.insert_at_caret(&insert);
+    }
+
+    pub(in crate::tui::sigil_view) fn type_into_composer(&self, text: &str) {
+        self.focus_composer();
+        self.insert_at_caret(text);
+    }
+
+    fn insert_at_caret(&self, insert: &str) {
+        let draft = self.draft.peek();
+        let caret = self.caret.peek().min(draft.len());
+        let next = format!("{}{insert}{}", &draft[..caret], &draft[caret..]);
+        self.replace(next);
+        self.caret.set(caret + insert.len());
+    }
+
     pub(in crate::tui::sigil_view) fn dequeue(&self) {
         if self.model.get().queued.1 > 0 {
             drop(self.cmd.send(Cmd::Dequeue));

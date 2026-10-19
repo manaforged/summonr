@@ -23,6 +23,7 @@ impl SessionDriver {
             base: None,
             fresh: false,
             last: None,
+            notice: None,
         };
         driver.append(Line::Session {
             id,
@@ -57,7 +58,10 @@ impl SessionDriver {
         } else {
             state.workspace.clone()
         };
-        let work = Work::load(&log::work_path(&path))?;
+        let (work, notice) = match Work::read(&log::work_path(&path))? {
+            Ok(work) => (Some(work), None),
+            Err(notice) => (None, notice),
+        };
         let workspace = if workspace.is_dir() {
             workspace
         } else if work.as_ref().is_none_or(Work::terminal) {
@@ -81,6 +85,7 @@ impl SessionDriver {
             base: None,
             fresh: false,
             last: None,
+            notice,
         };
         driver.recover()?;
         Ok(driver)

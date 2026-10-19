@@ -94,11 +94,11 @@ pub(crate) fn progress_keeps_a_slow_call_alive() {
     let model = Model::start(vec![
         Step::Call(
             "fixture1__progress",
-            json!({"ms": crate::support::slow(1) * 600}),
+            json!({"ms": crate::support::slow(3) * 600}),
         ),
         Step::Text("ok"),
     ]);
-    let timeout = format!("timeout_secs = {}", crate::support::slow(1));
+    let timeout = format!("timeout_secs = {}", crate::support::slow(3));
     session.run(&model, &session.server("fixture1", &timeout), &[]);
     assert!(
         model.tool_results()[0].contains("progressed"),

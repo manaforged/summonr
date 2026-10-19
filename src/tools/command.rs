@@ -12,6 +12,8 @@ pub(super) mod proc;
 mod run;
 
 pub(crate) use digest::searchish;
+#[cfg(feature = "gui")]
+pub(crate) use digest::test_result;
 pub(crate) use native::native_read_args;
 use native_search::native_search_args;
 pub(crate) use proc::{ProcessGroup, command_env, stop_groups};

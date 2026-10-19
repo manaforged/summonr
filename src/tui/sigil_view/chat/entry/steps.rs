@@ -42,6 +42,22 @@ pub(in crate::tui::sigil_view) fn subagents(entry: &Entry) -> bool {
     run(entry) == Some(Run::Subagents)
 }
 
+pub(in crate::tui::sigil_view) fn slots(entries: &[Entry]) -> Vec<Slot> {
+    let mut found = Vec::with_capacity(entries.len());
+    while found.len() < entries.len() {
+        let index = found.len();
+        match slot(entries, index) {
+            Slot::Lead(range) => {
+                let end = range.end;
+                found.push(Slot::Lead(range));
+                found.resize(end, Slot::Member);
+            }
+            other => found.push(other),
+        }
+    }
+    found
+}
+
 pub(in crate::tui::sigil_view) fn slot(entries: &[Entry], index: usize) -> Slot {
     let Some(kind) = entries.get(index).and_then(run) else {
         return Slot::Single;

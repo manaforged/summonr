@@ -219,3 +219,44 @@ fn a_mistyped_command_is_not_sent_to_the_model() {
     assert!(text.contains("did you mean `sessions`"), "{text}");
     assert!(bodies.lock().unwrap().is_empty(), "{text}");
 }
+
+#[test]
+fn sessions_grep_lists_newest_first_and_stops_at_fifty_lines() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    for n in 0..60_u32 {
+        let id = format!("0199a1b2c3d47e5f8a9b0c1d2e{n:06x}");
+        let dir = home.path().join("sessions").join(&id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("session.jsonl"),
+            format!(
+                "{{\"kind\":\"session\",\"id\":\"{id}\",\"model\":\"m\",\"system\":\"\",\"workspace\":\"/w\"}}\n{{\"kind\":\"user\",\"text\":\"otter {n}\",\"start\":true}}\n"
+            ),
+        )
+        .unwrap();
+    }
+    let quiet = home
+        .path()
+        .join("sessions/0199a1b2c3d47e5f8a9b0c1d2effffff");
+    std::fs::create_dir_all(&quiet).unwrap();
+    std::fs::write(
+        quiet.join("session.jsonl"),
+        "{\"kind\":\"session\",\"id\":\"0199a1b2c3d47e5f8a9b0c1d2effffff\",\"model\":\"m\",\"system\":\"\",\"workspace\":\"/w\"}\n{\"kind\":\"user\",\"text\":\"beaver\",\"start\":true}\n",
+    )
+    .unwrap();
+    let found = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["sessions", "--grep", "OTTER"])
+        .current_dir(work.path())
+        .env("HOME", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&found.stdout);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 51, "{text}");
+    assert!(lines[0].ends_with("otter 59"), "{text}");
+    assert!(lines[49].ends_with("otter 10"), "{text}");
+    assert_eq!(lines[50], "… more matches; narrow the pattern");
+}

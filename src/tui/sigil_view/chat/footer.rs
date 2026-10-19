@@ -10,7 +10,7 @@ use sigil::prelude::Paint;
 use sigil::prelude::container;
 use sigil::prelude::spacer;
 
-use super::{App, Entry, canvas, cell_width};
+use super::{App, canvas, cell_width};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Target {
@@ -32,11 +32,7 @@ fn footer_view(app: &App) -> FooterView {
     let cache_open = app.cache_open.get();
     let model = app.model.get();
     let spend = model.spend().map(crate::dollars);
-    let started = !model.usage.is_empty()
-        || model
-            .entries
-            .iter()
-            .any(|entry| matches!(entry, Entry::User(_)));
+    let started = !model.usage.is_empty() || model.entries.asked();
     let open = if !started {
         None
     } else if context_open {

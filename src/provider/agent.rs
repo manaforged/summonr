@@ -38,28 +38,40 @@ struct Seen {
 
 impl Seen {
     fn of(messages: &[Message]) -> Self {
+        Self::prefix(messages, usize::MAX)
+    }
+
+    fn prefix(messages: &[Message], limit: usize) -> Self {
+        use std::hash::Hash;
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        let spoken: Vec<&Message> = messages
+        let mut count = 0;
+        for message in messages
             .iter()
             .filter(|message| message.role != Role::System)
-            .collect();
-        for message in &spoken {
-            std::hash::Hash::hash(&transcript_line(message), &mut hasher);
+            .take(limit)
+        {
+            std::mem::discriminant(&message.role).hash(&mut hasher);
+            message.content.trim().hash(&mut hasher);
+            message.failed.hash(&mut hasher);
+            for image in &message.images {
+                image.media_type.hash(&mut hasher);
+                image.data.hash(&mut hasher);
+            }
+            message.tool_calls.len().hash(&mut hasher);
+            for call in &message.tool_calls {
+                call.function.name.hash(&mut hasher);
+                call.function.arguments.hash(&mut hasher);
+            }
+            count += 1;
         }
         Self {
-            count: spoken.len(),
+            count,
             digest: std::hash::Hasher::finish(&hasher),
         }
     }
 
     fn extended_by(self, messages: &[Message]) -> bool {
-        let spoken: Vec<Message> = messages
-            .iter()
-            .filter(|message| message.role != Role::System)
-            .take(self.count)
-            .cloned()
-            .collect();
-        spoken.len() == self.count && Self::of(&spoken) == self
+        Self::prefix(messages, self.count) == self
     }
 }
 

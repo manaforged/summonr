@@ -125,3 +125,41 @@ fn mail_arrives_while_other_threads_start_processes() {
         .for_each(|spawner| spawner.join().unwrap());
     assert_eq!(missed, 0);
 }
+
+#[test]
+fn the_board_keeps_the_latest_value_per_key_in_first_post_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = std::path::Path::new("/work/board");
+    super::post_board(dir.path(), cwd, "a", "k", "v1").unwrap();
+    super::post_board(dir.path(), cwd, "b", "k", "v2").unwrap();
+    super::post_board(dir.path(), cwd, "a", "j", "x").unwrap();
+    let board = super::read_board(dir.path(), cwd).unwrap();
+    let owned =
+        |key: &str, value: &str, from: &str| (key.to_string(), value.to_string(), from.to_string());
+    assert_eq!(board, vec![owned("k", "v2", "b"), owned("j", "x", "a")]);
+}
+
+#[test]
+fn a_long_board_folds_to_one_line_per_key_and_a_short_one_is_left_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = std::path::Path::new("/work/fold");
+    let file = |dir: &std::path::Path| {
+        std::fs::read_dir(dir.join("board"))
+            .unwrap()
+            .flatten()
+            .map(|entry| std::fs::read_to_string(entry.path()).unwrap())
+            .next()
+            .unwrap_or_default()
+    };
+    super::post_board(dir.path(), cwd, "a", "k", "v1").unwrap();
+    super::post_board(dir.path(), cwd, "a", "j", "x").unwrap();
+    super::read_board(dir.path(), cwd).unwrap();
+    assert_eq!(file(dir.path()).lines().count(), 2);
+    let value = "v".repeat(256);
+    for _ in 0..=super::BOARD_COMPACT_BYTES / value.len() {
+        super::post_board(dir.path(), cwd, "a", "k", &value).unwrap();
+    }
+    let board = super::read_board(dir.path(), cwd).unwrap();
+    assert_eq!(board.len(), 2);
+    assert_eq!(file(dir.path()).lines().count(), 2);
+}

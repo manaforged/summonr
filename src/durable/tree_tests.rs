@@ -21,26 +21,26 @@ fn a_same_size_rewrite_is_seen_even_when_it_restores_the_old_mtime() {
     std::fs::write(&fresh, "aaaa").unwrap();
     backdate(&stale, Duration::from_secs(20));
     backdate(&fresh, Duration::from_secs(20));
-    let base = snapshot(root, None, None).unwrap();
+    let base = snapshot(root, &[], None).unwrap();
 
     std::fs::write(&stale, "bbbb").unwrap();
     backdate(&stale, Duration::from_secs(20));
     std::fs::write(&fresh, "bbbb").unwrap();
-    let capture = snapshot(root, None, Some(&base)).unwrap();
+    let capture = snapshot(root, &[], Some(&base)).unwrap();
 
     assert_eq!(
         changed(&base, &capture),
         vec!["fresh.txt".to_string(), "stale.txt".to_string()],
         "a content write moves the change time, so a restored mtime still gets a rehash"
     );
-    let again = snapshot(root, None, Some(&capture)).unwrap();
+    let again = snapshot(root, &[], Some(&capture)).unwrap();
     assert_eq!(
         changed(&capture, &again),
         Vec::<String>::new(),
         "untouched files reuse their marks"
     );
     assert_eq!(
-        changed(&base, &snapshot(root, None, None).unwrap()),
+        changed(&base, &snapshot(root, &[], None).unwrap()),
         vec!["fresh.txt".to_string(), "stale.txt".to_string()],
         "without a previous snapshot every file is hashed"
     );
@@ -95,9 +95,34 @@ fn bytecode_a_check_writes_does_not_change_the_snapshot() {
         .unwrap();
     assert!(git.success());
     std::fs::write(root.join("calc.py"), "def add(a, b):\n    return a + b\n").unwrap();
-    let before = snapshot(root, None, None).unwrap();
+    let before = snapshot(root, &[], None).unwrap();
     std::fs::create_dir(root.join("__pycache__")).unwrap();
     std::fs::write(root.join("__pycache__/calc.cpython-312.pyc"), "bytecode").unwrap();
-    let after = snapshot(root, None, Some(&before)).unwrap();
+    let after = snapshot(root, &[], Some(&before)).unwrap();
     assert!(before == after, "a generated cache changed the snapshot");
+}
+
+#[test]
+fn the_tree_cache_drops_workspaces_past_the_retention() {
+    let cache = tempfile::tempdir().unwrap();
+    let kept = cache.path().join("kept.json");
+    let stale = cache.path().join("stale.json");
+    std::fs::write(&kept, "{}").unwrap();
+    std::fs::write(&stale, "{}").unwrap();
+    let retain = std::time::Duration::from_secs(60);
+    let later = std::time::SystemTime::now() + retain * 2;
+    super::cache::prune(cache.path(), &kept, retain, later);
+    assert!(kept.exists());
+    assert!(!stale.exists());
+}
+
+#[test]
+fn a_remembered_tree_reaches_a_new_process_through_the_cache() {
+    let work = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    std::fs::write(work.path().join("a.txt"), "one").unwrap();
+    let mut first = snapshot(work.path(), &[], None).unwrap();
+    super::cache::remember(cache.path(), work.path(), &mut first);
+    let loaded = super::cache::remembered(cache.path(), work.path()).expect("cached");
+    assert_eq!(loaded, first);
 }

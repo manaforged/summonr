@@ -327,3 +327,52 @@ fn a_long_workdir_on_a_narrow_splash_stays_on_its_row() {
         );
     });
 }
+
+#[test]
+fn a_start_without_the_splash_reveals_without_a_panic() {
+    Runtime::scope("splash-off-reveal", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(info(), workspace.path().to_owned(), commands);
+        app.model_mut(|model| model.prefs.animations = true);
+        app.splash.set(false);
+        app.splash_revealed.set(false);
+        app.resize(80, 24);
+        app.animate();
+        let mut host = sigil::Host::cells();
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = sigil::terminal::Screen::new(80, 24);
+        let mut router = sigil::events::EventRouter::new();
+        let panics = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = std::sync::Arc::clone(&panics);
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |_| {
+            seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }));
+        let reveal = std::time::Duration::from_millis(crate::limits::limits().splash_reveal_ms);
+        let end = std::time::Instant::now() + reveal * 2;
+        while std::time::Instant::now() < end && !app.splash_revealed.peek() {
+            screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+            std::thread::park_timeout(crate::limits::limits().animation());
+        }
+        screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+        std::panic::set_hook(previous);
+        assert!(app.splash_revealed.peek(), "the reveal never finished");
+        assert_eq!(
+            panics.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "a frame panicked"
+        );
+    });
+}
+
+#[test]
+fn a_meteor_in_flight_keeps_the_animation_cadence() {
+    Runtime::scope("splash-meteor", || {
+        let (app, _host, _screen) = splash_screen(120, 40);
+        let beat = crate::limits::limits().animation();
+        let seconds = beat.as_secs_f64() * 2.0;
+        assert!(super::next_change(&app, seconds) < beat * 2);
+    });
+}

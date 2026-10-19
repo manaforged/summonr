@@ -201,6 +201,12 @@ fn orbit(grid: &mut Grid, outline: &[(i32, i32)], (ox, oy): (i32, i32), clock: u
     }
 }
 
+pub(super) fn shimmer_wait(clock: u64) -> u64 {
+    let cells = perimeter(&outline()).len().max(1) as u64;
+    let head = (clock % LAP_MS) * cells / LAP_MS;
+    ((head + 1) * LAP_MS).div_ceil(cells) - clock % LAP_MS
+}
+
 fn trail(path: &[(i32, i32)], clock: u64) -> impl Iterator<Item = (i32, i32, f32)> + '_ {
     let cells = path.len();
     let (head, tail) = if cells == 0 {

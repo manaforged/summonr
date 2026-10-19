@@ -136,6 +136,24 @@ pub(crate) fn a_goal_run_reports_the_judge_usage_once() {
     assert_eq!(usage, model.requests().len(), "{}", result.stdout);
 }
 
+pub(crate) fn a_goal_met_without_tools_in_a_repository_passes() {
+    let session = Session::new();
+    std::fs::write(session.work.path().join("notes.txt"), "present\n").expect("write the fixture");
+    with_check(&session, "exit 0");
+    commit_all(&session);
+    let model = Model::start(vec![
+        Step::Text("already done"),
+        Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
+    ]);
+    let budget = crate::support::slow(20).to_string();
+    let result = session.run(
+        &model,
+        "",
+        &["--goal", "fix it", "--max-secs", &budget, "--json"],
+    );
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+}
+
 pub(crate) fn a_goal_run_whose_output_lands_in_the_workspace_still_passes() {
     let session = Session::new();
     let work = session.files.path();
@@ -292,5 +310,37 @@ pub(crate) fn a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code
                 && message["content"]
                     .as_str()
                     .is_some_and(|text| text.contains("finish the task")))
+    );
+}
+
+pub(crate) fn a_session_resumed_by_id_from_another_folder_runs_in_its_own_workspace() {
+    let session = Session::new();
+    let first = session.run(&Model::start(vec![Step::Text("done")]), "", &["--json"]);
+    assert_eq!(first.code, Some(0), "{}", first.stdout);
+    let id = events(&first.stdout)[0]["id"]
+        .as_str()
+        .expect("session id")
+        .to_string();
+    let elsewhere = tempfile::tempdir().expect("another folder");
+    let model = Model::start(vec![
+        Step::Call("run_command", json!({"command": "pwd"})),
+        Step::Text("ok"),
+    ]);
+    let resumed = session.run_with(
+        &model,
+        "",
+        &["--session", &id, "--json"],
+        &Options {
+            work: Some(elsewhere.path()),
+            ..Options::default()
+        },
+    );
+    assert_eq!(resumed.code, Some(0), "{}", resumed.stdout);
+    let workspace = dunce::canonicalize(session.work.path()).expect("workspace");
+    let shown = json!(workspace.to_string_lossy()).to_string();
+    assert!(
+        model.tool_results()[0].contains(shown.trim_matches('"')),
+        "{:?}",
+        model.tool_results()
     );
 }

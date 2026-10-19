@@ -135,7 +135,11 @@ async fn checked(name: &str, key: &str) -> std::result::Result<String, (String, 
         .map_err(|error| match error.provider_failure() {
             Some(failure) => (
                 format!("✗ {failure}"),
-                failure.kind == crate::error::ProviderFailureKind::Authentication,
+                matches!(
+                    failure.kind,
+                    crate::error::ProviderFailureKind::Authentication
+                        | crate::error::ProviderFailureKind::MissingKey
+                ),
             ),
             None => (format!("✗ {error}"), false),
         })?;

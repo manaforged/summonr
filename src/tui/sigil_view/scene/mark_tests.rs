@@ -96,3 +96,23 @@ fn the_face_shimmer_is_faint_moves_and_leaves_the_layers_alone() {
         assert_eq!(light(Some(clock)), light(None), "{clock}");
     }
 }
+
+#[test]
+fn the_shimmer_wakes_exactly_when_its_head_moves() {
+    let path = perimeter(&outline());
+    let head = |clock| trail(&path, clock).next();
+    for clock in (0..2 * LAP_MS).step_by(37) {
+        let wait = shimmer_wait(clock);
+        assert_eq!(
+            head(clock),
+            head(clock + wait - 1),
+            "moved early at {clock}"
+        );
+        assert_ne!(
+            head(clock),
+            head(clock + wait),
+            "no move at {}",
+            clock + wait
+        );
+    }
+}

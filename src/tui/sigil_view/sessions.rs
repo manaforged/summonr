@@ -4,14 +4,18 @@ use std::path::Path;
 
 use crate::session::SessionInfo;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeEventsExt, WidgetLayoutExt, container, signal, text_edit,
-    virtual_list,
+    LayoutBuilderExt, LayoutStyle, WidgetLayoutExt, container, signal, text_edit, virtual_list,
 };
 use sigil::prelude::{NodeBuilder, Signal};
 
 use super::app::App;
 use super::canvas;
-use super::ui::{Bindings, Dialog, Hints, Key, Size, alt, pick};
+use super::ui::{Bindings, Dialog, Hints, Key, Size, alt};
+
+mod resume_row;
+use resume_row::row;
+
+const CURRENT: &str = " (current)";
 
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
@@ -117,9 +121,7 @@ impl Picker {
         } else {
             choices
                 .into_iter()
-                .filter(|(info, local)| {
-                    info.id != self.current.get() && (scope == Scope::All || *local)
-                })
+                .filter(|(info, local)| scope == Scope::All || *local || self.is_current(info))
                 .map(|(info, _)| info)
                 .collect()
         };
@@ -208,11 +210,7 @@ impl Picker {
             return format!(
                 "{}{} · {}",
                 crate::session::short(&info.id),
-                if info.id == self.current.get() {
-                    " (current)"
-                } else {
-                    ""
-                },
+                self.current_mark(info),
                 info.parent.as_deref().map_or_else(
                     || "original session".to_string(),
                     |parent| format!("from {}", crate::session::short(parent))
@@ -220,8 +218,9 @@ impl Picker {
             );
         }
         format!(
-            "{} · {} · {}",
+            "{}{} · {} · {}",
             crate::session::short(&info.id),
+            self.current_mark(info),
             info.cwd
                 .as_deref()
                 .and_then(|cwd| Path::new(cwd).file_name())
@@ -229,6 +228,14 @@ impl Picker {
                 .unwrap_or("unknown project"),
             info.model.as_deref().unwrap_or("unknown model")
         )
+    }
+
+    fn is_current(self, info: &SessionInfo) -> bool {
+        info.id == self.current.get()
+    }
+
+    fn current_mark(self, info: &SessionInfo) -> &'static str {
+        if self.is_current(info) { CURRENT } else { "" }
     }
 
     fn heading(self) -> &'static str {
@@ -369,28 +376,4 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
                 ),
             ]
         })
-}
-
-fn row(app: App, picker: Picker, index: usize, info: &SessionInfo, selected: usize) -> NodeBuilder {
-    let choose = app.clone();
-    let title = picker.title(info);
-    let detail = app
-        .model
-        .peek()
-        .live
-        .iter()
-        .find(|entry| entry.session == info.id)
-        .map_or_else(
-            || picker.detail(info),
-            |entry| {
-                let state = entry.status.label();
-                let state = if state.is_empty() { "open" } else { state };
-                format!("{state} · {}", picker.detail(info))
-            },
-        );
-    pick(index == selected, title, detail).pointer_down(move |event| {
-        choose.sessions.selected.set(index);
-        choose.resume_session();
-        event.stop_propagation();
-    })
 }

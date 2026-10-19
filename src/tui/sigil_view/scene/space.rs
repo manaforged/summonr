@@ -89,6 +89,33 @@ pub(in crate::tui::sigil_view) fn moving(cols: u16, rows: u16, beat: f64, seed: 
     spots
 }
 
+pub(super) fn sky_wait(cols: u16, rows: u16, beat: f64, seed: u64) -> Option<f64> {
+    if cols == 0 || rows == 0 {
+        return None;
+    }
+    let beat = beat.max(0.0);
+    let tick = beat as u64;
+    let into = tick % SKY_PERIOD;
+    let sparkle = tick - into
+        + match into {
+            0..4 => 4,
+            4..20 => 20,
+            _ => SKY_PERIOD + 4,
+        };
+    let phase = beat % METEOR_CYCLE as f64;
+    let meteor = if phase < METEOR_FLIGHT as f64 {
+        1.0
+    } else {
+        METEOR_CYCLE as f64 - phase
+    };
+    let waits = [
+        Some(sparkle as f64 - beat),
+        Some(meteor),
+        super::stars::twinkle_wait(cols, rows, beat, seed),
+    ];
+    waits.into_iter().flatten().reduce(f64::min)
+}
+
 pub(super) fn paint_spots(scene: &mut SceneBuilder, area: Rect, spots: &[Spot]) {
     let cell = metrics();
     for spot in spots {
@@ -308,15 +335,15 @@ impl Plate {
         self.slot(at).and_then(|index| self.cells.get_mut(index))
     }
 
+    pub(super) fn cells_of(&self, index: u16) -> Option<&[Cell]> {
+        let [_, _, width, height] = self.area;
+        let start = usize::from(index) * usize::from(width);
+        (index < height).then(|| &self.cells[start..start + usize::from(width)])
+    }
+
     pub(super) fn row(&self, index: u16) -> Option<(u16, u16, Vec<Cell>)> {
-        let [x, y, width, height] = self.area;
-        (index < height).then(|| {
-            let start = usize::from(index) * usize::from(width);
-            (
-                x,
-                y + index,
-                self.cells[start..start + usize::from(width)].to_vec(),
-            )
-        })
+        let [x, y, ..] = self.area;
+        self.cells_of(index)
+            .map(|cells| (x, y + index, cells.to_vec()))
     }
 }

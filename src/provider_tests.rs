@@ -202,3 +202,36 @@ fn a_refused_loopback_server_says_nothing_is_listening() {
     let remote = unreachable_message("x", "https://api.example.com/v1", true, &"connect");
     assert!(remote.contains("check the network"), "{remote}");
 }
+
+#[test]
+fn a_401_with_no_key_sent_names_the_missing_key_not_a_rejected_one() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().take(4) {
+            let Ok(mut stream) = stream else { break };
+            let mut buffer = [0_u8; 4096];
+            drop(std::io::Read::read(&mut stream, &mut buffer));
+            drop(std::io::Write::write_all(
+                &mut stream,
+                b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+            ));
+        }
+    });
+    let mut endpoint =
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3-flash"), crate::Need::Config).unwrap();
+    endpoint.base_url = Some(format!("http://{address}/v1"));
+    endpoint.models_url = None;
+    endpoint.api_key = None;
+    endpoint.source = None;
+    endpoint.oauth = None;
+    let error = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(Client::discover(&endpoint))
+        .unwrap_err();
+    assert_eq!(Client::state(&error), crate::endpoint::State::NeedsKey);
+    assert!(error.to_string().contains("needs a key"), "{error}");
+    assert!(!error.to_string().contains("rejected the key"), "{error}");
+}

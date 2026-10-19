@@ -145,12 +145,20 @@ impl Limits {
         millis(self.reader_window_ms)
     }
 
+    pub(crate) fn stamp_settle(&self) -> Duration {
+        millis(self.stamp_settle_ms)
+    }
+
     pub(crate) fn frame_window(&self) -> Duration {
         secs(self.frame_window_secs)
     }
 
     pub(crate) fn animation(&self) -> Duration {
         millis(self.animation_ms)
+    }
+
+    pub(crate) fn wake_margin(&self) -> Duration {
+        millis(self.wake_margin_ms)
     }
 
     pub(crate) fn spinner(&self) -> Duration {

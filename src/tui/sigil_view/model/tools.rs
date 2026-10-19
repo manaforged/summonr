@@ -77,7 +77,7 @@ impl Model {
                     expanded,
                     patch,
                     ..
-                }) = self.entries.inner.pop()
+                }) = self.entries.pop()
                 else {
                     return false;
                 };
@@ -190,9 +190,10 @@ impl Model {
     pub(in crate::tui::sigil_view) fn place_assistant(&mut self, text: String) {
         let pending = self
             .entries
-            .iter_mut()
+            .iter()
+            .enumerate()
             .rev()
-            .take_while(|entry| {
+            .take_while(|(_, entry)| {
                 matches!(
                     entry,
                     Entry::Assistant { done: false, .. }
@@ -201,11 +202,12 @@ impl Model {
                         | Entry::System(_)
                 )
             })
-            .find_map(|entry| match entry {
-                Entry::Assistant { text, done } if !*done => Some((text, done)),
-                _ => None,
+            .find_map(|(at, entry)| {
+                matches!(entry, Entry::Assistant { done: false, .. }).then_some(at)
             });
-        if let Some((body, done)) = pending {
+        if let Some(Entry::Assistant { text: body, done }) =
+            pending.and_then(|at| self.entries.get_mut(at))
+        {
             *body = text;
             *done = true;
         } else {

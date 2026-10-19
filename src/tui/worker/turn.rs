@@ -96,6 +96,7 @@ impl MidTurn<'_> {
             | Cmd::KillJob(_)
             | Cmd::Clipboard
             | Cmd::Diff(_)
+            | Cmd::SessionDiff(_)
             | Cmd::Patch(..)
             | Cmd::Review { .. }
             | Cmd::Trees

@@ -164,3 +164,20 @@ pub(in crate::tui::sigil_view) fn tool_markdown(
         format!("{mark} **{name}** `{arg}`\n```text\n{output}\n```")
     }
 }
+
+impl super::Model {
+    pub(super) fn approval_note(&mut self, text: String) {
+        let last = self.entries.len().checked_sub(1);
+        let placed = self.approval_at.as_ref().is_some_and(|(at, note)| {
+            Some(*at) == last
+                && *at >= self.committed
+                && matches!(self.entries.get(*at), Some(Entry::System(shown)) if shown == note)
+        });
+        if placed && let Some(entry) = self.entries.last_mut() {
+            *entry = Entry::System(text.clone());
+        } else {
+            self.entries.push(Entry::System(text.clone()));
+        }
+        self.approval_at = self.entries.len().checked_sub(1).map(|at| (at, text));
+    }
+}

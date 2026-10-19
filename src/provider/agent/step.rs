@@ -28,6 +28,7 @@ impl Run {
     }
 
     pub(super) async fn answer(&mut self, messages: &[Message]) -> Result<()> {
+        self.sizes = (0, 0);
         for call in std::mem::take(&mut self.pending) {
             let result = messages.iter().rev().find(|message| {
                 message.role == Role::Tool && message.tool_call_id.as_deref() == Some(&call.id)

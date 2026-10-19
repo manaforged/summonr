@@ -47,10 +47,10 @@ fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr::tui::hub:
         let mut args = args.clone();
         args.resume = false;
         args.fork = false;
-        args.worktree = false;
+        args.worktree = matches!(open, summonr::tui::hub::Open::Worktree);
         args.name = None;
         args.session = match open {
-            summonr::tui::hub::Open::New => None,
+            summonr::tui::hub::Open::New | summonr::tui::hub::Open::Worktree => None,
             summonr::tui::hub::Open::Resume(id) => Some(id),
         };
         let (workspace, _, action) = isolate(&args, &cwd)?;

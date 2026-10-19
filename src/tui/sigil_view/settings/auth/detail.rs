@@ -127,7 +127,7 @@ fn route_choice(
     let labels = labels.into_iter().map(str::to_owned).collect();
     kv(name, String::new(), Token::OnSurface).child(
         segmented(picked, labels)
-            .height(canvas::cell().h)
+            .height(canvas::overlay_list_row())
             .label(name),
     )
 }

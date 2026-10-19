@@ -5,11 +5,13 @@ use sigil::prelude::{
     container, icon_button, node, notice_band, spacer, text_edit,
 };
 
-use super::icons;
 use super::{App, Pane, chat};
 use crate::session;
 
 mod composer;
+mod mentions;
+mod title;
+pub(super) use title::title_bar;
 pub(in crate::tui::sigil_view) mod status;
 
 pub(super) const XS: f32 = 4.0;
@@ -23,6 +25,7 @@ const COLUMN: f32 = 760.0;
 const TITLE_CELLS: usize = 48;
 const CRUMB: &str = "›";
 const EXPLAIN: &str = "Explain this repo";
+const ADD_PROVIDER: &str = "Add a provider";
 
 pub(super) fn quiet(content: impl Into<sigil::kernel::TextContent>) -> sigil::kernel::TextBuilder {
     sigil::kernel::text(content)
@@ -39,33 +42,30 @@ pub(super) fn strong(content: impl Into<sigil::kernel::TextContent>) -> sigil::k
         .text_color(Token::OnSurface)
 }
 
-pub(super) fn model_label(app: &App) -> String {
-    let model = app.model.get();
-    match model.snapshot.effort {
-        Some(effort) => format!("{} · {}", model.snapshot.model, effort.as_str()),
-        None => model.snapshot.model.clone(),
-    }
+fn column(child: NodeBuilder) -> NodeBuilder {
+    reading(child, false)
 }
 
-fn column(child: NodeBuilder) -> NodeBuilder {
+fn reading(child: NodeBuilder, grow: bool) -> NodeBuilder {
+    let outer = LayoutStyle::flex_row()
+        .fill_width()
+        .padding_x(XL)
+        .justify_content(JustifyContent::Center);
+    let inner = LayoutStyle::flex_column()
+        .fill_width()
+        .max_width(COLUMN)
+        .align_items(AlignItems::Stretch);
+    let (outer, inner) = if grow {
+        (
+            outer.grow(1.0).fill_height().min_size(0.0, 0.0),
+            inner.fill_height().min_size(0.0, 0.0),
+        )
+    } else {
+        (outer.shrink(0.0), inner)
+    };
     container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .shrink(0.0)
-                .padding_x(XL)
-                .justify_content(JustifyContent::Center),
-        )
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .max_width(COLUMN)
-                        .align_items(AlignItems::Stretch),
-                )
-                .child(child),
-        )
+        .layout(outer)
+        .child(container().layout(inner).child(child))
 }
 
 pub(super) fn main_col(app: App) -> NodeBuilder {
@@ -85,9 +85,21 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .align_items(AlignItems::Stretch),
         )
         .bg(Token::Surface)
-        .child(node(move || {
-            chat::transcript(transcript_app, (XL + L, L), empty_home)
-        }))
+        .child(reading(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .fill_height()
+                        .grow(1.0)
+                        .min_size(0.0, 0.0)
+                        .padding_top(L),
+                )
+                .child(node(move || {
+                    chat::transcript(transcript_app, (L, L), empty_home)
+                })),
+            true,
+        ))
         .child(
             container()
                 .layout(LayoutStyle::block().fill_width().shrink(0.0))
@@ -159,111 +171,12 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
         )
 }
 
-fn active(app: &App) -> Option<crate::tui::hub::Live> {
-    app.model
-        .get()
-        .live
-        .iter()
-        .find(|entry| entry.active)
-        .cloned()
-}
-
 fn workspace_name(app: &App) -> String {
-    active(app)
-        .map_or_else(|| app.workspace.clone(), |entry| entry.workspace)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
+    let workspace =
+        title::active(app).map_or_else(|| app.workspace.clone(), |entry| entry.workspace);
+    crate::worktree::display_name(&workspace)
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| env!("CARGO_PKG_NAME").to_string())
-}
-
-fn session_title(app: &App) -> String {
-    active(app)
-        .map(|entry| crate::text::ellipsize(entry.title.trim(), TITLE_CELLS))
-        .filter(|title| !title.trim().is_empty())
-        .unwrap_or_else(|| super::rail::UNTITLED.to_string())
-}
-
-pub(super) fn title_bar(app: App) -> NodeBuilder {
-    let place = {
-        let app = app.clone();
-        sigil::reactive::derived(move || (workspace_name(&app), session_title(&app)))
-    };
-    let changes = {
-        let model = app.model;
-        sigil::reactive::derived(move || {
-            let model = model.get();
-            (
-                model.diff.files.len(),
-                model.diff.added(),
-                model.diff.removed(),
-            )
-        })
-    };
-    let chip_label = {
-        let label = app.clone();
-        sigil::reactive::derived(move || model_label(&label))
-    };
-    let mut crumbs = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .gap(S)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
-        .child(
-            container()
-                .layout(LayoutStyle::block().shrink(0.0))
-                .children_reactive(move || vec![quiet(place.get().0)]),
-        );
-    if let Some(branch) = app.git_branch.clone().filter(|branch| !branch.is_empty()) {
-        crumbs = crumbs.child(quiet(CRUMB)).child(quiet(branch));
-    }
-    crumbs = crumbs.child(quiet(CRUMB)).child(
-        container()
-            .layout(LayoutStyle::block().min_size(0.0, 0.0))
-            .children_reactive(move || vec![strong(place.get().1)]),
-    );
-    let picker = app.clone();
-    let options = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(46.0)
-                .padding_x(L)
-                .gap(M)
-                .align_items(AlignItems::Center),
-        )
-        .child(crumbs)
-        .child(spacer())
-        .child(
-            button(move || chip_label.get())
-                .ghost()
-                .size(ControlSize::Compact)
-                .accessible("Model")
-                .activate(move || picker.begin_model_edit()),
-        )
-        .child(
-            container()
-                .layout(LayoutStyle::flex_row().align_items(AlignItems::Center))
-                .children_reactive({
-                    let review = app.clone();
-                    move || {
-                        let (files, added, removed) = changes.get();
-                        if files == 0 {
-                            return Vec::new();
-                        }
-                        let open = review.clone();
-                        vec![
-                            button(format!("Review +{added} −{removed}"))
-                                .size(ControlSize::Compact)
-                                .activate(move || open.toggle_pane(Pane::Diff)),
-                        ]
-                    }
-                }),
-        )
-        .child(icon_button("···", move || options.toggle_options()).accessible("Options"))
 }
 
 fn empty_home() -> NodeBuilder {
@@ -283,13 +196,15 @@ fn starters(app: &App) -> NodeBuilder {
             .align_items(AlignItems::Center)
             .justify_content(JustifyContent::Center),
     );
-    if !app.model.peek().diff.files.is_empty() {
-        let review = app.clone();
+    if app.model.get().snapshot.unseated {
+        let providers = app.clone();
         actions = actions.child(
-            button("Review uncommitted changes")
+            button(ADD_PROVIDER)
+                .primary()
                 .size(ControlSize::Compact)
-                .activate(move || review.toggle_pane(Pane::Diff)),
+                .activate(move || providers.open_providers()),
         );
+        return home(app, actions);
     }
     let explain = app.clone();
     actions = actions.child(
@@ -314,6 +229,10 @@ fn starters(app: &App) -> NodeBuilder {
                 }),
         );
     }
+    home(app, actions)
+}
+
+fn home(app: &App, actions: NodeBuilder) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_column()

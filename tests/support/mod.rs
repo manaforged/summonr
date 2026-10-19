@@ -16,15 +16,11 @@ mod model;
 
 pub(crate) use model::{Model, Step};
 
-const WINDOWS_SLOWDOWN: u64 = 5;
+const SLOWDOWN: u64 = if cfg!(any(windows, coverage)) { 5 } else { 1 };
 const FINISH_SECS: u64 = 90;
 
-pub(crate) fn slow(secs: u64) -> u64 {
-    if cfg!(windows) {
-        secs * WINDOWS_SLOWDOWN
-    } else {
-        secs
-    }
+pub(crate) const fn slow(secs: u64) -> u64 {
+    secs * SLOWDOWN
 }
 
 const PROFILE_DIRS: &[&str] = &["AppData/Local", "AppData/Roaming"];

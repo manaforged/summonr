@@ -20,6 +20,7 @@ const SPLIT_COLS: u16 = 110;
 const LIST_CELLS: f32 = 58.0;
 const LIST_CHROME: u16 = 5;
 const NARROW_NOTE_ROWS: usize = 2;
+const KEY_NOTE: &str = "A key is a secret from the provider's website that lets summonr use its models. Providers at the top need none.";
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     let mut bindings = alt("d", |app, event| {
@@ -158,7 +159,9 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
     };
     let states = app.picker.groups.get();
     let (lookup, shown) = sections(&rows, &states, selected);
+    let explain = canvas::is_window() && app.auth.filter.get().is_empty();
     let chrome = LIST_CHROME
+        + u16::from(explain)
         + if split(app) {
             0
         } else {
@@ -195,7 +198,11 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
                 wide,
             )));
         }
-        let mut nodes = vec![list];
+        let mut nodes = Vec::new();
+        if explain {
+            nodes.push(group(KEY_NOTE));
+        }
+        nodes.push(list);
         nodes.extend(below.into_iter().take(NARROW_NOTE_ROWS));
         return nodes;
     }

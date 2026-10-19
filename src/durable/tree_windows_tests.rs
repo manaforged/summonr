@@ -11,7 +11,7 @@ fn a_file_another_handle_locked_does_not_stop_the_snapshot() {
         .open(dir.path().join("held.lock"))
         .unwrap();
     held.lock().unwrap();
-    let taken = snapshot(dir.path(), None, None).unwrap();
+    let taken = snapshot(dir.path(), &[], None).unwrap();
     assert!(taken.files.contains_key("open.txt"));
     drop(held);
 }

@@ -28,7 +28,7 @@ impl Model {
                 assignment: assignment.clone(),
                 workspace: workspace.clone(),
                 access: *access,
-                ..Agent::placeholder(tag)
+                ..Agent::placeholder(tag.clone())
             }),
             Event::Usage {
                 prompt_tokens,
@@ -37,7 +37,7 @@ impl Model {
                 cost,
                 ..
             } => self.child_usage(
-                tag,
+                tag.clone(),
                 *prompt_tokens,
                 *completion_tokens,
                 *reasoning_tokens,
@@ -47,10 +47,28 @@ impl Model {
                 let Some((last, done, failed)) = child_line(other) else {
                     return;
                 };
-                self.child_status(tag, last, done, failed);
+                self.child_status(tag.clone(), last, done, failed);
             }
         }
-        self.entries.invalidate();
+        self.touch_call(&tag);
+    }
+
+    fn touch_call(&mut self, tag: &str) {
+        let Some(call) = self
+            .agents
+            .iter()
+            .find(|agent| agent.id == tag && !agent.call.is_empty())
+            .map(|agent| agent.call.clone())
+        else {
+            return;
+        };
+        if let Some(at) = self
+            .entries
+            .iter()
+            .rposition(|entry| matches!(entry, Entry::Tool { id, .. } if *id == call))
+        {
+            self.entries.touch(at);
+        }
     }
 
     pub(in crate::tui::sigil_view) fn child_receipt(

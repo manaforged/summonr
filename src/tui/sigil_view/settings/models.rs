@@ -134,7 +134,7 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
         }
         None => empty(paint),
     };
-    let height = (visible + 1) as f32 * canvas::cell().h;
+    let height = (visible + 1) as f32 * canvas::overlay_list_row();
     let column = |layout: LayoutStyle| container().layout(layout);
     let frame = LayoutStyle::flex_column().height(height).shrink(0.0);
     if !wide {

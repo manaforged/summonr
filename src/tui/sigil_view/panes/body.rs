@@ -21,6 +21,30 @@ use sigil::prelude::node;
 use sigil::prelude::text_edit;
 
 use super::{App, FileRow, Pane, diff, jobs, mcp, peers, todos};
+use crate::tui::sigil_view::canvas;
+
+pub(super) struct Empty {
+    pub(super) window: &'static str,
+    pub(super) terminal: &'static str,
+}
+
+pub(super) fn empty(text: &Empty) -> NodeBuilder {
+    let line = if canvas::is_window() {
+        sigil::kernel::text(text.window)
+            .wrap()
+            .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
+    } else {
+        sigil::kernel::text(text.terminal).nowrap()
+    };
+    line.font_size(12.0)
+        .text_color(sigil::prelude::Token::Gray11)
+        .into()
+}
+
+const NO_TREES: Empty = Empty {
+    window: "Worktrees show here when a session works on its own branch in a separate checkout.",
+    terminal: "no worktrees; summonr --worktree, --goal, or --steps",
+};
 
 pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
     drop((
@@ -30,18 +54,18 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
         app.note_target.get(),
         app.pane_focus.get(),
     ));
-    let mut column = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .width(width)
-                .fill_height()
-                .padding(16.0)
-                .gap(8.0)
-                .shrink(0.0)
-                .min_size(0.0, 0.0)
-                .overflow_y(Overflow::Scroll),
-        )
-        .bg(sigil::prelude::Token::Gray3);
+    let style = LayoutStyle::flex_column()
+        .width(width)
+        .padding(16.0)
+        .gap(8.0)
+        .shrink(0.0)
+        .min_size(0.0, 0.0);
+    let style = if canvas::is_window() {
+        style
+    } else {
+        style.fill_height().overflow_y(Overflow::Scroll)
+    };
+    let mut column = container().layout(style).bg(sigil::prelude::Token::Gray3);
     column = match pane {
         Pane::Diff => diff::diff(app, column, cols_in(width)),
         Pane::Files => files(app, column),
@@ -54,6 +78,14 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
         Pane::Chat => column,
     };
     column
+}
+
+pub(super) fn count(items: usize) -> String {
+    if items == 0 {
+        String::new()
+    } else {
+        items.to_string()
+    }
 }
 
 pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
@@ -76,7 +108,7 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
                 )
                 .font_size(14.0)
                 .font_weight(500)
-                .text_color(if app.pane_focus.peek() {
+                .text_color(if app.pane_focus.peek() && !canvas::is_window() {
                     sigil::prelude::Token::Accent
                 } else {
                     sigil::prelude::Token::Gray12
@@ -185,19 +217,9 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
 
 fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let trees = app.model.get().trees.clone();
-    column = column.child(header(
-        &app,
-        "Worktrees".to_string(),
-        trees.len().to_string(),
-    ));
+    column = column.child(header(&app, "Worktrees".to_string(), count(trees.len())));
     if trees.is_empty() {
-        return column.child(
-            sigil::kernel::text("no worktrees; summonr --worktree, --goal, or --steps")
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
-        );
+        return column.child(empty(&NO_TREES));
     }
     for (index, row) in trees.into_iter().enumerate() {
         let show = app.clone();
@@ -214,6 +236,7 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 if row.dirty { "dirty" } else { "clean" },
                 if row.dirty { Tone::Warn } else { Tone::Neutral },
             ))
+            .child(super::tree_actions::buttons(&app, &row.tree.path))
             .pointer_down(move |event| {
                 if event.button == Some(MouseButton::Right) {
                     menu.context_row(index);

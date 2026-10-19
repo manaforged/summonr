@@ -23,8 +23,43 @@ fn receipt_text(line: Line) -> Line {
     }
 }
 
+pub(crate) fn whole_len(path: &Path) -> Option<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = File::open(path).ok()?;
+    let len = file.metadata().ok().filter(fs::Metadata::is_file)?.len();
+    if len == 0 {
+        return Some(0);
+    }
+    let mut last = [0_u8];
+    file.seek(SeekFrom::End(-1)).ok()?;
+    file.read_exact(&mut last).ok()?;
+    (last == *b"\n").then_some(len)
+}
+
 pub(crate) fn records<T: DeserializeOwned>(path: &Path) -> io::Result<Vec<T>> {
-    let bytes = fs::read(path)?;
+    parse(&fs::read(path)?, true)
+}
+
+pub(crate) fn records_after<T: DeserializeOwned>(path: &Path, offset: u64) -> io::Result<Vec<T>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = File::open(path)?;
+    let start = offset.saturating_sub(1);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    if offset > 0 && bytes.first() != Some(&b'\n') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the cached length is not a line boundary",
+        ));
+    }
+    parse(
+        bytes.get(usize::from(offset > 0)..).unwrap_or_default(),
+        false,
+    )
+}
+
+fn parse<T: DeserializeOwned>(bytes: &[u8], strict: bool) -> io::Result<Vec<T>> {
     let complete = bytes
         .iter()
         .rposition(|byte| *byte == b'\n')
@@ -32,7 +67,7 @@ pub(crate) fn records<T: DeserializeOwned>(path: &Path) -> io::Result<Vec<T>> {
     let text = std::str::from_utf8(&bytes[..complete])
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let mut lines = Vec::new();
-    let mut first = true;
+    let mut first = strict;
     for line in text.lines() {
         if line.trim().is_empty() {
             continue;

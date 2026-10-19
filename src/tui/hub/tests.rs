@@ -215,3 +215,42 @@ async fn a_new_session_takes_the_view_and_the_first_comes_back_in_place() {
     started.commands.send(crate::tui::Cmd::Quit).unwrap();
     started.task.await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn naming_a_session_publishes_its_title() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let first = session(home.path(), work.path());
+    let (made_home, made_work) = (home.path().to_path_buf(), work.path().to_path_buf());
+    let factory: super::Factory =
+        std::sync::Arc::new(move |_, _| Ok((session(&made_home, &made_work), None)));
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let started = super::start(first, info(), (tx, rx), factory);
+    let mut inbox = started.inbox;
+    started
+        .commands
+        .send(crate::tui::Cmd::Command("/name fix tests".to_string()))
+        .unwrap();
+    until("the named title", &mut inbox, |msg| {
+        let Msg::Live(live) = msg else {
+            return None;
+        };
+        live.iter()
+            .any(|entry| entry.active && entry.title == "fix tests")
+            .then_some(())
+    })
+    .await;
+    started.commands.send(crate::tui::Cmd::Quit).unwrap();
+    started.task.await.unwrap();
+}
+
+#[test]
+fn the_first_line_of_a_submitted_prompt_titles_the_session() {
+    let submit = |text: &str| crate::tui::Cmd::Submit(crate::provider::UserInput::from(text));
+    assert_eq!(
+        super::run::title_from(&submit("\n  fix the tests\nthen add --json")).as_deref(),
+        Some("fix the tests")
+    );
+    assert_eq!(super::run::title_from(&submit("   ")), None);
+    assert_eq!(super::run::title_from(&crate::tui::Cmd::Tick), None);
+}

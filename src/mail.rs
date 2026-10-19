@@ -121,7 +121,7 @@ pub(crate) fn now() -> u64 {
         .unwrap_or(0)
 }
 
-fn slug(cwd: &str) -> String {
+pub(crate) fn slug(cwd: &str) -> String {
     cwd.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect()

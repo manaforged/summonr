@@ -38,9 +38,11 @@ mod tools;
 mod verb;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use live::{Content, content};
-pub(in crate::tui::sigil_view) use live::{Mark, Prose, mark};
+pub(in crate::tui::sigil_view) use live::{Mark, Prose, mark, revision};
 mod live;
-pub(in crate::tui::sigil_view) use steps::{Slot, slot, subagents};
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use steps::slot;
+pub(in crate::tui::sigil_view) use steps::{Slot, slots, subagents};
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use tools::glyph;
 pub(in crate::tui::sigil_view) use tools::workspace_relative;

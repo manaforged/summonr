@@ -38,7 +38,14 @@ impl Grid {
         };
         if !split {
             let taken = grid.cells() as usize - NAME_SPLIT;
-            grid.name = span.saturating_sub(taken + 10).clamp(NAME_MIN, NAME_MAX);
+            let most = if canvas::is_window() {
+                span.saturating_sub(taken + 10)
+            } else {
+                NAME_MAX
+            };
+            grid.name = span
+                .saturating_sub(taken + 10)
+                .clamp(NAME_MIN, most.max(NAME_MIN));
         }
         grid
     }

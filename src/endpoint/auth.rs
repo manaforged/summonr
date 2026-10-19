@@ -123,7 +123,10 @@ pub async fn check_key(name: &str, key: &str) -> Result<Source> {
     endpoint.source = None;
     endpoint.oauth = None;
     if let Err(error) = crate::provider::Client::discover(&endpoint).await
-        && crate::provider::Client::state(&error) == State::KeyRejected
+        && matches!(
+            crate::provider::Client::state(&error),
+            State::KeyRejected | State::NeedsKey
+        )
     {
         return Err(Error::provider(
             crate::error::ProviderFailureKind::Authentication,

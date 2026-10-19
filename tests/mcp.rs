@@ -27,6 +27,8 @@ mod secrets;
 #[path = "mcp/session.rs"]
 mod session;
 mod support;
+#[path = "mcp/torn.rs"]
+mod torn;
 #[path = "mcp/transport.rs"]
 mod transport;
 
@@ -42,6 +44,8 @@ fn main() {
         return;
     }
     support::harness(proofs![
+        torn::a_session_resumes_with_any_state_file_torn,
+        torn::a_torn_work_file_is_reported_on_resume,
         content::a_server_prompt_becomes_the_user_message,
         content::a_prompt_without_its_required_argument_is_refused,
         content::a_server_resource_is_attached_to_the_prompt,
@@ -111,6 +115,8 @@ fn main() {
         session::a_plain_worktree_turn_lands_its_changes_without_running_a_check,
         session::a_failed_worktree_run_without_changes_says_so,
         session::a_goal_run_reports_the_judge_usage_once,
+        session::a_goal_met_without_tools_in_a_repository_passes,
+        session::a_session_resumed_by_id_from_another_folder_runs_in_its_own_workspace,
         session::a_goal_run_whose_output_lands_in_the_workspace_still_passes,
         session::a_print_run_says_its_check_was_not_run,
         #[cfg(any(target_os = "macos", target_os = "linux"))]

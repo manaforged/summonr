@@ -15,6 +15,7 @@
 | --- | --- |
 | <code>New</code> |  |
 | <code>Resume(String)</code> |  |
+| <code>Worktree</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>StructuralPartialEq</code>
 

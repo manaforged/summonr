@@ -2,6 +2,7 @@ pub(in crate::tui::sigil_view) use super::note::Note;
 use rank::best_match;
 pub(in crate::tui::sigil_view) use rank::matching;
 
+mod providers;
 mod rank;
 use super::*;
 
@@ -38,7 +39,14 @@ fn providers() -> Vec<crate::endpoint::AuthInfo> {
         .into_iter()
         .filter_map(|name| crate::endpoint::auth_info(&name).ok())
         .collect();
-    choices.sort_by_key(|choice| (section(choice), choice.catalog_rank(), choice.name.clone()));
+    choices.sort_by_key(|choice| {
+        (
+            section(choice),
+            !choice.keyless(),
+            choice.catalog_rank(),
+            choice.name.clone(),
+        )
+    });
     choices
 }
 
@@ -257,15 +265,6 @@ impl App {
         }
     }
 
-    pub(in crate::tui::sigil_view) fn unseated(&self) -> bool {
-        crate::endpoint::resolve(
-            Some(&self.model.peek().snapshot.endpoint),
-            None,
-            crate::endpoint::Need::Seat,
-        )
-        .is_err()
-    }
-
     fn env_note(&self, choice: &crate::endpoint::AuthInfo) -> bool {
         let Some(env) = choice.env else {
             return false;
@@ -275,29 +274,6 @@ impl App {
         ))));
         self.auth.focus.set(self.auth.focus.peek() + 1);
         true
-    }
-
-    pub(in crate::tui::sigil_view) fn cancel_auth(&self) {
-        let step = self.auth.step.peek();
-        let waiting = matches!(step, Login::Checking)
-            || matches!(step, Login::SignIn { ref note, .. } if note.is_empty());
-        if waiting {
-            drop(self.cmd.send(Cmd::Cancel));
-        }
-        self.replace_auth_key(String::new());
-        self.auth.seat.set(None);
-        if matches!(step, Login::List(_)) || self.picker.open.peek() {
-            self.auth.open.set(false);
-        }
-        if matches!(step, Login::List(_)) && !self.picker.open.peek() && self.unseated() {
-            self.push_entry(Entry::System(
-                "no provider is set up; /login adds one".to_string(),
-            ));
-            self.splash.set(false);
-            self.refresh();
-        }
-        self.auth.focus.set(self.auth.focus.peek() + 1);
-        self.auth.step.set(Login::List(Note::default()));
     }
 
     pub(in crate::tui::sigil_view) fn auth_progress(

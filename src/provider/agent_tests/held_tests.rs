@@ -86,3 +86,76 @@ async fn a_cancelled_turn_forgets_the_claude_thread() {
         runs[1]
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn output_over_turns_is_capped_per_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let wide = "  *'\"type\":\"user\"'*)\n    big=$(head -c 5000000 /dev/zero | tr '\\0' x)\n    printf '{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"%s\"}}}\\n' \"$big\"\n";
+    let script = PLAIN.replacen("  *'\"type\":\"user\"'*)\n", wide, 1);
+    let client = seat_at(dir.path(), &script);
+    let mut messages = vec![Message::system("sys"), Message::user("first")];
+    client
+        .stream(&ask(&messages, &[]), &mut Partial::default())
+        .await
+        .unwrap();
+    reply(&mut messages, "second");
+    let second = client
+        .stream(&ask(&messages, &[]), &mut Partial::default())
+        .await;
+    assert!(second.is_ok(), "{:?}", second.err());
+    assert_eq!(runs(dir.path()).len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_changed_effort_starts_a_new_claude_process_and_the_same_effort_reuses_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let client = seat_at(dir.path(), PLAIN);
+    let mut messages = vec![Message::system("sys"), Message::user("first")];
+    let mut low = ask(&messages, &[]);
+    low.effort = Some(crate::provider::Effort::Low);
+    client.stream(&low, &mut Partial::default()).await.unwrap();
+    reply(&mut messages, "second");
+    let mut same = ask(&messages, &[]);
+    same.effort = Some(crate::provider::Effort::Low);
+    client.stream(&same, &mut Partial::default()).await.unwrap();
+    assert_eq!(
+        runs(dir.path()).len(),
+        1,
+        "the same effort restarted claude"
+    );
+    reply(&mut messages, "third");
+    let mut high = ask(&messages, &[]);
+    high.effort = Some(crate::provider::Effort::High);
+    client.stream(&high, &mut Partial::default()).await.unwrap();
+    assert_eq!(
+        runs(dir.path()).len(),
+        2,
+        "a new effort kept the old claude"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_earlier_message_that_changes_its_image_starts_a_new_claude_process() {
+    let dir = tempfile::tempdir().unwrap();
+    let client = seat_at(dir.path(), PLAIN);
+    let mut first = Message::user("look at this");
+    first
+        .images
+        .push(crate::provider::Image::encode("image/png", b"one"));
+    let mut messages = vec![Message::system("sys"), first];
+    client
+        .stream(&ask(&messages, &[]), &mut Partial::default())
+        .await
+        .unwrap();
+    reply(&mut messages, "second");
+    messages[1].images[0] = crate::provider::Image::encode("image/png", b"two");
+    client
+        .stream(&ask(&messages, &[]), &mut Partial::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        runs(dir.path()).len(),
+        2,
+        "a changed earlier image kept the old process"
+    );
+}

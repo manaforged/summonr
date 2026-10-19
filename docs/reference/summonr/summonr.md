@@ -940,6 +940,7 @@
 | <code>Http</code> |  |
 | <code>Malformed</code> |  |
 | <code>MalformedToolCall</code> |  |
+| <code>MissingKey</code> |  |
 | <code>RateLimited</code> |  |
 | <code>Server</code> |  |
 | <code>Transport</code> |  |

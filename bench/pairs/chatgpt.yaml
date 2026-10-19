@@ -2,7 +2,7 @@ n_attempts: 3
 n_concurrent_trials: 4
 timeout_multiplier: 1.0
 environment:
-  type: docker
+  import_path: image_user:Docker
   mounts:
     - {type: bind, source: "${LOGINS}/.summonr", target: /opt/auth/summonr}
 agents:
@@ -16,4 +16,4 @@ agents:
     model_name: openai/gpt-6.1-sol
     kwargs: {binary: "${SUMMONR}", binary_sha256: "${SUMMONR_SHA256}", reasoning_effort: high}
 datasets:
-  - {name: terminal-bench/terminal-bench, version: "4.0.0"}
+  - {name: terminal-bench/terminal-bench, ref: "4.0.0"}

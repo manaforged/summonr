@@ -62,7 +62,11 @@ fn popup(app: &App, width: usize) -> Option<Popup> {
             SuggestRow {
                 index,
                 name: label,
-                description: mention.map_or_else(String::new, |_| description.clone()),
+                description: if mention.is_some() || (head.is_none() && built_in(name)) {
+                    description.clone()
+                } else {
+                    String::new()
+                },
                 selected: index == cursor,
             }
         })
@@ -84,6 +88,10 @@ fn popup(app: &App, width: usize) -> Option<Popup> {
         keys,
         count,
     })
+}
+
+fn built_in(name: &str) -> bool {
+    canvas::is_window() && crate::command_specs().iter().any(|spec| spec.name == name)
 }
 
 pub(in crate::tui::sigil_view) fn height(app: &App, width: usize) -> u16 {
@@ -125,7 +133,7 @@ pub(in crate::tui::sigil_view) fn widget(app: App, width: usize) -> NodeBuilder 
             vec![
                 container()
                     .layout(LayoutStyle::flex_column().padding_x(8.0).gap(0.0))
-                    .border_w(canvas::cell().h as i16)
+                    .border_w(canvas::frame_border())
                     .border_color(sigil::prelude::Token::Gray6)
                     .bg(canvas::palette().tool_bg)
                     .child(body.child(popup.keys.right(popup.count).bar(&hotkeys))),

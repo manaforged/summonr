@@ -109,18 +109,28 @@ pub(in crate::tui::sigil_view) fn inline_layer(
         .child(canvas::gutter(footer::footer_bar(app, width)))
 }
 
-fn row(app: App, index: usize, spacing: (f32, f32), prefs: Signal<Prefs>) -> NodeBuilder {
+fn row(
+    app: App,
+    index: usize,
+    spacing: (f32, f32),
+    prefs: Signal<Prefs>,
+    table: Signal<Rc<[entry::Slot]>>,
+) -> NodeBuilder {
     #[cfg(feature = "gui")]
     if canvas::is_window() {
         return super::super::desktop::entry::row(app, index, spacing);
     }
     let probe = app.clone();
-    let current =
-        sigil::reactive::derived(move || probe.model.with(|model| slot_marks(model, index)));
+    let current = sigil::reactive::derived(move || {
+        let at = table.with(|table| table.get(index).cloned().unwrap_or(entry::Slot::Single));
+        probe
+            .model
+            .with(|model| (slot_marks(model, index, at), model.entries.stamp))
+    });
     container()
         .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
         .children_reactive(move || {
-            let (at, _) = current.get();
+            let ((at, _), _) = current.get();
             prefs.with(|_| ());
             untrack(|| match at {
                 entry::Slot::Member => vec![
@@ -134,8 +144,7 @@ fn row(app: App, index: usize, spacing: (f32, f32), prefs: Signal<Prefs>) -> Nod
         })
 }
 
-fn slot_marks(model: &Model, index: usize) -> (entry::Slot, Vec<entry::Mark>) {
-    let at = entry::slot(&model.entries, index);
+fn slot_marks(model: &Model, index: usize, at: entry::Slot) -> (entry::Slot, Vec<entry::Mark>) {
     let range = match &at {
         entry::Slot::Lead(range) => range.clone(),
         entry::Slot::Single => index..index + 1,
@@ -153,7 +162,7 @@ fn slot_marks(model: &Model, index: usize) -> (entry::Slot, Vec<entry::Mark>) {
             entry::mark(
                 item,
                 live && range.start + offset + 1 == last,
-                model,
+                entry::revision(&model.entries, range.start + offset),
                 entry::Prose::Patch,
             )
         })
@@ -218,21 +227,7 @@ fn inset(node: NodeBuilder, spacing: (f32, f32)) -> NodeBuilder {
         .child(node)
 }
 
-pub(in crate::tui::sigil_view) fn transcript(
-    app: App,
-    spacing: (f32, f32),
-    empty: impl Fn() -> NodeBuilder + 'static,
-) -> NodeBuilder {
-    let model = app.model;
-    let keys = sigil::reactive::derived(move || {
-        model.with(|model| {
-            Rc::new(
-                (0..model.entries.len())
-                    .map(|index| index as u64)
-                    .collect::<Vec<u64>>(),
-            )
-        })
-    });
+fn follow(app: &App) -> Signal<usize> {
     let jump = signal(0_usize);
     let target = app.search.target;
     effect(move || {
@@ -250,6 +245,31 @@ pub(in crate::tui::sigil_view) fn transcript(
             defer(move || scroll.set(end));
         }
     });
+    jump
+}
+
+pub(in crate::tui::sigil_view) fn transcript(
+    app: App,
+    spacing: (f32, f32),
+    empty: impl Fn() -> NodeBuilder + 'static,
+) -> NodeBuilder {
+    let model = app.model;
+    let keys = sigil::reactive::derived(move || {
+        model.with(|model| {
+            Rc::new(
+                (0..model.entries.len())
+                    .map(|index| index as u64)
+                    .collect::<Vec<u64>>(),
+            )
+        })
+    });
+    let shape = derived(move || model.with(|model| (model.entries.len(), model.entries.stamp)));
+    let table = derived(move || {
+        shape.with(|_| ());
+        untrack(|| model.with(|model| Rc::<[entry::Slot]>::from(entry::slots(&model.entries))))
+    });
+    let jump = follow(&app);
+    let settle = app.settle;
     let empty_now = sigil::reactive::derived(move || keys.get().is_empty());
     let prefs = derived(move || model.with(|model| model.prefs.clone()));
     fragment().children_reactive(move || {
@@ -281,7 +301,7 @@ pub(in crate::tui::sigil_view) fn transcript(
                 )
                 .child(
                     virtual_list(keys, move |index, _: &u64| {
-                        row(live.clone(), index, spacing, prefs)
+                        row(live.clone(), index, spacing, prefs, table)
                     })
                     .key_by(|_, key| *key)
                     .measured()

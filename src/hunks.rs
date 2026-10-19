@@ -31,6 +31,8 @@ pub(crate) struct Note {
     pub comment: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reported: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
 }
 
 pub(crate) type Marks = BTreeMap<String, BTreeMap<String, Note>>;
@@ -39,6 +41,8 @@ pub(crate) enum Op {
     Verdict(Option<Verdict>),
     Comment(Option<String>),
     Reject,
+    RejectFile,
+    Restore,
 }
 
 const FILE: &str = "review.json";
@@ -136,18 +140,52 @@ pub(crate) fn apply(root: &Path, path: &str, hunk: &str, op: Op) -> Result<Marks
                     "the hunk is gone; {path} changed since it was loaded"
                 )));
             };
-            diff::git_output(
-                root,
-                &[],
-                &["apply", "--reverse", "--whitespace=nowarn"],
-                Some(target.patch.as_bytes()),
-            )?;
-            note(&mut marks, path, hunk).verdict = Some(Verdict::Rejected);
+            git_apply(root, &target.patch, true)?;
+            rejected(&mut marks, path, target);
+        }
+        Op::RejectFile => {
+            let patch = diff::patch(root, Some(path))?;
+            if patch.trim().is_empty() {
+                return Err(Error::Config(format!("{path} has no changes to revert")));
+            }
+            git_apply(root, &patch, true)?;
+            for target in split(path, &patch) {
+                rejected(&mut marks, path, target);
+            }
+        }
+        Op::Restore => {
+            let entry = note(&mut marks, path, hunk);
+            let Some(patch) = entry.patch.clone() else {
+                return Err(Error::Config(format!(
+                    "nothing to undo for this hunk in {path}"
+                )));
+            };
+            git_apply(root, &patch, false)?;
+            *entry = Note {
+                comment: entry.comment.take(),
+                ..Note::default()
+            };
         }
     }
     prune(&mut marks);
     save(root, &marks)?;
     Ok(marks)
+}
+
+fn rejected(marks: &mut Marks, path: &str, target: Hunk) {
+    let entry = note(marks, path, &target.id);
+    entry.verdict = Some(Verdict::Rejected);
+    entry.reported = false;
+    entry.patch = Some(target.patch);
+}
+
+fn git_apply(root: &Path, patch: &str, reverse: bool) -> Result<()> {
+    let mut args = vec!["apply", "--whitespace=nowarn"];
+    if reverse {
+        args.push("--reverse");
+    }
+    diff::git_output(root, &[], &args, Some(patch.as_bytes()))?;
+    Ok(())
 }
 
 pub(crate) fn drain(root: &Path) -> Option<String> {

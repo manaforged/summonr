@@ -127,6 +127,28 @@ fn is_summary(line: &str) -> bool {
     SUMMARY_STARTS.iter().any(|prefix| line.starts_with(prefix)) || line.ends_with(SUMMARY_ENDS)
 }
 
+#[cfg(feature = "gui")]
+pub(crate) fn test_result(text: &str) -> Option<&str> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with(SUMMARY_STARTS[0]))
+        .enumerate()
+        .max_by_key(|(index, line)| (test_count(line), *index))
+        .map(|(_, line)| line)
+}
+
+#[cfg(feature = "gui")]
+fn test_count(line: &str) -> usize {
+    line.split(';')
+        .filter_map(|part| {
+            let mut words = part.split_whitespace().rev();
+            let label = words.next()?;
+            let count = words.next()?.parse::<usize>().ok()?;
+            matches!(label, "passed" | "failed").then_some(count)
+        })
+        .sum()
+}
+
 fn ends_block(lines: &[Cow<'_, str>], index: usize) -> bool {
     lines[index].trim_start().is_empty()
         && index + 1 < lines.len()

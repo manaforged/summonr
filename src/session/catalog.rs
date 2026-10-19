@@ -23,14 +23,14 @@ pub(crate) fn latest_in(
     skip: Option<&str>,
 ) -> Result<Option<SessionInfo>> {
     let want = roots(workspace);
-    let sessions = ids_in(home)?;
+    let sessions = journals_in(home)?;
     let mut index = Index::load(home);
     let found = sessions
         .iter()
         .rev()
-        .filter(|(id, _)| skip != Some(id.as_str()))
-        .find_map(|(id, path)| {
-            let summary = index.summary(id, path)?;
+        .filter(|(id, _, _)| skip != Some(id.as_str()))
+        .find_map(|(id, path, len)| {
+            let summary = index.summary(id, path, *len)?;
             summary
                 .here(&want)
                 .then(|| summary.into_info(id.clone(), path.clone()))
@@ -249,26 +249,41 @@ pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt
 }
 
 pub(crate) fn list_in(home: &Path) -> Result<Vec<SessionInfo>> {
-    let sessions = ids_in(home)?;
+    let sessions = journals_in(home)?;
     let mut index = Index::load(home);
     let infos = sessions
         .iter()
-        .filter_map(|(id, path)| Some(index.summary(id, path)?.into_info(id.clone(), path.clone())))
+        .filter_map(|(id, path, len)| {
+            Some(
+                index
+                    .summary(id, path, *len)?
+                    .into_info(id.clone(), path.clone()),
+            )
+        })
         .collect();
     index.save(&sessions);
     Ok(infos)
 }
 
 pub(crate) fn ids_in(home: &Path) -> Result<Vec<(String, PathBuf)>> {
+    Ok(journals_in(home)?
+        .into_iter()
+        .map(|(id, path, _)| (id, path))
+        .collect())
+}
+
+fn journals_in(home: &Path) -> Result<Vec<(String, PathBuf, u64)>> {
     let dir = log::sessions_dir(home);
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
-    let mut ids: Vec<(String, PathBuf)> = std::fs::read_dir(dir)?
+    let mut ids: Vec<(String, PathBuf, u64)> = std::fs::read_dir(dir)?
         .filter_map(std::result::Result::ok)
         .filter_map(|entry| {
             let id: SessionId = entry.file_name().to_str()?.parse().ok()?;
-            Some((id.to_string(), log::session_path(home, id)))
+            let path = log::session_path(home, id);
+            let len = file_bytes(&path)?;
+            Some((id.to_string(), path, len))
         })
         .collect();
     ids.sort();
@@ -292,21 +307,24 @@ impl Index {
         Self(Sidecar::load(home, INDEX_FILE))
     }
 
-    fn summary(&mut self, id: &str, path: &Path) -> Option<Summary> {
+    fn summary(&mut self, id: &str, path: &Path, len: u64) -> Option<Summary> {
         if let Some(summary) = self.0.get(id)
-            && (summary.settled() || summary.open_bytes() == file_bytes(path))
+            && (summary.settled() || summary.open_bytes() == Some(len))
         {
             return Some(summary.clone());
         }
+        let whole = log::whole_len(path);
         let bytes = file_bytes(path)?;
         let (mut summary, settled) = Summary::peek(path);
         summary.mark_open((!settled).then_some(bytes));
-        self.0.put(id, summary.clone());
+        if settled || whole == Some(bytes) {
+            self.0.put(id, summary.clone());
+        }
         Some(summary)
     }
 
-    fn save(self, live: &[(String, PathBuf)]) {
-        self.0.save(live.iter().map(|(id, _)| id.as_str()));
+    fn save(self, live: &[(String, PathBuf, u64)]) {
+        self.0.save(live.iter().map(|(id, _, _)| id.as_str()));
     }
 }
 
@@ -316,3 +334,7 @@ fn file_bytes(path: &Path) -> Option<u64> {
         .filter(std::fs::Metadata::is_file)
         .map(|meta| meta.len())
 }
+
+#[cfg(test)]
+#[path = "catalog_tests.rs"]
+mod tests;

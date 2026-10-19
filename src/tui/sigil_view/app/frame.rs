@@ -2,11 +2,17 @@ use sigil::prelude::{effect, interval};
 
 use super::*;
 
-fn sky_clock() -> sigil::prelude::Signal<f64> {
+fn sky_clock(app: &App) -> sigil::prelude::Signal<f64> {
     let seconds = sigil::prelude::signal(0.0_f64);
     let start = std::time::Instant::now();
-    interval(crate::limits::limits().animation(), move || {
-        seconds.set(start.elapsed().as_secs_f64())
+    let app = app.clone();
+    effect(move || {
+        let delay = crate::tui::sigil_view::scene::next_change(&app, seconds.get());
+        let wake = app.clone();
+        interval(delay, move || {
+            seconds.set(start.elapsed().as_secs_f64());
+            wake.reveal();
+        });
     });
     seconds
 }
@@ -32,6 +38,22 @@ impl App {
         self.viewport.set((cols, rows));
     }
 
+    #[cfg(feature = "gui")]
+    pub(in crate::tui::sigil_view) fn fit_window(&self) {
+        let size = sigil::app::viewport_size();
+        let app = self.clone();
+        effect(move || {
+            let logical = size.get();
+            let cell = crate::tui::sigil_view::canvas::cell();
+            if logical.width > 0.0 && logical.height > 0.0 {
+                app.resize(
+                    (logical.width / cell.w).floor().max(1.0) as u16,
+                    (logical.height / cell.h).floor().max(1.0) as u16,
+                );
+            }
+        });
+    }
+
     pub(in crate::tui::sigil_view) fn animate(&self) {
         let app = self.clone();
         let busy =
@@ -41,12 +63,26 @@ impl App {
             (app.splash.get() && app.model.with(|model| model.prefs.animations) && !app.covered())
                 || !app.splash_revealed.get()
         });
+        self.ticks_while(splash, busy);
         let app = self.clone();
         effect(move || {
-            let period = if splash.get() {
-                Some(crate::limits::limits().animation())
-            } else {
-                busy.get().then_some(crate::limits::limits().spinner())
+            app.sky_clock.set(splash.get().then(|| sky_clock(&app)));
+        });
+        self.poll();
+        self.clear_notices();
+    }
+
+    fn ticks_while(
+        &self,
+        splash: sigil::prelude::Signal<bool>,
+        busy: sigil::prelude::Signal<bool>,
+    ) {
+        let app = self.clone();
+        effect(move || {
+            let period = match (splash.get(), busy.get()) {
+                (true, true) => Some(crate::limits::limits().animation()),
+                (true, false) => None,
+                (false, busy) => busy.then_some(crate::limits::limits().spinner()),
             };
             if let Some(period) = period {
                 let tick = app.clone();
@@ -59,11 +95,9 @@ impl App {
                 });
             }
         });
-        let app = self.clone();
-        effect(move || {
-            app.sky_clock.set(splash.get().then(sky_clock));
-        });
-        self.poll();
+    }
+
+    fn clear_notices(&self) {
         let app = self.clone();
         effect(move || {
             if app.notice.get().is_some() {
@@ -123,6 +157,9 @@ impl App {
 
     fn tick(&self) {
         self.ticks.update(|ticks| *ticks = ticks.saturating_add(1));
+    }
+
+    fn reveal(&self) {
         if !self.splash_revealed.peek()
             && self.splash_since.get().elapsed().as_millis()
                 > u128::from(crate::limits::limits().splash_reveal_ms)

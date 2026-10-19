@@ -72,7 +72,9 @@ impl App {
                 secondary: Some(pane),
                 share,
             });
-            self.pane_focus.set(true);
+            if !crate::tui::sigil_view::canvas::is_window() {
+                self.pane_focus.set(true);
+            }
         }
     }
 
@@ -330,10 +332,7 @@ impl App {
         let Some(pane) = layout.secondary else {
             return false;
         };
-        if !self.draft.peek().is_empty()
-            || self.overlay().is_some()
-            || self.model.peek().busy_since.is_some()
-        {
+        if !self.draft.peek().is_empty() || self.overlay().is_some() {
             return false;
         }
         self.last_pane.set(Some(pane));

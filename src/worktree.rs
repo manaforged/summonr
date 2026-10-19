@@ -13,7 +13,7 @@ pub(crate) use land::{Landing, reconcile_children};
 
 const COMMIT_MAX: u64 = 5 * 1024 * 1024;
 
-fn worktree_id(branch: &str) -> Option<&str> {
+pub(crate) fn worktree_id(branch: &str) -> Option<&str> {
     branch
         .strip_prefix("summonr/")
         .or_else(|| branch.strip_prefix("summon/"))
@@ -282,8 +282,25 @@ fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {
     Ok(common.join("summon").join(format!("{id}.base")))
 }
 
+#[cfg(feature = "gui")]
+pub(crate) fn display_name(path: &Path) -> Option<String> {
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    let repo = path
+        .parent()
+        .and_then(Path::file_name)
+        .map(|parent| parent.to_string_lossy().into_owned())
+        .and_then(|parent| {
+            parent
+                .strip_suffix(&format!("-{WORKTREES}"))
+                .map(str::to_string)
+        });
+    Some(repo.map_or(name, |repo| format!("{repo} · worktree")))
+}
+
+const WORKTREES: &str = "worktrees";
+
 fn worktree_dir(primary: &Path, id: &str) -> Result<PathBuf> {
-    checkout_dir(primary, "worktrees", id)
+    checkout_dir(primary, WORKTREES, id)
 }
 
 pub(super) const CHILDREN: &str = "children";
@@ -350,4 +367,4 @@ fn new_id() -> String {
 
 #[cfg(test)]
 #[path = "worktree_tests.rs"]
-mod tests;
+pub(crate) mod tests;

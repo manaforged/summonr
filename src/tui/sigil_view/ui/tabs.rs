@@ -38,23 +38,26 @@ pub(in crate::tui::sigil_view) fn strip(app: &App, active: Tab) -> NodeBuilder {
             .align_items(AlignItems::Center)
             .gap(canvas::cell().w * 3.0),
     );
-    Tab::ALL
-        .into_iter()
-        .fold(line, |line, tab| {
-            let look = if tab == active {
-                Look::sm(Token::Accent11).bold()
-            } else {
-                Look::sm(Token::Gray10)
-            };
-            let app = app.clone();
-            line.child(
-                container()
-                    .child(look.on(sigil::kernel::text(tab.label()).nowrap()))
-                    .pointer_down(move |event| {
-                        app.show_tab(tab);
-                        event.stop_propagation();
-                    }),
-            )
-        })
-        .child(Look::xs(Token::Gray9).on(sigil::kernel::text("←/→").nowrap()))
+    let tabs = Tab::ALL.into_iter().fold(line, |line, tab| {
+        let look = if tab == active {
+            Look::sm(Token::Accent11).bold()
+        } else {
+            Look::sm(Token::Gray10)
+        };
+        let app = app.clone();
+        line.child(
+            container()
+                .child(look.on(sigil::kernel::text(tab.label()).nowrap()))
+                .pointer_down(move |event| {
+                    app.show_tab(tab);
+                    event.stop_propagation();
+                }),
+        )
+    });
+    if canvas::is_window() {
+        return tabs;
+    }
+    tabs.child(Look::xs(Token::Gray9).on(sigil::kernel::text(TAB_HINT).nowrap()))
 }
+
+const TAB_HINT: &str = "←/→";

@@ -2,7 +2,12 @@ use sigil::prelude::Paint;
 use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder};
 
 use super::App;
-use super::body::header;
+use super::body::{Empty, empty, header};
+
+const NO_LEDGER: Empty = Empty {
+    window: "The agent's step-by-step plan shows here when it works on a task with several steps.",
+    terminal: "no ledger items yet",
+};
 use super::ledger::Mark;
 use crate::tui::sigil_view::chat::todos::tally;
 
@@ -16,13 +21,7 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
     drop(model);
     column = column.child(header(app, "Ledger".to_string(), count));
     if lines.is_empty() {
-        return column.child(
-            sigil::kernel::text("no ledger items yet")
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
-        );
+        return column.child(empty(&NO_LEDGER));
     }
     for row in lines {
         let done = row.mark == Mark::Done;

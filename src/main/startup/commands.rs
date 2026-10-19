@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
 
 use summonr::{Result, last_for, list_sessions, resolve_session, sweep_worktrees, workflow};
 
@@ -58,40 +61,76 @@ pub(super) fn grep_sessions(pattern: &str) -> Result<()> {
     let needle = pattern.to_lowercase();
     let sessions: Vec<_> = list_sessions()?.into_iter().rev().collect();
     let width = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-    let mut shown = 0;
-    for batch in sessions.chunks(width) {
-        let found: Vec<Vec<String>> = std::thread::scope(|scope| {
-            let searches: Vec<_> = batch
-                .iter()
-                .map(|info| scope.spawn(|| matching(&info.path, &needle)))
-                .collect();
-            searches
-                .into_iter()
-                .map(|search| search.join().unwrap_or_default())
-                .collect()
-        });
-        for (info, lines) in batch.iter().zip(found) {
-            for line in lines {
-                if shown == GREP_LINES {
-                    println!("… more matches; narrow the pattern");
-                    return Ok(());
+    let next = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
+    let (sender, found) = mpsc::channel();
+    let shown = std::thread::scope(|scope| {
+        for _ in 0..width.min(sessions.len()) {
+            let sender = sender.clone();
+            let (next, stop, sessions, needle) = (&next, &stop, &sessions, &needle);
+            scope.spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(info) = sessions.get(index) else {
+                        break;
+                    };
+                    let lines = if info.may_contain(needle) {
+                        matching(&info.path, needle)
+                    } else {
+                        Vec::new()
+                    };
+                    if sender.send((index, lines)).is_err() {
+                        break;
+                    }
                 }
-                println!(
-                    "{}\t{}\t{}\t{}",
+            });
+        }
+        drop(sender);
+        let shown = print_in_order(
+            |index| {
+                let info = &sessions[index];
+                format!(
+                    "{}\t{}\t{}",
                     summonr::short(&info.id),
                     started(&info.id),
-                    info.cwd.as_deref().unwrap_or("-"),
-                    line
-                );
-                shown += 1;
-            }
-        }
-    }
+                    info.cwd.as_deref().unwrap_or("-")
+                )
+            },
+            &found,
+        );
+        stop.store(true, Ordering::Relaxed);
+        drop(found);
+        shown
+    });
     if shown == 0 {
         eprintln!("no matches");
         std::process::exit(1);
     }
     Ok(())
+}
+
+fn print_in_order(
+    row: impl Fn(usize) -> String,
+    found: &mpsc::Receiver<(usize, Vec<String>)>,
+) -> usize {
+    let mut pending = BTreeMap::new();
+    let mut due = 0;
+    let mut shown = 0;
+    for (index, lines) in found {
+        pending.insert(index, lines);
+        while let Some(lines) = pending.remove(&due) {
+            for line in lines {
+                if shown == GREP_LINES {
+                    println!("… more matches; narrow the pattern");
+                    return shown;
+                }
+                println!("{}\t{line}", row(due));
+                shown += 1;
+            }
+            due += 1;
+        }
+    }
+    shown
 }
 
 fn matching(journal: &Path, needle: &str) -> Vec<String> {

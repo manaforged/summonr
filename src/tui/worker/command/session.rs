@@ -49,7 +49,11 @@ impl Worker {
     pub(in crate::tui::worker) fn name(&mut self, name: Option<&str>) -> bool {
         match name {
             Some(name) => match self.loop_.set_name(name) {
-                Ok(()) => self.system(&format!("session named {name}")),
+                Ok(()) => {
+                    let named = self.loop_.name().unwrap_or_else(|| name.to_string());
+                    drop(self.ui.send(Msg::Named(named)));
+                    self.system(&format!("session named {name}"));
+                }
                 Err(error) => self.fail(&error.to_string()),
             },
             None => match self.loop_.name() {

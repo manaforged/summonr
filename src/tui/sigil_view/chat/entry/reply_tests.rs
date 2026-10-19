@@ -1,4 +1,4 @@
-use super::{Part, Shown, parts, stats_of};
+use super::{Part, Shown, Stream, parts, stats_of};
 
 #[test]
 fn a_quoted_stat_and_patch_use_the_diff_card() {
@@ -71,4 +71,17 @@ fn kind(part: &Part) -> &'static str {
         Part::Shown(Shown::Stat { .. }) => "stat",
         Part::Shown(Shown::Patch { .. }) => "patch",
     }
+}
+
+#[test]
+fn a_streamed_reply_parses_like_the_whole_text() {
+    let reply = "Intro line\r\nmore prose\n\n```\n$ summonr diff --stat\n+3     −6     src/hashline.rs\n1 file · +3 −6 · vs HEAD\n```\n\n```text\nplain fence\n```\ntail prose\n```rust\nfn open() {\n";
+    let mut stream = Stream::default();
+    for end in (0..=reply.len()).filter(|&end| reply.is_char_boundary(end)) {
+        assert!(
+            stream.parts(&reply[..end]) == parts(&reply[..end]),
+            "differs after {end} bytes"
+        );
+    }
+    assert!(stream.parts("other text") == parts("other text"));
 }

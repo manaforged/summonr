@@ -32,8 +32,7 @@ impl Model {
         let at = self.entries.len().saturating_sub(1);
         let answer = matches!(self.entries.last(), Some(Entry::Assistant { .. }));
         if answer && at >= self.committed {
-            self.entries.invalidate();
-            self.entries.inner.insert(at, entry);
+            self.entries.insert(at, entry);
         } else {
             self.entries.push(entry);
         }
@@ -204,8 +203,7 @@ impl Model {
                         .iter()
                         .rposition(|entry| matches!(entry, Entry::Assistant { done: false, .. }))
                 {
-                    self.entries.invalidate();
-                    self.entries.inner.remove(at);
+                    self.entries.remove(at);
                 }
                 self.entries.push(Entry::System(text));
             }

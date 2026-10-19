@@ -8,6 +8,7 @@ mod jobs;
 mod mcp;
 mod peers;
 mod todos;
+mod tree_actions;
 
 pub(super) mod ledger;
 

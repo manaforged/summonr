@@ -13,6 +13,22 @@ impl App {
             .collect()
     }
 
+    pub(in crate::tui::sigil_view) fn toggle_session(&self) {
+        self.diff_session.set(!self.diff_session.peek());
+        self.diff_cursor.set(0);
+        self.request_diff();
+        self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn request_diff(&self) {
+        let command = if self.diff_session.peek() && self.root().is_none() {
+            Cmd::SessionDiff(self.model.peek().session.clone())
+        } else {
+            Cmd::Diff(self.root())
+        };
+        drop(self.cmd.send(command));
+    }
+
     pub(in crate::tui::sigil_view) fn toggle_recent(&self) {
         self.diff_recent.set(!self.diff_recent.peek());
         self.diff_cursor.set(0);
@@ -235,6 +251,26 @@ impl App {
         self.refresh();
     }
 
+    pub(in crate::tui::sigil_view) fn tree_merge(&self, path: PathBuf) {
+        drop(self.cmd.send(Cmd::Merge(path)));
+        self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn tree_discard(&self, path: PathBuf) {
+        self.worktree_discard.set(None);
+        drop(self.cmd.send(Cmd::Discard(path)));
+        self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn tree_discard_armed(&self, path: PathBuf) {
+        if self.worktree_discard.peek().as_ref() == Some(&path) {
+            self.tree_discard(path);
+        } else {
+            self.worktree_discard.set(Some(path));
+            self.refresh();
+        }
+    }
+
     pub(in crate::tui::sigil_view) fn diff_command(&self, argument: Option<&str>) {
         self.splash.set(false);
         self.compare(None);
@@ -245,7 +281,9 @@ impl App {
                 ..layout
             });
         }
-        self.pane_focus.set(true);
+        if !crate::tui::sigil_view::canvas::is_window() {
+            self.pane_focus.set(true);
+        }
         match argument {
             Some(path) => self.diff_open(path.to_string()),
             None => {

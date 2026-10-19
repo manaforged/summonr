@@ -49,6 +49,7 @@ impl Worker {
             | Cmd::KillJob(_)
             | Cmd::Clipboard
             | Cmd::Diff(_)
+            | Cmd::SessionDiff(_)
             | Cmd::Patch(..)
             | Cmd::Review { .. }
             | Cmd::Trees
@@ -143,11 +144,14 @@ impl Worker {
                 } else {
                     let before = self.loop_.is_approval();
                     let on = self.loop_.toggle_approval();
-                    self.system(match (on, before == on) {
+                    let note = match (on, before == on) {
                         (true, true) => "approval mode stays on: configured policy requires it",
                         (true, false) => "approval mode: risky commands ask before running",
-                        (false, _) => "auto approval: destructive commands and policy asks still require approval",
-                    });
+                        (false, _) => {
+                            "auto approval: destructive commands and policy asks still require approval"
+                        }
+                    };
+                    drop(self.ui.send(Msg::Approval(note.to_string())));
                 }
                 self.send_settings();
             }

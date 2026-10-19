@@ -53,7 +53,7 @@ pub(in crate::provider) struct Run {
     pub(super) metered: bool,
     pub(super) spent: (u32, u32),
     ready: Value,
-    shape: u64,
+    shape: String,
 }
 
 impl Drop for Run {
@@ -85,7 +85,7 @@ impl Run {
             thread,
         };
         let mut run = Self::open(seat, spec).await?;
-        run.shape = shape(request);
+        run.shape = request.shape_hash();
         for message in input {
             run.send(&bridge::user(message)).await?;
         }
@@ -146,7 +146,7 @@ impl Run {
             metered: false,
             spent: (0, 0),
             ready: Value::Null,
-            shape: 0,
+            shape: String::new(),
         };
         run.send(&json!({
             "type": "control_request",
@@ -191,7 +191,7 @@ impl Run {
     }
 
     pub(super) fn fits(&mut self, request: &CompletionRequest<'_>) -> bool {
-        self.shape == shape(request) && matches!(self.child.try_wait(), Ok(None))
+        self.shape == request.shape_hash() && matches!(self.child.try_wait(), Ok(None))
     }
 
     pub(super) fn recorded(&self) -> Option<&str> {
@@ -246,18 +246,6 @@ impl Run {
             .and(flushed)
             .map_err(|error| self.exited(&format!(" ({error})")))
     }
-}
-
-fn shape(request: &CompletionRequest<'_>) -> u64 {
-    let system = request
-        .messages
-        .first()
-        .filter(|message| message.role == Role::System)
-        .map(|message| message.content.as_str());
-    let spec = json!([request.model, system, request.effort, request.tools]);
-    let mut hasher = crate::text::Fnv64::default();
-    std::hash::Hasher::write(&mut hasher, spec.to_string().as_bytes());
-    std::hash::Hasher::finish(&hasher)
 }
 
 fn keep_listing(name: &str, ready: &Value) {

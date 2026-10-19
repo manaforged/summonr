@@ -61,17 +61,12 @@ pub(in crate::tui::sigil_view) fn meters(app: App) -> NodeBuilder {
         )
         .child(facts)
         .child(spacer());
-    if let Some(branch) = app.git_branch.clone().filter(|branch| !branch.is_empty()) {
-        row = row.child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .gap(XS)
-                        .align_items(AlignItems::Center),
-                )
-                .child(icons::branch())
-                .child(quiet(branch)),
-        );
+    if let Some(note) = app.notice.get() {
+        let tone = match note.kind {
+            crate::tui::sigil_view::app::NoticeKind::Copied => Token::Success11,
+            crate::tui::sigil_view::app::NoticeKind::Failed => Token::Error11,
+        };
+        row = row.child(quiet(note.text).text_color(tone));
     }
     row
 }

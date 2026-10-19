@@ -4,6 +4,7 @@ import shlex
 from pathlib import Path, PurePosixPath
 from typing import Any, override
 
+import image_user
 import level
 from harbor.agents.capabilities import AgentCapabilities
 from harbor.agents.installed.base import BaseInstalledAgent, CliFlag, with_prompt_template
@@ -30,7 +31,7 @@ BINARY = "/usr/local/bin/summonr"
 
 class Summonr(BaseInstalledAgent):
     DEFAULT_SETUP_TIMEOUT_SEC = level.SETUP_TIMEOUT_SEC
-    capabilities = AgentCapabilities(atif=True)
+    capabilities = AgentCapabilities(atif=True, skills=True, mcp_servers=True)
 
     _OUTPUT_FILENAME = "summonr.txt"
     _instruction = ""
@@ -90,14 +91,19 @@ class Summonr(BaseInstalledAgent):
         endpoint, model = self._endpoint()
         home = (EnvironmentPaths.agent_dir / "summonr").as_posix()
         marker = f"{home}/.started"
-        links = " ".join(f"ln -sfn {LOGINS / name} {home}/{name};" for name in LOGIN_FILES)
+        logins = await image_user.lend(self, environment, LOGINS)
+        links = " ".join(f"ln -sfn {logins / name} {home}/{name};" for name in LOGIN_FILES)
         base, key = self._get_env("BENCH_BASE"), self._get_env("BENCH_KEY")
         config = f'[endpoint.{endpoint}]\nmodel = "{model}"\n' + (f'base_url = "{level.per_trial(base, self.logs_dir.parent.name)}"\n' if base else "") + (f'api_key = "{key}"\n' if base and key else "")
+        for server in self.mcp_servers:
+            launch = f"command = {json.dumps(server.command)}\nargs = {json.dumps(server.args)}\n" if server.transport == "stdio" else f"url = {json.dumps(server.url)}\n"
+            config += f"[mcp.{server.name}]\n{launch}"
+        skills = f"mkdir -p {home}/skills && cp -r {shlex.quote(self.skills_dir)}/* {home}/skills/ 2>/dev/null; " if self.skills_dir else ""
         await self.exec_as_agent(
             environment,
             command=(
-                f"mkdir -p {home} {LOGINS}/locks && touch {marker} && "
-                f"printf %s {shlex.quote(config)} > {home}/config.toml && {links}"
+                f"mkdir -p {home} {logins}/locks && touch {marker} && "
+                f"printf %s {shlex.quote(config)} > {home}/config.toml && {links} {skills}true"
             ),
         )
         flags = self.build_cli_flags()
@@ -113,6 +119,7 @@ class Summonr(BaseInstalledAgent):
                 env=env,
             )
         finally:
+            await image_user.give_back(self, environment, LOGINS, logins)
             await self.exec_as_root(
                 environment,
                 command=(

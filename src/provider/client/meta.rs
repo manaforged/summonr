@@ -191,10 +191,11 @@ impl Client {
             .header("retry-after")
             .and_then(|value| value.trim().parse().ok());
         let text = response.text().await.unwrap_or_default();
-        self.explain(response_failure(code, text.trim(), after), model)
+        let keyed = self.auth.is_login() || self.token().await.is_ok_and(|key| !key.is_empty());
+        self.explain(response_failure(code, text.trim(), after), model, keyed)
     }
 
-    fn explain(&self, error: Error, model: Option<&str>) -> Error {
+    fn explain(&self, error: Error, model: Option<&str>, keyed: bool) -> Error {
         let Error::Provider(mut failure) = error else {
             return error;
         };
@@ -208,6 +209,10 @@ impl Client {
             (ProviderFailureKind::RateLimited, _) if lower.contains(PLAN_USAGE_CAP) => format!(
                 "{name} reached this app's cap on your ChatGPT plan; open Manage usage at {PLAN_USAGE_SETTINGS} to raise it, or pick another model with /model"
             ),
+            (ProviderFailureKind::Authentication, _) if !keyed => {
+                failure.kind = ProviderFailureKind::MissingKey;
+                format!("{name} needs a key and none is set; run `summonr login {name}` to add one")
+            }
             (ProviderFailureKind::Authentication, _) => {
                 format!("{name} rejected the key; run `summonr login {name}` to replace it")
             }
@@ -239,7 +244,8 @@ impl Client {
                 format!("{name} has no model `{model}`: {hint}`summonr endpoints` lists its models")
             }
             (
-                ProviderFailureKind::Server
+                ProviderFailureKind::MissingKey
+                | ProviderFailureKind::Server
                 | ProviderFailureKind::Transport
                 | ProviderFailureKind::ContextOverflow
                 | ProviderFailureKind::MalformedToolCall
@@ -297,6 +303,7 @@ impl Client {
         use ProviderFailureKind as Kind;
         match error.provider_failure().map(|failure| failure.kind) {
             Some(Kind::Authentication) => State::KeyRejected,
+            Some(Kind::MissingKey) => State::NeedsKey,
             Some(Kind::RateLimited) => State::RateLimited,
             Some(Kind::Transport) => State::Offline,
             Some(

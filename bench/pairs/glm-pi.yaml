@@ -2,7 +2,7 @@ n_attempts: 1
 n_concurrent_trials: 3
 timeout_multiplier: 1.0
 environment:
-  type: docker
+  import_path: image_user:Docker
   kwargs: {extra_hosts: "host.docker.internal:host-gateway"}
 agents:
   - import_path: summonr_agent:Summonr
@@ -21,4 +21,4 @@ agents:
     kwargs: {version: "${opencode2}", variant: max}
     env: {ZHIPU_API_KEY: "$${ZAI_API_KEY}", BENCH_BASE: "${BENCH_PROXY}/opencode2/v1"}
 datasets:
-  - {name: terminal-bench/terminal-bench, version: "4.0.0"}
+  - {name: terminal-bench/terminal-bench, ref: "4.0.0"}

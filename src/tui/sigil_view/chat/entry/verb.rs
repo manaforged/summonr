@@ -165,7 +165,9 @@ fn ok_meta(step: &Step, output: &str) -> Option<(String, Look)> {
         }
         StepVerb::Ran => {
             let text = preview::summary(output, false);
-            let last = text.lines().last().unwrap_or("").trim().to_string();
+            let last = crate::tools::command::test_result(&text)
+                .unwrap_or_else(|| text.lines().last().unwrap_or("").trim())
+                .to_string();
             (!last.is_empty()).then(|| {
                 (
                     crate::text::ellipsize(&last, META_COLS),

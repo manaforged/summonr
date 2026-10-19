@@ -54,7 +54,7 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
         "auto"
     };
     let rows = [
-        ("session", Setting::Mode, "mode", mode.to_string()),
+        ("session", Setting::Mode, "run mode", mode.to_string()),
         (
             "session",
             Setting::Verify,

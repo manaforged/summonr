@@ -1,6 +1,53 @@
 use super::*;
 
+#[cfg(feature = "gui")]
+const RENAME: &str = "/name ";
+
 impl App {
+    #[cfg(feature = "gui")]
+    pub(in crate::tui::sigil_view) fn new_session(&self) {
+        self.open_session(crate::tui::hub::Open::New);
+    }
+
+    #[cfg(feature = "gui")]
+    pub(in crate::tui::sigil_view) fn new_worktree_session(&self) {
+        self.open_session(crate::tui::hub::Open::Worktree);
+    }
+
+    #[cfg(feature = "gui")]
+    pub(in crate::tui::sigil_view) fn rename_session(&self, id: &str) {
+        if id != self.model.peek().session {
+            self.open_session(crate::tui::hub::Open::Resume(id.to_string()));
+        }
+        self.replace(RENAME.to_string());
+        self.focus_composer();
+    }
+
+    #[cfg(feature = "gui")]
+    pub(in crate::tui::sigil_view) fn remove_session(&self, id: &str, again: &str) -> bool {
+        match self.forget(id, again) {
+            Ok(()) => true,
+            Err(note) => {
+                self.push_entry(Entry::System(note));
+                false
+            }
+        }
+    }
+
+    fn forget(&self, id: &str, again: &str) -> Result<(), String> {
+        if id == self.model.get().session {
+            return Err("the open session cannot be deleted".to_string());
+        }
+        if self.sessions.arm(id) {
+            drop(self.cmd.send(Cmd::DeleteSession(id.to_string())));
+            return Ok(());
+        }
+        Err(format!(
+            "{again} again deletes {}",
+            crate::session::short(id)
+        ))
+    }
+
     pub(in crate::tui::sigil_view) fn open_session(&self, open: crate::tui::hub::Open) {
         drop(self.cmd.send(Cmd::Open(open)));
     }
@@ -44,20 +91,9 @@ impl App {
         ) else {
             return;
         };
-        if info.id == self.model.get().session {
-            self.sessions.note("the open session cannot be deleted");
-            return;
-        }
-        if self.sessions.arm(&info.id) {
-            drop(self.cmd.send(Cmd::DeleteSession(info.id.clone())));
-            self.sessions.note("");
-        } else {
-            self.sessions.note(&format!(
-                "{} again deletes {}",
-                crate::tui::sigil_view::ui::alt_label('d'),
-                crate::session::short(&info.id)
-            ));
-        }
+        let again = crate::tui::sigil_view::ui::alt_label('d');
+        let note = self.forget(&info.id, &again).err().unwrap_or_default();
+        self.sessions.note(&note);
     }
 
     pub(in crate::tui::sigil_view) fn resume_session(&self) {

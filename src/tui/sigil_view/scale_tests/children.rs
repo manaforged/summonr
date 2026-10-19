@@ -1,5 +1,5 @@
 use super::super::app::App;
-use super::{State, busy_info, frame_with};
+use super::{State, busy_info, frame_with, screens};
 use crate::tools::Event;
 use crate::tui::Msg;
 
@@ -335,4 +335,44 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         assert!(model.busy_since.is_some());
         assert_eq!(model.agents[0].last, "still finishes");
     });
+}
+
+fn read(app: &App, id: &str) {
+    app.update(Msg::Event(Event::ToolCall {
+        id: id.to_owned(),
+        name: "read".to_owned(),
+        arguments: r#"{"path":"a.txt"}"#.to_owned(),
+    }));
+}
+
+fn done(app: &App, id: &str, output: &str) {
+    app.update(Msg::Event(Event::ToolResult {
+        id: id.to_owned(),
+        success: true,
+        mutated: false,
+        output: output.to_owned(),
+        millis: Some(3),
+        patch: None,
+    }));
+}
+
+#[test]
+fn a_group_row_repaints_when_a_later_call_finishes_empty() {
+    let setup = |app: &App| {
+        read(app, "1");
+        done(app, "1", "one");
+        read(app, "2");
+    };
+    let live = screens(110, 30, setup, &[&|app| done(app, "2", "")]);
+    let fresh = frame_with(busy_info(), 110, 30, State::Idle, |app| {
+        setup(app);
+        done(app, "2", "");
+    })
+    .join("\n");
+    let live = live.last().map_or("", |screen| screen.trim_end());
+    assert!(
+        fresh.contains("2 reads") || fresh.contains("Read"),
+        "{fresh}"
+    );
+    assert_eq!(live, fresh.trim_end());
 }

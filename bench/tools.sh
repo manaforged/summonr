@@ -17,6 +17,21 @@ here=$(cd "$(dirname "$0")" && pwd)
 pin() { awk -v k="$1" '$1==k{print $2}' "$here/tools.lock"; }
 hermes=$(pin hermes) uv=$(pin uv) bun=$(pin bun)
 
+if [ -n "$src" ]; then
+  docker run --rm -v "$out":/opt/tools -v "$src":/src:ro \
+    ${sigil:+-v "$sigil":/sigil:ro} \
+    -v "$HOME/.cargo/git:/root/.cargo/git" \
+    -v "$HOME/.cargo/registry:/root/.cargo/registry" \
+    "alpine:$(pin alpine)" sh -euc "
+apk add -q --no-cache curl ca-certificates git bash make cmake clang clang-dev g++ musl-dev pkgconf linux-headers perl >/dev/null
+curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable >/dev/null
+. /root/.cargo/env
+export CARGO_NET_GIT_FETCH_WITH_CLI=true CC_x86_64_unknown_linux_musl=gcc CXX_x86_64_unknown_linux_musl=g++
+cargo build --manifest-path /src/Cargo.toml --release --locked -p summonr --bin summonr --target x86_64-unknown-linux-musl --target-dir /tmp/summonr-target
+install -D -m 755 /tmp/summonr-target/x86_64-unknown-linux-musl/release/summonr /opt/tools/summonr/bin/summonr
+"
+fi
+
 docker run --rm -v "$out":/opt/tools \
   -e HERMES="$hermes" -e UV="$uv" -e BUN="$bun" -e OWNER="$(id -u):$(id -g)" \
   ${src:+-v "$src":/src:ro} \
@@ -27,12 +42,6 @@ docker run --rm -v "$out":/opt/tools \
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
 apt-get update -qq >/dev/null
 apt-get install -y -qq curl ca-certificates git unzip make cmake clang libclang-dev g++ pkg-config libssl-dev >/dev/null
-if [ -d /src ]; then
-  curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable >/dev/null
-  . /root/.cargo/env
-  cargo build --manifest-path /src/Cargo.toml --release --locked --target-dir /tmp/summonr-target
-  install -D -m 755 /tmp/summonr-target/release/summonr /opt/tools/summonr/bin/summonr
-fi
 install -m 644 /etc/ssl/certs/ca-certificates.crt cacert.pem
 if [ -n \"\$HERMES\" ] && [ -n \"\$UV\" ]; then
   rm -rf hermes hermes-python uv && mkdir -p uv

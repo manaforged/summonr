@@ -65,7 +65,13 @@ impl App {
             Msg::Event(crate::Event::Elicit { form, dialog }) => {
                 self.form_open(form.clone(), *dialog);
             }
-            Msg::Diff(_) => {
+            Msg::Diff(diff) => {
+                if self.diff_session.peek()
+                    && self.root().is_none()
+                    && diff.base != crate::diff::SESSION_BASE
+                {
+                    self.request_diff();
+                }
                 if let Some(path) = self.diff_view.peek() {
                     self.model_mut(|model| model.patch = None);
                     drop(self.cmd.send(Cmd::Patch(self.root(), path)));

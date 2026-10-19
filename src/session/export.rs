@@ -101,3 +101,31 @@ fn export_tool(out: &mut String, text: &str, success: bool) {
         if success { "" } else { "(failed)\n" }
     ));
 }
+
+const DECORATION: &str = "session name you assistant interrupted compacted failed in refs";
+const RAW_ONLY: [&[u8]; 4] = [
+    b"\\u",
+    b"\"kind\":\"receipt\"",
+    "\u{212a}".as_bytes(),
+    "\u{130}".as_bytes(),
+];
+
+impl super::SessionInfo {
+    #[must_use]
+    pub fn may_contain(&self, needle: &str) -> bool {
+        if needle.is_empty()
+            || !needle.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            || DECORATION.contains(needle)
+        {
+            return true;
+        }
+        let Ok(mut bytes) = std::fs::read(&self.path) else {
+            return true;
+        };
+        bytes.make_ascii_lowercase();
+        let has = |part: &[u8]| bytes.windows(part.len()).any(|window| window == part);
+        has(needle.as_bytes())
+            || RAW_ONLY.into_iter().any(has)
+            || name_of(&self.path).is_some_and(|name| name.to_lowercase().contains(needle))
+    }
+}

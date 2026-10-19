@@ -252,3 +252,50 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
         assert!(model.busy_since.is_some());
     }
 }
+
+#[test]
+fn a_streamed_token_rebuilds_only_the_live_row() {
+    let mut model = model();
+    model.apply(Msg::User("first".to_string()));
+    model.apply(Msg::Busy(Some(Activity::Turn)));
+    call(&mut model, "1", "run_command");
+    finish(&mut model, "1");
+    model.apply(Msg::Event(Event::Delta {
+        text: "partial".to_string(),
+    }));
+    let before: Vec<u64> = (0..model.entries.len())
+        .map(|at| model.entries.rev(at))
+        .collect();
+    model.apply(Msg::Event(Event::Delta {
+        text: " answer".to_string(),
+    }));
+    let after: Vec<u64> = (0..model.entries.len())
+        .map(|at| model.entries.rev(at))
+        .collect();
+    let last = before.len() - 1;
+    assert_eq!(before[..last], after[..last]);
+}
+
+#[test]
+fn a_child_event_touches_only_its_tool_row() {
+    let mut model = model();
+    call(&mut model, "a", "run_command");
+    call(&mut model, "b", "task");
+    let stamp = model.entries.stamp;
+    let first = model.entries.rev(0);
+    let second = model.entries.rev(1);
+    model.apply_child(
+        "01a104ac00000000000000000000cccc",
+        Event::Spawned {
+            assignment: "job".to_string(),
+            access: crate::child::Access::Research,
+            call: "b".to_string(),
+            background: false,
+            workspace: String::new(),
+            agent: String::new(),
+        },
+    );
+    assert_eq!(model.entries.stamp, stamp);
+    assert_eq!(model.entries.rev(0), first);
+    assert_ne!(model.entries.rev(1), second);
+}

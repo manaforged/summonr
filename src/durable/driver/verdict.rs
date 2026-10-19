@@ -5,18 +5,20 @@ impl SessionDriver {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
         }
-        let capture = if self.unchanged_turn() {
-            drop(self.base.take());
-            self.work
-                .as_mut()
-                .ok_or(DriverError::NoWork)?
-                .base
-                .get_or_insert_with(Snapshot::default)
-                .clone()
+        let unchanged = self.unchanged_turn();
+        self.settle_base()?;
+        let base = match self.work.as_ref().and_then(|work| work.base.clone()) {
+            Some(base) => base,
+            None => {
+                let now = self.snapshot(None)?;
+                self.work.as_mut().ok_or(DriverError::NoWork)?.base = Some(now.clone());
+                now
+            }
+        };
+        let capture = if unchanged {
+            base
         } else {
-            self.settle_base()?;
-            let base = self.work.as_ref().and_then(|work| work.base.clone());
-            self.snapshot(base.as_ref())?
+            self.snapshot(Some(&base))?
         };
         let paths = self
             .work

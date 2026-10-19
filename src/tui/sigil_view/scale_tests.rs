@@ -340,3 +340,13 @@ fn your_line_is_the_text_you_sent() {
         .expect("user text");
     assert_eq!(row.trim(), "Review the change", "{row:?}");
 }
+
+#[test]
+fn a_cleared_transcript_shows_the_note_in_place_of_the_prompt() {
+    let shots = screens(80, 24, |_| {}, &[&|app: &App| app.update(Msg::Cleared)]);
+    let last = shots.last().map(String::as_str).unwrap_or_default();
+    assert!(
+        last.contains("history cleared") && !last.contains("Review the change"),
+        "{last}"
+    );
+}

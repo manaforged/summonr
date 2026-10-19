@@ -9,7 +9,7 @@ use crate::session::sidecar::Sidecar;
 
 const CACHE_FILE: &str = "usage.json";
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub(super) struct Charge(
     pub(super) Option<String>,
     pub(super) u64,
@@ -51,11 +51,18 @@ impl Charge {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub(super) struct Entry {
-    size: u64,
+    size: Option<u64>,
     pub(super) undated: bool,
     pub(super) charges: Vec<Charge>,
+    #[serde(default)]
+    resume: Option<Resume>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+struct Resume {
+    model: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -76,21 +83,20 @@ impl Journals {
     }
 
     pub(super) fn entry(&mut self, info: &SessionInfo) -> Option<&Entry> {
-        let size = std::fs::metadata(&info.path).ok()?.len();
-        let fresh = self.0.get(&info.id).is_some_and(|entry| entry.size == size);
-        if !fresh {
-            let Some((undated, charges)) = read(&info.path) else {
-                self.0.forget(&info.id);
-                return None;
-            };
-            self.0.put(
-                &info.id,
-                Entry {
-                    size,
-                    undated,
-                    charges,
-                },
-            );
+        let size = log::whole_len(&info.path);
+        let cached = self.0.get(&info.id);
+        if size.is_some() && cached.is_some_and(|entry| entry.size == size) {
+            return self.0.get(&info.id);
+        }
+        let next = cached
+            .and_then(|entry| grown(entry, &info.path, size?))
+            .or_else(|| full(&info.path, size));
+        let Some(next) = next else {
+            self.0.forget(&info.id);
+            return None;
+        };
+        if self.0.get(&info.id) != Some(&next) {
+            self.0.put(&info.id, next);
         }
         self.0.get(&info.id)
     }
@@ -100,36 +106,57 @@ impl Journals {
     }
 }
 
-fn read(path: &Path) -> Option<(bool, Vec<Charge>)> {
+fn full(path: &Path, size: Option<u64>) -> Option<Entry> {
     let records = log::records::<Record>(path).ok()?;
-    let mut current = None;
-    let mut charges = Vec::new();
-    let mut undated = false;
-    for record in records {
-        let reported = record.reported;
-        let (model, usage, cost) = match record.line {
-            log::Line::Session { model, .. } => {
-                current = Some(model);
+    let mut entry = Entry {
+        size,
+        resume: Some(Resume { model: None }),
+        ..Entry::default()
+    };
+    entry.add(records);
+    Some(entry)
+}
+
+fn grown(cached: &Entry, path: &Path, size: u64) -> Option<Entry> {
+    cached.resume.as_ref()?;
+    let records = log::records_after::<Record>(path, cached.size?).ok()?;
+    let mut entry = cached.clone();
+    entry.size = Some(size);
+    entry.add(records);
+    Some(entry)
+}
+
+impl Entry {
+    fn add(&mut self, records: impl IntoIterator<Item = Record>) {
+        let Some(resume) = self.resume.as_mut() else {
+            return;
+        };
+        for record in records {
+            let reported = record.reported;
+            let (model, usage, cost) = match record.line {
+                log::Line::Session { model, .. } => {
+                    resume.model = Some(model);
+                    continue;
+                }
+                log::Line::Assistant {
+                    model, usage, cost, ..
+                } => (model, usage, cost),
+                log::Line::Charge {
+                    model, usage, cost, ..
+                } if reported != Some(false) => (model, usage, cost),
+                _ => continue,
+            };
+            if usage.input == 0 && usage.output == 0 {
                 continue;
             }
-            log::Line::Assistant {
-                model, usage, cost, ..
-            } => (model, usage, cost),
-            log::Line::Charge {
-                model, usage, cost, ..
-            } if reported != Some(false) => (model, usage, cost),
-            _ => continue,
-        };
-        if usage.input == 0 && usage.output == 0 {
-            continue;
+            let model = if model.is_empty() {
+                resume.model.clone()
+            } else {
+                Some(model)
+            };
+            self.undated |= record.at == 0;
+            self.charges
+                .push(Charge::new(model, record.at, usage, cost));
         }
-        let model = if model.is_empty() {
-            current.clone()
-        } else {
-            Some(model)
-        };
-        undated |= record.at == 0;
-        charges.push(Charge::new(model, record.at, usage, cost));
     }
-    Some((undated, charges))
 }

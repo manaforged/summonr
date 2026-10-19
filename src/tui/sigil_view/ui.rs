@@ -5,6 +5,7 @@ mod prompt;
 mod rows;
 mod tabs;
 
+pub(in crate::tui::sigil_view) use dialog::dismissing;
 pub(in crate::tui) use dialog::{Dialog, Size};
 pub(in crate::tui) use hints::{FILTER_HINT, Hints, Key, alt_label};
 pub(in crate::tui::sigil_view) use keys::{Bindings, KeyAction, alt, keyed, press};

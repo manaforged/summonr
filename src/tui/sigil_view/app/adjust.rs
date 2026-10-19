@@ -1,5 +1,10 @@
 use super::*;
 
+const AUTO_COMMAND: &str = "/auto";
+const GOAL_PREFILL: &str = "/goal ";
+
+mod display;
+
 impl App {
     pub(in crate::tui::sigil_view) fn move_setting(&self, delta: isize) {
         if self.picker.open.peek() {
@@ -56,8 +61,8 @@ impl App {
             Setting::Hotkeys => self.open_hotkeys(),
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
             Setting::Motion => self.toggle_motion(),
-            Setting::Mode
-            | Setting::Verify
+            Setting::Mode => self.cycle_run_mode(),
+            Setting::Verify
             | Setting::Workflow
             | Setting::Endpoint
             | Setting::Model
@@ -300,96 +305,6 @@ impl App {
         modules.insert(id, on);
         self.modules.set(modules);
         drop(self.cmd.send(Cmd::SetModule(id, on)));
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn commit_effort(&self) {
-        if self.model.peek().snapshot.levels.is_empty() {
-            self.effort.open.set(false);
-            self.refresh();
-            return;
-        }
-        let level = self.effort.picked();
-        self.effort.open.set(false);
-        self.effort_command(level.as_str());
-    }
-
-    pub(in crate::tui::sigil_view) fn effort_command(&self, level: &str) {
-        let next = match crate::provider::Effort::parse(level) {
-            Some(effort) => effort.clamp(&self.model.peek().snapshot.levels),
-            None => {
-                self.push_entry(Entry::Error(format!(
-                    "effort {}",
-                    crate::provider::Effort::rejects(level)
-                )));
-                self.refresh();
-                return;
-            }
-        };
-        self.model_mut(|model| model.snapshot.effort = Some(next));
-        drop(self.cmd.send(Cmd::SetEffort(Some(next))));
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn reasoning_command(&self, argument: Option<&str>) {
-        self.model_mut(|model| {
-            model.prefs.reasoning = match argument {
-                Some(value) => {
-                    crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Collapsed)
-                }
-                None => model.prefs.reasoning.toggle(),
-            };
-            model.entries.invalidate();
-        });
-        let prefs = self.model.peek().prefs.clone();
-        self.persist(&prefs);
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn receipts_command(&self, argument: Option<&str>) {
-        self.model_mut(|model| {
-            model.prefs.receipts = match argument {
-                Some(value) => {
-                    crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Off)
-                }
-                None => model.prefs.receipts.toggle(),
-            };
-            model.entries.invalidate();
-        });
-        let prefs = self.model.peek().prefs.clone();
-        self.persist(&prefs);
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn toggle_tools(&self) {
-        self.set_tools(self.model.peek().prefs.tools.toggle());
-    }
-
-    pub(in crate::tui::sigil_view) fn set_tools(&self, tools: crate::prefs::ToolOutput) {
-        self.model_mut(|model| {
-            model.prefs.tools = tools;
-            model.entries.invalidate();
-        });
-        let prefs = self.model.peek().prefs.clone();
-        self.persist(&prefs);
-        self.refresh();
-    }
-
-    fn fold_cycle(&self) {
-        use crate::prefs::{ToolOutput, Visibility};
-        let prefs = &self.model.peek().prefs;
-        let (reasoning, tools) = match (prefs.reasoning, prefs.tools) {
-            (_, ToolOutput::Hidden) => (Visibility::Expanded, ToolOutput::Compact),
-            (Visibility::Expanded, _) => (Visibility::Collapsed, ToolOutput::Compact),
-            _ => (Visibility::Collapsed, ToolOutput::Hidden),
-        };
-        self.model_mut(|model| {
-            model.prefs.reasoning = reasoning;
-            model.prefs.tools = tools;
-            model.entries.invalidate();
-        });
-        let prefs = self.model.peek().prefs.clone();
-        self.persist(&prefs);
         self.refresh();
     }
 }

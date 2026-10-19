@@ -145,7 +145,7 @@ fn controls(usage: Panel, local: bool, metric: Metric) -> NodeBuilder {
                 usage.range,
                 RANGES.iter().map(ToString::to_string).collect(),
             )
-            .height(canvas::cell().h)
+            .height(canvas::overlay_list_row())
             .label("Range"),
         )
         .child(
@@ -156,7 +156,7 @@ fn controls(usage: Panel, local: bool, metric: Metric) -> NodeBuilder {
                     .map(|metric| metric.name().to_string())
                     .collect(),
             )
-            .height(canvas::cell().h)
+            .height(canvas::overlay_list_row())
             .label(format!("Metric: {}", metric.name())),
         )
 }

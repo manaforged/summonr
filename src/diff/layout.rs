@@ -16,6 +16,8 @@ const COMMONDIR: &str = "commondir";
 const INDEX: &str = "index";
 const WORKTREES: &str = "worktrees";
 const GITDIR_FILE: &str = "gitdir";
+const HEAD: &str = "HEAD";
+const HEAD_REF: &str = "ref: refs/heads/";
 
 pub(crate) struct Layout {
     pub(crate) git_dir: PathBuf,
@@ -39,10 +41,20 @@ impl Layout {
             .into_iter()
             .flatten()
             .flatten()
+            .filter(|entry| owned(&entry.path()))
             .filter_map(|entry| std::fs::read_to_string(entry.path().join(GITDIR_FILE)).ok())
             .filter_map(|text| PathBuf::from(text.trim()).parent().map(Path::to_path_buf));
         primary.into_iter().chain(linked).collect()
     }
+}
+
+fn owned(admin: &Path) -> bool {
+    std::fs::read_to_string(admin.join(HEAD))
+        .ok()
+        .as_deref()
+        .and_then(|text| text.trim().strip_prefix(HEAD_REF))
+        .and_then(crate::worktree::worktree_id)
+        .is_some()
 }
 
 pub(crate) fn inside_git(root: &Path) -> bool {

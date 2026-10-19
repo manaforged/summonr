@@ -1,5 +1,8 @@
 # Shrink-only. Rewrite with: python3 scripts/api-census.py --update
 # label	count	keep
+delete Client::agent_models	0	`catalog::listing`, `catalog::offered`, the session handshake's model list
+delete agent::run::models	0	`catalog::listing`, `catalog::offered`, the session handshake's model list
+delete probe_endpoints	0	`catalog::listing`, `catalog::offered`, the session handshake's model list
 delete overlay::shell	0	`ui::{Dialog, Prompt, Hints, notice}`
 delete overlay::wide_shell	0	`ui::{Dialog, Prompt, Hints, notice}`
 delete overlay::wide_page	0	`ui::{Dialog, Prompt, Hints, notice}`
@@ -68,12 +71,12 @@ session dialect Cmd	1	one session event
 session dialect Entry	1	one session event
 name collision: Kind	0	one word, one domain
 clip-shaped helper	0	text::ellipsize
-short-shaped helper	3	check the job, then name it
+short-shaped helper	1	check the job, then name it
 wrap-shaped helper	5	check the job, then name it
 surface painter	0	rows::paint
 sigil prelude glob	0	named imports
 legacy tool alias literal	12	one alias table
-match wildcard arm	110	name the arm
+match wildcard arm	109	name the arm
 timeout mention	24	one timeout policy
 delete unicode-width	0	nothing
 delete winapi-util	0	nothing

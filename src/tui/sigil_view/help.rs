@@ -80,7 +80,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .key(Key::Fixed("type"), "to filter")
         .key(Key::Fixed("scroll"), "for more")
         .key(Key::Esc, "close");
-    Dialog::new(Size::Normal, "Help", hints)
+    Dialog::new(Size::Reading, "Help", hints)
         .child(
             text_field(query)
                 .placeholder("find")

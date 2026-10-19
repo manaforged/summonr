@@ -76,6 +76,7 @@ impl Reader {
             | Cmd::KillJob(_)
             | Cmd::Clipboard
             | Cmd::Diff(_)
+            | Cmd::SessionDiff(_)
             | Cmd::Patch(..)
             | Cmd::Review { .. }
             | Cmd::Trees
@@ -143,6 +144,7 @@ impl Reader {
                 clipboard().map_err(|error| error.to_string()),
             )),
             Cmd::Diff(root) => self.diff(root.as_deref().unwrap_or(&self.workspace)),
+            Cmd::SessionDiff(session) => self.session_diff(&session),
             Cmd::Patch(root, path) => self.patch(root, path),
             Cmd::Review {
                 root,
@@ -195,11 +197,16 @@ impl Reader {
     }
 
     fn review(&self, root: Option<PathBuf>, path: String, hunk: String, op: crate::hunks::Op) {
-        let rejected = matches!(op, crate::hunks::Op::Reject);
+        let note = match op {
+            crate::hunks::Op::Reject => Some(format!("reverted a hunk in {path}")),
+            crate::hunks::Op::RejectFile => Some(format!("reverted {path}")),
+            crate::hunks::Op::Restore => Some(format!("restored a hunk in {path}")),
+            crate::hunks::Op::Verdict(_) | crate::hunks::Op::Comment(_) => None,
+        };
         let dir = root.clone().unwrap_or_else(|| self.workspace.clone());
         let result = crate::hunks::apply(&dir, &path, &hunk, op).map_err(|error| error.to_string());
-        if rejected && result.is_ok() {
-            self.send(Msg::System(format!("reverted a hunk in {path}")));
+        if let (Some(note), Ok(_)) = (note, &result) {
+            self.send(Msg::System(note));
         }
         self.send(Msg::Review { root, result });
     }
@@ -234,6 +241,16 @@ impl Reader {
             Ok(diff) => self.send(Msg::Diff(diff)),
             Err(error) => self.send(Msg::DiffFailed(error.to_string())),
         }
+    }
+
+    fn session_diff(&self, session: &str) {
+        let diff = diff::turn_stats(&self.workspace, session, diff::TurnId::Session)
+            .unwrap_or_else(|_| diff::Diff {
+                base: diff::SESSION_BASE.to_string(),
+                session: Some(session.to_string()),
+                files: Vec::new(),
+            });
+        self.send(Msg::Diff(diff));
     }
 
     pub(super) fn jobs(&self) {

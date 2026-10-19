@@ -62,7 +62,7 @@ leyline = { workspace = true }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "714380d17923de37a2e903c81cd708ec6b31f87f", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "05d994bf109d6f3562157539740176e9cddb303d", default-features = false, features = ["terminal", "inspect"] }
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"
@@ -103,6 +103,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage
 
 [lints.rust]
 unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage)"] }
 unreachable_pub = "deny"
 
 [lints.clippy]

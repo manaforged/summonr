@@ -75,6 +75,28 @@ pub(super) fn twinkling(cols: u16, rows: u16, beat: f64, seed: u64) -> Vec<Shine
         .collect()
 }
 
+pub(super) fn twinkle_wait(cols: u16, rows: u16, beat: f64, seed: u64) -> Option<f64> {
+    use std::f64::consts::{PI, TAU};
+    let edges = [
+        PI / 6.0,
+        5.0 * PI / 6.0,
+        PI,
+        7.0 * PI / 6.0,
+        11.0 * PI / 6.0,
+        TAU,
+    ];
+    sky(cols, rows, seed)
+        .iter()
+        .filter_map(|star| {
+            let [period, phase] = star.lit.twinkle?;
+            let angle =
+                f64::from(beat as f32 / period * std::f32::consts::TAU + phase).rem_euclid(TAU);
+            let edge = edges.into_iter().find(|edge| *edge > angle).unwrap_or(TAU);
+            Some((edge - angle) / TAU * f64::from(period))
+        })
+        .reduce(f64::min)
+}
+
 pub(super) fn bright(cols: u16, rows: u16, seed: u64) -> Vec<(u16, u16)> {
     sky(cols, rows, seed)
         .iter()

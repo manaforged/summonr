@@ -6,6 +6,8 @@ use super::super::canvas;
 use crate::tui::sigil_view::app::App;
 use crate::tui::sigil_view::look::Look;
 
+const CHIP_GAP_WINDOW: f32 = 14.0;
+
 pub(super) fn chips(app: &App) -> NodeBuilder {
     let active = app.picker.facet.get();
     let listed = app.picker.shown.get().len();
@@ -14,7 +16,11 @@ pub(super) fn chips(app: &App) -> NodeBuilder {
             .fill_width()
             .height(canvas::overlay_list_row())
             .padding_x(8.0)
-            .gap(canvas::cell().w)
+            .gap(if canvas::is_window() {
+                CHIP_GAP_WINDOW
+            } else {
+                canvas::cell().w
+            })
             .align_items(AlignItems::Center),
     );
     app.facet_counts()

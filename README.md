@@ -84,13 +84,6 @@ summonr login grok         # sign in with SuperGrok or X Premium+, or paste a ke
 summonr openai
 ```
 
-A Claude Pro or Max plan runs through your own Claude Code. Sign in there once, and summonr starts it for each turn:
-
-```sh
-claude auth login
-summonr claude
-```
-
 Run one prompt and exit:
 
 ```sh

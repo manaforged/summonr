@@ -145,6 +145,10 @@ impl Limits {
         millis(self.reader_window_ms)
     }
 
+    pub(crate) fn stamp_settle(&self) -> Duration {
+        millis(self.stamp_settle_ms)
+    }
+
     pub(crate) fn frame_window(&self) -> Duration {
         secs(self.frame_window_secs)
     }

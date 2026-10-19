@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use toml_edit::DocumentMut;
 
-type Stamp = Option<(SystemTime, u64)>;
+pub(super) type Stamp = Option<(SystemTime, u64)>;
 
 struct Cached {
     file: PathBuf,
@@ -17,6 +17,14 @@ static DECRYPTED: RwLock<Option<Cached>> = RwLock::new(None);
 pub(super) fn stamp(path: &Path) -> Stamp {
     let meta = std::fs::metadata(path).ok()?;
     Some((meta.modified().ok()?, meta.len()))
+}
+
+pub(super) fn settled(stamp: Stamp, taken: SystemTime) -> bool {
+    stamp.is_none_or(|(modified, _)| {
+        modified
+            .checked_add(crate::limits::limits().stamp_settle())
+            .is_some_and(|settles| settles <= taken)
+    })
 }
 
 pub(super) fn find<T>(

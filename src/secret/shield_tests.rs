@@ -42,3 +42,26 @@ fn an_unchanged_workspace_reuses_its_scan() {
         &super::known(workspace.path())
     ));
 }
+
+#[test]
+fn a_secret_rewritten_within_the_clock_tick_of_a_scan_is_hidden() {
+    let workspace = tempfile::tempdir().unwrap();
+    let env = workspace.path().join(".env");
+    std::fs::write(&env, "API_KEY=first-secret-value\n").unwrap();
+    let written = std::fs::metadata(&env).unwrap().modified().unwrap();
+    assert_eq!(
+        super::scrub("first-secret-value", workspace.path()),
+        "[secret]"
+    );
+    std::fs::write(&env, "API_KEY=other-secret-value\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&env)
+        .unwrap()
+        .set_modified(written)
+        .unwrap();
+    assert_eq!(
+        super::scrub("other-secret-value", workspace.path()),
+        "[secret]"
+    );
+}

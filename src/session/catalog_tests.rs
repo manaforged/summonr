@@ -14,8 +14,9 @@ fn journal(home: &Path, id: &str) -> PathBuf {
 }
 
 fn header(id: &str, workspace: &str, depth: u8) -> String {
+    let workspace = serde_json::Value::from(workspace);
     format!(
-        r#"{{"kind":"session","id":"{id}","model":"glm","system":"","workspace":"{workspace}","depth":{depth}}}"#
+        r#"{{"kind":"session","id":"{id}","model":"glm","system":"","workspace":{workspace},"depth":{depth}}}"#
     ) + "\n"
 }
 

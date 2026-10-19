@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::SystemTime;
 
+use super::cache::{Stamp, settled, stamp};
+
 const DEPTH: usize = 3;
 const MIN_LEN: usize = 6;
 const LONG: usize = 16;
@@ -72,9 +74,8 @@ struct Shapes {
     token: Vec<Shape>,
 }
 
-type Stamp = Option<(SystemTime, u64)>;
-
 struct Scan {
+    taken: SystemTime,
     watched: Vec<(PathBuf, Stamp)>,
     values: Arc<Vec<String>>,
 }
@@ -98,30 +99,34 @@ fn known(workspace: &Path) -> Arc<Vec<String>> {
     let mut seen = SEEN.lock().unwrap_or_else(PoisonError::into_inner);
     let seen = seen.get_or_insert_with(HashMap::new);
     if let Some(scan) = seen.get(workspace)
-        && scan.watched.iter().all(|(path, was)| stamp(path) == *was)
+        && scan
+            .watched
+            .iter()
+            .all(|(path, was)| settled(*was, scan.taken) && stamp(path) == *was)
     {
         return Arc::clone(&scan.values);
     }
+    let taken = SystemTime::now();
     let (files, folders) = files(workspace);
     let watched: Vec<(PathBuf, Stamp)> = files
         .iter()
         .chain(&folders)
         .map(|path| (path.clone(), stamp(path)))
         .collect();
-    let values = Arc::new(values(&files));
+    let fresh = values(&files);
+    let values = match seen.get(workspace) {
+        Some(scan) if *scan.values == fresh => Arc::clone(&scan.values),
+        Some(_) | None => Arc::new(fresh),
+    };
     seen.insert(
         workspace.to_path_buf(),
         Scan {
+            taken,
             watched,
             values: Arc::clone(&values),
         },
     );
     values
-}
-
-fn stamp(path: &Path) -> Stamp {
-    let meta = std::fs::metadata(path).ok()?;
-    Some((meta.modified().ok()?, meta.len()))
 }
 
 fn values(files: &[PathBuf]) -> Vec<String> {

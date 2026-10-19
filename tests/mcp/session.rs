@@ -337,8 +337,9 @@ pub(crate) fn a_session_resumed_by_id_from_another_folder_runs_in_its_own_worksp
     );
     assert_eq!(resumed.code, Some(0), "{}", resumed.stdout);
     let workspace = dunce::canonicalize(session.work.path()).expect("workspace");
+    let shown = json!(workspace.to_string_lossy()).to_string();
     assert!(
-        model.tool_results()[0].contains(&*workspace.to_string_lossy()),
+        model.tool_results()[0].contains(shown.trim_matches('"')),
         "{:?}",
         model.tool_results()
     );

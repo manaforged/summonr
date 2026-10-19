@@ -1,7 +1,10 @@
 name: CI
 
 on:
+  pull_request:
+  merge_group:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -10,7 +13,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || '' }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -87,3 +90,20 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: tests
         run: cargo test --workspace --locked --no-fail-fast
+
+  required:
+    if: always()
+    needs: [ci, windows, macos]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: every platform passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "a platform job ended with $result" >&2
+              exit 1
+            fi
+          done

@@ -30,7 +30,7 @@ fn chrome_rows_start_at_the_gutter() {
             ("busy", find(&lines, " · 0s")),
             (
                 "todos",
-                find(&lines, "Todos").or(find(&lines, "● auto").filter(|_| cols >= 120)),
+                find(&lines, "Tasks").or(find(&lines, "● auto").filter(|_| cols >= 120)),
             ),
             ("composer", find(&lines, "● auto")),
             (

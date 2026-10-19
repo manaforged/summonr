@@ -116,12 +116,13 @@ fn an_empty_tree_pair_writes_no_sidecar_and_clears_a_stale_one() {
 }
 
 #[test]
-fn a_goal_stops_after_three_failed_checks() {
+fn numbered_steps_stop_after_three_failed_checks() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), "a").unwrap();
     let shot = snapshot(dir.path(), &[], None).unwrap();
-    let mut work = Work::new("make the check pass", Policy::Goal {});
-    work.plan = Some("plan".to_string());
+    let mut work = Work::new("make the check pass", Policy::Steps);
+    work.select("## Steps\n1. Repair the check\n", &[])
+        .expect("select numbered steps");
     work.execute(Some(shot.clone())).unwrap();
     for _ in 0..3 {
         work.verify(shot.clone()).unwrap();

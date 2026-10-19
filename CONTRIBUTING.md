@@ -15,13 +15,15 @@ cargo run --locked -- anthropic
 
 ## Check
 
-Run these before you send a patch. Pull request CI runs `cargo fmt` on the whole workspace, then `cargo clippy` and `cargo test` only for the packages that your change touches. It does not run `api-census`, so run it locally.
+Run these before you send a patch. The CI workflow checks formatting, the API census, the palette, dependency policy, Clippy, and tests on Linux, plus tests on macOS and Windows. Its `required` job succeeds only when all three platform jobs pass.
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 python3 scripts/api-census.py --check
+python3 scripts/palette-check.py
+cargo deny check
 ```
 
 The tests need no network and no keys. The census must print `api-census deny: clean`. It also counts wildcard `_ =>` match arms and files over 400 lines, so avoid both.

@@ -304,7 +304,7 @@ cache_ttl = "5m"
 | `notice_secs` | `2` | Time a notice stays on screen. |
 | `worker_stop_secs` | `2` | Desktop worker stop wait. |
 | `repeat_window_secs` | `2` | Window for a double key press. |
-| `step_attempts` | `3` | Attempts per plan step. |
+| `step_attempts` | `3` | Failed-check attempts per numbered plan step; not applied to goals. |
 | `repair_limit` | `6` | Argument repairs and overflow retries per turn. |
 | `repeat_nudge` | `5` | Times the same tool call, or the same cycle of up to three calls, may return the same result in a row before summonr adds a note to the result asking the model to change approach. The call still runs, and a new message starts the count again. `0` turns the note off. |
 | `edit_hunk_rows` | `80` | Rows shown per edit hunk. |
@@ -566,6 +566,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `/usage [session]` | token spend; session profiles this session |
 | `/agents` | list agent sessions on this machine |
 | `/memory` | show the memory files and their size |
+| `/skills` | list skills from their current files; installed skills also appear in slash completion |
 | `/exit` | quit summonr |
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort. A provider that does not answer is left out of the list until `F5` reaches it |
 | `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
@@ -631,7 +632,7 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | `edit` | always | Change or move a file; hashes from `read`; `edits` for a batch |
 | `write` | always | New or empty files; `files` for several |
 | `run_command` | always | `workdir` / `background` / `job` / `kill`; full log path |
-| `todo` | `/steps`, `/goal`, `--steps`, `--goal` | Replaces the Work todo list; status `pending`, `active`, or `done` |
+| `todo` | always | Replaces the Work task list; status `pending`, `active`, or `done`. Update it as tasks start or finish. |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
 | `lsp` | `lsp` on | Diagnostics for a `path`; definition, `references`, or `new_name` at `line` and `character` |
 | `web` | `search` on (off by default) | `query` searches; `url` fetches as markdown, text, or html |
@@ -844,7 +845,7 @@ The built-in modules are the binary (modules above). What you add lives in files
 
 | Layer | Where | What the model sees |
 | --- | --- | --- |
-| Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/` | One `skill` tool. The body is a later tool result. |
+| Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/` | `/skills` lists them; `/NAME [arguments]` invokes one; the model uses the `skill` tool. Slash completion refreshes on opening; no copying or sync option is needed. Built-ins and plugin commands win name collisions. |
 | MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt` and `@server:uri` expand server prompts and resources into the user message. |
 | Hook | `[hooks]` `pre_tool`, `post_tool`, `compact`, `stop` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call (stdin is JSON). |
 | Plugin | `summonr install PATH` (Claude Code layout) | Its skills, MCP tools (`<plugin>-<server>__tool`), hooks, and `bin/` |

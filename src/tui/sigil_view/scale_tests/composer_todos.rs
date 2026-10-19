@@ -45,7 +45,7 @@ fn a_work_plan_stays_above_the_composer_without_opening_a_pane() {
         assert_eq!(app.layout.peek().secondary, None);
     });
     let shown = lines.join("\n");
-    let tasks = find(&lines, "Todos 0/2").expect("the task strip is visible");
+    let tasks = find(&lines, "Tasks 0/2").expect("the task strip is visible");
     assert!(tasks < composer_top(&lines), "{shown}");
     assert!(lines[tasks].contains("Keep tasks inline"), "{shown}");
     assert!(!shown.contains("Ledger"), "{shown}");
@@ -62,7 +62,7 @@ fn the_task_shortcut_expands_and_scrolls_the_inline_list() {
         assert_eq!(app.layout.peek().secondary, None);
     });
     let shown = lines.join("\n");
-    let tasks = find(&lines, "Todos 1/8").expect("the task strip is visible");
+    let tasks = find(&lines, "Tasks 1/8").expect("the task strip is visible");
     let last = find(&lines, "◦ Last task").expect("the last task is reachable by scrolling");
     assert!(tasks < last && last < composer_top(&lines), "{shown}");
     assert!(!shown.contains("Ledger"), "{shown}");
@@ -81,7 +81,7 @@ fn child_tasks_use_the_same_inline_strip() {
         assert_eq!(app.layout.peek().secondary, None);
     });
     let shown = lines.join("\n");
-    let tasks = find(&lines, "Todos 0/2").expect("the child task strip is visible");
+    let tasks = find(&lines, "Tasks 0/2").expect("the child task strip is visible");
     let active = find(&lines, "Check child result").expect("the active child task is visible");
     let pending = find(&lines, "Report findings").expect("the pending child task is visible");
     assert!(
@@ -182,5 +182,46 @@ fn a_numbered_prompt_does_not_open_the_task_strip() {
         app.update(Msg::Event(Event::Work { progress: single }));
     });
     let shown = lines.join("\n");
-    assert!(find(&lines, "Todos").is_none(), "{shown}");
+    assert!(find(&lines, "Tasks").is_none(), "{shown}");
+}
+
+#[test]
+fn task_progress_updates_the_mounted_counter_and_clears_finished_work() {
+    let tasks = |done| Event::Work {
+        progress: progress(
+            Vec::new(),
+            (0..6)
+                .map(|index| crate::tools::Todo {
+                    text: format!("Task {index}"),
+                    status: if index < done {
+                        crate::tools::TodoStatus::Done
+                    } else if index == done {
+                        crate::tools::TodoStatus::Active
+                    } else {
+                        crate::tools::TodoStatus::Pending
+                    },
+                })
+                .collect(),
+        ),
+    };
+    let one = |app: &App| app.update(Msg::Event(tasks(1)));
+    let five = |app: &App| app.update(Msg::Event(tasks(5)));
+    let complete = |app: &App| app.update(Msg::Event(tasks(6)));
+    let reset = |app: &App| app.update(Msg::Reset);
+    let restart = |app: &App| {
+        app.update(Msg::Session("another-session".to_owned()));
+        app.update(Msg::Event(tasks(0)));
+    };
+    let frames = super::screens(
+        100,
+        30,
+        |app| app.update(Msg::Event(tasks(0))),
+        &[&one, &five, &reset, &restart, &complete],
+    );
+    for (frame, count) in frames.iter().zip(["Tasks 0/6", "Tasks 1/6", "Tasks 5/6"]) {
+        assert!(frame.contains(count), "{frame}");
+    }
+    assert!(!frames[3].contains("Tasks"), "{}", frames[3]);
+    assert!(frames[4].contains("Tasks 0/6"), "{}", frames[4]);
+    assert!(!frames[5].contains("Tasks"), "{}", frames[5]);
 }

@@ -1,6 +1,62 @@
 use super::{State, busy_info, frame_with};
 
 #[test]
+fn reopening_hidden_slash_completion_refreshes_the_offers() {
+    use super::super::app::App;
+    use crate::tui::Cmd;
+    sigil::reactive::Runtime::scope("skill-reopen", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
+        app.replace("/sett".to_owned());
+        assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
+        assert!(app.commands.hide("/sett", 5, &app.model.get()));
+        app.replace("/setti".to_owned());
+        assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
+        app.replace("/settin".to_owned());
+        assert!(sent.try_recv().is_err());
+    });
+}
+
+#[test]
+fn skill_typeahead_matches_fuzzy_names() {
+    let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
+        app.update(crate::tui::Msg::Offers(vec![crate::mcp::Offer {
+            kind: crate::mcp::OfferKind::Prompt,
+            insert: "/probe-custom-skill".to_owned(),
+            about: "custom skill".to_owned(),
+        }]));
+        app.replace("/pcs".to_owned());
+    })
+    .join("\n");
+    assert!(shown.contains("/probe-custom-skill"), "{shown}");
+}
+
+#[test]
+fn submitting_a_skill_passes_its_arguments_to_the_worker() {
+    use super::super::app::App;
+    use crate::tui::Cmd;
+    sigil::reactive::Runtime::scope("skill-submit", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let skill = workspace.path().join(".claude/skills/probe-ui");
+        std::fs::create_dir_all(&skill).expect("skill directory");
+        std::fs::write(skill.join("SKILL.md"), "Use the skill.").expect("skill body");
+        let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.replace("/probe-ui inspect the parser".to_owned());
+        app.submit();
+        let submitted = std::iter::from_fn(|| sent.try_recv().ok())
+            .find_map(|command| match command {
+                Cmd::Submit(input) => Some(input),
+                _ => None,
+            })
+            .expect("a skill invocation reaches the worker");
+        assert_eq!(submitted.text, "/probe-ui inspect the parser");
+    });
+}
+
+#[test]
 fn commands_suggest_and_complete_while_a_turn_runs() {
     let mut completed = String::new();
     let shown = frame_with(busy_info(), 110, 30, State::Busy, |app| {

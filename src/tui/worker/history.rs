@@ -3,6 +3,7 @@ use std::path::Path;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::durable::log::{self, Line};
+use crate::durable::work::Work;
 use crate::session::user_text;
 use crate::tools::Event;
 
@@ -21,16 +22,6 @@ impl Worker {
 
     fn restore(&self) {
         journal(self.loop_.session_path(), &self.ui);
-        if let Ok(progress) = self.loop_.work_progress()
-            && !progress.todos.is_empty()
-        {
-            drop(self.ui.send(Msg::Event(Event::Work {
-                progress: crate::WorkProgress {
-                    reason: None,
-                    ..progress
-                },
-            })));
-        }
         drop(self.ui.send(Msg::Event(Event::Unreported {
             tokens: self.loop_.unreported_tokens(),
         })));
@@ -53,6 +44,16 @@ fn journal(path: &Path, ui: &UnboundedSender<Msg>) {
     };
     for line in lines {
         restore_line(line, ui);
+    }
+    match Work::load(&log::work_path(path)) {
+        Ok(Some(work)) => drop(ui.send(Msg::Event(Event::Work {
+            progress: crate::WorkProgress {
+                reason: None,
+                ..work.progress()
+            },
+        }))),
+        Ok(None) => {}
+        Err(error) => drop(ui.send(Msg::System(format!("cannot load task progress: {error}")))),
     }
 }
 

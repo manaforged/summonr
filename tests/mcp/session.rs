@@ -136,6 +136,48 @@ pub(crate) fn a_goal_run_reports_the_judge_usage_once() {
     assert_eq!(usage, model.requests().len(), "{}", result.stdout);
 }
 
+pub(crate) fn a_goal_recovers_after_more_than_three_failed_checks() {
+    let session = Session::new();
+    with_check(&session, "git diff --exit-code -- marker.txt");
+    std::fs::write(session.work.path().join("marker.txt"), "clean\n").expect("write clean fixture");
+    commit_all(&session);
+    std::fs::write(session.work.path().join("marker.txt"), "dirty\n").expect("break the check");
+    let model = Model::start(vec![
+        Step::Text("first attempt"),
+        Step::Text("second attempt"),
+        Step::Text("third attempt"),
+        Step::Text("fourth attempt"),
+        Step::Call("write", json!({"path": "marker.txt", "content": "clean\n"})),
+        Step::Text("repaired"),
+        Step::Text(r#"{"verdict":"done","reason":"the original check passes"}"#),
+    ]);
+    let result = session.run(&model, "", &["--goal", "repair marker.txt", "--json"]);
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    let events = events(&result.stdout);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event["type"] == "verify" && event["passed"] == false)
+            .count(),
+        4
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event["type"] == "verify" && event["passed"] == true)
+    );
+    let requests = model.requests();
+    let repair = &requests[requests.len() - 2]["messages"];
+    assert!(repair.to_string().contains("marker.txt"), "{repair}");
+    assert!(
+        repair
+            .as_array()
+            .expect("repair conversation")
+            .iter()
+            .any(|message| message["role"] == "tool")
+    );
+}
+
 pub(crate) fn a_goal_met_without_tools_in_a_repository_passes() {
     let session = Session::new();
     std::fs::write(session.work.path().join("notes.txt"), "present\n").expect("write the fixture");

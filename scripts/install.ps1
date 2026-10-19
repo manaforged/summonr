@@ -37,7 +37,7 @@ try {
         Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset" -OutFile $Archive
         Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset.sha256" -OutFile "$Archive.sha256"
     } catch {
-        Fail "cannot download $Base/$Asset. See $Releases for available builds."
+        Fail "cannot download $Base/$Asset. See $Releases for available builds, or build from source: cargo install --git https://github.com/$Repo --locked (Rust 1.98, Git, CMake, and a C/C++ compiler required)."
     }
 
     $Want = ((Get-Content "$Archive.sha256" -Raw).Trim() -split '\s+')[0].ToLower()

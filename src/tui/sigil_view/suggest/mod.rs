@@ -36,7 +36,9 @@ impl Picker {
         levels: &[crate::provider::Effort],
         endpoint: &str,
         facts: &Facts,
-    ) {
+    ) -> bool {
+        let refresh =
+            draft.starts_with('/') && (!self.query.peek().starts_with('/') || self.hidden.peek());
         self.cursor.set(0);
         self.hidden.set(false);
         self.query.set(draft.to_string());
@@ -46,6 +48,7 @@ impl Picker {
             self.args
                 .set(std::rc::Rc::new((head.to_string(), levels.to_vec(), rows)));
         }
+        refresh
     }
 
     pub(super) fn mentions(self) -> bool {
@@ -232,10 +235,14 @@ fn prompts(model: &Model, draft: &str) -> Rows {
     if !draft.starts_with('/') || draft.contains(char::is_whitespace) {
         return Vec::new();
     }
+    let query = draft.to_lowercase();
     model
         .offers
         .iter()
-        .filter(|offer| offer.kind == OfferKind::Prompt && offer.insert.starts_with(draft))
+        .filter(|offer| {
+            offer.kind == OfferKind::Prompt
+                && sigil::prelude::fuzzy_score(&query, &offer.insert.to_lowercase()).is_some()
+        })
         .map(|offer| (format!("{} ", offer.insert), offer.about.clone()))
         .collect()
 }

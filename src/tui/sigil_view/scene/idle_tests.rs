@@ -97,12 +97,25 @@ fn the_splash_sky_shows_the_stars_of_its_clock() {
         let (app, mut host, mut screen) = super::tests::splash_screen(SIZE.0, SIZE.1);
         let per_beat = crate::limits::limits().animation().as_secs_f64().max(0.001);
         let window = super::window_area(&app, SIZE.0, SIZE.1);
+        let mut router = sigil::events::EventRouter::new();
+        screen
+            .frame(&mut host, &mut router, [], SIZE)
+            .expect("render the splash window");
+        let border = screen
+            .frame(&mut host, &mut router, [], SIZE)
+            .expect("render its settled border")
+            .text();
+        let bottom = border
+            .lines()
+            .position(|line| line.contains('╰'))
+            .expect("the rendered window has a bottom border") as u16;
         let outside = |x: u16, y: u16| {
-            x < window[0]
-                || y < window[1]
-                || x >= window[0] + window[2]
-                || y >= window[1] + window[3]
+            x < window[0] || y < window[1] || x >= window[0] + window[2] || y > bottom
         };
+        assert!(
+            !outside(window[0] + window[2] / 2, bottom),
+            "the composer window is not exposed sky"
+        );
         let stars = |beat: f64| {
             super::super::space::moving(SIZE.0, SIZE.1, beat, app.sky)
                 .into_iter()
@@ -124,7 +137,6 @@ fn the_splash_sky_shows_the_stars_of_its_clock() {
             .expect("a sky that changes after its first beat");
         app.sky_clock
             .set(Some(sigil::prelude::signal(beat * per_beat)));
-        let mut router = sigil::events::EventRouter::new();
         screen.frame(&mut host, &mut router, [], SIZE).unwrap();
         let grid = screen
             .frame(&mut host, &mut router, [], SIZE)

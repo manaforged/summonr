@@ -90,6 +90,8 @@ summonr ignores its own output files when it checks whether the workspace change
 
 When a `--goal` or `--steps` run stops short, summonr runs the configured check once at exit, and its result decides the exit code. `-p` runs no check at exit.
 
+Goal mode has no failed-check attempt limit. Numbered steps use `step_attempts` (default 3). A goal can still stop on a user budget, cancellation, a harness error, or a judge verdict of `stalled` or `impossible`.
+
 A signal exit skips the `--worktree` finish: the worktree and its branch stay in place, with the run's files uncommitted.
 
 An unknown option is exit code 1 with `unknown option`. `summonr mcp add` exits 1 when the new server does not answer; the entry stays in the config file, and the message names that file. On Unix, a closed stdout or stderr pipe ends summonr through `SIGPIPE` with no error message.
@@ -181,5 +183,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
 - summonr has no sandbox, so an unattended `--goal` run can read and run anything your account can. Run CI and other unattended goals in a container. In a noninteractive run, irreversible commands are refused, and under `--strict` so are writes outside the writable roots. Auto mode asks before it grants an extra write root.
 - `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root are read only when the workspace is trusted. A home `SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it.
+
+Native skills, Claude Code skills, shared `~/.agents/skills`, and enabled plugin skills use one discovery path. In interactive sessions, `/skills` lists the current files and slash completion includes `/NAME` skill invocations. Opening completion refreshes the list without copying files or rebuilding the session's model prefix. Built-ins and plugin commands take precedence over a skill with the same name. Skill invocations load the current body and append supplied arguments to the user request; unreadable bodies fail before calling the model.
 
 The [reference](guide/reference.md) has every flag and config key. [Extending summonr](guide/extending.md) covers skills, MCP servers, hooks, and CLIs.

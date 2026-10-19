@@ -149,10 +149,10 @@ impl Builtin {
             Self::Lsp => "Lsp",
             Self::Skill => "Skill",
             Self::RunCommand => "Run",
-            Self::Todo => "Todo",
+            Self::Todo => "Tasks",
             Self::Web => "Web",
             Self::Browser => "Browse",
-            Self::Task => "Task",
+            Self::Task => "Subagent",
         }
     }
 }
@@ -287,7 +287,7 @@ fn write() -> ToolDefinition {
 fn todo() -> ToolDefinition {
     tool(
         "todo",
-        "Replace the Work todo list; status pending|active|done.",
+        "Maintain the Work task list; status pending|active|done. Update statuses as tasks start or finish, not just when making the initial plan. A done item does not replace the completion check.",
         serde_json::json!({
             "type": "object",
             "properties": {

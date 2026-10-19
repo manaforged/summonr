@@ -28,8 +28,9 @@ fn approve_is_not_a_command() {
 #[test]
 fn a_server_prompt_line_is_a_prompt_not_a_command() {
     assert_eq!(parse_command("/github:review 42"), None);
-    assert_eq!(argument("/github:review 42"), Ok(None));
-    drop(argument("/nosuch 42").unwrap_err());
+    let workspace = tempfile::tempdir().expect("workspace");
+    assert_eq!(argument("/github:review 42", workspace.path()), Ok(None));
+    drop(argument("/nosuch 42", workspace.path()).unwrap_err());
 }
 
 #[test]

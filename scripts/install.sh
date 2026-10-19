@@ -67,7 +67,7 @@ trap 'rm -rf "$work"' EXIT
 trap 'exit 130' INT TERM
 
 echo "Downloading $asset ($version)"
-fetch "$base/$asset" "$work/$asset" || fail "cannot download $base/$asset. See $releases for available builds."
+fetch "$base/$asset" "$work/$asset" || fail "cannot download $base/$asset. See $releases for available builds, or build from source: cargo install --git https://github.com/$repo --locked (Rust 1.98, Git, CMake, and a C/C++ compiler required)."
 fetch "$base/$asset.sha256" "$work/$asset.sha256" || fail "cannot download $base/$asset.sha256"
 
 want=$(cut -d' ' -f1 "$work/$asset.sha256")

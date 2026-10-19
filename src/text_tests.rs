@@ -30,6 +30,94 @@ fn a_provider_error_never_echoes_a_key_fragment() {
 }
 
 #[test]
+fn frontmatter_reads_block_scalars_with_each_ending() {
+    for (marker, expected) in [
+        (">", "one two\n"),
+        (">-", "one two"),
+        (">+", "one two\n\n"),
+        ("|", "one\ntwo\n"),
+        ("|-", "one\ntwo"),
+        ("|+", "one\ntwo\n\n"),
+    ] {
+        let text = format!("---\ndescription: {marker}\n  one\n  two\n\nname: next\n---\nBody.\n");
+        let front = Frontmatter::parse(&text);
+        assert_eq!(front.get("description"), Some(expected), "{marker}");
+        assert_eq!(front.get("name"), Some("next"));
+        assert_eq!(front.body, "Body.\n");
+    }
+}
+
+#[test]
+fn literal_metadata_keeps_indentation_and_does_not_create_fields() {
+    let front = Frontmatter::parse(
+        "---\ndescription: |-\n  first\n    indented\n  notes: still text\n  - still text\n  ---\ntools:\n  - Read\n  - Grep\n---\nBody.\n",
+    );
+    assert_eq!(
+        front.get("description"),
+        Some("first\n  indented\nnotes: still text\n- still text\n---")
+    );
+    assert_eq!(front.get("notes"), None);
+    assert_eq!(
+        front.list("tools"),
+        Some(vec!["Read".to_owned(), "Grep".to_owned()])
+    );
+    assert_eq!(front.body, "Body.\n");
+}
+
+#[test]
+fn folded_metadata_keeps_paragraphs_and_more_indented_lines() {
+    let front = Frontmatter::parse(
+        "---\ndescription: >-\n  first\n  second\n\n  paragraph\n    code\n\n  last\n---\nBody.\n",
+    );
+    assert_eq!(
+        front.get("description"),
+        Some("first second\nparagraph\n  code\n\nlast")
+    );
+}
+
+#[test]
+fn quoted_block_markers_remain_scalar_text() {
+    let front = Frontmatter::parse("---\nfolded: '>'\nliteral: \"|-\"\n---\nBody.\n");
+    assert_eq!(front.get("folded"), Some(">"));
+    assert_eq!(front.get("literal"), Some("|-"));
+    assert_eq!(front.body, "Body.\n");
+}
+
+#[test]
+fn block_metadata_preserves_crlf_body_and_unicode_text() {
+    let front = Frontmatter::parse(
+        "---\r\ndescription: >-\r\n  análise: cuidado\r\n  λ\r\n---\r\nBody.\r\n",
+    );
+    assert_eq!(front.get("description"), Some("análise: cuidado λ"));
+    assert_eq!(front.body, "Body.\r\n");
+}
+
+#[test]
+fn unclosed_block_metadata_keeps_the_original_body() {
+    for text in [
+        "---\ndescription: >\n  unclosed\n",
+        "---\ndescription: |-\n  unclosed\n",
+    ] {
+        let front = Frontmatter::parse(text);
+        assert_eq!(front.get("description"), None);
+        assert_eq!(front.body, text);
+    }
+}
+
+#[test]
+fn malformed_block_metadata_keeps_other_fields_and_the_body() {
+    for text in [
+        "---\ntools: [Read]\ndescription: |\n    first\n  invalid indent\n---\nBody.\n",
+        "---\ndescription: |\n    first\n  invalid indent\ntools: [Read]\n---\nBody.\n",
+    ] {
+        let front = Frontmatter::parse(text);
+        assert_eq!(front.get("description"), Some("|"));
+        assert_eq!(front.list("tools"), Some(vec!["Read".to_owned()]));
+        assert_eq!(front.body, "Body.\n");
+    }
+}
+
+#[test]
 fn frontmatter_reads_fields_and_leaves_the_body() {
     let front = Frontmatter::parse(
         "---\nname: \"reviewer\"\ntools: Read, Grep\nempty:\n---\nReview the diff.\n",

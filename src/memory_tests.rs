@@ -154,3 +154,20 @@ fn a_torn_first_commit_cache_keeps_the_project_memory() {
     let id = std::fs::read_to_string(&cached).unwrap();
     assert!(object_id(id.trim()), "{id:?}");
 }
+
+#[test]
+fn a_subfolder_of_a_repository_shares_the_repository_memory_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("repo");
+    let sub = repo.join("nested");
+    std::fs::create_dir_all(&sub).unwrap();
+    crate::worktree::tests::git(&repo, &["init", "-q"]);
+    let top = repo.canonicalize().unwrap();
+    assert_eq!(root(&sub, None), top);
+    let layout = crate::diff::Layout {
+        git_dir: top.join(crate::policy::git::GIT_DIR),
+        common: top.join(crate::policy::git::GIT_DIR),
+        top: top.clone(),
+    };
+    assert_eq!(root(&sub, Some(&layout)), top);
+}

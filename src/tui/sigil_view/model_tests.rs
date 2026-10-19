@@ -299,3 +299,15 @@ fn a_child_event_touches_only_its_tool_row() {
     assert_eq!(model.entries.rev(0), first);
     assert_ne!(model.entries.rev(1), second);
 }
+
+#[test]
+fn a_trailing_entry_after_a_non_answer_goes_last() {
+    let mut model = model();
+    model.clear();
+    model.entries.push(Entry::Receipt("first".to_string()));
+    model.trail(Entry::Receipt("second".to_string()));
+    assert!(matches!(
+        model.entries.last(),
+        Some(Entry::Receipt(text)) if text == "second"
+    ));
+}

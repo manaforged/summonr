@@ -129,3 +129,13 @@ fn a_claude_plan_offers_models_without_a_listing() {
         offered.iter().map(|model| &model.id).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn a_remembered_listing_is_in_the_cached_listings() {
+    super::remember("lane-cached-seat", vec![Model::named("lane-model")]).unwrap();
+    let cached = super::cached();
+    let listing = cached
+        .get("lane-cached-seat")
+        .expect("the listing is cached");
+    assert_eq!(listing.models[0].id, "lane-model");
+}

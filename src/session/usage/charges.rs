@@ -160,3 +160,7 @@ impl Entry {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "charges_tests.rs"]
+mod tests;

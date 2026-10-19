@@ -265,3 +265,20 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
         assert_eq!(**event, expected);
     }
 }
+
+#[test]
+fn records_after_reads_from_a_line_boundary_and_rejects_a_mid_line_offset() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("records.jsonl");
+    let first = "{\"n\":1}\n";
+    std::fs::write(&path, format!("{first}{{\"n\":2}}\n")).unwrap();
+    let all: Vec<serde_json::Value> = records_after(&path, 0).unwrap();
+    assert_eq!(
+        all,
+        vec![serde_json::json!({"n": 1}), serde_json::json!({"n": 2})]
+    );
+    let tail: Vec<serde_json::Value> = records_after(&path, first.len() as u64).unwrap();
+    assert_eq!(tail, vec![serde_json::json!({"n": 2})]);
+    let torn = records_after::<serde_json::Value>(&path, 3).unwrap_err();
+    assert_eq!(torn.kind(), std::io::ErrorKind::InvalidData);
+}

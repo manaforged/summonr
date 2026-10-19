@@ -338,3 +338,7 @@ fn level(effort: Effort) -> &'static str {
         Effort::Max => "max",
     }
 }
+
+#[cfg(test)]
+#[path = "run_tests.rs"]
+mod tests;

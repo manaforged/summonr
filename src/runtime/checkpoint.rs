@@ -80,3 +80,7 @@ impl<P: Provider> Loop<P> {
         Ok((files, session))
     }
 }
+
+#[cfg(test)]
+#[path = "checkpoint_tests.rs"]
+mod tests;

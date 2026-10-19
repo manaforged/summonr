@@ -74,3 +74,7 @@ fn last_activity(dir: &Path) -> Option<SystemTime> {
         .chain(own)
         .max()
 }
+
+#[cfg(test)]
+#[path = "prune_tests.rs"]
+mod tests;

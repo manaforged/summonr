@@ -189,3 +189,41 @@ fn a_torn_work_file_starts_fresh() {
         .expect("the work survives a torn sidecar");
     assert!(loaded.base.is_none());
 }
+
+#[test]
+fn an_unreadable_work_path_is_an_error_not_a_missing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Work::read(dir.path()).unwrap_err();
+    assert!(matches!(
+        Work::read(&dir.path().join("absent.json")),
+        Ok(Err(None))
+    ));
+}
+
+#[test]
+fn an_unreadable_tree_sidecar_is_an_error_not_a_missing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("work.json");
+    Work::new("ship", Policy::Single)
+        .save(&path, false)
+        .unwrap();
+    std::fs::create_dir(path.with_extension(super::TREES)).unwrap();
+    let _ = Work::read(&path).unwrap_err();
+}
+
+#[test]
+fn a_legacy_tree_sidecar_keeps_its_file_map() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("work.json");
+    Work::new("ship", Policy::Single)
+        .save(&path, false)
+        .unwrap();
+    std::fs::write(
+        path.with_extension(super::TREES),
+        "{\"base\":{\"taken\":[1,2,3]},\"candidate\":null}",
+    )
+    .unwrap();
+    let loaded = Work::load(&path).unwrap().unwrap();
+    let base = loaded.base.expect("the legacy base loads");
+    assert_ne!(base, crate::durable::tree::Snapshot::default());
+}

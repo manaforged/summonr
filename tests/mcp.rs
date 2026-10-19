@@ -1,3 +1,6 @@
+#[cfg(unix)]
+#[path = "mcp/compat.rs"]
+mod compat;
 #[path = "mcp/content.rs"]
 mod content;
 #[path = "mcp/defer.rs"]
@@ -43,7 +46,18 @@ fn main() {
         support::fixture::main();
         return;
     }
+    #[cfg(unix)]
+    if let Some(out) = std::env::var_os("COMPAT_WRITE") {
+        compat::write_fixture(out);
+        return;
+    }
     support::harness(proofs![
+        #[cfg(unix)]
+        compat::sessions_saved_by_0_1_0_list_export_and_profile,
+        #[cfg(unix)]
+        compat::a_cron_job_saved_by_0_1_0_still_lists,
+        #[cfg(unix)]
+        compat::a_session_saved_by_0_1_0_resumes_with_its_history,
         torn::a_session_resumes_with_any_state_file_torn,
         torn::a_torn_work_file_is_reported_on_resume,
         content::a_server_prompt_becomes_the_user_message,

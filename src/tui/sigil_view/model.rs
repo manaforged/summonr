@@ -371,6 +371,7 @@ impl Model {
         self.agents.clear();
         self.agents_hidden.clear();
         self.speed = Speed::default();
+        self.marks = None;
     }
 }
 

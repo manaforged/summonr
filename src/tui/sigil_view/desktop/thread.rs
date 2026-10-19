@@ -92,7 +92,8 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                         .fill_width()
                         .fill_height()
                         .grow(1.0)
-                        .min_size(0.0, 0.0),
+                        .min_size(0.0, 0.0)
+                        .padding_top(L),
                 )
                 .child(node(move || {
                     chat::transcript(transcript_app, (L, L), empty_home)
@@ -171,10 +172,9 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
 }
 
 fn workspace_name(app: &App) -> String {
-    title::active(app)
-        .map_or_else(|| app.workspace.clone(), |entry| entry.workspace)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
+    let workspace =
+        title::active(app).map_or_else(|| app.workspace.clone(), |entry| entry.workspace);
+    crate::worktree::display_name(&workspace)
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| env!("CARGO_PKG_NAME").to_string())
 }

@@ -353,7 +353,11 @@ pub(super) fn peers(text: &str, model: &Model) -> Vec<String> {
 }
 
 pub(super) fn reference(path: &str) -> String {
-    format!("@{}", serde_json::Value::String(path.to_string()))
+    if path.chars().any(|ch| ch.is_whitespace() || ch == '"') {
+        format!("@{}", serde_json::Value::String(path.to_string()))
+    } else {
+        format!("@{path}")
+    }
 }
 
 pub(super) mod widget;

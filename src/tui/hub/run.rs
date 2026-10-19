@@ -100,8 +100,12 @@ impl Hub {
             }
             return true;
         }
-        if let Some(session) = self.sessions.get(&self.active) {
+        if let Some(session) = self.sessions.get_mut(&self.active) {
+            let named = session.name_from(&command);
             drop(session.cmd.send(command));
+            if named {
+                self.publish();
+            }
         }
         true
     }
@@ -234,6 +238,14 @@ impl Hub {
 }
 
 impl Session {
+    fn name_from(&mut self, command: &Cmd) -> bool {
+        if self.title.is_some() {
+            return false;
+        }
+        self.title = title_from(command);
+        self.title.is_some()
+    }
+
     fn observe(&mut self, msg: &Msg, active: bool) -> bool {
         let next = status(self.status, msg);
         let settled = if active { seen(next) } else { next };
@@ -268,4 +280,16 @@ async fn forward(key: u64, mut rx: UnboundedReceiver<Msg>, merged: UnboundedSend
             break;
         }
     }
+}
+
+pub(super) fn title_from(command: &Cmd) -> Option<String> {
+    let Cmd::Submit(input) = command else {
+        return None;
+    };
+    input
+        .text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
 }

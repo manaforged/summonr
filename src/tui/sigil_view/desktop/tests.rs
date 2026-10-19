@@ -20,6 +20,7 @@ use crate::tui::{Msg, Snapshot};
 mod harness;
 mod window_chrome;
 mod window_composer;
+mod window_focus;
 
 const VIEW: (f32, f32) = (1200.0, 800.0);
 const WINDOW_RUN: &str = "SUMMONR_TEST_WINDOW";

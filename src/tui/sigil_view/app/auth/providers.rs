@@ -14,6 +14,8 @@ fn no_provider() -> &'static str {
 impl App {
     pub(in crate::tui::sigil_view) fn open_providers(&self) {
         self.begin_auth(None);
+        self.auth.sel.set(0);
+        self.auth.scroll.set(0.0);
     }
 
     pub(in crate::tui::sigil_view) fn ask_provider(&self) {
@@ -45,12 +47,22 @@ impl App {
             self.auth.open.set(false);
         }
         if matches!(step, Login::List(_)) && !self.picker.open.peek() && self.unseated() {
-            self.push_entry(Entry::System(no_provider().to_string()));
-            self.splash.set(false);
-            self.refresh();
+            self.note_no_provider();
         }
         self.auth.focus.set(self.auth.focus.peek() + 1);
         self.auth.step.set(Login::List(Note::default()));
+    }
+
+    fn note_no_provider(&self) {
+        let shown = matches!(
+            self.model.peek().entries.last(),
+            Some(Entry::System(text)) if text == no_provider()
+        );
+        if !shown {
+            self.push_entry(Entry::System(no_provider().to_string()));
+        }
+        self.splash.set(false);
+        self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn dismiss_auth(&self) {

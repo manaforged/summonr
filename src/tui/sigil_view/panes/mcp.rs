@@ -15,7 +15,7 @@ pub(super) fn mcp(app: App, mut column: NodeBuilder) -> NodeBuilder {
     column = column.child(header(
         &app,
         "Servers".to_string(),
-        model.mcp.len().to_string(),
+        super::body::count(model.mcp.len()),
     ));
     if model.mcp.is_empty() {
         return column.child(dim(EMPTY.to_string()));

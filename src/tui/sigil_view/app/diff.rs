@@ -251,6 +251,26 @@ impl App {
         self.refresh();
     }
 
+    pub(in crate::tui::sigil_view) fn tree_merge(&self, path: PathBuf) {
+        drop(self.cmd.send(Cmd::Merge(path)));
+        self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn tree_discard(&self, path: PathBuf) {
+        self.worktree_discard.set(None);
+        drop(self.cmd.send(Cmd::Discard(path)));
+        self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn tree_discard_armed(&self, path: PathBuf) {
+        if self.worktree_discard.peek().as_ref() == Some(&path) {
+            self.tree_discard(path);
+        } else {
+            self.worktree_discard.set(Some(path));
+            self.refresh();
+        }
+    }
+
     pub(in crate::tui::sigil_view) fn diff_command(&self, argument: Option<&str>) {
         self.splash.set(false);
         self.compare(None);
@@ -261,7 +281,9 @@ impl App {
                 ..layout
             });
         }
-        self.pane_focus.set(true);
+        if !crate::tui::sigil_view::canvas::is_window() {
+            self.pane_focus.set(true);
+        }
         match argument {
             Some(path) => self.diff_open(path.to_string()),
             None => {

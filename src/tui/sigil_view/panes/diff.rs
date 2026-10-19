@@ -17,10 +17,11 @@ const NOTE: &str = "Note";
 const UNDO: &str = "Undo";
 const PENDING: &str = "pending";
 const REVERT_FILE: &str = "Revert file";
-const SCOPE_ALL: &str = "Showing: all changes vs base · show last turn";
-const SESSION_OFF: &str = "This session only";
-const SESSION_ON: &str = "All uncommitted changes";
-const SCOPE_RECENT: &str = "Showing: files the last turn edited · show all";
+const CONFIRM_REVERT: &str = "Confirm revert";
+const SCOPE_ALL: &str = "Last turn only";
+const SESSION_OFF: &str = "This session";
+const SESSION_ON: &str = "All changes";
+const SCOPE_RECENT: &str = "Every turn";
 const NO_CHANGES: Empty = Empty {
     window: "No changes yet. Files the agent edits show here while the turn runs.",
     terminal: "no changes",
@@ -195,8 +196,13 @@ fn file_actions(app: &App, path: &str) -> NodeBuilder {
     if reverted > 0 {
         row = row.child(chip(format!("{reverted} reverted"), Tone::Warn));
     }
+    let label = if app.revert_armed.peek().as_deref() == Some(target.as_str()) {
+        CONFIRM_REVERT
+    } else {
+        REVERT_FILE
+    };
     row.child(spacer()).child(
-        button(REVERT_FILE)
+        button(label)
             .ghost()
             .activate(move || revert.file_revert(&target)),
     )

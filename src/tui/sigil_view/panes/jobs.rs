@@ -15,7 +15,7 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
     column = column.child(header(
         &app,
         "Jobs".to_string(),
-        model.jobs.len().to_string(),
+        super::body::count(model.jobs.len()),
     ));
     if model.jobs.is_empty() {
         return column.child(empty(&NO_JOBS));

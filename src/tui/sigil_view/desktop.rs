@@ -115,7 +115,7 @@ fn overlay(app: &App) -> Option<NodeBuilder> {
     app.overlay().and_then(|overlay| overlay.layer(app.clone()))
 }
 
-const PANE_SHARE: f32 = 0.34;
+const PANE_SHARE: f32 = 0.4;
 const PANE_MIN: f32 = 360.0;
 const PANE_MAX: f32 = 760.0;
 

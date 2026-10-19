@@ -1,5 +1,5 @@
 use super::*;
-use sigil::prelude::{Radius, signal};
+use sigil::prelude::Radius;
 
 const PLACEHOLDER: &str = "Ask anything; @ attaches a file, / runs a command";
 const EDITING: &str = "Editing the file: ctrl+s saves, esc leaves";
@@ -17,7 +17,6 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
     } else {
         (app.draft, app.caret)
     };
-    let focus = signal(0_u64);
     let typing = app.clone();
     container()
         .key_capture(Shortcut::ctrl(LogicalKey::character("v")), move |event| {
@@ -44,7 +43,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
             if typing.pane_focus.peek() {
                 typing.focus_pane(false);
             }
-            focus.update(|n| *n += 1);
+            typing.focus_composer();
         })
         .child(chat::suggest::widget(
             app.clone(),
@@ -74,7 +73,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                                 changed.change(draft);
                             }
                         })
-                        .focus_when(focus)
+                        .focus_when(app.editor_focus)
                         .autofocus()
                         .layout(LayoutStyle::flex_column().fill_width().height(72.0))
                         .font_size(BODY)

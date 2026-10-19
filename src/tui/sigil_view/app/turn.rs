@@ -176,8 +176,34 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn dismiss(&self) -> bool {
-        self.commands
-            .hide(&self.draft.peek(), self.caret.peek(), &self.model.get())
+        let hidden = self
+            .commands
+            .hide(&self.draft.peek(), self.caret.peek(), &self.model.get());
+        if hidden && crate::tui::sigil_view::canvas::is_window() {
+            self.drop_bare_trigger();
+        }
+        hidden
+    }
+
+    fn drop_bare_trigger(&self) {
+        let draft = self.draft.peek();
+        let caret = self.caret.peek().min(draft.len());
+        let (before, after) = draft.split_at(caret);
+        let stripped = before.strip_suffix('@').or_else(|| {
+            before
+                .strip_suffix('/')
+                .filter(|rest| rest.trim().is_empty())
+        });
+        let Some(stripped) = stripped else {
+            return;
+        };
+        if !stripped.is_empty() && !stripped.ends_with(char::is_whitespace) {
+            return;
+        }
+        let kept = stripped.trim_end_matches(' ');
+        let next = format!("{kept}{after}");
+        self.replace(next);
+        self.caret.set(kept.len());
     }
 
     pub(in crate::tui::sigil_view) fn interrupt(&self) {

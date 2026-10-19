@@ -80,6 +80,14 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
     column
 }
 
+pub(super) fn count(items: usize) -> String {
+    if items == 0 {
+        String::new()
+    } else {
+        items.to_string()
+    }
+}
+
 pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
     container()
         .layout(
@@ -209,11 +217,7 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
 
 fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let trees = app.model.get().trees.clone();
-    column = column.child(header(
-        &app,
-        "Worktrees".to_string(),
-        trees.len().to_string(),
-    ));
+    column = column.child(header(&app, "Worktrees".to_string(), count(trees.len())));
     if trees.is_empty() {
         return column.child(empty(&NO_TREES));
     }
@@ -232,6 +236,7 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 if row.dirty { "dirty" } else { "clean" },
                 if row.dirty { Tone::Warn } else { Tone::Neutral },
             ))
+            .child(super::tree_actions::buttons(&app, &row.tree.path))
             .pointer_down(move |event| {
                 if event.button == Some(MouseButton::Right) {
                     menu.context_row(index);

@@ -98,20 +98,8 @@ impl App {
                 PathBuf::from(&context.target.path),
                 context.target.name.clone(),
             ),
-            Action::Merge => {
-                drop(
-                    self.cmd
-                        .send(Cmd::Merge(PathBuf::from(&context.target.path))),
-                );
-                self.refresh();
-            }
-            Action::Discard => {
-                drop(
-                    self.cmd
-                        .send(Cmd::Discard(PathBuf::from(&context.target.path))),
-                );
-                self.refresh();
-            }
+            Action::Merge => self.tree_merge(PathBuf::from(&context.target.path)),
+            Action::Discard => self.tree_discard(PathBuf::from(&context.target.path)),
             action => unreachable!("context_enter routes only tree actions: {action:?}"),
         }
     }

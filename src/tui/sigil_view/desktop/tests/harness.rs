@@ -55,6 +55,19 @@ pub(super) fn named(key: Key, modifiers: ModifiersState) -> ShellEvent {
     press(LogicalKey::named(key), modifiers, None)
 }
 
+pub(super) fn typed(text: &str) -> Vec<ShellEvent> {
+    text.chars()
+        .map(|ch| {
+            let key = ch.to_string();
+            press(
+                LogicalKey::character(&key),
+                ModifiersState::empty(),
+                Some(&key),
+            )
+        })
+        .collect()
+}
+
 pub(super) fn command(letter: &str) -> ShellEvent {
     press(LogicalKey::character(letter), ModifiersState::META, None)
 }

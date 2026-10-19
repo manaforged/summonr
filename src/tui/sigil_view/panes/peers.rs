@@ -14,7 +14,7 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
     column = column.child(header(
         &app,
         "Peers".to_string(),
-        model.peers.len().to_string(),
+        super::body::count(model.peers.len()),
     ));
     if model.peers.is_empty() {
         return column.child(empty(&NO_PEERS));

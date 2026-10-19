@@ -87,10 +87,8 @@ fn projects(live: &[Live]) -> Vec<String> {
 }
 
 fn project_of(entry: &Live) -> String {
-    entry.workspace.file_name().map_or_else(
-        || entry.workspace.display().to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    )
+    crate::worktree::display_name(&entry.workspace)
+        .unwrap_or_else(|| entry.workspace.display().to_string())
 }
 
 fn titled(text: &str) -> String {
@@ -111,7 +109,7 @@ fn titles(live: &[Live]) -> Vec<String> {
     base.iter()
         .zip(live)
         .map(|(title, entry)| {
-            if counts.get(title.as_str()).copied().unwrap_or(0) > 1 {
+            if title != UNTITLED && counts.get(title.as_str()).copied().unwrap_or(0) > 1 {
                 format!("{title} · {}", session::short(&entry.session))
             } else {
                 title.clone()

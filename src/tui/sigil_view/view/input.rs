@@ -99,13 +99,38 @@ enum WindowShortcut {
     Mentions,
     Settings,
     NewSession,
+    Pane(crate::tui::sigil_view::pane::Pane),
 }
 
-const WINDOW_SHORTCUTS: [(&str, WindowShortcut); 4] = [
+const WINDOW_SHORTCUTS: [(&str, WindowShortcut); 10] = [
     ("k", WindowShortcut::Commands),
     ("p", WindowShortcut::Mentions),
     (",", WindowShortcut::Settings),
     ("n", WindowShortcut::NewSession),
+    (
+        "1",
+        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Files),
+    ),
+    (
+        "2",
+        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Diff),
+    ),
+    (
+        "3",
+        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Worktrees),
+    ),
+    (
+        "4",
+        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Jobs),
+    ),
+    (
+        "5",
+        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Peers),
+    ),
+    (
+        "6",
+        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Ledger),
+    ),
 ];
 
 fn window_shortcut(app: &App, action: WindowShortcut) {
@@ -114,6 +139,7 @@ fn window_shortcut(app: &App, action: WindowShortcut) {
         WindowShortcut::Mentions => app.open_trigger('@'),
         WindowShortcut::Settings => app.toggle_options(),
         WindowShortcut::NewSession => app.open_session(crate::tui::hub::Open::New),
+        WindowShortcut::Pane(pane) => app.toggle_pane(pane),
     }
 }
 

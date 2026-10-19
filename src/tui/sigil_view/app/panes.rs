@@ -20,8 +20,6 @@ impl App {
         let opened = self.layout.peek().secondary != layout.secondary;
         if layout.secondary.is_none() {
             self.pane_focus.set(false);
-        } else if opened && crate::tui::sigil_view::canvas::is_window() {
-            self.pane_focus.set(true);
         }
         self.layout.set(layout);
         if layout.secondary.is_some() {
@@ -74,7 +72,9 @@ impl App {
                 secondary: Some(pane),
                 share,
             });
-            self.pane_focus.set(true);
+            if !crate::tui::sigil_view::canvas::is_window() {
+                self.pane_focus.set(true);
+            }
         }
     }
 

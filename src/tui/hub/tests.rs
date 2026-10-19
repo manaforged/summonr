@@ -243,3 +243,14 @@ async fn naming_a_session_publishes_its_title() {
     started.commands.send(crate::tui::Cmd::Quit).unwrap();
     started.task.await.unwrap();
 }
+
+#[test]
+fn the_first_line_of_a_submitted_prompt_titles_the_session() {
+    let submit = |text: &str| crate::tui::Cmd::Submit(crate::provider::UserInput::from(text));
+    assert_eq!(
+        super::run::title_from(&submit("\n  fix the tests\nthen add --json")).as_deref(),
+        Some("fix the tests")
+    );
+    assert_eq!(super::run::title_from(&submit("   ")), None);
+    assert_eq!(super::run::title_from(&crate::tui::Cmd::Tick), None);
+}

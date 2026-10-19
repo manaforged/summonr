@@ -55,18 +55,20 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                         .position(|item| matches!(item, Item::Seat(index) if *index == selected))
                         .map_or(0, |at| at.saturating_sub(1))
                         .min(items.len().saturating_sub(visible));
+                    if canvas::is_window() {
+                        let end = (top + visible).min(items.len());
+                        let page = items[top..end].iter().fold(
+                            container().layout(LayoutStyle::flex_column().fill_width()),
+                            |node, item| node.child(item_node(&paint, &rows, item, selected)),
+                        );
+                        return vec![page];
+                    }
                     let lookup = rows.clone();
                     let source = paint.clone();
                     vec![
                         container().layout(LayoutStyle::block().fill_width()).child(
-                            virtual_list(items, move |_, item: &Item| match item {
-                                Item::Heading(name) => group(*name),
-                                Item::Seat(index) => entry(
-                                    source.clone(),
-                                    &lookup[*index],
-                                    *index,
-                                    *index == selected,
-                                ),
+                            virtual_list(items, move |_, item: &Item| {
+                                item_node(&source, &lookup, item, selected)
                             })
                             .row_height(canvas::overlay_list_row())
                             .height(canvas::overlay_list_row() * visible as f32)
@@ -77,6 +79,13 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 }),
         )
         .build(app.settings_open, app.viewport.peek().0, &hotkeys)
+}
+
+fn item_node(app: &App, rows: &[Row], item: &Item, selected: usize) -> NodeBuilder {
+    match item {
+        Item::Heading(name) => group(*name),
+        Item::Seat(index) => entry(app.clone(), &rows[*index], *index, *index == selected),
+    }
 }
 
 enum Item {

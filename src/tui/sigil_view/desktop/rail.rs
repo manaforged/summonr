@@ -15,7 +15,7 @@ pub(super) use session_rows::recent;
 
 const RAIL: f32 = 252.0;
 const COMPACT_RAIL: f32 = 56.0;
-const NARROW: f32 = 900.0;
+const NARROW: f32 = 1024.0;
 const SECTION_GAP: f32 = 12.0;
 pub(super) const NEW_SESSION: &str = "New session";
 pub(super) const NEW_WORKTREE: &str = "New session in a worktree";
@@ -142,7 +142,7 @@ fn seat(app: &App, narrow: bool) -> NodeBuilder {
         let label = if unseated {
             ADD_PROVIDER.to_string()
         } else {
-            app.info.endpoint.clone()
+            app.model.get().snapshot.endpoint.clone()
         };
         let control =
             icon_button(icons::SEAT, move || open.open_providers()).accessible(label.clone());
@@ -161,12 +161,10 @@ fn seat(app: &App, narrow: bool) -> NodeBuilder {
                 .activate(move || open.open_providers()),
         );
     }
-    let model = app.model.get().snapshot.model.clone();
     list_row_with(
         false,
-        app.info.endpoint.clone(),
+        app.model.get().snapshot.endpoint.clone(),
         ListRowSlots {
-            status: Some(model.into()),
             activate: Some(Rc::new(move || open.open_providers())),
             ..ListRowSlots::default()
         },

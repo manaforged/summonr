@@ -1,5 +1,5 @@
 use super::*;
-use sigil::prelude::{MenuItem, menu, signal, tooltip};
+use sigil::prelude::{MenuItem, menu, tooltip};
 
 const OPTIONS: &str = "Settings";
 const OPTIONS_GLYPH: &str = "···";
@@ -35,7 +35,7 @@ fn session_title(app: &App) -> String {
 }
 
 fn options(app: &App) -> NodeBuilder {
-    let open = signal(false);
+    let open = app.options_menu;
     let (help, hotkeys, settings) = (app.clone(), app.clone(), app.clone());
     container()
         .layout(
@@ -123,17 +123,14 @@ pub(in crate::tui::sigil_view::desktop) fn title_bar(app: App) -> NodeBuilder {
                         if files == 0 {
                             return Vec::new();
                         }
+                        let shown = review.layout.get().secondary == Some(Pane::Diff);
                         let open = review.clone();
-                        vec![
-                            container().child(
-                                tooltip(CHANGES_HINT).child(
-                                    button(format!("Changes +{added} −{removed}"))
-                                        .size(ControlSize::Compact)
-                                        .accessible(CHANGES_HINT)
-                                        .activate(move || open.toggle_pane(Pane::Diff)),
-                                ),
-                            ),
-                        ]
+                        let control = button(format!("Changes +{added} −{removed}"))
+                            .size(ControlSize::Compact)
+                            .accessible(CHANGES_HINT)
+                            .activate(move || open.toggle_pane(Pane::Diff));
+                        let control = if shown { control.soft() } else { control };
+                        vec![container().child(tooltip(CHANGES_HINT).child(control))]
                     }
                 }),
         )

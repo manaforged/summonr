@@ -13,17 +13,20 @@ impl App {
             self.hotkeys.armed.set(false);
             return;
         }
+        if self.options_menu.peek() {
+            self.options_menu.set(false);
+            return;
+        }
         if self.options_active() {
             super::input::escape(self);
-        } else if self.dismiss() {
-        } else if self.form_stage().is_some() {
-            self.form_reply(crate::tui::sigil_view::app::Reply::Cancel);
-        } else if self.edit_stop() || self.note_stop() {
+        } else if self.dismiss() || self.edit_stop() || self.note_stop() {
         } else if self.context.peek().is_some() {
             self.context_close();
         } else if self.pane_focus.peek() {
             self.focus_pane(false);
         } else if self.pane_back() || self.pane_dismiss() {
+        } else if self.form_stage().is_some() {
+            self.form_reply(crate::tui::sigil_view::app::Reply::Cancel);
         } else {
             super::input::escape(self);
         }
@@ -270,7 +273,9 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
         });
     let scroll = app.clone();
     let owner = app.clone();
+    let stray = app.clone();
     let shell = shell
+        .key_any(move |event| stray.type_elsewhere(event))
         .key_capture_any(move |event| {
             if super::input::leader_plain(&owner, event) {
                 event.stop_propagation();
@@ -294,6 +299,24 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
 }
 
 impl App {
+    fn type_elsewhere(&self, event: &mut KeyEvent) {
+        let Some(text) = event.text.as_ref().map(ToString::to_string) else {
+            return;
+        };
+        let printable = !text.is_empty() && !text.chars().any(char::is_control);
+        let plain = !event
+            .modifiers
+            .intersects(ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META);
+        let free = self.overlay().is_none()
+            && self.pane_active().is_none()
+            && !self.view_edit.peek()
+            && !self.hotkeys.recording.peek();
+        if super::canvas::is_window() && printable && plain && free {
+            event.stop_propagation();
+            self.type_into_composer(&text);
+        }
+    }
+
     fn wheel(&self, event: &mut sigil::events::ScrollEvent) {
         self.settle.set(false);
         let lines = super::canvas::scroll_lines(event.delta);

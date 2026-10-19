@@ -18,6 +18,7 @@ pub(super) use run::{Started, start};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Open {
     New,
+    Worktree,
     Resume(String),
 }
 

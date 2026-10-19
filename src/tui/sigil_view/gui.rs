@@ -45,7 +45,7 @@ pub(crate) fn run(
         sigil::run(window(), move || {
             super::canvas::window_cells();
             let app = App::new(info.clone(), workspace.clone(), commands.clone());
-            app.resize(160, 50);
+            app.fit_window();
             app.load();
             app.refresh();
             app.animate();

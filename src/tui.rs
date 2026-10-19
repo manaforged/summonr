@@ -106,6 +106,8 @@ pub(crate) enum Msg {
     },
     Resume(String),
     Live(Vec<hub::Live>),
+    Named(String),
+    Approval(String),
     Replayed,
     LoginStep {
         text: String,
@@ -181,6 +183,7 @@ enum Cmd {
     KillJob(String),
     Clipboard,
     Diff(Option<std::path::PathBuf>),
+    SessionDiff(String),
     Patch(Option<std::path::PathBuf>, String),
     Review {
         root: Option<std::path::PathBuf>,

@@ -152,7 +152,7 @@ git diff | summonr kimi -p
 | `sessions [--grep TEXT]` | List sessions, or search their text. |
 | `export [ID\|NAME] [--digest]` | Print a session as Markdown; `--digest` prints the condensed form that `classify --review` reads. |
 | `profile [ID\|NAME]` | Time and tokens of one session. `--all` totals every session, and `--last N` only the newest N. |
-| `diff [PATH]` | Changes against the base. Takes `--stat`, `--json`, and `--turn N\|last`. |
+| `diff [PATH]` | Changes against the base. Takes `--stat`, `--json`, and `--turn N\|last\|session`. |
 | `worktrees [prune] [--json]` | List summonr worktrees, or remove the ones that are gone. |
 | `endpoints` | List the endpoints that are set up, with each model, host, key source, and cached model count, without contacting a provider. `--all` adds the rest with how to set each up, and `--check` asks each endpoint for its models. |
 | `login [NAME]` | List keys and plans, or sign in to NAME. Takes `--key`, `--url URL`, `--model NAME`, and `--default`. |
@@ -488,7 +488,7 @@ judge = "grok"
 
 ## Interface
 
-`summonr --gui` opens the session in a desktop window (a build with `--features gui`). The window is built on Sigil: a left rail that switches the Files, Changes, Worktrees, Jobs, Peers, and Ledger panes and lists this workspace's sessions; a main column with the transcript, and a composer card; a right rail that shows the open pane with real widgets: clickable file rows, +/− chips that open a file's hunks, an Edit/Save file view. The title bar's changes badge is live. The same `App`, keys, and layouts drive the terminal and the window.
+`summonr --gui` opens the session in a desktop window (a build with `--features gui`). The window is built on Sigil. The left rail starts with one row of buttons that switch the Files, Changes, Worktrees, Jobs, Peers, and Ledger panes, then lists this workspace's sessions: `+` starts a new session, the branch button starts one in its own git worktree (merge or discard it from the Worktrees pane), and a right-click on a session offers Rename and, on a past session, Delete. A live session is named by `/name`, otherwise by its first prompt. The rail's footer names the provider and opens the provider list; with none set up it reads Add a provider. Below 900 px the rail shows icons only. The main column holds the transcript and the composer card. The composer shows the `@` mentions in the draft as removable chips, and has an Attach button, the model, effort, and approval chips (pick a model, open the effort strip, or toggle approval), and Send, which waits for text or an image. With no provider set up, sending opens the provider list and keeps the draft. The title bar shows `Changes +N −M` while the workspace has changes, and `···` opens a menu with Hotkeys, Help, and Settings. The right side shows the open pane with real widgets: clickable file rows, +/− chips that open a file's hunks, an Edit/Save file view. Clicking outside a dialog closes it. The same `App` and layouts drive the terminal and the window. The window's keys differ: `tab` and `shift+tab` move focus instead of changing effort and approval, `cmd+k` opens the command list, `cmd+p` starts an `@` file mention, `cmd+,` opens Settings, and `cmd+n` starts a new session. In the window the command list shows one line of help for each built-in command.
 
 The screen is a set of panes on one session. `ctrl+x e` (or `/pane files`) opens the repository tree beside the chat; `ctrl+t` the plan ledger; `ctrl+x b` hides or restores the pane. In the tree: `ctrl+→` focuses it, `↑↓` move, `←→` collapse or expand, `PgUp/PgDn/Home/End` jump, Enter opens a directory or attaches `@path` to your prompt, and a right-click (or the mouse) opens a menu: attach, open in `$EDITOR`, insert path. `ctrl+←` or `esc` returns to the composer. With the composer focused, an empty draft, no open overlay, and no running turn, `esc` closes the open side pane. `/pane off` closes the pane. `/pane focus`, `run`, and `review` are presets, `/pane "chat | files 30%"` sets the split, and ctrl+shift+←/→ resizes it. The layout persists in `~/.summonr/config.toml` as `layout`. `ctrl+o` opens the settings modal, where every hotkey is editable; the choice is stored under `[hotkeys]` in the same file. `ctrl+x n` folds every thinking block, then every tool output (`tools = "hidden"`), then shows them all again; a click still opens one block.
 
@@ -496,7 +496,7 @@ The screen is a set of panes on one session. `ctrl+x e` (or `/pane files`) opens
 
 `→` on a file in the tree (or `/view PATH`, or the menu's view file) reads it in the view pane with line numbers; lines the diff added are green with a `+`. `↑↓`, `PgUp/PgDn`, `Home/End` scroll, `o` opens it in `$EDITOR`, `esc` returns to the tree. `e` edits the file in place: the keyboard goes to the file (type, Enter, arrows, Home/End), the caret is the inverted cell, `ctrl+s` saves, and `esc` leaves. With unsaved text a second `esc` discards it. The tree, the diff, and the view follow the file system: a change on disk relists, re-diffs, or reloads the pane within about half a second.
 
-In the diff pane `t` keeps only the files the last turn edited (the header says `· last turn`), `c` copies the patch on show to the clipboard (OSC 52 in the terminal; the system clipboard in the window), and a pane `diff_split_min_cols` columns or wider (100 by default) shows a file's hunks side by side, old on the left; a narrower pane shows the unified diff. `summonr diff --turn N` shows what turn N changed: from the checkpoint taken at its start to the next turn's checkpoint, or to the workspace for the newest turn. `--turn last` is the newest turn that changed files, in the newest session for this workspace. Without `--stat` or `--json`, it writes the same summary line as `--stat` to stderr before the patch. A resumed session keeps numbering its turns. The summary reads `turn N of session <short id>`; the JSON has `base: "turn N"` and `session` with the session id. A diff of the whole workspace still reads `vs HEAD`. A file that summonr's own output is redirected to stays out of every later checkpoint in that workspace, in every session, so `--turn` never lists it. A change to `.summonr/check.toml` or `.summonr/policy.toml` is never a touched path.
+In the diff pane `t` keeps only the files the last turn edited (the header says `· last turn`), `c` copies the patch on show to the clipboard (OSC 52 in the terminal; the system clipboard in the window), and a pane `diff_split_min_cols` columns or wider (100 by default) shows a file's hunks side by side, old on the left; a narrower pane shows the unified diff. The window's Changes pane also has Accept, Revert, and Note buttons on each hunk, a Revert file button and review counts on each file, and Undo after a revert; an undone hunk is not reported to the model. Its This session only button lists just the files this session's turns changed, from the checkpoint taken before its first turn, so changes that were already in the tree stay out. `summonr diff --turn N` shows what turn N changed: from the checkpoint taken at its start to the next turn's checkpoint, or to the workspace for the newest turn. `--turn last` is the newest turn that changed files, in the newest session for this workspace, and `--turn session` spans every turn of that session; its summary reads `all turns of session <short id>`. Without `--stat` or `--json`, it writes the same summary line as `--stat` to stderr before the patch. A resumed session keeps numbering its turns. The summary reads `turn N of session <short id>`; the JSON has `base: "turn N"` and `session` with the session id. A diff of the whole workspace still reads `vs HEAD`. A file that summonr's own output is redirected to stays out of every later checkpoint in that workspace, in every session, so `--turn` never lists it. A change to `.summonr/check.toml` or `.summonr/policy.toml` is never a touched path.
 
 While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it is running), the round, the seconds so far, the output rate, and the queue count. A message sent during the turn goes into the running turn, and the model reads it after its current tool calls. A message waits in the queue for the next turn instead while an approval or a question is open, while earlier messages or commands still wait, or when it starts with `!` or `/`; `enter` on an empty composer sends the waiting plain messages into the running turn.
 
@@ -515,9 +515,9 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | Key | Idle composer | During a turn |
 | --- | --- | --- |
 | `enter` | send | send into the running turn after the current tool calls, or queue it for the next turn as described above; on an empty composer, send the waiting plain messages into the running turn |
-| `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri`; in `/model`, cycle the filter: all, ready, ★, plan, free, think, vision, ≥1M; otherwise cycle reasoning effort | effort takes effect when the turn ends |
+| `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri`; in `/model`, cycle the filter: all, ready, ★, plan, free, think, vision, ≥1M; otherwise cycle reasoning effort (in the window, `tab` moves focus instead) | effort takes effect when the turn ends |
 | `↑` | recall earlier prompts; with input queued, pull it back into the editor | |
-| `esc` | dismiss; twice within two seconds opens the session tree | cancel the turn |
+| `esc` | dismiss; twice within two seconds opens the session tree | close an open list or side pane first; otherwise cancel the turn |
 | `ctrl+c` | clear the draft; on an empty draft, twice within two seconds quits | cancel the turn |
 | `ctrl+d` | quit when the draft is empty; otherwise delete the character after the caret | |
 | `pgup` `pgdn` | scroll the transcript a page | same |
@@ -531,7 +531,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `shift+enter` `alt+enter` | newline; macOS Terminal sends `alt+enter` for Shift+Return | same |
 | `ctrl+j` | newline (default; editable in options) | |
 | `ctrl+g` | edit the draft in `$EDITOR` (default) | |
-| `shift+tab` | toggle approval for risky commands | takes effect when the turn ends; configured policy still applies |
+| `shift+tab` | toggle approval for risky commands (in the window, `shift+tab` moves focus back; use the approval chip) | takes effect when the turn ends; configured policy still applies |
 | `alt+←` `alt+→` `alt+b` `alt+f` | word left or right | |
 | `ctrl+w` `alt+backspace` | delete the word before the caret | |
 | `alt+d` | delete the word after the caret | |
@@ -548,7 +548,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 
 | Command | Job |
 | --- | --- |
-| `/resume [ID\|NAME]` | open another session |
+| `/resume [ID\|NAME]` | open another session; the list includes the current one, marked (current) |
 | `/new` | start another session beside this one |
 | `/name [TEXT]` | name this session |
 | `/clear` | start a fresh context; files stay |
@@ -580,7 +580,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `/permissions [write]` | extra write paths for --strict |
 | `/help` | list commands and keys |
 
-Typing `/` opens the command list above the composer. Each row shows the command, its argument, and one line of help. After `/model `, or `/login `, the list shows the values that command takes: the current endpoint's cached models or the endpoint names. `↑` and `↓` move, `tab` completes, `enter` runs the selected row (prompt rows too), and `esc` hides the list. An unknown command says so and names the closest command; it never runs another command. One `esc` closes `/login` and `/model`. With no usable endpoint, the composer header reads `no provider · /login`. The `ctx` meter hides when the model's context window is unknown.
+Typing `/` opens the command list above the composer. Each row shows the command and its argument; in the window, a built-in command also shows one line of help. After `/model `, or `/login `, the list shows the values that command takes: the current endpoint's cached models or the endpoint names. `↑` and `↓` move, `tab` completes, `enter` runs the selected row (prompt rows too), and `esc` hides the list. An unknown command says so and names the closest command; it never runs another command. One `esc` closes `/login` and `/model`. With no usable endpoint, the composer header reads `no provider · /login`. The `ctx` meter hides when the model's context window is unknown.
 
 A draft that starts with `!` runs as a shell command before any model round: `!cmd` shows the output as a tool card and then sends `$ cmd` plus the output as the prompt; `!!cmd` shows the output only. Escape cancels either command and stops its process group; a cancelled command does not start a model response.
 

@@ -141,7 +141,7 @@ fn card(
         .child(
             container()
                 .layout(LayoutStyle::flex_row().fill_width())
-                .border_w(canvas::cell().h as i16)
+                .border_w(canvas::frame_border())
                 .border_color(Token::Gray6)
                 .bg(canvas::palette().tool_bg)
                 .child(row),

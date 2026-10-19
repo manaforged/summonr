@@ -13,6 +13,22 @@ impl App {
             .collect()
     }
 
+    pub(in crate::tui::sigil_view) fn toggle_session(&self) {
+        self.diff_session.set(!self.diff_session.peek());
+        self.diff_cursor.set(0);
+        self.request_diff();
+        self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn request_diff(&self) {
+        let command = if self.diff_session.peek() && self.root().is_none() {
+            Cmd::SessionDiff(self.model.peek().session.clone())
+        } else {
+            Cmd::Diff(self.root())
+        };
+        drop(self.cmd.send(command));
+    }
+
     pub(in crate::tui::sigil_view) fn toggle_recent(&self) {
         self.diff_recent.set(!self.diff_recent.peek());
         self.diff_cursor.set(0);

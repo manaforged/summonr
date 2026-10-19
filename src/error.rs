@@ -3,6 +3,7 @@ use thiserror::Error;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderFailureKind {
     Authentication,
+    MissingKey,
     RateLimited,
     Server,
     Transport,

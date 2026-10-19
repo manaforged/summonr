@@ -3,7 +3,9 @@ use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Theme, Token, container,
 };
 
+use sigil::events::ScrollEvent;
 use sigil::layout::Position;
+use sigil::prelude::{NodeEventsExt, Signal, scroll};
 
 use super::view::shell;
 use crate::tui::Cmd;
@@ -22,6 +24,7 @@ mod thread;
 pub(super) fn root(app: App) -> NodeBuilder {
     drop(app.cmd.send(Cmd::Diff(None)));
     let screen = app.clone();
+    let pane_scroll = sigil::reactive::signal(0.0_f32);
     shell(&screen)
         .theme(Theme::dark())
         .children_reactive(move || {
@@ -29,10 +32,6 @@ pub(super) fn root(app: App) -> NodeBuilder {
             let navigation = screen.clone();
             let side = screen.clone();
             let top = screen.clone();
-            let changes = {
-                let model = screen.model;
-                sigil::reactive::derived(move || !model.get().diff.files.is_empty())
-            };
             let work = container()
                 .layout(
                     LayoutStyle::flex_row()
@@ -78,9 +77,9 @@ pub(super) fn root(app: App) -> NodeBuilder {
                                 side.workflow.draft.get(),
                                 side.diff_view.get(),
                                 side.view_edit.get(),
-                                changes.get(),
+                                side.viewport.get(),
                             ));
-                            vec![pane(side.clone(), changes.peek())]
+                            vec![pane(side.clone(), pane_scroll)]
                         }),
                 );
             let mut window = container()
@@ -116,12 +115,40 @@ fn overlay(app: &App) -> Option<NodeBuilder> {
     app.overlay().and_then(|overlay| overlay.layer(app.clone()))
 }
 
-fn pane(app: App, changes: bool) -> NodeBuilder {
-    match app.layout.peek().secondary {
-        Some(Pane::Diff) if !changes => closed(),
-        Some(pane) => super::panes::body::pane_body(app, pane, 380.0),
-        None => closed(),
-    }
+const PANE_SHARE: f32 = 0.34;
+const PANE_MIN: f32 = 360.0;
+const PANE_MAX: f32 = 760.0;
+
+fn pane(app: App, offset: Signal<f32>) -> NodeBuilder {
+    let Some(pane) = app.layout.peek().secondary else {
+        return closed();
+    };
+    let window = f32::from(app.viewport.peek().0) * super::canvas::cell().w;
+    let width = (window * PANE_SHARE).clamp(PANE_MIN, PANE_MAX);
+    let focus = app.clone();
+    let focused = app.pane_focus.peek();
+    let content = super::panes::body::pane_body(app, pane, width);
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .width(width)
+                .fill_height()
+                .shrink(0.0),
+        )
+        .bg(Token::Gray3)
+        .border_left(1)
+        .border_color(if focused {
+            Token::Accent
+        } else {
+            Token::Border
+        })
+        .pointer_down_capture(move |_| {
+            if !focus.pane_focus.peek() {
+                focus.focus_pane(true);
+            }
+        })
+        .on_scroll(ScrollEvent::stop_propagation)
+        .child(scroll(content).fill().scroll_bind(offset))
 }
 
 fn closed() -> NodeBuilder {

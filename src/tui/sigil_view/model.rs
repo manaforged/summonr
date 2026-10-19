@@ -59,6 +59,7 @@ pub(super) struct Model {
     pub(super) live: Vec<crate::tui::hub::Live>,
     pub(super) entries: Entries,
     committed: usize,
+    approval_at: Option<(usize, String)>,
     pub(super) ledger: Vec<LedgerRow>,
     pub(super) child_todos: Vec<(String, Vec<LedgerRow>)>,
     pub(super) todos_expanded: bool,
@@ -150,6 +151,7 @@ impl Model {
             live: Vec::new(),
             entries: Entries::default(),
             committed: 0,
+            approval_at: None,
             ledger: Vec::new(),
             child_todos: Vec::new(),
             todos_expanded: false,
@@ -205,6 +207,7 @@ impl Model {
             | Msg::Image(_)
             | Msg::Receipt(_)
             | Msg::System(_)
+            | Msg::Approval(_)
             | Msg::Outcome(_)
             | Msg::Mail { .. }
             | Msg::Failed(_)) => self.entry(msg),
@@ -233,6 +236,7 @@ impl Model {
             | Msg::OpenHelp
             | Msg::Secret(_)
             | Msg::Clipboard(_)
+            | Msg::Named(_)
             | Msg::Models { .. }
             | Msg::ModelNote(_)
             | Msg::Defaulted(_)
@@ -260,6 +264,7 @@ impl Model {
             Msg::Image(image) => self.entries.push(image_entry(image)),
             Msg::Receipt(text) => self.receipt(&text),
             Msg::System(text) => self.entries.push(Entry::System(text)),
+            Msg::Approval(text) => self.approval_note(text),
             Msg::Outcome(text) => self.trail(Entry::System(text)),
             Msg::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Msg::Failed(text) => {

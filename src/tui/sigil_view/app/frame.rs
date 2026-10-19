@@ -38,6 +38,22 @@ impl App {
         self.viewport.set((cols, rows));
     }
 
+    #[cfg(feature = "gui")]
+    pub(in crate::tui::sigil_view) fn fit_window(&self) {
+        let size = sigil::app::viewport_size();
+        let app = self.clone();
+        effect(move || {
+            let logical = size.get();
+            let cell = crate::tui::sigil_view::canvas::cell();
+            if logical.width > 0.0 && logical.height > 0.0 {
+                app.resize(
+                    (logical.width / cell.w).floor().max(1.0) as u16,
+                    (logical.height / cell.h).floor().max(1.0) as u16,
+                );
+            }
+        });
+    }
+
     pub(in crate::tui::sigil_view) fn animate(&self) {
         let app = self.clone();
         let busy =

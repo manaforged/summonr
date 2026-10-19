@@ -1,24 +1,48 @@
+use std::rc::Rc;
+
 use sigil::kernel::TextContent;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, PathNode, Tone, WidgetLayoutExt,
-    container, dot, list_row, section_label, sidebar, spacer,
+    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Tone, WidgetLayoutExt,
+    button, container, icon_button, list_row_with, section_label, sidebar, signal, spacer, tooltip,
 };
 
 use super::{App, Pane};
 use super::{icons, open};
-use crate::session;
-use crate::tui::hub::{Live, Open, Status};
+
+mod session_rows;
+#[cfg(test)]
+pub(super) use session_rows::recent;
 
 const RAIL: f32 = 252.0;
-const PREVIEW_CELLS: usize = 36;
-const RECENT: usize = 8;
+const COMPACT_RAIL: f32 = 56.0;
+const NARROW: f32 = 900.0;
 const SECTION_GAP: f32 = 12.0;
 pub(super) const NEW_SESSION: &str = "New session";
+pub(super) const NEW_WORKTREE: &str = "New session in a worktree";
 pub(super) const UNTITLED: &str = "Untitled";
 pub(super) const LEDGER: &str = "Ledger";
+const SESSIONS: &str = "Sessions";
+const ADD_PROVIDER: &str = "Add a provider";
+const PANES: [(Pane, &str); 6] = [
+    (Pane::Files, "Files"),
+    (Pane::Diff, "Changes"),
+    (Pane::Worktrees, "Worktrees"),
+    (Pane::Jobs, "Jobs"),
+    (Pane::Peers, "Peers"),
+    (Pane::Ledger, LEDGER),
+];
 
 pub(super) fn rail(app: App) -> NodeBuilder {
-    let mut column = container().label("Panes").layout(
+    container()
+        .layout(LayoutStyle::flex_column().fill_height().shrink(0.0))
+        .children_reactive(move || {
+            let narrow = sigil::app::viewport_size().get().width < NARROW;
+            vec![body(&app, narrow)]
+        })
+}
+
+fn body(app: &App, narrow: bool) -> NodeBuilder {
+    let mut column = container().layout(
         LayoutStyle::flex_column()
             .fill_width()
             .fill_height()
@@ -26,47 +50,79 @@ pub(super) fn rail(app: App) -> NodeBuilder {
             .padding_y(14.0)
             .gap(2.0),
     );
-    for (pane, title) in [
-        (Pane::Files, "Files"),
-        (Pane::Diff, "Changes"),
-        (Pane::Worktrees, "Worktrees"),
-        (Pane::Jobs, "Jobs"),
-        (Pane::Peers, "Peers"),
-        (Pane::Ledger, LEDGER),
-    ] {
-        let toggle = app.clone();
-        column = column.child(
-            list_row(open(&app, pane), title, "")
-                .child(glyph(pane))
-                .pointer_down(move |event| {
-                    toggle.toggle_pane(pane);
-                    event.stop_propagation();
-                }),
-        );
-    }
+    column = column.child(panes(app, narrow));
+    column = if narrow {
+        column.child(new_session(app))
+    } else {
+        column
+            .child(heading(app))
+            .child(session_rows::sessions(app))
+    };
     container()
-        .layout(LayoutStyle::flex_column().fill_height().shrink(0.0))
+        .layout(LayoutStyle::block().fill_height())
         .child(
-            sidebar(
-                column
-                    .child(section("Sessions"))
-                    .child(sessions(&app))
-                    .child(spacer())
-                    .child(seat(&app)),
-            )
-            .width(RAIL),
+            sidebar(column.child(spacer()).child(seat(app, narrow))).width(if narrow {
+                COMPACT_RAIL
+            } else {
+                RAIL
+            }),
         )
 }
 
-fn glyph(pane: Pane) -> PathNode {
-    match pane {
-        Pane::Diff => icons::diffs(),
-        Pane::Worktrees => icons::branch(),
-        Pane::Jobs => icons::terminal(),
-        Pane::Peers => icons::peers(),
-        Pane::Ledger => icons::clock(),
-        _ => icons::folder(),
+fn panes(app: &App, narrow: bool) -> NodeBuilder {
+    let flow = if narrow {
+        LayoutStyle::flex_column()
+    } else {
+        LayoutStyle::flex_row()
+    };
+    let mut strip = container()
+        .label("Panes")
+        .layout(flow.fill_width().gap(2.0).align_items(AlignItems::Center));
+    for (pane, title) in PANES {
+        let toggle = app.clone();
+        let shown = open(app, pane);
+        let control =
+            icon_button(icons::pane(pane), move || toggle.toggle_pane(pane)).accessible(title);
+        let control = if shown { control.soft() } else { control };
+        strip = strip.child(
+            container()
+                .selected(signal(shown))
+                .child(tooltip(title).child(control)),
+        );
     }
+    strip
+}
+
+fn heading(app: &App) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .padding_top(SECTION_GAP)
+                .align_items(AlignItems::Center),
+        )
+        .child(
+            container()
+                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
+                .child(section_label(SESSIONS)),
+        )
+        .child(new_worktree(app))
+        .child(new_session(app))
+}
+
+fn new_session(app: &App) -> NodeBuilder {
+    let open = app.clone();
+    container().child(
+        tooltip(NEW_SESSION)
+            .child(icon_button(icons::NEW, move || open.new_session()).accessible(NEW_SESSION)),
+    )
+}
+
+fn new_worktree(app: &App) -> NodeBuilder {
+    let open = app.clone();
+    container().child(tooltip(NEW_WORKTREE).child(
+        icon_button(icons::WORKTREE, move || open.new_worktree_session()).accessible(NEW_WORKTREE),
+    ))
 }
 
 fn section(title: impl Into<TextContent>) -> NodeBuilder {
@@ -79,126 +135,40 @@ fn section(title: impl Into<TextContent>) -> NodeBuilder {
         .child(section_label(title))
 }
 
-fn sessions(app: &App) -> NodeBuilder {
-    let live = {
-        let model = app.model;
-        sigil::reactive::derived(move || model.get().live.clone())
-    };
-    let here = app.workspace.display().to_string();
-    let recent = recent(session::list().unwrap_or_default(), &here);
+fn seat(app: &App, narrow: bool) -> NodeBuilder {
     let open = app.clone();
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(2.0))
-        .children_reactive(move || {
-            let live = live.get();
-            let mut rows = vec![new_session(&open)];
-            for project in projects(&live) {
-                rows.push(section(project.clone()));
-                rows.extend(
-                    live.iter()
-                        .filter(|entry| project_of(entry) == project)
-                        .map(|entry| live_row(&open, entry)),
-                );
-            }
-            let past: Vec<NodeBuilder> = recent
-                .iter()
-                .filter(|info| live.iter().all(|entry| entry.session != info.id))
-                .take(RECENT)
-                .map(|info| past_row(&open, info))
-                .collect();
-            if !past.is_empty() {
-                rows.push(section("Recent"));
-                rows.extend(past);
-            }
-            rows
-        })
-}
-
-pub(super) fn recent(sessions: Vec<session::SessionInfo>, here: &str) -> Vec<session::SessionInfo> {
-    let mut recent: Vec<session::SessionInfo> = sessions
-        .into_iter()
-        .filter(|info| info.cwd.as_deref() == Some(here) && info.depth == 0)
-        .filter(|info| !info.preview.trim().is_empty())
-        .collect();
-    recent.reverse();
-    recent
-}
-
-fn new_session(app: &App) -> NodeBuilder {
-    let open = app.clone();
-    list_row(false, NEW_SESSION, "")
-        .child(icons::plus())
-        .pointer_down(move |event| {
-            open.open_session(Open::New);
-            event.stop_propagation();
-        })
-}
-
-fn projects(live: &[Live]) -> Vec<String> {
-    let mut names: Vec<String> = Vec::new();
-    for entry in live {
-        let name = project_of(entry);
-        if !names.contains(&name) {
-            names.push(name);
-        }
+    let unseated = app.model.get().snapshot.unseated;
+    if narrow {
+        let label = if unseated {
+            ADD_PROVIDER.to_string()
+        } else {
+            app.info.endpoint.clone()
+        };
+        let control =
+            icon_button(icons::SEAT, move || open.open_providers()).accessible(label.clone());
+        let control = if unseated {
+            control.tone(Tone::Warn)
+        } else {
+            control
+        };
+        return container().child(tooltip(label).child(control));
     }
-    names
-}
-
-fn project_of(entry: &Live) -> String {
-    entry.workspace.file_name().map_or_else(
-        || entry.workspace.display().to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    )
-}
-
-fn live_row(app: &App, entry: &Live) -> NodeBuilder {
-    let title = if entry.title.trim().is_empty() {
-        UNTITLED.to_string()
-    } else {
-        crate::text::ellipsize(entry.title.trim(), PREVIEW_CELLS)
-    };
-    let open = app.clone();
-    let (id, active) = (entry.session.clone(), entry.active);
-    list_row(active, title, entry.status.label())
-        .child(dot(tone(entry.status)))
-        .pointer_down(move |event| {
-            if !active {
-                open.open_session(Open::Resume(id.clone()));
-            }
-            event.stop_propagation();
-        })
-}
-
-fn past_row(app: &App, info: &session::SessionInfo) -> NodeBuilder {
-    let title = info
-        .name
-        .clone()
-        .unwrap_or_else(|| crate::text::ellipsize(info.preview.trim(), PREVIEW_CELLS));
-    let title = if title.trim().is_empty() {
-        UNTITLED.to_string()
-    } else {
-        title
-    };
-    let open = app.clone();
-    let id = info.id.clone();
-    list_row(false, title, "").pointer_down(move |event| {
-        open.open_session(Open::Resume(id.clone()));
-        event.stop_propagation();
-    })
-}
-
-const fn tone(status: Status) -> Tone {
-    match status {
-        Status::Working => Tone::Primary,
-        Status::NeedsYou => Tone::Warn,
-        Status::Review => Tone::Success,
-        Status::Failed => Tone::Error,
-        Status::Idle => Tone::Neutral,
+    if unseated {
+        return container().child(
+            button(ADD_PROVIDER)
+                .tone(Tone::Warn)
+                .soft()
+                .activate(move || open.open_providers()),
+        );
     }
-}
-
-fn seat(app: &App) -> NodeBuilder {
     let model = app.model.get().snapshot.model.clone();
-    list_row(false, app.info.endpoint.clone(), model).child(icons::avatar())
+    list_row_with(
+        false,
+        app.info.endpoint.clone(),
+        ListRowSlots {
+            status: Some(model.into()),
+            activate: Some(Rc::new(move || open.open_providers())),
+            ..ListRowSlots::default()
+        },
+    )
 }

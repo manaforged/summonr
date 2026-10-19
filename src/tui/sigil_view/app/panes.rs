@@ -20,6 +20,8 @@ impl App {
         let opened = self.layout.peek().secondary != layout.secondary;
         if layout.secondary.is_none() {
             self.pane_focus.set(false);
+        } else if opened && crate::tui::sigil_view::canvas::is_window() {
+            self.pane_focus.set(true);
         }
         self.layout.set(layout);
         if layout.secondary.is_some() {
@@ -330,10 +332,7 @@ impl App {
         let Some(pane) = layout.secondary else {
             return false;
         };
-        if !self.draft.peek().is_empty()
-            || self.overlay().is_some()
-            || self.model.peek().busy_since.is_some()
-        {
+        if !self.draft.peek().is_empty() || self.overlay().is_some() {
             return false;
         }
         self.last_pane.set(Some(pane));

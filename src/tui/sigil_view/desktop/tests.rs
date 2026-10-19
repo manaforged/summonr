@@ -15,8 +15,11 @@ use super::{App, rail, root, thread};
 use crate::catalog::Model;
 use crate::recent::Seat;
 use crate::tools::Event;
-use crate::tui::hub::{Live, Status};
 use crate::tui::{Msg, Snapshot};
+
+mod harness;
+mod window_chrome;
+mod window_composer;
 
 const VIEW: (f32, f32) = (1200.0, 800.0);
 const WINDOW_RUN: &str = "SUMMONR_TEST_WINDOW";
@@ -132,51 +135,6 @@ fn the_context_meter_draws_no_caption_text() {
 }
 
 #[test]
-fn the_rail_names_the_ledger_pane_as_it_titles_it() {
-    let runs = texts(|_| {}, rail::rail);
-    row(&runs, rail::LEDGER);
-    assert!(
-        runs.iter().all(|(text, _)| text != "Plan"),
-        "{}",
-        shown(&runs)
-    );
-}
-
-#[test]
-fn the_sessions_heading_sits_a_gap_below_the_last_pane() {
-    let runs = texts(|_| {}, rail::rail);
-    let ledger = row(&runs, rail::LEDGER);
-    let peers = row(&runs, "Peers");
-    let heading = row(&runs, "Sessions");
-    assert!(
-        heading - ledger > ledger - peers,
-        "Peers {peers}, Ledger {ledger}, Sessions {heading}"
-    );
-}
-
-#[test]
-fn an_untitled_live_session_is_not_named_like_the_new_session_button() {
-    let runs = texts(
-        |app| {
-            app.update(Msg::Live(vec![Live {
-                session: "0123456789abcdef".to_owned(),
-                title: String::new(),
-                workspace: std::path::PathBuf::from("/tmp/proj"),
-                status: Status::Idle,
-                active: true,
-            }]));
-        },
-        rail::rail,
-    );
-    let buttons = runs
-        .iter()
-        .filter(|(text, _)| text == rail::NEW_SESSION)
-        .count();
-    assert_eq!(buttons, 1, "{}", shown(&runs));
-    row(&runs, rail::UNTITLED);
-}
-
-#[test]
 fn recent_leaves_out_sessions_without_a_message() {
     let info = |id: &str, preview: &str| crate::session::SessionInfo {
         id: id.to_owned(),
@@ -194,6 +152,16 @@ fn recent_leaves_out_sessions_without_a_message() {
     );
     let ids: Vec<&str> = shown.iter().map(|info| info.id.as_str()).collect();
     assert_eq!(ids, ["used"]);
+    let twins = rail::recent(
+        vec![
+            info("older", "Reply ok."),
+            info("newer", "Reply ok."),
+            info("other", "fix the tests"),
+        ],
+        "/work",
+    );
+    let ids: Vec<&str> = twins.iter().map(|info| info.id.as_str()).collect();
+    assert_eq!(ids, ["other", "newer"]);
 }
 
 #[test]

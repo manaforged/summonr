@@ -207,3 +207,60 @@ fn review_marks_live_in_the_repository_state() {
     let git = dunce::canonicalize(repo.path().join(".git")).unwrap();
     assert_eq!(file(repo.path()), git.join("summonr").join(FILE));
 }
+
+fn committed(root: &Path, text: &str) {
+    for args in [
+        &["init", "-q"][..],
+        &["config", "core.autocrlf", "false"],
+        &["config", "user.email", "t@t"],
+        &["config", "user.name", "t"],
+    ] {
+        crate::diff::git_env(root, &[], args).unwrap();
+    }
+    std::fs::write(root.join("f.txt"), text).unwrap();
+    crate::diff::git_env(root, &[], &["add", "f.txt"]).unwrap();
+    crate::diff::git_env(root, &[], &["commit", "-qm", "init"]).unwrap();
+}
+
+#[test]
+fn restore_puts_a_reverted_hunk_back_and_clears_its_mark() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    committed(root, "one\ntwo\nthree\n");
+    std::fs::write(root.join("f.txt"), "one\nTWO\nthree\n").unwrap();
+    let hunk = split("f.txt", &diff::patch(root, Some("f.txt")).unwrap())[0].clone();
+    apply(root, "f.txt", &hunk.id, Op::Reject).unwrap();
+    apply(root, "f.txt", &hunk.id, Op::Restore).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("f.txt")).unwrap(),
+        "one\nTWO\nthree\n"
+    );
+    assert!(
+        load(root)
+            .get("f.txt")
+            .and_then(|notes| notes.get(&hunk.id))
+            .is_none_or(|note| note.verdict.is_none())
+    );
+    assert!(drain(root).is_none_or(|notes| !notes.contains("reverted")));
+}
+
+#[test]
+fn reject_file_reverts_every_hunk_in_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let original: String = (1..=30).map(|line| format!("line {line}\n")).collect();
+    committed(root, &original);
+    let edited = original
+        .replace("line 2\n", "LINE 2\n")
+        .replace("line 28\n", "LINE 28\n");
+    std::fs::write(root.join("f.txt"), &edited).unwrap();
+    assert_eq!(
+        split("f.txt", &diff::patch(root, Some("f.txt")).unwrap()).len(),
+        2
+    );
+    apply(root, "f.txt", "", Op::RejectFile).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("f.txt")).unwrap(),
+        original
+    );
+}

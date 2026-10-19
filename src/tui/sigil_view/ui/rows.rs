@@ -32,11 +32,15 @@ pub(in crate::tui) fn slotted(
     name: impl Into<String>,
     slots: ListRowSlots,
 ) -> NodeBuilder {
-    let cursor = format!(
-        "{}{}",
-        if selected { "❯" } else { " " },
-        mark.unwrap_or(" ")
-    );
+    let cursor = if canvas::is_window() {
+        mark.unwrap_or(" ").to_string()
+    } else {
+        format!(
+            "{}{}",
+            if selected { "❯" } else { " " },
+            mark.unwrap_or(" ")
+        )
+    };
     list_row_with(
         selected,
         name.into(),

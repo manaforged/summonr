@@ -15,6 +15,7 @@ impl App {
         }
         if self.options_active() {
             super::input::escape(self);
+        } else if self.dismiss() {
         } else if self.form_stage().is_some() {
             self.form_reply(crate::tui::sigil_view::app::Reply::Cancel);
         } else if self.edit_stop() || self.note_stop() {
@@ -287,29 +288,41 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
             }
         })
-        .on_scroll(move |event| {
-            scroll.settle.set(false);
-            let lines = super::canvas::scroll_lines(event.delta);
-            if scroll.overlay_move(-lines.round() as isize) {
-                event.stop_propagation();
-                return;
-            }
-            if !scroll.options_active()
-                && !scroll.splash.peek()
-                && scroll.layout.peek().secondary.is_some()
-                && event.position.x >= f32::from(scroll.chat_cols()) * super::canvas::cell().w
-            {
-                scroll.pane_move(-lines.round() as isize);
-                event.stop_propagation();
-                return;
-            }
-            let delta = lines * super::canvas::cell().h;
-            let before = scroll.scroll_y.peek();
-            scroll.scroll_history(delta);
-            if scroll.scroll_y.peek() != before {
-                event.stop_propagation();
-            }
-        });
+        .on_scroll(move |event| scroll.wheel(event));
     let shell = super::input::tab_shortcuts(shell, app);
     super::input::hotkey_shortcuts(super::input::composer_keys(shell, app), app)
+}
+
+impl App {
+    fn wheel(&self, event: &mut sigil::events::ScrollEvent) {
+        self.settle.set(false);
+        let lines = super::canvas::scroll_lines(event.delta);
+        let step = -lines.round() as isize;
+        if self.wheel_surface(step, event.position.x) {
+            event.stop_propagation();
+            return;
+        }
+        let before = self.scroll_y.peek();
+        self.scroll_history(lines * super::canvas::cell().h);
+        if self.scroll_y.peek() != before {
+            event.stop_propagation();
+        }
+    }
+
+    fn wheel_surface(&self, step: isize, x: f32) -> bool {
+        if super::canvas::is_window() {
+            return self.options_active() && self.overlay_scroll(step);
+        }
+        if self.overlay_move(step) {
+            return true;
+        }
+        let over_pane = !self.options_active()
+            && !self.splash.peek()
+            && self.layout.peek().secondary.is_some()
+            && x >= f32::from(self.chat_cols()) * super::canvas::cell().w;
+        if over_pane {
+            self.pane_move(step);
+        }
+        over_pane
+    }
 }

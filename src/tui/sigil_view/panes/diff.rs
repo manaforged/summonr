@@ -5,8 +5,26 @@ use sigil::prelude::{
     WidgetLayoutExt, button, chip, container, list_row, node, spacer, text_edit,
 };
 
+use std::collections::BTreeSet;
+
 use super::App;
-use super::body::header;
+use super::body::{Empty, empty, header};
+use crate::tui::sigil_view::canvas;
+
+const ACCEPT: &str = "Accept";
+const REVERT: &str = "Revert";
+const NOTE: &str = "Note";
+const UNDO: &str = "Undo";
+const PENDING: &str = "pending";
+const REVERT_FILE: &str = "Revert file";
+const SCOPE_ALL: &str = "Showing: all changes vs base · show last turn";
+const SESSION_OFF: &str = "This session only";
+const SESSION_ON: &str = "All uncommitted changes";
+const SCOPE_RECENT: &str = "Showing: files the last turn edited · show all";
+const NO_CHANGES: Empty = Empty {
+    window: "No changes yet. Files the agent edits show here while the turn runs.",
+    terminal: "no changes",
+};
 use crate::tui::sigil_view::ui::{Hints, Key};
 
 pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder {
@@ -45,12 +63,13 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
         };
         let hunks = app.hunks();
         if text.trim().is_empty() {
-            return column.child(
+            column = column.child(
                 sigil::kernel::text("no changes left in this file")
                     .nowrap()
                     .font_size(12.0)
                     .text_color(sigil::prelude::Token::Gray11),
             );
+            return undo_rows(&app, column, Some(&path), &BTreeSet::new());
         }
         if hunks.is_empty() {
             return column.child(crate::tui::sigil_view::chat::entry::patch_view(
@@ -90,19 +109,19 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                 ),
             ));
         }
-        return column;
+        return undo_rows(&app, column, Some(&path), &BTreeSet::new());
     }
     column = column.child(header(&app, "Changes".to_string(), model.diff.summary()));
     drop(model);
+    let window = canvas::is_window();
+    if window {
+        column = column.child(scope(&app));
+    }
     let stats = app.diff_stats();
+    let listed: BTreeSet<String> = stats.iter().map(|stat| stat.path.clone()).collect();
     if stats.is_empty() {
-        return column.child(
-            sigil::kernel::text("no changes")
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
-        );
+        column = column.child(empty(&NO_CHANGES));
+        return undo_rows(&app, column, None, &listed);
     }
     for (index, stat) in stats.into_iter().enumerate() {
         let open = app.clone();
@@ -124,8 +143,133 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                 event.stop_propagation();
             }),
         );
+        if window {
+            column = column.child(file_actions(&app, &stat.path));
+        }
+    }
+    undo_rows(&app, column, None, &listed)
+}
+
+fn actions() -> NodeBuilder {
+    container().layout(
+        LayoutStyle::flex_row()
+            .fill_width()
+            .gap(6.0)
+            .align_items(AlignItems::Center),
+    )
+}
+
+fn hunk_actions(app: &App, path: &str, hunk: &str) -> NodeBuilder {
+    let target = (path.to_string(), hunk.to_string());
+    let (accept, revert, note) = (app.clone(), app.clone(), app.clone());
+    let (a, r, n) = (target.clone(), target.clone(), target);
+    actions()
+        .child(
+            button(ACCEPT)
+                .ghost()
+                .activate(move || accept.hunk_toggle(&a.0, &a.1)),
+        )
+        .child(
+            button(REVERT)
+                .ghost()
+                .activate(move || revert.hunk_revert(&r.0, &r.1)),
+        )
+        .child(
+            button(NOTE)
+                .ghost()
+                .activate(move || note.note_start(n.0.clone(), n.1.clone())),
+        )
+}
+
+fn file_actions(app: &App, path: &str) -> NodeBuilder {
+    let (accepted, reverted) = app.file_review(path);
+    let revert = app.clone();
+    let target = path.to_string();
+    let mut row = actions();
+    if accepted == 0 && reverted == 0 {
+        row = row.child(chip(PENDING, Tone::Neutral));
+    }
+    if accepted > 0 {
+        row = row.child(chip(format!("{accepted} accepted"), Tone::Success));
+    }
+    if reverted > 0 {
+        row = row.child(chip(format!("{reverted} reverted"), Tone::Warn));
+    }
+    row.child(spacer()).child(
+        button(REVERT_FILE)
+            .ghost()
+            .activate(move || revert.file_revert(&target)),
+    )
+}
+
+fn undo_rows(
+    app: &App,
+    mut column: NodeBuilder,
+    only: Option<&str>,
+    skip: &BTreeSet<String>,
+) -> NodeBuilder {
+    if !canvas::is_window() {
+        return column;
+    }
+    for gone in app
+        .reverted(only)
+        .into_iter()
+        .filter(|gone| !skip.contains(&gone.path))
+    {
+        let undo = app.clone();
+        let label = match only {
+            Some(_) => format!("reverted {}", gone.header),
+            None => format!("reverted {} {}", gone.path, gone.header),
+        };
+        column = column.child(
+            actions()
+                .child(
+                    sigil::kernel::text(label)
+                        .nowrap()
+                        .ellipsize()
+                        .layout(
+                            LayoutStyle::block()
+                                .grow(1.0)
+                                .shrink(1.0)
+                                .min_size(0.0, 14.0),
+                        )
+                        .font_size(12.0)
+                        .text_color(sigil::prelude::Token::Gray11),
+                )
+                .child(
+                    button(UNDO)
+                        .ghost()
+                        .activate(move || undo.hunk_restore(&gone.path, &gone.hunk)),
+                ),
+        );
     }
     column
+}
+
+fn scope(app: &App) -> NodeBuilder {
+    let toggle = app.clone();
+    let label = if app.diff_recent.peek() {
+        SCOPE_RECENT
+    } else {
+        SCOPE_ALL
+    };
+    let session = app.clone();
+    let whole = if app.diff_session.peek() {
+        SESSION_ON
+    } else {
+        SESSION_OFF
+    };
+    actions()
+        .child(
+            button(label)
+                .ghost()
+                .activate(move || toggle.toggle_recent()),
+        )
+        .child(
+            button(whole)
+                .ghost()
+                .activate(move || session.toggle_session()),
+        )
 }
 
 fn hunk_view(
@@ -170,6 +314,9 @@ fn hunk_view(
                     event.stop_propagation();
                 }),
         );
+    if canvas::is_window() && !editing {
+        card = card.child(hunk_actions(app, path, &hunk.id));
+    }
     if editing {
         let commit = app.clone();
         let edit = app.clone();

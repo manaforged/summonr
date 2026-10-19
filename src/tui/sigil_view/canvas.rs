@@ -69,6 +69,18 @@ pub(super) fn cell() -> Metrics {
 }
 
 pub(super) const DIALOG_CELLS: f32 = 72.0;
+pub(super) const WINDOW_DIALOG_W: f32 = 520.0;
+pub(super) const WINDOW_PAGE_FRACTION: f32 = 0.86;
+pub(super) const WINDOW_PAGE_MAX_W: f32 = 1180.0;
+const WINDOW_FRAME_BORDER: i16 = 1;
+
+pub(in crate::tui::sigil_view) fn frame_border() -> i16 {
+    if is_window() {
+        WINDOW_FRAME_BORDER
+    } else {
+        cell().h as i16
+    }
+}
 
 pub(super) fn overlay_gap() -> f32 {
     if WINDOW.load(Ordering::Relaxed) {

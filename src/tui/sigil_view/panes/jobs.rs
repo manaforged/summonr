@@ -1,8 +1,12 @@
-use sigil::prelude::Paint;
 use sigil::prelude::{MouseButton, NodeBuilder, NodeEventsExt, Tone, chip, list_row};
 
 use super::App;
-use super::body::{detail, header};
+use super::body::{Empty, detail, empty, header};
+
+const NO_JOBS: Empty = Empty {
+    window: "Commands the agent leaves running in the background show here, with their output and exit status.",
+    terminal: "no background commands; run_command background:true starts one",
+};
 
 pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
@@ -14,13 +18,7 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
         model.jobs.len().to_string(),
     ));
     if model.jobs.is_empty() {
-        return column.child(
-            sigil::kernel::text("no background commands; run_command background:true starts one")
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
-        );
+        return column.child(empty(&NO_JOBS));
     }
     for (index, (record, status)) in model.jobs.iter().enumerate() {
         let menu = app.clone();

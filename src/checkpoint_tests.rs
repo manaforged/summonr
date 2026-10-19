@@ -104,3 +104,27 @@ fn an_undo_reports_only_the_files_a_user_would_see() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn the_session_span_leaves_out_changes_made_before_the_first_turn() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    git_env(workspace, &[], &["config", "core.autocrlf", "false"])?;
+    git_env(workspace, &[], &["config", "user.email", "t@t"])?;
+    git_env(workspace, &[], &["config", "user.name", "t"])?;
+    std::fs::write(workspace.join("a.txt"), "a\n")?;
+    git_env(workspace, &[], &["add", "a.txt"])?;
+    git_env(workspace, &[], &["commit", "-qm", "init"])?;
+    std::fs::write(workspace.join("before.txt"), "dirty before the session\n")?;
+    let checkpoints = Checkpoints::open(workspace, "scope").expect("a Git workspace");
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("first.txt"), "turn one\n")?;
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("second.txt"), "turn two\n")?;
+    let diff = crate::diff::turn_stats(workspace, "scope", crate::diff::TurnId::Session)?;
+    let paths: Vec<&str> = diff.files.iter().map(|stat| stat.path.as_str()).collect();
+    assert_eq!(paths, ["first.txt", "second.txt"]);
+    assert_eq!(diff.base, crate::diff::SESSION_BASE);
+    Ok(())
+}

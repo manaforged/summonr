@@ -1,8 +1,12 @@
-use sigil::prelude::Paint;
 use sigil::prelude::{MouseButton, NodeBuilder, NodeEventsExt, Tone, chip, list_row};
 
 use super::App;
-use super::body::header;
+use super::body::{Empty, empty, header};
+
+const NO_PEERS: Empty = Empty {
+    window: "Other summonr sessions running on this computer show here. Pick one to mention it in your prompt.",
+    terminal: "no other live sessions",
+};
 
 pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
@@ -13,13 +17,7 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
         model.peers.len().to_string(),
     ));
     if model.peers.is_empty() {
-        return column.child(
-            sigil::kernel::text("no other live sessions")
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
-        );
+        return column.child(empty(&NO_PEERS));
     }
     for (index, agent) in model.peers.iter().enumerate() {
         let menu = app.clone();

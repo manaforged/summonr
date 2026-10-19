@@ -20,7 +20,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let state = app.clone();
     let hotkeys = app.model.peek().prefs.hotkeys.clone();
-    Dialog::new(Size::Normal, "Hotkeys", Hints::new())
+    Dialog::new(Size::Reading, "Hotkeys", Hints::new())
         .live_hints(move || {
             if state.hotkeys.armed.get() {
                 Hints::new()

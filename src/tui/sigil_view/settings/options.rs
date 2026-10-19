@@ -49,11 +49,12 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     let rows = setting_rows(&paint);
                     let selected = paint.settings_sel.get().min(rows.len().saturating_sub(1));
                     let items = list_items(&rows);
+                    let visible = canvas::overlay_shown(items.len(), paint.viewport.get().1);
                     let top = items
                         .iter()
                         .position(|item| matches!(item, Item::Seat(index) if *index == selected))
-                        .map_or(0, |at| at.saturating_sub(1));
-                    let visible = canvas::overlay_shown(items.len(), paint.viewport.get().1);
+                        .map_or(0, |at| at.saturating_sub(1))
+                        .min(items.len().saturating_sub(visible));
                     let lookup = rows.clone();
                     let source = paint.clone();
                     vec![
@@ -98,7 +99,7 @@ fn entry(app: App, row: &Row, index: usize, active: bool) -> NodeBuilder {
     let choose = app.clone();
     pick(active, row.label.clone(), row.value.clone()).pointer_down(move |event| {
         if choose.settings_sel.peek() == index {
-            choose.adjust_setting();
+            choose.overlay_adjust(1);
         } else {
             choose.settings_sel.set(index);
         }

@@ -16,6 +16,10 @@ impl App {
         if self.dispatch_line(&text) {
             return;
         }
+        if self.model.peek().snapshot.unseated {
+            self.ask_provider();
+            return;
+        }
         let Some(mut input) = self.attach(&text) else {
             return;
         };
@@ -45,6 +49,8 @@ impl App {
         let argument = match argument(text) {
             Ok(argument) => argument,
             Err(error) => {
+                self.cleared.set(Some(text.to_owned()));
+                self.replace(String::new());
                 self.push_entry(Entry::Error(error));
                 self.splash.set(false);
                 self.refresh();
@@ -155,7 +161,10 @@ impl App {
             return false;
         };
         self.completion(&name);
-        !run
+        if run {
+            self.submit();
+        }
+        true
     }
 
     pub(in crate::tui::sigil_view) fn escape_idle(&self) -> bool {

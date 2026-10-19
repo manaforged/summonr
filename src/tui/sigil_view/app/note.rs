@@ -19,6 +19,13 @@ impl Note {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::tui::sigil_view) struct Reverted {
+    pub(in crate::tui::sigil_view) path: String,
+    pub(in crate::tui::sigil_view) hunk: String,
+    pub(in crate::tui::sigil_view) header: String,
+}
+
 impl App {
     pub(in crate::tui::sigil_view) fn focus_composer(&self) {
         self.editor_focus
@@ -91,6 +98,69 @@ impl App {
             op,
         }));
         self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn hunk_revert(&self, path: &str, hunk: &str) {
+        self.hunk_mark(path, hunk, crate::hunks::Op::Reject);
+    }
+
+    pub(in crate::tui::sigil_view) fn hunk_restore(&self, path: &str, hunk: &str) {
+        self.hunk_mark(path, hunk, crate::hunks::Op::Restore);
+    }
+
+    pub(in crate::tui::sigil_view) fn file_revert(&self, path: &str) {
+        self.hunk_mark(path, "", crate::hunks::Op::RejectFile);
+    }
+
+    pub(in crate::tui::sigil_view) fn file_review(&self, path: &str) -> (usize, usize) {
+        let model = self.model.peek();
+        let Some(hunks) = model
+            .marks
+            .as_ref()
+            .filter(|(root, _)| *root == self.root())
+            .and_then(|(_, marks)| marks.get(path))
+        else {
+            return (0, 0);
+        };
+        let count = |verdict| {
+            hunks
+                .values()
+                .filter(|note| note.verdict == Some(verdict))
+                .count()
+        };
+        (
+            count(crate::hunks::Verdict::Accepted),
+            count(crate::hunks::Verdict::Rejected),
+        )
+    }
+
+    pub(in crate::tui::sigil_view) fn reverted(&self, only: Option<&str>) -> Vec<Reverted> {
+        let model = self.model.peek();
+        let Some((_, marks)) = model
+            .marks
+            .as_ref()
+            .filter(|(root, _)| *root == self.root())
+        else {
+            return Vec::new();
+        };
+        marks
+            .iter()
+            .filter(|(path, _)| only.is_none_or(|only| only == path.as_str()))
+            .flat_map(|(path, hunks)| {
+                hunks.iter().filter_map(move |(id, note)| {
+                    let patch = note.patch.as_ref()?;
+                    (note.verdict == Some(crate::hunks::Verdict::Rejected)).then(|| Reverted {
+                        path: path.clone(),
+                        hunk: id.clone(),
+                        header: patch
+                            .lines()
+                            .find(|line| line.starts_with("@@ "))
+                            .unwrap_or_default()
+                            .to_string(),
+                    })
+                })
+            })
+            .collect()
     }
 
     pub(in crate::tui::sigil_view) fn hunk_context(&self, index: usize) {

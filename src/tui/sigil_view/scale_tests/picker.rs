@@ -325,3 +325,14 @@ fn alt_hints_name_the_option_key_on_macos() {
     assert!(screen.contains(favorite), "{screen}");
     assert!(!screen.contains("alt+p"), "{screen}");
 }
+
+#[test]
+fn resume_lists_the_current_session_and_marks_it() {
+    let screen = picker(120, |app| {
+        app.update(Msg::Session("current".to_owned()));
+        app.open_sessions(false);
+        app.update(Msg::Sessions(Ok(vec![(session("current", None), true)])));
+    });
+    assert!(screen.contains("Session current"), "{screen}");
+    assert!(screen.contains("(current)"), "{screen}");
+}

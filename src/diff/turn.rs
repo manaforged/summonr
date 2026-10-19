@@ -10,7 +10,11 @@ use crate::error::{Error, Result};
 pub enum TurnId {
     Last,
     Number(usize),
+    Session,
 }
+
+const SESSION_TOKEN: &str = "session";
+pub const SESSION_BASE: &str = "all turns";
 
 impl FromStr for TurnId {
     type Err = Error;
@@ -19,17 +23,20 @@ impl FromStr for TurnId {
         if text == "last" {
             return Ok(Self::Last);
         }
+        if text == SESSION_TOKEN {
+            return Ok(Self::Session);
+        }
         match text.parse::<usize>() {
             Ok(number) if number > 0 => Ok(Self::Number(number)),
             Ok(_) | Err(_) => Err(Error::Config(format!(
-                "--turn takes a turn number or `last`, not `{text}`"
+                "--turn takes a turn number, `last`, or `session`, not `{text}`"
             ))),
         }
     }
 }
 
 struct Span {
-    turn: usize,
+    base: String,
     from: String,
     to: String,
 }
@@ -73,7 +80,7 @@ impl Span {
             .collect();
         files.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(Diff {
-            base: format!("turn {}", self.turn),
+            base: self.base.clone(),
             session: Some(session.to_string()),
             files,
         })
@@ -94,7 +101,7 @@ fn spans(root: &Path, session: &str) -> Result<Vec<Span>> {
         .iter()
         .enumerate()
         .map(|(slot, from)| Span {
-            turn: slot + 1,
+            base: format!("turn {}", slot + 1),
             from: from.clone(),
             to: trees.get(slot + 1).unwrap_or(&current).clone(),
         })
@@ -114,6 +121,14 @@ fn pick(root: &Path, session: &str, id: TurnId) -> Result<(Span, Diff)> {
             "no turn {number}; the session has {}",
             crate::text::plural(count, "turn")
         ))),
+        TurnId::Session => {
+            let to = spans.last().map(|span| span.to.clone()).unwrap_or_default();
+            let mut span = spans.swap_remove(0);
+            span.to = to;
+            span.base = SESSION_BASE.to_string();
+            let diff = span.stats(root, session)?;
+            Ok((span, diff))
+        }
         TurnId::Last => {
             let mut empty = None;
             while let Some(span) = spans.pop() {

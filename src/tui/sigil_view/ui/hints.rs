@@ -6,6 +6,7 @@ use crate::tui::sigil_view::canvas;
 use super::rows::row;
 
 const SEPARATOR: &str = " · ";
+const WINDOW_KEYS: usize = 2;
 
 pub(in crate::tui) const FILTER_HINT: &str = "type to filter";
 
@@ -71,8 +72,14 @@ impl Hints {
 
     #[must_use]
     pub(in crate::tui) fn text(&self, keys: &Hotkeys) -> String {
+        let shown = if canvas::is_window() {
+            WINDOW_KEYS
+        } else {
+            self.keys.len()
+        };
         self.keys
             .iter()
+            .take(shown)
             .map(|(key, action)| format!("{} {action}", key.label(keys)))
             .collect::<Vec<_>>()
             .join(SEPARATOR)

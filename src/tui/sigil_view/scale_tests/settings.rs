@@ -94,3 +94,19 @@ fn every_dialog_ends_in_its_key_hints() {
         "{settings}"
     );
 }
+
+#[test]
+fn adjusting_the_mode_row_in_auto_starts_a_goal_in_the_composer() {
+    let mut seen = (String::new(), true);
+    let _ = frame_with(busy_info(), 110, 40, State::Idle, |app| {
+        app.toggle_options();
+        let mode = super::super::settings::setting_rows(app)
+            .iter()
+            .position(|row| row.label == "mode")
+            .expect("a mode row");
+        app.settings_sel.set(mode);
+        app.overlay_adjust(1);
+        seen = (app.draft.peek(), app.settings_open.peek());
+    });
+    assert_eq!(seen, ("/goal ".to_owned(), false));
+}

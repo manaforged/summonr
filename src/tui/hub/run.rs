@@ -245,6 +245,12 @@ impl Session {
             self.title = Some(text.clone());
             changed = true;
         }
+        if let Msg::Named(name) = msg
+            && self.title.as_ref() != Some(name)
+        {
+            self.title = Some(name.clone());
+            changed = true;
+        }
         if let Msg::Session(id) = msg
             && self.id != *id
         {

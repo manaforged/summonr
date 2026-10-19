@@ -1,9 +1,11 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use sigil::prelude::{
     IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Signal, WidgetLayoutExt,
-    container, modal,
+    container, effect, modal, signal,
 };
+use sigil::reactive::untrack;
 
 use crate::prefs::Hotkeys;
 use crate::tui::sigil_view::canvas;
@@ -13,16 +15,22 @@ use super::hints::Hints;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui) enum Size {
     Normal,
+    Reading,
     Page,
 }
 
 impl Size {
     pub(in crate::tui) fn width(self, cols: u16) -> f32 {
         if canvas::is_window() {
-            return 520.0;
+            let window = f32::from(cols) * canvas::cell().w;
+            return match self {
+                Self::Normal => canvas::WINDOW_DIALOG_W,
+                Self::Reading | Self::Page => (window * canvas::WINDOW_PAGE_FRACTION)
+                    .clamp(canvas::WINDOW_DIALOG_W, canvas::WINDOW_PAGE_MAX_W),
+            };
         }
         let max_cells = match self {
-            Self::Normal => canvas::DIALOG_CELLS,
+            Self::Normal | Self::Reading => canvas::DIALOG_CELLS,
             Self::Page => f32::from(cols),
         };
         (f32::from(cols.saturating_sub(4)) * canvas::cell().w).min(max_cells * canvas::cell().w)
@@ -32,6 +40,38 @@ impl Size {
     pub(in crate::tui) fn cells(self, cols: u16) -> usize {
         (self.width(cols) / canvas::cell().w) as usize
     }
+}
+
+type Dismiss = Rc<dyn Fn()>;
+
+thread_local! {
+    static DISMISS: RefCell<Option<Dismiss>> = const { RefCell::new(None) };
+}
+
+pub(in crate::tui::sigil_view) fn dismissing<T>(close: Dismiss, build: impl FnOnce() -> T) -> T {
+    let previous = DISMISS.with(|slot| slot.replace(Some(close)));
+    let built = build();
+    DISMISS.with(|slot| *slot.borrow_mut() = previous);
+    built
+}
+
+fn backdrop_signal(open: Signal<bool>, close: Dismiss) -> Signal<bool> {
+    let shown = signal(open.peek());
+    effect(move || {
+        let now = open.get();
+        if shown.peek() != now {
+            shown.set(now);
+        }
+    });
+    effect(move || {
+        if !shown.get() && open.peek() {
+            untrack(|| close());
+            if open.peek() {
+                shown.set(true);
+            }
+        }
+    });
+    shown
 }
 
 pub(in crate::tui) struct Dialog {
@@ -111,10 +151,17 @@ impl Dialog {
                 .child(bar),
             None => self.body.child(bar),
         };
-        let shell = modal(open)
+        let dismiss = DISMISS
+            .with(|slot| slot.borrow().clone())
+            .filter(|_| canvas::is_window());
+        let backdrop = dismiss.is_some();
+        let shown = dismiss.map_or(open, |close| backdrop_signal(open, close));
+        let shell = modal(shown)
             .trap(true)
+            .dismiss_on_backdrop(backdrop)
+            .escape_closes(!backdrop)
             .width(width)
-            .border_w(canvas::cell().h as i16);
+            .border_w(canvas::frame_border());
         let shell = match self.header {
             Some(header) => shell.child(
                 container()

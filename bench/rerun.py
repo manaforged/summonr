@@ -5,6 +5,7 @@ from pathlib import Path
 from stats import requests
 
 SETUP = {"AgentSetupTimeoutError"}
+STOPPED = {"CancelledError"}
 PROVIDER = {"ApiRateLimitError": lambda status: status == 429, "NetworkConnectionError": lambda status: status is None or status >= 500}
 
 
@@ -24,7 +25,8 @@ def unfinished(trial):
     result = trial / "result.json"
     text = result.read_text() if result.is_file() else ""
     data = json.loads(text) if text.strip() else {}
-    return not data.get("exception_info") and not data.get("verifier_result")
+    kind = (data.get("exception_info") or {}).get("exception_type")
+    return kind in STOPPED or (not kind and not data.get("verifier_result"))
 
 
 def set_aside(job, by_label, rerun):

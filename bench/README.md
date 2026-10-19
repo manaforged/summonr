@@ -27,7 +27,7 @@ python3 table.py tb21-chatgpt-mine --subject summonr
 
 The judge is Harbor's default evaluator, Claude Code on `claude-haiku-4-5`, so it needs an Anthropic key (`--ae ANTHROPIC_API_KEY=...`). A judge FAIL or a URL to a dataset source voids the solve. The source scan reads every file under the trial's `agent/` folder except SQLite databases, where a harness keeps its provider catalog; the same session is in its text log. `table.py` prints the score with voided solves at 0, as the leaderboard scores them, the same count with them counted, and pass@k on the tasks where no try of either harness was voided. It names any passing trial the judge has not seen.
 
-The job pins the summonr build: `board.sh` records its sha256, and a trial whose binary differs fails at install. A rerun with the same run id resumes the job: a trial the host stopped (no `result.json`, or neither a verifier result nor an error) moves to `jobs/RUN.rerun/` and runs again, and `BENCH_RERUN=1` also reruns setup timeouts and the provider failures the proxy saw. Your counts will differ from ours by provider load and sampling; the pass@k intervals in `BENCHMARKS.md` show how far.
+The job pins the summonr build: `board.sh` records its sha256, and a trial whose binary differs fails at install. A rerun with the same run id resumes the job: a trial the host stopped (no `result.json`, neither a verifier result nor an error, or a `CancelledError` from stopping the job) moves to `jobs/RUN.rerun/` and runs again, and `BENCH_RERUN=1` also reruns setup timeouts and the provider failures the proxy saw. Your counts will differ from ours by provider load and sampling; the pass@k intervals in `BENCHMARKS.md` show how far.
 
 ## Tracks
 

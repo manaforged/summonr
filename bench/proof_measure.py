@@ -139,10 +139,11 @@ class Reruns(Bench):
         harbor_trial(self.job, "fix-git__c5", "fix-git")
         (self.job / "fix-git__c5" / "result.json").write_text("")
         harbor_trial(self.job, "fix-git__c6", "fix-git", exception="AgentSetupTimeoutError")
-        calls = {name: [call(name)] for name in ("fix-git__c1", "fix-git__c2", "fix-git__c3")}
+        harbor_trial(self.job, "fix-git__c7", "fix-git", reward=None, exception="CancelledError")
+        calls = {name: [call(name)] for name in ("fix-git__c1", "fix-git__c2", "fix-git__c3", "fix-git__c7")}
         rerun.set_aside(self.job, calls, rerun=True)
-        self.assertEqual(sorted(path.name for path in (self.jobs / "run1.rerun").iterdir()), ["fix-git__c2", "fix-git__c4", "fix-git__c5", "fix-git__c6"])
-        self.assertEqual((self.job / "run.txt").read_text(), "dropped fix-git__c2\ndropped fix-git__c4\ndropped fix-git__c5\nrerun fix-git__c6 AgentSetupTimeoutError\n")
+        self.assertEqual(sorted(path.name for path in (self.jobs / "run1.rerun").iterdir()), ["fix-git__c2", "fix-git__c4", "fix-git__c5", "fix-git__c6", "fix-git__c7"])
+        self.assertEqual((self.job / "run.txt").read_text(), "dropped fix-git__c2\ndropped fix-git__c4\ndropped fix-git__c5\ndropped fix-git__c7\nrerun fix-git__c6 AgentSetupTimeoutError\n")
         self.assertEqual(sorted(path.name for path in self.job.iterdir() if path.is_dir()), ["fix-git__c1", "fix-git__c3"])
 
     def test_pairs_pin_the_dataset_as_a_ref_harbor_reads(self):

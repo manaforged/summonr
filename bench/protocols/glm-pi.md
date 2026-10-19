@@ -8,7 +8,7 @@ On GLM 5.3 Flash and the 66 Terminal-Bench 4.0 tasks, how many input tokens and 
 
 ## Arms
 
-summonr, pi, and OpenCode 2, at the versions in `tools.lock` and the summonr build pinned by sha256 in `run.txt`. Both run GLM 5.3 Flash through the z.ai GLM Coding Plan at effort `max`, z.ai's recommended setting: summonr `--effort max`, pi `--thinking max`, OpenCode 2 the `#max` variant. None sends a temperature, so all get z.ai's default sampling.
+summonr, pi, and OpenCode 2, at the versions in `tools.lock` and the summonr build pinned by sha256 in `run.txt`. All run GLM 5.3 Flash through the z.ai GLM Coding Plan at effort `high`, the level every bench pair uses: summonr `--effort high`, pi `--thinking high`, OpenCode 2 the `#high` variant. None sends a temperature, so all get z.ai's default sampling.
 
 ## Tasks and tries
 
@@ -29,7 +29,7 @@ On the 66 tasks, against each of pi and OpenCode 2 separately, paired ratios as 
 ## Validity checks
 
 - The parity check finds no difference between the arms' environments, and every agent that ran wrote a snapshot.
-- Every tool-carrying request matches a line for its arm in `pairs/glm-pi.settings`, which holds what preflight-glm-1016a saw for these three arms; a preflight on the run's bench commit and summonr build checks every request against it.
+- Every tool-carrying request matches a line for its arm in `pairs/glm-pi.settings`, which the first preflight at effort `high` writes from what these three arms sent; a second preflight on the run's bench commit and summonr build checks every request against it.
 - Every task ran from one task checksum.
 
 ## Reruns and scoring

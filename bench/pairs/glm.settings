@@ -1,8 +1,0 @@
-# arm effort max_tokens temperature, as sent
-hermes max/enabled None None
-omp max/None 131072 None
-opencode2 max/enabled 131072 None
-opencode2 max/enabled None None
-pi max/enabled 131072 None
-summonr max/enabled None None
-summonr-control max/enabled None None

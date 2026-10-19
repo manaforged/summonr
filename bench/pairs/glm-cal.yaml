@@ -15,13 +15,13 @@ agents:
     n_concurrent: 2
     override_timeout_sec: 21600
     model_name: zai/glm-5.3-flash
-    kwargs: {version: "${pi}", reasoning_effort: max}
+    kwargs: {version: "${pi}", reasoning_effort: high}
     env: {ZAI_API_KEY: "$${ZAI_API_KEY}", BENCH_BASE: "${BENCH_PROXY}/pi/v1"}
   - import_path: summonr_agent:Summonr
     n_concurrent: 2
     override_timeout_sec: 21600
     model_name: zai/glm-5.3-flash
-    kwargs: {binary: "${SUMMONR}", binary_sha256: "${SUMMONR_SHA256}", reasoning_effort: max}
+    kwargs: {binary: "${SUMMONR}", binary_sha256: "${SUMMONR_SHA256}", reasoning_effort: high}
     env: {ZAI_API_KEY: "$${ZAI_API_KEY}", BENCH_KEY: "$${ZAI_API_KEY}", BENCH_BASE: "${BENCH_PROXY}/summonr/v1"}
 datasets:
   - {name: terminal-bench/terminal-bench-2-1, ref: latest}

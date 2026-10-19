@@ -41,6 +41,11 @@ jobs:
         run: python3 scripts/api-census.py --check
       - name: palette
         run: python3 scripts/palette-check.py
+      - uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d
+        with:
+          tool: cargo-deny@0.20.2
+      - name: supply chain
+        run: cargo deny check
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           save-if: ${{ github.event_name == 'push' }}

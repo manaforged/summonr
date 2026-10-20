@@ -14,8 +14,8 @@ This runs a published plan pair the way the Terminal-Bench leaderboard runs: Har
 4. Try two tasks first, then run the full set under a new run id:
 
 ```
-BENCH_TASKS="fix-git openssl-selfsigned-cert" ./board.sh smoke-chatgpt chatgpt
-./board.sh tb21-chatgpt-mine chatgpt
+BENCH_TASKS="embedding-drift-monitor layout-config-recreation2" ./board.sh smoke-chatgpt chatgpt
+./board.sh tb40-chatgpt-mine chatgpt
 ```
 
 5. Judge every passing trial for reward hacking and solution lookups, then print the tables:

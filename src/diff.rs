@@ -367,3 +367,7 @@ pub fn turns(journal: &Path) -> Result<Vec<Vec<String>>> {
     }
     Ok(turns)
 }
+
+#[cfg(test)]
+#[path = "diff_tests.rs"]
+mod tests;

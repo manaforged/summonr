@@ -52,3 +52,7 @@ impl<T: Serialize + DeserializeOwned> Sidecar<T> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "sidecar_tests.rs"]
+mod tests;

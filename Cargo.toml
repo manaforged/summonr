@@ -50,6 +50,7 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 thiserror = "2"
+sha2 = { workspace = true }
 tempfile = "3"
 zeroize = "1"
 toml = "0.8"
@@ -62,7 +63,7 @@ leyline = { workspace = true }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "05d994bf109d6f3562157539740176e9cddb303d", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "441cf15b45d85afde220572ecb19f2cc623edcf5", default-features = false, features = ["terminal", "inspect"] }
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"
@@ -74,6 +75,9 @@ libc = "0.2"
 dunce = "1.0"
 jiff = "0.2.38"
 httparse = "1.10"
+
+[dev-dependencies]
+fastrand = "2.5"
 
 [target.'cfg(unix)'.dev-dependencies]
 portable-pty = "0.9"

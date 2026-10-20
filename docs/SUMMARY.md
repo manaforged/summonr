@@ -57,6 +57,7 @@
     - [summonr::supervise](reference/summonr/summonr-supervise.md)
     - [summonr::tui](reference/summonr/summonr-tui.md)
     - [summonr::tui::hub](reference/summonr/summonr-tui-hub.md)
+    - [summonr::update](reference/summonr/summonr-update.md)
     - [summonr::workflow](reference/summonr/summonr-workflow.md)
     - [API changes](reference/summonr/changes.md)
 

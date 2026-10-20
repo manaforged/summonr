@@ -369,3 +369,7 @@ impl Endpoint {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;

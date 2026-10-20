@@ -234,3 +234,7 @@ fn fill(style: LayoutStyle) -> LayoutStyle {
         .fill_height()
         .gap(0.0)
 }
+
+#[cfg(test)]
+#[path = "scene_tests.rs"]
+mod tests;

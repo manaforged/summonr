@@ -184,7 +184,7 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
         }));
     })
     .join("\n");
-    assert!(shown.contains("Task Fix the parser"), "{shown}");
+    assert!(shown.contains("Subagent Fix the parser"), "{shown}");
     assert!(shown.contains("Parser fixed; 4 tests pass."), "{shown}");
     assert!(shown.contains("src/parse.rs"), "{shown}");
     assert!(

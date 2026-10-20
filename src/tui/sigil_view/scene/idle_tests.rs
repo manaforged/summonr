@@ -60,3 +60,95 @@ fn an_idle_splash_frame_repaints_only_what_twinkles() {
         assert!(bytes <= 4_096, "a twinkle wrote {bytes} bytes");
     });
 }
+
+#[test]
+fn the_splash_never_asks_to_wake_sooner_than_a_beat() {
+    Runtime::scope("splash-wake-floor", || {
+        let (app, _host, _screen) = super::tests::splash_screen(SIZE.0, SIZE.1);
+        let beat = crate::limits::limits().animation();
+        for seconds in [0.0, 1.5, 30.0] {
+            let wake = super::next_change(&app, seconds);
+            assert!(wake >= beat, "woke after {wake:?} at {seconds}s");
+        }
+    });
+}
+
+#[test]
+fn a_busy_splash_ticks_the_app_clock() {
+    Runtime::scope("splash-busy-ticks", || {
+        let (app, mut host, mut screen) = super::tests::splash_screen(SIZE.0, SIZE.1);
+        app.update(crate::tui::Msg::Busy(Some(crate::tui::Activity::Turn)));
+        let mut router = sigil::events::EventRouter::new();
+        let beat = crate::limits::limits().animation();
+        for _ in 0..40 {
+            screen.frame(&mut host, &mut router, [], SIZE).unwrap();
+            if app.ticks.peek() > 0 {
+                break;
+            }
+            std::thread::park_timeout(beat);
+        }
+        assert!(app.ticks.peek() > 0, "a busy splash never ticked");
+    });
+}
+
+#[test]
+fn the_splash_sky_shows_the_stars_of_its_clock() {
+    Runtime::scope("splash-sky-clock", || {
+        let (app, mut host, mut screen) = super::tests::splash_screen(SIZE.0, SIZE.1);
+        let per_beat = crate::limits::limits().animation().as_secs_f64().max(0.001);
+        let window = super::window_area(&app, SIZE.0, SIZE.1);
+        let mut router = sigil::events::EventRouter::new();
+        screen
+            .frame(&mut host, &mut router, [], SIZE)
+            .expect("render the splash window");
+        let border = screen
+            .frame(&mut host, &mut router, [], SIZE)
+            .expect("render its settled border")
+            .text();
+        let bottom = border
+            .lines()
+            .position(|line| line.contains('╰'))
+            .expect("the rendered window has a bottom border") as u16;
+        let outside = |x: u16, y: u16| {
+            x < window[0] || y < window[1] || x >= window[0] + window[2] || y > bottom
+        };
+        assert!(
+            !outside(window[0] + window[2] / 2, bottom),
+            "the composer window is not exposed sky"
+        );
+        let stars = |beat: f64| {
+            super::super::space::moving(SIZE.0, SIZE.1, beat, app.sky)
+                .into_iter()
+                .filter(|spot| outside(spot.x, spot.y))
+                .map(|spot| (spot.x, spot.y, spot.cell.text.to_string()))
+                .collect::<Vec<_>>()
+        };
+        let still = stars(0.0);
+        let (beat, moved) = (1..2_000_u32)
+            .map(f64::from)
+            .map(|beat| {
+                let moved: Vec<_> = stars(beat)
+                    .into_iter()
+                    .filter(|spot| !still.contains(spot))
+                    .collect();
+                (beat, moved)
+            })
+            .find(|(_, moved)| !moved.is_empty())
+            .expect("a sky that changes after its first beat");
+        app.sky_clock
+            .set(Some(sigil::prelude::signal(beat * per_beat)));
+        screen.frame(&mut host, &mut router, [], SIZE).unwrap();
+        let grid = screen
+            .frame(&mut host, &mut router, [], SIZE)
+            .unwrap()
+            .clone();
+        for (x, y, text) in moved {
+            assert_eq!(
+                grid.get(usize::from(x), usize::from(y))
+                    .map(|cell| cell.text.to_string()),
+                Some(text),
+                "star at {x},{y} on beat {beat}"
+            );
+        }
+    });
+}

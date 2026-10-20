@@ -111,6 +111,7 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
             .expect("complete command");
         assert_eq!(app.draft.peek(), "/settings");
         assert_eq!(app.model.get().snapshot.effort, Some(Effort::Low));
+        assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
         assert!(matches!(sent.try_recv(), Err(TryRecvError::Empty)));
         app.begin_model_edit();
         assert!(matches!(sent.try_recv(), Ok(Cmd::ListModels { .. })));

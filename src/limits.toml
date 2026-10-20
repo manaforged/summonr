@@ -22,6 +22,7 @@ mail_sweep_secs = 86400
 verify_timeout_secs = 600
 probe_secs = 5
 auth_secs = 30
+update_secs = 600
 model_probe_secs = 8
 web_search_secs = 15
 search_secs = 20

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import csv
 from collections import Counter
 from pathlib import Path
 
@@ -275,10 +276,11 @@ def version_of(info, harness):
 
 def write_csv(path, rows):
     keys = [key for key in rows[0] if key not in ("effort", "models", "void", "warn", "controls", "window")] if rows else []
-    with open(path, "w") as out:
-        out.write(",".join(keys) + "\n")
+    with open(path, "w", newline="") as out:
+        writer = csv.DictWriter(out, fieldnames=[*keys, "voided"], extrasaction="ignore")
+        writer.writeheader()
         for row in rows:
-            out.write(",".join(str(row[key]) for key in keys) + "\n")
+            writer.writerow({**row, "voided": bool(row["void"])})
 
 
 def proxy_section(args, rows):

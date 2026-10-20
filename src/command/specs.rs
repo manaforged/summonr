@@ -133,6 +133,13 @@ pub(super) const SPECS: &[CommandSpec] = &[
     ),
     spec("/exit", "quit summonr", SlashCommand::Exit, Bare, Session),
     spec(
+        "/skills",
+        "list installed skills from their current files",
+        SlashCommand::Skills,
+        Bare,
+        Session,
+    ),
+    spec(
         "/model",
         "choose the model; LEVEL sets the effort",
         SlashCommand::Model,

@@ -1,4 +1,7 @@
+use std::borrow::Cow;
 use std::hash::Hasher;
+use std::iter::Peekable;
+use std::str::SplitInclusive;
 
 use sigil::app::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
@@ -173,13 +176,91 @@ const QUOTES: [char; 2] = ['"', '\''];
 
 struct Field<'a> {
     key: &'a str,
-    value: &'a str,
+    value: Cow<'a, str>,
     items: Vec<&'a str>,
 }
 
 pub(crate) struct Frontmatter<'a> {
     fields: Vec<Field<'a>>,
     pub(crate) body: &'a str,
+}
+
+#[derive(Clone, Copy)]
+enum ScalarStyle {
+    Folded,
+    Literal,
+}
+
+#[derive(Clone, Copy)]
+enum Chomping {
+    Strip,
+    Clip,
+    Keep,
+}
+
+const BLOCK_SCALARS: &[(&str, ScalarStyle, Chomping)] = &[
+    (">", ScalarStyle::Folded, Chomping::Clip),
+    (">-", ScalarStyle::Folded, Chomping::Strip),
+    (">+", ScalarStyle::Folded, Chomping::Keep),
+    ("|", ScalarStyle::Literal, Chomping::Clip),
+    ("|-", ScalarStyle::Literal, Chomping::Strip),
+    ("|+", ScalarStyle::Literal, Chomping::Keep),
+];
+
+fn block_scalar(
+    lines: &mut Peekable<SplitInclusive<'_, char>>,
+    offset: &mut usize,
+    parent: usize,
+    style: ScalarStyle,
+    chomping: Chomping,
+) -> Option<String> {
+    let mut body = Vec::new();
+    while let Some(line) = lines.next_if(|line| {
+        line.trim().is_empty() || line.len() - line.trim_start_matches(' ').len() > parent
+    }) {
+        *offset += line.len();
+        body.push(line.trim_end_matches(['\r', '\n']));
+    }
+    let indent = body
+        .iter()
+        .find(|line| !line.trim().is_empty())
+        .map_or_else(
+            || body.iter().map(|line| line.len()).max().unwrap_or(0),
+            |line| line.len() - line.trim_start_matches(' ').len(),
+        );
+    let prefix = " ".repeat(indent);
+    for line in &mut body {
+        let raw = *line;
+        *line = raw
+            .strip_prefix(&prefix)
+            .or_else(|| raw.trim().is_empty().then_some(""))?;
+    }
+    let end = body
+        .iter()
+        .rposition(|line| !line.is_empty())
+        .map_or(0, |at| at + 1);
+    let mut value = String::new();
+    for (at, line) in body[..end].iter().enumerate() {
+        value.push_str(line);
+        value.push_str(match (style, body[..end].get(at + 1).copied()) {
+            (ScalarStyle::Literal, _) | (_, None) => "\n",
+            (ScalarStyle::Folded, Some(next))
+                if line.is_empty()
+                    || line.starts_with([' ', '\t'])
+                    || next.starts_with([' ', '\t']) =>
+            {
+                "\n"
+            }
+            (ScalarStyle::Folded, Some("")) => "",
+            (ScalarStyle::Folded, Some(_)) => " ",
+        });
+    }
+    match chomping {
+        Chomping::Strip => value.truncate(value.trim_end_matches('\n').len()),
+        Chomping::Clip => {}
+        Chomping::Keep => value.push_str(&"\n".repeat(body.len() - end)),
+    }
+    Some(value)
 }
 
 impl<'a> Frontmatter<'a> {
@@ -196,9 +277,10 @@ impl<'a> Frontmatter<'a> {
         };
         let mut fields: Vec<Field<'a>> = Vec::new();
         let mut offset = 0;
-        for line in rest.split_inclusive('\n') {
-            offset += line.len();
-            let line = line.trim();
+        let mut lines = rest.split_inclusive('\n').peekable();
+        while let Some(raw) = lines.next() {
+            offset += raw.len();
+            let line = raw.trim();
             if line == FENCE {
                 return Self {
                     fields,
@@ -210,9 +292,21 @@ impl<'a> Frontmatter<'a> {
                     field.items.push(item.trim().trim_matches(QUOTES));
                 }
             } else if let Some((key, value)) = line.split_once(':') {
+                let block = BLOCK_SCALARS
+                    .iter()
+                    .find(|(marker, ..)| *marker == value.trim());
+                let value = if let Some((_, style, chomping)) = block {
+                    let parent = raw.len() - raw.trim_start_matches(' ').len();
+                    match block_scalar(&mut lines, &mut offset, parent, *style, *chomping) {
+                        Some(value) => Cow::Owned(value),
+                        None => Cow::Borrowed(value.trim()),
+                    }
+                } else {
+                    Cow::Borrowed(value.trim().trim_matches(QUOTES))
+                };
                 fields.push(Field {
                     key: key.trim().trim_matches(QUOTES),
-                    value: value.trim().trim_matches(QUOTES),
+                    value,
                     items: Vec::new(),
                 });
             }
@@ -220,11 +314,11 @@ impl<'a> Frontmatter<'a> {
         plain
     }
 
-    pub(crate) fn get(&self, key: &str) -> Option<&'a str> {
+    pub(crate) fn get(&self, key: &str) -> Option<&str> {
         self.fields
             .iter()
             .find(|field| field.key == key && !field.value.is_empty())
-            .map(|field| field.value)
+            .map(|field| field.value.as_ref())
     }
 
     pub(crate) fn list(&self, key: &str) -> Option<Vec<String>> {

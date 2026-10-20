@@ -1,0 +1,14 @@
+[[job]]
+name = "nightly"
+schedule = "0 3 * * *"
+dir = "/work/demo"
+worktree = false
+notify = "failure"
+chat = false
+paused = false
+fails = 0
+created = 1792437526
+runs = []
+
+[job.task]
+goal = "make the tests pass"

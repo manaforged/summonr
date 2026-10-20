@@ -317,3 +317,7 @@ pub(in crate::tui::sigil_view) fn transcript(
         ]
     })
 }
+
+#[cfg(test)]
+#[path = "surface_tests.rs"]
+mod tests;

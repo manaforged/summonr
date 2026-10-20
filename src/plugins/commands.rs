@@ -1,6 +1,8 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use super::{Plugin, enabled};
+use crate::error::Result;
 use crate::mcp::{Offer, OfferKind};
 use crate::skills;
 use crate::text::Frontmatter;
@@ -86,13 +88,32 @@ pub(crate) fn named(line: &str) -> bool {
     line.split_whitespace().next().and_then(find).is_some()
 }
 
-pub(crate) fn expand(input: &str, workspace: &Path) -> Option<String> {
+pub(crate) fn expand(input: &str, workspace: &Path) -> Result<Option<String>> {
     let text = input.trim_start();
     let (head, rest) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
-    Some(find(head)?.render(rest.trim(), workspace))
+    if crate::parse_command(head).is_some() {
+        return Ok(None);
+    }
+    if let Some(command) = find(head) {
+        return Ok(Some(command.render(rest.trim(), workspace)));
+    }
+    let Some(name) = head.strip_prefix('/').filter(|name| {
+        skills::list(workspace)
+            .iter()
+            .any(|(known, _)| known.as_str() == *name)
+    }) else {
+        return Ok(None);
+    };
+    let body = skills::load(workspace, name)?;
+    let body = crate::secret::shield::scrub_found(&body, workspace);
+    Ok(Some(if rest.trim().is_empty() {
+        body
+    } else {
+        format!("{body}\n\nSkill arguments:\n{}", rest.trim())
+    }))
 }
 
-pub(crate) fn offers() -> Vec<Offer> {
+pub(crate) fn offers(workspace: &Path) -> Vec<Offer> {
     let all = commands();
     let mut offers = Vec::new();
     for command in &all {
@@ -109,6 +130,17 @@ pub(crate) fn offers() -> Vec<Offer> {
             insert: command.qualified(),
             about,
         });
+    }
+    let offered: HashSet<_> = offers.iter().map(|offer| offer.insert.clone()).collect();
+    for (name, about) in skills::list(workspace) {
+        let insert = format!("/{name}");
+        if crate::parse_command(&insert).is_none() && !offered.contains(&insert) {
+            offers.push(Offer {
+                kind: OfferKind::Prompt,
+                insert,
+                about,
+            });
+        }
     }
     offers
 }

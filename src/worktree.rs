@@ -265,10 +265,10 @@ pub fn tree_at(cwd: &Path) -> Option<Tree> {
 }
 
 fn locate(primary: &Path, cwd: &Path) -> Result<Option<Tree>> {
-    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-    Ok(list(primary)?
-        .into_iter()
-        .find(|tree| tree.path == cwd && worktree_id(&tree.branch).is_some()))
+    let cwd = crate::durable::driver::canonical(cwd);
+    Ok(list(primary)?.into_iter().find(|tree| {
+        crate::durable::driver::canonical(&tree.path) == cwd && worktree_id(&tree.branch).is_some()
+    }))
 }
 
 fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {

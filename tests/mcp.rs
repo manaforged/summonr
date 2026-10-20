@@ -1,3 +1,6 @@
+#[cfg(unix)]
+#[path = "mcp/compat.rs"]
+mod compat;
 #[path = "mcp/content.rs"]
 mod content;
 #[path = "mcp/defer.rs"]
@@ -16,6 +19,8 @@ mod plugin_install;
 mod plugins;
 #[path = "mcp/policy.rs"]
 mod policy;
+#[path = "mcp/progress.rs"]
+mod progress;
 #[path = "mcp/protocol.rs"]
 mod protocol;
 #[cfg(unix)]
@@ -43,7 +48,23 @@ fn main() {
         support::fixture::main();
         return;
     }
+    #[cfg(unix)]
+    if let Some(out) = std::env::var_os("COMPAT_WRITE") {
+        compat::write_fixture(out);
+        return;
+    }
     support::harness(proofs![
+        content::a_native_skill_loads_its_body_and_arguments_without_exposing_secrets,
+        content::a_multiline_skill_description_is_readable_in_the_catalog,
+        content::an_unreadable_skill_fails_before_the_model_is_called,
+        progress::task_progress_reaches_the_next_provider_turn,
+        session::a_goal_recovers_after_more_than_three_failed_checks,
+        #[cfg(unix)]
+        compat::sessions_saved_by_0_1_0_list_export_and_profile,
+        #[cfg(unix)]
+        compat::a_cron_job_saved_by_0_1_0_still_lists,
+        #[cfg(unix)]
+        compat::a_session_saved_by_0_1_0_resumes_with_its_history,
         torn::a_session_resumes_with_any_state_file_torn,
         torn::a_torn_work_file_is_reported_on_resume,
         content::a_server_prompt_becomes_the_user_message,

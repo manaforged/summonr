@@ -112,3 +112,47 @@ fn a_cut_reply_records_the_usage_the_provider_reported() {
     assert_eq!(charge["reported"], true, "{charge}");
     assert_eq!(charge["usage"]["input"], 150_000, "{charge}");
 }
+
+#[test]
+fn an_abort_closes_the_open_turn_with_its_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver.prepare_turn_work("task", &[]).unwrap();
+    driver.start_input(&UserInput::from("task")).unwrap();
+    assert!(driver.turn_open());
+    let abort = crate::tools::Abort::time_limit();
+    driver.abort(&abort, None).unwrap();
+    assert!(!driver.turn_open());
+    assert_eq!(driver.last_close_reason(), Some(abort.reason.as_str()));
+}
+
+#[test]
+fn the_snapshot_skips_the_session_store_and_the_tree_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    let cache = tree::cache_dir(&canonical(dir.path()));
+    assert_eq!(driver.tree_cache(), Some(cache.clone()));
+    let excludes = driver.excludes();
+    assert!(excludes.contains(&cache), "{excludes:?}");
+    assert!(
+        excludes.contains(&canonical(
+            driver.path().parent().unwrap().parent().unwrap()
+        )),
+        "{excludes:?}"
+    );
+}
+
+#[test]
+fn a_checkpoint_writes_the_tree_sidecar_when_the_trees_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    let mut work = Work::new("ship", Policy::Single);
+    work.base = Some(tree::snapshot(dir.path(), &[], None).unwrap());
+    driver.work = Some(work);
+    driver.checkpoint().unwrap();
+    let sidecar = log::work_path(driver.path()).with_extension("tree.json");
+    assert!(sidecar.is_file());
+    std::fs::remove_file(&sidecar).unwrap();
+    driver.checkpoint().unwrap();
+    assert!(!sidecar.exists(), "unchanged trees are not rewritten");
+}

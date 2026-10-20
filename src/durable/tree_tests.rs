@@ -126,3 +126,19 @@ fn a_remembered_tree_reaches_a_new_process_through_the_cache() {
     let loaded = super::cache::remembered(cache.path(), work.path()).expect("cached");
     assert_eq!(loaded, first);
 }
+
+#[test]
+fn a_cached_tree_exactly_at_the_retention_age_is_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path();
+    let edge = cache.join("edge.json");
+    let old = cache.join("old.json");
+    std::fs::write(&edge, "{}").unwrap();
+    std::fs::write(&old, "{}").unwrap();
+    let retain = Duration::from_secs(60);
+    backdate(&old, retain * 2);
+    let at = std::fs::metadata(&edge).unwrap().modified().unwrap();
+    super::cache::prune(cache, &cache.join("keep.json"), retain, at + retain);
+    assert!(edge.is_file());
+    assert!(!old.exists());
+}

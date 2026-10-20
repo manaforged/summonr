@@ -2,7 +2,6 @@ $ErrorActionPreference = 'Stop'
 
 $Repo = 'manaforged/summonr'
 $Releases = "https://github.com/$Repo/releases"
-$Installer = 'https://summonr.dev/install.ps1'
 $Target = 'x86_64-pc-windows-msvc'
 $Dir = if ($env:SUMMONR_INSTALL_DIR) { $env:SUMMONR_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\summonr\bin' }
 $Version = if ($env:SUMMONR_VERSION) { $env:SUMMONR_VERSION } else { 'latest' }
@@ -37,7 +36,7 @@ try {
         Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset" -OutFile $Archive
         Invoke-WebRequest -UseBasicParsing -Uri "$Base/$Asset.sha256" -OutFile "$Archive.sha256"
     } catch {
-        Fail "cannot download $Base/$Asset. See $Releases for available builds."
+        Fail "cannot download $Base/$Asset. See $Releases for available builds, or build from source: cargo install --git https://github.com/$Repo --locked (Rust 1.98, Git, CMake, and a C/C++ compiler required)."
     }
 
     $Want = ((Get-Content "$Archive.sha256" -Raw).Trim() -split '\s+')[0].ToLower()
@@ -63,6 +62,6 @@ if ($Entries -notcontains $Dir) {
     [Environment]::SetEnvironmentVariable('Path', (@($Entries) + $Dir) -join ';', 'User')
     Write-Host "Added $Dir to your user Path. Open a new terminal to use summonr."
 }
-Write-Host "Update: irm $Installer | iex"
+Write-Host "Update: summonr update"
 Write-Host "Uninstall: Remove-Item `"$Exe`""
 Write-Host 'Next: run summonr, then /login to pick a provider and add a key or sign in to a plan.'

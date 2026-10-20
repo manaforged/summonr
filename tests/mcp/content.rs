@@ -6,6 +6,82 @@ fn server(session: &Session) -> String {
     session.server_env("fixture1", ", MCP_FIXTURE_PROMPTS = '1'", "")
 }
 
+pub(crate) fn a_multiline_skill_description_is_readable_in_the_catalog() {
+    let session = Session::new();
+    let skill = session.work.path().join(".claude/skills/probe-folded");
+    std::fs::create_dir_all(&skill).expect("skill directory");
+    std::fs::write(skill.join("SKILL.md"), "---\ndescription: >\n  Inspect the current code and\n  report concrete findings.\n---\nSkill body.\n").expect("folded description");
+    let literal = session.work.path().join(".claude/skills/probe-literal");
+    std::fs::create_dir_all(&literal).expect("literal skill directory");
+    std::fs::write(literal.join("SKILL.md"), "---\ndescription: |-\n  Keep the literal text\n  ---\n  and the next line.\n---\nSkill body.\n").expect("literal description with a fence");
+    let model = Model::start(vec![Step::Text("ok")]);
+    let result = session.run(&model, "", &[]);
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    let requests = model.requests();
+    let sent = requests[0]["messages"].to_string();
+    assert!(
+        sent.contains("probe-folded: Inspect the current code and report concrete findings."),
+        "{sent}"
+    );
+    assert!(
+        sent.contains("probe-literal: Keep the literal text --- and the next line."),
+        "{sent}"
+    );
+}
+
+pub(crate) fn a_native_skill_loads_its_body_and_arguments_without_exposing_secrets() {
+    let session = Session::new();
+    let skill = session.work.path().join(".claude/skills/probe-invoke");
+    std::fs::create_dir_all(&skill).expect("skill directory");
+    let secret = format!(
+        "fixture-secret-{}",
+        session
+            .work
+            .path()
+            .file_name()
+            .expect("workspace name")
+            .to_string_lossy()
+    );
+    std::fs::write(
+        session.work.path().join(".env"),
+        format!("FIXTURE_SECRET={secret}\n"),
+    )
+    .expect("private fixture");
+    std::fs::write(skill.join("SKILL.md"), format!("---\ndescription: native fixture\n---\nFollow the native fixture instructions.\nPrivate value: {secret}\n")).expect("skill body");
+    let model = Model::start(vec![Step::Text("ok")]);
+    let options = Options {
+        prompt: Some("/probe-invoke inspect the parser"),
+        ..Options::default()
+    };
+    let result = session.run_with(&model, "", &[], &options);
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    let requests = model.requests();
+    let sent = requests[0]["messages"].to_string();
+    assert!(
+        sent.contains("Follow the native fixture instructions."),
+        "{sent}"
+    );
+    assert!(sent.contains("inspect the parser"), "{sent}");
+    assert!(!sent.contains(&secret));
+}
+
+pub(crate) fn an_unreadable_skill_fails_before_the_model_is_called() {
+    let session = Session::new();
+    let skill = session.work.path().join(".summonr/skills/probe-unreadable");
+    std::fs::create_dir_all(&skill).expect("skill directory");
+    let mut body = b"---\ndescription: metadata remains readable\n---\n".to_vec();
+    body.push(0xff);
+    std::fs::write(skill.join("SKILL.md"), body).expect("invalid body fixture");
+    let model = Model::start(vec![Step::Text("should not run")]);
+    let options = Options {
+        prompt: Some("/probe-unreadable"),
+        ..Options::default()
+    };
+    let result = session.run_with(&model, "", &[], &options);
+    assert_eq!(result.code, Some(1), "{}", result.stdout);
+    assert!(model.requests().is_empty());
+}
+
 fn asked(session: &Session, model: &Model, prompt: &str) -> String {
     let options = Options {
         prompt: Some(prompt),

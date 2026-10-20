@@ -31,7 +31,9 @@ Setup:
   mcp remove NAME             remove an MCP server from ~/.summonr/config.toml
   install PATH                install a directory of extras (--list shows them)
   uninstall NAME              remove an installed plugin
-  doctor [--logs]             report crashed runs; --logs lists run logs
+  update                      replace this binary with the latest release
+  doctor [--logs|--report]    report crashed runs; --logs lists run logs;
+                              --report prints the last crash to paste into an issue
 
 Integrations:
   acp                         serve the Agent Client Protocol on stdio

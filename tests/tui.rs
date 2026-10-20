@@ -207,6 +207,42 @@ impl Splash {
 }
 
 #[test]
+fn claude_skills_appear_in_slash_typeahead_and_refresh_without_a_restart() {
+    let home = tempfile::tempdir().expect("isolated skill home");
+    let installed = home.path().join(".claude/skills/probe-discovery");
+    std::fs::create_dir_all(&installed).expect("Claude skill directory");
+    std::fs::write(
+        installed.join("SKILL.md"),
+        "---\ndescription: inspect this project\n---\nInspect the project.\n",
+    )
+    .expect("Claude skill file");
+    let terminal = Terminal::open(home.path(), 120, 40);
+    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    let query = b"/probe-disc";
+    terminal.send(query);
+    terminal.settle("the Claude skill suggestion", |splash| {
+        splash.shows("/probe-discovery")
+    });
+    terminal.send(&vec![0x7f; query.len()]);
+    let added = home.path().join(".summonr/skills/probe-hot-added");
+    std::fs::create_dir_all(&added).expect("new native skill directory");
+    std::fs::write(
+        added.join("SKILL.md"),
+        "---\ndescription: added during this session\n---\nUse the current project.\n",
+    )
+    .expect("new native skill file");
+    terminal.send(b"/probe-hot");
+    terminal.settle("the newly installed skill suggestion", |splash| {
+        splash.shows("/probe-hot-added")
+    });
+    terminal.send(&vec![0x7f; b"/probe-hot".len()]);
+    terminal.send(b"/skills\r");
+    terminal.settle("the installed skills listing", |splash| {
+        splash.shows("added during this session")
+    });
+}
+
+#[test]
 fn the_splash_prompt_holds_its_row_inside_the_window_while_typing() {
     for (cols, rows) in SIZES {
         let home = tempfile::tempdir().unwrap();

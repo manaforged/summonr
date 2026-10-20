@@ -5,7 +5,7 @@ use super::preview;
 use super::tools::{call_line, header, workspace_relative};
 use super::tree::{branch, label, tree};
 use crate::child::{ChildRecord, ChildState};
-use crate::tools::{Hold, Kept};
+use crate::tools::{Builtin, Hold, Kept};
 use crate::tui::ToolState;
 use crate::tui::sigil_view::look::Look;
 
@@ -162,7 +162,7 @@ pub(super) fn receipt_card(
         .child(header(
             &state,
             call_line(
-                "Task",
+                Builtin::Task.verb(),
                 &Agent::title_of(&workspace_relative(&record.assignment, &roots)),
                 Some((note, Look::xs(Token::Gray10))),
                 true,
@@ -187,7 +187,7 @@ pub(super) fn receipt_card(
         body = format!("{body}\n{diagnostic}").trim().to_string();
     }
     let failed = matches!(state, ToolState::Failed);
-    let mut shown = preview::text(full, "Task", &body, failed, false);
+    let mut shown = preview::text(full, Builtin::Task.verb(), &body, failed, false);
     if !result.changed_paths.is_empty() {
         let paths = result
             .changed_paths

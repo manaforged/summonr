@@ -44,11 +44,11 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<UserInput> {
         if !crate::mcp::wanted(&input.text) {
-            return Ok(self.expand_command(input));
+            return self.expand_command(input);
         }
         self.settle_mcp(events, emit).await?;
         let Some(hub) = self.mcp.clone() else {
-            return Ok(self.expand_command(input));
+            return self.expand_command(input);
         };
         let head = input.text.split_whitespace().next().unwrap_or_default();
         let offered = crate::mcp::offers(&self.workspace)
@@ -57,24 +57,24 @@ impl<P: Provider> Loop<P> {
         let input = if offered {
             input
         } else {
-            self.expand_command(input)
+            self.expand_command(input)?
         };
         hub.expand(input).await
     }
 
-    fn expand_command(&self, input: UserInput) -> UserInput {
-        let Some(text) = crate::plugins::commands::expand(&input.text, &self.workspace) else {
-            return input;
+    fn expand_command(&self, input: UserInput) -> Result<UserInput> {
+        let Some(text) = crate::plugins::commands::expand(&input.text, &self.workspace)? else {
+            return Ok(input);
         };
         let source = input.source.unwrap_or(crate::provider::Source {
             text: input.text,
             images: input.images.len(),
         });
-        UserInput {
+        Ok(UserInput {
             text,
             images: input.images,
             source: Some(source),
-        }
+        })
     }
 
     #[must_use]

@@ -3,7 +3,6 @@ set -eu
 
 repo=manaforged/summonr
 releases="https://github.com/$repo/releases"
-installer="https://summonr.dev/install.sh"
 dir=${SUMMONR_INSTALL_DIR:-$HOME/.local/bin}
 version=${SUMMONR_VERSION:-latest}
 libc=${SUMMONR_LIBC:-musl}
@@ -67,7 +66,7 @@ trap 'rm -rf "$work"' EXIT
 trap 'exit 130' INT TERM
 
 echo "Downloading $asset ($version)"
-fetch "$base/$asset" "$work/$asset" || fail "cannot download $base/$asset. See $releases for available builds."
+fetch "$base/$asset" "$work/$asset" || fail "cannot download $base/$asset. See $releases for available builds, or build from source: cargo install --git https://github.com/$repo --locked (Rust 1.98, Git, CMake, and a C/C++ compiler required)."
 fetch "$base/$asset.sha256" "$work/$asset.sha256" || fail "cannot download $base/$asset.sha256"
 
 want=$(cut -d' ' -f1 "$work/$asset.sha256")
@@ -85,6 +84,6 @@ case ":$PATH:" in
     *":$dir:"*) ;;
     *) echo "Add $dir to PATH: export PATH=\"$dir:\$PATH\"" ;;
 esac
-echo "Update: curl -fsSL $installer | sh"
+echo "Update: summonr update"
 echo "Uninstall: rm $dir/summonr"
 echo "Next: run summonr, then /login to pick a provider and add a key or sign in to a plan."

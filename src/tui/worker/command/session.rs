@@ -163,7 +163,7 @@ impl Worker {
                 command,
                 Cmd::Command(line)
                     if line.trim_start().starts_with(head)
-                        && matches!(argument(line), Ok(Some("clear" | "stop" | "off" | "cancel")))
+                        && matches!(argument(line, self.loop_.workspace()), Ok(Some("clear" | "stop" | "off" | "cancel")))
             )
         });
         position.is_some_and(|index| self.deferred.remove(index).is_some())

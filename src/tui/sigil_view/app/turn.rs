@@ -46,7 +46,7 @@ impl App {
     }
 
     fn dispatch_line(&self, text: &str) -> bool {
-        let argument = match argument(text) {
+        let argument = match argument(text, &self.workspace) {
             Ok(argument) => argument,
             Err(error) => {
                 self.cleared.set(Some(text.to_owned()));

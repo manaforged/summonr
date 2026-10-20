@@ -1,5 +1,5 @@
 n_attempts: 3
-n_concurrent_trials: 3
+n_concurrent_trials: 9
 timeout_multiplier: 1.0
 environment:
   import_path: image_user:Docker

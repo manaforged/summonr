@@ -6,6 +6,7 @@ use sigil::prelude::{
 
 use super::panes::ledger::{LedgerRow, Mark};
 use super::{App, Model, Pane, canvas};
+use crate::tools::Builtin;
 use crate::tui::sigil_view::ui::pick;
 
 #[derive(Clone, PartialEq)]
@@ -98,7 +99,7 @@ fn panel(app: App, view: TodosView) -> NodeBuilder {
         .child(
             list_row_with(
                 false,
-                format!("Todos {}/{}", view.done, view.total),
+                format!("{} {}/{}", Builtin::Todo.verb(), view.done, view.total),
                 ListRowSlots {
                     status: view.expanded.then(|| "hide".to_string().into()),
                     detail: (!view.expanded).then(|| view.detail.clone().into()),

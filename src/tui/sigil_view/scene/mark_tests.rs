@@ -116,3 +116,26 @@ fn the_shimmer_wakes_exactly_when_its_head_moves() {
         );
     }
 }
+
+#[test]
+fn the_shimmer_tail_trails_behind_its_head_for_a_tenth_of_the_outline() {
+    let path = perimeter(&outline());
+    assert!(path.len() >= 40, "{} outline cells", path.len());
+    let clock = LAP_MS / 2;
+    let head = usize::try_from(clock).unwrap() * path.len() / usize::try_from(LAP_MS).unwrap();
+    let cells: Vec<(i32, i32)> = trail(&path, clock).map(|(x, y, _)| (x, y)).collect();
+    assert_eq!(cells.len(), path.len() * TAIL_PERCENT / 100);
+    for (back, cell) in cells.iter().enumerate() {
+        assert_eq!(*cell, path[head - back], "{back} behind the head");
+    }
+}
+
+#[test]
+fn the_shimmer_head_repeats_every_lap_even_at_the_end_of_the_clock() {
+    let path = perimeter(&outline());
+    let late: Vec<(i32, i32)> = trail(&path, u64::MAX).map(|(x, y, _)| (x, y)).collect();
+    let early: Vec<(i32, i32)> = trail(&path, u64::MAX % LAP_MS)
+        .map(|(x, y, _)| (x, y))
+        .collect();
+    assert_eq!(late, early);
+}

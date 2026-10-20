@@ -8,16 +8,23 @@ const SKILL: &str = "SKILL.md";
 use crate::text::FENCE;
 
 #[must_use]
-pub(crate) fn catalog(workspace: &Path) -> Option<String> {
+pub(crate) fn list(workspace: &Path) -> Vec<(String, String)> {
     let mut rows = Vec::new();
     for root in roots(workspace) {
         collect(root, &mut rows);
     }
+    rows.retain(|(name, _)| valid(name));
+    rows.sort_by(|left, right| left.0.cmp(&right.0));
+    rows.dedup_by(|left, right| left.0 == right.0);
+    rows
+}
+
+#[must_use]
+pub(crate) fn catalog(workspace: &Path) -> Option<String> {
+    let rows = list(workspace);
     if rows.is_empty() {
         return None;
     }
-    rows.sort();
-    rows.dedup_by(|left, right| left.0 == right.0);
     let mut out = String::from(
         "Skills (load with the skill tool, then follow the file). Catalog only; bodies stay on disk:",
     );
@@ -112,7 +119,7 @@ fn head(mut reader: impl BufRead) -> Option<String> {
             continue;
         }
         if fenced || trimmed != FENCE {
-            if !fenced || trimmed == FENCE {
+            if !fenced || piece.trim_end() == FENCE {
                 return Some(text);
             }
             continue;
@@ -128,7 +135,7 @@ fn summary(text: &str) -> String {
         Some(line) if line != FENCE => heading(line),
         Some(_) => crate::text::Frontmatter::parse(text)
             .get("description")
-            .map_or_else(|| heading(FENCE), str::to_string),
+            .map_or_else(|| heading(FENCE), crate::text::squash),
     }
 }
 

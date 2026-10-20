@@ -65,12 +65,14 @@ impl App {
         if draft.contains('@') && !self.commands.mentions() {
             drop(self.cmd.send(Cmd::ListFiles));
         }
-        self.commands.change(
+        if self.commands.change(
             draft,
             &self.model.peek().snapshot.levels,
             &self.model.peek().snapshot.endpoint,
             &self.picker.facts.peek(),
-        );
+        ) {
+            drop(self.cmd.send(Cmd::Offers));
+        }
     }
 
     pub(in crate::tui::sigil_view) fn boundary(&self, end: bool, extend: bool) -> bool {

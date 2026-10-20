@@ -2,7 +2,7 @@
 
 A coding agent for any model, in your terminal or a desktop window, written in Rust.
 
-- **Light**: 27 MB while it works in our [Terminal-Bench 2.1 runs](#benchmarks), against 146 MB for Grok Build and 276 MB for Codex.
+- **Light**: typical harness memory of 27 MB in our [Terminal-Bench 2.1 runs](#benchmarks), against 146 MB for Grok Build and 276 MB for Codex. These are measured medians, not memory limits.
 - **Sessions that talk**: message any running session with `@name`, even one on a different model or provider. [Try it](#coordinate-work-live).
 - **Your own browser**: uses the Chrome you already have, in its own profile, and stays signed in. Web search needs no API key. Turn on `browser` and `search` under `[modules]`.
 - **Any model**: 28 providers built in, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
@@ -19,6 +19,18 @@ Pull requests are by invitation; open an [issue](https://github.com/manaforged/s
 
 ## Install
 
+Build from source on macOS, Linux, or Windows. You need Rust 1.98 or later, Git, CMake, and a C and C++ compiler. On Windows, use the MSVC Rust toolchain and Visual Studio C++ Build Tools.
+
+```sh
+cargo install --git https://github.com/manaforged/summonr --locked
+```
+
+Run the same command to update. To uninstall, run `cargo uninstall summonr`.
+
+### Binary installers
+
+No release binaries are published yet. These installers require an existing [GitHub release](https://github.com/manaforged/summonr/releases); use the source command above until one is available.
+
 macOS and Linux:
 
 ```sh
@@ -31,7 +43,7 @@ Windows (PowerShell):
 irm https://summonr.dev/install.ps1 | iex
 ```
 
-Release binaries cover macOS (Apple silicon), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer downloads the archive's `.sha256` file from the same release, checks the archive's SHA-256 against it, and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
+The release workflow targets macOS (Apple silicon), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer downloads the archive's `.sha256` file from the same release, checks the archive's SHA-256 against it, and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
 
 To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases](https://github.com/manaforged/summonr/releases), then check the archive:
 
@@ -39,13 +51,13 @@ To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases]
 shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
-On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with the line in `SHA256SUMS`. A checksum from the same release does not prove where the file came from. To check provenance, verify the build attestation that each release file has:
+On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with the line in `SHA256SUMS`. A checksum from the same release does not prove where the file came from. The release workflow creates build attestations; verify an available file with:
 
 ```sh
 gh attestation verify <file> --repo manaforged/summonr
 ```
 
-To update, run the installer again. To uninstall, delete the binary: `~/.local/bin/summonr` or `%LOCALAPPDATA%\Programs\summonr\bin\summonr.exe`.
+To update, run `summonr update`. To uninstall, delete the binary: `~/.local/bin/summonr` or `%LOCALAPPDATA%\Programs\summonr\bin\summonr.exe`.
 
 ## First run
 
@@ -55,11 +67,13 @@ To update, run the installer again. To uninstall, delete the binary: `~/.local/b
 
 To skip the prompt, set a key such as `ANTHROPIC_API_KEY` and run `summonr anthropic`.
 
+For a first bounded task, [configure a check and run a goal](#usage) with `--max-secs 1800`. Inspect the result with `summonr diff --turn last`; the receipt reports which checks ran and whether they passed. Commands run as your account with no sandbox, so use a container when a task must not access the rest of your machine.
+
 Docs: [user guide](docs/guide/README.md), [reference](docs/guide/reference.md), and [docs/api.md](docs/api.md) for a coding agent that drives summonr.
 
 ## Desktop window
 
-`summonr --gui` opens the same session in a Sigil desktop window. The release binaries leave it out; build with the `gui` feature (Rust 1.98, Git, CMake, and a C and C++ compiler):
+`summonr --gui` opens the same session in a Sigil desktop window. The default build leaves it out; build with the `gui` feature:
 
 ```sh
 cargo install --git https://github.com/manaforged/summonr --locked --features gui
@@ -95,10 +109,10 @@ Work until the tests pass:
 ```sh
 mkdir -p .summonr
 echo 'check = "cargo test"' > .summonr/check.toml
-summonr anthropic --goal "make cargo test pass"
+summonr anthropic --goal "make cargo test pass" --max-secs 1800
 ```
 
-`--goal` continues until the check exits 0 and a second model call agrees that the goal is met. Exit codes: 0 done, 1 harness error, 2 check still red (summonr runs the check once more when a budget or an abort stops the run), 3 stopped short with no check configured, or with a passing check and an unmet goal. CI can branch on them.
+`--goal` retries failed checks without an attempt limit until the check exits 0 and a second model call agrees that the goal is met. A budget, cancellation, harness error, or judge verdict of `stalled` or `impossible` can stop it short. Numbered steps retain their configured attempt limit. Exit codes: 0 done, 1 harness error, 2 check still red (summonr runs the check once more when a budget or an abort stops the run), 3 stopped short with no check configured, or with a passing check and an unmet goal. CI can branch on them.
 
 Next commands:
 
@@ -149,7 +163,7 @@ It lands in the tests session's inbox, and the tests session replies with `@buil
 
 ## Benchmarks
 
-Terminal-Bench 2.1, at high effort, with every agent in a pair on the same model. The plan pairs ran all 89 tasks side by side, 3 trials each.
+Terminal-Bench 2.1, at high effort, with every agent in a pair on the same model. The plan-pair tables use the earliest 3 trials per arm and task from larger side-by-side jobs covering all 89 tasks. Those historical jobs include Summonr binary switches, and their judge pass is unfinished.
 
 GPT-6.1 Sol on a ChatGPT plan:
 
@@ -174,6 +188,8 @@ GLM 5.3 Flash through z.ai, one try on each of 86 tasks; OpenCode ran in a later
 | OpenCode 2.0.22 | 67.4% | 228,578 | 394 MB |
 
 Medians, as each agent reported them: input over the tasks that agent solved, cost per trial at API list price. Method and caveats: [`BENCHMARKS.md`](BENCHMARKS.md).
+
+Across all 5 ChatGPT trials per task, summonr scored 374/445 and Codex 359/445 after source-lookup voids. The paired solve-difference interval includes zero: 0.03 (-0.01–0.08). The paired input-per-solved-trial ratio remains 0.33 (0.28–0.38); execution time is 1.17× Codex's. These results support an efficiency claim, not general task-solving superiority. [Per-trial data and reproduction](bench/results/README.md).
 
 The first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Six core tools are advertised every round (`read`, `search`, `edit`, `write`, `run_command`, `todo`), plus `ask` in an interactive session and the modules you turned on. MCP schemas join the prefix only for servers you configure.
 

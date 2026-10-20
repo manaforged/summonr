@@ -470,6 +470,26 @@ impl core::clone::Clone for summonr::tui::Ui
 pub fn summonr::tui::channel() -> (summonr::tui::Ui, summonr::tui::Inbox)
 pub fn summonr::tui::profile(args: impl core::iter::traits::iterator::Iterator<Item = alloc::string::String>) -> summonr::Result<()>
 pub fn summonr::tui::run(loop_: summonr::Loop<summonr::Client>, workspace: std::path::PathBuf, info: summonr::tui::Info, ui: summonr::tui::Ui, inbox: summonr::tui::Inbox, gui: bool, factory: summonr::tui::hub::Factory) -> summonr::Result<i32>
+pub mod summonr::update
+pub enum summonr::update::Outcome
+pub summonr::update::Outcome::Ahead
+pub summonr::update::Outcome::Ahead::latest: alloc::string::String
+pub summonr::update::Outcome::Current(alloc::string::String)
+pub summonr::update::Outcome::Updated
+pub summonr::update::Outcome::Updated::from: alloc::string::String
+pub summonr::update::Outcome::Updated::to: alloc::string::String
+impl core::cmp::Eq for summonr::update::Outcome
+impl core::cmp::PartialEq for summonr::update::Outcome
+impl core::fmt::Debug for summonr::update::Outcome
+impl core::marker::StructuralPartialEq for summonr::update::Outcome
+pub struct summonr::update::Source<'a>
+pub summonr::update::Source::current: &'a str
+pub summonr::update::Source::releases: &'a str
+pub summonr::update::Source::target: &'a str
+impl summonr::update::Source<'static>
+pub const fn summonr::update::Source<'static>::this_build() -> Self
+pub const summonr::update::RELEASES: &str
+pub async fn summonr::update::run(source: &summonr::update::Source<'_>, exe: &std::path::Path) -> summonr::Result<summonr::update::Outcome>
 pub mod summonr::workflow
 pub struct summonr::workflow::Seat
 pub summonr::workflow::Seat::endpoint: alloc::string::String
@@ -842,6 +862,7 @@ pub summonr::SlashCommand::Resume
 pub summonr::SlashCommand::Retry
 pub summonr::SlashCommand::Search
 pub summonr::SlashCommand::Settings
+pub summonr::SlashCommand::Skills
 pub summonr::SlashCommand::Status
 pub summonr::SlashCommand::Steps
 pub summonr::SlashCommand::Undo

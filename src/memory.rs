@@ -247,7 +247,7 @@ fn root(workspace: &Path, layout: Option<&crate::diff::Layout>) -> PathBuf {
         )
         .ok()
         .filter(|dir| !dir.is_empty())
-        .map(PathBuf::from),
+        .map(|dir| crate::durable::driver::canonical(Path::new(&dir))),
         None => None,
     };
     common
@@ -261,11 +261,7 @@ fn root(workspace: &Path, layout: Option<&crate::diff::Layout>) -> PathBuf {
                 common
             }
         })
-        .unwrap_or_else(|| {
-            workspace
-                .canonicalize()
-                .unwrap_or_else(|_| workspace.to_path_buf())
-        })
+        .unwrap_or_else(|| crate::durable::driver::canonical(workspace))
 }
 
 fn clean(text: &str, workspace: &Path) -> String {

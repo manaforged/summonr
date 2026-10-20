@@ -375,3 +375,7 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
             .text_color(sigil::prelude::Token::Gray11),
     )
 }
+
+#[cfg(test)]
+#[path = "footer_tests.rs"]
+mod tests;

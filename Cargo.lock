@@ -3894,12 +3894,12 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "sigil-fonts"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=05d994bf109d6f3562157539740176e9cddb303d#05d994bf109d6f3562157539740176e9cddb303d"
+source = "git+https://github.com/manaforged/sigil.git?rev=441cf15b45d85afde220572ecb19f2cc623edcf5#441cf15b45d85afde220572ecb19f2cc623edcf5"
 
 [[package]]
 name = "sigil-ui"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=05d994bf109d6f3562157539740176e9cddb303d#05d994bf109d6f3562157539740176e9cddb303d"
+source = "git+https://github.com/manaforged/sigil.git?rev=441cf15b45d85afde220572ecb19f2cc623edcf5#441cf15b45d85afde220572ecb19f2cc623edcf5"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -4185,6 +4185,7 @@ dependencies = [
  "charm-cdp",
  "crossterm",
  "dunce",
+ "fastrand",
  "futures",
  "grep-matcher",
  "grep-regex",
@@ -4202,6 +4203,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "sigil-ui",
  "summonr-auth",
  "tempfile",

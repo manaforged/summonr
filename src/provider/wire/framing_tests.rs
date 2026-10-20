@@ -143,3 +143,17 @@ fn bad_bytes_are_reported_rather_than_losing_the_turn() {
         "got {error}"
     );
 }
+
+#[test]
+fn framing_garbage_split_anywhere_is_an_error_not_a_panic() {
+    for (index, input) in crate::fuzz_tests::inputs(0x5eed_0003, 5_000)
+        .iter()
+        .enumerate()
+    {
+        let mut frames = Frames::default();
+        let cut = index.checked_rem(input.len()).unwrap_or(0);
+        let sentinel = [None, Some("[DONE]")][index % 2];
+        drop(frames.push(&input[..cut], sentinel).map(|got| got.len()));
+        drop(frames.push(&input[cut..], sentinel).map(|got| got.len()));
+    }
+}

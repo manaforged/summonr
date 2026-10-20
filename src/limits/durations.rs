@@ -57,6 +57,10 @@ impl Limits {
         secs(self.auth_secs)
     }
 
+    pub(crate) fn update(&self) -> Duration {
+        secs(self.update_secs)
+    }
+
     pub(crate) fn model_probe(&self) -> Duration {
         secs(self.model_probe_secs)
     }

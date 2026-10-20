@@ -164,7 +164,8 @@ git diff | summonr kimi -p
 | `mcp remove NAME` | Remove an MCP server from `~/.summonr/config.toml`. |
 | `install PATH [--list]` | Install a directory of extras; `--list` shows installed plugins. |
 | `uninstall NAME` | Remove an installed plugin. |
-| `doctor [--logs]` | Report crashed runs; `--logs` lists the run logs. |
+| `update` | Replace this binary with the latest release: download the archive for this platform, check its SHA-256 against the release's `.sha256` file, run the new binary once, then swap it in. A build from source prints the `cargo install` command instead. |
+| `doctor [--logs\|--report]` | Report crashed runs; `--logs` lists the run logs; `--report` prints the last crashed or failed run, with the home folder shown as `~`, to paste into an issue. |
 | `acp` | Serve the Agent Client Protocol on stdio. |
 | `mail` | Peer mail between sessions: `agents`, `send`, `inbox`, `board`. See Mail. |
 | `tool NAME [JSON]` | Run one tool with JSON arguments (default `{}`) in this directory and print the result. Exits 1 when the tool fails. |
@@ -252,6 +253,7 @@ cache_ttl = "5m"
 | `verify_timeout_secs` | `600` | Timeout for a check command. |
 | `probe_secs` | `5` | Endpoint probe timeout. |
 | `auth_secs` | `30` | Sign-in request timeout. |
+| `update_secs` | `600` | `summonr update` download timeout. |
 | `model_probe_secs` | `8` | Model list request timeout. |
 | `web_search_secs` | `15` | Web search timeout. |
 | `search_secs` | `20` | Time one `search` call walks and scans before it returns what it found. |
@@ -304,7 +306,7 @@ cache_ttl = "5m"
 | `notice_secs` | `2` | Time a notice stays on screen. |
 | `worker_stop_secs` | `2` | Desktop worker stop wait. |
 | `repeat_window_secs` | `2` | Window for a double key press. |
-| `step_attempts` | `3` | Attempts per plan step. |
+| `step_attempts` | `3` | Failed-check attempts per numbered plan step; not applied to goals. |
 | `repair_limit` | `6` | Argument repairs and overflow retries per turn. |
 | `repeat_nudge` | `5` | Times the same tool call, or the same cycle of up to three calls, may return the same result in a row before summonr adds a note to the result asking the model to change approach. The call still runs, and a new message starts the count again. `0` turns the note off. |
 | `edit_hunk_rows` | `80` | Rows shown per edit hunk. |
@@ -566,6 +568,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `/usage [session]` | token spend; session profiles this session |
 | `/agents` | list agent sessions on this machine |
 | `/memory` | show the memory files and their size |
+| `/skills` | list skills from their current files; installed skills also appear in slash completion |
 | `/exit` | quit summonr |
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort. A provider that does not answer is left out of the list until `F5` reaches it |
 | `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
@@ -631,7 +634,7 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | `edit` | always | Change or move a file; hashes from `read`; `edits` for a batch |
 | `write` | always | New or empty files; `files` for several |
 | `run_command` | always | `workdir` / `background` / `job` / `kill`; full log path |
-| `todo` | `/steps`, `/goal`, `--steps`, `--goal` | Replaces the Work todo list; status `pending`, `active`, or `done` |
+| `todo` | always | Replaces the Work task list; status `pending`, `active`, or `done`. Update it as tasks start or finish. |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
 | `lsp` | `lsp` on | Diagnostics for a `path`; definition, `references`, or `new_name` at `line` and `character` |
 | `web` | `search` on (off by default) | `query` searches; `url` fetches as markdown, text, or html |
@@ -844,7 +847,7 @@ The built-in modules are the binary (modules above). What you add lives in files
 
 | Layer | Where | What the model sees |
 | --- | --- | --- |
-| Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/` | One `skill` tool. The body is a later tool result. |
+| Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/` | `/skills` lists them; `/NAME [arguments]` invokes one; the model uses the `skill` tool. Slash completion refreshes on opening; no copying or sync option is needed. Built-ins and plugin commands win name collisions. |
 | MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt` and `@server:uri` expand server prompts and resources into the user message. |
 | Hook | `[hooks]` `pre_tool`, `post_tool`, `compact`, `stop` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call (stdin is JSON). |
 | Plugin | `summonr install PATH` (Claude Code layout) | Its skills, MCP tools (`<plugin>-<server>__tool`), hooks, and `bin/` |

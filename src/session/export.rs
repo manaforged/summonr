@@ -129,3 +129,7 @@ impl super::SessionInfo {
             || name_of(&self.path).is_some_and(|name| name.to_lowercase().contains(needle))
     }
 }
+
+#[cfg(test)]
+#[path = "export_tests.rs"]
+mod tests;

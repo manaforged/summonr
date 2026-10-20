@@ -144,3 +144,19 @@ fn continue_ignores_a_linked_worktree_that_summonr_did_not_make() {
     let found = latest_in(home.path(), &primary, None).unwrap();
     assert_eq!(found.map(|info| info.path), None);
 }
+
+#[test]
+fn an_open_session_of_unchanged_size_is_served_from_the_index() {
+    let home = tempfile::tempdir().unwrap();
+    let path = journal(home.path(), OLDER);
+    std::fs::write(&path, header(OLDER, "/work/alpha", 0)).unwrap();
+    assert_eq!(
+        list_in(home.path()).unwrap()[0].cwd.as_deref(),
+        Some("/work/alpha")
+    );
+    std::fs::write(&path, header(OLDER, "/work/omega", 0)).unwrap();
+    assert_eq!(
+        list_in(home.path()).unwrap()[0].cwd.as_deref(),
+        Some("/work/alpha")
+    );
+}

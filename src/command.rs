@@ -49,6 +49,7 @@ pub enum SlashCommand {
     View,
     Agents,
     Memory,
+    Skills,
     Permissions,
     Fork,
     Usage,
@@ -143,10 +144,18 @@ pub(crate) fn alias(line: &str) -> Option<String> {
     })
 }
 
-pub(crate) fn argument(line: &str) -> Result<Option<&str>, String> {
+pub(crate) fn argument<'a>(
+    line: &'a str,
+    workspace: &std::path::Path,
+) -> Result<Option<&'a str>, String> {
     let Some(command) = parse_command(line) else {
         if let Some(head) = line.split_whitespace().next().filter(|head| {
-            head.starts_with('/') && !server_prompt(head) && !crate::plugins::commands::named(head)
+            head.starts_with('/')
+                && !server_prompt(head)
+                && !crate::plugins::commands::named(head)
+                && !crate::skills::list(workspace)
+                    .iter()
+                    .any(|(name, _)| head.strip_prefix('/') == Some(name.as_str()))
         }) {
             return Err(format!(
                 "Unknown command `{head}`. Use /help or press Tab to complete."

@@ -68,7 +68,7 @@ impl Worker {
         if line.is_empty() {
             return Some(true);
         }
-        let argument = match argument(line) {
+        let argument = match argument(line, self.loop_.workspace()) {
             Ok(argument) => argument,
             Err(_) if crate::parse_command(line).is_none() => return self.unknown(line),
             Err(error) => {
@@ -129,6 +129,19 @@ impl Worker {
             crate::SlashCommand::Undo => self.undo_command(argument),
             crate::SlashCommand::Agents => self.agents(),
             crate::SlashCommand::Memory => self.memory(),
+            crate::SlashCommand::Skills => {
+                let skills = crate::skills::list(self.loop_.workspace())
+                    .into_iter()
+                    .map(|(name, about)| format!("/{name}  {about}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                self.system(if skills.is_empty() {
+                    "No skills found in the standard skill folders."
+                } else {
+                    &skills
+                });
+                true
+            }
             _ => self.unknown(line).unwrap_or(true),
         }
     }

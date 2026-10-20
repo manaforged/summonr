@@ -29,12 +29,13 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr mcp list\|get NAME [--json]`, `summonr mcp add NAME -- CMD\|--url URL`, `summonr mcp remove NAME` | List MCP servers with state, tools, and schema size; add or remove a `[mcp.NAME]` table |
 | `summonr install PATH`, `summonr install --list`, `summonr uninstall NAME` | Install a plugin directory, list plugins, or remove one |
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
+| `summonr update` | Replace the installed binary with the latest release after a SHA-256 check; exit 0 when updated or already current |
 | `summonr tool NAME [JSON]` | Run one tool in the current directory and print its result; a module tool needs its module on. Exit 0 on success, 1 on a tool error |
 | `summonr mail [agents\|send\|inbox\|board]` | Read and write peer mail between agent sessions on this machine |
 | `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|token\|install\|uninstall\|status` | Run a prompt or goal on a schedule; `install` adds the once-a-minute OS tick; `token NAME` prints a webhook token |
 | `summonr gateway setup telegram\|telegram\|pair CODE\|unpair ID\|status\|webhook [--port N]` | Drive sessions from a paired Telegram chat, or fire cron jobs from a loopback webhook |
 | `summonr classify ...` | Ask typed questions of a decisions endpoint |
-| `summonr doctor [--logs]` | List per-run JSONL logs, or report incomplete and crashed runs |
+| `summonr doctor [--logs\|--report]` | List per-run JSONL logs, report incomplete and crashed runs, or print the last crashed or failed run with the home folder shown as `~` |
 | `summonr --help`, `summonr --version` | Print help, or the version and revision |
 
 ## Quick paths
@@ -89,6 +90,8 @@ summonr ignores its own output files when it checks whether the workspace change
 | 129 | Hung up by `SIGHUP` (Unix). | `until_signal` in `src/main.rs` |
 
 When a `--goal` or `--steps` run stops short, summonr runs the configured check once at exit, and its result decides the exit code. `-p` runs no check at exit.
+
+Goal mode has no failed-check attempt limit. Numbered steps use `step_attempts` (default 3). A goal can still stop on a user budget, cancellation, a harness error, or a judge verdict of `stalled` or `impossible`.
 
 A signal exit skips the `--worktree` finish: the worktree and its branch stay in place, with the run's files uncommitted.
 
@@ -181,5 +184,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
 - summonr has no sandbox, so an unattended `--goal` run can read and run anything your account can. Run CI and other unattended goals in a container. In a noninteractive run, irreversible commands are refused, and under `--strict` so are writes outside the writable roots. Auto mode asks before it grants an extra write root.
 - `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root are read only when the workspace is trusted. A home `SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it.
+
+Native skills, Claude Code skills, shared `~/.agents/skills`, and enabled plugin skills use one discovery path. In interactive sessions, `/skills` lists the current files and slash completion includes `/NAME` skill invocations. Opening completion refreshes the list without copying files or rebuilding the session's model prefix. Built-ins and plugin commands take precedence over a skill with the same name. Skill invocations load the current body and append supplied arguments to the user request; unreadable bodies fail before calling the model.
 
 The [reference](guide/reference.md) has every flag and config key. [Extending summonr](guide/extending.md) covers skills, MCP servers, hooks, and CLIs.

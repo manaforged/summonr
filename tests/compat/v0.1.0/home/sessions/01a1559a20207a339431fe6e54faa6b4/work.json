@@ -1,0 +1,1 @@
+{"objective":"finish the notes","policy":{"goal":{}},"status":"completed","plan":"finish the notes","checks":[{"command":"exit 0"}],"steps":[{"title":"Objective","checks":[],"state":"completed","attempts":0,"rounds":1}],"active":null,"candidate":{"paths":["notes.txt"]},"pending":[],"deferred":0,"touched":["notes.txt"],"check":"passed"}

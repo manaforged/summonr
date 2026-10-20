@@ -353,3 +353,13 @@ fn a_large_file_changed_only_on_the_moved_base_does_not_block_the_run() {
     let error = super::finish(&tree, "add calc", &["calc.py".to_string()]).unwrap_err();
     assert!(!error.to_string().contains("data.bin"), "{error}");
 }
+
+#[test]
+fn a_linked_worktree_is_found_from_its_own_folder_and_the_primary_is_not() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    let found = super::tree_at(&tree.path).map(|found| found.branch);
+    assert_eq!(found, Some(tree.branch.clone()));
+    assert!(super::tree_at(&primary).is_none());
+    drop(tree.remove());
+}

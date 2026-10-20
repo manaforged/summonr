@@ -1,4 +1,50 @@
 #[test]
+fn skill_catalog_and_loading_use_the_same_root_precedence() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    for (root, description) in [
+        (".summonr", "Z preferred source"),
+        (".claude", "A lower-priority source"),
+    ] {
+        let dir = workspace.path().join(root).join("skills/probe-precedence");
+        std::fs::create_dir_all(&dir).expect("skill directory");
+        std::fs::write(
+            dir.join("SKILL.md"),
+            format!("---\ndescription: {description}\n---\n{description}\n"),
+        )
+        .expect("skill body");
+    }
+    let catalog = super::catalog(workspace.path()).expect("skill catalog");
+    assert!(
+        catalog.contains("probe-precedence: Z preferred source"),
+        "{catalog}"
+    );
+    assert!(!catalog.contains("A lower-priority source"), "{catalog}");
+    assert!(
+        super::load(workspace.path(), "probe-precedence")
+            .expect("skill body")
+            .contains("Z preferred source")
+    );
+}
+
+#[test]
+fn a_skill_cannot_shadow_a_builtin_slash_command() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let dir = workspace.path().join(".claude/skills/help");
+    std::fs::create_dir_all(&dir).expect("skill directory");
+    std::fs::write(dir.join("SKILL.md"), "skill instructions").expect("skill body");
+    assert!(
+        crate::plugins::commands::offers(workspace.path())
+            .iter()
+            .all(|offer| offer.insert != "/help")
+    );
+    assert!(
+        crate::plugins::commands::expand("/help", workspace.path())
+            .expect("slash expansion")
+            .is_none()
+    );
+}
+
+#[test]
 fn claude_code_skills_join_the_catalog_and_load() {
     let home = crate::prompt::user_home().expect("test home");
     let user = home.join(".claude/skills/probe-user-skill");

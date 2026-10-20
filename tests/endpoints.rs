@@ -225,3 +225,19 @@ fn a_check_says_when_claude_code_is_missing() {
         "{checked}"
     );
 }
+
+#[test]
+fn a_check_says_when_the_models_catalog_cannot_be_refreshed() {
+    let (catalog, port) = models_server();
+    drop(catalog);
+    let mut home = Home::new().offline();
+    home.env.push((
+        "SUMMONR_MODELS_URL",
+        format!("http://127.0.0.1:{port}/api.json"),
+    ));
+    let checked = home.list(&["--check"]);
+    assert!(
+        checked.contains("summonr: models.dev catalog not refreshed: "),
+        "{checked}"
+    );
+}

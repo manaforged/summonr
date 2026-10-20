@@ -159,6 +159,13 @@ impl<P: Provider> Loop<P> {
                 progress.ledger.join("\n")
             ));
         }
+        if !progress.todos.is_empty() {
+            let tasks: Vec<String> = progress.todos.iter().map(|todo| todo.line()).collect();
+            parts.push(format!(
+                "Harness task list (update with `todo` as work starts or finishes; a done item is not a passing check):\n{}",
+                tasks.join("\n")
+            ));
+        }
         if self.seat_model(workflow::Role::Review).is_some() {
             parts.push(
                 "Harness: a reviewer reads the change after the completion check and can send it back."

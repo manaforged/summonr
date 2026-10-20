@@ -3,6 +3,32 @@ use crate::durable::driver::SessionDriver;
 use crate::provider::Effort;
 use tokio::sync::mpsc::unbounded_channel;
 
+#[test]
+fn task_progress_replays_the_current_numbered_plan() {
+    let home = tempfile::tempdir().expect("session home");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let mut driver = SessionDriver::open(home.path(), workspace.path(), "m", "system", None)
+        .expect("session driver");
+    driver
+        .prepare_external_work(
+            "## Steps\n1. First task\n2. Second task\n3. Third task\n",
+            crate::durable::work::Policy::Steps,
+            &[],
+        )
+        .expect("select plan");
+    let (ui, mut inbox) = unbounded_channel();
+    history::reshow_running(driver.path(), "fixture", &ui);
+    let progress = std::iter::from_fn(|| inbox.try_recv().ok())
+        .find_map(|message| match message {
+            Msg::Event(crate::Event::Work { progress }) => Some(progress),
+            _ => None,
+        })
+        .expect("replay must restore the checkpoint task progress");
+    assert_eq!(progress.current, Some(1));
+    assert_eq!(progress.total, 3);
+    assert_eq!(progress.ledger[0], "[/] First task");
+}
+
 #[tokio::test]
 async fn startup_effort_reaches_the_composer_before_a_model_switch() {
     let home = tempfile::tempdir().expect("session home");

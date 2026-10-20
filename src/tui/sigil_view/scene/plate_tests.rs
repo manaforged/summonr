@@ -236,3 +236,19 @@ fn the_splash_glass_reaches_the_window_frame() {
         );
     });
 }
+
+#[test]
+fn the_splash_card_is_two_rows_taller_than_its_body() {
+    Runtime::scope("splash-card-height", || {
+        let (cols, rows) = (160, 120);
+        let (app, _host, _screen) = splash_screen(cols, rows);
+        let facts = super::facts(&app.model.get(), &app);
+        let card = super::fitting(cols, rows, &facts);
+        let [_, body_rows] = super::body(cols, card, &facts);
+        assert!(body_rows > 2);
+        assert_eq!(
+            super::compose(cols, rows, &app).plate.area[3],
+            body_rows + 2
+        );
+    });
+}

@@ -999,6 +999,7 @@
 | <code>Retry</code> |  |
 | <code>Search</code> |  |
 | <code>Settings</code> |  |
+| <code>Skills</code> |  |
 | <code>Status</code> |  |
 | <code>Steps</code> |  |
 | <code>Undo</code> |  |

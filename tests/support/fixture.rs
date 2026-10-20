@@ -198,11 +198,18 @@ pub(crate) fn main() {
     append_line(&mut starts, &process::id().to_string());
     let mut log = append_file("MCP_FIXTURE_LOG");
     let out = Out(Arc::new(Mutex::new(io::stdout())));
+    let read_pause = env::var("MCP_FIXTURE_READ_MS")
+        .ok()
+        .and_then(|ms| ms.parse().ok())
+        .map(Duration::from_millis);
     let reader = thread::spawn(move || {
         for line in io::stdin().lock().lines() {
             let Ok(line) = line else {
                 break;
             };
+            if let Some(pause) = read_pause {
+                super::pause(pause);
+            }
             append_line(&mut log, &line);
             if let Ok(message) = serde_json::from_str::<Value>(&line) {
                 handle(&out, message);

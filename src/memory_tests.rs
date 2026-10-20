@@ -162,7 +162,7 @@ fn a_subfolder_of_a_repository_shares_the_repository_memory_root() {
     let sub = repo.join("nested");
     std::fs::create_dir_all(&sub).unwrap();
     crate::worktree::tests::git(&repo, &["init", "-q"]);
-    let top = repo.canonicalize().unwrap();
+    let top = crate::durable::driver::canonical(&repo);
     assert_eq!(root(&sub, None), top);
     let layout = crate::diff::Layout {
         git_dir: top.join(crate::policy::git::GIT_DIR),

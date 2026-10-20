@@ -3,6 +3,7 @@
 | Item | Kind | Description |
 | --- | --- | --- |
 | [`ServerKind`](#serverkind) | enum |  |
+| [`closed`](#closed) | fn |  |
 
 ## Enums
 
@@ -16,6 +17,13 @@
 | <code>Mcp</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>
+
+
+## Functions
+
+### `closed`
+
+<pre>pub async fn <a href="#closed">closed</a>()</pre>
 
 
 ---

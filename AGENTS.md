@@ -16,7 +16,7 @@ Windows (PowerShell):
 irm https://summonr.dev/install.ps1 | iex
 ```
 
-The installer checks the archive's SHA-256 and puts `summonr` in `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. `summonr update` moves it to the latest release. To build from source instead, you need Rust 1.98 or later, Git, CMake, and a C and C++ compiler:
+The installer checks the archive against the release's SHA-256 and puts `summonr` in `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. `summonr update` moves it to the latest release. To build from source instead, you need Rust 1.98 or later, Git, CMake, and a C and C++ compiler:
 
 ```sh
 cargo install --git https://github.com/manaforged/summonr --locked
@@ -68,7 +68,7 @@ summonr cron log nightly      # what the last run did and whether the check pass
 
 `summonr cron add NAME --manual -p PROMPT` with `summonr cron token NAME` and `summonr gateway webhook` starts a job from `POST /run/NAME`. `summonr gateway telegram` drives sessions from a paired Telegram chat.
 
-summonr runs commands as your account with no sandbox, so run unattended goals in a container when they should not touch the rest of the machine. Useful flags: `--worktree` to work in a separate git worktree (on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch; on failure it keeps the worktree), and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
+summonr runs commands as your account with no sandbox, so run unattended goals in a container when they should not touch the rest of the machine. `--worktree` works in a separate git worktree: on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch, and on failure it keeps the worktree. `--steps PLAN.md` runs a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
 
 ## Give it project instructions
 

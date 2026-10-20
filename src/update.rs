@@ -15,6 +15,7 @@ const BINARY: &str = if cfg!(windows) {
     "summonr"
 };
 const ARCHIVE: &str = if cfg!(windows) { "zip" } else { "tar.gz" };
+const STAGE: &str = ".summonr-update-";
 
 pub struct Source<'a> {
     pub releases: &'a str,
@@ -47,6 +48,8 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
             exe.display()
         )));
     }
+    let dir = exe.parent().unwrap_or_else(|| Path::new("."));
+    sweep(dir);
     let http = crate::credentials::session(
         summonr_auth::builder(
             crate::limits::limits().update(),
@@ -60,9 +63,8 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
         Ordering::Less => return Ok(Outcome::Ahead { latest }),
         Ordering::Greater => {}
     }
-    let dir = exe.parent().unwrap_or_else(|| Path::new("."));
     let stage = tempfile::Builder::new()
-        .prefix(".summonr-update-")
+        .prefix(STAGE)
         .tempdir_in(dir)
         .map_err(|error| unwritable(dir, &error))?;
     let name = format!("summonr-{}", source.target);
@@ -80,6 +82,24 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
         from: source.current.to_string(),
         to: latest,
     })
+}
+
+fn sweep(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let stale = entry.file_name().to_string_lossy().starts_with(STAGE)
+            && entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age > crate::limits::limits().update());
+        if stale {
+            drop(std::fs::remove_dir_all(entry.path()));
+        }
+    }
 }
 
 fn built_from_source(exe: &Path) -> bool {

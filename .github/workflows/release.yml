@@ -131,6 +131,11 @@ jobs:
           (cd dist && if command -v sha256sum >/dev/null; then sha256sum "$asset"; else shasum -a 256 "$asset"; fi) > "dist/$asset.sha256"
           echo "asset=$asset" >> "$GITHUB_OUTPUT"
           echo "${{ matrix.target }}: $asset $(cut -d' ' -f1 "dist/$asset.sha256")" >> "$GITHUB_STEP_SUMMARY"
+      - name: update rehearsal
+        env:
+          SUMMONR_REHEARSE_DIST: dist
+          SUMMONR_REHEARSE_TARGET: ${{ matrix.target }}
+        run: cargo test --locked -p summonr --lib update::tests::a_release_archive_replaces_a_running_install -- --ignored --exact
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: dist/${{ steps.package.outputs.asset }}

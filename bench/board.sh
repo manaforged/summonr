@@ -38,7 +38,7 @@ if [ -d "$dir" ]; then
   exec harbor job resume -p "$dir" --plugin rss:Rss
 fi
 
-[ -z "${BENCH_PREFLIGHT:-}" ] || export BENCH_TASKS=${BENCH_TASKS:-fix-git}
+[ -z "${BENCH_PREFLIGHT:-}" ] || export BENCH_TASKS=${BENCH_TASKS:-embedding-drift-monitor}
 protocol=$root/protocols/$pair.md
 if [ -z "${BENCH_TASKS:-}" ]; then
   [ -f "$protocol" ] || { echo "a full $pair run needs its protocol at $protocol" >&2; exit 1; }

@@ -12,7 +12,7 @@ summonr, pi, and OpenCode 2, at the versions in `tools.lock` and the summonr bui
 
 ## Tasks and tries
 
-All 66 Terminal-Bench 4.0 tasks (`terminal-bench/terminal-bench@4.0.0`, sha256 in `dataset.lock`), one try each, each task's own agent limit (a flat 8 h in 4.0), internet on, one trial per arm at a time (three requests in flight at most), all arms in one Harbor job. No 4.0 task was visible while summonr was developed, so all 66 are held out. Archived and not scored: the Terminal-Bench 2.1 runs `tb21-glm-1015e`, `-1015f`, `-1015g`, `-1015h`, `tb21-glm-pi-1016a` (stopped when 4.0 replaced 2.1 on the leaderboard), and the stopped calibration `cal-glm-1016a`.
+All 66 Terminal-Bench 4.0 tasks (`terminal-bench/terminal-bench@4.0.0`, sha256 in `dataset.lock`), three tries each, each task's own agent limit (a flat 8 h in 4.0), internet on, one trial per arm at a time (three requests in flight at most), all arms in one Harbor job. No 4.0 task was visible while summonr was developed, so all 66 are held out. Archived and not scored: the Terminal-Bench 2.1 runs `tb21-glm-1015e`, `-1015f`, `-1015g`, `-1015h`, `tb21-glm-pi-1016a` (stopped when 4.0 replaced 2.1 on the leaderboard), the stopped calibration `cal-glm-1016a`, and the Terminal-Bench 4.0 run `tb40-glm-pi-1016a` (one try each at effort `max`, stopped at 13 of 198 trials).
 
 ## Environment and measurement
 
@@ -24,7 +24,7 @@ On the 66 tasks, against each of pi and OpenCode 2 separately, paired ratios as 
 
 - Input tokens per solved try: over tasks both arms solved, the upper bound of summonr / other is below 1.
 - Mean harness RSS: the upper bound of summonr / other is below 1.
-- Solve rate: the paired solve difference, summonr minus the other arm, is reported with its interval. In `tb21-glm-1015h` summonr disagreed with pi and OpenCode 2 on 16% of tasks, which gives one try on 66 tasks a 95% half-width near 0.10, so this run cannot show a solve gap smaller than that.
+- Solve rate: the paired solve difference, summonr minus the other arm, is reported with its interval. In `tb21-glm-1015h` summonr disagreed with pi and OpenCode 2 on 16% of tasks, which gives one try on 66 tasks a 95% half-width near 0.10. Three tries narrow that only as far as a task's tries disagree with each other, so the run's own interval is the one reported.
 
 ## Validity checks
 

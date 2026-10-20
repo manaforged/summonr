@@ -74,6 +74,26 @@ fn beside(exe: &Path) -> Vec<String> {
 }
 
 #[tokio::test]
+#[ignore = "live: reaches github.com"]
+async fn github_serves_a_release_the_updater_can_download() {
+    let http = super::client().unwrap();
+    let latest = super::latest(&http, "https://github.com/cli/cli/releases")
+        .await
+        .unwrap();
+    assert!(super::core(&latest).is_some(), "{latest}");
+    let asset = "gh_2.102.0_macOS_arm64.zip";
+    let archive = super::fetch(
+        &http,
+        &format!("https://github.com/cli/cli/releases/download/v2.102.0/{asset}"),
+    )
+    .await
+    .unwrap();
+    let listed =
+        format!("da922c20d1792e5b2cbf375593d7a658acf034c12c84e007e71c76ef959c337e  {asset}\n");
+    super::check(&archive, listed.as_bytes(), asset).unwrap();
+}
+
+#[tokio::test]
 #[ignore = "release rehearsal: SUMMONR_REHEARSE_DIST names a folder of release archives"]
 async fn a_release_archive_replaces_a_running_install() {
     let dist = PathBuf::from(std::env::var("SUMMONR_REHEARSE_DIST").unwrap());

@@ -50,13 +50,7 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
     }
     let dir = exe.parent().unwrap_or_else(|| Path::new("."));
     sweep(dir);
-    let http = crate::credentials::session(
-        summonr_auth::builder(
-            crate::limits::limits().update(),
-            crate::limits::limits().connect(),
-        ),
-        crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
-    )?;
+    let http = client()?;
     let latest = latest(&http, source.releases).await?;
     match newer(&latest, source.current) {
         Ordering::Equal => return Ok(Outcome::Current(latest)),
@@ -82,6 +76,16 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
         from: source.current.to_string(),
         to: latest,
     })
+}
+
+fn client() -> Result<Session> {
+    crate::credentials::session(
+        summonr_auth::builder(
+            crate::limits::limits().update(),
+            crate::limits::limits().connect(),
+        ),
+        crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
+    )
 }
 
 fn sweep(dir: &Path) {

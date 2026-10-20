@@ -122,6 +122,23 @@ pub(crate) fn server_log_messages_go_to_the_log_file() {
     );
 }
 
+pub(crate) fn a_cancel_sent_at_exit_reaches_a_slow_server() {
+    let session = Session::new();
+    let model = Model::start(vec![Step::Call("fixture1__hang", json!({}))]);
+    session.run(
+        &model,
+        &session.server_env("fixture1", ", MCP_FIXTURE_READ_MS = '200'", ""),
+        &["--max-secs", &crate::support::slow(5).to_string()],
+    );
+    let received = session.received_until("fixture1", Duration::from_secs(2), |received| {
+        !calls(received, "notifications/cancelled").is_empty()
+    });
+    let call = calls(&received, "tools/call")[0]["id"].clone();
+    let cancelled = calls(&received, "notifications/cancelled");
+    assert_eq!(cancelled.len(), 1, "{received:?}");
+    assert_eq!(cancelled[0]["params"]["requestId"], call);
+}
+
 pub(crate) fn an_aborted_call_is_cancelled() {
     let session = Session::new();
     let model = Model::start(vec![Step::Call("fixture1__hang", json!({}))]);

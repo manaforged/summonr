@@ -33,7 +33,9 @@ fn main() {
         .enable_all()
         .build()
         .unwrap_or_else(|error| fail(&error));
-    match runtime.block_on(run(args)) {
+    let result = runtime.block_on(run(args));
+    runtime.block_on(summonr::supervise::closed());
+    match result {
         Ok(code) => {
             summonr::stop_children();
             std::process::exit(code);

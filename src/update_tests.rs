@@ -126,6 +126,17 @@ async fn a_release_archive_replaces_a_running_install() {
         }
     );
     assert!(alive, "the running session stopped during the update");
+    let asked = release.asked.lock().unwrap().clone();
+    let download = format!("/releases/download/v{}/{asset}", built.current);
+    assert_eq!(
+        asked,
+        [
+            "/releases/latest".to_string(),
+            format!("/releases/tag/v{}", built.current),
+            download.clone(),
+            format!("{download}.sha256"),
+        ]
+    );
     assert!(version(&exe).contains(built.current), "{}", version(&exe));
     #[cfg(unix)]
     assert_ne!(

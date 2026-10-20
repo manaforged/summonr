@@ -166,6 +166,7 @@ fn main() {
         protocol::progress_keeps_a_slow_call_alive,
         protocol::server_log_messages_go_to_the_log_file,
         protocol::an_aborted_call_is_cancelled,
+        protocol::a_cancel_sent_at_exit_reaches_a_slow_server,
         transport::a_call_with_no_reply_is_cancelled_at_the_timeout,
         transport::a_timed_out_reply_does_not_break_the_next_call,
         transport::a_request_the_server_does_not_read_times_out,

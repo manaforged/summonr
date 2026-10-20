@@ -96,9 +96,52 @@ jobs:
       - name: tests
         run: cargo test --workspace --locked --no-fail-fast
 
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            libc: musl
+          - os: ubuntu-24.04
+            libc: gnu
+          - os: ubuntu-24.04-arm
+            libc: musl
+          - os: ubuntu-24.04-arm
+            libc: gnu
+          - os: macos-14
+          - os: windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: install the latest release with this checkout's installer
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          SUMMONR_LIBC: ${{ matrix.libc || 'musl' }}
+        run: |
+          dir="$RUNNER_TEMP/summonr-bin"
+          SUMMONR_INSTALL_DIR="$dir" sh scripts/install.sh
+          "$dir/summonr" --version
+          "$dir/summonr" update
+      - name: install the latest release with this checkout's installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:SUMMONR_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'summonr-bin'
+          ./scripts/install.ps1
+          $exe = Join-Path $env:SUMMONR_INSTALL_DIR 'summonr.exe'
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $exe update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   required:
     if: always()
-    needs: [ci, windows, macos]
+    needs: [ci, windows, macos, install]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

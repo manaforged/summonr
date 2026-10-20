@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
@@ -10,8 +11,44 @@ pub enum ServerKind {
     Lsp,
 }
 
-pub(crate) async fn exited_within(child: &mut tokio::process::Child, grace: Duration) -> bool {
-    tokio::time::timeout(grace, child.wait()).await.is_ok()
+pub(crate) async fn within(grace: Duration, work: impl Future) -> bool {
+    tokio::time::timeout(grace, work).await.is_ok()
+}
+
+static CLOSING: AtomicUsize = AtomicUsize::new(0);
+static SETTLED: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+pub(crate) fn close<G: Send + 'static>(
+    runtime: &tokio::runtime::Handle,
+    mut child: tokio::process::Child,
+    group: G,
+) {
+    CLOSING.fetch_add(1, Ordering::SeqCst);
+    let grace = crate::limits::limits().mcp_close_grace();
+    drop(runtime.spawn(async move {
+        within(grace, child.wait()).await;
+        drop(group);
+        drop(child);
+        if CLOSING.fetch_sub(1, Ordering::SeqCst) == 1 {
+            SETTLED.notify_waiters();
+        }
+    }));
+}
+
+pub async fn closed() {
+    let grace = crate::limits::limits().mcp_close_grace();
+    within(grace, async {
+        loop {
+            let settled = SETTLED.notified();
+            tokio::pin!(settled);
+            settled.as_mut().enable();
+            if CLOSING.load(Ordering::SeqCst) == 0 {
+                return;
+            }
+            settled.await;
+        }
+    })
+    .await;
 }
 
 pub(crate) type Slot<T> = Arc<tokio::sync::Mutex<Option<T>>>;

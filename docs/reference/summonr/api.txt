@@ -432,6 +432,7 @@ impl core::fmt::Debug for summonr::supervise::ServerKind
 impl core::marker::Copy for summonr::supervise::ServerKind
 impl core::marker::StructuralPartialEq for summonr::supervise::ServerKind
 impl serde_core::ser::Serialize for summonr::supervise::ServerKind
+pub async fn summonr::supervise::closed()
 pub mod summonr::tui
 pub mod summonr::tui::hub
 pub enum summonr::tui::hub::Open

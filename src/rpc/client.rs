@@ -300,15 +300,10 @@ impl Drop for Client {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
-        let (Some(mut child), group) = (self.child.take(), self.group.take()) else {
+        let (Some(child), group) = (self.child.take(), self.group.take()) else {
             return;
         };
-        let grace = crate::limits::limits().mcp_close_grace();
-        drop(runtime.spawn(async move {
-            crate::supervise::exited_within(&mut child, grace).await;
-            drop(group);
-            drop(child);
-        }));
+        crate::supervise::close(&runtime, child, group);
     }
 }
 

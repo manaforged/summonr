@@ -61,13 +61,13 @@ pub(crate) fn the_least_recently_used_idle_server_stops_at_the_server_cap() {
         session.server("fixture1", "idle_secs = 60"),
         session.server("fixture2", "idle_secs = 60"),
     );
-    session.run(&model, &config, &[]);
+    let outcome = session.run(&model, &config, &[]);
+    finished(&session, &model, &outcome);
     assert_eq!(
         session.starts("fixture1"),
         3,
         "list, first call, and a restart after the cap stopped it"
     );
-    assert!(model.tool_results()[2].contains("three"));
 }
 
 pub(crate) fn keep_alive_servers_count_toward_the_server_cap() {
@@ -83,13 +83,26 @@ pub(crate) fn keep_alive_servers_count_toward_the_server_cap() {
         session.server("fixture1", "keep_alive = true"),
         session.server("fixture2", "keep_alive = true"),
     );
-    session.run(&model, &config, &[]);
+    let outcome = session.run(&model, &config, &[]);
+    finished(&session, &model, &outcome);
     assert!(
         session.starts("fixture1") >= 2,
         "fixture1 restarted after the cap stopped it: {} starts",
         session.starts("fixture1")
     );
-    assert!(model.tool_results()[2].contains("three"));
+}
+
+fn finished(session: &Session, model: &Model, outcome: &crate::support::Outcome) {
+    let stderr = crate::support::read(&session.file("stderr"));
+    let results = model.tool_results();
+    assert_eq!(outcome.code, Some(0), "{}\n{stderr}", outcome.stdout);
+    assert!(
+        results
+            .get(2)
+            .is_some_and(|result| result.contains("three")),
+        "{results:?}\n{}\n{stderr}",
+        outcome.stdout
+    );
 }
 
 pub(crate) fn tool_lists_are_cached_per_workspace() {

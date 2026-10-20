@@ -87,7 +87,7 @@ async fn tail(stderr: Option<tokio::process::ChildStderr>) -> Vec<String> {
 async fn halt(child: &mut tokio::process::Child, group: Option<ProcessGroup>) -> Result<()> {
     if group.as_ref().is_some_and(ProcessGroup::terminate) {
         let grace = Duration::from_secs(crate::limits::limits().gateway_stop_secs);
-        if crate::supervise::exited_within(child, grace).await {
+        if crate::supervise::within(grace, child.wait()).await {
             return Ok(());
         }
     }

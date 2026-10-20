@@ -4,13 +4,23 @@ Point your coding agent at this file when it sets up summonr, runs it from a scr
 
 ## Install
 
-Build from source on macOS, Linux, or Windows. You need Rust 1.98 or later, Git, CMake, and a C and C++ compiler:
+macOS and Linux:
+
+```sh
+curl -fsSL https://summonr.dev/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://summonr.dev/install.ps1 | iex
+```
+
+The installer checks the archive's SHA-256 and puts `summonr` in `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. `summonr update` moves it to the latest release. To build from source instead, you need Rust 1.98 or later, Git, CMake, and a C and C++ compiler:
 
 ```sh
 cargo install --git https://github.com/manaforged/summonr --locked
 ```
-
-No release binaries are published yet. The [binary installers](https://github.com/manaforged/summonr#binary-installers) require an existing GitHub release.
 
 ## Give it a key
 

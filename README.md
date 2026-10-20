@@ -19,18 +19,6 @@ Pull requests are by invitation; open an [issue](https://github.com/manaforged/s
 
 ## Install
 
-Build from source on macOS, Linux, or Windows. You need Rust 1.98 or later, Git, CMake, and a C and C++ compiler. On Windows, use the MSVC Rust toolchain and Visual Studio C++ Build Tools.
-
-```sh
-cargo install --git https://github.com/manaforged/summonr --locked
-```
-
-Run the same command to update. To uninstall, run `cargo uninstall summonr`.
-
-### Binary installers
-
-No release binaries are published yet. These installers require an existing [GitHub release](https://github.com/manaforged/summonr/releases); use the source command above until one is available.
-
 macOS and Linux:
 
 ```sh
@@ -43,7 +31,7 @@ Windows (PowerShell):
 irm https://summonr.dev/install.ps1 | iex
 ```
 
-The release workflow targets macOS (Apple silicon), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer downloads the archive's `.sha256` file from the same release, checks the archive's SHA-256 against it, and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
+Each [release](https://github.com/manaforged/summonr/releases) ships binaries for macOS (Apple silicon), Linux (x86_64 and arm64, glibc or static musl), and Windows (x86_64). The installer downloads the archive's `.sha256` file from the same release, checks the archive's SHA-256 against it, and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
 
 To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases](https://github.com/manaforged/summonr/releases), then check the archive:
 
@@ -58,6 +46,16 @@ gh attestation verify <file> --repo manaforged/summonr
 ```
 
 To update, run `summonr update`. To uninstall, delete the binary: `~/.local/bin/summonr` or `%LOCALAPPDATA%\Programs\summonr\bin\summonr.exe`.
+
+### Build from source
+
+You need Rust 1.98 or later, Git, CMake, and a C and C++ compiler. On Windows, use the MSVC Rust toolchain and Visual Studio C++ Build Tools.
+
+```sh
+cargo install --git https://github.com/manaforged/summonr --locked
+```
+
+Run the same command to update. To uninstall, run `cargo uninstall summonr`.
 
 ## First run
 

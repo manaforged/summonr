@@ -1,21 +1,19 @@
 # summonr
 
-A coding agent for any model, in your terminal or a desktop window, written in Rust.
+A terminal coding agent for any model that keeps working until your check command passes.
 
-- **Light**: typical harness memory of 27 MB in our [Terminal-Bench 2.1 runs](#benchmarks), against 146 MB for Grok Build and 276 MB for Codex. These are measured medians, not memory limits.
-- **Sessions that talk**: message any running session with `@name`, even one on a different model or provider. [Try it](#coordinate-work-live).
-- **Your own browser**: uses the Chrome you already have, in its own profile, and stays signed in. Web search needs no API key. Turn on `browser` and `search` under `[modules]`.
-- **Any model**: 28 providers built in, from Anthropic and OpenAI to coding plans and local servers, plus any OpenAI-compatible server.
-- **One binary**: web search, a real browser, MCP servers, and parallel child agents.
-- **Works until it passes**: `--goal` keeps going until your check command passes, inside a time or token budget you set.
-- **Works while you're away**: schedule a goal for 3 a.m. with `summonr cron`, fire one from a webhook, or text it from Telegram. It tells you whether the check passed.
+- **Light on tokens and memory**: median input tokens per solved task under half, and median memory under a third, of every agent paired with it on the same model ([benchmarks](#benchmarks)).
+- **Any model, your plan or your key**: 28 providers built in, sign-in for ChatGPT and SuperGrok plans, and any OpenAI-compatible server.
+- **Works until it passes**: `--goal` runs until your check command exits 0 and a second model call agrees the goal is met, inside a time or token budget you set.
+- **Sessions that talk**: message any running session with `@name`, even one on another model or provider. [Try it](#coordinate-work-live).
+- **Parallel children that land their own edits**: each implement child works in its own checkout, and the parent applies each finished one.
+- **Browses like you do**: drives your installed Chrome, Edge, or Brave in a profile of its own that stays signed in, and searches the web with no API key. Turn on `browser` and `search` under `[modules]`.
+- **Works while you're away**: schedule a goal for 3 AM with `summonr cron`, fire one from a webhook, or text it from Telegram. It tells you whether the check passed.
 - **Remembers**: tell it a preference once and every later session in that repository knows it. The notes are plain Markdown you can edit.
 
 [Docs](docs/guide/README.md) | [Reference](docs/guide/reference.md) | [Scripting API](docs/api.md) | [Benchmarks](#benchmarks)
 
 ![summonr fixing two bugs in calc.py and running pytest, captured from a session](docs/guide/assets/summonr-session.png)
-
-Pull requests are by invitation; open an [issue](https://github.com/manaforged/summonr/issues) for bugs and requests.
 
 ## Install
 
@@ -31,7 +29,7 @@ Windows (PowerShell):
 irm https://summonr.dev/install.ps1 | iex
 ```
 
-Each [release](https://github.com/manaforged/summonr/releases) ships binaries for macOS (Apple silicon), Linux (x86_64 and arm64, glibc or static musl), and Windows (x86_64). The installer downloads the archive's `.sha256` file from the same release, checks the archive's SHA-256 against it, and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
+Each [release](https://github.com/manaforged/summonr/releases) ships binaries for macOS (Apple silicon), Linux (x86_64 and arm64, glibc or static musl), and Windows (x86_64). The installer downloads the archive's `.sha256` file from the same release, checks the archive's SHA-256 against it, and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag, `SUMMONR_INSTALL_DIR` to change the directory, and `SUMMONR_LIBC=gnu` for the glibc build on Linux.
 
 To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases](https://github.com/manaforged/summonr/releases), then check the archive:
 
@@ -39,7 +37,7 @@ To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases]
 shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
-On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with the line in `SHA256SUMS`. A checksum from the same release does not prove where the file came from. The release workflow creates build attestations; verify an available file with:
+On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with the line in `SHA256SUMS`. A checksum from the same release catches a corrupted download, not a tampered release. To check where a file came from, verify its build attestation:
 
 ```sh
 gh attestation verify <file> --repo manaforged/summonr
@@ -67,11 +65,9 @@ To skip the prompt, set a key such as `ANTHROPIC_API_KEY` and run `summonr anthr
 
 For a first bounded task, [configure a check and run a goal](#usage) with `--max-secs 1800`. Inspect the result with `summonr diff --turn last`; the receipt reports which checks ran and whether they passed. Commands run as your account with no sandbox, so use a container when a task must not access the rest of your machine.
 
-Docs: [user guide](docs/guide/README.md), [reference](docs/guide/reference.md), and [docs/api.md](docs/api.md) for a coding agent that drives summonr.
-
 ## Desktop window
 
-`summonr --gui` opens the same session in a Sigil desktop window. The default build leaves it out; build with the `gui` feature:
+`summonr --gui` opens the same session in a Sigil desktop window. The release binaries and the default build leave it out; build with the `gui` feature:
 
 ```sh
 cargo install --git https://github.com/manaforged/summonr --locked --features gui
@@ -112,11 +108,11 @@ summonr anthropic --goal "make cargo test pass" --max-secs 1800
 
 `--goal` retries failed checks without an attempt limit until the check exits 0 and a second model call agrees that the goal is met. A budget, cancellation, harness error, or judge verdict of `stalled` or `impossible` can stop it short. Numbered steps retain their configured attempt limit. Exit codes: 0 done, 1 harness error, 2 check still red (summonr runs the check once more when a budget or an abort stops the run), 3 stopped short with no check configured, or with a passing check and an unmet goal. CI can branch on them.
 
-Next commands:
+More to try:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
 - Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the parent's endpoint and model unless the workflow assigns the role elsewhere; turn it off in the Modules rows of `/settings` or with `task = false` under `[modules]` in `~/.summonr/config.toml`.
-- An implement child works in `<repo>-children/<id>`, a checkout beside the repo. It shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects. It does not add a branch. Sharing those directories skips a second copy of the build cache. It does not limit how many checks run at once. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk, shows as a conflict, and the other children still land. summonr never deletes a kept checkout. A research child stays in the directory you launched. `--worktree` still isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`.
+- An implement child works in `<repo>-children/<id>`, a checkout beside the repo that shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects, without a branch. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk as a conflict and the other children still land; summonr never deletes a kept checkout. A research child stays in the directory you launched. `--worktree` isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`.
 - A `[mcp.NAME]` table in `~/.summonr/config.toml` connects an MCP server. summonr starts it once to list its tools, then again on its first tool call, and stops it when idle.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
 - `summonr export` writes a session as Markdown.
@@ -161,29 +157,29 @@ It lands in the tests session's inbox, and the tests session replies with `@buil
 
 ## Benchmarks
 
-Terminal-Bench 2.1, at high effort, with every agent in a pair on the same model. The plan-pair tables use the earliest 3 trials per arm and task from larger side-by-side jobs covering all 89 tasks. Those historical jobs include Summonr binary switches, and their judge pass is unfinished.
+Terminal-Bench 2.1, at high effort, with every agent in a pair on the same model. In every pair, summonr used under half the input tokens per solved task and under a third of the memory; resolution rates were within 7 points of each other. The plan-pair tables use the earliest 3 trials per arm and task from larger side-by-side jobs covering all 89 tasks. Those historical jobs include summonr binary switches, and their judge pass is unfinished.
 
 GPT-6.1 Sol on a ChatGPT plan:
 
-| Agent | Resolution rate | Input tokens per solved task | Cost per trial | Memory |
+| Agent | Input tokens per solved task | Memory | Cost per trial | Resolution rate |
 | --- | ---: | ---: | ---: | ---: |
-| summonr 0.1.0 | 85.8% | 58,976 | $0.078 | 27 MB |
-| Codex 0.162.1 | 79.0% | 182,691 | $0.105 | 276 MB |
+| summonr 0.1.0 | 58,976 | 27 MB | $0.078 | 85.8% |
+| Codex 0.162.1 | 182,691 | 276 MB | $0.105 | 79.0% |
 
 Grok 4.7 on a SuperGrok plan:
 
-| Agent | Resolution rate | Input tokens per solved task | Memory |
+| Agent | Input tokens per solved task | Memory | Resolution rate |
 | --- | ---: | ---: | ---: |
-| summonr 0.1.0 | 74.2% | 373,831 | 27 MB |
-| Grok Build 1.0.52 | 70.4% | 803,466 | 146 MB |
+| summonr 0.1.0 | 373,831 | 27 MB | 74.2% |
+| Grok Build 1.0.52 | 803,466 | 146 MB | 70.4% |
 
-GLM 5.3 Flash through z.ai, one try on each of 86 tasks; OpenCode ran in a later job than summonr and pi:
+GLM 5.3 Flash through z.ai, one try on each of 86 tasks; OpenCode ran in a later job than summonr and pi, and its memory includes the server it starts (86 MB without it):
 
-| Agent | Resolution rate | Input tokens per solved task | Memory |
+| Agent | Input tokens per solved task | Memory | Resolution rate |
 | --- | ---: | ---: | ---: |
-| summonr 0.1.0 | 73.3% | 95,271 | 24 MB |
-| pi 1.0.0 | 72.1% | 240,762 | 134 MB |
-| OpenCode 2.0.22 | 67.4% | 228,578 | 394 MB |
+| summonr 0.1.0 | 95,271 | 24 MB | 73.3% |
+| pi 1.0.0 | 240,762 | 134 MB | 72.1% |
+| OpenCode 2.0.22 | 228,578 | 394 MB | 67.4% |
 
 Medians, as each agent reported them: input over the tasks that agent solved, cost per trial at API list price. Method and caveats: [`BENCHMARKS.md`](BENCHMARKS.md).
 
@@ -194,7 +190,6 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 ## Limits
 
 - Commands run as your account, without a prompt and without a sandbox; run summonr in a container to contain it. Only irreversible destruction asks first: wiping the system, home, or project root, `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and dropped database tables. `-p` never runs those. Set `confirm = "risky"` in `~/.summonr/policy.toml` to also ask before force pushes, `sudo`, pipes into a shell, and history rewrites; `--strict` refuses that whole list. Under `--strict`, your own `policy.toml` deny rules are hard refusals.
-- When one call, or a cycle of up to three calls, returns the same result five times in a row, summonr adds a note to the result that tells the model to change its approach. The turn goes on.
 - The `mcp` module is on by default. A server starts once to list its tools, then on its first tool call, and stops after two idle minutes. A server with more than 8 KB of tool schemas is reached through one `mcp` tool, so large servers do not fill the prompt. `/server:prompt` runs a server prompt, `@server:uri` attaches a server resource, and a server can ask you to fill a form during a call. A reply over 4 MiB is dropped, and output over 50 KB is cut with the full text saved to a file. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` server runs only after you set `enabled = true` for it.
 - A project can turn a module off. A project can't turn a module on.
 - A trusted workspace supplies `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` as instructions, and your own `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` apply everywhere; `--no-trust` ignores the workspace files.
@@ -220,6 +215,10 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 ## Security
 
 Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+Pull requests are by invitation; open an [issue](https://github.com/manaforged/summonr/issues) for bugs and requests.
 
 ## License
 

@@ -132,12 +132,26 @@ jobs:
         shell: pwsh
         run: |
           $env:SUMMONR_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'summonr-bin'
-          ./scripts/install.ps1
+          $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+          $probe = '%USERPROFILE%\summonr-path-probe'
+          $key.SetValue('Path', $probe, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+          powershell -c "Get-Content -Raw scripts/install.ps1 | iex"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $path = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+          if ($key.GetValueKind('Path') -ne 'ExpandString' -or $path -ne "$probe;$env:SUMMONR_INSTALL_DIR") { throw "user Path rewritten: $path" }
           $exe = Join-Path $env:SUMMONR_INSTALL_DIR 'summonr.exe'
           & $exe --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $exe update
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: install with the command summonr.dev shows
+        if: runner.os == 'Windows'
+        shell: cmd
+        env:
+          SUMMONR_INSTALL_DIR: ${{ runner.temp }}\summonr-site
+        run: |
+          powershell -c "irm https://summonr.dev/install.ps1 | iex" || exit /b 1
+          "%SUMMONR_INSTALL_DIR%\summonr.exe" --version || exit /b 1
 
   required:
     if: always()

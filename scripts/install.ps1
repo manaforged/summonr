@@ -56,11 +56,21 @@ try {
 $Installed = try { (& $Exe --version) -join ' ' } catch { "summonr $Version" }
 Write-Host "Installed $Installed to $Exe"
 
-$UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-$Entries = if ($UserPath) { $UserPath -split ';' | Where-Object { $_ } } else { @() }
-if ($Entries -notcontains $Dir) {
-    [Environment]::SetEnvironmentVariable('Path', (@($Entries) + $Dir) -join ';', 'User')
-    Write-Host "Added $Dir to your user Path. Open a new terminal to use summonr."
+$EnvKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+try {
+    $UserPath = $EnvKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $Entries = @($UserPath -split ';' | Where-Object { $_ })
+    if (@($Entries | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_) }) -notcontains $Dir) {
+        $EnvKey.SetValue('Path', (($Entries + $Dir) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+        if (-not ('Win32.Broadcast' -as [type])) {
+            Add-Type -Namespace Win32 -Name Broadcast -MemberDefinition '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);'
+        }
+        $Ignored = [UIntPtr]::Zero
+        [void][Win32.Broadcast]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$Ignored)
+        Write-Host "Added $Dir to your user Path. Open a new terminal to use summonr."
+    }
+} finally {
+    $EnvKey.Close()
 }
 Write-Host "Update: summonr update"
 Write-Host "Uninstall: Remove-Item `"$Exe`""

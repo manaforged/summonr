@@ -10,10 +10,10 @@ macOS and Linux:
 curl -fsSL https://summonr.dev/install.sh | sh
 ```
 
-Windows (PowerShell):
+Windows:
 
 ```powershell
-irm https://summonr.dev/install.ps1 | iex
+powershell -c "irm https://summonr.dev/install.ps1 | iex"
 ```
 
 The installer checks the archive against the release's SHA-256 and puts `summonr` in `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. `summonr update` moves it to the latest release. To build from source instead, you need Rust 1.98 or later, Git, CMake, and a C and C++ compiler:

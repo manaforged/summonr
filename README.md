@@ -23,10 +23,10 @@ macOS and Linux:
 curl -fsSL https://summonr.dev/install.sh | sh
 ```
 
-Windows (PowerShell):
+Windows:
 
 ```powershell
-irm https://summonr.dev/install.ps1 | iex
+powershell -c "irm https://summonr.dev/install.ps1 | iex"
 ```
 
 Each [release](https://github.com/manaforged/summonr/releases) ships binaries for macOS (Apple silicon), Linux (x86_64 and arm64, glibc or static musl), and Windows (x86_64). The installer downloads the archive's `.sha256` file from the same release, checks the archive's SHA-256 against it, and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag, `SUMMONR_INSTALL_DIR` to change the directory, and `SUMMONR_LIBC=gnu` for the glibc build on Linux.

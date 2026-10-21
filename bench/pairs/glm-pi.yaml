@@ -21,4 +21,4 @@ agents:
     kwargs: {version: "${opencode2}", variant: high}
     env: {ZHIPU_API_KEY: "$${ZAI_API_KEY}", BENCH_BASE: "${BENCH_PROXY}/opencode2/v1"}
 datasets:
-  - {name: terminal-bench/terminal-bench, ref: "4.0.0"}
+  - {name: terminal-bench/terminal-bench-2-1, ref: latest}

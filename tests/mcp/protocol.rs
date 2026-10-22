@@ -122,6 +122,26 @@ pub(crate) fn server_log_messages_go_to_the_log_file() {
     );
 }
 
+pub(crate) fn startup_log_messages_go_to_the_log_file() {
+    let session = Session::new();
+    let fixture = crate::support::fixture();
+    let (ok, text) = session.cli(&[
+        "mcp",
+        "add",
+        "loud",
+        "--env",
+        "MCP_FIXTURE_SERVE=1",
+        "--env",
+        "MCP_FIXTURE_LOG_LIST=1",
+        "--",
+        &fixture.display().to_string(),
+    ]);
+    assert!(ok, "{text}");
+    let log = std::fs::read_to_string(session.home.path().join("logs").join("mcp.log"))
+        .unwrap_or_default();
+    assert!(log.contains("loud/fixture info \"listing\""), "{log}");
+}
+
 pub(crate) fn a_cancel_sent_at_exit_reaches_a_slow_server() {
     let session = Session::new();
     let model = Model::start(vec![Step::Call("fixture1__hang", json!({}))]);

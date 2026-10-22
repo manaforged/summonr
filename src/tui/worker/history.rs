@@ -12,6 +12,11 @@ use super::{Msg, Worker};
 impl Worker {
     pub(super) fn replay(&self) {
         self.restore();
+        if let Some((objective, _)) = self.loop_.active_goal().ok().flatten() {
+            drop(self.ui.send(Msg::System(format!(
+                "unfinished goal: {objective} · /goal with the same text continues it · /goal clear ends it"
+            ))));
+        }
     }
 
     pub(super) fn reshow(&self) {

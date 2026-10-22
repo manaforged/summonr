@@ -60,3 +60,38 @@ pub(crate) fn secret_values_never_reach_the_model_but_commands_still_load_them()
     assert!(results[5].contains("answered by search"), "{results:?}");
     assert!(!results[5].contains(".env:"), "{results:?}");
 }
+
+#[cfg(unix)]
+pub(crate) fn an_ssh_agent_reaches_commands_but_other_variables_do_not() {
+    let session = Session::new();
+    let model = Model::start(vec![
+        Step::Call(
+            "run_command",
+            json!({"command": "echo \"agent=$SSH_AUTH_SOCK token=$SUMMONR_PROBE_TOKEN\""}),
+        ),
+        Step::Text("done"),
+    ]);
+    session.run_with(
+        &model,
+        "",
+        &["--no-verify"],
+        &crate::support::Options {
+            env: &[
+                ("SSH_AUTH_SOCK", "/tmp/summonr-probe-agent.sock"),
+                ("SUMMONR_PROBE_TOKEN", "CANARY-probe"),
+            ],
+            ..crate::support::Options::default()
+        },
+    );
+    let results = model.tool_results();
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("agent=/tmp/summonr-probe-agent.sock token=")),
+        "{results:?}"
+    );
+    assert!(
+        !results.iter().any(|result| result.contains("CANARY-probe")),
+        "{results:?}"
+    );
+}

@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Several `task` calls in one response start together, also when the model updates its todo list in the same response.
+- `/workflow save NAME` keeps the workflow on a config that has no `[workflows]` table yet.
+- `r` in the diff pane reverts a hunk that ends on a blank line, and `summonr diff` prints the same patch as `git diff`.
+- `summonr cron add -e ROUTE` warns when its runs would have no key, including a key only in your shell, and no longer warns when a key is stored for that route.
+- A plugin's `bin/` and `~/.summonr/bin` are on `run_command`'s `PATH` in the interface, not only in `-p` runs.
+- `/resume` and `/new` no longer print the workspace check over the interface.
+- Resuming or removing a session by a short id that two sessions share lists the full ids to choose from.
+- A session reopened with an unfinished goal says so, with how to continue it and how to end it, and a second `/goal` names the goal still active and `/goal clear`.
+- The footer gives a long workspace path the room the meters leave, and the status bar keeps the end of a long path.
+- Paths under a symlinked home read as `~/...`.
+- A `--json` run that fails on its config prints its `aborted` event.
+- Subagent rows line up in shared columns.
+- `idle_timeout_secs` also bounds the wait for response headers, so a provider that never answers fails after the idle limit and enters the retry path.
+- Log lines an MCP server sends while it starts reach `~/.summonr/logs/mcp.log`.
+- A cancel summonr writes to an MCP server as it exits reaches the server before the server is stopped.
+- `run_command` passes `SSH_AUTH_SOCK`, so `git` over SSH reaches your agent.
+- The Windows installer keeps the user `Path` intact.
+
+### Docs
+
+- A quick start, and task pages for models, goals, automation, the terminal, and safety. The provider list is checked against the built-in presets.
+- The goals and terminal pages say which runs the check gates, that `--max-secs` counts working time, that a check must leave the workspace unchanged, that `--worktree` needs a committed check file, and that `/undo` continues in a copy of the session.
+
 ## 0.1.0
 
 First public release.

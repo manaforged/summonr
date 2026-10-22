@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use super::catalog::Listing;
 use super::config::{Launch, Server};
 use super::http;
+use super::journal::Journal;
 use crate::error::{Error, Result};
 use crate::rpc::{self, Client, Notice};
 
@@ -16,6 +17,22 @@ pub(super) struct Conn {
     transport: Transport,
     stateless: bool,
     offers: Value,
+    server: String,
+    journal: Journal,
+}
+
+fn logged<'n>(journal: &Journal, server: &str, notice: Notice<'n>) -> Option<Notice<'n>> {
+    match notice {
+        Notice::Message {
+            level,
+            logger,
+            data,
+        } => {
+            journal.append(server, level, logger, data);
+            None
+        }
+        other => Some(other),
+    }
 }
 
 enum Transport {
@@ -51,10 +68,17 @@ impl Conn {
             transport,
             stateless: false,
             offers: json!({"tools": {}}),
+            server: server.name.clone(),
+            journal: Journal::default(),
         };
+        let (journal, name) = (&conn.journal, conn.server.as_str());
+        let mut hear = |notice: Notice<'_>| drop(logged(journal, name, notice));
         let agreed = match &mut conn.transport {
-            Transport::Stdio(client) => Some(client.initialize("summonr").await?),
-            Transport::Http(http) => http.initialize(rpc::hello("summonr", json!({}))).await?,
+            Transport::Stdio(client) => Some(client.initialize("summonr", &mut hear).await?),
+            Transport::Http(http) => {
+                http.initialize(rpc::hello("summonr", json!({})), &mut hear)
+                    .await?
+            }
         };
         conn.stateless = agreed.is_none();
         if let Some(offers) =
@@ -159,9 +183,15 @@ impl Conn {
                 }),
             );
         }
+        let (journal, name) = (&self.journal, self.server.as_str());
+        let mut hear = |notice: Notice<'_>| {
+            if let Some(other) = logged(journal, name, notice) {
+                on_note(other);
+            }
+        };
         match &mut self.transport {
-            Transport::Stdio(client) => client.call(method, params, on_note).await,
-            Transport::Http(http) => http.call(method, params, on_note).await,
+            Transport::Stdio(client) => client.call(method, params, &mut hear).await,
+            Transport::Http(http) => http.call(method, params, &mut hear).await,
         }
     }
 }

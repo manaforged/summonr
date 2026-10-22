@@ -6,7 +6,6 @@ import sys
 import tempfile
 import threading
 import time
-import asyncio
 import unittest
 import urllib.error
 import urllib.request
@@ -16,7 +15,6 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import audit
-import level
 import rerun
 import trial
 
@@ -195,47 +193,6 @@ class Preflight(Bench):
         tools = lambda effort, model="glm-5.3-flash": {**call("fix-git__a1", model=model, effort=effort), "request": {**call("fix-git__a1", effort=effort)["request"], "tools": 18}}
         by_label = {"fix-git__a1": [tools("high"), tools(None), tools(None), call("fix-git__a1", effort="low", tools=0), tools("high", model="glm-4.5-flash")]}
         self.assertEqual(audit.unpinned(rows, by_label, "high", "glm-5.3-flash"), ["hermes: 1 responses came from glm-4.5-flash", "hermes: 2 tool requests sent effort None, not high"])
-
-
-class Startup(Bench):
-    def test_an_installers_shell_startup_edits_are_gone_before_the_model_runs(self):
-        home = self.tmp / "root"
-        home.mkdir()
-        (home / ".bashrc").write_text("alias ll='ls -l'\n")
-        level.TASK_PATH, level.RC_DIR, level.HOMES = str(self.tmp / "task-path"), str(self.tmp / "rc"), str(home)
-        env = {"HOME": str(home), "PATH": "/usr/bin:/bin"}
-        subprocess.run(["bash", "-c", level.keep()], env=env, check=True)
-        (home / ".bashrc").write_text("alias ll='ls -l'\nexport PATH=\"$HOME/.bun/bin:$PATH\"\n")
-        (home / ".profile").write_text(". ~/.bashrc\n")
-        subprocess.run(["bash", "-c", level.restore()], env=env, check=True)
-        self.assertEqual(((home / ".bashrc").read_text(), (home / ".profile").exists()), ("alias ll='ls -l'\n", False))
-
-
-class Install(unittest.TestCase):
-    class Agent:
-        def __init__(self, fails):
-            self.fails, self.sent = fails, []
-
-        async def ensure_system_dependencies(self, environment, packages):
-            self.sent.append(("packages", packages))
-            if self.fails:
-                raise RuntimeError("E: Failed to fetch curl_7.74.0-1.3+deb11u16_amd64.deb 404 Not Found")
-
-        async def exec_as_root(self, environment, command):
-            self.sent.append(("root", command))
-
-    def test_a_mirror_that_lost_its_packages_falls_back_to_the_images_pinned_snapshot(self):
-        agent = self.Agent(fails=True)
-        asyncio.run(level.install(agent, None))
-        (_, packages), (kind, command) = agent.sent
-        self.assertEqual((packages, kind), (level.PACKAGES, "root"))
-        self.assertIn("snapshot.debian.org", command)
-        self.assertTrue(command.endswith("install -y -qq ca-certificates curl git ripgrep xz-utils unzip bash coreutils python3 nodejs npm"))
-
-    def test_a_working_mirror_installs_once(self):
-        agent = self.Agent(fails=False)
-        asyncio.run(level.install(agent, None))
-        self.assertEqual(agent.sent, [("packages", level.PACKAGES)])
 
 
 class Parity(Bench):

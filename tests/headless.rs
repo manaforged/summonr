@@ -91,6 +91,33 @@ fn a_rejected_key_ends_the_json_stream_with_an_error_event() {
     assert_eq!(aborted(&events), Some("error"), "{events:?}\n{stderr}");
 }
 
+#[test]
+fn a_broken_config_ends_the_json_stream_with_an_error_event() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(home.path().join("config.toml"), "this is = = not toml\n").unwrap();
+    let child = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["-p", "--json", "hi"])
+        .current_dir(home.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (code, events, stderr) = finish(child);
+    assert_eq!(code, Some(1), "{stderr}");
+    assert_eq!(events.len(), 1, "one event: {events:?}\n{stderr}");
+    assert_eq!(aborted(&events), Some("error"), "{events:?}\n{stderr}");
+    assert!(
+        events[0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("config.toml")),
+        "{events:?}"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn an_interrupted_json_run_says_so_and_leaves_an_exit_record() {
@@ -194,4 +221,20 @@ fn a_text_run_keeps_stdout_to_the_answer_and_marks_reasoning_only_before_it() {
     assert_eq!(stdout.trim(), "pytest runs tests", "{stderr}");
     assert_eq!(stderr.matches("… reasoning").count(), 1, "{stderr}");
     assert!(stderr.contains("Turn receipt"), "{stderr}");
+}
+
+#[test]
+fn a_plain_run_names_its_workspace_check_and_a_json_run_does_not() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join(".summonr")).unwrap();
+    std::fs::write(
+        home.path().join(".summonr/check.toml"),
+        "check = \"true\"\n",
+    )
+    .unwrap();
+    let rejected = "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\ncontent-length: 41\r\nconnection: close\r\n\r\n{\"error\":{\"message\":\"invalid api key\"}}\n";
+    let (_, _, plain) = finish(launch(home.path(), provider(Some(rejected)), &["-p", "hi"]));
+    assert!(plain.contains("summonr: workspace check: true"), "{plain}");
+    let (_, _, json) = finish(start(home.path(), provider(Some(rejected))));
+    assert!(!json.contains("workspace check"), "{json}");
 }

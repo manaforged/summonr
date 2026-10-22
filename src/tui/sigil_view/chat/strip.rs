@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder,
-    NodeEventsExt, Token, button, container,
+    AlignItems, ControlSize, JustifyContent, LayoutBuilderExt, LayoutStyle, MouseButton,
+    NodeBuilder, NodeEventsExt, Token, button, container,
 };
 
 use super::{Agent, App};
@@ -29,7 +29,64 @@ enum Row {
         state: u8,
         detail: bool,
         clear: bool,
+        widths: Widths,
     },
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
+struct Widths {
+    title: usize,
+    access: usize,
+    clock: usize,
+    tokens: usize,
+}
+
+impl Widths {
+    fn of(rows: &[Agent], width: usize) -> Self {
+        let most = |pick: &dyn Fn(&Agent) -> String| {
+            rows.iter()
+                .map(|agent| super::cell_width(&pick(agent)))
+                .max()
+                .unwrap_or(0)
+        };
+        let mut widths = Self {
+            title: 0,
+            access: most(&|agent| agent.access.name().to_string()),
+            clock: most(&Agent::clock),
+            tokens: most(&|agent| crate::provider::compact(agent.tokens)),
+        };
+        widths.title = most(&|agent| agent.title.clone())
+            .min(width * TITLE_SHARE.0 / TITLE_SHARE.1)
+            .min(width.saturating_sub(widths.taken()));
+        widths
+    }
+
+    fn taken(self) -> usize {
+        let chrome: usize = CHROME.iter().map(|part| super::cell_width(part)).sum();
+        chrome + CHROME_GAPS + self.access + self.clock + self.tokens + ACTIVITY_MIN
+    }
+}
+
+const TITLE_SHARE: (usize, usize) = (2, 5);
+const ACTIVITY_MIN: usize = 12;
+const CHROME: [&str; 5] = ["○", "Subagent", "·", "·", "tok"];
+const CHROME_GAPS: usize = 9;
+
+fn fixed(
+    body: impl Into<sigil::kernel::TextContent>,
+    look: Look,
+    cells: usize,
+    justify: JustifyContent,
+) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .width(cells as f32 * super::canvas::cell().w)
+                .shrink(0.0)
+                .min_size(0.0, 0.0)
+                .justify_content(justify),
+        )
+        .child(text(body, look).ellipsize())
 }
 
 type View = sigil::prelude::Signal<(bool, Vec<Agent>)>;
@@ -53,23 +110,6 @@ fn field(view: View, id: String, pick: impl Fn(&Agent) -> String + 'static) -> i
     }
 }
 
-fn meta(agent: &Agent, detail: bool) -> String {
-    if detail {
-        format!(
-            "{} · {} · {} tok",
-            agent.access.name(),
-            agent.clock(),
-            crate::provider::compact(agent.tokens)
-        )
-    } else {
-        format!(
-            "{} · {} tok",
-            agent.clock(),
-            crate::provider::compact(agent.tokens)
-        )
-    }
-}
-
 fn doing(agent: &Agent, roots: &[String]) -> String {
     let last = super::entry::workspace_relative(&agent.last, &agent.roots(roots));
     if last.is_empty() {
@@ -79,7 +119,7 @@ fn doing(agent: &Agent, roots: &[String]) -> String {
     }
 }
 
-fn line(agent: &Agent, app: &App, detail: bool, view: View) -> NodeBuilder {
+fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> NodeBuilder {
     let (glyph, tone) = mark(agent);
     let roots = app.roots.clone();
     let mut line = container()
@@ -92,11 +132,12 @@ fn line(agent: &Agent, app: &App, detail: bool, view: View) -> NodeBuilder {
         )
         .child(text(glyph, tone))
         .child(text("Subagent", Look::xs(Token::Accent11)))
-        .child(
-            text(agent.title.clone(), Look::xs(Token::Gray12))
-                .ellipsize()
-                .layout(LayoutStyle::block().shrink(4.0).min_size(0.0, 0.0)),
-        )
+        .child(fixed(
+            agent.title.clone(),
+            Look::xs(Token::Gray12),
+            widths.title,
+            JustifyContent::Start,
+        ))
         .child(
             text(
                 field(view, agent.id.clone(), move |agent| doing(agent, &roots)),
@@ -107,14 +148,36 @@ fn line(agent: &Agent, app: &App, detail: bool, view: View) -> NodeBuilder {
                 LayoutStyle::block()
                     .grow(1.0)
                     .shrink(1.0)
-                    .min_size(0.0, 0.0)
-                    .max_width(super::ACTIVITY_SHARE),
+                    .min_size(0.0, 0.0),
             ),
-        )
-        .child(text(
-            field(view, agent.id.clone(), move |agent| meta(agent, detail)),
+        );
+    if detail {
+        line = line
+            .child(fixed(
+                agent.access.name(),
+                Look::xs(Token::Gray10),
+                widths.access,
+                JustifyContent::Start,
+            ))
+            .child(text("·", Look::xs(Token::Gray10)));
+    }
+    line = line
+        .child(fixed(
+            field(view, agent.id.clone(), Agent::clock),
             Look::xs(Token::Gray10),
-        ));
+            widths.clock,
+            JustifyContent::End,
+        ))
+        .child(text("·", Look::xs(Token::Gray10)))
+        .child(fixed(
+            field(view, agent.id.clone(), |agent| {
+                crate::provider::compact(agent.tokens)
+            }),
+            Look::xs(Token::Gray10),
+            widths.tokens,
+            JustifyContent::End,
+        ))
+        .child(text("tok", Look::xs(Token::Gray10)));
     if detail && agent.background {
         let clear = app.clone();
         let id = agent.id.clone();
@@ -196,6 +259,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                         }),
                 ));
             }
+            let widths = Widths::of(&rows, width);
             for agent in &rows {
                 let key = Row::Agent {
                     id: agent.id.clone(),
@@ -203,8 +267,9 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                     state: state_code(agent),
                     detail: expanded,
                     clear: expanded && agent.background,
+                    widths,
                 };
-                nodes.push((key, line(agent, &app, expanded, view)));
+                nodes.push((key, line(agent, &app, expanded, view, widths)));
             }
             nodes
         })

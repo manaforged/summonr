@@ -256,11 +256,7 @@ fn tracked_patch(root: &Path, base: &str, path: Option<&str>) -> Result<String> 
     }
     let mut args = vec!["diff", "--no-color", "--no-renames", base, "--"];
     args.extend(shown.iter().map(String::as_str));
-    let mut text = git(root, &args)?;
-    if !text.is_empty() {
-        text.push('\n');
-    }
-    Ok(text)
+    Ok(String::from_utf8_lossy(&git_output(root, &[], &args, None)?).into_owned())
 }
 
 fn untracked_patch(root: &Path, path: Option<&str>) -> Result<String> {
@@ -278,11 +274,13 @@ fn untracked_patch(root: &Path, path: Option<&str>) -> Result<String> {
             }
             continue;
         }
-        text.push_str(&git(
+        let args = ["diff", "--no-index", "--no-color", "--", "/dev/null", file];
+        text.push_str(&String::from_utf8_lossy(&git_output(
             root,
-            &["diff", "--no-index", "--no-color", "--", "/dev/null", file],
-        )?);
-        text.push('\n');
+            &[],
+            &args,
+            None,
+        )?));
     }
     Ok(text)
 }

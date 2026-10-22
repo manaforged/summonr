@@ -123,12 +123,17 @@ pub(super) fn spawn_command(
     let shell = crate::shell::program()?;
     let args = crate::shell::arguments(script, cwd);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let base = command_env();
+    let path = base
+        .iter()
+        .find_map(|(key, value)| (key == "PATH").then(|| value.clone()))
+        .unwrap_or_default();
     let mut cmd = Command::new(&shell);
     cmd.args(&args)
         .current_dir(cwd)
         .env_clear()
-        .envs(command_env())
-        .envs(crate::askpass::env())
+        .envs(base)
+        .envs(crate::askpass::env(&path))
         .envs(env.iter().cloned())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(err))
@@ -194,6 +199,7 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
         "SHELL",
         "USER",
         "LOGNAME",
+        "SSH_AUTH_SOCK",
         "CARGO_HOME",
         "RUSTUP_HOME",
         "CARGO_TARGET_DIR",

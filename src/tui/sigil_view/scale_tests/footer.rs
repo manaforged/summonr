@@ -211,3 +211,81 @@ fn the_model_reads_in_the_same_ink_as_the_workspace_path() {
     };
     assert_eq!(ink("stub-model"), ink("projects/demo"), "{shown}");
 }
+
+fn live(session: &str, status: crate::tui::hub::Status, active: bool) -> crate::tui::hub::Live {
+    crate::tui::hub::Live {
+        session: session.to_owned(),
+        title: session.to_owned(),
+        workspace: std::path::PathBuf::from("/work"),
+        status,
+        active,
+    }
+}
+
+fn spent(app: &super::super::app::App) {
+    app.update(Msg::Event(Event::Usage {
+        prompt_tokens: 1200,
+        completion_tokens: 300,
+        reasoning_tokens: 0,
+        cached_tokens: 800,
+        millis: Some(2000),
+        prefix_hash: String::new(),
+        cost: Some(0.0412),
+    }));
+}
+
+#[test]
+fn the_footer_counts_other_sessions_and_the_ones_waiting_on_you() {
+    use crate::tui::hub::Status;
+    let shown = |sessions: Vec<crate::tui::hub::Live>| {
+        footer(&frame_with(busy_info(), 140, 30, State::Idle, |app| {
+            spent(app);
+            app.update(Msg::Live(sessions));
+        }))
+    };
+    let waiting = shown(vec![
+        live("this", Status::Working, true),
+        live("b", Status::NeedsYou, false),
+        live("c", Status::Idle, false),
+    ]);
+    assert!(
+        waiting.contains("2 other sessions · 1 waiting on you · /resume"),
+        "{waiting}"
+    );
+    let quiet = shown(vec![
+        live("this", Status::NeedsYou, true),
+        live("b", Status::Working, false),
+    ]);
+    assert!(quiet.contains("1 other session"), "{quiet}");
+    assert!(!quiet.contains("waiting"), "{quiet}");
+    let alone = shown(vec![live("this", Status::Working, true)]);
+    assert!(!alone.contains("other session"), "{alone}");
+}
+
+#[test]
+fn a_long_workspace_path_takes_the_room_the_footer_leaves() {
+    let mut info = busy_info();
+    info.workspace = format!("/home/someone/{}checkout-name", "nested/".repeat(20));
+    let row = |window: Option<u32>| {
+        footer(&frame_with(info.clone(), 110, 30, State::Idle, |app| {
+            app.update(Msg::Settings(crate::tui::Snapshot {
+                model: "stub-model".to_owned(),
+                context_window: window,
+                ..crate::tui::Snapshot::default()
+            }));
+            spent(app);
+            app.update(Msg::Live(vec![
+                live("this", crate::tui::hub::Status::Working, true),
+                live("b", crate::tui::hub::Status::NeedsYou, false),
+            ]));
+        }))
+    };
+    for window in [None, Some(200_000)] {
+        let line = row(window);
+        for part in ["-name", "waiting on you", "$0.04", "cache"] {
+            assert!(line.contains(part), "{part}: {line}");
+        }
+        assert!(line.trim_end().ends_with('%'), "{line}");
+        assert!(line.trim_end().chars().count() >= 104, "{line}");
+    }
+}

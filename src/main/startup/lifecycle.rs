@@ -26,6 +26,11 @@ pub(super) async fn launch(
     let ui = channels(use_tui(args));
     ask_login(&ui, &endpoint, args.endpoint.is_some());
     let (loop_, goal_checks, workflow) = assemble(args, &endpoint, &workspace, action, &ui)?;
+    if !args.json {
+        for check in loop_.verify_commands() {
+            eprintln!("summonr: workspace check: {check}");
+        }
+    }
     let session = loop_.session_id();
     summonr::prune_sessions(Some(&session));
     let session_path = loop_.session_path().to_path_buf();
@@ -79,13 +84,6 @@ fn assemble(
     } else {
         summonr::check_commands(workspace)?
     };
-    if !args.json
-        && let Some(list) = &checks
-    {
-        for check in list {
-            eprintln!("summonr: workspace check: {check}");
-        }
-    }
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
     let mut loop_ = build(args, endpoint, provider, workspace, check, action)?;
     let (fallbacks, skipped) = summonr::endpoint_fallbacks(endpoint, |fallback| {

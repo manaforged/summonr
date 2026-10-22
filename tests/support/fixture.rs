@@ -178,6 +178,9 @@ fn handle(out: &Out, message: Value) {
         }
         "ping" => out.result(&id, json!({})),
         "tools/list" => {
+            if env::var_os("MCP_FIXTURE_LOG_LIST").is_some() {
+                out.send(&json!({"jsonrpc": "2.0", "method": "notifications/message", "params": {"level": "info", "logger": "fixture", "data": "listing"}}));
+            }
             let tools: Vec<Value> = advertised().into_iter().map(describe).collect();
             let mut page = json!({ "tools": tools });
             if env::var_os("MCP_FIXTURE_ENDLESS").is_some() {

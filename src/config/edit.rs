@@ -98,10 +98,10 @@ pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
                 }
             };
         }
-        document["workflows"][workflow.name.as_str()] = toml_edit::Item::Table(table);
-        if let Some(parent) = document["workflows"].as_table_mut() {
-            parent.set_implicit(true);
-        }
+        let Some(workflows) = tables_at(document, "workflows") else {
+            return Ok(false);
+        };
+        workflows[workflow.name.as_str()] = toml_edit::Item::Table(table);
         Ok(true)
     })
     .map(drop)
@@ -137,14 +137,30 @@ pub(crate) fn save_named(
         {
             return Ok(false);
         }
-        if !document.get(key).is_some_and(toml_edit::Item::is_table) {
-            let mut tables = toml_edit::Table::new();
-            tables.set_implicit(true);
-            document[key] = toml_edit::Item::Table(tables);
-        }
-        document[key][name] = table;
+        let Some(tables) = tables_at(document, key) else {
+            return Ok(false);
+        };
+        tables[name] = table;
         Ok(true)
     })
+}
+
+fn tables_at<'d>(document: &'d mut DocumentMut, key: &str) -> Option<&'d mut toml_edit::Table> {
+    if !document.get(key).is_some_and(toml_edit::Item::is_table) {
+        let table = document
+            .get(key)
+            .and_then(toml_edit::Item::as_inline_table)
+            .map_or_else(
+                || {
+                    let mut table = toml_edit::Table::new();
+                    table.set_implicit(true);
+                    table
+                },
+                |inline| inline.clone().into_table(),
+            );
+        document[key] = toml_edit::Item::Table(table);
+    }
+    document[key].as_table_mut()
 }
 
 pub(crate) fn remove_named(path: &Path, section: Section, name: &str) -> Result<bool> {
@@ -157,11 +173,11 @@ pub(crate) fn remove_named(path: &Path, section: Section, name: &str) -> Result<
 
 pub(crate) fn save_provider(path: &Path, name: &str, fields: &[(&str, &str)]) -> Result<()> {
     update(path, |document| {
+        let Some(providers) = tables_at(document, "provider") else {
+            return Ok(false);
+        };
         for (key, setting) in fields {
-            document["provider"][name][*key] = value(*setting);
-        }
-        if let Some(table) = document["provider"].as_table_mut() {
-            table.set_implicit(true);
+            providers[name][*key] = value(*setting);
         }
         Ok(true)
     })
@@ -170,10 +186,10 @@ pub(crate) fn save_provider(path: &Path, name: &str, fields: &[(&str, &str)]) ->
 
 pub(crate) fn save_module(path: &Path, id: crate::modules::ModuleId, on: bool) -> Result<()> {
     update(path, |document| {
-        document["modules"][id.name()] = value(on);
-        if let Some(table) = document["modules"].as_table_mut() {
-            table.set_implicit(true);
-        }
+        let Some(modules) = tables_at(document, "modules") else {
+            return Ok(false);
+        };
+        modules[id.name()] = value(on);
         Ok(true)
     })
     .map(drop)
@@ -205,17 +221,21 @@ pub(crate) fn save_default_seat(path: &Path, seat: Option<(&str, &str)>) -> Resu
 }
 
 pub fn tilde(path: &Path) -> String {
-    let home = super::home_dir();
-    if let Some(home) = home
-        && let Ok(rest) = path.strip_prefix(&home)
-    {
-        let rest = rest.to_string_lossy();
-        if rest.is_empty() {
-            return "~".to_string();
-        }
-        return format!("~/{rest}");
+    under(path, super::home_dir().as_deref())
+}
+
+fn under(path: &Path, home: Option<&Path>) -> String {
+    let resolved = home.and_then(|home| std::fs::canonicalize(home).ok());
+    let rest = home
+        .map(Path::to_path_buf)
+        .into_iter()
+        .chain(resolved)
+        .find_map(|home| path.strip_prefix(&home).ok().map(Path::to_path_buf));
+    match rest {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Some(rest) => format!("~/{}", rest.to_string_lossy()),
+        None => path.display().to_string(),
     }
-    path.display().to_string()
 }
 
 const WRITE_ROOTS: &str = "write_roots";
@@ -272,3 +292,7 @@ pub(crate) fn drop_plugin_off(path: &Path, name: &str) -> Result<bool> {
         Ok(array.len() != before)
     })
 }
+
+#[cfg(test)]
+#[path = "tilde_tests.rs"]
+mod tilde_tests;

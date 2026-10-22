@@ -98,10 +98,14 @@ impl Client {
         self.wait = wait;
     }
 
-    pub(crate) async fn initialize(&mut self, name: &str) -> Result<Value> {
+    pub(crate) async fn initialize(
+        &mut self,
+        name: &str,
+        on_note: impl FnMut(Notice<'_>),
+    ) -> Result<Value> {
         let capabilities = json!({"roots": {"listChanged": false}, "elicitation": {"form": {}}});
         let result = self
-            .call("initialize", hello(name, capabilities), |_| {})
+            .call("initialize", hello(name, capabilities), on_note)
             .await?;
         agreed(&result)?;
         self.notify("notifications/initialized", json!({})).await?;

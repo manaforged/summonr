@@ -76,8 +76,12 @@ impl Http {
         self.expired
     }
 
-    pub(super) async fn initialize(&mut self, params: Value) -> Result<Option<Value>> {
-        let reply = self.exchange("initialize", params, &mut |_| {}).await;
+    pub(super) async fn initialize(
+        &mut self,
+        params: Value,
+        on_note: &mut (dyn FnMut(Notice<'_>) + Send),
+    ) -> Result<Option<Value>> {
+        let reply = self.exchange("initialize", params, on_note).await;
         self.inflight = None;
         let result = match reply {
             Ok(result) => result,

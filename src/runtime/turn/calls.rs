@@ -1,6 +1,8 @@
 use super::*;
 use crate::tools::Builtin;
 
+type Ran = (Result<ToolOutput>, u64, Option<Usage>);
+
 impl<P: Provider> Loop<P> {
     pub(super) async fn execute_calls(
         &mut self,
@@ -15,21 +17,43 @@ impl<P: Provider> Loop<P> {
         if calls.is_empty() {
             return Ok(());
         }
-        let outputs = if calls
-            .iter()
-            .all(|call| Builtin::is(&call.function.name, Builtin::Task))
-        {
-            self.run_tasks(&calls, events, emit).await
-        } else if calls.iter().all(|call| readonly(&call.function.name)) {
-            self.run_readonly(&calls, events, emit).await?
-        } else {
+        if calls.iter().all(|call| readonly(&call.function.name)) {
+            let outputs = self.run_readonly(&calls, events, emit).await?;
+            let batch = planned.into_iter().zip(calls).zip(outputs).collect();
             return self
-                .run_serial(planned, calls, messages, events, emit, usage)
+                .finish_batch(batch, messages, events, emit, usage)
                 .await;
-        };
-        for ((planned, call), (output, millis, child_usage)) in
-            planned.into_iter().zip(calls).zip(outputs)
-        {
+        }
+        let is_task = |call: &ToolCall| Builtin::is(&call.function.name, Builtin::Task);
+        let mut pending = planned.into_iter().zip(calls).peekable();
+        while let Some((planned, call)) = pending.next() {
+            if !is_task(&call) {
+                self.run_serial(vec![planned], vec![call], messages, events, emit, usage)
+                    .await?;
+                continue;
+            }
+            let mut tasks = vec![(planned, call)];
+            while let Some(next) = pending.next_if(|(_, call)| is_task(call)) {
+                tasks.push(next);
+            }
+            let calls: Vec<ToolCall> = tasks.iter().map(|(_, call)| call.clone()).collect();
+            let outputs = self.run_tasks(&calls, events, emit).await;
+            let batch = tasks.into_iter().zip(outputs).collect();
+            self.finish_batch(batch, messages, events, emit, usage)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn finish_batch(
+        &mut self,
+        batch: Vec<((Call, ToolCall), Ran)>,
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<()> {
+        for ((planned, call), (output, millis, child_usage)) in batch {
             if let Some(child_usage) = child_usage {
                 usage.add(&child_usage);
             }
@@ -44,7 +68,7 @@ impl<P: Provider> Loop<P> {
         calls: &[ToolCall],
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Vec<(Result<ToolOutput>, u64, Option<Usage>)> {
+    ) -> Vec<Ran> {
         self.tasks_execute(calls, events, emit)
             .await
             .into_iter()
@@ -64,7 +88,7 @@ impl<P: Provider> Loop<P> {
         calls: &[ToolCall],
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<Vec<(Result<ToolOutput>, u64, Option<Usage>)>> {
+    ) -> Result<Vec<Ran>> {
         let tools = &self.tools;
         let ran = calls
             .iter()

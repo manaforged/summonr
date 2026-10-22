@@ -215,3 +215,37 @@ async fn a_reply_cut_at_the_output_limit_before_any_text_is_a_length_stop() {
     let (reply, _) = run(server(cut, "", 0, "")).await;
     assert_eq!(reply.unwrap().stop_reason, StopReason::Length);
 }
+
+#[tokio::test]
+async fn a_server_silent_before_its_headers_fails_after_the_idle_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        read_request(&mut socket);
+        drop(socket.set_read_timeout(Some(Duration::from_secs(30))));
+        drop(socket.read(&mut [0u8; 1]));
+    });
+    let mut endpoint = super::cache_tests::endpoint("deepseek", "deepseek-flash");
+    endpoint.base_url = Some(base);
+    endpoint.idle_timeout_secs = Some(1);
+    let client = Client::connect(&endpoint).unwrap();
+    let messages = [Message::user("hi".to_string())];
+    let request = CompletionRequest::new(
+        String::new(),
+        "deepseek-flash".to_string(),
+        &messages,
+        &[],
+        None,
+        true,
+        None,
+    );
+    let mut partial = Partial::default();
+    let outcome = tokio::time::timeout(
+        Duration::from_secs(10),
+        client.complete_stream(&request, &mut partial),
+    )
+    .await
+    .expect("a server that never sends headers must fail after idle_timeout_secs");
+    assert!(outcome.is_err(), "{outcome:?}");
+}

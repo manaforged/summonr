@@ -85,22 +85,7 @@ fn drain_hands_comments_to_the_prompt_once() {
 fn reject_reverts_one_hunk_in_a_real_repo() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{args:?}: {:?}", output.stderr);
-    };
-    git(&["init", "-q"]);
-    git(&["config", "core.autocrlf", "false"]);
-    git(&["config", "user.email", "t@t"]);
-    git(&["config", "user.name", "t"]);
-    std::fs::write(root.join("f.txt"), "one\ntwo\nthree\n").unwrap();
-    git(&["add", "f.txt"]);
-    git(&["commit", "-qm", "init"]);
+    committed(root, "one\ntwo\nthree\n");
     std::fs::write(root.join("f.txt"), "one\nTWO\nthree\n").unwrap();
     let patch = diff::patch(root, Some("f.txt")).unwrap();
     let hunks = split("f.txt", &patch);
@@ -263,4 +248,28 @@ fn reject_file_reverts_every_hunk_in_the_file() {
         std::fs::read_to_string(root.join("f.txt")).unwrap(),
         original
     );
+}
+
+#[test]
+fn a_hunk_that_ends_on_a_blank_line_reverts() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let before = "x\ny\nz\n\nw\n";
+    committed(root, before);
+    std::fs::write(root.join("f.txt"), "X\ny\nz\n\nw\n").unwrap();
+    let patch = diff::patch(root, Some("f.txt")).unwrap();
+    assert!(patch.ends_with(" z\n \n"), "{patch:?}");
+    let hunks = split("f.txt", &patch);
+    apply(root, "f.txt", &hunks[0].id, Op::Reject).unwrap();
+    assert_eq!(std::fs::read_to_string(root.join("f.txt")).unwrap(), before);
+}
+
+#[test]
+fn a_new_file_keeps_its_trailing_whitespace_in_the_patch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    committed(root, "one\n");
+    std::fs::write(root.join("new.txt"), "text\n   \n").unwrap();
+    let patch = diff::patch(root, Some("new.txt")).unwrap();
+    assert!(patch.ends_with("+text\n+   \n"), "{patch:?}");
 }

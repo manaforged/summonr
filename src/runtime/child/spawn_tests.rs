@@ -188,3 +188,54 @@ async fn a_failed_turn_drops_the_updates_its_background_children_left_queued() {
         .collect();
     assert!(late.is_empty(), "{late:?}");
 }
+
+fn call(id: &str, name: &str, arguments: &serde_json::Value) -> crate::provider::ToolCall {
+    crate::provider::ToolCall {
+        id: id.to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: name.to_string(),
+            arguments: arguments.to_string(),
+        },
+        continuation: None,
+    }
+}
+
+#[tokio::test]
+async fn task_calls_beside_a_todo_update_start_together() {
+    let research = |id, assignment| {
+        call(
+            id,
+            "task",
+            &serde_json::json!({ "assignment": assignment, "access": "research" }),
+        )
+    };
+    let round = vec![
+        call(
+            "t0",
+            "todo",
+            &serde_json::json!({ "items": [{ "text": "look around" }] }),
+        ),
+        research("t1", "find the config loader"),
+        research("t2", "find the session store"),
+    ];
+    let (mut parent, _dirs) = parent(vec![
+        Reply::Calls(round),
+        Reply::Text("the loader"),
+        Reply::Text("the store"),
+        Reply::Text("both found"),
+    ]);
+    let turn = parent.turn("look around").await.unwrap();
+    let spawned: Vec<bool> = turn
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            crate::tools::Event::Child { event, .. } => {
+                Some(matches!(**event, crate::tools::Event::Spawned { .. }))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(spawned.get(..2), Some(&[true, true][..]), "{spawned:?}");
+}

@@ -289,15 +289,14 @@ fn chat_missing() -> Option<String> {
 }
 
 fn key_missing(endpoint: Option<&str>) -> Option<String> {
-    let ready = crate::endpoint::set_up();
     let name = endpoint
         .map(str::to_string)
         .or_else(|| crate::endpoint::default_seat().map(|seat| seat.endpoint));
     match name {
-        Some(name) if !ready.contains(&name) => Some(format!(
-            "{name} has no usable key; run `summonr login {name}`"
-        )),
-        None if ready.is_empty() => {
+        Some(name) if !crate::endpoint::is_set_up(&name, crate::endpoint::Keys::Stored) => Some(
+            format!("{name} has no usable key; run `summonr login {name}`"),
+        ),
+        None if crate::endpoint::set_up().is_empty() => {
             Some("no endpoint has a key; run `summonr login NAME`".to_string())
         }
         Some(_) | None => None,

@@ -101,7 +101,7 @@ An unknown option is exit code 1 with `unknown option`. `summonr mcp add` exits 
 
 ### `--json` on a session (`-p`, `--goal`, `--steps`)
 
-summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The first line is `{"type":"session","id":"<session id>"}`. The shapes come from `Event` in `src/tools.rs`.
+summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The first line is `{"type":"session","id":"<session id>"}`. A run that fails before its session starts, for example on a broken config file or a missing key, prints one line instead: an `aborted` event with code `error`. The shapes come from `Event` in `src/tools.rs`.
 
 | `type` | Fields |
 | --- | --- |

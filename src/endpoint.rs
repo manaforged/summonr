@@ -299,6 +299,7 @@ use preset::preset;
 pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
 pub(crate) use resolve::default_seat;
 use resolve::hosted;
+pub(crate) use resolve::{Keys, is_set_up};
 pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
 pub(crate) use route::{Choice, Region, Route, Toggle, remembered, select, toggle};
 pub use server::{add_server, remove_server, set_default};

@@ -294,3 +294,30 @@ fn cron_run_takes_notify_for_this_run() {
     assert!(!text.contains("unknown option"), "{text}");
     assert!(text.contains("nosuch"), "{text}");
 }
+
+#[test]
+fn cron_add_sees_a_key_stored_for_a_route_name() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join(".summonr")).unwrap();
+    std::fs::write(
+        home.path().join(".summonr/credentials.toml"),
+        "zai-intl = \"fixture-key\"\n",
+    )
+    .unwrap();
+    let env = [("SUMMONR_SECRETS", "file")];
+    let args = |name, endpoint| ["add", name, "--manual", "-p", "hi", "-e", endpoint];
+    let (_, keyed) = cron(home.path(), &env, &args("keyed", "zai-intl"));
+    assert!(keyed.contains("added keyed"), "{keyed}");
+    assert!(!keyed.contains("no usable key"), "{keyed}");
+    let (_, bare) = cron(home.path(), &env, &args("bare", "deepseek"));
+    assert!(bare.contains("deepseek has no usable key"), "{bare}");
+    let shell = [
+        ("SUMMONR_SECRETS", "file"),
+        ("DEEPSEEK_API_KEY", "fixture-key"),
+    ];
+    let (_, from_shell) = cron(home.path(), &shell, &args("shell", "deepseek"));
+    assert!(
+        from_shell.contains("deepseek has no usable key"),
+        "a key only in the shell does not reach cron runs: {from_shell}"
+    );
+}

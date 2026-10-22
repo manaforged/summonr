@@ -127,19 +127,33 @@ pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
     }) {
         return Ok(named.clone());
     }
-    let hits: Vec<PathBuf> = sessions
+    let hits: Vec<(String, PathBuf)> = sessions
         .into_iter()
         .filter(|(session, _)| prefix(session, id) || (id.len() >= 5 && session.ends_with(id)))
-        .map(|(_, path)| path)
-        .filter(|path| path.is_file())
+        .filter(|(_, path)| path.is_file())
         .collect();
     match hits.as_slice() {
-        [only] => Ok(only.clone()),
+        [(_, only)] => Ok(only.clone()),
         [] => Err(Error::Config(format!("no session `{id}`"))),
-        _ => Err(Error::Config(format!(
-            "session id `{id}` is ambiguous; pass more of the id"
-        ))),
+        _ => Err(ambiguous(id, &hits)),
     }
+}
+
+fn ambiguous(id: &str, hits: &[(String, PathBuf)]) -> Error {
+    const SHOWN: usize = 5;
+    let mut named: Vec<&str> = hits
+        .iter()
+        .take(SHOWN)
+        .map(|(session, _)| session.as_str())
+        .collect();
+    let more = hits.len().saturating_sub(SHOWN).to_string() + " more";
+    if hits.len() > SHOWN {
+        named.push(&more);
+    }
+    Error::Config(format!(
+        "session id `{id}` is ambiguous; pass more of the id: {}",
+        named.join(", ")
+    ))
 }
 
 pub(crate) fn remove(id: &str) -> Result<String> {
@@ -152,23 +166,18 @@ pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
     let dir = if !id.is_empty() && exact.is_dir() {
         exact
     } else {
-        let hits: Vec<PathBuf> = ids_in(home)?
+        let hits: Vec<(String, PathBuf)> = ids_in(home)?
             .into_iter()
             .filter(|(session, _)| prefix(session, id))
-            .map(|(_, path)| path)
-            .filter(|path| path.is_file())
+            .filter(|(_, path)| path.is_file())
             .collect();
         match hits.as_slice() {
-            [only] => only
+            [(_, only)] => only
                 .parent()
                 .map(Path::to_path_buf)
                 .ok_or_else(|| Error::Config(format!("session `{id}` has no directory")))?,
             [] => return Err(Error::Config(format!("no session `{id}`"))),
-            _ => {
-                return Err(Error::Config(format!(
-                    "session id `{id}` is ambiguous; pass more of the id"
-                )));
-            }
+            _ => return Err(ambiguous(id, &hits)),
         }
     };
     let name = dir

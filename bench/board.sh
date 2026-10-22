@@ -15,9 +15,10 @@ got_harbor=$(harbor --version)
 [ "$got_harbor" = "$want_harbor" ] || { echo "harbor $got_harbor, but tools.lock pins harbor $want_harbor: uv tool install harbor==$want_harbor" >&2; exit 1; }
 jobs=$root/jobs
 dir=$jobs/$run
+. "$root/proxy-start.sh"
+start_apt_cache "$(python3 -c 'import level; print(level.APT_CACHE_PORT)')" "${BENCH_APT_CACHE:-$HOME/.cache/bench-apt-cache}"
 if [ -f "$root/pairs/$pair.proxy" ]; then
   proxy() { awk -v k="$1" '$1==k{print $2}' "$root/pairs/$pair.proxy"; }
-  . "$root/proxy-start.sh"
   start_proxy "$run" "$(proxy port)" "$(proxy upstream)" "$(proxy envfile)" "$(proxy keyenv)" $(awk '$1=="route"{print "--route", $2}' "$root/pairs/$pair.proxy")
   export BENCH_PROXY=http://host.docker.internal:$(proxy port) "$(proxy keyenv)=bench-proxy"
 fi

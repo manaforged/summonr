@@ -156,3 +156,21 @@ fn a_checkpoint_writes_the_tree_sidecar_when_the_trees_changed() {
     driver.checkpoint().unwrap();
     assert!(!sidecar.exists(), "unchanged trees are not rewritten");
 }
+
+#[test]
+fn a_second_goal_names_the_one_still_active_and_how_to_end_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver
+        .prepare_external_work("add a --version flag", Policy::Goal {}, &[])
+        .unwrap();
+    let error = driver
+        .prepare_external_work("print hello", Policy::Goal {}, &[])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("add a --version flag"), "{error}");
+    assert!(error.contains("/goal clear"), "{error}");
+    driver
+        .prepare_external_work("add a --version flag", Policy::Goal {}, &[])
+        .unwrap();
+}

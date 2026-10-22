@@ -121,9 +121,10 @@ impl SessionDriver {
                 ));
             }
             Some(work) if work.objective != text => {
-                return Err(DriverError::State(
-                    "another Work objective is already active".to_string(),
-                ));
+                return Err(DriverError::State(format!(
+                    "`{}` is still active; /goal clear or /steps clear ends it",
+                    work.objective
+                )));
             }
             Some(_) => {}
             None => self.set_work(text, policy)?,

@@ -100,9 +100,20 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
         })
 }
 
+const CONTEXT: &str = "ctx";
+const CACHE: &str = "cache";
+const BAR_CELLS: u16 = 8;
+
+fn meter_cells(caption: &str, percent: Option<u64>) -> usize {
+    percent.map_or(0, |percent| {
+        cell_width(caption) + usize::from(BAR_CELLS) + cell_width(&format!("{percent}%")) + 4
+    })
+}
+
 fn place_of(app: &App, view: &FooterView, width: usize) -> String {
-    let (notice, spend, elsewhere, _, cache_pct, _) = view;
-    let taken = cache_pct.map_or(0, |_| 42)
+    let (notice, spend, elsewhere, context_pct, cache_pct, _) = view;
+    let taken = meter_cells(CONTEXT, *context_pct)
+        + meter_cells(CACHE, *cache_pct)
         + elsewhere
             .as_ref()
             .map_or(0, |(note, _)| cell_width(note) + 2)
@@ -112,7 +123,7 @@ fn place_of(app: &App, view: &FooterView, width: usize) -> String {
             .map_or(0, |branch| cell_width(branch) + 4)
         + spend.as_deref().map_or(0, |cost| cell_width(cost) + 2)
         + notice.as_ref().map_or(0, |note| cell_width(&note.text) + 2);
-    crate::text::ellipsize(&app.info.workspace, width.saturating_sub(taken))
+    crate::text::ellipsize_start(&app.info.workspace, width.saturating_sub(taken))
 }
 
 fn footer_row(
@@ -213,14 +224,14 @@ fn footer_row(
         (
             false,
             Target::Context,
-            "ctx",
+            CONTEXT,
             context_pct,
             sigil::prelude::Token::Accent,
         ),
         (
             true,
             Target::Cache,
-            "cache",
+            CACHE,
             cache_pct,
             sigil::prelude::Token::Info11,
         ),
@@ -244,7 +255,7 @@ fn footer_row(
 }
 
 fn meter(caption: &str, percent: u64, fill: sigil::prelude::Token) -> NodeBuilder {
-    let bar = 64.0_f32;
+    let bar = f32::from(BAR_CELLS) * sigil::Host::CELL;
     container()
         .layout(
             LayoutStyle::flex_row()

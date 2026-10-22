@@ -5,7 +5,7 @@ pub mod summonr::askpass
 pub struct summonr::askpass::Request
 pub summonr::askpass::Request::prompt: alloc::string::String
 pub fn summonr::askpass::client(args: &[std::ffi::os_str::OsString]) -> i32
-pub fn summonr::askpass::env() -> alloc::vec::Vec<(alloc::string::String, alloc::string::String)>
+pub fn summonr::askpass::env(path: &str) -> alloc::vec::Vec<(alloc::string::String, alloc::string::String)>
 pub fn summonr::askpass::start(send: impl core::ops::function::Fn(summonr::askpass::Request) + core::marker::Send + 'static) -> summonr::Result<()>
 pub mod summonr::catalog
 pub enum summonr::catalog::Cost

@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import claude_agent
 import grok_plan
 import image_user
+import level
 import omp_agent
 import pi_agent
 import summonr_agent
@@ -90,6 +92,7 @@ class ImageUser(unittest.TestCase):
     def environment(self, found):
         environment = object.__new__(image_user.Docker)
         environment.default_user = None
+        environment.task_env_config = SimpleNamespace(docker_image=None)
 
         async def run(command, user=None, **_):
             return SimpleNamespace(return_code=0, stdout=found, stderr="")
@@ -139,6 +142,63 @@ class ImageUser(unittest.TestCase):
                     self.assertNotIn("/opt/lent", " ".join(command for command, _ in root) + " ".join(str(env) for _, env in root))
                     owned = {"summonr": "ln -sfn /opt/auth/summonr/credentials.toml ", "grok": "/opt/auth/grok/auth.json"}[name]
                     self.assertTrue(any(owned in command or owned in env.values() for command, env in root), root)
+
+
+class LevelImage(unittest.TestCase):
+    BASE = "debian:bookworm"
+
+    def setUp(self):
+        self.projects = []
+        self.compose = tempfile.TemporaryDirectory()
+        self.tag = asyncio.run(image_user.level_image(self.BASE))
+        subprocess.run(["docker", "rmi", "-f", self.tag], capture_output=True)
+
+    def tearDown(self):
+        for project in self.projects:
+            subprocess.run([*project, "down", "--volumes", "--remove-orphans"], capture_output=True)
+        subprocess.run(["docker", "rmi", "-f", self.tag], capture_output=True)
+        self.compose.cleanup()
+
+    def trial(self):
+        name = f"bench-proof-level-{len(self.projects)}"
+        environment = object.__new__(image_user.Docker)
+        environment.task_env_config = SimpleNamespace(docker_image=self.BASE)
+        environment._env_vars = SimpleNamespace(prebuilt_image_name=self.BASE)
+        compose = Path(self.compose.name) / f"{name}.yaml"
+        project = ["docker", "compose", "-p", name, "-f", str(compose)]
+        self.projects.append(project)
+        installed = []
+
+        async def resolve(service):
+            return subprocess.run([*project, "ps", "-q", service], capture_output=True, text=True).stdout.strip()
+
+        async def run(command, user=None, **_):
+            done = subprocess.run([*project, "exec", "-T", "main", "sh", "-c", command], capture_output=True, text=True)
+            return SimpleNamespace(return_code=done.returncode, stdout=done.stdout, stderr=done.stderr)
+
+        async def started(self, force_build):
+            compose.write_text(f'services:\n  main:\n    image: {self._env_vars.prebuilt_image_name}\n    command: ["sh", "-c", "sleep infinity"]\n')
+            subprocess.run([*project, "up", "-d"], check=True, capture_output=True)
+
+        async def ensure(environment, packages):
+            found = await run("[ -e /etc/bench-proof ] || { echo base > /etc/bench-proof && echo installed; }")
+            installed.extend(found.stdout.split())
+
+        environment._platform = SimpleNamespace(_resolve_service_container=resolve)
+        environment.exec = run
+        original = DockerEnvironment.start
+        DockerEnvironment.start = started
+        try:
+            asyncio.run(environment.start(False))
+        finally:
+            DockerEnvironment.start = original
+        asyncio.run(level.install(SimpleNamespace(ensure_system_dependencies=ensure), environment))
+        subprocess.run([*project, "down", "--rmi", "local", "--volumes", "--remove-orphans"], capture_output=True)
+        return environment._env_vars.prebuilt_image_name, installed
+
+    def test_later_trials_of_a_task_start_from_its_first_trials_base_install(self):
+        self.assertEqual(self.trial(), (self.BASE, ["installed"]))
+        self.assertEqual(self.trial(), (self.tag, []))
 
 
 class Skills(unittest.TestCase):

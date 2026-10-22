@@ -160,3 +160,24 @@ fn an_open_session_of_unchanged_size_is_served_from_the_index() {
         Some("/work/alpha")
     );
 }
+
+#[test]
+fn sessions_started_in_one_millisecond_are_named_when_their_short_id_is_ambiguous() {
+    const FIRST: &str = "01a16468026a70c39b593c8d424a8179";
+    const SECOND: &str = "01a16468026a7b40b5e58668d9b67cd8";
+    let home = tempfile::tempdir().unwrap();
+    session(home.path(), FIRST, "/work/alpha", 0);
+    let second = session(home.path(), SECOND, "/work/alpha", 0);
+    let error = resolve_in(home.path(), super::short(FIRST))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(FIRST) && error.contains(SECOND), "{error}");
+    assert_eq!(resolve_in(home.path(), &SECOND[..16]).unwrap(), second);
+    let removed = super::remove_in(home.path(), super::short(FIRST))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        removed.contains(FIRST) && removed.contains(SECOND),
+        "{removed}"
+    );
+}

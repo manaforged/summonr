@@ -8,6 +8,9 @@ DEBIAN_NAMES = {"ca_certificates": "ca-certificates", "xz": "xz-utils"}
 SNAPSHOT_LIST = "/etc/apt/bench-snapshot.list"
 HOMES = "/root /home/*"
 RC_FILES = (".bashrc", ".profile", ".bash_profile", ".bash_login", ".zshrc", ".zprofile")
+APT_DIR = "/etc/apt"
+APT_CACHE_HOST = "host.docker.internal"
+APT_CACHE_PORT = 3142
 
 
 HOSTS = (
@@ -22,8 +25,22 @@ def keep() -> str:
     return f'[ -s {TASK_PATH} ] || {{ printf %s "$PATH" > {TASK_PATH}; mkdir -p {RC_DIR}; {save}; }}'
 
 
+def apt_cache() -> str:
+    probe = f"#!/bin/bash\n(exec 3<>/dev/tcp/{APT_CACHE_HOST}/{APT_CACHE_PORT}) 2>/dev/null && echo http://{APT_CACHE_HOST}:{APT_CACHE_PORT} || echo DIRECT\n"
+    conf = f'Acquire::http::Proxy-Auto-Detect "{APT_DIR}/bench-proxy";\nDPkg::Options {{"--force-unsafe-io";}};\n'
+    encode = lambda text: base64.b64encode(text.encode()).decode()
+    return (
+        f"[ ! -d {APT_DIR}/apt.conf.d ] || {{ echo {encode(probe)} | base64 -d > {APT_DIR}/bench-proxy && chmod 755 {APT_DIR}/bench-proxy && "
+        f"echo {encode(conf)} | base64 -d > {APT_DIR}/apt.conf.d/00bench; }}"
+    )
+
+
 def record() -> str:
-    return f"{keep()}; {HOSTS}"
+    return f"{keep()}; {HOSTS}; {apt_cache()}"
+
+
+def recipe() -> str:
+    return "\n".join((record(), " ".join(PACKAGES), snapshot_install()))
 
 
 def restore() -> str:
@@ -75,3 +92,5 @@ async def install(agent, environment) -> None:
         await agent.ensure_system_dependencies(environment, PACKAGES)
     except Exception:
         await agent.exec_as_root(environment, command=snapshot_install())
+    if keep := getattr(environment, "keep_level", None):
+        await keep()

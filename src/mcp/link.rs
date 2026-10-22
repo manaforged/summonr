@@ -15,7 +15,6 @@ use super::catalog::{self, Listing};
 use super::config::Server;
 use super::conn::Conn;
 use super::form::Form;
-use super::journal::Journal;
 use super::status::McpState;
 use super::tool::Tool;
 use super::{Answer, McpProgress, McpUpdate};
@@ -27,7 +26,6 @@ pub(super) struct Link {
     fresh: std::sync::Mutex<Option<HashSet<String>>>,
     started: AtomicBool,
     detail: std::sync::Mutex<Option<String>>,
-    journal: Journal,
     pub(super) tools: Vec<Tool>,
 }
 
@@ -58,7 +56,6 @@ impl Link {
             fresh: std::sync::Mutex::new(None),
             started,
             detail: std::sync::Mutex::new(None),
-            journal: Journal::default(),
             tools,
         }))
     }
@@ -182,11 +179,6 @@ impl Link {
                 total,
                 message: message.map(str::to_string),
             })),
-            Notice::Message {
-                level,
-                logger,
-                data,
-            } => self.journal.append(&self.server.name, level, logger, data),
             Notice::Elicit { params, answer } => match Form::parse(&self.server.name, params) {
                 Some(form) => report(McpUpdate::Elicit {
                     form,
@@ -197,7 +189,7 @@ impl Link {
                     "summonr supports form elicitation with a flat schema".to_string(),
                 ))),
             },
-            Notice::Unknown => {}
+            Notice::Message { .. } | Notice::Unknown => {}
         }
     }
 

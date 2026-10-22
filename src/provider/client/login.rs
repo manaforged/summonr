@@ -34,6 +34,7 @@ impl Client {
         let timeouts = leyline::TimeoutConfig::new()
             .total(crate::limits::limits().stream_total())
             .connect(crate::limits::limits().connect())
+            .response_header(opts.idle_timeout)
             .read(opts.idle_timeout);
         let builder = leyline::Session::builder().timeout(timeouts);
         let mut headers = headers;

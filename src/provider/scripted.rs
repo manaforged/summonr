@@ -10,6 +10,7 @@ use super::{AssistantMessage, CompletionRequest, Message, Provider, StopReason, 
 pub(crate) enum Reply {
     Text(&'static str),
     Call(ToolCall),
+    Calls(Vec<ToolCall>),
     Fail(&'static str),
 }
 
@@ -82,6 +83,11 @@ impl Provider for Scripted {
                 }),
                 Some(Reply::Call(call)) => Ok(AssistantMessage {
                     tool_calls: vec![call],
+                    stop_reason: StopReason::ToolCalls,
+                    ..AssistantMessage::default()
+                }),
+                Some(Reply::Calls(calls)) => Ok(AssistantMessage {
+                    tool_calls: calls,
                     stop_reason: StopReason::ToolCalls,
                     ..AssistantMessage::default()
                 }),

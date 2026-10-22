@@ -4,11 +4,16 @@ summonr is a terminal coding agent written in Rust. This book holds the task pag
 
 ## Reading order
 
-1. The [README](../../README.md) covers requirements, install, and the first session.
-2. [Extending summonr](extending.md) shows how to add a skill, an MCP server, a hook, or a CLI.
-3. The [reference](reference.md) lists every flag, slash command, config key, exit code, and environment variable.
-4. The [API map](../api.md) is for agents and tools that drive summonr.
-5. [Architecture](architecture.md) explains how a turn runs.
+1. [Quick start](quickstart.md): install, sign in, and run your first goal.
+2. [Models and sign-in](models.md): providers, coding plans, local servers, and where keys live.
+3. [Goals and checks](goals.md): checks, goals, steps, budgets, exit codes, and worktrees.
+4. [Schedules and chat](automation.md): cron jobs, webhooks, Telegram, and GitHub.
+5. [Using the terminal](terminal.md): panes, sessions, child sessions, mail, and memory.
+6. [Extending summonr](extending.md): skills, MCP servers, hooks, CLIs, and project instructions.
+7. [Safety and policy](safety.md): what runs without asking, confirm levels, and policy files.
+8. The [reference](reference.md) lists every flag, slash command, config key, exit code, and environment variable.
+9. The [API map](../api.md) is for agents and tools that drive summonr.
+10. [Architecture](architecture.md) explains how a turn runs.
 
 ## Internals
 

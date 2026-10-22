@@ -100,13 +100,18 @@ fn usable(file: &File, name: &str) -> std::result::Result<(), String> {
     }
 }
 
-fn set_up_in(file: &File, name: &str) -> bool {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Keys {
+    Any,
+    Stored,
+}
+
+fn set_up_in(file: &File, name: &str, keys: Keys) -> bool {
     resolve(Some(name), None, Need::Seat).is_ok_and(|endpoint| {
         endpoint.wire != Wire::Decisions
-            && (endpoint
-                .source
-                .is_some_and(|source| source != Source::Builtin)
-                || (file.endpoint.contains_key(name) && endpoint.keyless())
+            && (endpoint.source.is_some_and(|source| {
+                source != Source::Builtin && !(keys == Keys::Stored && source == Source::Env)
+            }) || (file.endpoint.contains_key(name) && endpoint.keyless())
                 || endpoint
                     .oauth
                     .as_ref()
@@ -115,7 +120,10 @@ fn set_up_in(file: &File, name: &str) -> bool {
 }
 
 pub(super) fn first_ready(file: &File) -> Option<String> {
-    names().ok()?.into_iter().find(|name| set_up_in(file, name))
+    names()
+        .ok()?
+        .into_iter()
+        .find(|name| set_up_in(file, name, Keys::Any))
 }
 
 #[must_use]
@@ -126,8 +134,13 @@ pub fn set_up() -> Vec<String> {
     names()
         .unwrap_or_default()
         .into_iter()
-        .filter(|name| set_up_in(&file, name))
+        .filter(|name| set_up_in(&file, name, Keys::Any))
         .collect()
+}
+
+#[must_use]
+pub(crate) fn is_set_up(name: &str, keys: Keys) -> bool {
+    config::file().is_ok_and(|file| set_up_in(&file, name, keys))
 }
 
 pub fn ordered_names() -> Result<Vec<String>> {

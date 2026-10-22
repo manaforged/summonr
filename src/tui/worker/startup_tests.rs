@@ -111,3 +111,50 @@ async fn a_model_switch_becomes_the_last_used_seat() {
         Some(&crate::recent::Seat::new("openai", "gpt-5.5"))
     );
 }
+
+#[tokio::test]
+async fn a_session_opened_with_an_unfinished_goal_says_how_to_go_on() {
+    let home = tempfile::tempdir().expect("session home");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let client = Client::new("test", "http://127.0.0.1:9/v1").expect("local client");
+    let driver = SessionDriver::open(home.path(), workspace.path(), "m", "system", None)
+        .expect("session driver");
+    let mut loop_ = Loop::open(client, "m", workspace.path(), "system", driver).expect("loop");
+    loop_
+        .select_goal("add a --version flag", &[])
+        .expect("goal");
+    loop_.set_mode(crate::RunMode::Auto);
+    let info = Info {
+        version: String::new(),
+        model: "m".to_string(),
+        relay: None,
+        session: loop_.session_id(),
+        endpoint: "openai".to_string(),
+        pick: None,
+        prefs: crate::prefs::Prefs::default(),
+        splash: false,
+        inline: false,
+        strict: false,
+        workspace: workspace.path().display().to_string(),
+        workflow: None,
+        config: None,
+    };
+    let (commands, receiver) = unbounded_channel();
+    let (ui, mut inbox) = unbounded_channel();
+    commands.send(Cmd::Quit).expect("quit");
+    worker(loop_, receiver, ui, info).await;
+    let notes: Vec<String> = std::iter::from_fn(|| inbox.try_recv().ok())
+        .filter_map(|msg| match msg {
+            Msg::System(text) => Some(text),
+            _msg => None,
+        })
+        .collect();
+    assert!(
+        notes
+            .iter()
+            .any(|text| text.contains("add a --version flag")
+                && text.contains("same text")
+                && text.contains("/goal clear")),
+        "{notes:?}"
+    );
+}

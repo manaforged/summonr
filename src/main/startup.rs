@@ -75,6 +75,7 @@ fn signal(code: i32) -> String {
 }
 
 async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
+    summonr::check_config()?;
     if let Some(code) = early(&args, log).await {
         return code;
     }

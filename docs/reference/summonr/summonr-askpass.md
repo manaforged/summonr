@@ -27,7 +27,7 @@
 
 ### `env`
 
-<pre>pub fn <a href="#env">env</a>() -&gt; Vec&lt;(String, String)&gt;</pre>
+<pre>pub fn <a href="#env">env</a>(path: &amp;str) -&gt; Vec&lt;(String, String)&gt;</pre>
 
 
 ### `start`

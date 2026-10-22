@@ -168,3 +168,134 @@ fn a_save_writes_only_the_settings_that_changed() {
         assert!(!text.contains(key), "{key}: {text}");
     }
 }
+
+#[test]
+fn a_saved_workflow_loads_back_with_its_seats() {
+    use crate::workflow::{Role, Seat, Workflow};
+    let (_dir, path) = written("# mine\n");
+    let workflow = Workflow {
+        name: "fast".to_string(),
+        seats: [
+            (
+                Role::Scout,
+                Seat {
+                    endpoint: "zai".to_string(),
+                    model: None,
+                },
+            ),
+            (
+                Role::Review,
+                Seat {
+                    endpoint: "anthropic".to_string(),
+                    model: Some("claude-sonnet-5".to_string()),
+                },
+            ),
+        ]
+        .into(),
+    };
+    super::save_workflow(&path, &workflow).unwrap();
+    super::save_default_workflow(&path, "fast").unwrap();
+    let file = parse(&path).unwrap();
+    assert_eq!(crate::workflow::from_file(&file, "fast").unwrap(), workflow);
+    assert_eq!(file.workflow.as_deref(), Some("fast"));
+    assert!(std::fs::read_to_string(&path).unwrap().contains("# mine"));
+}
+
+#[test]
+fn provider_choices_and_module_switches_load_back() {
+    let (_dir, path) = written("");
+    super::save_provider(&path, "zai", &[("access", "plan"), ("region", "intl")]).unwrap();
+    super::save_module(&path, crate::modules::ModuleId::Mail, false).unwrap();
+    let file = parse(&path).unwrap();
+    let choice = file.provider.get("zai").expect("zai row");
+    assert_eq!(
+        format!("{:?} {:?}", choice.access, choice.region),
+        "Some(Plan) Some(Intl)"
+    );
+    assert_eq!(
+        file.modules,
+        [(crate::modules::ModuleId::Mail, false)].into()
+    );
+}
+
+#[test]
+fn a_second_named_endpoint_keeps_the_first_and_a_taken_name_is_refused() {
+    let (_dir, path) = written("");
+    let row = |url: &str| {
+        let mut table = toml_edit::Table::new();
+        table["base_url"] = toml_edit::value(url);
+        toml_edit::Item::Table(table)
+    };
+    let endpoint = super::Section::Endpoint;
+    assert!(super::save_named(&path, endpoint, "one", row("http://127.0.0.1:1/v1")).unwrap());
+    assert!(super::save_named(&path, endpoint, "two", row("http://127.0.0.1:2/v1")).unwrap());
+    assert!(!super::save_named(&path, endpoint, "one", row("http://127.0.0.1:3/v1")).unwrap());
+    let file = parse(&path).unwrap();
+    assert_eq!(
+        file.endpoint.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["one", "two"]
+    );
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("127.0.0.1:1/v1") && !text.contains("127.0.0.1:3/v1"),
+        "{text}"
+    );
+}
+
+#[test]
+fn write_roots_accumulate_once_each_and_keep_absolute_paths_whole() {
+    let (_dir, path) = written("write_roots = [\"~/code\"]\n");
+    let outside = tempfile::tempdir().unwrap();
+    let dir = outside.path().display().to_string();
+    super::save_write_root(&path, &dir).unwrap();
+    super::save_write_root(&path, &dir).unwrap();
+    super::save_write_root(&path, "relative/dir").unwrap();
+    let file = parse(&path).unwrap();
+    assert_eq!(file.write_roots, ["~/code", dir.as_str(), "relative/dir"]);
+}
+
+#[test]
+fn a_write_roots_value_that_is_not_a_list_is_refused() {
+    let (_dir, path) = written("write_roots = \"~/code\"\n");
+    let error = super::save_write_root(&path, "/opt/work").expect_err("not an array");
+    assert!(error.to_string().contains("must be an array"), "{error}");
+}
+
+#[test]
+fn a_rebound_hotkey_survives_a_save() {
+    let (_dir, path) = written("");
+    let mut prefs = crate::prefs::load_from(&path).unwrap();
+    let pane = crate::prefs::Hotkey::Pane;
+    let key = ('a'..='z')
+        .find(|key| {
+            prefs.hotkeys.action(*key) != Some(pane)
+                && prefs.clone().hotkeys.assign(pane, *key, false)
+        })
+        .expect("a free key");
+    assert!(prefs.hotkeys.assign(pane, key, false));
+    crate::prefs::save_in(&path, &prefs).unwrap();
+    let loaded = crate::prefs::load_from(&path).unwrap();
+    assert_eq!(loaded.hotkeys.action(key), Some(pane));
+}
+
+#[test]
+fn a_workflow_saves_next_to_an_inline_workflows_table() {
+    use crate::workflow::{Role, Seat, Workflow};
+    let (_dir, path) = written("workflows = { old = { scout = \"zai\" } }\n");
+    let workflow = Workflow {
+        name: "new".to_string(),
+        seats: [(
+            Role::Judge,
+            Seat {
+                endpoint: "anthropic".to_string(),
+                model: None,
+            },
+        )]
+        .into(),
+    };
+    super::save_workflow(&path, &workflow).unwrap();
+    let file = parse(&path).unwrap();
+    assert_eq!(crate::workflow::from_file(&file, "new").unwrap(), workflow);
+    let old = crate::workflow::from_file(&file, "old").unwrap();
+    assert_eq!(old.seats[&Role::Scout].endpoint, "zai");
+}

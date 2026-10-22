@@ -2,6 +2,7 @@ use super::preset::presets;
 use super::*;
 
 mod pick;
+pub(crate) use pick::{Keys, is_set_up};
 pub(crate) use pick::{choose, default_seat};
 use pick::{first_ready, last_used};
 pub use pick::{ordered_names, set_up};

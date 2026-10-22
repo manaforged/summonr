@@ -164,7 +164,7 @@ fn serve(mut stream: std::os::unix::net::UnixStream, send: &impl Fn(Request)) {
 }
 
 #[cfg(unix)]
-pub fn env() -> Vec<(String, String)> {
+pub fn env(path: &str) -> Vec<(String, String)> {
     BROKER.get().map_or_else(Vec::new, |broker| {
         let helper = broker.helper.display().to_string();
         vec![
@@ -175,7 +175,7 @@ pub fn env() -> Vec<(String, String)> {
                 "SUMMONR_ASKPASS".to_string(),
                 broker.socket.display().to_string(),
             ),
-            ("PATH".to_string(), shim_path(&broker.helper)),
+            ("PATH".to_string(), shim_path(&broker.helper, path)),
         ]
     })
 }
@@ -192,21 +192,20 @@ pub(crate) fn on_path(name: &str) -> Option<std::path::PathBuf> {
 }
 
 #[cfg(unix)]
-fn shim_path(helper: &Path) -> String {
-    let path = std::env::var_os("PATH").unwrap_or_default();
+fn shim_path(helper: &Path, path: &str) -> String {
     let dirs = helper
         .parent()
         .map(Path::to_path_buf)
         .into_iter()
-        .chain(std::env::split_paths(&path));
+        .chain(std::env::split_paths(path));
     std::env::join_paths(dirs).map_or_else(
-        |_| std::env::var("PATH").unwrap_or_default(),
+        |_| path.to_string(),
         |path| path.to_string_lossy().into_owned(),
     )
 }
 
 #[cfg(not(unix))]
-pub fn env() -> Vec<(String, String)> {
+pub fn env(_path: &str) -> Vec<(String, String)> {
     Vec::new()
 }
 

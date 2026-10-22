@@ -99,10 +99,7 @@ async fn until_signal<T>(work: impl std::future::Future<Output = T>) -> Result<T
 
 async fn run(args: Option<cli::Args>) -> summonr::Result<i32> {
     match args {
-        Some(args) => {
-            summonr::check_config()?;
-            startup::run(args).await
-        }
+        Some(args) => startup::run(args).await,
         None => until_signal(async { summonr::tui::profile(std::env::args().skip(2)) })
             .await
             .map_or_else(Ok, |done| done.map(|()| 0)),

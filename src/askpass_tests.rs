@@ -9,7 +9,7 @@ fn sudo_in_a_command_asks_through_the_broker() {
     let resolved = std::process::Command::new("sh")
         .args(["-c", "command -v sudo"])
         .env_clear()
-        .envs(env())
+        .envs(env(&std::env::var("PATH").unwrap_or_default()))
         .output()
         .unwrap();
     let shim = String::from_utf8(resolved.stdout).unwrap();
@@ -71,4 +71,18 @@ fn the_asker_comes_from_the_peer_process_not_the_client() {
     let parent = String::from_utf8_lossy(&parent.stdout).trim().to_string();
     assert_eq!(asker, parent.chars().take(256).collect::<String>());
     assert!(!asker.contains("sudo -A true"));
+}
+
+#[cfg(unix)]
+#[test]
+fn the_shim_goes_in_front_of_the_path_commands_were_given() {
+    start(|request| request.answer(None)).unwrap();
+    let given = "/plugins/tools/bin:/usr/bin:/bin";
+    let path = env(given)
+        .into_iter()
+        .find_map(|(key, value)| (key == "PATH").then_some(value))
+        .unwrap();
+    let helper = &BROKER.get().unwrap().helper;
+    let shim = helper.parent().unwrap().display().to_string();
+    assert_eq!(path, format!("{shim}:{given}"));
 }

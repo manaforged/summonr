@@ -157,6 +157,8 @@ fn main() {
         #[cfg(unix)]
         secrets::secret_values_never_reach_the_model_but_commands_still_load_them,
         #[cfg(unix)]
+        secrets::an_ssh_agent_reaches_commands_but_other_variables_do_not,
+        #[cfg(unix)]
         search_index::a_name_search_outside_the_workspace_answers_from_the_index_and_checks_the_disk,
         protocol::the_client_offers_the_current_spec_with_roots,
         protocol::a_server_on_an_unknown_version_is_refused,
@@ -165,6 +167,7 @@ fn main() {
         protocol::progress_reaches_the_event_stream,
         protocol::progress_keeps_a_slow_call_alive,
         protocol::server_log_messages_go_to_the_log_file,
+        protocol::startup_log_messages_go_to_the_log_file,
         protocol::an_aborted_call_is_cancelled,
         protocol::a_cancel_sent_at_exit_reaches_a_slow_server,
         transport::a_call_with_no_reply_is_cancelled_at_the_timeout,

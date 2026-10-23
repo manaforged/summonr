@@ -1,6 +1,6 @@
 [package]
 name = "summonr"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -17,7 +17,7 @@ publish = false
 members = ["crates/auth"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"

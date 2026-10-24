@@ -35,12 +35,12 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        drain_steer(&mut self.steer, &mut self.session, messages)?;
+        super::steer::drain_steer(&mut self.steer, &mut self.session, messages)?;
         if let Some(shared) = self.steer_shared.clone() {
             let mut queue = shared
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            drain_steer(&mut queue, &mut self.session, messages)?;
+            super::steer::drain_steer(&mut queue, &mut self.session, messages)?;
         }
         let (mail, overflow) = self.take_peer_mail(MAIL_PER_ROUND)?;
         for mail in mail {
@@ -362,21 +362,6 @@ impl<P: Provider> Loop<P> {
 #[cfg(test)]
 #[path = "retry_tests.rs"]
 mod tests;
-
-fn drain_steer(
-    queue: &mut std::collections::VecDeque<UserInput>,
-    session: &mut SessionDriver,
-    messages: &mut Vec<Message>,
-) -> Result<()> {
-    while let Some(input) = queue.pop_front() {
-        if let Err(error) = session.steer(&input) {
-            queue.push_front(input);
-            return Err(super::session_err(error));
-        }
-        messages.push(Message::user(input));
-    }
-    Ok(())
-}
 
 fn retryable_failure(failure: &crate::error::ProviderFailure) -> bool {
     failure.partial_output

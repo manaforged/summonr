@@ -4,20 +4,27 @@ from pathlib import Path
 
 from stats import requests
 
-SETUP = {"AgentSetupTimeoutError"}
+SETUP = {"AgentSetupTimeoutError", "BaseInstallError", "HarnessInstallError"}
 STOPPED = {"CancelledError"}
-PROVIDER = {"ApiRateLimitError": lambda status: status == 429, "NetworkConnectionError": lambda status: status is None or status >= 500}
+STANDS = {"AgentTimeoutError"}
 
 
-def eligible(job, by_label):
+def cut(kind, calls):
+    last = calls[-1].get("status") if calls else 0
+    return last == 429 or (last or 0) >= 500 or (kind == "NetworkConnectionError" and bool(calls) and last is None)
+
+
+def eligible(job, by_label, skip=()):
     found = []
     for result in sorted(Path(job).glob("*/result.json")):
+        if result.parent.name in skip:
+            continue
         data = json.loads(result.read_text())
         kind = (data.get("exception_info") or {}).get("exception_type")
-        calls = by_label.get(data["trial_name"])
-        seen = kind in PROVIDER and any(PROVIDER[kind](call.get("status")) for call in calls or [])
-        if kind and (kind in SETUP or seen or not calls):
-            found.append((data["trial_name"], kind))
+        calls = by_label.get(data["trial_name"]) or []
+        solved = (((data.get("verifier_result") or {}).get("rewards") or {}).get("reward") or 0) >= 1
+        if not solved and kind not in STANDS and (kind in SETUP or cut(kind, calls) or (kind and not calls)):
+            found.append((data["trial_name"], kind or "-"))
     return found
 
 
@@ -29,11 +36,15 @@ def unfinished(trial):
     return kind in STOPPED or (not kind and not data.get("verifier_result"))
 
 
-def set_aside(job, by_label, rerun):
+def aside(job, by_label, rerun):
     job = Path(job)
-    move(job, [f"dropped {path.name}" for path in sorted(job.iterdir()) if path.is_dir() and unfinished(path)])
-    if rerun:
-        move(job, [f"rerun {name} {kind}" for name, kind in eligible(job, by_label)])
+    dropped = [path.name for path in sorted(job.iterdir()) if path.is_dir() and unfinished(path)]
+    reruns = [f"rerun {name} {kind}" for name, kind in eligible(job, by_label, dropped)] if rerun else []
+    return [f"dropped {name}" for name in dropped] + reruns
+
+
+def set_aside(job, by_label, rerun):
+    move(Path(job), aside(job, by_label, rerun))
 
 
 def move(job, lines):
@@ -46,4 +57,8 @@ def move(job, lines):
 
 if __name__ == "__main__":
     log = Path(sys.argv[2])
-    set_aside(sys.argv[1], requests([log]) if log.is_file() else {}, len(sys.argv) > 3 and sys.argv[3] == "--rerun")
+    lines = aside(sys.argv[1], requests([log]) if log.is_file() else {}, "--rerun" in sys.argv[3:])
+    if "--move" in sys.argv[3:]:
+        move(Path(sys.argv[1]), lines)
+    else:
+        print("\n".join(lines))

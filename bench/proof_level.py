@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -61,8 +62,8 @@ class Level(Tmp):
 
 class Install(unittest.TestCase):
     class Agent:
-        def __init__(self, fails):
-            self.fails, self.sent = fails, []
+        def __init__(self, fails, snapshot_fails=False):
+            self.fails, self.snapshot_fails, self.sent = fails, snapshot_fails, []
 
         async def ensure_system_dependencies(self, environment, packages):
             self.sent.append(("packages", packages))
@@ -71,6 +72,13 @@ class Install(unittest.TestCase):
 
         async def exec_as_root(self, environment, command):
             self.sent.append(("root", command))
+            if self.snapshot_fails:
+                raise RuntimeError("Command failed (exit 1): sed -n")
+
+    def test_an_install_that_fails_both_ways_is_a_setup_error_that_keeps_apts_message(self):
+        with self.assertRaises(level.BaseInstallError) as caught:
+            asyncio.run(level.install(self.Agent(fails=True, snapshot_fails=True), None))
+        self.assertIn("404 Not Found", str(caught.exception))
 
     def test_a_mirror_that_lost_its_packages_falls_back_to_the_images_pinned_snapshot(self):
         agent = self.Agent(fails=True)
@@ -79,6 +87,23 @@ class Install(unittest.TestCase):
         self.assertEqual((packages, kind), (level.PACKAGES, "root"))
         self.assertIn("snapshot.debian.org", command)
         self.assertTrue(command.endswith("install -y -qq ca-certificates curl git ripgrep xz-utils unzip bash coreutils python3 nodejs npm"))
+
+    def test_a_trial_that_starts_from_its_tasks_snapshot_installs_nothing(self):
+        agent = self.Agent(fails=False)
+        asyncio.run(level.install(agent, SimpleNamespace(leveled=True)))
+        self.assertEqual(agent.sent, [])
+
+    def test_a_failed_harness_install_is_a_setup_error(self):
+        with self.assertRaises(level.HarnessInstallError) as caught, level.harness():
+            raise RuntimeError("npm ERR! 429 Too Many Requests")
+        self.assertIn("429", str(caught.exception))
+
+    def test_the_parity_probe_sees_a_package_version_change(self):
+        fake = Path(tempfile.mkdtemp())
+        (fake / "dpkg-query").write_text('#!/bin/sh\ncase "$3" in *Version*) echo "curl=$V" ;; *) echo curl ;; esac\n')
+        (fake / "dpkg-query").chmod(0o755)
+        line = lambda v: [l for l in subprocess.run(["sh", "-c", level.PROBE], env={"PATH": f"{fake}:/usr/bin:/bin", "V": v}, capture_output=True, text=True).stdout.splitlines() if l.startswith("dpkg=")]
+        self.assertNotEqual(line("1.0"), line("2.0"))
 
     def test_a_working_mirror_installs_once(self):
         agent = self.Agent(fails=False)

@@ -245,7 +245,7 @@ impl ToolRegistry {
                     call.function.name
                 )))
             }
-            Some(kind) if self.enabled(kind) => self.dispatch(kind, &call).await,
+            Some(kind) if self.enabled(kind) => self.fit_output(self.dispatch(kind, &call).await),
             Some(kind) if kind != Builtin::Task => Err(Error::Denied(format!(
                 "tool `{}` is unavailable in the current mode",
                 call.function.name

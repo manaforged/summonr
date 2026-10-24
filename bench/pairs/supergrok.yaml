@@ -1,6 +1,7 @@
 n_attempts: 3
 n_concurrent_trials: 4
 timeout_multiplier: 1.0
+retry: {max_retries: 2, include_exceptions: [BaseInstallError, HarnessInstallError, AgentSetupTimeoutError]}
 environment:
   import_path: image_user:Docker
   mounts:

@@ -22,7 +22,7 @@ Typing `/` opens the command list above the composer. Each row shows the `/comma
 
 While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it runs), the round, the seconds so far, the output rate, and the queue count. The composer status counts waiting input, as in `2 queued, ↑ edits`.
 
-A message you send during a turn goes into the running turn. The model reads it after its current tool calls. The message waits in the queue for the next turn instead when:
+A message you send during a turn goes into the running turn. The model reads it after its current tool calls. It carries a note that asks the model to answer it in its next reply. The message waits in the queue for the next turn instead when:
 
 - an approval or a question is open,
 - earlier messages or commands still wait, or

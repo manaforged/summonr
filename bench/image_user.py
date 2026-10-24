@@ -15,12 +15,14 @@ COMPOSE_PROJECT_LABEL = "com.docker.compose.project"
 class Docker(DockerEnvironment):
     image_user = None
     level_tag = None
+    leveled = False
     _level_locks: dict[str, asyncio.Lock] = {}
 
     async def start(self, force_build: bool):
         base = self.task_env_config.docker_image
         if base and (leveled := await level_image(base)) and await engine("image", "inspect", leveled):
             self._env_vars.prebuilt_image_name = leveled
+            self.leveled = True
         await super().start(force_build)
         if base and self._env_vars.prebuilt_image_name == base:
             self.level_tag = await level_image(base)
@@ -32,7 +34,10 @@ class Docker(DockerEnvironment):
             return
         async with self._level_locks.setdefault(self.level_tag, asyncio.Lock()):
             if await engine("image", "inspect", self.level_tag) is None:
-                await engine("commit", "--change", f"LABEL {COMPOSE_PROJECT_LABEL}=", await self._platform._resolve_service_container("main"), self.level_tag)
+                try:
+                    await engine("commit", "--change", f"LABEL {COMPOSE_PROJECT_LABEL}=", await self._platform._resolve_service_container("main"), self.level_tag, check=True)
+                except RuntimeError as failed:
+                    self.logger.warning(f"{self.level_tag} not kept: {failed}")
 
     @contextlib.contextmanager
     def with_default_user(self, user):
@@ -40,10 +45,14 @@ class Docker(DockerEnvironment):
             yield
 
 
-async def engine(*args: str) -> str | None:
-    process = await asyncio.create_subprocess_exec(*Docker._engine_cmd(*args), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-    out, _ = await process.communicate()
-    return out.decode().strip() if process.returncode == 0 else None
+async def engine(*args: str, check: bool = False) -> str | None:
+    process = await asyncio.create_subprocess_exec(*Docker._engine_cmd(*args), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    out, err = await process.communicate()
+    if process.returncode == 0:
+        return out.decode().strip()
+    if check:
+        raise RuntimeError(f"docker {args[0]} failed: {err.decode().strip()}")
+    return None
 
 
 async def level_image(base: str) -> str | None:

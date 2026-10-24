@@ -151,18 +151,15 @@ pub(super) fn named_model(endpoint: &str, model: &str) -> String {
     model.to_string()
 }
 
-#[cfg(not(test))]
 pub(super) fn env_key(names: &[&str]) -> Option<String> {
+    if cfg!(test) && std::env::var_os("SUMMONR_LIVE_KEYS").is_none() {
+        return None;
+    }
     names.iter().find_map(|name| {
         std::env::var(name)
             .ok()
             .filter(|value| !value.trim().is_empty())
     })
-}
-
-#[cfg(test)]
-pub(super) fn env_key(_names: &[&str]) -> Option<String> {
-    None
 }
 
 pub(super) fn trim_slash(url: &str) -> String {

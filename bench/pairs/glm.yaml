@@ -1,6 +1,7 @@
 n_attempts: 1
 n_concurrent_trials: 6
 timeout_multiplier: 1.0
+retry: {max_retries: 2, include_exceptions: [BaseInstallError, HarnessInstallError, AgentSetupTimeoutError]}
 environment:
   import_path: image_user:Docker
   kwargs: {extra_hosts: "host.docker.internal:host-gateway"}
@@ -9,7 +10,7 @@ agents:
     n_concurrent: 1
     override_timeout_sec: 21600
     model_name: zai/glm-5.3-flash
-    kwargs: {version: "${pi}", reasoning_effort: high}
+    kwargs: {version: "${pi}", node: "${nvm_node}", reasoning_effort: high}
     env: {ZAI_API_KEY: "$${ZAI_API_KEY}", BENCH_BASE: "${BENCH_PROXY}/pi/v1"}
   - import_path: hermes_agent:HermesCli
     n_concurrent: 1
@@ -21,7 +22,7 @@ agents:
     n_concurrent: 1
     override_timeout_sec: 21600
     model_name: zai/glm-5.3-flash
-    kwargs: {version: "${opencode2}", variant: high}
+    kwargs: {version: "${opencode2}", node: "${nvm_node}", variant: high}
     env: {ZHIPU_API_KEY: "$${ZAI_API_KEY}", BENCH_BASE: "${BENCH_PROXY}/opencode2/v1"}
   - import_path: omp_agent:Omp
     n_concurrent: 1

@@ -19,13 +19,6 @@ const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 const FILE: &str = "credentials.toml";
 const LOCKED: &str = "the keychain did not answer; unlock it";
-#[cfg_attr(
-    test,
-    expect(
-        dead_code,
-        reason = "discover() is elided under test, so the choice parser has no caller"
-    )
-)]
 const CHOICES: &str = "secrets must be \"file\" or \"keychain\"";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,11 +48,8 @@ enum Backend {
     File,
     #[cfg(any(target_os = "macos", all(test, unix)))]
     #[cfg_attr(
-        test,
-        expect(
-            dead_code,
-            reason = "discover() is elided under test, so platform() never builds this"
-        )
+        all(test, not(target_os = "macos")),
+        expect(dead_code, reason = "only macOS builds the security backend")
     )]
     Security(PathBuf),
     #[cfg(not(target_os = "macos"))]
@@ -74,8 +64,14 @@ pub(crate) struct Store {
 }
 
 impl Store {
-    #[cfg(not(test))]
     pub(crate) fn discover() -> Result<Self> {
+        #[cfg(test)]
+        if std::env::var_os("SUMMONR_LIVE_KEYS").is_none() {
+            let file = std::env::temp_dir()
+                .join(format!("summon-test-{}", std::process::id()))
+                .join(FILE);
+            return Ok(Self::file_with_seal(file.clone(), test_seal(&file)));
+        }
         let file = crate::prompt::summonr_home()?.join(FILE);
         let choice = match std::env::var("SUMMONR_SECRETS") {
             Ok(choice) => choice,
@@ -87,14 +83,6 @@ impl Store {
             seal: None,
             wrap_tool: None,
         })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn discover() -> Result<Self> {
-        let file = std::env::temp_dir()
-            .join(format!("summon-test-{}", std::process::id()))
-            .join(FILE);
-        Ok(Self::file_with_seal(file.clone(), test_seal(&file)))
     }
 
     #[cfg(test)]
@@ -251,13 +239,6 @@ impl Store {
     }
 }
 
-#[cfg_attr(
-    test,
-    expect(
-        dead_code,
-        reason = "discover() is elided under test, so nothing parses the choice"
-    )
-)]
 fn backend(choice: &str) -> Result<Backend> {
     match choice.trim().to_ascii_lowercase().as_str() {
         "" | "file" => Ok(Backend::File),
@@ -281,13 +262,6 @@ fn native_get(name: &str) -> Result<Option<String>> {
     }
 }
 
-#[cfg_attr(
-    test,
-    expect(
-        dead_code,
-        reason = "discover() is elided under test, so backend() never asks for it"
-    )
-)]
 fn platform() -> Backend {
     #[cfg(target_os = "macos")]
     {

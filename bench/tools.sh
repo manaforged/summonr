@@ -22,6 +22,7 @@ if [ -n "$src" ]; then
     ${sigil:+-v "$sigil":/sigil:ro} \
     -v "$HOME/.cargo/git:/root/.cargo/git" \
     -v "$HOME/.cargo/registry:/root/.cargo/registry" \
+    -v "$HOME/.cache/bench-summonr-target:/tmp/summonr-target" \
     "alpine:$(pin alpine)" sh -euc "
 apk add -q --no-cache curl ca-certificates git bash make cmake clang clang-dev g++ musl-dev pkgconf linux-headers perl >/dev/null
 curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable >/dev/null

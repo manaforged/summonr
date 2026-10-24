@@ -275,3 +275,21 @@ fn a_read_only_registry_keeps_the_parent_tool_list() {
     tools.contain_read_only();
     assert_eq!(names(&tools), parent);
 }
+
+#[test]
+fn builtin_results_share_the_output_budget() {
+    let line = "x".repeat(120);
+    let body: String = (0..1000).map(|n| format!("{n:04}{line}\n")).collect();
+    let (_dir, tools) = workspace(&[("big.txt", body.as_str())]);
+    let text = run(&tools, "read", serde_json::json!({ "path": "big.txt" }));
+    assert!(text.len() <= 50 * 1024, "{} bytes", text.len());
+    assert!(text.contains("[full output: "), "{}", &text[..200]);
+    let saved = text
+        .split("[full output: ")
+        .nth(1)
+        .and_then(|rest| rest.split(" (").next())
+        .unwrap();
+    let full = std::fs::read_to_string(saved).unwrap();
+    assert!(full.len() > text.len(), "{} <= {}", full.len(), text.len());
+    assert!(full.contains("0300xxxx"), "{saved}");
+}

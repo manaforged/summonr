@@ -5,7 +5,7 @@ from typing import override
 import level
 from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from harbor.agents.installed.node_install import nvm_node_install_snippet
-from harbor.agents.installed.opencode import OpenCode
+from harbor.agents.installed.opencode import OpenCode, OpenCodeOptions
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
@@ -13,8 +13,14 @@ PACKAGE = "@opencode/cli"
 PROVIDERS = {"zai": "zai-coding-plan"}
 
 
+class Options(OpenCodeOptions, level.NodePin):
+    pass
+
+
 class OpenCode2(OpenCode):
     DEFAULT_SETUP_TIMEOUT_SEC = level.SETUP_TIMEOUT_SEC
+    options_model = Options
+
     @staticmethod
     @override
     def name() -> str:
@@ -29,10 +35,11 @@ class OpenCode2(OpenCode):
         await self.exec_as_root(environment, command=level.record())
         await level.install(self, environment)
         version = f"@{self._version}" if self._version else "@latest"
-        await self.exec_as_agent(
-            environment,
-            command=f"set -euo pipefail; {nvm_node_install_snippet()} && npm i -g {PACKAGE}{version} && opencode2 --version && {level.wrap('opencode2')}",
-        )
+        with level.harness():
+            await self.exec_as_agent(
+                environment,
+                command=f"set -euo pipefail; {nvm_node_install_snippet(*filter(None, [self.options.node]))} && npm i -g {PACKAGE}{version} && opencode2 --version && {level.wrap('opencode2')}",
+            )
         await self.exec_as_agent(environment, command=level.snapshot())
 
     @override

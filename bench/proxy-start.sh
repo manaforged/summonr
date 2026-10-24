@@ -10,10 +10,14 @@ start_proxy() {
     for name in $(grep -oE "^${keyenv}(_[0-9]+)?=" "$root/$envfile" | tr -d =); do keys+=(--key-env "$name"); done
   fi
   (set -a; [ -z "$envfile" ] || . "$root/$envfile"; set +a
-    exec setsid nohup python3 "$root/proxy.py" --bind 0.0.0.0 --port "$port" "${keys[@]}" "$@" --log "$root/logs/$run.jsonl" ${BENCH_DUMP:+--dump "$root/logs/$run.bodies"} \
+    exec setsid nohup bash -c 'while :; do "$@"; sleep 1; done' proxy-supervisor python3 "$root/proxy.py" --bind 0.0.0.0 --port "$port" "${keys[@]}" "$@" --log "$root/logs/$run.jsonl" ${BENCH_DUMP:+--dump "$root/logs/$run.bodies"} \
       --upstream "$upstream" >> "$root/logs/proxy-$run.out" 2>&1 < /dev/null) &
   for _ in $(seq 50); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break; sleep 0.2; done
-  (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || { echo "proxy did not start on $port: see logs/proxy-$run.out" >&2; exit 1; }
+  (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || { stop_proxy "$run"; echo "proxy did not start on $port: see logs/proxy-$run.out" >&2; exit 1; }
+}
+
+stop_proxy() {
+  pkill -f "proxy.py .*--log [^ ]*/$1\.jsonl( |$)" || true
 }
 
 start_apt_cache() {

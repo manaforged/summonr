@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import logging
 import shlex
 import subprocess
 import sys
@@ -15,6 +16,7 @@ import grok_plan
 import image_user
 import level
 import omp_agent
+import opencode2_agent
 import pi_agent
 import summonr_agent
 from harbor.environments.docker.docker import DockerEnvironment
@@ -199,6 +201,58 @@ class LevelImage(unittest.TestCase):
     def test_later_trials_of_a_task_start_from_its_first_trials_base_install(self):
         self.assertEqual(self.trial(), (self.BASE, ["installed"]))
         self.assertEqual(self.trial(), (self.tag, []))
+
+
+class Node(unittest.TestCase):
+    ARMS = {"pi_agent:Pi": (pi_agent.Pi, "1.4.0"), "opencode2_agent:OpenCode2": (opencode2_agent.OpenCode2, "2.1.4")}
+
+    def installed(self, arm, version):
+        with tempfile.TemporaryDirectory() as logs:
+            agent = arm(logs_dir=Path(logs) / "fix-git__a1" / "agent", model_name="zai/glm-5.3-flash", version=version, node="22.23.4")
+            seen = []
+
+            async def record(environment, command, **_):
+                seen.append(command)
+                return SimpleNamespace(return_code=0, stdout="", stderr="")
+
+            async def exec(command, **_):
+                return SimpleNamespace(return_code=0, stdout="", stderr="")
+
+            agent.exec_as_agent = agent.exec_as_root = record
+            asyncio.run(agent.install(SimpleNamespace(leveled=True, default_user=None, exec=exec)))
+            return " ".join(seen)
+
+    def test_both_node_harnesses_install_the_pinned_node(self):
+        for arm, version in self.ARMS.values():
+            with self.subTest(arm=arm.__name__):
+                self.assertIn("nvm install 22.23.4 && nvm alias default 22.23.4", self.installed(arm, version))
+
+    def test_every_pair_pins_node_for_its_node_harnesses_and_harbor_accepts_every_arms_options(self):
+        import importlib
+        import yaml
+        for pair in sorted((Path(__file__).parent / "pairs").glob("*.yaml")):
+            for agent in yaml.safe_load(pair.read_text())["agents"]:
+                if agent.get("import_path") in self.ARMS:
+                    self.assertEqual(agent["kwargs"].get("node"), "${nvm_node}", pair.name)
+                if path := agent.get("import_path"):
+                    module, _, name = path.partition(":")
+                    with self.subTest(pair=pair.name, agent=path):
+                        getattr(importlib.import_module(module), name).parse_options(agent.get("kwargs"))
+
+
+class KeepLevel(unittest.TestCase):
+    def test_a_snapshot_that_cannot_be_committed_says_why(self):
+        environment = object.__new__(image_user.Docker)
+        environment.level_tag = "bench-level/bench-proof:none"
+        environment.logger = logging.getLogger("bench-proof-keep")
+
+        async def resolve(service):
+            return "bench-proof-no-such-container"
+
+        environment._platform = SimpleNamespace(_resolve_service_container=resolve)
+        with self.assertLogs("bench-proof-keep", "WARNING") as caught:
+            asyncio.run(environment.keep_level())
+        self.assertIn("bench-proof-no-such-container", " ".join(caught.output))
 
 
 class Skills(unittest.TestCase):

@@ -183,12 +183,10 @@ impl Stream {
     fn text(&mut self, frame: &Frame<'_>) -> Delta {
         let delta: &str = &frame.delta;
         let item = frame.item_id.as_deref().unwrap_or("");
-        if self.commentary.iter().any(|known| known == item) {
-            self.thinking.push_str(delta);
-            if let Some(remark) = self.remarks.last_mut() {
-                remark.push_str(delta);
-            }
-            return Delta::Thinking(delta.to_string());
+        if self.commentary.iter().any(|known| known == item)
+            && let Some(remark) = self.remarks.last_mut()
+        {
+            remark.push_str(delta);
         }
         let mut text = String::new();
         if !self.text.is_empty() && self.last.as_deref() != Some(item) {
@@ -294,19 +292,14 @@ impl Stream {
     fn message(&mut self, item: &Item<'_>) -> crate::error::Result<()> {
         refusal(item)?;
         let commentary = self.phase(item);
-        let target = if commentary {
-            &mut self.thinking
-        } else {
-            &mut self.text
-        };
-        if !target.is_empty() {
-            target.push_str("\n\n");
+        if !self.text.is_empty() {
+            self.text.push_str("\n\n");
         }
         for part in item.parts() {
             if part.shape == PartShape::OutputText
                 && let Some(text) = part.text.as_deref()
             {
-                target.push_str(text);
+                self.text.push_str(text);
                 if commentary && let Some(remark) = self.remarks.last_mut() {
                     remark.push_str(text);
                 }

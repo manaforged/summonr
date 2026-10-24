@@ -110,12 +110,13 @@ pub(super) async fn drive_goal(
         if let Some(code) = progress.exit_code() {
             return Ok(code);
         }
-        let turn = complete(
-            loop_,
-            summonr::goal_prompt(objective, gates, progress.rounds).into(),
-            json,
-        )
-        .await?;
+        let round = if loop_.begin_goal_turn()? {
+            0
+        } else {
+            progress.rounds
+        };
+        let prompt = summonr::goal_prompt(loop_, objective, gates, round);
+        let turn = complete(loop_, prompt.into(), json).await?;
         if turn.aborted {
             return stop(loop_, "goal execution aborted", json).await;
         }

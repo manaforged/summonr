@@ -120,6 +120,8 @@ impl<P: Provider> Loop<P> {
             session,
             verify: None,
             check_file: None,
+            protected: std::collections::BTreeMap::new(),
+            goal_score: crate::score::Goal::default(),
             budget: Budget {
                 max_tokens,
                 max_secs: max_live_millis

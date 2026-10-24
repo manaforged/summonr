@@ -43,48 +43,42 @@ struct Span {
 
 impl Span {
     fn stats(&self, root: &Path, session: &str) -> Result<Diff> {
-        let numstat = git(
-            root,
-            &[
-                "diff",
-                "--numstat",
-                "--no-renames",
-                &self.from,
-                &self.to,
-                "--",
-            ],
-        )?;
-        let added: HashSet<String> = git_paths(
-            root,
-            &[
-                "diff",
-                "--name-only",
-                "-z",
-                "--no-renames",
-                "--diff-filter=A",
-                &self.from,
-                &self.to,
-                "--",
-            ],
-        )?
-        .into_iter()
-        .collect();
-        let mut files: Vec<Stat> = numstat
-            .lines()
-            .filter_map(numstat_row)
-            .filter(|stat| !ignored::hidden(&stat.path))
-            .map(|stat| Stat {
-                new: added.contains(&stat.path),
-                ..stat
-            })
-            .collect();
-        files.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(Diff {
             base: self.base.clone(),
             session: Some(session.to_string()),
-            files,
+            files: between(root, &self.from, &self.to)?,
         })
     }
+}
+
+pub(crate) fn between(root: &Path, from: &str, to: &str) -> Result<Vec<Stat>> {
+    let numstat = git(root, &["diff", "--numstat", "--no-renames", from, to, "--"])?;
+    let added: HashSet<String> = git_paths(
+        root,
+        &[
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--diff-filter=A",
+            from,
+            to,
+            "--",
+        ],
+    )?
+    .into_iter()
+    .collect();
+    let mut files: Vec<Stat> = numstat
+        .lines()
+        .filter_map(numstat_row)
+        .filter(|stat| !ignored::hidden(&stat.path))
+        .map(|stat| Stat {
+            new: added.contains(&stat.path),
+            ..stat
+        })
+        .collect();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(files)
 }
 
 fn spans(root: &Path, session: &str) -> Result<Vec<Span>> {

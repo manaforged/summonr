@@ -86,6 +86,10 @@ impl Work {
             return Err(WorkError(DECISION.to_string()));
         }
         self.record_check(passed);
+        if let (Policy::Goal { .. }, Decision::GoalStop(reason)) = (self.policy, &decision) {
+            self.abandon(reason);
+            return Ok(());
+        }
         if !passed {
             return self.fail("Repair the failed completion check.".to_string());
         }
@@ -111,11 +115,6 @@ impl Work {
                 step.state = StepState::Completed;
                 self.advance_step();
             }
-            (Policy::Goal { .. }, Decision::GoalStop(reason)) => {
-                step.state = StepState::Blocked;
-                self.active = None;
-                self.status = Status::Abandoned(reason);
-            }
             (Policy::Goal { .. }, Decision::GoalContinue(reason)) => {
                 step.state = StepState::Active;
                 self.status = Status::Active(Stage::Execute);
@@ -124,7 +123,7 @@ impl Work {
                     "[summon goal: the objective is not complete; {reason}]"
                 ));
             }
-            (Policy::Goal { .. }, Decision::Automatic) => {
+            (Policy::Goal { .. }, Decision::Automatic | Decision::GoalStop(_)) => {
                 return Err(WorkError(DECISION.to_string()));
             }
         }

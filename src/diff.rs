@@ -14,6 +14,7 @@ mod turn;
 use git::{git, numstat_row};
 pub(crate) use git::{git_env, git_output, git_paths};
 pub(crate) use layout::{Layout, STATE_DIR, inside_git, layout, state_dir};
+pub(crate) use turn::between;
 pub use turn::{SESSION_BASE, TurnId, turn_patch, turn_stats};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]

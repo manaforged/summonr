@@ -997,6 +997,7 @@ pub summonr::InstalledPlugin::report: alloc::string::String
 pub struct summonr::Loop<P>
 impl<P: summonr::provider::Provider> summonr::Loop<P>
 pub fn summonr::Loop<P>::abandon_work(&mut self, reason: &str) -> summonr::Result<()>
+pub fn summonr::Loop<P>::begin_goal_turn(&mut self) -> summonr::Result<bool>
 pub fn summonr::Loop<P>::goal_at(path: &std::path::Path, workspace: &std::path::Path, objective: &str) -> bool
 pub fn summonr::Loop<P>::job_at(path: &std::path::Path, workspace: &std::path::Path) -> core::option::Option<(summonr::WorkKind, alloc::string::String)>
 pub fn summonr::Loop<P>::select_goal(&mut self, objective: &str, commands: &[alloc::string::String]) -> summonr::Result<()>
@@ -1245,7 +1246,7 @@ pub fn summonr::endpoint_names_ordered() -> summonr::Result<alloc::vec::Vec<allo
 pub fn summonr::endpoint_set_up() -> alloc::vec::Vec<alloc::string::String>
 pub fn summonr::export_session(path: &std::path::Path) -> summonr::Result<alloc::string::String>
 pub fn summonr::finish_worktree(tree: &summonr::Tree, objective: &str, paths: &[alloc::string::String]) -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
-pub fn summonr::goal_prompt(objective: &str, gates: &[alloc::string::String], round: u32) -> alloc::string::String
+pub fn summonr::goal_prompt<P: summonr::provider::Provider>(loop_: &summonr::Loop<P>, objective: &str, gates: &[alloc::string::String], round: u32) -> alloc::string::String
 pub fn summonr::in_git(path: &std::path::Path) -> bool
 pub fn summonr::index_files(root: &std::path::Path) -> i32
 pub fn summonr::install_plugin(src: &std::path::Path) -> summonr::Result<summonr::InstalledPlugin>

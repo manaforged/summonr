@@ -67,13 +67,28 @@ impl<P: Provider> Loop<P> {
                 .abort_turn(abort, events, emit, usage, round, pre)
                 .await;
         }
-        if let Some(running) = self.defer_running(&running, unsettled)? {
+        let breached = if running.is_empty() {
+            None
+        } else {
+            self.watch_spend(events, &mut emit).await?
+        };
+        if breached.is_none()
+            && let Some(running) = self.defer_running(&running, unsettled)?
+        {
             let ending = Ending::Deferred(running);
             return self.close_turn(ending, message.content, events, emit, round, usage);
         }
         self.stop_spawned(events, &mut emit, usage).await?;
         let checks = self
-            .judge_work(&message.content, snapshot, checks, events, &mut emit, usage)
+            .judge_work(
+                &message.content,
+                snapshot,
+                checks,
+                breached,
+                events,
+                &mut emit,
+                usage,
+            )
             .await?;
         self.close_turn(
             Ending::Done(checks),
@@ -85,21 +100,34 @@ impl<P: Provider> Loop<P> {
         )
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one judge path for a finished work turn"
+    )]
     async fn judge_work(
         &mut self,
         reply: &str,
         snapshot: String,
         mut checks: Vec<Outcome>,
+        watched: Option<crate::score::Spend>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Vec<Outcome>> {
         let paths = self.session.enter_verify().map_err(super::session_err)?;
         checks.extend(self.run_verify(events, emit).await?);
+        self.settle_todos(&checks, events, emit)?;
+        let scored = self.score_goal(watched).await?;
+        let mut breached = false;
+        if let Some(scored) = &scored {
+            let text = scored.text();
+            self.push_event(events, emit, Event::Note { text })?;
+            breached = self.budget_stop(scored, events, emit)?;
+        }
         let mut verdict = self.verdict(&mut checks, events, emit)?;
         let mut rejected = None;
         let mut reviewed = false;
-        if verdict.passed && self.seat_model(workflow::Role::Review).is_some() {
+        if verdict.passed && !breached && self.seat_model(workflow::Role::Review).is_some() {
             rejected = self
                 .review_turn(reply, &paths, &mut checks, events, emit, usage)
                 .await?;
@@ -107,10 +135,15 @@ impl<P: Provider> Loop<P> {
             reviewed = true;
         }
         let receipt = Receipt::new(paths, checks.clone(), snapshot, events);
+        let evidence = match &scored {
+            Some(scored) => format!("{}\n\n{}", receipt.text, scored.text()),
+            None => receipt.text.clone(),
+        };
         let decision = self
             .decide(
                 reply,
-                &receipt.text,
+                &evidence,
+                scored.as_ref(),
                 &mut verdict,
                 reviewed,
                 &mut checks,
@@ -138,6 +171,7 @@ impl<P: Provider> Loop<P> {
         &mut self,
         reply: &str,
         receipt: &str,
+        scored: Option<&crate::score::Measured>,
         verdict: &mut Verdict,
         reviewed: bool,
         checks: &mut Vec<Outcome>,
@@ -145,10 +179,42 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Decision> {
+        if let Some(spend) = scored
+            .and_then(|scored| scored.board().spend.as_ref())
+            .filter(|spend| spend.breached())
+        {
+            return Ok(Decision::GoalStop(spend.reason()));
+        }
+        if let Some(crate::score::Measured::Failed { board, reason }) = scored
+            && board.failed >= crate::score::FAILED_TURNS
+        {
+            return Ok(Decision::GoalStop(format!(
+                "score unavailable for {} turns: {reason}",
+                crate::score::FAILED_TURNS
+            )));
+        }
+        if self.goal_score.quiet >= crate::score::PARK_TURNS {
+            return Ok(Decision::GoalStop(format!(
+                "no new measurement in {} goal turns",
+                crate::score::PARK_TURNS
+            )));
+        }
+        if let Some(reason) = self.blocked_goal()? {
+            return Ok(Decision::GoalStop(reason));
+        }
         if !verdict.passed {
             return Ok(Decision::Automatic);
         }
-        let decision = self.goal_decision(reply, receipt, emit, usage).await?;
+        let mut decision = self.goal_decision(reply, receipt, emit, usage).await?;
+        if let Some(scored) = scored
+            && matches!(decision, Decision::GoalComplete)
+            && !scored.met()
+        {
+            decision = Decision::GoalContinue(format!(
+                "score targets unmet: {}",
+                scored.board().unmet.join(", ")
+            ));
+        }
         if reviewed || !matches!(decision, Decision::Automatic) {
             *verdict = self.verdict(checks, events, emit)?;
         }

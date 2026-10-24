@@ -49,6 +49,7 @@ mod recent;
 mod review;
 mod rpc;
 mod runtime;
+mod score;
 mod scout;
 pub mod secret;
 mod session;

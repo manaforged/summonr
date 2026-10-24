@@ -31,6 +31,7 @@ impl From<TodoStatus> for Mark {
             TodoStatus::Done => Self::Done,
             TodoStatus::Active => Self::Active,
             TodoStatus::Pending => Self::Pending,
+            TodoStatus::Blocked => Self::Blocked,
         }
     }
 }

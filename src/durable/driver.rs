@@ -134,6 +134,13 @@ impl SessionDriver {
             work.todos.clear();
             self.checkpoint()?;
         }
+        self.clear_messages()
+    }
+
+    pub(crate) fn clear_messages(&mut self) -> Result<(), DriverError> {
+        if self.turn.is_some() {
+            return Err(DriverError::Busy);
+        }
         self.append(Line::Clear)
     }
 

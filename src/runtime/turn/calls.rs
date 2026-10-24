@@ -217,8 +217,11 @@ impl<P: Provider> Loop<P> {
         if is_mail_tool(name) {
             return Ok((self.mail_execute(call).map(ToolOutput::ok), None));
         }
-        let output = self.tools.execute_outcome(call).await;
-        Ok((self.with_grant(output, call, events, emit).await?, None))
+        let (output, usage) = self.run_or_wake(call, events, emit).await?;
+        Ok((
+            self.with_grant(output, call, events, emit).await?,
+            Some(usage),
+        ))
     }
 
     async fn heard(

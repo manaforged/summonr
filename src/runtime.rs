@@ -107,6 +107,8 @@ pub struct Loop<P> {
     session: SessionDriver,
     verify: Option<Vec<String>>,
     check_file: Option<Vec<u8>>,
+    protected: std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>,
+    goal_score: crate::score::Goal,
     budget: Budget,
     spent_tokens: u64,
     run_base: (u64, u64),

@@ -239,3 +239,46 @@ async fn task_calls_beside_a_todo_update_start_together() {
         .collect();
     assert_eq!(spawned.get(..2), Some(&[true, true][..]), "{spawned:?}");
 }
+
+#[tokio::test]
+async fn a_job_wait_settles_a_child_that_finished_before_it_and_then_waits_on_the_job() {
+    let (mut parent, _dirs) = parent(vec![Reply::Text("ok"), Reply::Text("child done")]);
+    parent.turn("hi").await.unwrap();
+    let id = spawn_background(&mut parent);
+    let started = std::time::Instant::now();
+    while !parent.spawned[&id].handle.is_finished() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let job = parent
+        .tools
+        .execute_outcome(&call(
+            "c1",
+            "run_command",
+            &serde_json::json!({"command": "sleep 30", "background": true}),
+        ))
+        .await
+        .unwrap()
+        .text;
+    let job = job
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .unwrap()
+        .to_string();
+    let mut events = Vec::new();
+    let waited = std::time::Instant::now();
+    let (output, _) = parent
+        .run_or_wake(
+            &call("c2", "run_command", &serde_json::json!({"job": job})),
+            &mut events,
+            &mut |_| {},
+        )
+        .await
+        .unwrap();
+    drop(parent.tools.stop_jobs());
+    let text = output.unwrap().text;
+    assert!(!parent.spawned.contains_key(&id));
+    assert!(!text.starts_with("returned early"), "{text}");
+    assert!(text.contains("state: running"), "{text}");
+    assert!(waited.elapsed() >= std::time::Duration::from_millis(900));
+}

@@ -248,6 +248,7 @@
 | Method | Description |
 | --- | --- |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::abandon_work(&amp;mut self, reason: &amp;str) -&gt; <a href="#result">Result</a>&lt;()&gt;</code> |  |
+| <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::begin_goal_turn(&amp;mut self) -&gt; <a href="#result">Result</a>&lt;bool&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::goal_at(path: &amp;Path, workspace: &amp;Path, objective: &amp;str) -&gt; bool</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::job_at(path: &amp;Path, workspace: &amp;Path) -&gt; Option&lt;(<a href="#workkind">WorkKind</a>, String)&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::select_goal(&amp;mut self, objective: &amp;str, commands: &amp;[String]) -&gt; <a href="#result">Result</a>&lt;()&gt;</code> |  |
@@ -1152,7 +1153,7 @@
 
 ### `goal_prompt`
 
-<pre>pub fn <a href="#goal_prompt">goal_prompt</a>(objective: &amp;str, gates: &amp;[String], round: u32) -&gt; String</pre>
+<pre>pub fn <a href="#goal_prompt">goal_prompt</a>&lt;P: provider::Provider&gt;(loop_: &amp;<a href="#loop">Loop</a>&lt;P&gt;, objective: &amp;str, gates: &amp;[String], round: u32) -&gt; String</pre>
 
 
 ### `in_git`

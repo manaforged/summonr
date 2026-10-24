@@ -87,7 +87,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn set_verify(&mut self, commands: Option<Vec<String>>) {
-        self.check_file = std::fs::read(crate::verify::check_path(&self.workspace)).ok();
+        self.snapshot_check_file();
         self.verify = commands;
     }
 

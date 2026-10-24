@@ -105,6 +105,150 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
+    pub(crate) fn blocked_goal(&self) -> Result<Option<String>> {
+        if self
+            .session
+            .goal_objective()
+            .map_err(super::session_err)?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let todos = self.work_progress()?.todos;
+        let blocked: Vec<&str> = todos
+            .iter()
+            .filter(|todo| todo.status == crate::tools::TodoStatus::Blocked)
+            .map(|todo| todo.text.as_str())
+            .collect();
+        let open = todos.iter().any(|todo| {
+            !matches!(
+                todo.status,
+                crate::tools::TodoStatus::Done | crate::tools::TodoStatus::Blocked
+            )
+        });
+        Ok((!blocked.is_empty() && !open).then(|| format!("blocked: {}", blocked.join("; "))))
+    }
+
+    pub(crate) fn goal_quiet(&self) -> usize {
+        self.goal_score.quiet
+    }
+
+    pub(crate) fn goal_notes(&self) -> &[String] {
+        &self.goal_score.notes
+    }
+
+    pub fn begin_goal_turn(&mut self) -> Result<bool> {
+        let todos = self.work_progress()?.todos;
+        let done = |todos: &[crate::tools::Todo]| {
+            todos
+                .iter()
+                .filter(|todo| todo.status == crate::tools::TodoStatus::Done)
+                .count()
+        };
+        let finished = self
+            .goal_score
+            .todos
+            .as_deref()
+            .is_some_and(|start| done(&todos) > done(start));
+        if finished {
+            self.session.clear_messages().map_err(super::session_err)?;
+            self.tools.forget_reads();
+        }
+        self.goal_score.todos = Some(todos);
+        Ok(finished)
+    }
+
+    pub(crate) fn settle_todos(
+        &mut self,
+        checks: &[crate::verify::Outcome],
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        if self
+            .session
+            .goal_objective()
+            .map_err(super::session_err)?
+            .is_none()
+        {
+            return Ok(());
+        }
+        let failed = checks.iter().any(|check| !check.passed);
+        let output = checks
+            .iter()
+            .filter(|check| !check.passed)
+            .map(|check| check.output.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let check = failed.then(|| without_durations(&output));
+        let unchanged = check.is_some() && check == self.goal_score.check;
+        self.goal_score.check.clone_from(&check);
+        let tree = crate::score::tree(&self.workspace, Some(&self.session.id().to_string()));
+        let scored = self
+            .goal_score_config()?
+            .is_some_and(|config| config.command.is_some());
+        if !scored && !checks.is_empty() {
+            let reading = format!("{failed}\n{}", check.unwrap_or_default());
+            self.goal_score
+                .observe(tree.clone(), crate::score::Reading::Output(reading));
+        }
+        let Some(start) = self.goal_score.todos.clone() else {
+            return Ok(());
+        };
+        let mut todos = self.work_progress()?.todos;
+        let mut facts = Vec::new();
+        if let Some((from, to)) = self.goal_score.task_tree.as_deref().zip(tree.as_deref())
+            && let Ok(files) = crate::diff::between(&self.workspace, from, to)
+        {
+            facts.push(match files.is_empty() {
+                true => "no files changed".to_string(),
+                false => format!(
+                    "changed {}",
+                    files
+                        .into_iter()
+                        .map(|stat| stat.path)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            });
+        }
+        facts.push(format!(
+            "the check {}",
+            if failed { "failed" } else { "passed" }
+        ));
+        let facts = facts.join("; ");
+        let mut reopened = false;
+        let mut finished = false;
+        for (index, todo) in todos.iter_mut().enumerate() {
+            if todo.status != crate::tools::TodoStatus::Done || start.get(index) == Some(todo) {
+                continue;
+            }
+            if unchanged && self.goal_score.reopened.insert(index) {
+                todo.status = crate::tools::TodoStatus::Pending;
+                reopened = true;
+                let text = format!(
+                    "reopened {}: the check output did not change after it was marked done",
+                    todo.text
+                );
+                self.push_event(events, emit, Event::Note { text })?;
+            } else {
+                self.goal_score
+                    .notes
+                    .push(format!("{}: {facts}", todo.text));
+                finished = true;
+            }
+        }
+        if finished {
+            self.goal_score.task_tree = tree;
+        }
+        if reopened {
+            self.session
+                .apply_todos(todos.clone())
+                .map_err(super::session_err)?;
+            self.goal_score.todos = Some(todos);
+        }
+        Ok(())
+    }
+
     pub(crate) fn abort_note(&mut self, reason: &str) -> Result<()> {
         let abort = crate::tools::Abort {
             code: crate::tools::AbortCode::Interrupted,
@@ -122,8 +266,11 @@ impl<P: Provider> Loop<P> {
         self.session
             .abort(abort, None)
             .map_err(super::session_err)?;
-        self.tools.stop_jobs()?;
-        self.emit_records(&mut Vec::new(), &mut emit)?;
+        let mut events = Vec::new();
+        for text in self.tools.stop_jobs()? {
+            self.push_event(&mut events, &mut emit, Event::Note { text })?;
+        }
+        self.emit_records(&mut events, &mut emit)?;
         self.sync_usage(&mut emit);
         Ok(())
     }
@@ -155,9 +302,18 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn select_goal(&mut self, objective: &str, commands: &[String]) -> Result<()> {
+        let fresh = self.active_goal().ok().flatten().is_none();
         self.session
             .prepare_external_work(objective, WorkPolicy::Goal {}, commands)
             .map_err(super::session_err)?;
+        if fresh {
+            self.goal_score = crate::score::Goal::started();
+            self.goal_score.task_tree =
+                crate::score::tree(&self.workspace, Some(&self.session.id().to_string()));
+        }
+        if fresh || self.check_file.is_none() {
+            self.snapshot_check_file();
+        }
         self.schema = None;
         self.set_mode(crate::RunMode::Goal);
         Ok(())
@@ -188,4 +344,11 @@ impl<P: Provider> Loop<P> {
     pub fn goal_at(path: &Path, workspace: &Path, objective: &str) -> bool {
         work_at(path, workspace, WorkPolicy::Goal {}, objective)
     }
+}
+
+fn without_durations(output: &str) -> String {
+    regex::Regex::new(r"\d+(?:\.\d+)?\s*(?:ns|us|µs|ms|s|m|h)\b").map_or_else(
+        |_| output.to_string(),
+        |pattern| pattern.replace_all(output, "").into_owned(),
+    )
 }

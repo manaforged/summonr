@@ -11,7 +11,8 @@ line of JSON: {\"verdict\": \"done\"|\"continue\"|\"stalled\"|\"impossible\", \"
 file, or test output) that the objective is met. Never `done` when the pass depends on hidden \
 state, call order, special cases for test inputs, or changed test expectations, or on a \
 changed environment for the check (a stub or shim on PATH, an edited file outside the \
-workspace, a faked clock or tool); reply `continue` and name the trick. `continue` when work remains; name what remains. `stalled` when the response reports no concrete action on the objective. \
+workspace, a faked clock or tool); reply `continue` and name the trick. `continue` when work remains; name what remains. `stalled` when the response reports no concrete action on the objective; a scoreboard \
+that did not move is not by itself `stalled`. \
 `impossible` when the objective cannot be met in this workspace; name the blocker. When two \
 tests expect different results for the same input, reply `impossible` and name both tests.";
 
@@ -53,13 +54,35 @@ pub(crate) async fn decision<P: Provider>(
 }
 
 #[must_use]
-pub fn prompt(objective: &str, gates: &[String], round: u32) -> String {
+pub fn prompt<P: Provider>(
+    loop_: &Loop<P>,
+    objective: &str,
+    gates: &[String],
+    round: u32,
+) -> String {
+    let scored = matches!(loop_.goal_score_config(), Ok(Some(config)) if config.command.is_some());
+    let board = loop_.goal_board().filter(|board| !board.entries.is_empty());
     if round > 0 {
-        return "[summon goal: continue the active Work]".to_string();
+        let mut text = "[summon goal: continue the active Work]".to_string();
+        match board {
+            Some(board) => {
+                text.push_str("\n\n");
+                text.push_str(&board.text());
+            }
+            None if loop_.goal_quiet() > 0 => {
+                text.push_str("\n\n");
+                text.push_str(&crate::score::evidence(loop_.goal_quiet()));
+            }
+            None => {}
+        }
+        return text;
     }
     let mut text = format!(
         "Work toward this objective. Keep going until it is fully met. Do not stop halfway or \
-ask questions you can resolve yourself:\n\n{objective}\n"
+ask questions you can resolve yourself. Break the objective into tasks with the `todo` tool. \
+Work on one task per turn and mark it done when it is finished. If a task cannot be done in \
+this workspace, mark it blocked and say why; that is not a failure, and the goal stops when every \
+open task is blocked. The files the check and score commands use are read-only:\n\n{objective}\n"
     );
     if !gates.is_empty() {
         let list = gates
@@ -70,6 +93,23 @@ ask questions you can resolve yourself:\n\n{objective}\n"
         text.push_str(&format!(
             "\nAfter each turn the harness runs {list}. A red check means the objective is not met.\n"
         ));
+    }
+    if scored {
+        text.push_str(
+            "\nAfter each turn the harness also runs the score command and records it in the ledger. The goal is not met while a score target is unmet.\n",
+        );
+    }
+    let notes = loop_.goal_notes();
+    if !notes.is_empty() {
+        text.push_str("\nDone so far:\n");
+        for note in notes {
+            text.push_str(&format!("- {note}\n"));
+        }
+    }
+    if let Some(board) = board {
+        text.push('\n');
+        text.push_str(&board.text());
+        text.push('\n');
     }
     text
 }

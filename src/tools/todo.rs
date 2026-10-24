@@ -11,6 +11,7 @@ pub enum TodoStatus {
     Pending,
     Active,
     Done,
+    Blocked,
 }
 
 impl TodoStatus {
@@ -19,13 +20,14 @@ impl TodoStatus {
             "pending" => Some(Self::Pending),
             "active" | "in_progress" => Some(Self::Active),
             "done" | "completed" => Some(Self::Done),
+            "blocked" => Some(Self::Blocked),
             _ => None,
         }
     }
 
     pub(crate) fn acp(self) -> &'static str {
         match self {
-            Self::Pending => "pending",
+            Self::Pending | Self::Blocked => "pending",
             Self::Active => "in_progress",
             Self::Done => "completed",
         }
@@ -44,6 +46,7 @@ impl Todo {
             TodoStatus::Done => "✓",
             TodoStatus::Active => "●",
             TodoStatus::Pending => "○",
+            TodoStatus::Blocked => "!",
         }
     }
 
@@ -77,7 +80,7 @@ pub(crate) fn todos_from_args(arguments: &str) -> Result<Vec<Todo>> {
             .unwrap_or("pending");
         let status = TodoStatus::parse(name).ok_or_else(|| {
             Error::Tool(format!(
-                "todo status `{name}` is not one of pending, active, done"
+                "todo status `{name}` is not one of pending, active, done, blocked"
             ))
         })?;
         todos.push(Todo {

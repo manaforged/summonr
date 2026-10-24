@@ -154,18 +154,31 @@ fn prune(workspace: &Path, record: &Record) -> bool {
 }
 
 pub(crate) fn status(workspace: &Path, record: &Record) -> Result<Status> {
+    report(workspace, record, true)
+}
+
+fn report(workspace: &Path, record: &Record, list_children: bool) -> Result<Status> {
     let log = log_path(workspace, record);
     let exit = exit_path(workspace, &record.id);
     let bytes = std::fs::metadata(&log).map(|meta| meta.len()).unwrap_or(0);
+    let mut children = String::new();
     let state = if !exit.is_file() && alive_since(record.pid, record.started) {
+        if list_children {
+            children = tree::block("children", &tree::child_lines(record.pid));
+        }
         JobState::Running
     } else if exit.is_file() {
         let text = crate::durable::store::read_or_empty(&exit)?;
-        let text = text.trim();
-        if text == KILLED {
+        let mut lines = text.lines();
+        let first = lines.next().unwrap_or_default().trim();
+        if first == KILLED {
+            let killed: Vec<String> = lines.map(str::to_string).collect();
+            children = tree::block("children at kill", &killed);
             JobState::Killed
         } else {
-            text.parse::<i32>().map_or(JobState::Dead, JobState::Exited)
+            first
+                .parse::<i32>()
+                .map_or(JobState::Dead, JobState::Exited)
         }
     } else {
         JobState::Dead
@@ -177,7 +190,7 @@ pub(crate) fn status(workspace: &Path, record: &Record) -> Result<Status> {
     };
     Ok(Status {
         text: format!(
-            "job {id}\ncommand: {command}\nworkspace: {cwd}\npid: {pid}\nstate: {state}\nlog: {log} ({bytes} bytes)\n{preview}",
+            "job {id}\ncommand: {command}\nworkspace: {cwd}\npid: {pid}\nstate: {state}\n{children}log: {log} ({bytes} bytes)\n{preview}",
             id = record.id,
             command = record.command,
             cwd = record.workspace,
@@ -236,8 +249,13 @@ pub(crate) fn stamp(
     })
 }
 
-pub(crate) fn write_killed(path: &Path) -> Result<()> {
-    store::write(path, format!("{KILLED}\n"), store::Durability::Renamed)?;
+pub(crate) fn write_killed(path: &Path, children: &[String]) -> Result<()> {
+    let mut text = format!("{KILLED}\n");
+    for child in children {
+        text.push_str(child);
+        text.push('\n');
+    }
+    store::write(path, text, store::Durability::Renamed)?;
     Ok(())
 }
 
@@ -262,8 +280,8 @@ pub(crate) async fn wait(
     let mut pause = crate::limits::limits().job_poll_start_secs;
     let mut announced = false;
     loop {
-        let current = status(workspace, &load(workspace, id)?)?;
         let elapsed = started.elapsed().as_secs();
+        let current = report(workspace, &load(workspace, id)?, elapsed >= limit_secs)?;
         if current.state != JobState::Running || elapsed >= limit_secs {
             return Ok(current);
         }
@@ -299,23 +317,8 @@ pub(crate) fn alive(pid: u32) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-#[expect(unsafe_code, reason = "std has no process start-time query")]
 fn start_secs(pid: u32) -> Option<u64> {
-    let pid = libc::c_int::try_from(pid).ok()?;
-    // SAFETY: proc_bsdinfo is plain integers and byte arrays; all-zero is a valid value.
-    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-    let size = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).ok()?;
-    // SAFETY: the buffer pointer and size describe one owned proc_bsdinfo for the call.
-    let written = unsafe {
-        libc::proc_pidinfo(
-            pid,
-            libc::PROC_PIDTBSDINFO,
-            0,
-            std::ptr::from_mut(&mut info).cast(),
-            size,
-        )
-    };
-    (written == size).then_some(info.pbi_start_tvsec)
+    tree::bsd_info(pid).map(|info| info.pbi_start_tvsec)
 }
 
 #[cfg(target_os = "linux")]
@@ -349,6 +352,10 @@ fn start_secs(_pid: u32) -> Option<u64> {
 #[path = "jobs/place.rs"]
 mod place;
 pub(crate) use place::dir;
+
+#[path = "jobs/tree.rs"]
+mod tree;
+pub(crate) use tree::{block, child_lines};
 
 #[cfg(windows)]
 #[path = "jobs/windows.rs"]

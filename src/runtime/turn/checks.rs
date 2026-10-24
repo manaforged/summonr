@@ -20,6 +20,19 @@ impl<P: Provider> Loop<P> {
                 },
             )?;
         }
+        let restored = self.restore_protected();
+        if !restored.is_empty() {
+            self.push_event(
+                events,
+                emit,
+                Event::Note {
+                    text: format!(
+                        "summonr put back {}: files the check and score commands use are read-only while the goal runs",
+                        restored.join(", ")
+                    ),
+                },
+            )?;
+        }
         let mut checks = Vec::new();
         for check in declared {
             let command = check.command.clone();
@@ -75,6 +88,93 @@ impl<P: Provider> Loop<P> {
         Ok(checks)
     }
 
+    pub(crate) fn goal_score_config(&self) -> Result<Option<crate::verify::ScoreConfig>> {
+        if self
+            .session
+            .goal_objective()
+            .map_err(super::session_err)?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        match &self.check_file {
+            Some(bytes) => crate::verify::score_config(&self.workspace, bytes),
+            None => Ok(None),
+        }
+    }
+
+    pub(crate) fn goal_board(&self) -> Option<crate::score::Board> {
+        let config = self.goal_score_config().ok().flatten()?;
+        let session = self.session.id().to_string();
+        crate::score::board(&self.workspace, &config, Some(&session), &self.goal_score).ok()
+    }
+
+    pub(super) async fn score_goal(
+        &mut self,
+        watched: Option<crate::score::Spend>,
+    ) -> Result<Option<crate::score::Measured>> {
+        let Some(config) = self.goal_score_config()? else {
+            return Ok(None);
+        };
+        let session = Some(self.session.id().to_string());
+        crate::score::measure(
+            &self.tools,
+            &self.workspace,
+            &config,
+            session,
+            &mut self.goal_score,
+            watched,
+        )
+        .await
+        .map(Some)
+    }
+
+    pub(super) fn budget_stop(
+        &mut self,
+        scored: &crate::score::Measured,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<bool> {
+        let Some(spend) = scored
+            .board()
+            .spend
+            .as_ref()
+            .filter(|spend| spend.breached())
+        else {
+            return Ok(false);
+        };
+        let text = spend.note();
+        self.push_event(events, emit, Event::Note { text })?;
+        for text in self.tools.stop_jobs()? {
+            self.push_event(events, emit, Event::Note { text })?;
+        }
+        Ok(true)
+    }
+
+    pub(super) async fn watch_spend(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Option<crate::score::Spend>> {
+        let Some(config) = self.goal_score_config()? else {
+            return Ok(None);
+        };
+        let session = self.session.id().to_string();
+        let spend = crate::score::watch(
+            &self.tools,
+            &self.workspace,
+            &config,
+            Some(&session),
+            &mut self.goal_score,
+        )
+        .await?;
+        if let Some(spend) = &spend {
+            let text = spend.line();
+            self.push_event(events, emit, Event::Note { text })?;
+        }
+        Ok(spend.filter(crate::score::Spend::breached))
+    }
+
     pub async fn stop_work(&mut self, reason: &str, mut emit: impl FnMut(&Event)) -> Result<i32> {
         if !self.work_progress()?.terminal() {
             let checks = self.run_verify(&mut Vec::new(), &mut emit).await?;
@@ -92,6 +192,35 @@ impl<P: Provider> Loop<P> {
         Ok(progress.exit_code().unwrap_or(3))
     }
 
+    pub(crate) fn snapshot_check_file(&mut self) {
+        self.check_file = std::fs::read(crate::verify::check_path(&self.workspace)).ok();
+        self.protected = self
+            .check_file
+            .as_deref()
+            .map(|bytes| crate::verify::protected(&self.workspace, bytes))
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|path| std::fs::read(&path).ok().map(|bytes| (path, bytes)))
+            .collect();
+    }
+
+    fn restore_protected(&self) -> Vec<String> {
+        let mut restored = Vec::new();
+        for (path, bytes) in &self.protected {
+            if std::fs::read(path).ok().as_ref() == Some(bytes) {
+                continue;
+            }
+            if let Some(parent) = path.parent() {
+                drop(std::fs::create_dir_all(parent));
+            }
+            if std::fs::write(path, bytes).is_ok() {
+                let shown = path.strip_prefix(&self.workspace).unwrap_or(path);
+                restored.push(shown.display().to_string());
+            }
+        }
+        restored
+    }
+
     fn restore_check_file(&self) {
         let path = crate::verify::check_path(&self.workspace);
         drop(match &self.check_file {
@@ -101,7 +230,7 @@ impl<P: Provider> Loop<P> {
     }
 
     fn check_file_drifted(&self) -> bool {
-        self.verify.is_some()
+        (self.verify.is_some() || self.check_file.is_some())
             && std::fs::read(crate::verify::check_path(&self.workspace)).ok() != self.check_file
     }
 
@@ -117,7 +246,9 @@ impl<P: Provider> Loop<P> {
         let snapshot = self.settle(pre, events, &mut emit).await?;
         let receipt = Receipt::aborted(snapshot, events);
         drop(self.kill_spawned(&abort.reason, usage).await?);
-        self.tools.stop_jobs()?;
+        for text in self.tools.stop_jobs()? {
+            self.push_event(events, &mut emit, Event::Note { text })?;
+        }
         self.session
             .abort(&abort, Some(&receipt))
             .map_err(super::session_err)?;

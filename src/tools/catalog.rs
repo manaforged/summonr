@@ -287,7 +287,7 @@ fn write() -> ToolDefinition {
 fn todo() -> ToolDefinition {
     tool(
         "todo",
-        "Maintain the Work task list; status pending|active|done. Update statuses as tasks start or finish, not just when making the initial plan. A done item does not replace the completion check.",
+        "Maintain the Work task list; status pending|active|done|blocked. Update statuses as tasks start or finish, not just when making the initial plan. A done item does not replace the completion check. Mark a task blocked when it cannot be done in this workspace and say why.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -299,7 +299,7 @@ fn todo() -> ToolDefinition {
                             "text": { "type": "string" },
                             "status": {
                                 "type": "string",
-                                "enum": ["pending", "active", "done"]
+                                "enum": ["pending", "active", "done", "blocked"]
                             }
                         },
                         "required": ["text"]

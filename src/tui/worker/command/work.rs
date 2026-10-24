@@ -182,7 +182,15 @@ impl Worker {
             if self.cleared("/goal", "goal cleared by user", &notice) {
                 return true;
             }
-            let prompt = crate::goal::prompt(objective, gates, progress.rounds);
+            let round = match self.loop_.begin_goal_turn() {
+                Ok(true) => 0,
+                Ok(false) => progress.rounds,
+                Err(error) => {
+                    self.fail(&error.to_string());
+                    return true;
+                }
+            };
+            let prompt = crate::goal::prompt(&self.loop_, objective, gates, round);
             if let Some(keep_running) = self
                 .work_turn(
                     prompt,

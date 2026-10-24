@@ -204,7 +204,12 @@ fn assistant_items(message: &Message, model: &str) -> crate::error::Result<Vec<V
             }
         }
     }
-    for remark in remarks.iter().filter(|remark| !remark.is_empty()) {
+    let remarks: Vec<&str> = remarks
+        .iter()
+        .map(String::as_str)
+        .filter(|remark| !remark.is_empty())
+        .collect();
+    for remark in &remarks {
         items.push(json!({
             "type": "message",
             "role": "assistant",
@@ -212,11 +217,19 @@ fn assistant_items(message: &Message, model: &str) -> crate::error::Result<Vec<V
             "phase": "commentary",
         }));
     }
-    if !message.content.is_empty() {
+    let said = remarks.join("\n\n");
+    let reply = message
+        .content
+        .strip_prefix(said.as_str())
+        .filter(|_| !said.is_empty())
+        .map_or(message.content.as_str(), |rest| {
+            rest.trim_start_matches("\n\n")
+        });
+    if !reply.is_empty() {
         let mut item = json!({
             "type": "message",
             "role": "assistant",
-            "content": [{"type": "output_text", "text": message.content}],
+            "content": [{"type": "output_text", "text": reply}],
         });
         if let Some(phase) = phase {
             item["phase"] = json!(phase);

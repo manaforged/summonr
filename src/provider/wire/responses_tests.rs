@@ -51,7 +51,7 @@ fn an_error_event_reports_the_providers_message() {
 }
 
 #[test]
-fn commentary_streams_as_reasoning_and_the_reply_stands_alone() {
+fn commentary_streams_as_reply_text_not_reasoning() {
     let reply = stream(&[
         json!({"type": "response.output_item.added",
                "item": {"type": "message", "id": "m1", "phase": "commentary"}}),
@@ -62,8 +62,8 @@ fn commentary_streams_as_reasoning_and_the_reply_stands_alone() {
         json!({"type": "response.completed", "response": {"status": "completed"}}),
     ])
     .unwrap();
-    assert_eq!(reply.content.as_deref(), Some("Here"));
-    assert_eq!(reply.reasoning_content.as_deref(), Some("Got it"));
+    assert_eq!(reply.content.as_deref(), Some("Got it\n\nHere"));
+    assert_eq!(reply.reasoning_content, None);
 }
 
 #[test]
@@ -194,6 +194,23 @@ fn a_replayed_reply_carries_its_commentary_and_phase() {
     assert_eq!(body["input"][1]["phase"], "commentary");
     assert_eq!(body["input"][1]["content"][0]["text"], "Got it");
     assert_eq!(body["input"][2]["phase"], "final_answer");
+}
+
+#[test]
+fn a_replayed_reply_sends_its_commentary_once() {
+    let mut assistant = message(Role::Assistant, "Got it\n\nHere");
+    assistant.continuation = Some(Continuation::Responses {
+        model: "gpt-5.1".to_string(),
+        signatures: Vec::new(),
+        phase: Some("final_answer".to_string()),
+        commentary: vec!["Got it".to_string()],
+    });
+    let messages = vec![message(Role::User, "hi"), assistant];
+    let body = request(&ask(&messages, None), true).unwrap();
+    assert_eq!(body["input"][1]["phase"], "commentary");
+    assert_eq!(body["input"][1]["content"][0]["text"], "Got it");
+    assert_eq!(body["input"][2]["phase"], "final_answer");
+    assert_eq!(body["input"][2]["content"][0]["text"], "Here");
 }
 
 #[test]

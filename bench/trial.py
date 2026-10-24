@@ -66,7 +66,9 @@ def priced(usage, rates):
 
 def token_fields(calls, rates):
     usage = [row.get("usage") or {} for row in calls]
-    first = usage[0] if usage else {}
+    lead = next((index for index, row in enumerate(calls) if (row.get("request") or {}).get("tools")), 0)
+    first = usage[lead] if usage else {}
+    rest = usage[:lead] + usage[lead + 1:]
     hit = sum(hit_tokens(u) for u in usage)
     miss = sum(miss_tokens(u) for u in usage)
     output = sum(u.get("completion_tokens", 0) for u in usage)
@@ -74,8 +76,8 @@ def token_fields(calls, rates):
         "prompt": sum(u.get("prompt_tokens", 0) for u in usage),
         "hit": hit,
         "miss": miss,
-        "session_prompt": sum(u.get("prompt_tokens", 0) for u in usage[1:]),
-        "session_hit": sum(hit_tokens(u) for u in usage[1:]),
+        "session_prompt": sum(u.get("prompt_tokens", 0) for u in rest),
+        "session_hit": sum(hit_tokens(u) for u in rest),
         "output": output,
         "reasoning": sum(reasoning_tokens(u) for u in usage),
         "cost": priced(usage, rates),

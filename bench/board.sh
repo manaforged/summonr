@@ -2,6 +2,16 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")" && pwd)
+. "$root/proxy-start.sh"
+if [ "${1:-}" = stop ]; then
+  run=${2:?usage: board.sh stop RUN_ID}
+  harbor="harbor (job resume -p [^ ]*/jobs/$run|run .*--job-name $run)( |$)"
+  pkill -INT -f "$harbor" || true
+  for _ in $(seq 600); do pgrep -f "$harbor" > /dev/null || break; sleep 1; done
+  ! pgrep -af "$harbor" >&2 || { echo "harbor for $run is still running" >&2; exit 1; }
+  stop_proxy "$run"
+  exit 0
+fi
 run=${1:?usage: board.sh RUN_ID PAIR}
 pair=${2:?usage: board.sh RUN_ID PAIR}
 template=$root/pairs/$pair.yaml
@@ -15,7 +25,6 @@ got_harbor=$(harbor --version)
 [ "$got_harbor" = "$want_harbor" ] || { echo "harbor $got_harbor, but tools.lock pins harbor $want_harbor: uv tool install harbor==$want_harbor" >&2; exit 1; }
 jobs=$root/jobs
 dir=$jobs/$run
-. "$root/proxy-start.sh"
 start_apt_cache "$(python3 -c 'import level; print(level.APT_CACHE_PORT)')" "${BENCH_APT_CACHE:-$HOME/.cache/bench-apt-cache}"
 if [ -f "$root/pairs/$pair.proxy" ]; then
   proxy() { awk -v k="$1" '$1==k{print $2}' "$root/pairs/$pair.proxy"; }
@@ -23,23 +32,26 @@ if [ -f "$root/pairs/$pair.proxy" ]; then
   export BENCH_PROXY=http://host.docker.internal:$(proxy port) "$(proxy keyenv)=bench-proxy"
 fi
 
+bench="$(git -C "$root" rev-parse --short=12 HEAD)$([ -z "$(git -C "$root" status --porcelain -- .)" ] || echo -dirty)"
+trap 'stop_proxy "$run"' EXIT
+
+if [ -d "$dir" ]; then
+  echo "resume $(date -u +%FT%TZ) bench $bench" >> "$dir/run.txt"
+  python3 "$root/rerun.py" "$dir" "$root/logs/$run.jsonl" --move ${BENCH_RERUN:+--rerun}
+  harbor job resume -p "$dir" --plugin rss:Rss
+  exit 0
+fi
+
 fetch=$(mktemp -d)
-trap 'rm -rf "$fetch"' EXIT
+trap 'rm -rf "$fetch"; stop_proxy "$run"' EXIT
 spec=$(python3 -c 'import re, sys; name, ref = re.search(r"\{name: ([^,}\s]+)(?:, ref: \"?([^,}\"\s]+))?", open(sys.argv[1]).read()).groups(); print(f"{name}@{ref}" if ref not in (None, "latest") else name)' "$template")
 dataset=${spec##*/}
 harbor download "$spec" -o "$fetch" > /dev/null
 got=$(cd "$fetch/${dataset%@*}" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
 want=$(awk -v key="$dataset" '$1==key{print $2}' "$root/dataset.lock")
 [ "$got" = "$want" ] || { echo "dataset lock: $dataset wants $want, hub has $got" >&2; exit 1; }
-bench="$(git -C "$root" rev-parse --short=12 HEAD)$([ -z "$(git -C "$root" status --porcelain -- .)" ] || echo -dirty)"
-
-if [ -d "$dir" ]; then
-  echo "resume $(date -u +%FT%TZ) bench $bench" >> "$dir/run.txt"
-  python3 "$root/rerun.py" "$dir" "$root/logs/$run.jsonl" ${BENCH_RERUN:+--rerun}
-  exec harbor job resume -p "$dir" --plugin rss:Rss
-fi
-
-[ -z "${BENCH_PREFLIGHT:-}" ] || export BENCH_TASKS=${BENCH_TASKS:-embedding-drift-monitor}
+[ -z "${BENCH_PREFLIGHT:-}" ] || export BENCH_TASKS=${BENCH_TASKS:-$(awk '$1=="preflight"{print $2}' "$root/pairs/$pair.proxy" 2>/dev/null)}
+[ -z "${BENCH_PREFLIGHT:-}" ] || [ -n "$BENCH_TASKS" ] || { echo "a $pair preflight needs BENCH_TASKS or a preflight line in pairs/$pair.proxy" >&2; exit 1; }
 protocol=$root/protocols/$pair.md
 if [ -z "${BENCH_TASKS:-}" ]; then
   [ -f "$protocol" ] || { echo "a full $pair run needs its protocol at $protocol" >&2; exit 1; }
@@ -86,4 +98,4 @@ EOF
   echo "job $(sha256sum "$dir/job.yaml" | cut -d' ' -f1)"
 } >> "$dir/run.txt"
 harbor run -c "$dir/job.yaml" --job-name "$run" -o "$jobs" --plugin rss:Rss
-[ -z "${BENCH_PREFLIGHT:-}" ] || exec python3 "$root/preflight.py" "$dir" "$root/logs/$run.jsonl" "$root/pairs/$pair.settings"
+[ -z "${BENCH_PREFLIGHT:-}" ] || python3 "$root/preflight.py" "$dir" "$root/logs/$run.jsonl" "$root/pairs/$pair.settings"

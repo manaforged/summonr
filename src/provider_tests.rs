@@ -117,11 +117,11 @@ fn a_client_lists_models_from_the_models_base_not_the_chat_base() {
 }
 
 #[test]
-fn a_plan_cap_is_a_rate_limit_that_names_its_code() {
+fn a_plan_cap_names_its_code_without_a_transient_rate_limit() {
     let text = r#"{"error":{"code":"subscription_sharing_usage_limit_exceeded","message":"cap"}}"#;
     let error = response_failure(429, text, None);
     let failure = error.provider_failure().unwrap();
-    assert_eq!(failure.kind, ProviderFailureKind::RateLimited);
+    assert_ne!(failure.kind, ProviderFailureKind::RateLimited);
     assert!(
         failure
             .message
@@ -150,7 +150,7 @@ fn a_plan_cap_in_the_stream_keeps_its_message() {
         "weekly cap reached",
     );
     let failure = error.provider_failure().unwrap();
-    assert_eq!(failure.kind, ProviderFailureKind::RateLimited);
+    assert_ne!(failure.kind, ProviderFailureKind::RateLimited);
     assert!(
         failure.message.contains("weekly cap reached"),
         "the provider's words survive the stream path, got {}",

@@ -101,27 +101,12 @@ impl Worker {
     }
 
     fn peers(&mut self) {
-        let peers: Vec<_> = self
-            .loop_
-            .peers()
-            .into_iter()
-            .filter(|agent| agent.id != self.loop_.session_id())
-            .collect();
-        let last = self.last_peers.as_deref().unwrap_or(&[]);
-        let same = last.len() == peers.len()
-            && last.iter().zip(&peers).all(|(a, b)| {
-                a.id == b.id
-                    && a.name == b.name
-                    && a.kind == b.kind
-                    && a.model == b.model
-                    && a.cwd == b.cwd
-                    && a.pid == b.pid
-                    && a.status == b.status
-            });
-        if !same {
-            self.last_peers = Some(peers.clone());
-            drop(self.ui.send(Msg::Peers(peers)));
-        }
+        publish_peers(
+            self.loop_.peers(),
+            &self.loop_.session_id(),
+            &mut self.last_peers,
+            &self.ui,
+        );
     }
 
     pub(super) fn tick(&mut self) {
@@ -192,5 +177,33 @@ impl Worker {
 
     pub(super) fn fail(&self, text: &str) {
         drop(self.ui.send(Msg::Failed(text.to_string())));
+    }
+}
+
+pub(super) fn publish_peers(
+    peers: Vec<crate::mail::Agent>,
+    session: &str,
+    previous: &mut Option<Vec<crate::mail::Agent>>,
+    ui: &UnboundedSender<Msg>,
+) {
+    let peers: Vec<_> = peers
+        .into_iter()
+        .filter(|agent| agent.id != session)
+        .collect();
+    let last = previous.as_deref().unwrap_or(&[]);
+    let same = last.len() == peers.len()
+        && last.iter().zip(&peers).all(|(a, b)| {
+            a.id == b.id
+                && a.parent == b.parent
+                && a.name == b.name
+                && a.kind == b.kind
+                && a.model == b.model
+                && a.cwd == b.cwd
+                && a.pid == b.pid
+                && a.status == b.status
+        });
+    if !same {
+        *previous = Some(peers.clone());
+        drop(ui.send(Msg::Peers(peers)));
     }
 }

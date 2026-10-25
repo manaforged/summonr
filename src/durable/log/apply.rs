@@ -83,6 +83,7 @@ impl State {
         if start {
             self.opener = Some(self.history.len());
             self.unanswered.clear();
+            self.last_close_reason = None;
         }
         let mut message = Message::user(text);
         message.images = images;

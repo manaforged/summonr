@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn a_command_receives_its_own_session_instead_of_an_inherited_identity() {
+    let (_dir, mut tools) = workspace(&[]);
+    tools.set_env([
+        ("SUMMONR_SESSION_ID".to_string(), "outer".to_string()),
+        ("SUMMONR_PARENT_SESSION".to_string(), "outer".to_string()),
+    ]);
+    tools.set_session("current");
+    let text = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": per_shell(
+            "printf '%s|%s' \"$SUMMONR_SESSION_ID\" \"$SUMMONR_PARENT_SESSION\"",
+            "Write-Output \"$env:SUMMONR_SESSION_ID|$env:SUMMONR_PARENT_SESSION\""
+        )}),
+    );
+    assert!(text.lines().any(|line| line == "current|current"), "{text}");
+}
+
+#[test]
 fn a_background_deadline_is_rejected_before_the_command_runs() {
     let (dir, tools) = workspace(&[]);
     let refused = outcome_with(

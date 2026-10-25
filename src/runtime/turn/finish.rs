@@ -207,6 +207,15 @@ impl<P: Provider> Loop<P> {
         let Some(objective) = self.session.goal_objective().map_err(super::session_err)? else {
             return Ok(Decision::Automatic);
         };
+        if self
+            .session
+            .completion_checks()
+            .map_err(super::session_err)?
+            .iter()
+            .any(|check| check.observation.is_none())
+        {
+            return Ok(Decision::GoalComplete);
+        }
         let decision = goal::decision(self, &objective, reply, evidence, usage).await;
         self.sync_usage(emit);
         Ok(decision)

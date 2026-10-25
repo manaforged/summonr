@@ -146,7 +146,7 @@ impl<P: Provider> Loop<P> {
             checks: self.verify.as_deref().unwrap_or_default(),
             children: self.task_available(),
         }));
-        if progress.kind == WorkKind::Goal {
+        if !progress.objective.is_empty() {
             parts.push(format!(
                 "Harness objective (verbatim, this is what must be met):\n{}",
                 progress.objective

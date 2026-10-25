@@ -1,8 +1,8 @@
 use std::borrow::{Borrow, Cow};
 
-const OUTPUT_BUDGET: usize = 50 * 1024;
+pub(super) const OUTPUT_BUDGET: usize = 16 * 1024;
 const NOTE_ROOM: usize = 1024;
-const SHAPED_BUDGET: usize = OUTPUT_BUDGET - NOTE_ROOM;
+pub(super) const SHAPED_BUDGET: usize = OUTPUT_BUDGET - NOTE_ROOM;
 const HEAD_SHARE: usize = 6;
 const LINE_MAX: usize = 8 * 1024;
 const CLIP_MARK: &str = " [line clipped]";

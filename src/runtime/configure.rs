@@ -1,5 +1,5 @@
 use super::*;
-use crate::durable::driver::work_at;
+use crate::durable::driver::{Parent, work_at};
 use crate::durable::log;
 use crate::durable::work::Policy as WorkPolicy;
 use crate::workflow;
@@ -353,5 +353,16 @@ pub(super) fn open_driver(
     model: &str,
     system: &str,
 ) -> Result<SessionDriver> {
-    SessionDriver::open(home.as_ref(), workspace, model, system, None).map_err(super::session_err)
+    let parent = std::env::var_os(crate::session::PARENT_ENV)
+        .map(|value| value.to_string_lossy().parse())
+        .transpose()
+        .map_err(|error| Error::Config(format!("invalid parent session: {error}")))?;
+    SessionDriver::open(
+        home.as_ref(),
+        workspace,
+        model,
+        system,
+        parent.map(Parent::Session),
+    )
+    .map_err(super::session_err)
 }

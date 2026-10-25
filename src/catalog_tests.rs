@@ -1,6 +1,14 @@
 use super::Model;
 
 #[test]
+fn grok_4_7_takes_its_context_window_from_the_catalog() {
+    assert_eq!(
+        super::context_limit("grok", "grok-4.7", Some("https://api.x.ai/v1")),
+        Some(500_000)
+    );
+}
+
+#[test]
 fn a_december_release_keeps_its_own_year() {
     let model = Model {
         release: Some(19_722),

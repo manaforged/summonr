@@ -8,7 +8,7 @@ use super::super::{
 use super::bridge;
 use super::frame::{Block, Control, Finished, Frame, LimitStatus, Piece, Rpc, Streamed};
 use super::run::{Call, Run};
-use crate::error::{Error, ProviderFailureKind, Result};
+use crate::error::{Error, Result};
 
 pub(in crate::provider) enum Step {
     Paused(AssistantMessage),
@@ -240,15 +240,14 @@ impl Run {
         } else {
             finished.errors.join("; ")
         };
-        let status = finished.api_error_status;
-        let kind = if self.rejected || status == Some(429) {
-            ProviderFailureKind::RateLimited
-        } else if matches!(status, Some(401 | 403)) {
-            ProviderFailureKind::Authentication
-        } else {
-            ProviderFailureKind::Http
-        };
-        Error::provider(kind, format!("Claude Code: {message}"))
+        let code = finished
+            .api_error_status
+            .unwrap_or(if self.rejected { 429 } else { 400 });
+        super::super::client::response_failure(
+            code,
+            &format!("Claude Code coding plan: {message}"),
+            None,
+        )
     }
 }
 

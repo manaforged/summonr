@@ -11,7 +11,7 @@ use super::image::image_type;
 use super::{ToolRegistry, object_string, object_usize, parse_args};
 use crate::tools::ToolOutput;
 
-const READ_PAGE_BYTES: usize = 50 * 1024;
+const READ_PAGE_BYTES: usize = super::super::budget::SHAPED_BUDGET;
 const READ_MAX_BYTES: usize = 8 * 1024;
 const READ_MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 

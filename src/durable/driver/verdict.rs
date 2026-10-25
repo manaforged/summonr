@@ -82,10 +82,28 @@ impl SessionDriver {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
         }
-        self.work
-            .as_mut()
-            .ok_or(DriverError::NoWork)?
-            .verdict(verdict.passed, decision)?;
+        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        let failure = receipt
+            .filter(|receipt| !verdict.passed && !receipt.checks.is_empty())
+            .map(|receipt| receipt.checks.clone());
+        let denied = failure.as_ref().is_some_and(|checks| {
+            checks
+                .iter()
+                .any(|check| !check.passed && check.output.starts_with("policy denied"))
+        });
+        if denied {
+            work.record_check(false);
+            work.abandon("completion check denied by policy");
+        } else if matches!(work.policy, Policy::Goal { .. })
+            && failure.is_some()
+            && failure == work.failed_checks
+        {
+            work.record_check(false);
+            work.abandon("completion check failed with the same output twice");
+        } else {
+            work.verdict(verdict.passed, decision)?;
+        }
+        work.failed_checks = failure;
         self.close_with(receipt)
     }
 

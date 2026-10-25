@@ -91,6 +91,22 @@ fn under_pressure(estimated_tokens: usize, window: u32) -> bool {
         >= (window as usize).saturating_mul(crate::limits::limits().compact_percent)
 }
 
+fn prompt_pressure(chars: usize, estimated_tokens: usize, window: Option<u32>) -> bool {
+    match window {
+        Some(window) => under_pressure(estimated_tokens, window),
+        None => chars >= crate::limits::limits().compact_chars,
+    }
+}
+
+fn elide_target(chars: usize, estimated_tokens: usize, window: Option<u32>) -> usize {
+    let limits = crate::limits::limits();
+    let from_chars =
+        limits.compact_chars.saturating_mul(limits.elide_percent) / limits.compact_percent.max(1);
+    window.map_or(from_chars, |window| {
+        chars.saturating_mul(window as usize * limits.elide_percent / 100) / estimated_tokens.max(1)
+    })
+}
+
 impl<P: Provider> Loop<P> {
     pub(super) fn rewrite(
         &mut self,
@@ -160,9 +176,7 @@ impl<P: Provider> Loop<P> {
         let estimated_tokens = self.estimated_prompt_tokens(chars, tool_bytes);
         let window = self.compact_window();
         let compact_chars = crate::limits::limits().compact_chars;
-        let pressure = window.map_or(chars >= compact_chars, |window| {
-            under_pressure(estimated_tokens, window)
-        });
+        let pressure = prompt_pressure(chars, estimated_tokens, window);
         if !pressure || messages.len() < 8 {
             return Ok(false);
         }
@@ -242,16 +256,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<bool> {
-        let limits = crate::limits::limits();
-        let target_chars = size.window.map_or(
-            limits.compact_chars.saturating_mul(limits.elide_percent)
-                / limits.compact_percent.max(1),
-            |window| {
-                size.chars
-                    .saturating_mul(window as usize * limits.elide_percent / 100)
-                    / size.estimated_tokens.max(1)
-            },
-        );
+        let target_chars = elide_target(size.chars, size.estimated_tokens, size.window);
         let needed = size.chars.saturating_sub(target_chars);
         let stale = live_outputs(&messages[1..], size.keep_from - 1);
         let (edits, reclaimed) = clear_outputs(&messages[1..], &stale, needed);

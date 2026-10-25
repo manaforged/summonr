@@ -65,6 +65,11 @@ pub(crate) struct Verdict {
     pub(crate) diagnostic: Option<String>,
 }
 
+pub(crate) enum Parent {
+    Session(SessionId),
+    Task(SessionId),
+}
+
 pub(crate) struct SessionDriver {
     pub(crate) partial: Partial,
     log: Log,

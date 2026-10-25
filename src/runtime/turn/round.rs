@@ -286,8 +286,12 @@ impl<P: Provider> Loop<P> {
         self.settle_probe().await;
         self.take_mail(messages, events, emit)?;
         self.drain(events, emit);
-        self.auto_compact(messages, tool_bytes, usage, events, emit)
-            .await?;
+        if self
+            .auto_compact(messages, tool_bytes, usage, events, emit)
+            .await?
+        {
+            self.inject(self.harness_note(&self.work_progress()?), messages)?;
+        }
         Ok(())
     }
 }

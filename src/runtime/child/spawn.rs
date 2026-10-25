@@ -1,6 +1,7 @@
 use super::brief::{agent_brief, instruction, rebase_paths};
 use super::record::*;
 use super::*;
+use crate::durable::driver::Parent;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
@@ -74,7 +75,7 @@ impl<P: Provider> Loop<P> {
             &workspace,
             &model,
             &self.system_prompt,
-            Some(self.session.id()),
+            Some(Parent::Task(self.session.id())),
         )
         .map_err(super::session_err)?;
         let (opener, tools) = self.child_opener(&args, tree.as_ref(), &workspace)?;

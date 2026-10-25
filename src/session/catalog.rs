@@ -210,12 +210,7 @@ pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt
         }
         None => list_in(home)?,
     };
-    for session in sessions
-        .into_iter()
-        .rev()
-        .filter(|info| info.depth == 0)
-        .take(PROMPT_SESSIONS)
-    {
+    for session in sessions.into_iter().rev().take(PROMPT_SESSIONS) {
         let lines = match log::read(&session.path) {
             Ok(lines) => lines,
             Err(error) => {
@@ -269,6 +264,7 @@ pub(crate) fn list_in(home: &Path) -> Result<Vec<SessionInfo>> {
                     .into_info(id.clone(), path.clone()),
             )
         })
+        .filter(|info| info.depth == 0)
         .collect();
     index.save(&sessions);
     Ok(infos)

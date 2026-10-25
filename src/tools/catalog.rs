@@ -349,7 +349,7 @@ fn run_command() -> ToolDefinition {
     tool(
         "run_command",
         &format!(
-            "Run a shell command in the workspace. Use search, not grep or find, to search files. workdir picks the directory; after {wait}s a command continues as a job unless timeout_secs sets a hard stop; background returns a job to wait on, kill stops it. op=help returns output and policy details.",
+            "Run builds, tests, and command-line tools in the workspace. Use edit/write for source changes and search to find files or text. workdir picks the directory; after {wait}s a command continues as a job unless timeout_secs sets a hard stop; background returns a job to wait on, kill stops it. Cancelling a reply preserves background jobs; inspect or wait on the existing id before launching another. op=help returns output and policy details.",
             wait = crate::limits::limits().command_wait_secs
         ),
         serde_json::json!({

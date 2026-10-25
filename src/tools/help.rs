@@ -2,10 +2,11 @@ pub(crate) fn read() -> String {
     format!(
         "read op reference: every form honors ignore rules unless no_ignore is true; search files with the search tool.
 
-op=file (default with path): N:text lines, one page of up to 50 KB by default; offset starts at line N, limit caps lines (max {max}); paths[] reads several files and reports missing ones inline; tags true adds hash tags for tag-edits.
+op=file (default with path): N:text lines, one page of up to {kb} KiB by default; offset starts at line N, limit caps lines (max {max}); paths[] reads several files and reports missing ones inline; tags true adds hash tags for tag-edits.
 op=list: directory listing; recursive true or depth N returns a tree; truncation notes say how to narrow.
 op=image: returns the image so you can see it; a model without image input gets a description or a note instead.",
-        max = crate::limits::limits().read_line_limit
+        max = crate::limits::limits().read_line_limit,
+        kb = super::budget::SHAPED_BUDGET / 1024,
     )
 }
 

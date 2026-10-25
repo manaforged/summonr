@@ -122,7 +122,9 @@ impl<P: Provider> Loop<P> {
         self.session
             .abort(abort, None)
             .map_err(super::session_err)?;
-        self.tools.stop_jobs()?;
+        if abort.code.child_scope() == crate::child::ChildScope::All {
+            self.tools.stop_jobs()?;
+        }
         self.emit_records(&mut Vec::new(), &mut emit)?;
         self.sync_usage(&mut emit);
         Ok(())

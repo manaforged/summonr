@@ -23,6 +23,12 @@ fn mark(agent: &Agent) -> (&'static str, Look) {
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum Row {
     Head(bool),
+    Headless {
+        id: String,
+        title: String,
+        model: String,
+        status: String,
+    },
     Agent {
         id: String,
         title: String,
@@ -89,7 +95,7 @@ fn fixed(
         .child(text(body, look).ellipsize())
 }
 
-type View = sigil::prelude::Signal<(bool, Vec<Agent>)>;
+type View = sigil::prelude::Signal<(bool, Vec<Agent>, Vec<crate::mail::Agent>)>;
 
 fn state_code(agent: &Agent) -> u8 {
     match agent.state() {
@@ -101,7 +107,7 @@ fn state_code(agent: &Agent) -> u8 {
 
 fn field(view: View, id: String, pick: impl Fn(&Agent) -> String + 'static) -> impl Fn() -> String {
     move || {
-        view.with(|(_, rows)| {
+        view.with(|(_, rows, _)| {
             rows.iter()
                 .find(|agent| agent.id == id)
                 .map(&pick)
@@ -192,7 +198,7 @@ fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> N
     line
 }
 
-fn shown(app: &App) -> (bool, Vec<Agent>) {
+fn shown(app: &App) -> (bool, Vec<Agent>, Vec<crate::mail::Agent>) {
     let model = app.model.get();
     let expanded = model.agents_expanded;
     let hidden: &std::collections::BTreeSet<String> = &model.agents_hidden;
@@ -203,12 +209,19 @@ fn shown(app: &App) -> (bool, Vec<Agent>) {
         .filter(|agent| expanded || (agent.background && !agent.done))
         .cloned()
         .collect();
-    (expanded, rows)
+    let headless = model
+        .peers
+        .iter()
+        .filter(|peer| peer.parent.as_deref() == Some(model.session.as_str()))
+        .cloned()
+        .collect();
+    (expanded, rows, headless)
 }
 
 pub(in crate::tui::sigil_view) fn rows(app: &App) -> usize {
-    let (_, rows) = shown(app);
-    rows.len() + usize::from(!rows.is_empty())
+    let (_, rows, headless) = shown(app);
+    let count = rows.len() + headless.len();
+    count + usize::from(count > 0)
 }
 
 pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder {
@@ -218,7 +231,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
         if width >= 12 {
             shown(&update)
         } else {
-            (false, Vec::new())
+            (false, Vec::new(), Vec::new())
         }
     });
     container()
@@ -229,10 +242,12 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 .min_size(0.0, 0.0),
         )
         .children_keyed(move || {
-            let (expanded, rows) = view.get();
+            let (expanded, rows, headless) = view.get();
             let mut nodes = Vec::new();
-            if !rows.is_empty() {
-                let count = move || view.with(|(_, rows)| rows.len().to_string());
+            if !rows.is_empty() || !headless.is_empty() {
+                let count = move || {
+                    view.with(|(_, rows, headless)| (rows.len() + headless.len()).to_string())
+                };
                 let toggle = app.clone();
                 let hint = Hints::new()
                     .key(
@@ -270,6 +285,62 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                     widths,
                 };
                 nodes.push((key, line(agent, &app, expanded, view, widths)));
+            }
+            let model_width = headless
+                .iter()
+                .map(|peer| super::cell_width(&peer.model))
+                .max()
+                .unwrap_or(0)
+                .min(width / 4);
+            let status_width = headless
+                .iter()
+                .map(|peer| super::cell_width(&peer.status.to_string()))
+                .max()
+                .unwrap_or(0);
+            for peer in headless {
+                let title = peer.label().to_string();
+                let status = peer.status.to_string();
+                let tone = match peer.status {
+                    crate::mail::Presence::Working => Token::Accent11,
+                    crate::mail::Presence::Joined
+                    | crate::mail::Presence::Idle
+                    | crate::mail::Presence::Unknown => Token::Gray10,
+                };
+                nodes.push((
+                    Row::Headless {
+                        id: peer.id,
+                        title: title.clone(),
+                        model: peer.model.clone(),
+                        status: status.clone(),
+                    },
+                    container()
+                        .layout(
+                            LayoutStyle::flex_row()
+                                .fill_width()
+                                .gap(8.0)
+                                .min_size(0.0, 0.0)
+                                .align_items(AlignItems::Center),
+                        )
+                        .child(text("○", Look::xs(tone)))
+                        .child(text("Headless", Look::xs(Token::Accent11)))
+                        .child(
+                            text(title, Look::xs(Token::Gray12))
+                                .ellipsize()
+                                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
+                        )
+                        .child(fixed(
+                            peer.model,
+                            Look::xs(Token::Gray10),
+                            model_width,
+                            JustifyContent::Start,
+                        ))
+                        .child(fixed(
+                            status,
+                            Look::xs(tone),
+                            status_width,
+                            JustifyContent::Start,
+                        )),
+                ));
             }
             nodes
         })

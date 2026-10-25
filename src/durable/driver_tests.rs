@@ -127,6 +127,73 @@ fn an_abort_closes_the_open_turn_with_its_reason() {
 }
 
 #[test]
+fn the_next_user_line_consumes_a_cancel_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver.prepare_turn_work("task", &[]).unwrap();
+    driver.start_input(&UserInput::from("task")).unwrap();
+    let abort = crate::tools::Abort::time_limit();
+    driver.abort(&abort, None).unwrap();
+    assert_eq!(driver.last_close_reason(), Some(abort.reason.as_str()));
+    driver.start_input(&UserInput::from("next")).unwrap();
+    assert_eq!(driver.last_close_reason(), None);
+}
+
+#[test]
+fn a_policy_denied_check_stops() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    let mut work = Work::new("make the check pass", Policy::Goal {});
+    work.status = crate::durable::work::Status::Active(Stage::Verify);
+    driver.work = Some(work);
+    driver.turn = Some(Turn {
+        stage: Some(Stage::Verify),
+        round: None,
+        calls: Vec::new(),
+    });
+    let receipt = crate::verify::Receipt {
+        changes: Vec::new(),
+        checks: vec![crate::verify::Outcome {
+            command: "cargo test".to_string(),
+            passed: false,
+            output: "policy denied: command blocked".to_string(),
+        }],
+        snapshot: String::new(),
+        reads: 0,
+        searches: 0,
+        commands: 0,
+        failures: Vec::new(),
+        aborted: false,
+        verified: false,
+        text: String::new(),
+    };
+    driver
+        .commit_verdict(
+            Verdict {
+                passed: false,
+                diagnostic: None,
+            },
+            Decision::Automatic,
+            Some(&receipt),
+        )
+        .unwrap();
+    let work = driver.work.as_ref().unwrap();
+    assert!(
+        matches!(
+            work.status,
+            crate::durable::work::Status::Abandoned(ref reason) if reason.contains("denied")
+        ),
+        "{:?}",
+        work.status
+    );
+    assert!(
+        !work.pending.iter().any(|line| line.contains("Repair")),
+        "{:?}",
+        work.pending
+    );
+}
+
+#[test]
 fn the_snapshot_skips_the_session_store_and_the_tree_cache() {
     let dir = tempfile::tempdir().unwrap();
     let driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();

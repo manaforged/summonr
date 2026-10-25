@@ -9,19 +9,24 @@ fn the_environment_joins_the_mailbox_when_the_module_is_off() {
 }
 
 #[test]
+fn an_unresolved_mail_name_fails_and_writes_no_inbox() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = std::path::Path::new("/work/summonr");
+    let _sender = Mailbox::open(dir.path(), "s1", Some("sender"), "summonr", "model", cwd).unwrap();
+    let error = deliver_in(dir.path(), "s1", &["missing".to_string()], "hello").unwrap_err();
+    assert!(error.to_string().contains("missing"), "{error}");
+    assert!(!dir.path().join("inbox/missing.jsonl").exists());
+}
+
+#[test]
 fn clear_refuses_the_inbox_of_a_live_session() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("agents")).unwrap();
-    let agent = Agent {
-        id: "s1".to_string(),
-        name: String::new(),
-        kind: default_kind(),
-        model: "model".to_string(),
-        cwd: "/work".to_string(),
-        pid: 1,
-        status: Presence::Idle,
-        last_seen: now(),
-    };
+    let agent: Agent = serde_json::from_value(serde_json::json!({
+        "id": "s1", "model": "model", "cwd": "/work", "pid": 1,
+        "status": "idle", "last_seen": now()
+    }))
+    .expect("peer record");
     std::fs::write(
         dir.path().join("agents/s1.json"),
         serde_json::to_string(&agent).unwrap(),

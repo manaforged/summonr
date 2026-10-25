@@ -23,12 +23,7 @@ impl Worker {
 
     pub(in crate::tui::worker) fn resume(&self, key: Option<&str>) -> bool {
         let selected = match key {
-            Some(key) => crate::session::resolve_id(key).and_then(|path| {
-                crate::session::list()?
-                    .into_iter()
-                    .find(|info| info.path == path)
-                    .ok_or_else(|| crate::Error::Config(format!("session `{key}` disappeared")))
-            }),
+            Some(key) => crate::session::resolve_id(key).map(crate::session::info),
             None => crate::session::previous_for(
                 self.loop_.workspace(),
                 &self.loop_.session_id().to_string(),

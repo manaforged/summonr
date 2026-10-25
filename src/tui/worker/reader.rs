@@ -100,7 +100,6 @@ impl Reader {
                     .map(|rows| {
                         rows.into_iter()
                             .rev()
-                            .filter(|info| info.depth == 0)
                             .map(|info| {
                                 let local =
                                     info.cwd.as_ref().is_some_and(|cwd| roots.contains(cwd));

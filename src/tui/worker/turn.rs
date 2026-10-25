@@ -33,6 +33,7 @@ struct MidTurn<'a> {
     auto_reply: &'a mut bool,
     ui: &'a UnboundedSender<Msg>,
     reader: &'a super::reader::Reader,
+    peers: &'a mut Option<Vec<crate::mail::Agent>>,
 }
 
 impl MidTurn<'_> {
@@ -131,7 +132,21 @@ impl MidTurn<'_> {
                 self.steering.answer(dialog, UserInput::from(text));
                 Outcome::Keep
             }
-            Cmd::Mail | Cmd::Tick | Cmd::LoginAnswer(_) | Cmd::Open(_) => Outcome::Keep,
+            Cmd::Tick => {
+                if crate::mail::listed() {
+                    match crate::mail::dir() {
+                        Ok(dir) => super::state::publish_peers(
+                            crate::mail::live(&dir),
+                            session_id,
+                            self.peers,
+                            self.ui,
+                        ),
+                        Err(error) => drop(self.ui.send(Msg::System(error.to_string()))),
+                    }
+                }
+                Outcome::Keep
+            }
+            Cmd::Mail | Cmd::LoginAnswer(_) | Cmd::Open(_) => Outcome::Keep,
             Cmd::Cancel | Cmd::Quit => unreachable!("attend handles Cancel and Quit"),
         }
     }
@@ -219,6 +234,7 @@ impl Worker {
                 auto_reply: &mut self.auto_reply,
                 ui: &self.ui,
                 reader: &self.reader,
+                peers: &mut self.last_peers,
             };
             let (mut cancelled, mut quit) = (false, false);
             let result = loop {

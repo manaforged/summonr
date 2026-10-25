@@ -25,7 +25,7 @@ pub(crate) fn input_cap(text: &str) -> Option<u32> {
 const PLAN_USAGE: &[(&str, ProviderFailureKind)] = &[
     (
         "subscription_sharing_usage_limit_exceeded",
-        ProviderFailureKind::RateLimited,
+        ProviderFailureKind::UsageLimit,
     ),
     (
         "subscription_sharing_user_not_eligible",
@@ -59,33 +59,25 @@ const PLAN_USAGE: &[(&str, ProviderFailureKind)] = &[
         "chatpass_v2_invalid_authorization_context",
         ProviderFailureKind::Http,
     ),
+    ("insufficient_quota", ProviderFailureKind::UsageLimit),
+    ("hit your session limit", ProviderFailureKind::UsageLimit),
 ];
 
 const PLAN_USAGE_CAP: &str = "subscription_sharing_usage_limit_exceeded";
 const PLAN_USAGE_SETTINGS: &str = "https://chatgpt.com/settings/usage";
 
-pub(crate) fn plan_usage(code: u16, text: &str, retry_after: Option<u64>) -> Option<Error> {
-    let (named, kind) = PLAN_USAGE
-        .iter()
-        .find(|(code, _)| text.contains(code))
-        .copied()?;
-    Some(Error::Provider(ProviderFailure {
-        kind,
-        status: Some(code),
-        message: format!("HTTP {code}: {named}: {}", reason(text)),
-        partial_output: false,
-        retry_after,
-    }))
-}
-
 pub(crate) fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
-    if let Some(error) = plan_usage(code, text, retry_after) {
-        return error;
-    }
+    let lower = text.to_ascii_lowercase();
+    // complexity: bounded by the eleven provider failure markers
+    let known = PLAN_USAGE.iter().find(|(named, _)| lower.contains(named));
+    let detail = reason(text);
     Error::Provider(ProviderFailure {
-        kind: failure_kind(code, &text.to_lowercase()),
+        kind: known.map_or_else(|| failure_kind(code, &lower), |(_, kind)| *kind),
         status: Some(code),
-        message: format!("HTTP {code}: {}", reason(text)),
+        message: known.map_or_else(
+            || format!("HTTP {code}: {detail}"),
+            |(named, _)| format!("HTTP {code}: {named}: {detail}"),
+        ),
         partial_output: false,
         retry_after: retry_after.or_else(|| retry_delay(text)),
     })
@@ -206,9 +198,17 @@ impl Client {
         };
         let lower = failure.message.to_lowercase();
         let advice = match (failure.kind, model) {
-            (ProviderFailureKind::RateLimited, _) if lower.contains(PLAN_USAGE_CAP) => format!(
-                "{name} reached this app's cap on your ChatGPT plan; open Manage usage at {PLAN_USAGE_SETTINGS} to raise it, or pick another model with /model"
-            ),
+            (ProviderFailureKind::UsageLimit, _) => {
+                if lower.contains(PLAN_USAGE_CAP) {
+                    format!(
+                        "{name} reached this app's cap on your ChatGPT plan; open Manage usage at {PLAN_USAGE_SETTINGS} to raise it, or pick another model with /model"
+                    )
+                } else {
+                    format!(
+                        "{name} exhausted its usage allowance; wait for its reset or select another account or provider"
+                    )
+                }
+            }
             (ProviderFailureKind::Authentication, _) if !keyed => {
                 failure.kind = ProviderFailureKind::MissingKey;
                 format!("{name} needs a key and none is set; run `summonr login {name}` to add one")
@@ -304,7 +304,7 @@ impl Client {
         match error.provider_failure().map(|failure| failure.kind) {
             Some(Kind::Authentication) => State::KeyRejected,
             Some(Kind::MissingKey) => State::NeedsKey,
-            Some(Kind::RateLimited) => State::RateLimited,
+            Some(Kind::RateLimited | Kind::UsageLimit) => State::RateLimited,
             Some(Kind::Transport) => State::Offline,
             Some(
                 Kind::Server
@@ -358,15 +358,7 @@ impl Client {
     }
 
     fn recorded(&self, endpoint: &str, model: &str) -> Option<u32> {
-        if let Some(limit) = crate::catalog::known(endpoint, model).and_then(|row| row.context) {
-            return Some(limit);
-        }
-        let mut rows = [Model {
-            id: model.to_string(),
-            ..Model::default()
-        }];
-        crate::catalog::enrich(endpoint, Some(&self.base), &mut rows);
-        rows[0].context
+        crate::catalog::context_limit(endpoint, model, Some(&self.base))
     }
 
     pub(super) async fn probe(&self, model: &str) -> Option<u32> {

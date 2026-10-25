@@ -6,8 +6,13 @@ impl SessionDriver {
         workspace: &Path,
         model: &str,
         system: &str,
-        parent: Option<SessionId>,
+        parent: Option<Parent>,
     ) -> Result<Self, DriverError> {
+        let (parent, depth) = match parent {
+            Some(Parent::Session(id)) => (Some(id), 0),
+            Some(Parent::Task(id)) => (Some(id), 1),
+            None => (None, 0),
+        };
         let id = SessionId::new();
         let path = log::session_path(home, id);
         let mut driver = Self {
@@ -31,7 +36,7 @@ impl SessionDriver {
             system: system.to_string(),
             workspace: driver.workspace.clone(),
             parent,
-            depth: u8::from(parent.is_some()),
+            depth,
         })?;
         Ok(driver)
     }

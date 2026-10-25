@@ -224,6 +224,11 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
+        if error.provider_failure().map(|failure| failure.kind)
+            == Some(ProviderFailureKind::UsageLimit)
+        {
+            return Err(error);
+        }
         let text = error.to_string();
         if !retryable {
             if self.seats.contains_key(&role) || !self.fall_back(&text, events, emit)? {

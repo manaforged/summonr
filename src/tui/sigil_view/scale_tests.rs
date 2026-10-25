@@ -353,3 +353,47 @@ fn a_cleared_transcript_shows_the_note_in_place_of_the_prompt() {
         "{last}"
     );
 }
+
+#[test]
+fn headless_workers_appear_in_the_originating_conversation() {
+    for width in [80, 100, 160] {
+        let shown = frame_with(busy_info(), width, 30, State::Busy, |app| {
+            let parent = app.model.peek().session.clone();
+            let peers = serde_json::from_value(serde_json::json!([
+                {"id": "worker-a", "name": "Attention", "model": "gpt-6.1-sol", "cwd": "/work", "pid": 1, "status": "working", "last_seen": 0, "parent": parent},
+                {"id": "worker-c", "name": "MoE", "model": "claude-opus", "cwd": "/work", "pid": 3, "status": "idle", "last_seen": 0, "parent": parent},
+                {"id": "worker-d", "name": "Prefill", "model": "gpt-6.1-sol", "cwd": "/work", "pid": 4, "status": "joined", "last_seen": 0, "parent": parent},
+                {"id": "worker-b", "name": "Unrelated", "model": "other-model", "cwd": "/work", "pid": 2, "status": "working", "last_seen": 0, "parent": "other-session"}
+            ])).expect("headless worker records");
+            app.update(Msg::Peers(peers));
+        }).join("\n");
+        println!("{width} columns:\n{shown}");
+        assert!(
+            shown.contains("Subagents") && shown.contains("Headless"),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("Attention")
+                && shown.contains("gpt-6.1-sol")
+                && shown.contains("working"),
+            "{shown}"
+        );
+        assert!(
+            !shown.contains("Unrelated"),
+            "another conversation's worker leaked into the strip: {shown}"
+        );
+        assert!(
+            shown.contains("MoE") && shown.contains("Prefill"),
+            "{shown}"
+        );
+        let working = shown
+            .lines()
+            .find(|line| line.contains("working"))
+            .expect("working row");
+        let idle = shown
+            .lines()
+            .find(|line| line.contains("idle"))
+            .expect("idle row");
+        assert_eq!(working.find("working"), idle.find("idle"), "{shown}");
+    }
+}

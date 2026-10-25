@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::durable::log::{self, Line};
 use crate::provider::Message;
 
+pub(crate) const PARENT_ENV: &str = "SUMMONR_PARENT_SESSION";
+pub(crate) const SESSION_ENV: &str = "SUMMONR_SESSION_ID";
+
 mod catalog;
 mod export;
 mod profile;

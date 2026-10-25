@@ -107,13 +107,7 @@ pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {
         (None, None) => Vec::new(),
     };
     commands.retain(|command| !command.trim().is_empty());
-    if commands.is_empty() {
-        return Err(Error::Config(format!(
-            "{}: `check` must name at least one command",
-            path.display()
-        )));
-    }
-    Ok(Some(commands))
+    Ok((!commands.is_empty()).then_some(commands))
 }
 
 #[must_use]

@@ -98,3 +98,5 @@ gateway_fire_secs = 60
 gateway_head_secs = 2
 gateway_read_secs = 10
 gateway_stop_secs = 5
+job_child_rows = 8
+job_child_width = 160

@@ -258,14 +258,15 @@ impl ToolRegistry {
         Ok(Some(ToolOutput::ok(answers.join("\n\n"))))
     }
 
-    pub(crate) fn stop_jobs(&self) -> Result<()> {
+    pub(crate) fn stop_jobs(&self) -> Result<Vec<String>> {
         let session = self
             .session
             .lock()
             .map_err(|error| Error::Tool(format!("cannot read tool session: {error}")))?;
         let Some(session) = session.clone() else {
-            return Ok(());
+            return Ok(Vec::new());
         };
+        let mut notes = Vec::new();
         for record in crate::jobs::since(&self.workspace, 0, Some(&session))
             .into_iter()
             .filter(|record| record.session.as_deref() == Some(&session))
@@ -273,10 +274,16 @@ impl ToolRegistry {
             if crate::jobs::status(&self.workspace, &record)?.state
                 == crate::jobs::JobState::Running
             {
-                stop_job(&self.workspace, &record)?;
+                let children = stop_job(&self.workspace, &record)?;
+                notes.push(format!(
+                    "killed job {} `{}`\n{}",
+                    record.id,
+                    crate::secret::shield::scrub_found(&record.command, &self.workspace),
+                    crate::jobs::block("child commands at kill", &children)
+                ));
             }
         }
-        Ok(())
+        Ok(notes)
     }
 
     fn check_command(&self, command: &str, cwd: &Path) -> Result<()> {

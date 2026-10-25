@@ -147,10 +147,21 @@ impl<P: Provider> Loop<P> {
             role,
         } = failed;
         let failure = error.provider_failure();
-        let retryable = state.retries < crate::limits::limits().retry_limit
-            && failure.is_some_and(retryable_failure);
-        let wait = failure
+        let mut wait = failure
             .map(|failure| crate::limits::limits().retry_wait(failure.retry_after, state.retries));
+        let retryable = match failure {
+            Some(failure) if failure.kind == ProviderFailureKind::RateLimited => {
+                let asked = failure.retry_after.map(Duration::from_secs);
+                if self.remaining_time().is_some() {
+                    wait = asked.or(wait);
+                }
+                self.can_wait(wait, state.retries)
+            }
+            _ => {
+                state.retries < crate::limits::limits().retry_limit
+                    && failure.is_some_and(retryable_failure)
+            }
+        };
         let kind = failure.map(|failure| failure.kind);
         self.record_failure(attempt, &error, started, messages, events, emit)?;
         if self.round_abort().is_some() {
@@ -197,6 +208,13 @@ impl<P: Provider> Loop<P> {
         Ok(true)
     }
 
+    fn can_wait(&self, wait: Option<Duration>, retries: u32) -> bool {
+        match self.remaining_time() {
+            Some(left) => wait.is_some_and(|wait| wait < left),
+            None => retries < crate::limits::limits().retry_limit,
+        }
+    }
+
     fn retry_or_fall_back(
         &mut self,
         error: Error,
@@ -220,9 +238,8 @@ impl<P: Provider> Loop<P> {
             emit,
             Event::Note {
                 text: format!(
-                    "stream cut; retry {} of {}: {}",
+                    "provider error; retry {}: {}",
                     state.retries,
-                    crate::limits::limits().retry_limit,
                     text.lines().next().unwrap_or("unknown")
                 ),
             },

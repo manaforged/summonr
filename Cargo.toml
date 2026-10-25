@@ -78,6 +78,7 @@ httparse = "1.10"
 
 [dev-dependencies]
 fastrand = "2.5"
+tokio = { version = "1", features = ["test-util"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 portable-pty = "0.9"

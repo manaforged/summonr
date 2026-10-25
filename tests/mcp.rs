@@ -59,6 +59,7 @@ fn main() {
         content::an_unreadable_skill_fails_before_the_model_is_called,
         progress::task_progress_reaches_the_next_provider_turn,
         session::a_goal_recovers_after_more_than_three_failed_checks,
+        session::a_goal_with_no_check_and_no_score_runs_until_the_judge_says_done,
         #[cfg(unix)]
         compat::sessions_saved_by_0_1_0_list_export_and_profile,
         #[cfg(unix)]

@@ -10,6 +10,7 @@ struct Fault {
     kind: ProviderFailureKind,
     partial: bool,
     fails: usize,
+    asked: Option<u64>,
     sent: Mutex<Vec<Vec<Message>>>,
 }
 
@@ -39,7 +40,7 @@ impl Provider for Fault {
                 status: None,
                 message: "fixture failure".to_string(),
                 partial_output: self.partial,
-                retry_after: (self.fails > 1).then_some(0),
+                retry_after: self.asked.or((self.fails > 1).then_some(0)),
             }))
         } else {
             Ok(AssistantMessage {
@@ -72,6 +73,7 @@ async fn run_failing(
         kind,
         partial,
         fails,
+        asked: None,
         sent: Mutex::new(Vec::new()),
     };
     let mut loop_ =
@@ -125,4 +127,72 @@ async fn an_overloaded_stream_retries_up_to_the_transport_limit() {
     let (ok, attempts, _) = run_failing(ProviderFailureKind::Server, true, limit + 1).await;
     assert!(!ok);
     assert_eq!(attempts, limit + 1);
+}
+
+#[tokio::test]
+async fn a_rate_limited_request_is_retried() {
+    let (ok, attempts, _) = run_failing(ProviderFailureKind::RateLimited, false, 3).await;
+    assert!(ok, "a rate limit that clears recovers the turn");
+    assert_eq!(attempts, 4);
+}
+
+#[tokio::test]
+async fn a_rate_limit_is_waited_out_past_the_retry_limit_while_the_time_budget_lasts() {
+    let fails = crate::limits::limits().retry_limit as usize + 3;
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("session home");
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .expect("open journal");
+    let provider = Fault {
+        kind: ProviderFailureKind::RateLimited,
+        partial: false,
+        fails,
+        asked: None,
+        sent: Mutex::new(Vec::new()),
+    };
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver)
+        .expect("open runtime")
+        .with_budget(crate::Budget {
+            max_tokens: None,
+            max_secs: Some(600),
+        })
+        .expect("budget");
+    let result = loop_.turn("hi there").await;
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(
+        loop_.provider.sent.lock().expect("requests").len(),
+        fails + 1
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_rate_limit_inside_a_time_budget_waits_the_full_time_the_provider_asks() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("session home");
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .expect("open journal");
+    let provider = Fault {
+        kind: ProviderFailureKind::RateLimited,
+        partial: false,
+        fails: 1,
+        asked: Some(120),
+        sent: Mutex::new(Vec::new()),
+    };
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver)
+        .expect("open runtime")
+        .with_budget(crate::Budget {
+            max_tokens: None,
+            max_secs: Some(600),
+        })
+        .expect("budget");
+    let started = tokio::time::Instant::now();
+    let result = loop_.turn("hi there").await;
+    assert!(result.is_ok(), "{result:?}");
+    assert!(
+        started.elapsed() >= std::time::Duration::from_secs(120),
+        "retried after {:?}, before the 120 s the provider asked for",
+        started.elapsed()
+    );
 }

@@ -35,6 +35,7 @@ class Summonr(BaseInstalledAgent):
 
     _OUTPUT_FILENAME = "summonr.txt"
     _instruction = ""
+    ASK = "-p -- {}"
 
     CLI_FLAGS = [
         CliFlag(
@@ -113,7 +114,7 @@ class Summonr(BaseInstalledAgent):
             await self.exec_as_agent(
                 environment,
                 command=(
-                    f"{BINARY} -e {endpoint} --json {flags} -p -- {shlex.quote(instruction)} "
+                    f"{BINARY} -e {endpoint} --json {flags} {self.ASK.format(shlex.quote(instruction))} "
                     f"2>{EnvironmentPaths.agent_dir}/summonr.err </dev/null "
                     f"| tee {EnvironmentPaths.agent_dir / self._OUTPUT_FILENAME}"
                 ),
@@ -224,3 +225,12 @@ class SummonrControl(Summonr):
     @override
     def name() -> str:
         return "summonr-control"
+
+
+class SummonrGoal(Summonr):
+    ASK = "--goal {}"
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "summonr-goal"

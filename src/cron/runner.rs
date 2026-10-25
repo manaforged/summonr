@@ -216,7 +216,7 @@ pub(crate) fn exec(
     let code = child.wait()?.code();
     match code {
         Some(code) => durable::write(&exit, format!("{code}\n"), durable::Durability::Renamed)?,
-        None => crate::jobs::write_killed(&exit)?,
+        None => crate::jobs::write_killed(&exit, &[])?,
     }
     conclude(&job, slot, started, code, Some(&log))?;
     Ok(code.unwrap_or(1))

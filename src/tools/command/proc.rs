@@ -300,13 +300,18 @@ pub(super) async fn wait_shell(
     }
 }
 
-pub(super) fn stop_job(workspace: &std::path::Path, record: &crate::jobs::Record) -> Result<()> {
+pub(super) fn stop_job(
+    workspace: &std::path::Path,
+    record: &crate::jobs::Record,
+) -> Result<Vec<String>> {
     let exit = crate::jobs::exit_path(workspace, &record.id);
+    let mut children = Vec::new();
     if crate::jobs::alive_since(record.pid, record.started) {
+        children = crate::jobs::child_lines(record.pid, workspace);
         kill_group(record.pid);
     }
     if !exit.is_file() {
-        crate::jobs::write_killed(&exit)?;
+        crate::jobs::write_killed(&exit, &children)?;
     }
-    Ok(())
+    Ok(children)
 }

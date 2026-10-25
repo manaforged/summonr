@@ -294,4 +294,38 @@ impl<P: Provider> Loop<P> {
         };
         spawned.last = last;
     }
+
+    pub(in crate::runtime) async fn run_or_wake(
+        &mut self,
+        call: &ToolCall,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<(Result<ToolOutput>, Usage)> {
+        let waits =
+            crate::tools::Builtin::is(&call.function.name, crate::tools::Builtin::RunCommand)
+                && serde_json::from_str::<serde_json::Value>(&call.function.arguments)
+                    .is_ok_and(|args| args.get("job").is_some() && args.get("kill").is_none());
+        let mut usage = Usage::default();
+        if waits {
+            self.settle_ready(events, emit, &mut usage).await?;
+        }
+        if !waits || self.spawned.is_empty() {
+            return Ok((self.tools.execute_outcome(call).await, usage));
+        }
+        let ids: Vec<String> = self.spawned.keys().cloned().collect();
+        let handles = self.spawned.values_mut().map(|spawned| &mut spawned.handle);
+        let (index, joined) = tokio::select! {
+            biased;
+            (joined, index, _) = futures::future::select_all(handles) => (index, joined),
+            output = self.tools.execute_outcome(call) => return Ok((output, usage)),
+        };
+        let id = &ids[index];
+        self.announce_finished(id, joined, events, emit, &mut usage)?;
+        Ok((
+            Ok(ToolOutput::ok(format!(
+                "returned early: background child {id} finished before this job did; its result is delivered; wait on the job again"
+            ))),
+            usage,
+        ))
+    }
 }

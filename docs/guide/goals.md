@@ -26,7 +26,7 @@ With no check file, `/goal` in the interface detects a check from the workspace 
 | `package.json` with a non-empty `test` script | `npm test` |
 | `go.mod` | `go test ./...` |
 
-A Python project gets no detected check, and the judge decides.
+A Python project gets no detected check, and the judge decides. A goal with no check, such as "make the system better", asks the model to first write a contract: the outcome that matters most, the command or evidence that will show it, and what must not regress. The judge counts the goal done only when that evidence is shown; formatting, renames, comments, docs, or a bare test run count as unfinished.
 
 Use one key, not both. The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. If the check file changes during a run anyway, summonr restores it, a `note` event says so, and the run keeps the check it loaded at start. `--no-verify` skips the check gate for one run.
 

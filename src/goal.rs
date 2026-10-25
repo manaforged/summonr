@@ -11,7 +11,7 @@ line of JSON: {\"verdict\": \"done\"|\"continue\"|\"stalled\"|\"impossible\", \"
 file, or test output) that the objective is met. Never `done` when the pass depends on hidden \
 state, call order, special cases for test inputs, or changed test expectations, or on a \
 changed environment for the check (a stub or shim on PATH, an edited file outside the \
-workspace, a faked clock or tool); reply `continue` and name the trick. `continue` when work remains; name what remains. `stalled` when the response reports no concrete action on the objective. \
+workspace, a faked clock or tool); reply `continue` and name the trick. `continue` when work remains; name what remains. For an open-ended objective, `done` needs the outcome the agent committed to and the evidence that shows it, on something a user would notice; formatting, renames, comments, docs, a test run alone, or the agent's belief that it is done are `continue`, so name the bigger gap. `stalled` when the response reports no concrete action on the objective; a question the agent could answer from the workspace is `continue`, not `stalled`. \
 `impossible` when the objective cannot be met in this workspace; name the blocker. When two \
 tests expect different results for the same input, reply `impossible` and name both tests.";
 
@@ -61,7 +61,11 @@ pub fn prompt(objective: &str, gates: &[String], round: u32) -> String {
         "Work toward this objective. Keep going until it is fully met. Do not stop halfway or \
 ask questions you can resolve yourself:\n\n{objective}\n"
     );
-    if !gates.is_empty() {
+    if gates.is_empty() {
+        text.push_str(
+            "\nNo check is set. Before changing anything, turn the objective into a contract: the outcome that should be true when you are done, the command or evidence that will show it, and what must not regress. Pick the outcome that matters most to a user of this code, not the easiest one. Work to that contract, and end with the evidence. Formatting, renames, comments, and docs alone are not an outcome.\n",
+        );
+    } else {
         let list = gates
             .iter()
             .map(|gate| format!("`{gate}`"))

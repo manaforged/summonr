@@ -231,7 +231,7 @@ cache_ttl = "5m"
 | Key | Built in | Meaning |
 | --- | --- | --- |
 | `cache_ttl` | `"1h"` | Prompt-cache lifetime for an endpoint that sets none: `"5m"` or `"1h"`. |
-| `retry_limit` | `5` | Retries for a 429, a 5xx, or a connection error. |
+| `retry_limit` | `5` | Retries for a 429, a 5xx, or a connection error. With `--max-secs` set, a rate-limited request waits the full `retry-after` the provider asks for and keeps retrying while the time left covers the wait; it stops at once when the provider asks for a longer wait than that. |
 | `retry_base_ms` | `1000` | First retry wait; each retry doubles it. |
 | `retry_max_ms` | `30000` | Longest retry wait. |
 | `retry_after_max_secs` | `60` | Longest `Retry-After` summonr waits for; a longer one falls back to the next endpoint. |

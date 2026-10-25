@@ -178,6 +178,31 @@ pub(crate) fn a_goal_recovers_after_more_than_three_failed_checks() {
     );
 }
 
+pub(crate) fn a_goal_with_no_check_and_no_score_runs_until_the_judge_says_done() {
+    let session = Session::new();
+    std::fs::write(session.work.path().join("parts.txt"), "none\n").expect("write the fixture");
+    commit_all(&session);
+    let mut steps = Vec::new();
+    for _ in 0..8 {
+        steps.push(Step::Text("one more part is written"));
+        steps.push(Step::Text(
+            r#"{"verdict": "continue", "reason": "more parts remain"}"#,
+        ));
+    }
+    steps.push(Step::Text("every part is written"));
+    steps.push(Step::Text(
+        r#"{"verdict": "done", "reason": "every part is written"}"#,
+    ));
+    let model = Model::start(steps);
+    let result = session.run(&model, "", &["--goal", "write every part", "--json"]);
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    assert!(
+        !result.stdout.contains("no new measurement"),
+        "{}",
+        result.stdout
+    );
+}
+
 pub(crate) fn a_goal_met_without_tools_in_a_repository_passes() {
     let session = Session::new();
     std::fs::write(session.work.path().join("notes.txt"), "present\n").expect("write the fixture");

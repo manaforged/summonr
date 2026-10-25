@@ -50,7 +50,109 @@ fn a_stopped_job_reads_as_killed() {
     let (id, record_path, _log, _exit) = prepare(dir.path()).unwrap();
     let record = stamp(&id, 999_999, "sleep 9", dir.path(), true, None).unwrap();
     write(&record_path, &record).unwrap();
-    write_killed(&exit_path(dir.path(), &id)).unwrap();
+    write_killed(&exit_path(dir.path(), &id), &[]).unwrap();
     let status = status(dir.path(), &record).unwrap();
     assert_eq!(status.state, JobState::Killed);
+}
+
+#[cfg(unix)]
+fn call(tools: &crate::tools::ToolRegistry, arguments: serde_json::Value) -> String {
+    let call = crate::provider::ToolCall {
+        id: "t1".to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: arguments.to_string(),
+        },
+        continuation: None,
+    };
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call))
+        .unwrap()
+        .text
+}
+
+#[cfg(unix)]
+fn started(dir: &Path, command: &str) -> (crate::tools::ToolRegistry, String) {
+    let tools = crate::tools::ToolRegistry::with_policy_and_search(
+        dir,
+        crate::policy::Policy::builtin(),
+        None,
+    )
+    .unwrap();
+    tools.set_session("s1");
+    let text = call(
+        &tools,
+        serde_json::json!({"command": command, "background": true}),
+    );
+    let id = text
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .unwrap_or_else(|| panic!("{text}"))
+        .to_string();
+    (tools, id)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_running_job_status_names_its_child_commands() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tools, id) = started(dir.path(), "sleep 41 & sleep 42; wait");
+    let status = call(&tools, serde_json::json!({"job": id}));
+    drop(tools.stop_jobs());
+    assert!(status.contains("children:"), "{status}");
+    assert!(status.contains("sleep 41"), "{status}");
+    assert!(status.contains("sleep 42"), "{status}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_cancel_names_the_child_commands_it_killed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tools, id) = started(dir.path(), "sleep 43; true");
+    let running = call(&tools, serde_json::json!({"job": id}));
+    assert!(running.contains("sleep 43"), "{running}");
+    let notes = tools.stop_jobs().unwrap();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(
+        notes[0].contains(&format!("killed job {id}")),
+        "{}",
+        notes[0]
+    );
+    assert!(notes[0].contains("child commands at kill:"), "{}", notes[0]);
+    assert!(notes[0].contains("sleep 43"), "{}", notes[0]);
+    let status = call(&tools, serde_json::json!({"job": id}));
+    assert!(status.contains("children at kill:"), "{status}");
+    assert!(status.contains("sleep 43"), "{status}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_child_command_with_newlines_lists_on_one_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tools, id) = started(dir.path(), "sleep 44\nsleep 45");
+    let status = call(&tools, serde_json::json!({"job": id}));
+    drop(tools.stop_jobs());
+    let block: Vec<&str> = status
+        .lines()
+        .skip_while(|line| *line != "children:")
+        .skip(1)
+        .take_while(|line| !line.starts_with("log:"))
+        .collect();
+    assert!(!block.is_empty(), "{status}");
+    assert!(
+        block.iter().all(|line| line
+            .trim_start()
+            .split(' ')
+            .next()
+            .unwrap()
+            .parse::<u32>()
+            .is_ok()),
+        "{status}"
+    );
 }

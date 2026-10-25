@@ -125,4 +125,6 @@ table! {
     gateway_head_secs: u64,
     gateway_read_secs: u64,
     gateway_stop_secs: u64,
+    job_child_rows: usize,
+    job_child_width: usize,
 }

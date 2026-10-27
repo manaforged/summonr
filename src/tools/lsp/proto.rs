@@ -315,6 +315,12 @@ pub(super) async fn read_msg(reader: &mut BufReader<impl AsyncRead + Unpin>) -> 
     }
     let length =
         length.ok_or_else(|| Error::Tool("lsp message missing Content-Length".to_string()))?;
+    let max = crate::limits::limits().lsp_frame_max_bytes;
+    if length > max {
+        return Err(Error::Tool(format!(
+            "lsp message of {length} bytes is larger than {max}"
+        )));
+    }
     let mut body = vec![0_u8; length];
     reader
         .read_exact(&mut body)

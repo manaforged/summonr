@@ -146,7 +146,11 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
     }
     let toggle = app.clone();
     let open = visibility == Visibility::Expanded;
-    let next = if open { "collapsed" } else { "expanded" };
+    let next = if open {
+        Visibility::Collapsed
+    } else {
+        Visibility::Expanded
+    };
     let words = crate::text::plural(body.split_whitespace().count(), "word");
     let head = if live {
         "Thinking…".to_string()
@@ -165,7 +169,7 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
         .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
         .pointer_up(move |event: &mut PointerEvent| {
             if event.button == Some(MouseButton::Left) {
-                toggle.reasoning_command(Some(next));
+                toggle.set_visibility(|prefs| &mut prefs.reasoning, Some(next));
                 event.stop_propagation();
             }
         })

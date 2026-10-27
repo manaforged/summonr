@@ -49,10 +49,6 @@ pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]
         .join(" ")
 }
 
-fn verb<'a>(name: &'a str, arg: &'a str) -> (&'a str, &'a str) {
-    (Builtin::of(name).map_or(name, |kind| kind.verb()), arg)
-}
-
 fn detail(name: &str, call: &Call, output: &str) -> Detail {
     match call.state {
         ToolState::Running => None,
@@ -124,8 +120,8 @@ pub(in crate::tui::sigil_view) fn flip(
         }
         app.model_mut(|model| match call {
             None => {
-                if let Some(Entry::Tool { expanded, .. }) = model.entries.get_mut(index) {
-                    *expanded = !*expanded;
+                if let Some(Entry::Tool { call, .. }) = model.entries.get_mut(index) {
+                    call.expanded = !call.expanded;
                 }
             }
             Some(at) => {
@@ -205,7 +201,7 @@ pub(super) fn tool_card(
         return super::children::starting_card();
     }
     let shown = workspace_relative(&call.arg, &app.roots);
-    let (verb, arg) = verb(name, &shown);
+    let (verb, arg) = (tool_label(name), shown.as_str());
     let output = preview::plain(&call.output)
         .lines()
         .map(|line| workspace_relative(line, &app.roots))
@@ -243,8 +239,7 @@ fn group_state(calls: &[Call]) -> ToolState {
 
 fn group_title<'a>(name: &'a str, calls: &[Call]) -> (&'a str, String) {
     if !Builtin::is(name, Builtin::Read) {
-        let verb = Builtin::of(name).map_or(name, |kind| kind.verb());
-        return (verb, format!("×{}", calls.len()));
+        return (tool_label(name), format!("×{}", calls.len()));
     }
     ("Explored", crate::text::plural(calls.len(), "file"))
 }
@@ -260,7 +255,7 @@ fn group_row(
 ) -> NodeBuilder {
     let output = preview::plain(&call.output);
     let shown = workspace_relative(&call.arg, &app.roots);
-    let (verb, arg) = verb(name, &shown);
+    let (verb, arg) = (tool_label(name), shown.as_str());
     let detail = match call.state {
         ToolState::Failed => Some((preview::summary(&output, true), Look::xs(Token::Error11))),
         _ => detail(name, call, &output),
@@ -299,4 +294,11 @@ pub(super) fn group_card(
         card = card.child(group_row(name, call, at, tools, layout, app, index));
     }
     card
+}
+
+pub(in crate::tui::sigil_view) fn tool_label(name: &str) -> &str {
+    match crate::tools::Builtin::of(name) {
+        Some(kind) => kind.verb(),
+        None => name,
+    }
 }

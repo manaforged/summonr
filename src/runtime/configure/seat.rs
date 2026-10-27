@@ -64,7 +64,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
-        self.session.set_workflow(name).map_err(super::session_err)
+        self.session.set_workflow(name).map_err(Error::from)
     }
 
     pub(crate) fn apply_workflow(
@@ -107,12 +107,10 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn with_budget(mut self, budget: Budget) -> Result<Self> {
-        self.session
-            .set_budget(
-                budget.max_tokens,
-                budget.max_secs.map(|seconds| seconds.saturating_mul(1_000)),
-            )
-            .map_err(super::session_err)?;
+        self.session.set_budget(
+            budget.max_tokens,
+            budget.max_secs.map(|seconds| seconds.saturating_mul(1_000)),
+        )?;
         self.budget = budget;
         Ok(self)
     }
@@ -146,7 +144,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn work_progress(&self) -> Result<crate::WorkProgress> {
-        self.session.work_progress().map_err(super::session_err)
+        self.session.work_progress().map_err(Error::from)
     }
 
     pub fn next_step(

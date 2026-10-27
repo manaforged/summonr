@@ -310,6 +310,32 @@ pub(crate) fn a_hook_matcher_limits_the_tools_it_runs_for() {
 }
 
 #[cfg(unix)]
+pub(crate) fn a_pre_tool_hook_screens_scout_tool_calls() {
+    let session = Session::new();
+    let config = "[workflows.scouted]\nscout = \"replay\"\n[hooks]\npre_tool = \"echo blocked by hook >&2; exit 1\"\n";
+    let model = Model::start(vec![
+        Step::Call("run_command", json!({"command": "echo scout-ran"})),
+        Step::Text("brief"),
+        Step::Text("done"),
+        Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
+    ]);
+    write(
+        &session.work.path().join(".summonr/check.toml"),
+        "check = 'exit 0'\n",
+    );
+    session.run(
+        &model,
+        config,
+        &["-w", "scouted", "--goal", "read the notes"],
+    );
+    let scout = model.requests()[1]["messages"][3]["content"].to_string();
+    assert!(
+        scout.contains("blocked by hook") && !scout.contains("scout-ran"),
+        "{scout}"
+    );
+}
+
+#[cfg(unix)]
 pub(crate) fn a_claude_hook_sees_a_name_search_as_glob_and_a_content_search_as_grep() {
     let session = Session::new();
     let config = "[hooks]\npre_tool = { command = \"grep -o 'tool_name.:.[A-Za-z]*' >&2; exit 2\", dialect = \"claude\", matcher = \"Glob\" }\n";

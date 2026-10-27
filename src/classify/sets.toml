@@ -1,0 +1,149 @@
+[[set]]
+name = "review"
+
+[set.questions.outcome]
+type = "choice"
+instructions = "What happened to the task the session was asked to do"
+criteria.finished = "The task was completed and the work is in place"
+criteria.partial = "Some of the task was completed and the rest was left"
+criteria.blocked = "The work stopped on something outside the agent's control"
+criteria.abandoned = "The work stopped without finishing and without a stated reason"
+
+[set.questions.risk]
+type = "score"
+instructions = "How much review the changes in this session need before they ship"
+criteria = [
+    "Read-only or trivial, no review needed",
+    "Ordinary change, normal review",
+    "Touches shared or risky code, read it closely",
+    "Destructive or irreversible, check before it lands",
+]
+
+[set.questions.proved]
+type = "noul"
+instructions = "The session ran a command that checks its own work, such as a build, a test or a lint"
+
+[set.questions.looped]
+type = "noul"
+instructions = "One command ran three or more times in this session"
+
+[set.questions.overreached]
+type = "noul"
+instructions = "The agent changed things the user did not ask it to change"
+
+[set.questions.unreported]
+type = "noul"
+instructions = "The session ended with a failure or a skipped step the agent did not state plainly"
+
+[[set]]
+name = "errors"
+
+[set.questions.kind]
+type = "choice"
+instructions = "Classify the root cause of this failure"
+
+[set.questions.kind.criteria.antibot]
+what = "A bot defence stopped the request before the application saw it"
+examples = [
+    "a challenge or captcha page",
+    "an Access Denied or Reference # interstitial",
+    "a Cloudflare, Akamai, PerimeterX or DataDome response",
+    "an HTML block page where JSON was expected",
+]
+not_for = "a named authentication error in a JSON body, which is auth"
+
+[set.questions.kind.criteria.network]
+what = "The request never got a usable reply"
+examples = ["connection reset", "timeout", "DNS failure", "TLS handshake failure", "a proxy refusing the connection"]
+not_for = "a reply that arrived and said no, which is auth or stock"
+
+[set.questions.kind.criteria.auth]
+what = "The site understood the request and rejected the credentials"
+examples = ["an expired or invalid token", "a signed out session", "a named authentication error code in the body"]
+not_for = "a block page with no application error body, which is antibot"
+
+[set.questions.kind.criteria.stock]
+what = "The site answered normally and the item cannot be bought"
+examples = ["out of stock", "unavailable", "a quantity limit"]
+
+[set.questions.kind.criteria.site_change]
+what = "The reply arrived but did not match what the code expects"
+examples = ["a missing or renamed field", "a parse failure", "a route that no longer exists"]
+
+[set.questions.kind.criteria.our_bug]
+what = "The failure happened in our own code and the site is not involved"
+examples = ["a panic", "an assertion", "a bad argument"]
+
+[set.questions.kind.criteria.other]
+what = "None of the above fits this failure"
+
+[set.questions.rotate]
+type = "noul"
+instructions = "Sending this same request again from a different proxy could succeed"
+criteria.true = "the failure is tied to this address or this proxy"
+criteria.false = "the failure would repeat from any address"
+
+[set.questions.resession]
+type = "noul"
+instructions = "This failure needs a fresh session or login before another attempt"
+
+[set.questions.same_again]
+type = "noul"
+instructions = "Sending this exact request again, unchanged and from the same session and proxy, could succeed"
+
+[set.questions.our_side]
+type = "noul"
+instructions = "The failure happened inside our own process, such as a panic, an assertion, or a deserialisation error, rather than being reported by the site"
+
+[[set]]
+name = "diff"
+
+[set.questions.kind]
+type = "choice"
+instructions = "What kind of change is this patch"
+criteria.feature = "It adds behaviour that did not exist"
+criteria.fix = "It corrects behaviour that was wrong"
+criteria.refactor = "It moves or renames code without changing what it does"
+criteria.test = "It only changes tests or test fixtures"
+criteria.chore = "It only changes documentation, formatting, dependencies or configuration"
+
+[set.questions.risk]
+type = "score"
+instructions = "How closely a reviewer needs to read this patch"
+criteria = [
+    "Nothing to check: text, comments, formatting or dependency bumps",
+    "Ordinary code change, read it normally",
+    "Changes control flow, error handling or a shared interface, read every line",
+    "Can lose data, spend money, or let something through that was blocked",
+]
+
+[set.questions.adds_panic]
+type = "noul"
+instructions = "An added line calls .unwrap(), .expect(...), panic!, unreachable! or array indexing, outside a test"
+
+[set.questions.removes_guard]
+type = "noul"
+instructions = "The removed lines contain more conditions, checks and error branches than the added lines do"
+
+[set.questions.widens_surface]
+type = "noul"
+instructions = "An added line declares a new `pub` function, type, field or variant, or changes the signature of an existing one"
+
+[set.questions.touches_value]
+type = "noul"
+instructions = "The changed lines handle money, prices, quantities, credentials, authentication or order submission"
+
+[[set]]
+name = "commit"
+
+[set.questions.untested]
+type = "noul"
+instructions = "This patch changes no file whose name marks it as a test"
+
+[set.questions.spans_crates]
+type = "noul"
+instructions = "This patch changes files in more than one crate or top level directory"
+
+[set.questions.mixes_jobs]
+type = "noul"
+instructions = "This patch does more than one unrelated job, such as a fix and a rename together"

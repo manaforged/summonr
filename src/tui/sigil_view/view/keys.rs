@@ -84,15 +84,6 @@ fn respond() -> Vec<(Shortcut, Handler)> {
             Shortcut::new(LogicalKey::character("?"), ModifiersState::SHIFT),
             App::shortcuts,
         ),
-        (
-            Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
-            |app, event| {
-                if app.answering() && app.approval.peek().is_some_and(|asked| asked.persist) {
-                    event.stop_propagation();
-                    app.approval_answer(crate::runtime::GrantAnswer::Always);
-                }
-            },
-        ),
         (LogicalKey::character("y").into(), |app, event| {
             if app.review() {
                 event.stop_propagation();
@@ -111,35 +102,109 @@ fn respond() -> Vec<(Shortcut, Handler)> {
                 app.approval_answer(crate::runtime::GrantAnswer::Deny);
             }
         }),
-        (Key::F5.into(), |app, event| {
-            if !app.options_active() && !app.view_edit.peek() {
-                event.stop_propagation();
-                app.retry();
-            }
-        }),
         (Key::Escape.into(), App::escape),
         (Key::Enter.into(), App::enter),
-        (Shortcut::ctrl(LogicalKey::character("c")), |app, event| {
-            if !app.hotkeys.recording.peek() {
-                event.stop_propagation();
-                app.interrupt();
-            }
-        }),
-        (Shortcut::ctrl(LogicalKey::character("d")), |app, event| {
-            if !app.hotkeys.recording.peek()
-                && !app.options_active()
-                && app.draft.peek().is_empty()
-                && app.model.get().busy_since.is_none()
-            {
-                event.stop_propagation();
-                app.quit.set(true);
-            }
-        }),
+    ]
+}
+
+fn diff_pane(app: &App) -> bool {
+    app.pane_active() == Some(super::Pane::Diff)
+}
+
+fn hunk_open(app: &App) -> bool {
+    diff_pane(app) && app.diff_view.peek().is_some()
+}
+
+type Guarded = (Shortcut, fn(&App) -> bool, fn(&App));
+
+fn guarded() -> Vec<Guarded> {
+    let ctrl_shift = ModifiersState::CONTROL | ModifiersState::SHIFT;
+    vec![
+        (
+            Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
+            |app| app.answering() && app.approval.peek().is_some_and(|asked| asked.persist),
+            |app| app.approval_answer(crate::runtime::GrantAnswer::Always),
+        ),
+        (
+            Key::F5.into(),
+            |app| !app.options_active() && !app.view_edit.peek(),
+            App::retry,
+        ),
+        (
+            Shortcut::ctrl(LogicalKey::character("c")),
+            |app| !app.hotkeys.recording.peek(),
+            App::interrupt,
+        ),
+        (
+            Shortcut::ctrl(LogicalKey::character("d")),
+            |app| {
+                !app.hotkeys.recording.peek()
+                    && !app.options_active()
+                    && app.draft.peek().is_empty()
+                    && app.model.get().busy_since.is_none()
+            },
+            |app| app.quit.set(true),
+        ),
+        (
+            LogicalKey::character("t").into(),
+            diff_pane,
+            App::toggle_recent,
+        ),
+        (
+            LogicalKey::character("c").into(),
+            diff_pane,
+            App::copy_patch,
+        ),
+        (
+            LogicalKey::character("o").into(),
+            |app| app.pane_active() == Some(super::Pane::View),
+            App::view_external,
+        ),
+        (
+            Key::ArrowLeft.into(),
+            |app| app.pane_active().is_some(),
+            App::pane_collapse,
+        ),
+        (
+            Key::ArrowRight.into(),
+            |app| app.pane_active().is_some(),
+            App::pane_expand,
+        ),
+        (
+            Shortcut::ctrl(Key::ArrowLeft),
+            |_| true,
+            |app| app.tab_or_pane(false),
+        ),
+        (
+            Shortcut::ctrl(Key::ArrowRight),
+            |_| true,
+            |app| app.tab_or_pane(true),
+        ),
+        (
+            Shortcut::new(Key::ArrowLeft, ctrl_shift),
+            |_| true,
+            |app| app.nudge_split(-5),
+        ),
+        (
+            Shortcut::new(Key::ArrowRight, ctrl_shift),
+            |_| true,
+            |app| app.nudge_split(5),
+        ),
+        (
+            LogicalKey::character("a").into(),
+            hunk_open,
+            App::hunk_accept,
+        ),
+        (
+            LogicalKey::character("r").into(),
+            hunk_open,
+            App::hunk_reject,
+        ),
     ]
 }
 
 fn panes() -> Vec<(Shortcut, Handler)> {
-    let mut keys: Vec<(Shortcut, Handler)> = vec![
+    vec![
         (LogicalKey::character("e").into(), |app, event| {
             if app.review() {
                 event.stop_propagation();
@@ -157,85 +222,8 @@ fn panes() -> Vec<(Shortcut, Handler)> {
                 app.edit_save();
             }
         }),
-        (LogicalKey::character("t").into(), |app, event| {
-            if app.pane_active() == Some(super::Pane::Diff) {
-                event.stop_propagation();
-                app.toggle_recent();
-            }
-        }),
-        (LogicalKey::character("c").into(), |app, event| {
-            if app.pane_active() == Some(super::Pane::Diff) {
-                event.stop_propagation();
-                app.copy_patch();
-            }
-        }),
-        (LogicalKey::character("o").into(), |app, event| {
-            if app.pane_active() == Some(super::Pane::View) {
-                event.stop_propagation();
-                app.view_external();
-            }
-        }),
-        (Key::ArrowLeft.into(), |app, event| {
-            if app.pane_active().is_some() {
-                event.stop_propagation();
-                app.pane_collapse();
-            }
-        }),
-        (Key::ArrowRight.into(), |app, event| {
-            if app.pane_active().is_some() {
-                event.stop_propagation();
-                app.pane_expand();
-            }
-        }),
-        (Shortcut::ctrl(Key::ArrowLeft), |app, event| {
-            event.stop_propagation();
-            app.tab_or_pane(false);
-        }),
-        (Shortcut::ctrl(Key::ArrowRight), |app, event| {
-            event.stop_propagation();
-            app.tab_or_pane(true);
-        }),
-        (
-            Shortcut::new(
-                Key::ArrowLeft,
-                ModifiersState::CONTROL | ModifiersState::SHIFT,
-            ),
-            |app, event| {
-                event.stop_propagation();
-                app.nudge_split(-5);
-            },
-        ),
-        (
-            Shortcut::new(
-                Key::ArrowRight,
-                ModifiersState::CONTROL | ModifiersState::SHIFT,
-            ),
-            |app, event| {
-                event.stop_propagation();
-                app.nudge_split(5);
-            },
-        ),
-    ];
-    keys.extend(hunk_keys());
-    keys
-}
-
-fn hunk_keys() -> Vec<(Shortcut, Handler)> {
-    vec![
-        (LogicalKey::character("a").into(), |app, event| {
-            if app.pane_active() == Some(super::Pane::Diff) && app.diff_view.peek().is_some() {
-                event.stop_propagation();
-                app.hunk_accept();
-            }
-        }),
-        (LogicalKey::character("r").into(), |app, event| {
-            if app.pane_active() == Some(super::Pane::Diff) && app.diff_view.peek().is_some() {
-                event.stop_propagation();
-                app.hunk_reject();
-            }
-        }),
         (LogicalKey::character("n").into(), |app, event| {
-            if app.pane_active() == Some(super::Pane::Diff)
+            if diff_pane(app)
                 && let Some((path, hunk)) = app.current_hunk()
             {
                 event.stop_propagation();
@@ -253,6 +241,15 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             .layout(LayoutStyle::flex_column().fill_width().fill_height()),
         app,
     );
+    for (shortcut, guard, action) in guarded() {
+        let app = app.clone();
+        shell = shell.key_capture(shortcut, move |event| {
+            if guard(&app) {
+                event.stop_propagation();
+                action(&app);
+            }
+        });
+    }
     let bindings = respond().into_iter().chain(panes()).chain(nav());
     for (shortcut, action) in bindings {
         let app = app.clone();

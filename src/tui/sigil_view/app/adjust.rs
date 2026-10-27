@@ -37,7 +37,7 @@ impl App {
             Setting::Workflow => self.open_workflow(),
             Setting::Endpoint => self.cycle_endpoint(),
             Setting::Model => self.begin_model_edit(),
-            Setting::Reasoning => self.reasoning_command(None),
+            Setting::Reasoning => self.set_visibility(|prefs| &mut prefs.reasoning, None),
             Setting::Tools => self.toggle_tools(),
             setting => self.adjust_display(setting),
         }
@@ -55,7 +55,7 @@ impl App {
             Setting::Theme => self.toggle_theme(),
             Setting::Background => self.toggle_background(),
             Setting::Notify => self.flip(|prefs| prefs.notify = prefs.notify.toggle()),
-            Setting::Receipts => self.receipts_command(None),
+            Setting::Receipts => self.set_visibility(|prefs| &mut prefs.receipts, None),
             Setting::Hotkeys => self.open_hotkeys(),
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
             Setting::Motion => self.toggle_motion(),

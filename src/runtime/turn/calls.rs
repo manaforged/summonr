@@ -277,8 +277,7 @@ impl<P: Provider> Loop<P> {
             )?;
         }
         self.session
-            .finish_tool(planned, text.as_str(), success, mutated, millis, patch)
-            .map_err(super::session_err)?;
+            .finish_tool(planned, text.as_str(), success, mutated, millis, patch)?;
         self.emit_records(events, emit)?;
         let todo = success && Builtin::is(&call.function.name, Builtin::Todo);
         let arguments = call.function.arguments.clone();
@@ -308,7 +307,7 @@ impl<P: Provider> Loop<P> {
                 self.push_event(events, emit, Event::Work { progress })
             }
             Err(crate::durable::driver::DriverError::NoWork) => Ok(()),
-            Err(error) => Err(super::session_err(error)),
+            Err(error) => Err(Error::from(error)),
         }
     }
 

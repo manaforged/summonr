@@ -4,6 +4,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use super::{Plugin, enabled, read_json};
+use crate::mcp::expand_vars;
 
 const FILE: &str = ".lsp.json";
 
@@ -44,6 +45,7 @@ pub(crate) fn servers(workspace: &Path) -> Vec<Server> {
 
 pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
     let maps = [read_json(&plugin.dir.join(FILE))];
+    let fill = |text: String| expand_vars(&text, &BTreeMap::new());
     plugin
         .servers(&maps, ":", workspace, |entry: &mut Entry| {
             std::iter::once(&mut entry.command)
@@ -54,8 +56,15 @@ pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
         .into_iter()
         .map(|(key, entry)| Server {
             key,
-            argv: std::iter::once(entry.command).chain(entry.args).collect(),
-            env: entry.env,
+            argv: std::iter::once(entry.command)
+                .chain(entry.args)
+                .map(fill)
+                .collect(),
+            env: entry
+                .env
+                .into_iter()
+                .map(|(key, value)| (key, fill(value)))
+                .collect(),
             languages: entry
                 .extension_to_language
                 .into_iter()

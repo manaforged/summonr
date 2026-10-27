@@ -98,6 +98,8 @@ fn main() {
         plugins::an_uninstalled_or_disabled_plugin_does_not_load,
         #[cfg(unix)]
         plugins::a_claude_hook_blocks_only_on_exit_two_or_a_deny,
+        #[cfg(unix)]
+        plugins::a_pre_tool_hook_screens_scout_tool_calls,
         plugins::two_pre_tool_hooks_both_run_in_order,
         #[cfg(unix)]
         plugins::a_chatty_hook_does_not_stall_the_call,

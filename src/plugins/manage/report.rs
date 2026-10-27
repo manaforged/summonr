@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use super::super::{Plugin, UNSUPPORTED, USER_CONFIG};
+use crate::mcp::scan;
 
 pub(super) fn report(plugin: &Plugin, manifest: &Value, off: bool) -> String {
     let mut lines = vec![format!(
@@ -165,7 +166,7 @@ pub(super) fn settings_servers(plugin: &Plugin) -> BTreeSet<String> {
 fn config_needs(plugin: &Plugin) -> std::collections::BTreeMap<String, Vec<String>> {
     let mut needs = std::collections::BTreeMap::new();
     let mut note = |server: &str, text: String| {
-        let keys: Vec<String> = config_keys(&text).into_iter().map(str::to_string).collect();
+        let keys: Vec<String> = config_keys(&text).into_iter().collect();
         if !keys.is_empty() {
             needs.entry(server.to_string()).or_insert(keys);
         }
@@ -185,21 +186,15 @@ fn config_needs(plugin: &Plugin) -> std::collections::BTreeMap<String, Vec<Strin
     needs
 }
 
-fn config_keys(text: &str) -> BTreeSet<&str> {
-    let mut keys = BTreeSet::new();
-    let mut rest = text;
-    while let Some(start) = rest.find(USER_CONFIG) {
-        let after = &rest[start + USER_CONFIG.len()..];
-        let Some(end) = after.find('}') else {
-            break;
-        };
-        let key = &after[..end];
+fn config_keys(text: &str) -> BTreeSet<String> {
+    let keys = std::cell::RefCell::new(BTreeSet::new());
+    scan(text, USER_CONFIG, |key| {
         if key_ok(key) {
-            keys.insert(key);
+            keys.borrow_mut().insert(key.to_string());
         }
-        rest = &after[end + 1..];
-    }
-    keys
+        None
+    });
+    keys.into_inner()
 }
 
 fn key_ok(key: &str) -> bool {

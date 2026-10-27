@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 
 use super::{Notice, agreed, hello, notification, request};
@@ -23,9 +23,7 @@ pub(crate) struct Client {
     group: Option<ProcessGroup>,
     child: Option<Child>,
     stdin: Option<ChildStdin>,
-    reader: BufReader<ChildStdout>,
-    pending: Vec<u8>,
-    over: bool,
+    reader: Lines<ChildStdout>,
     abandoned: Vec<Value>,
     inflight: Vec<Value>,
     roots: Value,
@@ -37,10 +35,58 @@ pub(crate) struct Client {
     next: i64,
 }
 
-enum Read {
+pub(crate) enum Read {
     Line(String),
     Oversize,
     Closed,
+}
+
+pub(crate) struct Lines<R> {
+    reader: BufReader<R>,
+    pending: Vec<u8>,
+    over: bool,
+}
+
+impl<R: AsyncRead + Unpin> Lines<R> {
+    pub(crate) fn new(reader: R) -> Self {
+        Self {
+            reader: BufReader::new(reader),
+            pending: Vec::new(),
+            over: false,
+        }
+    }
+
+    pub(crate) async fn next(&mut self) -> std::io::Result<Read> {
+        loop {
+            let chunk = self.reader.fill_buf().await?;
+            if chunk.is_empty() {
+                return Ok(Read::Closed);
+            }
+            let (take, done) = chunk
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or((chunk.len(), false), |at| (at + 1, true));
+            if !self.over
+                && self.pending.len() + take <= crate::limits::limits().mcp_frame_max_bytes
+            {
+                self.pending.extend_from_slice(&chunk[..take]);
+            } else if !self.over {
+                self.over = true;
+                self.pending = Vec::new();
+            }
+            self.reader.consume(take);
+            if done {
+                break;
+            }
+        }
+        let line = std::mem::take(&mut self.pending);
+        if std::mem::take(&mut self.over) {
+            return Ok(Read::Oversize);
+        }
+        Ok(Read::Line(String::from_utf8(line).unwrap_or_else(
+            |error| String::from_utf8_lossy(error.as_bytes()).into_owned(),
+        )))
+    }
 }
 
 pub(crate) struct Spawn<'a> {
@@ -70,9 +116,7 @@ impl Client {
             group: process.group,
             child: Some(process.child),
             stdin: Some(process.stdin),
-            reader: BufReader::new(process.stdout),
-            pending: Vec::new(),
-            over: false,
+            reader: Lines::new(process.stdout),
             abandoned: Vec::new(),
             inflight: Vec::new(),
             roots: roots(launch.cwd),
@@ -206,36 +250,9 @@ impl Client {
             self.settle_stderr().await?;
             return Ok(Read::Closed);
         }
-        loop {
-            let chunk = self.reader.fill_buf().await?;
-            if chunk.is_empty() {
-                self.broken = true;
-                return Ok(Read::Closed);
-            }
-            let (take, done) = chunk
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .map_or((chunk.len(), false), |at| (at + 1, true));
-            if !self.over
-                && self.pending.len() + take <= crate::limits::limits().mcp_frame_max_bytes
-            {
-                self.pending.extend_from_slice(&chunk[..take]);
-            } else if !self.over {
-                self.over = true;
-                self.pending = Vec::new();
-            }
-            self.reader.consume(take);
-            if done {
-                break;
-            }
-        }
-        let line = std::mem::take(&mut self.pending);
-        if std::mem::take(&mut self.over) {
-            return Ok(Read::Oversize);
-        }
-        Ok(Read::Line(String::from_utf8(line).unwrap_or_else(
-            |error| String::from_utf8_lossy(error.as_bytes()).into_owned(),
-        )))
+        let read = self.reader.next().await?;
+        self.broken = matches!(read, Read::Closed);
+        Ok(read)
     }
 
     async fn write(&mut self, value: &Value) -> Result<()> {

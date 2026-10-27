@@ -148,8 +148,7 @@ impl<P: Provider> Loop<P> {
             let purpose = purpose_of(role);
             Some(
                 self.session
-                    .start_round(purpose, &request.model, exposure)
-                    .map_err(super::session_err)?,
+                    .start_round(purpose, &request.model, exposure)?,
             )
         } else {
             None
@@ -178,14 +177,12 @@ impl<P: Provider> Loop<P> {
                         WaitError::Provider(error) => (error.to_string(), super::billable(error)),
                     };
                     self.session
-                        .fail_provider(attempt, &diagnostic, millis, billable)
-                        .map_err(super::session_err)?;
-                    self.spent_tokens = self.session.spent_tokens();
+                        .fail_provider(attempt, &diagnostic, millis, billable)?;
                 }
                 return Ok(Err(Missed { error, interrupted }));
             }
         };
-        let meter = super::meter(&message.usage, super::elapsed_millis(started));
+        let meter = Meter::measured(&message.usage, super::elapsed_millis(started));
         let meta = UsageMeta {
             continuation: message.continuation.clone(),
             prefix_hash,
@@ -196,28 +193,18 @@ impl<P: Provider> Loop<P> {
         let open = match (attempt, options.retry) {
             (Some(attempt), RetryPolicy::Round) => Some((attempt, meter, meta)),
             (Some(attempt), RetryPolicy::None) => {
-                self.session
-                    .finish_provider(
-                        attempt,
-                        message.content.as_deref().unwrap_or(""),
-                        message.reasoning_content.as_deref().unwrap_or(""),
-                        meter,
-                        meta,
-                    )
-                    .map_err(super::session_err)?;
-                self.spent_tokens = self.spent_tokens.saturating_add(u64::from(
-                    message
-                        .usage
-                        .prompt_tokens
-                        .saturating_add(message.usage.completion_tokens),
-                ));
+                self.session.finish_provider(
+                    attempt,
+                    message.content.as_deref().unwrap_or(""),
+                    message.reasoning_content.as_deref().unwrap_or(""),
+                    meter,
+                    meta,
+                )?;
                 None
             }
             (None, _) => {
                 self.session
-                    .charge(meter, "outside a turn", &request.model, true, meta)
-                    .map_err(super::session_err)?;
-                self.spent_tokens = self.session.spent_tokens();
+                    .charge(meter, "outside a turn", &request.model, true, meta)?;
                 None
             }
         };
@@ -326,9 +313,9 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn sync_usage(&mut self, emit: &mut impl FnMut(&Event)) {
-        let (spent, tokens) = self.session.usage();
-        self.spent_tokens = spent;
-        emit(&Event::Unreported { tokens });
+        emit(&Event::Unreported {
+            tokens: self.session.usage().1,
+        });
     }
 
     pub(super) fn push_event(

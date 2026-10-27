@@ -63,7 +63,7 @@ impl<P: Provider> Loop<P> {
                 slot.clone_from(message);
             }
         }
-        self.session.rewrite(edits).map_err(super::session_err)?;
+        self.session.rewrite(edits)?;
         Ok(())
     }
 
@@ -183,15 +183,13 @@ impl<P: Provider> Loop<P> {
             )?;
             return Ok(false);
         };
-        self.count_usage(&summary, usage);
+        usage.add(&summary.usage);
         self.emit_records(events, emit)?;
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));
         }
         let summary = summary.content.unwrap_or_default();
-        self.session
-            .compact(&summary, &messages[keep_from..])
-            .map_err(super::session_err)?;
+        self.session.compact(&summary, &messages[keep_from..])?;
         self.tools.forget_reads();
         messages.truncate(1);
         messages.extend(self.session.history().iter().cloned());
@@ -287,16 +285,12 @@ impl<P: Provider> Loop<P> {
                 "the compaction summary failed; the context is unchanged".to_string(),
             ));
         };
-        self.count_usage(&reply, &mut Usage::default());
         self.emit_records(&mut Vec::new(), &mut emit)?;
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));
         }
         let summary = reply.content.unwrap_or_default();
-        self.session
-            .compact(&summary, &messages[keep_from..])
-            .map_err(super::session_err)?;
-        self.spent_tokens = self.session.spent_tokens();
+        self.session.compact(&summary, &messages[keep_from..])?;
         self.tools.forget_reads();
         Ok(true)
     }

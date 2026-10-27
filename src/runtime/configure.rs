@@ -40,11 +40,8 @@ impl<P: Provider> Loop<P> {
         path: &Path,
     ) -> Result<Self> {
         let session = resume_driver(workspace.as_ref(), path)?;
-        let replay = session.replay();
         let workspace = session.workspace().to_path_buf();
-        let mut loop_ = Self::open(provider, model, workspace, system_prompt, session)?;
-        loop_ = loop_.restore_replay(replay);
-        Ok(loop_)
+        Self::open(provider, model, workspace, system_prompt, session)
     }
 
     pub fn fork_path(
@@ -55,7 +52,7 @@ impl<P: Provider> Loop<P> {
         source: &Path,
     ) -> Result<Self> {
         let parent = resume_driver(workspace.as_ref(), source)?;
-        let child = parent.fork(None).map_err(super::session_err)?;
+        let child = parent.fork(None)?;
         Self::resume_path(provider, model, workspace, system_prompt, &child)
     }
 
@@ -125,7 +122,6 @@ impl<P: Provider> Loop<P> {
                 max_secs: max_live_millis
                     .map(|millis| millis.saturating_add(999).saturating_div(1_000)),
             },
-            spent_tokens: 0,
             run_base,
             context_sample: None,
             context_window: None,
@@ -340,7 +336,7 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub(crate) fn spent_tokens(&self) -> u64 {
-        self.spent_tokens
+        self.session.spent_tokens()
     }
 
     #[must_use]
@@ -353,7 +349,7 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub(crate) fn run_tokens(&self) -> u64 {
-        self.spent_tokens.saturating_sub(self.run_base.0)
+        self.spent_tokens().saturating_sub(self.run_base.0)
     }
 
     #[must_use]
@@ -373,7 +369,7 @@ fn resume_driver(workspace: &Path, path: &Path) -> Result<SessionDriver> {
             path.display()
         )));
     };
-    SessionDriver::resume(home, session, workspace).map_err(super::session_err)
+    SessionDriver::resume(home, session, workspace).map_err(Error::from)
 }
 
 pub(super) fn open_driver(
@@ -393,5 +389,5 @@ pub(super) fn open_driver(
         system,
         parent.map(Parent::Session),
     )
-    .map_err(super::session_err)
+    .map_err(Error::from)
 }

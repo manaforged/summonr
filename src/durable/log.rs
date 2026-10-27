@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use super::id::SessionId;
 use crate::provider::{Continuation, Image, Message, Role, ToolCall};
-use crate::session::Replay;
 
 const FILE: &str = "session.jsonl";
 const WORK: &str = "work.json";
@@ -186,17 +185,6 @@ impl State {
     fn charge(&mut self, usage: Usage) {
         self.spent = self.spent.saturating_add(usage.tokens());
         self.elapsed = self.elapsed.saturating_add(usage.millis);
-    }
-
-    pub(crate) fn replay(&self) -> Replay {
-        Replay {
-            history: self.history.clone(),
-            prompt: Some(self.system.clone()),
-            model: Some(self.model.clone()),
-            id: self.id.map(|id| id.to_string()).unwrap_or_default(),
-            spent_tokens: self.spent,
-            elapsed_millis: self.elapsed,
-        }
     }
 }
 

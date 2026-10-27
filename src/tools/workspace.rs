@@ -14,7 +14,7 @@ mod ops;
 mod read;
 pub(in crate::tools) mod search;
 mod spans;
-mod write;
+pub(in crate::tools) mod write;
 
 pub(crate) use apply_patch::patch_files;
 pub(crate) use image::{IMAGES_MAX_BYTES, attach, image_type};
@@ -90,10 +90,14 @@ impl ToolRegistry {
         if dest.exists() {
             return Err(Error::Tool(format!("`{to}` already exists")));
         }
-        crate::durable::store::rename(&source, &dest)
-            .map_err(|error| Error::Tool(format!("cannot move `{path}` to `{to}`: {error}")))?;
-        self.note_wrote(path);
-        self.note_wrote(to);
+        self.apply_changes(&[write::Change {
+            dest: source,
+            display: path.to_string(),
+            action: write::Action::Move {
+                to: dest.clone(),
+                display: to.to_string(),
+            },
+        }])?;
         Ok(self
             .checked((dest, format!("moved {path} -> {to}"), None))
             .await)
@@ -131,7 +135,11 @@ impl ToolRegistry {
             .get("content")
             .and_then(Value::as_str)
             .ok_or_else(|| Error::Tool("write requires content".to_string()))?;
-        let written = super::blocking(|| self.write_one(path, content))?;
+        let written = super::blocking(|| {
+            let (change, out, patch) = self.plan_write(path, content)?;
+            self.apply_changes(std::slice::from_ref(&change))?;
+            Ok::<_, Error>((change.dest, out, patch))
+        })?;
         Ok(self.checked(written).await)
     }
 
@@ -163,56 +171,49 @@ impl ToolRegistry {
         let original = raw.replace("\r\n", "\n");
         let (edited, relaxed) = edited_text(&original, args)?;
         let edited = edit::restore(&endings, &original, &edited);
-        let written = self.atomic_write(&dest, path, &raw, &edited, edit::uses_tags(args))?;
-        let mut out = format!("edited {path}\n{}", written.preview);
+        let (preview, patch) = write::preview(&raw, &edited, edit::uses_tags(args));
+        self.apply_changes(&[write::Change::write(dest.clone(), path, edited)])?;
+        let mut out = format!("edited {path}\n{preview}");
         if relaxed {
             out.push_str(
                 "\nnote: old matched only with whitespace normalized; check the edit above",
             );
         }
-        Ok((dest, out, written.patch))
+        Ok((dest, out, patch))
     }
 
-    fn write_one(&self, path: &str, content: &str) -> Result<(PathBuf, String, Option<String>)> {
+    fn plan_write(
+        &self,
+        path: &str,
+        content: &str,
+    ) -> Result<(write::Change, String, Option<String>)> {
         let dest = self.resolve_write(path)?;
         self.check_write(&dest)?;
         let before = write::current(&dest, path)?;
-        let written = self.atomic_write(&dest, path, &before, content, write::View::Overwrite)?;
-        let out = format!(
-            "wrote {path} ({} lines, {})",
-            content.lines().count(),
-            written.preview
-        );
-        Ok((dest, out, written.patch))
+        let (note, patch) = write::preview(&before, content, write::View::Overwrite);
+        let out = format!("wrote {path} ({} lines, {note})", content.lines().count());
+        Ok((
+            write::Change::write(dest, path, content.to_string()),
+            out,
+            patch,
+        ))
     }
 
     fn stage_files(&self, files: &[Value]) -> Result<(Vec<write::Change>, String)> {
         let mut planned = Vec::with_capacity(files.len());
         let mut out = String::new();
         for file in files {
-            let path = nonempty_path(file, "write")?.to_string();
+            let path = nonempty_path(file, "write")?;
             let content = file
                 .get("content")
                 .and_then(Value::as_str)
                 .ok_or_else(|| Error::Tool(format!("write requires content for `{path}`")))?;
-            let dest = self.resolve_write(&path)?;
-            self.check_write(&dest)?;
-            let before = write::current(&dest, &path)?;
-            let note = write::preview(&before, content, write::View::Overwrite);
-            out.push_str(&format!(
-                "wrote {path} ({} lines, {note})\n",
-                content.lines().count()
-            ));
-            planned.push(write::Change {
-                dest,
-                display: path,
-                content: Some(content.to_string()),
-            });
+            let (change, line, _) = self.plan_write(path, content)?;
+            out.push_str(&line);
+            out.push('\n');
+            planned.push(change);
         }
-        write::apply_changes(&planned)?;
-        for change in &planned {
-            self.note_wrote(&change.display);
-        }
+        self.apply_changes(&planned)?;
         Ok((planned, out))
     }
 

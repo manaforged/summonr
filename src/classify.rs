@@ -65,6 +65,7 @@ impl Question {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn bounded(
         instructions: impl Into<Value>,
         yes: impl Into<Value>,
@@ -79,6 +80,7 @@ impl Question {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn choice<K, V>(
         instructions: impl Into<Value>,
         options: impl IntoIterator<Item = (K, V)>,

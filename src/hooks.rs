@@ -6,37 +6,16 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+use crate::tools::Builtin;
+
 mod config;
 
 const OUTPUT_MAX: u64 = 64 * 1024;
-const CLAUDE_NAMES: [(&str, &str); 9] = [
-    ("run_command", "Bash"),
-    ("read", "Read"),
-    ("search", "Grep"),
-    ("edit", "Edit"),
-    ("write", "Write"),
-    ("todo", "TodoWrite"),
-    ("task", "Task"),
-    ("web", "WebFetch"),
-    ("skill", "Skill"),
-];
-const CLAUDE_ALIASES: [(&str, &str); 5] = [
-    ("search", "Glob"),
-    ("edit", "MultiEdit"),
-    ("edit", "NotebookEdit"),
-    ("web", "WebSearch"),
-    ("lsp", "LSP"),
-];
 
 #[must_use]
-pub(crate) fn builtin(name: &str) -> Option<crate::tools::Builtin> {
+pub(crate) fn builtin(name: &str) -> Option<Builtin> {
     let name = name.trim();
-    let native = CLAUDE_NAMES
-        .iter()
-        .chain(&CLAUDE_ALIASES)
-        .find(|(_, claude)| claude.eq_ignore_ascii_case(name))
-        .map_or(name, |(native, _)| *native);
-    crate::tools::Builtin::live(native)
+    Builtin::from_claude(name).or_else(|| Builtin::live(name))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,19 +117,17 @@ impl Hook {
         };
         matcher.matches(&self.tool_name(tool))
             || (self.dialect != Dialect::Summonr
-                && CLAUDE_ALIASES
-                    .iter()
-                    .any(|(ours, theirs)| *ours == tool && matcher.matches(theirs)))
+                && Builtin::live(tool)
+                    .is_some_and(|kind| kind.claude().1.iter().any(|alias| matcher.matches(alias))))
     }
 
     pub(crate) fn tool_name(&self, tool: &str) -> String {
         if self.dialect == Dialect::Summonr {
             return tool.to_string();
         }
-        CLAUDE_NAMES
-            .iter()
-            .find(|(ours, _)| *ours == tool)
-            .map_or_else(|| mcp_name(tool), |(_, theirs)| (*theirs).to_string())
+        Builtin::live(tool)
+            .and_then(|kind| kind.claude().0)
+            .map_or_else(|| mcp_name(tool), str::to_string)
     }
 
     fn claude_payload(&self, call: &Call<'_>) -> Value {
@@ -162,13 +139,14 @@ impl Hook {
         });
         if let Some(tool) = payload.get("tool").and_then(Value::as_str) {
             let arguments = payload.get("arguments").cloned().unwrap_or(Value::Null);
-            let by_name = crate::tools::Builtin::live(tool) == Some(crate::tools::Builtin::Search)
-                && arguments.get("pattern").is_none();
+            let by_name =
+                Builtin::live(tool) == Some(Builtin::Search) && arguments.get("pattern").is_none();
             body["tool_name"] = json!(if by_name {
-                CLAUDE_ALIASES
-                    .iter()
-                    .find(|(ours, _)| *ours == tool)
-                    .map_or_else(|| self.tool_name(tool), |(_, theirs)| (*theirs).to_string())
+                Builtin::Search
+                    .claude()
+                    .1
+                    .first()
+                    .map_or_else(|| self.tool_name(tool), |alias| (*alias).to_string())
             } else {
                 self.tool_name(tool)
             });

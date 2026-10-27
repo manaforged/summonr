@@ -83,6 +83,7 @@ pub(super) struct Args {
     pub(super) add_list: bool,
     pub(super) uninstall: bool,
     pub(super) update: bool,
+    pub(super) arity: Option<(&'static str, usize)>,
 }
 
 pub(super) fn parse() -> Result<Args> {
@@ -134,7 +135,10 @@ impl Args {
             .find(|valued| valued.option == arg || valued.short == Some(arg))
         {
             (valued.set)(self, value(input, valued.option, valued.expected)?)?;
-        } else if let Some((_, run)) = COMMANDS.iter().find(|(name, _)| command && *name == arg) {
+        } else if let Some((name, most, run)) =
+            COMMANDS.iter().find(|(name, ..)| command && *name == arg)
+        {
+            self.arity = most.map(|most| (*name, most));
             run(self, input)?;
         } else if let Some((.., run)) = SCOPED
             .iter()
@@ -244,23 +248,7 @@ impl Args {
     }
 
     fn check_arity(&self) -> Result<()> {
-        let arity = [
-            (self.list, "endpoints", 0),
-            (self.list_sessions, "sessions", 0),
-            (self.list_workflows, "workflows", 0),
-            (self.list_modules, "modules", 0),
-            (self.acp, "acp", 0),
-            (self.list_worktrees, "worktrees", 0),
-            (self.logs || self.doctor, "doctor", 0),
-            (self.logout, "logout", 0),
-            (self.export, "export", 1),
-            (self.profile, "profile", 1),
-            (self.diff, "diff", 1),
-            (self.add, "install", 1),
-            (self.uninstall, "uninstall", 1),
-            (self.update, "update", 0),
-        ];
-        let Some((_, verb, most)) = arity.into_iter().find(|(on, ..)| *on) else {
+        let Some((verb, most)) = self.arity else {
             return Ok(());
         };
         match self.prompt.get(most) {

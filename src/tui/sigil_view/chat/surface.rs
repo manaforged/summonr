@@ -145,11 +145,7 @@ fn row(
 }
 
 fn slot_marks(model: &Model, index: usize, at: entry::Slot) -> (entry::Slot, Vec<entry::Mark>) {
-    let range = match &at {
-        entry::Slot::Lead(range) => range.clone(),
-        entry::Slot::Single => index..index + 1,
-        entry::Slot::Member => index..index,
-    };
+    let range = at.span(index);
     let last = model.entries.len();
     let live = model.busy_since.is_some();
     let mark: Vec<_> = model
@@ -203,13 +199,7 @@ fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
 }
 
 fn single(app: &App, index: usize, spacing: (f32, f32)) -> Vec<NodeBuilder> {
-    let (item, live, prefs) = app.model.with(|model| {
-        (
-            model.entries.get(index).cloned(),
-            model.busy_since.is_some() && index + 1 == model.entries.len(),
-            model.prefs.clone(),
-        )
-    });
+    let (item, live, prefs) = app.model.with(|model| model.entry_at(index));
     item.filter(|item| !entry::hidden(item, &prefs))
         .map(|item| vec![inset(entry::row(item, live, &prefs, app, index), spacing)])
         .unwrap_or_default()

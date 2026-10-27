@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::*;
+use crate::tools::workspace::write;
 
 impl ToolRegistry {
     pub(in crate::tools) async fn lsp(&self, arguments: &str) -> Result<ToolOutput> {
@@ -142,82 +143,61 @@ impl ToolRegistry {
     }
 
     pub(in crate::tools) fn apply_workspace_edit(&self, edit: &Value) -> Result<ToolOutput> {
-        if edit.is_null() {
-            return Err(Error::Tool(
-                "language server has no rename for this symbol".to_string(),
-            ));
-        }
         let ops = collect_changes(edit)?;
         if ops.is_empty() {
             return Err(Error::Tool(
                 "language server has no rename for this symbol".to_string(),
             ));
         }
-        let names = ops
-            .into_iter()
-            .map(|op| match op {
-                Change::Text { uri, edits } => self.edit_text(&uri, &edits),
-                Change::Create { uri } => self.create_file(&uri),
-                Change::Rename { from, to } => self.rename_file(&from, &to),
-                Change::Delete { uri } => self.delete_file(&uri),
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(ToolOutput {
-            text: format!("renamed {}", names.join(", ")),
-            success: true,
-            mutated: true,
-            grant: None,
-            images: Vec::new(),
-            patch: None,
-        })
-    }
-
-    fn edit_text(&self, uri: &str, edits: &[TextEdit]) -> Result<String> {
-        let dest = self.uri_path(uri)?;
-        self.check_write(&dest)?;
-        let original = std::fs::read_to_string(&dest)
-            .map_err(|error| Error::Tool(format!("cannot read {}: {error}", dest.display())))?;
-        let edited = apply_text_edits(&original, edits)?;
-        let name = self.relative(&dest)?;
-        drop(self.atomic_write(&dest, &name, &original, &edited, false)?);
-        Ok(name)
-    }
-
-    fn create_file(&self, uri: &str) -> Result<String> {
-        let dest = self.uri_path(uri)?;
-        self.check_write(&dest)?;
-        let name = self.relative(&dest)?;
-        if !dest.exists() {
-            drop(self.atomic_write(&dest, &name, "", "", false)?);
+        let mut changes = Vec::with_capacity(ops.len());
+        let mut names = Vec::with_capacity(ops.len());
+        for op in ops {
+            names.push(self.plan_lsp_change(op, &mut changes)?);
         }
-        Ok(name)
+        self.apply_changes(&changes)?;
+        let text = format!("renamed {}", names.join(", "));
+        Ok(ToolOutput::mutated(text, None))
     }
 
-    fn rename_file(&self, from: &str, to: &str) -> Result<String> {
-        let src = self.uri_path(from)?;
-        let dest = self.uri_path(to)?;
-        self.check_write(&src)?;
-        self.check_write(&dest)?;
-        crate::durable::store::rename(&src, &dest).map_err(|error| {
-            Error::Tool(format!(
-                "cannot rename {} → {}: {error}",
-                src.display(),
-                dest.display()
-            ))
-        })?;
-        Ok(format!(
-            "{} → {}",
-            self.relative(&src)?,
-            self.relative(&dest)?
-        ))
-    }
-
-    fn delete_file(&self, uri: &str) -> Result<String> {
+    fn plan_lsp_change(&self, op: Change, changes: &mut Vec<write::Change>) -> Result<String> {
+        let uri = match &op {
+            Change::Text { uri, .. } | Change::Create { uri } | Change::Delete { uri } => uri,
+            Change::Rename { from, .. } => from,
+        };
         let dest = self.uri_path(uri)?;
         self.check_write(&dest)?;
-        std::fs::remove_file(&dest)
-            .map_err(|error| Error::Tool(format!("cannot delete {}: {error}", dest.display())))?;
-        self.relative(&dest)
+        let name = self.relative(&dest)?;
+        let pending = write::staged(changes, &dest);
+        let (action, label) = match op {
+            Change::Text { edits, .. } => {
+                let original = match pending {
+                    Some(content) => content.unwrap_or_default().to_string(),
+                    None => std::fs::read_to_string(&dest).map_err(|error| {
+                        Error::Tool(format!("cannot read {}: {error}", dest.display()))
+                    })?,
+                };
+                let edited = apply_text_edits(&original, &edits)?;
+                (write::Action::Write(edited), name.clone())
+            }
+            Change::Create { .. } if pending.map_or_else(|| dest.exists(), |c| c.is_some()) => {
+                return Ok(name);
+            }
+            Change::Create { .. } => (write::Action::Write(String::new()), name.clone()),
+            Change::Delete { .. } => (write::Action::Delete, name.clone()),
+            Change::Rename { to, .. } => {
+                let to = self.uri_path(&to)?;
+                self.check_write(&to)?;
+                let display = self.relative(&to)?;
+                let label = format!("{name} → {display}");
+                (write::Action::Move { to, display }, label)
+            }
+        };
+        changes.push(write::Change {
+            dest,
+            display: name,
+            action,
+        });
+        Ok(label)
     }
 
     fn uri_path(&self, uri: &str) -> Result<PathBuf> {

@@ -62,7 +62,8 @@ impl Worker {
             | Cmd::ClearRole(_)
             | Cmd::SaveWorkflow(_)
             | Cmd::ListWorkflows) => self.configure(command).await,
-            command @ (Cmd::Merge(_) | Cmd::Discard(_)) => self.tree_command(command),
+            Cmd::Merge(path) => self.merge(&path),
+            Cmd::Discard(path) => self.discard(&path),
             command => self.reader.run(command).await,
         }
         true
@@ -91,30 +92,25 @@ impl Worker {
         }
     }
 
-    fn tree_command(&mut self, command: Cmd) {
-        match command {
-            Cmd::Merge(path) => {
-                match self.tree_at(&path).and_then(|tree| {
-                    crate::worktree::finish(&tree, "merge from the worktrees pane", &[])
-                        .map(|_| tree)
-                }) {
-                    Ok(tree) => self.system(&format!("merged {} into {}", tree.branch, tree.base)),
-                    Err(error) => self.system(&format!("merge failed: {error}")),
-                }
-                self.reader.trees();
-            }
-            Cmd::Discard(path) => {
-                match self
-                    .tree_at(&path)
-                    .and_then(|tree| crate::worktree::discard(&tree).map(|()| tree))
-                {
-                    Ok(tree) => self.system(&format!("removed worktree {}", tree.branch)),
-                    Err(error) => self.system(&format!("worktree kept: {error}")),
-                }
-                self.reader.trees();
-            }
-            _ => {}
+    fn merge(&mut self, path: &std::path::Path) {
+        match self.tree_at(path).and_then(|tree| {
+            crate::worktree::finish(&tree, "merge from the worktrees pane", &[]).map(|_| tree)
+        }) {
+            Ok(tree) => self.system(&format!("merged {} into {}", tree.branch, tree.base)),
+            Err(error) => self.system(&format!("merge failed: {error}")),
         }
+        self.reader.trees();
+    }
+
+    fn discard(&mut self, path: &std::path::Path) {
+        match self
+            .tree_at(path)
+            .and_then(|tree| crate::worktree::discard(&tree).map(|()| tree))
+        {
+            Ok(tree) => self.system(&format!("removed worktree {}", tree.branch)),
+            Err(error) => self.system(&format!("worktree kept: {error}")),
+        }
+        self.reader.trees();
     }
 
     async fn session_command(&mut self, command: Cmd) {

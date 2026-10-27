@@ -14,20 +14,12 @@ mod message;
 
 type Version = (Slot, Vec<Content>, bool);
 
-fn span(at: &Slot, index: usize) -> std::ops::Range<usize> {
-    match at {
-        Slot::Lead(range) => range.clone(),
-        Slot::Single => index..index + 1,
-        Slot::Member => index..index,
-    }
-}
-
 fn version(app: &App, index: usize) -> Version {
     app.model.with(|model| {
         let busy = model.busy_since.is_some();
         let last = model.entries.len();
         let at = slot(&model.entries, index);
-        let range = span(&at, index);
+        let range = at.span(index);
         let items = model
             .entries
             .get(range.clone())
@@ -79,13 +71,7 @@ fn pad(node: NodeBuilder, bottom: f32) -> NodeBuilder {
 }
 
 fn single(app: &App, index: usize) -> Option<NodeBuilder> {
-    let (entry, live, prefs) = app.model.with(|model| {
-        (
-            model.entries.get(index).cloned(),
-            model.busy_since.is_some() && index + 1 == model.entries.len(),
-            model.prefs.clone(),
-        )
-    });
+    let (entry, live, prefs) = app.model.with(|model| model.entry_at(index));
     entry.map(|entry| form(entry, live, &prefs, app, index))
 }
 
@@ -96,12 +82,12 @@ fn form(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> Nod
         Entry::Thinking(text) => message::thinking(&text, prefs.reasoning, live, app),
         Entry::System(body) => message::quiet(body),
         Entry::Aborted(reason) | Entry::Error(reason) => message::error(reason),
-        Entry::Tool {
-            ref id, ref name, ..
-        } if Builtin::is(name, Builtin::Task) => match child::cards(app, id) {
-            Some(cards) => cards,
-            None => terminal::row(entry, live, prefs, app, index),
-        },
+        Entry::Tool { ref name, ref call } if Builtin::is(name, Builtin::Task) => {
+            match child::cards(app, &call.id) {
+                Some(cards) => cards,
+                None => terminal::row(entry, live, prefs, app, index),
+            }
+        }
         entry @ (Entry::Tool { .. }
         | Entry::ToolGroup { .. }
         | Entry::Receipt(_)

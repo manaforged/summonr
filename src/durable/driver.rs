@@ -9,7 +9,6 @@ use super::tree::{self, Snapshot};
 use super::work::{Check, Decision, Stage, Work, WorkError, WorkKind};
 use crate::WorkProgress;
 use crate::provider::{Message, Partial, ToolCall, UserInput};
-use crate::session::Replay;
 
 #[derive(Debug, Error)]
 pub(crate) enum DriverError {
@@ -176,10 +175,6 @@ impl SessionDriver {
 
     pub(crate) fn stage(&self) -> Option<Stage> {
         self.turn.as_ref().and_then(|turn| turn.stage)
-    }
-
-    pub(crate) fn replay(&self) -> Replay {
-        self.state.replay()
     }
 
     pub(crate) fn history(&self) -> &[Message] {

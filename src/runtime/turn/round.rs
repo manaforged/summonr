@@ -55,9 +55,13 @@ impl<P: Provider> Loop<P> {
                 continue;
             }
             if message.tool_calls.is_empty() && self.steer_waiting() {
-                self.session
-                    .finish_provider(durable_attempt, &message.content, &reasoning, meter, meta)
-                    .map_err(super::session_err)?;
+                self.session.finish_provider(
+                    durable_attempt,
+                    &message.content,
+                    &reasoning,
+                    meter,
+                    meta,
+                )?;
                 self.emit_records(events, &mut emit)?;
                 if !message.content.is_empty() {
                     let text = message.content.clone();
@@ -107,21 +111,18 @@ impl<P: Provider> Loop<P> {
     ) -> Result<()> {
         let (message, reasoning, durable_attempt, meter, meta) = reply;
         let calls = message.tool_calls.clone();
-        let planned = self
-            .session
-            .finish_provider_with_tools(
-                durable_attempt,
-                &message.content,
-                &reasoning,
-                meter,
-                &calls,
-                meta,
-            )
-            .map_err(super::session_err)?;
+        let planned = self.session.finish_provider_with_tools(
+            durable_attempt,
+            &message.content,
+            &reasoning,
+            meter,
+            &calls,
+            meta,
+        )?;
         messages.push(message);
         self.emit_records(events, emit)?;
         self.settle(pre, events, emit).await?;
-        self.session.settle_base().map_err(super::session_err)?;
+        self.session.settle_base()?;
         self.execute_calls(planned, calls, messages, events, emit, usage)
             .await
     }
@@ -166,7 +167,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Option<(AssistantMessage, usize, (Attempt, Meter, UsageMeta))>> {
-        let role = self.round_role();
+        let role = crate::workflow::Role::Implement;
         let mut state = super::retry::RetryState::default();
         loop {
             let request = self.request_with(role, messages, tools);
@@ -215,7 +216,7 @@ impl<P: Provider> Loop<P> {
         if assistant.usage.prompt_tokens > 0 {
             self.context_sample = Some((request_chars, assistant.usage.prompt_tokens));
         }
-        self.count_usage(&assistant, usage);
+        usage.add(&assistant.usage);
         let stop_reason = assistant.stop_reason;
         let reasoning = assistant.reasoning_content.clone().unwrap_or_default();
         (assistant.into_message(), stop_reason, reasoning)
@@ -231,7 +232,7 @@ impl<P: Provider> Loop<P> {
         if self.seat_model(workflow::Role::Scout).is_none() || !self.session.needs_scout() {
             return Ok(());
         }
-        let objective = self.session.objective().map_err(super::session_err)?;
+        let objective = self.session.objective()?;
         let brief = scout::brief(self, &objective, usage).await;
         self.sync_usage(emit);
         let brief = match brief {
@@ -246,7 +247,7 @@ impl<P: Provider> Loop<P> {
                 );
             }
         };
-        self.session.set_brief(&brief).map_err(super::session_err)?;
+        self.session.set_brief(&brief)?;
         self.inject(scout::note(&brief), messages)?;
         self.push_event(
             events,
@@ -278,9 +279,7 @@ impl<P: Provider> Loop<P> {
             }
             input.text = decorate(&harness, &input.text);
         }
-        self.session
-            .start_input(&input)
-            .map_err(super::session_err)?;
+        self.session.start_input(&input)?;
         let history = self.session.history();
         let mut messages = Vec::with_capacity(history.len() + 1);
         messages.push(Message::system(self.system_prompt.clone()));
@@ -289,18 +288,12 @@ impl<P: Provider> Loop<P> {
     }
 
     fn prepare_work(&mut self, text: &str, commands: &[String]) -> Result<()> {
-        if self.is_goal()
-            && self
-                .session
-                .goal_objective()
-                .map_err(super::session_err)?
-                .is_none()
-        {
+        if self.is_goal() && self.session.goal_objective()?.is_none() {
             self.select_goal(text, commands)?;
         }
         self.session
             .prepare_turn_work(text, commands)
-            .map_err(super::session_err)
+            .map_err(Error::from)
     }
 
     pub(in crate::runtime) fn round_abort(&self) -> Option<String> {

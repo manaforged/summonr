@@ -1,7 +1,5 @@
 use super::*;
 
-const MAIL_PER_ROUND: usize = 5;
-
 #[derive(Default)]
 pub(super) struct RetryState {
     retries: u32,
@@ -33,7 +31,7 @@ impl<P: Provider> Loop<P> {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             super::steer::drain_steer(&mut queue, &mut self.session, messages)?;
         }
-        let (mail, overflow) = self.take_peer_mail(MAIL_PER_ROUND)?;
+        let (mail, overflow) = self.take_peer_mail(crate::limits::limits().mail_per_round)?;
         for mail in mail {
             self.inject(envelope(&mail), messages)?;
             self.push_event(
@@ -144,7 +142,7 @@ impl<P: Provider> Loop<P> {
         }
         let text = error.to_string();
         if !retryable {
-            if self.seats.contains_key(&self.round_role())
+            if self.seats.contains_key(&crate::workflow::Role::Implement)
                 || !self.fall_back(&text, events, emit)?
             {
                 return Err(error);
@@ -218,7 +216,7 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<bool> {
         if let Some(cap) = crate::provider::input_cap(text) {
-            self.learn_role_window(self.round_role(), cap);
+            self.learn_role_window(crate::workflow::Role::Implement, cap);
         }
         if !self
             .auto_compact(messages, tool_bytes, usage, events, emit)

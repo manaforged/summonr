@@ -2,6 +2,14 @@ use super::entry::linked;
 use super::*;
 
 impl Model {
+    pub(in crate::tui::sigil_view) fn entry_at(
+        &self,
+        index: usize,
+    ) -> (Option<Entry>, bool, Prefs) {
+        let live = self.busy_since.is_some() && index + 1 == self.entries.len();
+        (self.entries.get(index).cloned(), live, self.prefs.clone())
+    }
+
     pub(in crate::tui::sigil_view) fn start_tool(
         &mut self,
         id: String,
@@ -19,13 +27,8 @@ impl Model {
         }
         self.tools.insert(id.clone(), self.entries.len());
         self.entries.push(Entry::Tool {
-            id,
             name: name.clone(),
-            arg: arg.clone(),
-            state: ToolState::Running,
-            output: String::new(),
-            expanded: false,
-            patch: None,
+            call: Call::new(id, arg.clone(), ToolState::Running, String::new()),
         });
         self.live_tool = Some((name, arg));
     }
@@ -45,11 +48,8 @@ impl Model {
             Tail::Group
         } else if matches!(
             last,
-            Some(Entry::Tool {
-                name: prior,
-                state: ToolState::Ok | ToolState::Failed,
-                ..
-            }) if prior == name
+            Some(Entry::Tool { name: prior, call })
+                if prior == name && !matches!(call.state, ToolState::Running)
         ) {
             Tail::Single
         } else {
@@ -69,27 +69,11 @@ impl Model {
                 ));
             }
             Tail::Single => {
-                let Some(Entry::Tool {
-                    id: old_id,
-                    arg: old_arg,
-                    state: old_state,
-                    output: old_output,
-                    expanded,
-                    patch,
-                    ..
-                }) = self.entries.pop()
-                else {
+                let Some(Entry::Tool { call, .. }) = self.entries.pop() else {
                     return false;
                 };
                 let calls = vec![
-                    Call {
-                        id: old_id,
-                        arg: old_arg,
-                        state: old_state,
-                        output: old_output,
-                        expanded,
-                        patch,
-                    },
+                    call,
                     Call::new(id.to_string(), arg, ToolState::Running, String::new()),
                 ];
                 self.entries.push(Entry::ToolGroup {
@@ -115,19 +99,14 @@ impl Model {
             ToolState::Failed
         };
         if let Some(index) = self.tools.remove(id) {
-            if let Some(Entry::Tool {
-                state: stored,
-                output: body,
-                patch: shown,
-                ..
-            }) = self.entries.get_mut(index)
-            {
-                *stored = state;
-                *body = output;
-                *shown = patch;
-            } else if let Some(Entry::ToolGroup { calls, .. }) = self.entries.get_mut(index)
-                && let Some(call) = calls.iter_mut().find(|call| call.id == id)
-            {
+            let call = if let Some(Entry::Tool { call, .. }) = self.entries.get_mut(index) {
+                Some(call)
+            } else if let Some(Entry::ToolGroup { calls, .. }) = self.entries.get_mut(index) {
+                calls.iter_mut().find(|call| call.id == id)
+            } else {
+                None
+            };
+            if let Some(call) = call {
                 call.state = state;
                 call.output = output;
                 call.patch = patch;

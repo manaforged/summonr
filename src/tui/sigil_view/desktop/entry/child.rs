@@ -46,17 +46,10 @@ fn card(kid: &Agent) -> NodeBuilder {
 
 pub(super) fn cards(app: &App, call: &str) -> Option<NodeBuilder> {
     let model = app.model.get();
-    let kids: Vec<&Agent> = model
-        .agents
-        .iter()
-        .filter(|kid| !call.is_empty() && kid.call == call)
-        .collect();
-    if kids.is_empty() {
-        return None;
-    }
-    let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(8.0));
-    for kid in kids {
-        column = column.child(card(kid));
-    }
-    Some(column)
+    let mut kids = model.agents_of(call).peekable();
+    kids.peek()?;
+    Some(kids.fold(
+        container().layout(LayoutStyle::flex_column().fill_width().gap(8.0)),
+        |column, kid| column.child(card(kid)),
+    ))
 }

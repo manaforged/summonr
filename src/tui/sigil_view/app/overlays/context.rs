@@ -40,7 +40,7 @@ impl App {
         let Some(mut context) = self.context.peek() else {
             return;
         };
-        context.cursor = files::wrap(context.cursor, delta, context.items().len());
+        context.cursor = files::cycle(context.cursor, delta, context.items().len());
         self.context.set(Some(context));
         self.refresh();
     }

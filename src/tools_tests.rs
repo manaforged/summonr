@@ -315,3 +315,14 @@ fn read_pages_share_the_output_budget_without_hiding_later_lines() {
         "later source lines were hidden: {later}"
     );
 }
+
+#[test]
+fn each_tool_row_keeps_its_claude_names_and_editor_kind() {
+    assert_eq!(Builtin::Search.claude(), (Some("Grep"), &["Glob"][..]));
+    assert_eq!(Builtin::Lsp.claude(), (None, &["LSP"][..]));
+    assert_eq!(Builtin::Task.claude(), (Some("Task"), &[][..]));
+    assert_eq!(Builtin::from_claude("multiedit"), Some(Builtin::Edit));
+    assert_eq!(Builtin::Write.acp_kind(), "edit");
+    assert_eq!(Builtin::Browser.acp_kind(), "fetch");
+    assert_eq!(Builtin::Task.acp_kind(), "other");
+}

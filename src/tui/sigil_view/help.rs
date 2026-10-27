@@ -5,6 +5,7 @@ use sigil::prelude::{
 use super::app::App;
 use super::canvas;
 use super::ui::{Dialog, Hints, Key, Size, pick};
+use crate::tui::matching::all_words;
 
 const ROW_MARKER: usize = 2;
 const DIALOG_PADDING: f32 = 16.0;
@@ -49,13 +50,11 @@ fn visible(app: &App) -> usize {
 
 fn lines(app: &App, query: &str) -> Vec<String> {
     let width = row_cells(app.viewport.peek().0);
-    matching(
-        &crate::tui::help_text(&app.model.get().prefs.hotkeys),
-        query,
-    )
-    .into_iter()
-    .map(|line| crate::text::ellipsize(&line, width))
-    .collect()
+    crate::tui::help_text(&app.model.get().prefs.hotkeys)
+        .lines()
+        .filter(|line| all_words(line, query))
+        .map(|line| crate::text::ellipsize(line, width))
+        .collect()
 }
 
 fn row_cells(cols: u16) -> usize {
@@ -99,18 +98,4 @@ pub(super) fn layer(app: App) -> NodeBuilder {
             .scroll_bind(scroll),
         )
         .build(app.help.open, cols, &app.model.peek().prefs.hotkeys)
-}
-
-fn matching(text: &str, query: &str) -> Vec<String> {
-    let terms: Vec<String> = query
-        .split_whitespace()
-        .map(|term| term.to_lowercase())
-        .collect();
-    text.lines()
-        .filter(|line| {
-            let line = line.to_lowercase();
-            terms.iter().all(|term| line.contains(term))
-        })
-        .map(str::to_string)
-        .collect()
 }

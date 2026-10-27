@@ -20,7 +20,7 @@ use sigil::prelude::text;
 use sigil::terminal::caps;
 use sigil::widgets::DiffBuilder;
 
-use super::{App, Call, Entry, canvas};
+use super::{App, Entry, canvas};
 use crate::prefs::{DiffLayout, Prefs};
 use crate::tui::sigil_view::look::Look;
 
@@ -45,6 +45,7 @@ pub(in crate::tui::sigil_view) use steps::slot;
 pub(in crate::tui::sigil_view) use steps::{Slot, slots, subagents};
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use tools::glyph;
+pub(in crate::tui::sigil_view) use tools::tool_label;
 pub(in crate::tui::sigil_view) use tools::workspace_relative;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use tree::label;
@@ -62,30 +63,9 @@ pub(in crate::tui::sigil_view) fn row(
     let tools = prefs.tools;
     let layout = prefs.diff_layout;
     match entry {
-        Entry::Tool {
-            id,
-            name,
-            arg,
-            state,
-            output,
-            expanded,
-            patch,
-        } => tools::tool_card(
-            &name,
-            &Call {
-                id,
-                arg,
-                state,
-                output,
-                expanded,
-                patch,
-            },
-            tools,
-            layout,
-            app,
-            index,
-            None,
-        ),
+        Entry::Tool { name, call } => {
+            tools::tool_card(&name, &call, tools, layout, app, index, None)
+        }
         Entry::ToolGroup { name, calls } => {
             tools::group_card(&name, &calls, tools, layout, app, index)
         }

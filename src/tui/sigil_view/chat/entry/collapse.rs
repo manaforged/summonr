@@ -19,17 +19,18 @@ pub(super) fn collapsible(
 ) -> NodeBuilder {
     let toggle = app.clone();
     let next = if visibility == Visibility::Expanded {
-        "collapsed"
+        Visibility::Collapsed
     } else {
-        "expanded"
+        Visibility::Expanded
+    };
+    let field: fn(&mut crate::prefs::Prefs) -> &mut Visibility = if reasoning {
+        |prefs| &mut prefs.reasoning
+    } else {
+        |prefs| &mut prefs.receipts
     };
     let press = move |event: &mut PointerEvent| {
         if event.button == Some(MouseButton::Left) {
-            if reasoning {
-                toggle.reasoning_command(Some(next));
-            } else {
-                toggle.receipts_command(Some(next));
-            }
+            toggle.set_visibility(field, Some(next));
             event.stop_propagation();
         }
     };

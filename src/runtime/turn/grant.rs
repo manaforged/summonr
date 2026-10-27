@@ -10,8 +10,7 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Verdict> {
         let verdict = self
             .session
-            .prepare_verdict(checks.iter().all(|check| check.passed))
-            .map_err(super::session_err)?;
+            .prepare_verdict(checks.iter().all(|check| check.passed))?;
         if let Some(output) = &verdict.diagnostic {
             let command = "workspace changed after the check ran".to_string();
             self.push_event(

@@ -112,7 +112,7 @@ impl Entry {
 
     fn launch(self) -> Option<Launch> {
         let user_config = self.user_config;
-        let fill = |text: &str| expand(&substitute(text, &user_config));
+        let fill = |text: &str| expand_vars(text, &user_config);
         if let Some(url) = self.url {
             let mut headers: Vec<(String, String)> = self
                 .headers
@@ -303,18 +303,17 @@ fn toml_map(value: Option<&toml::Value>) -> BTreeMap<String, Entry> {
         .collect()
 }
 
-fn substitute(text: &str, config: &BTreeMap<String, String>) -> String {
-    scan(text, "${user_config.", |name| config.get(name).cloned())
-}
-
-fn expand(text: &str) -> String {
-    scan(text, "${", |inner| {
+pub(crate) fn expand_vars(text: &str, user_config: &BTreeMap<String, String>) -> String {
+    let text = scan(text, crate::plugins::USER_CONFIG, |name| {
+        user_config.get(name).cloned()
+    });
+    scan(&text, "${", |inner| {
         let (name, fallback) = inner.split_once(":-").unwrap_or((inner, ""));
         Some(std::env::var(name).unwrap_or_else(|_unset| fallback.to_string()))
     })
 }
 
-fn scan(text: &str, open: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
+pub(crate) fn scan(text: &str, open: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::new();
     let mut rest = text;
     while let Some(start) = rest.find(open) {

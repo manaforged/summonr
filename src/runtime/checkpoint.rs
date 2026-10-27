@@ -57,8 +57,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn undo(&mut self) -> Result<(Option<Vec<String>>, Option<String>)> {
-        let turns = log::read(self.session_path())
-            .map_err(super::session_err)?
+        let turns = log::read(self.session_path())?
             .iter()
             .filter(|line| matches!(line, Line::User { start: true, .. }))
             .count();

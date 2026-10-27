@@ -59,7 +59,11 @@ impl<P: Provider> Loop<P> {
                 return Ok((text, usage));
             }
             for call in calls {
-                let (success, output) = match self.tools.execute_outcome(&call).await {
+                let ran = match self.pre_tool(&call).await.blocked {
+                    Some(reason) => Err(super::hooks::blocked(&reason)),
+                    None => self.tools.execute_outcome(&call).await,
+                };
+                let (success, output) = match ran {
                     Ok(output) => (output.success, output.text),
                     Err(error) => (false, error.to_string()),
                 };

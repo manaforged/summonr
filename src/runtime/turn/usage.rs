@@ -1,16 +1,6 @@
 use super::*;
 
 impl<P: Provider> Loop<P> {
-    pub(in crate::runtime) fn count_usage(
-        &mut self,
-        assistant: &AssistantMessage,
-        usage: &mut Usage,
-    ) {
-        usage.add(&assistant.usage);
-        self.spent_tokens +=
-            u64::from(assistant.usage.prompt_tokens + assistant.usage.completion_tokens);
-    }
-
     pub(in crate::runtime) fn emit_records(
         &mut self,
         events: &mut Vec<Event>,

@@ -95,26 +95,50 @@ pub(crate) enum Builtin {
     Task,
 }
 
-const LIVE: &[(&str, Builtin)] = &[
-    ("read", Builtin::Read),
-    ("search", Builtin::Search),
-    ("edit", Builtin::Edit),
-    ("write", Builtin::Write),
-    ("lsp", Builtin::Lsp),
-    ("skill", Builtin::Skill),
-    ("run_command", Builtin::RunCommand),
-    ("todo", Builtin::Todo),
-    ("web", Builtin::Web),
-    ("browser", Builtin::Browser),
-    ("task", Builtin::Task),
+#[rustfmt::skip]
+type Row = (&'static str, Builtin, Option<&'static str>, &'static [&'static str], &'static str, &'static str, bool);
+
+#[rustfmt::skip]
+const LIVE: &[Row] = &[
+    ("read", Builtin::Read, Some("Read"), &[], "read", "Read", true),
+    ("search", Builtin::Search, Some("Grep"), &["Glob"], "search", "Search", true),
+    ("edit", Builtin::Edit, Some("Edit"), &["MultiEdit", "NotebookEdit"], "edit", "Edit", false),
+    ("write", Builtin::Write, Some("Write"), &[], "edit", "Write", false),
+    ("lsp", Builtin::Lsp, None, &["LSP"], "search", "Lsp", true),
+    ("skill", Builtin::Skill, Some("Skill"), &[], "other", "Skill", true),
+    ("run_command", Builtin::RunCommand, Some("Bash"), &[], "execute", "Run", false),
+    ("todo", Builtin::Todo, Some("TodoWrite"), &[], "other", "Tasks", true),
+    ("web", Builtin::Web, Some("WebFetch"), &["WebSearch"], "fetch", "Web", true),
+    ("browser", Builtin::Browser, None, &[], "fetch", "Browse", false),
+    ("task", Builtin::Task, Some("Task"), &[], "other", "Subagent", false),
 ];
 
 impl Builtin {
     #[must_use]
     pub(crate) fn live(name: &str) -> Option<Self> {
+        LIVE.iter().find(|row| row.0 == name).map(|row| row.1)
+    }
+
+    #[must_use]
+    pub(crate) fn from_claude(name: &str) -> Option<Self> {
+        let named = |claude: &&str| claude.eq_ignore_ascii_case(name);
         LIVE.iter()
-            .find(|(live, _)| *live == name)
-            .map(|(_, kind)| *kind)
+            .find(|row| row.2.iter().chain(row.3).any(named))
+            .map(|row| row.1)
+    }
+
+    fn row(self) -> &'static Row {
+        &LIVE[self as usize]
+    }
+
+    #[must_use]
+    pub(crate) fn claude(self) -> (Option<&'static str>, &'static [&'static str]) {
+        (self.row().2, self.row().3)
+    }
+
+    #[must_use]
+    pub(crate) fn acp_kind(self) -> &'static str {
+        self.row().4
     }
 
     #[must_use]
@@ -129,10 +153,7 @@ impl Builtin {
 
     #[must_use]
     pub(crate) fn readonly(self) -> bool {
-        matches!(
-            self,
-            Self::Read | Self::Search | Self::Lsp | Self::Skill | Self::Todo | Self::Web
-        )
+        self.row().6
     }
 
     #[must_use]
@@ -142,19 +163,7 @@ impl Builtin {
 
     #[must_use]
     pub(crate) fn verb(self) -> &'static str {
-        match self {
-            Self::Read => "Read",
-            Self::Search => "Search",
-            Self::Edit => "Edit",
-            Self::Write => "Write",
-            Self::Lsp => "Lsp",
-            Self::Skill => "Skill",
-            Self::RunCommand => "Run",
-            Self::Todo => "Tasks",
-            Self::Web => "Web",
-            Self::Browser => "Browse",
-            Self::Task => "Subagent",
-        }
+        self.row().5
     }
 }
 

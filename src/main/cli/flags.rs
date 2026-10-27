@@ -110,38 +110,40 @@ pub(super) const VALUES: [Valued; 12] = [
     },
 ];
 
-pub(super) const COMMANDS: [(&str, Run); 23] = [
-    ("endpoints", |args, _| on(&mut args.list)),
-    ("sessions", |args, _| on(&mut args.list_sessions)),
-    ("resume", Args::resume),
-    ("doctor", |args, _| on(&mut args.doctor)),
-    ("classify", |args, _| on(&mut args.classify)),
-    ("export", |args, _| on(&mut args.export)),
-    ("profile", |args, _| on(&mut args.profile)),
-    ("workflows", |args, _| on(&mut args.list_workflows)),
-    ("modules", |args, _| on(&mut args.list_modules)),
-    ("install", |args, _| on(&mut args.add)),
-    ("uninstall", |args, _| on(&mut args.uninstall)),
-    ("update", |args, _| on(&mut args.update)),
-    ("acp", |args, _| on(&mut args.acp)),
-    ("mail", |args, input| {
+pub(super) const COMMANDS: [(&str, Option<usize>, Run); 23] = [
+    ("endpoints", Some(0), |args, _| on(&mut args.list)),
+    ("sessions", Some(0), |args, _| on(&mut args.list_sessions)),
+    ("resume", None, Args::resume),
+    ("doctor", Some(0), |args, _| on(&mut args.doctor)),
+    ("classify", None, |args, _| on(&mut args.classify)),
+    ("export", Some(1), |args, _| on(&mut args.export)),
+    ("profile", Some(1), |args, _| on(&mut args.profile)),
+    ("workflows", Some(0), |args, _| on(&mut args.list_workflows)),
+    ("modules", Some(0), |args, _| on(&mut args.list_modules)),
+    ("install", Some(1), |args, _| on(&mut args.add)),
+    ("uninstall", Some(1), |args, _| on(&mut args.uninstall)),
+    ("update", Some(0), |args, _| on(&mut args.update)),
+    ("acp", Some(0), |args, _| on(&mut args.acp)),
+    ("mail", None, |args, input| {
         some(&mut args.mail, input.by_ref().collect())
     }),
-    ("cron", |args, input| {
+    ("cron", None, |args, input| {
         some(&mut args.cron, input.by_ref().collect())
     }),
-    ("gateway", |args, input| {
+    ("gateway", None, |args, input| {
         some(&mut args.gateway, input.by_ref().collect())
     }),
-    ("tool", |args, input| {
+    ("tool", None, |args, input| {
         some(&mut args.tool, input.by_ref().collect())
     }),
-    ("mcp", |args, input| some(&mut args.mcp, mcp::parse(input)?)),
-    ("login", |args, _| on(&mut args.login)),
-    ("logout", |args, _| on(&mut args.logout)),
-    ("worktrees", |args, _| on(&mut args.list_worktrees)),
-    ("diff", |args, _| on(&mut args.diff)),
-    ("help", |_, input| exit_help(input.next().as_deref())),
+    ("mcp", None, |args, input| {
+        some(&mut args.mcp, mcp::parse(input)?)
+    }),
+    ("login", None, |args, _| on(&mut args.login)),
+    ("logout", Some(0), |args, _| on(&mut args.logout)),
+    ("worktrees", Some(0), |args, _| on(&mut args.list_worktrees)),
+    ("diff", Some(1), |args, _| on(&mut args.diff)),
+    ("help", None, |_, input| exit_help(input.next().as_deref())),
 ];
 
 pub(super) const SCOPED: [Scope; 23] = [

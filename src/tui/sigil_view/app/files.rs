@@ -106,7 +106,7 @@ pub(in crate::tui::sigil_view) fn shift(cursor: &Signal<usize>, delta: isize, le
     );
 }
 
-pub(in crate::tui::sigil_view) fn wrap(at: usize, delta: isize, len: usize) -> usize {
+pub(in crate::tui::sigil_view) fn cycle(at: usize, delta: isize, len: usize) -> usize {
     (at as isize + delta).rem_euclid(len.max(1) as isize) as usize
 }
 

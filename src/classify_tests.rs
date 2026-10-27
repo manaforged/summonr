@@ -322,3 +322,32 @@ fn an_answer_from_a_provider_with_extra_fields_still_parses() {
         "a provider adding fields must not break the read"
     );
 }
+
+#[test]
+fn the_question_sets_load_from_data_by_name() {
+    assert_eq!(*sets::NAMES, ["review", "errors", "diff", "commit"]);
+    let names = |set: &str| -> Vec<String> { sets::by_name(set).unwrap().into_keys().collect() };
+    assert_eq!(
+        names("review"),
+        [
+            "looped",
+            "outcome",
+            "overreached",
+            "proved",
+            "risk",
+            "unreported"
+        ]
+    );
+    assert_eq!(
+        names("diff"),
+        [
+            "adds_panic",
+            "kind",
+            "removes_guard",
+            "risk",
+            "touches_value",
+            "widens_surface"
+        ]
+    );
+    assert!(sets::by_name("nothing").is_none());
+}

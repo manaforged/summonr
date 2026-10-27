@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use super::model::{Agent, Entry};
+use super::model::{Agent, Call, Entry};
 use crate::child::Access;
 use crate::tui::{Round, ToolState};
 
@@ -55,13 +55,13 @@ pub(super) fn entries() -> Vec<Entry> {
             done: true,
         },
         Entry::Tool {
-            id: "d1".to_string(),
             name: "edit".to_string(),
-            arg: "src/demo.rs".to_string(),
-            state: ToolState::Ok,
-            output: DIFF.to_string(),
-            expanded: false,
-            patch: None,
+            call: Call::new(
+                "d1".to_string(),
+                "src/demo.rs".to_string(),
+                ToolState::Ok,
+                DIFF.to_string(),
+            ),
         },
         Entry::Chart(vec![
             Round {

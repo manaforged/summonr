@@ -91,7 +91,6 @@ pub struct Loop<P> {
     verify: Option<Vec<String>>,
     check_file: Option<Vec<u8>>,
     budget: Budget,
-    spent_tokens: u64,
     run_base: (u64, u64),
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,
@@ -198,18 +197,6 @@ impl<P: Provider> Loop<P> {
         self.request(role, sent, &advertised.tools, true)
             .with_tools_json(&advertised.json)
     }
-
-    fn round_role(&self) -> workflow::Role {
-        workflow::Role::Implement
-    }
-}
-
-pub(super) fn session_err(error: impl std::fmt::Display) -> Error {
-    Error::Config(error.to_string())
-}
-
-pub(super) fn meter(usage: &Usage, millis: u64) -> Meter {
-    Meter::measured(usage, millis)
 }
 
 pub(crate) fn billable(error: &Error) -> bool {

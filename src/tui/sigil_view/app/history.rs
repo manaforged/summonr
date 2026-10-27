@@ -53,8 +53,8 @@ impl App {
             return;
         }
         self.model_mut(|model| {
-            if let Some(Entry::Tool { expanded, .. }) = model.entries.get_mut(*entry) {
-                *expanded = true;
+            if let Some(Entry::Tool { call, .. }) = model.entries.get_mut(*entry) {
+                call.expanded = true;
                 model.entries.invalidate();
             }
         });

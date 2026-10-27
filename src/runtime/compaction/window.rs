@@ -53,7 +53,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn known_window(&self) -> Option<u32> {
-        let round = self.receiver_window(self.round_role());
+        let round = self.receiver_window(crate::workflow::Role::Implement);
         let summary = self
             .seats
             .get(&workflow::Role::Summary)

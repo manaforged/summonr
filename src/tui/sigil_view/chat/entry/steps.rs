@@ -10,6 +10,16 @@ pub(in crate::tui::sigil_view) enum Slot {
     Member,
 }
 
+impl Slot {
+    pub(in crate::tui::sigil_view) fn span(&self, index: usize) -> Range<usize> {
+        match self {
+            Self::Lead(range) => range.clone(),
+            Self::Single => index..index + 1,
+            Self::Member => index..index,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Run {
     Steps,
@@ -96,13 +106,13 @@ mod tests {
 
     fn tool(name: &str) -> Entry {
         Entry::Tool {
-            id: String::new(),
             name: name.to_owned(),
-            arg: "src/lib.rs".to_owned(),
-            state: ToolState::Ok,
-            output: String::new(),
-            expanded: false,
-            patch: None,
+            call: Call::new(
+                String::new(),
+                "src/lib.rs".to_owned(),
+                ToolState::Ok,
+                String::new(),
+            ),
         }
     }
 

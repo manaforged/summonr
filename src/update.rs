@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
 
-pub const RELEASES: &str = "https://github.com/manaforged/summonr/releases";
+const RELEASES: &str = "https://github.com/manaforged/summonr/releases";
 const FROM_SOURCE: &str = "cargo install --git https://github.com/manaforged/summonr --locked";
 const BINARY: &str = if cfg!(windows) {
     "summonr.exe"

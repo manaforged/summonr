@@ -141,6 +141,9 @@ fn main() {
         session::a_session_resumed_by_id_from_another_folder_runs_in_its_own_workspace,
         session::a_goal_run_whose_output_lands_in_the_workspace_still_passes,
         session::a_print_run_says_its_check_was_not_run,
+        session::a_session_header_names_the_build_that_wrote_it,
+        session::a_print_run_offers_no_task_list_and_a_goal_run_does,
+        session::a_print_run_sends_a_lean_first_request,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         session::a_failing_grep_check_does_not_complete_a_goal,
         session::forking_a_named_session_keeps_the_original_transcript,

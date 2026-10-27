@@ -111,6 +111,8 @@ impl ToolRegistry {
         }
         crate::durable::store::rename(&source, &dest)
             .map_err(|error| Error::Tool(format!("cannot move `{path}` to `{to}`: {error}")))?;
+        self.note_wrote(path);
+        self.note_wrote(to);
         let mut out = format!("moved {path} -> {to}");
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
@@ -257,6 +259,9 @@ impl ToolRegistry {
             });
         }
         write::apply_changes(&planned)?;
+        for change in &planned {
+            self.note_wrote(&change.display);
+        }
         Ok((planned, out))
     }
 

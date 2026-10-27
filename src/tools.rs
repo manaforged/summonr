@@ -66,10 +66,12 @@ pub(crate) struct ToolRegistry {
     launches: lsp::Launches,
     roots: Vec<paths::Root>,
     approved_once: std::sync::Mutex<Option<command::Approval>>,
+    wrote: std::sync::Mutex<std::collections::BTreeSet<String>>,
     model_images: bool,
     vision: Option<crate::endpoint::Endpoint>,
     only: Option<Vec<Builtin>>,
     standalone: bool,
+    task_list: bool,
 }
 
 pub(crate) struct ToolOutput {
@@ -135,10 +137,12 @@ impl ToolRegistry {
             spill_dir: std::sync::OnceLock::new(),
             launches: lsp::Launches::default(),
             approved_once: std::sync::Mutex::new(None),
+            wrote: std::sync::Mutex::new(std::collections::BTreeSet::new()),
             model_images: false,
             vision: None,
             only: None,
             standalone: false,
+            task_list: true,
         })
     }
 
@@ -218,6 +222,10 @@ impl ToolRegistry {
         }
     }
 
+    pub(crate) fn set_task_list(&mut self, on: bool) {
+        self.task_list = on;
+    }
+
     pub(crate) fn set_read_only(&mut self, on: bool) {
         self.policy.set_read_only(on);
     }
@@ -234,6 +242,29 @@ impl ToolRegistry {
                 .filter_map(|name| crate::hooks::builtin(name))
                 .collect(),
         );
+    }
+
+    pub(crate) fn clear_wrote(&self) {
+        if let Ok(mut wrote) = self.wrote.lock() {
+            wrote.clear();
+        }
+    }
+
+    pub(crate) fn note_wrote(&self, path: &str) {
+        let path = path.trim().trim_start_matches("./").replace('\\', "/");
+        if path.is_empty() {
+            return;
+        }
+        if let Ok(mut wrote) = self.wrote.lock() {
+            wrote.insert(path);
+        }
+    }
+
+    pub(crate) fn wrote(&self) -> Vec<String> {
+        self.wrote
+            .lock()
+            .map(|wrote| wrote.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub(crate) async fn execute_outcome(&self, call: &ToolCall) -> Result<ToolOutput> {

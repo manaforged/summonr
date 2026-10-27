@@ -244,6 +244,10 @@ pub(crate) struct Snapshot {
     pub context_window: Option<u32>,
     pub workflow: Option<String>,
     pub unseated: bool,
+    pub prompt_system: usize,
+    pub prompt_schemas: usize,
+    pub prompt_tools: usize,
+    pub prompt_other: usize,
 }
 
 impl Snapshot {

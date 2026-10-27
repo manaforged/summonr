@@ -8,7 +8,7 @@ use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder, Sink, SinkContex
 use crate::hashline::line_hash;
 
 use super::walk::Shared;
-use super::{GREP_FILE_HITS, GREP_FILE_MAX, GREP_LINE_MAX, Mode, Query, relative};
+use super::{GREP_FILE_HITS, GREP_FILE_MAX, Mode, Query, relative};
 
 pub(super) enum Row {
     Hit(String),
@@ -191,9 +191,10 @@ fn match_column(matcher: &RegexMatcher, bytes: &[u8]) -> usize {
 
 fn hit_line(line: &str) -> String {
     let line = line.trim_end_matches(['\n', '\r']);
-    if line.len() <= GREP_LINE_MAX {
+    let limit = crate::limits::limits().search_line_bytes;
+    if line.len() <= limit {
         return line.to_string();
     }
-    let end = line.floor_char_boundary(GREP_LINE_MAX);
-    format!("{}… [line clipped at {GREP_LINE_MAX} bytes]", &line[..end])
+    crate::text::ellipsize(line, crate::text::Span::Bytes(limit))
+        + &crate::tools::budget::clip_mark(limit)
 }

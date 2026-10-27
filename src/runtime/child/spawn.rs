@@ -90,7 +90,8 @@ impl<P: Provider> Loop<P> {
         )?;
         child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
         child.depth = 1;
-        child.context_window = self.context_window;
+        child.context_window = self.receiver_window(role);
+        child.compact_tokens = self.compact_tokens;
         child.context_sample = self.context_sample;
         child.effort = self.effort_for(role);
         child.price = self.price_for(role);

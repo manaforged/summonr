@@ -9,6 +9,8 @@ use crate::provider::{Effort, EffortField, Off, Scale};
 #[derive(Deserialize)]
 pub(super) struct File {
     pub(super) preset: Vec<Row>,
+    #[serde(default)]
+    pub(super) oauth: BTreeMap<String, crate::config::OAuth>,
 }
 
 #[derive(Deserialize)]
@@ -140,11 +142,18 @@ impl ReasoningRow {
 }
 
 impl Row {
-    fn oauth(&self, name: &str) -> Checked<Option<fn() -> crate::config::OAuth>> {
+    fn oauth(
+        &self,
+        name: &str,
+        logins: &BTreeMap<String, crate::config::OAuth>,
+    ) -> Checked<Option<crate::config::OAuth>> {
         self.oauth
             .as_deref()
             .map(|named| {
-                login(named).ok_or_else(|| format!("`{name}` names unknown login `{named}`"))
+                logins
+                    .get(named)
+                    .cloned()
+                    .ok_or_else(|| format!("`{name}` names unknown login `{named}`"))
             })
             .transpose()
     }
@@ -180,8 +189,13 @@ impl Row {
         })
     }
 
-    pub(super) fn into_preset(self, name: String, base_url: String) -> Checked<Preset> {
-        let oauth = self.oauth(&name)?;
+    pub(super) fn into_preset(
+        self,
+        name: String,
+        base_url: String,
+        logins: &BTreeMap<String, crate::config::OAuth>,
+    ) -> Checked<Preset> {
+        let oauth = self.oauth(&name, logins)?;
         let wire = self.wire(&name)?;
         self.check_env_keys(&name)?;
         let missing = self.missing(&name);

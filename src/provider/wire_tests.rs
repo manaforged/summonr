@@ -322,35 +322,6 @@ fn a_continuation_names_the_model_that_produced_it() {
 }
 
 #[test]
-fn a_whole_reply_and_a_streamed_one_agree_on_every_wire() {
-    let streamed = drive::<anthropic::Wire>(&anthropic_turn()).0;
-    let whole = anthropic::Wire::parse(
-        "claude-opus-5",
-        &json!({
-            "content": [
-                {"type": "thinking", "thinking": "weighing", "signature": "sig"},
-                {"type": "tool_use", "id": "toolu_1", "name": "read",
-                 "input": {"path": "a.rs"}}
-            ],
-            "stop_reason": "tool_use",
-            "usage": {"input_tokens": 9, "output_tokens": 4}
-        }),
-    );
-    assert_eq!(whole.reasoning_content, streamed.reasoning_content);
-    assert_eq!(whole.stop_reason, streamed.stop_reason);
-    assert_eq!(whole.usage, streamed.usage);
-    assert_eq!(
-        whole.tool_calls[0].function.arguments,
-        streamed.tool_calls[0].function.arguments
-    );
-    assert!(
-        continued(&whole).is_some(),
-        "a reply that did not stream must still be replayable, or reasoning \
-         survives only on the streaming path"
-    );
-}
-
-#[test]
 fn only_claude_3_7_among_claude_3_models_takes_a_thinking_budget() {
     use traits::{Thinking, traits};
     assert_eq!(

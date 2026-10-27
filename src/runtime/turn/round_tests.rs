@@ -268,13 +268,9 @@ async fn cancelling_a_reply_preserves_its_job() -> crate::Result<()> {
         crate::jobs::JobState::Running
     );
     let resumed = parent.begin_turn(crate::provider::UserInput::from("what is the status"))?;
-    assert!(
-        resumed
-            .last()
-            .expect("resumed prompt")
-            .content
-            .contains("finish the kernel candidate")
-    );
+    let prompt = &resumed.last().expect("resumed prompt").content;
+    assert!(prompt.contains("what is the status"), "{prompt}");
+    assert!(!prompt.contains("finish the kernel candidate"), "{prompt}");
     std::fs::write(&release, "continue\n")?;
     let completed = parent
         .tools

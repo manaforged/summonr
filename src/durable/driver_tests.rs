@@ -225,6 +225,30 @@ fn a_checkpoint_writes_the_tree_sidecar_when_the_trees_changed() {
 }
 
 #[test]
+fn a_new_sentence_replaces_single_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver.prepare_turn_work("fix the meter", &[]).unwrap();
+    assert_eq!(driver.work.as_ref().unwrap().objective, "fix the meter");
+    driver.prepare_turn_work("why did that stall", &[]).unwrap();
+    assert_eq!(
+        driver.work.as_ref().unwrap().objective,
+        "why did that stall"
+    );
+}
+
+#[test]
+fn a_goal_keeps_its_objective_when_the_next_sentence_differs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver
+        .prepare_external_work("keep this goal", Policy::Goal {}, &[])
+        .unwrap();
+    driver.prepare_turn_work("a side question", &[]).unwrap();
+    assert_eq!(driver.work.as_ref().unwrap().objective, "keep this goal");
+}
+
+#[test]
 fn a_second_goal_names_the_one_still_active_and_how_to_end_it() {
     let dir = tempfile::tempdir().unwrap();
     let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();

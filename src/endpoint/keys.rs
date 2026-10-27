@@ -108,7 +108,7 @@ pub(super) fn builtin(name: &str) -> Option<Endpoint> {
         model: row.model.clone(),
         api_key: None,
         source: None,
-        oauth: row.oauth.map(|make| make()),
+        oauth: row.sign_in(),
         body: None,
         context_window: row.context_window,
         idle_timeout_secs: None,

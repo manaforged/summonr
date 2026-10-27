@@ -37,6 +37,9 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
         changes.push(change);
     }
     apply_changes(&changes)?;
+    for change in &changes {
+        registry.note_wrote(&change.display);
+    }
     if let Some(change) = changes.iter().rev().find(|change| change.content.is_some())
         && let Some(check) = registry.check_after_edit(&change.dest).await
     {

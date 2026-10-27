@@ -155,12 +155,21 @@ impl Worker {
             });
         match resolved {
             Ok((endpoint, client)) => {
+                if endpoint.context_window.is_none() {
+                    self.loop_.watch_context(
+                        Some(role),
+                        client.clone(),
+                        &endpoint.name,
+                        &endpoint.model,
+                    );
+                }
                 self.loop_.set_seat(
                     role,
                     client,
                     endpoint.model.clone(),
                     endpoint.effort,
                     endpoint.price,
+                    endpoint.context_window,
                 );
                 self.workflow.seats.insert(
                     role,
@@ -270,17 +279,29 @@ impl Worker {
             Err(error) => return self.fail(&error.to_string()),
         };
         let ui = &self.ui;
-        let applied = self.loop_.apply_workflow(&workflow, |seat| {
+        let mut missing = Vec::new();
+        let applied = self.loop_.apply_workflow(&workflow, |role, seat| {
             let endpoint = crate::endpoint::resolve(
                 Some(&seat.endpoint),
                 seat.model.as_deref(),
                 crate::endpoint::Need::Seat,
             )?;
             let client = Self::client(ui, &endpoint)?;
+            if endpoint.context_window.is_none() {
+                missing.push((
+                    role,
+                    client.clone(),
+                    endpoint.name.clone(),
+                    endpoint.model.clone(),
+                ));
+            }
             Ok((client, endpoint))
         });
         if let Err(error) = applied {
             return self.fail(&error.to_string());
+        }
+        for (role, client, name, model) in missing {
+            self.loop_.watch_context(Some(role), client, &name, &model);
         }
         self.system(&format!("workflow {name} · {}", workflow.summary()));
         self.workflow = workflow;
@@ -328,7 +349,11 @@ impl Worker {
                 strict: self.loop_.is_strict(),
                 approval: self.loop_.is_approval(),
                 endpoint: self.endpoint.clone(),
-                context_window: self.loop_.context_window(),
+                context_window: self.loop_.pressure_window(),
+                prompt_system: self.loop_.prompt_parts().0,
+                prompt_schemas: self.loop_.prompt_parts().1,
+                prompt_tools: self.loop_.prompt_parts().2,
+                prompt_other: self.loop_.prompt_parts().3,
                 workflow: self.loop_.workflow(),
                 unseated: crate::endpoint::resolve(
                     Some(&self.endpoint),

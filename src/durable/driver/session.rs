@@ -37,6 +37,7 @@ impl SessionDriver {
             workspace: driver.workspace.clone(),
             parent,
             depth,
+            revision: Some(crate::revision().to_string()),
         })?;
         Ok(driver)
     }
@@ -153,6 +154,7 @@ impl SessionDriver {
             workspace: self.state.workspace.clone(),
             parent: self.state.id,
             depth: 0,
+            revision: Some(crate::revision().to_string()),
         })?;
         for line in lines {
             if !matches!(line, Line::Session { .. }) {

@@ -289,7 +289,6 @@ pub summonr::modules::ModuleId::Search
 pub summonr::modules::ModuleId::Skills
 pub summonr::modules::ModuleId::Task
 impl summonr::modules::ModuleId
-pub fn summonr::modules::ModuleId::from_name(name: &str) -> core::option::Option<Self>
 pub const fn summonr::modules::ModuleId::name(self) -> &'static str
 impl core::clone::Clone for summonr::modules::ModuleId
 impl core::cmp::Eq for summonr::modules::ModuleId
@@ -489,7 +488,6 @@ pub summonr::update::Source::releases: &'a str
 pub summonr::update::Source::target: &'a str
 impl summonr::update::Source<'static>
 pub const fn summonr::update::Source<'static>::this_build() -> Self
-pub const summonr::update::RELEASES: &str
 pub async fn summonr::update::run(source: &summonr::update::Source<'_>, exe: &std::path::Path) -> summonr::Result<summonr::update::Outcome>
 pub mod summonr::workflow
 pub struct summonr::workflow::Seat
@@ -1025,6 +1023,7 @@ pub fn summonr::Loop<P>::verify_commands(&self) -> &[alloc::string::String]
 pub fn summonr::Loop<P>::with_interactive(self) -> Self
 pub fn summonr::Loop<P>::with_strict(self) -> Self
 pub fn summonr::Loop<P>::with_unrestricted_commands(self) -> Self
+pub fn summonr::Loop<P>::without_task_list(self) -> Self
 pub fn summonr::Loop<P>::apply_endpoint(&mut self, endpoint: &summonr::Endpoint)
 pub fn summonr::Loop<P>::apply_workflow(&mut self, workflow: &summonr::workflow::Workflow, resolve: impl core::ops::function::FnMut(&summonr::workflow::Seat) -> summonr::Result<(P, summonr::Endpoint)>) -> summonr::Result<()>
 pub fn summonr::Loop<P>::history_len(&self) -> usize
@@ -1239,7 +1238,6 @@ pub const fn summonr::command_specs() -> &'static [summonr::command::CommandSpec
 pub fn summonr::default_effort(endpoint: &str, model: &str) -> core::option::Option<summonr::Effort>
 pub fn summonr::endpoint_chosen_by(name: core::option::Option<&str>, model: core::option::Option<&str>) -> core::option::Option<summonr::Pick>
 pub fn summonr::endpoint_fallbacks<P>(endpoint: &summonr::Endpoint, connect: impl core::ops::function::FnMut(&summonr::Endpoint) -> summonr::Result<P>) -> (alloc::vec::Vec<(P, summonr::Endpoint)>, alloc::vec::Vec<alloc::string::String>)
-pub fn summonr::endpoint_label(name: &str) -> core::option::Option<&'static str>
 pub fn summonr::endpoint_names() -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
 pub fn summonr::endpoint_names_ordered() -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
 pub fn summonr::endpoint_set_up() -> alloc::vec::Vec<alloc::string::String>

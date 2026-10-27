@@ -14,13 +14,15 @@ pub(in crate::tools) const GREP_DEFAULT: usize = 50;
 pub(in crate::tools) const GREP_MAX: usize = 200;
 const GREP_FILE_HITS: usize = 20;
 const GREP_FILE_MAX: u64 = 1024 * 1024;
-const GREP_LINE_MAX: usize = 500;
 pub(in crate::tools) const CONTEXT_MAX: usize = 10;
 const OUTPUT_MAX: usize = 50 * 1024;
 
 impl ToolRegistry {
     pub(in crate::tools) fn search_files(&self, arguments: &str) -> Result<String> {
         let args: Value = parse_args("search", arguments)?;
+        if args.get("op").and_then(Value::as_str) == Some("help") {
+            return Ok(crate::tools::help::search());
+        }
         let (roots, missing) = self.search_roots(&args)?;
         let query = Arc::new(self.query(&args, roots)?);
         let started = Instant::now();

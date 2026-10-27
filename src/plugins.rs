@@ -1,7 +1,8 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
@@ -140,23 +141,42 @@ impl Plugin {
             .cloned()
     }
 
+    pub(crate) fn servers<T: DeserializeOwned>(
+        &self,
+        maps: &[Value],
+        separator: &str,
+        workspace: &Path,
+        fields: impl Fn(&mut T) -> Vec<&mut String>,
+    ) -> Vec<(String, T)> {
+        maps.iter()
+            .filter_map(Value::as_object)
+            .flatten()
+            .filter_map(|(name, entry)| Some((name.clone(), T::deserialize(entry).ok()?)))
+            .collect::<BTreeMap<_, _>>()
+            .into_iter()
+            .map(|(name, mut entry)| {
+                for text in fields(&mut entry) {
+                    *text = self.expand(text, workspace);
+                }
+                (format!("{}{separator}{name}", self.name), entry)
+            })
+            .collect()
+    }
+
     pub(crate) fn hooks(&self) -> Hooks {
+        let inline = self.manifest.get("hooks").filter(|value| value.is_object());
+        let files = self.hook_files();
+        let mut files: Vec<Value> = files.iter().map(|file| read_json(file)).collect();
+        files.extend(inline.map(|inline| serde_json::json!({ "hooks": inline })));
+        let native = std::fs::read_to_string(self.dir.join("hooks.toml")).ok();
+        let native = native.and_then(|text| toml::from_str::<Hooks>(&text).ok());
         let mut hooks = Hooks::default();
-        for file in self.hook_files() {
-            self.claude_hooks(&read_json(&file), &mut hooks);
-        }
-        if let Some(inline) = self.manifest.get("hooks").filter(|value| value.is_object()) {
-            self.claude_hooks(&serde_json::json!({ "hooks": inline }), &mut hooks);
-        }
-        if let Ok(text) = std::fs::read_to_string(self.dir.join("hooks.toml"))
-            && let Ok(native) = toml::from_str::<Hooks>(&text)
-        {
+        for source in files.iter().map(claude_hooks).chain(native) {
             for event in HookEvent::ALL {
-                for hook in native.of(event) {
+                for hook in source.of(event) {
                     hooks.push(
                         event,
                         Hook {
-                            command: hook.command.clone(),
                             root: Some(self.dir.clone()),
                             ..hook.clone()
                         },
@@ -166,35 +186,37 @@ impl Plugin {
         }
         hooks
     }
+}
 
-    fn claude_hooks(&self, file: &Value, hooks: &mut Hooks) {
-        for event in HookEvent::ALL {
-            let groups = file["hooks"][event.claude()]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
-            for group in groups {
-                let matcher = group["matcher"].as_str().and_then(Matcher::parse);
-                for handler in group["hooks"].as_array().into_iter().flatten() {
-                    if handler["type"] != "command" {
-                        continue;
-                    }
-                    let Some(command) = handler["command"].as_str() else {
-                        continue;
-                    };
-                    hooks.push(
-                        event,
-                        Hook {
-                            command: command.to_string(),
-                            dialect: Dialect::Claude,
-                            matcher: matcher.clone(),
-                            root: Some(self.dir.clone()),
-                        },
-                    );
+fn claude_hooks(file: &Value) -> Hooks {
+    let mut hooks = Hooks::default();
+    for event in HookEvent::ALL {
+        for group in file["hooks"][event.claude()]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let matcher = group["matcher"].as_str().and_then(Matcher::parse);
+            for handler in group["hooks"].as_array().into_iter().flatten() {
+                if handler["type"] != "command" {
+                    continue;
                 }
+                let Some(command) = handler["command"].as_str() else {
+                    continue;
+                };
+                hooks.push(
+                    event,
+                    Hook {
+                        command: command.to_string(),
+                        dialect: Dialect::Claude,
+                        matcher: matcher.clone(),
+                        root: None,
+                    },
+                );
             }
         }
     }
+    hooks
 }
 
 fn note_mods(file: &Value, lines: &mut Vec<String>) {

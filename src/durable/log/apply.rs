@@ -10,6 +10,7 @@ impl State {
                 workspace,
                 parent,
                 depth,
+                ..
             } => {
                 self.id = Some(id);
                 self.model = model;

@@ -97,7 +97,11 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
 }
 
 fn with_catalog_window(mut endpoint: Endpoint) -> Endpoint {
-    if endpoint.context_window.is_none() && !endpoint.keyless() {
+    let remote = endpoint
+        .base_url
+        .as_deref()
+        .is_some_and(|url| !super::local(url));
+    if endpoint.context_window.is_none() && remote {
         endpoint.context_window = crate::catalog::context_limit(
             &endpoint.name,
             &endpoint.model,

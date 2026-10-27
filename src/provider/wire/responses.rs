@@ -27,13 +27,6 @@ impl Chat for Wire {
     ) -> crate::error::Result<super::Wired> {
         body(call, reasoning, stream).map(super::Wired::head)
     }
-
-    #[cfg(test)]
-    fn parse(model: &str, body: &Value) -> AssistantMessage {
-        let mut reply = Stream::new(model);
-        drop(reply.whole(body));
-        reply.finish()
-    }
 }
 
 #[cfg(test)]

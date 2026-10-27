@@ -17,8 +17,34 @@ pub(super) fn listed(value: &Value, model: &str) -> Option<u32> {
 }
 
 pub(crate) fn input_cap(text: &str) -> Option<u32> {
-    let rest = text.split("maximum allowed length (").nth(1)?;
-    let digits: String = rest.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+    const AFTER: &[&str] = &[
+        "maximum allowed length (",
+        "maximum context length is ",
+        "maximum number of tokens allowed (",
+        "available context size (",
+        "context window of ",
+        "context limit of ",
+        "maximum prompt length (",
+        "max context length: ",
+    ];
+    let lower = text.to_ascii_lowercase();
+    for mark in AFTER {
+        if let Some(index) = lower.find(mark)
+            && let Some(cap) = leading_number(&text[index + mark.len()..])
+        {
+            return Some(cap);
+        }
+    }
+    text.rsplit_once("> ")
+        .and_then(|(_, rest)| leading_number(rest))
+}
+
+fn leading_number(text: &str) -> Option<u32> {
+    let digits: String = text
+        .chars()
+        .skip_while(|ch| ch.is_ascii_whitespace())
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect();
     digits.parse().ok().filter(|value| *value > 0)
 }
 
@@ -102,11 +128,16 @@ fn malformed_tool_call(lower: &str) -> bool {
 }
 
 fn context_overflow(lower: &str) -> bool {
-    (lower.contains("context")
-        && ["window", "length", "too long", "exceed"]
-            .iter()
-            .any(|word| lower.contains(word)))
-        || lower.contains("maximum allowed length")
+    lower.contains("maximum allowed length")
+        || lower.contains("maximum context length")
+        || lower.contains("maximum number of tokens")
+        || lower.contains("prompt is too long")
+        || lower.contains("available context size")
+        || lower.contains("context limit")
+        || lower.contains("context window")
+        || lower.contains("too many tokens")
+        || (lower.contains("context")
+            && (lower.contains("length") || lower.contains("too long") || lower.contains("exceed")))
         || (lower.contains("input length") && lower.contains("exceed"))
 }
 
@@ -346,15 +377,19 @@ impl Client {
     }
 
     pub async fn context(&self, endpoint: &str, model: &str) -> Option<u32> {
-        let local = crate::endpoint::auth_info(endpoint).is_ok_and(|info| info.keyless());
+        let local = crate::endpoint::local(&self.base);
         if !local && let Some(limit) = self.recorded(endpoint, model) {
             return Some(limit);
         }
-        tokio::time::timeout(crate::limits::limits().probe(), self.probe(model))
+        let probed = tokio::time::timeout(crate::limits::limits().probe(), self.probe(model))
             .await
             .ok()
-            .flatten()
-            .or_else(|| self.recorded(endpoint, model))
+            .flatten();
+        if local {
+            probed
+        } else {
+            probed.or_else(|| self.recorded(endpoint, model))
+        }
     }
 
     fn recorded(&self, endpoint: &str, model: &str) -> Option<u32> {

@@ -190,6 +190,9 @@ impl SessionDriver {
         commands: &[String],
     ) -> Result<(), DriverError> {
         let work = self.work.as_ref().ok_or(DriverError::NoWork)?;
+        if work.policy == Policy::Single && work.objective != objective {
+            return self.replace_single(objective, commands);
+        }
         match work.stage() {
             Some(Stage::Plan) if work.policy == Policy::Single && work.plan.is_none() => {
                 self.replan_turn_work(objective, commands)
@@ -201,6 +204,15 @@ impl SessionDriver {
             )),
             None => Err(DriverError::NoWork),
         }
+    }
+
+    fn replace_single(&mut self, objective: &str, commands: &[String]) -> Result<(), DriverError> {
+        self.set_work(objective, Policy::Single)?;
+        self.work
+            .as_mut()
+            .ok_or(DriverError::NoWork)?
+            .select(objective, commands)?;
+        self.execute()
     }
 
     fn replan_turn_work(

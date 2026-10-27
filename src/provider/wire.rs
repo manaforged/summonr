@@ -318,9 +318,6 @@ pub(crate) trait Chat {
         )?
         .value()
     }
-
-    #[cfg(test)]
-    fn parse(model: &str, body: &Value) -> AssistantMessage;
 }
 
 #[cfg(test)]

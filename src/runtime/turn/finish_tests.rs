@@ -35,6 +35,7 @@ fn goal(run: &mut Run, review: impl IntoIterator<Item = Reply>) {
         "r",
         None,
         None,
+        None,
     );
 }
 
@@ -364,6 +365,7 @@ async fn todo_harness_note_never_shows_in_the_users_own_message() {
         workflow::Role::Review,
         Scripted::new([Reply::Text(r#"{"pass": true}"#)]),
         "r",
+        None,
         None,
         None,
     );

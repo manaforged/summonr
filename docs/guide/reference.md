@@ -208,11 +208,11 @@ Keys on an `[endpoint.NAME]` row:
 
 | Key | Effect |
 | --- | --- |
-| `context_window` | Context size in tokens. Without it, summonr asks the provider. |
+| `context_window` | Context size in tokens. Without it, a remote endpoint takes the catalog number for that model. A local URL stays unset so summonr asks the provider, and a failed ask leaves the window unset. Compaction uses the window of the model that receives the request. A seated model does not inherit the driving seat's window. An overflow that names a cap teaches that model its window. |
 | `idle_timeout_secs` | Seconds a response stream may stay silent before the request fails. At least 1; default 240. |
 | `headers` | A table of extra HTTP headers sent on every request. |
 | `fallback` | A list of endpoint names. When a request fails with an error that a retry cannot fix, the session moves to the next name. |
-| `compact_tokens` | Compact the context at this token count. With `context_window` also set, the smaller value applies. |
+| `compact_tokens` | An extra compaction ceiling in tokens. It does not count as a known model window. With `context_window` also set, the smaller value applies. |
 | `keep_reasoning` | `true` sends earlier reasoning back to the model on later requests. |
 | `cache_ttl` | Prompt-cache lifetime on the Anthropic wire: `"1h"` or `"5m"`; unset uses `[limits] cache_ttl`. A cache write costs 2x the input price at `1h` and 1.25x at `5m`; a read costs 0.1x either way. `grok` also sends `x-grok-conv-id` with the prompt hash so xAI routes each request to a warm cache. |
 | `auth.token_url` | Token endpoint of a login. Required with `auth.client_id`. |
@@ -238,9 +238,13 @@ cache_ttl = "5m"
 | `stream_idle_secs` | `240` | Idle stream timeout for an endpoint with no `idle_timeout_secs`. |
 | `stream_total_secs` | `86400` | Total time limit for one request. |
 | `connect_secs` | `20` | Connect timeout. |
-| `compact_percent` | `80` | Share of the context window that starts compaction. |
+| `compact_percent` | `80` | Share of the context window that starts a summary. Old tool output clears earlier, at `clear_percent`. |
 | `elide_percent` | `60` | Share of the context window that compaction aims for by clearing old tool output; it summarizes only when clearing cannot get there. |
-| `compact_chars` | `256000` | Prompt size in characters that starts compaction when the model window is unknown. A known window compacts at `compact_percent` of that window. |
+| `clear_percent` | `50` | With a known window, share of it at which old tool outputs clear. |
+| `clear_tokens` | `100000` | Prompt size in tokens at which old tool outputs clear, when that comes before `clear_percent`. |
+| `clear_keep` | `3` | Newest tool outputs that a clear keeps. |
+| `clear_at_least_percent` | `20` | Share of the clear trigger that a clear must free; a smaller clear would cost a cache rewrite for little, so it waits. |
+| `compact_chars` | `256000` | Prompt size in characters that starts compaction when the model window is unknown. A known window compacts at `compact_percent` of that window. `compact_tokens` does not replace this cap. |
 | `summary_retry_rounds` | `8` | Rounds before a failed compaction summary retries. |
 | `job_wait_secs` | `120` | Wait on a job or hook before it is reported still running. |
 | `command_wait_secs` | `120` | Time before a `run_command` continues as a background job. |
@@ -636,11 +640,11 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | Name | When | Notes |
 | --- | --- | --- |
 | `read` | always | File, directory, or image |
-| `search` | always | Contents (`pattern`) or files by name (`name`, `glob`) under any readable path; ignores case; `newer`, `group`, `offset`, `word`; content search skips files over 1 MiB |
+| `search` | always | Contents (`pattern`) or files by name (`name`, `glob`) under any readable path; ignores case; `newer`, `group`, `offset`, `word`, and the other options that `op=help` lists; content search skips files over 1 MiB |
 | `edit` | always | Change or move a file; hashes from `read`; `edits` for a batch |
 | `write` | always | New or empty files; `files` for several |
 | `run_command` | always | `workdir` / `background` / `job` / `kill`; full log path |
-| `todo` | always | Replaces the Work task list; status `pending`, `active`, or `done`. Update it as tasks start or finish. |
+| `todo` | not in a one-shot `-p` prompt | Replaces the Work task list; status `pending`, `active`, or `done`. Update it as tasks start or finish. |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
 | `lsp` | `lsp` on | Diagnostics for a `path`; definition, `references`, or `new_name` at `line` and `character` |
 | `web` | `search` on (off by default) | `query` searches; `url` fetches as markdown, text, or html |
@@ -861,7 +865,7 @@ The built-in modules are the binary (modules above). What you add lives in files
 
 `summonr install PATH` copies a plugin directory to `~/.summonr/plugins/<name>/`. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr install --list` prints one line per plugin: its name, on or off, and what it adds (skills, MCP servers, commands, agents, language servers, hooks, `bin`). There is no marketplace and no in-process loader.
 
-After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`, and a steps or goal run adds `todo`.
+After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`. A one-shot `-p` prompt never advertises `todo`.
 
 When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once. A line in one of these files that starts with `@` names another file relative to it, and its text joins the prompt in place; each file loads once, and a missing include stays as the literal line.
 

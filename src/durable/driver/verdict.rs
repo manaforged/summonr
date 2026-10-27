@@ -29,6 +29,16 @@ impl SessionDriver {
         Ok(paths)
     }
 
+    pub(crate) fn limit_changes(&mut self, wrote: &[String]) -> Result<Vec<String>, DriverError> {
+        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        let kept: std::collections::HashSet<&str> = wrote.iter().map(String::as_str).collect();
+        if let Some(candidate) = work.candidate.as_mut() {
+            candidate.paths.retain(|path| kept.contains(path.as_str()));
+        }
+        work.touched.retain(|path| kept.contains(path.as_str()));
+        Ok(wrote.to_vec())
+    }
+
     pub(crate) fn prepare_verdict(&mut self, passed: bool) -> Result<Verdict, DriverError> {
         let candidate = self
             .work

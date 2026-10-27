@@ -79,10 +79,7 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
 }
 
 fn sweep(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
+    for entry in crate::walk::children(dir) {
         let stale = entry.file_name().to_string_lossy().starts_with(STAGE)
             && entry
                 .metadata()

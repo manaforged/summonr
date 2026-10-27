@@ -360,3 +360,35 @@ fn a_headless_worker_appears_while_the_parent_is_waiting_for_the_model() {
         Err(error) => std::panic::resume_unwind(error),
     }
 }
+
+#[test]
+fn the_status_row_names_the_tool_the_first_model_is_calling() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for mut stream in listener.incoming().flatten() {
+            let mut buffer = [0_u8; 65536];
+            let read = stream.read(&mut buffer).unwrap();
+            if !buffer[..read].starts_with(b"POST ") {
+                drop(stream.write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n"));
+                continue;
+            }
+            let call = r#"{"id":"c","object":"chat.completion.chunk","model":"m","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"run_command","arguments":""}}]}}]}"#;
+            let body = format!("data: {call}\n\n");
+            let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n";
+            let chunk = format!("{:x}\r\n{body}\r\n", body.len());
+            drop(stream.write_all(head.as_bytes()));
+            drop(stream.write_all(chunk.as_bytes()));
+            drop(stream.flush());
+            held.push(stream);
+        }
+    });
+    let home = tempfile::tempdir().unwrap();
+    let terminal = Terminal::open(home.path(), 120, 40, port);
+    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.send(b"list the files\r");
+    terminal.settle("the running tool on the status row", |splash| {
+        splash.shows("run_command")
+    });
+}

@@ -382,3 +382,11 @@ fn an_explicit_effort_reaches_the_provider_unchanged() {
         Some(Effort::Medium)
     );
 }
+
+#[test]
+fn a_preset_row_keeps_its_configured_idle_timeout() {
+    let file: crate::config::File =
+        toml::from_str("[endpoint.grok]\nidle_timeout_secs = 7\n").unwrap();
+    let endpoint = super::resolve::seat(&file, "grok").unwrap();
+    assert_eq!(endpoint.idle_timeout_secs, Some(7));
+}

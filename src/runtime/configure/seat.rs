@@ -147,25 +147,29 @@ impl<P: Provider> Loop<P> {
         self.session.work_progress().map_err(Error::from)
     }
 
-    pub fn next_step(
-        &self,
-        steps: &[crate::steps::Step],
-        plan_path: &str,
-    ) -> Result<crate::StepRun> {
+    pub fn next_beat(&self, job: &crate::Job) -> Result<crate::Beat> {
         let progress = self.work_progress()?;
         if let Some(code) = progress.exit_code() {
-            return Ok(crate::StepRun::Done(code));
+            return Ok(crate::Beat::Done(code));
         }
+        let (plan, steps) = match job {
+            crate::Job::Goal { objective, gates } => {
+                return Ok(crate::Beat::Run {
+                    prompt: crate::goal::prompt(objective, gates, progress.rounds),
+                    step: None,
+                });
+            }
+            crate::Job::Steps { plan, steps } => (plan, steps),
+        };
         let current = progress
             .current
             .ok_or_else(|| Error::Config("Steps Work has no active item".to_string()))?;
         let step = steps
             .get(current.saturating_sub(1))
             .ok_or_else(|| Error::Config("Steps Work is outside the selected plan".to_string()))?;
-        Ok(crate::StepRun::Run {
-            index: current,
-            total: steps.len(),
-            prompt: crate::steps::prompt(step, steps.len(), plan_path),
+        Ok(crate::Beat::Run {
+            prompt: crate::steps::prompt(step, steps.len(), plan),
+            step: Some((current, steps.len())),
         })
     }
 }

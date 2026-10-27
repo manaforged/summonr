@@ -53,11 +53,7 @@ pub(crate) fn keeper() -> Arc<dyn Store> {
 }
 
 pub(crate) fn scheme(wire: Wire) -> Scheme {
-    match wire {
-        Wire::Anthropic => Scheme::ApiKey,
-        Wire::Gemini => Scheme::GoogleKey,
-        Wire::Completions | Wire::Responses | Wire::Decisions | Wire::AgentSdk => Scheme::Bearer,
-    }
+    crate::provider::wire::spec(wire).scheme
 }
 
 pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {

@@ -106,7 +106,6 @@ fn caption(text: impl Into<sigil::kernel::TextContent>) -> NodeBuilder {
     wrap(
         sigil::kernel::text(text)
             .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
             .font_size(12.0)
             .font_italic(true)
             .text_color(sigil::prelude::Token::Gray11),

@@ -20,7 +20,7 @@ static SETTLED: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
 pub(crate) fn close<G: Send + 'static>(
     runtime: &tokio::runtime::Handle,
-    mut child: tokio::process::Child,
+    mut child: crate::process::Child,
     group: G,
 ) {
     CLOSING.fetch_add(1, Ordering::SeqCst);
@@ -182,7 +182,7 @@ pub(crate) fn live() -> Vec<Live> {
         .map(|(kind, name, pid)| Live {
             kind,
             name,
-            rss_kb: pid.and_then(|pid| footprint_kb(Some(pid))),
+            rss_kb: pid.and_then(|pid| crate::process::footprint_kb(Some(pid))),
         })
         .collect()
 }
@@ -278,54 +278,6 @@ fn enforce(keep: Option<usize>) {
             .collect::<Vec<(usize, Weak<dyn Held>)>>()
     };
     evict(crowd);
-}
-
-#[cfg(target_os = "macos")]
-#[expect(unsafe_code, reason = "proc_pid_rusage has no std wrapper")]
-pub(crate) fn footprint_kb(pid: Option<u32>) -> Option<u64> {
-    let target = match pid {
-        Some(pid) => i32::try_from(pid).ok()?,
-        None => i32::try_from(std::process::id()).ok()?,
-    };
-    let mut info = std::mem::MaybeUninit::<libc::rusage_info_v4>::zeroed();
-    // SAFETY: proc_pid_rusage writes one rusage_info_v4 into the buffer; zero means success.
-    let info = unsafe {
-        (libc::proc_pid_rusage(target, libc::RUSAGE_INFO_V4, info.as_mut_ptr().cast()) == 0)
-            .then(|| info.assume_init())
-    }?;
-    Some(
-        match pid {
-            Some(_) => info.ri_phys_footprint,
-            None => info.ri_lifetime_max_phys_footprint,
-        } / 1024,
-    )
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-#[expect(unsafe_code, reason = "getrusage has no std wrapper")]
-pub(crate) fn footprint_kb(pid: Option<u32>) -> Option<u64> {
-    if let Some(pid) = pid {
-        let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
-        return status
-            .lines()
-            .find_map(|line| line.strip_prefix("VmRSS:"))?
-            .trim()
-            .trim_end_matches("kB")
-            .trim()
-            .parse()
-            .ok();
-    }
-    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
-    // SAFETY: getrusage writes one rusage into the zeroed buffer; zero means success.
-    let usage = unsafe {
-        (libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) == 0).then(|| usage.assume_init())
-    }?;
-    u64::try_from(usage.ru_maxrss).ok()
-}
-
-#[cfg(not(unix))]
-pub(crate) fn footprint_kb(_pid: Option<u32>) -> Option<u64> {
-    None
 }
 
 #[cfg(test)]

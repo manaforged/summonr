@@ -75,9 +75,9 @@ short-shaped helper	1	check the job, then name it
 wrap-shaped helper	5	check the job, then name it
 surface painter	0	rows::paint
 sigil prelude glob	0	named imports
-legacy tool alias literal	12	one alias table
-match wildcard arm	109	name the arm
-timeout mention	24	one timeout policy
+legacy tool alias literal	2	one alias table
+match wildcard arm	107	name the arm
+timeout mention	21	one timeout policy
 delete unicode-width	0	nothing
 delete winapi-util	0	nothing
 delete smol_str	0	nothing

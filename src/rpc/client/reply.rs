@@ -27,7 +27,7 @@ impl Client {
         };
         loop {
             let read = self.next_read(&clock, id, method).await?;
-            if matches!(read, Read::Closed) && self.drain.is_some() {
+            if matches!(read, Read::Closed) && self.stderr.draining() {
                 clock.deadline = clock
                     .deadline
                     .min(Instant::now() + crate::limits::limits().mcp_stderr_settle());
@@ -57,9 +57,7 @@ impl Client {
         match tokio::time::timeout_at(clock.deadline, self.frame()).await {
             Ok(read) => read,
             Err(_elapsed) if self.broken => {
-                if let Some(drain) = &self.drain {
-                    drain.abort();
-                }
+                self.stderr.abort();
                 self.settle_stderr().await?;
                 Ok(Read::Closed)
             }

@@ -151,11 +151,7 @@ fn bare(all: &[Command], name: &str) -> bool {
 }
 
 pub(super) fn load(plugin: &Plugin) -> Vec<Command> {
-    let Ok(entries) = std::fs::read_dir(plugin.dir.join(DIR)) else {
-        return Vec::new();
-    };
-    let mut commands: Vec<Command> = entries
-        .filter_map(std::result::Result::ok)
+    let mut commands: Vec<Command> = crate::walk::children(&plugin.dir.join(DIR))
         .map(|entry| entry.path())
         .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == EXTENSION))
         .filter_map(|path| read(plugin, &path))

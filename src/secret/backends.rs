@@ -10,31 +10,21 @@ use super::{
     SERVICE,
     seal::{find, security},
 };
-use super::{Source, Store, cache};
+use super::{Source, Store};
+use crate::durable::store;
 #[cfg(not(target_os = "macos"))]
 use crate::error::Error;
 use crate::error::Result;
 
 impl Store {
     pub(super) fn file_get(&self, name: &str) -> Result<Option<(String, Source)>> {
-        let stamp = cache::stamp(&self.file);
-        if let Some(hit) = cache::find(&self.file, stamp, |doc| lookup(doc, name)) {
-            return Ok(hit.map(|secret| (secret, Source::File)));
-        }
-        self.locked(|| {
-            let document = self.read_file()?;
-            cache::keep(&self.file, cache::stamp(&self.file), &document);
-            Ok(lookup(&document, name).map(|secret| (secret, Source::File)))
-        })
+        let document = store::memo(&self.file, || self.locked(|| self.read_file()))?;
+        Ok(lookup(&document, name).map(|secret| (secret, Source::File)))
     }
 
     #[cfg(any(target_os = "macos", all(test, unix)))]
     fn blob_lookup(&self, tool: &Path, name: &str) -> Result<Option<String>> {
-        if let Some(hit) = cache::find(&self.file, None, |doc| lookup(doc, name)) {
-            return Ok(hit);
-        }
-        let blob = self.read_blob(tool)?;
-        cache::keep(&self.file, None, &blob);
+        let blob = store::memo(&self.file, || self.read_blob(tool))?;
         Ok(lookup(&blob, name))
     }
 
@@ -57,7 +47,7 @@ impl Store {
             )
             .map(drop)
         }));
-        cache::clear();
+        store::forget(&self.file);
         Ok(Some((secret, Source::Keychain)))
     }
 

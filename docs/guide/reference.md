@@ -290,6 +290,8 @@ cache_ttl = "5m"
 | `mcp_frame_max_bytes` | `4194304` | Largest MCP reply. |
 | `lsp_frame_max_bytes` | `16777216` | Largest language-server message; a larger Content-Length is refused before it is read. |
 | `mcp_stderr_tail_bytes` | `2048` | MCP stderr kept for diagnostics. |
+| `hook_output_max_bytes` | `65536` | Most bytes of a hook's stdout and stderr that summonr keeps. |
+| `gateway_stderr_tail_lines` | `20` | Last stderr lines of a gateway run kept for its failure report. |
 | `mcp_stderr_settle_secs` | `1` | Most time spent draining MCP stderr after stdout closes. |
 | `mcp_defer_bytes` | `8192` | Tool schemas above this size go behind one `mcp` tool. |
 | `mcp_found_max` | `8` | Most deferred tools returned per search. |
@@ -562,7 +564,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 
 ### Commands
 
-`/help` lists these by job. Old names such as `/rollback`, `/tree`, and `/net` still work for one release and print the new name once.
+`/help` lists these by job. Old names such as `/rollback` and `/tree` still run their new command.
 
 | Command | Job |
 | --- | --- |

@@ -4,6 +4,11 @@ use std::path::{Path, PathBuf};
 
 use tempfile::NamedTempFile;
 
+mod doc;
+mod stamp;
+pub(crate) use doc::{Codec, Doc, Encode, Invalid, PrettyJson, Wait, hold};
+pub(crate) use stamp::{Stamp, forget, memo, settled, stamp};
+
 pub(crate) struct Staged<'a> {
     temp: NamedTempFile,
     path: &'a Path,

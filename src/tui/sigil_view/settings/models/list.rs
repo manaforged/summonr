@@ -1,10 +1,7 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, NodeEventsExt, Tone, WidgetLayoutExt,
-    container, signal, virtual_list,
-};
+use sigil::prelude::{ListRowSlots, NodeBuilder, NodeEventsExt, Tone, signal, virtual_list};
 
 use super::super::{App, canvas};
 use super::row::{self, Grid, Shown};
@@ -13,7 +10,7 @@ use crate::catalog::Model;
 use crate::endpoint::State;
 use crate::recent::Seat;
 use crate::tui::sigil_view::app::{Facet, Mark};
-use crate::tui::sigil_view::ui::{alt_label, group, slotted};
+use crate::tui::sigil_view::ui::{alt_label, group, overlay_list, slotted};
 
 pub(super) struct View {
     pub(super) choices: Rc<Vec<Seat>>,
@@ -120,8 +117,7 @@ pub(super) fn list(
         .position(|row| matches!(row, ModelRow::Seat(at) | ModelRow::Fix(at) if *at == selected))
         .unwrap_or(0);
     let source = app.clone();
-    let height = canvas::overlay_list_row() * visible as f32;
-    container().layout(LayoutStyle::block().fill_width()).child(
+    overlay_list(
         virtual_list(rows, move |_, row: &ModelRow| match row {
             ModelRow::Header(name) => row::section_heading(name),
             ModelRow::Provider(name, count) => {
@@ -145,11 +141,10 @@ pub(super) fn list(
                 choosable(&source, row, *index)
             }
         })
-        .row_height(canvas::overlay_list_row())
-        .height(height)
-        .viewport_height(height)
         .scroll_bind(app.picker.scroll)
         .follow_row(signal(shown)),
+        canvas::overlay_list_row(),
+        visible,
     )
 }
 

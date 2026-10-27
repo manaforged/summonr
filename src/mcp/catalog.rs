@@ -86,7 +86,7 @@ pub(super) fn forget(name: &str) {
         return;
     };
     let stem = stem(name);
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+    for entry in crate::walk::children(&dir) {
         let path = entry.path();
         let owned = path
             .file_stem()

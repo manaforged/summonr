@@ -68,7 +68,7 @@ pub(in crate::tui::sigil_view) struct Asked {
     pub(in crate::tui::sigil_view) dialog: u64,
 }
 
-pub(super) use files::{Action, Context, FileRow, shift};
+pub(super) use files::{FileRow, shift};
 use files::{armed, file_url, read_git_branch, save};
 
 mod secret;
@@ -82,6 +82,7 @@ pub(super) enum Overlay {
     Help,
     Search,
     Sessions,
+    Usage,
     Auth,
     Model,
     Effort,
@@ -90,7 +91,6 @@ pub(super) enum Overlay {
     Settings,
     Context,
     Cache,
-    Usage,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,7 +149,6 @@ pub(super) struct App {
     pub(super) file_cursor: Signal<usize>,
     pub(super) expanded: Signal<Vec<String>>,
     pub(super) last_pane: Signal<Option<Pane>>,
-    pub(super) context: Signal<Option<Context>>,
     pub(super) diff_cursor: Signal<usize>,
     pub(super) diff_view: Signal<Option<String>>,
     pub(super) diff_root: Signal<Option<(PathBuf, String)>>,
@@ -282,7 +281,6 @@ impl App {
             file_cursor: signal(0),
             expanded: signal(Vec::new()),
             last_pane: signal(None),
-            context: signal(None),
             diff_cursor: signal(0),
             diff_view: signal(None),
             diff_root: signal(None),

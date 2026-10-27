@@ -101,38 +101,7 @@ fn fallback_key(
 
 pub(super) fn builtin(name: &str) -> Option<Endpoint> {
     let row = preset(name)?;
-    Some(Endpoint {
-        name: row.name.clone(),
-        base_url: Some(row.base_url.clone()),
-        models_url: row.models_url.map(str::to_string),
-        model: row.model.clone(),
-        api_key: None,
-        source: None,
-        oauth: row.sign_in(),
-        body: None,
-        context_window: row.context_window,
-        idle_timeout_secs: None,
-        effort: None,
-        price: None,
-        env: BTreeMap::new(),
-        headers: row
-            .headers
-            .iter()
-            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
-            .collect(),
-        wire: row.wire,
-        fallback: Vec::new(),
-        compact_tokens: None,
-        images: None,
-        keep_reasoning: false,
-        opencode: row.opencode,
-        prompt_cache_key: row.prompt_cache_key,
-        assistant_after_tool: row.assistant_after_tool,
-        cache_ttl: row.cache_ttl.unwrap_or(crate::limits::limits().cache_ttl),
-        cache_header: row.cache_header.clone(),
-        cache_marks: row.cache_marks,
-        reasoning: reasoning::from_preset(Some(row)),
-    })
+    Some(Record::from(row).endpoint(&row.name, Some(row)))
 }
 
 pub(super) fn json(value: &toml::Value) -> serde_json::Value {

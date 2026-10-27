@@ -11,7 +11,8 @@ pub(in crate::tui) use hints::{FILTER_HINT, Hints, Key, alt_label};
 pub(in crate::tui::sigil_view) use keys::{Bindings, KeyAction, alt, keyed, press};
 pub(in crate::tui) use prompt::{Action, ActionKind, Prompt};
 pub(in crate::tui) use rows::{
-    blank, field, field_width, group, heading, notice, part, pick, slotted,
+    blank, field, field_width, filter_column, filter_field, group, heading, notice, overlay_list,
+    part, pick, plain, slotted,
 };
 pub(in crate::tui) use tabs::Tab;
 pub(in crate::tui::sigil_view) use tabs::strip as tab_strip;

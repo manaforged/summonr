@@ -14,6 +14,7 @@ use sigil::prelude::WidgetLayoutExt;
 use sigil::prelude::button;
 use sigil::prelude::chip;
 use sigil::prelude::container;
+use sigil::prelude::context_menu;
 use sigil::prelude::icon_button;
 use sigil::prelude::image;
 use sigil::prelude::list_row;
@@ -173,7 +174,6 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(
             sigil::kernel::text("no files in this folder yet")
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         );
@@ -187,30 +187,31 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
         } else {
             " "
         };
-        let menu = app.clone();
+        let (menu, point) = (app.clone(), app.clone());
         let title = format!("{glyph} {}", row.name);
-        column = column.child(
-            list_row(false, title, String::new())
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .height(24.0)
-                        .padding_x(8.0 + 12.0 * row.depth as f32)
-                        .gap(6.0)
-                        .align_items(AlignItems::Center),
-                )
-                .pointer_down(move |event| {
-                    if event.button == Some(MouseButton::Right) {
-                        menu.context_row(index);
-                    } else if dir {
-                        act.file_cursor.set(index);
-                        act.pane_enter();
-                    } else {
-                        act.view_open(path.clone());
-                    }
-                    event.stop_propagation();
-                }),
-        );
+        let item = list_row(false, title, String::new())
+            .layout(
+                LayoutStyle::flex_row()
+                    .fill_width()
+                    .height(24.0)
+                    .padding_x(8.0 + 12.0 * row.depth as f32)
+                    .gap(6.0)
+                    .align_items(AlignItems::Center),
+            )
+            .pointer_down(move |event| {
+                if event.button == Some(MouseButton::Right) {
+                    return point.pane_point(Pane::Files, index);
+                } else if dir {
+                    act.file_cursor.set(index);
+                    act.pane_enter();
+                } else {
+                    act.view_open(path.clone());
+                }
+                event.stop_propagation();
+            });
+        column = column.child(context_menu(item, move || {
+            menu.row_menu(Pane::Files, index)
+        }));
     }
     column
 }
@@ -225,27 +226,27 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
         let show = app.clone();
         let path = row.tree.path.clone();
         let branch = row.tree.branch.clone();
-        let menu = app.clone();
-        column = column.child(
-            list_row(
-                false,
-                row.tree.branch.clone(),
-                format!("{} ahead", row.ahead),
-            )
-            .child(chip(
-                if row.dirty { "dirty" } else { "clean" },
-                if row.dirty { Tone::Warn } else { Tone::Neutral },
-            ))
-            .child(super::tree_actions::buttons(&app, &row.tree.path))
-            .pointer_down(move |event| {
-                if event.button == Some(MouseButton::Right) {
-                    menu.context_row(index);
-                } else {
-                    show.tree_show(path.clone(), branch.clone());
-                }
-                event.stop_propagation();
-            }),
-        );
+        let (menu, point) = (app.clone(), app.clone());
+        let item = list_row(
+            false,
+            row.tree.branch.clone(),
+            format!("{} ahead", row.ahead),
+        )
+        .child(chip(
+            if row.dirty { "dirty" } else { "clean" },
+            if row.dirty { Tone::Warn } else { Tone::Neutral },
+        ))
+        .child(super::tree_actions::buttons(&app, &row.tree.path))
+        .pointer_down(move |event| {
+            if event.button == Some(MouseButton::Right) {
+                return point.pane_point(Pane::Worktrees, index);
+            }
+            show.tree_show(path.clone(), branch.clone());
+            event.stop_propagation();
+        });
+        column = column.child(context_menu(item, move || {
+            menu.row_menu(Pane::Worktrees, index)
+        }));
     }
     column
 }
@@ -256,7 +257,6 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(
             sigil::kernel::text("no file open")
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         );
@@ -283,7 +283,6 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 .child(
                     sigil::kernel::text(view.path.clone())
                         .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface)
                         .font_size(14.0)
                         .font_weight(500)
                         .text_color(sigil::prelude::Token::Gray12),
@@ -327,7 +326,7 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
         .layout(LayoutStyle::flex_column().fill_width().gap(1.0))
         .rounded(sigil::prelude::Radius::Md)
         .bg(sigil::prelude::Token::Gray1);
-    for (index, line) in text.lines().enumerate() {
+    for (index, line) in text.lines().enumerate().skip(app.view_scroll.get()) {
         let number = index + 1;
         let mut row = container().layout(
             LayoutStyle::flex_row()
@@ -343,14 +342,12 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
             row.child(
                 sigil::kernel::text(number.to_string())
                     .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
                     .font_size(12.0)
                     .text_color(sigil::prelude::Token::Gray11),
             )
             .child(
                 sigil::kernel::text(line.replace('\t', "    "))
                     .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
                     .ellipsize()
                     .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))
                     .font_size(12.0)

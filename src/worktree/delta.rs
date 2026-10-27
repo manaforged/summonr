@@ -128,12 +128,7 @@ fn exclude(dest: &Path, names: &[String]) -> Result<()> {
 fn overlay(primary: &Path, dest: &Path, names: &[String]) -> Result<()> {
     let patch = diff::git_output(primary, &[], &["diff", "--binary", "HEAD"], None)?;
     if !patch.is_empty() {
-        diff::git_output(
-            dest,
-            &[],
-            &["apply", "--binary", "--whitespace=nowarn", "-"],
-            Some(&patch),
-        )?;
+        diff::git_apply(dest, &patch, &[])?;
     }
     let listed = diff::git_paths(
         primary,

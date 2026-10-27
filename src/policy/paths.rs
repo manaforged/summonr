@@ -1,4 +1,4 @@
-use super::shell::{WRAPPERS, command_pieces, skip_wrapper_args};
+use super::shell::{command_pieces, skip_wrapper_args, wrapper};
 use super::*;
 
 pub(crate) fn split_segments(command: &str) -> Vec<String> {
@@ -27,7 +27,7 @@ pub(super) fn unwrap_segment(segment: &str) -> String {
         let (word, tail) = text.split_once([' ', '\t']).unwrap_or((text, ""));
         let name = word.trim_start_matches('\\');
         let name = name.rsplit('/').next().unwrap_or(name);
-        if !WRAPPERS.contains(&name) {
+        if !wrapper(name) {
             return text.trim_start_matches('\\').to_string();
         }
         text = skip_wrapper_args(name, tail.trim_start());

@@ -280,12 +280,7 @@ impl Worker {
     }
 
     fn carry_steering(&mut self) {
-        let left: Vec<UserInput> = self
-            .steering
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .drain(..)
-            .collect();
+        let left = self.take_steering();
         self.carried = left.len();
         for input in left.into_iter().rev() {
             self.followups.push_front(input);
@@ -293,13 +288,13 @@ impl Worker {
         super::announce(&self.ui, &self.steering, &self.followups, &self.deferred);
     }
 
+    fn take_steering(&self) -> Vec<UserInput> {
+        let mut steering = self.steering.lock().unwrap_or_else(PoisonError::into_inner);
+        steering.drain(..).collect()
+    }
+
     pub(super) fn recover(&mut self) {
-        let mut pending: Vec<UserInput> = self
-            .steering
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .drain(..)
-            .collect();
+        let mut pending = self.take_steering();
         pending.extend(self.followups.drain(..));
         self.carried = 0;
         while let Ok(command) = self.cmd.try_recv() {

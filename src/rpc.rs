@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 
 mod client;
 
-pub(crate) use client::{Client, Env, Launch, Lines, Process, Read, Spawn, Stderr, start, tail};
+pub(crate) use client::{Client, Lines, Read, Spawn};
 
 pub(crate) const PROTOCOL: &str = "2025-11-25";
 const SUPPORTED: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];

@@ -13,11 +13,6 @@ impl App {
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn mcp_move(&self, delta: isize) {
-        files::shift(&self.mcp_cursor, delta, self.mcp_rows().len());
-        self.refresh();
-    }
-
     pub(in crate::tui::sigil_view) fn mcp_enter(&self) {
         let rows = self.mcp_rows();
         if let Some(row) = rows.get(files::pick(&self.mcp_cursor, rows.len())) {

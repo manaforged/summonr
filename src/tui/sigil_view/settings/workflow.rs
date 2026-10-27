@@ -6,7 +6,7 @@ use sigil::prelude::{
 
 use super::{App, canvas};
 use crate::tui::Cmd;
-use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, pick, press};
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, overlay_list, pick, press};
 use crate::workflow::Role;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
@@ -110,25 +110,22 @@ fn seats(app: &App) -> Vec<NodeBuilder> {
             (*role, seat)
         })
         .collect();
-    let mut items: Vec<NodeBuilder> = vec![
-        container().layout(LayoutStyle::block().fill_width()).child(
-            virtual_list(lookup, move |index, (role, seat): &(Role, String)| {
-                entry(
-                    source.clone(),
-                    *role,
-                    seat,
-                    index,
-                    index == selected,
-                    dragging == Some(index),
-                    over == Some(index),
-                )
-            })
-            .row_height(canvas::overlay_list_row())
-            .height(canvas::overlay_list_row() * 8.0)
-            .viewport_height(canvas::overlay_list_row() * 8.0)
-            .scroll_into_view(selected),
-        ),
-    ];
+    let mut items: Vec<NodeBuilder> = vec![overlay_list(
+        virtual_list(lookup, move |index, (role, seat): &(Role, String)| {
+            entry(
+                source.clone(),
+                *role,
+                seat,
+                index,
+                index == selected,
+                dragging == Some(index),
+                over == Some(index),
+            )
+        })
+        .scroll_into_view(selected),
+        canvas::overlay_list_row(),
+        8,
+    )];
     items.push(saved(app));
     items
 }
@@ -147,7 +144,6 @@ fn saved(app: &App) -> NodeBuilder {
         .child(
             sigil::kernel::text("saved:")
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         );
@@ -155,7 +151,6 @@ fn saved(app: &App) -> NodeBuilder {
         row = row.child(
             sigil::kernel::text("none")
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         );

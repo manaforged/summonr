@@ -1,14 +1,68 @@
 use super::*;
 
+use crate::prefs::Hotkey;
+use crate::runtime::GrantAnswer;
+use crate::tui::sigil_view::app::Reply;
+
+mod bindings;
 mod nav;
 
-use nav::nav;
-
-type Handler = fn(&App, &mut KeyEvent);
+pub(in crate::tui::sigil_view) use bindings::KeyCommand;
+use bindings::bindings;
 
 impl App {
-    fn escape(&self, event: &mut KeyEvent) {
-        event.stop_propagation();
+    pub(in crate::tui::sigil_view) fn run_key(&self, command: KeyCommand) -> bool {
+        match command {
+            KeyCommand::Hotkey(hotkey) => match hotkey {
+                Hotkey::Options => self.toggle_options(),
+                Hotkey::Newline => return false,
+                Hotkey::Editor => self.editor_requested.set(true),
+                Hotkey::Files => self.toggle_pane(Pane::Files),
+                Hotkey::Ledger => self.toggle_todos(),
+                Hotkey::Agents => self.toggle_agents(),
+                Hotkey::Diff => self.toggle_pane(Pane::Diff),
+                Hotkey::Copy => self.copy_chat(None),
+                Hotkey::Select => self.select.set(!self.select.peek()),
+                Hotkey::Pane => self.toggle_side(),
+                Hotkey::Search => self.search.start(""),
+                Hotkey::History => self.prompt_history(""),
+                Hotkey::Fold => self.fold_cycle(),
+            },
+            KeyCommand::Trigger(trigger) => self.open_trigger(trigger),
+            KeyCommand::NewSession => self.open_session(crate::tui::hub::Open::New),
+            KeyCommand::Pane(pane) => self.toggle_pane(pane),
+            KeyCommand::Always => self.approval_answer(GrantAnswer::Always),
+            KeyCommand::Retry => self.retry(),
+            KeyCommand::Interrupt => self.interrupt(),
+            KeyCommand::Quit => self.quit.set(true),
+            KeyCommand::ToggleRecent => self.toggle_recent(),
+            KeyCommand::CopyPatch => self.copy_patch(),
+            KeyCommand::ViewExternal => self.view_external(),
+            KeyCommand::Collapse => self.pane_collapse(),
+            KeyCommand::Expand => self.pane_expand(),
+            KeyCommand::TabOrPane(forward) => self.tab_or_pane(forward),
+            KeyCommand::NudgeSplit(delta) => self.nudge_split(delta),
+            KeyCommand::HunkAccept => self.hunk_accept(),
+            KeyCommand::HunkReject => self.hunk_reject(),
+            KeyCommand::Shortcuts => return self.shortcuts(),
+            KeyCommand::Answer(reply, answer) => return self.answer(reply, answer),
+            KeyCommand::Escape => self.escape(),
+            KeyCommand::Enter => return self.enter(),
+            KeyCommand::Edit => return self.edit_key(),
+            KeyCommand::Save => return self.save_key(),
+            KeyCommand::Note => return self.note_key(),
+            KeyCommand::Edge(end) => return self.edge(end),
+            KeyCommand::CtrlEdge(end) => return self.ctrl_edge(end),
+            KeyCommand::Page(dir) => return self.page(dir),
+            KeyCommand::Arrow(dir) => return self.arrow(dir),
+            KeyCommand::Adjust(dir) => return self.overlay_adjust(dir),
+            KeyCommand::Toggle => return !self.options_active() && self.form_toggle(),
+            KeyCommand::Recall(older) => return self.recall(older),
+        }
+        true
+    }
+
+    fn escape(&self) {
         if self.hotkeys.armed.peek() {
             self.hotkeys.armed.set(false);
             return;
@@ -20,37 +74,32 @@ impl App {
         if self.options_active() {
             super::input::escape(self);
         } else if self.dismiss() || self.edit_stop() || self.note_stop() {
-        } else if self.context.peek().is_some() {
-            self.context_close();
         } else if self.pane_focus.peek() {
             self.focus_pane(false);
         } else if self.pane_back() || self.pane_dismiss() {
         } else if self.form_stage().is_some() {
-            self.form_reply(crate::tui::sigil_view::app::Reply::Cancel);
+            self.form_reply(Reply::Cancel);
         } else {
             super::input::escape(self);
         }
     }
 
-    fn enter(&self, event: &mut KeyEvent) {
+    fn enter(&self) -> bool {
         if self.note_target.peek().is_some() && !self.options_active() {
-            event.stop_propagation();
             self.note_commit(&self.note_text.peek());
-            return;
+            return true;
         }
         if self.view_edit.peek() && !self.options_active() {
-            return;
+            return false;
         }
-        event.stop_propagation();
         if self.overlay_enter() {
-        } else if self.context.peek().is_some() {
-            self.context_enter();
         } else if self.pane_active().is_some() {
             self.pane_enter();
         } else if self.form_enter() {
         } else if !self.accept() {
             self.submit();
         }
+        true
     }
 
     fn review(&self) -> bool {
@@ -62,175 +111,63 @@ impl App {
         !self.options_active() && self.draft.peek().is_empty() && self.approval.peek().is_some()
     }
 
-    fn shortcuts(&self, event: &mut KeyEvent) {
-        if !self.options_active()
+    fn answer(&self, reply: Reply, answer: GrantAnswer) -> bool {
+        if self.review() {
+            self.form_reply(reply);
+        } else if self.answering() {
+            self.approval_answer(answer);
+        } else {
+            return false;
+        }
+        true
+    }
+
+    fn edit_key(&self) -> bool {
+        if self.review() {
+            self.form_reply(Reply::Edit);
+        } else if self.pane_active() == Some(Pane::View) {
+            self.edit_start();
+        } else {
+            return false;
+        }
+        true
+    }
+
+    fn save_key(&self) -> bool {
+        if self.picker.open.peek() {
+            return true;
+        }
+        let save = self.view_edit.peek() && !self.hotkeys.recording.peek();
+        if save {
+            self.edit_save();
+        }
+        save
+    }
+
+    fn note_key(&self) -> bool {
+        if self.pane_active() != Some(Pane::Diff) {
+            return false;
+        }
+        let Some((path, hunk)) = self.current_hunk() else {
+            return false;
+        };
+        self.note_start(path, hunk);
+        true
+    }
+
+    fn shortcuts(&self) -> bool {
+        let shown = !self.options_active()
             && !self.view_edit.peek()
             && !self.pane_focus.peek()
             && self.form_stage().is_none()
             && self.approval.peek().is_none()
-            && self.draft.peek().is_empty()
-        {
-            event.stop_propagation();
+            && self.draft.peek().is_empty();
+        if shown {
             self.help.show();
             self.refresh();
         }
+        shown
     }
-}
-
-fn respond() -> Vec<(Shortcut, Handler)> {
-    vec![
-        (LogicalKey::character("?").into(), App::shortcuts),
-        (
-            Shortcut::new(LogicalKey::character("?"), ModifiersState::SHIFT),
-            App::shortcuts,
-        ),
-        (LogicalKey::character("y").into(), |app, event| {
-            if app.review() {
-                event.stop_propagation();
-                app.form_reply(crate::tui::sigil_view::app::Reply::Send);
-            } else if app.answering() {
-                event.stop_propagation();
-                app.approval_answer(crate::runtime::GrantAnswer::Allow);
-            }
-        }),
-        (LogicalKey::character("n").into(), |app, event| {
-            if app.review() {
-                event.stop_propagation();
-                app.form_reply(crate::tui::sigil_view::app::Reply::Decline);
-            } else if app.answering() {
-                event.stop_propagation();
-                app.approval_answer(crate::runtime::GrantAnswer::Deny);
-            }
-        }),
-        (Key::Escape.into(), App::escape),
-        (Key::Enter.into(), App::enter),
-    ]
-}
-
-fn diff_pane(app: &App) -> bool {
-    app.pane_active() == Some(super::Pane::Diff)
-}
-
-fn hunk_open(app: &App) -> bool {
-    diff_pane(app) && app.diff_view.peek().is_some()
-}
-
-type Guarded = (Shortcut, fn(&App) -> bool, fn(&App));
-
-fn guarded() -> Vec<Guarded> {
-    let ctrl_shift = ModifiersState::CONTROL | ModifiersState::SHIFT;
-    vec![
-        (
-            Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
-            |app| app.answering() && app.approval.peek().is_some_and(|asked| asked.persist),
-            |app| app.approval_answer(crate::runtime::GrantAnswer::Always),
-        ),
-        (
-            Key::F5.into(),
-            |app| !app.options_active() && !app.view_edit.peek(),
-            App::retry,
-        ),
-        (
-            Shortcut::ctrl(LogicalKey::character("c")),
-            |app| !app.hotkeys.recording.peek(),
-            App::interrupt,
-        ),
-        (
-            Shortcut::ctrl(LogicalKey::character("d")),
-            |app| {
-                !app.hotkeys.recording.peek()
-                    && !app.options_active()
-                    && app.draft.peek().is_empty()
-                    && app.model.get().busy_since.is_none()
-            },
-            |app| app.quit.set(true),
-        ),
-        (
-            LogicalKey::character("t").into(),
-            diff_pane,
-            App::toggle_recent,
-        ),
-        (
-            LogicalKey::character("c").into(),
-            diff_pane,
-            App::copy_patch,
-        ),
-        (
-            LogicalKey::character("o").into(),
-            |app| app.pane_active() == Some(super::Pane::View),
-            App::view_external,
-        ),
-        (
-            Key::ArrowLeft.into(),
-            |app| app.pane_active().is_some(),
-            App::pane_collapse,
-        ),
-        (
-            Key::ArrowRight.into(),
-            |app| app.pane_active().is_some(),
-            App::pane_expand,
-        ),
-        (
-            Shortcut::ctrl(Key::ArrowLeft),
-            |_| true,
-            |app| app.tab_or_pane(false),
-        ),
-        (
-            Shortcut::ctrl(Key::ArrowRight),
-            |_| true,
-            |app| app.tab_or_pane(true),
-        ),
-        (
-            Shortcut::new(Key::ArrowLeft, ctrl_shift),
-            |_| true,
-            |app| app.nudge_split(-5),
-        ),
-        (
-            Shortcut::new(Key::ArrowRight, ctrl_shift),
-            |_| true,
-            |app| app.nudge_split(5),
-        ),
-        (
-            LogicalKey::character("a").into(),
-            hunk_open,
-            App::hunk_accept,
-        ),
-        (
-            LogicalKey::character("r").into(),
-            hunk_open,
-            App::hunk_reject,
-        ),
-    ]
-}
-
-fn panes() -> Vec<(Shortcut, Handler)> {
-    vec![
-        (LogicalKey::character("e").into(), |app, event| {
-            if app.review() {
-                event.stop_propagation();
-                app.form_reply(crate::tui::sigil_view::app::Reply::Edit);
-            } else if app.pane_active() == Some(super::Pane::View) {
-                event.stop_propagation();
-                app.edit_start();
-            }
-        }),
-        (Shortcut::ctrl(LogicalKey::character("s")), |app, event| {
-            if app.picker.open.peek() {
-                event.stop_propagation();
-            } else if app.view_edit.peek() && !app.hotkeys.recording.peek() {
-                event.stop_propagation();
-                app.edit_save();
-            }
-        }),
-        (LogicalKey::character("n").into(), |app, event| {
-            if diff_pane(app)
-                && let Some((path, hunk)) = app.current_hunk()
-            {
-                event.stop_propagation();
-                app.note_start(path, hunk);
-            }
-        }),
-    ]
 }
 
 pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
@@ -241,33 +178,19 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             .layout(LayoutStyle::flex_column().fill_width().fill_height()),
         app,
     );
-    for (shortcut, guard, action) in guarded() {
+    for (shortcut, when, command) in bindings() {
         let app = app.clone();
-        shell = shell.key_capture(shortcut, move |event| {
-            if guard(&app) {
+        let handler = move |event: &mut KeyEvent| {
+            if when.holds(&app) && app.run_key(command) {
                 event.stop_propagation();
-                action(&app);
             }
-        });
+        };
+        shell = if matches!(command, KeyCommand::Recall(_)) {
+            shell.key(shortcut, handler)
+        } else {
+            shell.key_capture(shortcut, handler)
+        };
     }
-    let bindings = respond().into_iter().chain(panes()).chain(nav());
-    for (shortcut, action) in bindings {
-        let app = app.clone();
-        shell = shell.key_capture(shortcut.clone(), move |event| action(&app, event));
-    }
-    let older = app.clone();
-    let newer = app.clone();
-    let shell = shell
-        .key(Key::ArrowUp, move |event| {
-            if older.recall(true) {
-                event.stop_propagation();
-            }
-        })
-        .key(Key::ArrowDown, move |event| {
-            if newer.recall(false) {
-                event.stop_propagation();
-            }
-        });
     let scroll = app.clone();
     let owner = app.clone();
     let stray = app.clone();
@@ -282,9 +205,7 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 .text
                 .as_ref()
                 .is_some_and(|text| !text.is_empty() && !text.chars().any(char::is_control))
-                && !event.modifiers.intersects(
-                    ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META,
-                );
+                && !crate::tui::sigil_view::host::intake::chord(event.modifiers);
             owner.settle.set(false);
             if typed && owner.pane_active().is_some() {
                 event.stop_propagation();
@@ -301,9 +222,7 @@ impl App {
             return;
         };
         let printable = !text.is_empty() && !text.chars().any(char::is_control);
-        let plain = !event
-            .modifiers
-            .intersects(ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META);
+        let plain = !crate::tui::sigil_view::host::intake::chord(event.modifiers);
         let free = self.overlay().is_none()
             && self.pane_active().is_none()
             && !self.view_edit.peek()

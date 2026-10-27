@@ -63,8 +63,7 @@ impl App {
             .iter()
             .position(|facet| *facet == self.picker.facet.peek())
             .unwrap_or(0);
-        let next = (at as isize + delta).rem_euclid(Facet::ALL.len() as isize);
-        self.pick_facet(Facet::ALL[next as usize]);
+        self.pick_facet(Facet::ALL[files::cycle(at, delta, Facet::ALL.len())]);
     }
 
     pub(in crate::tui::sigil_view) fn pick_facet(&self, facet: Facet) {

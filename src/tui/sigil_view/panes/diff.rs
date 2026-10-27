@@ -7,9 +7,10 @@ use sigil::prelude::{
 
 use std::collections::BTreeSet;
 
-use super::App;
 use super::body::{Empty, empty, header};
+use super::{App, Pane};
 use crate::tui::sigil_view::canvas;
+use sigil::prelude::context_menu;
 
 const ACCEPT: &str = "Accept";
 const REVERT: &str = "Revert";
@@ -45,7 +46,6 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             return column.child(
                 sigil::kernel::text("loading…")
                     .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
                     .font_size(12.0)
                     .text_color(sigil::prelude::Token::Gray11),
             );
@@ -127,8 +127,8 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
     for (index, stat) in stats.into_iter().enumerate() {
         let open = app.clone();
         let path = stat.path.clone();
-        let menu = app.clone();
-        column = column.child(
+        let (menu, point) = (app.clone(), app.clone());
+        column = column.child(context_menu(
             list_row(
                 index == app.diff_cursor.peek(),
                 stat.path.clone(),
@@ -136,14 +136,14 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             )
             .pointer_down(move |event| {
                 if event.button == Some(MouseButton::Right) {
-                    menu.context_row(index);
-                } else {
-                    open.diff_cursor.set(index);
-                    open.diff_open(path.clone());
+                    return point.pane_point(Pane::Diff, index);
                 }
+                open.diff_cursor.set(index);
+                open.diff_open(path.clone());
                 event.stop_propagation();
             }),
-        );
+            move || menu.row_menu(Pane::Diff, index),
+        ));
         if window {
             column = column.child(file_actions(&app, &stat.path));
         }
@@ -295,10 +295,10 @@ fn hunk_view(
         .note_target
         .peek()
         .is_some_and(|(target, id)| target == path && id == hunk.id);
-    let menu = app.clone();
+    let (menu, items) = (app.clone(), app.clone());
     let mut card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
-        .child(
+        .child(context_menu(
             list_row(focused, hunk.header.clone(), String::new())
                 .layout(
                     LayoutStyle::flex_row()
@@ -311,15 +311,14 @@ fn hunk_view(
                 .child(chip(verdict, tone))
                 .child(spacer())
                 .pointer_down(move |event| {
-                    if event.button == Some(MouseButton::Right) {
-                        menu.hunk_context(index);
-                    } else {
-                        menu.hunk_cursor.set(index);
-                        menu.focus_pane(true);
+                    menu.hunk_cursor.set(index);
+                    menu.focus_pane(true);
+                    if event.button != Some(MouseButton::Right) {
+                        event.stop_propagation();
                     }
-                    event.stop_propagation();
                 }),
-        );
+            move || items.hunk_menu(index),
+        ));
     if canvas::is_window() && !editing {
         card = card.child(hunk_actions(app, path, &hunk.id));
     }

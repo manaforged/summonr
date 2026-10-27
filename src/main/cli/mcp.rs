@@ -1,9 +1,9 @@
 use std::fmt;
 
+use summonr::table::{Row, Table};
 use summonr::{Error, McpLaunch, Result};
 
 use super::flags::Input;
-use super::value;
 
 #[derive(Clone)]
 pub(crate) enum McpCommand {
@@ -77,7 +77,9 @@ fn finished(input: &mut Input) -> Result<()> {
 
 fn add(input: &mut Input) -> Result<McpCommand> {
     let name = name(input).map_err(|_unnamed| usage(ADD_USAGE))?;
-    let launch = AddFlags::read(input)?.launch()?;
+    let mut flags = AddFlags::default();
+    ADD.walk(&mut flags, input.by_ref())?;
+    let launch = flags.launch()?;
     Ok(McpCommand::Add { name, launch })
 }
 
@@ -89,26 +91,34 @@ struct AddFlags {
     command: Vec<String>,
 }
 
-impl AddFlags {
-    fn read(input: &mut Input) -> Result<Self> {
-        let mut flags = Self::default();
-        while let Some(arg) = input.next() {
-            match arg.as_str() {
-                "--env" => flags.env.push(pair(&value(input, "--env", "KEY=VALUE")?)?),
-                "--header" => flags
-                    .headers
-                    .push(pair(&value(input, "--header", "KEY=VALUE")?)?),
-                "--url" if flags.url.is_none() => {
-                    flags.url = Some(value(input, "--url", "a URL")?);
-                }
-                "--" => flags.command.extend(input.by_ref()),
-                "-h" | "--help" => super::exit_help(Some("mcp")),
-                unknown => return Err(usage(&format!("unexpected `{unknown}`; {ADD_USAGE}"))),
-            }
-        }
-        Ok(flags)
-    }
+type AddFlag = Row<AddFlags>;
 
+const ADD: Table<AddFlags> = Table {
+    rows: &[
+        AddFlag::value(&["--env"], "KEY=VALUE", |flags, raw| {
+            flags.env.push(pair(&raw)?);
+            Ok(())
+        }),
+        AddFlag::value(&["--header"], "KEY=VALUE", |flags, raw| {
+            flags.headers.push(pair(&raw)?);
+            Ok(())
+        }),
+        AddFlag::value(&["--url"], "a URL", |flags, url| {
+            flags.url = Some(url);
+            Ok(())
+        })
+        .once(),
+        AddFlag::rest(&["--"], |flags, command| flags.command.extend(command)),
+        AddFlag::switch(&["-h", "--help"], |_| super::exit_help(Some("mcp"))),
+    ],
+    missing: |flag, expected| format!("{flag} requires {expected}"),
+    unknown: |flag| format!("usage: unexpected `{flag}`; {ADD_USAGE}"),
+    error: Error::Config,
+    dash_values: false,
+    pairs: false,
+};
+
+impl AddFlags {
     fn launch(self) -> Result<McpLaunch> {
         let Self {
             env,

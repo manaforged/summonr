@@ -10,7 +10,6 @@ use crate::web::Search;
 mod args;
 mod budget;
 mod event;
-mod help;
 pub(crate) use event::progress_text;
 pub(crate) use event::{Abort, Hold, Kept};
 pub use event::{AbortCode, Event};
@@ -359,11 +358,9 @@ pub async fn run_tool(
 }
 
 fn normalize(call: &ToolCall) -> (&str, Option<&'static str>) {
-    catalog::RETIRED
-        .iter()
-        .find(|(retired, _, _)| *retired == call.function.name)
-        .map_or((call.function.name.as_str(), None), |(_, name, op)| {
-            (*name, *op)
+    catalog::retired(&call.function.name)
+        .map_or((call.function.name.as_str(), None), |(_, live, op)| {
+            (live.name(), *op)
         })
 }
 

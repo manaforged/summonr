@@ -187,7 +187,7 @@ impl App {
         if action != Hotkey::Options && self.options_active() {
             return true;
         }
-        self.run_hotkey(action)
+        self.run_key(super::super::view::KeyCommand::Hotkey(action))
     }
 
     pub(in crate::tui::sigil_view) fn record_chord(&self, key: char, leader: bool) {
@@ -206,25 +206,6 @@ impl App {
             return;
         }
         self.save_hotkeys();
-    }
-
-    fn run_hotkey(&self, action: Hotkey) -> bool {
-        match action {
-            Hotkey::Options => self.toggle_options(),
-            Hotkey::Newline => return false,
-            Hotkey::Editor => self.editor_requested.set(true),
-            Hotkey::Files => self.toggle_pane(Pane::Files),
-            Hotkey::Ledger => self.toggle_todos(),
-            Hotkey::Agents => self.toggle_agents(),
-            Hotkey::Diff => self.toggle_pane(Pane::Diff),
-            Hotkey::Copy => self.copy_chat(None),
-            Hotkey::Select => self.select.set(!self.select.peek()),
-            Hotkey::Pane => self.toggle_side(),
-            Hotkey::Search => self.search.start(""),
-            Hotkey::History => self.prompt_history(""),
-            Hotkey::Fold => self.fold_cycle(),
-        }
-        true
     }
 
     pub(in crate::tui::sigil_view) fn toggle_theme(&self) {

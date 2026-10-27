@@ -65,13 +65,53 @@ pub struct Turn {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum StepRun {
+pub enum Beat {
     Done(i32),
     Run {
-        index: usize,
-        total: usize,
         prompt: String,
+        step: Option<(usize, usize)>,
     },
+}
+
+#[derive(Clone, Debug)]
+pub enum Job {
+    Goal {
+        objective: String,
+        gates: Vec<String>,
+    },
+    Steps {
+        plan: String,
+        steps: Vec<crate::steps::Step>,
+    },
+}
+
+impl Job {
+    #[must_use]
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::Goal { .. } => "goal",
+            Self::Steps { .. } => "steps",
+        }
+    }
+
+    #[must_use]
+    pub const fn aborted(&self) -> &'static str {
+        match self {
+            Self::Goal { .. } => "goal execution aborted",
+            Self::Steps { .. } => "step execution aborted",
+        }
+    }
+
+    #[must_use]
+    pub fn check(&self, index: usize) -> Option<String> {
+        let Self::Steps { steps, .. } = self else {
+            return None;
+        };
+        steps
+            .get(index.saturating_sub(1))
+            .map(|step| step.checks.join(" && "))
+            .filter(|check| !check.is_empty())
+    }
 }
 
 pub struct Loop<P> {

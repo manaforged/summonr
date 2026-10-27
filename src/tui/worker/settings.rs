@@ -2,7 +2,6 @@ use super::Worker;
 use crate::endpoint::Endpoint;
 use crate::provider::Client;
 use crate::runtime::Loop;
-use crate::tools::Event;
 use crate::tui::{Msg, Snapshot};
 use crate::workflow::{self, Role, Seat, Workflow};
 use tokio::sync::mpsc::UnboundedSender;
@@ -61,21 +60,7 @@ impl Worker {
     }
 
     fn client(ui: &UnboundedSender<Msg>, endpoint: &Endpoint) -> crate::Result<Client> {
-        let delta = ui.clone();
-        let thinking = ui.clone();
-        let calling = ui.clone();
-        Ok(Client::connect(endpoint)?
-            .on_delta(move |text| {
-                drop(delta.send(Msg::Event(Event::Delta {
-                    text: text.to_string(),
-                })))
-            })
-            .on_reasoning(move |text| {
-                drop(thinking.send(Msg::Event(Event::Reasoning {
-                    text: text.to_string(),
-                })));
-            })
-            .on_tool(move |name| drop(calling.send(Msg::Calling(name.to_string())))))
+        crate::tui::channel::client(ui, endpoint)
     }
 
     pub(super) fn workflow(&mut self, argument: Option<&str>) {

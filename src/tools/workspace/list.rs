@@ -2,31 +2,24 @@ use std::path::Path;
 
 use crate::SKIP_DIRS;
 use crate::error::{Error, Result};
+use crate::walk::{self, Walk};
 
 const LIST_MAX: usize = 200;
 
 pub(super) fn format_tree(path: &str, dir: &Path, depth: usize) -> Result<String> {
     let mut rows = Vec::new();
-    for entry in ignore::WalkBuilder::new(dir)
-        .require_git(false)
-        .hidden(false)
-        .max_depth(Some(depth))
-        .filter_entry(|entry| {
-            entry.depth() == 0
-                || !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
-        })
-        .build()
-        .filter_map(std::result::Result::ok)
-        .skip(1)
-    {
+    let walk = Walk {
+        depth: Some(depth),
+        ..Walk::TOOL
+    };
+    for entry in walk.entries(dir).skip(1) {
         let rel = entry
             .path()
             .strip_prefix(dir)
             .unwrap_or_else(|_| entry.path())
             .to_string_lossy()
             .replace('\\', "/");
-        let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
+        let is_dir = walk::is_dir(&entry);
         rows.push((
             entry.depth(),
             format!("{rel}{}", if is_dir { "/" } else { "" }),

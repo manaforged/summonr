@@ -1,4 +1,5 @@
 use super::*;
+use crate::endpoint::Wire;
 
 const LIVE: &str = r#"{
   "model": "typesafe/jev-1.13-20260917",

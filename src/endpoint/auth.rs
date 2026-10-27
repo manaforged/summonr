@@ -222,7 +222,7 @@ pub(crate) fn ready(need: Need) -> (Vec<Endpoint>, Vec<String>) {
     let mut errors = Vec::new();
     for name in names {
         let endpoint = match resolve(Some(&name), None, need) {
-            Ok(endpoint) if endpoint.wire == Wire::Decisions => continue,
+            Ok(endpoint) if crate::provider::wire::spec(endpoint.wire).classifies() => continue,
             Ok(endpoint) => endpoint,
             Err(_) => {
                 if let Err(error) = resolve(Some(&name), None, need.without_key())
@@ -248,7 +248,8 @@ pub(crate) fn ready(need: Need) -> (Vec<Endpoint>, Vec<String>) {
 
 pub fn first_classify() -> Option<String> {
     names().unwrap_or_default().into_iter().find(|name| {
-        resolve(Some(name), None, Need::Key).is_ok_and(|endpoint| endpoint.wire == Wire::Decisions)
+        resolve(Some(name), None, Need::Key)
+            .is_ok_and(|endpoint| crate::provider::wire::spec(endpoint.wire).classifies())
     })
 }
 

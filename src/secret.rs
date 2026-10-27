@@ -106,16 +106,16 @@ impl Store {
     }
 
     pub(crate) fn set(&self, name: &str, secret: &str) -> Result<Source> {
-        cache::clear();
+        store::forget(&self.file);
         let outcome = self.write_secret(name, secret);
-        cache::clear();
+        store::forget(&self.file);
         outcome
     }
 
     pub(crate) fn forget(&self, name: &str) -> Result<bool> {
-        cache::clear();
+        store::forget(&self.file);
         let outcome = self.remove_secret(name);
-        cache::clear();
+        store::forget(&self.file);
         outcome
     }
 
@@ -274,7 +274,6 @@ fn platform() -> Backend {
 }
 
 mod backends;
-mod cache;
 mod seal;
 pub(crate) mod shield;
 

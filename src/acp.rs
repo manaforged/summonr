@@ -75,9 +75,15 @@ where
     }
 
     fn connect(&self, endpoint: &Endpoint, tag: &Arc<OnceLock<String>>) -> Result<Client> {
-        Ok(Client::connect(endpoint)?
-            .on_delta(self.stream("agent_message_chunk", tag))
-            .on_reasoning(self.stream("agent_thought_chunk", tag)))
+        let message = self.stream("agent_message_chunk", tag);
+        let thought = self.stream("agent_thought_chunk", tag);
+        Ok(
+            Client::connect(endpoint)?.on_stream(move |delta| match delta {
+                crate::Delta::Text(text) => message(text),
+                crate::Delta::Thinking(text) => thought(text),
+                crate::Delta::Call(_) | crate::Delta::Progress => {}
+            }),
+        )
     }
 
     fn open(&mut self, params: &Value) -> Reply {

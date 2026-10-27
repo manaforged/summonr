@@ -74,9 +74,7 @@ impl Client {
             wire: opts.wire,
             reasoning: Reasoning::default(),
             idle: opts.idle_timeout,
-            on_delta: None,
-            on_reasoning: None,
-            on_tool: None,
+            on_stream: None,
         })
     }
 }

@@ -260,7 +260,7 @@ pub fn names() -> Result<Vec<String>> {
 }
 
 fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
-    if endpoint.wire == Wire::Decisions {
+    if crate::provider::wire::spec(endpoint.wire).classifies() {
         return LoginGroup::Decide;
     }
     if let Some(preset) = preset(name) {
@@ -288,6 +288,7 @@ mod info;
 mod keys;
 mod preset;
 mod reasoning;
+mod record;
 mod resolve;
 mod route;
 mod server;
@@ -303,6 +304,7 @@ use keys::*;
 pub(crate) use preset::label;
 use preset::preset;
 pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
+use record::Record;
 pub(crate) use resolve::default_seat;
 use resolve::hosted;
 pub(crate) use resolve::{Keys, is_set_up};

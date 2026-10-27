@@ -104,39 +104,49 @@ impl App {
     fn pane_len(&self) -> usize {
         match self.layout.peek().secondary {
             Some(Pane::View) => self.view_lines(),
-            Some(Pane::Worktrees) => self.tree_rows().len(),
-            Some(Pane::Jobs) => self.job_rows().len(),
-            Some(Pane::Mcp) => self.mcp_rows().len(),
-            Some(Pane::Peers) => self.model.get().peers.len(),
             Some(Pane::Diff) if self.diff_view.peek().is_some() => self.hunks().len(),
-            Some(Pane::Diff) => self.diff_rows().len(),
-            Some(Pane::Chat | Pane::Ledger | Pane::Files) | None => self.file_rows().len(),
+            other => self.pane_rows(other.unwrap_or(Pane::Files)).len(),
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_cursor(&self, pane: Pane) -> &Signal<usize> {
+        match pane {
+            Pane::Diff => &self.diff_cursor,
+            Pane::Worktrees => &self.tree_cursor,
+            Pane::Jobs => &self.job_cursor,
+            Pane::Mcp => &self.mcp_cursor,
+            Pane::Peers => &self.peer_cursor,
+            Pane::Chat | Pane::Ledger | Pane::Files | Pane::View => &self.file_cursor,
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_rows(&self, pane: Pane) -> Vec<FileRow> {
+        match pane {
+            Pane::Diff => self.diff_rows(),
+            Pane::Worktrees => self.tree_rows(),
+            Pane::Jobs => self.job_rows(),
+            Pane::Mcp => self.mcp_rows(),
+            Pane::Peers => self.peer_rows(),
+            Pane::Chat | Pane::Ledger | Pane::Files | Pane::View => self.file_rows(),
         }
     }
 
     pub(in crate::tui::sigil_view) fn pane_collapse(&self) {
-        if self.layout.peek().secondary == Some(Pane::View) {
-            self.pane_back();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Worktrees)
-            || self.layout.peek().secondary == Some(Pane::Peers)
-        {
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Jobs) {
-            self.job_open.set(None);
-            self.refresh();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Mcp) {
-            self.mcp_open.set(None);
-            self.refresh();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Diff) {
-            self.pane_back();
-            return;
+        match self.layout.peek().secondary {
+            Some(Pane::View | Pane::Diff) => {
+                self.pane_back();
+                return;
+            }
+            Some(Pane::Worktrees | Pane::Peers) => return,
+            Some(Pane::Jobs) => {
+                self.job_open.set(None);
+                return self.refresh();
+            }
+            Some(Pane::Mcp) => {
+                self.mcp_open.set(None);
+                return self.refresh();
+            }
+            None | Some(Pane::Chat | Pane::Ledger | Pane::Files) => {}
         }
         let rows = self.file_rows();
         let Some(row) = rows.get(files::pick(&self.file_cursor, rows.len())) else {
@@ -155,30 +165,19 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn pane_expand(&self) {
-        if self.layout.peek().secondary == Some(Pane::View) {
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Worktrees) {
-            self.tree_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Jobs) {
-            self.job_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Mcp) {
-            self.mcp_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Peers) {
-            self.peer_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Diff) {
-            if self.diff_view.peek().is_none() {
-                self.diff_enter();
+        match self.layout.peek().secondary {
+            Some(Pane::View) => return,
+            Some(Pane::Diff) => {
+                if self.diff_view.peek().is_none() {
+                    self.diff_enter();
+                }
+                return;
             }
-            return;
+            Some(Pane::Worktrees) => return self.tree_enter(),
+            Some(Pane::Jobs) => return self.job_enter(),
+            Some(Pane::Mcp) => return self.mcp_enter(),
+            Some(Pane::Peers) => return self.peer_enter(),
+            None | Some(Pane::Chat | Pane::Ledger | Pane::Files) => {}
         }
         let rows = self.file_rows();
         match rows.get(files::pick(&self.file_cursor, rows.len())) {
@@ -215,57 +214,26 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn pane_move(&self, delta: isize) {
-        if self.layout.peek().secondary == Some(Pane::View) {
-            self.view_move(delta);
-            return;
+        match self.layout.peek().secondary {
+            Some(Pane::View) => self.view_move(delta),
+            Some(Pane::Diff) => self.diff_move(delta),
+            other => {
+                let pane = other.unwrap_or(Pane::Files);
+                files::shift(self.pane_cursor(pane), delta, self.pane_rows(pane).len());
+                self.refresh();
+            }
         }
-        if self.layout.peek().secondary == Some(Pane::Worktrees) {
-            self.tree_move(delta);
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Jobs) {
-            self.job_move(delta);
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Mcp) {
-            self.mcp_move(delta);
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Peers) {
-            self.peer_move(delta);
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Diff) {
-            self.diff_move(delta);
-            return;
-        }
-        files::shift(&self.file_cursor, delta, self.file_rows().len());
-        self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn pane_enter(&self) {
-        if self.layout.peek().secondary == Some(Pane::View) {
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Worktrees) {
-            self.tree_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Jobs) {
-            self.job_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Mcp) {
-            self.mcp_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Peers) {
-            self.peer_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Diff) {
-            self.diff_enter();
-            return;
+        match self.layout.peek().secondary {
+            Some(Pane::View) => return,
+            Some(Pane::Diff) => return self.diff_enter(),
+            Some(Pane::Worktrees) => return self.tree_enter(),
+            Some(Pane::Jobs) => return self.job_enter(),
+            Some(Pane::Mcp) => return self.mcp_enter(),
+            Some(Pane::Peers) => return self.peer_enter(),
+            None | Some(Pane::Chat | Pane::Ledger | Pane::Files) => {}
         }
         let rows = self.file_rows();
         let Some(row) = rows.get(files::pick(&self.file_cursor, rows.len())) else {

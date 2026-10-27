@@ -1,5 +1,7 @@
 use super::*;
 
+use super::keys::KeyCommand;
+
 pub(super) fn composer_keys(mut node: NodeBuilder, app: &App) -> NodeBuilder {
     for modifier in [ModifiersState::SHIFT, ModifiersState::ALT] {
         node = node.key_capture(Shortcut::new(Key::Enter, modifier), |event| {
@@ -79,13 +81,14 @@ pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
         );
     }
     if canvas::is_window() {
-        for (key, action) in WINDOW_SHORTCUTS {
+        for (key, command) in WINDOW_SHORTCUTS {
             let route = app.clone();
             node = node.key_capture(
                 Shortcut::new(LogicalKey::character(key), ModifiersState::META),
                 move |event| {
-                    event.stop_propagation();
-                    window_shortcut(&route, action);
+                    if route.run_key(command) {
+                        event.stop_propagation();
+                    }
                 },
             );
         }
@@ -93,55 +96,18 @@ pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
     node
 }
 
-#[derive(Clone, Copy)]
-enum WindowShortcut {
-    Commands,
-    Mentions,
-    Settings,
-    NewSession,
-    Pane(crate::tui::sigil_view::pane::Pane),
-}
-
-const WINDOW_SHORTCUTS: [(&str, WindowShortcut); 10] = [
-    ("k", WindowShortcut::Commands),
-    ("p", WindowShortcut::Mentions),
-    (",", WindowShortcut::Settings),
-    ("n", WindowShortcut::NewSession),
-    (
-        "1",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Files),
-    ),
-    (
-        "2",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Diff),
-    ),
-    (
-        "3",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Worktrees),
-    ),
-    (
-        "4",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Jobs),
-    ),
-    (
-        "5",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Peers),
-    ),
-    (
-        "6",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Ledger),
-    ),
+const WINDOW_SHORTCUTS: [(&str, KeyCommand); 10] = [
+    ("k", KeyCommand::Trigger('/')),
+    ("p", KeyCommand::Trigger('@')),
+    (",", KeyCommand::Hotkey(crate::prefs::Hotkey::Options)),
+    ("n", KeyCommand::NewSession),
+    ("1", KeyCommand::Pane(Pane::Files)),
+    ("2", KeyCommand::Pane(Pane::Diff)),
+    ("3", KeyCommand::Pane(Pane::Worktrees)),
+    ("4", KeyCommand::Pane(Pane::Jobs)),
+    ("5", KeyCommand::Pane(Pane::Peers)),
+    ("6", KeyCommand::Pane(Pane::Ledger)),
 ];
-
-fn window_shortcut(app: &App, action: WindowShortcut) {
-    match action {
-        WindowShortcut::Commands => app.open_trigger('/'),
-        WindowShortcut::Mentions => app.open_trigger('@'),
-        WindowShortcut::Settings => app.toggle_options(),
-        WindowShortcut::NewSession => app.open_session(crate::tui::hub::Open::New),
-        WindowShortcut::Pane(pane) => app.toggle_pane(pane),
-    }
-}
 
 pub(super) fn chord_letter(text: &str) -> Option<char> {
     let mut chars = text.chars();

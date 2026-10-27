@@ -14,7 +14,7 @@ mod agent;
 mod capture;
 pub(crate) mod stream;
 pub(crate) mod think;
-mod wire;
+pub(crate) mod wire;
 pub(crate) use wire::boundary;
 pub(crate) use wire::traits::traits;
 
@@ -61,7 +61,7 @@ pub trait Provider: Send + Sync + 'static {
     }
 }
 
-type DeltaFn = Arc<dyn Fn(&str) + Send + Sync>;
+type DeltaFn = Arc<dyn Fn(&wire::Delta) + Send + Sync>;
 
 pub use client::Client;
 pub(crate) use client::input_cap;
@@ -80,6 +80,7 @@ pub(crate) use request::dollars;
 pub(crate) use request::{CompletionRequest, FunctionDefinition, ToolDefinition, ToolsJson};
 pub(crate) use request::{CountStyle, compact};
 pub(crate) use request::{Partial, Price};
+pub use wire::Delta;
 #[cfg(test)]
 pub(crate) use wire::decisions;
 

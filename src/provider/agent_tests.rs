@@ -259,14 +259,11 @@ async fn claude_code_never_sees_an_api_key() {
         assert!(unset.contains(&key), "{key} reaches Claude Code");
     }
     let cwd = std::env::current_dir().unwrap();
-    let mut process = crate::rpc::start(&crate::rpc::Launch {
-        program: "sh",
-        args: &["-c", "printf %s \"${HOME-absent}\""],
-        env: &[],
-        unset: &["HOME"],
-        cwd: &cwd,
-        base: crate::rpc::Env::Inherit,
-        stderr: crate::rpc::Stderr::Discard,
+    let mut process = crate::process::start(crate::process::Spec {
+        remove: vec!["HOME".into()],
+        cwd: Some(cwd),
+        stderr: crate::process::Io::Null,
+        ..crate::process::Spec::new("sh", ["-c", "printf %s \"${HOME-absent}\""])
     })
     .unwrap();
     let mut seen = String::new();

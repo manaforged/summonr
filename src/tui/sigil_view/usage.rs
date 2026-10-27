@@ -59,8 +59,7 @@ impl Panel {
     }
 
     pub(super) fn shift(self, delta: isize) {
-        let next = self.range.peek().saturating_add_signed(delta);
-        self.range.set(next.min(RANGES.len() - 1));
+        super::app::shift(&self.range, delta, RANGES.len());
     }
 
     pub(super) fn metric(self) {

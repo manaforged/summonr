@@ -127,14 +127,12 @@ fn busy_row(app: &App, width: usize) -> NodeBuilder {
         .child(
             sigil::kernel::text(move || split(true))
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Accent),
         )
         .child(
             sigil::kernel::text(move || split(false))
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         )

@@ -1,4 +1,3 @@
-use crate::command::Category;
 use crate::prefs::{Hotkey, Hotkeys};
 use crate::provider::Effort;
 use crate::tui::sigil_view::ui::alt_label;
@@ -7,24 +6,19 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
     let specs: Vec<_> = crate::command_specs()
         .iter()
         .filter(|spec| spec.shown())
-        .map(|spec| (spec.category, spec.name, spec.description))
         .collect();
-    let width = specs.iter().map(|spec| spec.1.len()).max().unwrap_or(0);
+    let width = specs.iter().map(|spec| spec.name.len()).max().unwrap_or(0);
     let mut lines = Vec::new();
-    for category in Category::ALL {
-        if !specs.iter().any(|spec| spec.0 == category) {
-            continue;
+    let mut group = None;
+    for spec in specs {
+        if group != Some(spec.group) {
+            if group.is_some() {
+                lines.push(String::new());
+            }
+            group = Some(spec.group);
+            lines.push(spec.group.to_string());
         }
-        if !lines.is_empty() {
-            lines.push(String::new());
-        }
-        lines.push(category.title().to_string());
-        lines.extend(
-            specs
-                .iter()
-                .filter(|spec| spec.0 == category)
-                .map(|spec| format!("  {:<width$}  {}", spec.1, spec.2)),
-        );
+        lines.push(format!("  {:<width$}  {}", spec.name, spec.description));
     }
     lines.extend(
         [

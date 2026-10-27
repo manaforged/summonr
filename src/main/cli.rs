@@ -1,6 +1,6 @@
 use summonr::{Error, Result, is_endpoint};
 
-use flags::{COMMANDS, Input, SCOPED, SWITCHES, VALUES};
+use flags::{COMMANDS, CONFLICTS, FLAGS, Input};
 
 #[path = "cli/flags.rs"]
 mod flags;
@@ -11,7 +11,7 @@ mod mcp;
 #[path = "cli/typo.rs"]
 mod typo;
 
-use help::{exit_help, exit_version};
+use help::exit_help;
 pub(super) use mcp::McpCommand;
 
 #[derive(Clone, Debug, Default)]
@@ -93,7 +93,6 @@ pub(super) fn parse() -> Result<Args> {
 enum Step {
     Next,
     Endpoint,
-    Rest,
 }
 
 fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
@@ -116,10 +115,6 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
                 args.endpoint = Some(arg);
                 command_position = command;
             }
-            Step::Rest => {
-                args.prompt.extend(input.by_ref());
-                break;
-            }
         }
     }
     args.check()?;
@@ -128,38 +123,19 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
 
 impl Args {
     fn step(&mut self, input: &mut Input, arg: &str, command: bool) -> Result<Step> {
-        if let Some((_, set)) = SWITCHES.iter().find(|(names, _)| names.contains(&arg)) {
-            set(self);
-        } else if let Some(valued) = VALUES
-            .iter()
-            .find(|valued| valued.option == arg || valued.short == Some(arg))
-        {
-            (valued.set)(self, value(input, valued.option, valued.expected)?)?;
+        if let Some(row) = FLAGS.find(arg, self) {
+            FLAGS.apply(row, arg, self, input)?;
         } else if let Some((name, most, run)) =
             COMMANDS.iter().find(|(name, ..)| command && *name == arg)
         {
             self.arity = most.map(|most| (*name, most));
             run(self, input)?;
-        } else if let Some((.., run)) = SCOPED
-            .iter()
-            .find(|(flag, _, active, _)| *flag == arg && active(self))
-        {
-            run(self, input)?;
+        } else if arg.starts_with('-') {
+            return Err(misplaced(arg));
         } else {
-            return self.rest(arg, command);
+            return self.positional(arg, command);
         }
         Ok(Step::Next)
-    }
-
-    fn rest(&mut self, arg: &str, command: bool) -> Result<Step> {
-        match arg {
-            "-p" | "--print" => self.print().map(|()| Step::Next),
-            "-h" | "--help" => exit_help(self.verb()),
-            "-V" | "--version" => exit_version(),
-            "--" => Ok(Step::Rest),
-            option if option.starts_with('-') => Err(misplaced(option)),
-            name => self.positional(name, command),
-        }
     }
 
     fn positional(&mut self, name: &str, command: bool) -> Result<Step> {
@@ -189,10 +165,7 @@ impl Args {
     }
 
     fn verb(&self) -> Option<&'static str> {
-        SCOPED
-            .iter()
-            .find(|(_, _, active, _)| active(self))
-            .map(|(_, verb, ..)| *verb)
+        FLAGS.scoped(self)
     }
 
     fn endpoint_slot(&self, command: bool) -> bool {
@@ -218,18 +191,8 @@ impl Args {
     }
 
     fn check(&self) -> Result<()> {
-        if self.grep.is_some() && !self.list_sessions {
-            return Err(Error::Config(
-                "--grep works with `summonr sessions`".to_string(),
-            ));
-        }
-        if self.here && self.worktree {
-            return Err(Error::Config(
-                "use --here or --worktree, not both".to_string(),
-            ));
-        }
-        if self.goal.is_some() && self.steps.is_some() {
-            return Err(Error::Config("use --goal or --steps, not both".to_string()));
+        if let Some((_, message)) = CONFLICTS.iter().find(|(broken, _)| broken(self)) {
+            return Err(Error::Config((*message).to_string()));
         }
         if let Some(mode) = [
             ("--goal", self.goal.is_some()),
@@ -264,10 +227,10 @@ impl Args {
 }
 
 fn misplaced(option: &str) -> Error {
-    let verbs: Vec<String> = SCOPED
+    let verbs: Vec<String> = FLAGS
+        .verbs(option)
         .iter()
-        .filter(|(flag, ..)| *flag == option)
-        .map(|(_, verb, ..)| format!("`summonr {verb}`"))
+        .map(|verb| format!("`summonr {verb}`"))
         .collect();
     Error::Config(if verbs.is_empty() {
         format!("unknown option `{option}`")
@@ -299,18 +262,6 @@ fn named(token: &str) -> bool {
         && token
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
-}
-
-fn value(input: &mut impl Iterator<Item = String>, option: &str, expected: &str) -> Result<String> {
-    let value = input
-        .next()
-        .ok_or_else(|| Error::Config(format!("{option} requires {expected}")))?;
-    if value.starts_with('-') {
-        return Err(Error::Config(format!(
-            "{option} requires {expected}, not option `{value}`"
-        )));
-    }
-    Ok(value)
 }
 
 #[cfg(test)]

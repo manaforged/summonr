@@ -1,7 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-const WORKSPACE_CONTROL: &[&[&str]] = &[&[".summonr", "check.toml"], &[".summonr", "policy.toml"]];
+use super::rules;
 
 pub(crate) fn workspace_control(path: &Path) -> bool {
     let parts: Vec<&str> = path
@@ -14,56 +14,50 @@ pub(crate) fn workspace_control(path: &Path) -> bool {
             | Component::ParentDir => None,
         })
         .collect();
-    WORKSPACE_CONTROL.iter().any(|tail| parts.ends_with(tail))
+    rules().secrets.control.iter().any(|tail| {
+        parts.len() >= tail.len()
+            && parts[parts.len() - tail.len()..]
+                .iter()
+                .zip(tail)
+                .all(|(part, name)| *part == name.as_str())
+    })
 }
-
-const SECRET_FILES: &[&str] = &[
-    ".env",
-    "credentials",
-    ".netrc",
-    ".git-credentials",
-    ".pypirc",
-];
-const SECRET_DIRS: &[&str] = &[
-    ".ssh",
-    ".gnupg",
-    ".aws",
-    ".summonr",
-    ".docker",
-    ".kube",
-    ".config/gh",
-    ".config/gcloud",
-];
 
 pub(crate) fn protected_read(path: &Path) -> bool {
     let path = dunce::simplified(path);
+    let secrets = &rules().secrets;
     if let Some(name) = path.file_name().and_then(|name| name.to_str())
-        && (name.starts_with(".env.")
-            || name.starts_with("credentials.")
-            || SECRET_FILES.contains(&name))
+        && secret_name(name, &secrets.read_files, &secrets.read_prefixes)
     {
         return true;
     }
     protected_dirs().iter().any(|dir| within(path, dir))
 }
 
+pub(super) fn secret_name(name: &str, files: &[String], prefixes: &[String]) -> bool {
+    files.iter().any(|file| file == name)
+        || prefixes
+            .iter()
+            .any(|prefix| name.starts_with(prefix.as_str()))
+}
+
 pub(crate) fn holds_protected(path: &Path) -> bool {
     protected_dirs().iter().any(|dir| within(dir, path))
 }
 
-pub(crate) fn home_secret(path: &Path, dirs: &[&str]) -> bool {
+pub(crate) fn home_secret<S: AsRef<str>>(path: &Path, dirs: &[S]) -> bool {
     crate::config::home_dir().is_some_and(|home| secret_under(path, &home, dirs))
         || crate::prompt::summonr_home()
             .ok()
             .is_some_and(|summonr| within(path, &summonr))
 }
 
-pub(crate) fn secret_under(path: &Path, home: &Path, dirs: &[&str]) -> bool {
+pub(crate) fn secret_under<S: AsRef<str>>(path: &Path, home: &Path, dirs: &[S]) -> bool {
     let real = home.canonicalize().ok().filter(|real| real != home);
     let homes: Vec<PathBuf> = std::iter::once(home.to_path_buf()).chain(real).collect();
     let guarded: Vec<PathBuf> = homes
         .iter()
-        .flat_map(|home| dirs.iter().map(move |dir| home.join(dir)))
+        .flat_map(|home| dirs.iter().map(move |dir| home.join(dir.as_ref())))
         .collect();
     guarded.iter().any(|dir| within(path, dir))
 }
@@ -95,7 +89,9 @@ fn protected_dirs() -> Arc<Vec<PathBuf>> {
         return Arc::clone(dirs);
     }
     let dirs: Arc<Vec<PathBuf>> = Arc::new(
-        SECRET_DIRS
+        rules()
+            .secrets
+            .read_dirs
             .iter()
             .filter_map(|dir| home.as_ref().map(|home| home.join(dir)))
             .chain(summonr.clone())

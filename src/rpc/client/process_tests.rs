@@ -1,17 +1,14 @@
 use tokio::io::AsyncReadExt;
 
-use super::*;
+use crate::process::{Env, Io, Spec, start};
 
 async fn seen(base: Env) -> String {
     let dir = tempfile::tempdir().unwrap();
-    let mut process = start(&Launch {
-        program: "sh",
-        args: &["-c", "printf %s \"${CARGO_MANIFEST_DIR:-unset}\""],
-        env: &[],
-        unset: &[],
-        cwd: dir.path(),
+    let mut process = start(Spec {
+        cwd: Some(dir.path().to_path_buf()),
         base,
-        stderr: Stderr::Discard,
+        stderr: Io::Null,
+        ..Spec::new("sh", ["-c", "printf %s \"${CARGO_MANIFEST_DIR:-unset}\""])
     })
     .unwrap();
     let mut out = String::new();

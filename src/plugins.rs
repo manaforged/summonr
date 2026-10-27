@@ -312,11 +312,7 @@ pub(super) fn installed() -> Vec<Plugin> {
     let Ok(root) = root() else {
         return Vec::new();
     };
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return Vec::new();
-    };
-    let mut plugins: Vec<Plugin> = entries
-        .filter_map(std::result::Result::ok)
+    let mut plugins: Vec<Plugin> = crate::walk::children(&root)
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
         .filter_map(|dir| {
@@ -374,10 +370,8 @@ pub(crate) fn warn_unknown_off(off: &[String]) {
 pub(crate) fn bin_path_prefix() -> Option<String> {
     let mut dirs: Vec<PathBuf> = summonr_home()
         .ok()
-        .and_then(|home| std::fs::read_dir(home.join("bin")).ok())
         .into_iter()
-        .flatten()
-        .filter_map(std::result::Result::ok)
+        .flat_map(|home| crate::walk::children(&home.join("bin")))
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
         .collect();

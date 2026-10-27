@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::process::Child;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use url::Url;
 
 use crate::error::{Error, Result};
 use crate::language;
+use crate::process::{Child, Env, Io, Spec};
 use crate::rpc::{self, Frame};
 
 use super::command::ProcessGroup;
@@ -59,26 +59,25 @@ impl Conn {
             .argv
             .split_first()
             .ok_or_else(|| Error::Tool("language server has no command".to_string()))?;
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let base = match launch.origin {
-            Origin::Host => rpc::Env::Inherit,
-            Origin::Plugin => rpc::Env::Clean,
+            Origin::Host => Env::Inherit,
+            Origin::Plugin => Env::Clean,
         };
-        let rpc::Process {
+        let crate::process::Process {
             child,
             stdin,
             stdout,
             group,
             ..
-        } = rpc::start(&rpc::Launch {
-            program,
-            args: &args,
-            env: &launch.env,
-            unset: &[],
-            cwd: workspace,
-            base,
-            stderr: rpc::Stderr::Discard,
-        })?;
+        } = crate::process::start(
+            Spec {
+                cwd: Some(workspace.to_path_buf()),
+                base,
+                stderr: Io::Null,
+                ..Spec::new(program, args)
+            }
+            .envs(launch.env.iter().cloned()),
+        )?;
         let (sender, inbox) = mpsc::channel(INBOX);
         let mut stdout = BufReader::new(stdout);
         let reader = tokio::spawn(async move {

@@ -45,11 +45,8 @@ pub(crate) fn prune_in(
     keep: Option<&str>,
     now: SystemTime,
 ) -> usize {
-    let Ok(entries) = std::fs::read_dir(log::sessions_dir(home)) else {
-        return 0;
-    };
     let mut removed = 0;
-    for entry in entries.flatten() {
+    for entry in crate::walk::children(&log::sessions_dir(home)) {
         let path = entry.path();
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;

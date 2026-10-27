@@ -55,7 +55,9 @@ impl ToolRegistry {
             && !named("command")
             && !named("job")
         {
-            return Ok(ToolOutput::ok(super::help::RUN_COMMAND.to_string()));
+            return Ok(ToolOutput::ok(super::catalog::help(
+                super::Builtin::RunCommand,
+            )));
         }
         let locked = self.policy.is_read_only();
         if let Some(id) = args

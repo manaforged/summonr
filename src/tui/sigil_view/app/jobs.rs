@@ -13,11 +13,6 @@ impl App {
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn job_move(&self, delta: isize) {
-        files::shift(&self.job_cursor, delta, self.job_rows().len());
-        self.refresh();
-    }
-
     pub(in crate::tui::sigil_view) fn job_enter(&self) {
         let rows = self.job_rows();
         if let Some(row) = rows.get(files::pick(&self.job_cursor, rows.len())) {

@@ -9,102 +9,10 @@ pub(crate) mod completions;
 pub(crate) mod decisions;
 pub(crate) mod gemini;
 pub(crate) mod responses;
+mod spec;
 pub(crate) mod traits;
 
-pub(crate) struct Spec {
-    pub(crate) name: &'static str,
-    pub(crate) headers: &'static [(&'static str, &'static str)],
-    pub(crate) sentinel: Option<&'static str>,
-    pub(crate) probe: Option<&'static str>,
-    pub(crate) images: ImageBudget,
-}
-
-pub(crate) struct ImageBudget {
-    pub(crate) types: &'static [&'static str],
-    pub(crate) tool_types: &'static [&'static str],
-    pub(crate) count: usize,
-    pub(crate) each: usize,
-    pub(crate) bytes: usize,
-    pub(crate) tool_images: bool,
-}
-
-const PNG_JPEG: &[&str] = &["image/png", "image/jpeg"];
-const WEB_IMAGES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
-const GEMINI_IMAGES: &[&str] = &[
-    "image/png",
-    "image/jpeg",
-    "image/webp",
-    "image/heic",
-    "image/heif",
-];
-const GEMINI_TOOL_IMAGES: &[&str] = &["image/png", "image/jpeg", "image/webp"];
-
-const fn images(
-    types: &'static [&'static str],
-    count: usize,
-    each: usize,
-    bytes: usize,
-) -> ImageBudget {
-    ImageBudget {
-        types,
-        tool_types: types,
-        count,
-        each,
-        bytes,
-        tool_images: true,
-    }
-}
-
-const SPEC: Spec = Spec {
-    name: "completions",
-    headers: &[],
-    sentinel: None,
-    probe: None,
-    images: images(PNG_JPEG, 100, 10_000_000, 20_000_000),
-};
-
-pub(crate) fn spec(wire: crate::endpoint::Wire) -> Spec {
-    let anthropic = images(WEB_IMAGES, 100, 10_000_000, 24_000_000);
-    match wire {
-        crate::endpoint::Wire::Anthropic => Spec {
-            name: "anthropic",
-            headers: &[("anthropic-version", "2023-06-01")],
-            probe: Some("max_input_tokens"),
-            images: anthropic,
-            ..SPEC
-        },
-        crate::endpoint::Wire::AgentSdk => Spec {
-            name: "agent-sdk",
-            images: anthropic,
-            ..SPEC
-        },
-        crate::endpoint::Wire::Gemini => Spec {
-            name: "gemini",
-            probe: Some("inputTokenLimit"),
-            images: ImageBudget {
-                tool_types: GEMINI_TOOL_IMAGES,
-                tool_images: false,
-                ..images(GEMINI_IMAGES, 3600, 15_000_000, 15_000_000)
-            },
-            ..SPEC
-        },
-        crate::endpoint::Wire::Responses => Spec {
-            name: "responses",
-            images: images(WEB_IMAGES, 1500, 256_000_000, 256_000_000),
-            ..SPEC
-        },
-        crate::endpoint::Wire::Completions => Spec {
-            sentinel: Some("[DONE]"),
-            ..SPEC
-        },
-        crate::endpoint::Wire::Decisions => Spec {
-            name: "decisions",
-            sentinel: Some("[DONE]"),
-            images: images(PNG_JPEG, 0, 0, 0),
-            ..SPEC
-        },
-    }
-}
+pub(crate) use spec::{ImageBudget, spec};
 
 pub(crate) fn tools(
     call: &CompletionRequest<'_>,
@@ -143,25 +51,8 @@ pub(crate) fn checked(function: &crate::provider::ToolFunction) -> Result<()> {
     arguments(&function.name, &function.arguments).map(drop)
 }
 
-const STATUS_MARKERS: &[(&str, u16)] = &[
-    ("overload", 503),
-    ("unavailable", 503),
-    ("server", 503),
-    ("api_error", 503),
-    ("internal", 503),
-    ("rate", 429),
-    ("exhausted", 429),
-];
-
 pub(crate) fn failed(status: Option<u16>, kind: &str, message: &str) -> Error {
-    let lower = kind.to_ascii_lowercase();
-    let code = status.unwrap_or_else(|| {
-        STATUS_MARKERS
-            .iter()
-            // complexity: bounded by the seven status markers
-            .find(|(marker, _)| lower.contains(marker))
-            .map_or(400, |(_, code)| *code)
-    });
+    let code = status.unwrap_or_else(|| super::client::status_code(kind));
     let mut error = super::client::response_failure(code, &format!("{kind}: {message}"), None);
     if let Error::Provider(failure) = &mut error {
         failure.status = status;
@@ -176,7 +67,7 @@ pub(crate) fn blocked(reason: &str) -> Error {
     )
 }
 
-pub(crate) enum Delta {
+pub enum Delta {
     Text(String),
     Thinking(String),
     Call(String),
@@ -331,7 +222,7 @@ pub(crate) trait Accumulate {
 }
 
 pub(crate) trait Chat {
-    type Stream: Accumulate;
+    type Stream: Accumulate + Send;
 
     fn path(model: &str, stream: bool) -> String;
 

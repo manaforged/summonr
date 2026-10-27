@@ -71,6 +71,14 @@ impl Hints {
     }
 
     #[must_use]
+    pub(in crate::tui) fn count(self, selected: usize, total: usize) -> Self {
+        if total == 0 {
+            return self;
+        }
+        self.right(format!("{} / {total}", selected.min(total - 1) + 1))
+    }
+
+    #[must_use]
     pub(in crate::tui) fn text(&self, keys: &Hotkeys) -> String {
         let shown = if canvas::is_window() {
             WINDOW_KEYS

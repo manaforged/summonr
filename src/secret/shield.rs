@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::SystemTime;
 
-use super::cache::{Stamp, settled, stamp};
+use crate::durable::store::{Stamp, settled, stamp};
+use crate::walk::{self, Walk};
 
 const DEPTH: usize = 3;
 const MIN_LEN: usize = 6;
@@ -147,19 +148,15 @@ fn files(workspace: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
         .filter_map(|name| home.as_ref().map(|home| home.join(name)))
         .chain(WORKSPACE_FILES.iter().map(|name| workspace.join(name)))
         .collect();
-    let walk = ignore::WalkBuilder::new(workspace)
-        .standard_filters(false)
-        .max_depth(Some(DEPTH))
-        .filter_entry(|entry| {
-            entry.depth() == 0
-                || !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !crate::SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
-        })
-        .build();
+    let walk = Walk {
+        gitignore: false,
+        depth: Some(DEPTH),
+        ..Walk::TOOL
+    };
     let mut folders = Vec::new();
-    for entry in walk.filter_map(Result::ok) {
+    for entry in walk.entries(workspace) {
         let name = entry.file_name().to_string_lossy();
-        if entry.file_type().is_some_and(|kind| kind.is_dir()) {
+        if walk::is_dir(&entry) {
             folders.push(entry.into_path());
         } else if env_file(&name) {
             paths.push(entry.into_path());

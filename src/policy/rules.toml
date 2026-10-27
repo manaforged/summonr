@@ -1,0 +1,251 @@
+inquiry_flags = ["--version", "--help"]
+
+text_hazards = [
+    { text = "drop database", reason = "it drops database objects" },
+    { text = "drop table", reason = "it drops database objects" },
+]
+
+[wrappers]
+env = ["-u", "-C", "--unset", "--chdir"]
+sudo = ["-u", "-g", "-h", "-p", "-C", "-T"]
+doas = []
+nice = ["-n"]
+nohup = []
+exec = []
+command = []
+builtin = []
+time = []
+xargs = ["-I", "-J", "-L", "-n", "-P", "-d", "-E", "-s", "-a"]
+timeout = ["-k", "--kill-after"]
+stdbuf = ["-i", "-o", "-e"]
+setsid = []
+flock = ["-w"]
+chronic = []
+eval = []
+then = []
+do = []
+else = []
+elif = []
+
+[xargs]
+name = "xargs"
+replace = ["-I", "-J", "--replace=", "-i"]
+token_flags = ["-I", "-J"]
+default_token = "{}"
+
+[roots]
+top = [
+    "bin", "boot", "dev", "etc", "home", "lib", "lib32", "lib64", "opt", "proc", "root", "run",
+    "sbin", "srv", "sys", "usr", "var", "tmp", "Applications", "Library", "System", "Users",
+    "Volumes", "private",
+]
+nested = ["usr", "etc", "var", "opt", "System", "Library", "private"]
+
+[git]
+modules = "modules"
+guards = ["hooks", "config", "commondir", "HEAD", "index", "refs", "packed-refs", "logs"]
+
+[secrets]
+read_files = [".env", "credentials", ".netrc", ".git-credentials", ".pypirc"]
+read_prefixes = [".env.", "credentials."]
+read_dirs = [".ssh", ".gnupg", ".aws", ".summonr", ".docker", ".kube", ".config/gh", ".config/gcloud"]
+write_files = [".env", ".bashrc", ".zshrc", ".zprofile", ".profile", ".bash_profile"]
+write_prefixes = [".env."]
+write_dirs = [".ssh", ".gnupg", ".summonr"]
+control = [[".summonr", "check.toml"], [".summonr", "policy.toml"]]
+
+[[verbs]]
+names = ["cat"]
+read = "always"
+native = "cat"
+
+[[verbs]]
+names = [
+    "ls", "tree", "wc", "echo", "printf", "pwd", "which", "env", "printenv", "type", "file", "stat",
+    "du", "df", "date", "true", "false", "test", "less", "more", "sort", "uniq", "diff", "cut",
+    "awk", "jq", "xxd", "od",
+]
+read = "always"
+
+[[verbs]]
+names = ["head"]
+read = "always"
+native = "head"
+clip = "head"
+
+[[verbs]]
+names = ["tail"]
+read = "always"
+clip = "tail"
+
+[[verbs]]
+names = ["grep"]
+read = "always"
+search = "contents"
+native = "grep"
+
+[[verbs]]
+names = ["rg"]
+read = "always"
+search = "contents"
+native = "rg"
+
+[[verbs]]
+names = ["sed"]
+read = { unless = [{ prefix = ["-i", "--in-place"] }] }
+write = { when = [{ prefix = ["-i", "--in-place"] }] }
+native = "sed"
+
+[[verbs]]
+names = ["find"]
+native = "find"
+read = { unless = [{ prefix = ["-delete", "-exec", "-ok"] }] }
+search = "names"
+write = { when = [{ any = ["-delete", "-exec", "-execdir"] }] }
+
+[[verbs.hazard.args]]
+when = [
+    { any = ["-delete"] },
+    { runs = { flags = ["-exec", "-execdir", "-ok", "-okdir"], verbs = ["rm", "rmdir", "unlink", "shred", "truncate"] } },
+]
+broad = true
+gate = "destructive"
+reason = "it deletes files across a system, home, or project root"
+
+[[verbs]]
+names = ["git"]
+read = { sub = ["status", "log", "diff", "show", "branch", "ls-files", "blame", "rev-parse"] }
+
+[verbs.hazard.sub]
+skip = ["-C", "-c"]
+
+[[verbs.hazard.sub.rules]]
+names = ["reset"]
+when = [{ any = ["--hard"] }]
+gate = "risky"
+reason = "it discards uncommitted changes"
+
+[[verbs.hazard.sub.rules]]
+names = ["clean"]
+when = [{ any = ["--force"] }, { short = "f" }]
+gate = "risky"
+reason = "it deletes untracked files"
+
+[[verbs.hazard.sub.rules]]
+names = ["checkout", "restore"]
+when = [{ any = ["."] }]
+gate = "risky"
+reason = "it discards uncommitted changes"
+
+[[verbs.hazard.sub.rules]]
+names = ["branch"]
+when = [{ any = ["-D"] }, { all = ["--delete", "--force"] }]
+gate = "risky"
+reason = "it force-deletes a branch"
+
+[[verbs.hazard.sub.rules]]
+names = ["push"]
+when = [
+    { any = ["--force", "-f", "--force-with-lease", "--delete", "--mirror"] },
+    { prefix = ["+", ":"] },
+]
+gate = "risky"
+reason = "it rewrites or deletes remote history"
+
+[[verbs.hazard.sub.rules]]
+names = ["stash"]
+when = [{ any = ["drop", "clear"] }]
+gate = "risky"
+reason = "it deletes stashed work"
+
+[[verbs.hazard.sub.rules]]
+names = ["filter-branch", "filter-repo"]
+when = ["always"]
+gate = "risky"
+reason = "it rewrites history"
+
+[[verbs]]
+names = ["ag", "ack"]
+search = "contents"
+
+[[verbs]]
+names = ["fd"]
+search = "names"
+
+[[verbs]]
+names = ["mdfind"]
+read = "always"
+search = "names"
+native = "mdfind"
+
+[[verbs]]
+names = ["locate"]
+read = "always"
+search = "names"
+
+[[verbs]]
+names = ["rm", "remove-item", "ri", "del", "erase", "rd"]
+write = "all"
+
+[[verbs.hazard.args]]
+when = [{ any = ["--recursive"] }, { short = "r" }, { short = "R" }]
+broad = true
+gate = "destructive"
+reason = "it deletes a system, home, or project root recursively"
+
+[[verbs]]
+names = ["shred"]
+write = "all"
+
+[[verbs.hazard.args]]
+when = ["always"]
+broad = false
+gate = "risky"
+reason = "it destroys file contents"
+
+[[verbs]]
+names = ["rmdir", "unlink", "chmod", "chown", "truncate", "tee", "dd"]
+write = "all"
+
+[[verbs]]
+names = ["mv", "cp", "ln", "install", "rsync"]
+write = "last"
+
+[[verbs]]
+names = ["mkdir", "touch", "md"]
+write = "creates"
+
+[[verbs]]
+names = ["cd"]
+cwd = "tracked"
+
+[[verbs]]
+names = ["pushd"]
+cwd = "changes"
+
+[[verbs]]
+names = ["terraform", "tofu"]
+
+[[verbs.hazard.args]]
+when = [{ any = ["destroy"] }]
+broad = false
+gate = "destructive"
+reason = "it destroys infrastructure"
+
+[[verbs]]
+names = ["kubectl"]
+
+[[verbs.hazard.args]]
+when = [{ first = "delete" }]
+broad = false
+gate = "destructive"
+reason = "it deletes cluster resources"
+
+[[verbs]]
+names = ["docker", "podman"]
+
+[[verbs.hazard.args]]
+when = [{ any = ["prune"] }]
+broad = false
+gate = "risky"
+reason = "it deletes container data"

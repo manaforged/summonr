@@ -144,8 +144,20 @@ pub(crate) fn a_goal_recovers_after_more_than_three_failed_checks() {
     std::fs::write(session.work.path().join("marker.txt"), "dirty\n").expect("break the check");
     let model = Model::start(vec![
         Step::Text("first attempt"),
+        Step::Call(
+            "write",
+            json!({"path": "marker.txt", "content": "dirty two\n"}),
+        ),
         Step::Text("second attempt"),
+        Step::Call(
+            "write",
+            json!({"path": "marker.txt", "content": "dirty three\n"}),
+        ),
         Step::Text("third attempt"),
+        Step::Call(
+            "write",
+            json!({"path": "marker.txt", "content": "dirty four\n"}),
+        ),
         Step::Text("fourth attempt"),
         Step::Call("write", json!({"path": "marker.txt", "content": "clean\n"})),
         Step::Text("repaired"),

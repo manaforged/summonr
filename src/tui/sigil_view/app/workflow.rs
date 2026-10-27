@@ -22,14 +22,7 @@ impl App {
         if self.workflow.naming.peek() {
             return;
         }
-        let last = Role::ALL.len().saturating_sub(1);
-        self.workflow.sel.set(
-            self.workflow
-                .sel
-                .peek()
-                .saturating_add_signed(delta)
-                .min(last),
-        );
+        files::shift(&self.workflow.sel, delta, Role::ALL.len());
     }
 
     pub(in crate::tui::sigil_view) fn cycle_workflow(&self, delta: isize) {
@@ -43,7 +36,7 @@ impl App {
         let current = self.workflow.name.peek();
         let index = names.iter().position(|name| *name == current);
         let next = match (index, delta.is_negative()) {
-            (Some(index), _) => (index as isize + delta).rem_euclid(names.len() as isize) as usize,
+            (Some(index), _) => files::cycle(index, delta, names.len()),
             (None, true) => names.len() - 1,
             (None, false) => 0,
         };

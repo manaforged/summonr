@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
-
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::process::{ChildStdin, ChildStdout};
+
+use crate::process::{Cap, Child, Tail};
 
 use super::super::{CompletionRequest, Effort, Message, Role, ToolDefinition};
 use super::frame::{Frame, Ready, ReplyKind};
@@ -38,8 +38,8 @@ pub(in crate::provider) struct Run {
     _group: Option<crate::tools::command::ProcessGroup>,
     stdin: ChildStdin,
     pub(super) reader: BufReader<ChildStdout>,
-    stderr: Arc<Mutex<Vec<u8>>>,
-    drain: Option<tokio::task::JoinHandle<()>>,
+    stderr: Tail,
+    secrets: Vec<String>,
     pub(super) tools: Vec<ToolDefinition>,
     pub(super) pending: Vec<Call>,
     thread: Option<String>,
@@ -58,9 +58,6 @@ pub(in crate::provider) struct Run {
 
 impl Drop for Run {
     fn drop(&mut self) {
-        if let Some(drain) = &self.drain {
-            drain.abort();
-        }
         let _killed = self.child.start_kill();
     }
 }
@@ -102,26 +99,24 @@ impl Run {
             None => None,
         };
         let args = arguments(&spec, prompt.as_ref().map(tempfile::NamedTempFile::path));
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let cwd = std::env::current_dir()?;
-        let process = crate::rpc::start(&crate::rpc::Launch {
-            program: &seat.program,
-            args: &args,
-            env: &seat.env,
-            unset: seat.unset,
-            cwd: &cwd,
-            base: crate::rpc::Env::Inherit,
-            stderr: crate::rpc::Stderr::Pipe,
-        })
+        let process = crate::process::start(
+            crate::process::Spec {
+                remove: seat.unset.iter().map(Into::into).collect(),
+                cwd: Some(cwd),
+                ..crate::process::Spec::new(&seat.program, args)
+            }
+            .envs(seat.env.iter().cloned()),
+        )
         .map_err(|error| {
             Error::Config(format!(
                 "{error}; install Claude Code and run `claude auth login`"
             ))
         })?;
-        let stderr = Arc::new(Mutex::new(Vec::new()));
-        let drain = process
-            .stderr
-            .map(|pipe| tokio::spawn(crate::rpc::tail(pipe, Arc::clone(&stderr))));
+        let stderr = Tail::spawn(
+            process.stderr,
+            Cap::Tail(crate::limits::limits().mcp_stderr_tail_bytes),
+        );
         let thread = match &spec.thread {
             Thread::Start(id) | Thread::Resume(id) => Some(id.clone()),
             Thread::Once => None,
@@ -132,7 +127,7 @@ impl Run {
             stdin: process.stdin,
             reader: BufReader::new(process.stdout),
             stderr,
-            drain,
+            secrets: seat.env.iter().map(|(_, value)| value.clone()).collect(),
             tools: spec.tools.to_vec(),
             pending: Vec::new(),
             thread,
@@ -221,14 +216,9 @@ impl Run {
     }
 
     pub(super) fn exited(&self, cause: &str) -> Error {
-        let tail = self
+        let note = self
             .stderr
-            .lock()
-            .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string())
-            .unwrap_or_default();
-        let note = tail
-            .lines()
-            .last()
+            .last_line(&self.secrets)
             .map(|last| format!(": {last}"))
             .unwrap_or_default();
         Error::provider(

@@ -67,10 +67,7 @@ pub(crate) fn valid(name: &str) -> bool {
 }
 
 fn collect(root: PathBuf, rows: &mut Vec<(String, String)>) {
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return;
-    };
-    for entry in entries.filter_map(std::result::Result::ok) {
+    for entry in crate::walk::children(&root) {
         let path = entry.path();
         let dir = std::fs::metadata(&path).is_ok_and(|meta| meta.is_dir());
         let Some((name, file)) = skill_file(path, dir) else {

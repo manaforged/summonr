@@ -109,11 +109,7 @@ pub fn live(workspace: &Path) -> Vec<String> {
 
 pub(crate) fn since(workspace: &Path, started: u64, session: Option<&str>) -> Vec<Record> {
     let root = dir(workspace);
-    let Ok(entries) = std::fs::read_dir(&root) else {
-        return Vec::new();
-    };
-    let mut jobs: Vec<Record> = entries
-        .flatten()
+    let mut jobs: Vec<Record> = crate::walk::children(&root)
         .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
         .filter_map(|entry| {
             let text = std::fs::read_to_string(entry.path()).ok()?;
@@ -297,11 +293,13 @@ pub(crate) async fn wait(
 pub(crate) fn alive_since(pid: u32, started: u64) -> bool {
     #[cfg(windows)]
     {
-        windows::started(pid).is_some_and(|created| created <= started.saturating_add(5))
+        crate::process::started(pid).is_some_and(|created| created <= started.saturating_add(5))
     }
     #[cfg(unix)]
     {
-        alive(pid) && start_secs(pid).is_none_or(|created| created <= started.saturating_add(5))
+        alive(pid)
+            && crate::process::started(pid)
+                .is_none_or(|created| created <= started.saturating_add(5))
     }
 }
 
@@ -316,39 +314,6 @@ pub(crate) fn alive(pid: u32) -> bool {
     sent || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
-#[cfg(target_os = "macos")]
-fn start_secs(pid: u32) -> Option<u64> {
-    tree::bsd_info(pid).map(|info| info.pbi_start_tvsec)
-}
-
-#[cfg(target_os = "linux")]
-#[expect(unsafe_code, reason = "std has no clock-tick query")]
-fn start_secs(pid: u32) -> Option<u64> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let ticks = stat
-        .rsplit_once(')')?
-        .1
-        .split_whitespace()
-        .nth(19)?
-        .parse::<u64>()
-        .ok()?;
-    let boot = std::fs::read_to_string("/proc/stat")
-        .ok()?
-        .lines()
-        .find_map(|line| line.strip_prefix("btime "))?
-        .trim()
-        .parse::<u64>()
-        .ok()?;
-    // SAFETY: sysconf reads one integer and touches no memory.
-    let hertz = u64::try_from(unsafe { libc::sysconf(libc::_SC_CLK_TCK) }).ok()?;
-    (hertz > 0).then(|| boot + ticks / hertz)
-}
-
-#[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
-fn start_secs(_pid: u32) -> Option<u64> {
-    None
-}
-
 #[path = "jobs/place.rs"]
 mod place;
 pub(crate) use place::dir;
@@ -356,10 +321,6 @@ pub(crate) use place::dir;
 #[path = "jobs/tree.rs"]
 mod tree;
 pub(crate) use tree::{block, child_lines};
-
-#[cfg(windows)]
-#[path = "jobs/windows.rs"]
-mod windows;
 
 fn check_id(id: &str) -> Result<&str> {
     if id.is_empty() || id.len() > ID_MAX {

@@ -26,4 +26,24 @@ impl Ui {
     pub fn event(&self, event: Event) {
         drop(self.0.send(Msg::Event(event)));
     }
+
+    pub fn client(&self, endpoint: &crate::endpoint::Endpoint) -> crate::Result<crate::Client> {
+        client(&self.0, endpoint)
+    }
+}
+
+pub(crate) fn client(
+    ui: &UnboundedSender<Msg>,
+    endpoint: &crate::endpoint::Endpoint,
+) -> crate::Result<crate::Client> {
+    let ui = ui.clone();
+    Ok(crate::Client::connect(endpoint)?.on_stream(move |delta| {
+        let message = match delta {
+            crate::Delta::Text(text) => Msg::Event(Event::Delta { text: text.clone() }),
+            crate::Delta::Thinking(text) => Msg::Event(Event::Reasoning { text: text.clone() }),
+            crate::Delta::Call(name) => Msg::Calling(name.clone()),
+            crate::Delta::Progress => return,
+        };
+        drop(ui.send(message));
+    }))
 }

@@ -207,11 +207,6 @@ impl App {
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn tree_move(&self, delta: isize) {
-        files::shift(&self.tree_cursor, delta, self.tree_rows().len());
-        self.refresh();
-    }
-
     pub(in crate::tui::sigil_view) fn tree_enter(&self) {
         let rows = self.tree_rows();
         if let Some(row) = rows.get(files::pick(&self.tree_cursor, rows.len())) {

@@ -1,7 +1,8 @@
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Token, Tone,
-    container, list_row_with, notice_band, section_label,
+    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Token,
+    Tone, WidgetLayoutExt, container, list_row_with, notice_band, section_label, text_edit,
 };
+use sigil::widgets::{RowRender, TextEditBuilder, VirtualListBuilder};
 
 use crate::tui::sigil_view::canvas;
 use crate::tui::sigil_view::look::Look;
@@ -92,4 +93,39 @@ pub(in crate::tui) fn blank() -> NodeBuilder {
 
 pub(in crate::tui) const fn field_width(width: usize) -> usize {
     width.saturating_sub(FIELD_KEY)
+}
+
+pub(in crate::tui) fn overlay_list<T: 'static, R: RowRender<T>>(
+    list: VirtualListBuilder<T, R>,
+    row: f32,
+    shown: usize,
+) -> NodeBuilder {
+    let height = row * shown as f32;
+    container()
+        .layout(LayoutStyle::block().fill_width())
+        .child(list.row_height(row).height(height).viewport_height(height))
+}
+
+pub(in crate::tui) fn filter_field(query: Signal<String>, caret: Signal<usize>) -> TextEditBuilder {
+    text_edit(query)
+        .caret_position(caret)
+        .placeholder(super::FILTER_HINT)
+        .height(canvas::overlay_list_row())
+}
+
+pub(in crate::tui) fn filter_column() -> NodeBuilder {
+    container().layout(
+        LayoutStyle::flex_column()
+            .fill_width()
+            .grow(1.0)
+            .min_size(0.0, 0.0),
+    )
+}
+
+pub(in crate::tui) fn plain(text: impl Into<String>) -> NodeBuilder {
+    container().child(
+        sigil::kernel::text(text.into())
+            .nowrap()
+            .text_color(Token::OnSurface),
+    )
 }

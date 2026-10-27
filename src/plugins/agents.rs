@@ -96,11 +96,7 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
 }
 
 pub(super) fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
-    let Ok(entries) = std::fs::read_dir(plugin.dir.join(DIR)) else {
-        return Vec::new();
-    };
-    entries
-        .filter_map(std::result::Result::ok)
+    crate::walk::children(&plugin.dir.join(DIR))
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|ext| ext == EXTENSION))
         .filter_map(|path| {

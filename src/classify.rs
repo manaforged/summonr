@@ -9,7 +9,7 @@ pub mod sweep;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::endpoint::{Endpoint, Wire};
+use crate::endpoint::Endpoint;
 use crate::error::{Error, ProviderFailureKind, Result};
 
 pub(crate) const AT_ONCE: usize = 8;
@@ -194,7 +194,7 @@ pub async fn ask(
 }
 
 fn target(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> Result<()> {
-    if endpoint.wire != Wire::Decisions {
+    if !crate::provider::wire::spec(endpoint.wire).classifies() {
         return Err(Error::Config(format!(
             "`{}` is not a classify endpoint; see `summonr endpoints`",
             endpoint.name

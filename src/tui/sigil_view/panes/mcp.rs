@@ -1,10 +1,11 @@
 use sigil::prelude::Paint;
 use sigil::prelude::{IntoNode, MouseButton, NodeBuilder, NodeEventsExt, Tone, chip, list_row};
 
-use super::App;
 use super::body::{detail, header};
+use super::{App, Pane};
 use crate::mcp::{McpState, McpTransport, ServerStatus};
 use crate::supervise::ServerKind;
+use sigil::prelude::context_menu;
 
 const EMPTY: &str = "no mcp servers; summonr mcp add configures one";
 
@@ -21,21 +22,20 @@ pub(super) fn mcp(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(dim(EMPTY.to_string()));
     }
     for (index, server) in model.mcp.iter().enumerate() {
-        let menu = app.clone();
-        let toggle = app.clone();
-        column = column.child(
+        let (menu, point, toggle) = (app.clone(), app.clone(), app.clone());
+        column = column.child(context_menu(
             list_row(index == cursor, server.name.clone(), summary(server))
                 .child(chip(server.state.label(), tone(server.state)))
                 .pointer_down(move |event| {
                     if event.button == Some(MouseButton::Right) {
-                        menu.context_row(index);
-                    } else {
-                        toggle.mcp_cursor.set(index);
-                        toggle.mcp_enter();
+                        return point.pane_point(Pane::Mcp, index);
                     }
+                    toggle.mcp_cursor.set(index);
+                    toggle.mcp_enter();
                     event.stop_propagation();
                 }),
-        );
+            move || menu.row_menu(Pane::Mcp, index),
+        ));
         if let Some(text) = &server.detail {
             column = column.child(dim(text.clone()));
         }
@@ -80,7 +80,6 @@ fn tone(state: McpState) -> Tone {
 fn dim(text: String) -> impl IntoNode + 'static {
     sigil::kernel::text(text)
         .nowrap()
-        .text_color(sigil::prelude::Token::OnSurface)
         .font_size(12.0)
         .text_color(sigil::prelude::Token::Gray11)
 }

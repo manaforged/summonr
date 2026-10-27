@@ -36,10 +36,7 @@ pub(crate) fn live(dir: &Path) -> Vec<Agent> {
     let cutoff = now().saturating_sub(crate::limits::limits().mail_stale_secs);
     let sweep = now().saturating_sub(crate::limits::limits().mail_sweep_secs);
     let mut roster = Vec::new();
-    for entry in std::fs::read_dir(dir.join("agents"))
-        .into_iter()
-        .flatten()
-        .filter_map(|entry| entry.ok())
+    for entry in crate::walk::children(&dir.join("agents"))
         .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
     {
         let Ok(text) = std::fs::read_to_string(entry.path()) else {

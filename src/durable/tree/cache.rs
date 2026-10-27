@@ -39,10 +39,7 @@ pub(crate) fn remember(cache: &Path, root: &Path, snapshot: &mut Snapshot) {
 }
 
 pub(super) fn prune(cache: &Path, keep: &Path, retain: Duration, now: SystemTime) {
-    let Ok(entries) = std::fs::read_dir(cache) else {
-        return;
-    };
-    for entry in entries.flatten() {
+    for entry in crate::walk::children(cache) {
         let path = entry.path();
         let stale = path != keep
             && entry

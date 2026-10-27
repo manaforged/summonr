@@ -1,6 +1,5 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container, signal,
-    virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, container, signal, virtual_list,
 };
 
 use super::{App, canvas};
@@ -8,7 +7,7 @@ use crate::AuthInfo;
 use crate::endpoint::State;
 use crate::tui::sigil_view::app::{Login, Note, matching, section};
 use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, Size, Tab, alt, group, pick, tab_strip,
+    Bindings, Dialog, Hints, Key, Size, Tab, alt, group, overlay_list, pick, tab_strip,
 };
 
 mod detail;
@@ -169,7 +168,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         };
     let visible = canvas::list_rows(canvas::picker_rows(app.viewport.get().1), chrome);
     let state = chip(choice, states.get(&choice.name));
-    let list = container().layout(LayoutStyle::block().fill_width()).child(
+    let list = overlay_list(
         virtual_list(
             lookup,
             move |_, (name, chip, index): &(String, String, Option<usize>)| match index {
@@ -177,11 +176,10 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
                 None => group(name.clone()),
             },
         )
-        .row_height(canvas::overlay_list_row())
-        .height(canvas::overlay_list_row() * visible as f32)
-        .viewport_height(canvas::overlay_list_row() * visible as f32)
         .scroll_bind(app.auth.scroll)
         .follow_row(signal(shown)),
+        canvas::overlay_list_row(),
+        visible,
     );
     if !split(app) {
         let wide = span(app).saturating_sub(10);

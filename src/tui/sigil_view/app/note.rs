@@ -163,33 +163,6 @@ impl App {
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn hunk_context(&self, index: usize) {
-        let Some(path) = self.diff_view.peek() else {
-            return;
-        };
-        let hunks = self.hunks();
-        let Some(hunk) = hunks.get(index) else {
-            return;
-        };
-        self.hunk_cursor.set(index);
-        self.pane_focus.set(true);
-        self.context.set(Some(Context {
-            col: 0,
-            row: 0,
-            cursor: 0,
-            target: FileRow {
-                path,
-                name: hunk.header.clone(),
-                depth: 0,
-                dir: false,
-                open: false,
-            },
-            kind: Pane::Diff,
-            hunk: Some(hunk.id.clone()),
-        }));
-        self.refresh();
-    }
-
     pub(in crate::tui::sigil_view) fn note_start(&self, path: String, hunk: String) {
         let existing = self
             .hunk_note(&path, &hunk)

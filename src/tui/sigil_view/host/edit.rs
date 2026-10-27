@@ -1,11 +1,10 @@
 use super::*;
 
 pub(in crate::tui::sigil_view) fn editor() -> String {
-    std::env::var("VISUAL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| std::env::var("EDITOR").ok())
-        .filter(|value| !value.trim().is_empty())
+    ["VISUAL", "EDITOR"]
+        .into_iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .find(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "vi".to_string())
 }
 

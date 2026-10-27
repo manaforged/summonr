@@ -10,11 +10,6 @@ impl App {
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn peer_move(&self, delta: isize) {
-        files::shift(&self.peer_cursor, delta, self.model.get().peers.len());
-        self.refresh();
-    }
-
     pub(in crate::tui::sigil_view) fn peer_enter(&self) {
         let peers = self.model.get().peers.clone();
         let Some(agent) = peers.get(files::pick(&self.peer_cursor, peers.len())) else {

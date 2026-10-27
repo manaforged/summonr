@@ -1,7 +1,8 @@
 use sigil::prelude::{MouseButton, NodeBuilder, NodeEventsExt, Tone, chip, list_row};
 
-use super::App;
 use super::body::{Empty, empty, header};
+use super::{App, Pane};
+use sigil::prelude::context_menu;
 
 const NO_PEERS: Empty = Empty {
     window: "Other summonr sessions running on this computer show here. Pick one to mention it in your prompt.",
@@ -20,8 +21,7 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(empty(&NO_PEERS));
     }
     for (index, agent) in model.peers.iter().enumerate() {
-        let menu = app.clone();
-        let pick = app.clone();
+        let (menu, point, pick) = (app.clone(), app.clone(), app.clone());
         let tone = if agent.status == crate::mail::Presence::Working {
             Tone::Info
         } else {
@@ -37,7 +37,7 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
             .rsplit(['/', '\\'])
             .find(|part| !part.is_empty())
             .unwrap_or(&agent.cwd);
-        column = column.child(
+        column = column.child(context_menu(
             list_row(
                 index == cursor,
                 format!("@{}", agent.label()),
@@ -50,14 +50,14 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
             .child(chip(agent.status.to_string(), tone))
             .pointer_down(move |event| {
                 if event.button == Some(MouseButton::Right) {
-                    menu.context_row(index);
-                } else {
-                    pick.peer_cursor.set(index);
-                    pick.peer_enter();
+                    return point.pane_point(Pane::Peers, index);
                 }
+                pick.peer_cursor.set(index);
+                pick.peer_enter();
                 event.stop_propagation();
             }),
-        );
+            move || menu.row_menu(Pane::Peers, index),
+        ));
     }
     column
 }

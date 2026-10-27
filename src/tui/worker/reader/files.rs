@@ -1,18 +1,20 @@
 use std::path::{Path, PathBuf};
 
-use ignore::WalkBuilder;
 use notify::event::{EventKind, ModifyKind};
 use notify::{Event as NotifyEvent, RecursiveMode, Watcher};
 
 use crate::diff;
 use crate::error::{Error, Result};
+use crate::walk::Walk;
 
 pub(super) fn walk(root: &Path, depth: Option<usize>) -> impl Iterator<Item = ignore::DirEntry> {
-    WalkBuilder::new(root)
-        .require_git(false)
-        .max_depth(depth)
-        .build()
-        .filter_map(std::result::Result::ok)
+    Walk {
+        dotfiles: false,
+        skip: &[],
+        depth,
+        ..Walk::TOOL
+    }
+    .entries(root)
 }
 
 pub(super) fn watch(watcher: &mut impl Watcher, dirs: Vec<PathBuf>) -> notify::Result<()> {

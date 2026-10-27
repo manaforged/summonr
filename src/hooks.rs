@@ -1,16 +1,14 @@
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::Command;
+use tokio::io::AsyncWriteExt;
+
+use crate::process::{Cap, Env, Process, Spec, Tail};
 
 use crate::tools::Builtin;
 
 mod config;
-
-const OUTPUT_MAX: u64 = 64 * 1024;
 
 #[must_use]
 pub(crate) fn builtin(name: &str) -> Option<Builtin> {
@@ -161,55 +159,47 @@ impl Hook {
 
     async fn execute(&self, workspace: &Path, body: &Value) -> Result<Outcome, String> {
         let program = crate::shell::program().map_err(|error| error.to_string())?;
-        let mut command = Command::new(program);
-        command
-            .env_clear()
-            .envs(crate::tools::command::command_env())
-            .args(crate::shell::arguments(&self.command, workspace))
-            .current_dir(workspace)
-            .env("CLAUDE_PROJECT_DIR", workspace)
-            .envs(crate::prompt::summonr_home().map(|home| ("SUMMONR_HOME", home)))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        #[cfg(unix)]
-        command.process_group(0);
-        if let Some(root) = &self.root {
-            command
-                .env("CLAUDE_PLUGIN_ROOT", root)
-                .env("SUMMONR_PLUGIN_ROOT", root);
-            if let Some(data) = root
-                .file_name()
-                .and_then(|name| crate::plugins::data_dir(&name.to_string_lossy()).ok())
-            {
-                command
-                    .env("CLAUDE_PLUGIN_DATA", &data)
-                    .env("SUMMONR_PLUGIN_DATA", &data);
-            }
+        let root = self.root.as_ref();
+        let data = root
+            .and_then(|root| root.file_name())
+            .and_then(|name| crate::plugins::data_dir(&name.to_string_lossy()).ok());
+        let spec = Spec {
+            cwd: Some(workspace.to_path_buf()),
+            base: Env::Clean,
+            ..Spec::new(program, crate::shell::arguments(&self.command, workspace))
         }
-        let mut child = command
-            .spawn()
+        .envs([("CLAUDE_PROJECT_DIR", workspace.as_os_str())])
+        .envs(crate::prompt::summonr_home().map(|home| ("SUMMONR_HOME", home)))
+        .envs(
+            root.into_iter()
+                .flat_map(|root| [("CLAUDE_PLUGIN_ROOT", root), ("SUMMONR_PLUGIN_ROOT", root)]),
+        )
+        .envs(
+            data.iter()
+                .flat_map(|data| [("CLAUDE_PLUGIN_DATA", data), ("SUMMONR_PLUGIN_DATA", data)]),
+        );
+        let Process {
+            mut child,
+            mut stdin,
+            stdout,
+            stderr,
+            group,
+        } = crate::process::start(spec)
             .map_err(|error| format!("hook `{}` did not start: {error}", self.command))?;
-        let group = child.id().map(crate::tools::command::ProcessGroup::new);
         let text = body.to_string();
+        let max = crate::limits::limits().hook_output_max_bytes;
+        let mut stdout = Tail::spawn(Some(stdout), Cap::Head(max));
+        let mut stderr = Tail::spawn(stderr, Cap::Head(max));
         let work = async move {
-            let stdin = child.stdin.take();
-            let feed = async move {
-                if let Some(mut stdin) = stdin {
-                    drop(stdin.write_all(text.as_bytes()).await);
-                }
-            };
-            let ((), stdout, stderr) = tokio::join!(
-                feed,
-                read_capped(child.stdout.take()),
-                read_capped(child.stderr.take())
-            );
+            drop(stdin.write_all(text.as_bytes()).await);
+            drop(stdin);
             let status = child.wait().await?;
+            drop(stdout.settle().await);
+            drop(stderr.settle().await);
             Ok::<_, std::io::Error>(Outcome {
                 code: status.code(),
-                stdout,
-                stderr,
+                stdout: stdout.text().trim().to_string(),
+                stderr: stderr.text().trim().to_string(),
             })
         };
         let finished = tokio::time::timeout(crate::limits::limits().job_wait(), work).await;
@@ -311,16 +301,6 @@ struct Outcome {
     code: Option<i32>,
     stdout: String,
     stderr: String,
-}
-
-async fn read_capped(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> String {
-    let Some(mut pipe) = pipe else {
-        return String::new();
-    };
-    let mut bytes = Vec::new();
-    drop((&mut pipe).take(OUTPUT_MAX).read_to_end(&mut bytes).await);
-    drop(tokio::io::copy(&mut pipe, &mut tokio::io::sink()).await);
-    String::from_utf8_lossy(&bytes).trim().to_string()
 }
 
 fn judge(dialect: Dialect, event: HookEvent, outcome: Outcome) -> Verdict {

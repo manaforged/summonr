@@ -48,7 +48,7 @@ impl App {
         self.flip(|prefs| prefs.tools = tools);
     }
 
-    pub(super) fn fold_cycle(&self) {
+    pub(in crate::tui::sigil_view) fn fold_cycle(&self) {
         use crate::prefs::{ToolOutput, Visibility};
         let prefs = &self.model.peek().prefs;
         let (reasoning, tools) = match (prefs.reasoning, prefs.tools) {

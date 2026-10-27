@@ -1,23 +1,18 @@
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::time::Instant;
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
+use tokio::process::{ChildStdin, ChildStdout};
 
 use super::{Notice, agreed, hello, notification, request};
 use crate::error::{Error, Result};
+use crate::process::{Cap, Child, Env, Spec, Tail};
 use crate::tools::command::ProcessGroup;
 
-mod process;
 mod reply;
-
-pub(crate) use process::{Env, Launch, Process, Stderr, start};
-
-const SECRET_MIN: usize = 8;
 
 pub(crate) struct Client {
     group: Option<ProcessGroup>,
@@ -28,8 +23,7 @@ pub(crate) struct Client {
     inflight: Vec<Value>,
     roots: Value,
     broken: bool,
-    stderr: Arc<Mutex<Vec<u8>>>,
-    drain: Option<tokio::task::JoinHandle<()>>,
+    stderr: Tail,
     secrets: Vec<String>,
     wait: Duration,
     next: i64,
@@ -99,19 +93,18 @@ pub(crate) struct Spawn<'a> {
 
 impl Client {
     pub(crate) fn spawn(launch: &Spawn<'_>) -> Result<Self> {
-        let process = process::start(&process::Launch {
-            program: launch.program,
-            args: launch.args,
-            env: launch.env,
-            unset: &[],
-            cwd: launch.cwd,
-            base: process::Env::Clean,
-            stderr: process::Stderr::Pipe,
-        })?;
-        let stderr = Arc::new(Mutex::new(Vec::new()));
-        let drain = process
-            .stderr
-            .map(|pipe| tokio::spawn(tail(pipe, Arc::clone(&stderr))));
+        let process = crate::process::start(
+            Spec {
+                cwd: Some(launch.cwd.to_path_buf()),
+                base: Env::Clean,
+                ..Spec::new(launch.program, launch.args)
+            }
+            .envs(launch.env.iter().cloned()),
+        )?;
+        let stderr = Tail::spawn(
+            process.stderr,
+            Cap::Tail(crate::limits::limits().mcp_stderr_tail_bytes),
+        );
         Ok(Self {
             group: process.group,
             child: Some(process.child),
@@ -122,13 +115,7 @@ impl Client {
             roots: roots(launch.cwd),
             broken: false,
             stderr,
-            drain,
-            secrets: launch
-                .env
-                .iter()
-                .map(|(_, value)| value.clone())
-                .filter(|value| value.len() >= SECRET_MIN)
-                .collect(),
+            secrets: launch.env.iter().map(|(_, value)| value.clone()).collect(),
             wait: launch.wait,
             next: 1,
         })
@@ -278,45 +265,27 @@ impl Client {
     }
 
     async fn settle_stderr(&mut self) -> Result<()> {
-        if let Some(drain) = self.drain.as_mut()
-            && let Err(error) = drain.await
+        if let Err(error) = self.stderr.settle().await
             && !error.is_cancelled()
         {
-            self.drain = None;
             return Err(Error::Tool(format!(
                 "the child exited; stderr capture failed: {error}{}",
                 self.stderr_note()
             )));
         }
-        self.drain = None;
         Ok(())
     }
 
     fn stderr_note(&self) -> String {
-        let bytes = self
-            .stderr
-            .lock()
-            .map(|bytes| bytes.clone())
-            .unwrap_or_default();
-        let text = String::from_utf8_lossy(&bytes);
-        text.lines()
-            .rev()
-            .find(|line| !line.trim().is_empty())
-            .map(|line| {
-                format!(
-                    "; stderr: {}",
-                    crate::text::redact(line.trim(), self.secrets.iter().map(String::as_str))
-                )
-            })
+        self.stderr
+            .last_line(&self.secrets)
+            .map(|line| format!("; stderr: {line}"))
             .unwrap_or_default()
     }
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
-        if let Some(drain) = &self.drain {
-            drain.abort();
-        }
         drop(self.stdin.take());
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
@@ -341,23 +310,6 @@ fn frame_line(value: &Value) -> Result<String> {
     Ok(line)
 }
 
-pub(crate) async fn tail(mut pipe: ChildStderr, keep: Arc<Mutex<Vec<u8>>>) {
-    let mut chunk = [0_u8; 1024];
-    while let Ok(read) = pipe.read(&mut chunk).await {
-        if read == 0 {
-            break;
-        }
-        let Ok(mut bytes) = keep.lock() else {
-            break;
-        };
-        bytes.extend_from_slice(&chunk[..read]);
-        let excess = bytes
-            .len()
-            .saturating_sub(crate::limits::limits().mcp_stderr_tail_bytes);
-        bytes.drain(..excess);
-    }
-}
-
 fn roots(cwd: &Path) -> Value {
     let uri = url::Url::from_directory_path(cwd)
         .map(|uri| uri.to_string())
@@ -368,3 +320,7 @@ fn roots(cwd: &Path) -> Value {
         .unwrap_or_default();
     json!([{"uri": uri, "name": name}])
 }
+
+#[cfg(all(test, unix))]
+#[path = "client/process_tests.rs"]
+mod tests;

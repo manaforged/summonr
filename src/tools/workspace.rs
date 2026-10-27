@@ -44,7 +44,9 @@ impl ToolRegistry {
             Some(Some(ReadOp::List)) => self.list_dir(args).map(ToolOutput::ok),
             Some(Some(ReadOp::Search)) => self.search_files(args).map(ToolOutput::ok),
             Some(Some(ReadOp::Image)) => self.show_image(args),
-            Some(Some(ReadOp::Help)) => Ok(ToolOutput::ok(super::help::read())),
+            Some(Some(ReadOp::Help)) => {
+                Ok(ToolOutput::ok(super::catalog::help(super::Builtin::Read)))
+            }
             Some(None) => Err(Error::Tool(format!("unknown read operation `{name}`"))),
         }
     }
@@ -77,7 +79,7 @@ impl ToolRegistry {
         if super::args::named(args, "op") == Some("help")
             && super::args::named(args, "path").is_none()
         {
-            return Ok(ToolOutput::ok(super::help::EDIT.to_string()));
+            return Ok(ToolOutput::ok(super::catalog::help(super::Builtin::Edit)));
         }
         self.apply_edit("edit", args).await
     }

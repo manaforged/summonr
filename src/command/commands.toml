@@ -1,0 +1,76 @@
+[retired]
+"/auth" = "/login"
+"/quit" = "/exit"
+"/rollback" = "/undo files"
+"/branch" = "/fork"
+"/tree" = "/resume"
+"/session" = "/status"
+"/stats" = "/status"
+"/profile" = "/usage session"
+"/write" = "/permissions write"
+"/layout" = "/pane"
+"/theme" = "/settings"
+"/tools" = "/settings"
+"/reasoning" = "/settings"
+"/receipts" = "/settings"
+"/mail" = "/settings"
+"/modules" = "/settings"
+
+[[group]]
+title = "conversation and sessions"
+commands = [
+  { name = "/resume", takes = "value", usage = "[ID|NAME]", help = "open another session" },
+  { name = "/new", takes = "bare", help = "start another session beside this one" },
+  { name = "/name", takes = "value", usage = "[TEXT]", help = "name this session" },
+  { name = "/clear", takes = "bare", help = "start a fresh context; files stay" },
+  { name = "/compact", takes = "bare", help = "summarize earlier turns" },
+  { name = "/retry", takes = "bare", help = "continue a failed or cancelled turn (F5)" },
+  { name = "/undo", takes = "value", usage = "[files [N]]", help = "undo the last turn; files N restores files" },
+  { name = "/fork", takes = "text", usage = "[TEXT]", help = "fork this session; TEXT picks a turn" },
+  { name = "/export", takes = "value", usage = "[PATH]", help = "write this session as markdown" },
+  { name = "/copy", takes = "value", usage = "[all]", help = "copy the last reply; all copies everything" },
+  { name = "/search", takes = "text", usage = "TEXT", help = "find text in this conversation" },
+  { name = "/history", takes = "text", usage = "[TEXT]", help = "reuse an earlier prompt" },
+  { name = "/status", takes = "bare", help = "session id, log path, and model" },
+  { name = "/mcp", takes = "bare", help = "connected MCP servers and their tools" },
+  { name = "/usage", takes = "value", usage = "[session]", help = "token spend; session profiles this session" },
+  { name = "/agents", takes = "bare", help = "list agent sessions on this machine" },
+  { name = "/memory", takes = "bare", help = "show the memory files and their size" },
+  { name = "/exit", takes = "bare", help = "quit summonr" },
+  { name = "/skills", takes = "bare", help = "list installed skills from their current files" },
+]
+
+[[group]]
+title = "model and mode"
+commands = [
+  { name = "/model", takes = "value", usage = "[NAME] [LEVEL]", help = "choose the model; LEVEL sets the effort" },
+  { name = "/effort", takes = "value", usage = "[none|minimal|low|medium|high|xhigh|max]", help = "set the reasoning effort" },
+  { name = "/workflow", takes = "text", usage = "[NAME]", help = "choose models for scout, work, and review" },
+  { name = "/login", takes = "value", usage = "[NAME]", help = "sign in to a provider or store its key" },
+  { name = "/auto", takes = "bare", help = "return to auto mode" },
+  { name = "/goal", takes = "text", usage = "TEXT", help = "work toward an objective across turns" },
+  { name = "/steps", takes = "value", usage = "PLAN.md|clear", help = "run a plan's `## Steps` one at a time" },
+]
+
+[[group]]
+title = "files and panes"
+commands = [
+  { name = "/diff", takes = "value", usage = "[PATH]", help = "changes against the base, or one PATH" },
+  { name = "/view", takes = "value", usage = "PATH", help = "read a file in a pane" },
+  { name = "/pane", takes = "value", usage = "[NAME]", help = "files, ledger, diff, worktrees, jobs, mcp, peers, or a layout" },
+]
+
+[[group]]
+title = "settings and permissions"
+commands = [
+  { name = "/settings", takes = "bare", help = "theme, tool output, reasoning, modules, keys" },
+  { name = "/permissions", takes = "text", usage = "[write]", help = "extra write paths for --strict" },
+  { name = "/help", takes = "bare", help = "list commands and keys" },
+]
+
+[[group]]
+title = "developer"
+developer = true
+commands = [
+  { name = "/demo", takes = "bare", help = "show chat rendering: markdown, mermaid, charts, images, diffs" },
+]

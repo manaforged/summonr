@@ -20,7 +20,7 @@ const OUTPUT_MAX: usize = 50 * 1024;
 impl ToolRegistry {
     pub(in crate::tools) fn search_files(&self, args: &Value) -> Result<String> {
         if args.get("op").and_then(Value::as_str) == Some("help") {
-            return Ok(crate::tools::help::search());
+            return Ok(crate::tools::catalog::help(crate::tools::Builtin::Search));
         }
         let (roots, missing) = self.search_roots(args)?;
         let query = Arc::new(self.query(args, roots)?);

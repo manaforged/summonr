@@ -46,20 +46,14 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn hunk_move(&self, delta: isize) {
-        let count = self.hunks().len();
-        if count == 0 {
-            return;
-        }
-        let cursor = self.hunk_cursor.peek().min(count - 1) as isize;
-        self.hunk_cursor
-            .set((cursor + delta).clamp(0, count as isize - 1) as usize);
+        files::shift(&self.hunk_cursor, delta, self.hunks().len());
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn current_hunk(&self) -> Option<(String, String)> {
         let path = self.diff_view.peek()?;
         let hunks = self.hunks();
-        let hunk = hunks.get(self.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))?;
+        let hunk = hunks.get(files::pick(&self.hunk_cursor, hunks.len()))?;
         Some((path, hunk.id.clone()))
     }
 

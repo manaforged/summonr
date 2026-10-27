@@ -22,9 +22,9 @@ impl Work {
 
     pub(super) fn ledger(&self) -> Vec<String> {
         match self.policy {
-            Policy::Single => self.planned_ledger(),
-            Policy::Steps => self.step_ledger(),
-            Policy::Goal { .. } => Vec::new(),
+            WorkKind::Single => self.planned_ledger(),
+            WorkKind::Steps => self.step_ledger(),
+            WorkKind::Goal => Vec::new(),
         }
     }
 

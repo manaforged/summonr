@@ -21,17 +21,6 @@ pub(super) fn directory() -> Option<PathBuf> {
     pick(std::env::var(DIR).ok())
 }
 
-pub(super) fn wire_name(wire: Wire) -> &'static str {
-    match wire {
-        Wire::Anthropic => "anthropic",
-        Wire::Gemini => "gemini",
-        Wire::Responses => "responses",
-        Wire::Completions => "completions",
-        Wire::Decisions => "decisions",
-        Wire::AgentSdk => "agent-sdk",
-    }
-}
-
 #[derive(Clone)]
 pub(super) struct Sink {
     path: PathBuf,
@@ -49,10 +38,13 @@ impl Sink {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|since| since.as_secs())
             .unwrap_or_default();
-        let path = dir.join(format!("{}-{stamp}-{run:04}-{kind}.jsonl", wire_name(wire)));
+        let path = dir.join(format!(
+            "{}-{stamp}-{run:04}-{kind}.jsonl",
+            super::wire::spec(wire).name
+        ));
         eprintln!(
             "summonr: capturing {} frames to {}",
-            wire_name(wire),
+            super::wire::spec(wire).name,
             path.display()
         );
         Some(Self { path })

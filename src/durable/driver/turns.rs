@@ -56,14 +56,6 @@ impl SessionDriver {
         })
     }
 
-    pub(crate) fn start_provider(
-        &mut self,
-        model: &str,
-        exposure: Exposure,
-    ) -> Result<Attempt, DriverError> {
-        self.start_round(Purpose::Agent, model, exposure)
-    }
-
     pub(crate) fn start_round(
         &mut self,
         purpose: Purpose,

@@ -214,11 +214,8 @@ impl Picker {
     }
 
     pub(super) fn shift(self, model: &Model, delta: isize) {
-        let last = self
-            .rows(model)
-            .map_or(0, |rows| rows.len().saturating_sub(1));
-        self.selected
-            .set(self.selected.peek().saturating_add_signed(delta).min(last));
+        let len = self.rows(model).map_or(0, |rows| rows.len());
+        super::app::shift(&self.selected, delta, len);
     }
 }
 

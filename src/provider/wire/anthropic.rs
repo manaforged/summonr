@@ -24,10 +24,6 @@ impl Chat for Wire {
         "/messages".to_string()
     }
 
-    fn headers() -> &'static [(&'static str, &'static str)] {
-        &[("anthropic-version", "2023-06-01")]
-    }
-
     fn beta(call: &CompletionRequest<'_>) -> Option<(&'static str, &'static str)> {
         call.traits.bound.then_some(("anthropic-beta", BINDING))
     }

@@ -4,9 +4,7 @@ use serde_json::Value;
 
 use crate::error::{Error, Result};
 
-use super::{
-    ToolOutput, ToolRegistry, nonempty_path, object_bool, object_string, object_usize, parse_args,
-};
+use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_string, object_usize};
 
 mod apply_patch;
 mod edit;
@@ -23,85 +21,68 @@ pub(crate) use image::{IMAGES_MAX_BYTES, attach, image_type};
 use list::{format_directory, format_tree};
 
 impl ToolRegistry {
-    pub(super) fn read(&self, arguments: &str) -> Result<ToolOutput> {
-        let args: Value = parse_args("read", arguments)?;
-        let target = ["path", "pattern"]
-            .iter()
-            .any(|field| super::args::named(&args, field).is_some())
-            || args
-                .get("paths")
-                .and_then(Value::as_array)
-                .is_some_and(|paths| paths.iter().any(super::args::named_value));
-        let op = super::args::named(&args, "op").filter(|op| !(*op == "help" && target));
+    pub(super) fn read(&self, args: &Value) -> Result<ToolOutput> {
+        let name = super::args::named(args, "op").unwrap_or_default();
+        let op = read_op(args, name);
         if let Some(paths) = args
             .get("paths")
             .and_then(Value::as_array)
             .filter(|paths| !paths.is_empty())
         {
             return match op {
-                None if args.get("pattern").is_none() => self.read_files(&args, paths),
-                Some("file") => self.read_files(&args, paths),
-                None | Some("search") => self.search_files(arguments).map(ToolOutput::ok),
-                Some(operation) => Err(Error::Tool(format!(
-                    "paths does not apply to read op={operation}"
+                None if args.get("pattern").is_none() => self.read_files(args, paths),
+                Some(Some(ReadOp::File)) => self.read_files(args, paths),
+                None | Some(Some(ReadOp::Search)) => self.search_files(args).map(ToolOutput::ok),
+                Some(_) => Err(Error::Tool(format!(
+                    "paths does not apply to read op={name}"
                 ))),
             };
         }
         match op {
-            Some(operation) => self.read_op(operation, arguments),
-            None => self.read_default(&args, arguments),
+            None => self.read_default(args),
+            Some(Some(ReadOp::File)) => self.read_file(args),
+            Some(Some(ReadOp::List)) => self.list_dir(args).map(ToolOutput::ok),
+            Some(Some(ReadOp::Search)) => self.search_files(args).map(ToolOutput::ok),
+            Some(Some(ReadOp::Image)) => self.show_image(args),
+            Some(Some(ReadOp::Help)) => Ok(ToolOutput::ok(super::help::read())),
+            Some(None) => Err(Error::Tool(format!("unknown read operation `{name}`"))),
         }
     }
 
-    fn read_op(&self, operation: &str, arguments: &str) -> Result<ToolOutput> {
-        match operation {
-            "file" => self.read_file(arguments),
-            "list" => self.list_dir(arguments).map(ToolOutput::ok),
-            "search" => self.search_files(arguments).map(ToolOutput::ok),
-            "image" => self.show_image(arguments),
-            "help" => Ok(ToolOutput::ok(super::help::read())),
-            unknown => Err(Error::Tool(format!("unknown read operation `{unknown}`"))),
-        }
-    }
-
-    fn read_default(&self, args: &Value, arguments: &str) -> Result<ToolOutput> {
+    fn read_default(&self, args: &Value) -> Result<ToolOutput> {
         let pattern = args.get("pattern").and_then(Value::as_str).unwrap_or("");
         let glob = args
             .get("glob")
             .or_else(|| args.get("include"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|glob| !glob.is_empty());
-        if !pattern.is_empty() || glob.is_some() {
-            return self.search_files(arguments).map(ToolOutput::ok);
+            .is_some_and(super::args::named_value);
+        if !pattern.is_empty() || glob {
+            return self.search_files(args).map(ToolOutput::ok);
         }
-        let path = args
-            .get("path")
-            .and_then(Value::as_str)
-            .filter(|path| !path.trim().is_empty())
-            .unwrap_or(".");
-        let opened = if path == "." {
-            self.workspace.clone()
-        } else {
-            self.resolve_read(path, crate::tools::paths::Shield::Contained)?
-        };
-        if opened.is_dir() {
-            return self.list_dir(arguments).map(ToolOutput::ok);
+        if self.opened_path(args)?.1.is_dir() {
+            return self.list_dir(args).map(ToolOutput::ok);
         }
-        self.read_file(arguments)
+        self.read_file(args)
     }
 
-    pub(super) async fn edit_file(&self, arguments: &str) -> Result<ToolOutput> {
-        let args: Value = parse_args("edit", arguments)?;
-        if super::args::named(&args, "op") == Some("help")
-            && super::args::named(&args, "path").is_none()
+    fn opened_path<'a>(&self, args: &'a Value) -> Result<(&'a str, PathBuf)> {
+        let path = super::args::named(args, "path").unwrap_or(".");
+        if path == "." {
+            return Ok((path, self.workspace.clone()));
+        }
+        let opened = self.resolve_read(path, crate::tools::paths::Shield::Contained)?;
+        Ok((path, opened))
+    }
+
+    pub(super) async fn edit_file(&self, args: &Value) -> Result<ToolOutput> {
+        if super::args::named(args, "op") == Some("help")
+            && super::args::named(args, "path").is_none()
         {
             return Ok(ToolOutput::ok(super::help::EDIT.to_string()));
         }
-        self.apply_edit("edit", &args).await
+        self.apply_edit("edit", args).await
     }
 
-    async fn move_file(&self, path: &str, to: &str) -> Result<String> {
+    async fn move_file(&self, path: &str, to: &str) -> Result<ToolOutput> {
         let source = self.resolve_existing(path)?;
         self.check_write(&source)?;
         let dest = self.resolve_write(to)?;
@@ -113,12 +94,20 @@ impl ToolRegistry {
             .map_err(|error| Error::Tool(format!("cannot move `{path}` to `{to}`: {error}")))?;
         self.note_wrote(path);
         self.note_wrote(to);
-        let mut out = format!("moved {path} -> {to}");
+        Ok(self
+            .checked((dest, format!("moved {path} -> {to}"), None))
+            .await)
+    }
+
+    async fn checked(
+        &self,
+        (dest, mut out, patch): (PathBuf, String, Option<String>),
+    ) -> ToolOutput {
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
             out.push_str(&check.text);
         }
-        Ok(out)
+        ToolOutput::mutated(out, patch)
     }
 
     async fn apply_edit(&self, name: &str, args: &Value) -> Result<ToolOutput> {
@@ -127,54 +116,23 @@ impl ToolRegistry {
         }
         let path = nonempty_path(args, name)?;
         if let Some(to) = edit::move_target(args) {
-            let text = self.move_file(path, to).await?;
-            return Ok(ToolOutput {
-                text,
-                success: true,
-                mutated: true,
-                grant: None,
-                images: Vec::new(),
-                patch: None,
-            });
+            return self.move_file(path, to).await;
         }
-        let (dest, mut out, patch) = super::blocking(|| self.edit_in_place(path, args))?;
-        if let Some(check) = self.check_after_edit(&dest).await {
-            out.push('\n');
-            out.push_str(&check.text);
-        }
-        Ok(ToolOutput {
-            text: out,
-            success: true,
-            mutated: true,
-            grant: None,
-            images: Vec::new(),
-            patch,
-        })
+        let edited = super::blocking(|| self.edit_in_place(path, args))?;
+        Ok(self.checked(edited).await)
     }
 
-    pub(super) async fn write_file(&self, arguments: &str) -> Result<ToolOutput> {
-        let args: Value = parse_args("write", arguments)?;
+    pub(super) async fn write_file(&self, args: &Value) -> Result<ToolOutput> {
         if let Some(files) = args.get("files").and_then(Value::as_array) {
             return self.write_files(files).await;
         }
-        let path = nonempty_path(&args, "write")?;
+        let path = nonempty_path(args, "write")?;
         let content = args
             .get("content")
             .and_then(Value::as_str)
             .ok_or_else(|| Error::Tool("write requires content".to_string()))?;
-        let (dest, mut out, patch) = super::blocking(|| self.write_one(path, content))?;
-        if let Some(check) = self.check_after_edit(&dest).await {
-            out.push('\n');
-            out.push_str(&check.text);
-        }
-        Ok(ToolOutput {
-            text: out,
-            success: true,
-            mutated: true,
-            grant: None,
-            images: Vec::new(),
-            patch,
-        })
+        let written = super::blocking(|| self.write_one(path, content))?;
+        Ok(self.checked(written).await)
     }
 
     async fn write_files(&self, files: &[Value]) -> Result<ToolOutput> {
@@ -188,14 +146,7 @@ impl ToolRegistry {
                 out.push('\n');
             }
         }
-        Ok(ToolOutput {
-            text: out.trim_end().to_string(),
-            success: true,
-            mutated: true,
-            grant: None,
-            images: Vec::new(),
-            patch: None,
-        })
+        Ok(ToolOutput::mutated(out.trim_end().to_string(), None))
     }
 
     fn edit_in_place(&self, path: &str, args: &Value) -> Result<(PathBuf, String, Option<String>)> {
@@ -265,25 +216,15 @@ impl ToolRegistry {
         Ok((planned, out))
     }
 
-    pub(super) fn list_dir(&self, arguments: &str) -> Result<String> {
-        let args: Value = parse_args("read", arguments)?;
-        let path = args
-            .get("path")
-            .and_then(Value::as_str)
-            .filter(|path| !path.trim().is_empty())
-            .unwrap_or(".");
-        let dir = if path == "." {
-            self.workspace.clone()
-        } else {
-            self.resolve_read(path, crate::tools::paths::Shield::Contained)?
-        };
+    pub(super) fn list_dir(&self, args: &Value) -> Result<String> {
+        let (path, dir) = self.opened_path(args)?;
         if !dir.is_dir() {
             return Err(Error::Tool(format!("`{path}` is not a directory")));
         }
         let depth = args
             .get("depth")
             .and_then(Value::as_u64)
-            .or_else(|| object_bool(&args, "recursive").then_some(u64::MAX))
+            .or_else(|| object_bool(args, "recursive").then_some(u64::MAX))
             .map(|depth| usize::try_from(depth).unwrap_or(usize::MAX));
         if let Some(depth) = depth {
             return format_tree(path, &dir, depth);
@@ -291,10 +232,34 @@ impl ToolRegistry {
         format_directory(path, &dir)
     }
 
-    pub(super) fn skill(&self, arguments: &str) -> Result<String> {
-        let args: Value = parse_args("skill", arguments)?;
-        let name = object_string(&args, "name")?;
-        crate::skills::load(&self.workspace, name)
+    pub(super) fn skill(&self, args: &Value) -> Result<String> {
+        crate::skills::load(&self.workspace, object_string(args, "name")?)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReadOp {
+    File,
+    List,
+    Search,
+    Image,
+    Help,
+}
+
+const READ_OPS: &[(&str, ReadOp)] = &[
+    ("file", ReadOp::File),
+    ("list", ReadOp::List),
+    ("search", ReadOp::Search),
+    ("image", ReadOp::Image),
+    ("help", ReadOp::Help),
+];
+
+impl ReadOp {
+    fn of(name: &str) -> Option<Self> {
+        READ_OPS
+            .iter()
+            .find(|(op, _)| *op == name)
+            .map(|(_, op)| *op)
     }
 }
 
@@ -331,4 +296,16 @@ fn blank_edit(op: &Value) -> bool {
             .values()
             .all(|value| !super::args::named_value(value) && value.as_bool() != Some(true))
     })
+}
+
+fn read_op(args: &Value, name: &str) -> Option<Option<ReadOp>> {
+    let target = ["path", "pattern"]
+        .iter()
+        .any(|field| super::args::named(args, field).is_some())
+        || args
+            .get("paths")
+            .and_then(Value::as_array)
+            .is_some_and(|paths| paths.iter().any(super::args::named_value));
+    let op = (!name.is_empty()).then(|| ReadOp::of(name));
+    op.filter(|op| !(*op == Some(ReadOp::Help) && target))
 }

@@ -302,11 +302,11 @@ impl<P: Provider> Loop<P> {
             .finish_provider(durable_attempt, &message.content, reasoning, meter, meta)
             .map_err(super::session_err)?;
         self.emit_records(events, emit)?;
-        let control = UserInput::from(
-            "[summon control: the previous reply reached the output limit and was cut off.]",
-        );
-        self.session.steer(&control).map_err(super::session_err)?;
-        messages.push(Message::user(control));
+        self.inject(
+            "[summon control: the previous reply reached the output limit and was cut off.]"
+                .to_string(),
+            messages,
+        )?;
         self.push_event(
             events,
             emit,

@@ -88,7 +88,9 @@ impl Client {
             if let Some(sink) = &sink {
                 sink.write("chunk", &String::from_utf8_lossy(&chunk));
             }
-            let parsed = frames.push(&chunk, W::sentinel()).map_err(cut)?;
+            let parsed = frames
+                .push(&chunk, super::wire::spec(self.wire).sentinel)
+                .map_err(cut)?;
             let produced = self.take(&mut state, &parsed, request).map_err(cut)?;
             let thinking = state
                 .state

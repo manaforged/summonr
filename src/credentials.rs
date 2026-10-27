@@ -131,12 +131,9 @@ pub(crate) fn bearer(key: impl Into<String>) -> Auth {
     Auth::new(Method::Key(key.into()), Scheme::Bearer, "local", keeper())
 }
 
-pub(crate) fn http() -> Result<leyline::Session> {
+pub(crate) fn http(total: std::time::Duration) -> Result<leyline::Session> {
     session(
-        summonr_auth::builder(
-            crate::limits::limits().auth(),
-            crate::limits::limits().connect(),
-        ),
+        summonr_auth::builder(total, crate::limits::limits().connect()),
         crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
     )
 }

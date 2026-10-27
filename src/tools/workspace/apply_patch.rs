@@ -45,14 +45,7 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
     {
         out.push_str(&check.text);
     }
-    Ok(ToolOutput {
-        text: out.trim_end().to_string(),
-        success: true,
-        mutated: true,
-        grant: None,
-        images: Vec::new(),
-        patch: None,
-    })
+    Ok(ToolOutput::mutated(out.trim_end().to_string(), None))
 }
 
 impl Section {

@@ -21,7 +21,9 @@ fn a_compacted_tail_replays_as_the_model_saw_it_after_an_interrupted_reply() {
     };
     driver.prepare_turn_work("task", &[]).unwrap();
     driver.start_input(&UserInput::from("task")).unwrap();
-    let attempt = driver.start_provider("model", exposure()).unwrap();
+    let attempt = driver
+        .start_round(Purpose::Agent, "model", exposure())
+        .unwrap();
     let planned = driver
         .finish_provider_with_tools(
             attempt,
@@ -36,7 +38,9 @@ fn a_compacted_tail_replays_as_the_model_saw_it_after_an_interrupted_reply() {
         .finish_tool(planned[0], "file body", true, false, 1, None)
         .unwrap();
     let seen = driver.history()[1..].to_vec();
-    let attempt = driver.start_provider("model", exposure()).unwrap();
+    let attempt = driver
+        .start_round(Purpose::Agent, "model", exposure())
+        .unwrap();
     driver.partial.text = "partial reply".to_string();
     driver
         .fail_provider(attempt, "stream cut", 0, false)
@@ -95,7 +99,9 @@ fn a_cut_reply_records_the_usage_the_provider_reported() {
         max_input_tokens: 9,
         max_output_tokens: 9,
     };
-    let attempt = driver.start_provider("model", exposure).unwrap();
+    let attempt = driver
+        .start_round(Purpose::Agent, "model", exposure)
+        .unwrap();
     driver.partial.usage = Some(crate::provider::Usage {
         prompt_tokens: 150_000,
         ..Default::default()
@@ -143,7 +149,7 @@ fn the_next_user_line_consumes_a_cancel_reason() {
 fn a_policy_denied_check_stops() {
     let dir = tempfile::tempdir().unwrap();
     let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
-    let mut work = Work::new("make the check pass", Policy::Goal {});
+    let mut work = Work::new("make the check pass", WorkKind::Goal);
     work.status = crate::durable::work::Status::Active(Stage::Verify);
     driver.work = Some(work);
     driver.turn = Some(Turn {
@@ -213,7 +219,7 @@ fn the_snapshot_skips_the_session_store_and_the_tree_cache() {
 fn a_checkpoint_writes_the_tree_sidecar_when_the_trees_changed() {
     let dir = tempfile::tempdir().unwrap();
     let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
-    let mut work = Work::new("ship", Policy::Single);
+    let mut work = Work::new("ship", WorkKind::Single);
     work.base = Some(tree::snapshot(dir.path(), &[], None).unwrap());
     driver.work = Some(work);
     driver.checkpoint().unwrap();
@@ -242,7 +248,7 @@ fn a_goal_keeps_its_objective_when_the_next_sentence_differs() {
     let dir = tempfile::tempdir().unwrap();
     let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
     driver
-        .prepare_external_work("keep this goal", Policy::Goal {}, &[])
+        .prepare_external_work("keep this goal", WorkKind::Goal, &[])
         .unwrap();
     driver.prepare_turn_work("a side question", &[]).unwrap();
     assert_eq!(driver.work.as_ref().unwrap().objective, "keep this goal");
@@ -253,15 +259,15 @@ fn a_second_goal_names_the_one_still_active_and_how_to_end_it() {
     let dir = tempfile::tempdir().unwrap();
     let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
     driver
-        .prepare_external_work("add a --version flag", Policy::Goal {}, &[])
+        .prepare_external_work("add a --version flag", WorkKind::Goal, &[])
         .unwrap();
     let error = driver
-        .prepare_external_work("print hello", Policy::Goal {}, &[])
+        .prepare_external_work("print hello", WorkKind::Goal, &[])
         .unwrap_err()
         .to_string();
     assert!(error.contains("add a --version flag"), "{error}");
     assert!(error.contains("/goal clear"), "{error}");
     driver
-        .prepare_external_work("add a --version flag", Policy::Goal {}, &[])
+        .prepare_external_work("add a --version flag", WorkKind::Goal, &[])
         .unwrap();
 }

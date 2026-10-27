@@ -241,12 +241,7 @@ pub(crate) fn file() -> Result<Arc<File>> {
 
 fn update(path: &Path, change: impl FnOnce(&mut DocumentMut) -> Result<bool>) -> Result<bool> {
     let held = hold(path)?;
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error.into()),
-    };
-    let mut document = text
+    let mut document = store::read_or_empty(path)?
         .parse::<DocumentMut>()
         .map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))?;
     let changed = change(&mut document)?;

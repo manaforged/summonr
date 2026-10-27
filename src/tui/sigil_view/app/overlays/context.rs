@@ -40,8 +40,7 @@ impl App {
         let Some(mut context) = self.context.peek() else {
             return;
         };
-        let count = context.items().len() as isize;
-        context.cursor = ((context.cursor as isize + delta).rem_euclid(count)) as usize;
+        context.cursor = files::wrap(context.cursor, delta, context.items().len());
         self.context.set(Some(context));
         self.refresh();
     }

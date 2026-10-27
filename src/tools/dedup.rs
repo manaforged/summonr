@@ -10,8 +10,8 @@ impl ToolRegistry {
             .clear();
     }
 
-    pub(super) fn dedup_read(&self, arguments: &str, out: ToolOutput) -> ToolOutput {
-        let Some((path, served)) = served_range(arguments, &out.text) else {
+    pub(super) fn dedup_read(&self, args: &serde_json::Value, out: ToolOutput) -> ToolOutput {
+        let Some((path, served)) = served_range(args, &out.text) else {
             return out;
         };
         let stamp = std::fs::metadata(self.workspace.join(&path))
@@ -68,15 +68,14 @@ impl ToolRegistry {
     }
 }
 
-fn served_range(arguments: &str, text: &str) -> Option<(String, (usize, usize))> {
-    let args: serde_json::Value = serde_json::from_str(arguments).ok()?;
+fn served_range(args: &serde_json::Value, text: &str) -> Option<(String, (usize, usize))> {
     if args
         .get("op")
         .and_then(serde_json::Value::as_str)
         .is_some_and(|op| op != "file")
         || args.get("pattern").is_some()
         || args.get("paths").is_some()
-        || object_bool(&args, "tags")
+        || object_bool(args, "tags")
     {
         return None;
     }

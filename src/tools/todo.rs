@@ -53,7 +53,10 @@ impl Todo {
 }
 
 pub(crate) fn todos_from_args(arguments: &str) -> Result<Vec<Todo>> {
-    let value = parse_args("todo", arguments)?;
+    todos(&parse_args("todo", arguments)?)
+}
+
+fn todos(value: &Value) -> Result<Vec<Todo>> {
     let items = value
         .get("items")
         .or_else(|| value.get("todos"))
@@ -98,8 +101,8 @@ pub(crate) fn todos_from_args(arguments: &str) -> Result<Vec<Todo>> {
     Ok(todos)
 }
 
-pub(super) fn parse_todo(arguments: &str) -> Result<String> {
-    let todos = todos_from_args(arguments)?;
+pub(super) fn parse_todo(args: &Value) -> Result<String> {
+    let todos = todos(args)?;
     if todos.is_empty() {
         return Ok("no todos".to_string());
     }

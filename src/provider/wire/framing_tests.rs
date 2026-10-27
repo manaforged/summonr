@@ -5,7 +5,7 @@ fn framing_reads_each_dialect_off_the_wire() {
     let anthropic = b"event: message_start\ndata: {\"type\":\"message_start\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\"}\n\n";
     let mut framing = Frames::default();
     let frames = framing
-        .push(anthropic, anthropic::Wire::sentinel())
+        .push(anthropic, spec(crate::endpoint::Wire::Anthropic).sentinel)
         .unwrap();
     assert_eq!(
         frames.len(),
@@ -19,7 +19,9 @@ fn framing_reads_each_dialect_off_the_wire() {
 
     let gemini = b"data: {\"candidates\":[]}\r\n\r\n";
     let mut framing = Frames::default();
-    let frames = framing.push(gemini, gemini::Wire::sentinel()).unwrap();
+    let frames = framing
+        .push(gemini, spec(crate::endpoint::Wire::Gemini).sentinel)
+        .unwrap();
     assert_eq!(frames.len(), 1, "a CRLF boundary must frame like an LF one");
 }
 
@@ -86,24 +88,24 @@ fn a_comment_or_a_blank_keepalive_is_ignored() {
 
 #[test]
 fn bytes_reach_an_answer_through_the_contract_alone() {
-    fn run<W: Chat>(bytes: &[u8], model: &str) -> AssistantMessage {
+    fn run<W: Chat>(wire: crate::endpoint::Wire, bytes: &[u8], model: &str) -> AssistantMessage {
         let mut frames = Frames::default();
         let mut stream = W::Stream::new(model);
-        for frame in frames.push(bytes, W::sentinel()).unwrap() {
+        for frame in frames.push(bytes, spec(wire).sentinel).unwrap() {
             drop(stream.on(frame).unwrap());
         }
         stream.finish()
     }
     let anthropic = b"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"text\":\"hi\"}}\n\n";
     assert_eq!(
-        run::<anthropic::Wire>(anthropic, "claude-opus-5")
+        run::<anthropic::Wire>(crate::endpoint::Wire::Anthropic, anthropic, "claude-opus-5")
             .content
             .as_deref(),
         Some("hi")
     );
     let gemini = b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi\"}]}}]}\n\n";
     assert_eq!(
-        run::<gemini::Wire>(gemini, "gemini-2.5-flash")
+        run::<gemini::Wire>(crate::endpoint::Wire::Gemini, gemini, "gemini-2.5-flash")
             .content
             .as_deref(),
         Some("hi"),

@@ -1,7 +1,6 @@
 use super::*;
 use crate::durable::driver::{Parent, work_at};
 use crate::durable::log;
-use crate::durable::work::Policy as WorkPolicy;
 use crate::workflow;
 
 impl<P: Provider> Loop<P> {
@@ -113,7 +112,7 @@ impl<P: Provider> Loop<P> {
             tuning: BTreeMap::new(),
             price: None,
             system_prompt,
-            mode: crate::RunMode::Auto,
+            mode: crate::WorkKind::Single,
             tools,
             schema: None,
 
@@ -149,7 +148,6 @@ impl<P: Provider> Loop<P> {
             mcp_wanted: false,
             mcp_board: crate::mcp::Board::default(),
             inbox: std::collections::VecDeque::new(),
-            steer: std::collections::VecDeque::new(),
             steer_shared: None,
             depth,
             tasks: true,
@@ -306,22 +304,22 @@ impl<P: Provider> Loop<P> {
         self
     }
 
-    pub(crate) fn set_mode(&mut self, mode: crate::RunMode) {
+    pub(crate) fn set_mode(&mut self, mode: crate::WorkKind) {
         self.mode = mode;
     }
 
     #[must_use]
     pub(crate) fn is_work(&self) -> bool {
-        self.mode == crate::RunMode::Work
+        self.mode == crate::WorkKind::Steps
     }
 
     #[must_use]
     pub(crate) fn is_goal(&self) -> bool {
-        self.mode == crate::RunMode::Goal
+        self.mode == crate::WorkKind::Goal
     }
 
     #[must_use]
-    pub fn mode(&self) -> crate::RunMode {
+    pub fn mode(&self) -> crate::WorkKind {
         self.mode
     }
 

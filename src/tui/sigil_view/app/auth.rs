@@ -134,16 +134,13 @@ impl App {
         if !self.auth_listing() || self.picker.open.peek() {
             return;
         }
-        let last = self.filtered_auth().len().saturating_sub(1);
-        self.auth
-            .sel
-            .set(self.auth.sel.peek().saturating_add_signed(delta).min(last));
+        super::files::shift(&self.auth.sel, delta, self.filtered_auth().len());
     }
 
     pub(in crate::tui::sigil_view) fn auth_choice(&self) -> Option<crate::endpoint::AuthInfo> {
         let choices = self.filtered_auth();
         choices
-            .get(self.auth.sel.peek().min(choices.len().saturating_sub(1)))
+            .get(super::files::pick(&self.auth.sel, choices.len()))
             .cloned()
     }
 

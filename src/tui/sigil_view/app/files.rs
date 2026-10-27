@@ -82,6 +82,39 @@ pub(in crate::tui::sigil_view) struct FileRow {
     pub(in crate::tui::sigil_view) open: bool,
 }
 
+impl FileRow {
+    pub(in crate::tui::sigil_view) fn flat(path: String, name: String, open: bool) -> Self {
+        Self {
+            path,
+            name,
+            depth: 0,
+            dir: false,
+            open,
+        }
+    }
+}
+
+pub(in crate::tui::sigil_view) fn pick(cursor: &Signal<usize>, len: usize) -> usize {
+    cursor.peek().min(len.saturating_sub(1))
+}
+
+pub(in crate::tui::sigil_view) fn shift(cursor: &Signal<usize>, delta: isize, len: usize) {
+    cursor.set(
+        pick(cursor, len)
+            .saturating_add_signed(delta)
+            .min(len.saturating_sub(1)),
+    );
+}
+
+pub(in crate::tui::sigil_view) fn wrap(at: usize, delta: isize, len: usize) -> usize {
+    (at as isize + delta).rem_euclid(len.max(1) as isize) as usize
+}
+
+pub(in crate::tui::sigil_view) fn toggle(open: &Signal<Option<String>>, path: &str) {
+    let other = open.peek().as_deref() != Some(path);
+    open.set(other.then(|| path.to_string()));
+}
+
 pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String]) -> Vec<FileRow> {
     let mut rows: Vec<FileRow> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();

@@ -19,6 +19,7 @@ use crate::tools::{Event, ToolRegistry};
 use crate::verify::Outcome;
 use crate::workflow;
 
+use turn::{CallOptions, RetryPolicy};
 pub(crate) use turn::{GrantAnswer, Steering};
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Budget {
@@ -53,25 +54,6 @@ impl Budget {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum RunMode {
-    #[default]
-    Auto,
-    Work,
-    Goal,
-}
-
-impl RunMode {
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Work => "work",
-            Self::Goal => "goal",
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Turn {
     pub text: String,
@@ -100,7 +82,7 @@ pub struct Loop<P> {
     tuning: BTreeMap<workflow::Role, (Option<Effort>, Option<Price>)>,
     price: Option<Price>,
     system_prompt: String,
-    mode: RunMode,
+    mode: crate::WorkKind,
     tools: ToolRegistry,
     schema: Option<Arc<mail::Advertised>>,
 
@@ -129,7 +111,6 @@ pub struct Loop<P> {
     mcp_wanted: bool,
     mcp_board: crate::mcp::Board,
     inbox: VecDeque<Mail>,
-    steer: VecDeque<UserInput>,
     steer_shared: Option<Arc<turn::Steering>>,
     depth: u8,
     tasks: bool,
@@ -173,10 +154,6 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn effort_for(&self, role: workflow::Role) -> Option<Effort> {
-        self.configured_effort(role)
-    }
-
-    fn configured_effort(&self, role: workflow::Role) -> Option<Effort> {
         self.tuning
             .get(&role)
             .and_then(|(effort, _)| *effort)

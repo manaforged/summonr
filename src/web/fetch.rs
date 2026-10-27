@@ -4,6 +4,7 @@ use leyline::http::StatusCode;
 use leyline::{Response, Session};
 use url::Url;
 
+use super::results::markup::{Space, attr, collapse, decode, strip, text};
 use super::{Format, Search};
 use crate::browser::wall::WALL;
 use crate::error::{Error, Result};
@@ -210,7 +211,7 @@ pub(super) fn html_to_md(html: &str) -> String {
                             let (text, close) = take_until_close(&without, i, "a");
                             out.push_str(&text);
                             out.push_str("](");
-                            out.push_str(&href);
+                            out.push_str(href);
                             out.push(')');
                             i = close;
                             continue;
@@ -227,7 +228,7 @@ pub(super) fn html_to_md(html: &str) -> String {
         out.push(ch);
         i += ch.len_utf8();
     }
-    decode_entities(&collapse_space(&out))
+    decode(&collapse(&out, Space::Lines))
 }
 
 pub(super) fn html_to_text(html: &str) -> String {
@@ -235,17 +236,7 @@ pub(super) fn html_to_text(html: &str) -> String {
         &strip_blocks(&strip_blocks(html, "script"), "style"),
         "noscript",
     );
-    let mut out = String::with_capacity(without.len());
-    let mut in_tag = false;
-    for ch in without.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(ch),
-            _ => {}
-        }
-    }
-    decode_entities(&collapse_space(&out))
+    decode(&collapse(&strip(&without), Space::Lines))
 }
 
 fn strip_blocks(html: &str, tag: &str) -> String {
@@ -268,7 +259,7 @@ fn strip_blocks(html: &str, tag: &str) -> String {
     out
 }
 
-fn parse_tag(html: &str, at: usize) -> Option<(String, Option<String>, usize)> {
+fn parse_tag(html: &str, at: usize) -> Option<(String, Option<&str>, usize)> {
     let bytes = html.as_bytes();
     let close = bytes[at + 1..].iter().position(|&b| b == b'>')? + at + 1;
     let inner = html[at + 1..close].trim();
@@ -286,77 +277,12 @@ fn parse_tag(html: &str, at: usize) -> Option<(String, Option<String>, usize)> {
     Some((name, href, close + 1))
 }
 
-fn attr(tag: &str, name: &str) -> Option<String> {
-    let needle = format!("{name}=");
-    let lower = tag.to_ascii_lowercase();
-    let at = lower.find(&needle)?;
-    let rest = tag[at + needle.len()..].trim_start();
-    let quote = rest.chars().next()?;
-    if quote == '"' || quote == '\'' {
-        let end = rest[1..].find(quote)?;
-        Some(rest[1..1 + end].to_string())
-    } else {
-        Some(
-            rest.split_whitespace()
-                .next()
-                .unwrap_or("")
-                .trim_end_matches('/')
-                .to_string(),
-        )
-    }
-}
-
 fn take_until_close(html: &str, from: usize, tag: &str) -> (String, usize) {
     let close = format!("</{tag}>");
     let lower = html[from..].to_ascii_lowercase();
     if let Some(at) = lower.find(&close) {
-        let text = strip_tags(&html[from..from + at]);
-        (text, from + at + close.len())
+        (text(&html[from..from + at]), from + at + close.len())
     } else {
-        (strip_tags(&html[from..]), html.len())
+        (text(&html[from..]), html.len())
     }
-}
-
-fn strip_tags(html: &str) -> String {
-    let mut out = String::new();
-    let mut in_tag = false;
-    for ch in html.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(ch),
-            _ => {}
-        }
-    }
-    decode_entities(&out)
-}
-
-fn decode_entities(text: &str) -> String {
-    text.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&nbsp;", " ")
-}
-
-fn collapse_space(text: &str) -> String {
-    let mut out = String::new();
-    let mut blank = 0;
-    for line in text.lines() {
-        let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
-        if line.is_empty() {
-            blank += 1;
-            if blank <= 1 && !out.is_empty() {
-                out.push('\n');
-            }
-        } else {
-            blank = 0;
-            if !out.is_empty() && !out.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push_str(&line);
-        }
-    }
-    out
 }

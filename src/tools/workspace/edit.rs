@@ -58,18 +58,19 @@ pub(super) struct Patch {
 pub(super) fn apply_many(original: &str, ops: &[Value]) -> Result<(String, bool)> {
     let mut patches = Vec::with_capacity(ops.len());
     for (index, op) in ops.iter().enumerate() {
-        let patch = parse_patch(original, op).map_err(|error| {
-            match edit_error_context(error, original, op) {
-                Error::Tool(message) => Error::Tool(format!("edit {}: {message}", index + 1)),
-                other => other,
-            }
-        })?;
-        patches.push(patch);
+        patches.push(numbered(index, original, op)?);
     }
     if overlaps(&mut patches) {
         return apply_sequence(original, ops);
     }
     apply_patches(original, patches)
+}
+
+fn numbered(index: usize, text: &str, op: &Value) -> Result<Patch> {
+    parse_patch(text, op).map_err(|error| match edit_error_context(error, text, op) {
+        Error::Tool(message) => Error::Tool(format!("edit {}: {message}", index + 1)),
+        other => other,
+    })
 }
 
 fn overlaps(patches: &mut [Patch]) -> bool {
@@ -83,12 +84,7 @@ pub(super) fn apply_sequence(original: &str, ops: &[Value]) -> Result<(String, b
     let mut edited = original.to_string();
     let mut relaxed = false;
     for (index, op) in ops.iter().enumerate() {
-        let patch = parse_patch(&edited, op).map_err(|error| {
-            match edit_error_context(error, &edited, op) {
-                Error::Tool(message) => Error::Tool(format!("edit {}: {message}", index + 1)),
-                other => other,
-            }
-        })?;
+        let patch = numbered(index, &edited, op)?;
         let (text, patch_relaxed) = apply_patches(&edited, vec![patch])?;
         relaxed |= patch_relaxed;
         edited = text;

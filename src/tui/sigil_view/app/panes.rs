@@ -139,8 +139,7 @@ impl App {
             return;
         }
         let rows = self.file_rows();
-        let cursor = self.file_cursor.peek().min(rows.len().saturating_sub(1));
-        let Some(row) = rows.get(cursor) else {
+        let Some(row) = rows.get(files::pick(&self.file_cursor, rows.len())) else {
             return;
         };
         if row.dir && row.open {
@@ -182,8 +181,7 @@ impl App {
             return;
         }
         let rows = self.file_rows();
-        let cursor = self.file_cursor.peek().min(rows.len().saturating_sub(1));
-        match rows.get(cursor) {
+        match rows.get(files::pick(&self.file_cursor, rows.len())) {
             Some(row) if row.dir => {
                 if !row.open {
                     self.pane_enter();
@@ -241,13 +239,7 @@ impl App {
             self.diff_move(delta);
             return;
         }
-        let count = self.file_rows().len();
-        if count == 0 {
-            return;
-        }
-        let cursor = self.file_cursor.peek().min(count - 1) as isize;
-        let next = (cursor + delta).clamp(0, count as isize - 1) as usize;
-        self.file_cursor.set(next);
+        files::shift(&self.file_cursor, delta, self.file_rows().len());
         self.refresh();
     }
 
@@ -276,7 +268,7 @@ impl App {
             return;
         }
         let rows = self.file_rows();
-        let Some(row) = rows.get(self.file_cursor.peek().min(rows.len().saturating_sub(1))) else {
+        let Some(row) = rows.get(files::pick(&self.file_cursor, rows.len())) else {
             return;
         };
         if row.dir {

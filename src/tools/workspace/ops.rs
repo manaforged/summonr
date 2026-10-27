@@ -64,7 +64,7 @@ fn tag_patch(text: &str, op: &Value) -> Result<Option<Patch>> {
             text,
             tag,
             op.get("end_tag").and_then(Value::as_str),
-            object_string(op, "new")?,
+            lines(object_string(op, "new")?),
         )
         .map(Some);
     }
@@ -72,7 +72,8 @@ fn tag_patch(text: &str, op: &Value) -> Result<Option<Patch>> {
         return insert_patch(text, tag, object_string(op, "text")?).map(Some);
     }
     if op.get("op").and_then(Value::as_str) == Some("delete") {
-        return delete_patch(text, tag, op.get("end_tag").and_then(Value::as_str)).map(Some);
+        let end_tag = op.get("end_tag").and_then(Value::as_str);
+        return replace_patch(text, tag, end_tag, Vec::new()).map(Some);
     }
     Ok(None)
 }
@@ -334,14 +335,19 @@ fn lcs(left: &str, right: &str) -> usize {
     row[right.len()]
 }
 
-fn replace_patch(text: &str, tag: &str, end_tag: Option<&str>, new: &str) -> Result<Patch> {
+fn replace_patch(
+    text: &str,
+    tag: &str,
+    end_tag: Option<&str>,
+    replacement: Vec<String>,
+) -> Result<Patch> {
     let (start, end) = resolve_span(text, tag, end_tag)?;
     Ok(Patch {
         start,
         end: end + 1,
         anchor_start: start,
         anchor_end: end + 1,
-        replacement: lines(new),
+        replacement,
         relaxed: false,
     })
 }
@@ -357,18 +363,6 @@ fn insert_patch(text: &str, tag: &str, body: &str) -> Result<Patch> {
         anchor_start: anchor,
         anchor_end: anchor + 1,
         replacement: lines(body),
-        relaxed: false,
-    })
-}
-
-fn delete_patch(text: &str, tag: &str, end_tag: Option<&str>) -> Result<Patch> {
-    let (start, end) = resolve_span(text, tag, end_tag)?;
-    Ok(Patch {
-        start,
-        end: end + 1,
-        anchor_start: start,
-        anchor_end: end + 1,
-        replacement: Vec::new(),
         relaxed: false,
     })
 }

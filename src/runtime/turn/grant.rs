@@ -53,7 +53,10 @@ impl<P: Provider> Loop<P> {
             Some(input) => match parse_decision(input.text.trim(), persist) {
                 Some(decision) => decision,
                 None => {
-                    self.steer.push_front(input);
+                    shared
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push_front(input);
                     GrantAnswer::Deny
                 }
             },

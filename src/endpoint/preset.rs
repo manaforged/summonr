@@ -73,17 +73,6 @@ impl Preset {
     }
 }
 
-fn wire(value: &str) -> std::result::Result<Wire, String> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "completions" => Ok(Wire::Completions),
-        "responses" => Ok(Wire::Responses),
-        "anthropic" => Ok(Wire::Anthropic),
-        "gemini" => Ok(Wire::Gemini),
-        "agent-sdk" => Ok(Wire::AgentSdk),
-        other => Err(format!("unknown wire `{other}`")),
-    }
-}
-
 mod row;
 
 use row::File;

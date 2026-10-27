@@ -6,14 +6,13 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 use crate::provider::{CompletionRequest, Image, Message, Provider, Source, UserInput};
 
-use super::{ToolOutput, ToolRegistry, object_string, parse_args};
+use super::{ToolOutput, ToolRegistry, object_string};
 
 pub(crate) const IMAGES_MAX_BYTES: usize = 10 * 1024 * 1024;
 
 impl ToolRegistry {
-    pub(super) fn show_image(&self, arguments: &str) -> Result<ToolOutput> {
-        let args: Value = parse_args("show_image", arguments)?;
-        let path = object_string(&args, "path")?;
+    pub(super) fn show_image(&self, arguments: &Value) -> Result<ToolOutput> {
+        let path = object_string(arguments, "path")?;
         let canonical = self.resolve_read(path, crate::tools::paths::Shield::Contained)?;
         let mut head = Vec::new();
         std::fs::File::open(&canonical)

@@ -23,7 +23,10 @@ impl<P: Provider> Loop<P> {
             Some(input) => match serde_json::from_str::<FormAnswer>(input.text.trim()) {
                 Ok(answer) => checked(&form, answer),
                 Err(_) => {
-                    self.steer.push_front(input);
+                    shared
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push_front(input);
                     FormAnswer::cancelled()
                 }
             },

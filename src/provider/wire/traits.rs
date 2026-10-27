@@ -1,31 +1,36 @@
+use std::sync::LazyLock;
+
+use serde::{Deserialize, Deserializer};
+
 use crate::provider::{Effort, Off, Scale};
 
-mod anthropic;
-mod gemini;
-mod openai;
-mod vendors;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Thinking {
     Adaptive,
     Budgeted,
     EffortBudget,
     Budget,
     Level,
+    #[default]
     None,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Family {
+    #[default]
     Other,
     Anthropic,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(default)]
 pub(crate) struct Traits {
     pub(crate) family: Family,
     pub(crate) thinking: Thinking,
     pub(crate) skip_signature: bool,
+    #[serde(deserialize_with = "scale")]
     pub(crate) scale: Option<Scale>,
     pub(crate) replay: bool,
     pub(crate) preserved: bool,
@@ -36,147 +41,42 @@ pub(crate) struct Traits {
     pub(crate) patch: bool,
 }
 
+#[derive(Deserialize)]
+struct ScaleRow {
+    levels: Vec<Effort>,
+    off: Off,
+    #[serde(default)]
+    up: bool,
+}
+
+fn scale<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Scale>, D::Error> {
+    let row = ScaleRow::deserialize(deserializer)?;
+    let scale = Scale::new(row.levels.leak(), row.off);
+    Ok(Some(if row.up { scale.upward() } else { scale }))
+}
+
+#[derive(Deserialize)]
 struct Row {
-    parts: &'static [&'static str],
+    parts: Vec<String>,
+    #[serde(flatten)]
     traits: Traits,
 }
 
-const NONE: Traits = Traits {
-    family: Family::Other,
-    thinking: Thinking::None,
-    skip_signature: false,
-    scale: None,
-    replay: false,
-    preserved: false,
-    tool_stream: false,
-    tool_images: false,
-    bound: false,
-    output: 0,
-    patch: false,
-};
-
-const fn row(
-    parts: &'static [&'static str],
-    thinking: Thinking,
-    levels: &'static [Effort],
-    off: Off,
-) -> Row {
-    Row {
-        parts,
-        traits: Traits {
-            family: Family::Other,
-            thinking,
-            skip_signature: false,
-            scale: Some(Scale::new(levels, off)),
-            replay: false,
-            preserved: false,
-            tool_stream: false,
-            tool_images: false,
-            bound: false,
-            output: 0,
-            patch: false,
-        },
-    }
+#[derive(Deserialize)]
+struct Catalog {
+    rows: Vec<Row>,
 }
 
-const fn signed(
-    parts: &'static [&'static str],
-    thinking: Thinking,
-    levels: &'static [Effort],
-    off: Off,
-) -> Row {
-    Row {
-        parts,
-        traits: Traits {
-            family: Family::Other,
-            thinking,
-            skip_signature: true,
-            scale: Some(Scale::new(levels, off)),
-            replay: false,
-            preserved: false,
-            tool_stream: false,
-            tool_images: true,
-            bound: false,
-            output: 0,
-            patch: false,
-        },
-    }
-}
-
-const fn scaled(parts: &'static [&'static str], levels: &'static [Effort], off: Off) -> Row {
-    row(parts, Thinking::None, levels, off)
-}
-
-const fn claude(row: Row) -> Row {
-    Row {
-        parts: row.parts,
-        traits: Traits {
-            family: Family::Anthropic,
-            ..row.traits
-        },
-    }
-}
-
-const fn bound(output: u32, row: Row) -> Row {
-    Row {
-        parts: row.parts,
-        traits: Traits {
-            bound: true,
-            output,
-            ..row.traits
-        },
-    }
-}
-
-const fn sized(output: u32, row: Row) -> Row {
-    Row {
-        parts: row.parts,
-        traits: Traits {
-            output,
-            ..row.traits
-        },
-    }
-}
-
-const fn patched(row: Row) -> Row {
-    Row {
-        parts: row.parts,
-        traits: Traits {
-            patch: true,
-            ..row.traits
-        },
-    }
-}
-
-const fn replayed(row: Row) -> Row {
-    Row {
-        parts: row.parts,
-        traits: Traits {
-            replay: true,
-            ..row.traits
-        },
-    }
-}
-
-const fn zai(row: Row) -> Row {
-    let row = replayed(row);
-    Row {
-        parts: row.parts,
-        traits: Traits {
-            preserved: true,
-            tool_stream: true,
-            ..row.traits
-        },
-    }
-}
-
-const TABLES: [&[Row]; 4] = [anthropic::ROWS, gemini::ROWS, openai::ROWS, vendors::ROWS];
+static ROWS: LazyLock<Vec<Row>> = LazyLock::new(|| {
+    toml::from_str::<Catalog>(include_str!("models.toml"))
+        .expect("models.toml parses")
+        .rows
+});
 
 pub(crate) fn traits(model: &str) -> Traits {
     let model = model.to_ascii_lowercase();
-    TABLES
-        .iter()
-        .flat_map(|rows| rows.iter())
-        .find(|row| row.parts.iter().all(|part| model.contains(part)))
-        .map_or(NONE, |row| row.traits)
+    ROWS.iter()
+        // complexity: bounded by the 68 catalog rows in models.toml and their few name parts
+        .find(|row| row.parts.iter().all(|part| model.contains(part.as_str())))
+        .map_or_else(Traits::default, |row| row.traits)
 }

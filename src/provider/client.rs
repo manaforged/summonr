@@ -294,7 +294,7 @@ impl Client {
                     .retry_policy(self.reach())
                     .allow_non_idempotent(true),
             );
-        for (key, value) in wire::headers(self.wire) {
+        for (key, value) in wire::spec(self.wire).headers {
             request = request.header(*key, *value);
         }
         for (key, value) in self.auth.stamped() {

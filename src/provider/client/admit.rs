@@ -5,7 +5,7 @@ use crate::provider::wire::ImageBudget;
 
 impl Client {
     pub(super) fn admit<'m>(&self, request: &CompletionRequest<'m>) -> Cow<'m, [Message]> {
-        let mut budget = crate::provider::wire::image_budget(self.wire);
+        let mut budget = crate::provider::wire::spec(self.wire).images;
         budget.tool_images |= request.traits.tool_images;
         admit(request.messages, self.images, &budget)
     }

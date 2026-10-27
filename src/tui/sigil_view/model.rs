@@ -284,8 +284,8 @@ impl Model {
             Msg::Cleared => self.clear(),
             Msg::Reset => self.reset(),
             Msg::RunMode(mode) => {
-                self.snapshot.work = mode == crate::RunMode::Work;
-                self.snapshot.goal = mode == crate::RunMode::Goal;
+                self.snapshot.work = mode == crate::WorkKind::Steps;
+                self.snapshot.goal = mode == crate::WorkKind::Goal;
             }
             Msg::Settings(snapshot) => {
                 if (&snapshot.endpoint, &snapshot.model)

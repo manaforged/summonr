@@ -78,9 +78,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn view_move(&self, delta: isize) {
-        let last = self.view_lines().saturating_sub(1) as isize;
-        let scroll = (self.view_scroll.peek() as isize + delta).clamp(0, last);
-        self.view_scroll.set(scroll as usize);
+        files::shift(&self.view_scroll, delta, self.view_lines());
         self.refresh();
     }
 

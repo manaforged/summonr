@@ -13,7 +13,7 @@ async fn every_preset_row_matches_the_live_catalog_and_its_host_answers() {
     let serves = crate::catalog::serves_live()
         .await
         .expect("models.dev catalog");
-    let http = crate::credentials::http().expect("http session");
+    let http = crate::credentials::http(crate::limits::limits().auth()).expect("http session");
     let mut broken = Vec::new();
     for preset in super::preset::presets().filter(|preset| !preset.off) {
         let models = std::iter::once(&preset.model)

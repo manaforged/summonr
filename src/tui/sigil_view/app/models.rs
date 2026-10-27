@@ -93,7 +93,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn picked_model(&self) -> Option<Seat> {
         let shown = self.picker.shown.peek();
         shown
-            .get(self.picker.sel.peek().min(shown.len().saturating_sub(1)))
+            .get(files::pick(&self.picker.sel, shown.len()))
             .cloned()
     }
 
@@ -245,7 +245,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn fixing(&self) -> bool {
         let listed: usize = self.picker.recent.peek().iter().sum();
         let shown = self.picker.shown.peek();
-        let at = self.picker.sel.peek().min(shown.len().saturating_sub(1));
+        let at = files::pick(&self.picker.sel, shown.len());
         self.picker.draft.peek().trim().is_empty()
             && self.picker.facet.peek() == super::facet::Facet::All
             && at >= listed
@@ -293,14 +293,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn move_model(&self, delta: isize) {
         self.picker.note.set(String::new());
-        let last = self.picker.shown.peek().len().saturating_sub(1);
-        self.picker.sel.set(
-            self.picker
-                .sel
-                .peek()
-                .saturating_add_signed(delta)
-                .min(last),
-        );
+        files::shift(&self.picker.sel, delta, self.picker.shown.peek().len());
     }
 
     pub(super) fn picker_rows(&self, older: bool, collapse: bool) -> (Vec<Seat>, usize) {

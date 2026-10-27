@@ -38,10 +38,6 @@ impl Chat for Wire {
         "/chat/completions".to_string()
     }
 
-    fn sentinel() -> Option<&'static str> {
-        Some("[DONE]")
-    }
-
     fn body(
         call: &CompletionRequest<'_>,
         reasoning: &Reasoning,

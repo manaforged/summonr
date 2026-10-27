@@ -40,7 +40,7 @@ pub(crate) enum Msg {
     Session(String),
     Cleared,
     Reset,
-    RunMode(crate::RunMode),
+    RunMode(crate::WorkKind),
     OpenLogin(String),
     OpenHelp,
     Settings(Snapshot),
@@ -263,11 +263,11 @@ impl Snapshot {
     #[must_use]
     pub(crate) fn mode_name(&self) -> &'static str {
         if self.work {
-            crate::RunMode::Work.name()
+            crate::WorkKind::Steps.name()
         } else if self.goal {
-            crate::RunMode::Goal.name()
+            crate::WorkKind::Goal.name()
         } else {
-            crate::RunMode::Auto.name()
+            crate::WorkKind::Single.name()
         }
     }
 }

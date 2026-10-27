@@ -85,17 +85,23 @@ impl<P: Provider> Loop<P> {
                 false,
             )
             .with_tools_json(&advertised.json);
+        let options = CallOptions {
+            stream: false,
+            retry: RetryPolicy::None,
+        };
         match self
-            .complete_once(workflow::Role::Summary, &request)
+            .call(workflow::Role::Summary, request, options)
             .await?
+            .map_err(|missed| missed.error)
         {
-            Ok(message)
-                if message
+            Ok(reply)
+                if reply
+                    .message
                     .content
                     .as_ref()
                     .is_some_and(|text| !text.trim().is_empty()) =>
             {
-                Ok(Some(message))
+                Ok(Some(reply.message))
             }
             Ok(_) => Ok(None),
             Err(WaitError::Provider(error)) => {

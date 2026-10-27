@@ -125,7 +125,7 @@ pub use prompt::{Sources, summonr_home, system_prompt};
 pub(crate) use provider::dollars;
 pub use provider::{Client, Effort, Usage, UserInput};
 pub use recent::default_effort;
-pub use runtime::{Budget, Loop, RunMode, StepRun, Turn};
+pub use runtime::{Budget, Loop, StepRun, Turn};
 pub use session::{
     ProfileScope, export as export_session, info as session_info, last_for, list as list_sessions,
     profile, prune as prune_sessions, resolve_id as resolve_session, short,

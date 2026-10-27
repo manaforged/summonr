@@ -31,7 +31,7 @@ impl Worker {
         let running = match outcome {
             Attended::Done(Ok(())) => {
                 if name == self.endpoint {
-                    self.set_endpoint(name).await;
+                    self.seat(Some(name), None).await;
                 }
                 self.done(name, Ok(format!("✓ Signed in to {name}.")));
                 true
@@ -61,7 +61,7 @@ impl Worker {
             Attended::Quit => return false,
         };
         if result.is_ok() && name == self.endpoint {
-            self.set_endpoint(name).await;
+            self.seat(Some(name), None).await;
         }
         self.report(name, result, rejected);
         true
@@ -70,7 +70,7 @@ impl Worker {
     pub(in crate::tui::worker) async fn logout(&mut self, name: &str) {
         let result = crate::endpoint::logout(name).map_err(|error| error.to_string());
         if result.is_ok() && name == self.endpoint {
-            self.set_endpoint(name).await;
+            self.seat(Some(name), None).await;
         }
         self.done(name, result);
     }

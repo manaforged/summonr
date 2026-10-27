@@ -48,8 +48,8 @@ impl ReadArgs {
         }
     }
 
-    pub(crate) fn to_json(&self) -> String {
-        serde_json::json!(self).to_string()
+    pub(crate) fn value(&self) -> serde_json::Value {
+        serde_json::json!(self)
     }
 }
 

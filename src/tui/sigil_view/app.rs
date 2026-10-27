@@ -68,7 +68,7 @@ pub(in crate::tui::sigil_view) struct Asked {
     pub(in crate::tui::sigil_view) dialog: u64,
 }
 
-pub(super) use files::{Action, Context, FileRow};
+pub(super) use files::{Action, Context, FileRow, shift};
 use files::{armed, file_url, read_git_branch, save};
 
 mod secret;

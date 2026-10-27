@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::hashline::{Tags, line_hash, tagged_lines};
 
 use super::image::image_type;
-use super::{ToolRegistry, object_string, object_usize, parse_args};
+use super::{ToolRegistry, object_string, object_usize};
 use crate::tools::ToolOutput;
 
 const READ_PAGE_BYTES: usize = super::super::budget::SHAPED_BUDGET;
@@ -111,7 +111,6 @@ impl ToolRegistry {
                 fields.remove("paths");
             }
             call["path"] = Value::String(path.to_string());
-            let call = call.to_string();
             match self.read_file(&call) {
                 Ok(read) if !out.is_empty() && out.len() + read.text.len() > READ_PAGE_BYTES => {
                     out.push_str(&format!(
@@ -141,14 +140,13 @@ impl ToolRegistry {
         })
     }
 
-    pub(super) fn read_file(&self, arguments: &str) -> Result<ToolOutput> {
-        let args: Value = parse_args("read", arguments)?;
-        let path = object_string(&args, "path")?;
-        let context = object_usize(&args, "context");
-        let before = object_usize(&args, "before").or(context).unwrap_or(0);
-        let after = object_usize(&args, "after").or(context).unwrap_or(0);
-        let offset = object_usize(&args, "offset").unwrap_or(1).max(1);
-        let limit = object_usize(&args, "limit").map_or(usize::MAX, |limit| {
+    pub(super) fn read_file(&self, args: &Value) -> Result<ToolOutput> {
+        let path = object_string(args, "path")?;
+        let context = object_usize(args, "context");
+        let before = object_usize(args, "before").or(context).unwrap_or(0);
+        let after = object_usize(args, "after").or(context).unwrap_or(0);
+        let offset = object_usize(args, "offset").unwrap_or(1).max(1);
+        let limit = object_usize(args, "limit").map_or(usize::MAX, |limit| {
             limit
                 .saturating_add(before.min(offset - 1))
                 .saturating_add(after)

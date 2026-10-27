@@ -86,16 +86,20 @@ impl<P: Provider> Loop<P> {
             Message::user(user.to_string()),
         ];
         let request = self.request(workflow::Role::Judge, &messages, &[], false);
-        match self.complete_once(workflow::Role::Judge, &request).await? {
-            Ok(message) => {
-                let usage = message.usage.clone();
-                let text = message.content.unwrap_or_default();
+        let options = CallOptions {
+            stream: false,
+            retry: RetryPolicy::None,
+        };
+        match self.call(workflow::Role::Judge, request, options).await? {
+            Ok(reply) => {
+                let usage = reply.message.usage.clone();
+                let text = reply.message.content.unwrap_or_default();
                 if let Some(reason) = self.round_abort() {
                     return Err(Error::Config(reason));
                 }
                 Ok((text, usage))
             }
-            Err(wait_error) => Err(wait_error.error()),
+            Err(missed) => Err(missed.error.error()),
         }
     }
 
@@ -149,19 +153,19 @@ impl<P: Provider> Loop<P> {
 
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {
         self.session
-            .prepare_external_work(markdown, WorkPolicy::Steps, commands)
+            .prepare_external_work(markdown, crate::WorkKind::Steps, commands)
             .map_err(super::session_err)?;
         self.schema = None;
-        self.set_mode(crate::RunMode::Work);
+        self.set_mode(crate::WorkKind::Steps);
         Ok(())
     }
 
     pub fn select_goal(&mut self, objective: &str, commands: &[String]) -> Result<()> {
         self.session
-            .prepare_external_work(objective, WorkPolicy::Goal {}, commands)
+            .prepare_external_work(objective, crate::WorkKind::Goal, commands)
             .map_err(super::session_err)?;
         self.schema = None;
-        self.set_mode(crate::RunMode::Goal);
+        self.set_mode(crate::WorkKind::Goal);
         Ok(())
     }
 
@@ -172,22 +176,16 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub fn job_at(path: &Path, workspace: &Path) -> Option<(crate::WorkKind, String)> {
-        let (policy, objective) = crate::durable::driver::active_at(path, workspace)?;
-        let kind = match policy {
-            WorkPolicy::Single => crate::WorkKind::Single,
-            WorkPolicy::Steps => crate::WorkKind::Steps,
-            WorkPolicy::Goal { .. } => crate::WorkKind::Goal,
-        };
-        Some((kind, objective))
+        crate::durable::driver::active_at(path, workspace)
     }
 
     #[must_use]
     pub fn steps_at(path: &Path, workspace: &Path, markdown: &str) -> bool {
-        work_at(path, workspace, WorkPolicy::Steps, markdown)
+        work_at(path, workspace, crate::WorkKind::Steps, markdown)
     }
 
     #[must_use]
     pub fn goal_at(path: &Path, workspace: &Path, objective: &str) -> bool {
-        work_at(path, workspace, WorkPolicy::Goal {}, objective)
+        work_at(path, workspace, crate::WorkKind::Goal, objective)
     }
 }

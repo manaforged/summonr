@@ -29,7 +29,7 @@ pub(crate) fn roman(number: usize) -> String {
 
 pub(crate) fn checks(
     markdown: &str,
-    policy: Policy,
+    policy: WorkKind,
     commands: &[String],
 ) -> Result<Vec<Check>, WorkError> {
     let mut checks: Vec<Check> = commands
@@ -39,7 +39,7 @@ pub(crate) fn checks(
             observation: None,
         })
         .collect();
-    if policy != Policy::Steps {
+    if policy != WorkKind::Steps {
         return Ok(checks);
     }
     let mut push = |command: String, observation: Option<Observation>| {
@@ -75,12 +75,49 @@ pub(crate) fn checks(
     Ok(checks)
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkKind {
+    #[default]
     Single,
     Steps,
     Goal,
+}
+
+impl WorkKind {
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Single => "auto",
+            Self::Steps => "work",
+            Self::Goal => "goal",
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Persisted {
+    Single,
+    Steps,
+    Goal {},
+}
+
+pub(super) fn persist<S: serde::Serializer>(kind: &WorkKind, to: S) -> Result<S::Ok, S::Error> {
+    match kind {
+        WorkKind::Single => Persisted::Single,
+        WorkKind::Steps => Persisted::Steps,
+        WorkKind::Goal => Persisted::Goal {},
+    }
+    .serialize(to)
+}
+
+pub(super) fn restore<'de, D: serde::Deserializer<'de>>(from: D) -> Result<WorkKind, D::Error> {
+    Ok(match Persisted::deserialize(from)? {
+        Persisted::Single => WorkKind::Single,
+        Persisted::Steps => WorkKind::Steps,
+        Persisted::Goal {} => WorkKind::Goal,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]

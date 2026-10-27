@@ -6,31 +6,18 @@ impl App {
             .get()
             .peers
             .iter()
-            .map(|agent| FileRow {
-                path: agent.label().to_string(),
-                name: agent.label().to_string(),
-                depth: 0,
-                dir: false,
-                open: false,
-            })
+            .map(|agent| FileRow::flat(agent.label().to_string(), agent.label().to_string(), false))
             .collect()
     }
 
     pub(in crate::tui::sigil_view) fn peer_move(&self, delta: isize) {
-        let count = self.model.get().peers.len();
-        if count == 0 {
-            return;
-        }
-        let cursor = self.peer_cursor.peek().min(count - 1) as isize;
-        self.peer_cursor
-            .set((cursor + delta).clamp(0, count as isize - 1) as usize);
+        files::shift(&self.peer_cursor, delta, self.model.get().peers.len());
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn peer_enter(&self) {
         let peers = self.model.get().peers.clone();
-        let cursor = self.peer_cursor.peek().min(peers.len().saturating_sub(1));
-        let Some(agent) = peers.get(cursor) else {
+        let Some(agent) = peers.get(files::pick(&self.peer_cursor, peers.len())) else {
             return;
         };
         let label = agent.label().to_string();

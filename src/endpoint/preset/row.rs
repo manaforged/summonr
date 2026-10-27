@@ -161,9 +161,8 @@ impl Row {
     fn wire(&self, name: &str) -> Checked<Wire> {
         match self.wire.as_deref() {
             None => Ok(Wire::Completions),
-            Some(named) => {
-                wire(named).map_err(|error| format!("`{name}` has an invalid wire: {error}"))
-            }
+            Some(named) => Wire::parse(named)
+                .ok_or_else(|| format!("`{name}` has an invalid wire: unknown wire `{named}`")),
         }
     }
 

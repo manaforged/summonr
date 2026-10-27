@@ -128,13 +128,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn diff_rows(&self) -> Vec<FileRow> {
         self.diff_stats()
             .iter()
-            .map(|stat| FileRow {
-                path: stat.path.clone(),
-                name: stat.path.clone(),
-                depth: 0,
-                dir: false,
-                open: false,
-            })
+            .map(|stat| FileRow::flat(stat.path.clone(), stat.path.clone(), false))
             .collect()
     }
 
@@ -142,13 +136,7 @@ impl App {
         if self.diff_view.peek().is_some() {
             return self.hunk_move(delta);
         }
-        let count = self.diff_rows().len();
-        if count == 0 {
-            return;
-        }
-        let cursor = self.diff_cursor.peek().min(count - 1) as isize;
-        self.diff_cursor
-            .set((cursor + delta).clamp(0, count as isize - 1) as usize);
+        files::shift(&self.diff_cursor, delta, self.diff_rows().len());
         self.refresh();
     }
 
@@ -160,8 +148,7 @@ impl App {
             return;
         }
         let rows = self.diff_rows();
-        let cursor = self.diff_cursor.peek().min(rows.len().saturating_sub(1));
-        if let Some(row) = rows.get(cursor) {
+        if let Some(row) = rows.get(files::pick(&self.diff_cursor, rows.len())) {
             self.diff_open(row.path.clone());
         }
     }
@@ -210,31 +197,24 @@ impl App {
             .get()
             .trees
             .iter()
-            .map(|row| FileRow {
-                path: row.tree.path.display().to_string(),
-                name: row.tree.branch.clone(),
-                depth: 0,
-                dir: false,
-                open: false,
+            .map(|row| {
+                FileRow::flat(
+                    row.tree.path.display().to_string(),
+                    row.tree.branch.clone(),
+                    false,
+                )
             })
             .collect()
     }
 
     pub(in crate::tui::sigil_view) fn tree_move(&self, delta: isize) {
-        let count = self.tree_rows().len();
-        if count == 0 {
-            return;
-        }
-        let cursor = self.tree_cursor.peek().min(count - 1) as isize;
-        self.tree_cursor
-            .set((cursor + delta).clamp(0, count as isize - 1) as usize);
+        files::shift(&self.tree_cursor, delta, self.tree_rows().len());
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn tree_enter(&self) {
         let rows = self.tree_rows();
-        let cursor = self.tree_cursor.peek().min(rows.len().saturating_sub(1));
-        if let Some(row) = rows.get(cursor) {
+        if let Some(row) = rows.get(files::pick(&self.tree_cursor, rows.len())) {
             self.tree_show(PathBuf::from(&row.path), row.name.clone());
         }
     }

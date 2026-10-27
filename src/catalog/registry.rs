@@ -157,7 +157,7 @@ pub async fn refresh_registry() -> Result<()> {
 }
 
 async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
-    let http = crate::credentials::http()?;
+    let http = crate::credentials::http(crate::limits::limits().auth())?;
     let url = std::env::var("SUMMONR_MODELS_URL")
         .ok()
         .filter(|url| !url.trim().is_empty())

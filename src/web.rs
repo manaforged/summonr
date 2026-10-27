@@ -40,7 +40,9 @@ pub(crate) const PRIVATE_URL_PATTERNS: &[&str] = &[
     "*://metadata.google.internal/*",
     "*://metadata.google.internal:*/*",
 ];
-use results::{Engine, Hit, Window, engines, flat, format_hits, parse_page};
+use results::markup::{Space, collapse};
+pub(crate) use results::wall;
+use results::{Engine, Hit, Window, engines, format_hits, parse_page};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Format {
@@ -222,7 +224,7 @@ impl Search {
             return Err(Error::Tool(format!(
                 "web_search {} HTTP {status}: {}",
                 engine.name,
-                crate::text::ellipsize(&flat(&body), 200)
+                crate::text::ellipsize(&collapse(&body, Space::Flat), 200)
             )));
         }
         Ok(Page::Hits(parse_page(&body, engine)))

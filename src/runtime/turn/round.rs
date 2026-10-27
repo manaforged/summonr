@@ -28,15 +28,15 @@ impl<P: Provider> Loop<P> {
                 abort = reason;
                 break;
             }
-            let Some((assistant, prefix_hash, request_chars, durable_attempt, live_millis)) = self
-                .complete_retry(&mut messages, &tools, events, &mut emit)
+            let Some((assistant, request_chars, (durable_attempt, meter, meta))) = self
+                .round_call(&mut messages, &tools, events, &mut emit)
                 .await?
             else {
                 abort = self.budget_abort().unwrap_or_else(Abort::time_limit);
                 break;
             };
-            let (message, stop_reason, meter, reasoning, meta) =
-                self.take_reply(assistant, prefix_hash, request_chars, live_millis, usage);
+            let (message, stop_reason, reasoning) =
+                self.take_reply(assistant, request_chars, usage);
             if stop_reason == StopReason::Length && message.tool_calls.is_empty() {
                 let mut steered = Vec::new();
                 self.steer_length(
@@ -159,30 +159,66 @@ impl<P: Provider> Loop<P> {
         Ok(self.budget_abort())
     }
 
+    async fn round_call(
+        &mut self,
+        messages: &mut Vec<Message>,
+        tools: &super::super::mail::Advertised,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Option<(AssistantMessage, usize, (Attempt, Meter, UsageMeta))>> {
+        let role = self.round_role();
+        let mut state = super::retry::RetryState::default();
+        loop {
+            let request = self.request_with(role, messages, tools);
+            self.freeze_catalog();
+            let options = CallOptions {
+                stream: true,
+                retry: RetryPolicy::Round,
+            };
+            let Missed { error, interrupted } = match self.call(role, request, options).await? {
+                Ok(reply) => {
+                    let open = reply
+                        .open
+                        .ok_or_else(|| Error::Config("no provider round is open".to_string()))?;
+                    return Ok(Some((reply.message, reply.chars, open)));
+                }
+                Err(missed) => missed,
+            };
+            let error = match error {
+                WaitError::Deadline(_) => None,
+                WaitError::Provider(error) => {
+                    messages.extend(interrupted);
+                    Some(error)
+                }
+            };
+            self.emit_records(events, emit)?;
+            self.sync_usage(emit);
+            let Some(error) = error else {
+                return Ok(None);
+            };
+            if !self
+                .provider_failed(error, &mut state, messages, tools, events, emit)
+                .await?
+            {
+                return Ok(None);
+            }
+        }
+    }
+
     fn take_reply(
         &mut self,
         assistant: AssistantMessage,
-        prefix_hash: String,
         request_chars: usize,
-        live_millis: u64,
         usage: &mut Usage,
-    ) -> (Message, StopReason, Meter, String, UsageMeta) {
+    ) -> (Message, StopReason, String) {
         self.summary_wait = self.summary_wait.saturating_sub(1);
         if assistant.usage.prompt_tokens > 0 {
             self.context_sample = Some((request_chars, assistant.usage.prompt_tokens));
         }
-        let role = self.round_role();
-        let meta = self.record_usage(&assistant, prefix_hash, role, usage);
+        self.count_usage(&assistant, usage);
         let stop_reason = assistant.stop_reason;
-        let meter = super::meter(&assistant.usage, live_millis);
         let reasoning = assistant.reasoning_content.clone().unwrap_or_default();
-        (
-            assistant.into_message(),
-            stop_reason,
-            meter,
-            reasoning,
-            meta,
-        )
+        (assistant.into_message(), stop_reason, reasoning)
     }
 
     pub(super) async fn scout(

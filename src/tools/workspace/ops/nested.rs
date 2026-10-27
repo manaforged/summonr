@@ -5,7 +5,7 @@ use crate::error::{Error, Result};
 use super::super::edit::Patch;
 use super::super::object_string;
 use super::{
-    OP_INSERT_AFTER, OP_REPLACE_TEXT, delete_patch, insert_patch, optional_tag, replace_all,
+    OP_INSERT_AFTER, OP_REPLACE_TEXT, insert_patch, lines, optional_tag, replace_all,
     replace_patch, replace_text_patch,
 };
 
@@ -39,7 +39,7 @@ fn nested_replace(text: &str, replace: &Value) -> Result<Patch> {
         .and_then(Value::as_str)
         .ok_or_else(|| Error::Tool("replace requires new".to_string()))?;
     let end = replace.get("end_tag").and_then(Value::as_str);
-    replace_patch(text, tag, end, new)
+    replace_patch(text, tag, end, lines(new))
 }
 
 fn nested_replace_text(text: &str, replace: &Value) -> Result<Patch> {
@@ -76,5 +76,5 @@ fn nested_delete(text: &str, delete: &Value) -> Result<Patch> {
     }
     let tag = object_string(delete, "tag")?;
     let end = delete.get("end_tag").and_then(Value::as_str);
-    delete_patch(text, tag, end)
+    replace_patch(text, tag, end, Vec::new())
 }

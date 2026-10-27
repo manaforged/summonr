@@ -398,12 +398,7 @@ impl Client {
 
     pub(super) async fn probe(&self, model: &str) -> Option<u32> {
         let base = &self.base;
-        let field = match self.wire {
-            Wire::Anthropic => Some("max_input_tokens"),
-            Wire::Gemini => Some("inputTokenLimit"),
-            Wire::Completions | Wire::Responses | Wire::Decisions | Wire::AgentSdk => None,
-        };
-        if let Some(field) = field {
+        if let Some(field) = wire::spec(self.wire).probe {
             let mut url = url::Url::parse(&format!("{base}/models/")).ok()?;
             url.path_segments_mut()
                 .ok()?

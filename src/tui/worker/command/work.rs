@@ -120,11 +120,11 @@ impl Worker {
         }
         if clears(objective) {
             self.clear_goal();
-            self.leave_goal(crate::RunMode::Auto);
+            self.leave_goal(crate::WorkKind::Single);
             return true;
         }
         let before = match self.loop_.mode() {
-            crate::RunMode::Goal => crate::RunMode::Auto,
+            crate::WorkKind::Goal => crate::WorkKind::Single,
             mode => mode,
         };
         let Some(gates) = self.goal_gates() else {
@@ -206,8 +206,8 @@ impl Worker {
         true
     }
 
-    fn leave_goal(&mut self, mode: crate::RunMode) {
-        if self.loop_.mode() == crate::RunMode::Goal
+    fn leave_goal(&mut self, mode: crate::WorkKind) {
+        if self.loop_.mode() == crate::WorkKind::Goal
             && self.loop_.active_goal().ok().flatten().is_none()
         {
             self.loop_.set_mode(mode);

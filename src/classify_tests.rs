@@ -255,7 +255,7 @@ fn any_endpoint_can_declare_itself_a_decisions_endpoint() {
     for spelling in ["decisions", "systemone", "system-one", "DECISIONS"] {
         assert_eq!(
             crate::endpoint::Wire::parse(spelling),
-            Wire::Decisions,
+            Some(Wire::Decisions),
             "config must be able to declare `{spelling}`"
         );
     }

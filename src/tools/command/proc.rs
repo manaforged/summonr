@@ -168,14 +168,7 @@ pub(super) fn background_result(started: StartedCommand) -> ToolOutput {
     } = started;
     group.disarm();
     drop(child);
-    ToolOutput {
-        text: job_text(&id, pid, &log_path),
-        success: true,
-        mutated: false,
-        grant: None,
-        images: Vec::new(),
-        patch: None,
-    }
+    ToolOutput::ok(job_text(&id, pid, &log_path))
 }
 
 pub(super) fn job_text(id: &str, pid: u32, log_path: &std::path::Path) -> String {

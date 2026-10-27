@@ -233,14 +233,16 @@ impl LoginFlow {
 }
 
 impl Wire {
-    pub(crate) fn parse(value: &str) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        Some(match value.trim().to_ascii_lowercase().as_str() {
+            "completions" => Self::Completions,
             "responses" => Self::Responses,
             "anthropic" | "claude" => Self::Anthropic,
             "gemini" | "google" => Self::Gemini,
             "decisions" | "systemone" | "system-one" => Self::Decisions,
-            _ => Self::Completions,
-        }
+            "agent-sdk" => Self::AgentSdk,
+            _ => return None,
+        })
     }
 }
 

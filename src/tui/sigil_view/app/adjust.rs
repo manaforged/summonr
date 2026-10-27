@@ -10,12 +10,10 @@ impl App {
         if self.picker.open.peek() {
             return;
         }
-        let last = super::settings::setting_rows(self).len().saturating_sub(1);
-        self.settings_sel.set(
-            self.settings_sel
-                .peek()
-                .saturating_add_signed(delta)
-                .min(last),
+        files::shift(
+            &self.settings_sel,
+            delta,
+            super::settings::setting_rows(self).len(),
         );
     }
 
@@ -132,13 +130,7 @@ impl App {
         if self.hotkeys.recording.peek() {
             return;
         }
-        self.hotkeys.sel.set(
-            self.hotkeys
-                .sel
-                .peek()
-                .saturating_add_signed(delta)
-                .min(Hotkey::ALL.len() - 1),
-        );
+        files::shift(&self.hotkeys.sel, delta, Hotkey::ALL.len());
     }
 
     pub(in crate::tui::sigil_view) fn edit_hotkey(&self) {

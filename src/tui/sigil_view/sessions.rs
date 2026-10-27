@@ -266,14 +266,7 @@ impl Picker {
             self.armed.set(None);
             self.error.set(String::new());
         }
-        let last = self.rows().len().saturating_sub(1);
-        self.selected.set(
-            self.selected
-                .peek()
-                .min(last)
-                .saturating_add_signed(delta)
-                .min(last),
-        );
+        super::app::shift(&self.selected, delta, self.rows().len());
     }
 
     pub(super) fn scope(self) {

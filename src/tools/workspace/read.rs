@@ -11,8 +11,7 @@ use super::image::image_type;
 use super::{ToolRegistry, object_string, object_usize, parse_args};
 use crate::tools::ToolOutput;
 
-const READ_PAGE_BYTES: usize = 50 * 1024;
-const READ_MAX_BYTES: usize = 8 * 1024;
+const READ_PAGE_BYTES: usize = super::super::budget::SHAPED_BUDGET;
 const READ_MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 
 enum Opened {
@@ -262,8 +261,9 @@ fn decode(raw: &[u8], partial: bool) -> (String, bool) {
     if raw.last() == Some(&b'\r') {
         raw = &raw[..raw.len() - 1];
     }
-    let clipped = partial || raw.len() > READ_MAX_BYTES;
-    let prefix = &raw[..raw.len().min(READ_MAX_BYTES)];
+    let limit = crate::limits::limits().output_line_bytes;
+    let clipped = partial || raw.len() > limit;
+    let prefix = &raw[..raw.len().min(limit)];
     let prefix = match std::str::from_utf8(prefix) {
         Err(error) if clipped && error.error_len().is_none() => &prefix[..error.valid_up_to()],
         Ok(_) | Err(_) => prefix,
@@ -273,7 +273,8 @@ fn decode(raw: &[u8], partial: bool) -> (String, bool) {
         Cow::Owned(text) => format!("{text} [invalid UTF-8 replaced]"),
     };
     if clipped {
-        text.push_str(&format!("… [line clipped at {READ_MAX_BYTES} bytes]"));
+        text.push('…');
+        text.push_str(&super::super::budget::clip_mark(limit));
     }
     (text, clipped)
 }

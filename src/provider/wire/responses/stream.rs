@@ -6,9 +6,6 @@ use crate::provider::{
     AssistantMessage, Continuation, Partial, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
 };
 
-#[cfg(test)]
-use serde_json::Value;
-
 #[derive(Default)]
 pub(crate) struct Stream {
     model: String,
@@ -266,12 +263,6 @@ impl Stream {
             _ => {}
         }
         Ok(())
-    }
-
-    #[cfg(test)]
-    pub(super) fn whole(&mut self, response: &Value) -> crate::error::Result<()> {
-        let text = response.to_string();
-        self.value(&parse::<Response<'_>>(&text)?)
     }
 
     fn value(&mut self, response: &Response<'_>) -> crate::error::Result<()> {

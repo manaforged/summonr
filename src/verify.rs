@@ -61,9 +61,17 @@ impl Receipt {
     }
 
     #[must_use]
-    pub(crate) fn unchecked(changes: Vec<String>, snapshot: String, events: &[Event]) -> Self {
-        let mut receipt = Self::new(changes, Vec::new(), snapshot, events);
-        receipt.text = render(&receipt, false);
+    pub(crate) fn from_turn(
+        changes: Vec<String>,
+        snapshot: String,
+        events: &[Event],
+        configured: &[String],
+    ) -> Self {
+        let checks = ran(events, configured);
+        let mut receipt = Self::new(changes, checks, snapshot, events);
+        if receipt.checks.is_empty() {
+            receipt.text = render(&receipt, false);
+        }
         receipt
     }
 
@@ -176,6 +184,53 @@ pub(crate) fn summary(changes: &[String], checks: &[Outcome]) -> String {
         }
     }
     text
+}
+
+pub(crate) fn ran(events: &[Event], configured: &[String]) -> Vec<Outcome> {
+    let mut calls = BTreeMap::new();
+    for event in events {
+        if let Event::ToolCall {
+            id,
+            name,
+            arguments,
+        } = event
+            && crate::tools::Builtin::of(name) == Some(crate::tools::Builtin::RunCommand)
+            && let Some(command) = command_of(arguments)
+            && is_check(&command, configured)
+        {
+            calls.insert(id.as_str(), command);
+        }
+    }
+    let mut outcomes = Vec::new();
+    for event in events {
+        if let Event::ToolResult {
+            id,
+            success,
+            output,
+            ..
+        } = event
+            && let Some(command) = calls.get(id.as_str())
+        {
+            outcomes.push(Outcome {
+                command: (*command).clone(),
+                passed: *success,
+                output: output.clone(),
+            });
+        }
+    }
+    outcomes
+}
+
+fn command_of(arguments: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(arguments)
+        .ok()?
+        .get("command")?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn is_check(command: &str, configured: &[String]) -> bool {
+    configured.iter().any(|check| check == command) || command.contains("loop verify")
 }
 
 fn tally(events: &[Event], receipt: &mut Receipt) {

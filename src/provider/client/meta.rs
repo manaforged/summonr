@@ -17,15 +17,41 @@ pub(super) fn listed(value: &Value, model: &str) -> Option<u32> {
 }
 
 pub(crate) fn input_cap(text: &str) -> Option<u32> {
-    let rest = text.split("maximum allowed length (").nth(1)?;
-    let digits: String = rest.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+    const AFTER: &[&str] = &[
+        "maximum allowed length (",
+        "maximum context length is ",
+        "maximum number of tokens allowed (",
+        "available context size (",
+        "context window of ",
+        "context limit of ",
+        "maximum prompt length (",
+        "max context length: ",
+    ];
+    let lower = text.to_ascii_lowercase();
+    for mark in AFTER {
+        if let Some(index) = lower.find(mark)
+            && let Some(cap) = leading_number(&text[index + mark.len()..])
+        {
+            return Some(cap);
+        }
+    }
+    text.rsplit_once("> ")
+        .and_then(|(_, rest)| leading_number(rest))
+}
+
+fn leading_number(text: &str) -> Option<u32> {
+    let digits: String = text
+        .chars()
+        .skip_while(|ch| ch.is_ascii_whitespace())
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect();
     digits.parse().ok().filter(|value| *value > 0)
 }
 
 const PLAN_USAGE: &[(&str, ProviderFailureKind)] = &[
     (
         "subscription_sharing_usage_limit_exceeded",
-        ProviderFailureKind::RateLimited,
+        ProviderFailureKind::UsageLimit,
     ),
     (
         "subscription_sharing_user_not_eligible",
@@ -59,33 +85,25 @@ const PLAN_USAGE: &[(&str, ProviderFailureKind)] = &[
         "chatpass_v2_invalid_authorization_context",
         ProviderFailureKind::Http,
     ),
+    ("insufficient_quota", ProviderFailureKind::UsageLimit),
+    ("hit your session limit", ProviderFailureKind::UsageLimit),
 ];
 
 const PLAN_USAGE_CAP: &str = "subscription_sharing_usage_limit_exceeded";
 const PLAN_USAGE_SETTINGS: &str = "https://chatgpt.com/settings/usage";
 
-pub(crate) fn plan_usage(code: u16, text: &str, retry_after: Option<u64>) -> Option<Error> {
-    let (named, kind) = PLAN_USAGE
-        .iter()
-        .find(|(code, _)| text.contains(code))
-        .copied()?;
-    Some(Error::Provider(ProviderFailure {
-        kind,
-        status: Some(code),
-        message: format!("HTTP {code}: {named}: {}", reason(text)),
-        partial_output: false,
-        retry_after,
-    }))
-}
-
 pub(crate) fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
-    if let Some(error) = plan_usage(code, text, retry_after) {
-        return error;
-    }
+    let lower = text.to_ascii_lowercase();
+    // complexity: bounded by the eleven provider failure markers
+    let known = PLAN_USAGE.iter().find(|(named, _)| lower.contains(named));
+    let detail = reason(text);
     Error::Provider(ProviderFailure {
-        kind: failure_kind(code, &text.to_lowercase()),
+        kind: known.map_or_else(|| failure_kind(code, &lower), |(_, kind)| *kind),
         status: Some(code),
-        message: format!("HTTP {code}: {}", reason(text)),
+        message: known.map_or_else(
+            || format!("HTTP {code}: {detail}"),
+            |(named, _)| format!("HTTP {code}: {named}: {detail}"),
+        ),
         partial_output: false,
         retry_after: retry_after.or_else(|| retry_delay(text)),
     })
@@ -110,11 +128,16 @@ fn malformed_tool_call(lower: &str) -> bool {
 }
 
 fn context_overflow(lower: &str) -> bool {
-    (lower.contains("context")
-        && ["window", "length", "too long", "exceed"]
-            .iter()
-            .any(|word| lower.contains(word)))
-        || lower.contains("maximum allowed length")
+    lower.contains("maximum allowed length")
+        || lower.contains("maximum context length")
+        || lower.contains("maximum number of tokens")
+        || lower.contains("prompt is too long")
+        || lower.contains("available context size")
+        || lower.contains("context limit")
+        || lower.contains("context window")
+        || lower.contains("too many tokens")
+        || (lower.contains("context")
+            && (lower.contains("length") || lower.contains("too long") || lower.contains("exceed")))
         || (lower.contains("input length") && lower.contains("exceed"))
 }
 
@@ -206,9 +229,17 @@ impl Client {
         };
         let lower = failure.message.to_lowercase();
         let advice = match (failure.kind, model) {
-            (ProviderFailureKind::RateLimited, _) if lower.contains(PLAN_USAGE_CAP) => format!(
-                "{name} reached this app's cap on your ChatGPT plan; open Manage usage at {PLAN_USAGE_SETTINGS} to raise it, or pick another model with /model"
-            ),
+            (ProviderFailureKind::UsageLimit, _) => {
+                if lower.contains(PLAN_USAGE_CAP) {
+                    format!(
+                        "{name} reached this app's cap on your ChatGPT plan; open Manage usage at {PLAN_USAGE_SETTINGS} to raise it, or pick another model with /model"
+                    )
+                } else {
+                    format!(
+                        "{name} exhausted its usage allowance; wait for its reset or select another account or provider"
+                    )
+                }
+            }
             (ProviderFailureKind::Authentication, _) if !keyed => {
                 failure.kind = ProviderFailureKind::MissingKey;
                 format!("{name} needs a key and none is set; run `summonr login {name}` to add one")
@@ -304,7 +335,7 @@ impl Client {
         match error.provider_failure().map(|failure| failure.kind) {
             Some(Kind::Authentication) => State::KeyRejected,
             Some(Kind::MissingKey) => State::NeedsKey,
-            Some(Kind::RateLimited) => State::RateLimited,
+            Some(Kind::RateLimited | Kind::UsageLimit) => State::RateLimited,
             Some(Kind::Transport) => State::Offline,
             Some(
                 Kind::Server
@@ -346,27 +377,23 @@ impl Client {
     }
 
     pub async fn context(&self, endpoint: &str, model: &str) -> Option<u32> {
-        let local = crate::endpoint::auth_info(endpoint).is_ok_and(|info| info.keyless());
+        let local = crate::endpoint::local(&self.base);
         if !local && let Some(limit) = self.recorded(endpoint, model) {
             return Some(limit);
         }
-        tokio::time::timeout(crate::limits::limits().probe(), self.probe(model))
+        let probed = tokio::time::timeout(crate::limits::limits().probe(), self.probe(model))
             .await
             .ok()
-            .flatten()
-            .or_else(|| self.recorded(endpoint, model))
+            .flatten();
+        if local {
+            probed
+        } else {
+            probed.or_else(|| self.recorded(endpoint, model))
+        }
     }
 
     fn recorded(&self, endpoint: &str, model: &str) -> Option<u32> {
-        if let Some(limit) = crate::catalog::known(endpoint, model).and_then(|row| row.context) {
-            return Some(limit);
-        }
-        let mut rows = [Model {
-            id: model.to_string(),
-            ..Model::default()
-        }];
-        crate::catalog::enrich(endpoint, Some(&self.base), &mut rows);
-        rows[0].context
+        crate::catalog::context_limit(endpoint, model, Some(&self.base))
     }
 
     pub(super) async fn probe(&self, model: &str) -> Option<u32> {

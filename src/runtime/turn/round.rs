@@ -230,6 +230,7 @@ impl<P: Provider> Loop<P> {
         self.summary_wait = 0;
         self.turn_started = crate::mail::now();
         let commands = self.verify.clone().unwrap_or_default();
+        self.tools.clear_wrote();
         self.prepare_work(&input.text, &commands)?;
         let harness = self.harness_note(&self.work_progress()?);
         if !self.note_sent(&harness) {
@@ -286,8 +287,15 @@ impl<P: Provider> Loop<P> {
         self.settle_probe().await;
         self.take_mail(messages, events, emit)?;
         self.drain(events, emit);
-        self.auto_compact(messages, tool_bytes, usage, events, emit)
-            .await?;
+        if self
+            .auto_compact(messages, tool_bytes, usage, events, emit)
+            .await?
+        {
+            let note = self.harness_note(&self.work_progress()?);
+            if !note.is_empty() {
+                self.inject(note, messages)?;
+            }
+        }
         Ok(())
     }
 }

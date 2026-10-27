@@ -90,7 +90,7 @@ impl<P: Provider> Loop<P> {
             let provider = self
                 .seats
                 .get(&role)
-                .map_or(&self.provider, |(provider, _)| provider);
+                .map_or(&self.provider, |(provider, _, _)| provider);
             let completion = provider.stream(&request, &mut self.session.partial);
             let reply = Self::wait(completion, remaining).await;
             match reply {
@@ -224,6 +224,11 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
+        if error.provider_failure().map(|failure| failure.kind)
+            == Some(ProviderFailureKind::UsageLimit)
+        {
+            return Err(error);
+        }
         let text = error.to_string();
         if !retryable {
             if self.seats.contains_key(&role) || !self.fall_back(&text, events, emit)? {
@@ -326,7 +331,7 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<bool> {
         if let Some(cap) = crate::provider::input_cap(text) {
-            self.set_context_window(Some(cap));
+            self.learn_role_window(self.round_role(), cap);
         }
         if !self
             .auto_compact(messages, tool_bytes, usage, events, emit)

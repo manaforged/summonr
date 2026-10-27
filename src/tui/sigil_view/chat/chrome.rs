@@ -48,6 +48,19 @@ impl Model {
         if out > 0 {
             rows.push(("out".to_string(), crate::provider::compact(out)));
         }
+        for (name, chars) in [
+            ("system", self.snapshot.prompt_system),
+            ("schemas", self.snapshot.prompt_schemas),
+            ("tools", self.snapshot.prompt_tools),
+            ("other", self.snapshot.prompt_other),
+        ] {
+            if chars > 0 {
+                rows.push((
+                    name.to_string(),
+                    format!("{} chars", crate::provider::compact(chars as u64)),
+                ));
+            }
+        }
         rows
     }
 

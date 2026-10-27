@@ -98,16 +98,14 @@ fn slash_typeahead_shows_command_names_and_syntax_without_descriptions() {
 #[test]
 fn mention_typeahead_keeps_peer_details() {
     let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(crate::tui::Msg::Peers(vec![crate::mail::Agent {
-            id: "0123456789abcdef0123456789abcdef".to_string(),
-            name: "build-peer".to_string(),
-            kind: crate::mail::KIND.to_string(),
-            model: "peer-model".to_string(),
-            cwd: "/work/summonr".to_string(),
-            pid: 1,
-            status: crate::mail::Presence::Idle,
-            last_seen: 0,
-        }]));
+        app.update(crate::tui::Msg::Peers(vec![
+            serde_json::from_value(serde_json::json!({
+                "id": "0123456789abcdef0123456789abcdef", "name": "build-peer",
+                "model": "peer-model", "cwd": "/work/summonr", "pid": 1,
+                "status": "idle", "last_seen": 0
+            }))
+            .expect("peer record"),
+        ]));
         app.replace("@build".to_string());
     })
     .join("\n");

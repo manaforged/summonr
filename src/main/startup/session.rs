@@ -47,7 +47,7 @@ pub(super) fn apply_workflow(
     json: bool,
 ) -> Result<workflow::Workflow> {
     let workflow = workflow::load(name)?;
-    loop_.apply_workflow(&workflow, |seat| {
+    loop_.seat_workflow(&workflow, |seat| {
         let endpoint = resolve_endpoint(
             Some(&seat.endpoint),
             seat.model.as_deref(),
@@ -150,6 +150,9 @@ fn configure(
     check: Option<Vec<String>>,
 ) -> Result<Loop<Client>> {
     loop_ = loop_.with_unrestricted_commands();
+    if args.print && args.goal.is_none() && args.steps.is_none() {
+        loop_ = loop_.without_task_list();
+    }
     for dir in &args.add_dir {
         loop_.allow_path(dir)?;
     }

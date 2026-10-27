@@ -160,6 +160,8 @@ pub(crate) struct Work {
     pub(crate) jobs: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) check: Option<CheckVerdict>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) failed_checks: Option<Vec<crate::verify::Outcome>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) todos: Vec<crate::tools::Todo>,
 }
@@ -186,6 +188,7 @@ impl Work {
             touched: BTreeSet::new(),
             jobs: Vec::new(),
             check: None,
+            failed_checks: None,
             todos: Vec::new(),
         }
     }

@@ -1,6 +1,58 @@
 use super::Model;
 
 #[test]
+fn grok_4_7_takes_its_context_window_from_the_catalog() {
+    assert_eq!(
+        super::context_limit("grok", "grok-4.7", Some("https://api.x.ai/v1")),
+        Some(500_000)
+    );
+}
+
+#[test]
+fn a_url_takes_the_preset_providers_window() {
+    assert_eq!(
+        super::context_limit("proxy", "grok-4.7", Some("https://api.x.ai/v1")),
+        Some(500_000)
+    );
+    assert_eq!(
+        super::context_limit(
+            "copilot",
+            "claude-opus-5-5",
+            Some("https://api.githubcopilot.com")
+        ),
+        Some(1_000_000)
+    );
+}
+
+#[test]
+fn context_limit_does_not_inherit_another_providers_window() {
+    assert_eq!(
+        super::context_limit(
+            "not-a-provider",
+            "grok-4.7",
+            Some("https://example.test/v1")
+        ),
+        None
+    );
+    assert_eq!(
+        super::context_limit(
+            "proxy",
+            "deepseek-flash",
+            Some("https://api.deepseek.com/v1")
+        ),
+        Some(1_000_000)
+    );
+    assert_eq!(
+        super::context_limit("proxy", "gpt-6-astra", Some("https://api.x.ai/v1")),
+        None
+    );
+    assert_eq!(
+        super::context_limit("grok", "no-such-model", Some("https://api.x.ai/v1")),
+        None
+    );
+}
+
+#[test]
 fn a_december_release_keeps_its_own_year() {
     let model = Model {
         release: Some(19_722),

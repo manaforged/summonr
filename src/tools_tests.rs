@@ -80,6 +80,27 @@ fn a_standalone_registry_keeps_its_spill_directory() {
     std::fs::remove_file(path).unwrap();
 }
 
+#[test]
+fn a_trimmed_command_keeps_the_complete_log() -> crate::Result<()> {
+    let (_dir, tools) = workspace(&[]);
+    let text = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": per_shell("seq 1 9000", "1..9000")}),
+    );
+    let path = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("[full output: "))
+        .and_then(|rest| rest.split_once(" ("))
+        .map(|(path, _)| std::path::PathBuf::from(path))
+        .expect("trimmed output names its full log");
+    assert!(text.len() < 17_000, "preview was {} bytes", text.len());
+    let full = std::fs::read_to_string(path)?;
+    assert!(full.lines().any(|line| line == "3000") && full.contains("9000"));
+    assert!(!text.lines().any(|line| line == "3000"));
+    Ok(())
+}
+
 fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
     let dir = tempfile::tempdir().unwrap();
     for (name, text) in files {
@@ -277,19 +298,20 @@ fn a_read_only_registry_keeps_the_parent_tool_list() {
 }
 
 #[test]
-fn builtin_results_share_the_output_budget() {
+fn read_pages_share_the_output_budget_without_hiding_later_lines() {
     let line = "x".repeat(120);
     let body: String = (0..1000).map(|n| format!("{n:04}{line}\n")).collect();
     let (_dir, tools) = workspace(&[("big.txt", body.as_str())]);
     let text = run(&tools, "read", serde_json::json!({ "path": "big.txt" }));
-    assert!(text.len() <= 50 * 1024, "{} bytes", text.len());
-    assert!(text.contains("[full output: "), "{}", &text[..200]);
-    let saved = text
-        .split("[full output: ")
-        .nth(1)
-        .and_then(|rest| rest.split(" (").next())
-        .unwrap();
-    let full = std::fs::read_to_string(saved).unwrap();
-    assert!(full.len() > text.len(), "{} <= {}", full.len(), text.len());
-    assert!(full.contains("0300xxxx"), "{saved}");
+    assert!(text.len() <= 16 * 1024, "{} bytes", text.len());
+    assert!(text.contains("continue with offset"), "{}", &text[..200]);
+    let later = run(
+        &tools,
+        "read",
+        serde_json::json!({"path": "big.txt", "offset": 301}),
+    );
+    assert!(
+        later.contains("0300xxxx"),
+        "later source lines were hidden: {later}"
+    );
 }

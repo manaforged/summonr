@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::support::{Model, Options, Session, Step};
+use crate::support::{Model, Options, Session, Step, advertised};
 
 fn events(stdout: &str) -> Vec<Value> {
     stdout
@@ -282,6 +282,76 @@ pub(crate) fn a_failing_grep_check_does_not_complete_a_goal() {
         "{}",
         result.stdout
     );
+}
+
+pub(crate) fn a_print_run_offers_no_task_list_and_a_goal_run_does() {
+    let session = Session::new();
+    let print = Model::start(vec![Step::Text("hi")]);
+    let result = session.run(&print, "", &["--json", "--no-verify"]);
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    assert_eq!(
+        advertised(&print.requests()[0]),
+        ["read", "search", "edit", "write", "run_command"]
+    );
+    with_check(&session, "exit 0");
+    commit_all(&session);
+    let goal = Model::start(vec![
+        Step::Text("already done"),
+        Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
+    ]);
+    let budget = crate::support::slow(20).to_string();
+    let result = session.run(
+        &goal,
+        "",
+        &["--goal", "fix it", "--max-secs", &budget, "--json"],
+    );
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    assert!(advertised(&goal.requests()[0]).contains(&"todo".to_string()));
+}
+
+pub(crate) fn a_print_run_sends_a_lean_first_request() {
+    let session = Session::new();
+    let model = Model::start(vec![Step::Text("hi")]);
+    let result = session.run(&model, "", &["--json", "--no-verify"]);
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    let request = &model.requests()[0];
+    let system = request["messages"][0]["content"]
+        .as_str()
+        .unwrap_or_default();
+    let tools = serde_json::to_string(&request["tools"]).expect("tool schemas");
+    assert!(
+        system.len() + tools.len() <= 5_400,
+        "system {} bytes, tools {} bytes:\n{system}",
+        system.len(),
+        tools.len()
+    );
+}
+
+pub(crate) fn a_session_header_names_the_build_that_wrote_it() {
+    let session = Session::new();
+    let result = session.run(&Model::start(vec![Step::Text("hi")]), "", &["--json"]);
+    assert_eq!(result.code, Some(0), "{}", result.stdout);
+    let (_, version) = session.cli(&["--version"]);
+    let revision = version
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(revision, _)| revision.to_string())
+        .expect("a revision in --version");
+    let journal = std::fs::read_dir(session.home.path().join("sessions"))
+        .expect("sessions dir")
+        .flatten()
+        .map(|entry| entry.path().join("session.jsonl"))
+        .find(|path| path.exists())
+        .expect("a journal");
+    let header: Value = serde_json::from_str(
+        std::fs::read_to_string(journal)
+            .expect("journal text")
+            .lines()
+            .next()
+            .expect("header"),
+    )
+    .expect("header json");
+    assert_eq!(header["revision"], Value::String(revision));
 }
 
 pub(crate) fn a_print_run_says_its_check_was_not_run() {

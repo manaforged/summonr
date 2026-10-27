@@ -34,7 +34,7 @@ impl ModuleId {
     }
 
     #[must_use]
-    pub fn from_name(name: &str) -> Option<Self> {
+    fn from_name(name: &str) -> Option<Self> {
         ALL.iter()
             .map(|module| module.id)
             .find(|id| id.name() == name)

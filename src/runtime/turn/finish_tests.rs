@@ -35,6 +35,7 @@ fn goal(run: &mut Run, review: impl IntoIterator<Item = Reply>) {
         "r",
         None,
         None,
+        None,
     );
 }
 
@@ -195,7 +196,7 @@ async fn an_unchanged_harness_note_is_sent_once() {
     let mut run = session([Reply::Text("one"), Reply::Text("two")]);
     run.loop_.set_mode(crate::RunMode::Work);
     run.loop_.turn("first").await.unwrap();
-    run.loop_.turn("second").await.unwrap();
+    run.loop_.turn("first").await.unwrap();
     let sent = run.sent.lock().unwrap();
     let last_user = |messages: &[Message]| {
         messages
@@ -206,7 +207,7 @@ async fn an_unchanged_harness_note_is_sent_once() {
             .unwrap_or_default()
     };
     assert_ne!(last_user(&sent[0]), "first");
-    assert_eq!(last_user(&sent[1]), "second");
+    assert_eq!(last_user(&sent[1]), "first");
 }
 
 #[test]
@@ -229,11 +230,8 @@ fn a_partial_reply_at_the_end_is_never_sent_as_the_last_message() {
 }
 
 #[tokio::test]
-async fn a_goal_selected_from_the_command_line_runs_its_check_and_asks_the_judge() {
-    let mut run = session([
-        Reply::Text("fixed"),
-        Reply::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
-    ]);
+async fn a_goal_with_a_check_finishes_without_asking_the_judge() {
+    let mut run = session([Reply::Text("fixed")]);
     run.loop_
         .select_goal("make the tests pass", &["exit 0".to_string()])
         .unwrap();
@@ -246,6 +244,7 @@ async fn a_goal_selected_from_the_command_line_runs_its_check_and_asks_the_judge
         closing(&turn)
     );
     assert_eq!(run.loop_.work_progress().unwrap().exit_code(), Some(0));
+    assert_eq!(run.sent.lock().expect("provider requests").len(), 1);
 }
 
 #[tokio::test]
@@ -256,9 +255,7 @@ async fn the_judge_refuses_a_gamed_pass_and_contradictory_tests_stop_the_goal() 
             r#"{"verdict": "impossible", "reason": "test_five and test_six expect 5 and 6 for add(2, 3)"}"#,
         ),
     ]);
-    run.loop_
-        .select_goal("make the tests pass", &["exit 0".to_string()])
-        .unwrap();
+    run.loop_.select_goal("make the tests pass", &[]).unwrap();
     run.loop_.turn("make the tests pass").await.unwrap();
     let sent = run.sent.lock().unwrap().clone();
     let system = &sent[1][0].content;
@@ -289,7 +286,7 @@ async fn steps_selected_from_the_command_line_run_the_completion_check() {
 
 #[tokio::test]
 async fn a_goal_that_stops_short_exits_on_its_check() {
-    for (check, code) in [("exit 1", 2), ("exit 0", 3)] {
+    for (check, code) in [("exit 1", 2), ("exit 0", 0)] {
         let mut run = stalled(check);
         run.loop_.turn("make the tests pass").await.unwrap();
         let exit = run
@@ -313,6 +310,26 @@ async fn a_failed_check_reads_the_same_in_progress_and_verify() {
         closing(&turn)
     );
     assert!(run.loop_.work_progress().unwrap().checks_failed);
+}
+
+#[tokio::test]
+async fn the_same_failed_check_twice_stops_a_goal() -> crate::Result<()> {
+    let mut run = session([Reply::Text("first attempt"), Reply::Text("second attempt")]);
+    run.loop_
+        .select_goal("repair the candidate", &["exit 1".to_string()])?;
+    run.loop_.turn("repair the candidate").await?;
+    assert!(!run.loop_.work_progress()?.terminal());
+    run.loop_.turn("continue the candidate").await?;
+    let progress = run.loop_.work_progress()?;
+    assert_eq!(progress.exit_code(), Some(2));
+    assert!(
+        progress
+            .reason
+            .expect("stop reason")
+            .contains("same output twice")
+    );
+    assert_eq!(run.sent.lock().expect("provider requests").len(), 2);
+    Ok(())
 }
 
 #[tokio::test]
@@ -348,6 +365,7 @@ async fn todo_harness_note_never_shows_in_the_users_own_message() {
         workflow::Role::Review,
         Scripted::new([Reply::Text(r#"{"pass": true}"#)]),
         "r",
+        None,
         None,
         None,
     );

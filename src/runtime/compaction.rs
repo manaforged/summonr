@@ -2,50 +2,13 @@ use super::turn::WaitError;
 use super::*;
 use crate::workflow;
 
-pub(super) fn force_compact(history: &[Message]) -> Vec<(usize, Message)> {
-    let live = live_outputs(history, history.len());
-    let target = live
-        .iter()
-        .map(|index| history[*index].content.len())
-        .sum::<usize>()
-        .div_ceil(2);
-    let keep = live.len().saturating_sub(KEEP_TAIL).max(1).min(live.len());
-    clear_outputs(history, &live[..keep], target).0
-}
+mod clear;
+mod window;
 
-fn live_outputs(history: &[Message], before: usize) -> Vec<usize> {
-    history[..before.min(history.len())]
-        .iter()
-        .enumerate()
-        .filter(|(_, message)| {
-            message.role == Role::Tool && !message.content.starts_with("[cleared")
-        })
-        .map(|(index, _)| index)
-        .collect()
-}
-
-fn clear_outputs(
-    history: &[Message],
-    candidates: &[usize],
-    target: usize,
-) -> (Vec<(usize, Message)>, usize) {
-    let mut reclaimed = 0;
-    let mut edits = Vec::new();
-    for &index in candidates {
-        if reclaimed >= target {
-            break;
-        }
-        let message = &history[index];
-        let cleared = format!("[cleared {} chars]", message.content.len());
-        if cleared.len() >= message.content.len() {
-            continue;
-        }
-        reclaimed += message.content.len() - cleared.len();
-        let call = message.tool_call_id.clone().unwrap_or_default();
-        edits.push((index, Message::tool(call, cleared)));
-    }
-    (edits, reclaimed)
-}
+#[cfg(test)]
+use clear::elide_target;
+pub(super) use clear::force_compact;
+use window::{ceiling_label, fired_ceiling};
 
 pub(super) fn repair_arguments(history: &[Message]) -> Vec<(usize, Message)> {
     let Some(index) = history.iter().rposition(|m| m.role == Role::Assistant) else {
@@ -79,16 +42,11 @@ const SUMMARY_ASK: &str = "Do not call tools. Summarize this session so it can c
 
 pub(super) fn estimate(chars: usize, sample: Option<(usize, u32)>) -> usize {
     match sample {
-        Some((sample_chars, tokens)) if chars >= sample_chars && tokens > 0 => {
-            tokens as usize + chars.saturating_sub(sample_chars).div_ceil(CHARS_PER_TOKEN)
+        Some((sample_chars, tokens)) if sample_chars > 0 && tokens > 0 => {
+            chars.saturating_mul(tokens as usize).div_ceil(sample_chars)
         }
         _ => chars.div_ceil(CHARS_PER_TOKEN),
     }
-}
-
-fn under_pressure(estimated_tokens: usize, window: u32) -> bool {
-    estimated_tokens.saturating_mul(100)
-        >= (window as usize).saturating_mul(crate::limits::limits().compact_percent)
 }
 
 impl<P: Provider> Loop<P> {
@@ -139,7 +97,13 @@ impl<P: Provider> Loop<P> {
             {
                 Ok(Some(message))
             }
-            Ok(_) | Err(WaitError::Provider(_)) => Ok(None),
+            Ok(_) => Ok(None),
+            Err(WaitError::Provider(error)) => {
+                if let Some(cap) = crate::provider::input_cap(&error.to_string()) {
+                    self.learn_role_window(workflow::Role::Summary, cap);
+                }
+                Ok(None)
+            }
             Err(wait_error) => Err(wait_error.error()),
         }
     }
@@ -155,15 +119,23 @@ impl<P: Provider> Loop<P> {
         if self.summary_wait > 0 {
             return Ok(false);
         }
-        let keep = self.provider.keeps_reasoning();
-        let chars: usize = messages.iter().map(|m| message_chars(m, keep)).sum();
+        let parts = self.measure_parts(messages, tool_bytes);
+        self.prompt_parts = parts;
+        let chars = parts.0 + parts.2 + parts.3;
         let estimated_tokens = self.estimated_prompt_tokens(chars, tool_bytes);
-        let window = self.compact_window();
+        let known = self.known_window();
+        if let Some(window) = known
+            && self.clear_old_outputs(messages, chars, estimated_tokens, window, events, emit)?
+        {
+            return Ok(true);
+        }
+        let Some(window) = fired_ceiling(chars, estimated_tokens, known, self.compact_tokens)
+        else {
+            return Ok(false);
+        };
+        let keep = self.provider.keeps_reasoning();
         let compact_chars = crate::limits::limits().compact_chars;
-        let pressure = window.map_or(chars >= compact_chars, |window| {
-            under_pressure(estimated_tokens, window)
-        });
-        if !pressure || messages.len() < 8 {
+        if messages.len() < 8 {
             return Ok(false);
         }
         let tail_chars = tail_chars(window, chars, estimated_tokens, compact_chars);
@@ -221,54 +193,46 @@ impl<P: Provider> Loop<P> {
             events,
             emit,
             Event::Note {
-                text: "context auto-compacted: earlier turns summarized".to_string(),
+                text: self.pressure_note(
+                    "auto-compacted",
+                    &ceiling_label(window, chars),
+                    "earlier turns summarized",
+                ),
             },
         )?;
         self.compact_hook(&summary, events, emit).await?;
         Ok(true)
     }
 
-    fn compact_window(&self) -> Option<u32> {
-        match (self.context_window, self.compact_tokens) {
-            (Some(window), Some(cap)) => Some(window.min(cap)),
-            (window, cap) => window.or(cap),
+    fn measure_parts(
+        &self,
+        messages: &[Message],
+        tool_bytes: usize,
+    ) -> (usize, usize, usize, usize) {
+        let keep = self.provider.keeps_reasoning();
+        let mut system = 0;
+        let mut tools = 0;
+        let mut other = 0;
+        for message in messages {
+            let chars = message_chars(message, keep);
+            match message.role {
+                Role::System => system += chars,
+                Role::Tool => tools += chars,
+                _ => other += chars,
+            }
         }
+        (system, tool_bytes, tools, other)
     }
 
-    fn elide_stale(
-        &mut self,
-        messages: &mut [Message],
-        size: &Size,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<bool> {
-        let limits = crate::limits::limits();
-        let target_chars = size.window.map_or(
-            limits.compact_chars.saturating_mul(limits.elide_percent)
-                / limits.compact_percent.max(1),
-            |window| {
-                size.chars
-                    .saturating_mul(window as usize * limits.elide_percent / 100)
-                    / size.estimated_tokens.max(1)
-            },
-        );
-        let needed = size.chars.saturating_sub(target_chars);
-        let stale = live_outputs(&messages[1..], size.keep_from - 1);
-        let (edits, reclaimed) = clear_outputs(&messages[1..], &stale, needed);
-        if needed == 0 || reclaimed < needed {
-            return Ok(false);
-        }
-        let cleared = edits.len();
-        self.rewrite(messages, edits)?;
-        self.tools.forget_reads();
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: format!("context compacted: cleared {cleared} old tool outputs"),
-            },
-        )?;
-        Ok(true)
+    pub(crate) fn prompt_parts(&self) -> (usize, usize, usize, usize) {
+        self.prompt_parts
+    }
+
+    fn pressure_note(&self, kind: &str, label: &str, detail: &str) -> String {
+        let (system, schemas, tools, other) = self.prompt_parts;
+        format!(
+            "context {kind} {label}: {detail}; system {system} chars, schemas {schemas} chars, tools {tools} chars, other {other} chars"
+        )
     }
 
     async fn compact_hook(

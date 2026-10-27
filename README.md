@@ -132,7 +132,7 @@ Medians, as each agent reported them: input over the tasks that agent solved, co
 
 Across all 5 ChatGPT trials per task, summonr scored 374/445 and Codex 359/445 after source-lookup voids. The paired solve-difference interval includes zero: 0.03 (-0.01–0.08). The paired input-per-solved-trial ratio remains 0.33 (0.28–0.38); execution time is 1.17× Codex's. These results support an efficiency claim, not general task-solving superiority. [Per-trial data and reproduction](bench/results/README.md).
 
-The first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Six core tools are advertised every round (`read`, `search`, `edit`, `write`, `run_command`, `todo`), plus `ask` in an interactive session and the modules you turned on. MCP schemas join the prefix only for servers you configure.
+The first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Five core tools are advertised every round (`read`, `search`, `edit`, `write`, `run_command`), plus `todo` outside a one-shot `-p` prompt, `ask` in an interactive session and the modules you turned on. MCP schemas join the prefix only for servers you configure.
 
 ## Limits
 

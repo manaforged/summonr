@@ -9,7 +9,7 @@ impl<P: Provider> Loop<P> {
     }
 }
 
-const STEER_NOTE: &str = "Harness: the user sent this while you were working. Answer it in text in your next reply, then change course if it asks.";
+const STEER_NOTE: &str = "Harness: the user sent this while you were working. Answer it.";
 
 pub(super) fn drain_steer(
     queue: &mut std::collections::VecDeque<UserInput>,

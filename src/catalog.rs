@@ -221,6 +221,13 @@ fn vision_of(endpoint: &crate::Endpoint, registry: &registry::Registry) -> bool 
 }
 
 #[must_use]
+pub(crate) fn context_limit(endpoint: &str, model: &str, base_url: Option<&str>) -> Option<u32> {
+    known(endpoint, model)
+        .and_then(|row| row.context)
+        .or_else(|| registry::context_of(endpoint, base_url, model))
+}
+
+#[must_use]
 pub(crate) fn known(endpoint: &str, id: &str) -> Option<Model> {
     listings()
         .get(endpoint)?

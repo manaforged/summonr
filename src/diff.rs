@@ -105,6 +105,34 @@ fn reference(root: &Path, base: Option<&str>) -> Result<String> {
     }
 }
 
+pub(crate) fn status_records(root: &Path) -> Vec<String> {
+    if inside_git(root)
+        && let Ok(status) = git(
+            root,
+            &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
+        )
+    {
+        return status
+            .split('\0')
+            .filter(|record| !record.is_empty() && !record.starts_with('#'))
+            .map(str::to_string)
+            .collect();
+    }
+    Vec::new()
+}
+
+pub(crate) fn changed_paths(before: &[String], after: &[String]) -> Vec<String> {
+    let had: std::collections::BTreeSet<&String> = before.iter().collect();
+    let mut paths: Vec<String> = after
+        .iter()
+        .filter(|record| !had.contains(*record))
+        .filter_map(|record| status_path(record).map(str::to_string))
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 pub(crate) fn snapshot(root: &Path) -> String {
     if !inside_git(root) {
         return "non-Git workspace".to_string();

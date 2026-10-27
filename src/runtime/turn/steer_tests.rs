@@ -206,7 +206,7 @@ async fn a_typed_steer_reaches_the_model_with_a_reply_note() {
     let request = request_after_steer(typed("why is the gap still open")).await;
     assert_eq!(
         steered_content(&request, "why is the gap still open"),
-        "why is the gap still open\n\nHarness: the user sent this while you were working. Answer it in text in your next reply, then change course if it asks."
+        "why is the gap still open\n\nHarness: the user sent this while you were working. Answer it."
     );
 }
 

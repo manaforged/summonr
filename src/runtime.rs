@@ -95,7 +95,8 @@ pub enum StepRun {
 pub struct Loop<P> {
     provider: P,
     model: String,
-    seats: BTreeMap<workflow::Role, (P, String)>,
+    seats: BTreeMap<workflow::Role, (P, String, Option<u32>)>,
+    prompt_parts: (usize, usize, usize, usize),
     tuning: BTreeMap<workflow::Role, (Option<Effort>, Option<Price>)>,
     price: Option<Price>,
     system_prompt: String,
@@ -112,7 +113,7 @@ pub struct Loop<P> {
     run_base: (u64, u64),
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,
-    probe: Option<tokio::task::JoinHandle<Option<u32>>>,
+    probes: Vec<(Option<workflow::Role>, tokio::task::JoinHandle<Option<u32>>)>,
     effort: Option<Effort>,
     chosen_effort: Option<Effort>,
     turn_started: u64,
@@ -167,7 +168,7 @@ impl<P: Provider> Loop<P> {
     fn seat(&self, role: workflow::Role) -> (&P, &str) {
         self.seats.get(&role).map_or(
             (&self.provider, self.model.as_str()),
-            |(provider, model)| (provider, model.as_str()),
+            |(provider, model, _)| (provider, model.as_str()),
         )
     }
 

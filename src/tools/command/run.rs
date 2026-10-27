@@ -59,7 +59,12 @@ impl ToolRegistry {
         let script = record_path
             .as_ref()
             .map_or(command, |(_, script)| script.as_str());
-        let child = spawn_command(&self.env, script, &log_path, persist, &cwd)?;
+        let mut env = self.env.clone();
+        if let Some(session) = self.session_id() {
+            env.push((crate::session::SESSION_ENV.to_string(), session.clone()));
+            env.push((crate::session::PARENT_ENV.to_string(), session));
+        }
+        let child = spawn_command(&env, script, &log_path, persist, &cwd)?;
         let pid = child
             .id()
             .ok_or_else(|| Error::Tool("command started without a pid".to_string()))?;

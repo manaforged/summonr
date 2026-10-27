@@ -132,7 +132,7 @@ summonr anthropic --goal "make cargo test pass" --max-secs 1800 --json
 echo $?
 ```
 
-JSON turn receipts keep model text separate from the changed-path list and every configured completion check. `verified` on a receipt is true only when at least one check ran and every check passed; a turn with no configured check completes with `verified: false`. The [API map](../api.md) lists the event shapes.
+JSON turn receipts keep model text separate from the files this turn wrote and every check this turn ran. `verified` is true only when at least one of those checks passed and none failed. A turn that ran no check completes with `verified: false`. The [API map](../api.md) lists the event shapes.
 
 ## Workflows
 

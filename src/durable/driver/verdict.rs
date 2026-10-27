@@ -29,6 +29,16 @@ impl SessionDriver {
         Ok(paths)
     }
 
+    pub(crate) fn limit_changes(&mut self, wrote: &[String]) -> Result<Vec<String>, DriverError> {
+        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        let kept: std::collections::HashSet<&str> = wrote.iter().map(String::as_str).collect();
+        if let Some(candidate) = work.candidate.as_mut() {
+            candidate.paths.retain(|path| kept.contains(path.as_str()));
+        }
+        work.touched.retain(|path| kept.contains(path.as_str()));
+        Ok(wrote.to_vec())
+    }
+
     pub(crate) fn prepare_verdict(&mut self, passed: bool) -> Result<Verdict, DriverError> {
         let candidate = self
             .work
@@ -82,10 +92,28 @@ impl SessionDriver {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
         }
-        self.work
-            .as_mut()
-            .ok_or(DriverError::NoWork)?
-            .verdict(verdict.passed, decision)?;
+        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        let failure = receipt
+            .filter(|receipt| !verdict.passed && !receipt.checks.is_empty())
+            .map(|receipt| receipt.checks.clone());
+        let denied = failure.as_ref().is_some_and(|checks| {
+            checks
+                .iter()
+                .any(|check| !check.passed && check.output.starts_with("policy denied"))
+        });
+        if denied {
+            work.record_check(false);
+            work.abandon("completion check denied by policy");
+        } else if matches!(work.policy, Policy::Goal { .. })
+            && failure.is_some()
+            && failure == work.failed_checks
+        {
+            work.record_check(false);
+            work.abandon("completion check failed with the same output twice");
+        } else {
+            work.verdict(verdict.passed, decision)?;
+        }
+        work.failed_checks = failure;
         self.close_with(receipt)
     }
 

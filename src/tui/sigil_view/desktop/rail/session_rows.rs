@@ -70,7 +70,7 @@ pub(in crate::tui::sigil_view::desktop) fn recent(
     let mut seen = HashSet::new();
     let mut recent: Vec<SessionInfo> = sessions
         .into_iter()
-        .filter(|info| info.cwd.as_deref() == Some(here) && info.depth == 0)
+        .filter(|info| info.cwd.as_deref() == Some(here))
         .filter(|info| !info.preview.trim().is_empty())
         .collect();
     recent.reverse();

@@ -2,9 +2,13 @@ use super::*;
 
 impl<P: Provider> Loop<P> {
     pub(crate) fn set_provider(&mut self, provider: P, model: impl Into<String>) {
-        if let Some(probe) = self.probe.take() {
-            probe.abort();
-        }
+        self.probes.retain(|(role, probe)| {
+            let keep = role.is_some();
+            if !keep {
+                probe.abort();
+            }
+            keep
+        });
         self.tools.set_model_images(provider.takes_images());
         self.provider = provider;
         self.model = model.into();
@@ -38,8 +42,10 @@ impl<P: Provider> Loop<P> {
         model: impl Into<String>,
         effort: Option<crate::provider::Effort>,
         price: Option<crate::provider::Price>,
+        context_window: Option<u32>,
     ) {
-        self.seats.insert(role, (provider, model.into()));
+        self.seats
+            .insert(role, (provider, model.into(), context_window));
         self.tuning.insert(role, (effort, price));
     }
 
@@ -54,25 +60,28 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub(crate) fn seat_model(&self, role: workflow::Role) -> Option<&str> {
-        self.seats.get(&role).map(|(_, model)| model.as_str())
+        self.seats.get(&role).map(|(_, model, _)| model.as_str())
     }
 
     pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
         self.session.set_workflow(name).map_err(super::session_err)
     }
 
-    pub fn apply_workflow(
+    pub(crate) fn apply_workflow(
         &mut self,
         workflow: &workflow::Workflow,
-        mut resolve: impl FnMut(&workflow::Seat) -> Result<(P, crate::endpoint::Endpoint)>,
+        mut resolve: impl FnMut(
+            workflow::Role,
+            &workflow::Seat,
+        ) -> Result<(P, crate::endpoint::Endpoint)>,
     ) -> Result<()> {
         let mut seats = BTreeMap::new();
         let mut tuning = BTreeMap::new();
         for (role, seat) in &workflow.seats {
-            let (provider, endpoint) = resolve(seat).map_err(|error| {
+            let (provider, endpoint) = resolve(*role, seat).map_err(|error| {
                 Error::Config(format!("{}: {role} seat {seat}: {error}", workflow.name))
             })?;
-            seats.insert(*role, (provider, endpoint.model));
+            seats.insert(*role, (provider, endpoint.model, endpoint.context_window));
             tuning.insert(*role, (endpoint.effort, endpoint.price));
         }
         self.set_workflow(Some(&workflow.name))?;
@@ -160,5 +169,52 @@ impl<P: Provider> Loop<P> {
             total: steps.len(),
             prompt: crate::steps::prompt(step, steps.len(), plan_path),
         })
+    }
+}
+
+impl Loop<crate::provider::Client> {
+    pub fn seat_workflow(
+        &mut self,
+        workflow: &workflow::Workflow,
+        mut connect: impl FnMut(
+            &workflow::Seat,
+        ) -> Result<(crate::provider::Client, crate::endpoint::Endpoint)>,
+    ) -> Result<()> {
+        let mut missing = Vec::new();
+        self.apply_workflow(workflow, |role, seat| {
+            let (client, endpoint) = connect(seat)?;
+            if endpoint.context_window.is_none() {
+                missing.push((
+                    role,
+                    client.clone(),
+                    endpoint.name.clone(),
+                    endpoint.model.clone(),
+                ));
+            }
+            Ok((client, endpoint))
+        })?;
+        for (role, client, name, model) in missing {
+            self.watch_context(Some(role), client, &name, &model);
+        }
+        Ok(())
+    }
+
+    pub fn watch_driver(&mut self, client: crate::provider::Client, endpoint: &str, model: &str) {
+        self.watch_context(None, client, endpoint, model);
+    }
+
+    pub(crate) fn watch_context(
+        &mut self,
+        role: Option<workflow::Role>,
+        client: crate::provider::Client,
+        endpoint: &str,
+        model: &str,
+    ) {
+        let endpoint = endpoint.to_string();
+        let model = model.to_string();
+        self.watch_window(
+            role,
+            tokio::spawn(async move { client.context(&endpoint, &model).await }),
+        );
     }
 }

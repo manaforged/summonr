@@ -162,6 +162,16 @@ fn an_open_session_of_unchanged_size_is_served_from_the_index() {
 }
 
 #[test]
+fn a_task_child_stays_off_the_session_list() {
+    let home = tempfile::tempdir().unwrap();
+    let parent = session(home.path(), OLDER, "/work/alpha", 0);
+    session(home.path(), MIDDLE, "/work/alpha", 1);
+    let listed = list_in(home.path()).unwrap();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].path, parent);
+}
+
+#[test]
 fn sessions_started_in_one_millisecond_are_named_when_their_short_id_is_ambiguous() {
     const FIRST: &str = "01a16468026a70c39b593c8d424a8179";
     const SECOND: &str = "01a16468026a7b40b5e58668d9b67cd8";

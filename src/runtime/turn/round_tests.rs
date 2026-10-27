@@ -210,3 +210,112 @@ async fn a_fallback_keeps_the_effort_the_user_chose_later() {
         .unwrap();
     assert_eq!(loop_.effort(), Some(Effort::Max));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cancelling_a_reply_preserves_its_job() -> crate::Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let home = tempfile::tempdir()?;
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")?;
+    let mut parent = Loop::open(Scripted::new([]), "m", workspace.path(), "system", driver)?;
+    let call = |id: &str, name: &str, args: &serde_json::Value| crate::provider::ToolCall {
+        id: id.to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: name.to_string(),
+            arguments: args.to_string(),
+        },
+        continuation: None,
+    };
+    parent.begin_turn(crate::provider::UserInput::from(
+        "finish the kernel candidate",
+    ))?;
+    let release = workspace.path().join("release");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&release)
+            .status()?
+            .success()
+    );
+    let started = parent
+        .tools
+        .execute_outcome(&call(
+            "start",
+            "run_command",
+            &serde_json::json!({
+                "command": "printf '%s\\n' \"$SUMMONR_PARENT_SESSION\"; IFS= read -r line < release; printf finished",
+                "background": true
+            }),
+        ))
+        .await?;
+    let id = started
+        .text
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .expect("job id");
+    let record = crate::jobs::load(workspace.path(), id)?;
+    parent.abort_with(
+        &Abort {
+            code: crate::tools::AbortCode::Cancelled,
+            reason: "cancelled by user".to_string(),
+        },
+        |_| {},
+    )?;
+    assert_eq!(
+        crate::jobs::status(workspace.path(), &record)?.state,
+        crate::jobs::JobState::Running
+    );
+    let resumed = parent.begin_turn(crate::provider::UserInput::from("what is the status"))?;
+    let prompt = &resumed.last().expect("resumed prompt").content;
+    assert!(prompt.contains("what is the status"), "{prompt}");
+    assert!(!prompt.contains("finish the kernel candidate"), "{prompt}");
+    std::fs::write(&release, "continue\n")?;
+    let completed = parent
+        .tools
+        .execute_outcome(&call(
+            "wait",
+            "run_command",
+            &serde_json::json!({"job": id}),
+        ))
+        .await?;
+    assert!(
+        completed.success && completed.text.contains("finished"),
+        "{}",
+        completed.text
+    );
+    assert!(
+        completed.text.contains(&parent.session_id()),
+        "worker lost its originating session"
+    );
+    let started = parent
+        .tools
+        .execute_outcome(&call(
+            "again",
+            "run_command",
+            &serde_json::json!({
+                "command": "IFS= read -r line < release; printf stopped",
+                "background": true
+            }),
+        ))
+        .await?;
+    let id = started
+        .text
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .expect("second job id");
+    let record = crate::jobs::load(workspace.path(), id)?;
+    parent.abort_with(
+        &Abort {
+            code: crate::tools::AbortCode::Interrupted,
+            reason: "shutdown".to_string(),
+        },
+        |_| {},
+    )?;
+    assert_eq!(
+        crate::jobs::status(workspace.path(), &record)?.state,
+        crate::jobs::JobState::Killed
+    );
+    Ok(())
+}

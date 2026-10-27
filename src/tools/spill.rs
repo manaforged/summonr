@@ -29,7 +29,7 @@ impl ToolRegistry {
         if budget::within(raw) {
             return raw.trim_end().to_string();
         }
-        let shown = budget::plain(raw);
+        let shown = budget::shaped(raw, |lines| lines);
         if !shown.cut {
             return shown.text;
         }

@@ -60,6 +60,8 @@ pub(crate) enum Line {
         parent: Option<SessionId>,
         #[serde(default, skip_serializing_if = "is_zero")]
         depth: u8,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision: Option<String>,
     },
     Tools {
         bytes: u64,

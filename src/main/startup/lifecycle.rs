@@ -73,18 +73,13 @@ fn assemble(
     ui: &Ui,
 ) -> Result<Assembled> {
     let provider = provider(endpoint, ui.0.as_ref(), args.json)?;
-    let probe = endpoint.context_window.is_none().then(|| {
-        let client = provider.clone();
-        let name = endpoint.name.clone();
-        let model = endpoint.model.clone();
-        tokio::spawn(async move { client.context(&name, &model).await })
-    });
     let checks = if args.no_verify {
         None
     } else {
         summonr::check_commands(workspace)?
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
+    let spare = endpoint.context_window.is_none().then(|| provider.clone());
     let mut loop_ = build(args, endpoint, provider, workspace, check, action)?;
     let (fallbacks, skipped) = summonr::endpoint_fallbacks(endpoint, |fallback| {
         self::provider(fallback, ui.0.as_ref(), args.json)
@@ -93,8 +88,8 @@ fn assemble(
         eprintln!("summonr: {note}");
     }
     loop_.set_fallbacks(fallbacks);
-    if let Some(probe) = probe {
-        loop_.set_context_probe(probe);
+    if let Some(client) = spare {
+        loop_.watch_driver(client, &endpoint.name, &endpoint.model);
     }
     let workflow = workflow_name(args, &loop_)?
         .map(|name| apply_workflow(&mut loop_, &name, ui.0.as_ref(), args.json))

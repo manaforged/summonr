@@ -5,6 +5,7 @@ pub enum ProviderFailureKind {
     Authentication,
     MissingKey,
     RateLimited,
+    UsageLimit,
     Server,
     Transport,
     ContextOverflow,
@@ -61,7 +62,12 @@ impl Error {
     pub(crate) fn provider_failure(&self) -> Option<&ProviderFailure> {
         match self {
             Self::Provider(failure) => Some(failure),
-            _ => None,
+            Self::Config(_)
+            | Self::Setup(_)
+            | Self::Io(_)
+            | Self::Json(_)
+            | Self::Tool(_)
+            | Self::Denied(_) => None,
         }
     }
 }

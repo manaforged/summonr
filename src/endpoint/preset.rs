@@ -1,7 +1,8 @@
-use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use super::*;
+
+const HOST_ID: &str = "{host_id}";
 use crate::provider::Spec;
 
 pub(super) struct Preset {
@@ -18,7 +19,7 @@ pub(super) struct Preset {
     pub(super) default_key: Option<&'static str>,
     pub(super) missing: String,
     pub(super) aliases: &'static [(String, String)],
-    pub(super) oauth: Option<fn() -> crate::config::OAuth>,
+    pub(super) oauth: Option<crate::config::OAuth>,
     pub(super) headers: &'static [(String, String)],
     pub(super) wire: Wire,
     pub(super) reasoning: Spec,
@@ -42,44 +43,6 @@ pub(super) fn env_default() -> Option<&'static Preset> {
     presets().find(|preset| preset.env_default)
 }
 
-fn claude_oauth() -> crate::config::OAuth {
-    crate::config::OAuth {
-        token_url: "https://platform.claude.com/v1/oauth/token".into(),
-        client_id: CLAUDE_CLIENT.into(),
-        label: Some("Claude Pro or Max".into()),
-        authorize_url: Some("https://claude.ai/oauth/authorize".into()),
-        redirect_uri: Some("https://platform.claude.com/oauth/code/callback".into()),
-        scope: Some(CLAUDE_SCOPES.into()),
-        grant: Some("authorization_code".into()),
-        token_style: Some("json".into()),
-        authorize_params: BTreeMap::from([("code".to_string(), "true".to_string())]),
-        ..crate::config::OAuth::default()
-    }
-}
-
-fn chatgpt_oauth() -> crate::config::OAuth {
-    let mut authorize_params = BTreeMap::from([
-        ("agent_name_hint".to_string(), "summonr".to_string()),
-        ("resource".to_string(), OPENAI_API.to_string()),
-    ]);
-    if let Some(host) = host_id() {
-        authorize_params.insert("ext_agent_host_id".to_string(), host);
-    }
-    crate::config::OAuth {
-        token_url: CHATGPT_TOKEN.into(),
-        client_id: CHATGPT_CLIENT.into(),
-        label: Some("ChatGPT Plus or Pro".into()),
-        authorize_url: Some(CHATGPT_AUTHORIZE.into()),
-        redirect_uri: Some(CHATGPT_REDIRECT.into()),
-        scope: Some(CHATGPT_SCOPES.into()),
-        grant: Some("authorization_code".into()),
-        authorize_params,
-        token_params: BTreeMap::from([("resource".to_string(), OPENAI_API.to_string())]),
-        required_scope: Some(CHATGPT_PLAN_SCOPE.into()),
-        ..crate::config::OAuth::default()
-    }
-}
-
 fn host_id() -> Option<String> {
     let path = crate::prompt::summonr_home().ok()?.join("host-id");
     if let Ok(found) = std::fs::read_to_string(&path)
@@ -92,43 +55,22 @@ fn host_id() -> Option<String> {
     Some(fresh)
 }
 
-fn supergrok_oauth() -> crate::config::OAuth {
-    crate::config::OAuth {
-        token_url: XAI_TOKEN.into(),
-        client_id: XAI_CLIENT.into(),
-        label: Some("SuperGrok or X Premium+".into()),
-        scope: Some(XAI_SCOPES.into()),
-        grant: Some("device_code".into()),
-        device_url: Some(XAI_DEVICE.into()),
-        ..crate::config::OAuth::default()
+impl Preset {
+    pub(super) fn sign_in(&self) -> Option<crate::config::OAuth> {
+        let mut oauth = self.oauth.clone()?;
+        let host = host_id();
+        oauth
+            .authorize_params
+            .retain(|_, value| value != HOST_ID || host.is_some());
+        for value in oauth.authorize_params.values_mut() {
+            if value == HOST_ID
+                && let Some(host) = &host
+            {
+                value.clone_from(host);
+            }
+        }
+        Some(oauth)
     }
-}
-
-fn copilot_oauth() -> crate::config::OAuth {
-    crate::config::OAuth {
-        token_url: GITHUB_TOKEN.into(),
-        client_id: COPILOT_CLIENT.into(),
-        label: Some("GitHub Copilot".into()),
-        client_secret: None,
-        refresh_token: None,
-        scope: Some("read:user".into()),
-        grant: Some("device_code".into()),
-        device_url: Some(GITHUB_DEVICE.into()),
-        exchange_url: Some("https://api.github.com/copilot_internal/v2/token".into()),
-        ..crate::config::OAuth::default()
-    }
-}
-
-fn login(name: &str) -> Option<fn() -> crate::config::OAuth> {
-    [
-        ("claude", claude_oauth as fn() -> crate::config::OAuth),
-        ("chatgpt", chatgpt_oauth),
-        ("supergrok", supergrok_oauth),
-        ("copilot", copilot_oauth),
-    ]
-    .into_iter()
-    .find(|(known, _)| *known == name)
-    .map(|(_, make)| make)
 }
 
 fn wire(value: &str) -> std::result::Result<Wire, String> {
@@ -160,7 +102,7 @@ pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
             return Err(format!("preset `{name}` is listed twice"));
         }
         seen.push(name.clone());
-        rows.push(row.into_preset(name, base_url)?);
+        rows.push(row.into_preset(name, base_url, &file.oauth)?);
     }
     let names: std::collections::BTreeSet<&str> = seen.iter().map(String::as_str).collect();
     let retired: std::collections::BTreeSet<&str> = rows
@@ -218,7 +160,7 @@ pub(crate) fn provider_ids(name: &str) -> &'static [&'static str] {
 }
 
 #[must_use]
-pub fn label(name: &str) -> Option<&'static str> {
+pub(crate) fn label(name: &str) -> Option<&'static str> {
     preset(name).and_then(|preset| preset.label.as_deref())
 }
 

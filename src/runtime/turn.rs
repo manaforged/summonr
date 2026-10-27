@@ -245,8 +245,6 @@ impl<P: Provider> Loop<P> {
         let mut usage = Usage::default();
         let mut rounds = 0;
         let remaining = self.remaining_time();
-        let before = self.session.elapsed_millis();
-        let started = Instant::now();
         let turn = self.run_turn(
             messages,
             &mut pre,
@@ -265,22 +263,6 @@ impl<P: Provider> Loop<P> {
             && let Some(hub) = &self.mcp
         {
             hub.cancel_inflight().await;
-        }
-        let accounted = self.session.elapsed_millis().saturating_sub(before);
-        let millis = super::elapsed_millis(started).saturating_sub(accounted);
-        if millis > 0 {
-            self.session
-                .charge(
-                    Meter {
-                        millis,
-                        ..Meter::default()
-                    },
-                    "unaccounted turn time",
-                    &self.model,
-                    false,
-                    UsageMeta::default(),
-                )
-                .map_err(super::session_err)?;
         }
         self.sync_usage(&mut emit);
         if let Ok(Ok(turn)) = &result {

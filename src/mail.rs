@@ -40,20 +40,6 @@ fn clean_id(id: &str) -> String {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Agent {
-    pub id: String,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default = "default_kind")]
-    pub kind: String,
-    pub model: String,
-    pub cwd: String,
-    pub pid: u32,
-    pub status: Presence,
-    pub last_seen: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct Mail {
     pub ts: u64,
     pub from: String,
@@ -173,7 +159,7 @@ fn deliver_in(dir: &Path, from: &str, to: &[String], text: &str) -> Result<usize
         kind: default_kind(),
         text: text.to_string(),
     };
-    append(dir, &targets(&agents, &from, to), &mail)
+    append(dir, &targets(&agents, &from, to)?, &mail)
 }
 
 fn append(dir: &Path, targets: &[String], mail: &Mail) -> Result<usize> {
@@ -245,6 +231,8 @@ impl Mailbox {
             pid: std::process::id(),
             status,
             last_seen: now(),
+            parent: std::env::var_os(crate::session::PARENT_ENV)
+                .map(|value| value.to_string_lossy().into_owned()),
         };
         let Ok(body) = serde_json::to_string(&record) else {
             return;
@@ -283,7 +271,7 @@ impl Mailbox {
             kind: self.kind.clone(),
             text: text.to_string(),
         };
-        let targets = targets(&self.agents(), &self.id, &[to.to_string()]);
+        let targets = targets(&self.agents(), &self.id, &[to.to_string()])?;
         append(&self.dir, &targets, &mail)
     }
 
@@ -390,7 +378,7 @@ pub(crate) mod tools;
 
 use files::inbox_path;
 pub(crate) use files::{post_board, read_board, read_inbox, take_inbox};
-pub(crate) use roster::{live, roster};
+pub(crate) use roster::{Agent, live, roster};
 use roster::{targets, unique_name};
 pub(crate) use tools::{Tool, definitions, is_mail_tool};
 

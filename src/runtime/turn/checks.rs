@@ -137,8 +137,7 @@ impl<P: Provider> Loop<P> {
         let mut parts = Vec::new();
         if let Some(reason) = self.session.last_close_reason() {
             parts.push(format!(
-                "Harness: the previous turn stopped early ({reason}). Address the user's \
-                 message directly before resuming tool work."
+                "Harness: the previous turn stopped early ({reason})."
             ));
         }
         parts.push(harness_section(&Harness {
@@ -146,7 +145,7 @@ impl<P: Provider> Loop<P> {
             checks: self.verify.as_deref().unwrap_or_default(),
             children: self.task_available(),
         }));
-        if progress.kind == WorkKind::Goal {
+        if self.is_goal() && !progress.objective.is_empty() {
             parts.push(format!(
                 "Harness objective (verbatim, this is what must be met):\n{}",
                 progress.objective

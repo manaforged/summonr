@@ -60,15 +60,16 @@ impl ToolRegistry {
         if self.browser.is_some() {
             all.push(browser());
         }
-        all.push(todo());
+        if self.task_list {
+            all.push(todo());
+        }
         all
     }
 
     pub(super) fn enabled(&self, kind: Builtin) -> bool {
         match kind {
-            Builtin::Read | Builtin::Search | Builtin::Todo | Builtin::Edit | Builtin::Write => {
-                true
-            }
+            Builtin::Read | Builtin::Search | Builtin::Edit | Builtin::Write => true,
+            Builtin::Todo => self.task_list,
             Builtin::Skill => self.skills,
             Builtin::Lsp => self.language,
             Builtin::RunCommand => !self.policy.is_read_only(),
@@ -349,7 +350,7 @@ fn run_command() -> ToolDefinition {
     tool(
         "run_command",
         &format!(
-            "Run a shell command in the workspace. Use search, not grep or find, to search files. workdir picks the directory; after {wait}s a command continues as a job unless timeout_secs sets a hard stop; background returns a job to wait on, kill stops it. op=help returns output and policy details.",
+            "Run builds, tests, and command-line tools in the workspace; use edit/write for source changes and search for files or text. After {wait}s a command continues as a job unless timeout_secs stops it; background returns a job id, job waits on one, kill stops it. op=help returns output, job, and policy details.",
             wait = crate::limits::limits().command_wait_secs
         ),
         serde_json::json!({

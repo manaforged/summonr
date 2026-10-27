@@ -8,24 +8,6 @@ use crate::secret::{self, Source};
 
 pub(crate) const ENV_ENDPOINT: &str = "env";
 const PLAN_PATH_MARKER: &str = "/coding/";
-const GITHUB_DEVICE: &str = "https://github.com/login/device/code";
-const GITHUB_TOKEN: &str = "https://github.com/login/oauth/access_token";
-const COPILOT_CLIENT: &str = "Iv1.b507a08c87ecfe98";
-const CLAUDE_CLIENT: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-const CLAUDE_SCOPES: &str = "org:create_api_key user:profile user:inference user:sessions:claude_code \
-     user:mcp_servers user:file_upload";
-const OPENAI_API: &str = "https://api.openai.com/v1";
-const CHATGPT_AUTHORIZE: &str = "https://auth.openai.com/api/accounts/authorize";
-const CHATGPT_TOKEN: &str = "https://auth.openai.com/api/accounts/oauth/token";
-const CHATGPT_CLIENT: &str = "dynamic_agent_client";
-const CHATGPT_REDIRECT: &str = "http://127.0.0.1:0/auth/callback";
-const CHATGPT_PLAN_SCOPE: &str = "chatgpt.tokens.use.direct";
-const CHATGPT_SCOPES: &str =
-    "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
-const XAI_DEVICE: &str = "https://auth.x.ai/oauth2/device/code";
-const XAI_TOKEN: &str = "https://auth.x.ai/oauth2/token";
-const XAI_CLIENT: &str = "b1a00492-073a-47ea-816f-4c329264a828";
-const XAI_SCOPES: &str = "openid profile email offline_access grok-cli:access api:access";
 
 #[derive(Clone, PartialEq)]
 pub struct Endpoint {
@@ -153,6 +135,28 @@ pub(crate) fn local(url: &str) -> bool {
         }
         None => false,
     }
+}
+
+pub(crate) fn host_port(url: &str) -> Option<String> {
+    let url = url::Url::parse(url.trim().trim_end_matches('/')).ok()?;
+    Some(format!(
+        "{}:{}",
+        url.host_str()?,
+        url.port_or_known_default()?
+    ))
+}
+
+pub(crate) fn providers_at(url: &str) -> Vec<&'static str> {
+    let Some(wanted) = host_port(url) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<&str> = preset::presets()
+        .filter(|preset| host_port(&preset.base_url).as_deref() == Some(wanted.as_str()))
+        .flat_map(|preset| preset.opencode_ids.iter().copied())
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -294,7 +298,7 @@ pub use choice::{Need, Pick};
 pub use info::AuthInfo;
 use info::LoginGroup;
 use keys::*;
-pub use preset::label;
+pub(crate) use preset::label;
 use preset::preset;
 pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
 pub(crate) use resolve::default_seat;

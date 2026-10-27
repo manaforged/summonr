@@ -19,6 +19,39 @@ fn call(id: &str, output: &str) -> [Event; 2] {
 }
 
 #[test]
+fn a_receipt_counts_a_verify_command_this_turn_ran() {
+    let events = vec![
+        Event::ToolCall {
+            id: "c1".to_string(),
+            name: "run_command".to_string(),
+            arguments: r#"{"command":"loop verify"}"#.to_string(),
+        },
+        Event::ToolResult {
+            id: "c1".to_string(),
+            success: true,
+            mutated: false,
+            output: "PASS".to_string(),
+            millis: None,
+            patch: None,
+        },
+    ];
+    let receipt = Receipt::from_turn(
+        vec!["src/runtime/turn.rs".to_string()],
+        "abc (HEAD)".to_string(),
+        &events,
+        &[],
+    );
+    assert!(receipt.text.contains("loop verify"), "{}", receipt.text);
+    assert!(receipt.text.contains("passed"), "{}", receipt.text);
+    assert!(
+        !receipt.text.contains("Verification: not run"),
+        "{}",
+        receipt.text
+    );
+    assert_eq!(receipt.changes, vec!["src/runtime/turn.rs".to_string()]);
+}
+
+#[test]
 fn receipt_fits_one_summary_line_and_caps_lists() {
     let events: Vec<Event> = (0..8)
         .flat_map(|index| call(&index.to_string(), &format!("exit {}", index % 7)))

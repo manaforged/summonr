@@ -103,11 +103,18 @@ impl ToolRegistry {
         } else {
             Wait::chosen(explicit, self.can_detach(locked))
         };
+        let before = crate::diff::status_records(&self.workspace);
         let started = self.start_command(command, wait, cwd)?;
         if background {
             return Ok(background_result(started));
         }
-        self.wait_command(started, command, wait).await
+        let output = self.wait_command(started, command, wait).await?;
+        for path in
+            crate::diff::changed_paths(&before, &crate::diff::status_records(&self.workspace))
+        {
+            self.note_wrote(&path);
+        }
+        Ok(output)
     }
 
     fn shortcut(

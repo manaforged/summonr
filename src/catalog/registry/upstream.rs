@@ -84,7 +84,8 @@ fn meta(model_id: &str, model: &UpstreamModel) -> Meta {
             .limit
             .as_ref()
             .and_then(|limit| limit.context)
-            .and_then(|tokens| u32::try_from(tokens).ok()),
+            .and_then(|tokens| u32::try_from(tokens).ok())
+            .filter(|tokens| *tokens > 0),
         metered: cost.map(|cost| {
             [cost.input, cost.output, cost.cache_read, cost.cache_write]
                 .into_iter()

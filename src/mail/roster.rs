@@ -1,4 +1,22 @@
+use std::collections::HashSet;
+
 use super::*;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct Agent {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default = "default_kind")]
+    pub kind: String,
+    pub model: String,
+    pub cwd: String,
+    pub pid: u32,
+    pub status: Presence,
+    pub last_seen: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+}
 
 impl Agent {
     pub(crate) fn label(&self) -> &str {
@@ -89,8 +107,9 @@ pub(super) fn unique_name(agents: &[Agent], id: &str, hint: Option<&str>, cwd: &
         .unwrap_or(base)
 }
 
-pub(super) fn targets(agents: &[Agent], from: &str, words: &[String]) -> Vec<String> {
-    let mut ids: Vec<String> = Vec::new();
+pub(super) fn targets(agents: &[Agent], from: &str, words: &[String]) -> Result<Vec<String>> {
+    let mut ids = Vec::new();
+    let mut seen = HashSet::new();
     for word in words {
         let matched: Vec<&Agent> = agents
             .iter()
@@ -102,16 +121,14 @@ pub(super) fn targets(agents: &[Agent], from: &str, words: &[String]) -> Vec<Str
                 }
             })
             .collect();
-        let found: Vec<String> = if matched.is_empty() && word != "all" {
-            vec![word.clone()]
-        } else {
-            matched.iter().map(|agent| agent.id.clone()).collect()
-        };
-        for id in found {
-            if !ids.contains(&id) {
-                ids.push(id);
+        if matched.is_empty() && word != "all" {
+            return Err(Error::Config(format!("no session named {word}")));
+        }
+        for agent in matched {
+            if seen.insert(agent.id.as_str()) {
+                ids.push(agent.id.clone());
             }
         }
     }
-    ids
+    Ok(ids)
 }

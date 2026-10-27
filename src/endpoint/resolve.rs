@@ -52,7 +52,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
         && !base.trim().is_empty()
         && matches!(name, None | Some(ENV_ENDPOINT))
     {
-        return Ok(env_endpoint(&base, model));
+        return Ok(with_catalog_window(env_endpoint(&base, model)));
     }
 
     let file = config::file()?;
@@ -93,7 +93,22 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
     {
         endpoint.model.clone_from(model);
     }
-    Ok(endpoint)
+    Ok(with_catalog_window(endpoint))
+}
+
+fn with_catalog_window(mut endpoint: Endpoint) -> Endpoint {
+    let remote = endpoint
+        .base_url
+        .as_deref()
+        .is_some_and(|url| !super::local(url));
+    if endpoint.context_window.is_none() && remote {
+        endpoint.context_window = crate::catalog::context_limit(
+            &endpoint.name,
+            &endpoint.model,
+            endpoint.base_url.as_deref(),
+        );
+    }
+    endpoint
 }
 
 fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {

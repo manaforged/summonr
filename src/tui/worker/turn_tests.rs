@@ -34,6 +34,7 @@ struct Fixture {
     steering: std::sync::Arc<crate::runtime::Steering>,
     reader: super::super::reader::Reader,
     auto_reply: bool,
+    peers: Option<Vec<crate::mail::Agent>>,
 }
 
 impl Fixture {
@@ -52,6 +53,7 @@ impl Fixture {
             steering: std::sync::Arc::default(),
             reader,
             auto_reply: false,
+            peers: None,
         }
     }
 
@@ -67,6 +69,7 @@ impl Fixture {
             auto_reply: &mut self.auto_reply,
             ui: &self.ui,
             reader: &self.reader,
+            peers: &mut self.peers,
         }
     }
 

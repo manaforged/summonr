@@ -71,43 +71,6 @@ impl Chat for Wire {
         effort(&mut body, call, reasoning);
         Ok(super::Wired::head(body))
     }
-
-    #[cfg(test)]
-    fn parse(_model: &str, body: &Value) -> AssistantMessage {
-        let reply: Reply = serde_json::from_value(body.clone()).unwrap_or_default();
-        let mut message = reply
-            .choices
-            .into_iter()
-            .next()
-            .map(|choice| {
-                let mut message = choice.message;
-                if let Some(reason) = choice.finish_reason {
-                    message.stop_reason = reason;
-                }
-                message
-            })
-            .unwrap_or_default();
-        if let Some(counted) = reply.usage {
-            message.usage = counted;
-        }
-        message
-    }
-}
-
-#[cfg(test)]
-#[derive(Default, Deserialize)]
-struct Reply {
-    #[serde(default)]
-    choices: Vec<Choice>,
-    usage: Option<Usage>,
-}
-
-#[cfg(test)]
-#[derive(Deserialize)]
-struct Choice {
-    #[serde(default)]
-    message: AssistantMessage,
-    finish_reason: Option<StopReason>,
 }
 
 #[derive(Default, Deserialize)]

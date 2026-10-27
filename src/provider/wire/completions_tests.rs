@@ -52,23 +52,6 @@ fn this_wire_is_the_one_that_ends_on_a_marker() {
 }
 
 #[test]
-fn a_whole_reply_carries_its_finish_reason_and_usage() {
-    let message = Wire::parse(
-        "glm-5.3",
-        &json!({
-            "choices": [{
-                "message": {"content": "hello"},
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {"prompt_tokens": 5, "completion_tokens": 2}
-        }),
-    );
-    assert_eq!(message.content.as_deref(), Some("hello"));
-    assert_eq!(message.stop_reason, StopReason::ToolCalls);
-    assert_eq!(message.usage.prompt_tokens, 5);
-}
-
-#[test]
 fn fragmented_arguments_join_across_frames() {
     let mut stream = <Stream as Accumulate>::new("glm-5.3");
     for frame in [

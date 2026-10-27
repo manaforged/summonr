@@ -39,7 +39,24 @@ pub(crate) fn duration(secs: u64) -> String {
     }
 }
 
-pub(crate) fn ellipsize(text: &str, width: usize) -> String {
+#[derive(Clone, Copy)]
+pub(crate) enum Span {
+    Cells(usize),
+    Bytes(usize),
+}
+
+impl From<usize> for Span {
+    fn from(cells: usize) -> Self {
+        Self::Cells(cells)
+    }
+}
+
+pub(crate) fn ellipsize(text: &str, span: impl Into<Span>) -> String {
+    let width = match span.into() {
+        Span::Cells(width) => width,
+        Span::Bytes(limit) if text.len() <= limit => return text.to_string(),
+        Span::Bytes(limit) => return format!("{}…", &text[..text.floor_char_boundary(limit)]),
+    };
     if cell_width(text) <= width {
         return text.to_string();
     }

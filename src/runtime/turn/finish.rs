@@ -6,8 +6,14 @@ impl<P: Provider> Loop<P> {
         if self.session.stage() == Some(Stage::Execute)
             && self.work_progress()?.kind == crate::WorkKind::Single
         {
-            let paths = self.session.enter_verify().map_err(super::session_err)?;
-            let receipt = Receipt::unchecked(paths, snapshot, events);
+            drop(self.session.enter_verify().map_err(super::session_err)?);
+            let wrote = self.tools.wrote();
+            drop(
+                self.session
+                    .limit_changes(&wrote)
+                    .map_err(super::session_err)?,
+            );
+            let receipt = self.turn_receipt(&wrote, snapshot, events);
             let verdict = self.session.captured_verdict(true);
             self.session
                 .commit_verdict(verdict, Decision::Automatic, Some(&receipt))
@@ -16,6 +22,15 @@ impl<P: Provider> Loop<P> {
             self.session.close().map_err(super::session_err)?;
         }
         Ok(())
+    }
+
+    fn turn_receipt(&self, wrote: &[String], snapshot: String, events: &[Event]) -> Receipt {
+        Receipt::from_turn(
+            wrote.to_vec(),
+            snapshot,
+            events,
+            self.verify.as_deref().unwrap_or(&[]),
+        )
     }
 
     #[expect(
@@ -94,8 +109,18 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Vec<Outcome>> {
-        let paths = self.session.enter_verify().map_err(super::session_err)?;
+        drop(self.session.enter_verify().map_err(super::session_err)?);
+        let paths = self
+            .session
+            .limit_changes(&self.tools.wrote())
+            .map_err(super::session_err)?;
         checks.extend(self.run_verify(events, emit).await?);
+        if checks.is_empty() {
+            checks.extend(crate::verify::ran(
+                events,
+                self.verify.as_deref().unwrap_or(&[]),
+            ));
+        }
         let mut verdict = self.verdict(&mut checks, events, emit)?;
         let mut rejected = None;
         let mut reviewed = false;
@@ -207,6 +232,15 @@ impl<P: Provider> Loop<P> {
         let Some(objective) = self.session.goal_objective().map_err(super::session_err)? else {
             return Ok(Decision::Automatic);
         };
+        if self
+            .session
+            .completion_checks()
+            .map_err(super::session_err)?
+            .iter()
+            .any(|check| check.observation.is_none())
+        {
+            return Ok(Decision::GoalComplete);
+        }
         let decision = goal::decision(self, &objective, reply, evidence, usage).await;
         self.sync_usage(emit);
         Ok(decision)

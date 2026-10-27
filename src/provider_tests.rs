@@ -82,23 +82,41 @@ fn sglang_input_length_400_is_overflow() {
 }
 
 #[test]
-fn a_hosted_model_window_comes_from_local_data_without_a_request() {
+fn a_local_url_does_not_inherit_the_catalog_window() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
     let mut endpoint =
         crate::endpoint::resolve(Some("zai"), Some("glm-5.3-flash"), crate::Need::Config).unwrap();
-    endpoint.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
+    endpoint.base_url = Some(format!("http://{addr}/v1"));
     let client = Client::connect(&endpoint).unwrap();
     let window = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(client.context(&endpoint.name, &endpoint.model));
-    assert!(window.is_some_and(|tokens| tokens > 0), "{window:?}");
-    assert!(
-        listener.accept().is_err(),
-        "the window lookup reached the network"
+    assert_eq!(
+        window, None,
+        "a local url inherited the remote catalog window"
     );
+}
+
+#[test]
+fn an_overflow_names_the_context_cap() {
+    let openai = "This model's maximum context length is 128000 tokens. However, your messages resulted in 150000 tokens.";
+    let error = response_failure(400, openai, None);
+    assert_eq!(
+        error.provider_failure().unwrap().kind,
+        ProviderFailureKind::ContextOverflow
+    );
+    assert_eq!(input_cap(openai), Some(128_000));
+    let anthropic = "prompt is too long: 213462 tokens > 200000 maximum";
+    let error = response_failure(400, anthropic, None);
+    assert_eq!(
+        error.provider_failure().unwrap().kind,
+        ProviderFailureKind::ContextOverflow
+    );
+    assert_eq!(input_cap(anthropic), Some(200_000));
 }
 
 #[test]
@@ -117,11 +135,11 @@ fn a_client_lists_models_from_the_models_base_not_the_chat_base() {
 }
 
 #[test]
-fn a_plan_cap_is_a_rate_limit_that_names_its_code() {
+fn a_plan_cap_names_its_code_without_a_transient_rate_limit() {
     let text = r#"{"error":{"code":"subscription_sharing_usage_limit_exceeded","message":"cap"}}"#;
     let error = response_failure(429, text, None);
     let failure = error.provider_failure().unwrap();
-    assert_eq!(failure.kind, ProviderFailureKind::RateLimited);
+    assert_ne!(failure.kind, ProviderFailureKind::RateLimited);
     assert!(
         failure
             .message
@@ -150,7 +168,7 @@ fn a_plan_cap_in_the_stream_keeps_its_message() {
         "weekly cap reached",
     );
     let failure = error.provider_failure().unwrap();
-    assert_eq!(failure.kind, ProviderFailureKind::RateLimited);
+    assert_ne!(failure.kind, ProviderFailureKind::RateLimited);
     assert!(
         failure.message.contains("weekly cap reached"),
         "the provider's words survive the stream path, got {}",

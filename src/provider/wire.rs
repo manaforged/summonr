@@ -116,8 +116,7 @@ pub(crate) fn failed(status: Option<u16>, kind: &str, message: &str) -> Error {
             400
         },
     );
-    let mut error = super::client::plan_usage(code, &format!("{kind}: {message}"), None)
-        .unwrap_or_else(|| super::client::response_failure(code, message, None));
+    let mut error = super::client::response_failure(code, &format!("{kind}: {message}"), None);
     if let Error::Provider(failure) = &mut error {
         failure.status = status;
     }
@@ -319,9 +318,6 @@ pub(crate) trait Chat {
         )?
         .value()
     }
-
-    #[cfg(test)]
-    fn parse(model: &str, body: &Value) -> AssistantMessage;
 }
 
 #[cfg(test)]

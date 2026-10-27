@@ -43,35 +43,26 @@ pub(crate) fn servers(workspace: &Path) -> Vec<Server> {
 }
 
 pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
-    let Ok(entries) = serde_json::from_value::<BTreeMap<String, serde_json::Value>>(read_json(
-        &plugin.dir.join(FILE),
-    )) else {
-        return Vec::new();
-    };
-    entries
+    let maps = [read_json(&plugin.dir.join(FILE))];
+    plugin
+        .servers(&maps, ":", workspace, |entry: &mut Entry| {
+            std::iter::once(&mut entry.command)
+                .chain(&mut entry.args)
+                .chain(entry.env.values_mut())
+                .collect()
+        })
         .into_iter()
-        .filter_map(|(name, entry)| Some((name, serde_json::from_value::<Entry>(entry).ok()?)))
-        .map(|(name, entry)| {
-            let expand = |text: &String| plugin.expand(text, workspace);
-            Server {
-                key: format!("{}:{name}", plugin.name),
-                argv: std::iter::once(&entry.command)
-                    .chain(&entry.args)
-                    .map(expand)
-                    .collect(),
-                env: entry
-                    .env
-                    .iter()
-                    .map(|(key, value)| (key.clone(), expand(value)))
-                    .collect(),
-                languages: entry
-                    .extension_to_language
-                    .into_iter()
-                    .map(|(extension, language)| {
-                        (extension.trim_start_matches('.').to_string(), language)
-                    })
-                    .collect(),
-            }
+        .map(|(key, entry)| Server {
+            key,
+            argv: std::iter::once(entry.command).chain(entry.args).collect(),
+            env: entry.env,
+            languages: entry
+                .extension_to_language
+                .into_iter()
+                .map(|(extension, language)| {
+                    (extension.trim_start_matches('.').to_string(), language)
+                })
+                .collect(),
         })
         .collect()
 }

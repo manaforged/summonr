@@ -43,6 +43,7 @@ impl ToolRegistry {
         stage(dest, display, content)?
             .commit()
             .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))?;
+        self.note_wrote(display);
         Ok(Written { preview, patch })
     }
 }

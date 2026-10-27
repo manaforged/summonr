@@ -1,17 +1,72 @@
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::Arc;
 
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
-use crate::provider::{AssistantMessage, CompletionRequest, Message, Partial, Provider};
+use crate::provider::{AssistantMessage, CompletionRequest, Partial, Provider};
 use crate::runtime::Loop;
+
+#[tokio::test]
+async fn usage_exhaustion_stops_before_retry_or_fallback() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let home = tempfile::tempdir()?;
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")?;
+    let error = crate::provider::response_failure(
+        429,
+        r#"{"error":{"code":"insufficient_quota","message":"allowance exhausted"}}"#,
+        Some(0),
+    );
+    let primary_sent = Arc::default();
+    let fallback_sent = Arc::default();
+    let primary = Fault {
+        kind: error.provider_failure().expect("provider failure").kind,
+        partial: false,
+        fails: usize::MAX,
+        asked: Some(0),
+        sent: Arc::clone(&primary_sent),
+        text: "fixture failure",
+    };
+    let fallback = Fault {
+        kind: ProviderFailureKind::Http,
+        partial: false,
+        fails: 0,
+        asked: None,
+        sent: Arc::clone(&fallback_sent),
+        text: "fixture failure",
+    };
+    let mut loop_ = Loop::open(primary, "m", workspace.path(), "system", driver)?;
+    let endpoint = crate::endpoint::resolve(Some("openai"), Some("alias"), crate::Need::Config)?;
+    loop_.set_fallbacks([(fallback, endpoint)]);
+    let failure = loop_
+        .turn("finish the kernel candidate")
+        .await
+        .expect_err("exhausted allowance stops the turn");
+    assert_eq!(
+        failure.provider_failure().expect("provider failure").kind,
+        error.provider_failure().expect("classified allowance").kind
+    );
+    let sent = primary_sent.lock().expect("primary requests");
+    assert_eq!(sent.len(), 1, "exhausted allowance was retried");
+    assert!(
+        sent[0]
+            .iter()
+            .any(|message| message.content.contains("finish the kernel candidate"))
+    );
+    assert!(
+        fallback_sent.lock().expect("fallback requests").is_empty(),
+        "exhausted allowance reached a fallback alias"
+    );
+    Ok(())
+}
 
 struct Fault {
     kind: ProviderFailureKind,
     partial: bool,
     fails: usize,
     asked: Option<u64>,
-    sent: Mutex<Vec<Vec<Message>>>,
+    sent: crate::provider::scripted::Sent,
+    text: &'static str,
 }
 
 impl Provider for Fault {
@@ -38,7 +93,7 @@ impl Provider for Fault {
             Err(Error::Provider(ProviderFailure {
                 kind: self.kind,
                 status: None,
-                message: "fixture failure".to_string(),
+                message: self.text.to_string(),
                 partial_output: self.partial,
                 retry_after: self.asked.or((self.fails > 1).then_some(0)),
             }))
@@ -74,7 +129,8 @@ async fn run_failing(
         partial,
         fails,
         asked: None,
-        sent: Mutex::new(Vec::new()),
+        sent: Arc::default(),
+        text: "fixture failure",
     };
     let mut loop_ =
         Loop::open(provider, "m", workspace.path(), "system", driver).expect("open runtime");
@@ -149,7 +205,8 @@ async fn a_rate_limit_is_waited_out_past_the_retry_limit_while_the_time_budget_l
         partial: false,
         fails,
         asked: None,
-        sent: Mutex::new(Vec::new()),
+        sent: Arc::default(),
+        text: "fixture failure",
     };
     let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver)
         .expect("open runtime")
@@ -178,7 +235,8 @@ async fn a_rate_limit_inside_a_time_budget_waits_the_full_time_the_provider_asks
         partial: false,
         fails: 1,
         asked: Some(120),
-        sent: Mutex::new(Vec::new()),
+        sent: Arc::default(),
+        text: "fixture failure",
     };
     let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver)
         .expect("open runtime")
@@ -195,4 +253,43 @@ async fn a_rate_limit_inside_a_time_budget_waits_the_full_time_the_provider_asks
         "retried after {:?}, before the 120 s the provider asked for",
         started.elapsed()
     );
+}
+
+#[tokio::test]
+async fn an_overflow_cap_sticks_on_the_seated_model() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("session home");
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .expect("open journal");
+    let idle = Fault {
+        kind: ProviderFailureKind::Http,
+        partial: false,
+        fails: 0,
+        asked: None,
+        sent: Arc::default(),
+        text: "fixture failure",
+    };
+    let seat = Fault {
+        kind: ProviderFailureKind::ContextOverflow,
+        partial: false,
+        fails: 1,
+        asked: None,
+        sent: Arc::default(),
+        text: "This model's maximum context length is 8000 tokens.",
+    };
+    let mut loop_ =
+        Loop::open(idle, "m", workspace.path(), "system", driver).expect("open runtime");
+    loop_.set_context_window(Some(1_000_000));
+    loop_.set_seat(
+        crate::workflow::Role::Implement,
+        seat,
+        "seat",
+        None,
+        None,
+        None,
+    );
+    drop(loop_.turn("hi there").await);
+    assert_eq!(loop_.context_window(), Some(1_000_000));
+    assert_eq!(loop_.pressure_window(), Some(8_000));
 }

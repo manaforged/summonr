@@ -1,5 +1,5 @@
 use super::*;
-use crate::durable::driver::work_at;
+use crate::durable::driver::{Parent, work_at};
 use crate::durable::log;
 use crate::durable::work::Policy as WorkPolicy;
 use crate::workflow;
@@ -109,6 +109,7 @@ impl<P: Provider> Loop<P> {
             provider,
             model,
             seats: BTreeMap::new(),
+            prompt_parts: (0, 0, 0, 0),
             tuning: BTreeMap::new(),
             price: None,
             system_prompt,
@@ -129,7 +130,7 @@ impl<P: Provider> Loop<P> {
             run_base,
             context_sample: None,
             context_window: None,
-            probe: None,
+            probes: Vec::new(),
             effort: None,
             chosen_effort: None,
             turn_started: 0,
@@ -162,6 +163,13 @@ impl<P: Provider> Loop<P> {
     pub(crate) fn steer_with(&mut self, source: std::sync::Arc<super::turn::Steering>) {
         self.steer_shared = Some(source);
         self.interactive = true;
+    }
+
+    #[must_use]
+    pub fn without_task_list(mut self) -> Self {
+        self.tools.set_task_list(false);
+        self.schema = None;
+        self
     }
 
     #[must_use]
@@ -226,19 +234,42 @@ impl<P: Provider> Loop<P> {
         self.context_window = window;
     }
 
-    pub fn set_context_probe(&mut self, probe: tokio::task::JoinHandle<Option<u32>>) {
-        self.probe = Some(probe);
+    pub(crate) fn watch_window(
+        &mut self,
+        role: Option<workflow::Role>,
+        probe: tokio::task::JoinHandle<Option<u32>>,
+    ) {
+        self.probes.push((role, probe));
+    }
+
+    pub(super) fn learn_role_window(&mut self, role: workflow::Role, window: u32) {
+        if self.seats.contains_key(&role) {
+            self.learn_window(Some(role), window);
+        } else {
+            self.learn_window(None, window);
+        }
+    }
+
+    fn learn_window(&mut self, role: Option<workflow::Role>, window: u32) {
+        let slot = match role {
+            Some(role) => self.seats.get_mut(&role).map(|(_, _, slot)| slot),
+            None => Some(&mut self.context_window),
+        };
+        if let Some(slot) = slot {
+            *slot = Some(slot.map_or(window, |have| have.min(window)));
+        }
     }
 
     pub(crate) async fn settle_probe(&mut self) {
-        if self
-            .probe
-            .as_ref()
-            .is_some_and(tokio::task::JoinHandle::is_finished)
-            && let Some(probe) = self.probe.take()
-            && let Ok(Some(window)) = probe.await
-        {
-            self.context_window = Some(self.context_window.map_or(window, |have| have.min(window)));
+        let pending = std::mem::take(&mut self.probes);
+        for (role, probe) in pending {
+            if !probe.is_finished() {
+                self.probes.push((role, probe));
+                continue;
+            }
+            if let Ok(Some(window)) = probe.await {
+                self.learn_window(role, window);
+            }
         }
     }
 
@@ -353,5 +384,16 @@ pub(super) fn open_driver(
     model: &str,
     system: &str,
 ) -> Result<SessionDriver> {
-    SessionDriver::open(home.as_ref(), workspace, model, system, None).map_err(super::session_err)
+    let parent = std::env::var_os(crate::session::PARENT_ENV)
+        .map(|value| value.to_string_lossy().parse())
+        .transpose()
+        .map_err(|error| Error::Config(format!("invalid parent session: {error}")))?;
+    SessionDriver::open(
+        home.as_ref(),
+        workspace,
+        model,
+        system,
+        parent.map(Parent::Session),
+    )
+    .map_err(super::session_err)
 }

@@ -1,7 +1,10 @@
 use super::*;
 use crate::provider::Effort;
 
-use crate::provider::{FunctionDefinition, Image, ToolDefinition};
+use crate::provider::{
+    FunctionDefinition, Image, Message, Role, ToolCall, ToolDefinition, ToolFunction, ToolKind,
+};
+use serde_json::json;
 
 pub(super) fn message(role: Role, content: &str) -> Message {
     Message {
@@ -152,29 +155,6 @@ fn asking_for_effort_turns_thinking_on_and_never_sends_a_budget() {
 }
 
 #[test]
-fn a_reply_parses_into_text_thinking_and_calls() {
-    let body = json!({
-        "id": "msg_1",
-        "content": [
-            {"type": "thinking", "thinking": "let me think"},
-            {"type": "text", "text": "Checking."},
-            {"type": "tool_use", "id": "toolu_1", "name": "get_weather",
-             "input": {"location": "Paris"}}
-        ],
-        "stop_reason": "tool_use",
-        "usage": {"input_tokens": 10, "output_tokens": 5}
-    });
-    let message = parse("claude-opus-5", &body);
-    assert_eq!(message.content.as_deref(), Some("Checking."));
-    assert_eq!(message.reasoning_content.as_deref(), Some("let me think"));
-    assert_eq!(message.stop_reason, StopReason::ToolCalls);
-    assert_eq!(message.tool_calls.len(), 1);
-    assert_eq!(message.tool_calls[0].id, "toolu_1");
-    let arguments: Value = serde_json::from_str(&message.tool_calls[0].function.arguments).unwrap();
-    assert_eq!(arguments["location"], "Paris");
-}
-
-#[test]
 fn every_stop_reason_maps_to_one_of_ours() {
     assert_eq!(stop_reason(Some("tool_use")), StopReason::ToolCalls);
     assert_eq!(stop_reason(Some("max_tokens")), StopReason::Length);
@@ -308,12 +288,14 @@ fn replayed_tool_arguments_keep_the_bytes_the_model_produced() {
 
 #[test]
 fn a_cache_write_is_priced_at_the_write_rate() {
-    let usage = super::usage(Some(&serde_json::json!({
+    let usage = serde_json::from_value::<super::event::Counted>(serde_json::json!({
         "input_tokens": 100,
         "cache_creation_input_tokens": 1000,
         "cache_read_input_tokens": 2000,
         "output_tokens": 50,
-    })));
+    }))
+    .unwrap()
+    .usage();
     assert_eq!(
         (
             usage.prompt_tokens,

@@ -44,13 +44,6 @@ impl Chat for Wire {
     ) -> crate::error::Result<super::Wired> {
         body::body(call, reasoning)
     }
-
-    #[cfg(test)]
-    fn parse(model: &str, body: &Value) -> AssistantMessage {
-        let mut reply = <Reply as Accumulate>::new(model);
-        drop(reply.take(body));
-        reply.finish()
-    }
 }
 
 #[cfg(test)]

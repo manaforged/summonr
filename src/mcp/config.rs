@@ -247,28 +247,18 @@ fn layers(workspace: &Path) -> Result<Layers> {
 fn plugin_layer(workspace: &Path) -> BTreeMap<String, Entry> {
     let mut layer = BTreeMap::new();
     for plugin in crate::plugins::enabled() {
-        let mut entries = BTreeMap::new();
-        for map in plugin.mcp_json() {
-            entries.extend(json_map(Some(&map)));
-        }
-        entries.extend(toml_map(plugin.mcp_toml().as_ref()));
-        for (name, mut entry) in entries {
-            entry.command = entry
+        let mut maps = plugin.mcp_json();
+        let toml = plugin.mcp_toml().map(serde_json::to_value);
+        maps.extend(toml.into_iter().flatten());
+        layer.extend(plugin.servers(&maps, "-", workspace, |entry: &mut Entry| {
+            entry
                 .command
-                .map(|command| plugin.expand(&command, workspace));
-            entry.args = entry
-                .args
-                .iter()
-                .map(|arg| plugin.expand(arg, workspace))
-                .collect();
-            entry.env = entry
-                .env
-                .into_iter()
-                .map(|(key, value)| (key, plugin.expand(&value, workspace)))
-                .collect();
-            entry.url = entry.url.map(|url| plugin.expand(&url, workspace));
-            layer.insert(format!("{}-{name}", plugin.name), entry);
-        }
+                .iter_mut()
+                .chain(&mut entry.url)
+                .chain(&mut entry.args)
+                .chain(entry.env.values_mut())
+                .collect()
+        }));
     }
     layer
 }
@@ -314,37 +304,30 @@ fn toml_map(value: Option<&toml::Value>) -> BTreeMap<String, Entry> {
 }
 
 fn substitute(text: &str, config: &BTreeMap<String, String>) -> String {
+    scan(text, "${user_config.", |name| config.get(name).cloned())
+}
+
+fn expand(text: &str) -> String {
+    scan(text, "${", |inner| {
+        let (name, fallback) = inner.split_once(":-").unwrap_or((inner, ""));
+        Some(std::env::var(name).unwrap_or_else(|_unset| fallback.to_string()))
+    })
+}
+
+fn scan(text: &str, open: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::new();
     let mut rest = text;
-    let needle = "${user_config.";
-    while let Some(start) = rest.find(needle) {
-        let after = &rest[start + needle.len()..];
+    while let Some(start) = rest.find(open) {
+        let after = &rest[start + open.len()..];
         let Some(end) = after.find('}') else {
             break;
         };
         out.push_str(&rest[..start]);
-        match config.get(&after[..end]) {
-            Some(value) => out.push_str(value),
-            None => out.push_str(&rest[start..start + needle.len() + end + 1]),
+        match resolve(&after[..end]) {
+            Some(value) => out.push_str(&value),
+            None => out.push_str(&rest[start..start + open.len() + end + 1]),
         }
         rest = &after[end + 1..];
-    }
-    out.push_str(rest);
-    out
-}
-
-fn expand(text: &str) -> String {
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(start) = rest.find("${") {
-        let Some(length) = rest[start..].find('}') else {
-            break;
-        };
-        out.push_str(&rest[..start]);
-        let inner = &rest[start + 2..start + length];
-        let (name, fallback) = inner.split_once(":-").unwrap_or((inner, ""));
-        out.push_str(&std::env::var(name).unwrap_or_else(|_unset| fallback.to_string()));
-        rest = &rest[start + length + 1..];
     }
     out.push_str(rest);
     out

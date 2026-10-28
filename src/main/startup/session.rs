@@ -166,7 +166,7 @@ fn configure(
         );
     }
     if let Some(check) = check {
-        loop_ = loop_.with_verify(check);
+        loop_ = loop_.with_verify(check)?;
     }
     if let Some(budget) = budget(args) {
         loop_ = loop_.with_budget(budget)?;

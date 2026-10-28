@@ -116,6 +116,7 @@ impl<P: Provider> Loop<P> {
             session,
             verify: None,
             check_file: None,
+            metric: None,
             run_base,
             context_sample: None,
             context_window: None,

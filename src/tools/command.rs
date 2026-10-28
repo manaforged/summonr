@@ -75,10 +75,14 @@ impl ToolRegistry {
         self.launch_command(args, locked, Rewrite::Native).await
     }
 
-    pub(crate) async fn run_check(&self, command: &str) -> Result<ToolOutput> {
+    pub(crate) async fn run_check(
+        &self,
+        command: &str,
+        timeout_secs: Option<u64>,
+    ) -> Result<ToolOutput> {
         let args = serde_json::json!({
             "command": command,
-            "timeout_secs": crate::limits::limits().verify_timeout_secs,
+            "timeout_secs": timeout_secs.unwrap_or(crate::limits::limits().verify_timeout_secs),
         });
         self.launch_command(&args, self.policy.is_read_only(), Rewrite::Exact)
             .await

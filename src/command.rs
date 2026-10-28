@@ -194,7 +194,7 @@ pub(crate) fn argument<'a>(
         if let Some(head) = line.split_whitespace().next().filter(|head| {
             head.starts_with('/')
                 && !server_prompt(head)
-                && !crate::plugins::commands::named(head)
+                && !crate::plugins::commands::named(head, workspace)
                 && !crate::skills::list(workspace)
                     .iter()
                     .any(|(name, _)| head.strip_prefix('/') == Some(name.as_str()))

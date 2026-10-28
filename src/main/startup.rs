@@ -75,40 +75,54 @@ fn signal(code: i32) -> String {
 
 async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     summonr::check_config()?;
-    if let Some(code) = early(&args, log).await {
-        return code;
-    }
     let adopted = adopt(&args)?;
-    if let Some(code) = account(&args).await {
-        return code;
+    match args.verb.as_ref() {
+        Some(verb) => run_verb(&args, log, verb).await,
+        None => launch(&args, log, &adopted).await,
     }
-    if let Some(code) = listing(&args).await {
-        return code;
-    }
-    launch(&args, log, &adopted).await
 }
 
-async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32>> {
+async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> Result<i32> {
     let in_cwd = |run: &dyn Fn(&std::path::Path) -> Result<i32>| {
-        Some(
-            std::env::current_dir()
-                .map_err(Into::into)
-                .and_then(|cwd| run(&cwd)),
-        )
+        std::env::current_dir()
+            .map_err(Into::into)
+            .and_then(|cwd| run(&cwd))
     };
+    let done = |result: Result<()>| result.map(|()| 0);
     let path = log.map(diagnostics::Log::path);
-    match args.verb.as_ref()? {
-        Verb::Doctor if args.logs => Some(diagnostics::print_logs(path)),
-        Verb::Doctor if args.report => Some(diagnostics::report(path)),
-        Verb::Doctor => Some(diagnostics::doctor(path)),
+    match verb {
+        Verb::Doctor if args.logs => diagnostics::print_logs(path),
+        Verb::Doctor if args.report => diagnostics::report(path),
+        Verb::Doctor => diagnostics::doctor(path),
         Verb::Mail(words) => in_cwd(&|cwd| summonr::mail::cli::run(words, cwd)),
         Verb::Cron(words) => in_cwd(&|cwd| summonr::cron::cli::run(words, cwd)),
         Verb::Gateway(words) => {
             in_cwd(&|cwd| summonr::gateway::cli::run(words, cwd, &login::read_secret))
         }
-        Verb::Tool(tool) => Some(tool::run(tool).await),
-        Verb::Acp => Some(acp(args).await),
-        _ => None,
+        Verb::Tool(tool) => tool::run(tool).await,
+        Verb::Acp => acp(args).await,
+        Verb::Login => done(login(args).await),
+        Verb::Logout => logout(args),
+        Verb::Classify => run_classify(args).await,
+        Verb::Endpoints => done(endpoints::list(args.all, args.live).await),
+        Verb::Mcp(command) => done(mcp(command, args.json).await),
+        Verb::Sessions => done(match args.grep.as_deref() {
+            Some(pattern) => grep_sessions(pattern),
+            None => print_sessions(),
+        }),
+        Verb::Export => done(export_session_cmd(args)),
+        Verb::Profile => done(profile(args)),
+        Verb::Workflows => done(print_workflows()),
+        Verb::Modules => done(
+            workspace()
+                .and_then(|root| summonr::modules::Switches::load(&root))
+                .map(|switches| println!("{}", switches.table())),
+        ),
+        Verb::Uninstall => uninstall(args),
+        Verb::Update => update().await,
+        Verb::Install => add(args).await,
+        Verb::Worktrees => done(manage_worktrees(args)),
+        Verb::Diff => done(print_diff(args)),
     }
 }
 
@@ -122,18 +136,6 @@ async fn acp(args: &Args) -> Result<i32> {
         },
     )
     .await
-}
-
-async fn account(args: &Args) -> Option<Result<i32>> {
-    let done = |result: Result<()>| Some(result.map(|()| 0));
-    match args.verb.as_ref()? {
-        Verb::Login => done(login(args).await),
-        Verb::Logout => Some(logout(args)),
-        Verb::Classify => Some(run_classify(args).await),
-        Verb::Endpoints => done(endpoints::list(args.all, args.live).await),
-        Verb::Mcp(command) => done(mcp(command, args.json).await),
-        _ => None,
-    }
 }
 
 async fn login(args: &Args) -> Result<()> {
@@ -188,30 +190,6 @@ fn logout(args: &Args) -> Result<i32> {
     };
     println!("{text}");
     Ok(0)
-}
-
-async fn listing(args: &Args) -> Option<Result<i32>> {
-    let done = |result: Result<()>| Some(result.map(|()| 0));
-    match args.verb.as_ref()? {
-        Verb::Sessions => done(match args.grep.as_deref() {
-            Some(pattern) => grep_sessions(pattern),
-            None => print_sessions(),
-        }),
-        Verb::Export => done(export_session_cmd(args)),
-        Verb::Profile => done(profile(args)),
-        Verb::Workflows => done(print_workflows()),
-        Verb::Modules => done(
-            workspace()
-                .and_then(|root| summonr::modules::Switches::load(&root))
-                .map(|switches| println!("{}", switches.table())),
-        ),
-        Verb::Uninstall => Some(uninstall(args)),
-        Verb::Update => Some(update().await),
-        Verb::Install => Some(add(args).await),
-        Verb::Worktrees => done(manage_worktrees(args)),
-        Verb::Diff => done(print_diff(args)),
-        _ => None,
-    }
 }
 
 fn profile(args: &Args) -> Result<()> {

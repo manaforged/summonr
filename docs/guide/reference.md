@@ -574,7 +574,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `/clear` | start a fresh context; files stay |
 | `/compact` | summarize earlier turns |
 | `/retry` | continue a failed or cancelled turn (F5) |
-| `/undo [files [N]]` | undo the last turn; files N restores files |
+| `/undo [files [N]]` | undo the last turn; files N restores files to their state before turn N, in a git repository or not. Outside a repository the checkpoints live in `~/.summonr/checkpoints` and skip `target`, `node_modules`, `dist`, and `__pycache__`. |
 | `/fork [TEXT]` | fork this session; TEXT picks a turn |
 | `/export [PATH]` | write this session as markdown |
 | `/copy [all]` | copy the last reply; all copies everything |
@@ -868,6 +868,7 @@ The built-in modules are the binary (modules above). What you add lives in files
 
 | Layer | Where | What the model sees |
 | --- | --- | --- |
+| Command | `<name>.md` under `.summonr/commands/`, `.claude/commands/`, `~/.summonr/commands/`, or `~/.claude/commands/` | `/<name> args`, or `/project:<name>` and `/user:<name>` when a plugin command has the same name. The body is the prompt; `$ARGUMENTS` is everything after the name and `$1`..`$9` are its words. A project file wins over a user file with the same name. |
 | Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/` | `/skills` lists them; `/NAME [arguments]` invokes one; the model uses the `skill` tool. Slash completion refreshes on opening; no copying or sync option is needed. Built-ins and plugin commands win name collisions. |
 | MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt` and `@server:uri` expand server prompts and resources into the user message. |
 | Hook | `[hooks]` `pre_tool`, `post_tool`, `compact`, `stop` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call (stdin is JSON). |

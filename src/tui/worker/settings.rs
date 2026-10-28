@@ -13,14 +13,18 @@ impl Worker {
     pub(super) fn set_verify(&mut self, on: bool) {
         if on {
             match crate::verify::check_commands(self.loop_.workspace()) {
-                Ok(Some(commands)) => self.loop_.set_verify(Some(commands)),
+                Ok(Some(commands)) => {
+                    if let Err(error) = self.loop_.set_verify(Some(commands)) {
+                        self.fail(&error.to_string());
+                    }
+                }
                 Ok(None) => {
                     self.fail("Add a check to .summonr/check.toml, then enable Verify again.")
                 }
                 Err(error) => self.fail(&error.to_string()),
             }
         } else {
-            self.loop_.set_verify(None);
+            drop(self.loop_.set_verify(None));
         }
         self.send_settings();
     }

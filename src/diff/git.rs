@@ -78,12 +78,15 @@ pub(crate) fn git_output(
 }
 
 pub(crate) fn git_paths(root: &Path, args: &[&str]) -> Result<Vec<String>> {
-    let out = git_output(root, &[], args, None)?;
-    Ok(String::from_utf8_lossy(&out)
+    Ok(nul_paths(&git_output(root, &[], args, None)?))
+}
+
+pub(crate) fn nul_paths(out: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(out)
         .split('\0')
         .filter(|path| !path.is_empty())
         .map(str::to_string)
-        .collect())
+        .collect()
 }
 
 pub(crate) fn git_apply(root: &Path, patch: &[u8], flags: &[&str]) -> Result<()> {

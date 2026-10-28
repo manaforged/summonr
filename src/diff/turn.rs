@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::str::FromStr;
 
-use super::{Diff, Stat, git, git_paths, ignored, numstat_row};
+use super::{Diff, Stat, ignored, numstat_row};
 use crate::checkpoint::Checkpoints;
 use crate::error::{Error, Result};
 
@@ -42,21 +42,17 @@ struct Span {
 }
 
 impl Span {
-    fn stats(&self, root: &Path, session: &str) -> Result<Diff> {
-        let numstat = git(
-            root,
-            &[
-                "diff",
-                "--numstat",
-                "--no-renames",
-                &self.from,
-                &self.to,
-                "--",
-            ],
-        )?;
-        let added: HashSet<String> = git_paths(
-            root,
-            &[
+    fn stats(&self, points: &Checkpoints, session: &str) -> Result<Diff> {
+        let numstat = points.git(&[
+            "diff",
+            "--numstat",
+            "--no-renames",
+            &self.from,
+            &self.to,
+            "--",
+        ])?;
+        let added: HashSet<String> = points
+            .paths(&[
                 "diff",
                 "--name-only",
                 "-z",
@@ -65,10 +61,9 @@ impl Span {
                 &self.from,
                 &self.to,
                 "--",
-            ],
-        )?
-        .into_iter()
-        .collect();
+            ])?
+            .into_iter()
+            .collect();
         let mut files: Vec<Stat> = numstat
             .lines()
             .filter_map(numstat_row)
@@ -87,9 +82,9 @@ impl Span {
     }
 }
 
-fn spans(root: &Path, session: &str) -> Result<Vec<Span>> {
+fn spans(root: &Path, session: &str) -> Result<(Checkpoints, Vec<Span>)> {
     let points = Checkpoints::open(root, session)
-        .ok_or_else(|| Error::Config("--turn needs a git workspace".to_string()))?;
+        .ok_or_else(|| Error::Config("this workspace has no checkpoints".to_string()))?;
     let trees = points.trees();
     if trees.is_empty() {
         return Err(Error::Config(
@@ -97,7 +92,7 @@ fn spans(root: &Path, session: &str) -> Result<Vec<Span>> {
         ));
     }
     let current = points.tree()?;
-    Ok(trees
+    let spans = trees
         .iter()
         .enumerate()
         .map(|(slot, from)| Span {
@@ -105,17 +100,18 @@ fn spans(root: &Path, session: &str) -> Result<Vec<Span>> {
             from: from.clone(),
             to: trees.get(slot + 1).unwrap_or(&current).clone(),
         })
-        .collect())
+        .collect();
+    Ok((points, spans))
 }
 
-fn pick(root: &Path, session: &str, id: TurnId) -> Result<(Span, Diff)> {
-    let mut spans = spans(root, session)?;
+fn pick(root: &Path, session: &str, id: TurnId) -> Result<(Checkpoints, Span, Diff)> {
+    let (points, mut spans) = spans(root, session)?;
     let count = spans.len();
     match id {
         TurnId::Number(number) if number <= count => {
             let span = spans.swap_remove(number - 1);
-            let diff = span.stats(root, session)?;
-            Ok((span, diff))
+            let diff = span.stats(&points, session)?;
+            Ok((points, span, diff))
         }
         TurnId::Number(number) => Err(Error::Config(format!(
             "no turn {number}; the session has {}",
@@ -126,29 +122,31 @@ fn pick(root: &Path, session: &str, id: TurnId) -> Result<(Span, Diff)> {
             let mut span = spans.swap_remove(0);
             span.to = to;
             span.base = SESSION_BASE.to_string();
-            let diff = span.stats(root, session)?;
-            Ok((span, diff))
+            let diff = span.stats(&points, session)?;
+            Ok((points, span, diff))
         }
         TurnId::Last => {
             let mut empty = None;
             while let Some(span) = spans.pop() {
-                let diff = span.stats(root, session)?;
+                let diff = span.stats(&points, session)?;
                 if !diff.files.is_empty() {
-                    return Ok((span, diff));
+                    return Ok((points, span, diff));
                 }
                 empty.get_or_insert((span, diff));
             }
-            empty.ok_or_else(|| Error::Config("the session has no turns".to_string()))
+            let (span, diff) =
+                empty.ok_or_else(|| Error::Config("the session has no turns".to_string()))?;
+            Ok((points, span, diff))
         }
     }
 }
 
 pub fn turn_stats(root: &Path, session: &str, id: TurnId) -> Result<Diff> {
-    pick(root, session, id).map(|(_, diff)| diff)
+    pick(root, session, id).map(|(_, _, diff)| diff)
 }
 
 pub fn turn_patch(root: &Path, session: &str, id: TurnId, path: Option<&str>) -> Result<String> {
-    let (span, diff) = pick(root, session, id)?;
+    let (points, span, diff) = pick(root, session, id)?;
     let shown: Vec<String> = diff
         .files
         .iter()
@@ -167,7 +165,7 @@ pub fn turn_patch(root: &Path, session: &str, id: TurnId, path: Option<&str>) ->
         "--",
     ];
     args.extend(shown.iter().map(String::as_str));
-    let mut text = git(root, &args)?;
+    let mut text = points.git(&args)?;
     text.push('\n');
     Ok(text)
 }

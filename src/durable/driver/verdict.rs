@@ -105,6 +105,7 @@ impl SessionDriver {
             work.record_check(false);
             work.abandon("completion check denied by policy");
         } else if matches!(work.policy, WorkKind::Goal)
+            && work.measurements.is_empty()
             && failure.is_some()
             && failure == work.failed_checks
         {

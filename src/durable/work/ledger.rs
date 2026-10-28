@@ -24,8 +24,32 @@ impl Work {
         match self.policy {
             WorkKind::Single => self.planned_ledger(),
             WorkKind::Steps => self.step_ledger(),
-            WorkKind::Goal => Vec::new(),
+            WorkKind::Goal => self.measurement_ledger(),
         }
+    }
+
+    fn measurement_ledger(&self) -> Vec<String> {
+        let skip = self
+            .measurements
+            .len()
+            .saturating_sub(crate::limits::limits().ledger_max);
+        self.measurements
+            .iter()
+            .enumerate()
+            .skip(skip)
+            .map(|(index, measurement)| {
+                let outcome = match (index, measurement.kept) {
+                    (0, _) => "baseline",
+                    (_, true) => "kept",
+                    (_, false) => "reverted",
+                };
+                format!(
+                    "#{} {} {outcome}",
+                    index + 1,
+                    measurement.value.as_deref().unwrap_or("no value")
+                )
+            })
+            .collect()
     }
 
     fn step_ledger(&self) -> Vec<String> {
@@ -73,7 +97,10 @@ const LEGEND: [(StepState, &str); 4] = [
 ];
 
 impl Work {
-    pub(crate) fn ledger_legend() -> String {
+    pub(crate) fn ledger_legend(kind: WorkKind) -> String {
+        if kind == WorkKind::Goal {
+            return "Harness metric ledger (attempt, value, outcome; #1 is the unchanged workspace, and only kept changes are in the workspace):".to_string();
+        }
         let marks: Vec<String> = LEGEND
             .iter()
             .map(|(state, word)| format!("{} {word}", step_mark(*state)))

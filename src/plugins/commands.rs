@@ -15,6 +15,8 @@ const SIGIL: char = '$';
 const ARGUMENTS: &str = "ARGUMENTS";
 const FIRST: u8 = b'1';
 const LAST: u8 = b'9';
+const PROJECT: &str = "project";
+const USER: &str = "user";
 
 #[derive(Clone, Debug)]
 pub(crate) struct Command {
@@ -67,13 +69,34 @@ impl Command {
     }
 }
 
-pub(crate) fn commands() -> Vec<Command> {
-    enabled().iter().flat_map(load).collect()
+pub(crate) fn commands(workspace: &Path) -> Vec<Command> {
+    let mut seen = HashSet::new();
+    let mut all: Vec<Command> = folders(workspace)
+        .iter()
+        .flat_map(load)
+        .filter(|command| seen.insert(command.name.clone()))
+        .collect();
+    all.extend(enabled().iter().flat_map(load));
+    all
 }
 
-pub(crate) fn find(head: &str) -> Option<Command> {
+fn folders(workspace: &Path) -> Vec<Plugin> {
+    let mut folders = vec![
+        Plugin::at(PROJECT.to_string(), workspace.join(".summonr")),
+        Plugin::at(PROJECT.to_string(), workspace.join(".claude")),
+    ];
+    if let Ok(home) = crate::prompt::summonr_home() {
+        folders.push(Plugin::at(USER.to_string(), home));
+    }
+    if let Some(home) = crate::prompt::user_home() {
+        folders.push(Plugin::at(USER.to_string(), home.join(".claude")));
+    }
+    folders
+}
+
+pub(crate) fn find(head: &str, workspace: &Path) -> Option<Command> {
     let head = head.strip_prefix('/')?;
-    let all = commands();
+    let all = commands(workspace);
     if let Some((plugin, name)) = head.split_once(':') {
         return all
             .into_iter()
@@ -84,8 +107,11 @@ pub(crate) fn find(head: &str) -> Option<Command> {
         .flatten()
 }
 
-pub(crate) fn named(line: &str) -> bool {
-    line.split_whitespace().next().and_then(find).is_some()
+pub(crate) fn named(line: &str, workspace: &Path) -> bool {
+    line.split_whitespace()
+        .next()
+        .and_then(|head| find(head, workspace))
+        .is_some()
 }
 
 pub(crate) fn expand(input: &str, workspace: &Path) -> Result<Option<String>> {
@@ -94,8 +120,9 @@ pub(crate) fn expand(input: &str, workspace: &Path) -> Result<Option<String>> {
     if crate::parse_command(head).is_some() {
         return Ok(None);
     }
-    if let Some(command) = find(head) {
-        return Ok(Some(command.render(rest.trim(), workspace)));
+    if let Some(command) = find(head, workspace) {
+        let text = command.render(rest.trim(), workspace);
+        return Ok(Some(crate::secret::shield::scrub_found(&text, workspace)));
     }
     let Some(name) = head.strip_prefix('/').filter(|name| {
         skills::list(workspace)
@@ -114,7 +141,7 @@ pub(crate) fn expand(input: &str, workspace: &Path) -> Result<Option<String>> {
 }
 
 pub(crate) fn offers(workspace: &Path) -> Vec<Offer> {
-    let all = commands();
+    let all = commands(workspace);
     let mut offers = Vec::new();
     for command in &all {
         let about = command.about();

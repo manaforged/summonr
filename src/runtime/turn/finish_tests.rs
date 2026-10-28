@@ -338,7 +338,9 @@ async fn a_check_file_changed_during_a_run_is_put_back() {
     let path = run.loop_.workspace().join(".summonr/check.toml");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "check = \"false\"\n").unwrap();
-    run.loop_.set_verify(Some(vec!["false".to_string()]));
+    run.loop_
+        .set_verify(Some(vec!["false".to_string()]))
+        .unwrap();
     std::fs::write(&path, "check = \"true\"\n").unwrap();
     run.loop_.turn("make the tests pass").await.unwrap();
     assert_eq!(

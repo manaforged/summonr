@@ -128,3 +128,25 @@ fn the_session_span_leaves_out_changes_made_before_the_first_turn() -> Result<()
     assert_eq!(diff.base, crate::diff::SESSION_BASE);
     Ok(())
 }
+
+#[test]
+fn a_workspace_outside_git_restores_a_turn() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    std::fs::write(workspace.join("notes.txt"), "before\n")?;
+    let checkpoints =
+        Checkpoints::open(workspace, "plain").expect("a plain folder supports checkpoints");
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("notes.txt"), "after\n")?;
+    std::fs::create_dir(workspace.join("node_modules"))?;
+    std::fs::write(workspace.join("node_modules/dep.js"), "x")?;
+    let restored = checkpoints.restore(1);
+    let text = std::fs::read_to_string(workspace.join("notes.txt"))?;
+    if let Some(store) = private_dir(workspace) {
+        drop(std::fs::remove_dir_all(store));
+    }
+    assert_eq!(restored?, vec!["notes.txt".to_string()]);
+    assert_eq!(text, "before\n");
+    assert!(!workspace.join(".git").exists());
+    Ok(())
+}

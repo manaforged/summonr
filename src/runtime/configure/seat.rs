@@ -95,15 +95,22 @@ impl<P: Provider> Loop<P> {
         self.session.workflow().map(str::to_string)
     }
 
-    pub(crate) fn set_verify(&mut self, commands: Option<Vec<String>>) {
+    pub(crate) fn set_verify(&mut self, commands: Option<Vec<String>>) -> Result<()> {
         self.check_file = std::fs::read(crate::verify::check_path(&self.workspace)).ok();
+        self.metric = match commands {
+            Some(_) => crate::verify::metric(&self.workspace)?.map(|metric| {
+                let protected = crate::verify::Protected::capture(&self.workspace, &metric.protect);
+                (metric, protected)
+            }),
+            None => None,
+        };
         self.verify = commands;
+        Ok(())
     }
 
-    #[must_use]
-    pub fn with_verify(mut self, commands: Vec<String>) -> Self {
-        self.set_verify(Some(commands));
-        self
+    pub fn with_verify(mut self, commands: Vec<String>) -> Result<Self> {
+        self.set_verify(Some(commands))?;
+        Ok(self)
     }
 
     pub fn with_budget(mut self, budget: Budget) -> Result<Self> {

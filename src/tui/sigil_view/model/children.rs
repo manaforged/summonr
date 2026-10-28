@@ -1,7 +1,16 @@
 use super::*;
-use crate::tools::Builtin;
+use crate::tui::sigil_view::chat::entry::tool_label;
 
 impl Model {
+    pub(in crate::tui::sigil_view) fn agents_of<'a>(
+        &'a self,
+        call: &'a str,
+    ) -> impl Iterator<Item = &'a Agent> {
+        self.agents
+            .iter()
+            .filter(move |kid| !call.is_empty() && kid.call == call)
+    }
+
     pub(in crate::tui::sigil_view) fn apply_child(&mut self, id: &str, event: Event) {
         let tag = crate::child::tag(id);
         if let Event::Work { progress } = &event
@@ -65,7 +74,7 @@ impl Model {
         if let Some(at) = self
             .entries
             .iter()
-            .rposition(|entry| matches!(entry, Entry::Tool { id, .. } if *id == call))
+            .rposition(|entry| matches!(entry, Entry::Tool { call: tool, .. } if tool.id == call))
         {
             self.entries.touch(at);
         }
@@ -76,7 +85,7 @@ impl Model {
         call: &str,
     ) -> Option<crate::child::ChildRecord> {
         let output = self.entries.iter().rev().find_map(|entry| match entry {
-            Entry::Tool { id, output, .. } if id == call => Some(output),
+            Entry::Tool { call: tool, .. } if tool.id == call => Some(&tool.output),
             Entry::ToolGroup { calls, .. } => calls
                 .iter()
                 .find(|item| item.id == call)
@@ -138,13 +147,9 @@ fn child_line(event: &Event) -> Option<(String, bool, bool)> {
         Event::ToolCall {
             name, arguments, ..
         } => (
-            format!(
-                "{} {}",
-                Builtin::of(name).map_or(name.as_str(), |kind| kind.verb()),
-                tool_arg(arguments)
-            )
-            .trim()
-            .to_string(),
+            format!("{} {}", tool_label(name), tool_arg(arguments))
+                .trim()
+                .to_string(),
             false,
             false,
         ),

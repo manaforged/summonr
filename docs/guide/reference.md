@@ -253,6 +253,7 @@ cache_ttl = "5m"
 | `job_poll_start_secs` | `1` | First job poll interval. |
 | `job_poll_cap_secs` | `2` | Longest job poll interval. |
 | `mail_stale_secs` | `120` | A mail peer with no heartbeat for this long is stale. |
+| `mail_per_round` | `5` | Most peer mail messages delivered into one model round; the rest wait for the next round. |
 | `mail_sweep_secs` | `86400` | Mail entries older than this are removed. |
 | `verify_timeout_secs` | `600` | Timeout for a check command. |
 | `probe_secs` | `5` | Endpoint probe timeout. |
@@ -287,7 +288,10 @@ cache_ttl = "5m"
 | `image_bytes` | `5000000` | Largest image sent to the model; a larger one is re-encoded to fit. |
 | `mcp_log_max_bytes` | `1048576` | MCP log size before rotation. |
 | `mcp_frame_max_bytes` | `4194304` | Largest MCP reply. |
+| `lsp_frame_max_bytes` | `16777216` | Largest language-server message; a larger Content-Length is refused before it is read. |
 | `mcp_stderr_tail_bytes` | `2048` | MCP stderr kept for diagnostics. |
+| `hook_output_max_bytes` | `65536` | Most bytes of a hook's stdout and stderr that summonr keeps. |
+| `gateway_stderr_tail_lines` | `20` | Last stderr lines of a gateway run kept for its failure report. |
 | `mcp_stderr_settle_secs` | `1` | Most time spent draining MCP stderr after stdout closes. |
 | `mcp_defer_bytes` | `8192` | Tool schemas above this size go behind one `mcp` tool. |
 | `mcp_found_max` | `8` | Most deferred tools returned per search. |
@@ -312,7 +316,8 @@ cache_ttl = "5m"
 | `repeat_window_secs` | `2` | Window for a double key press. |
 | `step_attempts` | `3` | Failed-check attempts per numbered plan step; not applied to goals. |
 | `repair_limit` | `6` | Argument repairs and overflow retries per turn. |
-| `repeat_nudge` | `5` | Times the same tool call, or the same cycle of up to three calls, may return the same result in a row before summonr adds a note to the result asking the model to change approach. The call still runs, and a new message starts the count again. `0` turns the note off. |
+| `repeat_nudge` | `5` | Times the same tool call, or the same cycle of up to `repeat_cycle_max` calls, may return the same result in a row before summonr adds a note to the result asking the model to change approach. The call still runs, and a new message starts the count again. `0` turns the note off. |
+| `repeat_cycle_max` | `3` | Longest cycle of tool calls, in calls, that `repeat_nudge` counts as a repeat. |
 | `edit_hunk_rows` | `80` | Rows shown per edit hunk. |
 | `display_patch_lines` | `1000` | Most patch lines shown. |
 | `read_line_limit` | `1000` | Largest `read` line limit. |
@@ -322,6 +327,12 @@ cache_ttl = "5m"
 | `cron_budget_secs` | `1800` | Time budget of a cron run that sets no `--max-secs`. |
 | `cron_runs_kept` | `50` | Runs kept per cron job; older runs and their saved webhook bodies are deleted. |
 | `cron_catchup_secs` | `604800` | A missed cron time older than this is logged as expired instead of run. |
+| `classify_task_chars` | `400` | Characters of the task kept in a session digest for `summonr classify`. |
+| `classify_closing_chars` | `600` | Characters of the closing reply kept in a session digest. |
+| `classify_command_chars` | `110` | Characters kept per command and per error line in a session digest. |
+| `classify_errors_max` | `12` | Most error lines kept in a session digest. |
+| `classify_commands_max` | `25` | Most distinct commands listed in a session digest. |
+| `classify_files_max` | `25` | Most changed files listed in a session digest. |
 | `cron_fail_pause` | `3` | Failed cron runs in a row before the job pauses itself. |
 | `memory_bytes` | `25000` | Bytes of each memory file loaded into a session. |
 | `gateway_poll_secs` | `50` | Long-poll wait of each Telegram update request. |
@@ -553,7 +564,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 
 ### Commands
 
-`/help` lists these by job. Old names such as `/rollback`, `/tree`, and `/net` still work for one release and print the new name once.
+`/help` lists these by job. Old names such as `/rollback` and `/tree` still run their new command.
 
 | Command | Job |
 | --- | --- |

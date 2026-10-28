@@ -116,10 +116,10 @@ impl App {
             .unwrap_or(0);
         let named = asked && choices.get(selected).is_some_and(|row| !row.dual());
         self.auth.choices.set(choices);
-        self.auth.filter.set(String::new());
+        self.auth.list.query.set(String::new());
         self.auth.seat.set(None);
         self.auth.focus.set(self.auth.focus.peek() + 1);
-        self.auth.sel.set(selected);
+        self.auth.list.cursor.set(selected);
         self.auth.step.set(Login::List(Note::default()));
         self.replace_auth_key(String::new());
         self.auth.open.set(true);
@@ -134,17 +134,12 @@ impl App {
         if !self.auth_listing() || self.picker.open.peek() {
             return;
         }
-        let last = self.filtered_auth().len().saturating_sub(1);
-        self.auth
-            .sel
-            .set(self.auth.sel.peek().saturating_add_signed(delta).min(last));
+        self.auth.list.shift(delta, self.filtered_auth().len());
     }
 
     pub(in crate::tui::sigil_view) fn auth_choice(&self) -> Option<crate::endpoint::AuthInfo> {
         let choices = self.filtered_auth();
-        choices
-            .get(self.auth.sel.peek().min(choices.len().saturating_sub(1)))
-            .cloned()
+        choices.get(self.auth.list.at(choices.len())).cloned()
     }
 
     pub(in crate::tui::sigil_view) fn commit_auth(&self) {
@@ -167,7 +162,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn filtered_auth(&self) -> Vec<crate::endpoint::AuthInfo> {
-        matching(self.auth.choices.peek(), &self.auth.filter.peek())
+        matching(self.auth.choices.peek(), &self.auth.list.query.peek())
     }
 
     pub(in crate::tui::sigil_view) fn auth_listing(&self) -> bool {
@@ -176,7 +171,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn pick_auth(&self, index: usize) {
         if self.auth_listing() && !self.picker.open.peek() {
-            self.auth.sel.set(index);
+            self.auth.list.cursor.set(index);
             self.commit_auth();
         }
     }
@@ -184,8 +179,8 @@ impl App {
     pub(in crate::tui::sigil_view) fn replace_auth_filter(&self, filter: String) {
         if self.auth_listing() {
             let best = best_match(&matching(self.auth.choices.peek(), &filter), &filter);
-            self.auth.filter.set(filter);
-            self.auth.sel.set(best);
+            self.auth.list.query.set(filter);
+            self.auth.list.cursor.set(best);
         }
     }
 
@@ -204,7 +199,7 @@ impl App {
                     .iter()
                     .position(|row| row.provider == choice.provider)
                     .unwrap_or(0);
-                self.auth.sel.set(selected);
+                self.auth.list.cursor.set(selected);
                 self.list_models(None);
             }
             Ok(None) => {}
@@ -333,7 +328,7 @@ impl App {
                     .filtered_auth()
                     .iter()
                     .position(|choice| choice.name == name);
-                self.auth.sel.set(found.unwrap_or_default());
+                self.auth.list.cursor.set(found.unwrap_or_default());
                 self.auth.step.set(Login::List(Note::plain(text)));
                 self.auth.focus.set(self.auth.focus.peek() + 1);
             }

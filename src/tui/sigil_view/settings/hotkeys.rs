@@ -1,11 +1,12 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Tone, WidgetLayoutExt, container,
-    virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Tone, container, virtual_list,
 };
 
 use super::{App, canvas};
 use crate::prefs::Hotkey;
-use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, notice, pick, press};
+use crate::tui::sigil_view::ui::{
+    Bindings, Dialog, Hints, Key, Size, notice, overlay_list, pick, press,
+};
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     vec![press("r", |app, event| {
@@ -46,7 +47,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                         .gap(canvas::overlay_gap()),
                 )
                 .children_reactive(move || {
-                    let selected = paint.hotkeys.sel.get().min(Hotkey::ALL.len() - 1);
+                    let selected = paint.hotkeys.list.cursor.get().min(Hotkey::ALL.len() - 1);
                     let visible = canvas::overlay_shown(Hotkey::ALL.len(), paint.viewport.get().1);
                     let recording = paint.hotkeys.recording.get();
                     let armed = paint.hotkeys.armed.get();
@@ -75,17 +76,14 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     if !note.is_empty() {
                         items.push(notice(note, Tone::Error));
                     }
-                    items.push(
-                        container().layout(LayoutStyle::block().fill_width()).child(
-                            virtual_list(rows, move |index, row: &(Hotkey, String)| {
-                                entry(source.clone(), index, row, selected)
-                            })
-                            .row_height(canvas::overlay_list_row())
-                            .height(canvas::overlay_list_row() * visible as f32)
-                            .viewport_height(canvas::overlay_list_row() * visible as f32)
-                            .scroll_into_view(selected),
-                        ),
-                    );
+                    items.push(overlay_list(
+                        virtual_list(rows, move |index, row: &(Hotkey, String)| {
+                            entry(source.clone(), index, row, selected)
+                        })
+                        .scroll_into_view(selected),
+                        canvas::overlay_list_row(),
+                        visible,
+                    ));
                     items
                 }),
         )
@@ -108,7 +106,7 @@ fn entry(
     .pointer_down(move |event| {
         choose.hotkeys.recording.set(false);
         choose.hotkeys.armed.set(false);
-        choose.hotkeys.sel.set(index);
+        choose.hotkeys.list.cursor.set(index);
         choose.edit_hotkey();
         event.stop_propagation();
     })

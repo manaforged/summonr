@@ -19,7 +19,6 @@ pub use progress::{WorkKind, WorkProgress};
 pub(crate) use progress::{checks, roman};
 
 const LEDGER_WIDTH: usize = 72;
-const LEDGER_MAX: usize = 40;
 const TREES: &str = "tree.json";
 const DECISION: &str = "Goal Work requires a completion decision";
 
@@ -31,14 +30,6 @@ impl From<crate::Error> for WorkError {
     fn from(error: crate::Error) -> Self {
         Self(error.to_string())
     }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Policy {
-    Single,
-    Steps,
-    Goal {},
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -140,7 +131,11 @@ struct LegacyFiles(BTreeMap<String, Entry>);
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Work {
     pub(crate) objective: String,
-    pub(crate) policy: Policy,
+    #[serde(
+        serialize_with = "progress::persist",
+        deserialize_with = "progress::restore"
+    )]
+    pub(crate) policy: WorkKind,
     pub(crate) status: Status,
     pub(crate) plan: Option<String>,
     pub(crate) checks: Vec<Check>,
@@ -167,10 +162,10 @@ pub(crate) struct Work {
 }
 
 impl Work {
-    pub(crate) fn new(objective: &str, policy: Policy) -> Self {
+    pub(crate) fn new(objective: &str, policy: WorkKind) -> Self {
         let steps = match policy {
-            Policy::Steps => Vec::new(),
-            Policy::Single | Policy::Goal { .. } => vec![Step::new("Objective", None, Vec::new())],
+            WorkKind::Steps => Vec::new(),
+            WorkKind::Single | WorkKind::Goal => vec![Step::new("Objective", None, Vec::new())],
         };
         Self {
             objective: objective.to_string(),
@@ -205,7 +200,7 @@ impl Work {
     }
 
     pub(crate) fn completion_checks(&self) -> Vec<Check> {
-        if self.policy != Policy::Steps {
+        if self.policy != WorkKind::Steps {
             return self.checks.clone();
         }
         self.active
@@ -232,11 +227,7 @@ impl Work {
     }
 
     pub(crate) fn progress(&self) -> WorkProgress {
-        let kind = match self.policy {
-            Policy::Single => WorkKind::Single,
-            Policy::Steps => WorkKind::Steps,
-            Policy::Goal { .. } => WorkKind::Goal,
-        };
+        let kind = self.policy;
         let (phase, reason) = match &self.status {
             Status::Active(Stage::Plan) => (WorkPhase::Plan, None),
             Status::Active(Stage::Execute) => (WorkPhase::Execute, None),
@@ -286,8 +277,8 @@ impl Work {
 
     fn durability(&self) -> store::Durability {
         match self.policy {
-            Policy::Single => store::Durability::Renamed,
-            Policy::Steps | Policy::Goal { .. } => store::Durability::Synced,
+            WorkKind::Single => store::Durability::Renamed,
+            WorkKind::Steps | WorkKind::Goal => store::Durability::Synced,
         }
     }
 
@@ -307,7 +298,7 @@ impl Work {
     }
 
     fn repair_steps(&mut self) {
-        if self.policy != Policy::Steps || self.checks.is_empty() {
+        if self.policy != WorkKind::Steps || self.checks.is_empty() {
             return;
         }
         let planned = self

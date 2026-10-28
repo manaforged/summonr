@@ -41,12 +41,7 @@ pub(in crate::tui::sigil_view) fn mark(entry: &Entry, live: bool, rev: u64, pros
     let (size, state) = match entry {
         Entry::Assistant { text, done } => (text_size(text, prose), u8::from(*done)),
         Entry::Thinking(text) => (text_size(text, prose), 0),
-        Entry::Tool {
-            state,
-            output,
-            expanded,
-            ..
-        } => (output.len(), bits(state, *expanded)),
+        Entry::Tool { call, .. } => (call.output.len(), bits(&call.state, call.expanded)),
         Entry::ToolGroup { calls, .. } => {
             let size: usize = calls.iter().map(|call| call.output.len()).sum();
             let state = calls.iter().fold(0_u8, |state, call| {
@@ -85,15 +80,11 @@ fn text_size(text: &str, prose: Prose) -> usize {
 #[cfg(feature = "gui")]
 fn children(entry: &Entry, model: &Model) -> u64 {
     use std::hash::{Hash, Hasher};
-    let Entry::Tool { id, .. } = entry else {
+    let Entry::Tool { call, .. } = entry else {
         return 0;
     };
     let mut hasher = std::hash::DefaultHasher::new();
-    for kid in model
-        .agents
-        .iter()
-        .filter(|kid| !id.is_empty() && kid.call == *id)
-    {
+    for kid in model.agents_of(&call.id) {
         (&kid.id, &kid.last, kid.done, kid.failed, kid.secs).hash(&mut hasher);
     }
     hasher.finish()

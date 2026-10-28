@@ -85,3 +85,10 @@ pub(crate) fn git_paths(root: &Path, args: &[&str]) -> Result<Vec<String>> {
         .map(str::to_string)
         .collect())
 }
+
+pub(crate) fn git_apply(root: &Path, patch: &[u8], flags: &[&str]) -> Result<()> {
+    let mut args = vec!["apply", "--binary", "--whitespace=nowarn"];
+    args.extend(flags);
+    git_output(root, &[], &args, Some(patch))?;
+    Ok(())
+}

@@ -10,13 +10,8 @@ pub(in crate::tui::sigil_view) enum Entry {
         done: bool,
     },
     Tool {
-        id: String,
         name: String,
-        arg: String,
-        state: ToolState,
-        output: String,
-        expanded: bool,
-        patch: Option<String>,
+        call: Call,
     },
     ToolGroup {
         name: String,
@@ -75,13 +70,7 @@ pub(in crate::tui::sigil_view) fn entry_markdown(entry: &Entry) -> String {
         Entry::Thinking(text) => format!("> **Thinking**\n> {}", text.replace('\n', "\n> ")),
         Entry::Receipt(text) => text.clone(),
         Entry::Assistant { text, .. } => text.clone(),
-        Entry::Tool {
-            name,
-            arg,
-            state,
-            output,
-            ..
-        } => tool_markdown(name, arg, state, output),
+        Entry::Tool { name, call } => tool_markdown(name, &call.arg, &call.state, &call.output),
         Entry::ToolGroup { name, calls } => calls
             .iter()
             .map(|call| tool_markdown(name, &call.arg, &call.state, &call.output))

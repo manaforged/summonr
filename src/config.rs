@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use serde::Deserialize;
 use toml_edit::{DocumentMut, value};
@@ -224,58 +224,62 @@ pub(crate) fn path() -> Result<PathBuf> {
     Ok(summonr_home()?.join("config.toml"))
 }
 
-static PARSED: RwLock<Option<Arc<File>>> = RwLock::new(None);
-
 pub(crate) fn file() -> Result<Arc<File>> {
-    if let Some(file) = PARSED.read().ok().and_then(|cached| cached.clone()) {
-        return Ok(file);
+    doc::<Parsed>(&path()?).current()
+}
+
+struct Parsed;
+
+impl store::Codec for Parsed {
+    type Value = File;
+
+    fn decode(path: &Path, text: &str) -> Result<File> {
+        let file = decode(path, text)?;
+        warn_unknown(path, &file);
+        validate(path, &file)?;
+        Ok(file)
     }
-    let file = Arc::new(parse(&path()?)?);
-    drop(
-        PARSED
-            .write()
-            .map(|mut cached| *cached = Some(Arc::clone(&file))),
-    );
-    Ok(file)
+}
+
+struct Edit;
+
+impl store::Codec for Edit {
+    type Value = DocumentMut;
+
+    fn decode(path: &Path, text: &str) -> Result<DocumentMut> {
+        text.parse::<DocumentMut>()
+            .map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))
+    }
+}
+
+impl store::Encode for Edit {
+    fn encode(document: &DocumentMut) -> Result<String> {
+        Ok(document.to_string())
+    }
+}
+
+fn lock_wait() -> store::Wait {
+    store::Wait::Within(|| crate::limits::limits().auth())
+}
+
+fn doc<C: store::Codec>(path: &Path) -> store::Doc<C>
+where
+    C::Value: Default,
+{
+    store::Doc::new(
+        path.to_path_buf(),
+        store::Durability::Synced,
+        store::Invalid::Fail,
+        lock_wait(),
+    )
 }
 
 fn update(path: &Path, change: impl FnOnce(&mut DocumentMut) -> Result<bool>) -> Result<bool> {
-    let held = hold(path)?;
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error.into()),
-    };
-    let mut document = text
-        .parse::<DocumentMut>()
-        .map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))?;
-    let changed = change(&mut document)?;
-    if changed {
-        store::write(path, document.to_string(), store::Durability::Synced)?;
-        drop(PARSED.write().map(|mut cached| *cached = None));
-    }
-    drop(held);
-    Ok(changed)
+    doc::<Edit>(path).update(change)
 }
 
 pub(crate) fn hold(path: &Path) -> Result<std::fs::File> {
-    if let Some(file) = store::lock(path, false)? {
-        return Ok(file);
-    }
-    let locked = || {
-        Error::Config(format!(
-            "{} is locked by another summonr process; gave up after {}s",
-            tilde(path),
-            crate::limits::limits().auth_secs
-        ))
-    };
-    let (send, wait) = std::sync::mpsc::channel();
-    let owned = path.to_path_buf();
-    std::thread::spawn(move || drop(send.send(store::lock(&owned, true))));
-    match wait.recv_timeout(crate::limits::limits().auth()) {
-        Ok(held) => held?.ok_or_else(locked),
-        Err(_) => Err(locked()),
-    }
+    store::hold(path, lock_wait())
 }
 
 pub fn check() -> Result<()> {
@@ -283,15 +287,7 @@ pub fn check() -> Result<()> {
 }
 
 pub(crate) fn parse(path: &Path) -> Result<File> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(File::default()),
-        Err(error) => return Err(error.into()),
-    };
-    let file = decode(path, &text)?;
-    warn_unknown(path, &file);
-    validate(path, &file)?;
-    Ok(file)
+    doc::<Parsed>(path).load()
 }
 
 mod decode;

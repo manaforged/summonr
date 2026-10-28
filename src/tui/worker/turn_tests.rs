@@ -34,6 +34,7 @@ struct Fixture {
     steering: std::sync::Arc<crate::runtime::Steering>,
     reader: super::super::reader::Reader,
     auto_reply: bool,
+    pending_mail: bool,
     peers: Option<Vec<crate::mail::Agent>>,
 }
 
@@ -53,6 +54,7 @@ impl Fixture {
             steering: std::sync::Arc::default(),
             reader,
             auto_reply: false,
+            pending_mail: false,
             peers: None,
         }
     }
@@ -67,6 +69,7 @@ impl Fixture {
             followups,
             steering: &self.steering,
             auto_reply: &mut self.auto_reply,
+            pending_mail: &mut self.pending_mail,
             ui: &self.ui,
             reader: &self.reader,
             peers: &mut self.peers,
@@ -166,8 +169,8 @@ async fn steering_queue_runs_an_effort_change_after_messages_queued_before_it() 
     let (mut deferred, mut followups) = (VecDeque::new(), VecDeque::new());
     let mut mid = fixture.mid(&mut deferred, &mut followups);
     mid.queued(Cmd::Queue(UserInput::from("!check")), &path);
-    mid.command(
-        Cmd::SetEffort(Some(crate::provider::Effort::High)),
+    mid.attend(
+        Some(Cmd::SetEffort(Some(crate::provider::Effort::High))),
         &path,
         "session",
         &path,

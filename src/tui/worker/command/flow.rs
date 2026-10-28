@@ -102,7 +102,7 @@ impl Worker {
             crate::SlashCommand::Retry => Some(self.retry().await),
             crate::SlashCommand::Steps => Some(self.steps(argument.unwrap_or_default()).await),
             crate::SlashCommand::Auto => {
-                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
+                set_run_mode(&mut self.loop_, &self.ui, crate::WorkKind::Single);
                 Some(true)
             }
             other => self.local(other, line, argument).then_some(true),

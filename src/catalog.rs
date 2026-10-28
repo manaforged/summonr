@@ -5,7 +5,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::prompt::summonr_home;
 
 const FILE: &str = "models.json";
 
@@ -238,24 +237,16 @@ pub(crate) fn known(endpoint: &str, id: &str) -> Option<Model> {
 }
 
 pub(crate) fn remember(name: &str, models: Vec<Model>) -> Result<()> {
-    let path = summonr_home()?.join(FILE);
-    let held = crate::durable::store::lock(&path, true)?;
-    let mut all: BTreeMap<String, Listing> =
-        (*shelf::load::<BTreeMap<String, Listing>>(FILE)?).clone();
-    all.insert(
-        name.to_string(),
-        Listing {
-            models,
-            fetched: now(),
-        },
-    );
-    crate::durable::store::write(
-        &path,
-        serde_json::to_string(&all)?,
-        crate::durable::store::Durability::Renamed,
-    )?;
-    shelf::store(&path, all);
-    drop(held);
+    shelf::doc::<BTreeMap<String, Listing>>(FILE)?.update(|all| {
+        all.insert(
+            name.to_string(),
+            Listing {
+                models,
+                fetched: now(),
+            },
+        );
+        Ok(true)
+    })?;
     Ok(())
 }
 

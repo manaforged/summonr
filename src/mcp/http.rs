@@ -88,7 +88,7 @@ impl Http {
             Err(Failure::Refused(_)) => return Ok(None),
             Err(Failure::Unreachable(error)) => return Err(error),
         };
-        rpc::agreed(&result)?;
+        super::handshake::agreed(&result)?;
         self.version = result
             .get("protocolVersion")
             .and_then(Value::as_str)
@@ -224,7 +224,10 @@ async fn read_reply(
     if events.oversize
         || (events.reply.is_none() && body.len() > crate::limits::limits().mcp_frame_max_bytes)
     {
-        return Err(Failure::Unreachable(rpc::oversize(method)));
+        return Err(Failure::Unreachable(rpc::oversize(
+            method,
+            crate::limits::limits().mcp_frame_max_bytes,
+        )));
     }
     events
         .reply

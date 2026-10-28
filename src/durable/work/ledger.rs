@@ -8,23 +8,23 @@ impl Work {
         if let Ok(parsed) = crate::steps::parse(plan) {
             return parsed
                 .iter()
-                .take(LEDGER_MAX)
+                .take(crate::limits::limits().ledger_max)
                 .map(|step| format!("{}. {}", step.index, step.text))
                 .collect();
         }
         plan.lines()
             .map(str::trim)
             .filter(|line| !line.is_empty() && !line.starts_with('#'))
-            .take(LEDGER_MAX)
+            .take(crate::limits::limits().ledger_max)
             .map(str::to_string)
             .collect()
     }
 
     pub(super) fn ledger(&self) -> Vec<String> {
         match self.policy {
-            Policy::Single => self.planned_ledger(),
-            Policy::Steps => self.step_ledger(),
-            Policy::Goal { .. } => Vec::new(),
+            WorkKind::Single => self.planned_ledger(),
+            WorkKind::Steps => self.step_ledger(),
+            WorkKind::Goal => Vec::new(),
         }
     }
 
@@ -32,7 +32,7 @@ impl Work {
         let mut lines = Vec::new();
         let mut phase: Option<&str> = None;
         let mut number = 0;
-        let compact = self.steps.len() > LEDGER_MAX;
+        let compact = self.steps.len() > crate::limits::limits().ledger_max;
         for step in &self.steps {
             if step.phase.as_deref() != phase && step.phase.is_some() {
                 phase = step.phase.as_deref();

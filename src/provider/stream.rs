@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use futures::StreamExt;
 use serde::Deserialize;
 
@@ -15,25 +18,11 @@ impl Client {
         request: &CompletionRequest<'_>,
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
-        match self.wire {
-            crate::endpoint::Wire::Anthropic => {
-                self.stream_wire::<super::wire::anthropic::Wire>(request, partial)
-                    .await
-            }
-            crate::endpoint::Wire::Gemini => {
-                self.stream_wire::<super::wire::gemini::Wire>(request, partial)
-                    .await
-            }
-            crate::endpoint::Wire::Responses => {
-                self.stream_wire::<super::wire::responses::Wire>(request, partial)
-                    .await
-            }
-            crate::endpoint::Wire::AgentSdk => self.stream_agent(request, partial).await,
-            crate::endpoint::Wire::Completions | crate::endpoint::Wire::Decisions => {
-                self.stream_wire::<super::wire::completions::Wire>(request, partial)
-                    .await
-            }
+        let spec = super::wire::spec(self.wire);
+        if spec.child() {
+            return self.stream_agent(request, partial).await;
         }
+        (spec.transport.codec()?.stream)(self, request, partial).await
     }
 
     async fn stream_wire<W: super::wire::Chat>(
@@ -46,7 +35,7 @@ impl Client {
         let model = body.model().map(str::to_string);
         let bytes = body.to_bytes()?;
         drop(body);
-        let url = self.url_for::<W>(&request.model, true);
+        let url = format!("{}{}", self.base, W::path(&request.model, true));
         let sink = super::capture::Sink::open(self.wire, "stream");
         if let Some(sink) = &sink {
             sink.write("request", &String::from_utf8_lossy(&bytes));
@@ -88,7 +77,9 @@ impl Client {
             if let Some(sink) = &sink {
                 sink.write("chunk", &String::from_utf8_lossy(&chunk));
             }
-            let parsed = frames.push(&chunk, W::sentinel()).map_err(cut)?;
+            let parsed = frames
+                .push(&chunk, super::wire::spec(self.wire).sentinel)
+                .map_err(cut)?;
             let produced = self.take(&mut state, &parsed, request).map_err(cut)?;
             let thinking = state
                 .state
@@ -150,22 +141,16 @@ impl Client {
     ) -> Result<()> {
         use super::wire::Delta;
 
-        let (emit, text) = match &delta {
-            Delta::Text(text) => {
-                sizes.0 += text.len();
-                (self.on_delta.as_ref(), text)
-            }
-            Delta::Thinking(text) => {
-                sizes.1 += text.len();
-                (self.on_reasoning.as_ref(), text)
-            }
-            Delta::Call(name) => (self.on_tool.as_ref(), name),
+        match &delta {
+            Delta::Text(text) => sizes.0 += text.len(),
+            Delta::Thinking(text) => sizes.1 += text.len(),
+            Delta::Call(_) => {}
             Delta::Progress => return Ok(()),
-        };
+        }
         if request.emit_deltas
-            && let Some(emit) = emit
+            && let Some(emit) = self.on_stream.as_ref()
         {
-            emit(text);
+            emit(&delta);
         }
         if sizes.0 > PARTIAL_CAP || sizes.1 > PARTIAL_CAP {
             return Err(Error::provider(
@@ -199,6 +184,14 @@ fn cut(error: Error) -> Error {
         }
         error => error,
     }
+}
+
+pub(super) fn streamed<'a, W: super::wire::Chat + 'static>(
+    client: &'a Client,
+    request: &'a CompletionRequest<'_>,
+    partial: &'a mut Partial,
+) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+    Box::pin(client.stream_wire::<W>(request, partial))
 }
 
 pub(crate) const PARTIAL_CAP: usize = 8 * 1024 * 1024;

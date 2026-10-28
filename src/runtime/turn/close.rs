@@ -16,14 +16,12 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Turn> {
-        self.session
-            .fail_provider(
-                attempt,
-                "assistant returned neither text nor a tool call",
-                millis,
-                true,
-            )
-            .map_err(super::session_err)?;
+        self.session.fail_provider(
+            attempt,
+            "assistant returned neither text nor a tool call",
+            millis,
+            true,
+        )?;
         self.emit_records(events, emit)?;
         Err(Error::provider(
             ProviderFailureKind::Malformed,
@@ -37,15 +35,13 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        self.session
-            .finish_provider(
-                answer.attempt,
-                answer.text,
-                answer.reasoning,
-                answer.meter,
-                answer.meta,
-            )
-            .map_err(super::session_err)?;
+        self.session.finish_provider(
+            answer.attempt,
+            answer.text,
+            answer.reasoning,
+            answer.meter,
+            answer.meta,
+        )?;
         self.emit_records(events, emit)
     }
 
@@ -56,9 +52,9 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Option<Abort>> {
-        let before_children = self.spent_tokens;
+        let before_children = self.spent_tokens();
         running.extend(self.await_children(events, emit, usage).await?);
-        if self.spent_tokens > before_children {
+        if self.spent_tokens() > before_children {
             return Ok(self.budget_abort());
         }
         Ok(None)
@@ -78,10 +74,7 @@ impl<P: Provider> Loop<P> {
         }
         let running = running.join("; ");
         let note = format!("[summon: background work still running: {running}]");
-        let deferred = self
-            .session
-            .defer(&note, unsettled)
-            .map_err(super::session_err)?;
+        let deferred = self.session.defer(&note, unsettled)?;
         Ok(deferred.then_some(running))
     }
 

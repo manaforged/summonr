@@ -286,3 +286,58 @@ fn a_plain_run_names_its_workspace_check_and_a_json_run_does_not() {
     let (_, _, json) = finish(start(home.path(), provider(Some(rejected))));
     assert!(!json.contains("workspace check"), "{json}");
 }
+
+#[test]
+fn a_json_steps_run_starts_each_step_with_its_check_and_exits_zero() {
+    let home = tempfile::tempdir().unwrap();
+    let port = streaming(&[
+        r#"{"choices":[{"index":0,"delta":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}"#,
+    ]);
+    let work = home.path().join("work");
+    std::fs::create_dir(&work).unwrap();
+    std::fs::write(
+        work.join("PLAN.md"),
+        "## Steps\n\n1. Say done. Run `true`.\n2. Say done again. Run `test -d .`.\n",
+    )
+    .unwrap();
+    let mut child = launch(home.path(), port, &["--version"], &[]);
+    drop(child.wait());
+    let child = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["-e", "local", "--steps", "PLAN.md", "--json"])
+        .current_dir(&work)
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .env(
+            "SUMMONR_MODELS_URL",
+            format!("http://127.0.0.1:{port}/registry.json"),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (code, events, stderr) = finish(child);
+    let steps: Vec<(u64, &str, Option<&str>)> = events
+        .iter()
+        .filter(|event| event["type"] == "step")
+        .map(|event| {
+            (
+                event["index"].as_u64().unwrap(),
+                event["state"].as_str().unwrap(),
+                event["check"].as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(code, Some(0), "{stderr}");
+    assert_eq!(
+        steps,
+        [
+            (1, "start", Some("true")),
+            (1, "check passed", Some("true")),
+            (2, "start", Some("test -d .")),
+            (2, "check passed", Some("test -d .")),
+        ],
+        "{stderr}"
+    );
+}

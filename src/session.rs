@@ -4,7 +4,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::durable::log::{self, Line};
-use crate::provider::Message;
 
 pub(crate) const PARENT_ENV: &str = "SUMMONR_PARENT_SESSION";
 pub(crate) const SESSION_ENV: &str = "SUMMONR_SESSION_ID";
@@ -132,16 +131,6 @@ pub(crate) struct Prompt {
     pub text: String,
     pub images: usize,
     pub closed: bool,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Replay {
-    pub history: Vec<Message>,
-    pub prompt: Option<String>,
-    pub model: Option<String>,
-    pub id: String,
-    pub spent_tokens: u64,
-    pub elapsed_millis: u64,
 }
 
 pub(crate) fn decorate(harness: &str, text: &str) -> String {

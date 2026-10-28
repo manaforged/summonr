@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -11,7 +10,6 @@ use crate::web::Search;
 mod args;
 mod budget;
 mod event;
-mod help;
 pub(crate) use event::progress_text;
 pub(crate) use event::{Abort, Hold, Kept};
 pub use event::{AbortCode, Event};
@@ -92,6 +90,14 @@ impl ToolOutput {
             grant: None,
             images: Vec::new(),
             patch: None,
+        }
+    }
+
+    pub(crate) fn mutated(text: String, patch: Option<String>) -> Self {
+        Self {
+            mutated: true,
+            patch,
+            ..Self::ok(text)
         }
     }
 }
@@ -268,45 +274,49 @@ impl ToolRegistry {
     }
 
     pub(crate) async fn execute_outcome(&self, call: &ToolCall) -> Result<ToolOutput> {
-        let call = normalize(call)?;
-        match Builtin::live(&call.function.name) {
-            Some(kind) if self.only.as_ref().is_some_and(|only| !only.contains(&kind)) => {
-                Err(Error::Denied(format!(
-                    "tool `{}` is not one of this agent's tools",
-                    call.function.name
-                )))
+        let (name, op) = normalize(call);
+        match Builtin::live(name) {
+            Some(kind) if self.only.as_ref().is_some_and(|only| !only.contains(&kind)) => Err(
+                Error::Denied(format!("tool `{name}` is not one of this agent's tools")),
+            ),
+            Some(kind) if self.enabled(kind) => {
+                self.fit_output(self.dispatch(kind, name, op, call).await)
             }
-            Some(kind) if self.enabled(kind) => self.fit_output(self.dispatch(kind, &call).await),
             Some(kind) if kind != Builtin::Task => Err(Error::Denied(format!(
-                "tool `{}` is unavailable in the current mode",
-                call.function.name
+                "tool `{name}` is unavailable in the current mode"
             ))),
-            Some(_) | None => Err(Error::Tool(format!(
-                "unknown tool `{}`",
-                call.function.name
-            ))),
+            Some(_) | None => Err(Error::Tool(format!("unknown tool `{name}`"))),
         }
     }
 
-    async fn dispatch(&self, kind: Builtin, call: &ToolCall) -> Result<ToolOutput> {
-        let arguments = &call.function.arguments;
-        match kind {
-            Builtin::Read => {
-                blocking(|| self.read(arguments)).map(|out| self.dedup_read(arguments, out))
+    async fn dispatch(
+        &self,
+        kind: Builtin,
+        name: &str,
+        op: Option<&str>,
+        call: &ToolCall,
+    ) -> Result<ToolOutput> {
+        let args = &match kind {
+            Builtin::Browser => {
+                return self
+                    .browse(&call.function.arguments)
+                    .await
+                    .map(ToolOutput::ok);
             }
-            Builtin::Search => blocking(|| self.search_files(arguments)).map(ToolOutput::ok),
-            Builtin::Edit => self.edit_file(arguments).await,
-            Builtin::Write => self.write_file(arguments).await,
-            Builtin::Skill => self.skill(arguments).map(ToolOutput::ok),
-            Builtin::RunCommand => self.run_command(arguments).await,
-            Builtin::Todo => parse_todo(arguments).map(ToolOutput::ok),
-            Builtin::Web => self.web(arguments).await.map(ToolOutput::ok),
-            Builtin::Lsp => self.lsp(arguments).await,
-            Builtin::Browser => self.browse(arguments).await.map(ToolOutput::ok),
-            Builtin::Task => Err(Error::Tool(format!(
-                "unknown tool `{}`",
-                call.function.name
-            ))),
+            Builtin::Task => return Err(Error::Tool(format!("unknown tool `{name}`"))),
+            _ => arguments_of(name, op, call)?,
+        };
+        match kind {
+            Builtin::Read => blocking(|| self.read(args)).map(|out| self.dedup_read(args, out)),
+            Builtin::Search => blocking(|| self.search_files(args)).map(ToolOutput::ok),
+            Builtin::Edit => self.edit_file(args).await,
+            Builtin::Write => self.write_file(args).await,
+            Builtin::Skill => self.skill(args).map(ToolOutput::ok),
+            Builtin::RunCommand => self.run_command(args).await,
+            Builtin::Todo => parse_todo(args).map(ToolOutput::ok),
+            Builtin::Web => self.web(args).await.map(ToolOutput::ok),
+            Builtin::Lsp => self.lsp(args).await,
+            Builtin::Browser | Builtin::Task => Err(Error::Tool("unknown tool".to_string())),
         }
     }
 }
@@ -346,28 +356,27 @@ pub async fn run_tool(
     })
 }
 
-fn normalize(call: &ToolCall) -> Result<Cow<'_, ToolCall>> {
-    let Some((_, name, operation)) = catalog::RETIRED
-        .iter()
-        .find(|(retired, _, _)| *retired == call.function.name)
-    else {
-        return Ok(Cow::Borrowed(call));
+fn normalize(call: &ToolCall) -> (&str, Option<&'static str>) {
+    catalog::retired(&call.function.name)
+        .map_or((call.function.name.as_str(), None), |(_, live, op)| {
+            (live.name(), *op)
+        })
+}
+
+fn arguments_of(name: &str, op: Option<&str>, call: &ToolCall) -> Result<Value> {
+    let Some(op) = op else {
+        return parse_args(name, &call.function.arguments);
     };
-    let mut call = call.clone();
-    if let Some(operation) = operation {
-        let mut args = parse_args(&call.function.name, &call.function.arguments)?;
-        args.as_object_mut()
-            .ok_or_else(|| {
-                Error::Tool(format!(
-                    "{} arguments must be an object",
-                    call.function.name
-                ))
-            })?
-            .insert("op".to_string(), Value::String((*operation).to_string()));
-        call.function.arguments = args.to_string();
-    }
-    call.function.name = (*name).to_string();
-    Ok(Cow::Owned(call))
+    let mut args = parse_args(&call.function.name, &call.function.arguments)?;
+    args.as_object_mut()
+        .ok_or_else(|| {
+            Error::Tool(format!(
+                "{} arguments must be an object",
+                call.function.name
+            ))
+        })?
+        .insert("op".to_string(), Value::String(op.to_string()));
+    Ok(args)
 }
 
 pub fn attach(workspace: &Path, line: &str) -> Result<UserInput> {

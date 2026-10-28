@@ -24,6 +24,7 @@ pub(super) fn exit_help(verb: Option<&str>) -> ! {
         |names| names.join(", "),
     );
     let text = include_str!("../help.txt")
+        .replace("{options}", &super::FLAGS.help_lines())
         .replace("{endpoints}", &endpoints)
         .replace("{commands}", &interactive())
         .replace("{sets}", &summonr::classify::sets::NAMES.join(", "));

@@ -53,11 +53,7 @@ pub(crate) fn keeper() -> Arc<dyn Store> {
 }
 
 pub(crate) fn scheme(wire: Wire) -> Scheme {
-    match wire {
-        Wire::Anthropic => Scheme::ApiKey,
-        Wire::Gemini => Scheme::GoogleKey,
-        Wire::Completions | Wire::Responses | Wire::Decisions | Wire::AgentSdk => Scheme::Bearer,
-    }
+    crate::provider::wire::spec(wire).scheme
 }
 
 pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
@@ -131,12 +127,9 @@ pub(crate) fn bearer(key: impl Into<String>) -> Auth {
     Auth::new(Method::Key(key.into()), Scheme::Bearer, "local", keeper())
 }
 
-pub(crate) fn http() -> Result<leyline::Session> {
+pub(crate) fn http(total: std::time::Duration) -> Result<leyline::Session> {
     session(
-        summonr_auth::builder(
-            crate::limits::limits().auth(),
-            crate::limits::limits().connect(),
-        ),
+        summonr_auth::builder(total, crate::limits::limits().connect()),
         crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
     )
 }

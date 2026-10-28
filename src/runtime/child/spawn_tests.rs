@@ -151,10 +151,10 @@ async fn a_cancelled_turn_leaves_background_children_settleable_by_poll() {
 async fn a_child_of_a_goal_session_works_in_plain_mode_and_finishes_its_turn() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("done")]);
     parent.select_goal("ship it", &[]).unwrap();
-    parent.set_mode(crate::RunMode::Goal);
+    parent.set_mode(crate::WorkKind::Goal);
     let budget = parent.task_budget(1).unwrap();
     let mut run = parent.task_start_in(implement(), &budget, None).unwrap();
-    assert_eq!(run.child.mode(), crate::RunMode::Auto);
+    assert_eq!(run.child.mode(), crate::WorkKind::Single);
     let assignment = run.assignment.clone();
     run.child.turn(&assignment).await.unwrap();
 }

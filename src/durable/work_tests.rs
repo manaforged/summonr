@@ -1,4 +1,4 @@
-use super::{Candidate, Decision, Policy, StepState, Work};
+use super::{Candidate, Decision, StepState, Work, WorkKind};
 use crate::durable::tree::snapshot;
 use crate::tools::{Todo, TodoStatus};
 
@@ -11,13 +11,13 @@ fn todo(text: &str, status: TodoStatus) -> Todo {
 
 #[test]
 fn todo_list_never_switches_off_the_completion_check() {
-    let mut work = Work::new("ship", Policy::Single);
+    let mut work = Work::new("ship", WorkKind::Single);
     work.select("ship", &["cargo test".to_string()]).unwrap();
     work.apply_todos(vec![
         todo("decode the image", TodoStatus::Done),
         todo("write the overlay", TodoStatus::Active),
     ]);
-    assert_eq!(work.policy, Policy::Single);
+    assert_eq!(work.policy, WorkKind::Single);
     assert_eq!(work.completion_checks().len(), 1);
     assert_eq!(work.progress().todos.len(), 2);
 }
@@ -26,7 +26,7 @@ fn todo_list_never_switches_off_the_completion_check() {
 fn todo_marked_done_cannot_finish_a_steps_plan() {
     let dir = tempfile::tempdir().unwrap();
     let shot = snapshot(dir.path(), &[], None).unwrap();
-    let mut work = Work::new("plan", Policy::Steps);
+    let mut work = Work::new("plan", WorkKind::Steps);
     work.select(
         "## Steps\n1. first\n2. second\n",
         &["cargo test".to_string()],
@@ -48,7 +48,7 @@ fn todo_marked_done_cannot_finish_a_steps_plan() {
 fn todo_marked_done_never_overrides_the_goal_judge() {
     let dir = tempfile::tempdir().unwrap();
     let shot = snapshot(dir.path(), &[], None).unwrap();
-    let mut work = Work::new("make the check pass", Policy::Goal {});
+    let mut work = Work::new("make the check pass", WorkKind::Goal);
     work.plan = Some("plan".to_string());
     work.execute(Some(shot.clone())).unwrap();
     work.apply_todos(vec![todo("everything", TodoStatus::Done)]);
@@ -66,7 +66,7 @@ fn work_trees_live_in_the_sidecar_and_an_old_inline_file_still_loads() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), "a").unwrap();
     let tree = snapshot(dir.path(), &[], None).unwrap();
-    let mut work = Work::new("ship", Policy::Single);
+    let mut work = Work::new("ship", WorkKind::Single);
     work.base = Some(tree.clone());
     work.candidate = Some(Candidate {
         paths: vec!["a.txt".to_string()],
@@ -101,7 +101,7 @@ fn an_empty_tree_pair_writes_no_sidecar_and_clears_a_stale_one() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("work.json");
     let sidecar = path.with_extension("tree.json");
-    let mut work = Work::new("ship", Policy::Single);
+    let mut work = Work::new("ship", WorkKind::Single);
     work.save(&path, true).unwrap();
     assert!(!sidecar.exists(), "no file map means no sidecar write");
     work.base = Some(snapshot(dir.path(), &[], None).unwrap());
@@ -120,7 +120,7 @@ fn numbered_steps_stop_after_three_failed_checks() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), "a").unwrap();
     let shot = snapshot(dir.path(), &[], None).unwrap();
-    let mut work = Work::new("make the check pass", Policy::Steps);
+    let mut work = Work::new("make the check pass", WorkKind::Steps);
     work.select("## Steps\n1. Repair the check\n", &[])
         .expect("select numbered steps");
     work.execute(Some(shot.clone())).unwrap();
@@ -139,7 +139,7 @@ fn check_file_and_cache_files_are_never_touched_paths() {
     std::fs::create_dir_all(dir.path().join(".summonr")).unwrap();
     write(".summonr/check.toml", "check = \"a\"\n");
     write("calc.py", "a");
-    let mut work = Work::new("ship", Policy::Single);
+    let mut work = Work::new("ship", WorkKind::Single);
     work.plan = Some("plan".to_string());
     work.execute(Some(snapshot(dir.path(), &[], None).unwrap()))
         .unwrap();
@@ -157,7 +157,7 @@ fn check_file_and_cache_files_are_never_touched_paths() {
 #[test]
 fn an_old_checkpoint_with_a_model_made_step_still_runs_the_saved_checks() {
     let dir = tempfile::tempdir().unwrap();
-    let mut work = Work::new("plan", Policy::Steps);
+    let mut work = Work::new("plan", WorkKind::Steps);
     work.select("## Steps\n1. first\n", &["false".to_string()])
         .unwrap();
     let path = dir.path().join("work.json");
@@ -181,7 +181,7 @@ fn a_torn_work_file_starts_fresh() {
     let path = dir.path().join("work.json");
     std::fs::write(&path, "").unwrap();
     assert!(Work::load(&path).unwrap().is_none());
-    Work::new("ship it", Policy::Single)
+    Work::new("ship it", WorkKind::Single)
         .save(&path, false)
         .unwrap();
     std::fs::write(path.with_extension(super::TREES), "{\"base\":").unwrap();
@@ -205,7 +205,7 @@ fn an_unreadable_work_path_is_an_error_not_a_missing_file() {
 fn an_unreadable_tree_sidecar_is_an_error_not_a_missing_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("work.json");
-    Work::new("ship", Policy::Single)
+    Work::new("ship", WorkKind::Single)
         .save(&path, false)
         .unwrap();
     std::fs::create_dir(path.with_extension(super::TREES)).unwrap();
@@ -216,7 +216,7 @@ fn an_unreadable_tree_sidecar_is_an_error_not_a_missing_file() {
 fn a_legacy_tree_sidecar_keeps_its_file_map() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("work.json");
-    Work::new("ship", Policy::Single)
+    Work::new("ship", WorkKind::Single)
         .save(&path, false)
         .unwrap();
     std::fs::write(

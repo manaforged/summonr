@@ -43,6 +43,7 @@ pub mod memory;
 pub mod modules;
 mod plugins;
 mod policy;
+mod process;
 mod prompt;
 mod provider;
 mod recent;
@@ -58,6 +59,7 @@ pub mod supervise;
 mod text;
 mod tools;
 mod verify;
+mod walk;
 mod web;
 mod worktree;
 
@@ -100,7 +102,7 @@ pub mod tui;
 pub mod update;
 pub mod workflow;
 
-pub use command::{SlashCommand, command_specs, parse_command};
+pub use command::{SlashCommand, command_specs, parse_command, table};
 pub use config::check as check_config;
 pub use config::tilde;
 pub use durable::store::lock as lock_file;
@@ -123,9 +125,9 @@ pub use plugins::{
 };
 pub use prompt::{Sources, summonr_home, system_prompt};
 pub(crate) use provider::dollars;
-pub use provider::{Client, Effort, Usage, UserInput};
+pub use provider::{Client, Delta, Effort, Usage, UserInput};
 pub use recent::default_effort;
-pub use runtime::{Budget, Loop, RunMode, StepRun, Turn};
+pub use runtime::{Beat, Budget, Job, Loop, Turn};
 pub use session::{
     ProfileScope, export as export_session, info as session_info, last_for, list as list_sessions,
     profile, prune as prune_sessions, resolve_id as resolve_session, short,

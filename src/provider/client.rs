@@ -4,14 +4,16 @@ use leyline::http::StatusCode;
 mod admit;
 mod classify;
 mod encode;
+mod failure;
 mod headers;
 mod login;
 mod meta;
 
 use encode::*;
+pub(crate) use failure::{input_cap, status_code};
+pub(crate) use meta::response_failure;
 #[cfg(test)]
 pub(crate) use meta::unreachable_message;
-pub(crate) use meta::{input_cap, response_failure};
 
 fn fixed_headers<'a>(raw: impl Iterator<Item = (&'a String, &'a String)>) -> Vec<(String, String)> {
     let mut headers: Vec<(String, String)> = Vec::new();
@@ -67,9 +69,7 @@ pub struct Client {
     pub(super) wire: Wire,
     pub(super) reasoning: Reasoning,
     pub(super) idle: Option<Duration>,
-    pub(super) on_delta: Option<DeltaFn>,
-    pub(super) on_reasoning: Option<DeltaFn>,
-    pub(super) on_tool: Option<DeltaFn>,
+    pub(super) on_stream: Option<DeltaFn>,
 }
 
 #[derive(Default)]
@@ -128,7 +128,7 @@ impl Client {
         client.cache_ttl = endpoint.cache_ttl;
         client.cache_header.clone_from(&endpoint.cache_header);
         client.cache_marks = endpoint.cache_marks;
-        if endpoint.wire == Wire::AgentSdk {
+        if wire::spec(endpoint.wire).child() {
             client.agent = Some(agent::Seat::new(endpoint, base));
         }
         client.reasoning.clone_from(&endpoint.reasoning);
@@ -136,20 +136,8 @@ impl Client {
     }
 
     #[must_use]
-    pub fn on_delta(mut self, emit: impl Fn(&str) + Send + Sync + 'static) -> Self {
-        self.on_delta = Some(Arc::new(emit));
-        self
-    }
-
-    #[must_use]
-    pub fn on_reasoning(mut self, emit: impl Fn(&str) + Send + Sync + 'static) -> Self {
-        self.on_reasoning = Some(Arc::new(emit));
-        self
-    }
-
-    #[must_use]
-    pub fn on_tool(mut self, emit: impl Fn(&str) + Send + Sync + 'static) -> Self {
-        self.on_tool = Some(Arc::new(emit));
+    pub fn on_stream(mut self, emit: impl Fn(&super::Delta) + Send + Sync + 'static) -> Self {
+        self.on_stream = Some(Arc::new(emit));
         self
     }
 
@@ -197,31 +185,9 @@ impl Client {
             messages: &admitted,
             ..request.clone()
         };
-        let wired = match self.wire {
-            Wire::Anthropic => {
-                <wire::anthropic::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
-            }
-            Wire::Gemini => {
-                <wire::gemini::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
-            }
-            Wire::Responses => {
-                <wire::responses::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
-            }
-            Wire::Completions => {
-                <wire::completions::Wire as wire::Chat>::body(call, reasoning, cache, stream)?
-            }
-            Wire::Decisions => {
-                return Err(Error::Config(
-                    "a classify endpoint does not run sessions".to_string(),
-                ));
-            }
-            Wire::AgentSdk => {
-                return Err(Error::Config(
-                    "a Claude Code seat sends no HTTP request".to_string(),
-                ));
-            }
-        };
-        let completions = self.wire == Wire::Completions;
+        let spec = wire::spec(self.wire);
+        let wired = (spec.transport.codec()?.body)(call, reasoning, cache, stream)?;
+        let completions = spec.encodes_messages;
         let messages = if completions {
             Some(serde_json::to_vec(&Messages {
                 list: call.messages,
@@ -267,10 +233,6 @@ impl Client {
         Ok(serde_json::from_slice(&bytes)?)
     }
 
-    pub(super) fn url_for<W: wire::Chat>(&self, model: &str, stream: bool) -> String {
-        format!("{}{}", self.base, W::path(model, stream))
-    }
-
     fn reach(&self) -> crate::limits::Reach {
         if crate::endpoint::local(&self.base) {
             crate::limits::Reach::Local
@@ -294,7 +256,7 @@ impl Client {
                     .retry_policy(self.reach())
                     .allow_non_idempotent(true),
             );
-        for (key, value) in wire::headers(self.wire) {
+        for (key, value) in wire::spec(self.wire).headers {
             request = request.header(*key, *value);
         }
         for (key, value) in self.auth.stamped() {
@@ -367,7 +329,7 @@ impl Provider for Client {
         request: &'a CompletionRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
         Box::pin(async move {
-            if self.wire == Wire::AgentSdk {
+            if wire::spec(self.wire).child() {
                 return self.complete_agent(request).await;
             }
             self.stream(request, &mut Partial::default()).await
@@ -384,9 +346,7 @@ impl Provider for Client {
 
     fn child(&self) -> Option<Self> {
         let mut child = self.clone();
-        child.on_delta = None;
-        child.on_reasoning = None;
-        child.on_tool = None;
+        child.on_stream = None;
         Some(child)
     }
 

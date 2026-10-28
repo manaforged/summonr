@@ -50,7 +50,7 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
     }
     let dir = exe.parent().unwrap_or_else(|| Path::new("."));
     sweep(dir);
-    let http = client()?;
+    let http = crate::credentials::http(crate::limits::limits().update())?;
     let latest = latest(&http, source.releases).await?;
     match newer(&latest, source.current) {
         Ordering::Equal => return Ok(Outcome::Current(latest)),
@@ -78,21 +78,8 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
     })
 }
 
-fn client() -> Result<Session> {
-    crate::credentials::session(
-        summonr_auth::builder(
-            crate::limits::limits().update(),
-            crate::limits::limits().connect(),
-        ),
-        crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
-    )
-}
-
 fn sweep(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
+    for entry in crate::walk::children(dir) {
         let stale = entry.file_name().to_string_lossy().starts_with(STAGE)
             && entry
                 .metadata()

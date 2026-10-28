@@ -26,5 +26,5 @@ use crate::tui::{Cmd, Info, Msg};
 pub(in crate::tui::sigil_view) use run::{start_tick, stop};
 
 mod edit;
-mod intake;
+pub(super) mod intake;
 pub(super) mod run;

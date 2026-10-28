@@ -119,25 +119,11 @@ impl ToolRegistry {
     }
 
     fn finished(&self, log_path: PathBuf, command: &str, code: i32) -> Result<ToolOutput> {
-        let raw = scrubbed_preview(&log_path)?;
-        let shown = digest(command, &raw);
-        let output = format!(
-            "exit {code}{}\n{}",
-            full_output_note(
-                &log_path,
-                shown.cut,
-                crate::diff::line_count(&log_path).ok().flatten()
-            ),
-            shown.text,
-        );
-        keep_log(&log_path, shown.cut);
+        let (note, text) = logged(&log_path, command)?;
         Ok(ToolOutput {
-            text: output.trim_end().to_string(),
             success: code == 0,
             mutated: may_write(command),
-            grant: None,
-            images: Vec::new(),
-            patch: None,
+            ..ToolOutput::ok(format!("exit {code}{note}\n{text}").trim_end().to_string())
         })
     }
 
@@ -161,33 +147,18 @@ impl ToolRegistry {
         started.child.wait().await.map_err(cleanup)?;
         started.group.disarm();
         self.discard_job(&started.id);
-        let log_path = started.log_path;
-        let raw = scrubbed_preview(&log_path)?;
-        let shown = digest(command, &raw);
+        let (note, text) = logged(&started.log_path, command)?;
         let mutated = may_write(command);
         let warning = if mutated {
             "\nthe command may have changed workspace files before timeout"
         } else {
             ""
         };
-        let note = full_output_note(
-            &log_path,
-            shown.cut,
-            crate::diff::line_count(&log_path).ok().flatten(),
-        );
-        keep_log(&log_path, shown.cut);
+        let text = format!("command timed out after {seconds}s{detail}{warning}{note}\n{text}");
         Ok(ToolOutput {
-            text: format!(
-                "command timed out after {seconds}s{detail}{warning}{note}\n{}",
-                shown.text
-            )
-            .trim_end()
-            .to_string(),
             success: false,
             mutated,
-            grant: None,
-            images: Vec::new(),
-            patch: None,
+            ..ToolOutput::ok(text.trim_end().to_string())
         })
     }
 
@@ -220,10 +191,14 @@ impl ToolRegistry {
     }
 }
 
-fn keep_log(log_path: &std::path::Path, keep: bool) {
-    if !keep {
+fn logged(log_path: &std::path::Path, command: &str) -> Result<(String, String)> {
+    let shown = digest(command, &scrubbed_preview(log_path)?);
+    let lines = crate::diff::line_count(log_path).ok().flatten();
+    let note = full_output_note(log_path, shown.cut, lines);
+    if !shown.cut {
         drop(std::fs::remove_file(log_path));
     }
+    Ok((note, shown.text))
 }
 
 fn scrubbed_preview(log_path: &std::path::Path) -> Result<String> {

@@ -6,7 +6,7 @@ use super::Hub;
 use super::link::Link;
 use super::tool::Tool;
 use crate::error::{Error, Result};
-use crate::policy::Policy;
+use crate::policy::{Action, Decision, Policy};
 use crate::provider::ToolDefinition;
 use crate::tools::tool;
 
@@ -90,9 +90,12 @@ pub fn call_label(name: &str, arguments: &str) -> String {
 }
 
 fn allowed<'a>(link: &'a Arc<Link>, policy: &'a Policy) -> impl Iterator<Item = &'a Tool> {
-    link.tools
-        .iter()
-        .filter(|item| policy.tool(&item.alias, false).is_ok())
+    link.tools.iter().filter(|item| {
+        policy.decide(Action::Tool {
+            alias: &item.alias,
+            read_only: false,
+        }) == Decision::Allow
+    })
 }
 
 fn declared(item: &Tool) -> ToolDefinition {

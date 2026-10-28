@@ -151,13 +151,6 @@ impl Worker {
         }
     }
 
-    pub(super) fn set_mail_reply(&mut self, on: bool) {
-        self.auto_reply = on;
-        if !on {
-            self.pending_mail = false;
-        }
-    }
-
     pub(super) fn system(&self, text: &str) {
         drop(self.ui.send(Msg::System(text.to_string())));
     }
@@ -177,6 +170,13 @@ impl Worker {
 
     pub(super) fn fail(&self, text: &str) {
         drop(self.ui.send(Msg::Failed(text.to_string())));
+    }
+}
+
+pub(super) fn set_mail_reply(auto_reply: &mut bool, pending_mail: &mut bool, on: bool) {
+    *auto_reply = on;
+    if !on {
+        *pending_mail = false;
     }
 }
 

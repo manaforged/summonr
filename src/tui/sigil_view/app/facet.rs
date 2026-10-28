@@ -63,15 +63,14 @@ impl App {
             .iter()
             .position(|facet| *facet == self.picker.facet.peek())
             .unwrap_or(0);
-        let next = (at as isize + delta).rem_euclid(Facet::ALL.len() as isize);
-        self.pick_facet(Facet::ALL[next as usize]);
+        self.pick_facet(Facet::ALL[crate::tui::sigil_view::ui::cycle(at, delta, Facet::ALL.len())]);
     }
 
     pub(in crate::tui::sigil_view) fn pick_facet(&self, facet: Facet) {
         self.picker.facet.set(facet);
         self.rank();
         self.picker.note.set(String::new());
-        self.picker.sel.set(0);
+        self.picker.list.cursor.set(0);
     }
 
     pub(in crate::tui::sigil_view) fn facet_counts(&self) -> Vec<(Facet, usize)> {

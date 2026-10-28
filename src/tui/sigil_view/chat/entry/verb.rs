@@ -43,35 +43,31 @@ impl StepVerb {
         }
     }
 
+    const fn row(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Explored => ("Explored", "◎"),
+            Self::Searched => ("Searched", "⌕"),
+            Self::Edited => ("Edited", "✎"),
+            Self::Ran => ("Ran", "▷"),
+            Self::Fetched => ("Fetched", "↓"),
+            Self::Inspected => ("Inspected", "◇"),
+            Self::Loaded => ("Loaded", "◆"),
+            Self::Planned => ("Planned", "☐"),
+            Self::Delegated => ("Delegated", "⇢"),
+            Self::Called => ("", "•"),
+        }
+    }
+
     pub(super) fn verb(self, name: &str) -> String {
         match self {
-            Self::Explored => "Explored",
-            Self::Searched => "Searched",
-            Self::Edited => "Edited",
-            Self::Ran => "Ran",
-            Self::Fetched => "Fetched",
-            Self::Inspected => "Inspected",
-            Self::Loaded => "Loaded",
-            Self::Planned => "Planned",
-            Self::Delegated => "Delegated",
             Self::Called => name,
+            kind => kind.row().0,
         }
         .to_string()
     }
 
     pub(super) const fn icon(self) -> &'static str {
-        match self {
-            Self::Explored => "◎",
-            Self::Searched => "⌕",
-            Self::Edited => "✎",
-            Self::Ran => "▷",
-            Self::Fetched => "↓",
-            Self::Inspected => "◇",
-            Self::Loaded => "◆",
-            Self::Planned => "☐",
-            Self::Delegated => "⇢",
-            Self::Called => "•",
-        }
+        self.row().1
     }
 }
 

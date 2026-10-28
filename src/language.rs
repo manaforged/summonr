@@ -157,14 +157,11 @@ pub(crate) fn detect(workspace: &Path, path: &Path) -> Result<&'static Module> {
 
 pub(crate) fn present(workspace: &Path) -> Vec<&'static Module> {
     let mut roots = vec![workspace.to_path_buf()];
-    if let Ok(entries) = std::fs::read_dir(workspace) {
-        roots.extend(
-            entries
-                .flatten()
-                .map(|entry| entry.path())
-                .filter(|path| path.is_dir()),
-        );
-    }
+    roots.extend(
+        crate::walk::children(workspace)
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir()),
+    );
     MODULES
         .iter()
         .filter(|module| {

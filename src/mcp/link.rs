@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
 use crate::error::{Error, Result};
-use crate::policy::Policy;
+use crate::policy::{Action, Policy};
 use crate::rpc::Notice;
 use crate::supervise::{self, ServerKind, Slot};
 
@@ -84,7 +84,12 @@ impl Link {
         gate: &Gate<'_>,
         report: &mut (dyn FnMut(McpUpdate) + Send),
     ) -> Result<Called> {
-        gate.policy.tool(&tool.alias, false)?;
+        gate.policy
+            .decide(Action::Tool {
+                alias: &tool.alias,
+                read_only: false,
+            })
+            .into_result()?;
         let mut slot = self.conn.lock().await;
         self.ensure(&mut slot).await?;
         self.offered(tool)?;

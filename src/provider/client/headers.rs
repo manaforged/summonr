@@ -35,6 +35,6 @@ impl Client {
     }
 
     pub(super) fn plan_responses(&self) -> bool {
-        self.wire == Wire::Responses && self.auth.is_login()
+        wire::spec(self.wire).plan_session && self.auth.is_login()
     }
 }

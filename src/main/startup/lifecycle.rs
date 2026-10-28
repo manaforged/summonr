@@ -2,7 +2,7 @@ use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use summonr::{Client, Endpoint, Event, Loop, Result, finish_worktree, splash, workflow};
+use summonr::{Client, Delta, Endpoint, Event, Loop, Result, finish_worktree, splash, workflow};
 
 use super::commands::workspace;
 use super::session::{apply_workflow, build, isolate, route_checks, workflow_name};
@@ -272,54 +272,34 @@ pub(super) fn provider(
     ui: Option<&summonr::tui::Ui>,
     json: bool,
 ) -> Result<Client> {
-    let mut provider = Client::connect(endpoint)?;
     if let Some(ui) = ui {
-        let text = ui.clone();
-        provider = provider.on_delta(move |delta| {
-            text.event(Event::Delta {
-                text: delta.to_string(),
-            });
-        });
-        let reasoning = ui.clone();
-        provider = provider.on_reasoning(move |delta| {
-            reasoning.event(Event::Reasoning {
-                text: delta.to_string(),
-            });
-        });
-    } else if json {
-        provider = provider.on_delta(|text| {
-            modes::print_json(&summonr::Event::Delta {
-                text: text.to_string(),
-            });
-        });
-        provider = provider.on_reasoning(|text| {
-            modes::print_json(&summonr::Event::Reasoning {
-                text: text.to_string(),
-            });
-        });
-    } else {
-        let stream = Arc::new(Mutex::new(Stream::Idle));
-        let text_state = stream.clone();
-        provider = provider.on_delta(move |text| {
-            *text_state.lock().unwrap_or_else(PoisonError::into_inner) = Stream::Answer;
-            print!("{text}");
-            drop(std::io::stdout().flush());
-        });
-        let reasoning_state = stream.clone();
-        provider = provider.on_reasoning(move |_| {
-            let mut state = reasoning_state
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if *state == Stream::Idle {
+        return ui.client(endpoint);
+    }
+    let provider = Client::connect(endpoint)?;
+    if json {
+        return Ok(provider.on_stream(|delta| match delta {
+            Delta::Text(text) => modes::print_json(&Event::Delta { text: text.clone() }),
+            Delta::Thinking(text) => modes::print_json(&Event::Reasoning { text: text.clone() }),
+            Delta::Call(_) | Delta::Progress => {}
+        }));
+    }
+    let stream = Mutex::new(Stream::Idle);
+    Ok(provider.on_stream(move |delta| {
+        let mut state = stream.lock().unwrap_or_else(PoisonError::into_inner);
+        match delta {
+            Delta::Text(text) => {
+                *state = Stream::Answer;
+                print!("{text}");
+                drop(std::io::stdout().flush());
+            }
+            Delta::Thinking(_) if *state == Stream::Idle => {
                 *state = Stream::Reasoning;
                 eprintln!("\n… reasoning");
             }
-        });
-        provider = provider.on_tool(move |_| {
-            *stream.lock().unwrap_or_else(PoisonError::into_inner) = Stream::Idle;
-        });
-    }
-    Ok(provider)
+            Delta::Call(_) => *state = Stream::Idle,
+            Delta::Thinking(_) | Delta::Progress => {}
+        }
+    }))
 }
 
 pub(super) fn use_tui(args: &Args) -> bool {

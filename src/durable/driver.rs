@@ -6,10 +6,9 @@ use thiserror::Error;
 use super::id::{Attempt, Call, SessionId};
 use super::log::{self, Line, Log, State, Usage, UsageMeta};
 use super::tree::{self, Snapshot};
-use super::work::{Check, Decision, Policy, Stage, Work, WorkError};
+use super::work::{Check, Decision, Stage, Work, WorkError, WorkKind};
 use crate::WorkProgress;
 use crate::provider::{Message, Partial, ToolCall, UserInput};
-use crate::session::Replay;
 
 #[derive(Debug, Error)]
 pub(crate) enum DriverError {
@@ -178,10 +177,6 @@ impl SessionDriver {
         self.turn.as_ref().and_then(|turn| turn.stage)
     }
 
-    pub(crate) fn replay(&self) -> Replay {
-        self.state.replay()
-    }
-
     pub(crate) fn history(&self) -> &[Message] {
         &self.state.history
     }
@@ -192,6 +187,10 @@ impl SessionDriver {
 
     pub(crate) fn spent_tokens(&self) -> u64 {
         self.state.spent
+    }
+
+    pub(crate) fn turns(&self) -> usize {
+        self.state.turns
     }
 
     pub(crate) fn elapsed_millis(&self) -> u64 {
@@ -296,7 +295,7 @@ impl SessionDriver {
     }
 }
 
-pub(crate) fn work_at(path: &Path, workspace: &Path, policy: Policy, text: &str) -> bool {
+pub(crate) fn work_at(path: &Path, workspace: &Path, policy: WorkKind, text: &str) -> bool {
     let Ok(Line::Session {
         workspace: recorded,
         ..
@@ -325,7 +324,7 @@ pub(crate) fn touched_at(path: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
-pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(Policy, String)> {
+pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(WorkKind, String)> {
     let Ok(Line::Session {
         workspace: recorded,
         ..
@@ -339,7 +338,7 @@ pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(Policy, String
     Work::load(&log::work_path(path))
         .ok()
         .flatten()
-        .filter(|work| work.policy != Policy::Single && !work.terminal())
+        .filter(|work| work.policy != WorkKind::Single && !work.terminal())
         .map(|work| (work.policy, work.objective))
 }
 

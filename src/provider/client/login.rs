@@ -6,7 +6,7 @@ impl Client {
         prompt: &mut summonr_auth::Prompt,
     ) -> Result<()> {
         let auth = crate::credentials::auth(endpoint)?;
-        let http = crate::credentials::http()?;
+        let http = crate::credentials::http(crate::limits::limits().auth())?;
         auth.login(&http, prompt)
             .await
             .map_err(|error| Error::Config(error.to_string()))
@@ -53,7 +53,7 @@ impl Client {
             .map_err(|error| Error::Config(error.to_string()))?;
         Ok(Self {
             http,
-            auth_http: crate::credentials::http()?,
+            auth_http: crate::credentials::http(crate::limits::limits().auth())?,
             base: base.trim_end_matches('/').to_string(),
             models_base: opts
                 .models_base
@@ -74,9 +74,7 @@ impl Client {
             wire: opts.wire,
             reasoning: Reasoning::default(),
             idle: opts.idle_timeout,
-            on_delta: None,
-            on_reasoning: None,
-            on_tool: None,
+            on_stream: None,
         })
     }
 }

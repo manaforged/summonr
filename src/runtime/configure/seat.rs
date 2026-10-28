@@ -64,7 +64,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
-        self.session.set_workflow(name).map_err(super::session_err)
+        self.session.set_workflow(name).map_err(Error::from)
     }
 
     pub(crate) fn apply_workflow(
@@ -107,13 +107,10 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn with_budget(mut self, budget: Budget) -> Result<Self> {
-        self.session
-            .set_budget(
-                budget.max_tokens,
-                budget.max_secs.map(|seconds| seconds.saturating_mul(1_000)),
-            )
-            .map_err(super::session_err)?;
-        self.budget = budget;
+        self.session.set_budget(
+            budget.max_tokens,
+            budget.max_secs.map(|seconds| seconds.saturating_mul(1_000)),
+        )?;
         Ok(self)
     }
 
@@ -146,28 +143,32 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn work_progress(&self) -> Result<crate::WorkProgress> {
-        self.session.work_progress().map_err(super::session_err)
+        self.session.work_progress().map_err(Error::from)
     }
 
-    pub fn next_step(
-        &self,
-        steps: &[crate::steps::Step],
-        plan_path: &str,
-    ) -> Result<crate::StepRun> {
+    pub fn next_beat(&self, job: &crate::Job) -> Result<crate::Beat> {
         let progress = self.work_progress()?;
         if let Some(code) = progress.exit_code() {
-            return Ok(crate::StepRun::Done(code));
+            return Ok(crate::Beat::Done(code));
         }
+        let (plan, steps) = match job {
+            crate::Job::Goal { objective, gates } => {
+                return Ok(crate::Beat::Run {
+                    prompt: crate::goal::prompt(objective, gates, progress.rounds),
+                    step: None,
+                });
+            }
+            crate::Job::Steps { plan, steps } => (plan, steps),
+        };
         let current = progress
             .current
             .ok_or_else(|| Error::Config("Steps Work has no active item".to_string()))?;
         let step = steps
             .get(current.saturating_sub(1))
             .ok_or_else(|| Error::Config("Steps Work is outside the selected plan".to_string()))?;
-        Ok(crate::StepRun::Run {
-            index: current,
-            total: steps.len(),
-            prompt: crate::steps::prompt(step, steps.len(), plan_path),
+        Ok(crate::Beat::Run {
+            prompt: crate::steps::prompt(step, steps.len(), plan),
+            step: Some((current, steps.len())),
         })
     }
 }

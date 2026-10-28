@@ -106,11 +106,7 @@ fn kept_of(record: &ChildRecord) -> Option<&Kept> {
 
 pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
     let model = app.model.get();
-    let kids: Vec<&Agent> = model
-        .agents
-        .iter()
-        .filter(|kid| !call.is_empty() && kid.call == call)
-        .collect();
+    let kids: Vec<&Agent> = model.agents_of(call).collect();
     if kids.is_empty() {
         return None;
     }

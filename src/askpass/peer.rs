@@ -3,31 +3,13 @@ use std::os::unix::net::UnixStream;
 
 pub(super) fn asker(stream: &UnixStream, limit: usize) -> String {
     peer_pid(stream)
-        .and_then(parent_of)
-        .map(command_of)
+        .and_then(crate::process::parent)
+        .and_then(crate::process::command)
         .unwrap_or_default()
         .replace(['\n', '\r'], " ")
         .chars()
         .take(limit)
         .collect()
-}
-
-fn ps(field: &str, pid: u32) -> Option<String> {
-    std::process::Command::new("ps")
-        .args(["-o", field, "-p"])
-        .arg(pid.to_string())
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-fn parent_of(pid: u32) -> Option<u32> {
-    ps("ppid=", pid)?.parse().ok()
-}
-
-fn command_of(pid: u32) -> String {
-    ps("command=", pid).unwrap_or_default()
 }
 
 #[cfg(target_os = "linux")]

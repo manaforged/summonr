@@ -135,7 +135,7 @@ fn ready(file: &File, route: &Preset) -> bool {
         .is_some_and(|key| !key.trim().is_empty());
     let stored = |slot: &str| secret::get(slot).ok().flatten().is_some();
     configured
-        || env_key(route.env_keys).is_some()
+        || env_key(&route.env_keys).is_some()
         || stored(&route.name)
         || stored(&crate::credentials::login_slot(&route.name))
         || route.key_from.iter().any(|slot| stored(slot))

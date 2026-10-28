@@ -4,7 +4,8 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock, PoisonError};
 
-use ignore::WalkBuilder;
+use crate::process::{Io, Spec};
+use crate::walk::{self, Walk};
 
 const MAGIC: &str = "summonr-names 1";
 pub(crate) const ENTRY: &str = "--index-files";
@@ -160,17 +161,16 @@ pub(super) fn refresh(root: &Path, slow: bool) {
     }
 }
 
-fn spawn(root: &Path) -> std::io::Result<()> {
-    let mut command = std::process::Command::new(std::env::current_exe()?);
-    command
-        .arg(ENTRY)
-        .arg(root)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let mut child = command.spawn()?;
+fn spawn(root: &Path) -> crate::error::Result<()> {
+    let mut child = crate::process::spawn_blocking(Spec {
+        stdin: Io::Null,
+        stdout: Io::Null,
+        stderr: Io::Null,
+        ..Spec::new(
+            std::env::current_exe()?,
+            [std::ffi::OsStr::new(ENTRY), root.as_os_str()],
+        )
+    })?;
     let root = root.to_path_buf();
     std::thread::Builder::new()
         .name("search-index".to_string())
@@ -188,14 +188,14 @@ fn in_progress(root: &Path) -> bool {
     let Some(target) = file_for(root) else {
         return false;
     };
-    let Some(Ok(entries)) = target.parent().map(std::fs::read_dir) else {
+    let Some(dir) = target.parent() else {
         return false;
     };
     let prefix = format!(
         "{}.",
         target.file_stem().unwrap_or_default().to_string_lossy()
     );
-    entries.filter_map(Result::ok).any(|entry| {
+    walk::children(dir).any(|entry| {
         let name = entry.file_name().to_string_lossy().into_owned();
         name.starts_with(&prefix) && name.ends_with(".tmp") && !aged(&entry)
     })
@@ -226,24 +226,14 @@ pub(crate) fn build(root: &Path) -> std::io::Result<()> {
         crate::mail::now()
     )?;
     let mut last: Vec<u8> = Vec::new();
-    let walk = WalkBuilder::new(root)
-        .standard_filters(false)
-        .sort_by_file_name(std::ffi::OsStr::cmp)
-        .filter_entry(|entry| {
-            entry.depth() == 0
-                || !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !(crate::STATE_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
-                    || super::walk::skipped_root(entry.path())
-                    || crate::policy::protected_read(entry.path()))
-        })
-        .build();
-    for entry in walk.filter_map(Result::ok) {
-        let listed = entry
-            .file_type()
-            .is_some_and(|kind| kind.is_file() || (kind.is_symlink() && !entry.path().is_dir()));
-        if !listed {
-            continue;
-        }
+    let entries = Walk {
+        guard: true,
+        sorted: true,
+        ..Walk::RAW
+    }
+    .entries(root)
+    .filter(walk::listed);
+    for entry in entries {
         let text = entry.path().to_string_lossy();
         let bytes = text.as_bytes();
         let shared = last
@@ -268,10 +258,7 @@ pub(crate) fn build(root: &Path) -> std::io::Result<()> {
 }
 
 fn sweep(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(Result::ok) {
+    for entry in walk::children(dir) {
         let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "tmp") && aged(&entry) {
             drop(std::fs::remove_file(path));

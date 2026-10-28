@@ -90,7 +90,7 @@ pub(super) fn body(
     if !call.tools.is_empty() {
         body.insert(
             "tools".to_string(),
-            json!([{"functionDeclarations": declarations(call)}]),
+            json!([{"functionDeclarations": super::super::tools(call, "parametersJsonSchema", &[])}]),
         );
     }
     body.insert(
@@ -102,19 +102,6 @@ pub(super) fn body(
         messages: Some(serde_json::to_vec(&contents)?),
         slot: Slot::Contents,
     })
-}
-
-fn declarations(call: &CompletionRequest<'_>) -> Vec<Value> {
-    call.tools
-        .iter()
-        .map(|tool| {
-            json!({
-                "name": tool.function.name,
-                "description": tool.function.description,
-                "parametersJsonSchema": tool.function.parameters,
-            })
-        })
-        .collect()
 }
 
 fn push<'a>(contents: &mut Vec<Content<'a>>, role: &'static str, parts: Vec<Part<'a>>) {

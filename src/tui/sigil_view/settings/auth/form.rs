@@ -85,7 +85,7 @@ pub(super) fn field(app: &App, input: Input, focus: bool) -> NodeBuilder {
     let save = app.clone();
     let filter = input == Input::Search;
     let value = if filter {
-        app.auth.filter
+        app.auth.list.query
     } else {
         app.auth.key
     };

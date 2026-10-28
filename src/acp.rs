@@ -3,17 +3,17 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, Stdin};
+use tokio::io::{AsyncWriteExt, Stdin};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::endpoint::{self, Endpoint};
 use crate::error::{Error, Result};
 use crate::provider::Client;
-use crate::rpc::{self, Frame};
+use crate::rpc::{self, Frame, Read};
 use crate::runtime::Loop;
 use crate::tools::Event;
 
-type Input = Lines<BufReader<Stdin>>;
+type Input = rpc::Lines<Stdin>;
 type Reply = std::result::Result<Value, (i64, String)>;
 
 struct Server<F> {
@@ -43,8 +43,8 @@ where
         out,
         sessions: BTreeMap::new(),
     };
-    let mut input = BufReader::new(tokio::io::stdin()).lines();
-    while let Some(line) = input.next_line().await? {
+    let mut input = rpc::Lines::new(tokio::io::stdin());
+    while let Some(line) = next_line(&mut input).await {
         server.handle(&line, &mut input).await;
     }
     drop(server);
@@ -75,9 +75,15 @@ where
     }
 
     fn connect(&self, endpoint: &Endpoint, tag: &Arc<OnceLock<String>>) -> Result<Client> {
-        Ok(Client::connect(endpoint)?
-            .on_delta(self.stream("agent_message_chunk", tag))
-            .on_reasoning(self.stream("agent_thought_chunk", tag)))
+        let message = self.stream("agent_message_chunk", tag);
+        let thought = self.stream("agent_thought_chunk", tag);
+        Ok(
+            Client::connect(endpoint)?.on_stream(move |delta| match delta {
+                crate::Delta::Text(text) => message(text),
+                crate::Delta::Thinking(text) => thought(text),
+                crate::Delta::Call(_) | crate::Delta::Progress => {}
+            }),
+        )
     }
 
     fn open(&mut self, params: &Value) -> Reply {
@@ -142,8 +148,8 @@ where
             loop {
                 tokio::select! {
                     done = &mut turn => break Some(done),
-                    read = input.next_line() => {
-                        let Ok(Some(line)) = read else {
+                    read = next_line(input) => {
+                        let Some(line) = read else {
                             break None;
                         };
                         match rpc::parse(&line) {
@@ -244,6 +250,16 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
     drop(out.send(frame_line(&update(session, content))));
 }
 
+async fn next_line(input: &mut Input) -> Option<String> {
+    loop {
+        match input.next().await {
+            Ok(Read::Line(line)) => return Some(line),
+            Ok(Read::Oversize) => {}
+            Ok(Read::Closed) | Err(_) => return None,
+        }
+    }
+}
+
 fn frame_line(frame: &Value) -> String {
     format!("{frame}\n")
 }
@@ -267,16 +283,7 @@ fn failure(error: Error) -> (i64, String) {
 }
 
 fn kind(name: &str) -> &'static str {
-    use crate::tools::Builtin;
-    match Builtin::live(name) {
-        Some(Builtin::Read) => "read",
-        Some(Builtin::Edit | Builtin::Write) => "edit",
-        Some(Builtin::RunCommand) => "execute",
-        Some(Builtin::Web) => "fetch",
-        Some(Builtin::Lsp | Builtin::Search) => "search",
-        Some(Builtin::Browser) => "fetch",
-        Some(Builtin::Skill | Builtin::Todo | Builtin::Task) | None => "other",
-    }
+    crate::tools::Builtin::live(name).map_or("other", crate::tools::Builtin::acp_kind)
 }
 
 fn block(item: &Value) -> Option<String> {

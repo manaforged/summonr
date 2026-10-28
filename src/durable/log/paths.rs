@@ -7,7 +7,13 @@ use serde::de::DeserializeOwned;
 use super::{DIR, FILE, Line, SessionId, WORK};
 
 pub(crate) fn read(path: &Path) -> io::Result<Vec<Line>> {
-    Ok(records(path)?.into_iter().map(receipt_text).collect())
+    let mut lines = Vec::new();
+    each(path, |line| lines.push(line))?;
+    Ok(lines)
+}
+
+pub(crate) fn each(path: &Path, mut visit: impl FnMut(Line)) -> io::Result<()> {
+    fold(path, 0, |line| visit(receipt_text(line)))
 }
 
 fn receipt_text(line: Line) -> Line {
@@ -36,15 +42,14 @@ pub(crate) fn whole_len(path: &Path) -> Option<u64> {
     (last == *b"\n").then_some(len)
 }
 
-pub(crate) fn records<T: DeserializeOwned>(path: &Path) -> io::Result<Vec<T>> {
-    parse(&fs::read(path)?, true)
-}
-
-pub(crate) fn records_after<T: DeserializeOwned>(path: &Path, offset: u64) -> io::Result<Vec<T>> {
+pub(crate) fn fold<T: DeserializeOwned>(
+    path: &Path,
+    offset: u64,
+    visit: impl FnMut(T),
+) -> io::Result<()> {
     use std::io::{Read, Seek, SeekFrom};
     let mut file = File::open(path)?;
-    let start = offset.saturating_sub(1);
-    file.seek(SeekFrom::Start(start))?;
+    file.seek(SeekFrom::Start(offset.saturating_sub(1)))?;
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
     if offset > 0 && bytes.first() != Some(&b'\n') {
@@ -55,25 +60,29 @@ pub(crate) fn records_after<T: DeserializeOwned>(path: &Path, offset: u64) -> io
     }
     parse(
         bytes.get(usize::from(offset > 0)..).unwrap_or_default(),
-        false,
+        offset == 0,
+        visit,
     )
 }
 
-fn parse<T: DeserializeOwned>(bytes: &[u8], strict: bool) -> io::Result<Vec<T>> {
+fn parse<T: DeserializeOwned>(
+    bytes: &[u8],
+    strict: bool,
+    mut visit: impl FnMut(T),
+) -> io::Result<()> {
     let complete = bytes
         .iter()
         .rposition(|byte| *byte == b'\n')
         .map_or(0, |index| index + 1);
     let text = std::str::from_utf8(&bytes[..complete])
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    let mut lines = Vec::new();
     let mut first = strict;
     for line in text.lines() {
         if line.trim().is_empty() {
             continue;
         }
         match serde_json::from_str(line) {
-            Ok(line) => lines.push(line),
+            Ok(line) => visit(line),
             Err(error) if first => return Err(error.into()),
             Err(_) => {}
         }
@@ -83,9 +92,9 @@ fn parse<T: DeserializeOwned>(bytes: &[u8], strict: bool) -> io::Result<Vec<T>> 
         && !tail.trim().is_empty()
         && let Ok(line) = serde_json::from_str(tail)
     {
-        lines.push(line);
+        visit(line);
     }
-    Ok(lines)
+    Ok(())
 }
 
 pub(crate) fn scan(path: &Path) -> io::Result<impl Iterator<Item = Line>> {

@@ -152,7 +152,7 @@ pub(crate) fn providers_at(url: &str) -> Vec<&'static str> {
     };
     let mut ids: Vec<&str> = preset::presets()
         .filter(|preset| host_port(&preset.base_url).as_deref() == Some(wanted.as_str()))
-        .flat_map(|preset| preset.opencode_ids.iter().copied())
+        .flat_map(|preset| preset.opencode_ids.iter().map(String::as_str))
         .collect();
     ids.sort_unstable();
     ids.dedup();
@@ -233,14 +233,16 @@ impl LoginFlow {
 }
 
 impl Wire {
-    pub(crate) fn parse(value: &str) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        Some(match value.trim().to_ascii_lowercase().as_str() {
+            "completions" => Self::Completions,
             "responses" => Self::Responses,
             "anthropic" | "claude" => Self::Anthropic,
             "gemini" | "google" => Self::Gemini,
             "decisions" | "systemone" | "system-one" => Self::Decisions,
-            _ => Self::Completions,
-        }
+            "agent-sdk" => Self::AgentSdk,
+            _ => return None,
+        })
     }
 }
 
@@ -258,7 +260,7 @@ pub fn names() -> Result<Vec<String>> {
 }
 
 fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
-    if endpoint.wire == Wire::Decisions {
+    if crate::provider::wire::spec(endpoint.wire).classifies() {
         return LoginGroup::Decide;
     }
     if let Some(preset) = preset(name) {
@@ -286,6 +288,7 @@ mod info;
 mod keys;
 mod preset;
 mod reasoning;
+mod record;
 mod resolve;
 mod route;
 mod server;
@@ -301,6 +304,7 @@ use keys::*;
 pub(crate) use preset::label;
 use preset::preset;
 pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
+use record::Record;
 pub(crate) use resolve::default_seat;
 use resolve::hosted;
 pub(crate) use resolve::{Keys, is_set_up};

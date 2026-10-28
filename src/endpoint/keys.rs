@@ -32,7 +32,7 @@ impl Endpoint {
             .filter(|row| self.own_base(row))
             .or_else(|| self.base_url.as_deref().and_then(hosted));
         if own.is_none()
-            && let Some(key) = row.and_then(|row| env_key(row.env_keys))
+            && let Some(key) = row.and_then(|row| env_key(&row.env_keys))
         {
             return Ok(Some((key, Source::Env)));
         }
@@ -79,7 +79,7 @@ fn fallback_key(
     let row = preset(&endpoint.name);
     if let Some(key) = row
         .filter(|row| endpoint.own_base(row))
-        .and_then(|row| row.default_key)
+        .and_then(|row| row.default_key.as_deref())
     {
         endpoint.api_key = Some(key.to_string());
         endpoint.source = Some(Source::Builtin);
@@ -101,38 +101,7 @@ fn fallback_key(
 
 pub(super) fn builtin(name: &str) -> Option<Endpoint> {
     let row = preset(name)?;
-    Some(Endpoint {
-        name: row.name.clone(),
-        base_url: Some(row.base_url.clone()),
-        models_url: row.models_url.map(str::to_string),
-        model: row.model.clone(),
-        api_key: None,
-        source: None,
-        oauth: row.sign_in(),
-        body: None,
-        context_window: row.context_window,
-        idle_timeout_secs: None,
-        effort: None,
-        price: None,
-        env: BTreeMap::new(),
-        headers: row
-            .headers
-            .iter()
-            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
-            .collect(),
-        wire: row.wire,
-        fallback: Vec::new(),
-        compact_tokens: None,
-        images: None,
-        keep_reasoning: false,
-        opencode: row.opencode,
-        prompt_cache_key: row.prompt_cache_key,
-        assistant_after_tool: row.assistant_after_tool,
-        cache_ttl: row.cache_ttl.unwrap_or(crate::limits::limits().cache_ttl),
-        cache_header: row.cache_header.clone(),
-        cache_marks: row.cache_marks,
-        reasoning: reasoning::from_preset(Some(row)),
-    })
+    Some(Record::from(row).endpoint(&row.name, Some(row)))
 }
 
 pub(super) fn json(value: &toml::Value) -> serde_json::Value {
@@ -142,7 +111,7 @@ pub(super) fn json(value: &toml::Value) -> serde_json::Value {
 pub(super) fn named_model(endpoint: &str, model: &str) -> String {
     let folded = model.trim().to_ascii_lowercase();
     if let Some(row) = preset(endpoint) {
-        for (alias, canon) in row.aliases {
+        for (alias, canon) in &row.aliases {
             if *alias == folded {
                 return (*canon).to_string();
             }
@@ -151,12 +120,12 @@ pub(super) fn named_model(endpoint: &str, model: &str) -> String {
     model.to_string()
 }
 
-pub(super) fn env_key(names: &[&str]) -> Option<String> {
+pub(super) fn env_key<S: AsRef<str>>(names: &[S]) -> Option<String> {
     if cfg!(test) && std::env::var_os("SUMMONR_LIVE_KEYS").is_none() {
         return None;
     }
     names.iter().find_map(|name| {
-        std::env::var(name)
+        std::env::var(name.as_ref())
             .ok()
             .filter(|value| !value.trim().is_empty())
     })

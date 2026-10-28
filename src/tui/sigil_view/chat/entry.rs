@@ -20,7 +20,7 @@ use sigil::prelude::text;
 use sigil::terminal::caps;
 use sigil::widgets::DiffBuilder;
 
-use super::{App, Call, Entry, canvas};
+use super::{App, Entry, canvas};
 use crate::prefs::{DiffLayout, Prefs};
 use crate::tui::sigil_view::look::Look;
 
@@ -45,6 +45,7 @@ pub(in crate::tui::sigil_view) use steps::slot;
 pub(in crate::tui::sigil_view) use steps::{Slot, slots, subagents};
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use tools::glyph;
+pub(in crate::tui::sigil_view) use tools::tool_label;
 pub(in crate::tui::sigil_view) use tools::workspace_relative;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use tree::label;
@@ -62,30 +63,9 @@ pub(in crate::tui::sigil_view) fn row(
     let tools = prefs.tools;
     let layout = prefs.diff_layout;
     match entry {
-        Entry::Tool {
-            id,
-            name,
-            arg,
-            state,
-            output,
-            expanded,
-            patch,
-        } => tools::tool_card(
-            &name,
-            &Call {
-                id,
-                arg,
-                state,
-                output,
-                expanded,
-                patch,
-            },
-            tools,
-            layout,
-            app,
-            index,
-            None,
-        ),
+        Entry::Tool { name, call } => {
+            tools::tool_card(&name, &call, tools, layout, app, index, None)
+        }
         Entry::ToolGroup { name, calls } => {
             tools::group_card(&name, &calls, tools, layout, app, index)
         }
@@ -119,11 +99,7 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> 
                     .min_size(0.0, 0.0),
             )
             .bg(sigil::prelude::Token::Gray5)
-            .child(
-                text(body)
-                    .font_size(14.0)
-                    .text_color(sigil::prelude::Token::Gray12),
-            ),
+            .child(Look::sm(sigil::prelude::Token::Gray12).on(text(body))),
         Entry::Assistant { .. } => assistant(live::text_of(app.model, index), app),
         Entry::Thinking(_) => collapse::collapsible(
             live::text_of(app.model, index),
@@ -146,16 +122,10 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> 
             &format!("{from}: {body}"),
             Look::sm(sigil::prelude::Token::Info11),
         ),
-        Entry::Aborted(reason) | Entry::Error(reason) => wrap(
-            text(reason)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Error11),
-        ),
-        Entry::System(body) => wrap(
-            text(body)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
-        ),
+        Entry::Aborted(reason) | Entry::Error(reason) => {
+            wrap(Look::xs(sigil::prelude::Token::Error11).on(text(reason)))
+        }
+        Entry::System(body) => wrap(Look::xs(sigil::prelude::Token::Gray11).on(text(body))),
         Entry::Chart(rounds) => wrap(
             chart(
                 rounds
@@ -200,17 +170,15 @@ fn assistant(body: sigil::prelude::Signal<String>, app: &App) -> NodeBuilder {
 }
 
 fn verify(command: &str, passed: bool) -> NodeBuilder {
-    wrap(
-        sigil::kernel::text(format!("{} {command}", if passed { "✓" } else { "✗" }))
-            .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
-            .font_size(12.0)
-            .text_color(if passed {
-                sigil::prelude::Token::Success11
-            } else {
-                sigil::prelude::Token::Error11
-            }),
-    )
+    let tone = if passed {
+        sigil::prelude::Token::Success11
+    } else {
+        sigil::prelude::Token::Error11
+    };
+    wrap(tree::label(
+        format!("{} {command}", if passed { "✓" } else { "✗" }),
+        Look::xs(tone),
+    ))
 }
 
 fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeBuilder {
@@ -245,13 +213,7 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
                 .fit(ObjectFit::Contain)
                 .layout(LayoutStyle::block().width(width).height(height)),
         )
-        .child(
-            sigil::kernel::text(name)
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
-        )
+        .child(tree::label(name, Look::xs(sigil::prelude::Token::Gray11)))
 }
 
 pub(super) fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {

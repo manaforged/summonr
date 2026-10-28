@@ -43,7 +43,7 @@ fn a_tag_on_a_clipped_long_line_resolves_against_the_full_line() {
         None,
     )
     .unwrap();
-    let args = serde_json::json!({"path": "a.txt", "tags": true}).to_string();
+    let args = serde_json::json!({"path": "a.txt", "tags": true});
     let text = tools.read_file(&args).unwrap().text;
     let shown = text.lines().find(|line| line.starts_with("2:")).unwrap();
     assert!(shown.contains("[line clipped at"), "{shown}");

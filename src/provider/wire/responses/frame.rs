@@ -171,22 +171,15 @@ struct Detail {
 
 impl Counted {
     pub(super) fn usage(&self) -> Usage {
-        let field = |count: Option<u64>| Usage::clamp(count.unwrap_or_default());
-        Usage {
-            prompt_tokens: field(self.input_tokens),
-            completion_tokens: field(self.output_tokens),
-            reasoning_tokens: field(
-                self.output_tokens_details
-                    .and_then(|detail| detail.reasoning_tokens),
-            ),
-            cached_tokens: field(
-                self.input_tokens_details
-                    .and_then(|detail| detail.cached_tokens),
-            ),
-            cache_write_tokens: field(
-                self.input_tokens_details
-                    .and_then(|detail| detail.cache_write_tokens),
-            ),
-        }
+        let input = self.input_tokens_details.unwrap_or_default();
+        Usage::counted(
+            self.input_tokens.unwrap_or_default(),
+            self.output_tokens.unwrap_or_default(),
+            self.output_tokens_details
+                .and_then(|detail| detail.reasoning_tokens)
+                .unwrap_or_default(),
+            input.cached_tokens.unwrap_or_default(),
+            input.cache_write_tokens.unwrap_or_default(),
+        )
     }
 }

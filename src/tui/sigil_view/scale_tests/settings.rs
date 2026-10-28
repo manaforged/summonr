@@ -104,7 +104,7 @@ fn adjusting_the_mode_row_in_auto_starts_a_goal_in_the_composer() {
             .iter()
             .position(|row| row.label == "run mode")
             .expect("a mode row");
-        app.settings_sel.set(mode);
+        app.settings.cursor.set(mode);
         app.overlay_adjust(1);
         seen = (app.draft.peek(), app.settings_open.peek());
     });

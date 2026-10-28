@@ -115,7 +115,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
 }
 
 pub(crate) struct Harness<'a> {
-    pub(crate) mode: crate::RunMode,
+    pub(crate) mode: crate::WorkKind,
     pub(crate) checks: &'a [String],
     pub(crate) children: bool,
 }
@@ -129,9 +129,9 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     } = harness;
     let mut parts = vec![
         match mode {
-            crate::RunMode::Work => "Harness state: work mode. Execute the selected steps in order.",
-            crate::RunMode::Goal => "Harness state: goal mode. The turn loop runs until the objective is met; a failed check starts another turn.",
-            crate::RunMode::Auto => "Harness state: auto mode.",
+            crate::WorkKind::Steps => "Harness state: work mode. Execute the selected steps in order.",
+            crate::WorkKind::Goal => "Harness state: goal mode. The turn loop runs until the objective is met; a failed check starts another turn.",
+            crate::WorkKind::Single => "Harness state: auto mode.",
         }
         .to_string(),
     ];
@@ -150,13 +150,13 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
             "Harness: before Work can complete, summonr runs {list} as the completion check."
         ));
     }
-    if children && matches!(mode, crate::RunMode::Work | crate::RunMode::Goal) {
+    if children && matches!(mode, crate::WorkKind::Steps | crate::WorkKind::Goal) {
         parts.push(
             "Spawn a child only for disjoint paths. An implement child gets an isolated checkout that shares the parent build cache. The parent runs the completion check."
                 .to_string(),
         );
     }
-    if mode == crate::RunMode::Auto && parts.len() == 1 {
+    if mode == crate::WorkKind::Single && parts.len() == 1 {
         return String::new();
     }
     parts.join("\n\n")

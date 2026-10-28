@@ -325,7 +325,7 @@ fn every_default_model_is_current_in_the_bundled_catalog() {
             continue;
         }
         for model in std::iter::once(&preset.model).chain(preset.login_model.as_ref()) {
-            if let Some(current) = crate::catalog::serves(preset.opencode_ids, model) {
+            if let Some(current) = crate::catalog::serves(&preset.opencode_ids, model) {
                 assert!(
                     current,
                     "{} defaults to {model}, which its catalog providers do not list as current",
@@ -381,4 +381,12 @@ fn an_explicit_effort_reaches_the_provider_unchanged() {
         endpoint.effort_for(Some(Effort::Medium)),
         Some(Effort::Medium)
     );
+}
+
+#[test]
+fn a_preset_row_keeps_its_configured_idle_timeout() {
+    let file: crate::config::File =
+        toml::from_str("[endpoint.grok]\nidle_timeout_secs = 7\n").unwrap();
+    let endpoint = super::resolve::seat(&file, "grok").unwrap();
+    assert_eq!(endpoint.idle_timeout_secs, Some(7));
 }

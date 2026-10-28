@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, FlexWrap, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone,
-    container, heatmap, panel, progress, signal, sparkline,
+    AlignItems, FlexWrap, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone, container,
+    heatmap, panel, progress, signal, sparkline,
 };
 use sigil::prelude::{Paint, WidgetLayoutExt};
 use sigil::widgets::SparkMark;
@@ -36,19 +36,15 @@ pub(super) fn ink(index: usize) -> Rgba8 {
 }
 
 pub(super) fn colored(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
-    container().layout(LayoutStyle::block().shrink(0.0)).child(
-        sigil::kernel::text(value.into())
-            .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
-            .text_color(color),
-    )
+    container()
+        .layout(LayoutStyle::block().shrink(0.0))
+        .child(sigil::kernel::text(value.into()).nowrap().text_color(color))
 }
 
 pub(super) fn strong(value: impl Into<String>) -> NodeBuilder {
     container().child(
         sigil::kernel::text(value.into())
             .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
             .font_weight(700)
             .text_color(palette().text),
     )
@@ -68,12 +64,7 @@ fn row(children: Vec<NodeBuilder>) -> NodeBuilder {
 fn wrapped(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
-        .child(
-            sigil::kernel::text(value.into())
-                .wrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .text_color(color),
-        )
+        .child(sigil::kernel::text(value.into()).wrap().text_color(color))
 }
 
 fn column(children: Vec<NodeBuilder>) -> NodeBuilder {
@@ -322,8 +313,4 @@ pub(super) fn bottom(report: &Report, metric: Metric, width: f32) -> NodeBuilder
                 .child(places(report, metric))
                 .child(hours(report)),
         )
-}
-
-pub(super) fn spacer() -> impl IntoNode {
-    container().layout(LayoutStyle::block().grow(1.0))
 }

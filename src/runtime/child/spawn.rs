@@ -60,7 +60,7 @@ impl<P: Provider> Loop<P> {
         budget: &Budget,
         tree: Option<Tree>,
     ) -> Result<Run<P>> {
-        let role = self.round_role();
+        let role = crate::workflow::Role::Implement;
         let provider = self.seat(role).0.child().ok_or_else(|| {
             Error::Denied("the active provider cannot create children".to_string())
         })?;
@@ -76,8 +76,7 @@ impl<P: Provider> Loop<P> {
             &model,
             &self.system_prompt,
             Some(Parent::Task(self.session.id())),
-        )
-        .map_err(super::session_err)?;
+        )?;
         let (opener, tools) = self.child_opener(&args, tree.as_ref(), &workspace)?;
         let mut child = Self::with_parts(
             provider,
@@ -89,7 +88,6 @@ impl<P: Provider> Loop<P> {
             None,
         )?;
         child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
-        child.depth = 1;
         child.context_window = self.receiver_window(role);
         child.compact_tokens = self.compact_tokens;
         child.context_sample = self.context_sample;
@@ -110,9 +108,7 @@ impl<P: Provider> Loop<P> {
             call: Some(args.call.clone()),
             state: ChildState::Running,
         };
-        self.session
-            .start_child(record.clone())
-            .map_err(super::session_err)?;
+        self.session.start_child(record.clone())?;
         drop(self.events.0.send(Event::Child {
             id: record.id.to_string(),
             event: Box::new(Event::Spawned {
@@ -252,14 +248,14 @@ impl<P: Provider> Loop<P> {
         if children == 0 {
             return Err(Error::Config("task batch is empty".to_string()));
         }
-        let tokens = self.budget.max_tokens.map(|limit| {
+        let tokens = self.budget().max_tokens.map(|limit| {
             limit
                 .saturating_sub(self.run_tokens())
                 .saturating_sub(self.child_budget_reserved())
                 / children
         });
         let secs = self
-            .budget
+            .budget()
             .max_secs
             .map(|limit| limit.saturating_sub(self.elapsed_secs()));
         if tokens == Some(0) || secs == Some(0) {

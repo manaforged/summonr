@@ -8,39 +8,6 @@ pub(crate) mod levels {
     use crate::provider::Effort;
 
     pub(crate) const STANDARD: &[Effort] = &[Effort::Low, Effort::Medium, Effort::High];
-    pub(crate) const EXTENDED: &[Effort] =
-        &[Effort::Low, Effort::Medium, Effort::High, Effort::XHigh];
-    pub(crate) const HIGH_MAX: &[Effort] =
-        &[Effort::Low, Effort::Medium, Effort::High, Effort::Max];
-    pub(crate) const FULL: &[Effort] = &[
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::XHigh,
-        Effort::Max,
-    ];
-    pub(crate) const MINIMAL_UP: &[Effort] =
-        &[Effort::Minimal, Effort::Low, Effort::Medium, Effort::High];
-    pub(crate) const MINIMAL_XHIGH: &[Effort] = &[
-        Effort::Minimal,
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::XHigh,
-    ];
-    pub(crate) const ALL_POSITIVE: &[Effort] = &[
-        Effort::Minimal,
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::XHigh,
-        Effort::Max,
-    ];
-    pub(crate) const LOW_HIGH: &[Effort] = &[Effort::Low, Effort::High];
-    pub(crate) const LOW_HIGH_MAX: &[Effort] = &[Effort::Low, Effort::High, Effort::Max];
-    pub(crate) const MEDIUM_UP: &[Effort] = &[Effort::Medium, Effort::High, Effort::XHigh];
-    pub(crate) const HIGH_ONLY: &[Effort] = &[Effort::High];
-    pub(crate) const NO_EFFORT: &[Effort] = &[];
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]

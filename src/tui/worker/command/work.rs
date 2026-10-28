@@ -47,40 +47,14 @@ impl Worker {
         let Some((markdown, steps)) = self.read_steps(plan_path) else {
             return true;
         };
-        let total = steps.len();
         let checks = self.loop_.verify_commands().to_vec();
         if let Err(error) = self.loop_.select_steps(&markdown, &checks) {
             self.fail(&error.to_string());
             return true;
         }
         announce_run_mode(&self.loop_, &self.ui);
-        let code = loop {
-            let prompt = match self.loop_.next_step(&steps, plan_path) {
-                Ok(crate::StepRun::Done(code)) => break code,
-                Ok(crate::StepRun::Run { prompt, .. }) => prompt,
-                Err(error) => {
-                    self.fail(&error.to_string());
-                    return true;
-                }
-            };
-            if self.cleared("/steps", "steps cleared by user", "steps cleared") {
-                return true;
-            }
-            let paused = "steps paused: cancelled by user; /steps PLAN.md resumes";
-            if let Some(keep_running) = self
-                .work_turn(prompt, paused, "step execution aborted", "steps")
-                .await
-            {
-                return keep_running;
-            }
-        };
-        if code == 0 {
-            self.outcome(&format!("steps complete: {total} of {total}"));
-        } else {
-            let reason = self.stop_reason().unwrap_or_default();
-            self.outcome(&format!("steps stopped (exit {code}): {reason}"));
-        }
-        true
+        let plan = plan_path.to_string();
+        self.run_work(&crate::Job::Steps { plan, steps }).await
     }
 
     fn clear_steps(&mut self) {
@@ -120,11 +94,11 @@ impl Worker {
         }
         if clears(objective) {
             self.clear_goal();
-            self.leave_goal(crate::RunMode::Auto);
+            self.leave_goal(crate::WorkKind::Single);
             return true;
         }
         let before = match self.loop_.mode() {
-            crate::RunMode::Goal => crate::RunMode::Auto,
+            crate::WorkKind::Goal => crate::WorkKind::Single,
             mode => mode,
         };
         let Some(gates) = self.goal_gates() else {
@@ -135,7 +109,8 @@ impl Worker {
             return true;
         }
         announce_run_mode(&self.loop_, &self.ui);
-        let keep_running = self.run_goal(objective, &gates).await;
+        let objective = objective.to_string();
+        let keep_running = self.run_work(&crate::Job::Goal { objective, gates }).await;
         self.leave_goal(before);
         keep_running
     }
@@ -165,49 +140,63 @@ impl Worker {
         Some(Vec::new())
     }
 
-    async fn run_goal(&mut self, objective: &str, gates: &[String]) -> bool {
+    async fn run_work(&mut self, job: &crate::Job) -> bool {
         let code = loop {
-            let progress = match self.loop_.work_progress() {
-                Ok(progress) => progress,
+            let prompt = match self.loop_.next_beat(job) {
+                Ok(crate::Beat::Done(code)) => break code,
+                Ok(crate::Beat::Run { prompt, .. }) => prompt,
                 Err(error) => {
                     self.fail(&error.to_string());
                     return true;
                 }
             };
-            if let Some(code) = progress.exit_code() {
-                break code;
-            }
-            let title = objective.lines().next().unwrap_or_default();
-            let notice = format!("goal cleared: {title}");
-            if self.cleared("/goal", "goal cleared by user", &notice) {
+            let (command, notice, paused) = match job {
+                crate::Job::Goal { objective, .. } => (
+                    "/goal",
+                    format!(
+                        "goal cleared: {}",
+                        objective.lines().next().unwrap_or_default()
+                    ),
+                    "goal paused: cancelled by user",
+                ),
+                crate::Job::Steps { .. } => (
+                    "/steps",
+                    "steps cleared".to_string(),
+                    "steps paused: cancelled by user; /steps PLAN.md resumes",
+                ),
+            };
+            let reason = format!("{} cleared by user", job.label());
+            if self.cleared(command, &reason, &notice) {
                 return true;
             }
-            let prompt = crate::goal::prompt(objective, gates, progress.rounds);
             if let Some(keep_running) = self
-                .work_turn(
-                    prompt,
-                    "goal paused: cancelled by user",
-                    "goal execution aborted",
-                    "goal",
-                )
+                .work_turn(prompt, paused, job.aborted(), job.label())
                 .await
             {
                 return keep_running;
             }
         };
-        if code == 0 {
-            self.outcome("goal achieved");
-        } else {
-            let reason = self
-                .stop_reason()
-                .unwrap_or_else(|| "resume with `summonr --goal`".to_string());
-            self.outcome(&format!("goal stopped (exit {code}): {reason}"));
-        }
+        let outcome = match (job, code) {
+            (crate::Job::Goal { .. }, 0) => "goal achieved".to_string(),
+            (crate::Job::Steps { steps, .. }, 0) => {
+                format!("steps complete: {0} of {0}", steps.len())
+            }
+            (crate::Job::Goal { .. }, code) => format!(
+                "goal stopped (exit {code}): {}",
+                self.stop_reason()
+                    .unwrap_or_else(|| "resume with `summonr --goal`".to_string())
+            ),
+            (crate::Job::Steps { .. }, code) => format!(
+                "steps stopped (exit {code}): {}",
+                self.stop_reason().unwrap_or_default()
+            ),
+        };
+        self.outcome(&outcome);
         true
     }
 
-    fn leave_goal(&mut self, mode: crate::RunMode) {
-        if self.loop_.mode() == crate::RunMode::Goal
+    fn leave_goal(&mut self, mode: crate::WorkKind) {
+        if self.loop_.mode() == crate::WorkKind::Goal
             && self.loop_.active_goal().ok().flatten().is_none()
         {
             self.loop_.set_mode(mode);

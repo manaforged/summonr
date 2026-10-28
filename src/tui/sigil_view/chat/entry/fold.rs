@@ -20,24 +20,9 @@ fn flatten(entries: &[Entry], start: usize) -> Vec<Step> {
     for (offset, entry) in entries.iter().enumerate() {
         let index = start + offset;
         match entry {
-            Entry::Tool {
-                id,
-                name,
-                arg,
-                state,
-                output,
-                expanded,
-                patch,
-            } => steps.push(Step {
+            Entry::Tool { name, call } => steps.push(Step {
                 name: name.clone(),
-                call: Call {
-                    id: id.clone(),
-                    arg: arg.clone(),
-                    state: state.clone(),
-                    output: output.clone(),
-                    expanded: *expanded,
-                    patch: patch.clone(),
-                },
+                call: call.clone(),
                 index,
                 at: None,
             }),

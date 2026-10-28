@@ -43,7 +43,10 @@ fn effort_reaches_this_wire_under_its_own_name() {
 
 #[test]
 fn this_wire_is_the_one_that_ends_on_a_marker() {
-    assert_eq!(Wire::sentinel(), Some("[DONE]"));
+    assert_eq!(
+        crate::provider::wire::spec(crate::endpoint::Wire::Completions).sentinel,
+        Some("[DONE]")
+    );
     assert_eq!(
         crate::credentials::scheme(crate::endpoint::Wire::Completions),
         summonr_auth::Scheme::Bearer

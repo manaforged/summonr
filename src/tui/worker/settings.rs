@@ -2,7 +2,6 @@ use super::Worker;
 use crate::endpoint::Endpoint;
 use crate::provider::Client;
 use crate::runtime::Loop;
-use crate::tools::Event;
 use crate::tui::{Msg, Snapshot};
 use crate::workflow::{self, Role, Seat, Workflow};
 use tokio::sync::mpsc::UnboundedSender;
@@ -26,31 +25,13 @@ impl Worker {
         self.send_settings();
     }
 
-    pub(super) async fn set_endpoint(&mut self, name: &str) {
-        self.drive(crate::endpoint::resolve(
-            Some(name),
-            None,
+    pub(super) async fn seat(&mut self, endpoint: Option<&str>, model: Option<&str>) {
+        let endpoint = crate::endpoint::resolve(
+            Some(endpoint.unwrap_or(&self.endpoint)),
+            model,
             crate::endpoint::Need::Seat,
-        ))
-        .await;
-    }
-
-    pub(super) async fn set_seat(&mut self, endpoint: &str, model: &str) {
-        self.drive(crate::endpoint::resolve(
-            Some(endpoint),
-            Some(model),
-            crate::endpoint::Need::Seat,
-        ))
-        .await;
-    }
-
-    pub(super) async fn set_model(&mut self, model: &str) {
-        self.drive(crate::endpoint::resolve(
-            Some(&self.endpoint),
-            Some(model),
-            crate::endpoint::Need::Seat,
-        ))
-        .await;
+        );
+        self.drive(endpoint).await;
     }
 
     pub(super) async fn drive(&mut self, endpoint: crate::Result<Endpoint>) {
@@ -79,21 +60,7 @@ impl Worker {
     }
 
     fn client(ui: &UnboundedSender<Msg>, endpoint: &Endpoint) -> crate::Result<Client> {
-        let delta = ui.clone();
-        let thinking = ui.clone();
-        let calling = ui.clone();
-        Ok(Client::connect(endpoint)?
-            .on_delta(move |text| {
-                drop(delta.send(Msg::Event(Event::Delta {
-                    text: text.to_string(),
-                })))
-            })
-            .on_reasoning(move |text| {
-                drop(thinking.send(Msg::Event(Event::Reasoning {
-                    text: text.to_string(),
-                })));
-            })
-            .on_tool(move |name| drop(calling.send(Msg::Calling(name.to_string())))))
+        crate::tui::channel::client(ui, endpoint)
     }
 
     pub(super) fn workflow(&mut self, argument: Option<&str>) {
@@ -279,29 +246,16 @@ impl Worker {
             Err(error) => return self.fail(&error.to_string()),
         };
         let ui = &self.ui;
-        let mut missing = Vec::new();
-        let applied = self.loop_.apply_workflow(&workflow, |role, seat| {
+        let seated = self.loop_.seat_workflow(&workflow, |seat| {
             let endpoint = crate::endpoint::resolve(
                 Some(&seat.endpoint),
                 seat.model.as_deref(),
                 crate::endpoint::Need::Seat,
             )?;
-            let client = Self::client(ui, &endpoint)?;
-            if endpoint.context_window.is_none() {
-                missing.push((
-                    role,
-                    client.clone(),
-                    endpoint.name.clone(),
-                    endpoint.model.clone(),
-                ));
-            }
-            Ok((client, endpoint))
+            Ok((Self::client(ui, &endpoint)?, endpoint))
         });
-        if let Err(error) = applied {
+        if let Err(error) = seated {
             return self.fail(&error.to_string());
-        }
-        for (role, client, name, model) in missing {
-            self.loop_.watch_context(Some(role), client, &name, &model);
         }
         self.system(&format!("workflow {name} · {}", workflow.summary()));
         self.workflow = workflow;
@@ -369,7 +323,7 @@ impl Worker {
 pub(super) fn set_run_mode(
     loop_: &mut Loop<Client>,
     ui: &UnboundedSender<Msg>,
-    mode: crate::RunMode,
+    mode: crate::WorkKind,
 ) {
     if loop_.mode() == mode {
         return;
@@ -382,9 +336,9 @@ pub(super) fn announce_run_mode(loop_: &Loop<Client>, ui: &UnboundedSender<Msg>)
     let mode = loop_.mode();
     drop(ui.send(Msg::RunMode(mode)));
     let text = match mode {
-        crate::RunMode::Work => "work mode: run the steps in order with a check per step",
-        crate::RunMode::Goal => "goal mode: keep going until the objective is met",
-        crate::RunMode::Auto => "auto mode: full tools",
+        crate::WorkKind::Steps => "work mode: run the steps in order with a check per step",
+        crate::WorkKind::Goal => "goal mode: keep going until the objective is met",
+        crate::WorkKind::Single => "auto mode: full tools",
     };
     drop(ui.send(Msg::System(text.to_string())));
 }

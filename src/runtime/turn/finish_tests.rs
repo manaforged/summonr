@@ -28,7 +28,7 @@ fn open(provider: Scripted) -> Run {
 
 fn goal(run: &mut Run, review: impl IntoIterator<Item = Reply>) {
     run.loop_.select_goal("ship it", &[]).unwrap();
-    run.loop_.set_mode(crate::RunMode::Goal);
+    run.loop_.set_mode(crate::WorkKind::Goal);
     run.loop_.set_seat(
         workflow::Role::Review,
         Scripted::new(review),
@@ -194,7 +194,7 @@ async fn a_turn_that_leaves_a_job_running_is_deferred_not_verified() {
 #[tokio::test]
 async fn an_unchanged_harness_note_is_sent_once() {
     let mut run = session([Reply::Text("one"), Reply::Text("two")]);
-    run.loop_.set_mode(crate::RunMode::Work);
+    run.loop_.set_mode(crate::WorkKind::Steps);
     run.loop_.turn("first").await.unwrap();
     run.loop_.turn("first").await.unwrap();
     let sent = run.sent.lock().unwrap();

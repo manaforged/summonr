@@ -87,17 +87,14 @@ impl Prompt {
         let mut band = container()
             .layout(LayoutStyle::flex_column().fill_width().gap(8.0))
             .child(notice_band(fit(&self.head), self.tone));
-        for line in &self.lines {
+        let hints = self.hints.text(keys);
+        for line in self
+            .lines
+            .iter()
+            .chain((!hints.is_empty()).then_some(&hints))
+        {
             band = band.child(
                 sigil::kernel::text(fit(line))
-                    .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface),
-            );
-        }
-        let hints = self.hints.text(keys);
-        if !hints.is_empty() {
-            band = band.child(
-                sigil::kernel::text(fit(&hints))
                     .nowrap()
                     .text_color(sigil::prelude::Token::OnSurface),
             );

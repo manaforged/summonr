@@ -78,69 +78,7 @@ pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
             },
         );
     }
-    if canvas::is_window() {
-        for (key, action) in WINDOW_SHORTCUTS {
-            let route = app.clone();
-            node = node.key_capture(
-                Shortcut::new(LogicalKey::character(key), ModifiersState::META),
-                move |event| {
-                    event.stop_propagation();
-                    window_shortcut(&route, action);
-                },
-            );
-        }
-    }
     node
-}
-
-#[derive(Clone, Copy)]
-enum WindowShortcut {
-    Commands,
-    Mentions,
-    Settings,
-    NewSession,
-    Pane(crate::tui::sigil_view::pane::Pane),
-}
-
-const WINDOW_SHORTCUTS: [(&str, WindowShortcut); 10] = [
-    ("k", WindowShortcut::Commands),
-    ("p", WindowShortcut::Mentions),
-    (",", WindowShortcut::Settings),
-    ("n", WindowShortcut::NewSession),
-    (
-        "1",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Files),
-    ),
-    (
-        "2",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Diff),
-    ),
-    (
-        "3",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Worktrees),
-    ),
-    (
-        "4",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Jobs),
-    ),
-    (
-        "5",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Peers),
-    ),
-    (
-        "6",
-        WindowShortcut::Pane(crate::tui::sigil_view::pane::Pane::Ledger),
-    ),
-];
-
-fn window_shortcut(app: &App, action: WindowShortcut) {
-    match action {
-        WindowShortcut::Commands => app.open_trigger('/'),
-        WindowShortcut::Mentions => app.open_trigger('@'),
-        WindowShortcut::Settings => app.toggle_options(),
-        WindowShortcut::NewSession => app.open_session(crate::tui::hub::Open::New),
-        WindowShortcut::Pane(pane) => app.toggle_pane(pane),
-    }
 }
 
 pub(super) fn chord_letter(text: &str) -> Option<char> {

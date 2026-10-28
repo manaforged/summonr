@@ -273,56 +273,6 @@ pub(super) fn format_location(item: &Value) -> Option<String> {
     Some(format!("{path}:{line}:{col}"))
 }
 
-pub(super) async fn write_msg(writer: &mut (impl AsyncWrite + Unpin), value: &Value) -> Result<()> {
-    let body = serde_json::to_vec(value)?;
-    let header = format!("Content-Length: {}\r\n\r\n", body.len());
-    writer
-        .write_all(header.as_bytes())
-        .await
-        .map_err(|error| Error::Tool(format!("lsp write: {error}")))?;
-    writer
-        .write_all(&body)
-        .await
-        .map_err(|error| Error::Tool(format!("lsp write: {error}")))?;
-    writer
-        .flush()
-        .await
-        .map_err(|error| Error::Tool(format!("lsp write: {error}")))?;
-    Ok(())
-}
-
-pub(super) async fn read_msg(reader: &mut BufReader<impl AsyncRead + Unpin>) -> Result<Value> {
-    let mut length = None;
-    loop {
-        let mut line = String::new();
-        let n = reader
-            .read_line(&mut line)
-            .await
-            .map_err(|error| Error::Tool(format!("lsp read: {error}")))?;
-        if n == 0 {
-            return Err(Error::Tool("language server closed".to_string()));
-        }
-        if line == "\r\n" || line == "\n" {
-            break;
-        }
-        if let Some(value) = line
-            .to_ascii_lowercase()
-            .strip_prefix("content-length:")
-            .map(str::trim)
-        {
-            length = value.parse().ok();
-        }
-    }
-    let length =
-        length.ok_or_else(|| Error::Tool("lsp message missing Content-Length".to_string()))?;
-    let mut body = vec![0_u8; length];
-    reader
-        .read_exact(&mut body)
-        .await
-        .map_err(|error| Error::Tool(format!("lsp read: {error}")))?;
-    serde_json::from_slice(&body).map_err(|error| Error::Tool(format!("lsp json: {error}")))
-}
-
 #[cfg(test)]
 #[path = "proto_tests.rs"]
 mod tests;

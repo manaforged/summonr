@@ -2,7 +2,7 @@ use super::*;
 
 impl<P: Provider> Loop<P> {
     pub(crate) fn active_goal(&self) -> Result<Option<(String, crate::WorkProgress)>> {
-        let Some(objective) = self.session.goal_objective().map_err(super::session_err)? else {
+        let Some(objective) = self.session.goal_objective()? else {
             return Ok(None);
         };
         let progress = self.work_progress()?;
@@ -35,15 +35,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn abandon_work(&mut self, reason: &str) -> Result<()> {
-        self.session
-            .abandon_work(reason)
-            .map_err(super::session_err)
-    }
-
-    #[must_use]
-    pub(crate) fn restore_replay(mut self, replay: crate::session::Replay) -> Self {
-        self.spent_tokens = replay.spent_tokens;
-        self
+        self.session.abandon_work(reason).map_err(Error::from)
     }
 
     pub(crate) fn fork_live(&mut self) -> Result<String> {
@@ -56,19 +48,17 @@ impl<P: Provider> Loop<P> {
                 "Collect or stop subagents before branching".to_string(),
             ));
         }
-        let path = self.session.fork(turn).map_err(super::session_err)?;
+        let path = self.session.fork(turn)?;
         let child = resume_driver(&self.workspace, &path)?;
-        let replay = child.replay();
         let id = child.id().to_string();
-        self.adopt(child, replay);
+        self.adopt(child);
         Ok(id)
     }
 
-    pub(crate) fn adopt(&mut self, session: SessionDriver, replay: crate::session::Replay) {
+    pub(crate) fn adopt(&mut self, session: SessionDriver) {
         self.forget_children(crate::child::ChildScope::All);
         self.session = session;
         self.tools.set_session(&self.session.id().to_string());
-        self.spent_tokens = replay.spent_tokens;
         self.mailbox = None;
         self.join_mail();
         self.schema = None;
@@ -86,21 +76,25 @@ impl<P: Provider> Loop<P> {
             Message::user(user.to_string()),
         ];
         let request = self.request(workflow::Role::Judge, &messages, &[], false);
-        match self.complete_once(workflow::Role::Judge, &request).await? {
-            Ok(message) => {
-                let usage = message.usage.clone();
-                let text = message.content.unwrap_or_default();
+        let options = CallOptions {
+            stream: false,
+            retry: RetryPolicy::None,
+        };
+        match self.call(workflow::Role::Judge, request, options).await? {
+            Ok(reply) => {
+                let usage = reply.message.usage.clone();
+                let text = reply.message.content.unwrap_or_default();
                 if let Some(reason) = self.round_abort() {
                     return Err(Error::Config(reason));
                 }
                 Ok((text, usage))
             }
-            Err(wait_error) => Err(wait_error.error()),
+            Err(missed) => Err(missed.error.error()),
         }
     }
 
     pub(crate) fn clear_history(&mut self) -> Result<()> {
-        self.session.clear().map_err(super::session_err)?;
+        self.session.clear()?;
         self.tools.forget_reads();
         Ok(())
     }
@@ -119,9 +113,7 @@ impl<P: Provider> Loop<P> {
         mut emit: impl FnMut(&Event),
     ) -> Result<()> {
         self.forget_children(abort.code.child_scope());
-        self.session
-            .abort(abort, None)
-            .map_err(super::session_err)?;
+        self.session.abort(abort, None)?;
         if abort.code.child_scope() == crate::child::ChildScope::All {
             self.tools.stop_jobs()?;
         }
@@ -149,19 +141,17 @@ impl<P: Provider> Loop<P> {
 
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {
         self.session
-            .prepare_external_work(markdown, WorkPolicy::Steps, commands)
-            .map_err(super::session_err)?;
+            .prepare_external_work(markdown, crate::WorkKind::Steps, commands)?;
         self.schema = None;
-        self.set_mode(crate::RunMode::Work);
+        self.set_mode(crate::WorkKind::Steps);
         Ok(())
     }
 
     pub fn select_goal(&mut self, objective: &str, commands: &[String]) -> Result<()> {
         self.session
-            .prepare_external_work(objective, WorkPolicy::Goal {}, commands)
-            .map_err(super::session_err)?;
+            .prepare_external_work(objective, crate::WorkKind::Goal, commands)?;
         self.schema = None;
-        self.set_mode(crate::RunMode::Goal);
+        self.set_mode(crate::WorkKind::Goal);
         Ok(())
     }
 
@@ -172,22 +162,16 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub fn job_at(path: &Path, workspace: &Path) -> Option<(crate::WorkKind, String)> {
-        let (policy, objective) = crate::durable::driver::active_at(path, workspace)?;
-        let kind = match policy {
-            WorkPolicy::Single => crate::WorkKind::Single,
-            WorkPolicy::Steps => crate::WorkKind::Steps,
-            WorkPolicy::Goal { .. } => crate::WorkKind::Goal,
-        };
-        Some((kind, objective))
+        crate::durable::driver::active_at(path, workspace)
     }
 
     #[must_use]
     pub fn steps_at(path: &Path, workspace: &Path, markdown: &str) -> bool {
-        work_at(path, workspace, WorkPolicy::Steps, markdown)
+        work_at(path, workspace, crate::WorkKind::Steps, markdown)
     }
 
     #[must_use]
     pub fn goal_at(path: &Path, workspace: &Path, objective: &str) -> bool {
-        work_at(path, workspace, WorkPolicy::Goal {}, objective)
+        work_at(path, workspace, crate::WorkKind::Goal, objective)
     }
 }

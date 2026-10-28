@@ -1,77 +1,52 @@
 use std::any::Any;
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::SystemTime;
+use std::marker::PhantomData;
+use std::path::Path;
+use std::sync::Arc;
 
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::durable::store::{self, Codec, Doc, Durability, Encode, Invalid, Wait};
 use crate::error::{Error, Result};
 use crate::prompt::summonr_home;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Stamp {
-    modified: Option<SystemTime>,
-    len: u64,
+pub(super) struct Json<T>(PhantomData<fn() -> T>);
+
+impl<T: Serialize + DeserializeOwned> Codec for Json<T> {
+    type Value = T;
+
+    fn decode(path: &Path, text: &str) -> Result<T> {
+        let file = path.file_name().unwrap_or_default().to_string_lossy();
+        serde_json::from_str(text)
+            .map_err(|error| Error::Config(format!("{file} is corrupt: {error}")))
+    }
 }
 
-type Held = (Stamp, Arc<dyn Any + Send + Sync>);
+impl<T: Serialize + DeserializeOwned> Encode for Json<T> {
+    fn encode(value: &T) -> Result<String> {
+        Ok(serde_json::to_string(value)?)
+    }
+}
 
-static SHELF: Mutex<BTreeMap<PathBuf, Held>> = Mutex::new(BTreeMap::new());
-
-fn stamp(path: &Path) -> std::io::Result<Stamp> {
-    let meta = std::fs::metadata(path)?;
-    Ok(Stamp {
-        modified: meta.modified().ok(),
-        len: meta.len(),
-    })
+pub(super) fn doc<T: Serialize + DeserializeOwned + Default>(file: &str) -> Result<Doc<Json<T>>> {
+    Ok(Doc::new(
+        summonr_home()?.join(file),
+        Durability::Renamed,
+        Invalid::Fail,
+        Wait::Forever,
+    ))
 }
 
 pub(super) fn load<T>(file: &str) -> Result<Arc<T>>
 where
-    T: DeserializeOwned + Default + Send + Sync + 'static,
+    T: Serialize + DeserializeOwned + Default + Any + Send + Sync,
 {
+    doc::<T>(file)?.current()
+}
+
+pub(super) fn save<T: Serialize + DeserializeOwned>(file: &str, value: &T) -> Result<()> {
     let path = summonr_home()?.join(file);
-    let now = match stamp(&path) {
-        Ok(now) => now,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Arc::new(T::default()));
-        }
-        Err(error) => return Err(error.into()),
-    };
-    let hit = SHELF
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .get(&path)
-        .filter(|(held, _)| *held == now)
-        .map(|(_, value)| Arc::clone(value));
-    if let Some(value) = hit.and_then(|value| value.downcast::<T>().ok()) {
-        return Ok(value);
-    }
-    let raw = match std::fs::read_to_string(&path) {
-        Ok(raw) => raw,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Arc::new(T::default()));
-        }
-        Err(error) => return Err(error.into()),
-    };
-    let value: Arc<T> = Arc::new(
-        serde_json::from_str(&raw)
-            .map_err(|error| Error::Config(format!("{file} is corrupt: {error}")))?,
-    );
-    keep(&path, now, Arc::clone(&value));
-    Ok(value)
-}
-
-pub(super) fn store<T: Send + Sync + 'static>(path: &Path, value: T) {
-    if let Ok(now) = stamp(path) {
-        keep(path, now, Arc::new(value));
-    }
-}
-
-fn keep<T: Send + Sync + 'static>(path: &Path, now: Stamp, value: Arc<T>) {
-    SHELF
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(path.to_path_buf(), (now, value));
+    store::write(&path, Json::<T>::encode(value)?, Durability::Renamed)?;
+    store::forget(&path);
+    Ok(())
 }

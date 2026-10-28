@@ -50,9 +50,7 @@ impl SessionDriver {
         let caller = workspace;
         let path = log::session_path(home, id);
         let mut state = State::default();
-        for line in log::read(&path)? {
-            state.apply(line);
-        }
+        log::each(&path, |line| state.apply(line))?;
         if state.id != Some(id) {
             return Err(DriverError::State(format!(
                 "{} is not the log of session {id}",

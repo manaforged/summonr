@@ -19,6 +19,7 @@ use crate::tools::{Event, ToolRegistry};
 use crate::verify::Outcome;
 use crate::workflow;
 
+use turn::{CallOptions, RetryPolicy};
 pub(crate) use turn::{GrantAnswer, Steering};
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Budget {
@@ -53,25 +54,6 @@ impl Budget {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum RunMode {
-    #[default]
-    Auto,
-    Work,
-    Goal,
-}
-
-impl RunMode {
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Work => "work",
-            Self::Goal => "goal",
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Turn {
     pub text: String,
@@ -83,13 +65,53 @@ pub struct Turn {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum StepRun {
+pub enum Beat {
     Done(i32),
     Run {
-        index: usize,
-        total: usize,
         prompt: String,
+        step: Option<(usize, usize)>,
     },
+}
+
+#[derive(Clone, Debug)]
+pub enum Job {
+    Goal {
+        objective: String,
+        gates: Vec<String>,
+    },
+    Steps {
+        plan: String,
+        steps: Vec<crate::steps::Step>,
+    },
+}
+
+impl Job {
+    #[must_use]
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::Goal { .. } => "goal",
+            Self::Steps { .. } => "steps",
+        }
+    }
+
+    #[must_use]
+    pub const fn aborted(&self) -> &'static str {
+        match self {
+            Self::Goal { .. } => "goal execution aborted",
+            Self::Steps { .. } => "step execution aborted",
+        }
+    }
+
+    #[must_use]
+    pub fn check(&self, index: usize) -> Option<String> {
+        let Self::Steps { steps, .. } = self else {
+            return None;
+        };
+        steps
+            .get(index.saturating_sub(1))
+            .map(|step| step.checks.join(" && "))
+            .filter(|check| !check.is_empty())
+    }
 }
 
 pub struct Loop<P> {
@@ -100,7 +122,7 @@ pub struct Loop<P> {
     tuning: BTreeMap<workflow::Role, (Option<Effort>, Option<Price>)>,
     price: Option<Price>,
     system_prompt: String,
-    mode: RunMode,
+    mode: crate::WorkKind,
     tools: ToolRegistry,
     schema: Option<Arc<mail::Advertised>>,
 
@@ -108,8 +130,6 @@ pub struct Loop<P> {
     session: SessionDriver,
     verify: Option<Vec<String>>,
     check_file: Option<Vec<u8>>,
-    budget: Budget,
-    spent_tokens: u64,
     run_base: (u64, u64),
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,
@@ -129,9 +149,7 @@ pub struct Loop<P> {
     mcp_wanted: bool,
     mcp_board: crate::mcp::Board,
     inbox: VecDeque<Mail>,
-    steer: VecDeque<UserInput>,
     steer_shared: Option<Arc<turn::Steering>>,
-    depth: u8,
     tasks: bool,
     interactive: bool,
     spawned: BTreeMap<String, child::Spawned>,
@@ -173,10 +191,6 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn effort_for(&self, role: workflow::Role) -> Option<Effort> {
-        self.configured_effort(role)
-    }
-
-    fn configured_effort(&self, role: workflow::Role) -> Option<Effort> {
         self.tuning
             .get(&role)
             .and_then(|(effort, _)| *effort)
@@ -221,18 +235,6 @@ impl<P: Provider> Loop<P> {
         self.request(role, sent, &advertised.tools, true)
             .with_tools_json(&advertised.json)
     }
-
-    fn round_role(&self) -> workflow::Role {
-        workflow::Role::Implement
-    }
-}
-
-pub(super) fn session_err(error: impl std::fmt::Display) -> Error {
-    Error::Config(error.to_string())
-}
-
-pub(super) fn meter(usage: &Usage, millis: u64) -> Meter {
-    Meter::measured(usage, millis)
 }
 
 pub(crate) fn billable(error: &Error) -> bool {

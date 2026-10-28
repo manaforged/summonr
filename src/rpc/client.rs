@@ -1,46 +1,36 @@
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::time::Instant;
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
+use tokio::io::AsyncWriteExt;
+use tokio::process::{ChildStdin, ChildStdout};
 
-use super::{Notice, agreed, hello, notification, request};
+use super::frame::{Framing, Lines, Read, encode};
+use super::{Peer, notification, request};
 use crate::error::{Error, Result};
+use crate::process::{Cap, Child, Env, Spec, Tail};
 use crate::tools::command::ProcessGroup;
 
-mod process;
 mod reply;
-
-pub(crate) use process::{Env, Launch, Process, Stderr, start};
-
-const SECRET_MIN: usize = 8;
 
 pub(crate) struct Client {
     group: Option<ProcessGroup>,
     child: Option<Child>,
     stdin: Option<ChildStdin>,
-    reader: BufReader<ChildStdout>,
-    pending: Vec<u8>,
-    over: bool,
+    reader: Lines<ChildStdout>,
+    framing: Framing,
+    max: usize,
+    peer: Peer,
     abandoned: Vec<Value>,
     inflight: Vec<Value>,
     roots: Value,
     broken: bool,
-    stderr: Arc<Mutex<Vec<u8>>>,
-    drain: Option<tokio::task::JoinHandle<()>>,
+    stderr: Tail,
     secrets: Vec<String>,
     wait: Duration,
     next: i64,
-}
-
-enum Read {
-    Line(String),
-    Oversize,
-    Closed,
 }
 
 pub(crate) struct Spawn<'a> {
@@ -49,42 +39,40 @@ pub(crate) struct Spawn<'a> {
     pub(crate) env: &'a [(String, String)],
     pub(crate) cwd: &'a Path,
     pub(crate) wait: Duration,
+    pub(crate) base: Env,
+    pub(crate) framing: Framing,
+    pub(crate) max: usize,
+    pub(crate) peer: Peer,
 }
 
 impl Client {
     pub(crate) fn spawn(launch: &Spawn<'_>) -> Result<Self> {
-        let process = process::start(&process::Launch {
-            program: launch.program,
-            args: launch.args,
-            env: launch.env,
-            unset: &[],
-            cwd: launch.cwd,
-            base: process::Env::Clean,
-            stderr: process::Stderr::Pipe,
-        })?;
-        let stderr = Arc::new(Mutex::new(Vec::new()));
-        let drain = process
-            .stderr
-            .map(|pipe| tokio::spawn(tail(pipe, Arc::clone(&stderr))));
+        let process = crate::process::start(
+            Spec {
+                cwd: Some(launch.cwd.to_path_buf()),
+                base: launch.base,
+                ..Spec::new(launch.program, launch.args)
+            }
+            .envs(launch.env.iter().cloned()),
+        )?;
+        let stderr = Tail::spawn(
+            process.stderr,
+            Cap::Tail(crate::limits::limits().mcp_stderr_tail_bytes),
+        );
         Ok(Self {
             group: process.group,
             child: Some(process.child),
             stdin: Some(process.stdin),
-            reader: BufReader::new(process.stdout),
-            pending: Vec::new(),
-            over: false,
+            reader: Lines::framed(process.stdout, launch.framing, launch.max),
+            framing: launch.framing,
+            max: launch.max,
+            peer: launch.peer.clone(),
             abandoned: Vec::new(),
             inflight: Vec::new(),
             roots: roots(launch.cwd),
             broken: false,
             stderr,
-            drain,
-            secrets: launch
-                .env
-                .iter()
-                .map(|(_, value)| value.clone())
-                .filter(|value| value.len() >= SECRET_MIN)
-                .collect(),
+            secrets: launch.env.iter().map(|(_, value)| value.clone()).collect(),
             wait: launch.wait,
             next: 1,
         })
@@ -96,20 +84,6 @@ impl Client {
 
     pub(crate) fn set_wait(&mut self, wait: Duration) {
         self.wait = wait;
-    }
-
-    pub(crate) async fn initialize(
-        &mut self,
-        name: &str,
-        on_note: impl FnMut(Notice<'_>),
-    ) -> Result<Value> {
-        let capabilities = json!({"roots": {"listChanged": false}, "elicitation": {"form": {}}});
-        let result = self
-            .call("initialize", hello(name, capabilities), on_note)
-            .await?;
-        agreed(&result)?;
-        self.notify("notifications/initialized", json!({})).await?;
-        Ok(result)
     }
 
     pub(crate) async fn notify(&mut self, method: &str, params: Value) -> Result<()> {
@@ -124,16 +98,19 @@ impl Client {
     }
 
     async fn cancel(&mut self, id: &Value, reason: &str) {
+        if !self.peer.cancels() {
+            return;
+        }
         let cancel = notification(
             "notifications/cancelled",
             json!({"requestId": id, "reason": reason}),
         );
-        let Ok(line) = frame_line(&cancel) else {
+        let Ok(bytes) = encode(self.framing, &cancel) else {
             return;
         };
         if !matches!(
             self.send(
-                &line,
+                &bytes,
                 Instant::now() + crate::limits::limits().mcp_cancel_write()
             )
             .await,
@@ -145,12 +122,12 @@ impl Client {
 
     async fn send(
         &mut self,
-        line: &str,
+        bytes: &[u8],
         deadline: Instant,
     ) -> std::result::Result<std::io::Result<()>, tokio::time::error::Elapsed> {
         tokio::time::timeout_at(deadline, async {
             let pipe = self.pipe()?;
-            pipe.write_all(line.as_bytes()).await?;
+            pipe.write_all(bytes).await?;
             pipe.flush().await
         })
         .await
@@ -159,9 +136,24 @@ impl Client {
     pub(crate) async fn call(
         &mut self,
         method: &str,
-        mut params: Value,
-        mut on_note: impl FnMut(Notice<'_>),
+        params: Value,
+        mut on_note: impl FnMut(super::Notice<'_>),
     ) -> Result<Value> {
+        let (result, error) = self.exchange(method, params.clone(), &mut on_note).await?;
+        let (result, error) = if self.peer.retries(error.as_ref()) {
+            self.exchange(method, params, &mut on_note).await?
+        } else {
+            (result, error)
+        };
+        super::outcome(self.peer.label(method), result, error)
+    }
+
+    async fn exchange(
+        &mut self,
+        method: &str,
+        mut params: Value,
+        on_note: &mut impl FnMut(super::Notice<'_>),
+    ) -> Result<(Option<Value>, Option<Value>)> {
         if self.broken {
             return Err(Error::Tool(format!(
                 "`{method}` was not sent: an earlier request was cut off"
@@ -175,13 +167,13 @@ impl Client {
         {
             object.insert("_meta".to_string(), json!({"progressToken": id}));
         }
-        let line = frame_line(&request(&id, method, params))?;
+        let bytes = encode(self.framing, &request(&id, method, params))?;
         let wait = self.wait;
         let deadline = Instant::now() + wait;
         self.inflight.push(id.clone());
-        let written = self.send(&line, deadline).await;
+        let written = self.send(&bytes, deadline).await;
         let result = match written {
-            Ok(Ok(())) => self.reply(&id, method, deadline, &mut on_note).await,
+            Ok(Ok(())) => self.reply(&id, method, deadline, on_note).await,
             Ok(Err(error)) => Err(error.into()),
             Err(_elapsed) => {
                 self.broken = true;
@@ -206,42 +198,15 @@ impl Client {
             self.settle_stderr().await?;
             return Ok(Read::Closed);
         }
-        loop {
-            let chunk = self.reader.fill_buf().await?;
-            if chunk.is_empty() {
-                self.broken = true;
-                return Ok(Read::Closed);
-            }
-            let (take, done) = chunk
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .map_or((chunk.len(), false), |at| (at + 1, true));
-            if !self.over
-                && self.pending.len() + take <= crate::limits::limits().mcp_frame_max_bytes
-            {
-                self.pending.extend_from_slice(&chunk[..take]);
-            } else if !self.over {
-                self.over = true;
-                self.pending = Vec::new();
-            }
-            self.reader.consume(take);
-            if done {
-                break;
-            }
-        }
-        let line = std::mem::take(&mut self.pending);
-        if std::mem::take(&mut self.over) {
-            return Ok(Read::Oversize);
-        }
-        Ok(Read::Line(String::from_utf8(line).unwrap_or_else(
-            |error| String::from_utf8_lossy(error.as_bytes()).into_owned(),
-        )))
+        let read = self.reader.next().await?;
+        self.broken = matches!(read, Read::Closed);
+        Ok(read)
     }
 
     async fn write(&mut self, value: &Value) -> Result<()> {
-        let line = frame_line(value)?;
+        let bytes = encode(self.framing, value)?;
         let pipe = self.pipe()?;
-        pipe.write_all(line.as_bytes()).await?;
+        pipe.write_all(&bytes).await?;
         pipe.flush().await?;
         Ok(())
     }
@@ -261,45 +226,27 @@ impl Client {
     }
 
     async fn settle_stderr(&mut self) -> Result<()> {
-        if let Some(drain) = self.drain.as_mut()
-            && let Err(error) = drain.await
+        if let Err(error) = self.stderr.settle().await
             && !error.is_cancelled()
         {
-            self.drain = None;
             return Err(Error::Tool(format!(
                 "the child exited; stderr capture failed: {error}{}",
                 self.stderr_note()
             )));
         }
-        self.drain = None;
         Ok(())
     }
 
     fn stderr_note(&self) -> String {
-        let bytes = self
-            .stderr
-            .lock()
-            .map(|bytes| bytes.clone())
-            .unwrap_or_default();
-        let text = String::from_utf8_lossy(&bytes);
-        text.lines()
-            .rev()
-            .find(|line| !line.trim().is_empty())
-            .map(|line| {
-                format!(
-                    "; stderr: {}",
-                    crate::text::redact(line.trim(), self.secrets.iter().map(String::as_str))
-                )
-            })
+        self.stderr
+            .last_line(&self.secrets)
+            .map(|line| format!("; stderr: {line}"))
             .unwrap_or_default()
     }
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
-        if let Some(drain) = &self.drain {
-            drain.abort();
-        }
         drop(self.stdin.take());
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
@@ -318,29 +265,6 @@ fn no_reply(method: &str, wait: Duration) -> Error {
     ))
 }
 
-fn frame_line(value: &Value) -> Result<String> {
-    let mut line = serde_json::to_string(value)?;
-    line.push('\n');
-    Ok(line)
-}
-
-pub(crate) async fn tail(mut pipe: ChildStderr, keep: Arc<Mutex<Vec<u8>>>) {
-    let mut chunk = [0_u8; 1024];
-    while let Ok(read) = pipe.read(&mut chunk).await {
-        if read == 0 {
-            break;
-        }
-        let Ok(mut bytes) = keep.lock() else {
-            break;
-        };
-        bytes.extend_from_slice(&chunk[..read]);
-        let excess = bytes
-            .len()
-            .saturating_sub(crate::limits::limits().mcp_stderr_tail_bytes);
-        bytes.drain(..excess);
-    }
-}
-
 fn roots(cwd: &Path) -> Value {
     let uri = url::Url::from_directory_path(cwd)
         .map(|uri| uri.to_string())
@@ -351,3 +275,7 @@ fn roots(cwd: &Path) -> Value {
         .unwrap_or_default();
     json!([{"uri": uri, "name": name}])
 }
+
+#[cfg(all(test, unix))]
+#[path = "client/process_tests.rs"]
+mod tests;

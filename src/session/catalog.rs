@@ -192,8 +192,6 @@ pub fn list() -> Result<Vec<SessionInfo>> {
     list_in(&summonr_home()?)
 }
 
-const PROMPT_SESSIONS: usize = 64;
-
 pub(crate) fn prompts(scope: Option<&str>) -> Result<(Vec<Prompt>, Vec<String>)> {
     prompts_in(&summonr_home()?, scope)
 }
@@ -210,41 +208,41 @@ pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt
         }
         None => list_in(home)?,
     };
-    for session in sessions.into_iter().rev().take(PROMPT_SESSIONS) {
-        let lines = match log::read(&session.path) {
-            Ok(lines) => lines,
-            Err(error) => {
-                let error = format!("Cannot read session {}: {error}", session.path.display());
-                if scope.is_some() {
-                    return Err(Error::Config(error));
-                }
-                skipped.push(error);
-                continue;
-            }
-        };
+    for session in sessions
+        .into_iter()
+        .rev()
+        .take(crate::limits::limits().prompt_sessions)
+    {
+        let path = session.path.clone();
         let session = Arc::new(session);
         let mut saved: Vec<Prompt> = Vec::new();
-        for line in lines {
-            match line {
-                Line::User {
-                    text,
-                    source,
-                    images,
-                    start: true,
-                } => saved.push(Prompt {
-                    session: Arc::clone(&session),
-                    turn: saved.len(),
-                    text: user_text(&text, source.as_deref()).to_string(),
-                    images: images.len(),
-                    closed: false,
-                }),
-                Line::Close { .. } => {
-                    if let Some(prompt) = saved.last_mut() {
-                        prompt.closed = true;
-                    }
+        let read = log::each(&path, |line| match line {
+            Line::User {
+                text,
+                source,
+                images,
+                start: true,
+            } => saved.push(Prompt {
+                session: Arc::clone(&session),
+                turn: saved.len(),
+                text: user_text(&text, source.as_deref()).to_string(),
+                images: images.len(),
+                closed: false,
+            }),
+            Line::Close { .. } => {
+                if let Some(prompt) = saved.last_mut() {
+                    prompt.closed = true;
                 }
-                _ => {}
             }
+            _ => {}
+        });
+        if let Err(error) = read {
+            let error = format!("Cannot read session {}: {error}", path.display());
+            if scope.is_some() {
+                return Err(Error::Config(error));
+            }
+            skipped.push(error);
+            continue;
         }
         saved.reverse();
         prompts.extend(saved);

@@ -1,90 +1,156 @@
+use super::overlays::context::{Act, CHANGE, DIR, FILE, JOB, MCP, PEER, TREE};
 use super::*;
-use crate::tui::sigil_view::ui::{Hints, Key};
+use crate::tui::sigil_view::ui::List;
+
+pub(super) const PANES: usize = 9;
+
+type Menu = fn(&FileRow) -> &'static [(&'static str, Act)];
+
+struct Row {
+    list: Pane,
+    rows: fn(&App) -> Vec<FileRow>,
+    load: fn(&App) -> Option<Cmd>,
+    shift: Option<fn(&App, isize)>,
+    pick: fn(&App, &FileRow),
+    enter: Option<fn(&App)>,
+    expand: Option<fn(&App)>,
+    collapse: Option<fn(&App)>,
+    click: Option<fn(&App, &FileRow)>,
+    menu: Menu,
+    tree: bool,
+}
+
+const FILES: Row = Row {
+    list: Pane::Files,
+    rows: App::file_rows,
+    load: |_| None,
+    shift: None,
+    pick: App::file_pick,
+    enter: None,
+    expand: Some(App::file_expand),
+    collapse: Some(App::file_collapse),
+    click: Some(|app, row| {
+        if row.dir {
+            app.file_pick(row);
+        } else {
+            app.view_open(row.path.clone());
+        }
+    }),
+    menu: |row| if row.dir { DIR } else { FILE },
+    tree: true,
+};
+
+const fn listed(list: Pane, rows: fn(&App) -> Vec<FileRow>, menu: Menu) -> Row {
+    Row {
+        list,
+        rows,
+        expand: None,
+        collapse: None,
+        click: None,
+        menu,
+        tree: false,
+        ..FILES
+    }
+}
+
+static ROWS: [Row; PANES] = [
+    FILES,
+    FILES,
+    Row {
+        load: |_| Some(Cmd::ListFiles),
+        ..FILES
+    },
+    Row {
+        load: |app| Some(Cmd::Diff(app.root())),
+        shift: Some(App::diff_move),
+        pick: |app, row| app.diff_open(row.path.clone()),
+        enter: Some(App::diff_enter),
+        expand: Some(|app| {
+            if app.diff_view.peek().is_none() {
+                app.diff_enter();
+            }
+        }),
+        collapse: Some(|app| {
+            app.pane_back();
+        }),
+        ..listed(Pane::Diff, App::diff_rows, |_| CHANGE)
+    },
+    Row {
+        load: |_| Some(Cmd::Trees),
+        pick: |app, row| app.tree_show(PathBuf::from(&row.path), row.name.clone()),
+        ..listed(Pane::Worktrees, App::tree_rows, |_| TREE)
+    },
+    Row {
+        load: |_| Some(Cmd::Jobs),
+        pick: App::open_row,
+        ..listed(Pane::Jobs, App::job_rows, |_| JOB)
+    },
+    Row {
+        load: |_| Some(Cmd::Mcp),
+        pick: App::open_row,
+        ..listed(Pane::Mcp, App::mcp_rows, |_| MCP)
+    },
+    Row {
+        pick: |app, row| app.peer_mention(&row.path),
+        ..listed(Pane::Peers, App::peer_rows, |_| PEER)
+    },
+    Row {
+        list: Pane::View,
+        shift: Some(App::view_move),
+        enter: Some(|_| {}),
+        expand: Some(|_| {}),
+        collapse: Some(|app| {
+            app.pane_back();
+        }),
+        click: None,
+        ..FILES
+    },
+];
+
+fn row(pane: Pane) -> &'static Row {
+    &ROWS[pane as usize]
+}
 
 impl App {
-    pub(in crate::tui::sigil_view) fn set_layout(&self, layout: Layout) {
-        if self.view_edit.peek() && layout.secondary != Some(Pane::View) {
-            if self.view_text.peek() != self.view_saved.peek() {
-                let keys = Hints::new()
-                    .key(Key::Fixed("ctrl+s"), "save")
-                    .key(Key::Esc, "leave")
-                    .text(&self.model.peek().prefs.hotkeys);
-                self.push_entry(Entry::Error(format!(
-                    "unsaved edits in the view pane: {keys}"
-                )));
-                self.refresh();
-                return;
-            }
-            self.view_edit.set(false);
-        }
-        let opened = self.layout.peek().secondary != layout.secondary;
-        if layout.secondary.is_none() {
-            self.pane_focus.set(false);
-        }
-        self.layout.set(layout);
-        if layout.secondary.is_some() {
-            self.splash.set(false);
-        }
-        if opened {
-            self.load();
-        }
-        if opened && layout.secondary.is_some() && layout.split(self.viewport.peek().0).1 == 0 {
-            self.push_entry(Entry::System(format!(
-                "widen to {} columns for panes",
-                Layout::MIN_COLS
-            )));
-        }
-        self.model_mut(|model| model.prefs.layout = layout.text());
-        let prefs = self.model.peek().prefs.clone();
-        self.persist(&prefs);
-        self.refresh();
+    fn current(&self) -> Pane {
+        self.layout.peek().secondary.unwrap_or(Pane::Files)
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_list(&self, pane: Pane) -> List {
+        self.pane_lists[row(pane).list as usize]
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_rows(&self, pane: Pane) -> Vec<FileRow> {
+        (row(pane).rows)(self)
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_tree(pane: Pane) -> bool {
+        row(pane).tree
     }
 
     pub(in crate::tui::sigil_view) fn load(&self) {
-        match self.layout.peek().secondary {
-            Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
-            Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
-            Some(Pane::Worktrees) => drop(self.cmd.send(Cmd::Trees)),
-            Some(Pane::Jobs) => drop(self.cmd.send(Cmd::Jobs)),
-            Some(Pane::Mcp) => drop(self.cmd.send(Cmd::Mcp)),
-            Some(Pane::Chat | Pane::Ledger | Pane::Peers | Pane::View) | None => {}
+        let Some(pane) = self.layout.peek().secondary else {
+            return;
+        };
+        if let Some(command) = (row(pane).load)(self) {
+            drop(self.cmd.send(command));
         }
     }
 
-    pub(in crate::tui::sigil_view) fn toggle_pane(&self, pane: Pane) {
-        if pane == Pane::Diff {
-            self.compare(None);
-        }
-        let layout = self.layout.peek();
-        if layout.secondary == Some(pane) {
-            self.last_pane.set(Some(pane));
-            self.set_layout(Layout {
-                secondary: None,
-                ..layout
-            });
-        } else {
-            let share = if pane == Pane::Diff {
-                layout.share.max(Layout::REVIEW_SHARE)
-            } else {
-                layout.share
-            };
-            self.set_layout(Layout {
-                secondary: Some(pane),
-                share,
-            });
-            if !crate::tui::sigil_view::canvas::is_window() {
-                self.pane_focus.set(true);
-            }
-        }
+    pub(in crate::tui::sigil_view) fn picked(&self, pane: Pane) -> Option<FileRow> {
+        let rows = self.pane_rows(pane);
+        let at = self.pane_list(pane).at(rows.len());
+        rows.into_iter().nth(at)
     }
 
-    pub(in crate::tui::sigil_view) fn toggle_side(&self) {
-        let layout = self.layout.peek();
-        match layout.secondary {
-            Some(pane) => self.toggle_pane(pane),
+    pub(in crate::tui::sigil_view) fn pane_move(&self, delta: isize) {
+        let pane = self.current();
+        match row(pane).shift {
+            Some(shift) => shift(self, delta),
             None => {
-                let pane = self.last_pane.peek().unwrap_or(Pane::Files);
-                self.toggle_pane(pane);
+                self.pane_list(pane)
+                    .shift(delta, self.pane_rows(pane).len());
+                self.refresh();
             }
         }
     }
@@ -97,289 +163,86 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn pane_edge(&self, end: bool) {
-        let last = self.pane_len().saturating_sub(1) as isize;
-        self.pane_move(if end { last } else { -last });
+        self.pane_move(if end { isize::MAX } else { -isize::MAX });
     }
 
-    fn pane_len(&self) -> usize {
-        match self.layout.peek().secondary {
-            Some(Pane::View) => self.view_lines(),
-            Some(Pane::Worktrees) => self.tree_rows().len(),
-            Some(Pane::Jobs) => self.job_rows().len(),
-            Some(Pane::Mcp) => self.mcp_rows().len(),
-            Some(Pane::Peers) => self.model.get().peers.len(),
-            Some(Pane::Diff) if self.diff_view.peek().is_some() => self.hunks().len(),
-            Some(Pane::Diff) => self.diff_rows().len(),
-            Some(Pane::Chat | Pane::Ledger | Pane::Files) | None => self.file_rows().len(),
+    pub(in crate::tui::sigil_view) fn pane_enter(&self) {
+        let pane = self.current();
+        if let Some(enter) = row(pane).enter {
+            return enter(self);
         }
-    }
-
-    pub(in crate::tui::sigil_view) fn pane_collapse(&self) {
-        if self.layout.peek().secondary == Some(Pane::View) {
-            self.pane_back();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Worktrees)
-            || self.layout.peek().secondary == Some(Pane::Peers)
-        {
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Jobs) {
-            self.job_open.set(None);
-            self.refresh();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Mcp) {
-            self.mcp_open.set(None);
-            self.refresh();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Diff) {
-            self.pane_back();
-            return;
-        }
-        let rows = self.file_rows();
-        let cursor = self.file_cursor.peek().min(rows.len().saturating_sub(1));
-        let Some(row) = rows.get(cursor) else {
-            return;
-        };
-        if row.dir && row.open {
-            self.pane_enter();
-            return;
-        }
-        if let Some((parent, _)) = row.path.rsplit_once('/')
-            && let Some(index) = rows.iter().position(|candidate| candidate.path == parent)
-        {
-            self.file_cursor.set(index);
-            self.refresh();
+        if let Some(picked) = self.picked(pane) {
+            (row(pane).pick)(self, &picked);
         }
     }
 
     pub(in crate::tui::sigil_view) fn pane_expand(&self) {
-        if self.layout.peek().secondary == Some(Pane::View) {
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Worktrees) {
-            self.tree_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Jobs) {
-            self.job_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Mcp) {
-            self.mcp_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Peers) {
-            self.peer_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Diff) {
-            if self.diff_view.peek().is_none() {
-                self.diff_enter();
-            }
-            return;
-        }
-        let rows = self.file_rows();
-        let cursor = self.file_cursor.peek().min(rows.len().saturating_sub(1));
-        match rows.get(cursor) {
-            Some(row) if row.dir => {
-                if !row.open {
-                    self.pane_enter();
-                }
-            }
-            Some(row) => self.view_open(row.path.clone()),
-            None => {}
-        }
+        row(self.current()).expand.unwrap_or(Self::pane_enter)(self);
     }
 
-    pub(in crate::tui::sigil_view) fn focus_pane(&self, on: bool) {
-        let has_pane = self.layout.peek().secondary.is_some();
-        self.pane_focus.set(on && has_pane);
-        if !self.pane_focus.peek() {
-            self.focus_composer();
-        }
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn pane_active(&self) -> Option<Pane> {
-        if self.view_edit.peek()
-            || self.note_target.peek().is_some()
-            || self.layout.peek().split(self.viewport.peek().0).1 == 0
-        {
-            return None;
-        }
-        self.pane_focus
-            .peek()
-            .then(|| self.layout.peek().secondary)
-            .flatten()
-    }
-
-    pub(in crate::tui::sigil_view) fn pane_move(&self, delta: isize) {
-        if self.layout.peek().secondary == Some(Pane::View) {
-            self.view_move(delta);
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Worktrees) {
-            self.tree_move(delta);
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Jobs) {
-            self.job_move(delta);
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Mcp) {
-            self.mcp_move(delta);
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Peers) {
-            self.peer_move(delta);
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Diff) {
-            self.diff_move(delta);
-            return;
-        }
-        let count = self.file_rows().len();
-        if count == 0 {
-            return;
-        }
-        let cursor = self.file_cursor.peek().min(count - 1) as isize;
-        let next = (cursor + delta).clamp(0, count as isize - 1) as usize;
-        self.file_cursor.set(next);
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn pane_enter(&self) {
-        if self.layout.peek().secondary == Some(Pane::View) {
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Worktrees) {
-            self.tree_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Jobs) {
-            self.job_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Mcp) {
-            self.mcp_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Peers) {
-            self.peer_enter();
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Diff) {
-            self.diff_enter();
-            return;
-        }
-        let rows = self.file_rows();
-        let Some(row) = rows.get(self.file_cursor.peek().min(rows.len().saturating_sub(1))) else {
-            return;
-        };
-        if row.dir {
-            let mut expanded = self.expanded.peek();
-            match expanded.iter().position(|dir| *dir == row.path) {
-                Some(index) => drop(expanded.remove(index)),
-                None => expanded.push(row.path.clone()),
-            }
-            self.expanded.set(expanded);
-        } else {
-            self.mention(&row.path);
-        }
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn pane_back(&self) -> bool {
-        let layout = self.layout.peek();
-        if layout.secondary == Some(Pane::View) {
-            let back = self.view_from.peek().unwrap_or(Pane::Files);
-            self.set_layout(Layout {
-                secondary: Some(back),
-                ..layout
-            });
-            self.pane_focus.set(true);
-            self.refresh();
-            return true;
-        }
-        if layout.secondary != Some(Pane::Diff) {
-            return false;
-        }
-        if self.diff_view.peek().is_some() {
-            self.note_target.set(None);
-            self.hunk_cursor.set(0);
-            self.diff_view.set(None);
-            self.refresh();
-            return true;
-        }
-        if self.diff_root.peek().is_some() {
-            self.compare(None);
-            self.set_layout(Layout {
-                secondary: Some(Pane::Worktrees),
-                ..layout
-            });
-            self.pane_focus.set(true);
-            self.refresh();
-            return true;
-        }
-        false
-    }
-
-    pub(in crate::tui::sigil_view) fn pane_dismiss(&self) -> bool {
-        let layout = self.layout.peek();
-        let Some(pane) = layout.secondary else {
-            return false;
-        };
-        if !self.draft.peek().is_empty() || self.overlay().is_some() {
-            return false;
-        }
-        self.last_pane.set(Some(pane));
-        self.set_layout(Layout {
-            secondary: None,
-            ..layout
-        });
-        self.refresh();
-        true
-    }
-
-    pub(in crate::tui::sigil_view) fn nudge_split(&self, delta: i16) {
-        let layout = self.layout.peek();
-        if layout.secondary.is_some() {
-            self.set_layout(layout.nudge(delta));
-        }
-    }
-
-    pub(in crate::tui::sigil_view) fn pane_command(&self, argument: Option<&str>) {
-        let layout = self.layout.peek();
-        match argument {
+    pub(in crate::tui::sigil_view) fn pane_collapse(&self) {
+        let pane = self.current();
+        match row(pane).collapse {
+            Some(collapse) => collapse(self),
             None => {
-                let names: Vec<&str> = Pane::SECONDARY.iter().map(|pane| pane.name()).collect();
-                self.push_entry(Entry::System(format!(
-                    "layout: {} · /pane {} · off · focus · run · review",
-                    layout.text(),
-                    names.join(" · ")
-                )));
+                self.pane_list(pane).close();
                 self.refresh();
             }
-            Some("off" | "close") => self.set_layout(Layout {
-                secondary: None,
-                ..layout
-            }),
-            Some(name) => match (Pane::parse(name), Layout::parse(name)) {
-                (Some(pane), _) if pane != Pane::Chat => self.set_layout(Layout {
-                    secondary: Some(pane),
-                    ..layout
-                }),
-                (_, Some(preset)) => self.set_layout(preset),
-                (Some(_) | None, None) => {
-                    self.push_entry(Entry::Error(format!(
-                        "no pane or layout `{name}`: files, ledger, diff, worktrees, jobs, mcp, peers, off, focus, run, review, or `chat | ledger 40%`"
-                    )));
-                    self.refresh();
-                }
-            },
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_click(&self, pane: Pane, index: usize) {
+        self.pane_list(pane).select(index);
+        let Some(picked) = self.pane_rows(pane).into_iter().nth(index) else {
+            return;
+        };
+        row(pane).click.unwrap_or(row(pane).pick)(self, &picked);
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_menu(
+        &self,
+        pane: Pane,
+        picked: &FileRow,
+    ) -> &'static [(&'static str, Act)] {
+        (row(pane).menu)(picked)
+    }
+
+    pub(in crate::tui::sigil_view) fn open_row(&self, picked: &FileRow) {
+        self.pane_list(self.current()).toggle_only(&picked.path);
+        self.refresh();
+    }
+
+    fn file_pick(&self, picked: &FileRow) {
+        if picked.dir {
+            self.pane_list(Pane::Files).toggle(&picked.path);
+        } else {
+            self.mention(&picked.path);
+        }
+        self.refresh();
+    }
+
+    fn file_expand(&self) {
+        match self.picked(Pane::Files) {
+            Some(picked) if picked.dir && !picked.open => self.file_pick(&picked),
+            Some(picked) if !picked.dir => self.view_open(picked.path),
+            Some(_) | None => {}
+        }
+    }
+
+    fn file_collapse(&self) {
+        let rows = self.file_rows();
+        let list = self.pane_list(Pane::Files);
+        let Some(picked) = rows.get(list.at(rows.len())) else {
+            return;
+        };
+        if picked.dir && picked.open {
+            return self.file_pick(picked);
+        }
+        if let Some((parent, _)) = picked.path.rsplit_once('/')
+            && let Some(index) = rows.iter().position(|candidate| candidate.path == parent)
+        {
+            list.select(index);
+            self.refresh();
         }
     }
 }

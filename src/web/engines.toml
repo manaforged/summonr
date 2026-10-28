@@ -9,7 +9,7 @@ unwrap = "u"
 unwrap_prefix = "a1"
 encoding = "base64"
 hosts = ["bing.com"]
-block_status = [429]
+blocked = { statuses = [429] }
 cooldown_secs = 60
 
 [engine.freshness]
@@ -29,8 +29,7 @@ link = "result__a"
 snippet = "result__snippet"
 unwrap = "uddg"
 hosts = ["duckduckgo.com"]
-block_status = [202, 429]
-block_markers = ["anomaly-modal"]
+blocked = { statuses = [202, 429], markers = ["anomaly-modal"] }
 cooldown_secs = 60
 
 [engine.freshness]
@@ -52,7 +51,7 @@ snippet = "compText"
 unwrap = "RU"
 carrier = "path"
 hosts = ["yahoo.com"]
-block_status = [429, 500]
+blocked = { statuses = [429, 500] }
 cooldown_secs = 60
 
 [[engine]]
@@ -64,7 +63,7 @@ link = "l1"
 title = "search-snippet-title"
 snippet = "generic-snippet"
 hosts = ["brave.com"]
-block_status = [429]
+blocked = { statuses = [429] }
 cooldown_secs = 60
 
 [engine.freshness]
@@ -74,3 +73,18 @@ param = "tf"
 day = "pd"
 week = "pw"
 month = "pm"
+
+[wall]
+statuses = [403, 503]
+body_max = 2048
+markers = [
+  "enable javascript",
+  "javascript is required",
+  "javascript is disabled",
+  "requires javascript",
+  "turn on javascript",
+  "just a moment",
+  "checking your browser",
+  "verify you are human",
+  "attention required",
+]

@@ -181,13 +181,13 @@ fn the_picker_wheel_scrolls_without_moving_the_selection() {
         },
         Vec::new(),
         |app| {
-            let before = (app.picker.sel.peek(), app.picker.scroll.peek());
+            let before = (app.picker.list.cursor.peek(), app.picker.list.scroll.peek());
             let scrolled = app.overlay_scroll(3);
             (
                 before,
                 scrolled,
-                app.picker.sel.peek(),
-                app.picker.scroll.peek(),
+                app.picker.list.cursor.peek(),
+                app.picker.list.scroll.peek(),
             )
         },
     );

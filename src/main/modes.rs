@@ -1,4 +1,4 @@
-use summonr::{Client, Event, Loop, Result, Turn, UserInput, WorkKind, WorkProgress};
+use summonr::{Beat, Client, Event, Job, Loop, Result, Turn, UserInput, WorkKind, WorkProgress};
 use tokio::io::{self, AsyncReadExt};
 
 use super::cli::Args;
@@ -32,33 +32,49 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
     let steps = summonr::steps::parse(&markdown)?;
     let checks = loop_.verify_commands().to_vec();
     loop_.select_steps(&markdown, &checks)?;
+    let plan = plan_path.to_string();
+    work(loop_, args, Job::Steps { plan, steps }).await
+}
+
+pub(super) async fn goal(
+    mut loop_: Loop<Client>,
+    args: &Args,
+    objective: &str,
+    gates: Vec<String>,
+) -> Result<i32> {
+    loop_.select_goal(objective, &gates)?;
+    let objective = objective.to_string();
+    work(loop_, args, Job::Goal { objective, gates }).await
+}
+
+async fn work(mut loop_: Loop<Client>, args: &Args, job: Job) -> Result<i32> {
     announce(&loop_, args.json);
-    loop {
-        let (index, total, prompt) = match loop_.next_step(&steps, plan_path)? {
-            summonr::StepRun::Done(code) => {
-                if !args.json {
-                    println!();
-                }
-                return Ok(code);
-            }
-            summonr::StepRun::Run {
+    let code = loop {
+        let (prompt, step) = match loop_.next_beat(&job)? {
+            Beat::Done(code) => break code,
+            Beat::Run { prompt, step } => (prompt, step),
+        };
+        if let Some((index, total)) = step {
+            step_event(
+                args.json,
                 index,
                 total,
-                prompt,
-            } => (index, total, prompt),
-        };
-        let check = steps
-            .get(index.saturating_sub(1))
-            .map(|step| step.checks.join(" && "))
-            .filter(|check| !check.is_empty());
-        step_event(args.json, index, total, "start", check.as_deref());
+                "start",
+                job.check(index).as_deref(),
+            );
+        }
         let turn = complete(&mut loop_, prompt.into(), args.json).await?;
         if turn.aborted {
-            return stop(&mut loop_, "step execution aborted", args.json).await;
+            return stop(&mut loop_, job.aborted(), args.json).await;
         }
-        let after = loop_.work_progress()?;
-        step_outcome(args.json, index, total, &turn, &after);
+        if let Some((index, total)) = step {
+            step_outcome(args.json, index, total, &turn, &loop_.work_progress()?);
+        }
+    };
+    if !args.json {
+        println!();
     }
+    Ok(code)
 }
 
 fn step_outcome(json: bool, index: usize, total: usize, turn: &Turn, after: &WorkProgress) {
@@ -84,44 +100,6 @@ fn step_outcome(json: bool, index: usize, total: usize, turn: &Turn, after: &Wor
     }
 }
 
-pub(super) async fn goal(
-    mut loop_: Loop<Client>,
-    args: &Args,
-    objective: &str,
-    gates: Vec<String>,
-) -> Result<i32> {
-    loop_.select_goal(objective, &gates)?;
-    announce(&loop_, args.json);
-    let code = drive_goal(&mut loop_, objective, &gates, args.json).await?;
-    if !args.json {
-        println!();
-    }
-    Ok(code)
-}
-
-pub(super) async fn drive_goal(
-    loop_: &mut Loop<Client>,
-    objective: &str,
-    gates: &[String],
-    json: bool,
-) -> Result<i32> {
-    loop {
-        let progress = loop_.work_progress()?;
-        if let Some(code) = progress.exit_code() {
-            return Ok(code);
-        }
-        let turn = complete(
-            loop_,
-            summonr::goal_prompt(objective, gates, progress.rounds).into(),
-            json,
-        )
-        .await?;
-        if turn.aborted {
-            return stop(loop_, "goal execution aborted", json).await;
-        }
-    }
-}
-
 fn announce(loop_: &Loop<Client>, json: bool) {
     if json {
         print_json(&Event::Session {
@@ -130,20 +108,16 @@ fn announce(loop_: &Loop<Client>, json: bool) {
     }
 }
 
+fn printer(json: bool) -> fn(&Event) {
+    if json { print_json } else { print_live }
+}
+
 async fn stop(loop_: &mut Loop<Client>, reason: &str, json: bool) -> Result<i32> {
-    if json {
-        loop_.stop_work(reason, print_json).await
-    } else {
-        loop_.stop_work(reason, print_live).await
-    }
+    loop_.stop_work(reason, printer(json)).await
 }
 
 async fn complete(loop_: &mut Loop<Client>, input: UserInput, json: bool) -> Result<Turn> {
-    if json {
-        loop_.turn_with(input, print_json).await
-    } else {
-        loop_.turn_with(input, print_live).await
-    }
+    loop_.turn_with(input, printer(json)).await
 }
 
 fn slash(prompt: &str) -> Option<&str> {

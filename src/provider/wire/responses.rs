@@ -43,7 +43,14 @@ pub(crate) fn body(
     body.insert("model".to_string(), json!(call.model));
     body.insert("input".to_string(), Value::Array(input(call)?));
     if !call.tools.is_empty() {
-        body.insert("tools".to_string(), Value::Array(tools(call)));
+        body.insert(
+            "tools".to_string(),
+            Value::Array(super::tools(
+                call,
+                "parameters",
+                &[("type", json!("function")), ("strict", json!(false))],
+            )),
+        );
     }
     if let Some(max) = call.max_output_tokens {
         body.insert("max_output_tokens".to_string(), json!(max));
@@ -130,21 +137,6 @@ pub(crate) fn namespace(tools: Value) -> Value {
         "description": "Tools of the Summonr coding agent",
         "tools": tools,
     })
-}
-
-fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
-    call.tools
-        .iter()
-        .map(|tool| {
-            json!({
-                "type": "function",
-                "name": tool.function.name,
-                "description": tool.function.description,
-                "parameters": tool.function.parameters,
-                "strict": false,
-            })
-        })
-        .collect()
 }
 
 fn tool_output(message: &Message) -> Value {

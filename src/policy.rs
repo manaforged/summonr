@@ -6,10 +6,13 @@ use crate::error::{Error, Result};
 
 mod ask;
 mod danger;
+mod decide;
 mod protected;
 pub(crate) use protected::{holds_protected, protected_read, workspace_control};
 mod walk;
 
+use decide::Check;
+pub(crate) use decide::{Action, Decision};
 pub(crate) use walk::{normalize, shell_words};
 pub(crate) use {
     danger::danger,
@@ -160,31 +163,17 @@ impl Policy {
     }
 
     pub(crate) fn command(&self, command: &str, workspace: &Path, start: &Path) -> Result<()> {
-        let command = command.trim();
-        let segments = split_segments(command);
-        self.command_policy_checked(command, &segments, workspace, start)?;
-        if self.unrestricted {
-            return Ok(());
-        }
-        let steps = walk::walk(command, workspace, start, &self.roots);
-        match write_block(&steps, workspace, &self.roots) {
-            Some(Block::Protected(path)) => {
-                return Err(Error::Denied(format!("`{path}` is a protected path")));
-            }
-            Some(Block::Outside(path)) => {
-                return Err(Error::Denied(format!(
-                    "`{path}` is outside the workspace: {}",
-                    outside_hint(&path)
-                )));
-            }
-            None => {}
-        }
-        if let Some(path) = read_block(&steps, workspace) {
-            return Err(Error::Denied(format!("`{path}` is a protected path")));
-        }
-        Ok(())
+        self.decide(Action::Command {
+            text: command,
+            workspace,
+            cwd: start,
+            ask: false,
+            approved: false,
+        })
+        .into_result()
     }
 
+    #[cfg(test)]
     pub(crate) fn command_policy_checked(
         &self,
         command: &str,
@@ -192,8 +181,53 @@ impl Policy {
         workspace: &Path,
         start: &Path,
     ) -> Result<()> {
+        self.command_rules(command, segments, workspace, start)
+            .map_err(Error::Denied)
+    }
+
+    pub(crate) fn write_path(&self, relative: &str) -> Result<()> {
+        self.decide(Action::Write(relative)).into_result()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn write_globs(&self, relative: &str) -> Result<()> {
+        self.glob_rules(relative).map_err(Error::Denied)
+    }
+
+    fn command_paths(&self, command: &str, workspace: &Path, start: &Path) -> Check {
+        let segments = split_segments(command);
+        self.command_rules(command, &segments, workspace, start)?;
+        if self.unrestricted {
+            return Ok(());
+        }
+        let steps = walk::walk(command, workspace, start, &self.roots);
+        match write_block(&steps, workspace, &self.roots) {
+            Some(Block::Protected(path)) => {
+                return Err(format!("`{path}` is a protected path"));
+            }
+            Some(Block::Outside(path)) => {
+                return Err(format!(
+                    "`{path}` is outside the workspace: {}",
+                    outside_hint(&path)
+                ));
+            }
+            None => {}
+        }
+        if let Some(path) = read_block(&steps, workspace) {
+            return Err(format!("`{path}` is a protected path"));
+        }
+        Ok(())
+    }
+
+    fn command_rules(
+        &self,
+        command: &str,
+        segments: &[String],
+        workspace: &Path,
+        start: &Path,
+    ) -> Check {
         if command.is_empty() {
-            return Err(Error::Denied("command is empty".to_string()));
+            return Err("command is empty".to_string());
         }
         if self.unrestricted {
             return Ok(());
@@ -202,13 +236,13 @@ impl Policy {
             && (builtin_deny(command, segments)
                 || danger(command, workspace, start, Gate::Risky).is_some())
         {
-            return Err(Error::Denied(format!(
+            return Err(format!(
                 "blocked command `{command}`; strict mode never runs it; run it yourself in another terminal"
-            )));
+            ));
         }
         for pattern in &self.deny {
             if matches_deny(command, pattern) {
-                return Err(Error::Denied(format!("denied by policy `{pattern}`")));
+                return Err(format!("denied by policy `{pattern}`"));
             }
         }
         if (self.strict && self.allow.is_empty())
@@ -224,18 +258,18 @@ impl Policy {
                         .all(|list| list.iter().any(|pattern| matches_allow(segment, pattern)))
             })
         {
-            return Err(Error::Denied(format!(
+            return Err(format!(
                 "command `{command}` is not on every configured allow list"
-            )));
+            ));
         }
         Ok(())
     }
 
-    pub(crate) fn tool(&self, alias: &str, readonly: bool) -> Result<()> {
+    fn tool_rules(&self, alias: &str, readonly: bool) -> Check {
         if self.read_only && !readonly {
-            return Err(Error::Denied(format!(
+            return Err(format!(
                 "`{alias}` can change state and is unavailable in a read-only session"
-            )));
+            ));
         }
         if self.unrestricted {
             return Ok(());
@@ -245,7 +279,7 @@ impl Policy {
             .iter()
             .find(|pattern| tool_matches(alias, pattern))
         {
-            return Err(Error::Denied(format!("denied by policy `{pattern}`")));
+            return Err(format!("denied by policy `{pattern}`"));
         }
         if readonly
             || !self.strict
@@ -257,30 +291,25 @@ impl Policy {
         {
             return Ok(());
         }
-        Err(Error::Denied(format!(
+        Err(format!(
             "`{alias}` can change state and is not on every configured allow list"
-        )))
+        ))
     }
 
-    pub(crate) fn write_path(&self, relative: &str) -> Result<()> {
+    fn write_rules(&self, relative: &str) -> Check {
         if self.read_only {
-            return Err(Error::Denied(
-                "this session is read-only and does not edit files. \
+            return Err("this session is read-only and does not edit files. \
                  Report the change in your reply."
-                    .to_string(),
-            ));
+                .to_string());
         }
         if !self.unrestricted && protected_write(Path::new(relative)) {
-            return Err(Error::Denied(format!("`{relative}` is a protected path")));
+            return Err(format!("`{relative}` is a protected path"));
         }
-        self.write_globs(relative)
+        self.glob_rules(relative)
     }
 
-    pub(crate) fn write_globs(&self, relative: &str) -> Result<()> {
-        if self.unrestricted {
-            return Ok(());
-        }
-        if self.write.is_empty() {
+    fn glob_rules(&self, relative: &str) -> Check {
+        if self.unrestricted || self.write.is_empty() {
             return Ok(());
         }
         let relative = relative.replace('\\', "/");
@@ -291,9 +320,9 @@ impl Policy {
         {
             return Ok(());
         }
-        Err(Error::Denied(format!(
+        Err(format!(
             "write to `{relative}` is not permitted by the policy write globs"
-        )))
+        ))
     }
 }
 
@@ -303,18 +332,13 @@ pub(crate) fn protected_write(path: &Path) -> bool {
     if git::guarded_git_part(&parts) || protected::workspace_control(path) {
         return true;
     }
-    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
-        if name == ".env" || name.starts_with(".env.") {
-            return true;
-        }
-        if matches!(
-            name,
-            ".bashrc" | ".zshrc" | ".zprofile" | ".profile" | ".bash_profile"
-        ) {
-            return true;
-        }
+    let secrets = &rules().secrets;
+    if let Some(name) = path.file_name().and_then(|name| name.to_str())
+        && protected::secret_name(name, &secrets.write_files, &secrets.write_prefixes)
+    {
+        return true;
     }
-    protected::home_secret(path, &[".ssh", ".gnupg", ".summonr"])
+    protected::home_secret(path, secrets.write_dirs.as_slice())
 }
 
 mod blocks;

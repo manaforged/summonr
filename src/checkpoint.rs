@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use crate::diff::{git_env, git_output};
+use crate::diff::{git_env, git_paths};
 use crate::durable::store;
 use crate::error::{Error, Result};
 
@@ -61,34 +61,19 @@ impl Checkpoints {
                 ))
             })?;
         let current = self.tree()?;
-        let changes = git_output(
+        let mut paths = git_paths(
             &self.root,
-            &[],
             &[
                 "diff-tree",
                 "-r",
                 "--no-renames",
-                "--name-status",
+                "--name-only",
                 "-z",
                 target,
                 &current,
             ],
-            None,
         )?;
-        let mut paths = Vec::new();
-        let mut records = changes.split(|byte| *byte == 0);
-        while let Some(status) = records.next().filter(|status| !status.is_empty()) {
-            let path = records.next().ok_or_else(|| {
-                Error::Config(format!(
-                    "git diff-tree returned an incomplete path for {}",
-                    String::from_utf8_lossy(status)
-                ))
-            })?;
-            let path = String::from_utf8_lossy(path).into_owned();
-            if !crate::diff::ignored::hidden(&path) {
-                paths.push(path);
-            }
-        }
+        paths.retain(|path| !crate::diff::ignored::hidden(path));
         let env = self.env();
         git_env(&self.root, &env, &["read-tree", "--reset", "-u", target])?;
         Ok(paths)
@@ -101,8 +86,9 @@ impl Checkpoints {
             .map(str::to_string)
             .collect();
         let known = paths.len();
+        let mut seen: std::collections::HashSet<String> = paths.iter().cloned().collect();
         for path in crate::durable::tree::own_files(&self.root) {
-            if !paths.contains(&path) {
+            if seen.insert(path.clone()) {
                 paths.push(path);
             }
         }

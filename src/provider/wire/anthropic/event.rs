@@ -142,18 +142,16 @@ impl Counted {
     }
 
     pub(crate) fn usage(&self) -> Usage {
-        let field = |count: Option<u64>| Usage::clamp(count.unwrap_or_default());
-        Usage {
-            prompt_tokens: field(self.input_tokens)
-                + field(self.cache_creation_input_tokens)
-                + field(self.cache_read_input_tokens),
-            completion_tokens: field(self.output_tokens),
-            reasoning_tokens: field(
-                self.output_tokens_details
-                    .and_then(|details| details.thinking_tokens),
-            ),
-            cached_tokens: field(self.cache_read_input_tokens),
-            cache_write_tokens: field(self.cache_creation_input_tokens),
-        }
+        let read = self.cache_read_input_tokens.unwrap_or_default();
+        let written = self.cache_creation_input_tokens.unwrap_or_default();
+        Usage::counted(
+            self.input_tokens.unwrap_or_default() + written + read,
+            self.output_tokens.unwrap_or_default(),
+            self.output_tokens_details
+                .and_then(|details| details.thinking_tokens)
+                .unwrap_or_default(),
+            read,
+            written,
+        )
     }
 }

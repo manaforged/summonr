@@ -39,9 +39,13 @@ impl<P: Provider> Loop<P> {
                 .request(role, &messages, tools, false)
                 .with_tools_json(json);
             self.freeze_catalog();
-            let assistant = match self.complete_once(role, &request).await? {
-                Ok(assistant) => assistant,
-                Err(wait_error) => return Err(wait_error.error()),
+            let options = CallOptions {
+                stream: false,
+                retry: RetryPolicy::None,
+            };
+            let assistant = match self.call(role, request, options).await? {
+                Ok(reply) => reply.message,
+                Err(missed) => return Err(missed.error.error()),
             };
             let text = assistant.content.clone().unwrap_or_default();
             usage.add(&assistant.usage);
@@ -55,7 +59,11 @@ impl<P: Provider> Loop<P> {
                 return Ok((text, usage));
             }
             for call in calls {
-                let (success, output) = match self.tools.execute_outcome(&call).await {
+                let ran = match self.pre_tool(&call).await.blocked {
+                    Some(reason) => Err(super::hooks::blocked(&reason)),
+                    None => self.tools.execute_outcome(&call).await,
+                };
+                let (success, output) = match ran {
                     Ok(output) => (output.success, output.text),
                     Err(error) => (false, error.to_string()),
                 };

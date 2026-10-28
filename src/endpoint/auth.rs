@@ -28,13 +28,13 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
             .and_then(|row| {
                 row.env_keys
                     .iter()
-                    .copied()
+                    .map(String::as_str)
                     .find(|key| env_key(&[key]).is_some())
             }),
         model: endpoint.model.clone(),
         base_url: endpoint.base_url.clone(),
         own: preset(name).is_none(),
-        env_hint: preset(name).and_then(|row| row.env_keys.first().copied()),
+        env_hint: preset(name).and_then(|row| row.env_keys.first().map(String::as_str)),
         group: login_group(name, &endpoint),
     };
     if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| flow(spec).signs_in()) {
@@ -222,7 +222,7 @@ pub(crate) fn ready(need: Need) -> (Vec<Endpoint>, Vec<String>) {
     let mut errors = Vec::new();
     for name in names {
         let endpoint = match resolve(Some(&name), None, need) {
-            Ok(endpoint) if endpoint.wire == Wire::Decisions => continue,
+            Ok(endpoint) if crate::provider::wire::spec(endpoint.wire).classifies() => continue,
             Ok(endpoint) => endpoint,
             Err(_) => {
                 if let Err(error) = resolve(Some(&name), None, need.without_key())
@@ -248,7 +248,8 @@ pub(crate) fn ready(need: Need) -> (Vec<Endpoint>, Vec<String>) {
 
 pub fn first_classify() -> Option<String> {
     names().unwrap_or_default().into_iter().find(|name| {
-        resolve(Some(name), None, Need::Key).is_ok_and(|endpoint| endpoint.wire == Wire::Decisions)
+        resolve(Some(name), None, Need::Key)
+            .is_ok_and(|endpoint| crate::provider::wire::spec(endpoint.wire).classifies())
     })
 }
 
@@ -279,7 +280,7 @@ pub(crate) fn catalog(wire: Wire) -> Vec<String> {
         if !models.contains(&row.model) {
             models.push(row.model.clone());
         }
-        for (_, canon) in row.aliases {
+        for canon in row.aliases.values() {
             if !models.contains(canon) {
                 models.push(canon.clone());
             }

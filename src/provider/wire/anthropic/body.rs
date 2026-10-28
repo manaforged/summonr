@@ -31,7 +31,7 @@ pub(crate) fn body(
     if let Some(last) = system.last_mut() {
         last["cache_control"] = control(ttl);
     }
-    let mut tools = tools(call);
+    let mut tools = super::super::tools(call, "input_schema", &[]);
     if let Some(last) = tools.last_mut() {
         last["cache_control"] = control(ttl);
     }
@@ -159,19 +159,6 @@ fn adaptive(call: &CompletionRequest<'_>) -> Value {
     } else {
         json!({"type": "adaptive"})
     }
-}
-
-fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
-    call.tools
-        .iter()
-        .map(|tool| {
-            json!({
-                "name": tool.function.name,
-                "description": tool.function.description,
-                "input_schema": tool.function.parameters,
-            })
-        })
-        .collect()
 }
 
 fn user_parts(message: &Message) -> Vec<Value> {

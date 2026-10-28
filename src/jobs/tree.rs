@@ -9,7 +9,7 @@ pub(crate) struct Descendant {
 pub(crate) fn descendants(root: u32) -> Vec<Descendant> {
     let mut children: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     let mut commands: BTreeMap<u32, String> = BTreeMap::new();
-    for (pid, parent, command) in table() {
+    for (pid, parent, command) in crate::process::table() {
         if pid != parent {
             children.entry(parent).or_default().push(pid);
         }
@@ -60,52 +60,4 @@ pub(crate) fn block(heading: &str, lines: &[String]) -> String {
         text.push('\n');
     }
     text
-}
-
-#[cfg(unix)]
-fn table() -> Vec<(u32, u32, String)> {
-    let Ok(output) = std::process::Command::new("ps")
-        .args(["-axo", "pid=,ppid=,command="])
-        .output()
-    else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| {
-            let (pid, rest) = line.trim_start().split_once(char::is_whitespace)?;
-            let rest = rest.trim_start();
-            let (parent, command) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
-            Some((
-                pid.parse().ok()?,
-                parent.parse().ok()?,
-                command.trim().to_string(),
-            ))
-        })
-        .collect()
-}
-
-#[cfg(not(unix))]
-fn table() -> Vec<(u32, u32, String)> {
-    Vec::new()
-}
-
-#[cfg(target_os = "macos")]
-#[expect(unsafe_code, reason = "std has no process info query")]
-pub(super) fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
-    let pid = libc::c_int::try_from(pid).ok()?;
-    // SAFETY: proc_bsdinfo is plain integers and byte arrays; all-zero is a valid value.
-    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-    let size = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).ok()?;
-    // SAFETY: the buffer pointer and size describe one owned proc_bsdinfo for the call.
-    let written = unsafe {
-        libc::proc_pidinfo(
-            pid,
-            libc::PROC_PIDTBSDINFO,
-            0,
-            std::ptr::from_mut(&mut info).cast(),
-            size,
-        )
-    };
-    (written == size).then_some(info)
 }

@@ -6,10 +6,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Vec<Outcome>> {
-        let declared = self
-            .session
-            .completion_checks()
-            .map_err(super::session_err)?;
+        let declared = self.session.completion_checks()?;
         if self.check_file_drifted() {
             self.restore_check_file();
             self.push_event(
@@ -80,8 +77,7 @@ impl<P: Provider> Loop<P> {
             let checks = self.run_verify(&mut Vec::new(), &mut emit).await?;
             if !checks.is_empty() {
                 self.session
-                    .record_check(checks.iter().all(|check| check.passed))
-                    .map_err(super::session_err)?;
+                    .record_check(checks.iter().all(|check| check.passed))?;
             }
         }
         self.abandon_work(reason)?;
@@ -118,9 +114,7 @@ impl<P: Provider> Loop<P> {
         let receipt = Receipt::aborted(snapshot, events);
         drop(self.kill_spawned(&abort.reason, usage).await?);
         self.tools.stop_jobs()?;
-        self.session
-            .abort(&abort, Some(&receipt))
-            .map_err(super::session_err)?;
+        self.session.abort(&abort, Some(&receipt))?;
         self.emit_records(events, &mut emit)?;
         self.sync_usage(&mut emit);
         Ok(Turn {

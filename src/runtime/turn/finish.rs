@@ -6,20 +6,15 @@ impl<P: Provider> Loop<P> {
         if self.session.stage() == Some(Stage::Execute)
             && self.work_progress()?.kind == crate::WorkKind::Single
         {
-            drop(self.session.enter_verify().map_err(super::session_err)?);
+            drop(self.session.enter_verify()?);
             let wrote = self.tools.wrote();
-            drop(
-                self.session
-                    .limit_changes(&wrote)
-                    .map_err(super::session_err)?,
-            );
+            drop(self.session.limit_changes(&wrote)?);
             let receipt = self.turn_receipt(&wrote, snapshot, events);
             let verdict = self.session.captured_verdict(true);
             self.session
-                .commit_verdict(verdict, Decision::Automatic, Some(&receipt))
-                .map_err(super::session_err)?;
+                .commit_verdict(verdict, Decision::Automatic, Some(&receipt))?;
         } else {
-            self.session.close().map_err(super::session_err)?;
+            self.session.close()?;
         }
         Ok(())
     }
@@ -109,11 +104,8 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Vec<Outcome>> {
-        drop(self.session.enter_verify().map_err(super::session_err)?);
-        let paths = self
-            .session
-            .limit_changes(&self.tools.wrote())
-            .map_err(super::session_err)?;
+        drop(self.session.enter_verify()?);
+        let paths = self.session.limit_changes(&self.tools.wrote())?;
         checks.extend(self.run_verify(events, emit).await?);
         if checks.is_empty() {
             checks.extend(crate::verify::ran(
@@ -150,8 +142,7 @@ impl<P: Provider> Loop<P> {
             None => self
                 .session
                 .commit_verdict(verdict, decision, Some(&receipt)),
-        }
-        .map_err(super::session_err)?;
+        }?;
         Ok(checks)
     }
 
@@ -189,8 +180,8 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Option<String>> {
-        self.session.enter_review().map_err(super::session_err)?;
-        let objective = self.session.objective().map_err(super::session_err)?;
+        self.session.enter_review()?;
+        let objective = self.session.objective()?;
         let evidence = verify::summary(paths, checks);
         let reviewed = review::outcome(self, &objective, reply, &evidence, paths, usage).await;
         self.sync_usage(emit);
@@ -229,13 +220,12 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Decision> {
-        let Some(objective) = self.session.goal_objective().map_err(super::session_err)? else {
+        let Some(objective) = self.session.goal_objective()? else {
             return Ok(Decision::Automatic);
         };
         if self
             .session
-            .completion_checks()
-            .map_err(super::session_err)?
+            .completion_checks()?
             .iter()
             .any(|check| check.observation.is_none())
         {
@@ -299,14 +289,13 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         self.session
-            .finish_provider(durable_attempt, &message.content, reasoning, meter, meta)
-            .map_err(super::session_err)?;
+            .finish_provider(durable_attempt, &message.content, reasoning, meter, meta)?;
         self.emit_records(events, emit)?;
-        let control = UserInput::from(
-            "[summon control: the previous reply reached the output limit and was cut off.]",
-        );
-        self.session.steer(&control).map_err(super::session_err)?;
-        messages.push(Message::user(control));
+        self.inject(
+            "[summon control: the previous reply reached the output limit and was cut off.]"
+                .to_string(),
+            messages,
+        )?;
         self.push_event(
             events,
             emit,

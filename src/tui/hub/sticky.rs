@@ -12,7 +12,7 @@ pub(super) struct Sticky {
     asking: Option<Event>,
     settings: Option<Snapshot>,
     workflow: Option<Roster>,
-    mode: Option<crate::RunMode>,
+    mode: Option<crate::WorkKind>,
     queued: Option<(usize, usize)>,
     changed: Option<Vec<String>>,
     restored: Option<Vec<UserInput>>,

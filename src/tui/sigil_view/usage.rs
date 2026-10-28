@@ -1,6 +1,6 @@
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, Signal, WidgetLayoutExt, container, request_focus,
-    scroll, segmented, signal,
+    scroll, segmented, signal, spacer,
 };
 
 use super::app::App;
@@ -14,7 +14,7 @@ mod sections;
 mod trend;
 
 use report::{METRICS, Metric, Report};
-use sections::{bottom, cards, colored, spacer};
+use sections::{bottom, cards, colored};
 use trend::trend;
 
 const RANGES: [&str; 4] = ["24h", "7d", "30d", "all"];
@@ -59,12 +59,12 @@ impl Panel {
     }
 
     pub(super) fn shift(self, delta: isize) {
-        let next = self.range.peek().saturating_add_signed(delta);
-        self.range.set(next.min(RANGES.len() - 1));
+        super::app::shift(&self.range, delta, RANGES.len());
     }
 
     pub(super) fn metric(self) {
-        self.metric.set((self.metric.peek() + 1) % METRICS.len());
+        self.metric
+            .set(super::ui::cycle(self.metric.peek(), 1, METRICS.len()));
     }
 
     pub(super) fn scope(self) {

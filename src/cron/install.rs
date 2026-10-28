@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::error::{Error, Result};
 
@@ -157,19 +156,14 @@ fn os_home() -> Result<PathBuf> {
 
 fn run(program: &str, args: &[&str], stdin: Option<&str>) -> Result<String> {
     use std::io::Write;
-    let mut command = Command::new(program);
-    command
-        .args(args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .stdin(if stdin.is_some() {
-            std::process::Stdio::piped()
+    let mut child = crate::process::spawn_blocking(crate::process::Spec {
+        stdin: if stdin.is_some() {
+            crate::process::Io::Pipe
         } else {
-            std::process::Stdio::null()
-        });
-    let mut child = command
-        .spawn()
-        .map_err(|e| Error::Config(format!("{program}: {e}")))?;
+            crate::process::Io::Null
+        },
+        ..crate::process::Spec::new(program, args)
+    })?;
     if let (Some(text), Some(mut pipe)) = (stdin, child.stdin.take()) {
         pipe.write_all(text.as_bytes())?;
     }

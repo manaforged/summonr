@@ -16,10 +16,13 @@ fn every_wire_has_a_name_a_file_can_carry() {
         Wire::Completions,
         Wire::Decisions,
     ] {
-        assert!(!wire_name(wire).is_empty());
+        assert!(!crate::provider::wire::spec(wire).name.is_empty());
     }
-    assert_eq!(wire_name(Wire::Anthropic), "anthropic");
-    assert_eq!(wire_name(Wire::Gemini), "gemini");
+    assert_eq!(
+        crate::provider::wire::spec(Wire::Anthropic).name,
+        "anthropic"
+    );
+    assert_eq!(crate::provider::wire::spec(Wire::Gemini).name, "gemini");
 }
 
 #[test]

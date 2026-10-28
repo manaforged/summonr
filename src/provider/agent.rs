@@ -18,7 +18,7 @@ pub(super) struct Seat {
     name: String,
     program: String,
     env: Vec<(String, String)>,
-    unset: &'static [&'static str],
+    unset: &'static [String],
     runs: Arc<Mutex<HashMap<String, (Instant, Run)>>>,
     threads: Arc<Mutex<HashMap<String, Known>>>,
     gates: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,

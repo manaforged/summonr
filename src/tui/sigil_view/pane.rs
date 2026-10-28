@@ -52,6 +52,25 @@ impl Pane {
     }
 }
 
+pub(super) enum Target {
+    Off,
+    Pane(Pane),
+    Layout(Layout),
+}
+
+impl Target {
+    pub(super) fn parse(text: &str) -> Option<Self> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "off" | "close" => Some(Self::Off),
+            _ => match (Pane::parse(text), Layout::parse(text)) {
+                (Some(pane), _) if pane != Pane::Chat => Some(Self::Pane(pane)),
+                (_, Some(layout)) => Some(Self::Layout(layout)),
+                (Some(_) | None, None) => None,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Layout {
     pub(super) secondary: Option<Pane>,

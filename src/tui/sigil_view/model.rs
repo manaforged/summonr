@@ -117,8 +117,8 @@ impl Model {
                 || match &self.entries[index] {
                     Entry::Thinking(_) => index < last,
                     Entry::Assistant { done, .. } => *done && index < last,
-                    Entry::Tool { state, .. } => {
-                        index < last && !matches!(state, ToolState::Running)
+                    Entry::Tool { call, .. } => {
+                        index < last && !matches!(call.state, ToolState::Running)
                     }
                     Entry::ToolGroup { calls, .. } => {
                         index < last
@@ -284,8 +284,8 @@ impl Model {
             Msg::Cleared => self.clear(),
             Msg::Reset => self.reset(),
             Msg::RunMode(mode) => {
-                self.snapshot.work = mode == crate::RunMode::Work;
-                self.snapshot.goal = mode == crate::RunMode::Goal;
+                self.snapshot.work = mode == crate::WorkKind::Steps;
+                self.snapshot.goal = mode == crate::WorkKind::Goal;
             }
             Msg::Settings(snapshot) => {
                 if (&snapshot.endpoint, &snapshot.model)

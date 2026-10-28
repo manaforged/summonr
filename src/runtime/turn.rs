@@ -46,6 +46,29 @@ fn parse_decision(text: &str, persist: bool) -> Option<GrantAnswer> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum RetryPolicy {
+    None,
+    Round,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct CallOptions {
+    pub(super) stream: bool,
+    pub(super) retry: RetryPolicy,
+}
+
+pub(super) struct Reply {
+    pub(super) message: AssistantMessage,
+    pub(super) chars: usize,
+    pub(super) open: Option<(Attempt, Meter, UsageMeta)>,
+}
+
+pub(super) struct Missed {
+    pub(super) error: WaitError,
+    pub(super) interrupted: Option<Message>,
+}
+
 pub(super) enum WaitError {
     Deadline(Duration),
     Provider(Error),
@@ -94,47 +117,23 @@ mod repeat_tests;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn remaining_time(&self) -> Option<Duration> {
-        let limit = crate::limits::seconds(self.budget.max_secs?);
+        let limit = crate::limits::seconds(self.budget().max_secs?);
         Some(limit.saturating_sub(crate::limits::seconds(self.elapsed_secs())))
     }
 
-    async fn complete_outside_turn(
+    pub(super) async fn call(
         &mut self,
         role: workflow::Role,
-        request: &CompletionRequest<'_>,
-    ) -> Result<std::result::Result<AssistantMessage, WaitError>> {
-        let started = Instant::now();
-        let message =
-            match Self::wait(self.seat(role).0.complete(request), self.remaining_time()).await {
-                Ok(message) => message,
-                Err(wait_error) => return Ok(Err(wait_error)),
-            };
-        let meter = super::meter(&message.usage, super::elapsed_millis(started));
-        let meta = UsageMeta {
-            continuation: message.continuation.clone(),
-            prefix_hash: request.prefix_hash(),
-            cost: self
-                .price_for(role)
-                .map(|price| price.cost(meter.input, meter.output, meter.cached, meter.written)),
-        };
-        self.session
-            .charge(meter, "outside a turn", &request.model, true, meta)
-            .map_err(super::session_err)?;
-        self.spent_tokens = self.session.spent_tokens();
-        Ok(Ok(message))
-    }
-
-    pub(super) async fn complete_once(
-        &mut self,
-        role: workflow::Role,
-        request: &CompletionRequest<'_>,
-    ) -> Result<std::result::Result<AssistantMessage, WaitError>> {
-        if let Some(reason) = self.round_abort() {
+        request: CompletionRequest<'_>,
+        options: CallOptions,
+    ) -> Result<std::result::Result<Reply, Missed>> {
+        if options.retry == RetryPolicy::None
+            && let Some(reason) = self.round_abort()
+        {
             return Err(Error::Config(reason));
         }
-        if !self.session.turn_open() {
-            return self.complete_outside_turn(role, request).await;
-        }
+        let prefix_hash = request.prefix_hash();
+        let request = request.with_prefix_hash(prefix_hash.clone());
         let tool_bytes = request.tools_json.map_or_else(
             || crate::provider::ToolsJson::encode(request.tools).len(),
             crate::provider::ToolsJson::len,
@@ -144,64 +143,76 @@ impl<P: Provider> Loop<P> {
             tool_bytes,
             self.seat(role).0.keeps_reasoning(),
         );
-        let attempt = self
-            .session
-            .start_round(
-                purpose_of(role),
-                &request.model,
-                super::exposure(request, chars),
+        let attempt = if self.session.turn_open() {
+            let exposure = super::exposure(&request, chars);
+            let purpose = purpose_of(role);
+            Some(
+                self.session
+                    .start_round(purpose, &request.model, exposure)?,
             )
-            .map_err(super::session_err)?;
+        } else {
+            None
+        };
         let started = Instant::now();
-        match Self::wait(self.seat(role).0.complete(request), self.remaining_time()).await {
-            Ok(message) => {
-                let meter = super::meter(&message.usage, super::elapsed_millis(started));
-                let meta = UsageMeta {
-                    continuation: message.continuation.clone(),
-                    prefix_hash: request.prefix_hash(),
-                    cost: self.price_for(role).map(|price| {
-                        price.cost(meter.input, meter.output, meter.cached, meter.written)
-                    }),
-                };
-                self.session
-                    .finish_provider(
-                        attempt,
-                        message.content.as_deref().unwrap_or(""),
-                        message.reasoning_content.as_deref().unwrap_or(""),
-                        meter,
-                        meta,
-                    )
-                    .map_err(super::session_err)?;
-                self.spent_tokens = self.spent_tokens.saturating_add(u64::from(
-                    message
-                        .usage
-                        .prompt_tokens
-                        .saturating_add(message.usage.completion_tokens),
-                ));
-                Ok(Ok(message))
+        let remaining = self.remaining_time();
+        let mut partial = std::mem::take(&mut self.session.partial);
+        let provider = self.seat(role).0;
+        let completion = if options.stream {
+            provider.stream(&request, &mut partial)
+        } else {
+            provider.complete(&request)
+        };
+        let message = match Self::wait(completion, remaining).await {
+            Ok(message) => message,
+            Err(error) => {
+                let interrupted = (!partial.text.is_empty()).then(|| Message {
+                    role: Role::Assistant,
+                    ..Message::system(partial.text.clone())
+                });
+                self.session.partial = partial;
+                if let Some(attempt) = attempt {
+                    let millis = error.millis(started);
+                    let (diagnostic, billable) = match &error {
+                        WaitError::Deadline(_) => (Abort::time_limit().reason, true),
+                        WaitError::Provider(error) => (error.to_string(), super::billable(error)),
+                    };
+                    self.session
+                        .fail_provider(attempt, &diagnostic, millis, billable)?;
+                }
+                return Ok(Err(Missed { error, interrupted }));
             }
-            Err(wait_error) => {
-                let millis = wait_error.millis(started);
-                let deadline = match wait_error {
-                    WaitError::Deadline(remaining) => Some(remaining),
-                    WaitError::Provider(_) => None,
-                };
-                let error = wait_error.error();
-                self.session
-                    .fail_provider(
-                        attempt,
-                        &error.to_string(),
-                        millis,
-                        deadline.is_some() || super::billable(&error),
-                    )
-                    .map_err(super::session_err)?;
-                self.spent_tokens = self.session.spent_tokens();
-                Ok(Err(deadline.map_or_else(
-                    || WaitError::Provider(error),
-                    WaitError::Deadline,
-                )))
+        };
+        let meter = Meter::measured(&message.usage, super::elapsed_millis(started));
+        let meta = UsageMeta {
+            continuation: message.continuation.clone(),
+            prefix_hash,
+            cost: self
+                .price_for(role)
+                .map(|price| price.cost(meter.input, meter.output, meter.cached, meter.written)),
+        };
+        let open = match (attempt, options.retry) {
+            (Some(attempt), RetryPolicy::Round) => Some((attempt, meter, meta)),
+            (Some(attempt), RetryPolicy::None) => {
+                self.session.finish_provider(
+                    attempt,
+                    message.content.as_deref().unwrap_or(""),
+                    message.reasoning_content.as_deref().unwrap_or(""),
+                    meter,
+                    meta,
+                )?;
+                None
             }
-        }
+            (None, _) => {
+                self.session
+                    .charge(meter, "outside a turn", &request.model, true, meta)?;
+                None
+            }
+        };
+        Ok(Ok(Reply {
+            message,
+            chars,
+            open,
+        }))
     }
 
     pub(super) async fn wait<F>(
@@ -302,9 +313,9 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn sync_usage(&mut self, emit: &mut impl FnMut(&Event)) {
-        let (spent, tokens) = self.session.usage();
-        self.spent_tokens = spent;
-        emit(&Event::Unreported { tokens });
+        emit(&Event::Unreported {
+            tokens: self.session.usage().1,
+        });
     }
 
     pub(super) fn push_event(

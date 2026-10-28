@@ -291,17 +291,6 @@ fn remove_landings(children: &[(Tree, Vec<String>)]) -> Vec<Landing> {
 }
 
 fn apply(tree: &Path, patch: &[u8]) -> Result<()> {
-    crate::diff::git_output(
-        tree,
-        &[],
-        &["apply", "--check", "--binary", "--whitespace=nowarn", "-"],
-        Some(patch),
-    )?;
-    crate::diff::git_output(
-        tree,
-        &[],
-        &["apply", "--binary", "--whitespace=nowarn", "-"],
-        Some(patch),
-    )?;
-    Ok(())
+    crate::diff::git_apply(tree, patch, &["--check"])?;
+    crate::diff::git_apply(tree, patch, &[])
 }

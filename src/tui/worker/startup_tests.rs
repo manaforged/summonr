@@ -12,7 +12,7 @@ fn task_progress_replays_the_current_numbered_plan() {
     driver
         .prepare_external_work(
             "## Steps\n1. First task\n2. Second task\n3. Third task\n",
-            crate::durable::work::Policy::Steps,
+            crate::WorkKind::Steps,
             &[],
         )
         .expect("select plan");
@@ -123,7 +123,7 @@ async fn a_session_opened_with_an_unfinished_goal_says_how_to_go_on() {
     loop_
         .select_goal("add a --version flag", &[])
         .expect("goal");
-    loop_.set_mode(crate::RunMode::Auto);
+    loop_.set_mode(crate::WorkKind::Single);
     let info = Info {
         version: String::new(),
         model: "m".to_string(),

@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use super::{Cost, Model, now, shelf};
 use crate::error::Result;
-use crate::prompt::summonr_home;
 use crate::provider::Price;
 
 const REGISTRY_URL: &str = "https://models.dev/api.json";
@@ -90,20 +89,20 @@ pub(super) fn snapshot() -> Arc<Registry> {
 }
 
 #[cfg(test)]
-pub(crate) fn serves(providers: &[&str], model: &str) -> Option<bool> {
+pub(crate) fn serves(providers: &[String], model: &str) -> Option<bool> {
     serves_in(&snapshot(), providers, model)
 }
 
 #[cfg(test)]
-pub(crate) async fn serves_live() -> Result<impl Fn(&[&str], &str) -> Option<bool>> {
+pub(crate) async fn serves_live() -> Result<impl Fn(&[String], &str) -> Option<bool>> {
     let registry = fetch_registry("")
         .await?
         .ok_or_else(|| crate::error::Error::Config("models.dev sent no catalog".to_string()))?;
-    Ok(move |providers: &[&str], model: &str| serves_in(&registry, providers, model))
+    Ok(move |providers: &[String], model: &str| serves_in(&registry, providers, model))
 }
 
 #[cfg(test)]
-fn serves_in(registry: &Registry, providers: &[&str], model: &str) -> Option<bool> {
+fn serves_in(registry: &Registry, providers: &[String], model: &str) -> Option<bool> {
     let by_id: BTreeMap<&str, &ProviderMeta> = registry
         .providers
         .iter()
@@ -111,7 +110,7 @@ fn serves_in(registry: &Registry, providers: &[&str], model: &str) -> Option<boo
         .collect();
     let known: Vec<&ProviderMeta> = providers
         .iter()
-        .filter_map(|id| by_id.get(id).copied())
+        .filter_map(|id| by_id.get(id.as_str()).copied())
         .collect();
     if known.is_empty() {
         return None;
@@ -146,18 +145,11 @@ pub async fn refresh_registry() -> Result<()> {
         fetched: now(),
         ..cache
     });
-    let path = summonr_home()?.join(FILE);
-    crate::durable::store::write(
-        &path,
-        serde_json::to_string(&saved)?,
-        crate::durable::store::Durability::Renamed,
-    )?;
-    shelf::store(&path, saved);
-    Ok(())
+    shelf::save(FILE, &saved)
 }
 
 async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
-    let http = crate::credentials::http()?;
+    let http = crate::credentials::http(crate::limits::limits().auth())?;
     let url = std::env::var("SUMMONR_MODELS_URL")
         .ok()
         .filter(|url| !url.trim().is_empty())
@@ -200,7 +192,7 @@ pub(crate) fn offered(endpoint: &str, cost: Cost) -> Vec<Model> {
         .collect();
     crate::endpoint::provider_ids(endpoint)
         .iter()
-        .filter_map(|id| by_id.get(id))
+        .filter_map(|id| by_id.get(id.as_str()))
         .flat_map(|provider| provider.models.iter())
         .filter(|(_, meta)| !meta.deprecated)
         .map(|(id, meta)| {
@@ -228,7 +220,11 @@ fn locate<'a>(registry: &'a Registry, endpoint: &str, base_url: Option<&str>) ->
         .unwrap_or_default();
     let named = |provider: &&ProviderMeta| {
         std::iter::once(endpoint)
-            .chain(crate::endpoint::provider_ids(endpoint).iter().copied())
+            .chain(
+                crate::endpoint::provider_ids(endpoint)
+                    .iter()
+                    .map(String::as_str),
+            )
             .chain(from_host.iter().copied())
             .any(|name| provider.id == name || provider.name.eq_ignore_ascii_case(name))
     };

@@ -1,13 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::limits::limits;
 use crate::text::ellipsize;
-
-const TASK_CHARS: usize = 400;
-const CLOSING_CHARS: usize = 600;
-const COMMAND_CHARS: usize = 110;
-const MOST_ERRORS: usize = 12;
-const MOST_COMMANDS: usize = 25;
-const MOST_FILES: usize = 25;
 
 #[derive(Default)]
 struct Seen {
@@ -56,7 +50,7 @@ fn walk(transcript: &str) -> Seen {
             capture_call(call, &mut seen);
             continue;
         }
-        if body.chars().count() < CLOSING_CHARS * 2 {
+        if body.chars().count() < limits().classify_closing_chars * 2 {
             body.push_str(line);
             body.push('\n');
         }
@@ -78,10 +72,10 @@ fn close(section: &str, body: &str, seen: &mut Seen) {
         return;
     }
     if section == "You" && seen.task.is_empty() {
-        seen.task = ellipsize(&text.replace('\n', " "), TASK_CHARS);
+        seen.task = ellipsize(&text.replace('\n', " "), limits().classify_task_chars);
     }
     if section == "Assistant" {
-        seen.closing = ellipsize(&text.replace('\n', " "), CLOSING_CHARS);
+        seen.closing = ellipsize(&text.replace('\n', " "), limits().classify_closing_chars);
     }
 }
 
@@ -93,7 +87,8 @@ fn capture_call(call: &str, seen: &mut Seen) {
     match Builtin::live(name) {
         Some(Builtin::RunCommand) => {
             if let Some(command) = field(rest, "command") {
-                seen.commands.push(ellipsize(&command, COMMAND_CHARS));
+                seen.commands
+                    .push(ellipsize(&command, limits().classify_command_chars));
             }
         }
         Some(Builtin::Read | Builtin::Search) => seen.reads += 1,
@@ -150,11 +145,13 @@ fn capture_output(line: &str, seen: &mut Seen) {
         || lowered.starts_with("failed")
         || lowered.contains("permission denied");
     if interesting
-        && seen.errors.len() < MOST_ERRORS
+        && seen.errors.len() < limits().classify_errors_max
         && !seen.errors.iter().any(|kept| kept == trimmed)
     {
-        seen.errors
-            .push(ellipsize(&trimmed.replace('\n', " "), COMMAND_CHARS));
+        seen.errors.push(ellipsize(
+            &trimmed.replace('\n', " "),
+            limits().classify_command_chars,
+        ));
     }
 }
 
@@ -180,7 +177,7 @@ fn render(seen: &Seen) -> String {
         seen.commands.len(),
         counted.len()
     );
-    for (command, count) in ranked.iter().take(MOST_COMMANDS) {
+    for (command, count) in ranked.iter().take(limits().classify_commands_max) {
         out.push_str(&format!("  {count}x {command}\n"));
     }
     if !seen.exits.is_empty() {
@@ -203,7 +200,7 @@ fn render(seen: &Seen) -> String {
         seen.edits,
         seen.files.len()
     ));
-    for path in seen.files.iter().take(MOST_FILES) {
+    for path in seen.files.iter().take(limits().classify_files_max) {
         out.push_str(&format!("  {path}\n"));
     }
     out.push_str(&format!("\nclosing statement\n{}\n", seen.closing));

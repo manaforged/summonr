@@ -6,12 +6,15 @@ pub(super) fn refuse(words: &[String]) -> Result<()> {
     let [word] = words else {
         return Ok(());
     };
-    if word.starts_with('-') || is_endpoint(word) || COMMANDS.iter().any(|(name, _)| name == word) {
+    if word.starts_with('-')
+        || is_endpoint(word)
+        || COMMANDS.iter().any(|(name, _, _)| name == word)
+    {
         return Ok(());
     }
     let names: Vec<String> = COMMANDS
         .iter()
-        .map(|(name, _)| (*name).to_string())
+        .map(|(name, _, _)| (*name).to_string())
         .collect();
     summonr::closest_endpoint(word, &names, summonr::EndpointNear::Typo).map_or(Ok(()), |near| {
         Err(Error::Config(format!(

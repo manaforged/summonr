@@ -16,12 +16,10 @@ impl App {
             Ok(rows) => rows,
             Err(_) => return,
         };
-        let Some((entry, _)) = rows.get(
-            self.search
-                .selected
-                .peek()
-                .min(rows.len().saturating_sub(1)),
-        ) else {
+        let Some((entry, _)) = rows.get(crate::tui::sigil_view::ui::at(
+            &self.search.selected,
+            rows.len(),
+        )) else {
             return;
         };
         if self.search.is_history() {
@@ -58,8 +56,8 @@ impl App {
             return;
         }
         self.model_mut(|model| {
-            if let Some(Entry::Tool { expanded, .. }) = model.entries.get_mut(*entry) {
-                *expanded = true;
+            if let Some(Entry::Tool { call, .. }) = model.entries.get_mut(*entry) {
+                call.expanded = true;
                 model.entries.invalidate();
             }
         });

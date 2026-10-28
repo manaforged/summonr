@@ -24,7 +24,7 @@ pub(super) use super::chat;
 use super::canvas::cell;
 pub(super) use super::model;
 use super::model::{Entry, Model, preview};
-use super::pane::{Layout, Pane};
+use super::pane::{Layout, Pane, Target};
 pub(super) use super::settings;
 pub(super) use super::suggest;
 use super::suggest::Picker;
@@ -46,14 +46,13 @@ pub(super) use models::Mark;
 mod files;
 mod frame;
 mod history;
-mod jobs;
-mod mcp;
+mod layout;
 mod models;
 mod note;
 mod overlays;
 mod panes;
-mod peers;
 pub(super) mod presentation;
+mod rows;
 mod sessions;
 mod tabs;
 mod turn;
@@ -68,7 +67,8 @@ pub(in crate::tui::sigil_view) struct Asked {
     pub(in crate::tui::sigil_view) dialog: u64,
 }
 
-pub(super) use files::{Action, Context, FileRow};
+pub(super) use super::ui::shift;
+pub(super) use files::FileRow;
 use files::{armed, file_url, read_git_branch, save};
 
 mod secret;
@@ -82,6 +82,7 @@ pub(super) enum Overlay {
     Help,
     Search,
     Sessions,
+    Usage,
     Auth,
     Model,
     Effort,
@@ -90,7 +91,6 @@ pub(super) enum Overlay {
     Settings,
     Context,
     Cache,
-    Usage,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -132,7 +132,7 @@ pub(super) struct App {
     pub(super) context_open: Signal<bool>,
     pub(super) cache_open: Signal<bool>,
     pub(super) scroll: Signal<usize>,
-    pub(super) settings_sel: Signal<usize>,
+    pub(super) settings: super::ui::List,
     pub(super) modules: Signal<std::collections::BTreeMap<crate::modules::ModuleId, bool>>,
     pub(super) ticks: Signal<u64>,
     pub(super) splash_revealed: Signal<bool>,
@@ -146,24 +146,14 @@ pub(super) struct App {
     pub(super) viewport: Signal<(u16, u16)>,
     pub(super) layout: Signal<Layout>,
     pub(super) pane_focus: Signal<bool>,
-    pub(super) file_cursor: Signal<usize>,
-    pub(super) expanded: Signal<Vec<String>>,
+    pub(super) pane_lists: [super::ui::List; panes::PANES],
+    pub(super) hunk_list: super::ui::List,
     pub(super) last_pane: Signal<Option<Pane>>,
-    pub(super) context: Signal<Option<Context>>,
-    pub(super) diff_cursor: Signal<usize>,
     pub(super) diff_view: Signal<Option<String>>,
     pub(super) diff_root: Signal<Option<(PathBuf, String)>>,
-    pub(super) hunk_cursor: Signal<usize>,
     pub(super) note_target: Signal<Option<(String, String)>>,
     pub(super) note_text: Signal<String>,
     pub(super) note_caret: Signal<usize>,
-    pub(super) tree_cursor: Signal<usize>,
-    pub(super) job_cursor: Signal<usize>,
-    pub(super) job_open: Signal<Option<String>>,
-    pub(super) mcp_cursor: Signal<usize>,
-    pub(super) mcp_open: Signal<Option<String>>,
-    pub(super) peer_cursor: Signal<usize>,
-    pub(super) view_scroll: Signal<usize>,
     pub(super) view_from: Signal<Option<Pane>>,
     pub(super) diff_recent: Signal<bool>,
     pub(super) diff_session: Signal<bool>,
@@ -254,7 +244,7 @@ impl App {
             context_open: signal(false),
             cache_open: signal(false),
             scroll: signal(0),
-            settings_sel: signal(0),
+            settings: super::ui::List::new(),
             modules: signal({
                 let switches = crate::modules::Switches::load(&workspace).ok();
                 crate::modules::ALL
@@ -279,24 +269,14 @@ impl App {
             viewport: signal((80, 24)),
             layout: signal(Layout::parse(&info.prefs.layout).unwrap_or_default()),
             pane_focus: signal(false),
-            file_cursor: signal(0),
-            expanded: signal(Vec::new()),
+            pane_lists: std::array::from_fn(|_| super::ui::List::new()),
+            hunk_list: super::ui::List::new(),
             last_pane: signal(None),
-            context: signal(None),
-            diff_cursor: signal(0),
             diff_view: signal(None),
             diff_root: signal(None),
-            hunk_cursor: signal(0),
             note_target: signal(None),
             note_text: signal(String::new()),
             note_caret: signal(0),
-            tree_cursor: signal(0),
-            job_cursor: signal(0),
-            job_open: signal(None),
-            mcp_cursor: signal(0),
-            mcp_open: signal(None),
-            peer_cursor: signal(0),
-            view_scroll: signal(0),
             view_from: signal(None),
             diff_recent: signal(false),
             diff_session: signal(false),

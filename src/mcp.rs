@@ -13,6 +13,7 @@ mod conn;
 mod defer;
 mod expand;
 mod form;
+mod handshake;
 mod http;
 mod journal;
 mod link;
@@ -23,7 +24,7 @@ mod probe;
 mod status;
 mod tool;
 
-pub(crate) use config::Entry;
+pub(crate) use config::{Entry, expand_vars, scan};
 pub use defer::call_label;
 pub(crate) use defer::{Resolved, SEARCH_TOOL, effective};
 pub(crate) use expand::wanted;

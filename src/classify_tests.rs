@@ -1,4 +1,5 @@
 use super::*;
+use crate::endpoint::Wire;
 
 const LIVE: &str = r#"{
   "model": "typesafe/jev-1.13-20260917",
@@ -255,7 +256,7 @@ fn any_endpoint_can_declare_itself_a_decisions_endpoint() {
     for spelling in ["decisions", "systemone", "system-one", "DECISIONS"] {
         assert_eq!(
             crate::endpoint::Wire::parse(spelling),
-            Wire::Decisions,
+            Some(Wire::Decisions),
             "config must be able to declare `{spelling}`"
         );
     }
@@ -321,4 +322,33 @@ fn an_answer_from_a_provider_with_extra_fields_still_parses() {
         decision.answers.contains_key("kind"),
         "a provider adding fields must not break the read"
     );
+}
+
+#[test]
+fn the_question_sets_load_from_data_by_name() {
+    assert_eq!(*sets::NAMES, ["review", "errors", "diff", "commit"]);
+    let names = |set: &str| -> Vec<String> { sets::by_name(set).unwrap().into_keys().collect() };
+    assert_eq!(
+        names("review"),
+        [
+            "looped",
+            "outcome",
+            "overreached",
+            "proved",
+            "risk",
+            "unreported"
+        ]
+    );
+    assert_eq!(
+        names("diff"),
+        [
+            "adds_panic",
+            "kind",
+            "removes_guard",
+            "risk",
+            "touches_value",
+            "widens_surface"
+        ]
+    );
+    assert!(sets::by_name("nothing").is_none());
 }

@@ -4,37 +4,19 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::process::Child;
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use url::Url;
 
 use crate::error::{Error, Result};
 use crate::language;
-use crate::rpc::{self, Frame};
+use crate::process::Env;
+use crate::rpc::{Client, Framing, Peer, Spawn};
 
-use super::command::ProcessGroup;
-use super::command::proc::kill_group;
-use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize, parse_args};
-
-const CONTENT_MODIFIED: i64 = -32801;
-const INBOX: usize = 64;
+use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize};
 
 pub(super) struct Conn {
-    child: Option<Child>,
-    inbox: mpsc::Receiver<Result<Frame>>,
-    reader: JoinHandle<()>,
-    writer: Box<dyn AsyncWrite + Send + Unpin>,
-    next_id: i64,
-    root: String,
-    clean: bool,
+    client: Client,
     docs: std::collections::HashMap<String, (String, i64, (u64, u64))>,
-    options: Value,
-    server: String,
-    key: String,
     languages: std::collections::BTreeMap<String, String>,
-    group: Option<ProcessGroup>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,69 +42,55 @@ impl Conn {
             .split_first()
             .ok_or_else(|| Error::Tool("language server has no command".to_string()))?;
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        let base = match launch.origin {
-            Origin::Host => rpc::Env::Inherit,
-            Origin::Plugin => rpc::Env::Clean,
-        };
-        let rpc::Process {
-            child,
-            stdin,
-            stdout,
-            group,
-            ..
-        } = rpc::start(&rpc::Launch {
+        let root = file_uri(workspace)?;
+        let limits = crate::limits::limits();
+        let client = Client::spawn(&Spawn {
             program,
             args: &args,
             env: &launch.env,
-            unset: &[],
             cwd: workspace,
-            base,
-            stderr: rpc::Stderr::Discard,
+            wait: limits.lsp_start(),
+            base: match launch.origin {
+                Origin::Host => Env::Inherit,
+                Origin::Plugin => Env::Clean,
+            },
+            framing: Framing::ContentLength,
+            max: limits.lsp_frame_max_bytes,
+            peer: Peer::Lsp(crate::rpc::Lsp {
+                root: root.clone(),
+                options: launch.options.clone(),
+                sections: vec![launch.argv[0].clone(), launch.key.clone()],
+            }),
         })?;
-        let (sender, inbox) = mpsc::channel(INBOX);
-        let mut stdout = BufReader::new(stdout);
-        let reader = tokio::spawn(async move {
-            loop {
-                let msg = match read_msg(&mut stdout).await {
-                    Ok(value) => match rpc::frame(value) {
-                        Ok(Frame::Notification { .. }) | Err(_) => continue,
-                        Ok(frame) => Ok(frame),
-                    },
-                    Err(error) => Err(error),
-                };
-                let failed = msg.is_err();
-                if sender.send(msg).await.is_err() || failed {
-                    break;
-                }
-            }
-        });
         let mut conn = Self {
-            child: Some(child),
-            inbox,
-            reader,
-            writer: Box::new(stdin),
-            next_id: 1,
-            root: file_uri(workspace)?,
-            clean: true,
+            client,
             docs: std::collections::HashMap::new(),
             languages: launch.languages.clone(),
-            options: launch.options.clone(),
-            server: launch.argv[0].clone(),
-            key: launch.key.clone(),
-            group,
         };
-        conn.handshake(&launch.options).await?;
+        conn.handshake(&root, &launch.options).await?;
         Ok(conn)
     }
 
-    async fn handshake(&mut self, options: &Value) -> Result<()> {
+    pub(super) fn pid(&self) -> Option<u32> {
+        self.client.pid()
+    }
+
+    pub(super) fn set_wait(&mut self, wait: std::time::Duration) {
+        self.client.set_wait(wait);
+    }
+
+    pub(super) fn alive(&mut self) -> bool {
+        self.client.alive()
+    }
+
+    async fn handshake(&mut self, root: &str, options: &Value) -> Result<()> {
         let result = self
             .request(
                 "initialize",
                 json!({
                     "processId": null,
-                    "rootUri": self.root,
-                    "workspaceFolders": [{ "uri": self.root, "name": "workspace" }],
+                    "rootUri": root,
+                    "workspaceFolders": [{ "uri": root, "name": "workspace" }],
                     "initializationOptions": options,
                     "capabilities": {
                         "workspace": { "workspaceFolders": true, "configuration": true },
@@ -244,109 +212,11 @@ impl Conn {
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
-        let mut reply = self.call(method, params.clone()).await?;
-        if reply
-            .1
-            .as_ref()
-            .and_then(|error| error.get("code"))
-            .and_then(Value::as_i64)
-            == Some(CONTENT_MODIFIED)
-        {
-            reply = self.call(method, params).await?;
-        }
-        rpc::outcome("lsp", reply.0, reply.1)
-    }
-
-    async fn call(&mut self, method: &str, params: Value) -> Result<Reply> {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.send(&rpc::request(&json!(id), method, params)).await?;
-        self.pump(id).await
+        self.client.call(method, params, |note| drop(note)).await
     }
 
     async fn notify(&mut self, method: &str, params: Value) -> Result<()> {
-        self.send(&rpc::notification(method, params)).await
-    }
-
-    async fn send(&mut self, value: &Value) -> Result<()> {
-        self.clean = false;
-        write_msg(&mut self.writer, value).await?;
-        self.clean = true;
-        Ok(())
-    }
-
-    async fn pump(&mut self, want: i64) -> Result<Reply> {
-        loop {
-            let msg = match self.inbox.recv().await {
-                Some(Ok(msg)) => msg,
-                Some(Err(error)) => {
-                    self.clean = false;
-                    return Err(error);
-                }
-                None => {
-                    self.clean = false;
-                    return Err(Error::Tool("language server closed".to_string()));
-                }
-            };
-            match msg {
-                Frame::Request { id, method, params } => {
-                    self.reply_server(id, &method, &params).await?;
-                }
-                Frame::Response { id, result, error } if id == want => {
-                    return Ok((result, error));
-                }
-                Frame::Response { .. } | Frame::Notification { .. } => {}
-            }
-        }
-    }
-
-    async fn reply_server(&mut self, id: Value, method: &str, params: &Value) -> Result<()> {
-        let result = match method {
-            "workspace/workspaceFolders" => json!([{ "uri": self.root, "name": "workspace" }]),
-            "workspace/configuration" => Value::Array(
-                params
-                    .get("items")
-                    .and_then(Value::as_array)
-                    .map(|items| {
-                        items
-                            .iter()
-                            .map(|item| {
-                                let section = item.get("section").and_then(Value::as_str);
-                                if section
-                                    .is_some_and(|name| name != self.server && name != self.key)
-                                {
-                                    Value::Null
-                                } else {
-                                    self.options.clone()
-                                }
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_else(|| vec![self.options.clone()]),
-            ),
-            "window/workDoneProgress/create" | "client/registerCapability" => Value::Null,
-            _ => Value::Null,
-        };
-        self.send(&rpc::response(&id, result)).await
-    }
-
-    fn kill(&mut self) {
-        self.reader.abort();
-        drop(self.group.take());
-        if let Some(child) = self.child.as_mut() {
-            if let Some(pid) = child.id() {
-                kill_group(pid);
-            }
-            drop(child.start_kill());
-        }
-    }
-}
-
-type Reply = (Option<Value>, Option<Value>);
-
-impl Drop for Conn {
-    fn drop(&mut self) {
-        self.kill();
+        self.client.notify(method, params).await
     }
 }
 

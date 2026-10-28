@@ -3,7 +3,9 @@ use std::sync::{Arc, PoisonError};
 
 use tokio::sync::mpsc::UnboundedSender;
 
+use super::lane::Lane;
 use super::settings::set_run_mode;
+use super::state::set_mail_reply;
 use super::steer::{steer, steerable, take_inputs};
 use super::{Cmd, Msg, Worker};
 use crate::provider::UserInput;
@@ -31,12 +33,28 @@ struct MidTurn<'a> {
     followups: &'a mut VecDeque<UserInput>,
     steering: &'a Arc<crate::runtime::Steering>,
     auto_reply: &'a mut bool,
+    pending_mail: &'a mut bool,
     ui: &'a UnboundedSender<Msg>,
     reader: &'a super::reader::Reader,
     peers: &'a mut Option<Vec<crate::mail::Agent>>,
 }
 
 impl MidTurn<'_> {
+    fn tick(&mut self, session_id: &str) {
+        if !crate::mail::listed() {
+            return;
+        }
+        match crate::mail::dir() {
+            Ok(dir) => super::state::publish_peers(
+                crate::mail::live(&dir),
+                session_id,
+                self.peers,
+                self.ui,
+            ),
+            Err(error) => drop(self.ui.send(Msg::System(error.to_string()))),
+        }
+    }
+
     async fn attend(
         &mut self,
         command: Option<Cmd>,
@@ -44,69 +62,16 @@ impl MidTurn<'_> {
         session_id: &str,
         workspace: &std::path::Path,
     ) -> Outcome {
+        let Some(command) = command else {
+            return Outcome::Quit;
+        };
         match command {
-            Some(Cmd::Cancel) => Outcome::Cancel,
-            Some(Cmd::Quit) => {
+            Cmd::Cancel => Outcome::Cancel,
+            Cmd::Quit => {
                 drop(self.ui.send(Msg::Bye));
                 Outcome::Quit
             }
-            None => Outcome::Quit,
-            Some(command) => {
-                self.command(command, session_path, session_id, workspace)
-                    .await
-            }
-        }
-    }
-
-    async fn command(
-        &mut self,
-        command: Cmd,
-        session_path: &std::path::Path,
-        session_id: &str,
-        workspace: &std::path::Path,
-    ) -> Outcome {
-        match command {
-            command @ (Cmd::Command(_)
-            | Cmd::Branch { .. }
-            | Cmd::Login(_)
-            | Cmd::SetKey(..)
-            | Cmd::Logout(_)
-            | Cmd::Merge(_)
-            | Cmd::Discard(_)
-            | Cmd::SetVerify(_)
-            | Cmd::ToggleApproval
-            | Cmd::SetEndpoint(_)
-            | Cmd::SetModel(_)
-            | Cmd::SetSeat(..)
-            | Cmd::SeatRole(..)
-            | Cmd::ClearRole(_)
-            | Cmd::SaveWorkflow(_)
-            | Cmd::ListWorkflows
-            | Cmd::SetModule(..)
-            | Cmd::SetEffort(_)) => self.later(command),
-            command @ (Cmd::ListModels { .. }
-            | Cmd::Pin(..)
-            | Cmd::SaveDefault(_)
-            | Cmd::ListSessions
-            | Cmd::ListUsage
-            | Cmd::DeleteSession(_)
-            | Cmd::ListPrompts(_)
-            | Cmd::ListFiles
-            | Cmd::Jobs
-            | Cmd::Mcp
-            | Cmd::KillJob(_)
-            | Cmd::Clipboard
-            | Cmd::Diff(_)
-            | Cmd::SessionDiff(_)
-            | Cmd::Patch(..)
-            | Cmd::Review { .. }
-            | Cmd::Trees
-            | Cmd::Offers
-            | Cmd::View(..)
-            | Cmd::Save(..)) => {
-                self.reader.run(command).await;
-                Outcome::Keep
-            }
+            command if command.lane() == Lane::AfterTurn => self.later(command),
             command @ (Cmd::Steer(_)
             | Cmd::Queue(_)
             | Cmd::Submit(_)
@@ -117,7 +82,7 @@ impl MidTurn<'_> {
                 Outcome::Keep
             }
             Cmd::SetMail(on) => {
-                *self.auto_reply = on;
+                set_mail_reply(self.auto_reply, self.pending_mail, on);
                 Outcome::Keep
             }
             Cmd::Send(to, text) => {
@@ -133,21 +98,14 @@ impl MidTurn<'_> {
                 Outcome::Keep
             }
             Cmd::Tick => {
-                if crate::mail::listed() {
-                    match crate::mail::dir() {
-                        Ok(dir) => super::state::publish_peers(
-                            crate::mail::live(&dir),
-                            session_id,
-                            self.peers,
-                            self.ui,
-                        ),
-                        Err(error) => drop(self.ui.send(Msg::System(error.to_string()))),
-                    }
-                }
+                self.tick(session_id);
                 Outcome::Keep
             }
             Cmd::Mail | Cmd::LoginAnswer(_) | Cmd::Open(_) => Outcome::Keep,
-            Cmd::Cancel | Cmd::Quit => unreachable!("attend handles Cancel and Quit"),
+            command => {
+                self.reader.run(command).await;
+                Outcome::Keep
+            }
         }
     }
 
@@ -232,6 +190,7 @@ impl Worker {
                 followups: &mut self.followups,
                 steering: &self.steering,
                 auto_reply: &mut self.auto_reply,
+                pending_mail: &mut self.pending_mail,
                 ui: &self.ui,
                 reader: &self.reader,
                 peers: &mut self.last_peers,
@@ -305,7 +264,7 @@ impl Worker {
                     .work_progress()
                     .is_ok_and(|progress| progress.terminal())
             {
-                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
+                set_run_mode(&mut self.loop_, &self.ui, crate::WorkKind::Single);
             }
         }
     }
@@ -321,12 +280,7 @@ impl Worker {
     }
 
     fn carry_steering(&mut self) {
-        let left: Vec<UserInput> = self
-            .steering
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .drain(..)
-            .collect();
+        let left = self.take_steering();
         self.carried = left.len();
         for input in left.into_iter().rev() {
             self.followups.push_front(input);
@@ -334,13 +288,13 @@ impl Worker {
         super::announce(&self.ui, &self.steering, &self.followups, &self.deferred);
     }
 
+    fn take_steering(&self) -> Vec<UserInput> {
+        let mut steering = self.steering.lock().unwrap_or_else(PoisonError::into_inner);
+        steering.drain(..).collect()
+    }
+
     pub(super) fn recover(&mut self) {
-        let mut pending: Vec<UserInput> = self
-            .steering
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .drain(..)
-            .collect();
+        let mut pending = self.take_steering();
         pending.extend(self.followups.drain(..));
         self.carried = 0;
         while let Ok(command) = self.cmd.try_recv() {

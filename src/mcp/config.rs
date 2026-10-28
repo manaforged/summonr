@@ -112,7 +112,7 @@ impl Entry {
 
     fn launch(self) -> Option<Launch> {
         let user_config = self.user_config;
-        let fill = |text: &str| expand(&substitute(text, &user_config));
+        let fill = |text: &str| expand_vars(text, &user_config);
         if let Some(url) = self.url {
             let mut headers: Vec<(String, String)> = self
                 .headers
@@ -195,11 +195,15 @@ fn layers(workspace: &Path) -> Result<Layers> {
             .map(|(name, _)| name.clone()),
     );
     if import_peers && let Some(home) = &home {
-        let codex = read_toml(&home.join(".codex/config.toml"))?;
+        let codex = read(&home.join(".codex/config.toml"), |text: &str| {
+            toml::from_str::<toml::Value>(text)
+        })?;
         layers.push(toml_map(
             codex.as_ref().and_then(|file| file.get("mcp_servers")),
         ));
-        let claude = read_json(&home.join(".claude.json"))?;
+        let claude = read(&home.join(".claude.json"), |text: &str| {
+            serde_json::from_str::<Value>(text)
+        })?;
         layers.push(json_map(
             claude.as_ref().and_then(|file| file.get("mcpServers")),
         ));
@@ -221,7 +225,9 @@ fn layers(workspace: &Path) -> Result<Layers> {
                 .map(str::to_string),
         );
     }
-    let local = read_json(&workspace.join(".mcp.json"))?;
+    let local = read(&workspace.join(".mcp.json"), |text: &str| {
+        serde_json::from_str::<Value>(text)
+    })?;
     let mut shared = json_map(local.as_ref().and_then(|file| file.get("mcpServers")));
     let path = workspace.join(".summonr/config.toml");
     if path.is_file() {
@@ -263,22 +269,15 @@ fn plugin_layer(workspace: &Path) -> BTreeMap<String, Entry> {
     layer
 }
 
-fn read_json(path: &Path) -> Result<Option<Value>> {
+fn read<T, E: std::fmt::Display>(
+    path: &Path,
+    parse: impl FnOnce(&str) -> std::result::Result<T, E>,
+) -> Result<Option<T>> {
     let text = store::read_or_empty(path)?;
     if text.is_empty() {
         return Ok(None);
     }
-    serde_json::from_str(&text)
-        .map(Some)
-        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))
-}
-
-fn read_toml(path: &Path) -> Result<Option<toml::Value>> {
-    let text = store::read_or_empty(path)?;
-    if text.is_empty() {
-        return Ok(None);
-    }
-    toml::from_str(&text)
+    parse(&text)
         .map(Some)
         .map_err(|error| Error::Config(format!("{}: {error}", path.display())))
 }
@@ -303,18 +302,17 @@ fn toml_map(value: Option<&toml::Value>) -> BTreeMap<String, Entry> {
         .collect()
 }
 
-fn substitute(text: &str, config: &BTreeMap<String, String>) -> String {
-    scan(text, "${user_config.", |name| config.get(name).cloned())
-}
-
-fn expand(text: &str) -> String {
-    scan(text, "${", |inner| {
+pub(crate) fn expand_vars(text: &str, user_config: &BTreeMap<String, String>) -> String {
+    let text = scan(text, crate::plugins::USER_CONFIG, |name| {
+        user_config.get(name).cloned()
+    });
+    scan(&text, "${", |inner| {
         let (name, fallback) = inner.split_once(":-").unwrap_or((inner, ""));
         Some(std::env::var(name).unwrap_or_else(|_unset| fallback.to_string()))
     })
 }
 
-fn scan(text: &str, open: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
+pub(crate) fn scan(text: &str, open: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::new();
     let mut rest = text;
     while let Some(start) = rest.find(open) {

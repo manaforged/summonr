@@ -49,7 +49,6 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                 .child(
                     sigil::kernel::text("❯")
                         .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface)
                         .font_size(12.0)
                         .text_color(sigil::prelude::Token::Gray12),
                 )
@@ -213,7 +212,6 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
                 node(
                     sigil::kernel::text(text)
                         .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface)
                         .font_size(12.0)
                         .text_color(sigil::prelude::Token::Gray11),
                 ),
@@ -231,7 +229,6 @@ fn mode_label(mode: ModeText) -> NodeBuilder {
     ][usize::from(class).min(2)];
     let title = sigil::kernel::text(text)
         .nowrap()
-        .text_color(sigil::prelude::Token::OnSurface)
         .font_size(12.0)
         .text_color(tone);
     container()
@@ -246,7 +243,6 @@ fn model_label(model: String) -> NodeBuilder {
             sigil::kernel::text(model)
                 .nowrap()
                 .ellipsize()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray12),
         )

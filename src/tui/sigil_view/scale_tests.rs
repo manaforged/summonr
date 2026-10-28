@@ -31,6 +31,7 @@ mod mode;
 mod paths;
 mod picker;
 mod reflow;
+mod right_click;
 mod secret;
 mod settings;
 mod strip;
@@ -39,6 +40,7 @@ mod thinking;
 mod typeahead;
 mod typing;
 mod usage;
+mod view_scroll;
 
 const SIZES: [(u16, u16); 5] = [(40, 12), (60, 20), (80, 24), (110, 34), (200, 60)];
 

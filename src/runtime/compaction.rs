@@ -31,9 +31,6 @@ struct Size {
 }
 
 pub(super) const CHARS_PER_TOKEN: usize = 4;
-const KEEP_TAIL: usize = 2;
-const RESERVE_TOKENS: u32 = 16_384;
-const TAIL_TOKENS: u32 = 24_000;
 
 const SUMMARY_ASK: &str = "Do not call tools. Summarize this session so it can continue without the raw history. \
     Exactly these sections, terse bullets: Goal / Constraints / Progress / Key decisions / \
@@ -63,7 +60,7 @@ impl<P: Provider> Loop<P> {
                 slot.clone_from(message);
             }
         }
-        self.session.rewrite(edits).map_err(super::session_err)?;
+        self.session.rewrite(edits)?;
         Ok(())
     }
 
@@ -85,17 +82,23 @@ impl<P: Provider> Loop<P> {
                 false,
             )
             .with_tools_json(&advertised.json);
+        let options = CallOptions {
+            stream: false,
+            retry: RetryPolicy::None,
+        };
         match self
-            .complete_once(workflow::Role::Summary, &request)
+            .call(workflow::Role::Summary, request, options)
             .await?
+            .map_err(|missed| missed.error)
         {
-            Ok(message)
-                if message
+            Ok(reply)
+                if reply
+                    .message
                     .content
                     .as_ref()
                     .is_some_and(|text| !text.trim().is_empty()) =>
             {
-                Ok(Some(message))
+                Ok(Some(reply.message))
             }
             Ok(_) => Ok(None),
             Err(WaitError::Provider(error)) => {
@@ -177,15 +180,13 @@ impl<P: Provider> Loop<P> {
             )?;
             return Ok(false);
         };
-        self.count_usage(&summary, usage);
+        usage.add(&summary.usage);
         self.emit_records(events, emit)?;
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));
         }
         let summary = summary.content.unwrap_or_default();
-        self.session
-            .compact(&summary, &messages[keep_from..])
-            .map_err(super::session_err)?;
+        self.session.compact(&summary, &messages[keep_from..])?;
         self.tools.forget_reads();
         messages.truncate(1);
         messages.extend(self.session.history().iter().cloned());
@@ -281,16 +282,12 @@ impl<P: Provider> Loop<P> {
                 "the compaction summary failed; the context is unchanged".to_string(),
             ));
         };
-        self.count_usage(&reply, &mut Usage::default());
         self.emit_records(&mut Vec::new(), &mut emit)?;
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));
         }
         let summary = reply.content.unwrap_or_default();
-        self.session
-            .compact(&summary, &messages[keep_from..])
-            .map_err(super::session_err)?;
-        self.spent_tokens = self.session.spent_tokens();
+        self.session.compact(&summary, &messages[keep_from..])?;
         self.tools.forget_reads();
         Ok(true)
     }
@@ -318,9 +315,13 @@ fn tail_chars(
 ) -> usize {
     window.map_or(compact_chars / 4, |window| {
         let tail_tokens = window
-            .saturating_sub(RESERVE_TOKENS.min(window / 4))
+            .saturating_sub(
+                crate::limits::limits()
+                    .compact_reserve_tokens
+                    .min(window / 4),
+            )
             .div_ceil(4)
-            .clamp(1, TAIL_TOKENS);
+            .clamp(1, crate::limits::limits().compact_tail_tokens);
         chars
             .saturating_mul(tail_tokens as usize)
             .checked_div(estimated_tokens.max(1))

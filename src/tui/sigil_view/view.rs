@@ -33,6 +33,7 @@ mod keys;
 mod splash;
 mod surface;
 
+pub(super) use keys::KeyCommand;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use keys::shell;
 

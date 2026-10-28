@@ -3,14 +3,14 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::session::SessionInfo;
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, WidgetLayoutExt, container, signal, text_edit, virtual_list,
-};
 use sigil::prelude::{NodeBuilder, Signal};
+use sigil::prelude::{container, signal, virtual_list};
 
 use super::app::App;
 use super::canvas;
-use super::ui::{Bindings, Dialog, Hints, Key, Size, alt};
+use super::ui::{
+    Bindings, Dialog, Hints, Key, Size, alt, filter_column, filter_field, overlay_list, plain,
+};
 
 mod resume_row;
 use resume_row::row;
@@ -266,14 +266,7 @@ impl Picker {
             self.armed.set(None);
             self.error.set(String::new());
         }
-        let last = self.rows().len().saturating_sub(1);
-        self.selected.set(
-            self.selected
-                .peek()
-                .min(last)
-                .saturating_add_signed(delta)
-                .min(last),
-        );
+        super::app::shift(&self.selected, delta, self.rows().len());
     }
 
     pub(super) fn scope(self) {
@@ -302,26 +295,15 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let keys = app.model.peek().prefs.hotkeys.clone();
     Dialog::new(Size::Normal, picker.heading(), Hints::new())
         .live_hints(move || {
-            let total = picker.rows().len();
-            let count = if total == 0 {
-                String::new()
-            } else {
-                format!("{} / {}", picker.selected.get().min(total - 1) + 1, total)
-            };
             Hints::new()
                 .key(Key::UpDown, "move")
                 .key(Key::Enter, "resume")
                 .key(Key::Tab, "scope")
                 .key(Key::Alt('d'), "delete")
                 .key(Key::Esc, "close")
-                .right(count)
+                .count(picker.selected.get(), picker.rows().len())
         })
-        .child(
-            text_edit(picker.query)
-                .caret_position(picker.caret)
-                .placeholder(super::ui::FILTER_HINT)
-                .height(canvas::overlay_list_row()),
-        )
+        .child(filter_field(picker.query, picker.caret))
         .child(container().children_reactive(move || {
             let note = picker.error.get();
             if note.is_empty() || picker.rows().is_empty() {
@@ -342,38 +324,21 @@ pub(super) fn layer(app: App) -> NodeBuilder {
 
 fn list(app: App, picker: Picker) -> NodeBuilder {
     let paint = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .grow(1.0)
-                .min_size(0.0, 0.0),
-        )
-        .children_reactive(move || {
-            let rows = picker.rows();
-            let selected = picker.selected.get().min(rows.len().saturating_sub(1));
-            if rows.is_empty() {
-                return vec![
-                    container().child(
-                        sigil::kernel::text(picker.empty())
-                            .nowrap()
-                            .text_color(sigil::prelude::Token::OnSurface),
-                    ),
-                ];
-            }
-            let source = paint.clone();
-            let band = canvas::overlay_list_row();
-            let shown = canvas::overlay_shown(rows.len(), paint.viewport.get().1);
-            vec![
-                container().layout(LayoutStyle::block().fill_width()).child(
-                    virtual_list(rows, move |index, info: &SessionInfo| {
-                        row(source.clone(), picker, index, info, selected)
-                    })
-                    .row_height(band)
-                    .height(band * shown as f32)
-                    .viewport_height(band * shown as f32)
-                    .follow_row(paint.sessions.selected),
-                ),
-            ]
-        })
+    filter_column().children_reactive(move || {
+        let rows = picker.rows();
+        let selected = picker.selected.get().min(rows.len().saturating_sub(1));
+        if rows.is_empty() {
+            return vec![plain(picker.empty())];
+        }
+        let source = paint.clone();
+        let shown = canvas::overlay_shown(rows.len(), paint.viewport.get().1);
+        vec![overlay_list(
+            virtual_list(rows, move |index, info: &SessionInfo| {
+                row(source.clone(), picker, index, info, selected)
+            })
+            .follow_row(paint.sessions.selected),
+            canvas::overlay_list_row(),
+            shown,
+        )]
+    })
 }

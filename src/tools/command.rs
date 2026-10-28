@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{Error, Result};
 use crate::policy::Grant;
 
-use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize, parse_args};
+use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize};
 
 pub(super) mod digest;
 mod native;
@@ -45,8 +45,7 @@ pub(crate) fn kill_job(workspace: &Path, id: &str) -> Result<crate::jobs::Status
 }
 
 impl ToolRegistry {
-    pub(super) async fn run_command(&self, arguments: &str) -> Result<ToolOutput> {
-        let args: serde_json::Value = parse_args("run_command", arguments)?;
+    pub(super) async fn run_command(&self, args: &serde_json::Value) -> Result<ToolOutput> {
         let named = |key| {
             args.get(key)
                 .and_then(serde_json::Value::as_str)
@@ -56,7 +55,9 @@ impl ToolRegistry {
             && !named("command")
             && !named("job")
         {
-            return Ok(ToolOutput::ok(super::help::RUN_COMMAND.to_string()));
+            return Ok(ToolOutput::ok(super::catalog::help(
+                super::Builtin::RunCommand,
+            )));
         }
         let locked = self.policy.is_read_only();
         if let Some(id) = args
@@ -69,9 +70,9 @@ impl ToolRegistry {
                     "run_command got both job `{id}` and a command; send job to poll or stop it, or command to start one"
                 )));
             }
-            return self.poll_job(&args, id, locked).await;
+            return self.poll_job(args, id, locked).await;
         }
-        self.launch_command(&args, locked, Rewrite::Native).await
+        self.launch_command(args, locked, Rewrite::Native).await
     }
 
     pub(crate) async fn run_check(&self, command: &str) -> Result<ToolOutput> {
@@ -155,17 +156,14 @@ impl ToolRegistry {
             && let Some(reason) = self.policy.needs_approval(command, &self.workspace, cwd)
         {
             return Ok(Some(ToolOutput {
-                text: format!(
-                    "summonr: not run; `{command}` needs the user's approval because {reason}"
-                ),
                 success: false,
-                mutated: false,
                 grant: Some(Grant::Danger {
                     command: command.to_string(),
                     reason: reason.to_string(),
                 }),
-                images: Vec::new(),
-                patch: None,
+                ..ToolOutput::ok(format!(
+                    "summonr: not run; `{command}` needs the user's approval because {reason}"
+                ))
             }));
         }
         if approved {
@@ -225,11 +223,7 @@ impl ToolRegistry {
                 status.state,
                 crate::jobs::JobState::Running | crate::jobs::JobState::Exited(0)
             ),
-            text: crate::askpass::scrub(&status.text),
-            mutated: false,
-            grant: None,
-            images: Vec::new(),
-            patch: None,
+            ..ToolOutput::ok(crate::askpass::scrub(&status.text))
         })
     }
 
@@ -237,7 +231,7 @@ impl ToolRegistry {
         let Some((read_args, pipe)) = native_read_args(command) else {
             return Ok(None);
         };
-        let mut text = crate::tools::blocking(|| self.read(&read_args.to_json()))?.text;
+        let mut text = crate::tools::blocking(|| self.read(&read_args.value()))?.text;
         if let Some(pipe) = pipe {
             text = pipe.apply(&text);
         }
@@ -259,7 +253,7 @@ impl ToolRegistry {
         };
         let mut answers = Vec::with_capacity(calls.len());
         for (part, call) in parts.iter().zip(calls) {
-            let text = crate::tools::blocking(|| self.search_files(&call.to_string()))?;
+            let text = crate::tools::blocking(|| self.search_files(&call))?;
             answers.push(format!("[`{part}` answered by search {call}]\n{text}"));
         }
         Ok(Some(ToolOutput::ok(answers.join("\n\n"))))
@@ -298,12 +292,15 @@ impl ToolRegistry {
     }
 
     fn check_policy(&self, command: &str, cwd: &Path) -> Result<()> {
-        self.policy.command_policy_checked(
-            command.trim(),
-            &crate::policy::split_segments(command.trim()),
-            &self.workspace,
-            cwd,
-        )
+        self.policy
+            .decide(crate::policy::Action::Command {
+                text: command.trim(),
+                workspace: &self.workspace,
+                cwd,
+                ask: false,
+                approved: true,
+            })
+            .into_result()
     }
 
     fn command_dir(&self, args: &serde_json::Value) -> Result<PathBuf> {

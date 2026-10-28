@@ -1,7 +1,7 @@
-use std::io;
 use std::path::Path;
 
 use crate::durable::store;
+use crate::error::Result;
 use crate::provider::Effort;
 
 const FILE: &str = "recent.json";
@@ -27,19 +27,50 @@ impl Seat {
     }
 }
 
+struct Seats;
+
+impl store::Codec for Seats {
+    type Value = Vec<(Seat, Option<Effort>)>;
+
+    fn decode(path: &Path, text: &str) -> Result<Self::Value> {
+        let rows: Vec<String> = serde_json::from_str(text).map_err(|error| {
+            crate::error::Error::Config(format!("{}: {error}", crate::config::tilde(path)))
+        })?;
+        Ok(rows
+            .iter()
+            .filter_map(|row| {
+                let mut fields = row.splitn(3, '\t');
+                let seat = Seat::new(fields.next()?, fields.next()?);
+                Some((seat, fields.next().and_then(Effort::parse)))
+            })
+            .collect())
+    }
+}
+
+impl store::Encode for Seats {
+    fn encode(seats: &Self::Value) -> Result<String> {
+        let rows: Vec<String> = seats
+            .iter()
+            .map(|(seat, effort)| match effort {
+                Some(effort) => format!("{}\t{}", seat.key(), effort.as_str()),
+                None => seat.key(),
+            })
+            .collect();
+        Ok(serde_json::to_string(&rows)?)
+    }
+}
+
+fn doc(home: &Path, file: &str) -> store::Doc<Seats> {
+    store::Doc::new(
+        home.join(file),
+        store::Durability::Renamed,
+        store::Invalid::Warn,
+        store::Wait::Forever,
+    )
+}
+
 fn rows(home: &Path, file: &str) -> Vec<(Seat, Option<Effort>)> {
-    let Ok(text) = std::fs::read_to_string(home.join(file)) else {
-        return Vec::new();
-    };
-    serde_json::from_str::<Vec<String>>(&text)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|row| {
-            let mut fields = row.splitn(3, '\t');
-            let seat = Seat::new(fields.next()?, fields.next()?);
-            Some((seat, fields.next().and_then(Effort::parse)))
-        })
-        .collect()
+    doc(home, file).load().unwrap_or_default()
 }
 
 fn read(home: &Path, file: &str) -> Vec<Seat> {
@@ -50,25 +81,13 @@ fn update(
     home: &Path,
     file: &str,
     change: impl FnOnce(&mut Vec<(Seat, Option<Effort>)>),
-) -> io::Result<()> {
-    let path = home.join(file);
-    let held = store::lock(&path, true)?;
-    let mut seats = rows(home, file);
-    change(&mut seats);
-    let rows: Vec<String> = seats
-        .iter()
-        .map(|(seat, effort)| match effort {
-            Some(effort) => format!("{}\t{}", seat.key(), effort.as_str()),
-            None => seat.key(),
+) -> Result<()> {
+    doc(home, file)
+        .update(|seats| {
+            change(seats);
+            Ok(true)
         })
-        .collect();
-    store::write(
-        &path,
-        serde_json::to_string(&rows)?,
-        store::Durability::Renamed,
-    )?;
-    drop(held);
-    Ok(())
+        .map(drop)
 }
 
 pub(crate) fn load(home: &Path) -> Vec<Seat> {
@@ -79,7 +98,7 @@ pub(crate) fn pinned(home: &Path) -> Vec<Seat> {
     read(home, PINNED)
 }
 
-pub(crate) fn record(home: &Path, seat: &Seat, effort: Option<Effort>) -> io::Result<()> {
+pub(crate) fn record(home: &Path, seat: &Seat, effort: Option<Effort>) -> Result<()> {
     update(home, FILE, |seats| {
         seats.retain(|(existing, _)| existing != seat);
         seats.insert(0, (seat.clone(), effort));
@@ -87,7 +106,7 @@ pub(crate) fn record(home: &Path, seat: &Seat, effort: Option<Effort>) -> io::Re
     })
 }
 
-pub(crate) fn pin(home: &Path, seat: &Seat, on: bool) -> io::Result<()> {
+pub(crate) fn pin(home: &Path, seat: &Seat, on: bool) -> Result<()> {
     update(home, PINNED, |seats| {
         seats.retain(|(existing, _)| existing != seat);
         if on {

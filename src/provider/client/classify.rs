@@ -7,7 +7,7 @@ impl Client {
         state: &Value,
         questions: &std::collections::BTreeMap<String, crate::classify::Question>,
     ) -> Result<crate::classify::Decision> {
-        if self.wire != Wire::Decisions {
+        if !wire::spec(self.wire).classifies() {
             return Err(Error::Config(
                 "this endpoint does not classify; see `summonr endpoints`".to_string(),
             ));

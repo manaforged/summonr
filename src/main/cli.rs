@@ -1,6 +1,6 @@
 use summonr::{Error, Result, is_endpoint};
 
-use flags::{COMMANDS, Input, SCOPED, SWITCHES, VALUES};
+use flags::{COMMANDS, CONFLICTS, FLAGS, Input};
 
 #[path = "cli/flags.rs"]
 mod flags;
@@ -11,34 +11,47 @@ mod mcp;
 #[path = "cli/typo.rs"]
 mod typo;
 
-use help::{exit_help, exit_version};
+use help::exit_help;
 pub(super) use mcp::McpCommand;
+
+#[derive(Clone, Debug)]
+pub(super) enum Verb {
+    Endpoints,
+    Sessions,
+    Doctor,
+    Classify,
+    Export,
+    Profile,
+    Workflows,
+    Modules,
+    Install,
+    Uninstall,
+    Update,
+    Acp,
+    Mail(Vec<String>),
+    Cron(Vec<String>),
+    Gateway(Vec<String>),
+    Tool(Vec<String>),
+    Mcp(McpCommand),
+    Login,
+    Logout,
+    Worktrees,
+    Diff,
+}
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct Args {
+    pub(super) verb: Option<Verb>,
     pub(super) print: bool,
     pub(super) effort: Option<summonr::Effort>,
     pub(super) json: bool,
-    pub(super) list: bool,
     pub(super) live: bool,
-    pub(super) list_sessions: bool,
     pub(super) grep: Option<String>,
     pub(super) logs: bool,
     pub(super) report: bool,
-    pub(super) doctor: bool,
-    pub(super) export: bool,
-    pub(super) profile: bool,
     pub(super) all: bool,
     pub(super) last: Option<usize>,
     pub(super) name: Option<String>,
-    pub(super) list_workflows: bool,
-    pub(super) list_modules: bool,
-    pub(super) mail: Option<Vec<String>>,
-    pub(super) cron: Option<Vec<String>>,
-    pub(super) gateway: Option<Vec<String>>,
-    pub(super) tool: Option<Vec<String>>,
-    pub(super) mcp: Option<McpCommand>,
-    pub(super) acp: bool,
     pub(super) resume: bool,
     pub(super) fork: bool,
     pub(super) trust: bool,
@@ -58,19 +71,14 @@ pub(super) struct Args {
     pub(super) prompt: Vec<String>,
     pub(super) here: bool,
     pub(super) worktree: bool,
-    pub(super) list_worktrees: bool,
     pub(super) gui: bool,
-    pub(super) diff: bool,
     pub(super) stat: bool,
     pub(super) turn: Option<String>,
     pub(super) prune_worktrees: bool,
-    pub(super) login: bool,
     pub(super) key: bool,
     pub(super) url: Option<String>,
     pub(super) default: bool,
-    pub(super) logout: bool,
     pub(super) remove: bool,
-    pub(super) classify: bool,
     pub(super) questions: Option<String>,
     pub(super) noul: Vec<String>,
     pub(super) review: bool,
@@ -79,10 +87,8 @@ pub(super) struct Args {
     pub(super) gate: Option<f64>,
     pub(super) review_diff: bool,
     pub(super) digest: bool,
-    pub(super) add: bool,
     pub(super) add_list: bool,
-    pub(super) uninstall: bool,
-    pub(super) update: bool,
+    pub(super) arity: Option<(&'static str, usize)>,
 }
 
 pub(super) fn parse() -> Result<Args> {
@@ -92,7 +98,6 @@ pub(super) fn parse() -> Result<Args> {
 enum Step {
     Next,
     Endpoint,
-    Rest,
 }
 
 fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
@@ -115,10 +120,6 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
                 args.endpoint = Some(arg);
                 command_position = command;
             }
-            Step::Rest => {
-                args.prompt.extend(input.by_ref());
-                break;
-            }
         }
     }
     args.check()?;
@@ -127,47 +128,34 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
 
 impl Args {
     fn step(&mut self, input: &mut Input, arg: &str, command: bool) -> Result<Step> {
-        if let Some((_, set)) = SWITCHES.iter().find(|(names, _)| names.contains(&arg)) {
-            set(self);
-        } else if let Some(valued) = VALUES
-            .iter()
-            .find(|valued| valued.option == arg || valued.short == Some(arg))
+        if let Some(row) = FLAGS.find(arg, self) {
+            FLAGS.apply(row, arg, self, input)?;
+        } else if let Some((name, most, run)) =
+            COMMANDS.iter().find(|(name, ..)| command && *name == arg)
         {
-            (valued.set)(self, value(input, valued.option, valued.expected)?)?;
-        } else if let Some((_, run)) = COMMANDS.iter().find(|(name, _)| command && *name == arg) {
+            self.arity = most.map(|most| (*name, most));
             run(self, input)?;
-        } else if let Some((.., run)) = SCOPED
-            .iter()
-            .find(|(flag, _, active, _)| *flag == arg && active(self))
-        {
-            run(self, input)?;
+        } else if arg.starts_with('-') {
+            return Err(misplaced(arg));
         } else {
-            return self.rest(arg, command);
+            return self.positional(arg, command);
         }
         Ok(Step::Next)
-    }
-
-    fn rest(&mut self, arg: &str, command: bool) -> Result<Step> {
-        match arg {
-            "-p" | "--print" => self.print().map(|()| Step::Next),
-            "-h" | "--help" => exit_help(self.verb()),
-            "-V" | "--version" => exit_version(),
-            "--" => Ok(Step::Rest),
-            option if option.starts_with('-') => Err(misplaced(option)),
-            name => self.positional(name, command),
-        }
     }
 
     fn positional(&mut self, name: &str, command: bool) -> Result<Step> {
         if self.endpoint_slot(command) && is_endpoint(name) {
             return Ok(Step::Endpoint);
         }
-        if self.login && self.endpoint.is_none() {
-            self.endpoint = Some(name.to_string());
-            return Ok(Step::Next);
-        }
-        if self.logout && self.endpoint.is_none() {
-            return Err(unknown(name, unlisted(self.login)));
+        if self.endpoint.is_none() {
+            match self.verb {
+                Some(Verb::Login) => {
+                    self.endpoint = Some(name.to_string());
+                    return Ok(Step::Next);
+                }
+                Some(Verb::Logout) => return Err(unknown(name, "")),
+                _ => {}
+            }
         }
         self.prompt.push(name.to_string());
         Ok(Step::Next)
@@ -185,18 +173,16 @@ impl Args {
     }
 
     fn verb(&self) -> Option<&'static str> {
-        SCOPED
-            .iter()
-            .find(|(_, _, active, _)| active(self))
-            .map(|(_, verb, ..)| *verb)
+        FLAGS.scoped(self)
     }
 
     fn endpoint_slot(&self, command: bool) -> bool {
-        self.endpoint.is_none() && (command || self.login || self.logout)
+        self.endpoint.is_none()
+            && (command || matches!(self.verb, Some(Verb::Login | Verb::Logout)))
     }
 
     fn check_names(&self) -> Result<()> {
-        if self.login
+        if matches!(self.verb, Some(Verb::Login))
             && self.url.is_none()
             && let Some(name) = self.endpoint.as_deref()
             && !is_endpoint(name)
@@ -214,18 +200,8 @@ impl Args {
     }
 
     fn check(&self) -> Result<()> {
-        if self.grep.is_some() && !self.list_sessions {
-            return Err(Error::Config(
-                "--grep works with `summonr sessions`".to_string(),
-            ));
-        }
-        if self.here && self.worktree {
-            return Err(Error::Config(
-                "use --here or --worktree, not both".to_string(),
-            ));
-        }
-        if self.goal.is_some() && self.steps.is_some() {
-            return Err(Error::Config("use --goal or --steps, not both".to_string()));
+        if let Some((_, message)) = CONFLICTS.iter().find(|(broken, _)| broken(self)) {
+            return Err(Error::Config((*message).to_string()));
         }
         if let Some(mode) = [
             ("--goal", self.goal.is_some()),
@@ -244,23 +220,7 @@ impl Args {
     }
 
     fn check_arity(&self) -> Result<()> {
-        let arity = [
-            (self.list, "endpoints", 0),
-            (self.list_sessions, "sessions", 0),
-            (self.list_workflows, "workflows", 0),
-            (self.list_modules, "modules", 0),
-            (self.acp, "acp", 0),
-            (self.list_worktrees, "worktrees", 0),
-            (self.logs || self.doctor, "doctor", 0),
-            (self.logout, "logout", 0),
-            (self.export, "export", 1),
-            (self.profile, "profile", 1),
-            (self.diff, "diff", 1),
-            (self.add, "install", 1),
-            (self.uninstall, "uninstall", 1),
-            (self.update, "update", 0),
-        ];
-        let Some((_, verb, most)) = arity.into_iter().find(|(on, ..)| *on) else {
+        let Some((verb, most)) = self.arity else {
             return Ok(());
         };
         match self.prompt.get(most) {
@@ -276,10 +236,10 @@ impl Args {
 }
 
 fn misplaced(option: &str) -> Error {
-    let verbs: Vec<String> = SCOPED
+    let verbs: Vec<String> = FLAGS
+        .verbs(option)
         .iter()
-        .filter(|(flag, ..)| *flag == option)
-        .map(|(_, verb, ..)| format!("`summonr {verb}`"))
+        .map(|verb| format!("`summonr {verb}`"))
         .collect();
     Error::Config(if verbs.is_empty() {
         format!("unknown option `{option}`")
@@ -311,18 +271,6 @@ fn named(token: &str) -> bool {
         && token
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
-}
-
-fn value(input: &mut impl Iterator<Item = String>, option: &str, expected: &str) -> Result<String> {
-    let value = input
-        .next()
-        .ok_or_else(|| Error::Config(format!("{option} requires {expected}")))?;
-    if value.starts_with('-') {
-        return Err(Error::Config(format!(
-            "{option} requires {expected}, not option `{value}`"
-        )));
-    }
-    Ok(value)
 }
 
 #[cfg(test)]

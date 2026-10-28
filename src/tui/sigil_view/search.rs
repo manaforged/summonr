@@ -8,13 +8,10 @@ use regex::{Regex, RegexBuilder, escape};
 use super::app::App;
 use super::canvas;
 use super::model::{Entry, Model, entry_markdown};
-use super::ui::{Dialog, Hints, Key, Size, pick};
+use super::ui::{Dialog, Hints, Key, Size, filter_column, filter_field, overlay_list, pick, plain};
 use crate::session::Prompt;
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeEventsExt, WidgetLayoutExt, container, signal, text_edit,
-    virtual_list,
-};
 use sigil::prelude::{NodeBuilder, Signal};
+use sigil::prelude::{NodeEventsExt, container, signal, virtual_list};
 
 const SNIPPET_CELLS: usize = 180;
 
@@ -106,13 +103,7 @@ impl Picker {
     }
 
     fn hints(self, model: &Model) -> Hints {
-        let count = match self.rows(model) {
-            Ok(rows) if !rows.is_empty() => {
-                let selected = self.selected.get().min(rows.len() - 1);
-                format!("{} / {}", selected + 1, rows.len())
-            }
-            Ok(_) | Err(_) => String::new(),
-        };
+        let total = self.rows(model).map_or(0, |rows| rows.len());
         let action = match self.mode.get() {
             Mode::Conversation => "jump",
             Mode::Prompts => "insert",
@@ -122,7 +113,7 @@ impl Picker {
             .key(Key::UpDown, "select")
             .key(Key::Enter, action)
             .key(Key::Esc, "close")
-            .right(count)
+            .count(self.selected.get(), total)
     }
 
     fn detail(self, index: usize) -> String {
@@ -214,11 +205,8 @@ impl Picker {
     }
 
     pub(super) fn shift(self, model: &Model, delta: isize) {
-        let last = self
-            .rows(model)
-            .map_or(0, |rows| rows.len().saturating_sub(1));
-        self.selected
-            .set(self.selected.peek().saturating_add_signed(delta).min(last));
+        let len = self.rows(model).map_or(0, |rows| rows.len());
+        super::app::shift(&self.selected, delta, len);
     }
 }
 
@@ -248,79 +236,51 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let live = app.clone();
     Dialog::new(Size::Normal, picker.title(), Hints::new())
         .live_hints(move || picker.hints(&live.model.get()))
-        .child(
-            text_edit(picker.query)
-                .caret_position(picker.caret)
-                .placeholder(super::ui::FILTER_HINT)
-                .height(canvas::overlay_list_row()),
-        )
+        .child(filter_field(picker.query, picker.caret))
         .child(results(app, picker))
         .build(picker.open, cols, &keys)
 }
 
 fn results(app: App, picker: Picker) -> NodeBuilder {
     let paint = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .grow(1.0)
-                .min_size(0.0, 0.0),
-        )
-        .children_reactive(move || {
-            let warning = picker.warning.get();
-            let mut items: Vec<NodeBuilder> = Vec::new();
-            if !warning.is_empty() {
-                items.push(
-                    container().child(
-                        sigil::kernel::text(warning)
-                            .nowrap()
-                            .text_color(sigil::prelude::Token::OnSurface)
-                            .font_size(12.0)
-                            .text_color(sigil::prelude::Token::Error11),
-                    ),
-                );
-            }
-            match picker.rows(&paint.model.get()) {
-                Ok(rows) => {
-                    let selected = picker.selected.get().min(rows.len().saturating_sub(1));
-                    if rows.is_empty() {
-                        items.push(
-                            container().child(
-                                sigil::kernel::text("no matches · edit the search")
-                                    .nowrap()
-                                    .text_color(sigil::prelude::Token::OnSurface),
-                            ),
-                        );
-                    }
-                    let height = if picker.is_history() {
-                        canvas::overlay_list_row() * 2.0
-                    } else {
-                        canvas::overlay_list_row()
-                    };
-                    let source = paint.clone();
-                    items.push(
-                        container().layout(LayoutStyle::block().fill_width()).child(
-                            virtual_list(rows, move |index, (entry, preview): &(usize, String)| {
-                                row(source.clone(), picker, index, *entry, preview, selected)
-                            })
-                            .row_height(height)
-                            .height(height * 10.0)
-                            .viewport_height(height * 10.0)
-                            .follow_row(picker.selected),
-                        ),
-                    );
-                }
-                Err(error) => items.push(
-                    container().child(
-                        sigil::kernel::text(error)
-                            .nowrap()
-                            .text_color(sigil::prelude::Token::OnSurface),
-                    ),
+    filter_column().children_reactive(move || {
+        let warning = picker.warning.get();
+        let mut items: Vec<NodeBuilder> = Vec::new();
+        if !warning.is_empty() {
+            items.push(
+                container().child(
+                    sigil::kernel::text(warning)
+                        .nowrap()
+                        .font_size(12.0)
+                        .text_color(sigil::prelude::Token::Error11),
                 ),
+            );
+        }
+        match picker.rows(&paint.model.get()) {
+            Ok(rows) => {
+                let selected = picker.selected.get().min(rows.len().saturating_sub(1));
+                if rows.is_empty() {
+                    items.push(plain("no matches · edit the search"));
+                }
+                let height = if picker.is_history() {
+                    canvas::overlay_list_row() * 2.0
+                } else {
+                    canvas::overlay_list_row()
+                };
+                let source = paint.clone();
+                items.push(overlay_list(
+                    virtual_list(rows, move |index, (entry, preview): &(usize, String)| {
+                        row(source.clone(), picker, index, *entry, preview, selected)
+                    })
+                    .follow_row(picker.selected),
+                    height,
+                    10,
+                ));
             }
-            items
-        })
+            Err(error) => items.push(plain(error)),
+        }
+        items
+    })
 }
 
 fn row(

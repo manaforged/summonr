@@ -1,10 +1,8 @@
-use std::path::Path;
-
 use crate::error::{Error, Result};
 
 use super::edit::{Patch, apply_patches, restore, terminators};
 use super::ops::replace_text_patch;
-use super::write::{Change, apply_changes};
+use super::write::{Action, Change, staged};
 use crate::text::squash;
 use crate::tools::{ToolOutput, ToolRegistry};
 
@@ -36,23 +34,16 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
         out.push_str(&text);
         changes.push(change);
     }
-    apply_changes(&changes)?;
-    for change in &changes {
-        registry.note_wrote(&change.display);
-    }
-    if let Some(change) = changes.iter().rev().find(|change| change.content.is_some())
+    registry.apply_changes(&changes)?;
+    if let Some(change) = changes
+        .iter()
+        .rev()
+        .find(|change| change.content().is_some())
         && let Some(check) = registry.check_after_edit(&change.dest).await
     {
         out.push_str(&check.text);
     }
-    Ok(ToolOutput {
-        text: out.trim_end().to_string(),
-        success: true,
-        mutated: true,
-        grant: None,
-        images: Vec::new(),
-        patch: None,
-    })
+    Ok(ToolOutput::mutated(out.trim_end().to_string(), None))
 }
 
 impl Section {
@@ -66,7 +57,7 @@ impl Section {
                 let change = Change {
                     dest,
                     display: path.clone(),
-                    content: None,
+                    action: Action::Delete,
                 };
                 Ok((change, format!("deleted {path}\n")))
             }
@@ -102,12 +93,8 @@ fn stage_update(
         text = apply_patches(&text, vec![patch])?.0;
     }
     let edited = restore(&endings, &raw, &text);
-    let preview = super::write::preview(&raw, &edited, false);
-    let change = Change {
-        dest,
-        display: path.to_string(),
-        content: Some(edited),
-    };
+    let preview = super::write::preview(&raw, &edited, false).0;
+    let change = Change::write(dest, path, edited);
     Ok((change, format!("edited {path}\n{preview}\n")))
 }
 
@@ -125,21 +112,9 @@ fn stage_add(
         )));
     }
     let content = format!("{}\n", lines.join("\n"));
-    let preview = super::write::preview("", &content, false);
-    let change = Change {
-        dest,
-        display: path.to_string(),
-        content: Some(content),
-    };
+    let preview = super::write::preview("", &content, false).0;
+    let change = Change::write(dest, path, content);
     Ok((change, format!("added {path}\n{preview}\n")))
-}
-
-fn staged<'a>(changes: &'a [Change], dest: &Path) -> Option<Option<&'a str>> {
-    changes
-        .iter()
-        .rev()
-        .find(|change| change.dest == dest)
-        .map(|change| change.content.as_deref())
 }
 
 fn hunk_patch(text: &str, hunk: &Hunk) -> Result<Patch> {

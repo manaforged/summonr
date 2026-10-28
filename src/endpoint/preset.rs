@@ -1,41 +1,77 @@
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use super::*;
-
-const HOST_ID: &str = "{host_id}";
 use crate::provider::Spec;
 
+const HOST_ID: &str = "{host_id}";
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct Preset {
     pub(super) name: String,
-    pub(super) provider: String,
-    pub(super) region: Option<super::Region>,
-    pub(super) replaces: Vec<String>,
     pub(super) base_url: String,
-    pub(super) models_url: Option<&'static str>,
+    #[serde(default)]
+    pub(super) provider: String,
+    #[serde(default)]
+    pub(super) region: Option<super::Region>,
+    #[serde(default)]
+    pub(super) replaces: Vec<String>,
+    #[serde(default)]
+    pub(super) models_url: Option<String>,
+    #[serde(default)]
     pub(super) model: String,
+    #[serde(default)]
     pub(super) login_model: Option<String>,
-    pub(super) env_keys: &'static [&'static str],
-    pub(super) env_unset: &'static [&'static str],
-    pub(super) default_key: Option<&'static str>,
+    #[serde(default)]
+    pub(super) env_keys: Vec<String>,
+    #[serde(default)]
+    pub(super) env_unset: Vec<String>,
+    #[serde(default)]
+    pub(super) default_key: Option<String>,
+    #[serde(default)]
     pub(super) missing: String,
-    pub(super) aliases: &'static [(String, String)],
+    #[serde(default)]
+    pub(super) aliases: BTreeMap<String, String>,
+    #[serde(default, rename = "oauth")]
+    login: Option<String>,
+    #[serde(skip)]
     pub(super) oauth: Option<crate::config::OAuth>,
-    pub(super) headers: &'static [(String, String)],
+    #[serde(default)]
+    pub(super) headers: BTreeMap<String, String>,
+    #[serde(default, deserialize_with = "row::wire")]
     pub(super) wire: Wire,
+    #[serde(default, rename = "reasoning")]
+    reasoning_row: row::ReasoningRow,
+    #[serde(skip)]
     pub(super) reasoning: Spec,
+    #[serde(default)]
     pub(super) context_window: Option<u32>,
+    #[serde(default)]
     pub(super) opencode: bool,
+    #[serde(default)]
     pub(super) prompt_cache_key: bool,
+    #[serde(default)]
     pub(super) assistant_after_tool: bool,
+    #[serde(default)]
     pub(super) cache_ttl: Option<CacheTtl>,
+    #[serde(default)]
     pub(super) cache_header: Option<String>,
+    #[serde(default)]
     pub(super) cache_marks: bool,
+    #[serde(default)]
     pub(super) env_default: bool,
+    #[serde(default)]
     pub(super) plan: bool,
+    #[serde(default)]
     pub(super) off: bool,
-    pub(super) opencode_ids: &'static [&'static str],
+    #[serde(default)]
+    pub(super) opencode_ids: Vec<String>,
+    #[serde(default)]
     pub(super) label: Option<String>,
+    #[serde(default)]
     pub(super) start: Option<String>,
+    #[serde(default)]
     pub(super) key_from: Vec<String>,
 }
 
@@ -71,16 +107,9 @@ impl Preset {
         }
         Some(oauth)
     }
-}
 
-fn wire(value: &str) -> std::result::Result<Wire, String> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "completions" => Ok(Wire::Completions),
-        "responses" => Ok(Wire::Responses),
-        "anthropic" => Ok(Wire::Anthropic),
-        "gemini" => Ok(Wire::Gemini),
-        "agent-sdk" => Ok(Wire::AgentSdk),
-        other => Err(format!("unknown wire `{other}`")),
+    pub(super) const fn keyless(&self) -> bool {
+        self.default_key.is_some() && self.env_keys.is_empty() && self.oauth.is_none()
     }
 }
 
@@ -89,30 +118,22 @@ mod row;
 use row::File;
 
 pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
-    let file: File = toml::from_str(text).map_err(|error| error.to_string())?;
-    let mut seen: Vec<String> = Vec::new();
-    let mut rows = Vec::new();
-    for row in file.preset {
-        let name = row.name.trim().to_string();
-        let base_url = row.base_url.trim().to_string();
-        if name.is_empty() || base_url.is_empty() {
-            return Err("every preset needs a name and a base_url".to_string());
+    let File { mut preset, oauth } = toml::from_str(text).map_err(|error| error.to_string())?;
+    let mut seen = std::collections::BTreeSet::new();
+    for row in &mut preset {
+        row.check(&oauth)?;
+        if !seen.insert(row.name.clone()) {
+            return Err(format!("preset `{}` is listed twice", row.name));
         }
-        if seen.contains(&name) {
-            return Err(format!("preset `{name}` is listed twice"));
-        }
-        seen.push(name.clone());
-        rows.push(row.into_preset(name, base_url, &file.oauth)?);
     }
-    let names: std::collections::BTreeSet<&str> = seen.iter().map(String::as_str).collect();
-    let retired: std::collections::BTreeSet<&str> = rows
+    if let Some(old) = preset
         .iter()
-        .flat_map(|row| row.replaces.iter().map(String::as_str))
-        .collect();
-    if let Some(old) = retired.iter().find(|old| names.contains(*old)) {
+        .flat_map(|row| &row.replaces)
+        .find(|old| seen.contains(*old))
+    {
         return Err(format!("`{old}` is retired but is still a preset"));
     }
-    Ok(rows)
+    Ok(preset)
 }
 
 const PRESETS: &str = include_str!("presets.toml");
@@ -125,12 +146,6 @@ pub(super) fn listed() -> &'static [Preset] {
     })
 }
 
-impl Preset {
-    pub(super) const fn keyless(&self) -> bool {
-        self.default_key.is_some() && self.env_keys.is_empty() && self.oauth.is_none()
-    }
-}
-
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {
     listed().iter().filter(|preset| !preset.off)
 }
@@ -140,23 +155,17 @@ pub(super) fn preset(name: &str) -> Option<&'static Preset> {
 }
 
 pub(crate) fn catalog_providers() -> impl Iterator<Item = &'static str> {
-    listed()
-        .iter()
-        .filter(|preset| !preset.off)
-        .flat_map(|preset| preset.opencode_ids.iter().copied())
+    presets().flat_map(|preset| preset.opencode_ids.iter().map(String::as_str))
 }
 
 #[must_use]
-pub(crate) fn env_unset(name: &str) -> &'static [&'static str] {
-    preset(name).map_or(&[], |preset| preset.env_unset)
+pub(crate) fn env_unset(name: &str) -> &'static [String] {
+    preset(name).map_or(&[], |preset| &preset.env_unset)
 }
 
 #[must_use]
-pub(crate) fn provider_ids(name: &str) -> &'static [&'static str] {
-    listed()
-        .iter()
-        .find(|preset| preset.name == name && !preset.off)
-        .map_or(&[], |preset| preset.opencode_ids)
+pub(crate) fn provider_ids(name: &str) -> &'static [String] {
+    preset(name).map_or(&[], |preset| &preset.opencode_ids)
 }
 
 #[must_use]

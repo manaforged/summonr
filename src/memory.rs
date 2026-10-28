@@ -194,9 +194,7 @@ fn key(memory: &Path, workspace: &Path) -> String {
 
 fn existing(memory: &Path, hash: &str) -> Option<String> {
     let suffix = format!("-{hash}");
-    std::fs::read_dir(memory)
-        .ok()?
-        .flatten()
+    crate::walk::children(memory)
         .filter_map(|entry| entry.file_name().into_string().ok())
         .find(|name| name.ends_with(&suffix))
 }

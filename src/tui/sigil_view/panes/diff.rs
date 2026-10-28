@@ -7,9 +7,10 @@ use sigil::prelude::{
 
 use std::collections::BTreeSet;
 
-use super::App;
-use super::body::{Empty, empty, header};
+use super::body::{Empty, Extra, header, listing};
+use super::{App, FileRow, Pane};
 use crate::tui::sigil_view::canvas;
+use sigil::prelude::context_menu;
 
 const ACCEPT: &str = "Accept";
 const REVERT: &str = "Revert";
@@ -45,7 +46,6 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             return column.child(
                 sigil::kernel::text("loading…")
                     .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
                     .font_size(12.0)
                     .text_color(sigil::prelude::Token::Gray11),
             );
@@ -80,7 +80,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                 crate::tui::sigil_view::chat::entry::Fit::of(cols),
             ));
         }
-        let cursor = app.hunk_cursor.peek();
+        let cursor = app.hunk_list.cursor.peek();
         let notes = format!(
             "{} · {}",
             crate::text::plural(hunks.len(), "hunk"),
@@ -118,36 +118,9 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
     if window {
         column = column.child(scope(&app));
     }
-    let stats = app.diff_stats();
-    let listed: BTreeSet<String> = stats.iter().map(|stat| stat.path.clone()).collect();
-    if stats.is_empty() {
-        column = column.child(empty(&NO_CHANGES));
-        return undo_rows(&app, column, None, &listed);
-    }
-    for (index, stat) in stats.into_iter().enumerate() {
-        let open = app.clone();
-        let path = stat.path.clone();
-        let menu = app.clone();
-        column = column.child(
-            list_row(
-                index == app.diff_cursor.peek(),
-                stat.path.clone(),
-                format!("+{} −{}", stat.added, stat.removed),
-            )
-            .pointer_down(move |event| {
-                if event.button == Some(MouseButton::Right) {
-                    menu.context_row(index);
-                } else {
-                    open.diff_cursor.set(index);
-                    open.diff_open(path.clone());
-                }
-                event.stop_propagation();
-            }),
-        );
-        if window {
-            column = column.child(file_actions(&app, &stat.path));
-        }
-    }
+    let listed: BTreeSet<String> = app.diff_rows().into_iter().map(|row| row.path).collect();
+    let below = window.then_some(file_actions as Extra);
+    column = listing(&app, Pane::Diff, column, &NO_CHANGES, (None, below));
     undo_rows(&app, column, None, &listed)
 }
 
@@ -182,7 +155,8 @@ fn hunk_actions(app: &App, path: &str, hunk: &str) -> NodeBuilder {
         )
 }
 
-fn file_actions(app: &App, path: &str) -> NodeBuilder {
+fn file_actions(app: &App, changed: &FileRow) -> NodeBuilder {
+    let path = changed.path.as_str();
     let (accepted, reverted) = app.file_review(path);
     let revert = app.clone();
     let target = path.to_string();
@@ -295,10 +269,10 @@ fn hunk_view(
         .note_target
         .peek()
         .is_some_and(|(target, id)| target == path && id == hunk.id);
-    let menu = app.clone();
+    let (menu, items) = (app.clone(), app.clone());
     let mut card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
-        .child(
+        .child(context_menu(
             list_row(focused, hunk.header.clone(), String::new())
                 .layout(
                     LayoutStyle::flex_row()
@@ -311,15 +285,14 @@ fn hunk_view(
                 .child(chip(verdict, tone))
                 .child(spacer())
                 .pointer_down(move |event| {
-                    if event.button == Some(MouseButton::Right) {
-                        menu.hunk_context(index);
-                    } else {
-                        menu.hunk_cursor.set(index);
-                        menu.focus_pane(true);
+                    menu.hunk_list.select(index);
+                    menu.focus_pane(true);
+                    if event.button != Some(MouseButton::Right) {
+                        event.stop_propagation();
                     }
-                    event.stop_propagation();
                 }),
-        );
+            move || items.hunk_menu(index),
+        ));
     if canvas::is_window() && !editing {
         card = card.child(hunk_actions(app, path, &hunk.id));
     }

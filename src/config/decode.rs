@@ -11,7 +11,8 @@ static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::ne
 pub(super) fn wire<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Option<Wire>, D::Error> {
-    Ok(Option::<String>::deserialize(deserializer)?.map(|name| Wire::parse(&name)))
+    Ok(Option::<String>::deserialize(deserializer)?
+        .map(|name| Wire::parse(&name).unwrap_or_default()))
 }
 
 fn bad(path: &Path, message: &str) -> Error {

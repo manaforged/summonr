@@ -3,11 +3,12 @@ use serde_json::{Value, json};
 use crate::error::{Error, Result};
 
 mod client;
+mod frame;
+mod peer;
 
-pub(crate) use client::{Client, Env, Launch, Process, Spawn, Stderr, start, tail};
-
-pub(crate) const PROTOCOL: &str = "2025-11-25";
-const SUPPORTED: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+pub(crate) use client::{Client, Spawn};
+pub(crate) use frame::{Framing, Lines, Read};
+pub(crate) use peer::{Lsp, Peer};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Frame {
@@ -55,10 +56,10 @@ pub(crate) fn frame(mut value: Value) -> Result<Frame> {
     }
 }
 
-pub(crate) fn oversize(method: &str) -> Error {
+pub(crate) fn oversize(method: &str, max: usize) -> Error {
     Error::Tool(format!(
         "a reply to `{method}` was over {} MiB; summonr dropped it",
-        crate::limits::limits().mcp_frame_max_bytes / (1024 * 1024)
+        max / (1024 * 1024)
     ))
 }
 
@@ -71,28 +72,6 @@ pub(crate) fn outcome(method: &str, result: Option<Value>, error: Option<Value>)
         return Err(Error::Tool(format!("`{method}` failed: {message}")));
     }
     Ok(result.unwrap_or(Value::Null))
-}
-
-pub(crate) fn hello(name: &str, capabilities: Value) -> Value {
-    json!({
-        "protocolVersion": PROTOCOL,
-        "capabilities": capabilities,
-        "clientInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")}
-    })
-}
-
-pub(crate) fn agreed(result: &Value) -> Result<String> {
-    let version = result
-        .get("protocolVersion")
-        .and_then(Value::as_str)
-        .unwrap_or(PROTOCOL);
-    if SUPPORTED.contains(&version) {
-        return Ok(version.to_string());
-    }
-    Err(Error::Tool(format!(
-        "the server speaks MCP {version}; summonr speaks {}",
-        SUPPORTED.join(", ")
-    )))
 }
 
 pub(crate) enum Reply {

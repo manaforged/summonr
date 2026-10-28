@@ -92,9 +92,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn picked_model(&self) -> Option<Seat> {
         let shown = self.picker.shown.peek();
-        shown
-            .get(self.picker.sel.peek().min(shown.len().saturating_sub(1)))
-            .cloned()
+        shown.get(self.picker.list.at(shown.len())).cloned()
     }
 
     pub(in crate::tui::sigil_view) fn pin_model(&self) {
@@ -148,7 +146,7 @@ impl App {
             .iter()
             .position(|held| *held == row)
         {
-            self.picker.sel.set(at);
+            self.picker.list.cursor.set(at);
         }
     }
 
@@ -182,19 +180,19 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn replace_model_draft(&self, draft: String) {
-        if self.picker.draft.peek() != draft {
-            self.picker.draft.set(draft);
+        if self.picker.list.query.peek() != draft {
+            self.picker.list.query.set(draft);
         }
         self.rank();
         self.picker.note.set(String::new());
-        self.picker.sel.set(0);
+        self.picker.list.cursor.set(0);
     }
 
     pub(in crate::tui::sigil_view) fn commit_model_edit(&self) {
         if self.auth.open.peek() {
             return;
         }
-        let draft = self.picker.draft.peek().trim().to_string();
+        let draft = self.picker.list.query.peek().trim().to_string();
         let current = self.model.peek().snapshot.endpoint.clone();
         let groups = self.picker.groups.peek();
         let picked = match self.picked_model() {
@@ -245,8 +243,8 @@ impl App {
     pub(in crate::tui::sigil_view) fn fixing(&self) -> bool {
         let listed: usize = self.picker.recent.peek().iter().sum();
         let shown = self.picker.shown.peek();
-        let at = self.picker.sel.peek().min(shown.len().saturating_sub(1));
-        self.picker.draft.peek().trim().is_empty()
+        let at = self.picker.list.at(shown.len());
+        self.picker.list.query.peek().trim().is_empty()
             && self.picker.facet.peek() == super::facet::Facet::All
             && at >= listed
             && shown.get(at).is_some_and(|seat| {
@@ -293,14 +291,9 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn move_model(&self, delta: isize) {
         self.picker.note.set(String::new());
-        let last = self.picker.shown.peek().len().saturating_sub(1);
-        self.picker.sel.set(
-            self.picker
-                .sel
-                .peek()
-                .saturating_add_signed(delta)
-                .min(last),
-        );
+        self.picker
+            .list
+            .shift(delta, self.picker.shown.peek().len());
     }
 
     pub(super) fn picker_rows(&self, older: bool, collapse: bool) -> (Vec<Seat>, usize) {
@@ -356,7 +349,7 @@ impl App {
                     .position(|seat| *seat == held)
             })
             .unwrap_or(0);
-        self.picker.sel.set(at);
+        self.picker.list.cursor.set(at);
     }
 
     pub(in crate::tui::sigil_view) fn rank(&self) {
@@ -366,7 +359,7 @@ impl App {
     }
 
     pub(super) fn ranked(&self, facet: super::facet::Facet) -> (Vec<Seat>, usize) {
-        let query = self.picker.draft.peek().to_lowercase();
+        let query = self.picker.list.query.peek().to_lowercase();
         if query.trim().is_empty() {
             let collapse = facet == super::facet::Facet::All;
             let (rows, hidden) = self.picker_rows(self.picker.older.peek(), collapse);

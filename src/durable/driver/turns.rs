@@ -56,14 +56,6 @@ impl SessionDriver {
         })
     }
 
-    pub(crate) fn start_provider(
-        &mut self,
-        model: &str,
-        exposure: Exposure,
-    ) -> Result<Attempt, DriverError> {
-        self.start_round(Purpose::Agent, model, exposure)
-    }
-
     pub(crate) fn start_round(
         &mut self,
         purpose: Purpose,
@@ -251,7 +243,7 @@ impl SessionDriver {
         self.append(Line::Close {
             reason: None,
             code: None,
-            footprint_kb: crate::supervise::footprint_kb(None),
+            footprint_kb: crate::process::footprint_kb(None),
         })?;
         self.turn = None;
         self.fresh = false;
@@ -282,7 +274,7 @@ impl SessionDriver {
         self.append(Line::Close {
             reason: Some(reason.to_string()),
             code: Some(abort.code),
-            footprint_kb: crate::supervise::footprint_kb(None),
+            footprint_kb: crate::process::footprint_kb(None),
         })?;
         if let Some(receipt) = receipt {
             self.append(Line::Receipt {

@@ -6,7 +6,7 @@ use sigil::prelude::{
 
 use super::{App, canvas};
 use crate::tui::Cmd;
-use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, pick, press};
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, overlay_list, pick, press};
 use crate::workflow::Role;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
@@ -73,8 +73,8 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
     let save = app.clone();
     vec![
         container().child(
-            text_edit(app.workflow.draft)
-                .caret_position(app.workflow.caret)
+            text_edit(app.workflow.list.query)
+                .caret_position(app.workflow.list.caret)
                 .placeholder("Workflow name")
                 .submit(move |_| save.commit_workflow())
                 .height(canvas::overlay_field()),
@@ -86,7 +86,7 @@ fn seats(app: &App) -> Vec<NodeBuilder> {
     let source = app.clone();
     let dragging = app.workflow.drag_from.get();
     let over = app.workflow.drag_over.get();
-    let selected = app.workflow.sel.get();
+    let selected = app.workflow.list.cursor.get();
     let driving = {
         let model = app.model.get();
         format!(
@@ -110,25 +110,22 @@ fn seats(app: &App) -> Vec<NodeBuilder> {
             (*role, seat)
         })
         .collect();
-    let mut items: Vec<NodeBuilder> = vec![
-        container().layout(LayoutStyle::block().fill_width()).child(
-            virtual_list(lookup, move |index, (role, seat): &(Role, String)| {
-                entry(
-                    source.clone(),
-                    *role,
-                    seat,
-                    index,
-                    index == selected,
-                    dragging == Some(index),
-                    over == Some(index),
-                )
-            })
-            .row_height(canvas::overlay_list_row())
-            .height(canvas::overlay_list_row() * 8.0)
-            .viewport_height(canvas::overlay_list_row() * 8.0)
-            .scroll_into_view(selected),
-        ),
-    ];
+    let mut items: Vec<NodeBuilder> = vec![overlay_list(
+        virtual_list(lookup, move |index, (role, seat): &(Role, String)| {
+            entry(
+                source.clone(),
+                *role,
+                seat,
+                index,
+                index == selected,
+                dragging == Some(index),
+                over == Some(index),
+            )
+        })
+        .scroll_into_view(selected),
+        canvas::overlay_list_row(),
+        8,
+    )];
     items.push(saved(app));
     items
 }
@@ -147,7 +144,6 @@ fn saved(app: &App) -> NodeBuilder {
         .child(
             sigil::kernel::text("saved:")
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         );
@@ -155,7 +151,6 @@ fn saved(app: &App) -> NodeBuilder {
         row = row.child(
             sigil::kernel::text("none")
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         );
@@ -201,7 +196,7 @@ fn entry(
     let lit = active || over;
     pick(lit, format!("{marker} {role}"), seat.to_string())
         .pointer_down(move |event| {
-            press.workflow.sel.set(index);
+            press.workflow.list.cursor.set(index);
             press.workflow.drag_from.set(Some(index));
             press.workflow.drag_over.set(Some(index));
             event.capture_pointer();
@@ -220,7 +215,7 @@ fn entry(
             drop.workflow.drag_from.set(None);
             drop.workflow.drag_over.set(None);
             if from == index {
-                drop.workflow.sel.set(index);
+                drop.workflow.list.cursor.set(index);
                 drop.pick_workflow_seat();
             } else {
                 drop.copy_seat(from, index);

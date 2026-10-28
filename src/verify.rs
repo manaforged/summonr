@@ -13,7 +13,7 @@ pub struct Outcome {
     pub output: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Receipt {
     pub changes: Vec<String>,
     pub checks: Vec<Outcome>,
@@ -47,13 +47,8 @@ impl Receipt {
             changes,
             checks,
             snapshot,
-            reads: 0,
-            searches: 0,
-            commands: 0,
-            failures: Vec::new(),
-            aborted: false,
             verified,
-            text: String::new(),
+            ..Self::default()
         };
         tally(events, &mut receipt);
         receipt.text = render(&receipt, true);
@@ -120,17 +115,14 @@ pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {
 
 #[must_use]
 pub(crate) fn outcome(command: &str, result: &std::result::Result<ToolOutput, Error>) -> Outcome {
-    match result {
-        Ok(output) => Outcome {
-            command: command.to_string(),
-            passed: output.success,
-            output: output.text.clone(),
-        },
-        Err(error) => Outcome {
-            command: command.to_string(),
-            passed: false,
-            output: error.to_string(),
-        },
+    let (passed, output) = match result {
+        Ok(output) => (output.success, output.text.clone()),
+        Err(error) => (false, error.to_string()),
+    };
+    Outcome {
+        command: command.to_string(),
+        passed,
+        output,
     }
 }
 

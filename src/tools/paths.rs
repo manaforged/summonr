@@ -107,11 +107,12 @@ impl ToolRegistry {
             .canonicalize()
             .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?;
         let normal = crate::policy::normalize(&requested);
-        if (shield == Shield::Always || !self.policy.is_unrestricted())
-            && [&requested, &normal, &opened]
-                .into_iter()
-                .any(|path| crate::policy::protected_read(path))
-        {
+        let shielded = shield == Shield::Always;
+        if [&requested, &normal, &opened].into_iter().any(|path| {
+            self.policy
+                .decide(crate::policy::Action::Read { path, shielded })
+                != crate::policy::Decision::Allow
+        }) {
             return Err(Error::Denied(format!("`{path}` is a protected path")));
         }
         Ok(opened)
@@ -269,12 +270,8 @@ fn existing(path: &Path) -> PathBuf {
         return path.to_path_buf();
     };
     let wanted = fold(name);
-    let Ok(entries) = std::fs::read_dir(existing(parent)) else {
-        return path.to_path_buf();
-    };
-    let mut found = entries
-        .filter_map(std::result::Result::ok)
-        .filter(|entry| fold(&entry.file_name()) == wanted);
+    let mut found =
+        crate::walk::children(&existing(parent)).filter(|entry| fold(&entry.file_name()) == wanted);
     match (found.next(), found.next()) {
         (Some(entry), None) => entry.path(),
         _ => path.to_path_buf(),

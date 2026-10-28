@@ -108,7 +108,7 @@ pub(crate) enum Keys {
 
 fn set_up_in(file: &File, name: &str, keys: Keys) -> bool {
     resolve(Some(name), None, Need::Seat).is_ok_and(|endpoint| {
-        endpoint.wire != Wire::Decisions
+        !crate::provider::wire::spec(endpoint.wire).classifies()
             && (endpoint.source.is_some_and(|source| {
                 source != Source::Builtin && !(keys == Keys::Stored && source == Source::Env)
             }) || (file.endpoint.contains_key(name) && endpoint.keyless())

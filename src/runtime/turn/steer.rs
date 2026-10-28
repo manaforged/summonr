@@ -3,7 +3,7 @@ use super::*;
 impl<P: Provider> Loop<P> {
     pub(super) fn inject(&mut self, text: String, messages: &mut Vec<Message>) -> Result<()> {
         let input = UserInput::from(text);
-        self.session.steer(&input).map_err(super::session_err)?;
+        self.session.steer(&input)?;
         messages.push(Message::user(input));
         Ok(())
     }
@@ -20,7 +20,7 @@ pub(super) fn drain_steer(
         let steered = with_note(&input);
         if let Err(error) = session.steer(&steered) {
             queue.push_front(input);
-            return Err(super::session_err(error));
+            return Err(Error::from(error));
         }
         messages.push(Message::user(steered));
     }

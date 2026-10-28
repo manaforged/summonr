@@ -1,6 +1,5 @@
 use super::*;
 use crate::checkpoint::Checkpoints;
-use crate::durable::log::{self, Line};
 
 pub(super) type Pretask = (
     Option<(
@@ -20,7 +19,7 @@ impl<P: Provider> Loop<P> {
 
     pub(super) fn checkpoint(&mut self) -> Pretask {
         let workspace = self.workspace.clone();
-        let points = (self.depth == 0).then(|| self.checkpoints().cloned());
+        let points = (self.session.depth() == 0).then(|| self.checkpoints().cloned());
         let capture = tokio::task::spawn_blocking(move || {
             points
                 .flatten()
@@ -57,11 +56,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn undo(&mut self) -> Result<(Option<Vec<String>>, Option<String>)> {
-        let turns = log::read(self.session_path())
-            .map_err(super::session_err)?
-            .iter()
-            .filter(|line| matches!(line, Line::User { start: true, .. }))
-            .count();
+        let turns = self.session.turns();
         if turns == 0 {
             return Err(Error::Config("nothing to undo".to_string()));
         }

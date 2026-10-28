@@ -1,10 +1,13 @@
-use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, glass, overlay};
+use super::input::{glass, overlay};
 use super::mark::Shimmer;
 use super::space::{PLATE, Plate, STAR_BRIGHT};
 use super::*;
+use sigil::animation::Easing;
 use sigil::prelude::Paint;
 
 const COMPOSER_ROWS: u16 = 7;
+const WORD_WIPE_MS: u64 = 480;
+const FADE_MS: u64 = 160;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Card {
@@ -14,6 +17,24 @@ pub(in crate::tui::sigil_view) enum Card {
 }
 
 impl Card {
+    const fn word_start(self) -> Option<u64> {
+        match self {
+            Self::Lockup => Some(super::mark::ENTRANCE_MS - super::mark::STEP_MS),
+            Self::Mark => None,
+            Self::Banner => Some(0),
+        }
+    }
+
+    fn facts_start(self) -> u64 {
+        self.word_start().map_or(super::mark::ENTRANCE_MS, |start| {
+            start + WORD_WIPE_MS + FADE_MS
+        })
+    }
+
+    fn reveal_ms(self) -> u64 {
+        self.facts_start() + FADE_MS
+    }
+
     const fn mark(self) -> super::Mark {
         match self {
             Self::Lockup | Self::Mark => super::Mark::Lines,
@@ -101,22 +122,42 @@ pub(in crate::tui::sigil_view) fn compose(cols: u16, rows: u16, app: &App) -> Co
         Card::Lockup => (crate::splash::logo_width() as u16).saturating_sub(FACT_LABEL),
         Card::Mark | Card::Banner => body_width.saturating_sub(FACT_LABEL),
     });
-    for (row, (label, value)) in facts.iter().enumerate().filter(|_| elapsed >= FACTS_MS) {
+    let facts_fade = Easing::SineOut.apply(
+        elapsed.saturating_sub(card_kind.facts_start()).min(FADE_MS) as f32 / FADE_MS as f32,
+    );
+    for (row, (label, value)) in facts.iter().enumerate().filter(|_| facts_fade > 0.0) {
         let [x, y] = placed.facts;
         let y = y + row as u16;
-        overlay(&mut plate, x, y, label, palette().dim);
+        overlay(
+            &mut plate,
+            x,
+            y,
+            label,
+            blend(PLATE, palette().dim, facts_fade),
+        );
         let value = crate::display::ellipsize_start(value, value_width);
-        overlay(&mut plate, x + FACT_LABEL, y, &value, palette().gray);
+        overlay(
+            &mut plate,
+            x + FACT_LABEL,
+            y,
+            &value,
+            blend(PLATE, palette().gray, facts_fade),
+        );
     }
-    if let Some(at) = placed.word {
-        wordmark(&mut plate, at, elapsed);
+    if let Some((at, start)) = placed.word.zip(card_kind.word_start()) {
+        wordmark(&mut plate, at, elapsed.saturating_sub(start));
     }
     let shimmer = (card_kind.mark() == super::Mark::Lines)
         .then(|| super::mark::paint(&mut plate, placed.mark, super::Mark::Lines, elapsed))
         .flatten()
-        .filter(|_| model.prefs.animations);
+        .filter(|_| model.prefs.animations && elapsed >= card_kind.reveal_ms());
     drop(model);
     Composed { plate, shimmer }
+}
+
+pub(in crate::tui::sigil_view) fn reveal_ms(app: &App) -> u64 {
+    let (cols, rows) = app.viewport.peek();
+    fitting(cols, rows, &facts(&app.model.get(), app)).reveal_ms()
 }
 
 pub(in crate::tui::sigil_view) fn shimmer_clock(app: &App) -> u64 {
@@ -125,12 +166,14 @@ pub(in crate::tui::sigil_view) fn shimmer_clock(app: &App) -> u64 {
 
 fn wordmark(plate: &mut Plate, [x, y]: [u16; 2], elapsed: u64) {
     let face = palette().text;
+    let width = crate::splash::logo_width();
     for (row, text) in crate::splash::logo().iter().enumerate() {
-        let width = text.chars().count();
-        let shown = reveal_chars(row, width, elapsed);
-        for (col, glyph) in text.chars().take(shown).enumerate() {
+        for (col, glyph) in text.chars().enumerate() {
             let at = [x + col as u16, y + row as u16];
-            let ink = bloom(row, col, width, elapsed, face);
+            let ink = bloom(col, width, elapsed, face);
+            if ink == PLATE {
+                continue;
+            }
             if glyph == SOLID {
                 solid(plate, at, ink);
             } else if glyph != ' ' {
@@ -238,33 +281,13 @@ pub(in crate::tui::sigil_view) fn layout(
     ]
 }
 
-pub(in crate::tui::sigil_view) fn reveal_chars(row: usize, len: usize, elapsed: u64) -> usize {
-    let start = row as u64 * ROW_MS;
-    if elapsed <= start {
-        0
-    } else if elapsed >= start + ROW_WIPE_MS {
-        len
-    } else {
-        len * (elapsed - start) as usize / ROW_WIPE_MS as usize
-    }
-}
-
-pub(in crate::tui::sigil_view) fn bloom(
-    row: usize,
-    col: usize,
-    width: usize,
-    elapsed: u64,
-    settled: Rgba8,
-) -> Rgba8 {
-    let appeared = row as u64 * ROW_MS + col as u64 * ROW_WIPE_MS / width.max(1) as u64;
+fn bloom(col: usize, width: usize, elapsed: u64, settled: Rgba8) -> Rgba8 {
+    let appeared = col as u64 * WORD_WIPE_MS / width.saturating_sub(1).max(1) as u64;
     let age = elapsed.saturating_sub(appeared);
-    if age >= 450 {
-        settled
-    } else if age >= 150 {
-        blend(STAR_BRIGHT, settled, 0.5)
-    } else {
-        STAR_BRIGHT
-    }
+    let fade = Easing::SineOut.apply(age.min(FADE_MS) as f32 / FADE_MS as f32);
+    let settle =
+        Easing::SineInOut.apply(age.saturating_sub(FADE_MS).min(FADE_MS) as f32 / FADE_MS as f32);
+    blend(PLATE, blend(STAR_BRIGHT, settled, settle), fade)
 }
 
 pub(in crate::tui::sigil_view) type Row = (u16, u16, Vec<Cell>);

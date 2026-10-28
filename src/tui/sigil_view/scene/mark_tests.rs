@@ -37,6 +37,37 @@ fn the_line_stack_matches_the_terminal_s_mockup() {
     assert_eq!(drawn, MOCKUP);
 }
 
+#[test]
+fn the_s_entrance_starts_immediately_and_builds_a_layer_every_120_ms() {
+    let mut first = super::super::input::glass([0, 0, 40, 24]);
+    let mut held = first.clone();
+    let mut next = first.clone();
+    paint(&mut first, [0, 0], Mark::Lines, 0);
+    paint(&mut held, [0, 0], Mark::Lines, 119);
+    paint(&mut next, [0, 0], Mark::Lines, 120);
+    assert_eq!(first, held);
+    assert_ne!(first, next);
+    for (elapsed, started, face) in [
+        (0, true, false),
+        (599, true, false),
+        (600, true, true),
+        (u64::MAX, true, true),
+    ] {
+        let mut plate = super::super::input::glass([0, 0, 40, 24]);
+        paint(&mut plate, [0, 0], Mark::Lines, elapsed);
+        assert_eq!(
+            plate.cells.iter().any(|cell| cell.text != " "),
+            started,
+            "S layers at {elapsed} ms"
+        );
+        assert_eq!(
+            plate.cells.iter().any(|cell| cell.text == "┏"),
+            face,
+            "S face at {elapsed} ms"
+        );
+    }
+}
+
 fn lit(clock: Option<u64>) -> Vec<(usize, usize)> {
     let face = palette().text;
     draw(Mark::Lines, u64::MAX / 2, clock)

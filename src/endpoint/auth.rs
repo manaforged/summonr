@@ -7,20 +7,29 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
     let name = route.as_str();
     let endpoint = resolve(Some(name), None, Need::Config)?;
     let offered = offered_login(name, &endpoint);
+    let external = matches!(endpoint.wire, Wire::AgentSdk);
     let provider = super::route::provider_of(name).to_string();
     let mut info = AuthInfo {
         name: name.to_string(),
         routes: super::route::options(&provider),
         provider,
-        flow: endpoint.oauth.as_ref().map(flow).unwrap_or_default(),
-        login: offered.as_ref().map(flow).unwrap_or_default(),
+        flow: if external {
+            LoginFlow::Browser
+        } else {
+            endpoint.oauth.as_ref().map(flow).unwrap_or_default()
+        },
+        login: if external {
+            LoginFlow::Browser
+        } else {
+            offered.as_ref().map(flow).unwrap_or_default()
+        },
         key: endpoint.takes_key() || (preset(name).is_none() && offered.is_none()),
         plan: offered
             .as_ref()
             .and_then(|row| row.label.clone())
             .unwrap_or_default(),
-        configured: endpoint.api_key.is_some(),
-        source: endpoint.source,
+        configured: !external && endpoint.api_key.is_some(),
+        source: if external { None } else { endpoint.source },
         setup: missing_setup(name, &endpoint),
         env: (endpoint.source == Some(Source::Env))
             .then(|| preset(name).or_else(|| endpoint.base_url.as_deref().and_then(hosted)))
@@ -37,6 +46,9 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
         env_hint: preset(name).and_then(|row| row.env_keys.first().map(String::as_str)),
         group: login_group(name, &endpoint),
     };
+    if external {
+        info.plan = label(name).unwrap_or(name).to_string();
+    }
     if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| flow(spec).signs_in()) {
         info.setup = match (flow(spec), info.key) {
             (_, true) => format!(

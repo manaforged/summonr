@@ -226,7 +226,7 @@ Prompt caching follows each host's documented session hint, so a session's reque
 | xAI | `x-grok-conv-id` header |
 | DashScope pay-as-you-go | `cache_control` breakpoints, Alibaba's explicit cache, which its implicit cache does not guarantee |
 
-GPT-5, GPT-6, and Codex models see an `apply_patch` tool instead of `edit` and `write`, because OpenAI trains them on that patch format. It runs through the same edit engine. Every other model sees `edit` and `write`.
+GPT-5, GPT-6, and Codex models also see `apply_patch`, which runs through the same edit engine. All models keep `edit` and `write`, including tag-based edits, checked multi-file replacements, and previews.
 
 ## Model catalog
 

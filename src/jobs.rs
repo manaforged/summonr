@@ -125,7 +125,11 @@ pub(crate) fn since(workspace: &Path, started: u64, session: Option<&str>) -> Ve
                 }
         })
         .collect();
-    jobs.sort_by_key(|record| record.started);
+    jobs.sort_by(|left, right| {
+        left.started
+            .cmp(&right.started)
+            .then_with(|| left.id.cmp(&right.id))
+    });
     jobs
 }
 

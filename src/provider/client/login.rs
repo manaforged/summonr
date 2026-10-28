@@ -5,6 +5,12 @@ impl Client {
         endpoint: &crate::endpoint::Endpoint,
         prompt: &mut summonr_auth::Prompt,
     ) -> Result<()> {
+        if wire::spec(endpoint.wire).child() {
+            let program = endpoint.base_url.as_deref().unwrap_or_default();
+            return super::super::agent::AgentClient::new(endpoint, program)
+                .login(prompt)
+                .await;
+        }
         let auth = crate::credentials::auth(endpoint)?;
         let http = crate::credentials::http(crate::limits::limits().auth())?;
         auth.login(&http, prompt)

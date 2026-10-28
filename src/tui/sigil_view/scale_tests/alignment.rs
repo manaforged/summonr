@@ -52,10 +52,7 @@ fn subagent_strip_rows_share_their_columns() {
             act(app, IDS[0], usage(1_400));
             act(app, IDS[2], usage(25_000));
         });
-        let strip: Vec<&String> = lines
-            .iter()
-            .filter(|line| line.contains("○ Subagent"))
-            .collect();
+        let strip: Vec<&String> = lines.iter().filter(|line| line.contains("○")).collect();
         let shown = lines.join("\n");
         assert_eq!(strip.len(), 3, "{cols}x{rows}: three strip rows:\n{shown}");
         let separators: Vec<Vec<usize>> = strip.iter().map(|line| columns(line)).collect();

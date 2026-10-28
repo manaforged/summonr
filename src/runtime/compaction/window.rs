@@ -28,22 +28,6 @@ pub(super) fn fired_ceiling(
     }
 }
 
-pub(super) fn ceiling_label(window: Option<u32>, chars: usize) -> String {
-    if let Some(ceiling) = window {
-        format!(
-            "at {}% of {ceiling}",
-            crate::limits::limits().compact_percent
-        )
-    } else if chars >= crate::limits::limits().compact_chars {
-        format!(
-            "prompt exceeded {} characters",
-            crate::limits::limits().compact_chars
-        )
-    } else {
-        "context limit".to_string()
-    }
-}
-
 impl<P: Provider> Loop<P> {
     pub(in crate::runtime) fn receiver_window(&self, role: workflow::Role) -> Option<u32> {
         match self.selections.get(&role) {

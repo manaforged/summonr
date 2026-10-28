@@ -126,7 +126,7 @@ impl<P: Provider> Loop<P> {
             verdict.passed = rejected.is_none();
             reviewed = true;
         }
-        let receipt = crate::verify::new(paths, checks.clone(), snapshot, events);
+        let receipt = crate::verify::new(paths, checks.clone(), snapshot);
         let decision = self
             .decide(
                 reply,
@@ -139,7 +139,7 @@ impl<P: Provider> Loop<P> {
                 usage,
             )
             .await?;
-        let receipt = crate::verify::new(receipt.changes, checks.clone(), receipt.snapshot, events);
+        let receipt = crate::verify::new(receipt.changes, checks.clone(), receipt.snapshot);
         match rejected {
             Some(findings) => self.session.commit_review(&findings, Some(&receipt)),
             None => self

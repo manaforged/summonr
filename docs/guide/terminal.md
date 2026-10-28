@@ -75,7 +75,7 @@ In the files tree, `ctrl+→` focuses it, `↑↓` move, `←→` collapse or ex
 
 The layout persists in `~/.summonr/config.toml` as `layout`. `ctrl+o` opens the settings modal, where every hotkey is editable; your choices go under `[hotkeys]` in the same file.
 
-`/settings` switches tool output between compact and full. Chain of thought is `collapsed` (the default: one dim line with a line count), `expanded`, or `off`. Turn receipts are `off` (the default), `collapsed` (one line: files read, searches, commands, failures, changed files, and the check result), or `expanded` (adds the start commit, the first five failures and changed files, and each check). A click on a receipt toggles it.
+`/settings` switches tool output between compact and full. Chain of thought is `collapsed` (the default: one dim line with a line count), `expanded`, or `off`.
 
 `ctrl+x n` folds every thinking block, then every tool output (`tools = "hidden"`), then shows them all again. A click still opens one block.
 

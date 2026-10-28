@@ -1,13 +1,14 @@
 use sigil::prelude::{effect, interval};
 
 use super::*;
+use crate::tui::sigil_view::scene;
 
 fn sky_clock(app: &App) -> sigil::prelude::Signal<f64> {
     let seconds = sigil::prelude::signal(0.0_f64);
     let start = std::time::Instant::now();
     let app = app.clone();
     effect(move || {
-        let delay = crate::tui::sigil_view::scene::next_change(&app, seconds.get());
+        let delay = scene::next_change(&app, seconds.get());
         let wake = app.clone();
         interval(delay, move || {
             seconds.set(start.elapsed().as_secs_f64());
@@ -162,7 +163,11 @@ impl App {
     fn reveal(&self) {
         if !self.splash_revealed.peek()
             && self.splash_since.get().elapsed().as_millis()
-                > u128::from(crate::limits::limits().splash_reveal_ms)
+                > u128::from(
+                    crate::limits::limits()
+                        .splash_reveal_ms
+                        .max(scene::reveal_ms(self)),
+                )
         {
             self.splash_revealed.set(true);
         }

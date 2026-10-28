@@ -52,7 +52,6 @@ impl App {
             Setting::Theme => self.toggle_theme(),
             Setting::Background => self.toggle_background(),
             Setting::Notify => self.flip(|prefs| prefs.notify = prefs.notify.toggle()),
-            Setting::Receipts => self.set_visibility(|prefs| &mut prefs.receipts, None),
             Setting::Hotkeys => self.open_hotkeys(),
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
             Setting::Motion => self.toggle_motion(),

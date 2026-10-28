@@ -53,6 +53,36 @@ and actions in `app/adjust.rs`.
 
 Typing, wrapping, newlines, and resizing do not dismiss the splash. A transcript entry or explicit navigation does.
 
+## Splash animation
+
+| Item | Owner | Callers |
+| --- | --- | --- |
+| `scene::reveal_ms` | `scene/logo.rs` | `app/frame.rs`; completion time for the visible card's entrance |
+
+The entrance stages attention from the S to the wordmark to the session
+facts. Related actions overlap; the face shimmer waits until the entrance
+finishes. The composer remains available throughout.
+
+| Card | S build | Wordmark sweep | Facts fade | Settled |
+| --- | --- | --- | --- | --- |
+| Lockup | 0–600 ms | 480–960 ms | 1120–1280 ms | 1280 ms |
+| Mark only | 0–600 ms | Not shown | 600–760 ms | 760 ms |
+| Banner only | Not shown | 0–480 ms | 640–800 ms | 800 ms |
+
+The first S layer appears immediately; subsequent layers arrive every
+120 ms. Each wordmark column fades in over 160 ms with sine ease-out,
+then settles from the star highlight to the text color over 160 ms with
+sine ease-in-out. Facts fade together with sine ease-out during the last
+column's color settle. The durations align with the default 40 ms cadence.
+Typing or disabling animations reveals the card immediately.
+The completion timer waits for both the visible card's sequence and
+`splash_reveal_ms`.
+
+The choreography applies [staging, overlapping action, and easing](https://www.adobe.com/creativecloud/animation/discover/principles-of-animation.html),
+with [sequencing](https://www.carbondesignsystem.com/building-blocks/foundations/motion/choreography)
+to preserve information hierarchy. These principles guide the score; they
+do not prescribe its exact durations.
+
 ## Composer Tab bindings
 
 Owner: `view/input.rs::tab_shortcuts`, attached to `view/keys.rs::shell`

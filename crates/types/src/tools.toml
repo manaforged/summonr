@@ -9,7 +9,7 @@ run = "always"
 description = "Read files (N:text; offset/limit, widened by before/after/context; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree, or view an image file. op=help returns the full reference."
 help = """read op reference: every form honors ignore rules unless no_ignore is true; search files with the search tool.
 
-op=file (default with path): N:text lines, one page of up to {read_page_kib} KiB by default; offset starts at line N, limit caps lines (max {read_line_limit}); paths[] reads several files and reports missing ones inline; tags true adds hash tags for tag-edits.
+op=file (default with path): N:text lines, one page of up to {read_page_kib} KiB by default; offset starts at line N, limit caps lines (max {read_line_limit}); paths[] shares the page budget across files, reports missing ones inline, and gives each truncated file its own continuation offset; tags true adds hash tags for tag-edits.
 op=list: directory listing; recursive true or depth N returns a tree; truncation notes say how to narrow.
 op=image: returns the image so you can see it; a model without image input gets a description or a note instead."""
 
@@ -69,17 +69,19 @@ verb = "Edit"
 readonly = false
 advertise = "always"
 run = "always"
-description = "Change an existing file. Use old+new: copy old exactly from the file, including indentation; it must be unique. edits[] applies several at once, in order if they overlap. Tags (from read with tags true) are only for when old is not unique. op=help covers moves, ranges, and patches. New or empty files: write."
+description = "Edit existing files with old+new, edits[], or checked replacements in files[]. expected_matches checks the exact occurrence count; preview true shows the changes without writing. path+to moves a file without staging Git changes. Tags from read disambiguate ranges. New or empty files: write. op=help gives the grammar."
 help = """edit grammar: tags are N:hash strings that a read with tags true returns.
 
-- old+new: replace the unique substring (replace_all true replaces every occurrence); a whitespace-only mismatch self-corrects and says so; zero matches errors with the closest lines, several matches lists their line numbers
+- old+new: replace the unique substring (replace_all true replaces every occurrence); expected_matches requires that exact count and replaces those occurrences; without it a whitespace-only mismatch self-corrects and says so
 - tag+new: replace the tagged line(s), end_tag extends the range
 - tag+text: insert after the tagged line
 - op=delete: remove tagged lines
 - edits[]: apply several of the above atomically; if two overlap they apply in order, each against the result of the one before
 - op=sequence: resolve edits in order
 - patch: a full *** Begin Patch / Update|Add|Delete File document with @@ context lines; multiple files per document; every file is staged first, so a failed stage changes nothing
-- path+to: rename or move the file
+- path+to: rename or move the file; an existing destination is rejected; Git's index is not changed
+- files[]: checked replacements in explicit files, each with path, old, new, and expected_matches; all files are validated before any writes; duplicate paths are rejected
+- preview true: validate and show the replacement diffs or move without writing or running diagnostics
 New or empty files: use write."""
 
 [tool.schema]
@@ -93,6 +95,9 @@ new = { type = "string" }
 tag = { type = "string" }
 text = { type = "string" }
 replace_all = { type = "boolean" }
+expected_matches = { type = "integer", minimum = 1 }
+to = { type = "string" }
+preview = { type = "boolean" }
 op = { type = "string", enum = ["delete", "sequence", "help"] }
 
 [tool.schema.properties.edits]
@@ -109,7 +114,23 @@ new = { type = "string" }
 tag = { type = "string" }
 text = { type = "string" }
 replace_all = { type = "boolean" }
+expected_matches = { type = "integer", minimum = 1 }
 op = { type = "string", enum = ["delete"] }
+
+[tool.schema.properties.files]
+type = "array"
+minItems = 1
+
+[tool.schema.properties.files.items]
+type = "object"
+additionalProperties = false
+required = ["path", "old", "new", "expected_matches"]
+
+[tool.schema.properties.files.items.properties]
+path = { type = "string" }
+old = { type = "string" }
+new = { type = "string" }
+expected_matches = { type = "integer", minimum = 1 }
 
 [[tool]]
 kind = "write"
@@ -186,7 +207,7 @@ verb = "Run"
 readonly = false
 advertise = "always"
 run = "writable"
-description = "Run builds, tests, and command-line tools in the workspace; use edit/write for source changes and search for files or text. After {command_wait_secs}s a command continues as a job unless timeout_secs stops it; background returns a job id, job waits on one, kill stops it. op=help returns output, job, and policy details."
+description = "Run builds, tests, and command-line tools in the workspace; use edit/write for source changes and search for files or text. After {command_wait_secs}s a foreground command continues as a job unless timeout_secs stops it; background returns a job id immediately and cannot be combined with timeout_secs; job waits on one, kill stops it. op=help returns output, job, and policy details."
 help = """run_command reference.
 
 - command runs via the shell in the workspace; workdir changes the directory; cwd does not persist between calls; stdin is closed; the environment is a safe allowlist
@@ -201,8 +222,8 @@ additionalProperties = false
 [tool.schema.properties]
 command = { type = "string" }
 workdir = { type = "string" }
-timeout_secs = { type = "integer", minimum = 1 }
-background = { type = "boolean" }
+timeout_secs = { type = "integer", minimum = 1, description = "Foreground only. Cannot be combined with background." }
+background = { type = "boolean", description = "Return a job id immediately. Omit timeout_secs." }
 job = { type = "string" }
 kill = { type = "boolean" }
 op = { type = "string", enum = ["help"] }
@@ -336,7 +357,7 @@ advertise = "never"
 run = "never"
 
 [apply_patch]
-description = "Create, change, or delete files with one patch. The patch text is:\n*** Begin Patch\n*** Update File: path/to/file\n@@ optional line that sits above the change\n context line\n-removed line\n+added line\n*** Add File: path/to/new\n+every line of the new file\n*** Delete File: path/to/old\n*** End Patch\nUpdate hunks need about three unchanged context lines around each change; one patch can touch several files, and nothing is written unless every section applies."
+description = "Create, change, move, or delete files with one patch. The patch text is:\n*** Begin Patch\n*** Update File: path/to/file\n*** Move to: path/to/destination\n@@ optional line that sits above the change\n context line\n-removed line\n+added line\n*** Add File: path/to/new\n+every line of the new file\n*** Delete File: path/to/old\n*** End Patch\nMove to is optional and must follow Update File immediately; omit hunks for a move without edits. An existing destination is rejected. Update hunks need about three unchanged context lines around each change. All sections are validated before writes. Git's index is not changed. Use edit for checked multi-file replacements and previews."
 
 [apply_patch.schema]
 type = "object"

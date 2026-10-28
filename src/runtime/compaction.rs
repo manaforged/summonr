@@ -6,7 +6,7 @@ mod clear;
 mod window;
 
 pub(super) use clear::force_compact;
-use window::{ceiling_label, fired_ceiling};
+use window::fired_ceiling;
 
 pub(super) fn repair_arguments(history: &[Message]) -> Vec<(usize, Message)> {
     let Some(index) = history.iter().rposition(|m| m.role == Role::Assistant) else {
@@ -126,7 +126,7 @@ impl<P: Provider> Loop<P> {
         let estimated_tokens = self.estimated_prompt_tokens(chars, tool_bytes);
         let known = self.known_window();
         if let Some(window) = known
-            && self.clear_old_outputs(messages, chars, estimated_tokens, window, events, emit)?
+            && self.clear_old_outputs(messages, chars, estimated_tokens, window)?
         {
             return Ok(true);
         }
@@ -150,16 +150,9 @@ impl<P: Provider> Loop<P> {
             window,
             keep_from,
         };
-        if self.elide_stale(messages, &size, events, emit)? {
+        if self.elide_stale(messages, &size)? {
             return Ok(true);
         }
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: "compacting the context…".to_string(),
-            },
-        )?;
         let Some(summary) = self
             .summarize(&messages[0], &messages[1..keep_from])
             .await?
@@ -188,17 +181,6 @@ impl<P: Provider> Loop<P> {
         self.tools.forget_reads();
         messages.truncate(1);
         messages.extend(self.session.history().iter().cloned());
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: self.pressure_note(
-                    "auto-compacted",
-                    &ceiling_label(window, chars),
-                    "earlier turns summarized",
-                ),
-            },
-        )?;
         self.compact_hook(&summary, events, emit).await?;
         Ok(true)
     }
@@ -225,13 +207,6 @@ impl<P: Provider> Loop<P> {
 
     pub(crate) fn prompt_parts(&self) -> (usize, usize, usize, usize) {
         self.prompt_parts
-    }
-
-    fn pressure_note(&self, kind: &str, label: &str, detail: &str) -> String {
-        let (system, schemas, tools, other) = self.prompt_parts;
-        format!(
-            "context {kind} {label}: {detail}; system {system} chars, schemas {schemas} chars, tools {tools} chars, other {other} chars"
-        )
     }
 
     async fn compact_hook(

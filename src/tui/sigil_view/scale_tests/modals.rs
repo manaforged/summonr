@@ -48,6 +48,53 @@ fn screen(cols: u16, rows: u16, setup: impl FnOnce(&App)) -> String {
 }
 
 #[test]
+fn claude_code_auth_in_the_model_picker_logs_in_and_selects_the_requested_model() {
+    let commands = sent(
+        |app| {
+            open(
+                app,
+                vec![(ModelId::new("claude", "default"), Model::named("default"))],
+                &[("claude", Reach::SignIn)],
+            );
+            select(app, "claude");
+        },
+        |app| {
+            app.commit_model_edit();
+            assert!(app.auth.open.peek());
+            assert!(matches!(app.auth.step.peek(), Login::SignIn { .. }));
+            app.update(Msg::LoginStep {
+                text: String::new(),
+                url: "https://auth.example.test/login".into(),
+                code: String::new(),
+                asking: true,
+            });
+            app.replace_auth_key("test-code".into());
+            app.commit_auth();
+            app.update(Msg::LoginDone {
+                name: "claude".into(),
+                result: Ok("Signed in".into()),
+                rejected: false,
+            });
+            assert!(!app.auth.open.peek());
+        },
+    );
+    assert!(
+        commands
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::Login(name) if name == "claude"))
+    );
+    assert!(
+        commands
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::LoginAnswer(code) if code == "test-code"))
+    );
+    assert!(commands.iter().any(
+        |cmd| matches!(cmd, Cmd::SelectModel(name, model) if name == "claude" && model == "default")
+    ));
+    assert!(!commands.iter().any(|cmd| matches!(cmd, Cmd::SetKey(..))));
+}
+
+#[test]
 fn a_provider_that_rejected_its_key_is_one_row_with_its_fix() {
     let screen = screen(160, 40, |app| {
         open(

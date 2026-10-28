@@ -33,7 +33,7 @@ impl Login {
     }
 }
 
-fn providers() -> Vec<crate::endpoint::AuthInfo> {
+fn providers(states: &std::collections::BTreeMap<String, State>) -> Vec<crate::endpoint::AuthInfo> {
     let mut choices: Vec<_> = crate::endpoint::names()
         .unwrap_or_default()
         .into_iter()
@@ -41,7 +41,7 @@ fn providers() -> Vec<crate::endpoint::AuthInfo> {
         .collect();
     choices.sort_by_key(|choice| {
         (
-            section(choice),
+            section(choice, states.get(&choice.name).copied()),
             !choice.keyless(),
             choice.catalog_rank(),
             choice.name.clone(),
@@ -65,11 +65,14 @@ impl Tier {
     }
 }
 
-pub(in crate::tui::sigil_view) fn section(choice: &crate::endpoint::AuthInfo) -> Tier {
+pub(in crate::tui::sigil_view) fn section(
+    choice: &crate::endpoint::AuthInfo,
+    state: Option<State>,
+) -> Tier {
     if choice.unmodeled() {
         return Tier::Unset;
     }
-    if choice.configured || choice.keyless() {
+    if choice.configured || choice.keyless() || state == Some(State::Ready) {
         return Tier::Ready;
     }
     Tier::Unset
@@ -82,7 +85,7 @@ impl App {
         {
             self.push_entry(Entry::Error(error.to_string()));
         }
-        let choices = providers();
+        let choices = providers(&self.picker.groups.peek());
         let current = self.model.get().snapshot.endpoint.clone();
         let focus = focus.map(|name| {
             let provider = crate::endpoint::auth_info(name).map(|info| info.provider);
@@ -193,7 +196,7 @@ impl App {
         }
         match crate::endpoint::toggle(&choice, toggle) {
             Ok(Some(_)) => {
-                self.auth.choices.set(providers());
+                self.auth.choices.set(providers(&self.picker.groups.peek()));
                 let rows = self.filtered_auth();
                 let selected = rows
                     .iter()
@@ -308,7 +311,11 @@ impl App {
         let mut groups = self.picker.groups.peek();
         match result {
             Ok(text) => {
-                groups.remove(name);
+                if matches!(self.auth.step.peek(), Login::SignIn { .. }) {
+                    groups.insert(name.to_string(), State::Ready);
+                } else {
+                    groups.remove(name);
+                }
                 self.picker.groups.set(groups);
                 self.replace_auth_key(String::new());
                 if self.picker.open.peek() {
@@ -328,7 +335,7 @@ impl App {
                     }
                     return;
                 }
-                self.auth.choices.set(providers());
+                self.auth.choices.set(providers(&self.picker.groups.peek()));
                 let found = self
                     .filtered_auth()
                     .iter()

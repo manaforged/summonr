@@ -44,6 +44,10 @@ impl Agent {
 
     pub(in crate::tui::sigil_view) fn title_of(assignment: &str) -> String {
         let line = assignment.lines().next().unwrap_or_default().trim();
+        let line = line
+            .split_once(": ")
+            .filter(|(label, _)| label.chars().all(|c| c.is_ascii_uppercase() || c == ' '))
+            .map_or(line, |(_, goal)| goal);
         let clause = [". ", ": ", " (", ", ", " — "]
             .iter()
             .filter_map(|mark| line.find(mark))

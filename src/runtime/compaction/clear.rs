@@ -65,8 +65,6 @@ impl<P: Provider> Loop<P> {
         chars: usize,
         estimated_tokens: usize,
         window: u32,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
     ) -> Result<bool> {
         let limits = crate::limits::limits();
         let trigger = (window as usize * limits.clear_percent / 100).min(limits.clear_tokens);
@@ -81,30 +79,12 @@ impl<P: Provider> Loop<P> {
         {
             return Ok(false);
         }
-        let cleared = edits.len();
         self.rewrite(messages, edits)?;
         self.tools.forget_reads();
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: self.pressure_note(
-                    "compacted",
-                    &format!("at {trigger} tokens"),
-                    &format!("cleared {cleared} old tool outputs"),
-                ),
-            },
-        )?;
         Ok(true)
     }
 
-    pub(super) fn elide_stale(
-        &mut self,
-        messages: &mut [Message],
-        size: &Size,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<bool> {
+    pub(super) fn elide_stale(&mut self, messages: &mut [Message], size: &Size) -> Result<bool> {
         let target_chars = elide_target(size.chars, size.estimated_tokens, size.window);
         let needed = size.chars.saturating_sub(target_chars);
         let stale = live_outputs(&messages[1..], size.keep_from - 1);
@@ -112,20 +92,8 @@ impl<P: Provider> Loop<P> {
         if needed == 0 || reclaimed < needed {
             return Ok(false);
         }
-        let cleared = edits.len();
         self.rewrite(messages, edits)?;
         self.tools.forget_reads();
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: self.pressure_note(
-                    "compacted",
-                    &ceiling_label(size.window, size.chars),
-                    &format!("cleared {cleared} old tool outputs"),
-                ),
-            },
-        )?;
         Ok(true)
     }
 }

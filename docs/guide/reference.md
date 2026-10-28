@@ -69,7 +69,7 @@ Built-ins are providers: `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `z
 
 Prompt caching follows each host's documented session hint: OpenAI, xAI, Mistral, and DeepSeek-style rows send the session id as `prompt_cache_key`, OpenRouter gets it in `x-session-id`, Fireworks in `x-session-affinity`, and xAI in `x-grok-conv-id`, so a session's requests reach a warm cache. DashScope pay-as-you-go rows mark `cache_control` breakpoints, Alibaba's explicit cache, which its implicit cache does not guarantee.
 
-GPT-5, GPT-6, and Codex models see an `apply_patch` tool instead of `edit` and `write`, because OpenAI trains them on that patch format; it runs through the same edit engine. Every other model sees `edit` and `write`.
+GPT-5, GPT-6, and Codex models also see `apply_patch`, which runs through the same edit engine. All models keep `edit` and `write`. `apply_patch` accepts `*** Move to: destination` immediately after an `Update File` header, with optional content hunks. Moves refuse existing destinations and do not stage Git changes. For a checked replacement across explicit files, use `edit` with `files: [{path, old, new, expected_matches}]`. Set `preview: true` to validate and show changes without writing; a failed match count prevents the whole batch from being written.
 
 
 | Provider | Routes |
@@ -277,7 +277,6 @@ cache_ttl = "5m"
 | `mcp_idle_secs` | `120` | MCP idle stop when a server sets none. |
 | `lsp_idle_secs` | `300` | Language-server idle stop. |
 | `servers_max` | `8` | MCP and language servers live at once; past it the least recently used idle one stops. |
-| `receipt_items_max` | `5` | Failures and changed files listed in an expanded turn receipt. |
 | `closest_percent` | `34` | A name is offered as the closest match only when it differs by at most this percent of the name length. |
 | `typo_min_chars` | `3` | An endpoint name with at least this many characters also gets a hint for one changed, added, or removed character, or two swapped adjacent characters. |
 | `diff_split_min_cols` | `100` | Narrowest diff pane that shows hunks side by side; a narrower pane shows the unified diff. |
@@ -613,7 +612,7 @@ A paste of eight or more lines, or a thousand or more bytes, folds into `[pasted
 
 While a turn runs, the composer status also counts waiting input (`2 queued, ↑ edits`). The terminal title reads `summonr · <workspace> · working` or `· ready`, and the terminal bell rings once when a turn ends while the terminal is not focused.
 
-`/settings` switches tool output between compact and full, sets chain of thought to `collapsed` (the default: one dim line with a line count), `expanded`, or `off`, and sets turn receipts to `off` (the default), `collapsed` (one line: files read, searches, commands, failures, changed files, and the check result), or `expanded` (that line, the start commit, the first five failures and changed files, and each check). A click on a receipt switches between `collapsed` and `expanded`.
+`/settings` switches tool output between compact and full, and sets chain of thought to `collapsed` (the default: one dim line with a line count), `expanded`, or `off`.
 
 `/export` writes the session as markdown to `~/.summonr/exports/<id>.md`; `/export PATH` writes it where you say. It works while a turn runs. `ctrl+x y` (the default copy hotkey) copies the latest assistant reply. `/copy all` copies the full transcript. Both use OSC 52 in the terminal and the system clipboard in the window. `ctrl+x t` releases the mouse to the terminal so you can select and copy any transcript span; press it again to restore mouse interaction.
 

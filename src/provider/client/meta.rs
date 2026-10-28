@@ -184,6 +184,9 @@ impl Client {
                     "{program} not found; install Claude Code and run `claude auth login`"
                 )));
             }
+            super::super::agent::AgentClient::new(endpoint, program)
+                .status()
+                .await?;
             return Ok(crate::catalog::listing(&endpoint.name).map_or_else(
                 || crate::catalog::offered(&endpoint.name, Cost::Plan),
                 |listing| listing.models,

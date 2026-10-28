@@ -350,10 +350,18 @@ fn a_start_without_the_splash_reveals_without_a_panic() {
         std::panic::set_hook(Box::new(move |_| {
             seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }));
-        let reveal = std::time::Duration::from_millis(crate::limits::limits().splash_reveal_ms);
+        let reveal = std::time::Duration::from_millis(
+            crate::limits::limits()
+                .splash_reveal_ms
+                .max(super::super::reveal_ms(&app)),
+        );
         let end = std::time::Instant::now() + reveal * 2;
         while std::time::Instant::now() < end && !app.splash_revealed.peek() {
             screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+            if app.splash_since.get().elapsed().as_millis() < reveal.as_millis().saturating_sub(40)
+            {
+                assert!(!app.splash_revealed.peek(), "the wordmark was cut short");
+            }
             std::thread::park_timeout(crate::limits::limits().animation());
         }
         screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();

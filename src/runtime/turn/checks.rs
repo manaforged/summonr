@@ -111,7 +111,7 @@ impl<P: Provider> Loop<P> {
         pre: &mut Pretask,
     ) -> Result<Turn> {
         let snapshot = self.settle(pre, events, &mut emit).await?;
-        let receipt = crate::verify::aborted(snapshot, events);
+        let receipt = crate::verify::aborted(snapshot);
         drop(self.kill_spawned(&abort.reason, usage).await?);
         self.tools.stop_jobs()?;
         self.session.abort(&abort, Some(&receipt))?;
@@ -155,12 +155,88 @@ impl<P: Provider> Loop<P> {
                 progress.ledger.join("\n")
             ));
         }
+        let mut status = Vec::new();
         if !progress.todos.is_empty() {
-            let tasks: Vec<String> = progress.todos.iter().map(|todo| todo.line()).collect();
-            parts.push(format!(
-                "Harness task list (update with `todo` as work starts or finishes; a done item is not a passing check):\n{}",
-                tasks.join("\n")
+            let mut done = 0;
+            let mut pending = 0;
+            let mut completed = None;
+            for todo in &progress.todos {
+                match todo.status {
+                    crate::tools::TodoStatus::Active => {
+                        status.push(format!("Current: {}", todo.text))
+                    }
+                    crate::tools::TodoStatus::Done => {
+                        done += 1;
+                        completed = Some(&todo.text);
+                    }
+                    crate::tools::TodoStatus::Pending => pending += 1,
+                }
+            }
+            if let Some(completed) = completed {
+                status.push(format!("Last completed: {completed}"));
+            }
+            status.push(format!("Tasks: {done} done, {pending} pending. Update todo on status changes; done is not a passing check."));
+        }
+        let mut job_failure = false;
+        let mut job_success = false;
+        let mut completed = std::collections::HashSet::new();
+        for job in crate::jobs::since(self.workspace(), 0, Some(&self.session_id()))
+            .into_iter()
+            .rev()
+        {
+            let Ok(report) = crate::jobs::status(self.workspace(), &job) else {
+                continue;
+            };
+            if !matches!(report.state, crate::jobs::JobState::Running)
+                && !completed.insert(job.command.clone())
+            {
+                continue;
+            }
+            match report.state {
+                crate::jobs::JobState::Running => {
+                    status.push(format!("Running job {}: {}", job.id, job.command))
+                }
+                crate::jobs::JobState::Exited(0) if !job_success => {
+                    status.push(format!("Latest successful job {}: {}", job.id, job.command));
+                    job_success = true;
+                }
+                crate::jobs::JobState::Exited(0) => {}
+                crate::jobs::JobState::Exited(_)
+                | crate::jobs::JobState::Killed
+                | crate::jobs::JobState::Dead
+                    if !job_failure =>
+                {
+                    status.push(format!(
+                        "Unresolved job failure {} ({:?}): {}",
+                        job.id, report.state, job.command
+                    ));
+                    job_failure = true;
+                }
+                crate::jobs::JobState::Exited(_)
+                | crate::jobs::JobState::Killed
+                | crate::jobs::JobState::Dead => {}
+            }
+        }
+        if let Some(failed) = self
+            .session
+            .history()
+            .iter()
+            .rev()
+            .find(|message| message.role == crate::provider::Role::Tool)
+            .filter(|message| message.failed)
+        {
+            let text = failed
+                .content
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or("tool returned a failure");
+            status.push(format!(
+                "Latest tool failure: {}",
+                crate::display::ellipsize(text, crate::limits::limits().output_line_bytes)
             ));
+        }
+        if !status.is_empty() {
+            parts.push(format!("Harness progress:\n{}", status.join("\n")));
         }
         if self.role_model(workflow::Role::Review).is_some() {
             parts.push(

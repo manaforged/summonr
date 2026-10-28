@@ -39,6 +39,24 @@ pub(super) fn task_call(app: &App) {
 }
 
 #[test]
+fn goal_briefs_show_the_task_and_web_host_without_repeated_labels() {
+    let shown = frame_with(busy_info(), 164, 40, State::Busy, |app| {
+        task_call(app);
+        spawn(app, IDS[0], "GOAL: Check subscription policy. PATHS: read-only", true);
+        act(app, IDS[0], Event::ToolCall {
+            id: "web-policy".to_string(),
+            name: "web".to_string(),
+            arguments: serde_json::json!({"url": "https://code.claude.com/docs/en/legal-and-compliance"}).to_string(),
+        });
+    }).join("\n");
+    assert!(shown.contains("Check subscription policy"), "{shown}");
+    assert!(shown.contains("Web code.claude.com"), "{shown}");
+    assert!(!shown.contains("GOAL"), "{shown}");
+    assert!(!shown.contains("/docs/en/legal-and-compliance"), "{shown}");
+    assert!(!shown.contains("Subagent Check subscription"), "{shown}");
+}
+
+#[test]
 fn children_the_turn_waits_on_sit_under_their_task_call() {
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
         task_call(app);

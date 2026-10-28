@@ -142,9 +142,9 @@ impl Worker {
 
     async fn run_work(&mut self, job: &crate::Job) -> bool {
         let code = loop {
-            let prompt = match self.loop_.next_beat(job) {
-                Ok(crate::Beat::Done(code)) => break code,
-                Ok(crate::Beat::Run { prompt, .. }) => prompt,
+            let prompt = match self.loop_.next_action(job) {
+                Ok(crate::NextAction::Done(code)) => break code,
+                Ok(crate::NextAction::Run { prompt, .. }) => prompt,
                 Err(error) => {
                     self.fail(&error.to_string());
                     return true;

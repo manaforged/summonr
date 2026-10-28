@@ -4,23 +4,23 @@ use crate::tui::sigil_view::ui::List;
 
 pub(super) const PANES: usize = 9;
 
-type Menu = fn(&FileRow) -> &'static [(&'static str, Act)];
+type Menu = fn(&PaneRow) -> &'static [(&'static str, Act)];
 
-struct Row {
+struct PaneSpec {
     list: Pane,
-    rows: fn(&App) -> Vec<FileRow>,
+    rows: fn(&App) -> Vec<PaneRow>,
     load: fn(&App) -> Option<Cmd>,
     shift: Option<fn(&App, isize)>,
-    pick: fn(&App, &FileRow),
+    pick: fn(&App, &PaneRow),
     enter: Option<fn(&App)>,
     expand: Option<fn(&App)>,
     collapse: Option<fn(&App)>,
-    click: Option<fn(&App, &FileRow)>,
+    click: Option<fn(&App, &PaneRow)>,
     menu: Menu,
     tree: bool,
 }
 
-const FILES: Row = Row {
+const FILES: PaneSpec = PaneSpec {
     list: Pane::Files,
     rows: App::file_rows,
     load: |_| None,
@@ -40,8 +40,8 @@ const FILES: Row = Row {
     tree: true,
 };
 
-const fn listed(list: Pane, rows: fn(&App) -> Vec<FileRow>, menu: Menu) -> Row {
-    Row {
+const fn listed(list: Pane, rows: fn(&App) -> Vec<PaneRow>, menu: Menu) -> PaneSpec {
+    PaneSpec {
         list,
         rows,
         expand: None,
@@ -53,14 +53,14 @@ const fn listed(list: Pane, rows: fn(&App) -> Vec<FileRow>, menu: Menu) -> Row {
     }
 }
 
-static ROWS: [Row; PANES] = [
+static PANE_SPECS: [PaneSpec; PANES] = [
     FILES,
     FILES,
-    Row {
+    PaneSpec {
         load: |_| Some(Cmd::ListFiles),
         ..FILES
     },
-    Row {
+    PaneSpec {
         load: |app| Some(Cmd::Diff(app.root())),
         shift: Some(App::diff_move),
         pick: |app, row| app.diff_open(row.path.clone()),
@@ -75,26 +75,26 @@ static ROWS: [Row; PANES] = [
         }),
         ..listed(Pane::Diff, App::diff_rows, |_| CHANGE)
     },
-    Row {
+    PaneSpec {
         load: |_| Some(Cmd::Trees),
         pick: |app, row| app.tree_show(PathBuf::from(&row.path), row.name.clone()),
         ..listed(Pane::Worktrees, App::tree_rows, |_| TREE)
     },
-    Row {
+    PaneSpec {
         load: |_| Some(Cmd::Jobs),
         pick: App::open_row,
         ..listed(Pane::Jobs, App::job_rows, |_| JOB)
     },
-    Row {
+    PaneSpec {
         load: |_| Some(Cmd::Mcp),
         pick: App::open_row,
         ..listed(Pane::Mcp, App::mcp_rows, |_| MCP)
     },
-    Row {
+    PaneSpec {
         pick: |app, row| app.peer_mention(&row.path),
         ..listed(Pane::Peers, App::peer_rows, |_| PEER)
     },
-    Row {
+    PaneSpec {
         list: Pane::View,
         shift: Some(App::view_move),
         enter: Some(|_| {}),
@@ -107,8 +107,8 @@ static ROWS: [Row; PANES] = [
     },
 ];
 
-fn row(pane: Pane) -> &'static Row {
-    &ROWS[pane as usize]
+fn spec(pane: Pane) -> &'static PaneSpec {
+    &PANE_SPECS[pane as usize]
 }
 
 impl App {
@@ -117,27 +117,27 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn pane_list(&self, pane: Pane) -> List {
-        self.pane_lists[row(pane).list as usize]
+        self.pane_lists[spec(pane).list as usize]
     }
 
-    pub(in crate::tui::sigil_view) fn pane_rows(&self, pane: Pane) -> Vec<FileRow> {
-        (row(pane).rows)(self)
+    pub(in crate::tui::sigil_view) fn pane_rows(&self, pane: Pane) -> Vec<PaneRow> {
+        (spec(pane).rows)(self)
     }
 
     pub(in crate::tui::sigil_view) fn pane_tree(pane: Pane) -> bool {
-        row(pane).tree
+        spec(pane).tree
     }
 
     pub(in crate::tui::sigil_view) fn load(&self) {
         let Some(pane) = self.layout.peek().secondary else {
             return;
         };
-        if let Some(command) = (row(pane).load)(self) {
+        if let Some(command) = (spec(pane).load)(self) {
             drop(self.cmd.send(command));
         }
     }
 
-    pub(in crate::tui::sigil_view) fn picked(&self, pane: Pane) -> Option<FileRow> {
+    pub(in crate::tui::sigil_view) fn picked(&self, pane: Pane) -> Option<PaneRow> {
         let rows = self.pane_rows(pane);
         let at = self.pane_list(pane).at(rows.len());
         rows.into_iter().nth(at)
@@ -145,7 +145,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn pane_move(&self, delta: isize) {
         let pane = self.current();
-        match row(pane).shift {
+        match spec(pane).shift {
             Some(shift) => shift(self, delta),
             None => {
                 self.pane_list(pane)
@@ -168,21 +168,21 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn pane_enter(&self) {
         let pane = self.current();
-        if let Some(enter) = row(pane).enter {
+        if let Some(enter) = spec(pane).enter {
             return enter(self);
         }
         if let Some(picked) = self.picked(pane) {
-            (row(pane).pick)(self, &picked);
+            (spec(pane).pick)(self, &picked);
         }
     }
 
     pub(in crate::tui::sigil_view) fn pane_expand(&self) {
-        row(self.current()).expand.unwrap_or(Self::pane_enter)(self);
+        spec(self.current()).expand.unwrap_or(Self::pane_enter)(self);
     }
 
     pub(in crate::tui::sigil_view) fn pane_collapse(&self) {
         let pane = self.current();
-        match row(pane).collapse {
+        match spec(pane).collapse {
             Some(collapse) => collapse(self),
             None => {
                 self.pane_list(pane).close();
@@ -196,23 +196,23 @@ impl App {
         let Some(picked) = self.pane_rows(pane).into_iter().nth(index) else {
             return;
         };
-        row(pane).click.unwrap_or(row(pane).pick)(self, &picked);
+        spec(pane).click.unwrap_or(spec(pane).pick)(self, &picked);
     }
 
     pub(in crate::tui::sigil_view) fn pane_menu(
         &self,
         pane: Pane,
-        picked: &FileRow,
+        picked: &PaneRow,
     ) -> &'static [(&'static str, Act)] {
-        (row(pane).menu)(picked)
+        (spec(pane).menu)(picked)
     }
 
-    pub(in crate::tui::sigil_view) fn open_row(&self, picked: &FileRow) {
+    pub(in crate::tui::sigil_view) fn open_row(&self, picked: &PaneRow) {
         self.pane_list(self.current()).toggle_only(&picked.path);
         self.refresh();
     }
 
-    fn file_pick(&self, picked: &FileRow) {
+    fn file_pick(&self, picked: &PaneRow) {
         if picked.dir {
             self.pane_list(Pane::Files).toggle(&picked.path);
         } else {

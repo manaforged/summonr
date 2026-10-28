@@ -122,7 +122,7 @@ fn an_unseated_session_shows_no_provider_instead_of_a_model() {
         app.update(Msg::Settings(crate::tui::Snapshot {
             model: "glm-5.3-flash".to_owned(),
             endpoint: "zai".to_owned(),
-            unseated: true,
+            unconfigured: true,
             ..crate::tui::Snapshot::default()
         }));
     });

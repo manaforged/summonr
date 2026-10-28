@@ -142,7 +142,9 @@ impl<P: Provider> Loop<P> {
         }
         let text = error.to_string();
         if !retryable {
-            if self.seats.contains_key(&crate::workflow::Role::Implement)
+            if self
+                .selections
+                .contains_key(&crate::workflow::Role::Implement)
                 || !self.fall_back(&text, events, emit)?
             {
                 return Err(error);
@@ -270,7 +272,7 @@ impl<P: Provider> Loop<P> {
 #[path = "retry_tests.rs"]
 mod tests;
 
-fn retryable_failure(failure: &crate::error::ProviderFailure) -> bool {
+fn retryable_failure(failure: &summonr_core::error::ProviderFailure) -> bool {
     failure.partial_output
         && failure.status.is_none()
         && matches!(

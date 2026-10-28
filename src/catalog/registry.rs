@@ -4,9 +4,9 @@ use std::sync::{Arc, OnceLock};
 use leyline::http::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use super::{Cost, Model, now, shelf};
-use crate::error::Result;
+use super::{Cost, Model, now, storage};
 use crate::provider::Price;
+use summonr_core::error::Result;
 
 const REGISTRY_URL: &str = "https://models.dev/api.json";
 pub(super) const FILE: &str = "models-dev.json";
@@ -95,9 +95,9 @@ pub(crate) fn serves(providers: &[String], model: &str) -> Option<bool> {
 
 #[cfg(test)]
 pub(crate) async fn serves_live() -> Result<impl Fn(&[String], &str) -> Option<bool>> {
-    let registry = fetch_registry("")
-        .await?
-        .ok_or_else(|| crate::error::Error::Config("models.dev sent no catalog".to_string()))?;
+    let registry = fetch_registry("").await?.ok_or_else(|| {
+        summonr_core::error::Error::Config("models.dev sent no catalog".to_string())
+    })?;
     Ok(move |providers: &[String], model: &str| serves_in(&registry, providers, model))
 }
 
@@ -124,7 +124,7 @@ fn serves_in(registry: &Registry, providers: &[String], model: &str) -> Option<b
 }
 
 pub(super) fn current() -> Arc<Registry> {
-    shelf::load::<Registry>(FILE)
+    storage::load::<Registry>(FILE)
         .ok()
         .filter(|cache| cache.schema == REGISTRY_SCHEMA && !cache.providers.is_empty())
         .unwrap_or_else(snapshot)
@@ -134,7 +134,7 @@ pub async fn refresh_registry() -> Result<()> {
     if crate::config::file().is_ok_and(|file| file.models_catalog == Some(false)) {
         return Ok(());
     }
-    let cache = shelf::load::<Registry>(FILE)
+    let cache = storage::load::<Registry>(FILE)
         .ok()
         .filter(|cache| cache.schema == REGISTRY_SCHEMA)
         .map_or_else(Registry::default, |cache| (*cache).clone());
@@ -145,7 +145,7 @@ pub async fn refresh_registry() -> Result<()> {
         fetched: now(),
         ..cache
     });
-    shelf::save(FILE, &saved)
+    storage::save(FILE, &saved)
 }
 
 async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
@@ -161,13 +161,13 @@ async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
     let response = request
         .send()
         .await
-        .map_err(|error| crate::error::Error::Config(error.to_string()))?;
+        .map_err(|error| summonr_core::error::Error::Config(error.to_string()))?;
     let status = response.status();
     if status == StatusCode::NOT_MODIFIED {
         return Ok(None);
     }
     if !status.is_success() {
-        return Err(crate::error::Error::Config(format!(
+        return Err(summonr_core::error::Error::Config(format!(
             "models.dev returned {}",
             status.as_u16()
         )));
@@ -176,7 +176,7 @@ async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
     let text = response
         .text()
         .await
-        .map_err(|error| crate::error::Error::Config(error.to_string()))?;
+        .map_err(|error| summonr_core::error::Error::Config(error.to_string()))?;
     Ok(Some(Registry {
         etag,
         ..decode(&text)?

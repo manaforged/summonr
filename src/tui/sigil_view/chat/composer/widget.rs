@@ -135,19 +135,19 @@ fn model_text(model: &Model) -> String {
         .effort
         .filter(|effort| *effort != crate::provider::Effort::None)
         .map_or(String::new(), |effort| format!(" ({})", effort.as_str()));
-    model.snapshot.seat_label(&suffix)
+    model.snapshot.model_label(&suffix)
 }
 
 fn header_row(app: App) -> NodeBuilder {
     let update = app.clone();
     let labels = sigil::reactive::derived(move || {
         let model = update.model.get();
-        let seat = if !model.snapshot.unseated {
+        let selection = if !model.snapshot.unconfigured {
             model_text(&model)
         } else {
             "no provider · /login".to_string()
         };
-        (mode_text(&model), seat)
+        (mode_text(&model), selection)
     });
     container()
         .layout(

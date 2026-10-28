@@ -1,5 +1,4 @@
-use serde::Deserialize;
-use serde_json::Value;
+pub(super) use summonr_types::reasoning_field;
 
 const OPEN: &str = "<think>";
 const CLOSE: &str = "</think>";
@@ -90,49 +89,6 @@ pub(super) fn hoist(message: &mut super::AssistantMessage) {
         .is_none_or(str::is_empty)
     {
         message.reasoning_content = Some(thought);
-    }
-}
-
-pub(super) fn vec_or_null<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
-}
-
-pub(super) fn reasoning_field<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = Option::<Value>::deserialize(deserializer)?;
-    Ok(from_json(value.unwrap_or(Value::Null)))
-}
-
-fn from_json(value: Value) -> Option<String> {
-    match value {
-        Value::Null => None,
-        Value::String(text) => empty_to_none(text),
-        Value::Object(map) => map
-            .get("content")
-            .or_else(|| map.get("text"))
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .and_then(empty_to_none),
-        Value::Array(parts) => {
-            let mut out = String::new();
-            for part in parts {
-                if let Some(text) = part.as_str() {
-                    out.push_str(text);
-                } else if let Some(text) = part.get("text").and_then(Value::as_str) {
-                    out.push_str(text);
-                } else if let Some(text) = part.get("content").and_then(Value::as_str) {
-                    out.push_str(text);
-                }
-            }
-            empty_to_none(out)
-        }
-        _ => None,
     }
 }
 

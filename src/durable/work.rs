@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{Display, Formatter};
+
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::Path;
@@ -14,9 +14,9 @@ mod ledger;
 mod progress;
 mod stage;
 
-pub(crate) use progress::WorkPhase;
-pub use progress::{WorkKind, WorkProgress};
 pub(crate) use progress::{checks, roman};
+pub(crate) use summonr_types::WorkPhase;
+pub use summonr_types::{WorkKind, WorkProgress};
 
 const LEDGER_WIDTH: usize = 72;
 const TREES: &str = "tree.json";
@@ -165,7 +165,7 @@ pub(crate) struct Work {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) failed_checks: Option<Vec<crate::verify::Outcome>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) todos: Vec<crate::tools::Todo>,
+    pub(crate) todos: Vec<summonr_types::Todo>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) measurements: Vec<Measurement>,
 }
@@ -244,7 +244,7 @@ impl Work {
         self.measurements.push(Measurement { value, kept });
     }
 
-    pub(crate) fn apply_todos(&mut self, todos: Vec<crate::tools::Todo>) {
+    pub(crate) fn apply_todos(&mut self, todos: Vec<summonr_types::Todo>) {
         self.todos = todos;
     }
 
@@ -292,7 +292,7 @@ impl Work {
     }
 
     pub(crate) fn trees_mark(&self) -> u64 {
-        let mut hasher = crate::text::Fnv64::default();
+        let mut hasher = summonr_core::text::Fnv64::default();
         self.trees().hash(&mut hasher);
         hasher.finish()
     }

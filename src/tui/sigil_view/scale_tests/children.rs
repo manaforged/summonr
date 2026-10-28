@@ -239,6 +239,80 @@ fn a_child_that_recovers_from_a_failed_command_reads_done_and_one_that_aborts_re
 }
 
 #[test]
+fn clicking_the_strip_header_expands_it() {
+    use super::super::view::root;
+    use sigil::{Host, events::EventRouter, reactive::Runtime, terminal::Screen};
+
+    Runtime::scope("strip-header", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _sent) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(100, 30);
+        spawn(&app, IDS[0], "Keep the parent working", true);
+        let mut host = Host::cells();
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(100, 30);
+        let mut router = EventRouter::new();
+        for _ in 0..2 {
+            screen
+                .frame(&mut host, &mut router, [], (100, 30))
+                .expect("frame");
+        }
+        let shown = screen
+            .frame(&mut host, &mut router, [], (100, 30))
+            .expect("frame")
+            .text();
+        let (row, line) = shown
+            .lines()
+            .enumerate()
+            .find(|(_, line)| line.contains("shows all"))
+            .expect("collapsed header");
+        let at = line.find('▸').expect("expand button");
+        let col = sigil::app::cell_width(&line[..at]);
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                sigil::terminal::click(col as u16, row as u16),
+                (100, 30),
+            )
+            .expect("click header");
+        let expanded = screen
+            .frame(&mut host, &mut router, [], (100, 30))
+            .expect("frame")
+            .text();
+        assert!(
+            expanded.contains("closes"),
+            "header click did not expand:\n{expanded}"
+        );
+        assert!(app.model.get().agents_expanded);
+        let ctrl_x = sigil::terminal::map_key(&crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('x'),
+            crossterm::event::KeyModifiers::CONTROL,
+        ))
+        .expect("ctrl+x");
+        let a = sigil::terminal::map_key(&crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('a'),
+            crossterm::event::KeyModifiers::NONE,
+        ))
+        .expect("a");
+        screen
+            .frame(&mut host, &mut router, [ctrl_x, a], (100, 30))
+            .expect("chord");
+        let collapsed = screen
+            .frame(&mut host, &mut router, [], (100, 30))
+            .expect("frame")
+            .text();
+        assert!(
+            collapsed.contains("shows all"),
+            "ctrl+x a did not collapse:\n{collapsed}"
+        );
+        assert!(!app.model.get().agents_expanded);
+    });
+}
+
+#[test]
 fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
     use super::super::{chat::panels, view::root};
     use crate::tui::{Activity, Cmd};

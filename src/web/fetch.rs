@@ -7,7 +7,7 @@ use url::Url;
 use super::results::markup::{Space, attr, collapse, decode, strip, text};
 use super::{Format, Search};
 use crate::browser::wall::WALL;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 pub(crate) const OUT_MAX: usize = 32 * 1024;
 

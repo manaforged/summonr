@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use serde_json::{Value, json};
 
 use super::Effort;
 use super::wire::traits::Traits;
@@ -10,34 +9,7 @@ pub(crate) mod levels {
     pub(crate) const STANDARD: &[Effort] = &[Effort::Low, Effort::Medium, Effort::High];
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Off {
-    Omit,
-    #[serde(rename = "none")]
-    EffortNone,
-    #[serde(rename = "disabled")]
-    ThinkingDisabled,
-    BetweenTools,
-    #[serde(rename = "chat_template_kwargs")]
-    TemplateKwarg,
-    EnableThinking,
-    Unsupported,
-}
-
-impl Off {
-    pub(crate) fn fragment(self) -> Option<(&'static str, Value)> {
-        match self {
-            Self::ThinkingDisabled => Some(("thinking", json!({"type": "disabled"}))),
-            Self::BetweenTools => Some(("thinking", json!({"type": "between_tools"}))),
-            Self::TemplateKwarg => {
-                Some(("chat_template_kwargs", json!({"enable_thinking": false})))
-            }
-            Self::EnableThinking => Some(("enable_thinking", json!(false))),
-            Self::Omit | Self::EffortNone | Self::Unsupported => None,
-        }
-    }
-}
+pub(crate) use summonr_types::Off;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

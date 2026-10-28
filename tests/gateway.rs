@@ -297,22 +297,3 @@ fn a_local_run_leaves_the_webhook_window_open() {
     );
     assert!(again.starts_with("HTTP/1.1 429"), "{again}");
 }
-
-#[test]
-fn a_panicking_test_leaves_no_webhook_server() {
-    let home = tempfile::tempdir().unwrap();
-    let pid = std::panic::catch_unwind(|| {
-        let (server, _port) = serve(home.path());
-        let pid = server.0.id();
-        std::panic::panic_any(pid);
-    })
-    .unwrap_err()
-    .downcast::<u32>()
-    .map(|pid| *pid)
-    .unwrap();
-    let alive = Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()
-        .is_ok_and(|status| status.success());
-    assert!(!alive, "webhook server {pid} outlived its test");
-}

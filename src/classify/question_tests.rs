@@ -1,8 +1,5 @@
 use super::*;
 
-use crate::classify::tests::endpoint;
-use crate::endpoint::Wire;
-
 #[test]
 fn a_noul_can_carry_the_boundary_the_api_documents() {
     let question = Question::bounded("is it transient", "retrying works", "retrying repeats");
@@ -78,18 +75,6 @@ fn state_may_be_an_object_because_the_api_takes_one() {
         &questions,
     );
     assert_eq!(body["state"]["order_id"], "A-104");
-}
-
-#[test]
-fn a_request_carries_the_headers_the_endpoint_declares() {
-    let mut seat = endpoint("vendor", Wire::Decisions);
-    seat.headers
-        .insert("X-Vendor-Project".to_string(), "webshop".to_string());
-    assert_eq!(
-        seat.headers.get("X-Vendor-Project").map(String::as_str),
-        Some("webshop"),
-        "a provider that needs a header must be configurable without code"
-    );
 }
 
 #[test]

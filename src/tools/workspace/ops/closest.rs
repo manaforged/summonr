@@ -1,5 +1,5 @@
-use crate::error::Error;
-use crate::text::squash;
+use summonr_core::error::Error;
+use summonr_core::text::squash;
 
 pub(super) fn no_match(text: &str, old: &str) -> Error {
     let mut out = "old does not appear in the file".to_string();

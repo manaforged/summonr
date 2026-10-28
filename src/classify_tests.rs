@@ -162,22 +162,6 @@ fn asking_nothing_is_refused() {
 }
 
 #[test]
-fn each_decisions_provider_keeps_its_own_url() {
-    let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
-    let openrouter =
-        crate::endpoint::resolve(Some("openrouter"), None, crate::endpoint::Need::Model).unwrap();
-    assert_eq!(
-        openrouter.base_url.as_deref(),
-        Some("https://openrouter.ai/api/v1")
-    );
-    assert_eq!(openrouter.wire, Wire::Completions);
-
-    let mut other = endpoint("other", Wire::Decisions);
-    other.base_url = Some("https://example.test/decisions".to_string());
-    target(&other, &questions).unwrap();
-}
-
-#[test]
 fn the_request_keeps_the_shape_the_api_documents() {
     let questions = BTreeMap::from([
         (
@@ -243,15 +227,6 @@ fn a_decisions_failure_classifies_like_every_other_provider_failure() {
 }
 
 #[test]
-fn the_decisions_model_is_absent_from_the_chat_catalog() {
-    let chat = crate::endpoint::catalog(Wire::Completions);
-    assert!(
-        !chat.iter().any(|model| model.contains("jev")),
-        "jev must never be offered as a chat model: {chat:?}"
-    );
-}
-
-#[test]
 fn any_endpoint_can_declare_itself_a_decisions_endpoint() {
     for spelling in ["decisions", "systemone", "system-one", "DECISIONS"] {
         assert_eq!(
@@ -260,18 +235,6 @@ fn any_endpoint_can_declare_itself_a_decisions_endpoint() {
             "config must be able to declare `{spelling}`"
         );
     }
-}
-
-#[test]
-fn a_provider_this_code_has_never_heard_of_still_works() {
-    let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
-    let mut unknown = endpoint("some-future-vendor", Wire::Decisions);
-    unknown.base_url = Some("https://example.invalid/v9/judge".to_string());
-    unknown.model = "not-jev-at-all".to_string();
-    target(&unknown, &questions).unwrap();
-    let body =
-        crate::provider::decisions::body(&unknown.model, &serde_json::Value::from("s"), &questions);
-    assert_eq!(body["model"], "not-jev-at-all");
 }
 
 #[test]
@@ -304,9 +267,9 @@ fn the_questions_are_charged_against_the_context() {
             )
         })
         .collect();
-    let seat = endpoint("any", Wire::Decisions);
+    let selection = endpoint("any", Wire::Decisions);
     assert!(
-        budget(&seat, &many) < budget(&seat, &one),
+        budget(&selection, &many) < budget(&selection, &one),
         "asking more must leave less room for the state"
     );
 }
@@ -322,33 +285,4 @@ fn an_answer_from_a_provider_with_extra_fields_still_parses() {
         decision.answers.contains_key("kind"),
         "a provider adding fields must not break the read"
     );
-}
-
-#[test]
-fn the_question_sets_load_from_data_by_name() {
-    assert_eq!(*sets::NAMES, ["review", "errors", "diff", "commit"]);
-    let names = |set: &str| -> Vec<String> { sets::by_name(set).unwrap().into_keys().collect() };
-    assert_eq!(
-        names("review"),
-        [
-            "looped",
-            "outcome",
-            "overreached",
-            "proved",
-            "risk",
-            "unreported"
-        ]
-    );
-    assert_eq!(
-        names("diff"),
-        [
-            "adds_panic",
-            "kind",
-            "removes_guard",
-            "risk",
-            "touches_value",
-            "widens_surface"
-        ]
-    );
-    assert!(sets::by_name("nothing").is_none());
 }

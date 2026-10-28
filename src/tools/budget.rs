@@ -50,7 +50,7 @@ fn lines(raw: &str) -> (Vec<Cow<'_, str>>, bool) {
                 Cow::Borrowed(line)
             } else {
                 Cow::Owned(
-                    crate::text::ellipsize(line, crate::text::Span::Bytes(limit))
+                    crate::display::ellipsize(line, crate::display::Span::Bytes(limit))
                         + &clip_mark(limit),
                 )
             }

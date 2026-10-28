@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const BASE: &str = "https://api.telegram.org/bot";
 pub(crate) const MESSAGE_MAX: usize = 4096;
@@ -140,7 +140,7 @@ impl Bot {
     }
 
     fn failed(&self, name: &str, why: &str) -> Error {
-        let why = crate::text::redact(why, [self.token.as_str()]);
+        let why = summonr_core::text::redact(why, [self.token.as_str()]);
         Error::Tool(format!("telegram {name}: {why}"))
     }
 

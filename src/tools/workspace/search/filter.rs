@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const UNITS: &[(char, u64)] = &[('m', 60), ('h', 3_600), ('d', 86_400), ('w', 604_800)];
 const GROUPS: &[&str] = &["folder", "dir", "directory"];

@@ -20,7 +20,7 @@ impl<P: Provider> Loop<P> {
     }
 
     fn turn_receipt(&self, wrote: &[String], snapshot: String, events: &[Event]) -> Receipt {
-        Receipt::from_turn(
+        crate::verify::from_turn(
             wrote.to_vec(),
             snapshot,
             events,
@@ -119,14 +119,14 @@ impl<P: Provider> Loop<P> {
         let mut verdict = self.verdict(&mut checks, events, emit)?;
         let mut rejected = None;
         let mut reviewed = false;
-        if verdict.passed && self.seat_model(workflow::Role::Review).is_some() {
+        if verdict.passed && self.role_model(workflow::Role::Review).is_some() {
             rejected = self
                 .review_turn(reply, &paths, &mut checks, events, emit, usage)
                 .await?;
             verdict.passed = rejected.is_none();
             reviewed = true;
         }
-        let receipt = Receipt::new(paths, checks.clone(), snapshot, events);
+        let receipt = crate::verify::new(paths, checks.clone(), snapshot, events);
         let decision = self
             .decide(
                 reply,
@@ -139,7 +139,7 @@ impl<P: Provider> Loop<P> {
                 usage,
             )
             .await?;
-        let receipt = Receipt::new(receipt.changes, checks.clone(), receipt.snapshot, events);
+        let receipt = crate::verify::new(receipt.changes, checks.clone(), receipt.snapshot, events);
         match rejected {
             Some(findings) => self.session.commit_review(&findings, Some(&receipt)),
             None => self

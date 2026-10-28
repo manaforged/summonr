@@ -49,7 +49,7 @@ pub(super) fn outcome(outcome: &charm::Outcome, out_max: usize) -> String {
         }
     }
     if let Some(snapshot) = &outcome.snapshot {
-        out.push_str(&crate::text::ellipsize(snapshot, out_max));
+        out.push_str(&crate::display::ellipsize(snapshot, out_max));
     }
     out
 }

@@ -2,7 +2,7 @@ use sigil::events::ModifiersState;
 use sigil::prelude::Key;
 
 use super::super::Pane;
-use super::harness::{command, drive, graded, named, settings, typed, unseated};
+use super::harness::{command, drive, graded, named, settings, typed, unconfigured};
 use super::in_window;
 use crate::mcp::{Field, FieldKind, Form};
 use crate::tui::Snapshot;
@@ -149,7 +149,7 @@ fn the_last_settings_page_shows_its_rows() {
 
 #[test]
 fn a_failed_send_with_no_provider_adds_one_notice_and_opens_at_the_top() {
-    let seen = drive(settings(unseated()), Vec::new(), |app| {
+    let seen = drive(settings(unconfigured()), Vec::new(), |app| {
         for _ in 0..2 {
             app.open_providers();
             app.auth.list.cursor.set(5);

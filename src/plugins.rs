@@ -1,14 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::error::{Error, Result};
 use crate::hooks::{Dialect, Hook, HookEvent, Hooks, Matcher};
-use crate::prompt::summonr_home;
 use crate::skills;
+use summonr_core::dirs::summonr_home;
+use summonr_core::error::{Error, Result};
 
 pub(crate) mod agents;
 pub(crate) mod commands;
@@ -28,12 +27,6 @@ pub(super) const UNSUPPORTED: [(&str, &str); 4] = [
     ("workflows", "workflows"),
     ("themes", "themes"),
 ];
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct Switches {
-    #[serde(default)]
-    pub(crate) off: Vec<String>,
-}
 
 #[derive(Clone, Debug)]
 pub(crate) struct Plugin {
@@ -312,7 +305,7 @@ pub(super) fn installed() -> Vec<Plugin> {
     let Ok(root) = root() else {
         return Vec::new();
     };
-    let mut plugins: Vec<Plugin> = crate::walk::children(&root)
+    let mut plugins: Vec<Plugin> = summonr_core::walk::children(&root)
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
         .filter_map(|dir| {
@@ -371,7 +364,7 @@ pub(crate) fn bin_path_prefix() -> Option<String> {
     let mut dirs: Vec<PathBuf> = summonr_home()
         .ok()
         .into_iter()
-        .flat_map(|home| crate::walk::children(&home.join("bin")))
+        .flat_map(|home| summonr_core::walk::children(&home.join("bin")))
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
         .collect();

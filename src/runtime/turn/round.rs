@@ -229,7 +229,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        if self.seat_model(workflow::Role::Scout).is_none() || !self.session.needs_scout() {
+        if self.role_model(workflow::Role::Scout).is_none() || !self.session.needs_scout() {
             return Ok(());
         }
         let objective = self.session.objective()?;

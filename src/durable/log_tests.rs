@@ -181,7 +181,7 @@ fn a_session_journal_opens_in_one_host_at_a_time() {
 #[test]
 fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
     use crate::child::{Access, ChildRecord, ChildState};
-    use crate::durable::projection::Speech;
+    use crate::durable::projection::AssistantEvents;
     use crate::tools::AbortCode;
     let record = ChildRecord {
         version: 1,
@@ -256,7 +256,7 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
             text: String::new(),
         },
     ]) {
-        let events = line.into_events(Speech::Skip);
+        let events = line.into_events(AssistantEvents::Skip);
         assert_eq!(events.len(), 1, "{events:?}");
         let Event::Child { id, event } = &events[0] else {
             panic!("child notification")

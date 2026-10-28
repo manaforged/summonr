@@ -3,8 +3,8 @@ use std::sync::Arc;
 use summonr_auth::{Auth, Grant, Method, Scheme, Spec, Store, TokenStyle};
 
 use crate::endpoint::{Endpoint, LoginFlow, Wire};
-use crate::error::{Error, Result};
 use crate::secret;
+use summonr_core::error::{Error, Result};
 
 struct Keeper;
 
@@ -41,7 +41,7 @@ impl Store for Keeper {
                 }
             })
             .collect();
-        crate::prompt::summonr_home()
+        summonr_core::dirs::summonr_home()
             .and_then(|home| crate::config::hold(&home.join("locks").join(safe)))
             .map(|file| Box::new(file) as Box<dyn Send>)
             .map_err(|error| summonr_auth::Error::Config(error.to_string()))

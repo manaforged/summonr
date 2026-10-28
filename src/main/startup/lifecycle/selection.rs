@@ -3,11 +3,11 @@ use summonr::{Client, Endpoint, Error, Need, Result};
 use super::{Ui, use_tui};
 use crate::cli::Args;
 
-pub(super) async fn seat(args: &Args, adopted: &[String]) -> Result<Endpoint> {
+pub(super) async fn selection(args: &Args, adopted: &[String]) -> Result<Endpoint> {
     let need = if use_tui(args) {
         Need::Model
     } else {
-        Need::Seat
+        Need::ModelAndKey
     };
     let (name, model) = (args.endpoint.as_deref(), args.model.as_deref());
     let endpoint = match summonr::resolve_endpoint(name, model, need) {
@@ -50,23 +50,23 @@ pub(super) fn ask_login(ui: &Ui, endpoint: &Endpoint, named: bool) {
         && endpoint.api_key.is_none()
         && endpoint.oauth.is_none()
     {
-        let (ui, seat) = (ui.clone(), endpoint.clone());
+        let (ui, selection) = (ui.clone(), endpoint.clone());
         drop(tokio::spawn(async move {
-            let note = if !seat.keyless() && named {
+            let note = if !selection.keyless() && named {
                 format!(
                     "{} has no key yet. Paste its key, or pick another provider.",
-                    seat.name
+                    selection.name
                 )
-            } else if !seat.keyless() && summonr::endpoint_set_up().is_empty() {
+            } else if !selection.keyless() && summonr::endpoint_set_up().is_empty() {
                 "No provider is set up yet. Pick one and paste its key.".to_string()
-            } else if !seat.keyless() {
+            } else if !selection.keyless() {
                 "Pick a model to start.".to_string()
             } else {
-                match Client::discover(&seat).await {
+                match Client::discover(&selection).await {
                     Err(error) if Client::state(&error) == summonr::EndpointState::KeyRejected => {
                         format!(
                             "{} rejected the request. Paste its key, or pick another provider.",
-                            seat.name
+                            selection.name
                         )
                     }
                     Ok(_) | Err(_) => return,

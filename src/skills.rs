@@ -1,11 +1,11 @@
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, Result};
-use crate::prompt::summonr_home;
+use summonr_core::dirs::summonr_home;
+use summonr_core::error::{Error, Result};
 
 const SKILL: &str = "SKILL.md";
-use crate::text::FENCE;
+use summonr_core::text::FENCE;
 
 #[must_use]
 pub(crate) fn list(workspace: &Path) -> Vec<(String, String)> {
@@ -67,7 +67,7 @@ pub(crate) fn valid(name: &str) -> bool {
 }
 
 fn collect(root: PathBuf, rows: &mut Vec<(String, String)>) {
-    for entry in crate::walk::children(&root) {
+    for entry in summonr_core::walk::children(&root) {
         let path = entry.path();
         let dir = std::fs::metadata(&path).is_ok_and(|meta| meta.is_dir());
         let Some((name, file)) = skill_file(path, dir) else {
@@ -130,9 +130,9 @@ fn summary(text: &str) -> String {
     match first {
         None => String::new(),
         Some(line) if line != FENCE => heading(line),
-        Some(_) => crate::text::Frontmatter::parse(text)
+        Some(_) => summonr_core::text::Frontmatter::parse(text)
             .get("description")
-            .map_or_else(|| heading(FENCE), crate::text::squash),
+            .map_or_else(|| heading(FENCE), summonr_core::text::squash),
     }
 }
 
@@ -150,7 +150,7 @@ fn roots(workspace: &Path) -> Vec<PathBuf> {
         .map(|home| home.join("skills"))
         .into_iter()
         .collect();
-    if let Some(home) = crate::prompt::user_home() {
+    if let Some(home) = summonr_core::dirs::user_home() {
         roots.push(home.join(".claude/skills"));
         roots.push(home.join(".agents/skills"));
     }

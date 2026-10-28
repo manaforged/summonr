@@ -8,7 +8,7 @@ use super::log::{self, Line, Log, State, Usage, UsageMeta};
 use super::tree::{self, Snapshot};
 use super::work::{Check, Decision, Stage, Work, WorkError, WorkKind};
 use crate::WorkProgress;
-use crate::provider::{Message, Partial, ToolCall, UserInput};
+use summonr_types::{Message, Partial, ToolCall, UserInput};
 
 #[derive(Debug, Error)]
 pub(crate) enum DriverError {
@@ -344,6 +344,12 @@ pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(WorkKind, Stri
 
 pub(crate) fn canonical(path: &Path) -> PathBuf {
     dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+impl From<DriverError> for summonr_core::error::Error {
+    fn from(error: DriverError) -> Self {
+        Self::Config(error.to_string())
+    }
 }
 
 #[cfg(test)]

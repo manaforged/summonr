@@ -42,7 +42,7 @@ impl Journal {
 
 impl Sink {
     fn open() -> Option<Self> {
-        let dir = crate::prompt::summonr_home().ok()?.join("logs");
+        let dir = summonr_core::dirs::summonr_home().ok()?.join("logs");
         std::fs::create_dir_all(&dir).ok()?;
         let sink = Self::attach(dir)?;
         if sink.written > crate::limits::limits().mcp_log_max_bytes {

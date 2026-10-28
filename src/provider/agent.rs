@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use super::{AssistantMessage, Client, CompletionRequest, Message, Partial, Role};
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 mod bridge;
 mod frame;
@@ -14,7 +14,7 @@ use run::{Run, Thread};
 use step::Step;
 
 #[derive(Clone)]
-pub(super) struct Seat {
+pub(super) struct AgentClient {
     name: String,
     program: String,
     env: Vec<(String, String)>,
@@ -76,7 +76,7 @@ impl Seen {
 }
 
 struct Forget<'a> {
-    seat: &'a Seat,
+    agent: &'a AgentClient,
     session: &'a str,
     armed: bool,
 }
@@ -84,12 +84,12 @@ struct Forget<'a> {
 impl Drop for Forget<'_> {
     fn drop(&mut self) {
         if self.armed {
-            self.seat.forget(self.session);
+            self.agent.forget(self.session);
         }
     }
 }
 
-impl Seat {
+impl AgentClient {
     pub(super) fn new(endpoint: &crate::Endpoint, program: &str) -> Self {
         Self {
             name: endpoint.name.clone(),
@@ -184,10 +184,10 @@ impl Seat {
 }
 
 impl Client {
-    fn seat(&self) -> Result<&Seat> {
+    fn agent(&self) -> Result<&AgentClient> {
         self.agent
             .as_ref()
-            .ok_or_else(|| Error::Config("this endpoint has no Claude Code seat".to_string()))
+            .ok_or_else(|| Error::Config("this endpoint has no Claude Code agent".to_string()))
     }
 
     pub(super) async fn stream_agent(
@@ -195,51 +195,51 @@ impl Client {
         request: &CompletionRequest<'_>,
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
-        let seat = self.seat()?;
-        let gate = seat.gate(&request.session);
+        let agent = self.agent()?;
+        let gate = agent.gate(&request.session);
         let _turn = gate.lock().await;
         let mut forget = Forget {
-            seat,
+            agent,
             session: &request.session,
             armed: true,
         };
-        let step = self.turn(seat, request, partial).await;
+        let step = self.turn(agent, request, partial).await;
         forget.armed = step.is_err();
         step
     }
 
     async fn turn(
         &self,
-        seat: &Seat,
+        agent: &AgentClient,
         request: &CompletionRequest<'_>,
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
-        let held = seat
+        let held = agent
             .take(&request.session)
             .filter(|run| !run.abandoned(request.messages))
-            .and_then(|run| seat.reusable(run, request));
+            .and_then(|run| agent.reusable(run, request));
         let mut run = match held {
             Some(mut run) => {
                 run.answer(request.messages).await?;
                 run
             }
             None => {
-                let known = seat.thread(&request.session, request.messages);
+                let known = agent.thread(&request.session, request.messages);
                 let thread = match &known {
                     Some(id) => Thread::Resume(id.clone()),
                     None => Thread::Start(uuid::Uuid::now_v7().to_string()),
                 };
                 let input = opening(request.messages, known.is_none());
-                Run::start(seat, request, thread, &input).await?
+                Run::start(agent, request, thread, &input).await?
             }
         };
         let step = run.next(self, request, partial).await;
         if let Some(id) = run.recorded() {
-            seat.remember(&request.session, id, request.messages);
+            agent.remember(&request.session, id, request.messages);
         }
         match step? {
             Step::Paused(message) | Step::Done(message) => {
-                seat.keep(&request.session, run);
+                agent.keep(&request.session, run);
                 Ok(message)
             }
         }
@@ -249,9 +249,9 @@ impl Client {
         &self,
         request: &CompletionRequest<'_>,
     ) -> Result<AssistantMessage> {
-        let seat = self.seat()?;
+        let agent = self.agent()?;
         let input = opening(request.messages, true);
-        let mut run = Run::start(seat, request, Thread::Once, &input).await?;
+        let mut run = Run::start(agent, request, Thread::Once, &input).await?;
         match run.next(self, request, &mut Partial::default()).await? {
             Step::Paused(message) | Step::Done(message) => Ok(message),
         }

@@ -32,6 +32,8 @@ mod secrets;
 #[path = "mcp/session.rs"]
 mod session;
 mod support;
+#[path = "mcp/tools.rs"]
+mod tools;
 #[path = "mcp/torn.rs"]
 mod torn;
 #[path = "mcp/transport.rs"]
@@ -66,6 +68,10 @@ fn main() {
         compat::a_cron_job_saved_by_0_1_0_still_lists,
         #[cfg(unix)]
         compat::a_session_saved_by_0_1_0_resumes_with_its_history,
+        tools::tools_core_calls_return_results_to_the_model,
+        tools::tools_module_configuration_errors_are_reported,
+        tools::tools_optional_modules_are_advertised_and_dispatch_calls,
+        tools::tools_disabled_modules_are_hidden_and_refuse_calls,
         torn::a_session_resumes_with_any_state_file_torn,
         torn::a_torn_work_file_is_reported_on_resume,
         content::a_server_prompt_becomes_the_user_message,

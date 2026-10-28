@@ -9,15 +9,15 @@ use super::{COMPACT_ROWS, patch_of, patch_path, patch_view, preview, wrap};
 use crate::prefs::{DiffLayout, ToolOutput};
 use crate::tools::Builtin;
 use crate::tui::ToolState;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
-pub(super) type Detail = Option<(String, Look)>;
+pub(super) type Detail = Option<(String, TextStyle)>;
 
-pub(in crate::tui::sigil_view) fn glyph(state: &ToolState) -> (&'static str, Look) {
+pub(in crate::tui::sigil_view) fn glyph(state: &ToolState) -> (&'static str, TextStyle) {
     match state {
-        ToolState::Running => ("○", Look::xs(Token::Gray11)),
-        ToolState::Ok => ("●", Look::xs(Token::Success11)),
-        ToolState::Failed => ("●", Look::xs(Token::Error11)),
+        ToolState::Running => ("○", TextStyle::xs(Token::Gray11)),
+        ToolState::Ok => ("●", TextStyle::xs(Token::Success11)),
+        ToolState::Failed => ("●", TextStyle::xs(Token::Error11)),
     }
 }
 
@@ -52,25 +52,27 @@ pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]
 fn detail(name: &str, call: &Call, output: &str) -> Detail {
     match call.state {
         ToolState::Running => None,
-        ToolState::Failed => {
-            preview::exit(output).map(|code| (format!("exit {code}"), Look::xs(Token::Error11)))
-        }
+        ToolState::Failed => preview::exit(output)
+            .map(|code| (format!("exit {code}"), TextStyle::xs(Token::Error11))),
         ToolState::Ok => Builtin::is(name, Builtin::Read)
             .then(|| crate::tools::read_span(output))
             .flatten()
             .filter(|_| output.starts_with(call.arg.as_str()))
-            .map(|(from, to)| (format!("{from}-{to}"), Look::xs(Token::Gray10))),
+            .map(|(from, to)| (format!("{from}-{to}"), TextStyle::xs(Token::Gray10))),
     }
 }
 
 pub(super) fn call_line(verb: &str, arg: &str, detail: Detail, strong: bool) -> NodeBuilder {
     let (head, body) = if strong {
         (
-            Look::xs(Token::Gray12).bold(),
-            Look::xs(Token::Gray12).mono(),
+            TextStyle::xs(Token::Gray12).bold(),
+            TextStyle::xs(Token::Gray12).mono(),
         )
     } else {
-        (Look::xs(Token::Gray11), Look::xs(Token::Gray11).mono())
+        (
+            TextStyle::xs(Token::Gray11),
+            TextStyle::xs(Token::Gray11).mono(),
+        )
     };
     let mut row = container()
         .layout(
@@ -241,7 +243,7 @@ fn group_title<'a>(name: &'a str, calls: &[Call]) -> (&'a str, String) {
     if !Builtin::is(name, Builtin::Read) {
         return (tool_label(name), format!("×{}", calls.len()));
     }
-    ("Explored", crate::text::plural(calls.len(), "file"))
+    ("Explored", summonr_core::text::plural(calls.len(), "file"))
 }
 
 fn group_row(
@@ -257,7 +259,10 @@ fn group_row(
     let shown = workspace_relative(&call.arg, &app.roots);
     let (verb, arg) = (tool_label(name), shown.as_str());
     let detail = match call.state {
-        ToolState::Failed => Some((preview::summary(&output, true), Look::xs(Token::Error11))),
+        ToolState::Failed => Some((
+            preview::summary(&output, true),
+            TextStyle::xs(Token::Error11),
+        )),
         _ => detail(name, call, &output),
     };
     let line =
@@ -288,7 +293,12 @@ pub(super) fn group_card(
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .child(header(
             &group_state(calls),
-            call_line(title, "", Some((counts, Look::xs(Token::Gray10))), true),
+            call_line(
+                title,
+                "",
+                Some((counts, TextStyle::xs(Token::Gray10))),
+                true,
+            ),
         ));
     for (at, call) in calls.iter().enumerate() {
         card = card.child(group_row(name, call, at, tools, layout, app, index));

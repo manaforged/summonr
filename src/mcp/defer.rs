@@ -5,10 +5,10 @@ use serde_json::{Value, json};
 use super::Hub;
 use super::link::Link;
 use super::tool::Tool;
-use crate::error::{Error, Result};
 use crate::policy::{Action, Decision, Policy};
 use crate::provider::ToolDefinition;
 use crate::tools::tool;
+use summonr_core::error::{Error, Result};
 
 pub(crate) const SEARCH_TOOL: &str = "mcp";
 
@@ -76,7 +76,7 @@ pub fn call_label(name: &str, arguments: &str) -> String {
             let verb = if name == SEARCH_TOOL { " search" } else { "" };
             format!(
                 "{name}{verb} {}",
-                crate::text::ellipsize(&summary, LABEL_ARG_WIDTH)
+                crate::display::ellipsize(&summary, LABEL_ARG_WIDTH)
             )
         },
         |(alias, _)| {

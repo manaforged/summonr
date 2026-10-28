@@ -70,15 +70,15 @@ while take; do
 done
 "#;
 
-pub(super) fn seat_at(dir: &std::path::Path, script: &str) -> Client {
+pub(super) fn client_at(dir: &std::path::Path, script: &str) -> Client {
     let stub = dir.join("claude");
     std::fs::write(&stub, script).unwrap();
     std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let mut seat =
+    let mut selection =
         crate::endpoint::resolve(Some("claude"), Some("claude-opus-5-5"), crate::Need::Config)
             .unwrap();
-    seat.base_url = Some(stub.display().to_string());
-    Client::connect(&seat).unwrap()
+    selection.base_url = Some(stub.display().to_string());
+    Client::connect(&selection).unwrap()
 }
 
 pub(super) fn said(dir: &std::path::Path) -> Vec<String> {
@@ -106,7 +106,7 @@ pub(super) fn reply(messages: &mut Vec<Message>, next: &str) {
 #[tokio::test(flavor = "multi_thread")]
 async fn two_turns_share_one_claude_process() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), PLAIN);
+    let client = client_at(dir.path(), PLAIN);
     let mut earlier = Message::user("earlier answer");
     earlier.role = Role::Assistant;
     let mut messages = vec![
@@ -147,7 +147,7 @@ async fn two_turns_share_one_claude_process() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_plan_turn_runs_summonr_tools_through_the_sdk_bridge() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), STUB);
+    let client = client_at(dir.path(), STUB);
     let tools = [read_tool()];
     let mut messages = vec![Message::system("sys"), Message::user("read a.txt")];
 
@@ -288,7 +288,7 @@ sleep 20
 #[tokio::test(flavor = "multi_thread")]
 async fn a_malformed_control_request_fails_the_turn() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), MALFORMED);
+    let client = client_at(dir.path(), MALFORMED);
     let messages = vec![Message::system("sys"), Message::user("hi")];
     let turn = tokio::time::timeout(
         std::time::Duration::from_secs(10),
@@ -303,7 +303,7 @@ async fn a_malformed_control_request_fails_the_turn() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_rewritten_history_starts_a_fresh_thread() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), PLAIN);
+    let client = client_at(dir.path(), PLAIN);
     let mut first = vec![Message::system("sys"), Message::user("long history")];
     client
         .stream(&ask(&first, &[]), &mut Partial::default())

@@ -4,8 +4,8 @@ use notify::event::{EventKind, ModifyKind};
 use notify::{Event as NotifyEvent, RecursiveMode, Watcher};
 
 use crate::diff;
-use crate::error::{Error, Result};
-use crate::walk::Walk;
+use summonr_core::error::{Error, Result};
+use summonr_core::walk::Walk;
 
 pub(super) fn walk(root: &Path, depth: Option<usize>) -> impl Iterator<Item = ignore::DirEntry> {
     Walk {

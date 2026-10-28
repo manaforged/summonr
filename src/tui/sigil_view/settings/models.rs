@@ -6,7 +6,7 @@ use sigil::prelude::{
 
 use super::{App, canvas};
 use crate::endpoint::State;
-use crate::recent::Seat;
+use crate::recent::ModelId;
 use crate::tui::sigil_view::ui::{
     Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, alt, group, notice, tab_strip,
 };
@@ -126,8 +126,8 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
     let fixing = rows
         .iter()
         .any(|row| matches!(row, ModelRow::Fix(at) if *at == view.selected));
-    let seat = view.seat().cloned();
-    let list = match seat {
+    let selection = view.selection().cloned();
+    let list = match selection {
         Some(_) => {
             let labels = names(&view.choices, &view.facts);
             list::list(paint, Rc::clone(&view), grid, labels, (rows, visible))
@@ -146,13 +146,13 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
         } else {
             column(frame.fill_width()).child(grid.header()).child(list)
         };
-        return vec![rows, strip(paint, &view, seat.as_ref(), narrow)];
+        return vec![rows, strip(paint, &view, selection.as_ref(), narrow)];
     }
     let rows = column(frame.width(grid.cells() * canvas::cell().w))
         .child(grid.header())
         .child(list);
     let width = span.saturating_sub(grid.cells() as usize + 6);
-    let pane = side(paint, seat.as_ref(), fixing, (width, visible));
+    let pane = side(paint, selection.as_ref(), fixing, (width, visible));
     vec![
         column(
             LayoutStyle::flex_row()
@@ -186,28 +186,31 @@ fn empty(paint: &App) -> NodeBuilder {
 
 fn side(
     paint: &App,
-    seat: Option<&Seat>,
+    selection: Option<&ModelId>,
     fixing: bool,
     (width, visible): (usize, usize),
 ) -> Vec<NodeBuilder> {
     let mut nodes = Vec::new();
     let error = paint.picker.error.get();
     if !error.is_empty() {
-        nodes.push(notice(crate::text::ellipsize(&error, width), Tone::Error));
+        nodes.push(notice(
+            crate::display::ellipsize(&error, width),
+            Tone::Error,
+        ));
     }
     let note = paint.picker.note.get();
     if !note.is_empty() {
-        nodes.push(group(crate::text::ellipsize(&note, width)));
+        nodes.push(group(crate::display::ellipsize(&note, width)));
     }
     if paint.auth.open.get() {
         nodes.extend(super::auth::step_pane(paint, width, visible));
-    } else if let Some(seat) = seat {
-        nodes.extend(detail::pane(paint, seat, fixing, width));
+    } else if let Some(selection) = selection {
+        nodes.extend(detail::pane(paint, selection, fixing, width));
     }
     nodes
 }
 
-fn strip(paint: &App, view: &View, seat: Option<&Seat>, width: usize) -> NodeBuilder {
+fn strip(paint: &App, view: &View, selection: Option<&ModelId>, width: usize) -> NodeBuilder {
     if paint.auth.open.get() {
         return group("");
     }
@@ -218,13 +221,13 @@ fn strip(paint: &App, view: &View, seat: Option<&Seat>, width: usize) -> NodeBui
         error
     } else if !note.is_empty() {
         note
-    } else if let Some(seat) = seat {
-        let state = view.groups.get(&seat.endpoint).copied();
+    } else if let Some(selection) = selection {
+        let state = view.groups.get(&selection.endpoint).copied();
         state
-            .and_then(|state| fix(&seat.endpoint, state, causes.get(&seat.endpoint)))
-            .unwrap_or_else(|| row::detail(seat, view.facts.get(seat), state))
+            .and_then(|state| fix(&selection.endpoint, state, causes.get(&selection.endpoint)))
+            .unwrap_or_else(|| row::detail(selection, view.facts.get(selection), state))
     } else {
         String::new()
     };
-    group(crate::text::ellipsize(&text, width))
+    group(crate::display::ellipsize(&text, width))
 }

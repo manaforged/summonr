@@ -8,7 +8,7 @@ use super::runner;
 use super::schedule;
 use super::store::{self, Job};
 use super::view;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 pub fn run(args: &[String], cwd: &Path) -> Result<i32> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();

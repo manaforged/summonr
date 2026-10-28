@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::call::Extra;
 use super::{fail, report};
-use crate::error::Result;
+use summonr_core::error::Result;
 
 const SHOT_PREFIX: &str = "shot-";
 const SHOT_SUFFIX: &str = ".png";
@@ -19,7 +19,7 @@ pub(super) async fn run(
         Extra::Snapshot { .. } | Extra::Read { .. } | Extra::Screenshot { .. }
     ) && let Some(blocked) = guard(page).await?
     {
-        return Err(crate::error::Error::Tool(blocked));
+        return Err(summonr_core::error::Error::Tool(blocked));
     }
     match extra {
         Extra::Snapshot {
@@ -59,11 +59,11 @@ pub(super) async fn act(
     out_max: usize,
 ) -> Result<String> {
     if let Some(blocked) = guard(page).await? {
-        return Err(crate::error::Error::Tool(blocked));
+        return Err(summonr_core::error::Error::Tool(blocked));
     }
     let outcome = page.act(action, report).await.map_err(fail)?;
     if let Some(blocked) = guard(page).await? {
-        return Err(crate::error::Error::Tool(blocked));
+        return Err(summonr_core::error::Error::Tool(blocked));
     }
     Ok(report::outcome(&outcome, out_max))
 }

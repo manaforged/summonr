@@ -8,9 +8,8 @@ pub(in crate::tui) fn export_session(
 ) {
     let out = match target {
         Some(path) => Ok(std::path::PathBuf::from(path)),
-        None => {
-            crate::prompt::summonr_home().map(|home| home.join("exports").join(format!("{id}.md")))
-        }
+        None => summonr_core::dirs::summonr_home()
+            .map(|home| home.join("exports").join(format!("{id}.md"))),
     };
     let written = out.and_then(|out| {
         let text = crate::export_session(session)?;

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::{Component, Path, PathBuf};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 use super::ToolRegistry;
 
@@ -270,8 +270,8 @@ fn existing(path: &Path) -> PathBuf {
         return path.to_path_buf();
     };
     let wanted = fold(name);
-    let mut found =
-        crate::walk::children(&existing(parent)).filter(|entry| fold(&entry.file_name()) == wanted);
+    let mut found = summonr_core::walk::children(&existing(parent))
+        .filter(|entry| fold(&entry.file_name()) == wanted);
     match (found.next(), found.next()) {
         (Some(entry), None) => entry.path(),
         _ => path.to_path_buf(),
@@ -280,7 +280,7 @@ fn existing(path: &Path) -> PathBuf {
 
 fn clean_path(path: &str) -> Cow<'_, str> {
     let expanded = if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
-        crate::config::home_dir()
+        summonr_core::dirs::home_dir()
             .map(|home| {
                 if path == "~" {
                     home.to_string_lossy().into_owned()

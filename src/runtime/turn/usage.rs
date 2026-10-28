@@ -10,7 +10,7 @@ impl<P: Provider> Loop<P> {
             self.push_event(events, emit, Event::Note { text })?;
         }
         for line in self.session.take_pending() {
-            for event in line.into_events(crate::durable::projection::Speech::Skip) {
+            for event in line.into_events(crate::durable::projection::AssistantEvents::Skip) {
                 self.push_event(events, emit, event)?;
             }
         }

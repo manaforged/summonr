@@ -4,7 +4,7 @@ use super::telegram::Bot;
 use super::turn::{self, Options};
 use super::{SECRET, block, store, token};
 use crate::command::table::{self, Row, Table};
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const USAGE: &str = "usage:\n  summonr gateway setup telegram\n  summonr gateway telegram [--endpoint E] [--model M] [--dir D]\n  summonr gateway pair CODE\n  summonr gateway unpair USER_ID\n  summonr gateway status\n  summonr gateway webhook [--port N]\n\nThe Telegram bridge long-polls the Bot API; no port opens.";
 const TOKEN_PROMPT: &str = "Telegram bot token: ";

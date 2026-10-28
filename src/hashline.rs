@@ -1,7 +1,7 @@
 use std::hash::Hasher;
 
-use crate::error::{Error, Result};
-use crate::text::Fnv64;
+use summonr_core::error::{Error, Result};
+use summonr_core::text::Fnv64;
 
 const ALPH: &[u8] = b"0123456789abcdefghijklmnopqrstuv";
 

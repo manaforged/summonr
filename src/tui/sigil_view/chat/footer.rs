@@ -61,7 +61,7 @@ fn elsewhere(live: &[crate::tui::hub::Live]) -> Option<(String, bool)> {
         .iter()
         .filter(|entry| entry.status == crate::tui::hub::Status::NeedsYou)
         .count();
-    let open = crate::text::plural(others.len(), "other session");
+    let open = summonr_core::text::plural(others.len(), "other session");
     Some(if waiting == 0 {
         (open, false)
     } else {
@@ -123,7 +123,7 @@ fn place_of(app: &App, view: &FooterView, width: usize) -> String {
             .map_or(0, |branch| cell_width(branch) + 4)
         + spend.as_deref().map_or(0, |cost| cell_width(cost) + 2)
         + notice.as_ref().map_or(0, |note| cell_width(&note.text) + 2);
-    crate::text::ellipsize_start(&app.info.workspace, width.saturating_sub(taken))
+    crate::display::ellipsize_start(&app.info.workspace, width.saturating_sub(taken))
 }
 
 fn footer_row(

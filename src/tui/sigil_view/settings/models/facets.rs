@@ -4,7 +4,7 @@ use sigil::prelude::{
 
 use super::super::canvas;
 use crate::tui::sigil_view::app::App;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 const CHIP_GAP_WINDOW: f32 = 14.0;
 
@@ -28,15 +28,15 @@ pub(super) fn chips(app: &App) -> NodeBuilder {
         .fold(line, |line, (facet, count)| {
             let on = facet == active;
             let count = if on { listed } else { count };
-            let look = if on {
-                Look::sm(Token::Accent11).bold()
+            let text_style = if on {
+                TextStyle::sm(Token::Accent11).bold()
             } else if count == 0 {
-                Look::sm(Token::Gray8)
+                TextStyle::sm(Token::Gray8)
             } else {
-                Look::sm(Token::Gray11)
+                TextStyle::sm(Token::Gray11)
             };
             let chip = container().child(
-                look.on(sigil::kernel::text(format!(" {} {count} ", facet.label())).nowrap()),
+                text_style.on(sigil::kernel::text(format!(" {} {count} ", facet.label())).nowrap()),
             );
             let chip = if on {
                 chip.bg(canvas::blend(
@@ -54,5 +54,5 @@ pub(super) fn chips(app: &App) -> NodeBuilder {
             }))
         })
         .child(container().layout(LayoutStyle::flex_row().grow(1.0)))
-        .child(Look::xs(Token::Gray9).on(sigil::kernel::text("tab next filter").nowrap()))
+        .child(TextStyle::xs(Token::Gray9).on(sigil::kernel::text("tab next filter").nowrap()))
 }

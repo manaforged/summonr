@@ -284,12 +284,12 @@ fn a_malformed_call_finish_asks_for_a_repair() {
         .on(r#"{"candidates":[{"finishReason":"MALFORMED_FUNCTION_CALL"}]}"#)
         .err()
         .expect("a malformed call must fail");
-    let crate::error::Error::Provider(failure) = error else {
+    let summonr_core::error::Error::Provider(failure) = error else {
         panic!("not a provider failure");
     };
     assert_eq!(
         failure.kind,
-        crate::error::ProviderFailureKind::MalformedToolCall
+        summonr_core::error::ProviderFailureKind::MalformedToolCall
     );
 }
 

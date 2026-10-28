@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
-use crate::error::Result;
+use summonr_core::error::Result;
 
 pub(crate) type Stamp = Option<(SystemTime, u64)>;
 

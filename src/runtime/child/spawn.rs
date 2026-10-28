@@ -61,10 +61,10 @@ impl<P: Provider> Loop<P> {
         tree: Option<Tree>,
     ) -> Result<Run<P>> {
         let role = crate::workflow::Role::Implement;
-        let provider = self.seat(role).0.child().ok_or_else(|| {
+        let provider = self.selection(role).0.child().ok_or_else(|| {
             Error::Denied("the active provider cannot create children".to_string())
         })?;
-        let model = self.seat(role).1.to_string();
+        let model = self.selection(role).1.to_string();
         let home = log::home_of(self.session.path())
             .ok_or_else(|| Error::Config("the parent session has no durable home".to_string()))?;
         let workspace = tree
@@ -159,6 +159,9 @@ impl<P: Provider> Loop<P> {
         let mut registry = self.tools.child_at(workspace, &child.session_id())?;
         if access == Access::Research || self.tools.is_read_only() {
             registry.contain_read_only();
+        }
+        if access == Access::Research {
+            registry.allow_shell();
         }
         if let Some(tools) = tools {
             registry.restrict_to(tools);

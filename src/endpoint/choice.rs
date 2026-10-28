@@ -3,22 +3,22 @@ pub enum Need {
     Config,
     Model,
     Key,
-    Seat,
+    ModelAndKey,
 }
 
 impl Need {
     pub(super) const fn key(self) -> bool {
-        matches!(self, Self::Key | Self::Seat)
+        matches!(self, Self::Key | Self::ModelAndKey)
     }
 
     pub(super) const fn model(self) -> bool {
-        matches!(self, Self::Model | Self::Seat)
+        matches!(self, Self::Model | Self::ModelAndKey)
     }
 
     pub(crate) const fn without_key(self) -> Self {
         match self {
             Self::Key => Self::Config,
-            Self::Seat => Self::Model,
+            Self::ModelAndKey => Self::Model,
             other => other,
         }
     }

@@ -2,10 +2,10 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use super::{Plugin, enabled};
-use crate::error::Result;
 use crate::mcp::{Offer, OfferKind};
 use crate::skills;
-use crate::text::Frontmatter;
+use summonr_core::error::Result;
+use summonr_core::text::Frontmatter;
 
 const DIR: &str = "commands";
 const EXTENSION: &str = "md";
@@ -85,10 +85,10 @@ fn folders(workspace: &Path) -> Vec<Plugin> {
         Plugin::at(PROJECT.to_string(), workspace.join(".summonr")),
         Plugin::at(PROJECT.to_string(), workspace.join(".claude")),
     ];
-    if let Ok(home) = crate::prompt::summonr_home() {
+    if let Ok(home) = summonr_core::dirs::summonr_home() {
         folders.push(Plugin::at(USER.to_string(), home));
     }
-    if let Some(home) = crate::prompt::user_home() {
+    if let Some(home) = summonr_core::dirs::user_home() {
         folders.push(Plugin::at(USER.to_string(), home.join(".claude")));
     }
     folders
@@ -178,7 +178,7 @@ fn bare(all: &[Command], name: &str) -> bool {
 }
 
 pub(super) fn load(plugin: &Plugin) -> Vec<Command> {
-    let mut commands: Vec<Command> = crate::walk::children(&plugin.dir.join(DIR))
+    let mut commands: Vec<Command> = summonr_core::walk::children(&plugin.dir.join(DIR))
         .map(|entry| entry.path())
         .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == EXTENSION))
         .filter_map(|path| read(plugin, &path))

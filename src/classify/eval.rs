@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use super::{Answer, Decision, Question};
 use crate::endpoint::Endpoint;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Example {

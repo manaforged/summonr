@@ -6,8 +6,8 @@ mod charges;
 
 use self::charges::{Charge, Journals};
 use super::catalog::list_in;
-use crate::error::Result;
-use crate::provider::Price;
+use summonr_core::error::Result;
+use summonr_types::Price;
 
 pub(crate) const HOUR: u64 = 3600;
 pub(crate) const DAY: u64 = 24 * HOUR;

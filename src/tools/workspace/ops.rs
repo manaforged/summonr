@@ -1,9 +1,9 @@
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
-use crate::error::{Error, Result};
 use crate::hashline::{resolve_span, tagged_span};
-use crate::text::squash;
+use summonr_core::error::{Error, Result};
+use summonr_core::text::squash;
 
 use super::edit::Patch;
 

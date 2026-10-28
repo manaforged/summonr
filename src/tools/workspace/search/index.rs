@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock, PoisonError};
 
 use crate::process::{Io, Spec};
-use crate::walk::{self, Walk};
+use summonr_core::walk::{self, Walk};
 
 const MAGIC: &str = "summonr-names 1";
 pub(crate) const ENTRY: &str = "--index-files";
@@ -24,13 +24,13 @@ fn folder() -> Option<PathBuf> {
 
 #[cfg(not(test))]
 fn folder() -> Option<PathBuf> {
-    crate::prompt::summonr_home()
+    summonr_core::dirs::summonr_home()
         .ok()
         .map(|home| home.join("cache").join("names"))
 }
 
 fn file_for(root: &Path) -> Option<PathBuf> {
-    let key = crate::text::fnv64(root.to_string_lossy().as_bytes());
+    let key = summonr_core::text::fnv64(root.to_string_lossy().as_bytes());
     folder().map(|dir| dir.join(format!("{key}.idx")))
 }
 
@@ -161,7 +161,7 @@ pub(super) fn refresh(root: &Path, slow: bool) {
     }
 }
 
-fn spawn(root: &Path) -> crate::error::Result<()> {
+fn spawn(root: &Path) -> summonr_core::error::Result<()> {
     let mut child = crate::process::spawn_blocking(Spec {
         stdin: Io::Null,
         stdout: Io::Null,
@@ -227,7 +227,7 @@ pub(crate) fn build(root: &Path) -> std::io::Result<()> {
     )?;
     let mut last: Vec<u8> = Vec::new();
     let entries = Walk {
-        guard: true,
+        guard: Some(crate::policy::protected_read),
         sorted: true,
         ..Walk::RAW
     }

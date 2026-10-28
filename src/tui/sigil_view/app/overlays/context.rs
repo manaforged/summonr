@@ -2,7 +2,7 @@ use sigil::prelude::MenuItem;
 
 use super::*;
 
-pub(in crate::tui::sigil_view) type Act = fn(&App, &FileRow, &str);
+pub(in crate::tui::sigil_view) type Act = fn(&App, &PaneRow, &str);
 
 const HUNK: &[(&str, Act)] = &[
     ("accept hunk", |app, row, hunk| {
@@ -77,10 +77,10 @@ impl App {
         else {
             return Vec::new();
         };
-        self.items(HUNK, &FileRow::flat(path, hunk.header, false), &hunk.id)
+        self.items(HUNK, &PaneRow::flat(path, hunk.header, false), &hunk.id)
     }
 
-    fn items(&self, acts: &[(&str, Act)], row: &FileRow, hunk: &str) -> Vec<MenuItem> {
+    fn items(&self, acts: &[(&str, Act)], row: &PaneRow, hunk: &str) -> Vec<MenuItem> {
         acts.iter()
             .map(|&(label, act)| {
                 let (app, row, hunk) = (self.clone(), row.clone(), hunk.to_string());
@@ -100,13 +100,13 @@ impl App {
         )
     }
 
-    fn open_path(&self, row: &FileRow, _: &str) {
+    fn open_path(&self, row: &PaneRow, _: &str) {
         let root = self.root().unwrap_or_else(|| self.workspace.clone());
         self.open_file.set(Some(root.join(&row.path)));
         self.refresh();
     }
 
-    fn insert_path(&self, row: &FileRow, _: &str) {
+    fn insert_path(&self, row: &PaneRow, _: &str) {
         let mut draft = self.draft.peek();
         draft.push_str(&row.path);
         self.replace(draft);

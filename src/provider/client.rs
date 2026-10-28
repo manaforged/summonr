@@ -65,7 +65,7 @@ pub struct Client {
     pub(super) cache_ttl: crate::endpoint::CacheTtl,
     pub(super) cache_header: Option<String>,
     pub(super) cache_marks: bool,
-    pub(super) agent: Option<agent::Seat>,
+    pub(super) agent: Option<agent::AgentClient>,
     pub(super) wire: Wire,
     pub(super) reasoning: Reasoning,
     pub(super) idle: Option<Duration>,
@@ -129,7 +129,7 @@ impl Client {
         client.cache_header.clone_from(&endpoint.cache_header);
         client.cache_marks = endpoint.cache_marks;
         if wire::spec(endpoint.wire).child() {
-            client.agent = Some(agent::Seat::new(endpoint, base));
+            client.agent = Some(agent::AgentClient::new(endpoint, base));
         }
         client.reasoning.clone_from(&endpoint.reasoning);
         Ok(client)

@@ -4,8 +4,8 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::error::{Error, Result};
 use crate::hashline::{Tags, line_hash, tagged_lines};
+use summonr_core::error::{Error, Result};
 
 use super::image::image_type;
 use super::{ToolRegistry, object_string, object_usize};

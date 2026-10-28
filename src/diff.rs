@@ -3,8 +3,8 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::durable::log::{self, Line};
-use crate::error::{Error, Result};
 use crate::worktree;
+use summonr_core::error::{Error, Result};
 
 mod git;
 pub(crate) mod ignored;
@@ -55,7 +55,7 @@ impl Diff {
         };
         format!(
             "{} · +{} −{} · {scope}",
-            crate::text::plural(self.files.len(), "file"),
+            summonr_core::text::plural(self.files.len(), "file"),
             self.added(),
             self.removed(),
         )
@@ -145,7 +145,7 @@ pub(crate) fn snapshot(root: &Path) -> String {
         count => format!(
             "{head} ({}), {} dirty",
             abbrev(&base),
-            crate::text::plural(count, "file")
+            summonr_core::text::plural(count, "file")
         ),
     }
 }

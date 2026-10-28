@@ -122,7 +122,7 @@ fn sub_reason(
 
 fn narrow(args: &[String], workspace: &Path, cwd: Option<&Path>) -> bool {
     let targets = found_roots(args);
-    let home = crate::config::home_dir().map(|home| super::paths::resolved(&home));
+    let home = summonr_core::dirs::home_dir().map(|home| super::paths::resolved(&home));
     let workspace = super::paths::resolved(workspace);
     let workspace = workspace.as_path();
     !targets.is_empty()

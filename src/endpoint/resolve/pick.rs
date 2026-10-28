@@ -5,14 +5,14 @@ use super::*;
 static NOTED: AtomicBool = AtomicBool::new(false);
 
 pub(super) fn last_used() -> Option<(String, String)> {
-    let home = crate::prompt::summonr_home().ok()?;
-    let seat = crate::recent::load(&home).into_iter().next()?;
-    Some((seat.endpoint, seat.model))
+    let home = summonr_core::dirs::summonr_home().ok()?;
+    let selection = crate::recent::load(&home).into_iter().next()?;
+    Some((selection.endpoint, selection.model))
 }
 
-pub(crate) fn default_seat() -> Option<crate::recent::Seat> {
+pub(crate) fn default_model_selection() -> Option<crate::recent::ModelId> {
     let file = config::file().ok()?;
-    Some(crate::recent::Seat::new(
+    Some(crate::recent::ModelId::new(
         file.default.clone()?,
         file.default_model.clone()?,
     ))
@@ -90,7 +90,7 @@ fn usable(file: &File, name: &str) -> std::result::Result<(), String> {
         Error::Config(text) | Error::Setup(text) => text,
         other => other.to_string(),
     };
-    let endpoint = seat(file, name).ok_or_else(|| text(unknown(name)))?;
+    let endpoint = selection(file, name).ok_or_else(|| text(unknown(name)))?;
     let endpoint = fill_key(endpoint, true).map_err(text)?;
     match &endpoint.oauth {
         Some(spec) if !logged_in(spec, name).is_ok_and(|ready| ready) => Err(format!(
@@ -107,7 +107,7 @@ pub(crate) enum Keys {
 }
 
 fn set_up_in(file: &File, name: &str, keys: Keys) -> bool {
-    resolve(Some(name), None, Need::Seat).is_ok_and(|endpoint| {
+    resolve(Some(name), None, Need::ModelAndKey).is_ok_and(|endpoint| {
         !crate::provider::wire::spec(endpoint.wire).classifies()
             && (endpoint.source.is_some_and(|source| {
                 source != Source::Builtin && !(keys == Keys::Stored && source == Source::Env)

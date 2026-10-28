@@ -22,7 +22,7 @@ use sigil::widgets::DiffBuilder;
 
 use super::{App, Entry, canvas};
 use crate::prefs::{DiffLayout, Prefs};
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 mod children;
 mod collapse;
@@ -99,7 +99,7 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> 
                     .min_size(0.0, 0.0),
             )
             .bg(sigil::prelude::Token::Gray5)
-            .child(Look::sm(sigil::prelude::Token::Gray12).on(text(body))),
+            .child(TextStyle::sm(sigil::prelude::Token::Gray12).on(text(body))),
         Entry::Assistant { .. } => assistant(live::text_of(app.model, index), app),
         Entry::Thinking(_) => collapse::collapsible(
             live::text_of(app.model, index),
@@ -120,12 +120,12 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> 
         Entry::Verify { command, passed } => verify(&command, passed),
         Entry::Mail { from, text: body } => prose(
             &format!("{from}: {body}"),
-            Look::sm(sigil::prelude::Token::Info11),
+            TextStyle::sm(sigil::prelude::Token::Info11),
         ),
         Entry::Aborted(reason) | Entry::Error(reason) => {
-            wrap(Look::xs(sigil::prelude::Token::Error11).on(text(reason)))
+            wrap(TextStyle::xs(sigil::prelude::Token::Error11).on(text(reason)))
         }
-        Entry::System(body) => wrap(Look::xs(sigil::prelude::Token::Gray11).on(text(body))),
+        Entry::System(body) => wrap(TextStyle::xs(sigil::prelude::Token::Gray11).on(text(body))),
         Entry::Chart(rounds) => wrap(
             chart(
                 rounds
@@ -177,13 +177,13 @@ fn verify(command: &str, passed: bool) -> NodeBuilder {
     };
     wrap(tree::label(
         format!("{} {command}", if passed { "✓" } else { "✗" }),
-        Look::xs(tone),
+        TextStyle::xs(tone),
     ))
 }
 
 fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeBuilder {
     if !canvas::is_window() && caps().is_none_or(|caps| caps.graphics.is_none()) {
-        return wrap(Look::sm(sigil::prelude::Token::Gray11).on(text("[attached image]")));
+        return wrap(TextStyle::sm(sigil::prelude::Token::Gray11).on(text("[attached image]")));
     }
     let (width, height) = (source.width() as f32, source.height() as f32);
     let id = source.id();
@@ -213,7 +213,10 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
                 .fit(ObjectFit::Contain)
                 .layout(LayoutStyle::block().width(width).height(height)),
         )
-        .child(tree::label(name, Look::xs(sigil::prelude::Token::Gray11)))
+        .child(tree::label(
+            name,
+            TextStyle::xs(sigil::prelude::Token::Gray11),
+        ))
 }
 
 pub(super) fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {
@@ -323,10 +326,10 @@ pub(in crate::tui::sigil_view) fn patch_view(
         })
 }
 
-fn prose(body: &str, look: Look) -> NodeBuilder {
+fn prose(body: &str, text_style: TextStyle) -> NodeBuilder {
     let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(0.0));
     for para in body.split('\n') {
-        column = column.child(look.on(markdown_inline(para)));
+        column = column.child(text_style.on(markdown_inline(para)));
     }
     column
 }

@@ -117,7 +117,7 @@ impl App {
         let named = asked && choices.get(selected).is_some_and(|row| !row.dual());
         self.auth.choices.set(choices);
         self.auth.list.query.set(String::new());
-        self.auth.seat.set(None);
+        self.auth.selection.set(None);
         self.auth.focus.set(self.auth.focus.peek() + 1);
         self.auth.list.cursor.set(selected);
         self.auth.step.set(Login::List(Note::default()));
@@ -314,10 +314,15 @@ impl App {
                 if self.picker.open.peek() {
                     self.push_entry(Entry::System(text.clone()));
                     self.auth.open.set(false);
-                    match self.auth.seat.peek().filter(|(owner, _)| owner == name) {
+                    match self
+                        .auth
+                        .selection
+                        .peek()
+                        .filter(|(owner, _)| owner == name)
+                    {
                         Some((owner, model)) => {
                             self.cancel_model_edit();
-                            drop(self.cmd.send(Cmd::SetSeat(owner, model)));
+                            drop(self.cmd.send(Cmd::SelectModel(owner, model)));
                         }
                         None => self.refresh_models(),
                     }

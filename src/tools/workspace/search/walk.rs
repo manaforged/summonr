@@ -8,9 +8,9 @@ use grep_searcher::Searcher;
 use ignore::WalkState;
 use ignore::overrides::Override;
 
-use crate::SKIP_DIRS;
-use crate::error::{Error, Result};
-use crate::walk::Walk;
+use summonr_core::error::{Error, Result};
+use summonr_core::walk::SKIP_DIRS;
+use summonr_core::walk::Walk;
 
 use super::scan::{self, Found};
 use super::{Query, Root, filter, index};
@@ -129,7 +129,7 @@ fn walk_all(query: &Query, shared: &Shared) {
         Walk::TOOL
     };
     let mut walker = Walk {
-        guard: true,
+        guard: Some(crate::policy::protected_read),
         depth: query.depth,
         ..base
     }

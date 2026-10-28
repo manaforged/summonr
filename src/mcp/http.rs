@@ -3,8 +3,8 @@ use serde_json::{Value, json};
 
 use std::time::Duration;
 
-use crate::error::{Error, Result};
 use crate::rpc::{self, Frame, Notice};
+use summonr_core::error::{Error, Result};
 
 pub(super) struct Http {
     client: leyline::Session,
@@ -88,7 +88,7 @@ impl Http {
             Err(Failure::Refused(_)) => return Ok(None),
             Err(Failure::Unreachable(error)) => return Err(error),
         };
-        super::handshake::agreed(&result)?;
+        super::handshake::validate_version(&result)?;
         self.version = result
             .get("protocolVersion")
             .and_then(Value::as_str)

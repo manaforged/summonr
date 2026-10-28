@@ -13,8 +13,8 @@ use super::{
 use super::{Source, Store};
 use crate::durable::store;
 #[cfg(not(target_os = "macos"))]
-use crate::error::Error;
-use crate::error::Result;
+use summonr_core::error::Error;
+use summonr_core::error::Result;
 
 impl Store {
     pub(super) fn file_get(&self, name: &str) -> Result<Option<(String, Source)>> {

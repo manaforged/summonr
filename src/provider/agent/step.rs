@@ -8,7 +8,7 @@ use super::super::{
 use super::bridge;
 use super::frame::{Block, Control, Finished, Frame, LimitStatus, Piece, Rpc, Streamed};
 use super::run::{Call, Run};
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 pub(in crate::provider) enum Step {
     Paused(AssistantMessage),

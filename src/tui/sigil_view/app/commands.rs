@@ -159,7 +159,7 @@ impl App {
                 let own = crate::catalog::known(&endpoint, model).is_some();
                 drop(self.cmd.send(match model.split_once('/') {
                     Some((name, id)) if !own && crate::endpoint::is_named(name) => {
-                        Cmd::SetSeat(name.to_string(), id.to_string())
+                        Cmd::SelectModel(name.to_string(), id.to_string())
                     }
                     Some(_) | None => Cmd::SetModel((*model).to_string()),
                 }));
@@ -192,17 +192,17 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn cycle_endpoint(&self) {
-        self.cycle_seat(true);
+        self.cycle_model(true);
     }
 
-    pub(in crate::tui::sigil_view) fn cycle_seat(&self, forward: bool) {
+    pub(in crate::tui::sigil_view) fn cycle_model(&self, forward: bool) {
         let current = self.model.get().snapshot.endpoint.clone();
         match crate::endpoint::step(&current, forward) {
             Some(next) => drop(self.cmd.send(Cmd::SetEndpoint(next))),
             None => {
                 self.model_mut(|model| {
                     model.entries.push(Entry::System(
-                        "only one ready seat; `summonr login NAME` adds another".to_string(),
+                        "only one model is ready; `summonr login NAME` adds another".to_string(),
                     ))
                 });
                 self.refresh();

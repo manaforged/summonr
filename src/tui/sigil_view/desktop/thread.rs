@@ -196,7 +196,7 @@ fn starters(app: &App) -> NodeBuilder {
             .align_items(AlignItems::Center)
             .justify_content(JustifyContent::Center),
     );
-    if app.model.get().snapshot.unseated {
+    if app.model.get().snapshot.unconfigured {
         let providers = app.clone();
         actions = actions.child(
             button(ADD_PROVIDER)

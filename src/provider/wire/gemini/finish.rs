@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
-use crate::error::{Error, ProviderFailureKind, Result};
 use crate::provider::StopReason;
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

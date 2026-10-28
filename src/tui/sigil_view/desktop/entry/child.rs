@@ -4,8 +4,8 @@ use sigil::prelude::{
 
 use super::super::App;
 use crate::tui::sigil_view::chat::entry::{glyph, label};
-use crate::tui::sigil_view::look::Look;
 use crate::tui::sigil_view::model::Agent;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 fn card(kid: &Agent) -> NodeBuilder {
     let (dot, tone) = glyph(&kid.state());
@@ -36,12 +36,12 @@ fn card(kid: &Agent) -> NodeBuilder {
         .child(
             label(
                 format!("Child task · {}", kid.title),
-                Look::sm(Token::Gray11),
+                TextStyle::sm(Token::Gray11),
             )
             .ellipsize()
             .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
         )
-        .child(label(meta, Look::xs(Token::Gray10)))
+        .child(label(meta, TextStyle::xs(Token::Gray10)))
 }
 
 pub(super) fn cards(app: &App, call: &str) -> Option<NodeBuilder> {

@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::super::app::App;
 use super::{State, busy_info, frame_with, screens};
 use crate::catalog::Model;
-use crate::recent::Seat;
+use crate::recent::ModelId;
 use crate::tui::Msg;
 
 fn session(id: &str, parent: Option<&str>) -> crate::session::SessionInfo {
@@ -104,16 +104,16 @@ fn days_ago(days: u64) -> Option<u64> {
 fn open(app: &App, rows: &[(&str, Option<u64>)], pinned: usize) {
     app.replace("/model".to_owned());
     app.submit();
-    let seat = |id: &str| Seat::new("openrouter", id);
+    let selection = |id: &str| ModelId::new("openrouter", id);
     app.update(Msg::Models {
         request: 1,
-        rows: rows.iter().map(|(id, _)| seat(id)).collect(),
+        rows: rows.iter().map(|(id, _)| selection(id)).collect(),
         facts: rows
             .iter()
             .map(|(id, release)| {
                 let mut model = Model::named(*id);
                 model.release = *release;
-                (seat(id), model)
+                (selection(id), model)
             })
             .collect(),
         groups: BTreeMap::new(),

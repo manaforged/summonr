@@ -1,7 +1,7 @@
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 pub enum Arity<T> {
     Switch(fn(&mut T) -> Result<()>),

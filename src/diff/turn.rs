@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use super::{Diff, Stat, ignored, numstat_row};
 use crate::checkpoint::Checkpoints;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TurnId {
@@ -115,7 +115,7 @@ fn pick(root: &Path, session: &str, id: TurnId) -> Result<(Checkpoints, Span, Di
         }
         TurnId::Number(number) => Err(Error::Config(format!(
             "no turn {number}; the session has {}",
-            crate::text::plural(count, "turn")
+            summonr_core::text::plural(count, "turn")
         ))),
         TurnId::Session => {
             let to = spans.last().map(|span| span.to.clone()).unwrap_or_default();

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::id::SessionId;
-use crate::provider::{Continuation, Image, Message, Role, ToolCall};
+use summonr_types::{Continuation, Image, Message, Role, ToolCall};
 
 const FILE: &str = "session.jsonl";
 const WORK: &str = "work.json";
@@ -31,7 +31,7 @@ pub(crate) struct UsageMeta {
 }
 
 impl Usage {
-    pub(crate) fn measured(usage: &crate::provider::Usage, millis: u64) -> Self {
+    pub(crate) fn measured(usage: &summonr_types::Usage, millis: u64) -> Self {
         Self {
             input: u64::from(usage.prompt_tokens),
             output: u64::from(usage.completion_tokens),
@@ -146,7 +146,7 @@ pub(crate) enum Line {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        code: Option<crate::tools::AbortCode>,
+        code: Option<summonr_types::AbortCode>,
         #[serde(default, skip_serializing_if = "Option::is_none", alias = "rss_kb")]
         footprint_kb: Option<u64>,
     },

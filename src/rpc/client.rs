@@ -9,9 +9,9 @@ use tokio::process::{ChildStdin, ChildStdout};
 
 use super::frame::{Framing, Lines, Read, encode};
 use super::{Peer, notification, request};
-use crate::error::{Error, Result};
 use crate::process::{Cap, Child, Env, Spec, Tail};
 use crate::tools::command::ProcessGroup;
+use summonr_core::error::{Error, Result};
 
 mod reply;
 

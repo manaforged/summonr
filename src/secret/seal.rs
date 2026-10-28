@@ -13,7 +13,7 @@ use toml_edit::DocumentMut;
 
 #[cfg(target_os = "macos")]
 use crate::durable::store;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 use super::*;
 

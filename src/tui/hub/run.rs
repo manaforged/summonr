@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 
-use super::sticky::Sticky;
+use super::replay::ReplayState;
 use super::{Factory, Live, Open, Status, seen, status};
 use crate::provider::Client;
 use crate::runtime::Loop;
@@ -22,7 +22,7 @@ struct Session {
     title: Option<String>,
     workspace: PathBuf,
     status: Status,
-    sticky: Sticky,
+    replay: ReplayState,
     stale: bool,
     cmd: UnboundedSender<Cmd>,
     task: JoinHandle<()>,
@@ -122,9 +122,9 @@ impl Hub {
         let changed = session.observe(&msg, active);
         let finished = matches!(msg, Msg::Busy(None));
         if !active {
-            session.stale |= session.sticky.working();
+            session.stale |= session.replay.working();
         } else if matches!(msg, Msg::Replayed) {
-            session.sticky.resend(&self.app);
+            session.replay.resend(&self.app);
         } else {
             drop(self.app.send(msg));
         }
@@ -203,7 +203,7 @@ impl Hub {
                 title,
                 workspace,
                 status: Status::Idle,
-                sticky: Sticky::default(),
+                replay: ReplayState::default(),
                 stale: false,
                 cmd,
                 task,
@@ -269,7 +269,7 @@ impl Session {
             self.id = id.clone();
             changed = true;
         }
-        self.sticky.record(msg, active);
+        self.replay.record(msg, active);
         changed
     }
 }

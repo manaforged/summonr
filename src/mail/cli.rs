@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::*;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const USAGE: &str = "usage:\n  summonr mail                  who is on this machine\n  summonr mail agents           same roster\n  summonr mail send <name|id|all> <text>\n  summonr mail inbox <id> [--clear]\n  summonr mail board [get <key>|set <key> <text>]\n\nAny agent CLI can use these: mail is files under ~/.summonr/mail, no server.";
 

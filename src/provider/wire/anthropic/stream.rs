@@ -2,12 +2,12 @@ use serde_json::{Value, json};
 
 use super::event::{Change, Counted, Event, EventKind, Opened, Shape};
 use super::stop_reason;
-use crate::provider::message::Checked;
 use crate::provider::stream::append_arguments;
 use crate::provider::wire::{Accumulate, Delta};
 use crate::provider::{
     AssistantMessage, Partial, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
 };
+use summonr_types::Checked;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum Block {
@@ -86,7 +86,7 @@ pub(crate) struct Stream {
     calls: Vec<ToolCall>,
     usage: Usage,
     counted: Counted,
-    broken: Option<crate::error::Error>,
+    broken: Option<summonr_core::error::Error>,
     stop: StopReason,
     done: bool,
 }
@@ -99,7 +99,7 @@ impl Accumulate for Stream {
         }
     }
 
-    fn on(&mut self, event: &str) -> crate::error::Result<Vec<Delta>> {
+    fn on(&mut self, event: &str) -> summonr_core::error::Result<Vec<Delta>> {
         let Some(event) = crate::provider::wire::parse::<Option<Event<'_>>>(event)? else {
             return Ok(Vec::new());
         };
@@ -124,7 +124,7 @@ impl Accumulate for Stream {
 }
 
 impl Stream {
-    fn event(&mut self, event: &Event<'_>) -> crate::error::Result<Option<Delta>> {
+    fn event(&mut self, event: &Event<'_>) -> summonr_core::error::Result<Option<Delta>> {
         Ok(match event.kind {
             EventKind::MessageStart => {
                 self.counted = event.message.usage.unwrap_or_default();
@@ -162,7 +162,7 @@ impl Stream {
         })
     }
 
-    fn message_delta(&mut self, event: &Event<'_>) -> crate::error::Result<Option<Delta>> {
+    fn message_delta(&mut self, event: &Event<'_>) -> summonr_core::error::Result<Option<Delta>> {
         if let Some(fields) = event.usage {
             self.counted.merge(fields);
         }
@@ -216,7 +216,7 @@ impl Stream {
 }
 
 impl Stream {
-    fn delta(&mut self, change: &Change<'_>) -> crate::error::Result<Option<Delta>> {
+    fn delta(&mut self, change: &Change<'_>) -> summonr_core::error::Result<Option<Delta>> {
         match &mut self.block {
             Block::Text { .. } => {
                 let chunk = change.text.to_string();
@@ -304,7 +304,7 @@ fn opened(
     block: &serde_json::value::RawValue,
     text: usize,
     thinking: usize,
-) -> crate::error::Result<Block> {
+) -> summonr_core::error::Result<Block> {
     let opened = crate::provider::wire::parse::<Opened<'_>>(block.get())?;
     Ok(match opened.shape {
         Shape::Text => Block::Text {

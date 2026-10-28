@@ -6,8 +6,8 @@ use crate::process::{Cap, Child, Tail};
 
 use super::super::{CompletionRequest, Effort, Message, Role, ToolDefinition};
 use super::frame::{Frame, Ready, ReplyKind};
-use super::{Seat, bridge};
-use crate::error::{Error, ProviderFailureKind, Result};
+use super::{AgentClient, bridge};
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 const INIT: &str = "init";
 
@@ -64,7 +64,7 @@ impl Drop for Run {
 
 impl Run {
     pub(super) async fn start(
-        seat: &Seat,
+        agent: &AgentClient,
         request: &CompletionRequest<'_>,
         thread: Thread,
         input: &[Message],
@@ -81,7 +81,7 @@ impl Run {
             tools: request.tools,
             thread,
         };
-        let mut run = Self::open(seat, spec).await?;
+        let mut run = Self::open(agent, spec).await?;
         run.shape = request.shape_hash();
         for message in input {
             run.send(&bridge::user(message)).await?;
@@ -89,7 +89,7 @@ impl Run {
         Ok(run)
     }
 
-    async fn open(seat: &Seat, spec: Spec<'_>) -> Result<Self> {
+    async fn open(agent: &AgentClient, spec: Spec<'_>) -> Result<Self> {
         let prompt = match spec.system {
             Some(system) => {
                 let mut file = tempfile::NamedTempFile::new()?;
@@ -102,11 +102,11 @@ impl Run {
         let cwd = std::env::current_dir()?;
         let process = crate::process::start(
             crate::process::Spec {
-                remove: seat.unset.iter().map(Into::into).collect(),
+                remove: agent.unset.iter().map(Into::into).collect(),
                 cwd: Some(cwd),
-                ..crate::process::Spec::new(&seat.program, args)
+                ..crate::process::Spec::new(&agent.program, args)
             }
-            .envs(seat.env.iter().cloned()),
+            .envs(agent.env.iter().cloned()),
         )
         .map_err(|error| {
             Error::Config(format!(
@@ -127,7 +127,7 @@ impl Run {
             stdin: process.stdin,
             reader: BufReader::new(process.stdout),
             stderr,
-            secrets: seat.env.iter().map(|(_, value)| value.clone()).collect(),
+            secrets: agent.env.iter().map(|(_, value)| value.clone()).collect(),
             tools: spec.tools.to_vec(),
             pending: Vec::new(),
             thread,
@@ -150,7 +150,7 @@ impl Run {
         }))
         .await?;
         run.handshake().await?;
-        keep_listing(&seat.name, &run.ready);
+        keep_listing(&agent.name, &run.ready);
         Ok(run)
     }
 

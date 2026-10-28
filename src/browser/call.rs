@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const TOOL: &str = "browser";
 const EXTRAS: [&str; 6] = ["snapshot", "read", "screenshot", "tabs", "login", "close"];

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::ToolRegistry;
 use crate::durable::store::{self, Staged};
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const HUNK_LINE_CHARS: usize = 160;
 
@@ -179,7 +179,7 @@ fn cap_rows(lines: Vec<String>) -> Vec<String> {
     let limit = crate::limits::limits().edit_hunk_rows;
     let mut lines = lines
         .iter()
-        .map(|line| crate::text::ellipsize(line, HUNK_LINE_CHARS))
+        .map(|line| crate::display::ellipsize(line, HUNK_LINE_CHARS))
         .collect::<Vec<_>>();
     if lines.len() > limit {
         let skipped = lines.len() - limit;

@@ -6,8 +6,8 @@ use super::link::Link;
 use super::offer::usage;
 use super::output::output;
 use super::{Hub, McpUpdate};
-use crate::error::{Error, Result};
 use crate::provider::{Source, UserInput};
+use summonr_core::error::{Error, Result};
 
 impl Hub {
     pub(crate) async fn expand(&self, input: UserInput) -> Result<UserInput> {

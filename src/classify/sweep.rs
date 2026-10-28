@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use super::{Answer, Decision, Question, Usage, ask};
 use crate::endpoint::Endpoint;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 pub fn windows(state: &str, budget: usize) -> Vec<String> {
     if budget == 0 || state.chars().count() <= budget {
@@ -71,7 +71,7 @@ pub(crate) fn merge(seen: &[Decision]) -> Result<Decision> {
             })
     }) {
         return Err(Error::provider(
-            crate::error::ProviderFailureKind::Malformed,
+            summonr_core::error::ProviderFailureKind::Malformed,
             "window answers have inconsistent questions or types",
         ));
     }

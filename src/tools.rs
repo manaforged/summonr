@@ -2,17 +2,15 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::error::{Error, Result};
 use crate::policy::{Grant, Policy};
 use crate::provider::{ToolCall, ToolFunction, ToolKind, UserInput};
 use crate::web::Search;
+use summonr_core::error::{Error, Result};
 
 mod args;
 mod budget;
-mod event;
-pub(crate) use event::progress_text;
-pub(crate) use event::{Abort, Hold, Kept};
-pub use event::{AbortCode, Event};
+pub(crate) use summonr_types::{Abort, Hold, Kept, ToolOutput, progress_text};
+pub use summonr_types::{AbortCode, Event};
 mod catalog;
 mod dedup;
 pub(crate) use catalog::{Builtin, readonly, retired_op, shaped};
@@ -70,36 +68,6 @@ pub(crate) struct ToolRegistry {
     only: Option<Vec<Builtin>>,
     standalone: bool,
     task_list: bool,
-}
-
-pub(crate) struct ToolOutput {
-    pub(crate) text: String,
-    pub(crate) success: bool,
-    pub(crate) mutated: bool,
-    pub(crate) grant: Option<Grant>,
-    pub(crate) images: Vec<crate::provider::Image>,
-    pub(crate) patch: Option<String>,
-}
-
-impl ToolOutput {
-    pub(crate) fn ok(text: String) -> Self {
-        Self {
-            text,
-            success: true,
-            mutated: false,
-            grant: None,
-            images: Vec::new(),
-            patch: None,
-        }
-    }
-
-    pub(crate) fn mutated(text: String, patch: Option<String>) -> Self {
-        Self {
-            mutated: true,
-            patch,
-            ..Self::ok(text)
-        }
-    }
 }
 
 pub(crate) fn needed_grant(result: &Result<ToolOutput>) -> Option<Grant> {
@@ -241,6 +209,15 @@ impl ToolRegistry {
         self.browser = None;
     }
 
+    pub(crate) fn allow_shell(&mut self) {
+        self.policy.allow_shell();
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn execute_for_test(&self, call: &ToolCall) -> Result<ToolOutput> {
+        self.execute_outcome(call).await
+    }
+
     pub(crate) fn restrict_to(&mut self, names: &[String]) {
         self.only = Some(
             names
@@ -338,7 +315,7 @@ pub async fn run_tool(
         None,
     )?;
     tools.standalone = true;
-    tools.set_modules(&crate::modules::Switches::load(workspace)?)?;
+    tools.set_modules(&crate::modules::load(workspace)?)?;
     let call = ToolCall {
         id: "cli".to_string(),
         kind: ToolKind::Function,

@@ -103,8 +103,8 @@ impl SessionDriver {
                 calls: Vec::new(),
             });
             self.abort(
-                &crate::tools::Abort {
-                    code: crate::tools::AbortCode::Interrupted,
+                &summonr_types::Abort {
+                    code: summonr_types::AbortCode::Interrupted,
                     reason: "process stopped before the turn finished".to_string(),
                 },
                 None,

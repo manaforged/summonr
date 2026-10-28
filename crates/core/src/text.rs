@@ -3,12 +3,9 @@ use std::hash::Hasher;
 use std::iter::Peekable;
 use std::str::SplitInclusive;
 
-use sigil::app::cell_width;
-use unicode_segmentation::UnicodeSegmentation;
-
 const IRREGULAR: &[(&str, &str)] = &[("child", "children"), ("entry", "entries")];
 
-pub(crate) fn plural(count: usize, word: &str) -> String {
+pub fn plural(count: usize, word: &str) -> String {
     if count == 1 {
         return format!("{count} {word}");
     }
@@ -23,11 +20,11 @@ pub(crate) fn plural(count: usize, word: &str) -> String {
 }
 
 #[must_use]
-pub(crate) fn megabytes(kb: u64) -> String {
+pub fn megabytes(kb: u64) -> String {
     format!("{:.0} MB", kb as f64 / 1024.0)
 }
 
-pub(crate) fn duration(secs: u64) -> String {
+pub fn duration(secs: u64) -> String {
     if secs < 60 {
         return format!("{secs}s");
     }
@@ -40,58 +37,7 @@ pub(crate) fn duration(secs: u64) -> String {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum Span {
-    Cells(usize),
-    Bytes(usize),
-}
-
-impl From<usize> for Span {
-    fn from(cells: usize) -> Self {
-        Self::Cells(cells)
-    }
-}
-
-pub(crate) fn ellipsize(text: &str, span: impl Into<Span>) -> String {
-    let width = match span.into() {
-        Span::Cells(width) => width,
-        Span::Bytes(limit) if text.len() <= limit => return text.to_string(),
-        Span::Bytes(limit) => return format!("{}…", &text[..text.floor_char_boundary(limit)]),
-    };
-    if cell_width(text) <= width {
-        return text.to_string();
-    }
-    if width == 0 {
-        return String::new();
-    }
-    let mut used = 0;
-    let end = text.grapheme_indices(true).find_map(|(index, grapheme)| {
-        used += cell_width(grapheme);
-        (used > width.saturating_sub(1)).then_some(index)
-    });
-    let mut shown = text[..end.unwrap_or(text.len())].to_string();
-    shown.push('…');
-    shown
-}
-
-pub(crate) fn ellipsize_start(text: &str, width: usize) -> String {
-    if cell_width(text) <= width {
-        return text.to_string();
-    }
-    if width == 0 {
-        return String::new();
-    }
-    let mut used = 0;
-    let start = text
-        .grapheme_indices(true)
-        .rev()
-        .find_map(|(index, grapheme)| {
-            used += cell_width(grapheme);
-            (used > width.saturating_sub(1)).then_some(index + grapheme.len())
-        });
-    format!("…{}", &text[start.unwrap_or(0)..])
-}
-
-pub(crate) struct Fnv64(u64);
+pub struct Fnv64(u64);
 
 impl Default for Fnv64 {
     fn default() -> Self {
@@ -112,13 +58,13 @@ impl Hasher for Fnv64 {
     }
 }
 
-pub(crate) fn fnv64(bytes: &[u8]) -> String {
+pub fn fnv64(bytes: &[u8]) -> String {
     let mut hasher = Fnv64::default();
     hasher.write(bytes);
     format!("{:016x}", hasher.finish())
 }
 
-pub(crate) fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
+pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
     secrets
         .into_iter()
         .filter(|secret| !secret.is_empty())
@@ -134,7 +80,7 @@ const KEY_ECHOES: &[&str] = &[
     "x-api-key:",
 ];
 
-pub(crate) fn hide_key_echo(text: &str) -> String {
+pub fn hide_key_echo(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some((at, marker)) = KEY_ECHOES
@@ -163,30 +109,15 @@ pub(crate) fn hide_key_echo(text: &str) -> String {
 }
 
 #[must_use]
-pub(crate) fn squash(text: &str) -> String {
+pub fn squash(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-#[must_use]
-pub(crate) fn lines_within(text: &str, width: usize) -> Vec<String> {
-    let mut parts: Vec<String> = Vec::new();
-    for word in text.split_whitespace() {
-        match parts.last_mut() {
-            Some(last) if cell_width(last) + 1 + cell_width(word) <= width => {
-                last.push(' ');
-                last.push_str(word);
-            }
-            Some(_) | None => parts.push(ellipsize(word, width)),
-        }
-    }
-    parts
 }
 
 #[cfg(test)]
 #[path = "text_tests.rs"]
 mod tests;
 
-pub(crate) const FENCE: &str = "---";
+pub const FENCE: &str = "---";
 
 const ITEM: &str = "- ";
 const QUOTES: [char; 2] = ['"', '\''];
@@ -197,9 +128,9 @@ struct Field<'a> {
     items: Vec<&'a str>,
 }
 
-pub(crate) struct Frontmatter<'a> {
+pub struct Frontmatter<'a> {
     fields: Vec<Field<'a>>,
-    pub(crate) body: &'a str,
+    pub body: &'a str,
 }
 
 #[derive(Clone, Copy)]
@@ -281,7 +212,7 @@ fn block_scalar(
 }
 
 impl<'a> Frontmatter<'a> {
-    pub(crate) fn parse(text: &'a str) -> Self {
+    pub fn parse(text: &'a str) -> Self {
         let plain = Self {
             fields: Vec::new(),
             body: text,
@@ -331,21 +262,21 @@ impl<'a> Frontmatter<'a> {
         plain
     }
 
-    pub(crate) fn get(&self, key: &str) -> Option<&str> {
+    pub fn get(&self, key: &str) -> Option<&str> {
         self.fields
             .iter()
             .find(|field| field.key == key && !field.value.is_empty())
             .map(|field| field.value.as_ref())
     }
 
-    pub(crate) fn list(&self, key: &str) -> Option<Vec<String>> {
+    pub fn list(&self, key: &str) -> Option<Vec<String>> {
         let field = self.fields.iter().find(|field| field.key == key)?;
         if field.value.is_empty() {
             return Some(field.items.iter().map(|item| (*item).to_string()).collect());
         }
         let inline = field.value.trim_start_matches('[').trim_end_matches(']');
         Some(
-            crate::policy::unquoted(inline, &[","])
+            crate::shell::unquoted(inline, &[","])
                 .iter()
                 .map(|item| item.trim().trim_matches(QUOTES))
                 .filter(|item| !item.is_empty())

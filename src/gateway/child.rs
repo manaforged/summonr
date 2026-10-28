@@ -9,9 +9,9 @@ use super::turn::Options;
 use crate::cron::launch::Launch;
 use crate::cron::report::Report;
 use crate::cron::store::{Outcome, Task};
-use crate::error::{Error, Result};
 use crate::process::{Cap, Child, Io, Spec, Tail};
 use crate::tools::command::ProcessGroup;
+use summonr_core::error::{Error, Result};
 
 const TYPING_EVERY: Duration = Duration::from_secs(4);
 const NO_REPLY: &str = "(no reply)";

@@ -6,13 +6,13 @@ use crate::mcp::{McpState, McpTransport, ServerStatus};
 use crate::supervise::ServerKind;
 
 impl App {
-    pub(in crate::tui::sigil_view) fn file_rows(&self) -> Vec<FileRow> {
+    pub(in crate::tui::sigil_view) fn file_rows(&self) -> Vec<PaneRow> {
         let model = self.model.get();
         let expanded = self.pane_list(Pane::Files).open.peek();
         files::file_rows(&model.files, &expanded)
     }
 
-    pub(in crate::tui::sigil_view) fn job_rows(&self) -> Vec<FileRow> {
+    pub(in crate::tui::sigil_view) fn job_rows(&self) -> Vec<PaneRow> {
         let list = self.pane_list(Pane::Jobs);
         self.model
             .get()
@@ -20,14 +20,14 @@ impl App {
             .iter()
             .map(|(record, status)| {
                 let open = list.is_open(&record.id);
-                FileRow::flat(record.id.clone(), record.command.clone(), open)
+                PaneRow::flat(record.id.clone(), record.command.clone(), open)
                     .badge(status.label(), job_tone(status.state))
                     .detail(status.text.lines().map(str::to_string))
             })
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn mcp_rows(&self) -> Vec<FileRow> {
+    pub(in crate::tui::sigil_view) fn mcp_rows(&self) -> Vec<PaneRow> {
         let list = self.pane_list(Pane::Mcp);
         self.model
             .get()
@@ -35,7 +35,7 @@ impl App {
             .iter()
             .map(|server| {
                 let open = list.is_open(&server.name);
-                FileRow::flat(server.name.clone(), server.name.clone(), open)
+                PaneRow::flat(server.name.clone(), server.name.clone(), open)
                     .status(summary(server))
                     .badge(server.state.label(), mcp_tone(server.state))
                     .note(server.detail.clone())
@@ -44,7 +44,7 @@ impl App {
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn peer_rows(&self) -> Vec<FileRow> {
+    pub(in crate::tui::sigil_view) fn peer_rows(&self) -> Vec<PaneRow> {
         self.model
             .get()
             .peers
@@ -71,14 +71,14 @@ impl App {
                     .collect::<Vec<_>>()
                     .join(" · ");
                 let label = agent.label().to_string();
-                FileRow::flat(label.clone(), format!("@{label}"), false)
+                PaneRow::flat(label.clone(), format!("@{label}"), false)
                     .status(about)
                     .badge(agent.status.to_string(), tone)
             })
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn tree_rows(&self) -> Vec<FileRow> {
+    pub(in crate::tui::sigil_view) fn tree_rows(&self) -> Vec<PaneRow> {
         self.model
             .get()
             .trees
@@ -89,7 +89,7 @@ impl App {
                 } else {
                     ("clean", Tone::Neutral)
                 };
-                FileRow::flat(
+                PaneRow::flat(
                     row.tree.path.display().to_string(),
                     row.tree.branch.clone(),
                     false,
@@ -100,11 +100,11 @@ impl App {
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn diff_rows(&self) -> Vec<FileRow> {
+    pub(in crate::tui::sigil_view) fn diff_rows(&self) -> Vec<PaneRow> {
         self.diff_stats()
             .iter()
             .map(|stat| {
-                FileRow::flat(stat.path.clone(), stat.path.clone(), false)
+                PaneRow::flat(stat.path.clone(), stat.path.clone(), false)
                     .status(format!("+{} −{}", stat.added, stat.removed))
             })
             .collect()
@@ -154,12 +154,12 @@ fn summary(server: &ServerStatus) -> String {
         ServerKind::Mcp => format!(
             "{} · {} · {}",
             server.transport.map_or("-", McpTransport::label),
-            crate::text::plural(server.tools.len(), "tool"),
+            summonr_core::text::plural(server.tools.len(), "tool"),
             server.schema_size(),
         ),
     };
     match server.rss_kb {
-        Some(kb) => format!("{head} · mem {}", crate::text::megabytes(kb)),
+        Some(kb) => format!("{head} · mem {}", summonr_core::text::megabytes(kb)),
         None => head,
     }
 }

@@ -73,7 +73,7 @@ impl Work {
                 continue;
             }
             let indent = if phase.is_some() { "  " } else { "" };
-            let title = crate::text::ellipsize(&step.title, LEDGER_WIDTH);
+            let title = crate::display::ellipsize(&step.title, LEDGER_WIDTH);
             lines.push(format!("{indent}{} {title}", step_mark(step.state)));
         }
         lines

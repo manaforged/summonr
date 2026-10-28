@@ -46,7 +46,7 @@ pub(super) fn ceiling_label(window: Option<u32>, chars: usize) -> String {
 
 impl<P: Provider> Loop<P> {
     pub(in crate::runtime) fn receiver_window(&self, role: workflow::Role) -> Option<u32> {
-        match self.seats.get(&role) {
+        match self.selections.get(&role) {
             Some((_, _, window)) => *window,
             None => self.context_window,
         }
@@ -55,7 +55,7 @@ impl<P: Provider> Loop<P> {
     pub(super) fn known_window(&self) -> Option<u32> {
         let round = self.receiver_window(crate::workflow::Role::Implement);
         let summary = self
-            .seats
+            .selections
             .get(&workflow::Role::Summary)
             .and_then(|(_, _, window)| *window);
         match (round, summary) {

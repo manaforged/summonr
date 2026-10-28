@@ -46,7 +46,7 @@ fn a_skill_cannot_shadow_a_builtin_slash_command() {
 
 #[test]
 fn claude_code_skills_join_the_catalog_and_load() {
-    let home = crate::prompt::user_home().expect("test home");
+    let home = summonr_core::dirs::user_home().expect("test home");
     let user = home.join(".claude/skills/probe-user-skill");
     std::fs::create_dir_all(&user).unwrap();
     std::fs::write(

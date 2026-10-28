@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 mod client;
 mod frame;

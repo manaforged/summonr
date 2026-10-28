@@ -1,22 +1,25 @@
 use sigil::prelude::{
-    AlignItems, ControlSize, JustifyContent, LayoutBuilderExt, LayoutStyle, MouseButton,
-    NodeBuilder, NodeEventsExt, Token, button, container,
+    AlignItems, ControlSize, JustifyContent, LayoutBuilderExt, LayoutStyle, NodeBuilder, Token,
+    button, container,
 };
 
 use super::{Agent, App};
 use crate::tui::ToolState;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{Hints, Key};
 
-fn text(body: impl Into<sigil::kernel::TextContent>, look: Look) -> sigil::kernel::TextBuilder {
-    look.on(sigil::kernel::text(body).nowrap())
+fn text(
+    body: impl Into<sigil::kernel::TextContent>,
+    text_style: TextStyle,
+) -> sigil::kernel::TextBuilder {
+    text_style.on(sigil::kernel::text(body).nowrap())
 }
 
-fn mark(agent: &Agent) -> (&'static str, Look) {
+fn mark(agent: &Agent) -> (&'static str, TextStyle) {
     match agent.state() {
-        ToolState::Running => ("○", Look::xs(Token::Gray11)),
-        ToolState::Ok => ("●", Look::xs(Token::Success11)),
-        ToolState::Failed => ("●", Look::xs(Token::Error11)),
+        ToolState::Running => ("○", TextStyle::xs(Token::Gray11)),
+        ToolState::Ok => ("●", TextStyle::xs(Token::Success11)),
+        ToolState::Failed => ("●", TextStyle::xs(Token::Error11)),
     }
 }
 
@@ -80,7 +83,7 @@ const CHROME_GAPS: usize = 9;
 
 fn fixed(
     body: impl Into<sigil::kernel::TextContent>,
-    look: Look,
+    text_style: TextStyle,
     cells: usize,
     justify: JustifyContent,
 ) -> NodeBuilder {
@@ -92,7 +95,7 @@ fn fixed(
                 .min_size(0.0, 0.0)
                 .justify_content(justify),
         )
-        .child(text(body, look).ellipsize())
+        .child(text(body, text_style).ellipsize())
 }
 
 type View = sigil::prelude::Signal<(bool, Vec<Agent>, Vec<crate::mail::Agent>)>;
@@ -137,17 +140,17 @@ fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> N
                 .align_items(AlignItems::Center),
         )
         .child(text(glyph, tone))
-        .child(text("Subagent", Look::xs(Token::Accent11)))
+        .child(text("Subagent", TextStyle::xs(Token::Accent11)))
         .child(fixed(
             agent.title.clone(),
-            Look::xs(Token::Gray12),
+            TextStyle::xs(Token::Gray12),
             widths.title,
             JustifyContent::Start,
         ))
         .child(
             text(
                 field(view, agent.id.clone(), move |agent| doing(agent, &roots)),
-                Look::xs(Token::Gray10),
+                TextStyle::xs(Token::Gray10),
             )
             .ellipsize()
             .layout(
@@ -161,29 +164,29 @@ fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> N
         line = line
             .child(fixed(
                 agent.access.name(),
-                Look::xs(Token::Gray10),
+                TextStyle::xs(Token::Gray10),
                 widths.access,
                 JustifyContent::Start,
             ))
-            .child(text("·", Look::xs(Token::Gray10)));
+            .child(text("·", TextStyle::xs(Token::Gray10)));
     }
     line = line
         .child(fixed(
             field(view, agent.id.clone(), Agent::clock),
-            Look::xs(Token::Gray10),
+            TextStyle::xs(Token::Gray10),
             widths.clock,
             JustifyContent::End,
         ))
-        .child(text("·", Look::xs(Token::Gray10)))
+        .child(text("·", TextStyle::xs(Token::Gray10)))
         .child(fixed(
             field(view, agent.id.clone(), |agent| {
                 crate::provider::compact(agent.tokens)
             }),
-            Look::xs(Token::Gray10),
+            TextStyle::xs(Token::Gray10),
             widths.tokens,
             JustifyContent::End,
         ))
-        .child(text("tok", Look::xs(Token::Gray10)));
+        .child(text("tok", TextStyle::xs(Token::Gray10)));
     if detail && agent.background {
         let clear = app.clone();
         let id = agent.id.clone();
@@ -258,20 +261,26 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 nodes.push((
                     Row::Head(expanded),
                     container()
-                        .layout(LayoutStyle::flex_row().fill_width().gap(8.0))
-                        .child(text(
-                            if expanded { "▾" } else { "▸" },
-                            Look::xs(Token::Gray10),
-                        ))
-                        .child(text("Subagents", Look::xs(Token::Gray12).bold()))
-                        .child(text(count, Look::xs(Token::Gray10)))
-                        .child(text(hint, Look::xs(Token::Gray9)))
-                        .pointer_down(move |event| {
-                            if event.button == Some(MouseButton::Left) {
-                                toggle.toggle_agents();
-                                event.stop_propagation();
-                            }
-                        }),
+                        .layout(
+                            LayoutStyle::flex_row()
+                                .fill_width()
+                                .gap(8.0)
+                                .align_items(AlignItems::Center),
+                        )
+                        .child(
+                            button(if expanded { "▾" } else { "▸" })
+                                .ghost()
+                                .size(ControlSize::Compact)
+                                .accessible(if expanded {
+                                    "Collapse subagents"
+                                } else {
+                                    "Expand subagents"
+                                })
+                                .activate(move || toggle.toggle_agents()),
+                        )
+                        .child(text("Subagents", TextStyle::xs(Token::Gray12).bold()))
+                        .child(text(count, TextStyle::xs(Token::Gray10)))
+                        .child(text(hint, TextStyle::xs(Token::Gray9))),
                 ));
             }
             let widths = Widths::of(&rows, width);
@@ -321,22 +330,22 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                                 .min_size(0.0, 0.0)
                                 .align_items(AlignItems::Center),
                         )
-                        .child(text("○", Look::xs(tone)))
-                        .child(text("Headless", Look::xs(Token::Accent11)))
+                        .child(text("○", TextStyle::xs(tone)))
+                        .child(text("Headless", TextStyle::xs(Token::Accent11)))
                         .child(
-                            text(title, Look::xs(Token::Gray12))
+                            text(title, TextStyle::xs(Token::Gray12))
                                 .ellipsize()
                                 .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
                         )
                         .child(fixed(
                             peer.model,
-                            Look::xs(Token::Gray10),
+                            TextStyle::xs(Token::Gray10),
                             model_width,
                             JustifyContent::Start,
                         ))
                         .child(fixed(
                             status,
-                            Look::xs(tone),
+                            TextStyle::xs(tone),
                             status_width,
                             JustifyContent::Start,
                         )),

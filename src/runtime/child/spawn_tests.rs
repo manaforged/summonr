@@ -1,4 +1,5 @@
 use crate::provider::scripted::{Reply, Scripted};
+use crate::provider::{ToolCall, ToolFunction, ToolKind};
 use crate::runtime::Loop;
 use crate::tools::{Abort, AbortCode};
 
@@ -281,4 +282,30 @@ async fn a_job_wait_settles_a_child_that_finished_before_it_and_then_waits_on_th
     assert!(!text.starts_with("returned early"), "{text}");
     assert!(text.contains("state: running"), "{text}");
     assert!(waited.elapsed() >= std::time::Duration::from_millis(900));
+}
+
+#[tokio::test]
+async fn a_research_child_can_run_a_foreground_command() {
+    let (mut parent, dirs) = parent(vec![Reply::Text("done")]);
+    let budget = parent.task_budget(1).unwrap();
+    let run = parent
+        .task_start_in(args("hold", "research", false), &budget, None)
+        .unwrap();
+    let output = run
+        .child
+        .execute_for_test(&ToolCall {
+            id: "t1".to_string(),
+            kind: ToolKind::Function,
+            function: ToolFunction {
+                checked: Default::default(),
+                name: "run_command".to_string(),
+                arguments: serde_json::json!({"command": "echo ok"}).to_string(),
+            },
+            continuation: None,
+        })
+        .await
+        .unwrap();
+    assert!(output.success, "{}", output.text);
+    assert!(output.text.contains("ok"), "{}", output.text);
+    drop(dirs);
 }

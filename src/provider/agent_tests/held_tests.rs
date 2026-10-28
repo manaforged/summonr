@@ -1,10 +1,10 @@
 use super::super::super::{Message, Partial, Provider};
-use super::{PLAIN, ask, reply, runs, seat_at};
+use super::{PLAIN, ask, client_at, reply, runs};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_changed_model_starts_a_new_claude_process_that_resumes_the_thread() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), PLAIN);
+    let client = client_at(dir.path(), PLAIN);
     let mut messages = vec![Message::system("sys"), Message::user("first")];
     client
         .stream(&ask(&messages, &[]), &mut Partial::default())
@@ -34,7 +34,7 @@ async fn a_changed_model_starts_a_new_claude_process_that_resumes_the_thread() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_held_claude_process_stops_with_its_client() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), PLAIN);
+    let client = client_at(dir.path(), PLAIN);
     let messages = vec![Message::system("sys"), Message::user("first")];
     client
         .stream(&ask(&messages, &[]), &mut Partial::default())
@@ -60,7 +60,7 @@ async fn a_held_claude_process_stops_with_its_client() {
 async fn a_cancelled_turn_forgets_the_claude_thread() {
     let dir = tempfile::tempdir().unwrap();
     let script = PLAIN.replace("HANG_ON", "second");
-    let client = seat_at(dir.path(), &script);
+    let client = client_at(dir.path(), &script);
     let mut messages = vec![Message::system("sys"), Message::user("first")];
     client
         .stream(&ask(&messages, &[]), &mut Partial::default())
@@ -92,7 +92,7 @@ async fn output_over_turns_is_capped_per_request() {
     let dir = tempfile::tempdir().unwrap();
     let wide = "  *'\"type\":\"user\"'*)\n    big=$(head -c 5000000 /dev/zero | tr '\\0' x)\n    printf '{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"%s\"}}}\\n' \"$big\"\n";
     let script = PLAIN.replacen("  *'\"type\":\"user\"'*)\n", wide, 1);
-    let client = seat_at(dir.path(), &script);
+    let client = client_at(dir.path(), &script);
     let mut messages = vec![Message::system("sys"), Message::user("first")];
     client
         .stream(&ask(&messages, &[]), &mut Partial::default())
@@ -109,7 +109,7 @@ async fn output_over_turns_is_capped_per_request() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_changed_effort_starts_a_new_claude_process_and_the_same_effort_reuses_it() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), PLAIN);
+    let client = client_at(dir.path(), PLAIN);
     let mut messages = vec![Message::system("sys"), Message::user("first")];
     let mut low = ask(&messages, &[]);
     low.effort = Some(crate::provider::Effort::Low);
@@ -137,7 +137,7 @@ async fn a_changed_effort_starts_a_new_claude_process_and_the_same_effort_reuses
 #[tokio::test(flavor = "multi_thread")]
 async fn an_earlier_message_that_changes_its_image_starts_a_new_claude_process() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), PLAIN);
+    let client = client_at(dir.path(), PLAIN);
     let mut first = Message::user("look at this");
     first
         .images

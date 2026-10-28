@@ -24,13 +24,16 @@ impl Chat for Wire {
         reasoning: &Reasoning,
         _cache: crate::endpoint::CacheTtl,
         stream: bool,
-    ) -> crate::error::Result<super::Wired> {
+    ) -> summonr_core::error::Result<super::Wired> {
         body(call, reasoning, stream).map(super::Wired::head)
     }
 }
 
 #[cfg(test)]
-pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
+pub(crate) fn request(
+    call: &CompletionRequest<'_>,
+    stream: bool,
+) -> summonr_core::error::Result<Value> {
     body(call, &call.reasoning, stream)
 }
 
@@ -38,7 +41,7 @@ pub(crate) fn body(
     call: &CompletionRequest<'_>,
     reasoning: &Reasoning,
     stream: bool,
-) -> crate::error::Result<Value> {
+) -> summonr_core::error::Result<Value> {
     let mut body = Map::new();
     body.insert("model".to_string(), json!(call.model));
     body.insert("input".to_string(), Value::Array(input(call)?));
@@ -63,7 +66,7 @@ pub(crate) fn body(
     Ok(Value::Object(body))
 }
 
-fn input(call: &CompletionRequest<'_>) -> crate::error::Result<Vec<Value>> {
+fn input(call: &CompletionRequest<'_>) -> summonr_core::error::Result<Vec<Value>> {
     let fixed: Vec<&str> = call
         .messages
         .iter()
@@ -160,7 +163,7 @@ fn user_parts(message: &Message) -> Vec<Value> {
     parts
 }
 
-fn assistant_items(message: &Message, model: &str) -> crate::error::Result<Vec<Value>> {
+fn assistant_items(message: &Message, model: &str) -> summonr_core::error::Result<Vec<Value>> {
     let mut items = Vec::new();
     let mut phase = None;
     let mut remarks: &[String] = &[];
@@ -233,10 +236,10 @@ fn assistant_items(message: &Message, model: &str) -> crate::error::Result<Vec<V
     Ok(items)
 }
 
-fn call_id(id: &str) -> crate::error::Result<&str> {
+fn call_id(id: &str) -> summonr_core::error::Result<&str> {
     if id.is_empty() {
-        return Err(crate::error::Error::provider(
-            crate::error::ProviderFailureKind::MalformedToolCall,
+        return Err(summonr_core::error::Error::provider(
+            summonr_core::error::ProviderFailureKind::MalformedToolCall,
             "responses: a tool call has an empty call_id",
         ));
     }

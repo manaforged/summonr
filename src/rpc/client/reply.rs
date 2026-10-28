@@ -2,8 +2,8 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::{Client, Read};
-use crate::error::{Error, Result};
 use crate::rpc::{Ask, Frame, Notice, Peer, Reply, ask, failure, notice, parse, response};
+use summonr_core::error::{Error, Result};
 
 type Raw = (Option<Value>, Option<Value>);
 

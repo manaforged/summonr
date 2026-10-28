@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{Browser, Live, fail};
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const ACTIVE_PORT: &str = "DevToolsActivePort";
 #[cfg(unix)]

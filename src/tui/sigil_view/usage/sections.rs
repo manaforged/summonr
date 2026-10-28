@@ -155,7 +155,7 @@ pub(super) fn cards(report: &Report) -> NodeBuilder {
             "sessions",
             group(total.sessions),
             None,
-            crate::text::plural(usize::try_from(total.turns).unwrap_or(usize::MAX), "turn")
+            summonr_core::text::plural(usize::try_from(total.turns).unwrap_or(usize::MAX), "turn")
                 .replacen(&total.turns.to_string(), &group(total.turns), 1),
         ))
         .child(card("cost", cost, None, priced.to_string()))
@@ -188,7 +188,7 @@ fn model_line(
 ) -> NodeBuilder {
     let share = model.value(metric.cost()) / whole * 100.0;
     let tint = ink(at);
-    let short = crate::text::ellipsize(name, name_cells);
+    let short = crate::display::ellipsize(name, name_cells);
     let short = format!(
         "{short}{}",
         " ".repeat(name_cells.saturating_sub(sigil::app::cell_width(&short)))
@@ -255,7 +255,7 @@ pub(super) fn places(report: &Report, metric: Metric) -> NodeBuilder {
     let mut lines = vec![strong("Workspaces")];
     for (name, value) in &report.places {
         let filled = ((value / peak) * PLACE_CELLS as f64).round() as usize;
-        let short = crate::text::ellipsize(name, PLACE_NAME_CELLS);
+        let short = crate::display::ellipsize(name, PLACE_NAME_CELLS);
         let pad = PLACE_NAME_CELLS.saturating_sub(sigil::app::cell_width(&short));
         lines.push(row(vec![
             colored(format!("{short}{}", " ".repeat(pad)), palette().text),

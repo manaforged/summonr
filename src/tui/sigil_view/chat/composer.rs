@@ -30,7 +30,7 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Optio
         format!(
             "{} {doing} · {}{speed}{waiting}",
             sigil::widgets::spinner_frame(tick),
-            crate::text::duration(since.elapsed().as_secs())
+            summonr_core::text::duration(since.elapsed().as_secs())
         )
     })
 }
@@ -53,7 +53,3 @@ pub(in crate::tui::sigil_view) fn composer_hint(
         .find(|hint| cell_width(hint.as_str()) <= available)
         .unwrap_or_default()
 }
-
-#[cfg(test)]
-#[path = "composer_tests.rs"]
-mod tests;

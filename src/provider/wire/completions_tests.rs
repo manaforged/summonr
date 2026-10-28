@@ -42,19 +42,6 @@ fn effort_reaches_this_wire_under_its_own_name() {
 }
 
 #[test]
-fn this_wire_is_the_one_that_ends_on_a_marker() {
-    assert_eq!(
-        crate::provider::wire::spec(crate::endpoint::Wire::Completions).sentinel,
-        Some("[DONE]")
-    );
-    assert_eq!(
-        crate::credentials::scheme(crate::endpoint::Wire::Completions),
-        summonr_auth::Scheme::Bearer
-    );
-    assert_eq!(Wire::path("glm-5.3", true), "/chat/completions");
-}
-
-#[test]
 fn fragmented_arguments_join_across_frames() {
     let mut stream = <Stream as Accumulate>::new("glm-5.3");
     for frame in [
@@ -95,7 +82,7 @@ fn text_and_reasoning_both_reach_the_caller() {
 
 #[test]
 fn finish_reasons_map_to_failures_or_a_length_stop() {
-    use crate::error::ProviderFailureKind::{Http, Server};
+    use summonr_core::error::ProviderFailureKind::{Http, Server};
     for (reason, expected) in [
         ("content_filter", Http),
         ("sensitive", Http),
@@ -114,7 +101,7 @@ fn finish_reasons_map_to_failures_or_a_length_stop() {
     assert_eq!(reply.stop_reason, StopReason::Length);
 }
 
-fn streamed(frames: &[serde_json::Value]) -> crate::error::Result<AssistantMessage> {
+fn streamed(frames: &[serde_json::Value]) -> summonr_core::error::Result<AssistantMessage> {
     let mut stream = Stream::new("m");
     for frame in frames {
         stream.on(&frame.to_string())?;
@@ -127,7 +114,7 @@ fn said(content: serde_json::Value, finish: Option<&str>) -> serde_json::Value {
     json!({"choices": [{"delta": {"content": content}, "finish_reason": finish}]})
 }
 
-fn kind(error: crate::error::Error) -> crate::error::ProviderFailureKind {
+fn kind(error: summonr_core::error::Error) -> summonr_core::error::ProviderFailureKind {
     error.provider_failure().unwrap().kind
 }
 

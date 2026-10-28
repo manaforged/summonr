@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use std::time::Duration;
 
-use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
+use summonr_core::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
 mod agent;
 mod capture;
@@ -23,7 +22,7 @@ pub(crate) use summonr_auth::Auth;
 
 mod client;
 mod fit;
-mod message;
+pub(crate) use fit::fit;
 mod reasoning;
 mod request;
 
@@ -67,19 +66,21 @@ pub use client::Client;
 pub(crate) use client::input_cap;
 #[cfg(test)]
 pub(crate) use client::{response_failure, unreachable_message};
-#[cfg(test)]
-pub(crate) use message::Checked;
-pub(crate) use message::{
+pub(crate) use reasoning::{EffortField, Off, Reasoning, Scale, Spec, Step, levels};
+pub(crate) use request::dollars;
+pub(crate) use request::{CompletionRequest, ToolsJson};
+pub(crate) use request::{CountStyle, compact};
+pub use summonr_types::Effort;
+pub(crate) use summonr_types::Partial;
+pub(crate) use summonr_types::Price;
+pub(crate) use summonr_types::ToolDefinition;
+pub(crate) use summonr_types::{
     AssistantMessage, Continuation, Role, Source, StopReason, ToolCall, ToolFunction, ToolKind,
 };
-pub(crate) use message::{Image, Message};
-pub use message::{Usage, UserInput};
-pub(crate) use reasoning::{EffortField, Off, Reasoning, Scale, Spec, Step, levels};
-pub use request::Effort;
-pub(crate) use request::dollars;
-pub(crate) use request::{CompletionRequest, FunctionDefinition, ToolDefinition, ToolsJson};
-pub(crate) use request::{CountStyle, compact};
-pub(crate) use request::{Partial, Price};
+#[cfg(test)]
+pub(crate) use summonr_types::{Checked, FunctionDefinition};
+pub(crate) use summonr_types::{Image, Message};
+pub use summonr_types::{Usage, UserInput};
 pub use wire::Delta;
 #[cfg(test)]
 pub(crate) use wire::decisions;

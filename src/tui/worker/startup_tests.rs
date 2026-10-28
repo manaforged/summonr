@@ -77,7 +77,7 @@ async fn startup_effort_reaches_the_composer_before_a_model_switch() {
 }
 
 #[tokio::test]
-async fn a_model_switch_becomes_the_last_used_seat() {
+async fn a_model_switch_becomes_the_last_used_model() {
     let home = tempfile::tempdir().expect("summonr home");
     let workspace = tempfile::tempdir().expect("workspace");
     let client = Client::new("test", "http://127.0.0.1:9/v1").expect("local client");
@@ -108,7 +108,7 @@ async fn a_model_switch_becomes_the_last_used_seat() {
     worker(loop_, receiver, ui, info).await;
     assert_eq!(
         crate::recent::load(home.path()).first(),
-        Some(&crate::recent::Seat::new("openai", "gpt-5.5"))
+        Some(&crate::recent::ModelId::new("openai", "gpt-5.5"))
     );
 }
 

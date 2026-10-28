@@ -31,7 +31,7 @@ fn shaped(query: &Query, mut report: Report) -> String {
         return format!(
             "no entries at offset {}: {} in all",
             query.offset,
-            crate::text::plural(report.files, "file")
+            summonr_core::text::plural(report.files, "file")
         );
     }
     let page: Vec<Found> = std::mem::take(&mut report.found)
@@ -74,18 +74,18 @@ fn header(query: &Query, report: &Report, tally: &Tally, next: usize) -> String 
     let mut out = match query.mode {
         Mode::Files => format!(
             "{} with `{pattern}`, newest first ({} searched)",
-            crate::text::plural(report.files, "file"),
+            summonr_core::text::plural(report.files, "file"),
             report.searched
         ),
         Mode::Count => format!(
             "{} in {} ({} searched)",
-            crate::text::plural(report.match_total, "match"),
-            crate::text::plural(report.files, "file"),
+            summonr_core::text::plural(report.match_total, "match"),
+            summonr_core::text::plural(report.files, "file"),
             report.searched
         ),
         Mode::Content => format!(
             "{} for `{pattern}`, newest file first ({} files searched)",
-            crate::text::plural(tally.matches, "match"),
+            summonr_core::text::plural(tally.matches, "match"),
             report.searched
         ),
     };
@@ -98,13 +98,13 @@ fn header(query: &Query, report: &Report, tally: &Tally, next: usize) -> String 
     if report.capped > 0 {
         out.push_str(&format!(
             "; {} had more than {GREP_FILE_HITS} matching lines",
-            crate::text::plural(report.capped, "file"),
+            summonr_core::text::plural(report.capped, "file"),
         ));
     }
     if report.skipped > 0 {
         out.push_str(&format!(
             "; {} skipped as binary, over 1 MiB, or unreadable",
-            crate::text::plural(report.skipped, "file")
+            summonr_core::text::plural(report.skipped, "file")
         ));
     }
     out.push_str(&coverage(report));
@@ -123,7 +123,7 @@ fn missed(query: &Query, report: &Report) -> String {
     };
     out.push_str(&format!(
         " ({} searched",
-        crate::text::plural(report.searched.max(report.files), "file")
+        summonr_core::text::plural(report.searched.max(report.files), "file")
     ));
     if report.skipped > 0 {
         out.push_str(&format!(
@@ -154,7 +154,7 @@ fn file_list(query: &Query, report: &Report, page: &[Found]) -> String {
     let shown = page.len().min(query.limit);
     let mut out = format!(
         "{}, newest first",
-        crate::text::plural(report.files, "file")
+        summonr_core::text::plural(report.files, "file")
     );
     let end = query.offset + shown;
     if query.offset > 0 || end < report.files {
@@ -179,8 +179,8 @@ fn groups(query: &Query, report: &Report) -> String {
     rows.sort_by(|left, right| right.1.cmp(left.1).then_with(|| left.0.cmp(right.0)));
     let mut out = format!(
         "{} in {}, by folder",
-        crate::text::plural(report.files, "file"),
-        crate::text::plural(rows.len(), "folder")
+        summonr_core::text::plural(report.files, "file"),
+        summonr_core::text::plural(rows.len(), "folder")
     );
     if rows.len() > query.limit {
         out.push_str(&format!("; showing the {} largest", query.limit));
@@ -197,11 +197,14 @@ fn groups(query: &Query, report: &Report) -> String {
 
 fn skipped_note(query: &Query) -> String {
     if query.no_ignore {
-        return format!("; {} folders skipped", crate::STATE_DIRS.join(" and "));
+        return format!(
+            "; {} folders skipped",
+            summonr_core::walk::STATE_DIRS.join(" and ")
+        );
     }
     format!(
         "; gitignored files and {} folders skipped (no_ignore true includes them)",
-        crate::SKIP_DIRS.join(", ")
+        summonr_core::walk::SKIP_DIRS.join(", ")
     )
 }
 
@@ -210,19 +213,19 @@ fn coverage(report: &Report) -> String {
     if let Some(built) = report.indexed {
         out.push_str(&format!(
             "; from the file index of {} ago, so files made since appear after the refresh this search started",
-            crate::text::duration(crate::mail::now().saturating_sub(built))
+            summonr_core::text::duration(crate::mail::now().saturating_sub(built))
         ));
     }
     if report.links > 0 {
         out.push_str(&format!(
             "; includes {}, which find -type f leaves out",
-            crate::text::plural(report.links, "symbolic link")
+            summonr_core::text::plural(report.links, "symbolic link")
         ));
     }
     if report.unreadable > 0 {
         out.push_str(&format!(
             "; {} could not be read",
-            crate::text::plural(report.unreadable, "folder")
+            summonr_core::text::plural(report.unreadable, "folder")
         ));
     }
     if report.stopped {

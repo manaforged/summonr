@@ -1,7 +1,7 @@
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 
-use crate::error::Result;
+use summonr_core::error::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Framing {

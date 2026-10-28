@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::TickEnv;
 #[cfg(unix)]
-use crate::error::Result;
+use summonr_core::error::Result;
 
 const CRON_MARKER: &str = "# summonr-cron";
 #[cfg(unix)]
@@ -14,11 +14,11 @@ pub(crate) fn cron_line(exe: &Path, env: TickEnv<'_>) -> String {
     let vars: String = env
         .vars()
         .into_iter()
-        .map(|(key, value)| format!("{key}={} ", crate::shell::quote(value)))
+        .map(|(key, value)| format!("{key}={} ", summonr_core::shell::quote(value)))
         .collect();
     let command = format!(
         "{vars}{} cron tick",
-        crate::shell::quote(&exe.display().to_string())
+        summonr_core::shell::quote(&exe.display().to_string())
     );
     format!("* * * * * {} {CRON_MARKER}", command.replace('%', "\\%"))
 }

@@ -4,8 +4,8 @@ use std::process::Stdio;
 
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
 
-use crate::error::{Error, Result};
 use crate::tools::command::ProcessGroup;
+use summonr_core::error::{Error, Result};
 
 mod info;
 mod tail;

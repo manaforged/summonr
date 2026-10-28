@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::durable::log::{self, Line};
-use crate::error::Result;
+use summonr_core::error::Result;
 
 const UNACCOUNTED: &str = "unaccounted turn time";
 const TOP: usize = 5;
@@ -102,7 +102,7 @@ impl Scan {
 
     fn assistant(
         &mut self,
-        tool_calls: Vec<crate::provider::ToolCall>,
+        tool_calls: Vec<summonr_types::ToolCall>,
         usage: crate::durable::log::Usage,
         text: String,
         reasoning: String,
@@ -160,7 +160,7 @@ impl Scan {
         self.extra.3 = self.extra.3.saturating_add(usage.output);
     }
 
-    fn summary(&mut self, text: String, tail: Vec<crate::provider::Message>) {
+    fn summary(&mut self, text: String, tail: Vec<summonr_types::Message>) {
         self.history.0 = self.first_user;
         self.history.1 = 0;
         self.history.2 = 0;

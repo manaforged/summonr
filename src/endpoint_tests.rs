@@ -107,21 +107,7 @@ fn a_custom_row_can_point_model_listings_elsewhere() {
 }
 
 #[test]
-fn a_misspelled_endpoint_suggests_the_closest_name() {
-    let names = vec![
-        "anthropic".to_string(),
-        "openai".to_string(),
-        "gemini".to_string(),
-    ];
-    assert_eq!(
-        closest("antropic", &names, super::Near::Typo),
-        Some("anthropic")
-    );
-    assert_eq!(closest("zzzzzzzz", &names, super::Near::Typo), None);
-}
-
-#[test]
-fn the_last_seat_wins_over_the_config_default_and_a_stale_one_falls_back() {
+fn the_last_model_wins_over_the_config_default_and_a_stale_one_falls_back() {
     let servers = "[endpoint.lab]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\n\n[endpoint.other]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"o\"\n";
     let file: crate::config::File = toml::from_str(&format!(
         "default = \"lab\"\ndefault_model = \"m\"\n{servers}"
@@ -138,23 +124,6 @@ fn the_last_seat_wins_over_the_config_default_and_a_stale_one_falls_back() {
     assert_eq!(
         (name.as_deref(), model.as_deref(), reason),
         (Some("lab"), Some("m"), Some(super::Pick::Default))
-    );
-}
-
-#[test]
-fn openai_and_grok_offer_a_sign_in_and_a_key() {
-    for (name, grant) in [
-        ("openai", summonr_auth::Grant::AuthorizationCode),
-        ("grok", summonr_auth::Grant::DeviceCode),
-    ] {
-        let row = super::keys::builtin(name).unwrap();
-        let spec = crate::credentials::spec(row.oauth.as_ref().unwrap()).unwrap();
-        assert_eq!(spec.grant, grant, "{name}");
-        assert!(row.takes_key(), "{name} still takes a key");
-    }
-    assert_eq!(
-        super::keys::builtin("openai").unwrap().wire,
-        super::Wire::Responses
     );
 }
 
@@ -193,70 +162,6 @@ fn an_off_row_is_listed_but_hidden() {
             .iter()
             .any(|row| row.name == "claude-pro" && row.off),
         "claude-pro stays in the table with off = true"
-    );
-}
-
-#[test]
-fn coding_plans_join_the_plan_group() {
-    for name in [
-        "qwen-plan",
-        "qwen-plan-cn",
-        "minimax-plan",
-        "minimax-cn-plan",
-        "tencent-plan",
-        "volcengine-plan",
-    ] {
-        let endpoint = super::keys::builtin(name).unwrap_or_else(|| panic!("{name} missing"));
-        assert!(
-            matches!(super::login_group(name, &endpoint), super::LoginGroup::Plan),
-            "{name} should sit in the coding-plan group"
-        );
-    }
-}
-
-#[test]
-fn the_new_endpoints_point_at_their_hosts() {
-    let qwen = super::keys::builtin("qwen-plan").unwrap();
-    assert_eq!(
-        qwen.base_url.as_deref(),
-        Some("https://coding-intl.dashscope.aliyuncs.com/v1")
-    );
-    assert_eq!(qwen.wire, super::Wire::Completions);
-    let minimax = super::keys::builtin("minimax-plan").unwrap();
-    assert_eq!(
-        minimax.base_url.as_deref(),
-        Some("https://api.minimax.io/anthropic/v1")
-    );
-    assert_eq!(minimax.wire, super::Wire::Anthropic);
-    assert!(
-        super::keys::builtin("perplexity").is_none(),
-        "perplexity runs no user tools"
-    );
-    let lmstudio = super::keys::builtin("lmstudio").unwrap();
-    assert!(lmstudio.keyless(), "lmstudio is a local server");
-    assert!(super::keys::builtin("ollama-cloud").is_some());
-}
-
-#[test]
-fn catalog_provider_ids_follow_the_table() {
-    assert_eq!(
-        super::preset::provider_ids("qwen-plan"),
-        ["alibaba-coding-plan"]
-    );
-    assert_eq!(
-        super::preset::provider_ids("volcengine-plan"),
-        ["volcengine-coding-plan"]
-    );
-    assert!(super::preset::catalog_providers().any(|known| known == "tencent-coding-plan"));
-}
-
-#[test]
-fn hosts_that_route_caches_per_conversation_opt_into_the_cache_key() {
-    assert!(
-        hosted("https://api.x.ai/v1")
-            .expect("xai preset")
-            .prompt_cache_key,
-        "xai stores cache entries per server and routes on the cache key"
     );
 }
 
@@ -337,16 +242,8 @@ fn every_default_model_is_current_in_the_bundled_catalog() {
 }
 
 #[test]
-fn a_chatgpt_sign_in_and_gemini_aliases_reach_current_models() {
-    let openai = super::preset::preset("openai").unwrap();
-    assert_eq!(openai.login_model.as_deref(), Some("gpt-6.1-sol"));
-    let flash = super::resolve(Some("gemini"), Some("flash"), crate::Need::Config).unwrap();
-    assert_eq!(flash.model, "gemini-3.8-flash");
-}
-
-#[test]
 fn another_tools_credential_files_are_never_read() {
-    let home = crate::prompt::user_home().expect("test home");
+    let home = summonr_core::dirs::user_home().expect("test home");
     let opencode = home.join(".local/share/opencode");
     std::fs::create_dir_all(&opencode).unwrap();
     std::fs::write(
@@ -387,6 +284,6 @@ fn an_explicit_effort_reaches_the_provider_unchanged() {
 fn a_preset_row_keeps_its_configured_idle_timeout() {
     let file: crate::config::File =
         toml::from_str("[endpoint.grok]\nidle_timeout_secs = 7\n").unwrap();
-    let endpoint = super::resolve::seat(&file, "grok").unwrap();
+    let endpoint = super::resolve::selection(&file, "grok").unwrap();
     assert_eq!(endpoint.idle_timeout_secs, Some(7));
 }

@@ -3,16 +3,16 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::error::{Error, Result};
 use crate::policy::Policy;
 use crate::tools::ToolOutput;
+use summonr_core::error::{Error, Result};
 
 mod catalog;
 mod config;
 mod conn;
 mod defer;
 mod expand;
-mod form;
+
 mod handshake;
 mod http;
 mod journal;
@@ -24,17 +24,17 @@ mod probe;
 mod status;
 mod tool;
 
-pub(crate) use config::{Entry, expand_vars, scan};
+pub(crate) use config::{expand_vars, scan};
 pub use defer::call_label;
 pub(crate) use defer::{Resolved, SEARCH_TOOL, effective};
 pub(crate) use expand::wanted;
-pub use form::{Choice, Field, FieldKind, Form, FormAction, FormAnswer, TextFormat};
 use link::{Gate, Link};
 pub use manage::{McpLaunch, add, remove};
 pub(crate) use offer::{Offer, OfferKind, offers};
 use output::output;
 pub use probe::probe;
 pub use status::{Board, McpState, McpTransport, ServerStatus, status};
+pub use summonr_types::{Choice, Field, FieldKind, Form, FormAction, FormAnswer, TextFormat};
 use tool::Tool;
 
 pub(crate) enum McpUpdate {

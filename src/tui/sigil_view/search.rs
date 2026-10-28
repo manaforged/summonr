@@ -198,7 +198,10 @@ impl Picker {
         let preview = snippet(pattern, &prompt.text)
             .or_else(|| pattern.is_match(&context).then(|| one_line(&prompt.text)))?;
         Some(if prompt.text.is_empty() {
-            format!("{} attached", crate::text::plural(prompt.images, "image"))
+            format!(
+                "{} attached",
+                summonr_core::text::plural(prompt.images, "image")
+            )
         } else {
             preview
         })
@@ -226,7 +229,7 @@ fn one_line(text: &str) -> String {
         .chars()
         .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
         .collect();
-    crate::text::ellipsize(&flat, SNIPPET_CELLS)
+    crate::display::ellipsize(&flat, SNIPPET_CELLS)
 }
 
 pub(super) fn layer(app: App) -> NodeBuilder {

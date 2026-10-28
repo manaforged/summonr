@@ -3,7 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 use super::{AssistantMessage, CompletionRequest, Message, Provider, StopReason, ToolCall};
 

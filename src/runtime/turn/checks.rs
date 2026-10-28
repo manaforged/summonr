@@ -111,7 +111,7 @@ impl<P: Provider> Loop<P> {
         pre: &mut Pretask,
     ) -> Result<Turn> {
         let snapshot = self.settle(pre, events, &mut emit).await?;
-        let receipt = Receipt::aborted(snapshot, events);
+        let receipt = crate::verify::aborted(snapshot, events);
         drop(self.kill_spawned(&abort.reason, usage).await?);
         self.tools.stop_jobs()?;
         self.session.abort(&abort, Some(&receipt))?;
@@ -162,7 +162,7 @@ impl<P: Provider> Loop<P> {
                 tasks.join("\n")
             ));
         }
-        if self.seat_model(workflow::Role::Review).is_some() {
+        if self.role_model(workflow::Role::Review).is_some() {
             parts.push(
                 "Harness: a reviewer reads the change after the completion check and can send it back."
                     .to_string(),

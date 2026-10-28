@@ -6,7 +6,10 @@ fn browsing(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
     (dir, tools)
 }
 
-async fn call(tools: &ToolRegistry, arguments: serde_json::Value) -> crate::error::Result<String> {
+async fn call(
+    tools: &ToolRegistry,
+    arguments: serde_json::Value,
+) -> summonr_core::error::Result<String> {
     let call = ToolCall {
         id: "t1".to_string(),
         kind: ToolKind::Function,

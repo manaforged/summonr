@@ -53,7 +53,7 @@ fn lines(app: &App, query: &str) -> Vec<String> {
     crate::tui::help_text(&app.model.get().prefs.hotkeys)
         .lines()
         .filter(|line| all_words(line, query))
-        .map(|line| crate::text::ellipsize(line, width))
+        .map(|line| crate::display::ellipsize(line, width))
         .collect()
 }
 

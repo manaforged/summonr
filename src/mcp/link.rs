@@ -6,18 +6,18 @@ use std::sync::{Arc, Weak};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
-use crate::error::{Error, Result};
 use crate::policy::{Action, Policy};
 use crate::rpc::Notice;
 use crate::supervise::{self, ServerKind, Slot};
+use summonr_core::error::{Error, Result};
 
 use super::catalog::{self, Listing};
 use super::config::Server;
 use super::conn::Conn;
-use super::form::Form;
 use super::status::McpState;
 use super::tool::Tool;
 use super::{Answer, McpProgress, McpUpdate};
+use summonr_types::Form;
 
 pub(super) struct Link {
     server: Server,

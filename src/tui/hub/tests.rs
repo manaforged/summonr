@@ -64,11 +64,11 @@ fn viewing_a_session_clears_finished_states_only() {
 
 #[test]
 fn switching_back_restores_the_turn_then_its_open_question() {
-    let mut sticky = super::sticky::Sticky::default();
-    sticky.record(&Msg::Busy(Some(Activity::Turn)), false);
-    sticky.record(&approval(Some("git push --force")), false);
+    let mut replay = super::replay::ReplayState::default();
+    replay.record(&Msg::Busy(Some(Activity::Turn)), false);
+    replay.record(&approval(Some("git push --force")), false);
     let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
-    sticky.resend(&app);
+    replay.resend(&app);
     let first = inbox.try_recv().unwrap();
     assert!(matches!(first, Msg::Busy(Some(Activity::Turn))));
     let mut last = None;
@@ -83,12 +83,12 @@ fn switching_back_restores_the_turn_then_its_open_question() {
 
 #[test]
 fn an_answered_question_is_not_asked_again_on_switch() {
-    let mut sticky = super::sticky::Sticky::default();
-    sticky.record(&Msg::Busy(Some(Activity::Turn)), false);
-    sticky.record(&approval(Some("rm -rf build")), false);
-    sticky.record(&approval(None), false);
+    let mut replay = super::replay::ReplayState::default();
+    replay.record(&Msg::Busy(Some(Activity::Turn)), false);
+    replay.record(&approval(Some("rm -rf build")), false);
+    replay.record(&approval(None), false);
     let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
-    sticky.resend(&app);
+    replay.resend(&app);
     while let Ok(msg) = inbox.try_recv() {
         assert!(!matches!(msg, Msg::Event(Event::Approval { .. })));
     }
@@ -97,18 +97,18 @@ fn an_answered_question_is_not_asked_again_on_switch() {
 #[test]
 fn text_handed_back_while_away_returns_once_on_switch() {
     let restored = || Msg::Restored(vec![crate::provider::UserInput::from("finish the docs")]);
-    let handed = |sticky: &mut super::sticky::Sticky| {
+    let handed = |replay: &mut super::replay::ReplayState| {
         let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
-        sticky.resend(&app);
+        replay.resend(&app);
         std::iter::from_fn(|| inbox.try_recv().ok())
             .filter(|msg| matches!(msg, Msg::Restored(_)))
             .count()
     };
-    let mut away = super::sticky::Sticky::default();
+    let mut away = super::replay::ReplayState::default();
     away.record(&restored(), false);
     assert_eq!(handed(&mut away), 1);
     assert_eq!(handed(&mut away), 0);
-    let mut shown = super::sticky::Sticky::default();
+    let mut shown = super::replay::ReplayState::default();
     shown.record(&restored(), true);
     assert_eq!(handed(&mut shown), 0);
 }

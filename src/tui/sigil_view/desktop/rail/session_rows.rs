@@ -96,7 +96,7 @@ fn titled(text: &str) -> String {
     if text.is_empty() {
         UNTITLED.to_string()
     } else {
-        crate::text::ellipsize(text, PREVIEW_CELLS)
+        crate::display::ellipsize(text, PREVIEW_CELLS)
     }
 }
 

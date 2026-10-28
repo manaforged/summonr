@@ -3,7 +3,7 @@ use std::path::Path;
 
 use super::store::{self, Job, Notify, Outcome, Run};
 use crate::Event;
-use crate::error::Result;
+use summonr_core::error::Result;
 
 const NO_ANSWER: &str = "(no answer)";
 const STILL_RUNNING: &str = "still running";

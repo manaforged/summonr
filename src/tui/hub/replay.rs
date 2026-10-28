@@ -7,7 +7,7 @@ use crate::tui::{Activity, Msg, Snapshot};
 type Roster = (Option<String>, Vec<String>, Vec<Option<String>>);
 
 #[derive(Default)]
-pub(super) struct Sticky {
+pub(super) struct ReplayState {
     busy: Option<Activity>,
     asking: Option<Event>,
     settings: Option<Snapshot>,
@@ -18,7 +18,7 @@ pub(super) struct Sticky {
     restored: Option<Vec<UserInput>>,
 }
 
-impl Sticky {
+impl ReplayState {
     pub(super) fn record(&mut self, msg: &Msg, active: bool) {
         if let Msg::Busy(busy) = msg {
             self.busy = *busy;
@@ -29,8 +29,13 @@ impl Sticky {
                 .map(|_| event.clone());
         } else if let Msg::Settings(snapshot) = msg {
             self.settings = Some(snapshot.clone());
-        } else if let Msg::Workflow { name, names, seats } = msg {
-            self.workflow = Some((name.clone(), names.clone(), seats.clone()));
+        } else if let Msg::Workflow {
+            name,
+            names,
+            selections,
+        } = msg
+        {
+            self.workflow = Some((name.clone(), names.clone(), selections.clone()));
         } else if let Msg::RunMode(mode) = msg {
             self.mode = Some(*mode);
         } else if let Msg::Queued { steering, queued } = msg {
@@ -54,7 +59,11 @@ impl Sticky {
         out.extend(
             self.workflow
                 .clone()
-                .map(|(name, names, seats)| Msg::Workflow { name, names, seats }),
+                .map(|(name, names, selections)| Msg::Workflow {
+                    name,
+                    names,
+                    selections,
+                }),
         );
         out.extend(self.mode.map(Msg::RunMode));
         let (steering, queued) = self.queued.unwrap_or_default();

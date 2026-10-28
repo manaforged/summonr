@@ -253,7 +253,7 @@ impl SessionDriver {
 
     pub(crate) fn abort(
         &mut self,
-        abort: &crate::tools::Abort,
+        abort: &summonr_types::Abort,
         receipt: Option<&crate::verify::Receipt>,
     ) -> Result<(), DriverError> {
         let reason = abort.reason.as_str();

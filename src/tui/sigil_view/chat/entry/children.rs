@@ -7,7 +7,7 @@ use super::tree::{branch, label, tree};
 use crate::child::{ChildRecord, ChildState};
 use crate::tools::{Builtin, Hold, Kept};
 use crate::tui::ToolState;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 fn task_title(kid: &Agent, roots: &[String]) -> String {
     if kid.assignment.is_empty() {
@@ -43,24 +43,26 @@ fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(label("◆", Look::xs(tone)))
-        .child(label("Subagent", Look::xs(Token::Gray12).bold()));
+        .child(label("◆", TextStyle::xs(tone)))
+        .child(label("Subagent", TextStyle::xs(Token::Gray12).bold()));
     if !kid.agent.is_empty() {
-        line = line.child(label(kid.agent.clone(), Look::xs(Token::Info11)));
+        line = line.child(label(kid.agent.clone(), TextStyle::xs(Token::Info11)));
     }
     line = line.child(
-        label(status, Look::xs(Token::Gray10))
+        label(status, TextStyle::xs(Token::Gray10))
             .ellipsize()
             .layout(LayoutStyle::block().shrink(4.0).min_size(0.0, 0.0)),
     );
     match doing {
         Some(doing) => line.child(
-            label(doing, Look::xs(Token::Gray10)).ellipsize().layout(
-                LayoutStyle::block()
-                    .shrink(1.0)
-                    .min_size(0.0, 0.0)
-                    .max_width(super::super::ACTIVITY_SHARE),
-            ),
+            label(doing, TextStyle::xs(Token::Gray10))
+                .ellipsize()
+                .layout(
+                    LayoutStyle::block()
+                        .shrink(1.0)
+                        .min_size(0.0, 0.0)
+                        .max_width(super::super::ACTIVITY_SHARE),
+                ),
         ),
         None => line,
     }
@@ -75,9 +77,9 @@ pub(super) fn starting_card() -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(label("◆", Look::xs(Token::Accent11)))
-        .child(label("Subagent", Look::xs(Token::Gray12).bold()))
-        .child(label("starting…", Look::xs(Token::Gray10)))
+        .child(label("◆", TextStyle::xs(Token::Accent11)))
+        .child(label("Subagent", TextStyle::xs(Token::Gray12).bold()))
+        .child(label("starting…", TextStyle::xs(Token::Gray10)))
 }
 
 fn kept_line(kept: &Kept, roots: &[String]) -> String {
@@ -121,7 +123,7 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
         if let Some((_, kept)) = kept.as_ref().filter(|(tag, _)| *tag == kid.id) {
             card = card.child(branch(
                 true,
-                label(kept_line(kept, &app.roots), Look::xs(Token::Warn11)).ellipsize(),
+                label(kept_line(kept, &app.roots), TextStyle::xs(Token::Warn11)).ellipsize(),
             ));
         }
     }
@@ -160,7 +162,7 @@ pub(super) fn receipt_card(
             call_line(
                 Builtin::Task.verb(),
                 &Agent::title_of(&workspace_relative(&record.assignment, &roots)),
-                Some((note, Look::xs(Token::Gray10))),
+                Some((note, TextStyle::xs(Token::Gray10))),
                 true,
             ),
         ));

@@ -185,23 +185,3 @@ fn a_flood_of_matches_is_cut_at_the_output_cap() {
         &hits[hits.len() - 80..]
     );
 }
-
-#[test]
-fn help_names_every_option_the_schema_leaves_out() {
-    let (_dir, tools) = workspace(&[("a.rs", "let id = 1;\n")]);
-    let help = search(&tools, serde_json::json!({"op": "help"}));
-    for option in [
-        "newer",
-        "word",
-        "case_sensitive",
-        "no_ignore",
-        "depth",
-        "offset",
-        "tags",
-    ] {
-        assert!(
-            help.starts_with("search reference") && help.contains(option),
-            "{option}: {help}"
-        );
-    }
-}

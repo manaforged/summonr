@@ -115,7 +115,7 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
         Verb::Workflows => done(print_workflows()),
         Verb::Modules => done(
             workspace()
-                .and_then(|root| summonr::modules::Switches::load(&root))
+                .and_then(|root| summonr::modules::load(&root))
                 .map(|switches| println!("{}", switches.table())),
         ),
         Verb::Uninstall => uninstall(args),

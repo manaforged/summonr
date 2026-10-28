@@ -1,10 +1,10 @@
 use super::super::{Accumulate, Delta, blocked, parse};
 use super::frame::{Failure, Frame, FrameKind, Item, PartShape, Response, Shape};
-use crate::provider::message::Checked;
 use crate::provider::stream::append_arguments;
 use crate::provider::{
     AssistantMessage, Continuation, Partial, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
 };
+use summonr_types::Checked;
 
 #[derive(Default)]
 pub(crate) struct Stream {
@@ -32,7 +32,7 @@ impl Accumulate for Stream {
         }
     }
 
-    fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>> {
+    fn on(&mut self, frame: &str) -> summonr_core::error::Result<Vec<Delta>> {
         let Some(frame) = parse::<Option<Frame<'_>>>(frame)? else {
             return Ok(Vec::new());
         };
@@ -96,7 +96,7 @@ impl Accumulate for Stream {
 }
 
 impl Stream {
-    fn event(&mut self, frame: &Frame<'_>) -> crate::error::Result<Vec<Delta>> {
+    fn event(&mut self, frame: &Frame<'_>) -> summonr_core::error::Result<Vec<Delta>> {
         match frame.kind {
             FrameKind::TextDelta => return Ok(vec![self.text(frame)]),
             FrameKind::RefusalDelta => {
@@ -150,7 +150,7 @@ impl Stream {
         }
     }
 
-    fn completed(&mut self, response: &Response<'_>) -> crate::error::Result<Vec<Delta>> {
+    fn completed(&mut self, response: &Response<'_>) -> summonr_core::error::Result<Vec<Delta>> {
         self.done = true;
         if self.text.is_empty() && self.calls.is_empty() && self.signatures.is_empty() {
             self.value(response)?;
@@ -203,7 +203,7 @@ impl Stream {
         delta
     }
 
-    fn arguments(&mut self, frame: &Frame<'_>) -> crate::error::Result<Vec<Delta>> {
+    fn arguments(&mut self, frame: &Frame<'_>) -> summonr_core::error::Result<Vec<Delta>> {
         let key = frame.item_id.as_deref();
         let index = key.and_then(|key| self.items.iter().position(|item| item == key));
         if let Some(index) = index
@@ -217,7 +217,7 @@ impl Stream {
             .collect())
     }
 
-    fn item(&mut self, item: &Item<'_>) -> crate::error::Result<()> {
+    fn item(&mut self, item: &Item<'_>) -> summonr_core::error::Result<()> {
         match item.shape {
             Shape::Reasoning => {
                 self.reasoning = false;
@@ -245,7 +245,7 @@ impl Stream {
         Ok(())
     }
 
-    fn status(&mut self, response: &Response<'_>) -> crate::error::Result<()> {
+    fn status(&mut self, response: &Response<'_>) -> summonr_core::error::Result<()> {
         if let Some(counted) = &response.usage {
             self.usage = counted.usage();
         }
@@ -265,7 +265,7 @@ impl Stream {
         Ok(())
     }
 
-    fn value(&mut self, response: &Response<'_>) -> crate::error::Result<()> {
+    fn value(&mut self, response: &Response<'_>) -> summonr_core::error::Result<()> {
         self.status(response)?;
         let Some(output) = response.output else {
             return Ok(());
@@ -280,7 +280,7 @@ impl Stream {
         Ok(())
     }
 
-    fn message(&mut self, item: &Item<'_>) -> crate::error::Result<()> {
+    fn message(&mut self, item: &Item<'_>) -> summonr_core::error::Result<()> {
         refusal(item)?;
         let commentary = self.phase(item);
         if !self.text.is_empty() {
@@ -313,7 +313,7 @@ fn called(item: &Item<'_>, arguments: String) -> ToolCall {
     }
 }
 
-fn refusal(item: &Item<'_>) -> crate::error::Result<()> {
+fn refusal(item: &Item<'_>) -> summonr_core::error::Result<()> {
     match item.parts().iter().find_map(|part| {
         (part.shape == PartShape::Refusal).then(|| part.refusal.as_deref().unwrap_or(""))
     }) {
@@ -322,7 +322,7 @@ fn refusal(item: &Item<'_>) -> crate::error::Result<()> {
     }
 }
 
-fn failed(error: Option<&Failure<'_>>, frame: &Frame<'_>) -> crate::error::Error {
+fn failed(error: Option<&Failure<'_>>, frame: &Frame<'_>) -> summonr_core::error::Error {
     let (code, message) = match error {
         Some(error) => (error.code.as_ref(), error.message.as_deref()),
         None if frame.kind == FrameKind::Error => (frame.code.as_ref(), frame.message.as_deref()),

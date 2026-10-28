@@ -1,7 +1,7 @@
 use toml_edit::{Array, InlineTable, Item, Table, value};
 
 use crate::config;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 #[derive(Clone)]
 pub enum McpLaunch {

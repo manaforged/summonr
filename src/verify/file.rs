@@ -3,7 +3,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use super::Metric;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 #[derive(Debug, Default, Deserialize)]
 struct CheckFile {

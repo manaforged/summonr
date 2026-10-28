@@ -83,7 +83,7 @@ impl Prompt {
 
     #[must_use]
     pub(in crate::tui) fn build(self, width: usize, keys: &Hotkeys) -> NodeBuilder {
-        let fit = |text: &str| crate::text::ellipsize(text, width.saturating_sub(4));
+        let fit = |text: &str| crate::display::ellipsize(text, width.saturating_sub(4));
         let mut band = container()
             .layout(LayoutStyle::flex_column().fill_width().gap(8.0))
             .child(notice_band(fit(&self.head), self.tone));

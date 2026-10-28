@@ -38,7 +38,7 @@ impl<P: Provider> Loop<P> {
             Some((value, _)) => format!("metric baseline {value}"),
             None => format!(
                 "no metric baseline: {}",
-                crate::text::ellipsize_start(output.trim(), OUTPUT_TAIL)
+                crate::display::ellipsize_start(output.trim(), OUTPUT_TAIL)
             ),
         };
         let kept = reading.is_some();
@@ -82,7 +82,7 @@ impl<P: Provider> Loop<P> {
             ),
             (None, _) => format!(
                 "no metric value: {}",
-                crate::text::ellipsize_start(output.trim(), OUTPUT_TAIL)
+                crate::display::ellipsize_start(output.trim(), OUTPUT_TAIL)
             ),
         };
         let best = if kept {
@@ -91,7 +91,7 @@ impl<P: Provider> Loop<P> {
             let (_, files) = self.rollback(None)?;
             text.push_str(&format!(
                 "; summonr restored {} to the start of this turn",
-                crate::text::plural(files.len(), "file")
+                summonr_core::text::plural(files.len(), "file")
             ));
             best
         };

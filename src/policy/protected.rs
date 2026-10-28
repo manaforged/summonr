@@ -46,8 +46,8 @@ pub(crate) fn holds_protected(path: &Path) -> bool {
 }
 
 pub(crate) fn home_secret<S: AsRef<str>>(path: &Path, dirs: &[S]) -> bool {
-    crate::config::home_dir().is_some_and(|home| secret_under(path, &home, dirs))
-        || crate::prompt::summonr_home()
+    summonr_core::dirs::home_dir().is_some_and(|home| secret_under(path, &home, dirs))
+        || summonr_core::dirs::summonr_home()
             .ok()
             .is_some_and(|summonr| within(path, &summonr))
 }
@@ -79,8 +79,8 @@ type Dirs = (Option<PathBuf>, Option<PathBuf>, Arc<Vec<PathBuf>>);
 
 fn protected_dirs() -> Arc<Vec<PathBuf>> {
     static CACHE: Mutex<Option<Dirs>> = Mutex::new(None);
-    let home = crate::config::home_dir();
-    let summonr = crate::prompt::summonr_home().ok();
+    let home = summonr_core::dirs::home_dir();
+    let summonr = summonr_core::dirs::summonr_home().ok();
     let mut cache = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some((cached_home, cached_summonr, dirs)) = cache.as_ref()
         && *cached_home == home

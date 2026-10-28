@@ -80,7 +80,7 @@ impl App {
             .collect()
     }
 
-    pub(super) fn faceted(&self, rows: Vec<Seat>, facet: Facet) -> Vec<Seat> {
+    pub(super) fn faceted(&self, rows: Vec<ModelId>, facet: Facet) -> Vec<ModelId> {
         if facet == Facet::All {
             return rows;
         }
@@ -88,12 +88,12 @@ impl App {
         let groups = self.picker.groups.peek();
         let mut seen = std::collections::BTreeSet::new();
         rows.into_iter()
-            .filter(|seat| {
+            .filter(|selection| {
                 facet.keeps(
-                    facts.get(seat),
-                    groups.get(&seat.endpoint).copied(),
-                    self.favorite(seat),
-                ) && seen.insert(seat.clone())
+                    facts.get(selection),
+                    groups.get(&selection.endpoint).copied(),
+                    self.favorite(selection),
+                ) && seen.insert(selection.clone())
             })
             .collect()
     }

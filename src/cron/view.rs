@@ -144,10 +144,10 @@ fn budget(job: &Job) -> String {
         || {
             format!(
                 "{} (default)",
-                crate::text::duration(crate::limits::limits().cron_budget_secs)
+                summonr_core::text::duration(crate::limits::limits().cron_budget_secs)
             )
         },
-        crate::text::duration,
+        summonr_core::text::duration,
     );
     match job.max_tokens {
         Some(tokens) => format!("{time}, {tokens} tokens"),
@@ -291,7 +291,7 @@ fn chat_missing() -> Option<String> {
 fn key_missing(endpoint: Option<&str>) -> Option<String> {
     let name = endpoint
         .map(str::to_string)
-        .or_else(|| crate::endpoint::default_seat().map(|seat| seat.endpoint));
+        .or_else(|| crate::endpoint::default_model_selection().map(|selection| selection.endpoint));
     match name {
         Some(name) if !crate::endpoint::is_set_up(&name, crate::endpoint::Keys::Stored) => Some(
             format!("{name} has no usable key; run `summonr login {name}`"),

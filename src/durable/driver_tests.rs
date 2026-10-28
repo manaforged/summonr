@@ -271,3 +271,62 @@ fn a_second_goal_names_the_one_still_active_and_how_to_end_it() {
         .prepare_external_work("add a --version flag", WorkKind::Goal, &[])
         .unwrap();
 }
+
+#[test]
+fn a_resumed_session_keeps_a_finished_tool_result_and_closes_the_cut_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let call = |id: &str| ToolCall {
+        id: id.to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "read".to_string(),
+            arguments: "{}".to_string(),
+        },
+        continuation: None,
+    };
+    let id = {
+        let mut driver =
+            SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+        driver.prepare_turn_work("task", &[]).unwrap();
+        driver.start_input(&UserInput::from("task")).unwrap();
+        let attempt = driver
+            .start_round(
+                Purpose::Agent,
+                "model",
+                Exposure {
+                    max_input_tokens: 0,
+                    max_output_tokens: 0,
+                },
+            )
+            .unwrap();
+        let planned = driver
+            .finish_provider_with_tools(
+                attempt,
+                "",
+                "",
+                Usage::default(),
+                &[call("done"), call("cut")],
+                UsageMeta::default(),
+            )
+            .unwrap();
+        driver
+            .finish_tool(planned[0], "file body", true, false, 1, None)
+            .unwrap();
+        driver.id()
+    };
+    drop(crate::durable::store::lock(&log::session_path(dir.path(), id), true).unwrap());
+    let resumed = SessionDriver::resume(dir.path(), id, dir.path()).unwrap();
+    assert!(!resumed.turn_open());
+    assert_eq!(
+        resumed.last_close_reason(),
+        Some("process stopped before the turn finished")
+    );
+    let results: Vec<&str> = resumed
+        .history()
+        .iter()
+        .filter(|message| message.tool_call_id.as_deref() == Some("done"))
+        .map(|message| message.content.as_str())
+        .collect();
+    assert_eq!(results, ["file body"]);
+}

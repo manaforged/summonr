@@ -12,7 +12,7 @@ pub fn prune(keep: Option<&str>) {
     }
     let keep = keep.map(str::to_owned);
     std::thread::spawn(move || {
-        let Ok(home) = crate::prompt::summonr_home() else {
+        let Ok(home) = summonr_core::dirs::summonr_home() else {
             return;
         };
         let retain = crate::config::file()
@@ -46,7 +46,7 @@ pub(crate) fn prune_in(
     now: SystemTime,
 ) -> usize {
     let mut removed = 0;
-    for entry in crate::walk::children(&log::sessions_dir(home)) {
+    for entry in summonr_core::walk::children(&log::sessions_dir(home)) {
         let path = entry.path();
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;

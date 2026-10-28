@@ -4,8 +4,8 @@ use std::path::Path;
 
 use sigil::prelude::Rgba8;
 
-use crate::error::{Error, Result};
 use crate::prefs::{Background, Prefs};
+use summonr_core::error::{Error, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Palette {

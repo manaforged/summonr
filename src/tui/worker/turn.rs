@@ -3,7 +3,7 @@ use std::sync::{Arc, PoisonError};
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::lane::Lane;
+use super::execution::ExecutionClass;
 use super::settings::set_run_mode;
 use super::state::set_mail_reply;
 use super::steer::{steer, steerable, take_inputs};
@@ -71,7 +71,9 @@ impl MidTurn<'_> {
                 drop(self.ui.send(Msg::Bye));
                 Outcome::Quit
             }
-            command if command.lane() == Lane::AfterTurn => self.later(command),
+            command if command.execution_class() == ExecutionClass::AfterTurn => {
+                self.later(command)
+            }
             command @ (Cmd::Steer(_)
             | Cmd::Queue(_)
             | Cmd::Submit(_)
@@ -228,14 +230,14 @@ impl Worker {
             _ => None,
         };
         if matches!(&result, Some(Ok(turn)) if !turn.aborted) {
-            self.remember_seat();
+            self.remember_model();
         }
         self.finish_turn(cancelled, result);
         self.send_settings();
         true
     }
 
-    fn finish_turn<T>(&mut self, cancelled: bool, result: Option<crate::error::Result<T>>) {
+    fn finish_turn<T>(&mut self, cancelled: bool, result: Option<summonr_core::error::Result<T>>) {
         if cancelled || matches!(&result, Some(Err(_))) {
             self.recover();
         }

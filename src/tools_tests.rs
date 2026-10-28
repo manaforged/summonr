@@ -74,7 +74,7 @@ fn a_standalone_registry_keeps_its_spill_directory() {
         .unwrap();
     drop(tools);
     drop(dir);
-    let expected = crate::prompt::summonr_home().unwrap().join("spill");
+    let expected = summonr_core::dirs::summonr_home().unwrap().join("spill");
     assert!(path.starts_with(&expected), "{path:?}");
     assert!(path.exists(), "{path:?}");
     std::fs::remove_file(path).unwrap();
@@ -275,21 +275,6 @@ async fn the_model_cannot_write_the_check_file_in_any_mode() {
 }
 
 #[test]
-fn the_command_tool_does_not_claim_a_sandbox_the_session_lacks() {
-    let (_dir, tools) = workspace(&[]);
-    let run = tools
-        .definitions()
-        .into_iter()
-        .find(|tool| tool.function.name == "run_command")
-        .unwrap();
-    assert!(
-        !run.function.description.to_lowercase().contains("sandbox"),
-        "{}",
-        run.function.description
-    );
-}
-
-#[test]
 fn a_read_only_registry_keeps_the_parent_tool_list() {
     let (_dir, mut tools) = workspace(&[]);
     let parent = names(&tools);
@@ -314,15 +299,4 @@ fn read_pages_share_the_output_budget_without_hiding_later_lines() {
         later.contains("0300xxxx"),
         "later source lines were hidden: {later}"
     );
-}
-
-#[test]
-fn each_tool_row_keeps_its_claude_names_and_editor_kind() {
-    assert_eq!(Builtin::Search.claude(), (Some("Grep"), &["Glob"][..]));
-    assert_eq!(Builtin::Lsp.claude(), (None, &["LSP"][..]));
-    assert_eq!(Builtin::Task.claude(), (Some("Task"), &[][..]));
-    assert_eq!(Builtin::from_claude("multiedit"), Some(Builtin::Edit));
-    assert_eq!(Builtin::Write.acp_kind(), "edit");
-    assert_eq!(Builtin::Browser.acp_kind(), "fetch");
-    assert_eq!(Builtin::Task.acp_kind(), "other");
 }

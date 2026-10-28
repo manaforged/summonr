@@ -16,7 +16,7 @@ impl App {
         if self.dispatch_line(&text) {
             return;
         }
-        if self.model.peek().snapshot.unseated {
+        if self.model.peek().snapshot.unconfigured {
             self.ask_provider();
             return;
         }

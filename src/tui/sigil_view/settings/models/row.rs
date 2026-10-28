@@ -7,8 +7,8 @@ use sigil::widgets::RowTone;
 use super::super::canvas;
 use crate::catalog::{Cost, Model};
 use crate::endpoint::State;
-use crate::recent::Seat;
-use crate::tui::sigil_view::look::Look;
+use crate::recent::ModelId;
+use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{heading, slotted};
 
 const NAME_MIN: usize = 16;
@@ -91,9 +91,14 @@ impl Grid {
         )
     }
 
-    pub(super) fn row(self, seat: &Seat, fact: Option<&Model>, shown: Shown) -> ListRowSlots {
+    pub(super) fn row(
+        self,
+        selection: &ModelId,
+        fact: Option<&Model>,
+        shown: Shown,
+    ) -> ListRowSlots {
         let provider = if shown.provider {
-            seat.endpoint.clone()
+            selection.endpoint.clone()
         } else {
             String::new()
         };
@@ -165,20 +170,23 @@ pub(in crate::tui::sigil_view::settings) fn tone(state: State) -> Token {
 }
 
 pub(super) fn section_heading(title: &str) -> NodeBuilder {
-    heading(vec![(title.to_string(), Look::xs(Token::Gray12).bold())])
+    heading(vec![(
+        title.to_string(),
+        TextStyle::xs(Token::Gray12).bold(),
+    )])
 }
 
 pub(super) fn provider_heading(name: &str, state: Option<State>, count: usize) -> NodeBuilder {
-    let mut parts = vec![(name.to_string(), Look::xs(Token::Gray12).bold())];
+    let mut parts = vec![(name.to_string(), TextStyle::xs(Token::Gray12).bold())];
     if let Some(state) = state {
-        parts.push((format!(" · {}", state.word()), Look::xs(tone(state))));
+        parts.push((format!(" · {}", state.word()), TextStyle::xs(tone(state))));
     }
-    parts.push((format!(" · {count}"), Look::xs(Token::Gray10)));
+    parts.push((format!(" · {count}"), TextStyle::xs(Token::Gray10)));
     heading(parts)
 }
 
-pub(super) fn detail(seat: &Seat, fact: Option<&Model>, state: Option<State>) -> String {
-    let mut parts = vec![format!("{}/{}", seat.endpoint, seat.model)];
+pub(super) fn detail(selection: &ModelId, fact: Option<&Model>, state: Option<State>) -> String {
+    let mut parts = vec![format!("{}/{}", selection.endpoint, selection.model)];
     if let Some(fact) = fact {
         if let Some(day) = fact.released_on() {
             parts.push(format!("released {day}"));
@@ -196,7 +204,7 @@ pub(super) fn detail(seat: &Seat, fact: Option<&Model>, state: Option<State>) ->
     } else if state == Some(State::Ready) {
         parts.push(format!(
             "{} does not list this model; ↵ still tries it",
-            seat.endpoint
+            selection.endpoint
         ));
     }
     parts.join(" · ")

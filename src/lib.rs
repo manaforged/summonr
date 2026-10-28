@@ -9,20 +9,11 @@ mod command;
 mod config;
 mod credentials;
 pub mod diff;
+mod display;
 pub(crate) mod durable;
 
-pub(crate) const STATE_DIRS: &[&str] = &[".git", ".summonr"];
-pub(crate) const SKIP_DIRS: &[&str] = &[
-    ".git",
-    ".summonr",
-    "target",
-    "node_modules",
-    "dist",
-    "__pycache__",
-];
 pub mod classify;
 mod endpoint;
-mod error;
 mod goal;
 mod hashline;
 mod herdr;
@@ -53,13 +44,10 @@ mod runtime;
 mod scout;
 pub mod secret;
 mod session;
-mod shell;
 mod skills;
 pub mod supervise;
-mod text;
 mod tools;
 mod verify;
-mod walk;
 mod web;
 mod worktree;
 
@@ -111,27 +99,28 @@ pub use endpoint::{
     AuthInfo, Endpoint, LoginFlow, Near as EndpointNear, Need, Pick, State as EndpointState,
     add_server as add_endpoint, adopt_keys, auth_info, check_key, chosen_by as endpoint_chosen_by,
     closest as closest_endpoint, fallbacks as endpoint_fallbacks,
-    first_classify as classify_endpoint, is_named as is_endpoint, login_seat, logout,
+    first_classify as classify_endpoint, is_named as is_endpoint, login_endpoint, logout,
     names as endpoint_names, ordered_names as endpoint_names_ordered,
     remove_server as remove_endpoint, resolve as resolve_endpoint,
     set_default as set_default_endpoint, set_up as endpoint_set_up, vision as vision_endpoint,
 };
-pub use error::{Error, ProviderFailureKind, Result};
 pub use goal::prompt as goal_prompt;
 pub use jobs::live as live_jobs;
 pub use plugins::{
     Installed as InstalledPlugin, check_servers as check_plugin_servers, install as install_plugin,
     list as list_plugins, uninstall as uninstall_plugin,
 };
-pub use prompt::{Sources, summonr_home, system_prompt};
+pub use prompt::{Sources, system_prompt};
 pub(crate) use provider::dollars;
 pub use provider::{Client, Delta, Effort, Usage, UserInput};
 pub use recent::default_effort;
-pub use runtime::{Beat, Budget, Job, Loop, Turn};
+pub use runtime::{Budget, Job, Loop, NextAction, Turn};
 pub use session::{
     ProfileScope, export as export_session, info as session_info, last_for, list as list_sessions,
     profile, prune as prune_sessions, resolve_id as resolve_session, short,
 };
+pub use summonr_core::dirs::summonr_home;
+pub use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 pub const INDEX_ENTRY: &str = tools::INDEX_ENTRY;
 

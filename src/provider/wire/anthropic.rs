@@ -33,13 +33,16 @@ impl Chat for Wire {
         reasoning: &Reasoning,
         cache: crate::endpoint::CacheTtl,
         stream: bool,
-    ) -> crate::error::Result<Wired> {
+    ) -> summonr_core::error::Result<Wired> {
         body::body(call, reasoning, cache, stream)
     }
 }
 
 #[cfg(test)]
-pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
+pub(crate) fn request(
+    call: &CompletionRequest<'_>,
+    stream: bool,
+) -> summonr_core::error::Result<Value> {
     body::body(
         call,
         &call.reasoning,

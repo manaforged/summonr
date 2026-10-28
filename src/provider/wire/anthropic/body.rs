@@ -26,7 +26,7 @@ pub(crate) fn body(
     reasoning: &Reasoning,
     ttl: CacheTtl,
     stream: bool,
-) -> crate::error::Result<Wired> {
+) -> summonr_core::error::Result<Wired> {
     let (mut system, mut turns) = turns(call)?;
     if let Some(last) = system.last_mut() {
         last["cache_control"] = control(ttl);
@@ -71,7 +71,9 @@ pub(crate) fn body(
     })
 }
 
-fn turns<'a>(call: &CompletionRequest<'a>) -> crate::error::Result<(Vec<Value>, Vec<Turn<'a>>)> {
+fn turns<'a>(
+    call: &CompletionRequest<'a>,
+) -> summonr_core::error::Result<(Vec<Value>, Vec<Turn<'a>>)> {
     let mut system = Vec::new();
     let mut turns: Vec<Turn<'a>> = Vec::new();
     for message in call.messages {
@@ -182,7 +184,10 @@ fn user_parts(message: &Message) -> Vec<Value> {
     parts
 }
 
-fn assistant_parts<'a>(message: &'a Message, model: &str) -> crate::error::Result<Vec<Part<'a>>> {
+fn assistant_parts<'a>(
+    message: &'a Message,
+    model: &str,
+) -> summonr_core::error::Result<Vec<Part<'a>>> {
     if let Some(kept) = retained(message, model)? {
         return Ok(kept);
     }
@@ -203,7 +208,10 @@ fn assistant_parts<'a>(message: &'a Message, model: &str) -> crate::error::Resul
     Ok(parts)
 }
 
-fn retained<'a>(message: &'a Message, model: &str) -> crate::error::Result<Option<Vec<Part<'a>>>> {
+fn retained<'a>(
+    message: &'a Message,
+    model: &str,
+) -> summonr_core::error::Result<Option<Vec<Part<'a>>>> {
     let Some(blocks) = message.tool_calls.iter().find_map(|call| {
         if let Some(Continuation::Anthropic {
             model: made,

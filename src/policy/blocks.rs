@@ -51,7 +51,7 @@ pub(super) fn block_target(
 }
 
 pub(super) fn read_block(steps: &[Step], workspace: &Path) -> Option<String> {
-    let home = crate::config::home_dir();
+    let home = summonr_core::dirs::home_dir();
     steps.iter().find_map(|step| {
         let row = verb_row(&step.verb()?)?;
         let operands = step.operands();

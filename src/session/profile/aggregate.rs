@@ -1,14 +1,14 @@
 use std::collections::BTreeMap;
 
 use crate::durable::log::{self, Line, Usage};
-use crate::error::Result;
-use crate::provider::ToolCall;
+use summonr_core::error::Result;
+use summonr_types::ToolCall;
 
 use super::fmt::{count, line, secs, share};
 use super::health::Health;
 
 pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
-    let home = crate::prompt::summonr_home()?;
+    let home = summonr_core::dirs::summonr_home()?;
     let mut paths: Vec<_> = crate::session::catalog::ids_in(&home)?
         .into_iter()
         .rev()
@@ -159,8 +159,8 @@ impl Totals {
                 &mut out,
                 format!(
                     "mem      median {} · max {}",
-                    crate::text::megabytes(median),
-                    crate::text::megabytes(max)
+                    summonr_core::text::megabytes(median),
+                    summonr_core::text::megabytes(max)
                 ),
             );
         }

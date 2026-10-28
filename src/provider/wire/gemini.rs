@@ -2,7 +2,6 @@
 use serde_json::Value;
 
 use super::{Accumulate, Chat, Delta};
-use crate::provider::message::Checked;
 use crate::provider::{
     AssistantMessage, CompletionRequest, Continuation, Partial, Reasoning, StopReason, ToolCall,
     ToolFunction, ToolKind, Usage,
@@ -10,6 +9,7 @@ use crate::provider::{
 #[cfg(test)]
 use frame::Counted;
 use frame::{Call, Chunk};
+use summonr_types::Checked;
 
 #[cfg(test)]
 use crate::provider::{Message, Role};
@@ -41,13 +41,13 @@ impl Chat for Wire {
         reasoning: &Reasoning,
         _cache: crate::endpoint::CacheTtl,
         _stream: bool,
-    ) -> crate::error::Result<super::Wired> {
+    ) -> summonr_core::error::Result<super::Wired> {
         body::body(call, reasoning)
     }
 }
 
 #[cfg(test)]
-pub(crate) fn request(call: &CompletionRequest<'_>) -> crate::error::Result<Value> {
+pub(crate) fn request(call: &CompletionRequest<'_>) -> summonr_core::error::Result<Value> {
     body::body(call, &call.reasoning)?.value()
 }
 
@@ -72,7 +72,7 @@ impl Accumulate for Reply {
         }
     }
 
-    fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>> {
+    fn on(&mut self, frame: &str) -> summonr_core::error::Result<Vec<Delta>> {
         let Some(frame) = crate::provider::wire::parse::<Option<Chunk<'_>>>(frame)? else {
             return Ok(Vec::new());
         };

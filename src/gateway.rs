@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 mod child;
 pub mod cli;

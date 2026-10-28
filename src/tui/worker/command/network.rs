@@ -2,7 +2,7 @@ use super::*;
 
 impl Worker {
     pub(in crate::tui::worker) async fn login(&mut self, name: &str) -> bool {
-        let endpoint = match crate::endpoint::login_seat(name) {
+        let endpoint = match crate::endpoint::login_endpoint(name) {
             Ok(endpoint) => endpoint,
             Err(error) => {
                 self.done(name, Err(error.to_string()));
@@ -31,7 +31,7 @@ impl Worker {
         let running = match outcome {
             Attended::Done(Ok(())) => {
                 if name == self.endpoint {
-                    self.seat(Some(name), None).await;
+                    self.selection(Some(name), None).await;
                 }
                 self.done(name, Ok(format!("✓ Signed in to {name}.")));
                 true
@@ -61,7 +61,7 @@ impl Worker {
             Attended::Quit => return false,
         };
         if result.is_ok() && name == self.endpoint {
-            self.seat(Some(name), None).await;
+            self.selection(Some(name), None).await;
         }
         self.report(name, result, rejected);
         true
@@ -70,7 +70,7 @@ impl Worker {
     pub(in crate::tui::worker) async fn logout(&mut self, name: &str) {
         let result = crate::endpoint::logout(name).map_err(|error| error.to_string());
         if result.is_ok() && name == self.endpoint {
-            self.seat(Some(name), None).await;
+            self.selection(Some(name), None).await;
         }
         self.done(name, result);
     }
@@ -137,8 +137,8 @@ async fn checked(name: &str, key: &str) -> std::result::Result<String, (String, 
                 format!("✗ {failure}"),
                 matches!(
                     failure.kind,
-                    crate::error::ProviderFailureKind::Authentication
-                        | crate::error::ProviderFailureKind::MissingKey
+                    summonr_core::error::ProviderFailureKind::Authentication
+                        | summonr_core::error::ProviderFailureKind::MissingKey
                 ),
             ),
             None => (format!("✗ {error}"), false),

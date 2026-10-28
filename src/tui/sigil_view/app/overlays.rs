@@ -147,7 +147,7 @@ static ROWS: [Row; 13] = [
             }
             cycle
         },
-        enter: App::pick_workflow_seat,
+        enter: App::pick_workflow_model,
         close: Some(App::close_workflow),
         ..ROW
     },
@@ -169,7 +169,7 @@ static ROWS: [Row; 13] = [
         shift: App::move_setting,
         adjust: |app, delta| {
             if app.selected_setting() == Some(super::settings::Setting::Endpoint) {
-                app.cycle_seat(delta >= 0);
+                app.cycle_model(delta >= 0);
             } else {
                 app.adjust_setting();
             }
@@ -325,16 +325,17 @@ impl App {
         self.overlay() == Some(Overlay::Workflow) && !self.workflow.naming.peek()
     }
 
-    pub(in crate::tui::sigil_view) fn copy_seat(&self, from: usize, to: usize) {
+    pub(in crate::tui::sigil_view) fn copy_model(&self, from: usize, to: usize) {
         let Some(role) = Role::ALL.get(to) else {
             return;
         };
-        let seat = self.workflow.seats.peek().get(from).cloned().flatten();
-        let command = match seat.and_then(|seat| {
-            seat.split_once('\t')
+        let selection = self.workflow.selections.peek().get(from).cloned().flatten();
+        let command = match selection.and_then(|selection| {
+            selection
+                .split_once('\t')
                 .map(|(endpoint, model)| (endpoint.to_string(), model.to_string()))
         }) {
-            Some((endpoint, model)) => Cmd::SeatRole(*role, endpoint, model),
+            Some((endpoint, model)) => Cmd::AssignModel(*role, endpoint, model),
             None => Cmd::ClearRole(*role),
         };
         self.workflow.list.cursor.set(to);

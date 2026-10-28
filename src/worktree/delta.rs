@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::{CHILDREN, Tree, checkout_dir, new_id};
 use crate::diff;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const SHARED: &[&str] = &["target", "node_modules"];
 const LINK_LISTS: &[&str] = &[".summonr/linked", ".agents/linked"];

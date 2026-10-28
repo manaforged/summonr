@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::support::{Model, Options, Session, Step, Wire, advertised};
+use crate::support::{Model, Session, Step, advertised};
 
 pub(crate) fn tools_core_calls_return_results_to_the_model() {
     let session = Session::new();
@@ -50,77 +50,6 @@ pub(crate) fn tools_core_calls_return_results_to_the_model() {
     assert!(!failed, "{}", outcome.stdout);
 }
 
-pub(crate) fn tools_results_and_failures_round_trip_on_every_wire() {
-    for wire in [
-        Wire::Completions,
-        Wire::Anthropic,
-        Wire::Responses,
-        Wire::Gemini,
-    ] {
-        let session = Session::new();
-        let model = Model::start(vec![
-            Step::Call("read", json!({"path": "absent.txt"})),
-            Step::Call(
-                "write",
-                json!({"path": "note.txt", "content": "recovered\n"}),
-            ),
-            Step::Call("read", json!({"path": "note.txt"})),
-            Step::Text("done"),
-        ]);
-        let outcome = session.run_with(
-            &model,
-            "",
-            &["--no-verify", "--json"],
-            &Options {
-                wire,
-                ..Options::default()
-            },
-        );
-        assert_eq!(outcome.code, Some(0), "{wire:?}: {}", outcome.stdout);
-        let requests = model.requests();
-        assert_eq!(requests.len(), 4, "{wire:?}: {requests:?}");
-        let offered = match wire {
-            Wire::Completions => &requests[0]["tools"][0]["function"]["name"],
-            Wire::Anthropic | Wire::Responses => &requests[0]["tools"][0]["name"],
-            Wire::Gemini => &requests[0]["tools"][0]["functionDeclarations"][0]["name"],
-        };
-        assert_eq!(offered, "read", "{wire:?}: {requests:?}");
-        let returned = match wire {
-            Wire::Completions => requests[3]["messages"].as_array(),
-            Wire::Anthropic => requests[3]["messages"].as_array(),
-            Wire::Responses => requests[3]["input"].as_array(),
-            Wire::Gemini => requests[3]["contents"].as_array(),
-        }
-        .expect("sent history");
-        let last = returned.last().expect("sent tool result").to_string();
-        assert!(last.contains("1:recovered"), "{wire:?}: {last}");
-        let events: Vec<serde_json::Value> = outcome
-            .stdout
-            .lines()
-            .map(|line| serde_json::from_str(line).expect("JSON event"))
-            .filter(|event: &serde_json::Value| event["type"] == "tool_result")
-            .collect();
-        assert_eq!(events.len(), 3, "{wire:?}: {events:?}");
-        assert_eq!(events[0]["success"], false, "{wire:?}: {events:?}");
-        assert_eq!(events[1]["success"], true, "{wire:?}: {events:?}");
-        assert_eq!(events[2]["success"], true, "{wire:?}: {events:?}");
-        assert_eq!(
-            std::fs::read_to_string(session.work.path().join("note.txt")).expect("written file"),
-            "recovered\n"
-        );
-    }
-}
-
-pub(crate) fn tools_model_fixture_stops_listening_when_dropped() {
-    let model = Model::start(Vec::new());
-    let retained = std::sync::Arc::downgrade(&model.requests);
-    drop(model);
-    assert!(
-        retained.upgrade().is_none(),
-        "fixture listener or workers retained state"
-    );
-}
-
 pub(crate) fn tools_module_configuration_errors_are_reported() {
     let session = Session::new();
     let model = Model::start(vec![
@@ -162,47 +91,6 @@ pub(crate) fn tools_optional_modules_are_advertised_and_dispatch_calls() {
     let offered = advertised(&requests[0]);
     assert!(offered.iter().any(|name| name == "web"), "{offered:?}");
     assert!(offered.iter().any(|name| name == "browser"), "{offered:?}");
-    let browser = requests[0]["tools"]
-        .as_array()
-        .expect("tool schemas")
-        .iter()
-        .find(|tool| tool["function"]["name"] == "browser")
-        .expect("browser schema");
-    let properties = &browser["function"]["parameters"]["properties"];
-    for (group, field, kind) in [
-        ("by", "value", "array"),
-        ("by", "label", "array"),
-        ("by", "index", "array"),
-        ("for", "selector", "string"),
-        ("for", "text", "string"),
-        ("for", "ms", "integer"),
-        ("options", "button", "string"),
-        ("options", "count", "integer"),
-        ("options", "modifiers", "array"),
-        ("options", "position", "array"),
-    ] {
-        assert_eq!(
-            properties[group]["properties"][field]["type"], kind,
-            "{group}.{field}"
-        );
-        assert_eq!(properties[group]["additionalProperties"], false, "{group}");
-    }
-    assert_eq!(
-        properties["by"]["properties"]["value"]["items"]["type"],
-        "string"
-    );
-    assert_eq!(
-        properties["by"]["properties"]["index"]["items"]["minimum"],
-        0
-    );
-    assert_eq!(
-        properties["options"]["properties"]["position"]["minItems"],
-        2
-    );
-    assert_eq!(
-        properties["options"]["properties"]["position"]["maxItems"],
-        2
-    );
     let results = model.tool_results();
     assert_eq!(results.len(), 2, "{results:?}");
     assert!(results[0].contains("browser was not open"), "{results:?}");

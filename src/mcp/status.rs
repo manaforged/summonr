@@ -7,8 +7,8 @@ use serde_json::Value;
 use super::Hub;
 use super::catalog;
 use super::config::{self, Launch, Server};
-use crate::error::Result;
 use crate::supervise::{self, Live, ServerKind};
+use summonr_core::error::Result;
 
 pub type Board = Arc<Mutex<Weak<Hub>>>;
 
@@ -76,7 +76,7 @@ impl ServerStatus {
 
     #[must_use]
     pub fn state_text(&self, width: usize) -> String {
-        crate::text::ellipsize(self.state.label(), width)
+        crate::display::ellipsize(self.state.label(), width)
     }
 }
 

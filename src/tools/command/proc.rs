@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use crate::error::{Error, Result};
 use crate::process::{Env, Io, Spec};
+use summonr_core::error::{Error, Result};
 
 use super::ToolOutput;
 
@@ -96,8 +96,8 @@ pub(super) fn spawn_command(
             stderr: Io::File(err),
             kill_on_drop: !background,
             ..Spec::new(
-                crate::shell::program()?,
-                crate::shell::arguments(script, cwd),
+                summonr_core::shell::program()?,
+                summonr_core::shell::arguments(script, cwd),
             )
         }
         .envs(crate::askpass::env(&path))

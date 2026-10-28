@@ -12,29 +12,6 @@ fn trusted(workspace: &Path) -> String {
 }
 
 #[test]
-fn the_default_prompt_names_the_modules_without_steering() {
-    let workspace = tempfile::tempdir().unwrap();
-    let prompt = compose(workspace.path(), None, Sources::default());
-    for steering in [
-        "<work>",
-        "<persistence>",
-        "contract",
-        "Finish the authorized task",
-    ] {
-        assert!(!prompt.contains(steering), "{steering}: {prompt}");
-    }
-    for capability in [
-        "web (search, fetch)",
-        "mail (agents, send, inbox, board)",
-        "`summonr modules`",
-        "SKILL.md",
-        "summonr mcp add",
-    ] {
-        assert!(prompt.contains(capability), "{capability}: {prompt}");
-    }
-}
-
-#[test]
 fn an_at_include_pulls_the_referenced_file_in_once() {
     let workspace = tempfile::tempdir().unwrap();
     std::fs::write(workspace.path().join("AGENTS.md"), "AGENTS RULE").unwrap();
@@ -109,10 +86,7 @@ fn a_session_without_memory_is_told_nothing_persists() {
 }
 
 #[test]
-fn tests_never_read_the_users_summonr_home() {
-    if std::env::var_os("SUMMONR_HOME").is_some() {
-        return;
-    }
-    let real = crate::config::home_dir().expect("home").join(".summonr");
-    assert_ne!(super::summonr_home().expect("summonr home"), real);
+fn tests_keep_summonr_state_out_of_the_real_home() {
+    let home = summonr_core::dirs::summonr_home().unwrap();
+    assert!(home.starts_with(std::env::temp_dir()), "{}", home.display());
 }

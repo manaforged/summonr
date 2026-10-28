@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use super::store::{Notify, Task};
 use super::view;
 use crate::command::table::{self, Row, Table};
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 pub(super) const USAGE: &str = "usage:\n  summonr cron add NAME (--cron EXPR | --every 30m | --at TIME | --manual) (-p PROMPT | --goal GOAL)\n      [--dir D] [-e|--endpoint E] [--model M] [--tz ZONE] [--max-secs N] [--max-tokens N]\n      [--worktree] [--chat] [--notify never|failure|always] [--mail SESSION]\n  summonr cron edit NAME [same flags]\n  summonr cron list [--json]\n  summonr cron show|pause|resume|remove NAME\n  summonr cron run NAME [--raw] [--notify never|failure|always]\n  summonr cron log NAME [--last N] [--raw]\n  summonr cron token NAME\n  summonr cron install|uninstall|status\n\nTIME is HH:MM, YYYY-MM-DD HH:MM, or RFC 3339. A --manual job runs only through `cron run` or the webhook.\nThe OS starts `summonr cron tick` once a minute after `summonr cron install`.";
 

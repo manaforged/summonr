@@ -31,10 +31,10 @@ impl Worker {
             | Cmd::ToggleApproval
             | Cmd::SetEndpoint(_)
             | Cmd::SetModel(_)
-            | Cmd::SetSeat(..)
+            | Cmd::SelectModel(..)
             | Cmd::SetMail(_)
             | Cmd::SetModule(..)
-            | Cmd::SeatRole(..)
+            | Cmd::AssignModel(..)
             | Cmd::ClearRole(_)
             | Cmd::SaveWorkflow(_)
             | Cmd::ListWorkflows) => self.configure(command).await,
@@ -55,12 +55,16 @@ impl Worker {
             }
             Cmd::SetVerify(on) => self.set_verify(on),
             Cmd::ToggleApproval => self.toggle_approval(),
-            Cmd::SetEndpoint(name) => self.seat(Some(&name), None).await,
-            Cmd::SetModel(model) => self.seat(None, Some(&model)).await,
-            Cmd::SetSeat(endpoint, model) => self.seat(Some(&endpoint), Some(&model)).await,
+            Cmd::SetEndpoint(name) => self.selection(Some(&name), None).await,
+            Cmd::SetModel(model) => self.selection(None, Some(&model)).await,
+            Cmd::SelectModel(endpoint, model) => {
+                self.selection(Some(&endpoint), Some(&model)).await
+            }
             Cmd::SetMail(on) => set_mail_reply(&mut self.auto_reply, &mut self.pending_mail, on),
             Cmd::SetModule(id, on) => self.set_module(id, on),
-            Cmd::SeatRole(role, endpoint, model) => self.seat_role(role, &endpoint, Some(&model)),
+            Cmd::AssignModel(role, endpoint, model) => {
+                self.assign_model(role, &endpoint, Some(&model))
+            }
             Cmd::ClearRole(role) => self.clear_role(role),
             Cmd::SaveWorkflow(name) => self.save_workflow(&name),
             Cmd::ListWorkflows => self.send_workflow(),

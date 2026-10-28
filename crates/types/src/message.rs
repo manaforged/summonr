@@ -1,4 +1,9 @@
-use super::*;
+use base64::Engine as _;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use summonr_core::error::{Error, Result};
+
+use crate::Usage;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -16,8 +21,7 @@ pub struct Image {
 }
 
 impl Image {
-    pub(crate) fn encode(media_type: impl Into<String>, bytes: &[u8]) -> Self {
-        use base64::Engine as _;
+    pub fn encode(media_type: impl Into<String>, bytes: &[u8]) -> Self {
         Self {
             media_type: media_type.into(),
             data: base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -30,7 +34,7 @@ impl Image {
             .map_err(|error| Error::Config(format!("cannot decode stored image: {error}")))
     }
 
-    pub(crate) fn url(&self) -> String {
+    pub fn url(&self) -> String {
         format!("data:{};base64,{}", self.media_type, self.data)
     }
 }
@@ -77,7 +81,7 @@ pub struct Message {
     pub images: Vec<Image>,
     #[serde(
         default,
-        deserialize_with = "think::vec_or_null",
+        deserialize_with = "vec_or_null",
         skip_serializing_if = "Vec::is_empty"
     )]
     pub tool_calls: Vec<ToolCall>,
@@ -96,7 +100,7 @@ pub struct Message {
 }
 
 impl Message {
-    pub(crate) fn system(content: impl Into<String>) -> Self {
+    pub fn system(content: impl Into<String>) -> Self {
         Self {
             role: Role::System,
             content: content.into(),
@@ -109,7 +113,7 @@ impl Message {
         }
     }
 
-    pub(crate) fn user(input: impl Into<UserInput>) -> Self {
+    pub fn user(input: impl Into<UserInput>) -> Self {
         let input = input.into();
         Self {
             role: Role::User,
@@ -123,7 +127,7 @@ impl Message {
         }
     }
 
-    pub(crate) fn tool(call_id: impl Into<String>, content: impl Into<String>) -> Self {
+    pub fn tool(call_id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: Role::Tool,
             content: content.into(),
@@ -200,7 +204,7 @@ impl PartialEq for ToolFunction {
 impl Eq for ToolFunction {}
 
 impl ToolFunction {
-    pub(crate) fn check(&mut self) {
+    pub fn check(&mut self) {
         self.checked = if parses(&self.arguments) {
             Checked::Valid
         } else {
@@ -208,7 +212,7 @@ impl ToolFunction {
         };
     }
 
-    pub(crate) fn valid(&self) -> bool {
+    pub fn valid(&self) -> bool {
         match self.checked {
             Checked::Valid => true,
             Checked::Invalid => false,
@@ -222,136 +226,12 @@ fn parses(arguments: &str) -> bool {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(from = "UsageWire")]
-pub struct Usage {
-    #[serde(default)]
-    pub prompt_tokens: u32,
-    #[serde(default)]
-    pub completion_tokens: u32,
-    #[serde(default)]
-    pub reasoning_tokens: u32,
-    #[serde(default)]
-    pub cached_tokens: u32,
-    #[serde(default)]
-    pub cache_write_tokens: u32,
-}
-
-#[derive(Deserialize)]
-struct UsageWire {
-    #[serde(default)]
-    prompt_tokens: u32,
-    #[serde(default)]
-    completion_tokens: u32,
-    #[serde(default)]
-    total_tokens: Option<u32>,
-    #[serde(default)]
-    reasoning_tokens: u32,
-    #[serde(default)]
-    cached_tokens: u32,
-    #[serde(default)]
-    cache_write_tokens: u32,
-    #[serde(default)]
-    prompt_cache_hit_tokens: u32,
-    #[serde(default)]
-    prompt_tokens_details: Option<PromptDetails>,
-    #[serde(default)]
-    completion_tokens_details: Option<CompletionDetails>,
-}
-
-#[derive(Deserialize)]
-struct PromptDetails {
-    #[serde(default)]
-    cached_tokens: u32,
-    #[serde(default, alias = "cache_creation_input_tokens")]
-    cache_write_tokens: u32,
-}
-
-#[derive(Deserialize)]
-struct CompletionDetails {
-    #[serde(default)]
-    reasoning_tokens: u32,
-}
-
-impl From<UsageWire> for Usage {
-    fn from(wire: UsageWire) -> Self {
-        let (nested, written) = wire
-            .prompt_tokens_details
-            .map(|details| (details.cached_tokens, details.cache_write_tokens))
-            .unwrap_or_default();
-        let reasoning = wire
-            .completion_tokens_details
-            .map(|details| details.reasoning_tokens)
-            .unwrap_or_default()
-            .max(wire.reasoning_tokens);
-        let apart = reasoning > 0
-            && wire.total_tokens
-                == Some(
-                    wire.prompt_tokens
-                        .saturating_add(wire.completion_tokens)
-                        .saturating_add(reasoning),
-                );
-        Self {
-            prompt_tokens: wire.prompt_tokens,
-            completion_tokens: if apart {
-                wire.completion_tokens.saturating_add(reasoning)
-            } else {
-                wire.completion_tokens
-            },
-            reasoning_tokens: reasoning,
-            cached_tokens: nested
-                .max(wire.cached_tokens)
-                .max(wire.prompt_cache_hit_tokens),
-            cache_write_tokens: written.max(wire.cache_write_tokens),
-        }
-    }
-}
-
-impl Usage {
-    #[must_use]
-    pub fn clamp(count: u64) -> u32 {
-        u32::try_from(count).unwrap_or(u32::MAX)
-    }
-
-    pub(crate) fn counted(
-        prompt: u64,
-        completion: u64,
-        reasoning: u64,
-        cached: u64,
-        written: u64,
-    ) -> Self {
-        Self {
-            prompt_tokens: Self::clamp(prompt),
-            completion_tokens: Self::clamp(completion),
-            reasoning_tokens: Self::clamp(reasoning),
-            cached_tokens: Self::clamp(cached),
-            cache_write_tokens: Self::clamp(written),
-        }
-    }
-
-    pub fn add(&mut self, other: &Self) {
-        self.prompt_tokens = self.prompt_tokens.saturating_add(other.prompt_tokens);
-        self.completion_tokens = self
-            .completion_tokens
-            .saturating_add(other.completion_tokens);
-        self.reasoning_tokens = self.reasoning_tokens.saturating_add(other.reasoning_tokens);
-        self.cached_tokens = self.cached_tokens.saturating_add(other.cached_tokens);
-        self.cache_write_tokens = self
-            .cache_write_tokens
-            .saturating_add(other.cache_write_tokens);
-    }
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct AssistantMessage {
     #[serde(default)]
     pub content: Option<String>,
-    #[serde(default, deserialize_with = "think::vec_or_null")]
+    #[serde(default, deserialize_with = "vec_or_null")]
     pub tool_calls: Vec<ToolCall>,
-    #[serde(
-        default,
-        alias = "reasoning",
-        deserialize_with = "think::reasoning_field"
-    )]
+    #[serde(default, alias = "reasoning", deserialize_with = "reasoning_field")]
     pub reasoning_content: Option<String>,
     #[serde(default, skip_serializing)]
     pub usage: Usage,
@@ -373,7 +253,7 @@ pub enum StopReason {
 }
 
 impl AssistantMessage {
-    pub(crate) fn into_message(self) -> Message {
+    pub fn into_message(self) -> Message {
         Message {
             role: Role::Assistant,
             content: self.content.unwrap_or_default(),
@@ -385,4 +265,51 @@ impl AssistantMessage {
             continuation: self.continuation,
         }
     }
+}
+
+pub fn vec_or_null<'de, D, T>(deserializer: D) -> std::result::Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+pub fn reasoning_field<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(from_json(value.unwrap_or(Value::Null)))
+}
+
+fn from_json(value: Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(text) => empty_to_none(text),
+        Value::Object(map) => map
+            .get("content")
+            .or_else(|| map.get("text"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .and_then(empty_to_none),
+        Value::Array(parts) => {
+            let mut out = String::new();
+            for part in parts {
+                if let Some(text) = part.as_str() {
+                    out.push_str(text);
+                } else if let Some(text) = part.get("text").and_then(Value::as_str) {
+                    out.push_str(text);
+                } else if let Some(text) = part.get("content").and_then(Value::as_str) {
+                    out.push_str(text);
+                }
+            }
+            empty_to_none(out)
+        }
+        _ => None,
+    }
+}
+
+fn empty_to_none(text: String) -> Option<String> {
+    (!text.is_empty()).then_some(text)
 }

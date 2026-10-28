@@ -142,7 +142,7 @@ impl<P: Provider> Loop<P> {
         let chars = request_chars(
             request.messages,
             tool_bytes,
-            self.seat(role).0.keeps_reasoning(),
+            self.selection(role).0.keeps_reasoning(),
         );
         let attempt = if self.session.turn_open() {
             let exposure = super::exposure(&request, chars);
@@ -157,7 +157,7 @@ impl<P: Provider> Loop<P> {
         let started = Instant::now();
         let remaining = self.remaining_time();
         let mut partial = std::mem::take(&mut self.session.partial);
-        let provider = self.seat(role).0;
+        let provider = self.selection(role).0;
         let completion = if options.stream {
             provider.stream(&request, &mut partial)
         } else {

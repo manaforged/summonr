@@ -1,61 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, Result};
-
-static READY: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
-
-pub fn summonr_home() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("SUMMONR_HOME") {
-        if path.is_empty() {
-            return Err(Error::Config("SUMMONR_HOME is empty".to_string()));
-        }
-        return Ok(PathBuf::from(path));
-    }
-    let home = user_home().ok_or_else(|| {
-        Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
-    })?;
-    let dir = home.join(".summonr");
-    if READY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .as_ref()
-        == Some(&dir)
-    {
-        return Ok(dir);
-    }
-    if !dir.is_dir() {
-        std::fs::create_dir_all(&dir)?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(&dir)?.permissions().mode() & 0o777;
-        if mode != 0o700 {
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
-        }
-    }
-    *READY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(dir.clone());
-    Ok(dir)
-}
-
-#[cfg(not(test))]
-pub(crate) fn user_home() -> Option<PathBuf> {
-    crate::config::home_dir()
-}
-
-#[cfg(test)]
-pub(crate) fn user_home() -> Option<PathBuf> {
-    static HOME: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-    Some(
-        HOME.get_or_init(|| {
-            std::env::temp_dir().join(format!("summonr-tests-{}", std::process::id()))
-        })
-        .clone(),
-    )
-}
+use summonr_core::dirs::summonr_home;
 
 #[derive(Clone, Copy, Default)]
 pub struct Sources {
@@ -165,7 +111,7 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
 fn instructions(parts: &mut Vec<String>, workspace: &Path) {
     let mut seen = HashSet::new();
     let mut sections = HashSet::new();
-    let home = crate::config::home_dir();
+    let home = summonr_core::dirs::home_dir();
     let user = home.iter().flat_map(|home| {
         [
             ".agents/AGENTS.md",
@@ -241,7 +187,7 @@ fn dedup_sections(text: &str, seen: &mut HashSet<u64>) -> Option<String> {
             .to_lowercase();
         let hash = {
             use std::hash::Hasher;
-            let mut hasher = crate::text::Fnv64::default();
+            let mut hasher = summonr_core::text::Fnv64::default();
             hasher.write(normalized.as_bytes());
             hasher.finish()
         };

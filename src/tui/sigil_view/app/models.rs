@@ -30,7 +30,7 @@ impl Mark {
     }
 }
 
-fn score(query: &str, row: &Seat, display: &str) -> Option<usize> {
+fn score(query: &str, row: &ModelId, display: &str) -> Option<usize> {
     let query = match query.split_once('/') {
         Some((want, rest)) if row.endpoint.to_lowercase().starts_with(want) => rest,
         Some(_) | None => query,
@@ -51,7 +51,9 @@ impl App {
         self.picker.focus.set(self.picker.focus.peek() + 1);
         self.picker.groups.set(std::collections::BTreeMap::new());
         self.picker.causes.set(std::collections::BTreeMap::new());
-        self.picker.default.set(crate::endpoint::default_seat());
+        self.picker
+            .default
+            .set(crate::endpoint::default_model_selection());
         self.picker.recent.set([0; 3]);
         self.picker.older.set(false);
         self.picker.facet.set(super::facet::Facet::All);
@@ -90,7 +92,7 @@ impl App {
         }
     }
 
-    pub(in crate::tui::sigil_view) fn picked_model(&self) -> Option<Seat> {
+    pub(in crate::tui::sigil_view) fn picked_model(&self) -> Option<ModelId> {
         let shown = self.picker.shown.peek();
         shown.get(self.picker.list.at(shown.len())).cloned()
     }
@@ -106,14 +108,14 @@ impl App {
             .skip(current)
             .position(|held| *held == row)
             .map(|at| at + current);
-        let seated = current > 0 && rows.first() == Some(&row);
-        let pinned = if seated {
-            !crate::prompt::summonr_home()
+        let selected = current > 0 && rows.first() == Some(&row);
+        let pinned = if selected {
+            !summonr_core::dirs::summonr_home()
                 .is_ok_and(|home| crate::recent::pinned(&home).contains(&row))
         } else {
             !at.is_some_and(|at| at < current + pins)
         };
-        if !seated {
+        if !selected {
             if let Some(at) = at {
                 rows.remove(at);
                 if at < current + pins {
@@ -150,7 +152,7 @@ impl App {
         }
     }
 
-    pub(in crate::tui::sigil_view) fn label(&self, row: &Seat) -> String {
+    pub(in crate::tui::sigil_view) fn label(&self, row: &ModelId) -> String {
         self.picker
             .facts
             .peek()
@@ -166,16 +168,18 @@ impl App {
         drop(self.cmd.send(Cmd::SaveDefault((!clear).then_some(row))));
     }
 
-    pub(in crate::tui::sigil_view) fn defaulted(&self, seat: Option<Seat>) {
-        let note = match (&seat, self.picker.default.peek()) {
-            (Some(seat), _) => format!("◆ default {} · summonr starts on it", self.label(seat)),
+    pub(in crate::tui::sigil_view) fn defaulted(&self, selection: Option<ModelId>) {
+        let note = match (&selection, self.picker.default.peek()) {
+            (Some(selection), _) => {
+                format!("◆ default {} · summonr starts on it", self.label(selection))
+            }
             (None, Some(old)) => format!(
-                "cleared the default; {} is no longer the start seat",
+                "cleared the default; {} is no longer the default model",
                 self.label(&old)
             ),
             (None, None) => "cleared the default".to_string(),
         };
-        self.picker.default.set(seat);
+        self.picker.default.set(selection);
         self.picker.note.set(note);
     }
 
@@ -202,8 +206,8 @@ impl App {
                 .split_once('/')
                 .filter(|(name, _)| groups.contains_key(*name))
                 .map_or_else(
-                    || Seat::new(current.clone(), draft.clone()),
-                    |(name, id)| Seat::new(name, id),
+                    || ModelId::new(current.clone(), draft.clone()),
+                    |(name, id)| ModelId::new(name, id),
                 ),
         };
         if self.unblock(&groups, &picked) {
@@ -211,25 +215,29 @@ impl App {
         }
         let target = self.picker.target.peek();
         self.cancel_model_edit();
-        let Seat { endpoint, model } = picked;
+        let ModelId { endpoint, model } = picked;
         drop(
             self.cmd
                 .send(match target.and_then(|index| Role::ALL.get(index)) {
-                    Some(role) => Cmd::SeatRole(*role, endpoint, model),
+                    Some(role) => Cmd::AssignModel(*role, endpoint, model),
                     None if endpoint == current => Cmd::SetModel(model),
-                    None => Cmd::SetSeat(endpoint, model),
+                    None => Cmd::SelectModel(endpoint, model),
                 }),
         );
     }
 
-    fn unblock(&self, groups: &std::collections::BTreeMap<String, State>, picked: &Seat) -> bool {
+    fn unblock(
+        &self,
+        groups: &std::collections::BTreeMap<String, State>,
+        picked: &ModelId,
+    ) -> bool {
         let Some(state) = groups.get(&picked.endpoint).copied() else {
             return false;
         };
         if state.setup() || state == State::KeyRejected {
             self.begin_auth(Some(&picked.endpoint));
             self.auth
-                .seat
+                .selection
                 .set(Some((picked.endpoint.clone(), picked.model.clone())));
             return true;
         }
@@ -247,16 +255,16 @@ impl App {
         self.picker.list.query.peek().trim().is_empty()
             && self.picker.facet.peek() == super::facet::Facet::All
             && at >= listed
-            && shown.get(at).is_some_and(|seat| {
+            && shown.get(at).is_some_and(|selection| {
                 self.picker
                     .groups
                     .peek()
-                    .get(&seat.endpoint)
+                    .get(&selection.endpoint)
                     .is_some_and(|state| state.blocked())
             })
     }
 
-    pub(in crate::tui::sigil_view) fn favorite(&self, seat: &Seat) -> bool {
+    pub(in crate::tui::sigil_view) fn favorite(&self, selection: &ModelId) -> bool {
         let [current, pins, _] = self.picker.recent.get();
         self.picker
             .choices
@@ -264,17 +272,17 @@ impl App {
             .iter()
             .skip(current)
             .take(pins)
-            .any(|pin| pin == seat)
+            .any(|pin| pin == selection)
     }
 
-    pub(in crate::tui::sigil_view) fn mark(&self, seat: &Seat) -> Mark {
+    pub(in crate::tui::sigil_view) fn mark(&self, selection: &ModelId) -> Mark {
         let [current, _, _] = self.picker.recent.get();
         let choices = self.picker.choices.get();
-        if current > 0 && choices.first() == Some(seat) {
+        if current > 0 && choices.first() == Some(selection) {
             Mark::Current
-        } else if self.picker.default.get().as_ref() == Some(seat) {
+        } else if self.picker.default.get().as_ref() == Some(selection) {
             Mark::Default
-        } else if self.favorite(seat) {
+        } else if self.favorite(selection) {
             Mark::Favorite
         } else {
             Mark::None
@@ -296,41 +304,44 @@ impl App {
             .shift(delta, self.picker.shown.peek().len());
     }
 
-    pub(super) fn picker_rows(&self, older: bool, collapse: bool) -> (Vec<Seat>, usize) {
+    pub(super) fn picker_rows(&self, older: bool, collapse: bool) -> (Vec<ModelId>, usize) {
         let listed: usize = self.picker.recent.peek().iter().sum();
         let facts = self.picker.facts.peek();
         let choices = self.picker.choices.peek();
         let (held, rest) = choices.split_at(listed.min(choices.len()));
         let groups = self.picker.groups.peek();
-        let offline = |seat: &Seat| groups.get(&seat.endpoint) == Some(&State::Offline);
-        let served: Vec<(&Seat, Option<&crate::catalog::Model>)> = rest
+        let offline =
+            |selection: &ModelId| groups.get(&selection.endpoint) == Some(&State::Offline);
+        let served: Vec<(&ModelId, Option<&crate::catalog::Model>)> = rest
             .iter()
-            .map(|seat| (seat, facts.get(seat)))
-            .filter(|(seat, fact)| !offline(seat) && fact.is_none_or(|fact| fact.usable()))
+            .map(|selection| (selection, facts.get(selection)))
+            .filter(|(selection, fact)| {
+                !offline(selection) && fact.is_none_or(|fact| fact.usable())
+            })
             .collect();
-        let shelf: Vec<(&str, &crate::catalog::Model)> = served
+        let models: Vec<(&str, &crate::catalog::Model)> = served
             .iter()
-            .filter_map(|(seat, fact)| Some((seat.endpoint.as_str(), (*fact)?)))
+            .filter_map(|(selection, fact)| Some((selection.endpoint.as_str(), (*fact)?)))
             .collect();
-        let mut current = crate::catalog::current(&shelf).into_iter();
+        let mut current = crate::catalog::current(&models).into_iter();
         let mut fixes = std::collections::BTreeSet::new();
         let mut hidden = 0;
         let mut kept = Vec::new();
-        for (seat, fact) in &served {
+        for (selection, fact) in &served {
             let now = fact.is_none() || current.next().unwrap_or(true);
             if collapse
                 && groups
-                    .get(&seat.endpoint)
+                    .get(&selection.endpoint)
                     .is_some_and(|state| state.blocked())
             {
-                if fixes.insert(seat.endpoint.as_str()) {
-                    kept.push((*seat).clone());
+                if fixes.insert(selection.endpoint.as_str()) {
+                    kept.push((*selection).clone());
                 }
                 continue;
             }
             hidden += usize::from(!now);
             if older || now {
-                kept.push((*seat).clone());
+                kept.push((*selection).clone());
             }
         }
         (held.iter().cloned().chain(kept).collect(), hidden)
@@ -346,7 +357,7 @@ impl App {
                     .shown
                     .peek()
                     .iter()
-                    .position(|seat| *seat == held)
+                    .position(|selection| *selection == held)
             })
             .unwrap_or(0);
         self.picker.list.cursor.set(at);
@@ -358,7 +369,7 @@ impl App {
         self.picker.shown.set(Rc::new(rows));
     }
 
-    pub(super) fn ranked(&self, facet: super::facet::Facet) -> (Vec<Seat>, usize) {
+    pub(super) fn ranked(&self, facet: super::facet::Facet) -> (Vec<ModelId>, usize) {
         let query = self.picker.list.query.peek().to_lowercase();
         if query.trim().is_empty() {
             let collapse = facet == super::facet::Facet::All;
@@ -369,7 +380,7 @@ impl App {
         let choices = self.faceted(choices, facet);
         let words: Vec<&str> = query.split_whitespace().collect();
         let facts = self.picker.facts.peek();
-        let mut ranked: Vec<(usize, &Seat)> = choices
+        let mut ranked: Vec<(usize, &ModelId)> = choices
             .iter()
             .filter_map(|row| {
                 let display = facts.get(row).map_or("", |fact| fact.label());

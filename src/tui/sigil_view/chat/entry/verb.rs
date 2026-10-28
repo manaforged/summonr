@@ -6,8 +6,8 @@ use super::tools::workspace_relative;
 use super::tree::label;
 use crate::tools::Builtin;
 use crate::tui::ToolState;
-use crate::tui::sigil_view::look::Look;
 use crate::tui::sigil_view::model::Call;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 const CHIP_COLS: usize = 48;
 const META_COLS: usize = 40;
@@ -107,7 +107,7 @@ impl Step {
         };
         items
             .iter()
-            .map(|item| crate::text::ellipsize(item, CHIP_COLS))
+            .map(|item| crate::display::ellipsize(item, CHIP_COLS))
             .collect()
     }
 }
@@ -125,26 +125,26 @@ pub(super) fn chip(body: String) -> NodeBuilder {
         .border_w(1)
         .border_color(Token::BorderSubtle)
         .rounded(Radius::Sm)
-        .child(label(body, Look::xs(Token::Gray11).mono()).ellipsize())
+        .child(label(body, TextStyle::xs(Token::Gray11).mono()).ellipsize())
 }
 
-pub(super) fn step_meta(step: &Step) -> Option<(String, Look)> {
+pub(super) fn step_meta(step: &Step) -> Option<(String, TextStyle)> {
     let output = preview::plain(&step.call.output);
     match step.call.state {
-        ToolState::Running => Some(("running…".to_string(), Look::xs(Token::Gray10))),
+        ToolState::Running => Some(("running…".to_string(), TextStyle::xs(Token::Gray10))),
         ToolState::Failed => Some((
             preview::exit(&output).map_or_else(
-                || crate::text::ellipsize(&preview::summary(&output, true), META_COLS),
+                || crate::display::ellipsize(&preview::summary(&output, true), META_COLS),
                 |code| format!("exit {code}"),
             ),
-            Look::xs(Token::Error11),
+            TextStyle::xs(Token::Error11),
         )),
         ToolState::Ok => ok_meta(step, &output),
     }
 }
 
-fn ok_meta(step: &Step, output: &str) -> Option<(String, Look)> {
-    let muted = Look::xs(Token::Gray10);
+fn ok_meta(step: &Step, output: &str) -> Option<(String, TextStyle)> {
+    let muted = TextStyle::xs(Token::Gray10);
     match step.kind() {
         StepVerb::Edited => step
             .counts()
@@ -157,7 +157,7 @@ fn ok_meta(step: &Step, output: &str) -> Option<(String, Look)> {
                 .lines()
                 .filter(|line| !line.trim().is_empty())
                 .count();
-            Some((crate::text::plural(found, "match"), muted))
+            Some((summonr_core::text::plural(found, "match"), muted))
         }
         StepVerb::Ran => {
             let text = preview::summary(output, false);
@@ -166,8 +166,8 @@ fn ok_meta(step: &Step, output: &str) -> Option<(String, Look)> {
                 .to_string();
             (!last.is_empty()).then(|| {
                 (
-                    crate::text::ellipsize(&last, META_COLS),
-                    Look::xs(Token::Success11),
+                    crate::display::ellipsize(&last, META_COLS),
+                    TextStyle::xs(Token::Success11),
                 )
             })
         }

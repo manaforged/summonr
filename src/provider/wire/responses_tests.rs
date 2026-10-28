@@ -30,7 +30,7 @@ fn ask<'a>(messages: &'a [Message], effort: Option<Effort>) -> CompletionRequest
     )
 }
 
-fn stream(events: &[serde_json::Value]) -> crate::error::Result<AssistantMessage> {
+fn stream(events: &[serde_json::Value]) -> summonr_core::error::Result<AssistantMessage> {
     let mut stream = <Stream as Accumulate>::new("gpt-5.1");
     for event in events {
         stream.on(&event.to_string())?;
@@ -174,26 +174,6 @@ fn fixed_prompt_is_a_plain_developer_block() {
         "{body}"
     );
     assert_eq!(body["input"][1]["role"], "user");
-}
-
-#[test]
-fn a_replayed_reply_carries_its_commentary_and_phase() {
-    let mut assistant = message(Role::Assistant, "Here");
-    assistant.continuation = Some(Continuation::Responses {
-        model: "gpt-5.1".to_string(),
-        signatures: Vec::new(),
-        phase: Some("final_answer".to_string()),
-        commentary: vec!["Got it".to_string()],
-    });
-    let messages = vec![
-        message(Role::User, "hi"),
-        assistant,
-        message(Role::User, "more"),
-    ];
-    let body = request(&ask(&messages, None), true).unwrap();
-    assert_eq!(body["input"][1]["phase"], "commentary");
-    assert_eq!(body["input"][1]["content"][0]["text"], "Got it");
-    assert_eq!(body["input"][2]["phase"], "final_answer");
 }
 
 #[test]

@@ -87,7 +87,7 @@ fn offered_login(name: &str, endpoint: &Endpoint) -> Option<crate::config::OAuth
         })
 }
 
-pub fn login_seat(name: &str) -> Result<Endpoint> {
+pub fn login_endpoint(name: &str) -> Result<Endpoint> {
     let mut endpoint = resolve(Some(name), None, Need::Config)?;
     if endpoint.oauth.is_none() {
         endpoint.oauth = offered_login(name, &endpoint);
@@ -129,7 +129,7 @@ pub async fn check_key(name: &str, key: &str) -> Result<Source> {
         )
     {
         return Err(Error::provider(
-            crate::error::ProviderFailureKind::Authentication,
+            summonr_core::error::ProviderFailureKind::Authentication,
             format!("{name} rejected the key"),
         ));
     }
@@ -254,7 +254,7 @@ pub fn first_classify() -> Option<String> {
 }
 
 pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
-    let (endpoints, _) = ready(Need::Seat);
+    let (endpoints, _) = ready(Need::ModelAndKey);
     if endpoints.is_empty() {
         return None;
     }
@@ -268,23 +268,4 @@ pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
         (None, false) => endpoints.len() - 1,
     };
     (endpoints[target].name != current).then(|| endpoints[target].name.clone())
-}
-
-#[cfg(test)]
-pub(crate) fn catalog(wire: Wire) -> Vec<String> {
-    let mut models = Vec::new();
-    for row in super::preset::presets() {
-        if row.wire != wire {
-            continue;
-        }
-        if !models.contains(&row.model) {
-            models.push(row.model.clone());
-        }
-        for canon in row.aliases.values() {
-            if !models.contains(canon) {
-                models.push(canon.clone());
-            }
-        }
-    }
-    models
 }

@@ -7,9 +7,9 @@ use super::catalog::Listing;
 use super::config::{Launch, Server};
 use super::journal::Journal;
 use super::{handshake, http};
-use crate::error::{Error, Result};
 use crate::process::Env;
 use crate::rpc::{self, Client, Framing, Notice, Peer};
+use summonr_core::error::{Error, Result};
 
 const STATELESS: &str = "2026-07-28";
 const LIST_PAGES: usize = 64;
@@ -79,10 +79,15 @@ impl Conn {
         let (journal, name) = (&conn.journal, conn.server.as_str());
         let mut hear = |notice: Notice<'_>| drop(logged(journal, name, notice));
         let agreed = match &mut conn.transport {
-            Transport::Stdio(client) => Some(handshake::stdio(client, "summonr", &mut hear).await?),
+            Transport::Stdio(client) => {
+                Some(handshake::initialize_stdio(client, "summonr", &mut hear).await?)
+            }
             Transport::Http(http) => {
-                http.initialize(handshake::hello("summonr", json!({})), &mut hear)
-                    .await?
+                http.initialize(
+                    handshake::initialize_params("summonr", json!({})),
+                    &mut hear,
+                )
+                .await?
             }
         };
         conn.stateless = agreed.is_none();

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::error::Result;
+use summonr_core::error::Result;
 
 pub(crate) fn dir(workspace: &Path) -> PathBuf {
     let local = workspace.join(".summonr").join("jobs");
@@ -13,7 +13,7 @@ pub(crate) fn dir(workspace: &Path) -> PathBuf {
 }
 
 fn spare(workspace: &Path) -> Option<PathBuf> {
-    let home = crate::prompt::summonr_home().ok()?;
+    let home = summonr_core::dirs::summonr_home().ok()?;
     Some(
         home.join("jobs")
             .join(crate::mail::slug(&workspace.display().to_string())),

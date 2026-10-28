@@ -13,7 +13,7 @@ use tokio::sync::mpsc::unbounded_channel;
 
 use super::{App, rail, root, thread};
 use crate::catalog::Model;
-use crate::recent::Seat;
+use crate::recent::ModelId;
 use crate::tools::Event;
 use crate::tui::{Msg, Snapshot};
 
@@ -174,13 +174,13 @@ fn the_window_model_picker_rows_sit_between_header_and_hints() {
     let runs = texts(
         |app| {
             app.begin_model_edit();
-            let seat = |id: &str| Seat::new("openrouter", id);
+            let selection = |id: &str| ModelId::new("openrouter", id);
             app.update(Msg::Models {
                 request: 1,
-                rows: names.iter().map(|id| seat(id)).collect(),
+                rows: names.iter().map(|id| selection(id)).collect(),
                 facts: names
                     .iter()
-                    .map(|id| (seat(id), Model::named(*id)))
+                    .map(|id| (selection(id), Model::named(*id)))
                     .collect(),
                 groups: BTreeMap::new(),
                 causes: BTreeMap::new(),

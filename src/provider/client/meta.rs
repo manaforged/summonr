@@ -58,8 +58,8 @@ pub(super) fn reason(text: &str) -> String {
         .or(Some(error))
         .and_then(Value::as_str)
         .map_or_else(
-            || crate::text::hide_key_echo(text),
-            crate::text::hide_key_echo,
+            || summonr_core::text::hide_key_echo(text),
+            summonr_core::text::hide_key_echo,
         )
 }
 

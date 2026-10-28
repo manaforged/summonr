@@ -14,7 +14,7 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
         press("d", |app, event| {
             if app.workflow_keys() {
                 event.stop_propagation();
-                app.clear_workflow_seat();
+                app.clear_workflow_model();
             }
         }),
         press("s", |app, event| {
@@ -54,7 +54,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     if paint.workflow.naming.get() {
                         return naming(&paint);
                     }
-                    seats(&paint)
+                    selections(&paint)
                 }),
         )
         .build(app.workflow.open, app.viewport.peek().0, &hotkeys)
@@ -82,7 +82,7 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
     ]
 }
 
-fn seats(app: &App) -> Vec<NodeBuilder> {
+fn selections(app: &App) -> Vec<NodeBuilder> {
     let source = app.clone();
     let dragging = app.workflow.drag_from.get();
     let over = app.workflow.drag_over.get();
@@ -98,24 +98,24 @@ fn seats(app: &App) -> Vec<NodeBuilder> {
         .iter()
         .enumerate()
         .map(|(index, role)| {
-            let seat = app
+            let selection = app
                 .workflow
-                .seats
+                .selections
                 .get()
                 .get(index)
                 .cloned()
                 .flatten()
-                .map(|seat| seat.replace('\t', "  "))
+                .map(|selection| selection.replace('\t', "  "))
                 .unwrap_or_else(|| driving.clone());
-            (*role, seat)
+            (*role, selection)
         })
         .collect();
     let mut items: Vec<NodeBuilder> = vec![overlay_list(
-        virtual_list(lookup, move |index, (role, seat): &(Role, String)| {
+        virtual_list(lookup, move |index, (role, selection): &(Role, String)| {
             entry(
                 source.clone(),
                 *role,
-                seat,
+                selection,
                 index,
                 index == selected,
                 dragging == Some(index),
@@ -175,7 +175,7 @@ fn saved(app: &App) -> NodeBuilder {
 fn entry(
     app: App,
     role: Role,
-    seat: &str,
+    selection: &str,
     index: usize,
     active: bool,
     dragging: bool,
@@ -194,7 +194,7 @@ fn entry(
         ' '
     };
     let lit = active || over;
-    pick(lit, format!("{marker} {role}"), seat.to_string())
+    pick(lit, format!("{marker} {role}"), selection.to_string())
         .pointer_down(move |event| {
             press.workflow.list.cursor.set(index);
             press.workflow.drag_from.set(Some(index));
@@ -216,9 +216,9 @@ fn entry(
             drop.workflow.drag_over.set(None);
             if from == index {
                 drop.workflow.list.cursor.set(index);
-                drop.pick_workflow_seat();
+                drop.pick_workflow_model();
             } else {
-                drop.copy_seat(from, index);
+                drop.copy_model(from, index);
             }
             event.stop_propagation();
         })

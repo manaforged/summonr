@@ -71,7 +71,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
                                 side.workflow.open.get(),
                                 side.workflow.name.get(),
                                 side.workflow.names.get(),
-                                side.workflow.seats.get(),
+                                side.workflow.selections.get(),
                                 side.workflow.list.cursor.get(),
                                 side.workflow.naming.get(),
                                 side.workflow.list.query.get(),

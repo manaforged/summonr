@@ -10,7 +10,7 @@ use super::{
     AssistantMessage, Client, CompletionRequest, Partial, StopReason, ToolCall, ToolFunction,
     ToolKind, think,
 };
-use crate::error::{Error, ProviderFailureKind, Result};
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 impl Client {
     pub(super) async fn complete_stream(
@@ -221,7 +221,7 @@ pub(crate) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) -> Result<(
             function: ToolFunction {
                 name: String::new(),
                 arguments: String::new(),
-                checked: super::message::Checked::Unchecked,
+                checked: summonr_types::Checked::Unchecked,
             },
         });
     }

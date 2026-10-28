@@ -8,8 +8,8 @@ use super::config;
 use super::conn::Conn;
 use super::link::Link;
 use super::tool::Tool;
-use crate::error::Result;
 use crate::supervise::Slot;
+use summonr_core::error::Result;
 
 pub async fn probe(workspace: &Path, name: &str) -> Result<Option<usize>> {
     let Some(server) = config::servers(workspace)?

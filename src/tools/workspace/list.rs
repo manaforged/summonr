@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use crate::SKIP_DIRS;
-use crate::error::{Error, Result};
-use crate::walk::{self, Walk};
+use summonr_core::error::{Error, Result};
+use summonr_core::walk::SKIP_DIRS;
+use summonr_core::walk::{self, Walk};
 
 const LIST_MAX: usize = 200;
 

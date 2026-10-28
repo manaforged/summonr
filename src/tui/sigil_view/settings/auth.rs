@@ -90,7 +90,7 @@ pub(super) fn hints(app: &App) -> Hints {
         Login::Key(_) => Hints::new()
             .key(Key::Enter, "save and check")
             .key(Key::Esc, "back")
-            .right(crate::text::plural(
+            .right(summonr_core::text::plural(
                 app.auth.key.get().chars().count(),
                 "char",
             )),
@@ -191,7 +191,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         };
         let mut below = notes(&note, wide);
         if below.is_empty() {
-            below.push(group(crate::text::ellipsize(
+            below.push(group(crate::display::ellipsize(
                 &detail::summary(choice, &state),
                 wide,
             )));

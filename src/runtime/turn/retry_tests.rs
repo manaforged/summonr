@@ -2,9 +2,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 use crate::provider::{AssistantMessage, CompletionRequest, Partial, Provider};
 use crate::runtime::Loop;
+use summonr_core::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
 #[tokio::test]
 async fn usage_exhaustion_stops_before_retry_or_fallback() -> Result<()> {
@@ -270,7 +270,7 @@ async fn an_overflow_cap_sticks_on_the_seated_model() {
         sent: Arc::default(),
         text: "fixture failure",
     };
-    let seat = Fault {
+    let selection = Fault {
         kind: ProviderFailureKind::ContextOverflow,
         partial: false,
         fails: 1,
@@ -281,10 +281,10 @@ async fn an_overflow_cap_sticks_on_the_seated_model() {
     let mut loop_ =
         Loop::open(idle, "m", workspace.path(), "system", driver).expect("open runtime");
     loop_.set_context_window(Some(1_000_000));
-    loop_.set_seat(
+    loop_.set_role_model(
         crate::workflow::Role::Implement,
-        seat,
-        "seat",
+        selection,
+        "selection",
         None,
         None,
         None,

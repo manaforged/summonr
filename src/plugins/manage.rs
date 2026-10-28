@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::{MANIFEST, Plugin, data_dir, installed, json_file, require_tree, root, unknown_off};
-use crate::error::{Error, Result};
 use crate::skills;
+use summonr_core::error::{Error, Result};
 
 mod report;
 

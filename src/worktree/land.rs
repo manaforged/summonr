@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use crate::error::{Error, Result};
 use crate::tools::{Hold, Kept};
+use summonr_core::error::{Error, Result};
 
 use super::{COMMIT_MAX, Tree, base_record, worktree_id};
 

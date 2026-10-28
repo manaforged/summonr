@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+#[path = "form_check.rs"]
 mod check;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -116,7 +117,7 @@ impl FormAnswer {
 }
 
 impl Form {
-    pub(crate) fn parse(server: &str, params: &Value) -> Option<Self> {
+    pub fn parse(server: &str, params: &Value) -> Option<Self> {
         if params
             .get("mode")
             .and_then(Value::as_str)

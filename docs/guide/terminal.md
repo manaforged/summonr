@@ -155,7 +155,7 @@ The `task` tool delegates work to fresh child sessions. Only an interactive sess
 | Kind | Workspace | Can |
 | --- | --- | --- |
 | `implement` | An isolated checkout in `<repo>-children/<id>` that shares the parent's `target/` and `node_modules` | Use the parent's file, shell, and language-server tools; background commands stay with the parent |
-| `research` | The parent workspace | Read and search only; no shell, no writes, no background commands |
+| `research` | The parent workspace | Read and search; a foreground shell command; no writes, no background commands |
 
 The `task` module is on by default. Turn it off in the Modules rows of `/settings`, or with `task = false` under `[modules]` in `~/.summonr/config.toml`.
 

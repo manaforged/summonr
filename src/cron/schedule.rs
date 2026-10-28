@@ -2,7 +2,7 @@ use jiff::civil::{Date, DateTime, Time};
 use jiff::tz::{AmbiguousOffset, AmbiguousZoned, TimeZone};
 use jiff::{SignedDuration, Timestamp, Zoned};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const MONTHS: [&str; 12] = [
     "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",

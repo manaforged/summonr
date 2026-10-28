@@ -239,6 +239,31 @@ impl SessionDriver {
         self.checkpoint()
     }
 
+    pub(crate) fn measured(&self) -> Result<bool, DriverError> {
+        Ok(!self
+            .work
+            .as_ref()
+            .ok_or(DriverError::NoWork)?
+            .measurements
+            .is_empty())
+    }
+
+    pub(crate) fn best_measurement(&self) -> Result<Option<f64>, DriverError> {
+        Ok(self.work.as_ref().ok_or(DriverError::NoWork)?.best())
+    }
+
+    pub(crate) fn record_measurement(
+        &mut self,
+        value: Option<String>,
+        kept: bool,
+    ) -> Result<(), DriverError> {
+        self.work
+            .as_mut()
+            .ok_or(DriverError::NoWork)?
+            .measure(value, kept);
+        self.checkpoint()
+    }
+
     pub(super) fn active(&self) -> Option<&Work> {
         self.work.as_ref().filter(|work| !work.terminal())
     }

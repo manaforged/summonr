@@ -130,6 +130,7 @@ pub struct Loop<P> {
     session: SessionDriver,
     verify: Option<Vec<String>>,
     check_file: Option<Vec<u8>>,
+    metric: Option<(crate::verify::Metric, crate::verify::Protected)>,
     run_base: (u64, u64),
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,

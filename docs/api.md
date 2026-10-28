@@ -12,7 +12,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | --- | --- |
 | `summonr [ENDPOINT]` | Start an interactive session |
 | `summonr [ENDPOINT] -p PROMPT`, `summonr [ENDPOINT] PROMPT` | Run one prompt and exit |
-| `summonr [ENDPOINT] --goal TEXT` | Work until `.summonr/check.toml` passes and a judge call agrees |
+| `summonr [ENDPOINT] --goal TEXT` | Work until `.summonr/check.toml` passes and a judge call agrees; with a `[metric]` table, keep a turn only when its number beats the best, revert it otherwise, and stop at the target or a budget |
 | `summonr [ENDPOINT] --steps PLAN.md` | Run each numbered step under `## Steps`, and gate each step on its check |
 | `summonr -c`, `summonr --session ID`, `summonr resume [ID\|NAME]` | Resume the last session here, or a session by short id, id prefix, or name |
 | `summonr sessions` | List sessions, tab-separated: id, name, directory, preview |

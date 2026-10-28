@@ -3,28 +3,20 @@ use std::time::Duration;
 use super::*;
 use crate::tools::workspace::write;
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum Operation {
     Diagnostics,
     Definition,
 }
 
-impl Operation {
-    fn parse(text: &str) -> Option<Self> {
-        match text {
-            "diagnostics" => Some(Self::Diagnostics),
-            "definition" => Some(Self::Definition),
-            _ => None,
-        }
-    }
-}
-
 impl ToolRegistry {
     pub(in crate::tools) async fn lsp(&self, args: &Value) -> Result<ToolOutput> {
         if let Some(operation) = super::super::args::named(args, "op") {
-            return match Operation::parse(operation) {
-                Some(Operation::Diagnostics) => self.diagnostics(args).await,
-                Some(Operation::Definition) => self.definition(args).await,
-                None => Err(Error::Tool(format!("unknown lsp operation `{operation}`"))),
+            return match serde::Deserialize::deserialize(&args["op"]) {
+                Ok(Operation::Diagnostics) => self.diagnostics(args).await,
+                Ok(Operation::Definition) => self.definition(args).await,
+                Err(_) => Err(Error::Tool(format!("unknown lsp operation `{operation}`"))),
             };
         }
         let placed = |field| {

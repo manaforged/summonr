@@ -81,6 +81,13 @@ pub(crate) struct Check {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub(crate) struct Measurement {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) value: Option<String>,
+    pub(crate) kept: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Step {
     pub(crate) title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -159,6 +166,8 @@ pub(crate) struct Work {
     pub(crate) failed_checks: Option<Vec<crate::verify::Outcome>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) todos: Vec<crate::tools::Todo>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) measurements: Vec<Measurement>,
 }
 
 impl Work {
@@ -185,6 +194,7 @@ impl Work {
             check: None,
             failed_checks: None,
             todos: Vec::new(),
+            measurements: Vec::new(),
         }
     }
 
@@ -220,6 +230,18 @@ impl Work {
         } else {
             CheckVerdict::Failed
         });
+    }
+
+    pub(crate) fn best(&self) -> Option<f64> {
+        self.measurements
+            .iter()
+            .rev()
+            .filter(|measurement| measurement.kept)
+            .find_map(|measurement| measurement.value.as_deref()?.parse().ok())
+    }
+
+    pub(crate) fn measure(&mut self, value: Option<String>, kept: bool) {
+        self.measurements.push(Measurement { value, kept });
     }
 
     pub(crate) fn apply_todos(&mut self, todos: Vec<crate::tools::Todo>) {

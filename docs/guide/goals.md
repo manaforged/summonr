@@ -53,6 +53,41 @@ A goal has no turn cap and no failed-check attempt limit. It runs until the judg
 
 A turn that ends while a background command it started is still running is deferred, with no verdict and no repair strike, until the job exits or the model kills it. A later turn cannot complete while that job runs.
 
+## Climb a metric
+
+A goal can also climb a number: kernel time, an eval score, a loss, bundle size. Add a `[metric]` table to `.summonr/check.toml`:
+
+```toml
+check = "pytest -q"
+
+[metric]
+command = "python3 bench.py"
+better = "lower"
+target = 240.0
+noise = 1.5
+protect = ["bench.py"]
+```
+
+```sh
+summonr --goal "make bench.py faster" --max-secs 28800
+```
+
+Before the first turn, summonr runs the metric on the unchanged workspace; that value is the baseline. After each goal turn, summonr runs the checks, then the metric command, and reads one number from its output. The change stays only when that number beats the best so far by more than `noise`. Otherwise, and whenever a check fails, the command prints no number, or the turn changed a protected file, summonr restores the turn's files to how they were when the turn started. The model never decides whether a change was better.
+
+| Key | Value |
+| --- | --- |
+| `command` | The command that prints the metric. |
+| `better` | `higher` or `lower`. |
+| `pattern` | Optional regular expression; its first group, or the whole match, is the value. Without it, summonr reads the last number in the output. |
+| `target` | Optional. The goal ends when the best reaches it. Without one, the goal runs until a budget ends it. |
+| `noise` | Optional, default 0. How much a value must beat the best by to count. Measure it by running the unchanged code a few times. |
+| `timeout_secs` | Optional. The metric command's time limit; the default is the check's. |
+| `protect` | Optional list of files the model must not change, such as the benchmark script and its inputs. A turn that changes one is reverted without running the metric. |
+
+Every attempt goes in the run's ledger, which the model reads at the start of each turn: the baseline, then each value and whether it was kept or reverted. summonr holds the best value in the session's `work.json`, outside the workspace, and the check file is protected as above. The metric command's own files are not protected unless you list them in `protect`; a model that can rewrite the benchmark can fake a better number.
+
+Reverting uses the same turn checkpoints as `/undo`, so a metric goal works in a git repository or a plain folder. In a git repository, those checkpoints skip files that `.gitignore` covers, so keep the files the model changes, and the files in `protect`, out of ignored paths. Repeated identical failures do not end a metric goal; a budget does.
+
 ## Run a plan
 
 `--steps PLAN.md` hands the model one numbered item at a time:

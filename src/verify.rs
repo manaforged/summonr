@@ -1,10 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::Error;
 use crate::tools::{Event, ToolOutput};
+
+mod file;
+mod metric;
+pub use file::check_commands;
+pub(crate) use file::{check_path, metric};
+pub(crate) use metric::{Metric, Protected};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Outcome {
@@ -77,40 +82,6 @@ impl Receipt {
         receipt.text = render(&receipt, true);
         receipt
     }
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct CheckFile {
-    check: Option<String>,
-    checks: Option<Vec<String>>,
-}
-
-#[must_use]
-pub(crate) fn check_path(workspace: &Path) -> std::path::PathBuf {
-    workspace.join(".summonr/check.toml")
-}
-
-pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {
-    let path = check_path(workspace);
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let text = std::fs::read_to_string(&path)?;
-    let file: CheckFile = toml::from_str(&text)
-        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
-    if file.check.is_some() && file.checks.is_some() {
-        return Err(Error::Config(format!(
-            "{}: use `check` or `checks`, not both",
-            path.display()
-        )));
-    }
-    let mut commands = match (file.check, file.checks) {
-        (Some(check), _) => vec![check],
-        (None, Some(checks)) => checks,
-        (None, None) => Vec::new(),
-    };
-    commands.retain(|command| !command.trim().is_empty());
-    Ok((!commands.is_empty()).then_some(commands))
 }
 
 #[must_use]

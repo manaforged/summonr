@@ -1,9 +1,16 @@
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use crate::diff::{git_env, git_paths};
+use sha2::{Digest, Sha256};
+
+use crate::diff::{git_env, git_output};
 use crate::durable::store;
 use crate::error::{Error, Result};
+
+const CHECKPOINTS: &str = "checkpoints";
+const STORE: &str = "git";
+const EXCLUDE: &str = "info/exclude";
+const KEY_BYTES: usize = 8;
 
 #[derive(Clone)]
 pub(crate) struct Checkpoints {
@@ -11,25 +18,34 @@ pub(crate) struct Checkpoints {
     index: PathBuf,
     log: PathBuf,
     skip: PathBuf,
+    store: Option<PathBuf>,
 }
 
 impl Checkpoints {
     pub(crate) fn open(workspace: &Path, session: &str) -> Option<Self> {
-        let dir = crate::diff::state_dir(workspace)?;
-        let layout = crate::diff::layout(workspace);
+        let (dir, store) = match crate::diff::state_dir(workspace) {
+            Some(dir) => (dir, None),
+            None => {
+                let dir = private_dir(workspace)?;
+                (dir.clone(), Some(dir.join(STORE)))
+            }
+        };
         std::fs::create_dir_all(&dir).ok()?;
         let index = dir.join(format!("{session}.index"));
-        if !index.exists() {
-            match &layout {
-                Some(layout) => seed_from(workspace, layout, &index),
+        match &store {
+            Some(store) => init(workspace, store)?,
+            None if !index.exists() => match crate::diff::layout(workspace) {
+                Some(layout) => seed_from(workspace, &layout, &index),
                 None => seed(workspace, &index),
-            }
+            },
+            None => {}
         }
         Some(Self {
             root: workspace.to_path_buf(),
             index,
             log: dir.join(format!("{session}.checkpoints")),
             skip: dir.join("skip"),
+            store,
         })
     }
 
@@ -61,21 +77,17 @@ impl Checkpoints {
                 ))
             })?;
         let current = self.tree()?;
-        let mut paths = git_paths(
-            &self.root,
-            &[
-                "diff-tree",
-                "-r",
-                "--no-renames",
-                "--name-only",
-                "-z",
-                target,
-                &current,
-            ],
-        )?;
+        let mut paths = self.paths(&[
+            "diff-tree",
+            "-r",
+            "--no-renames",
+            "--name-only",
+            "-z",
+            target,
+            &current,
+        ])?;
         paths.retain(|path| !crate::diff::ignored::hidden(path));
-        let env = self.env();
-        git_env(&self.root, &env, &["read-tree", "--reset", "-u", target])?;
+        self.git(&["read-tree", "--reset", "-u", target])?;
         Ok(paths)
     }
 
@@ -103,7 +115,6 @@ impl Checkpoints {
     }
 
     pub(crate) fn tree(&self) -> Result<String> {
-        let env = self.env();
         let skipped = self.skipped()?;
         let excluded: Vec<String> = skipped
             .iter()
@@ -111,7 +122,7 @@ impl Checkpoints {
             .collect();
         let mut add = vec!["add", "-A", "--", "."];
         add.extend(excluded.iter().map(String::as_str));
-        git_env(&self.root, &env, &add)?;
+        self.git(&add)?;
         if !skipped.is_empty() {
             let literal: Vec<String> = skipped
                 .iter()
@@ -119,11 +130,9 @@ impl Checkpoints {
                 .collect();
             let mut drop = vec!["rm", "--cached", "-f", "-q", "--ignore-unmatch", "--"];
             drop.extend(literal.iter().map(String::as_str));
-            git_env(&self.root, &env, &drop)?;
+            self.git(&drop)?;
         }
-        Ok(git_env(&self.root, &env, &["write-tree"])?
-            .trim()
-            .to_string())
+        Ok(self.git(&["write-tree"])?.trim().to_string())
     }
 
     pub(crate) fn trees(&self) -> Vec<String> {
@@ -134,9 +143,55 @@ impl Checkpoints {
             .collect()
     }
 
-    fn env(&self) -> [(&str, &OsStr); 1] {
-        [("GIT_INDEX_FILE", self.index.as_os_str())]
+    pub(crate) fn git(&self, args: &[&str]) -> Result<String> {
+        git_env(&self.root, &self.env(), args)
     }
+
+    pub(crate) fn paths(&self, args: &[&str]) -> Result<Vec<String>> {
+        Ok(crate::diff::nul_paths(&git_output(
+            &self.root,
+            &self.env(),
+            args,
+            None,
+        )?))
+    }
+
+    fn env(&self) -> Vec<(&str, &OsStr)> {
+        let mut env = vec![("GIT_INDEX_FILE", self.index.as_os_str())];
+        if let Some(store) = &self.store {
+            env.push(("GIT_DIR", store.as_os_str()));
+            env.push(("GIT_WORK_TREE", self.root.as_os_str()));
+        }
+        env
+    }
+}
+
+fn private_dir(workspace: &Path) -> Option<PathBuf> {
+    let workspace = dunce::canonicalize(workspace).ok()?;
+    let home = crate::prompt::summonr_home().ok()?;
+    if home.starts_with(&workspace) {
+        return None;
+    }
+    let key = Sha256::digest(workspace.as_os_str().as_encoded_bytes());
+    let key: String = key
+        .iter()
+        .take(KEY_BYTES)
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Some(home.join(CHECKPOINTS).join(key))
+}
+
+fn init(workspace: &Path, store: &Path) -> Option<()> {
+    if store.exists() {
+        return Some(());
+    }
+    let path = OsString::from(store);
+    git_env(workspace, &[], &["init", "-q", "--bare", path.to_str()?]).ok()?;
+    let exclude: String = crate::SKIP_DIRS
+        .iter()
+        .map(|dir| format!("{dir}/\n"))
+        .collect();
+    std::fs::write(store.join(EXCLUDE), exclude).ok()
 }
 
 fn seed_from(workspace: &Path, layout: &crate::diff::Layout, index: &Path) {

@@ -24,7 +24,7 @@ impl Pane {
 
     pub(super) fn parse(text: &str) -> Option<Self> {
         match text.trim().to_ascii_lowercase().as_str() {
-            "chat" => Some(Self::Chat),
+            "chat" | "off" | "close" => Some(Self::Chat),
             "ledger" | "plan" => Some(Self::Ledger),
             "files" | "tree" | "repo" => Some(Self::Files),
             "diff" | "changes" => Some(Self::Diff),
@@ -60,13 +60,11 @@ pub(super) enum Target {
 
 impl Target {
     pub(super) fn parse(text: &str) -> Option<Self> {
-        match text.trim().to_ascii_lowercase().as_str() {
-            "off" | "close" => Some(Self::Off),
-            _ => match (Pane::parse(text), Layout::parse(text)) {
-                (Some(pane), _) if pane != Pane::Chat => Some(Self::Pane(pane)),
-                (_, Some(layout)) => Some(Self::Layout(layout)),
-                (Some(_) | None, None) => None,
-            },
+        match (Pane::parse(text), Layout::parse(text)) {
+            (Some(Pane::Chat), _) => Some(Self::Off),
+            (Some(pane), _) => Some(Self::Pane(pane)),
+            (None, Some(layout)) => Some(Self::Layout(layout)),
+            (None, None) => None,
         }
     }
 }

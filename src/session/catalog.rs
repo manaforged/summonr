@@ -135,7 +135,7 @@ pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
     match hits.as_slice() {
         [(_, only)] => Ok(only.clone()),
         [] => Err(Error::Config(format!("no session `{id}`"))),
-        _ => Err(ambiguous(id, &hits)),
+        [_, _, ..] => Err(ambiguous(id, &hits)),
     }
 }
 
@@ -177,7 +177,7 @@ pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
                 .map(Path::to_path_buf)
                 .ok_or_else(|| Error::Config(format!("session `{id}` has no directory")))?,
             [] => return Err(Error::Config(format!("no session `{id}`"))),
-            _ => return Err(ambiguous(id, &hits)),
+            [_, _, ..] => return Err(ambiguous(id, &hits)),
         }
     };
     let name = dir

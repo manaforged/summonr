@@ -102,6 +102,7 @@ mod elicit;
 pub(crate) use elicit::Steering;
 mod finish;
 mod grant;
+mod metric;
 mod repeat;
 mod retry;
 mod round;
@@ -252,6 +253,7 @@ impl<P: Provider> Loop<P> {
             .await?;
         self.tools.fold_unseen_images(&mut input).await?;
         let messages = self.begin_turn(input)?;
+        self.measure_baseline(&mut events, &mut emit).await?;
         let mut pre = self.checkpoint();
         let mut usage = Usage::default();
         let mut rounds = 0;

@@ -113,6 +113,9 @@ impl<P: Provider> Loop<P> {
                 self.verify.as_deref().unwrap_or(&[]),
             ));
         }
+        if let Some(measured) = self.measure_turn(&checks, events, emit).await? {
+            checks.push(measured);
+        }
         let mut verdict = self.verdict(&mut checks, events, emit)?;
         let mut rejected = None;
         let mut reviewed = false;
@@ -223,11 +226,12 @@ impl<P: Provider> Loop<P> {
         let Some(objective) = self.session.goal_objective()? else {
             return Ok(Decision::Automatic);
         };
-        if self
-            .session
-            .completion_checks()?
-            .iter()
-            .any(|check| check.observation.is_none())
+        if self.metric.is_some()
+            || self
+                .session
+                .completion_checks()?
+                .iter()
+                .any(|check| check.observation.is_none())
         {
             return Ok(Decision::GoalComplete);
         }

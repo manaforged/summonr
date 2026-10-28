@@ -39,7 +39,7 @@ impl<P: Provider> Loop<P> {
                     },
                 },
                 Some(Observation::Stdout(expected)) => {
-                    let result = self.tools.run_check(&command).await;
+                    let result = self.tools.run_check(&command, None).await;
                     let mut outcome = verify::outcome(&command, &result);
                     if outcome.passed && !outcome.output.contains(expected.as_str()) {
                         outcome.passed = false;
@@ -51,7 +51,7 @@ impl<P: Provider> Loop<P> {
                     outcome
                 }
                 None => {
-                    let result = self.tools.run_check(&command).await;
+                    let result = self.tools.run_check(&command, None).await;
                     verify::outcome(&command, &result)
                 }
             };
@@ -145,10 +145,13 @@ impl<P: Provider> Loop<P> {
                 progress.objective
             ));
         }
+        if let Some((metric, _)) = self.goal_metric() {
+            parts.push(metric.rules());
+        }
         if progress.kind != WorkKind::Single && !progress.ledger.is_empty() {
             parts.push(format!(
                 "{}\n{}",
-                crate::durable::work::Work::ledger_legend(),
+                crate::durable::work::Work::ledger_legend(progress.kind),
                 progress.ledger.join("\n")
             ));
         }

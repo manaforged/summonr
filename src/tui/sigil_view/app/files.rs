@@ -66,7 +66,7 @@ pub(in crate::tui::sigil_view) fn read_git_branch(workspace: &Path) -> Option<St
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::tui::sigil_view) struct FileRow {
+pub(in crate::tui::sigil_view) struct PaneRow {
     pub(in crate::tui::sigil_view) path: String,
     pub(in crate::tui::sigil_view) name: String,
     pub(in crate::tui::sigil_view) depth: usize,
@@ -78,7 +78,7 @@ pub(in crate::tui::sigil_view) struct FileRow {
     pub(in crate::tui::sigil_view) detail: Vec<String>,
 }
 
-impl FileRow {
+impl PaneRow {
     pub(in crate::tui::sigil_view) fn flat(path: String, name: String, open: bool) -> Self {
         Self {
             path,
@@ -123,9 +123,9 @@ impl FileRow {
     }
 }
 
-pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String]) -> Vec<FileRow> {
+pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String]) -> Vec<PaneRow> {
     let expanded: std::collections::HashSet<&str> = expanded.iter().map(String::as_str).collect();
-    let mut rows: Vec<FileRow> = Vec::new();
+    let mut rows: Vec<PaneRow> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut sorted: Vec<&String> = files.iter().collect();
     sorted.sort();
@@ -142,10 +142,10 @@ pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String
             };
             let shut = !last && !expanded.contains(path.as_str());
             if !hidden && seen.insert(path.clone()) {
-                rows.push(FileRow {
+                rows.push(PaneRow {
                     depth,
                     dir: !last,
-                    ..FileRow::flat(path.clone(), (*part).to_string(), !shut)
+                    ..PaneRow::flat(path.clone(), (*part).to_string(), !shut)
                 });
             }
             hidden |= shut;

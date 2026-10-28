@@ -1,20 +1,20 @@
 use std::path::Path;
 
 use crate::durable::store;
-use crate::error::Result;
 use crate::provider::Effort;
+use summonr_core::error::Result;
 
 const FILE: &str = "recent.json";
 const PINNED: &str = "favorites.json";
 const CAP: usize = 8;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct Seat {
+pub(crate) struct ModelId {
     pub endpoint: String,
     pub model: String,
 }
 
-impl Seat {
+impl ModelId {
     pub(crate) fn new(endpoint: impl Into<String>, model: impl Into<String>) -> Self {
         Self {
             endpoint: endpoint.into(),
@@ -27,40 +27,40 @@ impl Seat {
     }
 }
 
-struct Seats;
+struct Models;
 
-impl store::Codec for Seats {
-    type Value = Vec<(Seat, Option<Effort>)>;
+impl store::Codec for Models {
+    type Value = Vec<(ModelId, Option<Effort>)>;
 
     fn decode(path: &Path, text: &str) -> Result<Self::Value> {
         let rows: Vec<String> = serde_json::from_str(text).map_err(|error| {
-            crate::error::Error::Config(format!("{}: {error}", crate::config::tilde(path)))
+            summonr_core::error::Error::Config(format!("{}: {error}", crate::config::tilde(path)))
         })?;
         Ok(rows
             .iter()
             .filter_map(|row| {
                 let mut fields = row.splitn(3, '\t');
-                let seat = Seat::new(fields.next()?, fields.next()?);
-                Some((seat, fields.next().and_then(Effort::parse)))
+                let selection = ModelId::new(fields.next()?, fields.next()?);
+                Some((selection, fields.next().and_then(Effort::parse)))
             })
             .collect())
     }
 }
 
-impl store::Encode for Seats {
-    fn encode(seats: &Self::Value) -> Result<String> {
-        let rows: Vec<String> = seats
+impl store::Encode for Models {
+    fn encode(selections: &Self::Value) -> Result<String> {
+        let rows: Vec<String> = selections
             .iter()
-            .map(|(seat, effort)| match effort {
-                Some(effort) => format!("{}\t{}", seat.key(), effort.as_str()),
-                None => seat.key(),
+            .map(|(selection, effort)| match effort {
+                Some(effort) => format!("{}\t{}", selection.key(), effort.as_str()),
+                None => selection.key(),
             })
             .collect();
         Ok(serde_json::to_string(&rows)?)
     }
 }
 
-fn doc(home: &Path, file: &str) -> store::Doc<Seats> {
+fn doc(home: &Path, file: &str) -> store::Doc<Models> {
     store::Doc::new(
         home.join(file),
         store::Durability::Renamed,
@@ -69,48 +69,51 @@ fn doc(home: &Path, file: &str) -> store::Doc<Seats> {
     )
 }
 
-fn rows(home: &Path, file: &str) -> Vec<(Seat, Option<Effort>)> {
+fn rows(home: &Path, file: &str) -> Vec<(ModelId, Option<Effort>)> {
     doc(home, file).load().unwrap_or_default()
 }
 
-fn read(home: &Path, file: &str) -> Vec<Seat> {
-    rows(home, file).into_iter().map(|(seat, _)| seat).collect()
+fn read(home: &Path, file: &str) -> Vec<ModelId> {
+    rows(home, file)
+        .into_iter()
+        .map(|(selection, _)| selection)
+        .collect()
 }
 
 fn update(
     home: &Path,
     file: &str,
-    change: impl FnOnce(&mut Vec<(Seat, Option<Effort>)>),
+    change: impl FnOnce(&mut Vec<(ModelId, Option<Effort>)>),
 ) -> Result<()> {
     doc(home, file)
-        .update(|seats| {
-            change(seats);
+        .update(|selections| {
+            change(selections);
             Ok(true)
         })
         .map(drop)
 }
 
-pub(crate) fn load(home: &Path) -> Vec<Seat> {
+pub(crate) fn load(home: &Path) -> Vec<ModelId> {
     read(home, FILE)
 }
 
-pub(crate) fn pinned(home: &Path) -> Vec<Seat> {
+pub(crate) fn pinned(home: &Path) -> Vec<ModelId> {
     read(home, PINNED)
 }
 
-pub(crate) fn record(home: &Path, seat: &Seat, effort: Option<Effort>) -> Result<()> {
-    update(home, FILE, |seats| {
-        seats.retain(|(existing, _)| existing != seat);
-        seats.insert(0, (seat.clone(), effort));
-        seats.truncate(CAP);
+pub(crate) fn record(home: &Path, selection: &ModelId, effort: Option<Effort>) -> Result<()> {
+    update(home, FILE, |selections| {
+        selections.retain(|(existing, _)| existing != selection);
+        selections.insert(0, (selection.clone(), effort));
+        selections.truncate(CAP);
     })
 }
 
-pub(crate) fn pin(home: &Path, seat: &Seat, on: bool) -> Result<()> {
-    update(home, PINNED, |seats| {
-        seats.retain(|(existing, _)| existing != seat);
+pub(crate) fn pin(home: &Path, selection: &ModelId, on: bool) -> Result<()> {
+    update(home, PINNED, |selections| {
+        selections.retain(|(existing, _)| existing != selection);
         if on {
-            seats.push((seat.clone(), None));
+            selections.push((selection.clone(), None));
         }
     })
 }
@@ -120,16 +123,16 @@ pub(crate) fn remembered_effort(
     endpoint: &str,
     model: &str,
 ) -> Option<Effort> {
-    let seat = Seat::new(endpoint, model);
+    let selection = ModelId::new(endpoint, model);
     rows(home?, FILE)
         .into_iter()
-        .find(|(row, _)| *row == seat)
+        .find(|(row, _)| *row == selection)
         .and_then(|(_, effort)| effort)
 }
 
 #[must_use]
 pub fn default_effort(endpoint: &str, model: &str) -> Option<Effort> {
-    let home = crate::prompt::summonr_home().ok();
+    let home = summonr_core::dirs::summonr_home().ok();
     remembered_effort(home.as_deref(), endpoint, model).or_else(|| {
         crate::catalog::known(endpoint, model)
             .filter(|known| known.reasoning)

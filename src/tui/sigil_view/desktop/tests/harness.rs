@@ -147,9 +147,9 @@ pub(super) fn graded() -> Snapshot {
     }
 }
 
-pub(super) fn unseated() -> Snapshot {
+pub(super) fn unconfigured() -> Snapshot {
     Snapshot {
-        unseated: true,
+        unconfigured: true,
         ..Snapshot::default()
     }
 }

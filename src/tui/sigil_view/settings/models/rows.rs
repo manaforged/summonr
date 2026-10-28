@@ -2,20 +2,20 @@ use std::collections::BTreeMap;
 
 use crate::catalog::Model;
 use crate::endpoint::State;
-use crate::recent::Seat;
+use crate::recent::ModelId;
 
 const CURRENT: &str = "current";
 
 pub(super) enum ModelRow {
     Header(String),
     Provider(String, usize),
-    Seat(usize),
+    Model(usize),
     Fix(usize),
     Older(usize),
 }
 
 pub(super) fn list_rows(
-    choices: &[Seat],
+    choices: &[ModelId],
     counts: [usize; 3],
     groups: &BTreeMap<String, State>,
     aged: usize,
@@ -32,7 +32,7 @@ pub(super) fn list_rows(
                 title.to_string()
             };
             rows.push(ModelRow::Header(title));
-            rows.extend((start..end).map(ModelRow::Seat));
+            rows.extend((start..end).map(ModelRow::Model));
         }
         start = end;
     }
@@ -47,11 +47,11 @@ pub(super) fn list_rows(
                     heading = name;
                     let count = choices[index..]
                         .iter()
-                        .take_while(|seat| seat.endpoint == name)
+                        .take_while(|selection| selection.endpoint == name)
                         .count();
                     rows.push(ModelRow::Provider(name.to_string(), count));
                 }
-                rows.push(ModelRow::Seat(index));
+                rows.push(ModelRow::Model(index));
             }
         }
     }
@@ -67,28 +67,30 @@ pub(super) fn list_rows(
     rows
 }
 
-fn label<'a>(seat: &'a Seat, facts: &'a BTreeMap<Seat, Model>) -> &'a str {
-    facts.get(seat).map_or(seat.model.as_str(), Model::label)
+fn label<'a>(selection: &'a ModelId, facts: &'a BTreeMap<ModelId, Model>) -> &'a str {
+    facts
+        .get(selection)
+        .map_or(selection.model.as_str(), Model::label)
 }
 
-pub(super) fn names(choices: &[Seat], facts: &BTreeMap<Seat, Model>) -> Vec<String> {
+pub(super) fn names(choices: &[ModelId], facts: &BTreeMap<ModelId, Model>) -> Vec<String> {
     let mut seen: BTreeMap<(&str, &str), usize> = BTreeMap::new();
-    for seat in choices {
+    for selection in choices {
         *seen
-            .entry((seat.endpoint.as_str(), label(seat, facts)))
+            .entry((selection.endpoint.as_str(), label(selection, facts)))
             .or_default() += 1;
     }
     choices
         .iter()
-        .map(|seat| {
-            let name = label(seat, facts);
+        .map(|selection| {
+            let name = label(selection, facts);
             if seen
-                .get(&(seat.endpoint.as_str(), name))
+                .get(&(selection.endpoint.as_str(), name))
                 .copied()
                 .unwrap_or(0)
                 > 1
             {
-                seat.model.clone()
+                selection.model.clone()
             } else {
                 name.to_string()
             }

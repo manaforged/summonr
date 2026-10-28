@@ -4,7 +4,7 @@ use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, container};
 use super::app::App;
 use super::canvas;
 use super::ui::{Dialog, Hints, Key, Size, group};
-use crate::text::ellipsize;
+use crate::display::ellipsize;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let secret = app.secret;

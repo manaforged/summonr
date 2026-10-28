@@ -16,139 +16,6 @@ pub struct CompletionRequest<'a> {
     pub(crate) prefix_hash: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Effort {
-    None,
-    Minimal,
-    Low,
-    Medium,
-    High,
-    XHigh,
-    Max,
-}
-
-impl<'de> Deserialize<'de> for Effort {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> std::result::Result<Self, D::Error> {
-        let text = String::deserialize(deserializer)?;
-        Self::parse(&text)
-            .ok_or_else(|| serde::de::Error::custom(format!("effort {}", Self::rejects(&text))))
-    }
-}
-
-impl Effort {
-    pub(crate) const ALL: [Self; 7] = [
-        Self::None,
-        Self::Minimal,
-        Self::Low,
-        Self::Medium,
-        Self::High,
-        Self::XHigh,
-        Self::Max,
-    ];
-
-    #[must_use]
-    pub fn rejects(text: &str) -> String {
-        let names: Vec<&str> = Self::ALL.iter().map(|effort| effort.as_str()).collect();
-        let (last, rest) = names.split_last().unwrap_or((&"", &[]));
-        format!("takes {}, or {last}, not `{text}`", rest.join(", "))
-    }
-
-    #[must_use]
-    pub fn parse(text: &str) -> Option<Self> {
-        match text.trim().to_ascii_lowercase().as_str() {
-            "none" | "off" => Some(Self::None),
-            "minimal" => Some(Self::Minimal),
-            "low" => Some(Self::Low),
-            "medium" => Some(Self::Medium),
-            "high" => Some(Self::High),
-            "xhigh" => Some(Self::XHigh),
-            "max" => Some(Self::Max),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Minimal => "minimal",
-            Self::Low => "low",
-            Self::Medium => "medium",
-            Self::High => "high",
-            Self::XHigh => "xhigh",
-            Self::Max => "max",
-        }
-    }
-
-    #[must_use]
-    pub fn next(self) -> Self {
-        match self {
-            Self::None => Self::Minimal,
-            Self::Minimal => Self::Low,
-            Self::Low => Self::Medium,
-            Self::Medium => Self::High,
-            Self::High => Self::XHigh,
-            Self::XHigh => Self::Max,
-            Self::Max => Self::None,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn clamp(self, levels: &[Self]) -> Self {
-        self.rounded(levels, false)
-    }
-
-    #[must_use]
-    pub(crate) fn rounded(self, levels: &[Self], up: bool) -> Self {
-        levels
-            .iter()
-            .copied()
-            .min_by_key(|level| {
-                let lean = if up {
-                    u8::MAX - *level as u8
-                } else {
-                    *level as u8
-                };
-                ((*level as u8).abs_diff(self as u8), lean)
-            })
-            .unwrap_or(self)
-    }
-
-    #[must_use]
-    pub(crate) fn shifted(self, levels: &[Self], delta: isize) -> Self {
-        let at = levels.iter().position(|level| *level == self).unwrap_or(0);
-        let next = (at as isize + delta).rem_euclid(levels.len() as isize);
-        levels.get(next as usize).copied().unwrap_or(self)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-pub struct Price {
-    pub input: f64,
-    pub output: f64,
-    #[serde(default)]
-    pub cached: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache_write: Option<f64>,
-}
-
-impl Price {
-    #[must_use]
-    pub(crate) fn cost(&self, prompt: u64, completion: u64, cached: u64, written: u64) -> f64 {
-        let cached = cached.min(prompt);
-        let written = written.min(prompt - cached);
-        let fresh = prompt - cached - written;
-        (fresh as f64 * self.input
-            + cached as f64 * self.cached
-            + written as f64 * self.cache_write.unwrap_or(self.input)
-            + completion as f64 * self.output)
-            / 1_000_000.0
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CountStyle {
     Usage,
@@ -265,7 +132,7 @@ impl<'a> CompletionRequest<'a> {
 
     pub(crate) fn shape_hash(&self) -> String {
         let effort = self.effort.map_or("", |effort| effort.as_str());
-        crate::text::fnv64(format!("{}\n{effort}", self.prefix_hash()).as_bytes())
+        summonr_core::text::fnv64(format!("{}\n{effort}", self.prefix_hash()).as_bytes())
     }
 
     pub(crate) fn prefix_hash(&self) -> String {
@@ -281,12 +148,12 @@ impl<'a> CompletionRequest<'a> {
             serde_json::to_writer(&mut bytes, &system).is_ok()
         };
         if !written {
-            return crate::text::fnv64(&[]);
+            return summonr_core::text::fnv64(&[]);
         }
         bytes.push(b',');
         bytes.extend_from_slice(&tools);
         bytes.push(b']');
-        crate::text::fnv64(&bytes)
+        summonr_core::text::fnv64(&bytes)
     }
 }
 
@@ -315,29 +182,4 @@ impl ToolsJson {
     pub fn is_empty(&self) -> bool {
         self.declared.is_empty()
     }
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct ToolDefinition {
-    #[serde(rename = "type")]
-    pub kind: ToolKind,
-    pub function: FunctionDefinition,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct FunctionDefinition {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
-}
-
-#[allow(
-    async_fn_in_trait,
-    reason = "Provider is an application-owned trait with no public Send contract"
-)]
-#[derive(Default)]
-pub struct Partial {
-    pub text: String,
-    pub reasoning: String,
-    pub usage: Option<super::Usage>,
 }

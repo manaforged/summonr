@@ -7,11 +7,11 @@ use tokio::io::{AsyncWriteExt, Stdin};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::endpoint::{self, Endpoint};
-use crate::error::{Error, Result};
 use crate::provider::Client;
 use crate::rpc::{self, Frame, Read};
 use crate::runtime::Loop;
 use crate::tools::Event;
+use summonr_core::error::{Error, Result};
 
 type Input = rpc::Lines<Stdin>;
 type Reply = std::result::Result<Value, (i64, String)>;
@@ -37,7 +37,7 @@ where
         }
     });
     let mut server = Server {
-        endpoint: endpoint::resolve(name, model, crate::endpoint::Need::Seat)
+        endpoint: endpoint::resolve(name, model, crate::endpoint::Need::ModelAndKey)
             .map_err(|error| error.to_string()),
         build,
         out,

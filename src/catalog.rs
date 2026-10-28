@@ -4,13 +4,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
+use summonr_core::error::Result;
 
 const FILE: &str = "models.json";
 
 mod listing;
 mod registry;
-mod shelf;
+mod storage;
 
 pub(crate) use listing::window;
 pub use listing::{parse, tokens};
@@ -192,7 +192,7 @@ pub fn listing(endpoint: &str) -> Option<Listing> {
 }
 
 fn listings() -> Arc<BTreeMap<String, Listing>> {
-    shelf::load(FILE).unwrap_or_default()
+    storage::load(FILE).unwrap_or_default()
 }
 
 #[must_use]
@@ -237,7 +237,7 @@ pub(crate) fn known(endpoint: &str, id: &str) -> Option<Model> {
 }
 
 pub(crate) fn remember(name: &str, models: Vec<Model>) -> Result<()> {
-    shelf::doc::<BTreeMap<String, Listing>>(FILE)?.update(|all| {
+    storage::doc::<BTreeMap<String, Listing>>(FILE)?.update(|all| {
         all.insert(
             name.to_string(),
             Listing {

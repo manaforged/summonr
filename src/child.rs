@@ -5,28 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::durable::id::SessionId;
 use crate::provider::Usage;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Access {
-    #[default]
-    Implement,
-    Research,
-}
-
-impl Access {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Implement => "implement",
-            Self::Research => "research",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ChildScope {
-    All,
-    Foreground,
-}
+pub use summonr_types::Access;
+pub(crate) use summonr_types::ChildScope;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct ChildRecord {

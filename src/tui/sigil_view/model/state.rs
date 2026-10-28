@@ -49,7 +49,7 @@ impl Agent {
             .filter_map(|mark| line.find(mark))
             .min()
             .map_or(line, |at| &line[..at]);
-        crate::text::ellipsize(clause.trim_end_matches('.'), TITLE_CHARS).to_string()
+        crate::display::ellipsize(clause.trim_end_matches('.'), TITLE_CHARS).to_string()
     }
 
     pub(in crate::tui::sigil_view) fn roots(&self, roots: &[String]) -> Vec<String> {
@@ -66,7 +66,7 @@ impl Agent {
     }
 
     pub(in crate::tui::sigil_view) fn clock(&self) -> String {
-        crate::text::duration(self.elapsed())
+        summonr_core::text::duration(self.elapsed())
     }
 
     pub(in crate::tui::sigil_view) fn state(&self) -> ToolState {

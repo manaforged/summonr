@@ -74,7 +74,7 @@ pub(super) fn notes(note: &Note, width: usize) -> Vec<NodeBuilder> {
     } else {
         Tone::Neutral
     };
-    crate::text::lines_within(&note.text, width)
+    crate::display::lines_within(&note.text, width)
         .into_iter()
         .map(|part| notice(part, tone))
         .collect()
@@ -121,7 +121,7 @@ fn entering(app: &App, note: &str, width: usize) -> Vec<NodeBuilder> {
         field(app, Input::Key, true),
     ];
     nodes.extend(
-        crate::text::lines_within(note, width)
+        crate::display::lines_within(note, width)
             .into_iter()
             .map(|part| notice(part, Tone::Error)),
     );
@@ -141,19 +141,23 @@ fn signing(
     if !url.is_empty() {
         nodes.push(line(format!(
             "1. Open         {}",
-            crate::text::ellipsize(&url, width)
+            crate::display::ellipsize(&url, width)
         )));
     }
     if !code.is_empty() {
         nodes.push(line(format!("2. Enter code   {code}")));
     }
-    nodes.extend(crate::text::lines_within(&text, wide).into_iter().map(line));
+    nodes.extend(
+        crate::display::lines_within(&text, wide)
+            .into_iter()
+            .map(line),
+    );
     if asking {
         nodes.push(field(app, Input::Code, true));
     }
     if !note.is_empty() {
         nodes.extend(
-            crate::text::lines_within(&note, wide)
+            crate::display::lines_within(&note, wide)
                 .into_iter()
                 .map(|part| notice(part, Tone::Error)),
         );

@@ -5,7 +5,7 @@ use std::process::Command;
 use leyline::Session;
 use sha2::{Digest, Sha256};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const RELEASES: &str = "https://github.com/manaforged/summonr/releases";
 const FROM_SOURCE: &str = "cargo install --git https://github.com/manaforged/summonr --locked";
@@ -79,7 +79,7 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
 }
 
 fn sweep(dir: &Path) {
-    for entry in crate::walk::children(dir) {
+    for entry in summonr_core::walk::children(dir) {
         let stale = entry.file_name().to_string_lossy().starts_with(STAGE)
             && entry
                 .metadata()

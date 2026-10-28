@@ -7,7 +7,7 @@ use sigil::prelude::{
 use super::super::App;
 use crate::prefs::Visibility;
 use crate::tui::sigil_view::chat::entry::label;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 const FENCE: &str = "```";
 const LINE: f32 = 22.0;
@@ -73,7 +73,7 @@ pub(super) fn user(body: String) -> NodeBuilder {
                 )
                 .bg(Token::SurfaceHover)
                 .rounded(Radius::Lg)
-                .child(Look::sm(Token::Gray12).on(sigil::kernel::text(body))),
+                .child(TextStyle::sm(Token::Gray12).on(sigil::kernel::text(body))),
         )
 }
 
@@ -100,7 +100,7 @@ fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
             } else {
                 lang.as_str()
             },
-            Look::xs(Token::Gray10),
+            TextStyle::xs(Token::Gray10),
         ))
         .child(
             button("Copy")
@@ -151,7 +151,7 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
     } else {
         Visibility::Expanded
     };
-    let words = crate::text::plural(body.split_whitespace().count(), "word");
+    let words = summonr_core::text::plural(body.split_whitespace().count(), "word");
     let head = if live {
         "Thinking…".to_string()
     } else {
@@ -163,8 +163,11 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
                 .gap(8.0)
                 .align_items(AlignItems::Center),
         )
-        .child(label(if open { "▾" } else { "▸" }, Look::sm(Token::Gray10)))
-        .child(label(head, Look::sm(Token::Gray10)));
+        .child(label(
+            if open { "▾" } else { "▸" },
+            TextStyle::sm(Token::Gray10),
+        ))
+        .child(label(head, TextStyle::sm(Token::Gray10)));
     let mut column = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
         .pointer_up(move |event: &mut PointerEvent| {
@@ -176,7 +179,7 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
         .child(row);
     if open {
         column = column.child(
-            Look::sm(Token::Gray10)
+            TextStyle::sm(Token::Gray10)
                 .italic()
                 .on(sigil::kernel::text(body.to_string()))
                 .line_height_px(LINE),
@@ -188,7 +191,7 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
 pub(super) fn quiet(body: String) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
-        .child(Look::xs(Token::Gray10).on(sigil::kernel::text(body)))
+        .child(TextStyle::xs(Token::Gray10).on(sigil::kernel::text(body)))
 }
 
 pub(super) fn error(reason: String) -> NodeBuilder {
@@ -200,8 +203,8 @@ pub(super) fn error(reason: String) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Start),
         )
-        .child(label("⚠", Look::xs(Token::Error11)))
-        .child(Look::xs(Token::Error11).on(sigil::kernel::text(reason)))
+        .child(label("⚠", TextStyle::xs(Token::Error11)))
+        .child(TextStyle::xs(Token::Error11).on(sigil::kernel::text(reason)))
 }
 
 #[cfg(test)]

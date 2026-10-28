@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::{Plugin, enabled};
-use crate::text::Frontmatter;
+use summonr_core::text::Frontmatter;
 
 const DIR: &str = "agents";
 const EXTENSION: &str = "md";
@@ -96,7 +96,7 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
 }
 
 pub(super) fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
-    crate::walk::children(&plugin.dir.join(DIR))
+    summonr_core::walk::children(&plugin.dir.join(DIR))
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|ext| ext == EXTENSION))
         .filter_map(|path| {

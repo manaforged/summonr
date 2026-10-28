@@ -368,12 +368,12 @@ fn mistral_gets_an_assistant_turn_between_a_tool_result_and_a_steer() {
 
 #[test]
 fn responses_login_uses_session_affinity() {
-    let seat = crate::endpoint::login_seat("openai").unwrap();
-    let client = Client::connect(&seat).unwrap();
+    let selection = crate::endpoint::login_endpoint("openai").unwrap();
+    let client = Client::connect(&selection).unwrap();
     let messages = tool_round();
     let request = CompletionRequest::new(
         "session-7".to_string(),
-        seat.model.clone(),
+        selection.model.clone(),
         &messages,
         &[],
         None,

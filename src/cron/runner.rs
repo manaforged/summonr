@@ -11,8 +11,8 @@ use super::report::{self, Report};
 use super::schedule::{self, Schedule};
 use super::store::{self, Job, Origin, Outcome, Run, Task};
 use crate::durable::store as durable;
-use crate::error::{Error, Result};
 use crate::process::{Group, Io, Spec};
+use summonr_core::error::{Error, Result};
 
 pub(crate) const ENV: &str = "SUMMONR_CRON";
 pub(crate) const TOO_RECENT: &str = "fired too recently";

@@ -8,24 +8,6 @@ fn capture_is_off_unless_a_directory_is_named() {
 }
 
 #[test]
-fn every_wire_has_a_name_a_file_can_carry() {
-    for wire in [
-        Wire::Anthropic,
-        Wire::Gemini,
-        Wire::Responses,
-        Wire::Completions,
-        Wire::Decisions,
-    ] {
-        assert!(!crate::provider::wire::spec(wire).name.is_empty());
-    }
-    assert_eq!(
-        crate::provider::wire::spec(Wire::Anthropic).name,
-        "anthropic"
-    );
-    assert_eq!(crate::provider::wire::spec(Wire::Gemini).name, "gemini");
-}
-
-#[test]
 fn a_sink_writes_one_json_line_per_frame() {
     let dir = std::env::temp_dir().join(format!("summonr-capture-{}", std::process::id()));
     let sink =

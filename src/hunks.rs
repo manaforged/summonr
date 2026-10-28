@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::diff;
 use crate::durable::store;
-use crate::error::{Error, Result};
-use crate::text::Fnv64;
+use summonr_core::error::{Error, Result};
+use summonr_core::text::Fnv64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Hunk {

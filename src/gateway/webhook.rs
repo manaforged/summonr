@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::cron::{runner, store};
-use crate::error::Error;
+use summonr_core::error::Error;
 
 const ROUTE: &str = "/run/";
 const BEARER: &str = "bearer";
@@ -105,7 +105,7 @@ impl Conn<'_> {
     }
 }
 
-pub(crate) fn serve(port: u16) -> crate::error::Result<i32> {
+pub(crate) fn serve(port: u16) -> summonr_core::error::Result<i32> {
     let listener = Arc::new(TcpListener::bind((Ipv4Addr::LOCALHOST, port))?);
     let bound = listener.local_addr()?.port();
     println!("listening on http://127.0.0.1:{bound}");

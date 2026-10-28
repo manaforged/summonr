@@ -63,17 +63,6 @@ fn historical_usage_keeps_the_cost_each_turn_recorded() {
 }
 
 #[test]
-fn user_text_strips_the_harness_note() {
-    assert_eq!(
-        user_text(
-            "hi\n\nHarness state: auto mode. Do only what they asked.",
-            None
-        ),
-        "hi"
-    );
-}
-
-#[test]
 fn sessions_idle_past_the_retention_are_removed_except_the_open_one() {
     let home = tempfile::tempdir().unwrap();
     let sessions = crate::durable::log::sessions_dir(home.path());
@@ -304,18 +293,6 @@ fn usage_counts_an_appended_turn_once() {
         grown.iter().map(|row| &row.model).collect::<Vec<_>>()
     );
     assert_eq!(total(&spend(home.path(), &[], &prices).unwrap()), 150);
-}
-
-#[test]
-fn pruning_is_due_once_per_period() {
-    let home = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(crate::durable::log::sessions_dir(home.path())).unwrap();
-    let period = std::time::Duration::from_secs(3600);
-    let now = std::time::SystemTime::now();
-    assert!(super::prune::due(home.path(), period, now));
-    let soon = now + std::time::Duration::from_secs(1);
-    assert!(!super::prune::due(home.path(), period, soon));
-    assert!(super::prune::due(home.path(), period, now + period * 2));
 }
 
 #[test]

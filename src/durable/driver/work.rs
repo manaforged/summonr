@@ -29,7 +29,7 @@ impl SessionDriver {
 
     pub(crate) fn apply_todos(
         &mut self,
-        todos: Vec<crate::tools::Todo>,
+        todos: Vec<summonr_types::Todo>,
     ) -> Result<(), DriverError> {
         let work = self
             .work

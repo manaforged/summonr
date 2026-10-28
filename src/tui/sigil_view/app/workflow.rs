@@ -46,7 +46,7 @@ impl App {
         );
     }
 
-    pub(in crate::tui::sigil_view) fn pick_workflow_seat(&self) {
+    pub(in crate::tui::sigil_view) fn pick_workflow_model(&self) {
         if self.workflow.naming.peek() {
             self.commit_workflow();
             return;
@@ -57,7 +57,7 @@ impl App {
         self.begin_model_edit();
     }
 
-    pub(in crate::tui::sigil_view) fn clear_workflow_seat(&self) {
+    pub(in crate::tui::sigil_view) fn clear_workflow_model(&self) {
         if self.workflow.naming.peek() {
             return;
         }

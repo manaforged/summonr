@@ -105,7 +105,7 @@ pub(in crate::tui::sigil_view) fn compose(cols: u16, rows: u16, app: &App) -> Co
         let [x, y] = placed.facts;
         let y = y + row as u16;
         overlay(&mut plate, x, y, label, palette().dim);
-        let value = crate::text::ellipsize_start(value, value_width);
+        let value = crate::display::ellipsize_start(value, value_width);
         overlay(&mut plate, x + FACT_LABEL, y, &value, palette().gray);
     }
     if let Some(at) = placed.word {
@@ -167,7 +167,7 @@ pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'stat
         ("session", crate::session::short(&model.session).to_string()),
         ("workdir", app.info.workspace.clone()),
     ];
-    if app.unseated() {
+    if app.unconfigured() {
         facts.push(("setup", "/login · /model · /help".to_string()));
     }
     if model.snapshot.work {

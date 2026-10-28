@@ -1,7 +1,7 @@
 use sigil::prelude::{FontFamily, Paint, Token};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(in crate::tui) struct Look {
+pub(in crate::tui) struct TextStyle {
     size: f32,
     color: Token,
     mono: bool,
@@ -9,7 +9,7 @@ pub(in crate::tui) struct Look {
     bold: bool,
 }
 
-impl Look {
+impl TextStyle {
     pub(in crate::tui) const fn xs(color: Token) -> Self {
         Self {
             size: 12.0,

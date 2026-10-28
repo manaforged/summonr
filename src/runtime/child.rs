@@ -8,9 +8,9 @@ use tokio::task::JoinHandle;
 
 use super::*;
 use crate::child::{Access, ChildRecord, ChildResult, ChildState};
+use crate::display::ellipsize;
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, State, Usage as Meter};
-use crate::text::ellipsize;
 use crate::tools::{ToolOutput, tool};
 use crate::worktree::{self, Tree};
 
@@ -104,7 +104,7 @@ impl<P: Provider> Loop<P> {
             && self.session.depth() == 0
             && self.interactive
             && self
-                .seat(crate::workflow::Role::Implement)
+                .selection(crate::workflow::Role::Implement)
                 .0
                 .supports_children()
     }

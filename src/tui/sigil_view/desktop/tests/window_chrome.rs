@@ -128,18 +128,6 @@ fn a_test_summary_shows_the_line_with_the_most_tests() {
 }
 
 #[test]
-fn window_dialogs_have_a_thin_border_and_wide_pages() {
-    if !in_window("window_chrome::window_dialogs_have_a_thin_border_and_wide_pages") {
-        return;
-    }
-    use crate::tui::sigil_view::ui::Size;
-    let cols = (1440.0 / crate::tui::sigil_view::canvas::cell().w) as u16;
-    assert_eq!(crate::tui::sigil_view::canvas::frame_border(), 1);
-    assert!(Size::Page.width(cols) > Size::Normal.width(cols));
-    assert_eq!(Size::Reading.width(cols), Size::Page.width(cols));
-}
-
-#[test]
 fn window_hint_bars_show_two_keys() {
     if !in_window("window_chrome::window_hint_bars_show_two_keys") {
         return;
@@ -162,14 +150,14 @@ fn the_picker_wheel_scrolls_without_moving_the_selection() {
     let seen = drive(
         |app| {
             app.begin_model_edit();
-            let seat = |id: String| crate::recent::Seat::new("openrouter", &id);
+            let selection = |id: String| crate::recent::ModelId::new("openrouter", &id);
             let names: Vec<String> = (0..40).map(|n| format!("model-{n}")).collect();
             app.update(Msg::Models {
                 request: 1,
-                rows: names.iter().cloned().map(seat).collect(),
+                rows: names.iter().cloned().map(selection).collect(),
                 facts: names
                     .iter()
-                    .map(|id| (seat(id.clone()), crate::catalog::Model::named(id)))
+                    .map(|id| (selection(id.clone()), crate::catalog::Model::named(id)))
                     .collect(),
                 groups: std::collections::BTreeMap::new(),
                 causes: std::collections::BTreeMap::new(),

@@ -5,8 +5,8 @@ use serde::Deserialize;
 use url::Url;
 
 use super::{domain_match, host_of};
-use crate::error::{Error, Result};
-use crate::text::ellipsize;
+use crate::display::ellipsize;
+use summonr_core::error::{Error, Result};
 
 pub(super) mod markup;
 

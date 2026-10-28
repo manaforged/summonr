@@ -1,8 +1,8 @@
 use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::error::{Error, ProviderFailureKind, Result};
 use crate::provider::{AssistantMessage, CompletionRequest, Partial, Reasoning};
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 pub(crate) mod anthropic;
 pub(crate) mod completions;

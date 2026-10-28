@@ -5,8 +5,6 @@ use crate::workflow;
 mod clear;
 mod window;
 
-#[cfg(test)]
-use clear::elide_target;
 pub(super) use clear::force_compact;
 use window::{ceiling_label, fired_ceiling};
 

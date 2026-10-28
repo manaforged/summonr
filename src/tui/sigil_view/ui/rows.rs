@@ -5,7 +5,7 @@ use sigil::prelude::{
 use sigil::widgets::{RowRender, TextEditBuilder, VirtualListBuilder};
 
 use crate::tui::sigil_view::canvas;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 pub(super) fn row(padding: f32) -> LayoutStyle {
     LayoutStyle::flex_row()
@@ -56,10 +56,10 @@ pub(in crate::tui) fn group(title: impl Into<String>) -> NodeBuilder {
     section_label(title.into()).layout(row(8.0))
 }
 
-pub(in crate::tui) fn heading(parts: Vec<(String, Look)>) -> NodeBuilder {
+pub(in crate::tui) fn heading(parts: Vec<(String, TextStyle)>) -> NodeBuilder {
     parts.into_iter().fold(
         container().layout(row(8.0).align_items(AlignItems::Center)),
-        |line, (text, look)| line.child(look.on(sigil::kernel::text(text).nowrap())),
+        |line, (text, text_style)| line.child(text_style.on(sigil::kernel::text(text).nowrap())),
     )
 }
 
@@ -76,8 +76,8 @@ pub(in crate::tui) fn notice(text: impl Into<String>, tone: Tone) -> NodeBuilder
 
 const FIELD_KEY: usize = 11;
 
-pub(in crate::tui) fn part(value: impl Into<String>, color: Token) -> (String, Look) {
-    (value.into(), Look::sm(color))
+pub(in crate::tui) fn part(value: impl Into<String>, color: Token) -> (String, TextStyle) {
+    (value.into(), TextStyle::sm(color))
 }
 
 pub(in crate::tui) fn field(key: &str, value: impl Into<String>, color: Token) -> NodeBuilder {

@@ -25,11 +25,11 @@ impl App {
             .set(Login::List(Note::plain(no_provider().to_string())));
     }
 
-    pub(in crate::tui::sigil_view) fn unseated(&self) -> bool {
+    pub(in crate::tui::sigil_view) fn unconfigured(&self) -> bool {
         crate::endpoint::resolve(
             Some(&self.model.peek().snapshot.endpoint),
             None,
-            crate::endpoint::Need::Seat,
+            crate::endpoint::Need::ModelAndKey,
         )
         .is_err()
     }
@@ -42,11 +42,11 @@ impl App {
             drop(self.cmd.send(Cmd::Cancel));
         }
         self.replace_auth_key(String::new());
-        self.auth.seat.set(None);
+        self.auth.selection.set(None);
         if matches!(step, Login::List(_)) || self.picker.open.peek() {
             self.auth.open.set(false);
         }
-        if matches!(step, Login::List(_)) && !self.picker.open.peek() && self.unseated() {
+        if matches!(step, Login::List(_)) && !self.picker.open.peek() && self.unconfigured() {
             self.note_no_provider();
         }
         self.auth.focus.set(self.auth.focus.peek() + 1);

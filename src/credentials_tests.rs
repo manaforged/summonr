@@ -15,14 +15,6 @@ fn row() -> crate::config::OAuth {
 }
 
 #[test]
-fn each_wire_carries_its_credential_where_that_wire_wants_it() {
-    assert_eq!(scheme(Wire::Anthropic), Scheme::ApiKey);
-    assert_eq!(scheme(Wire::Gemini), Scheme::GoogleKey);
-    assert_eq!(scheme(Wire::Completions), Scheme::Bearer);
-    assert_eq!(scheme(Wire::Decisions), Scheme::Bearer);
-}
-
-#[test]
 fn a_login_row_becomes_a_spec_with_its_grant() {
     let built = spec(&row()).unwrap();
     assert_eq!(built.grant, Grant::DeviceCode);

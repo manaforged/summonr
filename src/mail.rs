@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::durable::store;
-use crate::error::{Error, Result};
-use crate::prompt::summonr_home;
+use summonr_core::dirs::summonr_home;
+use summonr_core::error::{Error, Result};
 
 mod presence;
 

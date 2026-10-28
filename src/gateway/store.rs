@@ -4,7 +4,7 @@ use chacha20poly1305::aead::{OsRng, rand_core::RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::durable::store;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const FILE: &str = "gateway.toml";
 pub(crate) const CODE_LEN: usize = 6;
@@ -129,7 +129,7 @@ pub(crate) fn new_code() -> String {
 }
 
 pub(crate) fn path() -> Result<PathBuf> {
-    Ok(crate::prompt::summonr_home()?.join(FILE))
+    Ok(summonr_core::dirs::summonr_home()?.join(FILE))
 }
 
 pub(crate) fn load() -> Result<State> {

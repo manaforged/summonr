@@ -6,7 +6,7 @@ use std::sync::{Mutex, OnceLock};
 
 use zeroize::Zeroizing;
 
-use crate::error::Result;
+use summonr_core::error::Result;
 
 pub(crate) type Secret = Zeroizing<String>;
 
@@ -97,7 +97,7 @@ pub fn start(send: impl Fn(Request) + Send + 'static) -> Result<()> {
         &helper,
         format!(
             "#!/bin/sh\nexec {} askpass \"$@\"\n",
-            crate::shell::quote(&exe)
+            summonr_core::shell::quote(&exe)
         ),
     )?;
     set_permissions(&helper, Permissions::from_mode(0o700))?;
@@ -107,7 +107,7 @@ pub fn start(send: impl Fn(Request) + Send + 'static) -> Result<()> {
             &shim,
             format!(
                 "#!/bin/sh\nexec {} -A \"$@\"\n",
-                crate::shell::quote(&sudo.display().to_string())
+                summonr_core::shell::quote(&sudo.display().to_string())
             ),
         )?;
         set_permissions(&shim, Permissions::from_mode(0o700))?;
@@ -214,7 +214,7 @@ pub(crate) fn scrub(text: &str) -> String {
     let Some(secrets) = BROKER.get().and_then(|broker| broker.secrets.lock().ok()) else {
         return text.to_string();
     };
-    crate::text::redact(text, secrets.iter().map(|secret| secret.as_str()))
+    summonr_core::text::redact(text, secrets.iter().map(|secret| secret.as_str()))
 }
 
 #[cfg(not(unix))]

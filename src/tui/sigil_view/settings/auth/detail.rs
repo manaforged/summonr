@@ -5,7 +5,7 @@ use super::App;
 use crate::AuthInfo;
 use crate::endpoint::{State, Toggle};
 use crate::tui::sigil_view::canvas;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{alt_label, blank, field as kv, heading, part as text};
 
 const CONTEXT: usize = 8;
@@ -30,7 +30,7 @@ pub(super) fn pane(
     };
     let mut nodes = vec![
         heading(vec![
-            (choice.name.clone(), Look::sm(Token::OnSurface).bold()),
+            (choice.name.clone(), TextStyle::sm(Token::OnSurface).bold()),
             text("   ", Token::Gray10),
             text(state, color),
         ]),
@@ -76,7 +76,7 @@ pub(super) fn pane(
                 text(
                     format!(
                         "  {:<name$}",
-                        crate::text::ellipsize(id, name.saturating_sub(2))
+                        crate::display::ellipsize(id, name.saturating_sub(2))
                     ),
                     Token::Gray12,
                 ),
@@ -179,11 +179,11 @@ fn models(app: &App, name: &str) -> Vec<(String, String, String)> {
         .choices
         .get()
         .iter()
-        .filter(|seat| seat.endpoint == name)
-        .map(|seat| {
-            let fact = facts.get(seat);
+        .filter(|selection| selection.endpoint == name)
+        .map(|selection| {
+            let fact = facts.get(selection);
             let context = fact.map(crate::catalog::Model::window).unwrap_or_default();
-            (seat.model.clone(), context, price(fact))
+            (selection.model.clone(), context, price(fact))
         })
         .collect()
 }

@@ -3,8 +3,8 @@ use std::path::Path;
 use serde::{Deserialize, Deserializer};
 
 use super::{File, tilde};
-use crate::endpoint::Wire;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
+use summonr_types::endpoint::Wire;
 
 static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 

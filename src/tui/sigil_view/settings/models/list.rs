@@ -8,16 +8,16 @@ use super::row::{self, Grid, Shown};
 use super::rows::{ModelRow, action, list_rows};
 use crate::catalog::Model;
 use crate::endpoint::State;
-use crate::recent::Seat;
+use crate::recent::ModelId;
 use crate::tui::sigil_view::app::{Facet, Mark};
 use crate::tui::sigil_view::ui::{alt_label, group, overlay_list, slotted};
 
 pub(super) struct View {
-    pub(super) choices: Rc<Vec<Seat>>,
+    pub(super) choices: Rc<Vec<ModelId>>,
     marks: Vec<Mark>,
     counts: [usize; 3],
     pub(super) groups: BTreeMap<String, State>,
-    pub(super) facts: Rc<BTreeMap<Seat, Model>>,
+    pub(super) facts: Rc<BTreeMap<ModelId, Model>>,
     sections: bool,
     older: bool,
     aged: usize,
@@ -35,7 +35,10 @@ impl View {
             .get()
             .min(choices.len().saturating_sub(1));
         Self {
-            marks: choices.iter().map(|seat| app.mark(seat)).collect(),
+            marks: choices
+                .iter()
+                .map(|selection| app.mark(selection))
+                .collect(),
             counts: picker.recent.get(),
             groups: picker.groups.get(),
             facts: picker.facts.get(),
@@ -51,21 +54,21 @@ impl View {
         if self.sections {
             list_rows(&self.choices, self.counts, &self.groups, self.aged)
         } else {
-            (0..self.choices.len()).map(ModelRow::Seat).collect()
+            (0..self.choices.len()).map(ModelRow::Model).collect()
         }
     }
 
-    pub(super) fn seat(&self) -> Option<&Seat> {
+    pub(super) fn selection(&self) -> Option<&ModelId> {
         self.choices.get(self.selected)
     }
 
-    fn seat_slots(&self, grid: Grid, index: usize) -> ListRowSlots {
-        let seat = &self.choices[index];
-        let state = self.groups.get(&seat.endpoint).copied();
+    fn model_slots(&self, grid: Grid, index: usize) -> ListRowSlots {
+        let selection = &self.choices[index];
+        let state = self.groups.get(&selection.endpoint).copied();
         let listed: usize = self.counts.iter().sum();
         grid.row(
-            seat,
-            self.facts.get(seat),
+            selection,
+            self.facts.get(selection),
             Shown {
                 provider: !self.sections || index < listed || state.is_some_and(State::blocked),
                 state,
@@ -74,10 +77,10 @@ impl View {
     }
 
     fn fix_slots(&self, index: usize) -> ListRowSlots {
-        let seat = &self.choices[index];
+        let selection = &self.choices[index];
         let state = self
             .groups
-            .get(&seat.endpoint)
+            .get(&selection.endpoint)
             .copied()
             .unwrap_or(State::Error);
         let status = format!("{} · {}", state.word(), action(state));
@@ -118,7 +121,7 @@ pub(super) fn list(
     let selected = view.selected;
     let shown = rows
         .iter()
-        .position(|row| matches!(row, ModelRow::Seat(at) | ModelRow::Fix(at) if *at == selected))
+        .position(|row| matches!(row, ModelRow::Model(at) | ModelRow::Fix(at) if *at == selected))
         .unwrap_or(0);
     let source = app.clone();
     overlay_list(
@@ -128,8 +131,8 @@ pub(super) fn list(
                 row::provider_heading(name, view.groups.get(name).copied(), *count)
             }
             ModelRow::Older(count) => view.older_row(&source, *count),
-            ModelRow::Seat(index) => {
-                let slots = view.seat_slots(grid, *index);
+            ModelRow::Model(index) => {
+                let slots = view.model_slots(grid, *index);
                 let mark = view.marks[*index].glyph();
                 let row = slotted(
                     *index == selected,

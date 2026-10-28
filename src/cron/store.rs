@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::durable::store;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const FILE: &str = "jobs.toml";
 const TOKEN_PREFIX: &str = "cron:";
@@ -141,7 +141,7 @@ pub(crate) fn name<T: Serialize>(value: &T) -> String {
 }
 
 pub(crate) fn dir() -> Result<PathBuf> {
-    Ok(crate::prompt::summonr_home()?.join("cron"))
+    Ok(summonr_core::dirs::summonr_home()?.join("cron"))
 }
 
 pub(crate) fn run_lock(name: &str) -> Result<PathBuf> {

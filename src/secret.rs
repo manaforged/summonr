@@ -8,7 +8,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use toml_edit::{DocumentMut, value};
 
 use crate::durable::store;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const SERVICE: &str = "summoner";
 #[cfg(any(target_os = "macos", all(test, unix)))]
@@ -72,7 +72,7 @@ impl Store {
                 .join(FILE);
             return Ok(Self::file_with_seal(file.clone(), test_seal(&file)));
         }
-        let file = crate::prompt::summonr_home()?.join(FILE);
+        let file = summonr_core::dirs::summonr_home()?.join(FILE);
         let choice = match std::env::var("SUMMONR_SECRETS") {
             Ok(choice) => choice,
             Err(_) => crate::config::file()?.secrets.clone().unwrap_or_default(),

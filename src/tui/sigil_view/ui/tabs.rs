@@ -4,7 +4,7 @@ use sigil::prelude::{
 
 use crate::tui::sigil_view::app::App;
 use crate::tui::sigil_view::canvas;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 use super::rows::row;
 
@@ -50,7 +50,7 @@ pub(in crate::tui::sigil_view) fn strip(app: &App, active: Tab) -> NodeBuilder {
     if canvas::is_window() {
         return line;
     }
-    line.child(Look::xs(Token::Gray9).on(sigil::kernel::text(TAB_HINT).nowrap()))
+    line.child(TextStyle::xs(Token::Gray9).on(sigil::kernel::text(TAB_HINT).nowrap()))
 }
 
 const TAB_HINT: &str = "←/→";

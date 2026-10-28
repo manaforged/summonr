@@ -12,8 +12,8 @@ use super::tree::label;
 use super::verb::{Step, StepVerb, chip, step_meta};
 use super::{patch_of, preview};
 use crate::tui::ToolState;
-use crate::tui::sigil_view::look::Look;
 use crate::tui::sigil_view::model::{Call, Entry};
+use crate::tui::sigil_view::text_style::TextStyle;
 
 fn flatten(entries: &[Entry], start: usize) -> Vec<Step> {
     let mut steps = Vec::new();
@@ -96,13 +96,13 @@ fn summary(
         } else {
             "Worked for"
         };
-        parts.push(format!("{lead} {}", crate::text::duration(secs)));
+        parts.push(format!("{lead} {}", summonr_core::text::duration(secs)));
     }
-    parts.push(crate::text::plural(sum.steps, "step"));
+    parts.push(summonr_core::text::plural(sum.steps, "step"));
     if !sum.edited.is_empty() {
         parts.push(format!(
             "{} edited",
-            crate::text::plural(sum.edited.len(), "file")
+            summonr_core::text::plural(sum.edited.len(), "file")
         ));
     }
     let mut head = container()
@@ -124,17 +124,23 @@ fn summary(
         })
         .child(label(
             if unfolded { "▾" } else { "▸" },
-            Look::sm(Token::Gray10),
+            TextStyle::sm(Token::Gray10),
         ))
         .child(
-            label(parts.join(" · "), Look::sm(Token::Gray11))
+            label(parts.join(" · "), TextStyle::sm(Token::Gray11))
                 .ellipsize()
                 .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
         );
     if sum.adds + sum.dels > 0 {
         head = head
-            .child(label(format!("+{}", sum.adds), Look::xs(Token::Success11)))
-            .child(label(format!("−{}", sum.dels), Look::xs(Token::Error11)));
+            .child(label(
+                format!("+{}", sum.adds),
+                TextStyle::xs(Token::Success11),
+            ))
+            .child(label(
+                format!("−{}", sum.dels),
+                TextStyle::xs(Token::Error11),
+            ));
     }
     head
 }
@@ -143,7 +149,7 @@ fn step_row(step: &Step, app: &App, layout: crate::prefs::DiffLayout) -> NodeBui
     let kind = step.kind();
     let tone = match step.call.state {
         ToolState::Failed => glyph(&step.call.state).1,
-        ToolState::Running | ToolState::Ok => Look::sm(Token::Gray10),
+        ToolState::Running | ToolState::Ok => TextStyle::sm(Token::Gray10),
     };
     let mut line = container()
         .layout(
@@ -156,13 +162,13 @@ fn step_row(step: &Step, app: &App, layout: crate::prefs::DiffLayout) -> NodeBui
         )
         .pointer_up(flip(app, step.index, step.at))
         .child(label(kind.icon(), tone))
-        .child(label(kind.verb(&step.name), Look::sm(Token::Gray11)));
+        .child(label(kind.verb(&step.name), TextStyle::sm(Token::Gray11)));
     for item in step.chips(&app.roots) {
         line = line.child(chip(item));
     }
     line = line.child(container().layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)));
-    if let Some((text, look)) = step_meta(step) {
-        line = line.child(label(text, look));
+    if let Some((text, text_style)) = step_meta(step) {
+        line = line.child(label(text, text_style));
     }
     let column = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))

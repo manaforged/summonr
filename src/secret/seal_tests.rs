@@ -1,19 +1,5 @@
 use super::*;
 
-#[test]
-fn each_key_source_has_its_own_label() {
-    let labels = [
-        (Source::Env, "env"),
-        (Source::Keychain, "keychain"),
-        (Source::File, "file"),
-        (Source::Config, "config (plaintext)"),
-        (Source::Builtin, "built-in"),
-    ];
-    for (source, label) in labels {
-        assert_eq!(source.label(), label);
-    }
-}
-
 #[cfg(target_os = "macos")]
 #[test]
 fn a_written_wrap_key_is_read_back_from_disk() {

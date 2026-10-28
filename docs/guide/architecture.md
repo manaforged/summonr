@@ -23,7 +23,7 @@ The model never owns this. It sees one step, or one objective, and the tools. su
 
 ## Tools
 
-The advertised schema is `src/tools/catalog.rs`. Dispatch still accepts the old names.
+The advertised schema is `crates/types/src/tools.toml`; `src/tools/catalog.rs` fills runtime limits and applies policy and module gates. Dispatch still accepts the old names.
 
 | Tool | Job |
 | --- | --- |
@@ -57,12 +57,68 @@ Crash the process. Run the same command. Resume reads the session log back into 
 | RunMode Plan → Work | `src/runtime.rs` `next`, `Loop::set_mode` |
 | Standing goal + judge | `src/goal.rs` |
 | Check commands | `src/verify.rs` |
-| Advertised tools | `src/tools/catalog.rs` |
+| Tool identity and schema templates | `crates/types/src/catalog.rs`, `crates/types/src/tools.toml` |
+| Runtime tool availability and schema limits | `src/tools/catalog.rs` |
 | argv (`summonr grok`, `--steps`, `--goal`) | `src/main/cli.rs` |
 
 A session is `~/.summonr/sessions/<id>/session.jsonl` (append-only messages) plus `work.json` (the job, rewritten atomically after every transition). The changed-file manifest reads Git without writing it. Outside Git, it walks the directory. Both paths fingerprint file content, permissions, and symlink targets in addition to recording size and modification time.
 
 On disk the names are summonr: `~/.summonr/sessions/`, `.summonr/jobs/`, `SUMMONR_*`.
+
+## Layers
+
+summonr's modules sit in seven layers. A module imports only modules in its own layer or a lower one, and imports inside a layer never form a cycle. [`layers.json`](../../layers.json) is the map.
+
+| Layer | Holds | Modules |
+|---|---|---|
+| core | helpers with no summonr types. The `summonr-core` crate in `crates/core` holds errors, text, shell syntax, file walks and the summonr home paths (`dirs`); terminal width formatting stays in `display` | `display`, `language`, `hashline`, `herdr` |
+| types | the shared vocabulary: conversation messages, tool identity and output, settings types; Cargo enforces its core-only dependency | `summonr-types` in `crates/types` |
+| settings | reading and merging configuration | `config`, `prefs`, `modules`, `workflow`, `limits`, `policy` |
+| platform | processes, secrets, credentials, session storage, RPC | `process`, `supervise`, `secret`, `askpass`, `credentials`, `durable`, `rpc` |
+| services | providers, endpoints, diffs, worktrees, MCP, plugins, skills, mail, web | the other domain modules |
+| orchestration | the tool runner, the turn loop, goals, scheduling, the gateway | `tools`, `runtime`, `goal`, `review`, `scout`, `cron`, `gateway`, `acp`, `update`, `splash` |
+| surface | the terminal UI and the CLI entry point | `tui`, `main`, `lib` |
+
+The `debt` list in `layers.json` names the imports that break this order today. It only shrinks: remove an entry in the change that removes its import. The largest groups and their fixes:
+
+| Debt | Fix |
+|---|---|
+| `process`, `rpc`, `provider`, `steps` import `tools::command::ProcessGroup` and the command exit helpers | move them into `process` |
+| `durable` and others import provider behavior and tools through application exports | shared messages, events, work progress, and receipts now live in `summonr-types`; move the remaining behavior to its owner |
+| `verify`, `session`, `diff`, `mcp` still import tool identity and output through `tools` | use their owner, `summonr-types`, before extracting these crates |
+| `mcp`, `session` import `tui::tool_arg`; `provider` imports `splash::host_of`; `text`, `walk` import `policy` helpers | move each helper to the lowest layer that uses it |
+
+## Crates
+
+summonr is moving from one crate to a flat workspace: every crate sits in `crates/`, holds one job, and depends only on crates above it in this list. Cargo enforces the order, so `layers.json` goes away when the last crate lands.
+
+| Crate | Job | Modules today | State |
+|---|---|---|---|
+| `summonr-core` | errors, text, shell syntax, file walks, home paths | `error`, `text`, `shell`, `walk`, `dirs` | landed |
+| `summonr-types` | messages, tool identity and schemas, events, work progress, receipts, forms, settings types | `crates/types`; depends only on core | landed |
+| `summonr-store` | atomic files and stamps | `durable::store` | planned |
+| `summonr-config` | reading and merging configuration, limits, policy | `config`, `prefs`, `modules`, `workflow`, `limits`, `policy` | planned |
+| `summonr-platform` | processes, secrets, credentials, RPC | `process`, `supervise`, `secret`, `askpass`, `credentials`, `rpc` | planned |
+| `summonr-provider` | model wires, endpoints, the catalog | `provider`, `endpoint`, `catalog`, `classify`, `recent` | planned |
+| `summonr-workspace` | diffs, worktrees, checks, checkpoints | `diff`, `hunks`, `worktree`, `verify`, `steps`, `checkpoint` | planned |
+| `summonr-extensions` | MCP, plugins, skills, hooks, memory, prompts, mail | `mcp`, `plugins`, `skills`, `hooks`, `memory`, `prompt`, `mail` | planned |
+| `summonr-tools` | the tool runner and its tools | `tools`, `browser`, `web`, `jobs`, `command`, `child` | planned |
+| `summonr-session` | session state and history | `durable` (driver, log, work, tree), `session` | planned |
+| `summonr-runtime` | the turn loop and goals | `runtime`, `goal`, `review`, `scout` | planned |
+| `summonr-gateway` | scheduling, chat gateways, ACP | `gateway`, `cron`, `acp` | planned |
+| `summonr-tui` | the terminal and desktop UI | `tui`, `splash`, `display`, `herdr`, `language`, `hashline` | planned |
+| `summonr` | the binary and CLI | `main`, `lib`, `update` | planned |
+
+Before a crate can move, its upward imports must go. Measured against this map, these remain after the shared vocabulary moves into `summonr-types`:
+
+| Import | Fix |
+|---|---|
+| `browser`, `child`, `memory`, `checkpoint`, `diff`, `worktree` use `durable` beyond its store | take what they need through `summonr-types` or a trait the session crate implements |
+| `config`, `diff`, `mail`, `tools`, `worktree` use `session` | same |
+| `durable::store` uses `config` and `limits` | pass the limits it reads as arguments |
+| `credentials` uses `endpoint` and `provider` | move the endpoint key lookup into `summonr-provider` |
+| `mail`, `mcp`, `worktree` use `tools` | move the shared tool types into `summonr-types` |
+| `tools` uses `cron` | move the schedule tool next to `cron` |
 
 ## Worktrees
 

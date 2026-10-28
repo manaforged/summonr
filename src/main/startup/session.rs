@@ -47,11 +47,11 @@ pub(super) fn apply_workflow(
     json: bool,
 ) -> Result<workflow::Workflow> {
     let workflow = workflow::load(name)?;
-    loop_.seat_workflow(&workflow, |seat| {
+    loop_.configure_workflow(&workflow, |selection| {
         let endpoint = resolve_endpoint(
-            Some(&seat.endpoint),
-            seat.model.as_deref(),
-            summonr::Need::Seat,
+            Some(&selection.endpoint),
+            selection.model.as_deref(),
+            summonr::Need::ModelAndKey,
         )?;
         let client = provider(&endpoint, ui, json)?;
         Ok((client, endpoint))
@@ -114,7 +114,7 @@ pub(super) fn build(
     check: Option<Vec<String>>,
     action: SessionAction,
 ) -> Result<Loop<Client>> {
-    let switches = summonr::modules::Switches::load(workspace)?;
+    let switches = summonr::modules::load(workspace)?;
     let images = summonr::catalog::accepts_images(endpoint);
     let prompt = system_prompt(
         workspace,

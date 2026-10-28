@@ -1,4 +1,4 @@
-pub(super) use super::app::{App, FileRow};
+pub(super) use super::app::{App, PaneRow};
 pub(super) use super::pane::Pane;
 use sigil::prelude::NodeBuilder;
 

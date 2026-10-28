@@ -15,7 +15,7 @@ impl<P: Provider> Loop<P> {
         let round = progress.rounds;
         let mut text = format!(
             "goal active: {}\nround {round} · {} tokens · {}",
-            crate::text::ellipsize(objective.lines().next().unwrap_or_default(), 80),
+            crate::display::ellipsize(objective.lines().next().unwrap_or_default(), 80),
             self.spent_tokens(),
             progress.phase,
         );
@@ -26,7 +26,7 @@ impl<P: Provider> Loop<P> {
         }
         if let Some(reason) = &progress.reason {
             text.push_str("\nlast: ");
-            text.push_str(&crate::text::ellipsize(
+            text.push_str(&crate::display::ellipsize(
                 reason.lines().next().unwrap_or_default(),
                 160,
             ));

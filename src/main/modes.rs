@@ -1,4 +1,6 @@
-use summonr::{Beat, Client, Event, Job, Loop, Result, Turn, UserInput, WorkKind, WorkProgress};
+use summonr::{
+    Client, Event, Job, Loop, NextAction, Result, Turn, UserInput, WorkKind, WorkProgress,
+};
 use tokio::io::{self, AsyncReadExt};
 
 use super::cli::Args;
@@ -50,9 +52,9 @@ pub(super) async fn goal(
 async fn work(mut loop_: Loop<Client>, args: &Args, job: Job) -> Result<i32> {
     announce(&loop_, args.json);
     let code = loop {
-        let (prompt, step) = match loop_.next_beat(&job)? {
-            Beat::Done(code) => break code,
-            Beat::Run { prompt, step } => (prompt, step),
+        let (prompt, step) = match loop_.next_action(&job)? {
+            NextAction::Done(code) => break code,
+            NextAction::Run { prompt, step } => (prompt, step),
         };
         if let Some((index, total)) = step {
             step_event(

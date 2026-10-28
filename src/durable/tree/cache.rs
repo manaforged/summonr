@@ -11,7 +11,7 @@ pub(crate) fn cache_dir(home: &Path) -> PathBuf {
 }
 
 fn remembered_at(cache: &Path, root: &Path) -> PathBuf {
-    let key = crate::text::fnv64(root.to_string_lossy().as_bytes());
+    let key = summonr_core::text::fnv64(root.to_string_lossy().as_bytes());
     cache.join(format!("{key}.json"))
 }
 
@@ -39,7 +39,7 @@ pub(crate) fn remember(cache: &Path, root: &Path, snapshot: &mut Snapshot) {
 }
 
 pub(super) fn prune(cache: &Path, keep: &Path, retain: Duration, now: SystemTime) {
-    for entry in crate::walk::children(cache) {
+    for entry in summonr_core::walk::children(cache) {
         let path = entry.path();
         let stale = path != keep
             && entry

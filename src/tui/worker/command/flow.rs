@@ -268,7 +268,7 @@ impl Worker {
     }
 
     fn memory(&self) -> bool {
-        let home = match crate::prompt::summonr_home() {
+        let home = match summonr_core::dirs::summonr_home() {
             Ok(home) => home,
             Err(error) => {
                 self.fail(&error.to_string());
@@ -276,7 +276,7 @@ impl Worker {
             }
         };
         let workspace = self.loop_.workspace();
-        let on = crate::modules::Switches::load(workspace)
+        let on = crate::modules::load(workspace)
             .is_ok_and(|switches| switches.enabled(crate::modules::ModuleId::Memory));
         let report = crate::memory::report(&crate::memory::files(&home, workspace));
         let text = if on {

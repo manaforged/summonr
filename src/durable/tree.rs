@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::text::Fnv64;
+use summonr_core::text::Fnv64;
 
 #[derive(Clone, Copy, Debug, Deserialize, Hash, PartialEq, Eq, Serialize)]
 pub(crate) struct Entry(u64, u64, u64);
@@ -304,7 +304,9 @@ fn walk(root: &Path, dir: &Path, device: Option<u64>, found: &mut Vec<PathBuf>) 
 
 fn descend(entry: &std::fs::DirEntry, device: Option<u64>) -> bool {
     let name = entry.file_name();
-    !crate::SKIP_DIRS.iter().any(|skip| name == *skip)
+    !summonr_core::walk::SKIP_DIRS
+        .iter()
+        .any(|skip| name == *skip)
         && device.is_none_or(|device| {
             entry
                 .metadata()

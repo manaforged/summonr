@@ -3,8 +3,8 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::error::{Error, Result};
 use crate::provider::{CompletionRequest, Image, Message, Provider, Source, UserInput};
+use summonr_core::error::{Error, Result};
 
 use super::{ToolOutput, ToolRegistry, object_string};
 
@@ -34,12 +34,12 @@ impl ToolRegistry {
     ) -> Result<ToolOutput> {
         if self.model_images {
             return Ok(ToolOutput {
-                images: vec![Image::fit(bytes)?],
+                images: vec![crate::provider::fit(bytes)?],
                 ..ToolOutput::ok(format!("{path} ({media}, {width}x{height}) is attached"))
             });
         }
         if let Some(endpoint) = &self.vision {
-            let images = [Image::fit(bytes)?];
+            let images = [crate::provider::fit(bytes)?];
             let described =
                 tokio::runtime::Handle::current().block_on(self.narrate_images(endpoint, &images));
             return match described {
@@ -139,7 +139,7 @@ pub(crate) fn attach(workspace: &Path, line: &str) -> Result<UserInput> {
                         "attached images are larger than {IMAGES_MAX_BYTES} bytes"
                     )));
                 }
-                images.push(Image::fit(&bytes)?);
+                images.push(crate::provider::fit(&bytes)?);
             } else {
                 let text = String::from_utf8(bytes).map_err(|error| {
                     Error::Tool(format!(

@@ -141,7 +141,7 @@ fn status(file: &MemoryFile, cap: usize) -> String {
     format!(
         "{} of {cap} bytes, {}{over}",
         file.bytes,
-        crate::text::plural(entries, "entry")
+        summonr_core::text::plural(entries, "entry")
     )
 }
 
@@ -188,13 +188,13 @@ fn key(memory: &Path, workspace: &Path) -> String {
         })
         .take(KEY_NAME_CHARS)
         .collect();
-    let hash = crate::text::fnv64(identity.as_bytes());
+    let hash = summonr_core::text::fnv64(identity.as_bytes());
     existing(memory, &hash).unwrap_or_else(|| format!("{name}-{hash}"))
 }
 
 fn existing(memory: &Path, hash: &str) -> Option<String> {
     let suffix = format!("-{hash}");
-    crate::walk::children(memory)
+    summonr_core::walk::children(memory)
         .filter_map(|entry| entry.file_name().into_string().ok())
         .find(|name| name.ends_with(&suffix))
 }

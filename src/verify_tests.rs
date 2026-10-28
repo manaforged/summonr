@@ -35,7 +35,7 @@ fn a_receipt_counts_a_verify_command_this_turn_ran() {
             patch: None,
         },
     ];
-    let receipt = Receipt::from_turn(
+    let receipt = from_turn(
         vec!["src/runtime/turn.rs".to_string()],
         "abc (HEAD)".to_string(),
         &events,
@@ -57,7 +57,7 @@ fn receipt_fits_one_summary_line_and_caps_lists() {
         .flat_map(|index| call(&index.to_string(), &format!("exit {}", index % 7)))
         .collect();
     let changes = (0..30).map(|index| format!("src/file{index}.rs")).collect();
-    let receipt = Receipt::new(changes, Vec::new(), "abc (HEAD)".to_string(), &events);
+    let receipt = new(changes, Vec::new(), "abc (HEAD)".to_string(), &events);
     let mut lines = receipt.text.lines();
     assert_eq!(
         lines.next(),

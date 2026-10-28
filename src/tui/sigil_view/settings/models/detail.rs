@@ -6,26 +6,32 @@ use super::row::{price, tone};
 use super::rows::{action, fix};
 use crate::catalog::{Cost, Model};
 use crate::endpoint::State;
-use crate::recent::Seat;
+use crate::recent::ModelId;
 use crate::tui::sigil_view::app::{App, Mark};
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{blank, field, field_width, heading, part as text};
 
 fn kv(key: &str, value: impl Into<String>) -> NodeBuilder {
     field(key, value, Token::OnSurface)
 }
 
-pub(super) fn pane(app: &App, seat: &Seat, fixing: bool, width: usize) -> Vec<NodeBuilder> {
+pub(super) fn pane(app: &App, selection: &ModelId, fixing: bool, width: usize) -> Vec<NodeBuilder> {
     let facts = app.picker.facts.get();
     let groups = app.picker.groups.get();
     let causes = app.picker.causes.get();
     let all = app.picker.choices.get();
-    let state = groups.get(&seat.endpoint).copied();
+    let state = groups.get(&selection.endpoint).copied();
     if fixing {
-        return provider(seat, state, causes.get(&seat.endpoint), &all, width);
+        return provider(
+            selection,
+            state,
+            causes.get(&selection.endpoint),
+            &all,
+            width,
+        );
     }
-    let fact = facts.get(seat);
-    let mark = app.mark(seat);
+    let fact = facts.get(selection);
+    let mark = app.mark(selection);
     let mark = text(
         mark.word(),
         match mark {
@@ -35,36 +41,38 @@ pub(super) fn pane(app: &App, seat: &Seat, fixing: bool, width: usize) -> Vec<No
             Mark::None => Token::Gray10,
         },
     );
-    let name = fact.map_or(seat.model.as_str(), Model::label).to_string();
+    let name = fact
+        .map_or(selection.model.as_str(), Model::label)
+        .to_string();
     let mut nodes = vec![
         heading(vec![
-            (name, Look::sm(Token::OnSurface).bold()),
+            (name, TextStyle::sm(Token::OnSurface).bold()),
             text("   ", Token::Gray10),
             mark,
         ]),
         heading(match state {
             Some(state) => vec![
                 text(
-                    format!("{} · {} · ", seat.model, seat.endpoint),
+                    format!("{} · {} · ", selection.model, selection.endpoint),
                     Token::Gray10,
                 ),
                 text(state.word(), tone(state)),
             ],
             None => vec![text(
-                format!("{} · {}", seat.model, seat.endpoint),
+                format!("{} · {}", selection.model, selection.endpoint),
                 Token::Gray10,
             )],
         }),
         blank(),
     ];
     nodes.extend(facts_lines(fact, width));
-    nodes.extend(routes(seat, &all, &facts, &groups));
+    nodes.extend(routes(selection, &all, &facts, &groups));
     if let Some(note) =
-        state.and_then(|state| fix(&seat.endpoint, state, causes.get(&seat.endpoint)))
+        state.and_then(|state| fix(&selection.endpoint, state, causes.get(&selection.endpoint)))
     {
         nodes.push(blank());
         nodes.push(heading(vec![text(
-            crate::text::ellipsize(&note, width),
+            crate::display::ellipsize(&note, width),
             state.map_or(Token::Gray10, tone),
         )]));
     }
@@ -113,24 +121,24 @@ fn facts_lines(fact: Option<&Model>, width: usize) -> Vec<NodeBuilder> {
     if let Some(about) = fact.about.as_deref() {
         nodes.push(kv(
             "about",
-            crate::text::ellipsize(about, field_width(width)),
+            crate::display::ellipsize(about, field_width(width)),
         ));
     }
     nodes
 }
 
 fn routes(
-    seat: &Seat,
-    all: &[Seat],
-    facts: &BTreeMap<Seat, Model>,
+    selection: &ModelId,
+    all: &[ModelId],
+    facts: &BTreeMap<ModelId, Model>,
     groups: &BTreeMap<String, State>,
 ) -> Vec<NodeBuilder> {
     let mut seen = std::collections::BTreeSet::new();
-    let (live, idle): (Vec<&Seat>, Vec<&Seat>) = all
+    let (live, idle): (Vec<&ModelId>, Vec<&ModelId>) = all
         .iter()
-        .filter(|other| other.model == seat.model && seen.insert(other.endpoint.as_str()))
+        .filter(|other| other.model == selection.model && seen.insert(other.endpoint.as_str()))
         .partition(|other| {
-            other.endpoint == seat.endpoint
+            other.endpoint == selection.endpoint
                 || groups
                     .get(&other.endpoint)
                     .is_none_or(|state| !state.blocked())
@@ -144,7 +152,7 @@ fn routes(
     ];
     for other in live {
         let state = groups.get(&other.endpoint).copied().unwrap_or(State::Ready);
-        let here = other.endpoint == seat.endpoint;
+        let here = other.endpoint == selection.endpoint;
         nodes.push(heading(vec![
             text(if here { "❯ " } else { "  " }, Token::Accent11),
             text(format!("{:<20}", other.endpoint), Token::OnSurface),
@@ -166,32 +174,35 @@ fn routes(
 }
 
 fn provider(
-    seat: &Seat,
+    selection: &ModelId,
     state: Option<State>,
     cause: Option<&String>,
-    all: &[Seat],
+    all: &[ModelId],
     width: usize,
 ) -> Vec<NodeBuilder> {
     let state = state.unwrap_or(State::Error);
     let count = all
         .iter()
-        .filter(|other| other.endpoint == seat.endpoint)
+        .filter(|other| other.endpoint == selection.endpoint)
         .count();
     let mut nodes = vec![
         heading(vec![
-            (seat.endpoint.clone(), Look::sm(Token::OnSurface).bold()),
+            (
+                selection.endpoint.clone(),
+                TextStyle::sm(Token::OnSurface).bold(),
+            ),
             text("   ", Token::Gray10),
             text(state.word(), tone(state)),
         ]),
         blank(),
     ];
     if count > 1 {
-        nodes.push(kv("models", crate::text::plural(count, "model")));
+        nodes.push(kv("models", summonr_core::text::plural(count, "model")));
     }
     if let Some(cause) = cause.and_then(|cause| cause.lines().next()) {
         nodes.push(kv(
             "reason",
-            crate::text::ellipsize(cause, field_width(width)),
+            crate::display::ellipsize(cause, field_width(width)),
         ));
     }
     nodes.push(blank());

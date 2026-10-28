@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 #[derive(Debug)]
 pub(crate) struct Module {
@@ -158,7 +158,7 @@ pub(crate) fn detect(workspace: &Path, path: &Path) -> Result<&'static Module> {
 pub(crate) fn present(workspace: &Path) -> Vec<&'static Module> {
     let mut roots = vec![workspace.to_path_buf()];
     roots.extend(
-        crate::walk::children(workspace)
+        summonr_core::walk::children(workspace)
             .map(|entry| entry.path())
             .filter(|path| path.is_dir()),
     );

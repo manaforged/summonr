@@ -7,8 +7,8 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::durable::store::{self, Codec, Doc, Durability, Encode, Invalid, Wait};
-use crate::error::{Error, Result};
-use crate::prompt::summonr_home;
+use summonr_core::dirs::summonr_home;
+use summonr_core::error::{Error, Result};
 
 pub(super) struct Json<T>(PhantomData<fn() -> T>);
 

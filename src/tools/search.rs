@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 use super::{ToolRegistry, object_string, object_usize};
 

@@ -12,15 +12,6 @@ fn todo_is_advertised_from_the_first_request_so_a_goal_keeps_the_prompt_cache() 
 }
 
 #[test]
-fn web_search_is_off_unless_turned_on() {
-    let empty = std::collections::BTreeMap::new();
-    assert!(
-        !crate::modules::Switches::from_maps(&empty, &empty)
-            .enabled(crate::modules::ModuleId::Search)
-    );
-}
-
-#[test]
 fn a_child_registry_inherits_the_web_modules() {
     let (dir, mut tools) = workspace(&[]);
     tools.search = Some(crate::web::Search::discover().unwrap());

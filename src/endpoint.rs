@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use crate::config::{self, Endpoint as FileEndpoint, File};
 use crate::credentials::{flow, logged_in};
-use crate::error::{Error, Result};
 use crate::provider::{Effort, Price, Reasoning};
 use crate::secret::{self, Source};
+use summonr_core::error::{Error, Result};
 
 pub(crate) const ENV_ENDPOINT: &str = "env";
 const PLAN_PATH_MARKER: &str = "/coding/";
@@ -72,24 +72,7 @@ impl std::fmt::Debug for Endpoint {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Wire {
-    #[default]
-    Completions,
-    Responses,
-    Anthropic,
-    Gemini,
-    Decisions,
-    AgentSdk,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
-pub enum CacheTtl {
-    #[serde(rename = "5m")]
-    FiveMinutes,
-    #[serde(rename = "1h")]
-    OneHour,
-}
+pub(crate) use summonr_types::endpoint::{CacheTtl, Wire};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LoginFlow {
@@ -232,20 +215,6 @@ impl LoginFlow {
     }
 }
 
-impl Wire {
-    pub(crate) fn parse(value: &str) -> Option<Self> {
-        Some(match value.trim().to_ascii_lowercase().as_str() {
-            "completions" => Self::Completions,
-            "responses" => Self::Responses,
-            "anthropic" | "claude" => Self::Anthropic,
-            "gemini" | "google" => Self::Gemini,
-            "decisions" | "systemone" | "system-one" => Self::Decisions,
-            "agent-sdk" => Self::AgentSdk,
-            _ => return None,
-        })
-    }
-}
-
 #[must_use]
 pub fn is_named(token: &str) -> bool {
     builtin(token).is_some()
@@ -293,9 +262,7 @@ mod resolve;
 mod route;
 mod server;
 
-#[cfg(test)]
-pub(crate) use auth::catalog;
-pub use auth::{adopt_keys, auth_info, check_key, first_classify, login_seat, logout};
+pub use auth::{adopt_keys, auth_info, check_key, first_classify, login_endpoint, logout};
 pub(crate) use auth::{ready, step};
 pub use choice::{Need, Pick};
 pub use info::AuthInfo;
@@ -305,11 +272,11 @@ pub(crate) use preset::label;
 use preset::preset;
 pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
 use record::Record;
-pub(crate) use resolve::default_seat;
+pub(crate) use resolve::default_model_selection;
 use resolve::hosted;
 pub(crate) use resolve::{Keys, is_set_up};
 pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
-pub(crate) use route::{Choice, Region, Route, Toggle, remembered, select, toggle};
+pub(crate) use route::{Region, Route, Toggle, remembered, select, toggle};
 pub use server::{add_server, remove_server, set_default};
 
 #[cfg(test)]

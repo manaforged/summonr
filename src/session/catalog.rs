@@ -6,8 +6,8 @@ use super::{Prompt, SessionInfo, Summary, user_text};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line};
 use crate::durable::store;
-use crate::error::{Error, Result};
-use crate::prompt::summonr_home;
+use summonr_core::dirs::summonr_home;
+use summonr_core::error::{Error, Result};
 
 pub fn last_for(workspace: &Path) -> Result<Option<SessionInfo>> {
     latest_in(&summonr_home()?, workspace, None)
@@ -81,7 +81,7 @@ pub fn short(id: &str) -> &str {
 const PREVIEW_WIDTH: usize = 72;
 
 pub(crate) fn preview(text: &str, source: Option<&str>) -> String {
-    crate::text::ellipsize(user_text(text, source), PREVIEW_WIDTH)
+    crate::display::ellipsize(user_text(text, source), PREVIEW_WIDTH)
 }
 
 pub(crate) fn name_of(path: &Path) -> Option<String> {

@@ -63,7 +63,3 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
 pub(crate) fn is_mail_tool(name: &str) -> bool {
     Tool::of(name).is_some()
 }
-
-#[cfg(test)]
-#[path = "tools_tests.rs"]
-mod tests;

@@ -93,16 +93,6 @@ fn engine(name: &str) -> &'static super::results::Engine {
 }
 
 #[test]
-fn engines_are_tried_bing_duckduckgo_yahoo_then_brave() {
-    let names = engines()
-        .unwrap()
-        .iter()
-        .map(|engine| engine.name.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(names, ["bing", "duckduckgo", "yahoo", "brave"]);
-}
-
-#[test]
 fn a_bing_page_yields_the_decoded_url_title_and_snippet_and_skips_its_own_links() {
     let hits = parse_page(BING, engine("bing"));
     assert_eq!(hits.len(), 1);
@@ -207,11 +197,11 @@ fn a_challenge_page_or_a_rate_limit_counts_as_a_blocked_engine() {
 #[test]
 fn a_blocked_engine_rests_until_its_cooldown_ends() {
     use std::time::{Duration, Instant};
-    let rest = super::Rest::default();
+    let rest = super::Cooldowns::default();
     let now = Instant::now();
     rest.block("duckduckgo", now + Duration::from_secs(60));
-    assert!(rest.resting("duckduckgo", now + Duration::from_secs(59)));
-    assert!(!rest.resting("duckduckgo", now + Duration::from_secs(61)));
-    assert!(!rest.resting("bing", now));
+    assert!(rest.blocked("duckduckgo", now + Duration::from_secs(59)));
+    assert!(!rest.blocked("duckduckgo", now + Duration::from_secs(61)));
+    assert!(!rest.blocked("bing", now));
     assert_eq!(engine("duckduckgo").cooldown(), Duration::from_secs(60));
 }

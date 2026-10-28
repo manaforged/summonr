@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::display::ellipsize;
 use crate::limits::limits;
-use crate::text::ellipsize;
 
 #[derive(Default)]
 struct Seen {

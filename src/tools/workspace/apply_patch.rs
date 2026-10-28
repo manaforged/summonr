@@ -1,10 +1,10 @@
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 use super::edit::{Patch, apply_patches, restore, terminators};
 use super::ops::replace_text_patch;
 use super::write::{Action, Change, staged};
-use crate::text::squash;
 use crate::tools::{ToolOutput, ToolRegistry};
+use summonr_core::text::squash;
 
 enum Section {
     Update { path: String, hunks: Vec<Hunk> },

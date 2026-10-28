@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 #[cfg(any(unix, test))]
 pub(crate) mod crontab;
@@ -151,7 +151,8 @@ impl OwnedEnv {
 
 #[cfg(unix)]
 fn os_home() -> Result<PathBuf> {
-    crate::config::home_dir().ok_or_else(|| Error::Config("cannot find the home directory".into()))
+    summonr_core::dirs::home_dir()
+        .ok_or_else(|| Error::Config("cannot find the home directory".into()))
 }
 
 fn run(program: &str, args: &[&str], stdin: Option<&str>) -> Result<String> {
@@ -210,7 +211,7 @@ fn bootout() {
 #[cfg(target_os = "macos")]
 pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
     let file = plist_path()?;
-    let logs = crate::prompt::summonr_home()?.join(LOG_DIR);
+    let logs = summonr_core::dirs::summonr_home()?.join(LOG_DIR);
     let log = logs.join(LOG_FILE);
     std::fs::create_dir_all(&logs)?;
     if let Some(dir) = file.parent() {

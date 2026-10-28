@@ -19,7 +19,7 @@ pub(super) enum Frame {
         parent_tool_use_id: Option<String>,
     },
     Assistant {
-        message: Said,
+        message: AssistantContent,
         #[serde(default)]
         parent_tool_use_id: Option<String>,
     },
@@ -125,7 +125,7 @@ pub(super) enum Piece {
 }
 
 #[derive(Deserialize)]
-pub(super) struct Said {
+pub(super) struct AssistantContent {
     #[serde(default)]
     pub(super) id: String,
     #[serde(default)]

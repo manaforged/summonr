@@ -1,5 +1,5 @@
-use crate::error::{Error, Result};
 use crate::tools::ToolRegistry;
+use summonr_core::error::{Error, Result};
 
 impl ToolRegistry {
     pub(in crate::tools) fn set_browser(&mut self, on: bool) -> Result<()> {

@@ -48,12 +48,6 @@ pub enum Error {
     Denied(String),
 }
 
-impl From<crate::durable::driver::DriverError> for Error {
-    fn from(error: crate::durable::driver::DriverError) -> Self {
-        Self::Config(error.to_string())
-    }
-}
-
 impl Error {
     pub fn provider(kind: ProviderFailureKind, message: impl Into<String>) -> Self {
         Self::Provider(ProviderFailure {
@@ -65,7 +59,7 @@ impl Error {
         })
     }
 
-    pub(crate) fn provider_failure(&self) -> Option<&ProviderFailure> {
+    pub fn provider_failure(&self) -> Option<&ProviderFailure> {
         match self {
             Self::Provider(failure) => Some(failure),
             Self::Config(_)

@@ -42,7 +42,7 @@ pub(in crate::tui::sigil_view) fn layer(
                     let probe = hint_app.clone();
                     let hint = derived(move || {
                         probe.model.with(|_| ());
-                        if probe.unseated() {
+                        if probe.unconfigured() {
                             "ask anything · /login · @file · !cmd · /help"
                         } else {
                             "ask anything · @file · !cmd · /help"

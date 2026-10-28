@@ -4,8 +4,8 @@ use std::pin::Pin;
 use summonr_auth::Scheme;
 
 use super::{Chat, Wired, anthropic, completions, gemini, responses};
-use crate::error::{Error, Result};
 use crate::provider::{AssistantMessage, Client, CompletionRequest, Partial, Reasoning};
+use summonr_core::error::{Error, Result};
 
 pub(crate) struct Spec {
     pub(crate) name: &'static str,
@@ -50,7 +50,7 @@ impl Transport {
                 "a classify endpoint does not run sessions".to_string(),
             )),
             Self::Child => Err(Error::Config(
-                "a Claude Code seat sends no HTTP request".to_string(),
+                "a Claude Code client sends no HTTP request".to_string(),
             )),
         }
     }

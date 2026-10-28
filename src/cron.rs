@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 mod args;
 pub mod cli;

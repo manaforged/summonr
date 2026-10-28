@@ -9,9 +9,9 @@ use super::session::{apply_workflow, build, isolate, route_checks, workflow_name
 use crate::cli::Args;
 use crate::{diagnostics, modes};
 
-#[path = "lifecycle/seat.rs"]
-mod seat;
-use seat::{ask_login, seat};
+#[path = "lifecycle/selection.rs"]
+mod selection;
+use selection::{ask_login, selection};
 
 type Ui = (Option<summonr::tui::Ui>, Option<summonr::tui::Inbox>);
 
@@ -22,7 +22,7 @@ pub(super) async fn launch(
 ) -> Result<i32> {
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
-    let endpoint = seat(args, adopted).await?;
+    let endpoint = selection(args, adopted).await?;
     let ui = channels(use_tui(args));
     ask_login(&ui, &endpoint, args.endpoint.is_some());
     let (loop_, goal_checks, workflow) = assemble(args, &endpoint, &workspace, action, &ui)?;

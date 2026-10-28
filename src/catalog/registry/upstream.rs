@@ -6,8 +6,8 @@ use serde_json::Value;
 
 use super::{Meta, ProviderMeta, REGISTRY_SCHEMA, Registry, epoch_day};
 use crate::catalog::now;
-use crate::error::Result;
 use crate::provider::Price;
+use summonr_core::error::Result;
 
 fn lenient<'de, D, T>(deserializer: D) -> std::result::Result<Option<T>, D::Error>
 where

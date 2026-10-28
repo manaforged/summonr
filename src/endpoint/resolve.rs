@@ -3,7 +3,7 @@ use super::*;
 
 mod pick;
 pub(crate) use pick::{Keys, is_set_up};
-pub(crate) use pick::{choose, default_seat};
+pub(crate) use pick::{choose, default_model_selection};
 use pick::{first_ready, last_used};
 pub use pick::{ordered_names, set_up};
 
@@ -14,7 +14,7 @@ pub fn fallbacks<P>(
     let mut ready = Vec::new();
     let mut skipped = Vec::new();
     for name in &endpoint.fallback {
-        match resolve(Some(name), None, Need::Seat)
+        match resolve(Some(name), None, Need::ModelAndKey)
             .and_then(|fallback| Ok((connect(&fallback)?, fallback)))
         {
             Ok(pair) => ready.push(pair),
@@ -35,7 +35,7 @@ pub fn vision() -> Result<Option<Endpoint>> {
     names.sort_unstable();
     Ok(names
         .into_iter()
-        .find_map(|name| resolve(Some(name), None, Need::Seat).ok()))
+        .find_map(|name| resolve(Some(name), None, Need::ModelAndKey).ok()))
 }
 
 pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<Pick> {
@@ -62,7 +62,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
         Some(chosen) => chosen,
         None => unchosen(&file, need)?,
     };
-    let mut endpoint = seat(&file, &chosen).ok_or_else(|| unknown(&chosen))?;
+    let mut endpoint = selection(&file, &chosen).ok_or_else(|| unknown(&chosen))?;
 
     let model_flag_unset = model_flag.is_none();
     if let Some(model) = model_flag {
@@ -137,7 +137,7 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
 fn unchosen(file: &File, need: Need) -> Result<String> {
     match first_ready(file) {
         Some(name) => Ok(name),
-        None if need.key() => Err(Error::Setup(no_seat())),
+        None if need.key() => Err(Error::Setup(no_endpoint())),
         None => Ok(presets()
             .next()
             .map_or_else(String::new, |row| row.name.to_string())),
@@ -157,7 +157,7 @@ fn config_shown() -> String {
     config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path))
 }
 
-fn no_seat() -> String {
+fn no_endpoint() -> String {
     let config = config_shown();
     format!(
         "no provider is set up yet.\n  Fix: `summonr login NAME`, or `export ANTHROPIC_API_KEY=…`, or a local [endpoint.NAME] base_url in {config}.\n  `summonr login` lists every provider and its status."
@@ -214,7 +214,7 @@ fn cost(name: &str, other: &str) -> usize {
     rows[left.len()][right.len()]
 }
 
-pub(super) fn seat(file: &File, chosen: &str) -> Option<Endpoint> {
+pub(super) fn selection(file: &File, chosen: &str) -> Option<Endpoint> {
     let typed = chosen;
     let chosen = &super::route::pick(file, typed);
     let own = file.endpoint.get(chosen);

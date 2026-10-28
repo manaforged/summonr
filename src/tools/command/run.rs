@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use crate::error::{Error, Result};
 use crate::jobs;
 use crate::tools::spill::full_output_note;
 use crate::tools::{ToolOutput, ToolRegistry};
+use summonr_core::error::{Error, Result};
 
 use super::digest::digest;
 use super::proc::{
@@ -47,7 +47,7 @@ impl ToolRegistry {
         let persist = matches!(wait, Wait::Background | Wait::Detach(_));
         let (id, log_path, record_path) = if persist {
             let (id, record_path, log_path, exit_path) = jobs::prepare(&self.workspace)?;
-            let script = crate::shell::wrap(command, &exit_path, &cwd);
+            let script = summonr_core::shell::wrap(command, &exit_path, &cwd);
             (id, log_path, Some((record_path, script)))
         } else {
             (

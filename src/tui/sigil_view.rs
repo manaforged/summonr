@@ -9,7 +9,7 @@ mod effort;
 mod gui;
 mod help;
 mod host;
-mod look;
+mod text_style;
 
 mod model;
 mod pane;

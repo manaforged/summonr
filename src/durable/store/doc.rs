@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 
 use super::{Durability, forget, lock, memo, write};
 use crate::config::tilde;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 pub(crate) trait Codec {
     type Value;

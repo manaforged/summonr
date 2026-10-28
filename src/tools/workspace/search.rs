@@ -7,8 +7,8 @@ use ignore::overrides::{Override, OverrideBuilder};
 use ignore::types::TypesBuilder;
 use serde_json::Value;
 
-use crate::error::{Error, Result};
 use crate::tools::{ToolRegistry, object_bool, object_usize};
+use summonr_core::error::{Error, Result};
 
 pub(in crate::tools) const GREP_DEFAULT: usize = 50;
 pub(in crate::tools) const GREP_MAX: usize = 200;

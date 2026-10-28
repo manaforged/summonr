@@ -195,6 +195,6 @@ fn hit_line(line: &str) -> String {
     if line.len() <= limit {
         return line.to_string();
     }
-    crate::text::ellipsize(line, crate::text::Span::Bytes(limit))
+    crate::display::ellipsize(line, crate::display::Span::Bytes(limit))
         + &crate::tools::budget::clip_mark(limit)
 }

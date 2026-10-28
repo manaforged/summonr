@@ -15,7 +15,7 @@ use crate::command::argument;
 use crate::endpoint::State;
 use crate::prefs::{self, Hotkey, Prefs};
 use crate::provider::{Image, UserInput};
-use crate::recent::Seat;
+use crate::recent::ModelId;
 use crate::tools::IMAGES_MAX_BYTES;
 use crate::workflow::Role;
 
@@ -68,7 +68,7 @@ pub(in crate::tui::sigil_view) struct Asked {
 }
 
 pub(super) use super::ui::shift;
-pub(super) use files::FileRow;
+pub(super) use files::PaneRow;
 use files::{armed, file_url, read_git_branch, save};
 
 mod secret;
@@ -246,7 +246,7 @@ impl App {
             scroll: signal(0),
             settings: super::ui::List::new(),
             modules: signal({
-                let switches = crate::modules::Switches::load(&workspace).ok();
+                let switches = crate::modules::load(&workspace).ok();
                 crate::modules::ALL
                     .iter()
                     .map(|module| {

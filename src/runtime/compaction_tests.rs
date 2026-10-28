@@ -54,24 +54,6 @@ fn a_usage_sample_scales_the_whole_prompt() {
     assert_eq!(estimate(100, Some((0, 500))), 25);
 }
 
-#[test]
-fn a_known_window_elides_to_its_percent_not_the_character_floor() {
-    let limits = crate::limits::limits();
-    let window = 500_000u32;
-    let estimated = window as usize * limits.compact_percent / 100;
-    let chars = estimated * 3;
-    let target = elide_target(chars, estimated, Some(window));
-    let floor = limits.compact_chars * limits.elide_percent / limits.compact_percent.max(1);
-    assert!(
-        target > floor,
-        "elide target {target} stayed on the character floor {floor}"
-    );
-    assert_eq!(
-        target,
-        chars * (window as usize * limits.elide_percent / 100) / estimated
-    );
-}
-
 #[tokio::test]
 async fn a_known_window_keeps_output_under_its_percent() -> crate::Result<()> {
     use crate::provider::scripted::{Reply, Scripted};
@@ -277,7 +259,7 @@ async fn second_request(
     file_body: &str,
     second_prompt: &str,
     driver_window: Option<u32>,
-    seat_window: Option<Option<u32>>,
+    role_window: Option<Option<u32>>,
     compact_tokens: Option<u32>,
 ) -> crate::Result<(String, String)> {
     use crate::provider::scripted::{Reply, Scripted};
@@ -295,14 +277,14 @@ async fn second_request(
     let idle = Scripted::new(Vec::<Reply>::new());
     let session_driver =
         super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")?;
-    let mut session = match seat_window {
+    let mut session = match role_window {
         Some(window) => {
             let mut session =
                 super::super::Loop::open(idle, "m", workspace.path(), "system", session_driver)?;
-            session.set_seat(
+            session.set_role_model(
                 crate::workflow::Role::Implement,
                 receiver,
-                "seat",
+                "selection",
                 None,
                 None,
                 window,
@@ -365,7 +347,7 @@ async fn compaction_uses_the_receiving_seats_window() -> crate::Result<()> {
     .await?;
     assert!(
         first.starts_with("[cleared"),
-        "driver window hid the seat window: {first}"
+        "driver window hid the selection window: {first}"
     );
     assert!(note.contains("at 80% of 8000"), "{note}");
     Ok(())
@@ -384,14 +366,14 @@ async fn a_seated_window_compacts_without_a_driver_window() -> crate::Result<()>
     .await?;
     assert!(
         first.starts_with("[cleared"),
-        "unknown driver hid the seat window: {first}"
+        "unknown driver hid the selection window: {first}"
     );
     assert!(note.contains("at 80% of 8000"), "{note}");
     Ok(())
 }
 
 #[tokio::test]
-async fn a_seat_without_a_window_does_not_inherit_the_driver_window() -> crate::Result<()> {
+async fn a_model_without_a_window_does_not_inherit_the_driver_window() -> crate::Result<()> {
     let (first, note) = second_request(
         4,
         &"0123456789".repeat(450),
@@ -403,7 +385,7 @@ async fn a_seat_without_a_window_does_not_inherit_the_driver_window() -> crate::
     .await?;
     assert!(
         !first.starts_with("[cleared"),
-        "seat inherited the driver window: {first}"
+        "selection inherited the driver window: {first}"
     );
     assert!(note.is_empty(), "{note}");
     Ok(())

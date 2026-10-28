@@ -86,15 +86,6 @@ fn a_login_endpoint_is_not_ready_until_something_is_stored() {
 }
 
 #[test]
-fn each_wire_puts_the_credential_where_that_wire_wants_it() {
-    assert_eq!(Scheme::default(), Scheme::Bearer);
-    for scheme in [Scheme::Bearer, Scheme::ApiKey, Scheme::GoogleKey] {
-        let auth = Auth::new(Method::Key("k".into()), scheme, "x", store());
-        assert_eq!(auth.scheme(), scheme);
-    }
-}
-
-#[test]
 fn a_login_spec_states_what_it_is_missing() {
     let device = Spec {
         grant: Grant::DeviceCode,

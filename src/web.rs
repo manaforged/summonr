@@ -9,7 +9,7 @@ use leyline::{
 use url::Url;
 
 use crate::config;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const HITS_DEFAULT: usize = 5;
 const HITS_MAX: usize = 8;
@@ -71,20 +71,20 @@ pub(crate) struct Search {
     allowed: Vec<String>,
     excluded: Vec<String>,
     browser: Arc<Mutex<Option<crate::browser::Browser>>>,
-    rest: Arc<Rest>,
+    cooldowns: Arc<Cooldowns>,
 }
 
 #[derive(Default)]
-pub(crate) struct Rest(Mutex<HashMap<String, Instant>>);
+pub(crate) struct Cooldowns(Mutex<HashMap<String, Instant>>);
 
-impl Rest {
+impl Cooldowns {
     pub(crate) fn block(&self, name: &str, until: Instant) {
         if let Ok(mut held) = self.0.lock() {
             held.insert(name.to_string(), until);
         }
     }
 
-    pub(crate) fn resting(&self, name: &str, now: Instant) -> bool {
+    pub(crate) fn blocked(&self, name: &str, now: Instant) -> bool {
         self.0
             .lock()
             .ok()
@@ -111,7 +111,7 @@ impl Search {
             allowed,
             excluded,
             browser: Arc::new(Mutex::new(None)),
-            rest: Arc::default(),
+            cooldowns: Arc::default(),
         })
     }
 
@@ -157,7 +157,7 @@ impl Search {
         let mut found = None;
         let mut tried = 0;
         for engine in engines()? {
-            if self.rest.resting(&engine.name, Instant::now()) {
+            if self.cooldowns.blocked(&engine.name, Instant::now()) {
                 continue;
             }
             tried += 1;
@@ -168,7 +168,7 @@ impl Search {
                 }
                 Ok(Page::Hits(_)) => {}
                 Ok(Page::Blocked(wait)) => {
-                    self.rest.block(&engine.name, Instant::now() + wait);
+                    self.cooldowns.block(&engine.name, Instant::now() + wait);
                 }
                 Err(error) => {
                     failure.get_or_insert(error);
@@ -177,7 +177,7 @@ impl Search {
         }
         if found.is_none() && failure.is_none() && tried < engines()?.len() {
             return Err(Error::Tool(
-                "web_search engines are resting after rate limits; try again in a minute"
+                "web_search engines are blocked after rate limits; try again in a minute"
                     .to_string(),
             ));
         }
@@ -224,7 +224,7 @@ impl Search {
             return Err(Error::Tool(format!(
                 "web_search {} HTTP {status}: {}",
                 engine.name,
-                crate::text::ellipsize(&collapse(&body, Space::Flat), 200)
+                crate::display::ellipsize(&collapse(&body, Space::Flat), 200)
             )));
         }
         Ok(Page::Hits(parse_page(&body, engine)))

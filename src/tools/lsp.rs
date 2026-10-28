@@ -6,10 +6,10 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use url::Url;
 
-use crate::error::{Error, Result};
 use crate::language;
 use crate::process::Env;
 use crate::rpc::{Client, Framing, Peer, Spawn};
+use summonr_core::error::{Error, Result};
 
 use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize};
 

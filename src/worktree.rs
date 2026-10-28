@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::durable::store;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 mod delta;
 mod finish;

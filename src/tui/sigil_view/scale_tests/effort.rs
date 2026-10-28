@@ -12,7 +12,7 @@ fn run(app: &App, line: &str) {
     app.submit();
 }
 
-fn seat(app: &App, levels: &[Effort]) {
+fn selection(app: &App, levels: &[Effort]) {
     let mut snapshot = app.model.peek().snapshot.clone();
     snapshot.levels = levels.to_vec();
     app.update(Msg::Settings(snapshot));
@@ -21,7 +21,7 @@ fn seat(app: &App, levels: &[Effort]) {
 #[test]
 fn slash_effort_opens_the_strip_with_the_model_levels() {
     let screen = screen(|app| {
-        seat(
+        selection(
             app,
             &[Effort::Low, Effort::Medium, Effort::High, Effort::XHigh],
         );
@@ -38,7 +38,7 @@ fn slash_effort_opens_the_strip_with_the_model_levels() {
 #[test]
 fn enter_on_the_effort_strip_sets_the_chosen_level() {
     let screen = screen(|app| {
-        seat(
+        selection(
             app,
             &[Effort::Low, Effort::Medium, Effort::High, Effort::XHigh],
         );
@@ -54,7 +54,7 @@ fn enter_on_the_effort_strip_sets_the_chosen_level() {
 #[test]
 fn slash_effort_skips_levels_the_model_lacks() {
     let screen = screen(|app| {
-        seat(app, &[Effort::Low, Effort::Medium, Effort::High]);
+        selection(app, &[Effort::Low, Effort::Medium, Effort::High]);
         run(app, "/effort xhigh");
     });
     assert!(screen.contains("stub-model (high)"), "{screen}");
@@ -63,7 +63,7 @@ fn slash_effort_skips_levels_the_model_lacks() {
 #[test]
 fn slash_effort_with_a_level_sets_it_without_the_strip() {
     let screen = screen(|app| {
-        seat(
+        selection(
             app,
             &[Effort::Low, Effort::Medium, Effort::High, Effort::Max],
         );
@@ -79,9 +79,9 @@ fn slash_effort_with_a_level_sets_it_without_the_strip() {
 #[test]
 fn effort_suggestions_follow_the_seated_model() {
     let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        seat(app, &[Effort::Minimal, Effort::Low]);
+        selection(app, &[Effort::Minimal, Effort::Low]);
         app.replace("/effort ".to_owned());
-        seat(app, &[Effort::XHigh]);
+        selection(app, &[Effort::XHigh]);
         app.replace("/effort ".to_owned());
     })
     .join("\n");
@@ -92,7 +92,7 @@ fn effort_suggestions_follow_the_seated_model() {
 #[test]
 fn a_model_without_effort_levels_shows_a_note() {
     let screen = screen(|app| {
-        seat(app, &[]);
+        selection(app, &[]);
         run(app, "/effort");
     });
     assert!(

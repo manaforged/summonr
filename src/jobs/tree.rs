@@ -36,8 +36,12 @@ pub(crate) fn child_lines(root: u32, workspace: &std::path::Path) -> Vec<String>
         .iter()
         .take(limits.job_child_rows)
         .map(|child| {
-            let line = format!("{} {}", child.pid, crate::text::squash(&child.command));
-            crate::text::ellipsize(
+            let line = format!(
+                "{} {}",
+                child.pid,
+                summonr_core::text::squash(&child.command)
+            );
+            crate::display::ellipsize(
                 &crate::secret::shield::scrub_found(&line, workspace),
                 limits.job_child_width,
             )

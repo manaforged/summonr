@@ -14,7 +14,7 @@ impl<P: Provider> Loop<P> {
         let model = model.into();
         let system_prompt = system_prompt.into();
         let session = session_home::fresh(
-            crate::prompt::summonr_home(),
+            summonr_core::dirs::summonr_home(),
             workspace,
             &model,
             &system_prompt,
@@ -103,7 +103,7 @@ impl<P: Provider> Loop<P> {
         Ok(Self {
             provider,
             model,
-            seats: BTreeMap::new(),
+            selections: BTreeMap::new(),
             prompt_parts: (0, 0, 0, 0),
             tuning: BTreeMap::new(),
             price: None,
@@ -132,10 +132,7 @@ impl<P: Provider> Loop<P> {
             checkpoints: None,
             fallbacks: VecDeque::new(),
             compact_tokens: None,
-            hooks: config
-                .hooks
-                .clone()
-                .with_plugins(&crate::plugins::enabled()),
+            hooks: crate::hooks::with_plugins(config.hooks.clone(), &crate::plugins::enabled()),
             mcp_wanted: false,
             mcp_board: crate::mcp::Board::default(),
             inbox: std::collections::VecDeque::new(),
@@ -231,7 +228,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn learn_role_window(&mut self, role: workflow::Role, window: u32) {
-        if self.seats.contains_key(&role) {
+        if self.selections.contains_key(&role) {
             self.learn_window(Some(role), window);
         } else {
             self.learn_window(None, window);
@@ -240,7 +237,7 @@ impl<P: Provider> Loop<P> {
 
     fn learn_window(&mut self, role: Option<workflow::Role>, window: u32) {
         let slot = match role {
-            Some(role) => self.seats.get_mut(&role).map(|(_, _, slot)| slot),
+            Some(role) => self.selections.get_mut(&role).map(|(_, _, slot)| slot),
             None => Some(&mut self.context_window),
         };
         if let Some(slot) = slot {
@@ -356,7 +353,7 @@ impl<P: Provider> Loop<P> {
     }
 }
 
-mod seat;
+mod selection;
 mod session_home;
 mod work;
 

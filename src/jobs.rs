@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::durable::store;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const ID_MAX: usize = 80;
 const KILLED: &str = "killed";
@@ -109,7 +109,7 @@ pub fn live(workspace: &Path) -> Vec<String> {
 
 pub(crate) fn since(workspace: &Path, started: u64, session: Option<&str>) -> Vec<Record> {
     let root = dir(workspace);
-    let mut jobs: Vec<Record> = crate::walk::children(&root)
+    let mut jobs: Vec<Record> = summonr_core::walk::children(&root)
         .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
         .filter_map(|entry| {
             let text = std::fs::read_to_string(entry.path()).ok()?;

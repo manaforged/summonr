@@ -9,9 +9,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::{Cmd, Msg};
 use crate::diff;
 use crate::endpoint;
-use crate::prompt::summonr_home;
 use crate::session::prompts;
 use crate::worktree;
+use summonr_core::dirs::summonr_home;
 
 mod files;
 mod models;
@@ -90,7 +90,7 @@ impl Reader {
                 let prices = endpoint::ready(endpoint::Need::Key)
                     .0
                     .into_iter()
-                    .filter_map(|seat| Some((seat.model, seat.price?)))
+                    .filter_map(|selection| Some((selection.model, selection.price?)))
                     .collect();
                 let roots = crate::session::roots(&self.workspace);
                 let rows = summonr_home()
@@ -125,22 +125,22 @@ impl Reader {
             Cmd::Offers => self.offers(),
             Cmd::Save(file, text) => self.save(file, text),
             Cmd::View(root, path) => self.show(root.as_deref(), path),
-            Cmd::Pin(seat, on) => {
+            Cmd::Pin(selection, on) => {
                 if let Err(error) =
-                    summonr_home().and_then(|home| crate::recent::pin(&home, &seat, on))
+                    summonr_home().and_then(|home| crate::recent::pin(&home, &selection, on))
                 {
                     self.send(Msg::ModelNote(format!("pin not saved: {error}")));
                 }
             }
-            Cmd::SaveDefault(seat) => {
+            Cmd::SaveDefault(selection) => {
                 let saved = crate::config::path().and_then(|path| {
-                    let pair = seat
+                    let pair = selection
                         .as_ref()
-                        .map(|seat| (seat.endpoint.as_str(), seat.model.as_str()));
-                    crate::config::save_default_seat(&path, pair)
+                        .map(|selection| (selection.endpoint.as_str(), selection.model.as_str()));
+                    crate::config::save_default_model(&path, pair)
                 });
                 self.send(match saved {
-                    Ok(()) => Msg::Defaulted(seat),
+                    Ok(()) => Msg::Defaulted(selection),
                     Err(error) => Msg::ModelNote(error.to_string()),
                 });
             }

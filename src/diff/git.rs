@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use super::Stat;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 pub(super) fn numstat_row(line: &str) -> Option<Stat> {
     let mut parts = line.splitn(3, '\t');

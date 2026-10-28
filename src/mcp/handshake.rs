@@ -1,12 +1,12 @@
 use serde_json::{Value, json};
 
-use crate::error::{Error, Result};
 use crate::rpc::{Client, Notice};
+use summonr_core::error::{Error, Result};
 
 const PROTOCOL: &str = "2025-11-25";
 const SUPPORTED: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
-pub(super) fn hello(name: &str, capabilities: Value) -> Value {
+pub(super) fn initialize_params(name: &str, capabilities: Value) -> Value {
     json!({
         "protocolVersion": PROTOCOL,
         "capabilities": capabilities,
@@ -14,7 +14,7 @@ pub(super) fn hello(name: &str, capabilities: Value) -> Value {
     })
 }
 
-pub(super) fn agreed(result: &Value) -> Result<String> {
+pub(super) fn validate_version(result: &Value) -> Result<String> {
     let version = result
         .get("protocolVersion")
         .and_then(Value::as_str)
@@ -28,16 +28,16 @@ pub(super) fn agreed(result: &Value) -> Result<String> {
     )))
 }
 
-pub(super) async fn stdio(
+pub(super) async fn initialize_stdio(
     client: &mut Client,
     name: &str,
     on_note: impl FnMut(Notice<'_>),
 ) -> Result<Value> {
     let capabilities = json!({"roots": {"listChanged": false}, "elicitation": {"form": {}}});
     let result = client
-        .call("initialize", hello(name, capabilities), on_note)
+        .call("initialize", initialize_params(name, capabilities), on_note)
         .await?;
-    agreed(&result)?;
+    validate_version(&result)?;
     client
         .notify("notifications/initialized", json!({}))
         .await?;

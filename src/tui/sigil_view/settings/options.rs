@@ -55,7 +55,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     let visible = canvas::overlay_shown(items.len(), paint.viewport.get().1);
                     let top = items
                         .iter()
-                        .position(|item| matches!(item, Item::Seat(index) if *index == selected))
+                        .position(|item| matches!(item, Item::Model(index) if *index == selected))
                         .map_or(0, |at| at.saturating_sub(1))
                         .min(items.len().saturating_sub(visible));
                     if canvas::is_window() {
@@ -84,13 +84,13 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
 fn item_node(app: &App, rows: &[Row], item: &Item, selected: usize) -> NodeBuilder {
     match item {
         Item::Heading(name) => group(*name),
-        Item::Seat(index) => entry(app.clone(), &rows[*index], *index, *index == selected),
+        Item::Model(index) => entry(app.clone(), &rows[*index], *index, *index == selected),
     }
 }
 
 enum Item {
     Heading(&'static str),
-    Seat(usize),
+    Model(usize),
 }
 
 fn list_items(rows: &[Row]) -> Vec<Item> {
@@ -99,7 +99,7 @@ fn list_items(rows: &[Row]) -> Vec<Item> {
         if index == 0 || rows[index - 1].group != row.group {
             items.push(Item::Heading(row.group));
         }
-        items.push(Item::Seat(index));
+        items.push(Item::Model(index));
     }
     items
 }

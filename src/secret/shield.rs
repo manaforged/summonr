@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::SystemTime;
 
 use crate::durable::store::{Stamp, settled, stamp};
-use crate::walk::{self, Walk};
+use summonr_core::walk::{self, Walk};
 
 const DEPTH: usize = 3;
 const MIN_LEN: usize = 6;
@@ -86,13 +86,13 @@ static SEEN: Mutex<Option<HashMap<PathBuf, Scan>>> = Mutex::new(None);
 pub(crate) fn scrub(text: &str, workspace: &Path) -> String {
     let text = crate::askpass::scrub(text);
     let values = known(workspace);
-    let text = crate::text::redact(&text, values.iter().map(String::as_str));
+    let text = summonr_core::text::redact(&text, values.iter().map(String::as_str));
     private_keys(&text)
 }
 
 pub(crate) fn scrub_found(text: &str, workspace: &Path) -> String {
     let found = secrets_in(text);
-    let text = crate::text::redact(text, found.iter().map(String::as_str));
+    let text = summonr_core::text::redact(text, found.iter().map(String::as_str));
     scrub(&text, workspace)
 }
 
@@ -142,7 +142,7 @@ fn values(files: &[PathBuf]) -> Vec<String> {
 }
 
 fn files(workspace: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let home = crate::config::home_dir();
+    let home = summonr_core::dirs::home_dir();
     let mut paths: Vec<PathBuf> = HOME_FILES
         .iter()
         .filter_map(|name| home.as_ref().map(|home| home.join(name)))

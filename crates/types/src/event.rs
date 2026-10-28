@@ -40,7 +40,7 @@ pub enum Event {
     },
     Spawned {
         assignment: String,
-        access: crate::child::Access,
+        access: crate::Access,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         call: String,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -85,7 +85,7 @@ pub enum Event {
         message: Option<String>,
     },
     Elicit {
-        form: Option<crate::mcp::Form>,
+        form: Option<crate::Form>,
         #[serde(default)]
         dialog: u64,
     },
@@ -114,7 +114,7 @@ pub enum Event {
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Hold {
+pub enum Hold {
     Conflict,
     OffBase,
     Unreadable,
@@ -123,7 +123,7 @@ pub(crate) enum Hold {
 
 impl Hold {
     #[must_use]
-    pub(crate) const fn reason(self) -> &'static str {
+    pub const fn reason(self) -> &'static str {
         match self {
             Self::Conflict => "conflicts with the parent",
             Self::OffBase => "moved off the parent base",
@@ -134,9 +134,9 @@ impl Hold {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Kept {
-    pub(crate) checkout: std::path::PathBuf,
-    pub(crate) hold: Hold,
+pub struct Kept {
+    pub checkout: std::path::PathBuf,
+    pub hold: Hold,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -152,24 +152,24 @@ pub enum AbortCode {
 
 impl AbortCode {
     #[must_use]
-    pub(crate) fn child_scope(self) -> crate::child::ChildScope {
+    pub fn child_scope(self) -> crate::ChildScope {
         if self == Self::Cancelled {
-            crate::child::ChildScope::Foreground
+            crate::ChildScope::Foreground
         } else {
-            crate::child::ChildScope::All
+            crate::ChildScope::All
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Abort {
+pub struct Abort {
     pub code: AbortCode,
     pub reason: String,
 }
 
 impl Abort {
     #[must_use]
-    pub(crate) fn time_limit() -> Self {
+    pub fn time_limit() -> Self {
         Self {
             code: AbortCode::TimeBudget,
             reason: "work-time limit reached".to_string(),
@@ -178,7 +178,7 @@ impl Abort {
 }
 
 #[must_use]
-pub(crate) fn progress_text(progress: f64, total: Option<f64>, message: Option<&str>) -> String {
+pub fn progress_text(progress: f64, total: Option<f64>, message: Option<&str>) -> String {
     let amount = total.map_or_else(
         || format!("{progress}"),
         |total| format!("{progress}/{total}"),

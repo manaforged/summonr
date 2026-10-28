@@ -11,7 +11,7 @@ const LIMIT: usize = 9;
 const MAX_WIDTH: usize = 72;
 
 type Rows = Vec<(String, String)>;
-type Facts = std::collections::BTreeMap<crate::recent::Seat, crate::catalog::Model>;
+type Facts = std::collections::BTreeMap<crate::recent::ModelId, crate::catalog::Model>;
 
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
@@ -294,7 +294,7 @@ fn arguments(
             } else {
                 facts
                     .iter()
-                    .map(|(seat, model)| (seat.endpoint.clone(), model.clone()))
+                    .map(|(selection, model)| (selection.endpoint.clone(), model.clone()))
                     .collect()
             };
             held.sort_by_key(|(name, _)| name != endpoint);

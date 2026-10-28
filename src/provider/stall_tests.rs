@@ -3,7 +3,7 @@ use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
 use super::*;
-use crate::error::{Error, ProviderFailureKind, Result};
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 fn chunk(data: &str) -> String {
     format!("{:x}\r\n{data}\r\n", data.len())
@@ -69,7 +69,7 @@ async fn run_on(base: String, wire: crate::endpoint::Wire) -> (Result<AssistantM
     (outcome, partial)
 }
 
-async fn cut(filler: &'static str) -> (crate::error::ProviderFailure, Partial) {
+async fn cut(filler: &'static str) -> (summonr_core::error::ProviderFailure, Partial) {
     let (outcome, partial) = run(stalled_server(filler)).await;
     let Err(Error::Provider(failure)) = outcome else {
         panic!("expected a provider failure, got {outcome:?}");
@@ -248,4 +248,29 @@ async fn a_server_silent_before_its_headers_fails_after_the_idle_timeout() {
     .await
     .expect("a server that never sends headers must fail after idle_timeout_secs");
     assert!(outcome.is_err(), "{outcome:?}");
+}
+
+#[tokio::test]
+async fn a_finished_stream_with_no_text_and_no_call_fails_as_empty() {
+    let first = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n";
+    let (outcome, _) = run(server(first, "", 0, "data: [DONE]\n\n")).await;
+    let Err(Error::Provider(failure)) = outcome else {
+        panic!("expected a provider failure, got {outcome:?}");
+    };
+    assert_eq!(failure.kind, ProviderFailureKind::Empty);
+}
+
+#[tokio::test]
+async fn a_frame_that_is_not_json_fails_the_stream() {
+    let (outcome, _) = run(server(
+        GREETING,
+        "",
+        0,
+        "data: {\"choices\":[{\"delta\n\ndata: [DONE]\n\n",
+    ))
+    .await;
+    let Err(Error::Provider(failure)) = outcome else {
+        panic!("expected a provider failure, got {outcome:?}");
+    };
+    assert_eq!(failure.kind, ProviderFailureKind::Malformed);
 }

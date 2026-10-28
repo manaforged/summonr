@@ -8,7 +8,7 @@ use sigil::prelude::{
 use std::collections::BTreeSet;
 
 use super::body::{Empty, Extra, header, listing};
-use super::{App, FileRow, Pane};
+use super::{App, Pane, PaneRow};
 use crate::tui::sigil_view::canvas;
 use sigil::prelude::context_menu;
 
@@ -83,7 +83,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
         let cursor = app.hunk_list.cursor.peek();
         let notes = format!(
             "{} · {}",
-            crate::text::plural(hunks.len(), "hunk"),
+            summonr_core::text::plural(hunks.len(), "hunk"),
             Hints::new()
                 .key(Key::Fixed("a"), "accept")
                 .key(Key::Fixed("r"), "revert")
@@ -155,7 +155,7 @@ fn hunk_actions(app: &App, path: &str, hunk: &str) -> NodeBuilder {
         )
 }
 
-fn file_actions(app: &App, changed: &FileRow) -> NodeBuilder {
+fn file_actions(app: &App, changed: &PaneRow) -> NodeBuilder {
     let path = changed.path.as_str();
     let (accepted, reverted) = app.file_review(path);
     let revert = app.clone();

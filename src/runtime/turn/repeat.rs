@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use crate::provider::{Message, Role, ToolFunction};
-use crate::text::{Fnv64, plural};
+use summonr_core::text::{Fnv64, plural};
 
 const MARK: &str = "[summon control: repeated tool results.";
 

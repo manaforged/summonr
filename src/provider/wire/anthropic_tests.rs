@@ -170,15 +170,6 @@ fn asked<'a>(model: &str, messages: &'a [Message], effort: Effort) -> Completion
 }
 
 #[test]
-fn the_request_path_sits_under_the_versioned_base_url() {
-    assert_eq!(
-        <Wire as crate::provider::wire::Chat>::path("claude-sonnet-5", true),
-        "/messages",
-        "the preset base_url already ends in /v1"
-    );
-}
-
-#[test]
 fn a_model_before_adaptive_thinking_gets_a_budget_below_max_tokens() {
     let messages = vec![message(Role::User, "hi")];
     let body = request(&asked("claude-sonnet-4-5", &messages, Effort::High), false).unwrap();

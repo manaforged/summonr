@@ -2,7 +2,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 mod ask;
 mod danger;
@@ -25,6 +25,7 @@ pub(crate) struct Policy {
     confirm: Gate,
     session_confirm: Gate,
     read_only: bool,
+    shell: bool,
     unrestricted: bool,
     deny: Vec<String>,
     ask: Vec<String>,
@@ -33,28 +34,7 @@ pub(crate) struct Policy {
     roots: Vec<PathBuf>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Grant {
-    Write(PathBuf),
-    Guarded(PathBuf),
-    Danger { command: String, reason: String },
-}
-
-impl Grant {
-    #[must_use]
-    pub(crate) fn prompt(&self) -> String {
-        match self {
-            Self::Write(path) => path.display().to_string(),
-            Self::Guarded(path) => format!("protected path {}", path.display()),
-            Self::Danger { command, reason } => {
-                format!(
-                    "{command} — {}",
-                    reason.strip_prefix("it ").unwrap_or(reason)
-                )
-            }
-        }
-    }
-}
+pub(crate) use summonr_types::Grant;
 
 #[derive(Debug, Default, Deserialize)]
 struct File {
@@ -80,7 +60,7 @@ impl Policy {
 
     pub(crate) fn discover(workspace: &Path) -> Result<Self> {
         let mut policy = Self::builtin();
-        if let Ok(home) = crate::prompt::summonr_home() {
+        if let Ok(home) = summonr_core::dirs::summonr_home() {
             policy.overlay_file(&home.join("policy.toml"))?;
         }
         policy.overlay_file(&workspace.join(".summonr/policy.toml"))?;
@@ -155,6 +135,15 @@ impl Policy {
 
     pub(crate) fn set_read_only(&mut self, on: bool) {
         self.read_only = on;
+    }
+
+    pub(crate) fn allow_shell(&mut self) {
+        self.shell = true;
+    }
+
+    #[must_use]
+    pub(crate) fn shell_allowed(&self) -> bool {
+        self.shell
     }
 
     #[must_use]
@@ -352,9 +341,10 @@ pub(crate) use blocks::{grant_from_error, outside_hint, reads_only, write_denied
 use paths::*;
 use shell::*;
 
-pub(crate) use paths::{expand_path, split_segments, unquoted};
+pub(crate) use paths::{expand_path, split_segments};
 #[cfg(all(test, unix))]
 pub(crate) use shell::running_as_root;
+use summonr_core::shell::unquoted;
 pub(crate) use verbs::*;
 
 #[cfg(test)]

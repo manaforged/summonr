@@ -32,8 +32,12 @@ impl App {
             Msg::Usage(rows) => self.usage.update(rows),
             msg @ Msg::Models { .. } => self.models_loaded(msg),
             Msg::ModelNote(note) => self.picker.note.set(note),
-            Msg::Defaulted(seat) => self.defaulted(seat),
-            Msg::Workflow { name, names, seats } => self.workflow_loaded(name, names, seats),
+            Msg::Defaulted(selection) => self.defaulted(selection),
+            Msg::Workflow {
+                name,
+                names,
+                selections,
+            } => self.workflow_loaded(name, names, selections),
             msg @ Msg::Patch { .. } => self.patch_loaded(msg),
             msg => self.apply_msg(msg),
         }
@@ -154,15 +158,15 @@ impl App {
             return;
         }
         let snapshot = self.model.peek().snapshot.clone();
-        let current = Seat::new(snapshot.endpoint, snapshot.model);
-        let seated = !current.model.is_empty();
-        let mut counts = [usize::from(seated), pinned, recent];
+        let current = ModelId::new(snapshot.endpoint, snapshot.model);
+        let selected = !current.model.is_empty();
+        let mut counts = [usize::from(selected), pinned, recent];
         if let Some(at) = rows.iter().position(|row| *row == current) {
             rows.remove(at);
             let slot = if at < pinned { 1 } else { 2 };
             counts[slot] = counts[slot].saturating_sub(usize::from(at < pinned + recent));
         }
-        if seated {
+        if selected {
             rows.insert(0, current.clone());
         }
         let selected = self.picked_model();
@@ -187,7 +191,7 @@ impl App {
 
     fn login_opened(&self, note: String) {
         self.begin_auth(None);
-        if self.unseated() {
+        if self.unconfigured() {
             let rows = self.filtered_auth();
             let ready = crate::endpoint::set_up();
             let at = rows
@@ -237,7 +241,7 @@ impl App {
                 model.entries.push(Entry::System(format!(
                     "saved {} · {}",
                     file.display(),
-                    crate::text::plural(lines, "line")
+                    summonr_core::text::plural(lines, "line")
                 )));
                 saved = viewed && editing;
             }
@@ -258,12 +262,12 @@ impl App {
         &self,
         name: Option<String>,
         names: Vec<String>,
-        mut seats: Vec<Option<String>>,
+        mut selections: Vec<Option<String>>,
     ) {
         self.workflow.name.set(name.unwrap_or_default());
         self.workflow.names.set(names);
-        seats.resize(Role::ALL.len(), None);
-        self.workflow.seats.set(seats);
+        selections.resize(Role::ALL.len(), None);
+        self.workflow.selections.set(selections);
     }
 
     pub(in crate::tui::sigil_view) fn approval_answer(&self, answer: crate::runtime::GrantAnswer) {

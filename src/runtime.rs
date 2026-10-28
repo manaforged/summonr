@@ -7,7 +7,6 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::durable::driver::{Exposure, SessionDriver};
 use crate::durable::log::{Usage as Meter, UsageMeta};
-use crate::error::{Error, Result};
 use crate::herdr::Reporter;
 use crate::mail::{Mail, Mailbox};
 use crate::policy::Policy;
@@ -18,6 +17,7 @@ use crate::provider::{
 use crate::tools::{Event, ToolRegistry};
 use crate::verify::Outcome;
 use crate::workflow;
+use summonr_core::error::{Error, Result};
 
 use turn::{CallOptions, RetryPolicy};
 pub(crate) use turn::{GrantAnswer, Steering};
@@ -65,7 +65,7 @@ pub struct Turn {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Beat {
+pub enum NextAction {
     Done(i32),
     Run {
         prompt: String,
@@ -117,7 +117,7 @@ impl Job {
 pub struct Loop<P> {
     provider: P,
     model: String,
-    seats: BTreeMap<workflow::Role, (P, String, Option<u32>)>,
+    selections: BTreeMap<workflow::Role, (P, String, Option<u32>)>,
     prompt_parts: (usize, usize, usize, usize),
     tuning: BTreeMap<workflow::Role, (Option<Effort>, Option<Price>)>,
     price: Option<Price>,
@@ -184,8 +184,8 @@ impl<P: Provider> Loop<P> {
         Ok((output.text, output.success))
     }
 
-    fn seat(&self, role: workflow::Role) -> (&P, &str) {
-        self.seats.get(&role).map_or(
+    fn selection(&self, role: workflow::Role) -> (&P, &str) {
+        self.selections.get(&role).map_or(
             (&self.provider, self.model.as_str()),
             |(provider, model, _)| (provider, model.as_str()),
         )
@@ -214,7 +214,7 @@ impl<P: Provider> Loop<P> {
     ) -> CompletionRequest<'a> {
         CompletionRequest::new(
             self.session_id(),
-            self.seat(role).1.to_string(),
+            self.selection(role).1.to_string(),
             messages,
             tools,
             None,
@@ -248,6 +248,16 @@ pub(super) fn exposure(request: &CompletionRequest<'_>, request_chars: usize) ->
     Exposure {
         max_input_tokens: u64::try_from(request_chars / 4).unwrap_or(u64::MAX),
         max_output_tokens: request.max_output_tokens.map_or(0, u64::from),
+    }
+}
+
+#[cfg(test)]
+impl<P> Loop<P> {
+    pub(crate) async fn execute_for_test(
+        &self,
+        call: &crate::provider::ToolCall,
+    ) -> summonr_core::error::Result<crate::tools::ToolOutput> {
+        self.tools.execute_for_test(call).await
     }
 }
 

@@ -38,7 +38,7 @@ const SKIP: &str = "skip_thought_signature_validator";
 pub(super) fn body(
     call: &CompletionRequest<'_>,
     reasoning: &Reasoning,
-) -> crate::error::Result<Wired> {
+) -> summonr_core::error::Result<Wired> {
     let names: std::collections::HashMap<&str, &str> = call
         .messages
         .iter()
@@ -135,7 +135,7 @@ fn model_parts<'a>(
     message: &'a Message,
     model: &str,
     skip_signature: bool,
-) -> crate::error::Result<Vec<Part<'a>>> {
+) -> summonr_core::error::Result<Vec<Part<'a>>> {
     let first = message.tool_calls.first();
     let signatures: &[String] = if let Some(Continuation::Gemini {
         model: made,

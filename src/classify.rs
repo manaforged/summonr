@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::endpoint::Endpoint;
-use crate::error::{Error, ProviderFailureKind, Result};
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 pub(crate) const AT_ONCE: usize = 8;
 
@@ -285,7 +285,7 @@ impl std::fmt::Display for Decision {
 }
 
 fn headline(name: &str, value: &str, confidence: Option<f64>) -> String {
-    let value = crate::text::ellipsize(value, 28);
+    let value = crate::display::ellipsize(value, 28);
     match confidence {
         Some(confidence) => format!("{name:<16} {value:<28} conf {confidence:.2}\n"),
         None => format!("{name:<16} {value}\n"),
@@ -301,7 +301,7 @@ fn bars(probabilities: &BTreeMap<String, f64>, label: impl Fn(&str) -> String) -
         let bar: String = "█".repeat(filled) + &"░".repeat(WIDTH - filled);
         out.push_str(&format!(
             "  {:<18} {bar} {share:.2}\n",
-            crate::text::ellipsize(&label(key), 18)
+            crate::display::ellipsize(&label(key), 18)
         ));
     }
     out

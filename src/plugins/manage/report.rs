@@ -90,7 +90,7 @@ fn skill_count(plugin: &Plugin) -> usize {
         if dir.join("SKILL.md").is_file() {
             found.insert(dir.clone());
         }
-        for entry in crate::walk::children(&dir) {
+        for entry in summonr_core::walk::children(&dir) {
             let path = entry.path();
             if path.join("SKILL.md").is_file() {
                 found.insert(path);
@@ -124,7 +124,7 @@ pub(super) fn servers(plugin: &Plugin) -> Vec<String> {
 
 fn has_bin_file(plugin: &Plugin) -> bool {
     plugin.bin().is_some_and(|dir| {
-        crate::walk::children(&dir).any(|entry| {
+        summonr_core::walk::children(&dir).any(|entry| {
             entry
                 .file_type()
                 .is_ok_and(|kind| kind.is_file() || kind.is_symlink())

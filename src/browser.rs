@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use url::Url;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 mod call;
 mod extras;
@@ -51,7 +51,7 @@ impl Browser {
                 "[browser] profile `{name}` must be a plain directory name"
             )));
         }
-        let profile = crate::prompt::summonr_home()?
+        let profile = summonr_core::dirs::summonr_home()?
             .join(BROWSER_DIR)
             .join(PROFILES_DIR)
             .join(name);
@@ -162,7 +162,7 @@ impl Browser {
 }
 
 fn shots_dir(session: Option<&str>) -> Result<PathBuf> {
-    let home = crate::prompt::summonr_home()?;
+    let home = summonr_core::dirs::summonr_home()?;
     Ok(match session {
         Some(id) => crate::durable::log::sessions_dir(&home).join(id),
         None => home.join(BROWSER_DIR).join(SHOTS_DIR),

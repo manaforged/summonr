@@ -9,7 +9,7 @@ use sigil::widgets::DiffBuilder;
 use super::{patch_of, patch_path, patch_view};
 use crate::prefs::DiffLayout;
 use crate::tui::sigil_view::chat::App;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 const FENCE: &str = "```";
 
@@ -140,7 +140,7 @@ fn stat_node(rows: &[StatLine], summary: Option<&str>) -> NodeBuilder {
     }
     if let Some(summary) = summary {
         column = column.child(
-            Look::xs(Token::Gray11)
+            TextStyle::xs(Token::Gray11)
                 .on(text(summary.to_string()))
                 .nowrap()
                 .layout(
@@ -166,7 +166,7 @@ fn stat_head(row: &StatLine) -> NodeBuilder {
                 .gap(8.0),
         )
         .child(
-            Look::xs(Token::Gray12)
+            TextStyle::xs(Token::Gray12)
                 .mono()
                 .bold()
                 .on(text(row.path.clone()))
@@ -175,13 +175,13 @@ fn stat_head(row: &StatLine) -> NodeBuilder {
                 .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
         )
         .child(
-            Look::xs(Token::Success11)
+            TextStyle::xs(Token::Success11)
                 .mono()
                 .on(text(format!("+{}", row.added)))
                 .nowrap(),
         )
         .child(
-            Look::xs(Token::Error11)
+            TextStyle::xs(Token::Error11)
                 .mono()
                 .on(text(format!("−{}", row.removed)))
                 .nowrap(),

@@ -14,10 +14,10 @@ use sigil::prelude::context_menu;
 use sigil::prelude::icon_button;
 use sigil::prelude::list_row_with;
 
-use super::{App, FileRow, Pane, diff, todos, tree_actions, view};
+use super::{App, Pane, PaneRow, diff, todos, tree_actions, view};
 use crate::tui::sigil_view::canvas;
 
-pub(super) type Extra = fn(&App, &FileRow) -> NodeBuilder;
+pub(super) type Extra = fn(&App, &PaneRow) -> NodeBuilder;
 
 pub(super) struct Empty {
     pub(super) window: &'static str,
@@ -262,6 +262,6 @@ fn cols_in(width: f32) -> u16 {
     (width / crate::tui::sigil_view::canvas::cell().w).max(0.0) as u16
 }
 
-fn tree_buttons(app: &App, row: &FileRow) -> NodeBuilder {
+fn tree_buttons(app: &App, row: &PaneRow) -> NodeBuilder {
     tree_actions::buttons(app, std::path::Path::new(&row.path))
 }

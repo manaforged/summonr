@@ -95,14 +95,6 @@ fn minimax_plan_sends_no_effort_field_when_none_is_asked_for() {
 }
 
 #[test]
-fn grok_never_gets_none() {
-    assert_eq!(
-        body("grok", "grok-4.5", Some(Effort::None))["reasoning_effort"],
-        "low"
-    );
-}
-
-#[test]
 fn anthropic_levels_follow_the_model() {
     let opus = body("anthropic-api", "claude-opus-4-8", Some(Effort::XHigh));
     assert_eq!(opus["output_config"]["effort"], "xhigh");

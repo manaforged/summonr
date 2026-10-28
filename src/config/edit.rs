@@ -87,12 +87,12 @@ pub(crate) fn remove_key(path: &Path, name: &str) -> Result<bool> {
 pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
     update(path, |document| {
         let mut table = toml_edit::Table::new();
-        for (role, seat) in &workflow.seats {
-            table[role.name()] = match &seat.model {
-                None => value(&seat.endpoint),
+        for (role, selection) in &workflow.selections {
+            table[role.name()] = match &selection.model {
+                None => value(&selection.endpoint),
                 Some(model) => {
                     let mut row = toml_edit::InlineTable::new();
-                    row.insert("endpoint", seat.endpoint.as_str().into());
+                    row.insert("endpoint", selection.endpoint.as_str().into());
                     row.insert("model", model.as_str().into());
                     toml_edit::Item::Value(toml_edit::Value::InlineTable(row))
                 }
@@ -184,7 +184,11 @@ pub(crate) fn save_provider(path: &Path, name: &str, fields: &[(&str, &str)]) ->
     .map(drop)
 }
 
-pub(crate) fn save_module(path: &Path, id: crate::modules::ModuleId, on: bool) -> Result<()> {
+pub(crate) fn save_module(
+    path: &Path,
+    id: summonr_types::modules::ModuleId,
+    on: bool,
+) -> Result<()> {
     update(path, |document| {
         let Some(modules) = tables_at(document, "modules") else {
             return Ok(false);
@@ -203,9 +207,9 @@ pub(crate) fn save_default_workflow(path: &Path, name: &str) -> Result<()> {
     .map(drop)
 }
 
-pub(crate) fn save_default_seat(path: &Path, seat: Option<(&str, &str)>) -> Result<()> {
+pub(crate) fn save_default_model(path: &Path, selection: Option<(&str, &str)>) -> Result<()> {
     update(path, |document| {
-        match seat {
+        match selection {
             Some((endpoint, model)) => {
                 document["default"] = value(endpoint);
                 document["default_model"] = value(model);
@@ -221,7 +225,7 @@ pub(crate) fn save_default_seat(path: &Path, seat: Option<(&str, &str)>) -> Resu
 }
 
 pub fn tilde(path: &Path) -> String {
-    under(path, super::home_dir().as_deref())
+    under(path, summonr_core::dirs::home_dir().as_deref())
 }
 
 fn under(path: &Path, home: Option<&Path>) -> String {

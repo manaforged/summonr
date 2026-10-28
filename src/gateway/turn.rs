@@ -10,7 +10,7 @@ use super::store;
 use super::telegram::{Bot, ChatKind, Update, User};
 use super::{Action, addressed, route};
 use crate::config::tilde;
-use crate::error::Result;
+use summonr_core::error::Result;
 
 const IDLE: &str = "nothing is running";
 const FRESH: &str = "new session";

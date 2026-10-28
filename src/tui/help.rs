@@ -71,7 +71,7 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "  diff         t last turn only · c copy the patch".to_string(),
             format!("  sessions     ↑↓ · enter resume · tab scope · {} twice deletes · esc", alt_label('d')),
             format!("  models       ↑↓ · enter use · {} favorite · {} older · {} default · F5 refresh", alt_label('p'), alt_label('o'), alt_label('d')),
-            "  workflow     ↑↓ role · enter seat · d driving · ←→ saved · s save".to_string(),
+            "  workflow     ↑↓ role · enter model · d default · ←→ saved · s save".to_string(),
         ],
     );
     lines.join("\n")

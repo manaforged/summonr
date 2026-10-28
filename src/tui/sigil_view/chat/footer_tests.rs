@@ -22,7 +22,7 @@ fn a_notice_takes_its_width_and_a_gap_from_the_workspace_path() {
         let place = place_of(&app, &view, 60);
         assert_eq!(
             place,
-            crate::text::ellipsize_start(&app.info.workspace, room)
+            crate::display::ellipsize_start(&app.info.workspace, room)
         );
         assert_eq!(cell_width(&place), room);
     });

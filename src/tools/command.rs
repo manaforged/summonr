@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, Result};
 use crate::policy::Grant;
+use summonr_core::error::{Error, Result};
 
 use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize};
 

@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::diff::{git_env, git_output};
 use crate::durable::store;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const CHECKPOINTS: &str = "checkpoints";
 const STORE: &str = "git";
@@ -168,7 +168,7 @@ impl Checkpoints {
 
 fn private_dir(workspace: &Path) -> Option<PathBuf> {
     let workspace = dunce::canonicalize(workspace).ok()?;
-    let home = crate::prompt::summonr_home().ok()?;
+    let home = summonr_core::dirs::summonr_home().ok()?;
     if home.starts_with(&workspace) {
         return None;
     }
@@ -187,7 +187,7 @@ fn init(workspace: &Path, store: &Path) -> Option<()> {
     }
     let path = OsString::from(store);
     git_env(workspace, &[], &["init", "-q", "--bare", path.to_str()?]).ok()?;
-    let exclude: String = crate::SKIP_DIRS
+    let exclude: String = summonr_core::walk::SKIP_DIRS
         .iter()
         .map(|dir| format!("{dir}/\n"))
         .collect();

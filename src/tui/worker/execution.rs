@@ -1,7 +1,7 @@
 use super::Cmd;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Lane {
+pub(super) enum ExecutionClass {
     Read,
     Live,
     AfterTurn,
@@ -9,7 +9,7 @@ pub(super) enum Lane {
 }
 
 impl Cmd {
-    pub(super) fn lane(&self) -> Lane {
+    pub(super) fn execution_class(&self) -> ExecutionClass {
         match self {
             Cmd::Command(_)
             | Cmd::Branch { .. }
@@ -22,20 +22,20 @@ impl Cmd {
             | Cmd::ToggleApproval
             | Cmd::SetEndpoint(_)
             | Cmd::SetModel(_)
-            | Cmd::SetSeat(..)
-            | Cmd::SeatRole(..)
+            | Cmd::SelectModel(..)
+            | Cmd::AssignModel(..)
             | Cmd::ClearRole(_)
             | Cmd::SaveWorkflow(_)
             | Cmd::ListWorkflows
             | Cmd::SetModule(..)
-            | Cmd::SetEffort(_) => Lane::AfterTurn,
+            | Cmd::SetEffort(_) => ExecutionClass::AfterTurn,
             Cmd::Cancel
             | Cmd::Quit
             | Cmd::Tick
             | Cmd::Open(_)
             | Cmd::Mail
             | Cmd::Answer(..)
-            | Cmd::LoginAnswer(_) => Lane::Control,
+            | Cmd::LoginAnswer(_) => ExecutionClass::Control,
             Cmd::Submit(_)
             | Cmd::Steer(_)
             | Cmd::Queue(_)
@@ -44,7 +44,7 @@ impl Cmd {
             | Cmd::Send(..)
             | Cmd::Export(_)
             | Cmd::Replay
-            | Cmd::SetMail(_) => Lane::Live,
+            | Cmd::SetMail(_) => ExecutionClass::Live,
             Cmd::ListModels { .. }
             | Cmd::Pin(..)
             | Cmd::SaveDefault(_)
@@ -64,7 +64,7 @@ impl Cmd {
             | Cmd::Trees
             | Cmd::View(..)
             | Cmd::Save(..)
-            | Cmd::DeleteSession(_) => Lane::Read,
+            | Cmd::DeleteSession(_) => ExecutionClass::Read,
         }
     }
 }

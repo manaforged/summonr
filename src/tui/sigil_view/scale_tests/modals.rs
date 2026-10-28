@@ -8,7 +8,7 @@ use super::{State, busy_info, frame_with};
 use crate::catalog::{Cost, Model};
 use crate::endpoint::State as Reach;
 use crate::provider::Price;
-use crate::recent::Seat;
+use crate::recent::ModelId;
 use crate::tui::{Cmd, Msg};
 
 fn model(id: &str, edit: impl FnOnce(&mut Model)) -> Model {
@@ -17,10 +17,13 @@ fn model(id: &str, edit: impl FnOnce(&mut Model)) -> Model {
     model
 }
 
-fn listed(app: &App, rows: Vec<(Seat, Model)>, groups: &[(&str, Reach)]) {
+fn listed(app: &App, rows: Vec<(ModelId, Model)>, groups: &[(&str, Reach)]) {
     app.update(Msg::Models {
         request: app.picker.request.get(),
-        rows: rows.iter().map(|(seat, _)| seat.clone()).collect(),
+        rows: rows
+            .iter()
+            .map(|(selection, _)| selection.clone())
+            .collect(),
         facts: rows.into_iter().collect(),
         groups: groups
             .iter()
@@ -34,7 +37,7 @@ fn listed(app: &App, rows: Vec<(Seat, Model)>, groups: &[(&str, Reach)]) {
     });
 }
 
-fn open(app: &App, rows: Vec<(Seat, Model)>, groups: &[(&str, Reach)]) {
+fn open(app: &App, rows: Vec<(ModelId, Model)>, groups: &[(&str, Reach)]) {
     app.replace("/model".to_owned());
     app.submit();
     listed(app, rows, groups);
@@ -50,9 +53,15 @@ fn a_provider_that_rejected_its_key_is_one_row_with_its_fix() {
         open(
             app,
             vec![
-                (Seat::new("openai", "gpt-alpha"), Model::named("gpt-alpha")),
-                (Seat::new("openai", "gpt-beta"), Model::named("gpt-beta")),
-                (Seat::new("deepseek", "ds-flash"), Model::named("ds-flash")),
+                (
+                    ModelId::new("openai", "gpt-alpha"),
+                    Model::named("gpt-alpha"),
+                ),
+                (ModelId::new("openai", "gpt-beta"), Model::named("gpt-beta")),
+                (
+                    ModelId::new("deepseek", "ds-flash"),
+                    Model::named("ds-flash"),
+                ),
             ],
             &[("openai", Reach::KeyRejected), ("deepseek", Reach::Ready)],
         );
@@ -77,7 +86,7 @@ fn the_model_picker_shows_dollar_prices_per_million_tokens() {
         });
         open(
             app,
-            vec![(Seat::new("deepseek", "metered-model"), fact)],
+            vec![(ModelId::new("deepseek", "metered-model"), fact)],
             &[("deepseek", Reach::Ready)],
         );
         app.overlay_move(1);
@@ -96,11 +105,11 @@ fn the_think_filter_keeps_only_reasoning_models() {
             app,
             vec![
                 (
-                    Seat::new("deepseek", "reasoner"),
+                    ModelId::new("deepseek", "reasoner"),
                     model("reasoner", |model| model.reasoning = true),
                 ),
                 (
-                    Seat::new("deepseek", "plain-chat"),
+                    ModelId::new("deepseek", "plain-chat"),
                     Model::named("plain-chat"),
                 ),
             ],
@@ -154,7 +163,7 @@ pub(super) fn select(app: &App, endpoint: &str) {
         .shown
         .peek()
         .iter()
-        .position(|seat| seat.endpoint == endpoint)
+        .position(|selection| selection.endpoint == endpoint)
         .expect("row");
     app.picker.list.cursor.set(at);
 }
@@ -163,9 +172,15 @@ pub(super) fn rejected_openai(app: &App) {
     open(
         app,
         vec![
-            (Seat::new("openai", "gpt-alpha"), Model::named("gpt-alpha")),
-            (Seat::new("openai", "gpt-beta"), Model::named("gpt-beta")),
-            (Seat::new("deepseek", "ds-flash"), Model::named("ds-flash")),
+            (
+                ModelId::new("openai", "gpt-alpha"),
+                Model::named("gpt-alpha"),
+            ),
+            (ModelId::new("openai", "gpt-beta"), Model::named("gpt-beta")),
+            (
+                ModelId::new("deepseek", "ds-flash"),
+                Model::named("ds-flash"),
+            ),
         ],
         &[("openai", Reach::KeyRejected), ("deepseek", Reach::Ready)],
     );
@@ -178,10 +193,13 @@ fn an_offline_provider_is_left_out_of_the_model_picker() {
             app,
             vec![
                 (
-                    Seat::new("ollama", "gpt-oss:20b"),
+                    ModelId::new("ollama", "gpt-oss:20b"),
                     Model::named("gpt-oss:20b"),
                 ),
-                (Seat::new("deepseek", "ds-flash"), Model::named("ds-flash")),
+                (
+                    ModelId::new("deepseek", "ds-flash"),
+                    Model::named("ds-flash"),
+                ),
             ],
             &[("ollama", Reach::Offline), ("deepseek", Reach::Ready)],
         );
@@ -228,7 +246,7 @@ fn a_typed_model_id_on_a_provider_that_needs_a_model_is_seated() {
         App::commit_model_edit,
     );
     assert!(sent.iter().any(
-        |command| matches!(command, Cmd::SetSeat(name, model) if name == "custom" && model == "my-model")
+        |command| matches!(command, Cmd::SelectModel(name, model) if name == "custom" && model == "my-model")
     ));
 }
 
@@ -277,7 +295,7 @@ fn a_large_price_fits_its_column() {
         });
         open(
             app,
-            vec![(Seat::new("deepseek", "frontier"), fact)],
+            vec![(ModelId::new("deepseek", "frontier"), fact)],
             &[("deepseek", Reach::Ready)],
         );
     });
@@ -320,7 +338,10 @@ fn the_model_dialog_keeps_its_frame_while_models_load() {
     let loaded = screen(160, 40, |app| {
         open(
             app,
-            vec![(Seat::new("deepseek", "ds-flash"), Model::named("ds-flash"))],
+            vec![(
+                ModelId::new("deepseek", "ds-flash"),
+                Model::named("ds-flash"),
+            )],
             &[("deepseek", Reach::Ready)],
         );
     });

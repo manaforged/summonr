@@ -2,33 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Duration;
 
-use serde::Deserialize;
 use serde_json::Value;
 
 use crate::config;
 use crate::durable::store;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
-pub(crate) struct Entry {
-    pub command: Option<String>,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub env: BTreeMap<String, String>,
-    pub url: Option<String>,
-    #[serde(default, alias = "http_headers")]
-    pub headers: BTreeMap<String, String>,
-    pub bearer_token_env_var: Option<String>,
-    pub enabled: Option<bool>,
-    pub auth: Option<crate::config::OAuth>,
-    pub tools: Option<Vec<String>>,
-    pub idle_secs: Option<u64>,
-    pub keep_alive: Option<bool>,
-    pub timeout_secs: Option<u64>,
-    #[serde(default)]
-    pub user_config: BTreeMap<String, String>,
-}
+pub(crate) use summonr_types::mcp::Entry;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Launch {
@@ -54,99 +34,81 @@ pub(crate) struct Server {
     pub wait: Duration,
 }
 
-impl Entry {
-    fn overlay(&mut self, top: Self) {
-        if top.command.is_none() && top.url.is_none() {
-            self.enabled = top.enabled.or(self.enabled);
-            self.tools = top.tools.or(self.tools.take());
-            self.idle_secs = top.idle_secs.or(self.idle_secs);
-            self.keep_alive = top.keep_alive.or(self.keep_alive);
-            self.timeout_secs = top.timeout_secs.or(self.timeout_secs);
-            self.env.extend(top.env);
-            self.headers.extend(top.headers);
-            self.user_config.extend(top.user_config);
-            return;
+fn server(entry: Entry, name: String, workspace: &Path) -> Result<Option<Server>> {
+    for (key, value) in [
+        ("timeout_secs", entry.timeout_secs),
+        ("idle_secs", entry.idle_secs),
+    ] {
+        if value == Some(0) {
+            return Err(Error::Config(format!(
+                "mcp {name} {key} must be at least 1"
+            )));
         }
-        let enabled = top.enabled.or(self.enabled);
-        *self = top;
-        self.enabled = enabled;
     }
+    let root = dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+    let key = format!(
+        "{}-{}",
+        super::catalog::stem(&name),
+        summonr_core::text::fnv64(
+            &serde_json::to_vec(&(root, &name, &entry.command, &entry.args, &entry.url))
+                .unwrap_or_default(),
+        )
+    );
+    let allow = entry.tools.clone().map(|tools| tools.into_iter().collect());
+    let idle = (entry.keep_alive != Some(true)).then(|| {
+        entry
+            .idle_secs
+            .map_or(crate::limits::limits().mcp_idle(), Duration::from_secs)
+    });
+    let wait = entry
+        .timeout_secs
+        .map_or(crate::limits::limits().mcp_call(), Duration::from_secs);
+    Ok(launch(entry).map(|launch| Server {
+        launch,
+        name,
+        key,
+        allow,
+        idle,
+        wait,
+    }))
+}
 
-    fn server(self, name: String, workspace: &Path) -> Result<Option<Server>> {
-        for (key, value) in [
-            ("timeout_secs", self.timeout_secs),
-            ("idle_secs", self.idle_secs),
-        ] {
-            if value == Some(0) {
-                return Err(Error::Config(format!(
-                    "mcp {name} {key} must be at least 1"
-                )));
-            }
+fn launch(entry: Entry) -> Option<Launch> {
+    let user_config = entry.user_config;
+    let fill = |text: &str| expand_vars(text, &user_config);
+    if let Some(url) = entry.url {
+        let mut headers: Vec<(String, String)> = entry
+            .headers
+            .iter()
+            .map(|(key, value)| (key.clone(), fill(value)))
+            .collect();
+        if let Some(var) = entry.bearer_token_env_var
+            && let Ok(token) = std::env::var(var)
+        {
+            headers.push(("Authorization".to_string(), format!("Bearer {token}")));
         }
-        let root = dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
-        let key = format!(
-            "{}-{}",
-            super::catalog::stem(&name),
-            crate::text::fnv64(
-                &serde_json::to_vec(&(root, &name, &self.command, &self.args, &self.url))
-                    .unwrap_or_default(),
-            )
-        );
-        let allow = self.tools.clone().map(|tools| tools.into_iter().collect());
-        let idle = (self.keep_alive != Some(true)).then(|| {
-            self.idle_secs
-                .map_or(crate::limits::limits().mcp_idle(), Duration::from_secs)
+        return Some(Launch::Http {
+            url: fill(&url),
+            headers,
+            auth: entry.auth.map(|auth| {
+                Box::new(crate::config::OAuth {
+                    client_secret: auth.client_secret.as_deref().map(&fill),
+                    refresh_token: auth.refresh_token.as_deref().map(&fill),
+                    ..auth
+                })
+            }),
         });
-        let wait = self
-            .timeout_secs
-            .map_or(crate::limits::limits().mcp_call(), Duration::from_secs);
-        Ok(self.launch().map(|launch| Server {
-            launch,
-            name,
-            key,
-            allow,
-            idle,
-            wait,
-        }))
     }
-
-    fn launch(self) -> Option<Launch> {
-        let user_config = self.user_config;
-        let fill = |text: &str| expand_vars(text, &user_config);
-        if let Some(url) = self.url {
-            let mut headers: Vec<(String, String)> = self
-                .headers
-                .iter()
-                .map(|(key, value)| (key.clone(), fill(value)))
-                .collect();
-            if let Some(var) = self.bearer_token_env_var
-                && let Ok(token) = std::env::var(var)
-            {
-                headers.push(("Authorization".to_string(), format!("Bearer {token}")));
-            }
-            return Some(Launch::Http {
-                url: fill(&url),
-                headers,
-                auth: self.auth.map(|auth| {
-                    Box::new(crate::config::OAuth {
-                        client_secret: auth.client_secret.as_deref().map(&fill),
-                        refresh_token: auth.refresh_token.as_deref().map(&fill),
-                        ..auth
-                    })
-                }),
-            });
-        }
-        let command = self.command?;
-        Some(Launch::Stdio {
-            command: fill(&command),
-            args: self.args.iter().map(|arg| fill(arg)).collect(),
-            env: self
-                .env
-                .iter()
-                .map(|(key, value)| (key.clone(), fill(value)))
-                .collect(),
-        })
-    }
+    let command = entry.command?;
+    Some(Launch::Stdio {
+        command: fill(&command),
+        args: entry.args.iter().map(|arg| fill(arg)).collect(),
+        env: entry
+            .env
+            .iter()
+            .map(|(key, value)| (key.clone(), fill(value)))
+            .collect(),
+    })
 }
 
 pub(crate) struct Found {
@@ -172,7 +134,7 @@ pub(crate) fn servers(workspace: &Path) -> Result<Found> {
         if entry.enabled == Some(false) {
             continue;
         }
-        if let Some(server) = entry.server(name, workspace)? {
+        if let Some(server) = server(entry, name, workspace)? {
             servers.push(server);
         }
     }
@@ -182,7 +144,7 @@ pub(crate) fn servers(workspace: &Path) -> Result<Found> {
 type Layers = (Vec<BTreeMap<String, Entry>>, Vec<String>);
 
 fn layers(workspace: &Path) -> Result<Layers> {
-    let home = config::home_dir();
+    let home = summonr_core::dirs::home_dir();
     let mut layers = Vec::new();
     let mut approved = BTreeSet::new();
     let mut all = false;

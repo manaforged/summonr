@@ -1,6 +1,5 @@
 use super::log::{Line, Usage};
-use crate::provider::Usage as Tokens;
-use crate::tools::Event;
+use summonr_types::{Event, Usage as Tokens};
 
 fn usage_event(usage: &Usage, prefix_hash: String, cost: Option<f64>) -> Option<Event> {
     if usage.input == 0 && usage.output == 0 {
@@ -18,14 +17,14 @@ fn usage_event(usage: &Usage, prefix_hash: String, cost: Option<f64>) -> Option<
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Speech {
+pub(crate) enum AssistantEvents {
     Include,
     Skip,
 }
 
-fn said(text: String, reasoning: String, speech: Speech) -> Vec<Event> {
+fn text_events(text: String, reasoning: String, assistant_events: AssistantEvents) -> Vec<Event> {
     let mut events = Vec::new();
-    if speech == Speech::Skip {
+    if assistant_events == AssistantEvents::Skip {
         return events;
     }
     if !reasoning.is_empty() {
@@ -39,10 +38,10 @@ fn said(text: String, reasoning: String, speech: Speech) -> Vec<Event> {
 
 impl Line {
     pub(crate) fn events(&self) -> Vec<Event> {
-        self.clone().into_events(Speech::Include)
+        self.clone().into_events(AssistantEvents::Include)
     }
 
-    pub(crate) fn into_events(self, speech: Speech) -> Vec<Event> {
+    pub(crate) fn into_events(self, assistant_events: AssistantEvents) -> Vec<Event> {
         match self {
             Line::Assistant {
                 text,
@@ -53,7 +52,7 @@ impl Line {
                 cost,
                 ..
             } => {
-                let mut events = said(text, reasoning, speech);
+                let mut events = text_events(text, reasoning, assistant_events);
                 events.extend(usage_event(&usage, prefix_hash, cost));
                 events.extend(tool_calls.into_iter().map(|call| Event::ToolCall {
                     id: call.id,
@@ -62,7 +61,7 @@ impl Line {
                 }));
                 events
             }
-            Line::Interrupted { text, reasoning } => said(text, reasoning, speech),
+            Line::Interrupted { text, reasoning } => text_events(text, reasoning, assistant_events),
             Line::Child { record } => record
                 .state
                 .notification()

@@ -14,10 +14,10 @@ use tokio::time::sleep;
 use super::app::App;
 use super::view::root;
 use crate::durable::store::{Durability, write};
-use crate::error::{Error, Result};
 use crate::prefs::{FPS_DEFAULT, FPS_MAX, FPS_MIN, Prefs};
 use crate::tools::Event;
 use crate::tui::{Info, Msg};
+use summonr_core::error::{Error, Result};
 
 struct Options {
     scenario: Scenario,

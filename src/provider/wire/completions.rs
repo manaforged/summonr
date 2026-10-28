@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-mod said;
+mod content;
 
 use super::{Accumulate, Chat, Delta};
 use crate::provider::{
@@ -43,7 +43,7 @@ impl Chat for Wire {
         reasoning: &Reasoning,
         _cache: crate::endpoint::CacheTtl,
         stream: bool,
-    ) -> crate::error::Result<super::Wired> {
+    ) -> summonr_core::error::Result<super::Wired> {
         let mut body = json!({
             "model": call.model,
             "stream": stream,
@@ -87,12 +87,12 @@ struct Failure {
 struct FrameChoice {
     #[serde(default)]
     delta: Piece,
-    finish_reason: Option<said::Finish>,
+    finish_reason: Option<content::Finish>,
 }
 
 #[derive(Default, Deserialize)]
 struct Piece {
-    content: Option<said::Said>,
+    content: Option<content::Content>,
     refusal: Option<String>,
     #[serde(
         default,
@@ -100,7 +100,7 @@ struct Piece {
         deserialize_with = "think::reasoning_field"
     )]
     reasoning_content: Option<String>,
-    #[serde(default, deserialize_with = "think::vec_or_null")]
+    #[serde(default, deserialize_with = "summonr_types::vec_or_null")]
     tool_calls: Vec<crate::provider::stream::CallDelta>,
 }
 
@@ -121,7 +121,7 @@ impl Accumulate for Stream {
         Self::default()
     }
 
-    fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>> {
+    fn on(&mut self, frame: &str) -> summonr_core::error::Result<Vec<Delta>> {
         let frame = crate::provider::wire::parse::<Frame>(frame)?;
         if let Some(failure) = frame.error {
             let message = if failure.message.is_empty() {
@@ -129,8 +129,8 @@ impl Accumulate for Stream {
             } else {
                 failure.message
             };
-            return Err(crate::error::Error::provider(
-                crate::error::ProviderFailureKind::Server,
+            return Err(summonr_core::error::Error::provider(
+                summonr_core::error::ProviderFailureKind::Server,
                 message,
             ));
         }
@@ -154,14 +154,14 @@ impl Accumulate for Stream {
             self.thought(part, &mut deltas);
         }
         match choice.delta.content {
-            Some(said::Said::Text(part)) => self.said(&part, &mut deltas),
-            Some(said::Said::Chunks(chunks)) => {
+            Some(content::Content::Text(part)) => self.append_text(&part, &mut deltas),
+            Some(content::Content::Chunks(chunks)) => {
                 for chunk in &chunks {
-                    if let said::Chunk::Thinking { thinking } = chunk {
-                        let part: String = thinking.iter().map(said::Chunk::text).collect();
+                    if let content::Chunk::Thinking { thinking } = chunk {
+                        let part: String = thinking.iter().map(content::Chunk::text).collect();
                         self.thought(part, &mut deltas);
                     } else {
-                        self.said(chunk.text(), &mut deltas);
+                        self.append_text(chunk.text(), &mut deltas);
                     }
                 }
             }
@@ -214,7 +214,7 @@ impl Stream {
         deltas.push(Delta::Thinking(part));
     }
 
-    fn said(&mut self, part: &str, deltas: &mut Vec<Delta>) {
+    fn append_text(&mut self, part: &str, deltas: &mut Vec<Delta>) {
         if part.is_empty() {
             return;
         }
@@ -236,7 +236,7 @@ impl Stream {
         &mut self,
         parts: Vec<crate::provider::stream::CallDelta>,
         deltas: &mut Vec<Delta>,
-    ) -> crate::error::Result<()> {
+    ) -> summonr_core::error::Result<()> {
         for part in parts {
             if part
                 .function

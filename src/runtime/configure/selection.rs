@@ -35,7 +35,7 @@ impl<P: Provider> Loop<P> {
         self.set_env(endpoint.env.clone());
     }
 
-    pub(crate) fn set_seat(
+    pub(crate) fn set_role_model(
         &mut self,
         role: workflow::Role,
         provider: P,
@@ -44,13 +44,13 @@ impl<P: Provider> Loop<P> {
         price: Option<crate::provider::Price>,
         context_window: Option<u32>,
     ) {
-        self.seats
+        self.selections
             .insert(role, (provider, model.into(), context_window));
         self.tuning.insert(role, (effort, price));
     }
 
-    pub(crate) fn clear_seat(&mut self, role: workflow::Role) {
-        self.seats.remove(&role);
+    pub(crate) fn clear_role_model(&mut self, role: workflow::Role) {
+        self.selections.remove(&role);
         self.tuning.remove(&role);
     }
 
@@ -59,8 +59,10 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub(crate) fn seat_model(&self, role: workflow::Role) -> Option<&str> {
-        self.seats.get(&role).map(|(_, model, _)| model.as_str())
+    pub(crate) fn role_model(&self, role: workflow::Role) -> Option<&str> {
+        self.selections
+            .get(&role)
+            .map(|(_, model, _)| model.as_str())
     }
 
     pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
@@ -72,20 +74,23 @@ impl<P: Provider> Loop<P> {
         workflow: &workflow::Workflow,
         mut resolve: impl FnMut(
             workflow::Role,
-            &workflow::Seat,
+            &workflow::ModelSelection,
         ) -> Result<(P, crate::endpoint::Endpoint)>,
     ) -> Result<()> {
-        let mut seats = BTreeMap::new();
+        let mut selections = BTreeMap::new();
         let mut tuning = BTreeMap::new();
-        for (role, seat) in &workflow.seats {
-            let (provider, endpoint) = resolve(*role, seat).map_err(|error| {
-                Error::Config(format!("{}: {role} seat {seat}: {error}", workflow.name))
+        for (role, selection) in &workflow.selections {
+            let (provider, endpoint) = resolve(*role, selection).map_err(|error| {
+                Error::Config(format!(
+                    "{}: {role} selection {selection}: {error}",
+                    workflow.name
+                ))
             })?;
-            seats.insert(*role, (provider, endpoint.model, endpoint.context_window));
+            selections.insert(*role, (provider, endpoint.model, endpoint.context_window));
             tuning.insert(*role, (endpoint.effort, endpoint.price));
         }
         self.set_workflow(Some(&workflow.name))?;
-        self.seats = seats;
+        self.selections = selections;
         self.tuning = tuning;
         Ok(())
     }
@@ -153,14 +158,14 @@ impl<P: Provider> Loop<P> {
         self.session.work_progress().map_err(Error::from)
     }
 
-    pub fn next_beat(&self, job: &crate::Job) -> Result<crate::Beat> {
+    pub fn next_action(&self, job: &crate::Job) -> Result<crate::NextAction> {
         let progress = self.work_progress()?;
         if let Some(code) = progress.exit_code() {
-            return Ok(crate::Beat::Done(code));
+            return Ok(crate::NextAction::Done(code));
         }
         let (plan, steps) = match job {
             crate::Job::Goal { objective, gates } => {
-                return Ok(crate::Beat::Run {
+                return Ok(crate::NextAction::Run {
                     prompt: crate::goal::prompt(objective, gates, progress.rounds),
                     step: None,
                 });
@@ -173,7 +178,7 @@ impl<P: Provider> Loop<P> {
         let step = steps
             .get(current.saturating_sub(1))
             .ok_or_else(|| Error::Config("Steps Work is outside the selected plan".to_string()))?;
-        Ok(crate::Beat::Run {
+        Ok(crate::NextAction::Run {
             prompt: crate::steps::prompt(step, steps.len(), plan),
             step: Some((current, steps.len())),
         })
@@ -181,16 +186,16 @@ impl<P: Provider> Loop<P> {
 }
 
 impl Loop<crate::provider::Client> {
-    pub fn seat_workflow(
+    pub fn configure_workflow(
         &mut self,
         workflow: &workflow::Workflow,
         mut connect: impl FnMut(
-            &workflow::Seat,
+            &workflow::ModelSelection,
         ) -> Result<(crate::provider::Client, crate::endpoint::Endpoint)>,
     ) -> Result<()> {
         let mut missing = Vec::new();
-        self.apply_workflow(workflow, |role, seat| {
-            let (client, endpoint) = connect(seat)?;
+        self.apply_workflow(workflow, |role, selection| {
+            let (client, endpoint) = connect(selection)?;
             if endpoint.context_window.is_none() {
                 missing.push((
                     role,

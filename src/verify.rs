@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
+pub(crate) use summonr_types::Outcome;
+pub use summonr_types::Receipt;
 
-use crate::error::Error;
 use crate::tools::{Event, ToolOutput};
+use summonr_core::error::Error;
 
 mod file;
 mod metric;
@@ -11,77 +12,47 @@ pub use file::check_commands;
 pub(crate) use file::{check_path, metric};
 pub(crate) use metric::{Metric, Protected};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Outcome {
-    pub command: String,
-    pub passed: bool,
-    pub output: String,
+#[must_use]
+pub(crate) fn new(
+    changes: Vec<String>,
+    checks: Vec<Outcome>,
+    snapshot: String,
+    events: &[Event],
+) -> Receipt {
+    let verified = !checks.is_empty() && checks.iter().all(|check| check.passed);
+    let mut receipt = Receipt {
+        changes,
+        checks,
+        snapshot,
+        verified,
+        ..Receipt::default()
+    };
+    tally(events, &mut receipt);
+    receipt.text = render(&receipt, true);
+    receipt
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Receipt {
-    pub changes: Vec<String>,
-    pub checks: Vec<Outcome>,
-    #[serde(default)]
-    pub snapshot: String,
-    #[serde(default)]
-    pub reads: usize,
-    #[serde(default)]
-    pub searches: usize,
-    #[serde(default)]
-    pub commands: usize,
-    #[serde(default)]
-    pub failures: Vec<String>,
-    #[serde(default)]
-    pub aborted: bool,
-    #[serde(default)]
-    pub verified: bool,
-    pub text: String,
+#[must_use]
+pub(crate) fn from_turn(
+    changes: Vec<String>,
+    snapshot: String,
+    events: &[Event],
+    configured: &[String],
+) -> Receipt {
+    let checks = ran(events, configured);
+    let mut receipt = new(changes, checks, snapshot, events);
+    if receipt.checks.is_empty() {
+        receipt.text = render(&receipt, false);
+    }
+    receipt
 }
 
-impl Receipt {
-    #[must_use]
-    pub(crate) fn new(
-        changes: Vec<String>,
-        checks: Vec<Outcome>,
-        snapshot: String,
-        events: &[Event],
-    ) -> Self {
-        let verified = !checks.is_empty() && checks.iter().all(|check| check.passed);
-        let mut receipt = Self {
-            changes,
-            checks,
-            snapshot,
-            verified,
-            ..Self::default()
-        };
-        tally(events, &mut receipt);
-        receipt.text = render(&receipt, true);
-        receipt
-    }
-
-    #[must_use]
-    pub(crate) fn from_turn(
-        changes: Vec<String>,
-        snapshot: String,
-        events: &[Event],
-        configured: &[String],
-    ) -> Self {
-        let checks = ran(events, configured);
-        let mut receipt = Self::new(changes, checks, snapshot, events);
-        if receipt.checks.is_empty() {
-            receipt.text = render(&receipt, false);
-        }
-        receipt
-    }
-
-    #[must_use]
-    pub(crate) fn aborted(snapshot: String, events: &[Event]) -> Self {
-        let mut receipt = Self::new(Vec::new(), Vec::new(), snapshot, events);
-        receipt.aborted = true;
-        receipt.text = render(&receipt, true);
-        receipt
-    }
+#[must_use]
+pub(crate) fn aborted(snapshot: String, events: &[Event]) -> Receipt {
+    let mut receipt = new(Vec::new(), Vec::new(), snapshot, events);
+    receipt.aborted = true;
+    receipt.text = render(&receipt, true);
+    receipt
 }
 
 #[must_use]
@@ -318,8 +289,8 @@ fn render(receipt: &Receipt, checked: bool) -> String {
 fn headline(receipt: &Receipt) -> String {
     let mut parts = vec![
         format!("{} read", receipt.reads),
-        crate::text::plural(receipt.searches, "search"),
-        crate::text::plural(receipt.commands, "command"),
+        summonr_core::text::plural(receipt.searches, "search"),
+        summonr_core::text::plural(receipt.commands, "command"),
     ];
     if !receipt.failures.is_empty() {
         parts.push(format!("{} failed", receipt.failures.len()));

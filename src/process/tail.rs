@@ -57,7 +57,7 @@ impl Tail {
             .rev()
             .find(|line| !line.trim().is_empty())
             .map(|line| {
-                crate::text::redact(
+                summonr_core::text::redact(
                     line.trim(),
                     secrets
                         .iter()

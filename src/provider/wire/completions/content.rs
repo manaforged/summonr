@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
-use crate::error::{Error, ProviderFailureKind, Result};
 use crate::provider::StopReason;
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -37,7 +37,7 @@ impl Finish {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-pub(super) enum Said {
+pub(super) enum Content {
     Text(String),
     Chunks(Vec<Chunk>),
 }

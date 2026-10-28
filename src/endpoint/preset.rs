@@ -80,7 +80,7 @@ pub(super) fn env_default() -> Option<&'static Preset> {
 }
 
 fn host_id() -> Option<String> {
-    let path = crate::prompt::summonr_home().ok()?.join("host-id");
+    let path = summonr_core::dirs::summonr_home().ok()?.join("host-id");
     if let Ok(found) = std::fs::read_to_string(&path)
         && !found.trim().is_empty()
     {

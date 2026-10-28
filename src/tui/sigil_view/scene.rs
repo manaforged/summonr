@@ -19,7 +19,7 @@ pub(in crate::tui::sigil_view) use input::window_area;
 
 mod logo;
 mod mark;
-pub(in crate::tui::sigil_view) use logo::{Line, compose, placed};
+pub(in crate::tui::sigil_view) use logo::{Line, compose, placed, reveal_ms};
 pub(in crate::tui::sigil_view) use mark::Mark;
 pub(in crate::tui::sigil_view) use space::Plate;
 pub(in crate::tui::sigil_view) use space::{GLASS, PLATE, SCRIM, VOID, moving};

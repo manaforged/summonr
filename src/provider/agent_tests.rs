@@ -3,6 +3,9 @@ use std::os::unix::fs::PermissionsExt;
 use super::super::{Client, CompletionRequest, Message, Partial, Provider, Role, StopReason};
 use crate::provider::{ToolCall, ToolFunction, ToolKind};
 
+#[path = "agent_tests/auth_tests.rs"]
+mod auth_tests;
+
 const STUB: &str = r#"#!/bin/sh
 log="$0.log"
 printf '%s\n' "$@" > "$0.args"

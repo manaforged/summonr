@@ -50,7 +50,11 @@ pub(super) fn pane(
         ));
     }
     if choice.login.signs_in() {
-        nodes.push(kv("sign-in", login_line(choice), Token::OnSurface));
+        nodes.push(kv(
+            "sign-in",
+            login_line(choice, tier == Some(State::Ready)),
+            Token::OnSurface,
+        ));
     }
     for (name, toggle) in [("region", Toggle::Region), ("access", Toggle::Access)] {
         if let Some(options) = choice.options(toggle) {
@@ -151,8 +155,8 @@ fn key_line(choice: &AuthInfo, state: &str) -> Option<String> {
     })
 }
 
-fn login_line(choice: &AuthInfo) -> String {
-    if choice.flow.signs_in() && choice.configured {
+fn login_line(choice: &AuthInfo, ready: bool) -> String {
+    if choice.flow.signs_in() && (choice.configured || ready) {
         return format!("signed in · {}", choice.plan);
     }
     format!("{} · not signed in", choice.plan)

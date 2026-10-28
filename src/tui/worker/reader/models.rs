@@ -219,7 +219,11 @@ impl Reader {
         let mut registry = Some(tokio::spawn(crate::catalog::refresh_registry()));
         let mut pending: FuturesUnordered<_> = endpoints
             .iter()
-            .filter(|endpoint| due(&endpoint.name, only.as_deref()))
+            .filter(|endpoint| {
+                due(&endpoint.name, only.as_deref())
+                    || (checked(&endpoint.name)
+                        && matches!(endpoint.wire, endpoint::Wire::AgentSdk))
+            })
             .map(
                 |endpoint| async move { (endpoint.name.clone(), Client::discover(endpoint).await) },
             )
@@ -248,7 +252,16 @@ impl Reader {
             match result {
                 Ok(models) => board.discovered(name, models),
                 Err(error) => {
-                    board.groups.insert(name.clone(), Client::state(&error));
+                    let state = match Client::state(&error) {
+                        State::NeedsKey
+                            if endpoint::auth_info(&name)
+                                .is_ok_and(|info| info.login.signs_in()) =>
+                        {
+                            State::SignIn
+                        }
+                        state => state,
+                    };
+                    board.groups.insert(name.clone(), state);
                     board.causes.insert(name, error.to_string());
                 }
             }

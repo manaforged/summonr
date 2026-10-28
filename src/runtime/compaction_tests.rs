@@ -162,7 +162,18 @@ async fn a_compaction_summary_reuses_the_session_prefix_and_history() {
         super::super::Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
     session.turn("read a.txt").await.unwrap();
     session.turn("again").await.unwrap();
-    assert!(session.compact().await.unwrap());
+    let mut events = Vec::new();
+    assert!(
+        session
+            .compact_with(|event| events.push(event.clone()))
+            .await
+            .expect("summary compaction succeeds")
+    );
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, crate::tools::Event::Note { .. }))
+    );
     let prefixes = prefixes.lock().unwrap();
     assert_eq!(prefixes.len(), 4);
     assert!(
@@ -328,8 +339,8 @@ async fn an_unknown_window_still_compacts_at_the_character_cap() -> crate::Resul
         "token cap hid the character cap: {first}"
     );
     assert!(
-        note.contains("prompt exceeded") && note.contains("tools"),
-        "{note}"
+        note.is_empty(),
+        "routine output pruning must be silent: {note}"
     );
     Ok(())
 }
@@ -349,7 +360,10 @@ async fn compaction_uses_the_receiving_seats_window() -> crate::Result<()> {
         first.starts_with("[cleared"),
         "driver window hid the selection window: {first}"
     );
-    assert!(note.contains("at 80% of 8000"), "{note}");
+    assert!(
+        note.is_empty(),
+        "routine output pruning must be silent: {note}"
+    );
     Ok(())
 }
 
@@ -368,7 +382,10 @@ async fn a_seated_window_compacts_without_a_driver_window() -> crate::Result<()>
         first.starts_with("[cleared"),
         "unknown driver hid the selection window: {first}"
     );
-    assert!(note.contains("at 80% of 8000"), "{note}");
+    assert!(
+        note.is_empty(),
+        "routine output pruning must be silent: {note}"
+    );
     Ok(())
 }
 
@@ -426,7 +443,7 @@ async fn old_tool_outputs_clear_once_in_one_batch_before_the_summary_trigger() -
             .map(|message| message.content.clone())
             .unwrap_or_default()
     };
-    assert_eq!(clears, 1);
+    assert_eq!(clears, 0, "routine output pruning must be silent");
     assert!(
         output("t1").starts_with("[cleared"),
         "{}",

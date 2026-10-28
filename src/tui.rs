@@ -350,6 +350,10 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
         .or(paths)
         .or_else(|| field("patch").map(|patch| crate::tools::patch_files(patch).join(", ")))
         .unwrap_or_default();
+    let picked = url::Url::parse(&picked)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or(picked);
     let mut picked = after_cd(&picked)
         .split_whitespace()
         .collect::<Vec<_>>()

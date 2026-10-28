@@ -41,7 +41,7 @@ impl ToolRegistry {
         }
         match op {
             None => self.read_default(args),
-            Some(Some(ReadOp::File)) => self.read_file(args),
+            Some(Some(ReadOp::File)) => self.read_file(args, read::READ_PAGE_BYTES),
             Some(Some(ReadOp::List)) => self.list_dir(args).map(ToolOutput::ok),
             Some(Some(ReadOp::Search)) => self.search_files(args).map(ToolOutput::ok),
             Some(Some(ReadOp::Image)) => self.show_image(args),
@@ -64,7 +64,7 @@ impl ToolRegistry {
         if self.opened_path(args)?.1.is_dir() {
             return self.list_dir(args).map(ToolOutput::ok);
         }
-        self.read_file(args)
+        self.read_file(args, read::READ_PAGE_BYTES)
     }
 
     fn opened_path<'a>(&self, args: &'a Value) -> Result<(&'a str, PathBuf)> {
@@ -85,7 +85,7 @@ impl ToolRegistry {
         self.apply_edit("edit", args).await
     }
 
-    async fn move_file(&self, path: &str, to: &str) -> Result<ToolOutput> {
+    fn plan_move(&self, path: &str, to: &str) -> Result<write::Change> {
         let source = self.resolve_existing(path)?;
         self.check_write(&source)?;
         let dest = self.resolve_write(to)?;
@@ -93,17 +93,14 @@ impl ToolRegistry {
         if dest.exists() {
             return Err(Error::Tool(format!("`{to}` already exists")));
         }
-        self.apply_changes(&[write::Change {
+        Ok(write::Change {
             dest: source,
             display: path.to_string(),
             action: write::Action::Move {
                 to: dest.clone(),
                 display: to.to_string(),
             },
-        }])?;
-        Ok(self
-            .checked((dest, format!("moved {path} -> {to}"), None))
-            .await)
+        })
     }
 
     async fn checked(
@@ -119,14 +116,94 @@ impl ToolRegistry {
 
     async fn apply_edit(&self, name: &str, args: &Value) -> Result<ToolOutput> {
         if let Some(patch) = args.get("patch").and_then(Value::as_str) {
+            if args.get("preview").is_some() {
+                return Err(Error::Tool(
+                    "patch does not accept preview; use old/new or files for a preview".to_string(),
+                ));
+            }
             return apply_patch::run(self, patch).await;
         }
-        let path = nonempty_path(args, name)?;
-        if let Some(to) = edit::move_target(args) {
-            return self.move_file(path, to).await;
+        let files = match args.get("files") {
+            None => std::slice::from_ref(args),
+            Some(Value::Array(files)) if !files.is_empty() => {
+                if super::args::named(args, "path").is_some() {
+                    return Err(Error::Tool("send path or files, not both".to_string()));
+                }
+                files.as_slice()
+            }
+            Some(_) => return Err(Error::Tool("files must be a nonempty array".to_string())),
+        };
+        let preview = match args.get("preview") {
+            None => false,
+            Some(Value::Bool(preview)) => *preview,
+            Some(_) => return Err(Error::Tool("preview must be a boolean".to_string())),
+        };
+        let (changes, mut out, patches) = super::blocking(|| {
+            let mut changes = Vec::new();
+            let mut paths = std::collections::BTreeSet::new();
+            let mut reports = Vec::new();
+            let mut patches = Vec::new();
+            for file in files {
+                if args.get("files").is_some() && file.get("expected_matches").is_none() {
+                    return Err(Error::Tool(
+                        "every file replacement requires expected_matches".to_string(),
+                    ));
+                }
+                let path = nonempty_path(file, name)?;
+                let (change, report, patch) = match edit::move_target(file) {
+                    Some(to) => (
+                        self.plan_move(path, to)?,
+                        format!("moved {path} -> {to}"),
+                        None,
+                    ),
+                    None => self.plan_edit(path, file)?,
+                };
+                let mut touched = vec![change.dest.as_path()];
+                if let write::Action::Move { to, .. } = &change.action {
+                    touched.push(to.as_path());
+                }
+                for path in touched {
+                    if !paths.insert(path.to_path_buf()) {
+                        return Err(Error::Tool(format!(
+                            "{} occurs more than once in the edit batch",
+                            path.display()
+                        )));
+                    }
+                }
+                reports.push(if preview {
+                    format!("{report}\n{}", patch.as_deref().unwrap_or(""))
+                } else {
+                    report
+                });
+                if let Some(patch) = patch {
+                    patches.push(patch);
+                }
+                changes.push(change);
+            }
+            if !preview {
+                self.apply_changes(&changes)?;
+            }
+            Ok((changes, reports.join("\n\n"), patches))
+        })?;
+        if preview {
+            return Ok(ToolOutput::ok(format!(
+                "Preview only; no files changed.\n{out}"
+            )));
         }
-        let edited = super::blocking(|| self.edit_in_place(path, args))?;
-        Ok(self.checked(edited).await)
+        for change in changes {
+            let dest = match change.action {
+                write::Action::Move { to, .. } => to,
+                write::Action::Write(_) | write::Action::Delete => change.dest,
+            };
+            if let Some(check) = self.check_after_edit(&dest).await {
+                out.push('\n');
+                out.push_str(&check.text);
+            }
+        }
+        Ok(ToolOutput::mutated(
+            out,
+            (!patches.is_empty()).then(|| patches.join("\n")),
+        ))
     }
 
     pub(super) async fn write_file(&self, args: &Value) -> Result<ToolOutput> {
@@ -160,7 +237,11 @@ impl ToolRegistry {
         Ok(ToolOutput::mutated(out.trim_end().to_string(), None))
     }
 
-    fn edit_in_place(&self, path: &str, args: &Value) -> Result<(PathBuf, String, Option<String>)> {
+    fn plan_edit(
+        &self,
+        path: &str,
+        args: &Value,
+    ) -> Result<(write::Change, String, Option<String>)> {
         let dest = self.resolve_existing(path)?;
         self.check_write(&dest)?;
         let raw = std::fs::read_to_string(&dest)
@@ -175,14 +256,13 @@ impl ToolRegistry {
         let (edited, relaxed) = edited_text(&original, args)?;
         let edited = edit::restore(&endings, &original, &edited);
         let (preview, patch) = write::preview(&raw, &edited, edit::uses_tags(args));
-        self.apply_changes(&[write::Change::write(dest.clone(), path, edited)])?;
         let mut out = format!("edited {path}\n{preview}");
         if relaxed {
             out.push_str(
                 "\nnote: old matched only with whitespace normalized; check the edit above",
             );
         }
-        Ok((dest, out, patch))
+        Ok((write::Change::write(dest, path, edited), out, patch))
     }
 
     fn plan_write(

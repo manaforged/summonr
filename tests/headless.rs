@@ -263,7 +263,7 @@ fn a_text_run_keeps_stdout_to_the_answer_and_marks_reasoning_only_before_it() {
     assert_eq!(output.status.code(), Some(0), "{stderr}");
     assert_eq!(stdout.trim(), "pytest runs tests", "{stderr}");
     assert_eq!(stderr.matches("… reasoning").count(), 1, "{stderr}");
-    assert!(stderr.contains("Turn receipt"), "{stderr}");
+    assert!(!stderr.contains("Turn receipt"), "{stderr}");
 }
 
 #[test]

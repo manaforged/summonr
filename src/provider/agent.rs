@@ -5,6 +5,7 @@ use std::time::Instant;
 use super::{AssistantMessage, Client, CompletionRequest, Message, Partial, Role};
 use summonr_core::error::{Error, Result};
 
+mod auth;
 mod bridge;
 mod frame;
 mod run;

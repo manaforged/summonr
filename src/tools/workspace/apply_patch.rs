@@ -7,9 +7,18 @@ use crate::tools::{ToolOutput, ToolRegistry};
 use summonr_core::text::squash;
 
 enum Section {
-    Update { path: String, hunks: Vec<Hunk> },
-    Add { path: String, lines: Vec<String> },
-    Delete { path: String },
+    Update {
+        path: String,
+        to: Option<String>,
+        hunks: Vec<Hunk>,
+    },
+    Add {
+        path: String,
+        lines: Vec<String>,
+    },
+    Delete {
+        path: String,
+    },
 }
 
 struct Hunk {
@@ -33,13 +42,38 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
         let (change, text) = section.stage(registry, &changes)?;
         out.push_str(&text);
         changes.push(change);
+        if let Section::Update {
+            path, to: Some(to), ..
+        } = section
+        {
+            changes.push(registry.plan_move(path, to)?);
+            out.push_str(&format!("moved {path} -> {to}\n"));
+        }
+    }
+    for (index, change) in changes.iter().enumerate() {
+        if let Action::Move { to, .. } = &change.action
+            && changes.iter().enumerate().any(|(other_index, other)| {
+                other_index != index
+                    && (other.dest == *to
+                        || matches!(&other.action, Action::Move { to: target, .. } if target == to))
+            })
+        {
+            return Err(Error::Tool(format!(
+                "multiple changes target move destination `{}`",
+                to.display()
+            )));
+        }
     }
     registry.apply_changes(&changes)?;
-    if let Some(change) = changes
+    if let Some(dest) = changes
         .iter()
         .rev()
-        .find(|change| change.content().is_some())
-        && let Some(check) = registry.check_after_edit(&change.dest).await
+        .find_map(|change| match &change.action {
+            Action::Move { to, .. } => Some(to),
+            Action::Write(_) => Some(&change.dest),
+            Action::Delete => None,
+        })
+        && let Some(check) = registry.check_after_edit(dest).await
     {
         out.push_str(&check.text);
     }
@@ -49,7 +83,7 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
 impl Section {
     fn stage(&self, registry: &ToolRegistry, changes: &[Change]) -> Result<(Change, String)> {
         match self {
-            Self::Update { path, hunks } => stage_update(registry, changes, path, hunks),
+            Self::Update { path, hunks, .. } => stage_update(registry, changes, path, hunks),
             Self::Add { path, lines } => stage_add(registry, changes, path, lines),
             Self::Delete { path } => {
                 let dest = registry.resolve_existing(path)?;
@@ -165,8 +199,15 @@ fn hunk_patch(text: &str, hunk: &Hunk) -> Result<Patch> {
 }
 
 enum Pending {
-    Update { path: String, hunks: Vec<Hunk> },
-    Add { path: String, lines: Vec<String> },
+    Update {
+        path: String,
+        to: Option<String>,
+        hunks: Vec<Hunk>,
+    },
+    Add {
+        path: String,
+        lines: Vec<String>,
+    },
 }
 
 enum Header {
@@ -193,8 +234,8 @@ impl Parser {
 
     fn flush_pending(&mut self) {
         match self.pending.take() {
-            Some(Pending::Update { path, hunks }) => {
-                self.sections.push(Section::Update { path, hunks });
+            Some(Pending::Update { path, to, hunks }) => {
+                self.sections.push(Section::Update { path, to, hunks });
             }
             Some(Pending::Add { path, lines }) => {
                 self.sections.push(Section::Add { path, lines });
@@ -210,6 +251,7 @@ impl Parser {
             Header::Update => {
                 self.pending = Some(Pending::Update {
                     path: path.to_string(),
+                    to: None,
                     hunks: Vec::new(),
                 });
             }
@@ -243,6 +285,26 @@ impl Parser {
         if let Some((kind, path)) = header(line) {
             self.header(kind, path);
             return Ok(());
+        }
+        if let Some(to) = line.strip_prefix("*** Move to: ") {
+            match &mut self.pending {
+                Some(Pending::Update {
+                    to: target, hunks, ..
+                }) if target.is_none()
+                    && hunks.is_empty()
+                    && self.hunk.is_none()
+                    && !to.trim().is_empty() =>
+                {
+                    *target = Some(to.trim().to_string());
+                    return Ok(());
+                }
+                Some(Pending::Update { .. } | Pending::Add { .. }) | None => {
+                    return Err(Error::Tool(
+                        "Move to must appear once, immediately after an Update File header"
+                            .to_string(),
+                    ));
+                }
+            }
         }
         if line == "*** End of File" {
             if let Some(open) = self.hunk.as_mut() {
@@ -311,8 +373,12 @@ fn header(line: &str) -> Option<(&'static Header, &str)> {
 pub(crate) fn patch_files(patch: &str) -> Vec<&str> {
     patch
         .lines()
-        .filter_map(|line| header(line.strip_suffix('\r').unwrap_or(line)))
-        .map(|(_, path)| path)
+        .filter_map(|line| {
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            header(line)
+                .map(|(_, path)| path)
+                .or_else(|| line.strip_prefix("*** Move to: ").map(str::trim))
+        })
         .collect()
 }
 

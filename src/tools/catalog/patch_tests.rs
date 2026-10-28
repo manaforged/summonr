@@ -10,7 +10,7 @@ fn names(definitions: &[crate::provider::ToolDefinition]) -> Vec<String> {
 }
 
 #[test]
-fn gpt_models_edit_through_apply_patch_and_others_keep_edit_and_write() {
+fn patch_models_keep_structured_editing_tools() {
     let dir = tempfile::tempdir().unwrap();
     let tools = ToolRegistry::with_policy_and_search(dir.path(), Policy::builtin(), None).unwrap();
     for model in ["gpt-6.1-sol", "gpt-6-astra", "gpt-5.5"] {
@@ -27,8 +27,8 @@ fn gpt_models_edit_through_apply_patch_and_others_keep_edit_and_write() {
     }
     let patched = names(&super::shaped(tools.definitions(), true));
     assert!(patched.contains(&"apply_patch".to_string()), "{patched:?}");
-    assert!(!patched.contains(&"edit".to_string()), "{patched:?}");
-    assert!(!patched.contains(&"write".to_string()), "{patched:?}");
+    assert!(patched.contains(&"edit".to_string()), "{patched:?}");
+    assert!(patched.contains(&"write".to_string()), "{patched:?}");
     let plain = names(&super::shaped(tools.definitions(), false));
     assert!(plain.contains(&"edit".to_string()) && plain.contains(&"write".to_string()));
     assert!(!plain.contains(&"apply_patch".to_string()));

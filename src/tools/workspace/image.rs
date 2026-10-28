@@ -21,7 +21,7 @@ impl ToolRegistry {
         image_type(&head).ok_or_else(|| {
             Error::Tool(format!("`{path}` is not a PNG, JPEG, GIF, or WebP image"))
         })?;
-        self.read_file(arguments)
+        self.read_file(arguments, super::read::READ_PAGE_BYTES)
     }
 
     pub(super) fn image_outcome(

@@ -4,12 +4,7 @@ pub(crate) fn shaped(definitions: Vec<ToolDefinition>, patch: bool) -> Vec<ToolD
     if !patch {
         return definitions;
     }
-    let mut shaped: Vec<ToolDefinition> = definitions
-        .into_iter()
-        .filter(|tool| {
-            !super::Builtin::live(&tool.function.name).is_some_and(super::Builtin::edits)
-        })
-        .collect();
+    let mut shaped = definitions;
     shaped.push(super::apply_patch());
     shaped
 }

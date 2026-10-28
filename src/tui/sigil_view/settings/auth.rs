@@ -145,7 +145,7 @@ fn span(app: &App) -> usize {
 
 fn chip(choice: &AuthInfo, state: Option<&State>) -> String {
     state
-        .filter(|state| state.failed())
+        .filter(|state| state.failed() || choice.login.signs_in())
         .map_or_else(|| choice.state(), ToString::to_string)
 }
 
@@ -256,8 +256,10 @@ fn sections(
     let mut lookup: Vec<Row> = Vec::new();
     let mut shown = 0;
     for (index, row) in rows.iter().enumerate() {
-        let tier = section(row);
-        if index == 0 || tier != section(&rows[index - 1]) {
+        let tier = section(row, states.get(&row.name).copied());
+        if index == 0
+            || tier != section(&rows[index - 1], states.get(&rows[index - 1].name).copied())
+        {
             lookup.push((tier.title().to_string(), String::new(), None));
         }
         if index == selected {

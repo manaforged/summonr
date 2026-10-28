@@ -14,14 +14,6 @@ pub struct Receipt {
     #[serde(default)]
     pub snapshot: String,
     #[serde(default)]
-    pub reads: usize,
-    #[serde(default)]
-    pub searches: usize,
-    #[serde(default)]
-    pub commands: usize,
-    #[serde(default)]
-    pub failures: Vec<String>,
-    #[serde(default)]
     pub aborted: bool,
     #[serde(default)]
     pub verified: bool,

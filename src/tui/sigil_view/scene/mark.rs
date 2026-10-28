@@ -8,7 +8,8 @@ pub(in crate::tui::sigil_view) enum Mark {
 }
 
 pub(super) const LAYERS: i32 = 5;
-const STEP_MS: u64 = 90;
+pub(super) const STEP_MS: u64 = 120;
+pub(super) const ENTRANCE_MS: u64 = LAYERS as u64 * STEP_MS;
 const LAP_MS: u64 = 8_000;
 const TAIL_PERCENT: usize = 10;
 const SHIMMER: f32 = 0.35;
@@ -118,7 +119,7 @@ pub(super) fn paint(
 }
 
 fn built(elapsed: u64) -> i32 {
-    i32::try_from(elapsed / STEP_MS).unwrap_or(i32::MAX)
+    i32::try_from(elapsed / STEP_MS + 1).unwrap_or(i32::MAX)
 }
 
 fn draw(mark: Mark, elapsed: u64, clock: Option<u64>) -> Grid {

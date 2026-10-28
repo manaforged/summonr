@@ -2,6 +2,94 @@ use super::*;
 use crate::provider::Image;
 use crate::provider::scripted::{Reply, Scripted};
 
+#[test]
+fn turn_prompts_summarize_tasks_and_show_background_job_state() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let mut driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    driver.prepare_turn_work("work", &[]).unwrap();
+    driver
+        .apply_todos(vec![
+            crate::tools::Todo {
+                text: "landed edit fix".to_string(),
+                status: crate::tools::TodoStatus::Done,
+            },
+            crate::tools::Todo {
+                text: "verify reads".to_string(),
+                status: crate::tools::TodoStatus::Active,
+            },
+            crate::tools::Todo {
+                text: "pending item must not repeat".to_string(),
+                status: crate::tools::TodoStatus::Pending,
+            },
+        ])
+        .unwrap();
+    for (code, command) in [
+        (None, "check the changed code"),
+        (Some(1), "failed verification"),
+        (Some(1), "recovered verification"),
+        (Some(0), "recovered verification"),
+    ] {
+        let (id, path, _, exit) = crate::jobs::prepare(workspace.path()).unwrap();
+        crate::jobs::write(
+            &path,
+            &crate::jobs::Record {
+                id,
+                pid: std::process::id(),
+                command: command.to_string(),
+                workspace: workspace.path().display().to_string(),
+                started: crate::mail::now(),
+                background: true,
+                session: Some(driver.id().to_string()),
+                log: None,
+            },
+        )
+        .unwrap();
+        if let Some(code) = code {
+            std::fs::write(exit, code.to_string()).unwrap();
+        }
+    }
+    let mut loop_ =
+        Loop::open(Scripted::default(), "m", workspace.path(), "system", driver).unwrap();
+    let messages = loop_.begin_turn(UserInput::from("work")).unwrap();
+    let prompt = &messages.last().unwrap().content;
+    assert!(prompt.contains("Current: verify reads"), "{prompt}");
+    assert!(
+        prompt.contains("Last completed: landed edit fix"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("Tasks: 1 done, 1 pending"), "{prompt}");
+    assert!(
+        prompt.lines().any(|line| line.starts_with("Running job ") && line.contains("check the changed code")),
+        "{prompt}"
+    );
+    assert!(
+        prompt
+            .lines()
+            .any(|line| line.starts_with("Unresolved job failure ")
+                && line.contains("failed verification")),
+        "{prompt}"
+    );
+    assert!(
+        prompt
+            .lines()
+            .any(|line| line.starts_with("Latest successful job ")
+                && line.contains("recovered verification")),
+        "{prompt}"
+    );
+    assert!(
+        prompt
+            .lines()
+            .all(|line| !line.starts_with("Unresolved job failure ")
+                || !line.contains("recovered verification")),
+        "{prompt}"
+    );
+    assert!(!prompt.contains("pending item must not repeat"), "{prompt}");
+    assert!(!prompt.contains("Harness task list"), "{prompt}");
+}
+
 fn blind_session(workspace: &Path, home: &Path, provider: Scripted) -> Loop<Scripted> {
     let driver =
         super::super::super::configure::open_driver(home, workspace, "m", "system").unwrap();

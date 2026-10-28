@@ -5,10 +5,7 @@ use crate::tools::Event;
 fn row(lines: &[String]) -> String {
     lines
         .iter()
-        .find(|line| {
-            line.trim_start().starts_with("○ Subagent")
-                || line.trim_start().starts_with("● Subagent")
-        })
+        .find(|line| line.trim_start().starts_with("○") || line.trim_start().starts_with("●"))
         .cloned()
         .unwrap_or_default()
 }
@@ -28,7 +25,10 @@ fn running(app: &super::super::app::App, assignment: &str) {
 }
 
 fn title(row: &str) -> String {
-    let after = row.split_once("Subagent ").map_or("", |(_, rest)| rest);
+    let after = row
+        .trim_start()
+        .split_once(' ')
+        .map_or("", |(_, rest)| rest);
     after.split(" · ").next().unwrap_or_default().to_owned()
 }
 
@@ -59,5 +59,5 @@ fn a_subagent_row_redraws_when_it_finishes() {
             },
         );
     }));
-    assert!(after.trim_start().starts_with("● Subagent"), "{after}");
+    assert!(after.trim_start().starts_with("●"), "{after}");
 }

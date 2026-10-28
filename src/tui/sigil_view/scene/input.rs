@@ -2,12 +2,6 @@ use super::logo::{body, facts, fitting, layout};
 use super::space::{GLASS, PLATE, Plate};
 use super::*;
 
-pub(in crate::tui::sigil_view) const ROW_MS: u64 = 70;
-
-pub(in crate::tui::sigil_view) const ROW_WIPE_MS: u64 = 130;
-
-pub(in crate::tui::sigil_view) const FACTS_MS: u64 = 560;
-
 pub(in crate::tui::sigil_view) fn window_area(app: &App, cols: u16, rows: u16) -> [u16; 4] {
     let model = app.model.get();
     let facts = facts(&model, app);

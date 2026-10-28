@@ -78,8 +78,8 @@ impl Widths {
 
 const TITLE_SHARE: (usize, usize) = (2, 5);
 const ACTIVITY_MIN: usize = 12;
-const CHROME: [&str; 5] = ["○", "Subagent", "·", "·", "tok"];
-const CHROME_GAPS: usize = 9;
+const CHROME: [&str; 4] = ["○", "·", "·", "tok"];
+const CHROME_GAPS: usize = 8;
 
 fn fixed(
     body: impl Into<sigil::kernel::TextContent>,
@@ -140,7 +140,6 @@ fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> N
                 .align_items(AlignItems::Center),
         )
         .child(text(glyph, tone))
-        .child(text("Subagent", TextStyle::xs(Token::Accent11)))
         .child(fixed(
             agent.title.clone(),
             TextStyle::xs(Token::Gray12),

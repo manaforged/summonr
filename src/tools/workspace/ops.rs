@@ -29,6 +29,8 @@ pub(super) struct EditOp {
     #[serde(deserialize_with = "present")]
     replace_all: Option<Value>,
     #[serde(deserialize_with = "present")]
+    expected_matches: Option<Value>,
+    #[serde(deserialize_with = "present")]
     all: Option<Value>,
     #[serde(deserialize_with = "present")]
     replace_text: Option<Value>,
@@ -152,7 +154,30 @@ impl EditOp {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         let (old, new) = (string(&self.old, "old")?, string(&self.new, "new")?);
-        replace_text_patch(text, tag, old, new, all)
+        let expected = self
+            .expected_matches
+            .as_ref()
+            .map(|value| {
+                value.as_u64().filter(|count| *count > 0).ok_or_else(|| {
+                    Error::Tool("expected_matches must be a positive integer".to_string())
+                })
+            })
+            .transpose()?;
+        if let Some(expected) = expected {
+            let found = count_matches(text, old);
+            if u64::try_from(found).ok() != Some(expected) {
+                return Err(Error::Tool(format!(
+                    "expected {expected} exact matches for old, found {found}"
+                )));
+            }
+        }
+        replace_text_patch(
+            text,
+            tag,
+            old,
+            new,
+            all || expected.is_some_and(|count| count > 1),
+        )
     }
 
     fn optional_tag(&self) -> Result<Option<&str>> {

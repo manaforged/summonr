@@ -61,7 +61,7 @@ impl Prompt {
         (self.say)(line);
     }
 
-    pub(crate) async fn request(&mut self, line: &str) -> Result<String> {
+    pub async fn request(&mut self, line: &str) -> Result<String> {
         (self.ask)(line.to_string())
             .await
             .map(|text| text.trim().to_string())

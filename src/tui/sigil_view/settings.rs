@@ -30,7 +30,6 @@ pub(super) enum Setting {
     Notify,
     Splash,
     Motion,
-    Receipts,
     Hotkeys,
 }
 
@@ -145,12 +144,6 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
             Setting::Motion,
             "motion",
             on_off(prefs.animations).to_string(),
-        ),
-        (
-            "interface",
-            Setting::Receipts,
-            "receipts",
-            prefs.receipts.name().to_string(),
         ),
         (
             "interface",

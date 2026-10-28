@@ -3,7 +3,7 @@ use super::*;
 impl<P: Provider> Loop<P> {
     pub(super) fn join_mail(&mut self) {
         self.mailbox = None;
-        if self.depth == 0 {
+        if self.session.depth() == 0 {
             self.mailbox = crate::mail::Mailbox::join(
                 &self.session_id(),
                 self.name().as_deref(),

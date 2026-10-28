@@ -3,16 +3,29 @@ use std::time::Duration;
 use super::*;
 use crate::tools::workspace::write;
 
+enum Operation {
+    Diagnostics,
+    Definition,
+}
+
+impl Operation {
+    fn parse(text: &str) -> Option<Self> {
+        match text {
+            "diagnostics" => Some(Self::Diagnostics),
+            "definition" => Some(Self::Definition),
+            _ => None,
+        }
+    }
+}
+
 impl ToolRegistry {
-    pub(in crate::tools) async fn lsp(&self, arguments: &str) -> Result<ToolOutput> {
-        let args = parse_args("lsp", arguments)?;
-        match super::super::args::named(&args, "op") {
-            Some("diagnostics") => return self.diagnostics(arguments).await,
-            Some("definition") => return self.definition(arguments).await,
-            Some(operation) => {
-                return Err(Error::Tool(format!("unknown lsp operation `{operation}`")));
-            }
-            None => {}
+    pub(in crate::tools) async fn lsp(&self, args: &Value) -> Result<ToolOutput> {
+        if let Some(operation) = super::super::args::named(args, "op") {
+            return match Operation::parse(operation) {
+                Some(Operation::Diagnostics) => self.diagnostics(args).await,
+                Some(Operation::Definition) => self.definition(args).await,
+                None => Err(Error::Tool(format!("unknown lsp operation `{operation}`"))),
+            };
         }
         let placed = |field| {
             args.get(field)
@@ -27,14 +40,13 @@ impl ToolRegistry {
                 .and_then(Value::as_str)
                 .is_some_and(|name| !name.trim().is_empty())
         {
-            return self.definition(arguments).await;
+            return self.definition(args).await;
         }
-        self.diagnostics(arguments).await
+        self.diagnostics(args).await
     }
 
-    pub(in crate::tools) async fn diagnostics(&self, arguments: &str) -> Result<ToolOutput> {
-        let args = parse_args("diagnostics", arguments)?;
-        let path = nonempty_path(&args, "diagnostics")?;
+    pub(in crate::tools) async fn diagnostics(&self, args: &Value) -> Result<ToolOutput> {
+        let path = nonempty_path(args, "diagnostics")?;
         let file = self.resolve_existing(path)?;
         let request_path = file.clone();
         let (text, _) = self
@@ -48,12 +60,11 @@ impl ToolRegistry {
         Ok(ToolOutput::ok(text))
     }
 
-    pub(in crate::tools) async fn definition(&self, arguments: &str) -> Result<ToolOutput> {
-        let args = parse_args("definition", arguments)?;
-        let path = nonempty_path(&args, "definition")?;
+    pub(in crate::tools) async fn definition(&self, args: &Value) -> Result<ToolOutput> {
+        let path = nonempty_path(args, "definition")?;
         let file = self.resolve_existing(path)?;
-        let line = object_usize(&args, "line").unwrap_or(1).max(1) as u32;
-        let character = match object_usize(&args, "character") {
+        let line = object_usize(args, "line").unwrap_or(1).max(1) as u32;
+        let character = match object_usize(args, "character") {
             Some(character) => character.max(1) as u32,
             None if args.get("line").is_some() => {
                 return Err(Error::Tool(format!(
@@ -89,7 +100,7 @@ impl ToolRegistry {
                 .await?;
             return self.apply_workspace_edit(&edit);
         }
-        let refs = object_bool(&args, "references");
+        let refs = object_bool(args, "references");
         let request_path = file.clone();
         let text = self
             .with_lsp(
@@ -262,24 +273,19 @@ impl ToolRegistry {
                 crate::supervise::register(
                     crate::supervise::ServerKind::Lsp,
                     &launch.key,
-                    conn.child.as_ref().and_then(|child| child.id()),
+                    conn.pid(),
                     Some(crate::limits::limits().lsp_idle()),
                     &slot,
                 );
                 conn
             }
         };
-        let outcome = tokio::time::timeout(deadline, f(&mut conn)).await;
+        conn.set_wait(deadline);
+        let outcome = f(&mut conn).await;
         crate::supervise::touch(&slot);
-        if conn.clean {
+        if conn.alive() {
             *state = Some(conn);
         }
-        outcome.map_err(|_elapsed| {
-            Error::Tool(format!(
-                "{} did not answer within {} s; the server may still be indexing",
-                launch.argv[0],
-                deadline.as_secs()
-            ))
-        })?
+        outcome
     }
 }

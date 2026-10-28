@@ -70,7 +70,7 @@ impl State {
         if !reported {
             self.unreported = self.unreported.saturating_add(usage.tokens());
         }
-        self.charge(usage);
+        self.charge(usage, reported);
     }
 
     fn apply_rewrite(&mut self, mut edits: Vec<(usize, Message)>) {
@@ -82,6 +82,7 @@ impl State {
 
     fn apply_user(&mut self, text: String, images: Vec<Image>, start: bool) {
         if start {
+            self.turns += 1;
             self.opener = Some(self.history.len());
             self.unanswered.clear();
             self.last_close_reason = None;
@@ -99,7 +100,7 @@ impl State {
         usage: Usage,
         continuation: Option<Continuation>,
     ) {
-        self.charge(usage);
+        self.charge(usage, true);
         for call in &mut tool_calls {
             call.function.check();
         }

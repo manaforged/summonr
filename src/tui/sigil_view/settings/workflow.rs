@@ -73,8 +73,8 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
     let save = app.clone();
     vec![
         container().child(
-            text_edit(app.workflow.draft)
-                .caret_position(app.workflow.caret)
+            text_edit(app.workflow.list.query)
+                .caret_position(app.workflow.list.caret)
                 .placeholder("Workflow name")
                 .submit(move |_| save.commit_workflow())
                 .height(canvas::overlay_field()),
@@ -86,7 +86,7 @@ fn seats(app: &App) -> Vec<NodeBuilder> {
     let source = app.clone();
     let dragging = app.workflow.drag_from.get();
     let over = app.workflow.drag_over.get();
-    let selected = app.workflow.sel.get();
+    let selected = app.workflow.list.cursor.get();
     let driving = {
         let model = app.model.get();
         format!(
@@ -196,7 +196,7 @@ fn entry(
     let lit = active || over;
     pick(lit, format!("{marker} {role}"), seat.to_string())
         .pointer_down(move |event| {
-            press.workflow.sel.set(index);
+            press.workflow.list.cursor.set(index);
             press.workflow.drag_from.set(Some(index));
             press.workflow.drag_over.set(Some(index));
             event.capture_pointer();
@@ -215,7 +215,7 @@ fn entry(
             drop.workflow.drag_from.set(None);
             drop.workflow.drag_over.set(None);
             if from == index {
-                drop.workflow.sel.set(index);
+                drop.workflow.list.cursor.set(index);
                 drop.pick_workflow_seat();
             } else {
                 drop.copy_seat(from, index);

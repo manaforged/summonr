@@ -5,10 +5,11 @@ use serde_json::{Value, json};
 
 use super::catalog::Listing;
 use super::config::{Launch, Server};
-use super::http;
 use super::journal::Journal;
+use super::{handshake, http};
 use crate::error::{Error, Result};
-use crate::rpc::{self, Client, Notice};
+use crate::process::Env;
+use crate::rpc::{self, Client, Framing, Notice, Peer};
 
 const STATELESS: &str = "2026-07-28";
 const LIST_PAGES: usize = 64;
@@ -51,6 +52,10 @@ impl Conn {
                     env,
                     cwd: workspace,
                     wait: crate::limits::limits().mcp_open().min(server.wait),
+                    base: Env::Clean,
+                    framing: Framing::Line,
+                    max: crate::limits::limits().mcp_frame_max_bytes,
+                    peer: Peer::Mcp,
                 })?))
             }
             Launch::Http { url, headers, auth } => Transport::Http(http::Http::new(
@@ -74,9 +79,9 @@ impl Conn {
         let (journal, name) = (&conn.journal, conn.server.as_str());
         let mut hear = |notice: Notice<'_>| drop(logged(journal, name, notice));
         let agreed = match &mut conn.transport {
-            Transport::Stdio(client) => Some(client.initialize("summonr", &mut hear).await?),
+            Transport::Stdio(client) => Some(handshake::stdio(client, "summonr", &mut hear).await?),
             Transport::Http(http) => {
-                http.initialize(rpc::hello("summonr", json!({})), &mut hear)
+                http.initialize(handshake::hello("summonr", json!({})), &mut hear)
                     .await?
             }
         };

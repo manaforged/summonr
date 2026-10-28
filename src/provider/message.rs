@@ -312,6 +312,22 @@ impl Usage {
         u32::try_from(count).unwrap_or(u32::MAX)
     }
 
+    pub(crate) fn counted(
+        prompt: u64,
+        completion: u64,
+        reasoning: u64,
+        cached: u64,
+        written: u64,
+    ) -> Self {
+        Self {
+            prompt_tokens: Self::clamp(prompt),
+            completion_tokens: Self::clamp(completion),
+            reasoning_tokens: Self::clamp(reasoning),
+            cached_tokens: Self::clamp(cached),
+            cache_write_tokens: Self::clamp(written),
+        }
+    }
+
     pub fn add(&mut self, other: &Self) {
         self.prompt_tokens = self.prompt_tokens.saturating_add(other.prompt_tokens);
         self.completion_tokens = self

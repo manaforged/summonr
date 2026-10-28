@@ -19,7 +19,6 @@ pub use progress::{WorkKind, WorkProgress};
 pub(crate) use progress::{checks, roman};
 
 const LEDGER_WIDTH: usize = 72;
-const LEDGER_MAX: usize = 40;
 const TREES: &str = "tree.json";
 const DECISION: &str = "Goal Work requires a completion decision";
 

@@ -46,6 +46,7 @@ pub(super) enum When {
     ViewPane,
     PaneActive,
     HunkOpen,
+    Window,
 }
 
 impl When {
@@ -69,45 +70,26 @@ impl When {
             Self::HunkOpen => {
                 app.pane_active() == Some(Pane::Diff) && app.diff_view.peek().is_some()
             }
+            Self::Window => canvas::is_window(),
         }
     }
 }
 
 pub(super) fn bindings() -> Vec<(Shortcut, When, KeyCommand)> {
     use KeyCommand as Do;
+    let text = |key: &'static str| -> Shortcut { LogicalKey::character(key).into() };
+    let ctrl = |key: &'static str| Shortcut::ctrl(LogicalKey::character(key));
+    let shift =
+        |key: &'static str| Shortcut::new(LogicalKey::character(key), ModifiersState::SHIFT);
     let ctrl_shift = ModifiersState::CONTROL | ModifiersState::SHIFT;
-    vec![
-        (
-            Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
-            When::Persist,
-            Do::Always,
-        ),
+    let mut rows = vec![
+        (shift("y"), When::Persist, Do::Always),
         (Key::F5.into(), When::Free, Do::Retry),
-        (
-            Shortcut::ctrl(LogicalKey::character("c")),
-            When::Unrecorded,
-            Do::Interrupt,
-        ),
-        (
-            Shortcut::ctrl(LogicalKey::character("d")),
-            When::Idle,
-            Do::Quit,
-        ),
-        (
-            LogicalKey::character("t").into(),
-            When::DiffPane,
-            Do::ToggleRecent,
-        ),
-        (
-            LogicalKey::character("c").into(),
-            When::DiffPane,
-            Do::CopyPatch,
-        ),
-        (
-            LogicalKey::character("o").into(),
-            When::ViewPane,
-            Do::ViewExternal,
-        ),
+        (ctrl("c"), When::Unrecorded, Do::Interrupt),
+        (ctrl("d"), When::Idle, Do::Quit),
+        (text("t"), When::DiffPane, Do::ToggleRecent),
+        (text("c"), When::DiffPane, Do::CopyPatch),
+        (text("o"), When::ViewPane, Do::ViewExternal),
         (Key::ArrowLeft.into(), When::PaneActive, Do::Collapse),
         (Key::ArrowRight.into(), When::PaneActive, Do::Expand),
         (
@@ -130,45 +112,25 @@ pub(super) fn bindings() -> Vec<(Shortcut, When, KeyCommand)> {
             When::Always,
             Do::NudgeSplit(5),
         ),
+        (text("a"), When::HunkOpen, Do::HunkAccept),
+        (text("r"), When::HunkOpen, Do::HunkReject),
+        (text("?"), When::Always, Do::Shortcuts),
+        (shift("?"), When::Always, Do::Shortcuts),
         (
-            LogicalKey::character("a").into(),
-            When::HunkOpen,
-            Do::HunkAccept,
-        ),
-        (
-            LogicalKey::character("r").into(),
-            When::HunkOpen,
-            Do::HunkReject,
-        ),
-        (
-            LogicalKey::character("?").into(),
-            When::Always,
-            Do::Shortcuts,
-        ),
-        (
-            Shortcut::new(LogicalKey::character("?"), ModifiersState::SHIFT),
-            When::Always,
-            Do::Shortcuts,
-        ),
-        (
-            LogicalKey::character("y").into(),
+            text("y"),
             When::Always,
             Do::Answer(Reply::Send, GrantAnswer::Allow),
         ),
         (
-            LogicalKey::character("n").into(),
+            text("n"),
             When::Always,
             Do::Answer(Reply::Decline, GrantAnswer::Deny),
         ),
         (Key::Escape.into(), When::Always, Do::Escape),
         (Key::Enter.into(), When::Always, Do::Enter),
-        (LogicalKey::character("e").into(), When::Always, Do::Edit),
-        (
-            Shortcut::ctrl(LogicalKey::character("s")),
-            When::Always,
-            Do::Save,
-        ),
-        (LogicalKey::character("n").into(), When::Always, Do::Note),
+        (text("e"), When::Always, Do::Edit),
+        (ctrl("s"), When::Always, Do::Save),
+        (text("n"), When::Always, Do::Note),
         (Key::Home.into(), When::Always, Do::Edge(false)),
         (Key::End.into(), When::Always, Do::Edge(true)),
         (Shortcut::ctrl(Key::Home), When::Always, Do::CtrlEdge(false)),
@@ -179,8 +141,29 @@ pub(super) fn bindings() -> Vec<(Shortcut, When, KeyCommand)> {
         (Key::ArrowDown.into(), When::Always, Do::Arrow(1)),
         (Key::ArrowLeft.into(), When::Always, Do::Adjust(-1)),
         (Key::ArrowRight.into(), When::Always, Do::Adjust(1)),
-        (LogicalKey::character(" ").into(), When::Always, Do::Toggle),
+        (text(" "), When::Always, Do::Toggle),
         (Key::ArrowUp.into(), When::Always, Do::Recall(true)),
         (Key::ArrowDown.into(), When::Always, Do::Recall(false)),
-    ]
+    ];
+    rows.extend(WINDOW.iter().map(|&(key, command)| {
+        (
+            Shortcut::new(LogicalKey::character(key), ModifiersState::META),
+            When::Window,
+            command,
+        )
+    }));
+    rows
 }
+
+const WINDOW: [(&str, KeyCommand); 10] = [
+    ("k", KeyCommand::Trigger('/')),
+    ("p", KeyCommand::Trigger('@')),
+    (",", KeyCommand::Hotkey(Hotkey::Options)),
+    ("n", KeyCommand::NewSession),
+    ("1", KeyCommand::Pane(Pane::Files)),
+    ("2", KeyCommand::Pane(Pane::Diff)),
+    ("3", KeyCommand::Pane(Pane::Worktrees)),
+    ("4", KeyCommand::Pane(Pane::Jobs)),
+    ("5", KeyCommand::Pane(Pane::Peers)),
+    ("6", KeyCommand::Pane(Pane::Ledger)),
+];

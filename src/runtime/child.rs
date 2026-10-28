@@ -101,7 +101,7 @@ pub(super) fn definition() -> ToolDefinition {
 impl<P: Provider> Loop<P> {
     pub(super) fn task_available(&self) -> bool {
         self.tasks
-            && self.depth == 0
+            && self.session.depth() == 0
             && self.interactive
             && self
                 .seat(crate::workflow::Role::Implement)

@@ -31,9 +31,6 @@ struct Size {
 }
 
 pub(super) const CHARS_PER_TOKEN: usize = 4;
-const KEEP_TAIL: usize = 2;
-const RESERVE_TOKENS: u32 = 16_384;
-const TAIL_TOKENS: u32 = 24_000;
 
 const SUMMARY_ASK: &str = "Do not call tools. Summarize this session so it can continue without the raw history. \
     Exactly these sections, terse bullets: Goal / Constraints / Progress / Key decisions / \
@@ -318,9 +315,13 @@ fn tail_chars(
 ) -> usize {
     window.map_or(compact_chars / 4, |window| {
         let tail_tokens = window
-            .saturating_sub(RESERVE_TOKENS.min(window / 4))
+            .saturating_sub(
+                crate::limits::limits()
+                    .compact_reserve_tokens
+                    .min(window / 4),
+            )
             .div_ceil(4)
-            .clamp(1, TAIL_TOKENS);
+            .clamp(1, crate::limits::limits().compact_tail_tokens);
         chars
             .saturating_mul(tail_tokens as usize)
             .checked_div(estimated_tokens.max(1))

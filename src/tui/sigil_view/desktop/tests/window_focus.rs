@@ -129,7 +129,7 @@ fn the_last_settings_page_shows_its_rows() {
         |app| {
             app.toggle_options();
             let rows = crate::tui::sigil_view::settings::setting_rows(app);
-            app.settings_sel.set(rows.len() - 1);
+            app.settings.cursor.set(rows.len() - 1);
         },
         Vec::new(),
         |app| {
@@ -152,7 +152,7 @@ fn a_failed_send_with_no_provider_adds_one_notice_and_opens_at_the_top() {
     let seen = drive(settings(unseated()), Vec::new(), |app| {
         for _ in 0..2 {
             app.open_providers();
-            app.auth.sel.set(5);
+            app.auth.list.cursor.set(5);
             app.cancel_auth();
         }
         app.open_providers();
@@ -163,7 +163,7 @@ fn a_failed_send_with_no_provider_adds_one_notice_and_opens_at_the_top() {
             .iter()
             .filter(|entry| matches!(entry, crate::tui::sigil_view::model::Entry::System(_)))
             .count();
-        (notices, app.auth.sel.peek())
+        (notices, app.auth.list.cursor.peek())
     });
     assert_eq!(seen.read, (1, 0));
 }

@@ -325,7 +325,7 @@ fn every_default_model_is_current_in_the_bundled_catalog() {
             continue;
         }
         for model in std::iter::once(&preset.model).chain(preset.login_model.as_ref()) {
-            if let Some(current) = crate::catalog::serves(preset.opencode_ids, model) {
+            if let Some(current) = crate::catalog::serves(&preset.opencode_ids, model) {
                 assert!(
                     current,
                     "{} defaults to {model}, which its catalog providers do not list as current",

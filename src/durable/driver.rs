@@ -189,6 +189,10 @@ impl SessionDriver {
         self.state.spent
     }
 
+    pub(crate) fn turns(&self) -> usize {
+        self.state.turns
+    }
+
     pub(crate) fn elapsed_millis(&self) -> u64 {
         self.state.elapsed
     }

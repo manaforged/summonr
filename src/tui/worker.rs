@@ -20,6 +20,7 @@ mod export;
 
 pub(super) use export::{announce, export_session};
 mod history;
+mod lane;
 mod reader;
 mod settings;
 #[cfg(test)]

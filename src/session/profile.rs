@@ -187,9 +187,7 @@ pub fn profile(scope: Scope<'_>) -> Result<String> {
 
 fn session(path: &Path) -> Result<String> {
     let mut scan = Scan::default();
-    for line in log::read(path)? {
-        scan.line(line);
-    }
+    log::each(path, |line| scan.line(line))?;
     let view = View {
         model: &scan.model,
         turns: scan.turns,

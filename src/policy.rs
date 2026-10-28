@@ -173,6 +173,7 @@ impl Policy {
         .into_result()
     }
 
+    #[cfg(test)]
     pub(crate) fn command_policy_checked(
         &self,
         command: &str,
@@ -182,14 +183,6 @@ impl Policy {
     ) -> Result<()> {
         self.command_rules(command, segments, workspace, start)
             .map_err(Error::Denied)
-    }
-
-    pub(crate) fn tool(&self, alias: &str, readonly: bool) -> Result<()> {
-        self.decide(Action::Tool {
-            alias,
-            read_only: readonly,
-        })
-        .into_result()
     }
 
     pub(crate) fn write_path(&self, relative: &str) -> Result<()> {

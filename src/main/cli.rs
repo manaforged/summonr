@@ -14,31 +14,44 @@ mod typo;
 use help::exit_help;
 pub(super) use mcp::McpCommand;
 
+#[derive(Clone, Debug)]
+pub(super) enum Verb {
+    Endpoints,
+    Sessions,
+    Doctor,
+    Classify,
+    Export,
+    Profile,
+    Workflows,
+    Modules,
+    Install,
+    Uninstall,
+    Update,
+    Acp,
+    Mail(Vec<String>),
+    Cron(Vec<String>),
+    Gateway(Vec<String>),
+    Tool(Vec<String>),
+    Mcp(McpCommand),
+    Login,
+    Logout,
+    Worktrees,
+    Diff,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct Args {
+    pub(super) verb: Option<Verb>,
     pub(super) print: bool,
     pub(super) effort: Option<summonr::Effort>,
     pub(super) json: bool,
-    pub(super) list: bool,
     pub(super) live: bool,
-    pub(super) list_sessions: bool,
     pub(super) grep: Option<String>,
     pub(super) logs: bool,
     pub(super) report: bool,
-    pub(super) doctor: bool,
-    pub(super) export: bool,
-    pub(super) profile: bool,
     pub(super) all: bool,
     pub(super) last: Option<usize>,
     pub(super) name: Option<String>,
-    pub(super) list_workflows: bool,
-    pub(super) list_modules: bool,
-    pub(super) mail: Option<Vec<String>>,
-    pub(super) cron: Option<Vec<String>>,
-    pub(super) gateway: Option<Vec<String>>,
-    pub(super) tool: Option<Vec<String>>,
-    pub(super) mcp: Option<McpCommand>,
-    pub(super) acp: bool,
     pub(super) resume: bool,
     pub(super) fork: bool,
     pub(super) trust: bool,
@@ -58,19 +71,14 @@ pub(super) struct Args {
     pub(super) prompt: Vec<String>,
     pub(super) here: bool,
     pub(super) worktree: bool,
-    pub(super) list_worktrees: bool,
     pub(super) gui: bool,
-    pub(super) diff: bool,
     pub(super) stat: bool,
     pub(super) turn: Option<String>,
     pub(super) prune_worktrees: bool,
-    pub(super) login: bool,
     pub(super) key: bool,
     pub(super) url: Option<String>,
     pub(super) default: bool,
-    pub(super) logout: bool,
     pub(super) remove: bool,
-    pub(super) classify: bool,
     pub(super) questions: Option<String>,
     pub(super) noul: Vec<String>,
     pub(super) review: bool,
@@ -79,10 +87,7 @@ pub(super) struct Args {
     pub(super) gate: Option<f64>,
     pub(super) review_diff: bool,
     pub(super) digest: bool,
-    pub(super) add: bool,
     pub(super) add_list: bool,
-    pub(super) uninstall: bool,
-    pub(super) update: bool,
     pub(super) arity: Option<(&'static str, usize)>,
 }
 
@@ -142,12 +147,15 @@ impl Args {
         if self.endpoint_slot(command) && is_endpoint(name) {
             return Ok(Step::Endpoint);
         }
-        if self.login && self.endpoint.is_none() {
-            self.endpoint = Some(name.to_string());
-            return Ok(Step::Next);
-        }
-        if self.logout && self.endpoint.is_none() {
-            return Err(unknown(name, unlisted(self.login)));
+        if self.endpoint.is_none() {
+            match self.verb {
+                Some(Verb::Login) => {
+                    self.endpoint = Some(name.to_string());
+                    return Ok(Step::Next);
+                }
+                Some(Verb::Logout) => return Err(unknown(name, "")),
+                _ => {}
+            }
         }
         self.prompt.push(name.to_string());
         Ok(Step::Next)
@@ -169,11 +177,12 @@ impl Args {
     }
 
     fn endpoint_slot(&self, command: bool) -> bool {
-        self.endpoint.is_none() && (command || self.login || self.logout)
+        self.endpoint.is_none()
+            && (command || matches!(self.verb, Some(Verb::Login | Verb::Logout)))
     }
 
     fn check_names(&self) -> Result<()> {
-        if self.login
+        if matches!(self.verb, Some(Verb::Login))
             && self.url.is_none()
             && let Some(name) = self.endpoint.as_deref()
             && !is_endpoint(name)

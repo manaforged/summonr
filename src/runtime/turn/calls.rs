@@ -178,7 +178,7 @@ impl<P: Provider> Loop<P> {
     }
 
     fn child_refusal(&self, name: &str) -> Option<String> {
-        if self.depth == 0 {
+        if self.session.depth() == 0 {
             return None;
         }
         match Builtin::of(name) {

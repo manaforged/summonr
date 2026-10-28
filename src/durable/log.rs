@@ -174,6 +174,8 @@ pub(crate) struct State {
     pub(crate) children: std::collections::BTreeMap<SessionId, crate::child::ChildRecord>,
     pub(crate) history: Vec<Message>,
     pub(crate) spent: u64,
+    pub(crate) metered: Usage,
+    pub(crate) turns: usize,
     pub(crate) unreported: u64,
     pub(crate) elapsed: u64,
     pub(crate) opener: Option<usize>,
@@ -182,9 +184,14 @@ pub(crate) struct State {
 }
 
 impl State {
-    fn charge(&mut self, usage: Usage) {
+    fn charge(&mut self, usage: Usage, reported: bool) {
         self.spent = self.spent.saturating_add(usage.tokens());
         self.elapsed = self.elapsed.saturating_add(usage.millis);
+        if reported {
+            self.metered.input = self.metered.input.saturating_add(usage.input);
+            self.metered.output = self.metered.output.saturating_add(usage.output);
+            self.metered.cached = self.metered.cached.saturating_add(usage.cached);
+        }
     }
 }
 

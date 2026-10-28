@@ -256,7 +256,10 @@ pub(super) fn runs(dir: &std::path::Path) -> Vec<String> {
 async fn claude_code_never_sees_an_api_key() {
     let unset = crate::endpoint::env_unset("claude");
     for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
-        assert!(unset.contains(&key), "{key} reaches Claude Code");
+        assert!(
+            unset.iter().any(|name| name == key),
+            "{key} reaches Claude Code"
+        );
     }
     let cwd = std::env::current_dir().unwrap();
     let mut process = crate::process::start(crate::process::Spec {

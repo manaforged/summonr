@@ -44,7 +44,7 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
         }
     }));
     bindings.extend(alt("o", |app, event| {
-        if app.picker.draft.peek().is_empty() {
+        if app.picker.list.query.peek().is_empty() {
             event.stop_propagation();
             app.toggle_older_models();
         }
@@ -71,7 +71,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         })
         .child(
             container().child(
-                text_field(app.picker.draft)
+                text_field(app.picker.list.query)
                     .placeholder("Search models, providers, or type a model id")
                     .focus_when(app.picker.focus)
                     .autofocus()
@@ -87,7 +87,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
 
 fn hints(app: &App) -> Hints {
     let total = app.picker.shown.get().len();
-    let selected = app.picker.sel.get().min(total.saturating_sub(1));
+    let selected = app.picker.list.cursor.get().min(total.saturating_sub(1));
     let checking = app
         .picker
         .groups
@@ -174,7 +174,7 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
 }
 
 fn empty(paint: &App) -> NodeBuilder {
-    let draft = paint.picker.draft.peek().trim().to_string();
+    let draft = paint.picker.list.query.peek().trim().to_string();
     if paint.picker.loading.get() {
         group("loading models…")
     } else if draft.is_empty() {

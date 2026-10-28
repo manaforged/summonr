@@ -83,7 +83,10 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn delete_session(&self) {
         let rows = self.sessions.rows();
-        let Some(info) = rows.get(files::pick(&self.sessions.selected, rows.len())) else {
+        let Some(info) = rows.get(crate::tui::sigil_view::ui::at(
+            &self.sessions.selected,
+            rows.len(),
+        )) else {
             return;
         };
         let again = crate::tui::sigil_view::ui::alt_label('d');
@@ -93,7 +96,10 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn resume_session(&self) {
         let rows = self.sessions.rows();
-        if let Some(info) = rows.get(files::pick(&self.sessions.selected, rows.len())) {
+        if let Some(info) = rows.get(crate::tui::sigil_view::ui::at(
+            &self.sessions.selected,
+            rows.len(),
+        )) {
             if info.id != self.model.get().session {
                 drop(self.cmd.send(Cmd::Command(format!("/resume {}", info.id))));
             }

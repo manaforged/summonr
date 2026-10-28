@@ -3,8 +3,6 @@ use crate::provider::Provider;
 use crate::runtime::Loop;
 use crate::{Error, ProviderFailureKind, Result};
 
-const REPAIRS: usize = 2;
-
 const JUDGE_SYSTEM: &str = "You judge whether a coding objective is complete. Reply with one \
 line of JSON: {\"verdict\": \"done\"|\"continue\"|\"stalled\"|\"impossible\", \"reason\": \
 \"<one sentence>\"}. `done` only when the response shows concrete evidence (a command result, \
@@ -33,9 +31,10 @@ pub(crate) async fn decision<P: Provider>(
         usage.add(&judge_usage);
         match parse_verdict(&reply) {
             Ok(verdict) => break verdict,
-            Err(error) if repairs >= REPAIRS => {
+            Err(error) if repairs >= crate::limits::limits().judge_repairs => {
                 return Decision::GoalContinue(format!(
-                    "goal judge stayed malformed after {REPAIRS} repairs: {error}"
+                    "goal judge stayed malformed after {} repairs: {error}",
+                    crate::limits::limits().judge_repairs
                 ));
             }
             Err(_) => {

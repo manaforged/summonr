@@ -14,8 +14,8 @@ fn no_provider() -> &'static str {
 impl App {
     pub(in crate::tui::sigil_view) fn open_providers(&self) {
         self.begin_auth(None);
-        self.auth.sel.set(0);
-        self.auth.scroll.set(0.0);
+        self.auth.list.cursor.set(0);
+        self.auth.list.scroll.set(0.0);
     }
 
     pub(in crate::tui::sigil_view) fn ask_provider(&self) {

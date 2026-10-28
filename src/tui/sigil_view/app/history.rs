@@ -16,7 +16,10 @@ impl App {
             Ok(rows) => rows,
             Err(_) => return,
         };
-        let Some((entry, _)) = rows.get(files::pick(&self.search.selected, rows.len())) else {
+        let Some((entry, _)) = rows.get(crate::tui::sigil_view::ui::at(
+            &self.search.selected,
+            rows.len(),
+        )) else {
             return;
         };
         if self.search.is_history() {

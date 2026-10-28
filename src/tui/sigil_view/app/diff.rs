@@ -15,7 +15,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn toggle_session(&self) {
         self.diff_session.set(!self.diff_session.peek());
-        self.diff_cursor.set(0);
+        self.pane_list(Pane::Diff).select(0);
         self.request_diff();
         self.refresh();
     }
@@ -31,7 +31,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn toggle_recent(&self) {
         self.diff_recent.set(!self.diff_recent.peek());
-        self.diff_cursor.set(0);
+        self.pane_list(Pane::Diff).select(0);
         self.refresh();
     }
 
@@ -125,18 +125,12 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn diff_rows(&self) -> Vec<FileRow> {
-        self.diff_stats()
-            .iter()
-            .map(|stat| FileRow::flat(stat.path.clone(), stat.path.clone(), false))
-            .collect()
-    }
-
     pub(in crate::tui::sigil_view) fn diff_move(&self, delta: isize) {
         if self.diff_view.peek().is_some() {
             return self.hunk_move(delta);
         }
-        files::shift(&self.diff_cursor, delta, self.diff_rows().len());
+        self.pane_list(Pane::Diff)
+            .shift(delta, self.diff_rows().len());
         self.refresh();
     }
 
@@ -147,9 +141,8 @@ impl App {
         if self.pane_back() {
             return;
         }
-        let rows = self.diff_rows();
-        if let Some(row) = rows.get(files::pick(&self.diff_cursor, rows.len())) {
-            self.diff_open(row.path.clone());
+        if let Some(row) = self.picked(Pane::Diff) {
+            self.diff_open(row.path);
         }
     }
 
@@ -171,7 +164,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn diff_open(&self, path: String) {
         self.model_mut(|model| model.patch = None);
-        self.hunk_cursor.set(0);
+        self.hunk_list.select(0);
         self.note_target.set(None);
         self.diff_view.set(Some(path.clone()));
         drop(self.cmd.send(Cmd::Patch(self.root(), path)));
@@ -187,31 +180,9 @@ impl App {
             model.patch = None;
             model.marks = None;
         });
-        self.hunk_cursor.set(0);
+        self.hunk_list.select(0);
         self.note_target.set(None);
         self.diff_root.set(root);
-    }
-
-    pub(in crate::tui::sigil_view) fn tree_rows(&self) -> Vec<FileRow> {
-        self.model
-            .get()
-            .trees
-            .iter()
-            .map(|row| {
-                FileRow::flat(
-                    row.tree.path.display().to_string(),
-                    row.tree.branch.clone(),
-                    false,
-                )
-            })
-            .collect()
-    }
-
-    pub(in crate::tui::sigil_view) fn tree_enter(&self) {
-        let rows = self.tree_rows();
-        if let Some(row) = rows.get(files::pick(&self.tree_cursor, rows.len())) {
-            self.tree_show(PathBuf::from(&row.path), row.name.clone());
-        }
     }
 
     pub(in crate::tui::sigil_view) fn tree_show(&self, path: PathBuf, branch: String) {

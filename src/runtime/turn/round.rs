@@ -16,7 +16,7 @@ impl<P: Provider> Loop<P> {
             .await?;
 
         loop {
-            while self.budget.max_tokens.is_some() && self.child_budget_reserved() > 0 {
+            while self.budget().max_tokens.is_some() && self.child_budget_reserved() > 0 {
                 self.await_children(events, &mut emit, usage).await?;
             }
             *reached = reached.saturating_add(1);
@@ -262,7 +262,7 @@ impl<P: Provider> Loop<P> {
         if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
-        let read_only = self.depth > 0 && self.tools.is_read_only();
+        let read_only = self.session.depth() > 0 && self.tools.is_read_only();
         self.tools.set_read_only(read_only);
         self.summary_wait = 0;
         self.turn_started = crate::mail::now();
@@ -301,7 +301,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(in crate::runtime) fn budget_abort(&self) -> Option<Abort> {
-        self.budget.breach(self.run_tokens(), self.elapsed_secs())
+        self.budget().breach(self.run_tokens(), self.elapsed_secs())
     }
 
     pub(super) async fn prepare_round(

@@ -4,11 +4,9 @@ use sigil::prelude::NodeBuilder;
 
 pub(in crate::tui::sigil_view) mod body;
 mod diff;
-mod jobs;
-mod mcp;
-mod peers;
 mod todos;
 mod tree_actions;
+mod view;
 
 pub(super) mod ledger;
 

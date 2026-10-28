@@ -3,7 +3,7 @@ use std::sync::{Arc, PoisonError};
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::dispatch::waits_for_turn;
+use super::lane::Lane;
 use super::settings::set_run_mode;
 use super::state::set_mail_reply;
 use super::steer::{steer, steerable, take_inputs};
@@ -71,7 +71,7 @@ impl MidTurn<'_> {
                 drop(self.ui.send(Msg::Bye));
                 Outcome::Quit
             }
-            command if waits_for_turn(&command) => self.later(command),
+            command if command.lane() == Lane::AfterTurn => self.later(command),
             command @ (Cmd::Steer(_)
             | Cmd::Queue(_)
             | Cmd::Submit(_)

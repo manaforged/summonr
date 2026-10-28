@@ -2,7 +2,7 @@ use sigil::prelude::MenuItem;
 
 use super::*;
 
-type Act = fn(&App, &FileRow, &str);
+pub(in crate::tui::sigil_view) type Act = fn(&App, &FileRow, &str);
 
 const HUNK: &[(&str, Act)] = &[
     ("accept hunk", |app, row, hunk| {
@@ -15,15 +15,17 @@ const HUNK: &[(&str, Act)] = &[
         app.note_start(row.path.clone(), hunk.to_string());
     }),
 ];
-const JOB: &[(&str, Act)] = &[
+pub(in crate::tui::sigil_view) const JOB: &[(&str, Act)] = &[
     ("kill job", |app, row, _| app.job_kill(&row.path)),
     ("view log", |app, row, _| {
         app.view_open(app.job_log(&row.path))
     }),
 ];
-const MCP: &[(&str, Act)] = &[("view server", |app, _, _| app.mcp_enter())];
-const PEER: &[(&str, Act)] = &[("mention @name", |app, row, _| app.peer_mention(&row.path))];
-const TREE: &[(&str, Act)] = &[
+pub(in crate::tui::sigil_view) const MCP: &[(&str, Act)] =
+    &[("view server", |app, row, _| app.open_row(row))];
+pub(in crate::tui::sigil_view) const PEER: &[(&str, Act)] =
+    &[("mention @name", |app, row, _| app.peer_mention(&row.path))];
+pub(in crate::tui::sigil_view) const TREE: &[(&str, Act)] = &[
     ("show diff", |app, row, _| {
         app.tree_show(PathBuf::from(&row.path), row.name.clone());
     }),
@@ -35,42 +37,33 @@ const TREE: &[(&str, Act)] = &[
     }),
     ("insert path", App::insert_path),
 ];
-const CHANGE: &[(&str, Act)] = &[
+pub(in crate::tui::sigil_view) const CHANGE: &[(&str, Act)] = &[
     ("view hunks", |app, row, _| app.diff_open(row.path.clone())),
     ("view file", |app, row, _| app.view_open(row.path.clone())),
     ("attach @path", |app, row, _| app.mention(&row.path)),
     ("open in $EDITOR", App::open_path),
     ("insert path", App::insert_path),
 ];
-const FILE: &[(&str, Act)] = &[
+pub(in crate::tui::sigil_view) const FILE: &[(&str, Act)] = &[
     ("attach @path", |app, row, _| app.mention(&row.path)),
     ("view file", |app, row, _| app.view_open(row.path.clone())),
     ("open in $EDITOR", App::open_path),
     ("insert path", App::insert_path),
 ];
-const DIR: &[(&str, Act)] = &[("insert path", App::insert_path)];
+pub(in crate::tui::sigil_view) const DIR: &[(&str, Act)] = &[("insert path", App::insert_path)];
 
 impl App {
     pub(in crate::tui::sigil_view) fn pane_point(&self, kind: Pane, index: usize) {
-        self.pane_cursor(kind).set(index);
+        self.pane_list(kind).select(index);
         self.pane_focus.set(true);
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn row_menu(&self, kind: Pane, index: usize) -> Vec<MenuItem> {
-        let Some(row) = self.pane_rows(kind).get(index).cloned() else {
+        let Some(row) = self.pane_rows(kind).into_iter().nth(index) else {
             return Vec::new();
         };
-        let acts = match kind {
-            Pane::Jobs => JOB,
-            Pane::Mcp => MCP,
-            Pane::Peers => PEER,
-            Pane::Worktrees => TREE,
-            Pane::Diff => CHANGE,
-            Pane::Chat | Pane::Ledger | Pane::Files | Pane::View if row.dir => DIR,
-            Pane::Chat | Pane::Ledger | Pane::Files | Pane::View => FILE,
-        };
-        let mut items = self.items(acts, &row, "");
+        let mut items = self.items(self.pane_menu(kind, &row), &row, "");
         if row.dir {
             let app = self.clone();
             let label = if row.open { "collapse" } else { "expand" };

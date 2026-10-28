@@ -117,7 +117,7 @@ mod repeat_tests;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn remaining_time(&self) -> Option<Duration> {
-        let limit = crate::limits::seconds(self.budget.max_secs?);
+        let limit = crate::limits::seconds(self.budget().max_secs?);
         Some(limit.saturating_sub(crate::limits::seconds(self.elapsed_secs())))
     }
 

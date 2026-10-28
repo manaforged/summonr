@@ -32,7 +32,7 @@ impl Endpoint {
             .filter(|row| self.own_base(row))
             .or_else(|| self.base_url.as_deref().and_then(hosted));
         if own.is_none()
-            && let Some(key) = row.and_then(|row| env_key(row.env_keys))
+            && let Some(key) = row.and_then(|row| env_key(&row.env_keys))
         {
             return Ok(Some((key, Source::Env)));
         }
@@ -79,7 +79,7 @@ fn fallback_key(
     let row = preset(&endpoint.name);
     if let Some(key) = row
         .filter(|row| endpoint.own_base(row))
-        .and_then(|row| row.default_key)
+        .and_then(|row| row.default_key.as_deref())
     {
         endpoint.api_key = Some(key.to_string());
         endpoint.source = Some(Source::Builtin);
@@ -111,7 +111,7 @@ pub(super) fn json(value: &toml::Value) -> serde_json::Value {
 pub(super) fn named_model(endpoint: &str, model: &str) -> String {
     let folded = model.trim().to_ascii_lowercase();
     if let Some(row) = preset(endpoint) {
-        for (alias, canon) in row.aliases {
+        for (alias, canon) in &row.aliases {
             if *alias == folded {
                 return (*canon).to_string();
             }
@@ -120,12 +120,12 @@ pub(super) fn named_model(endpoint: &str, model: &str) -> String {
     model.to_string()
 }
 
-pub(super) fn env_key(names: &[&str]) -> Option<String> {
+pub(super) fn env_key<S: AsRef<str>>(names: &[S]) -> Option<String> {
     if cfg!(test) && std::env::var_os("SUMMONR_LIVE_KEYS").is_none() {
         return None;
     }
     names.iter().find_map(|name| {
-        std::env::var(name)
+        std::env::var(name.as_ref())
             .ok()
             .filter(|value| !value.trim().is_empty())
     })

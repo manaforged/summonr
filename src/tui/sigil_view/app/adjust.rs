@@ -10,16 +10,13 @@ impl App {
         if self.picker.open.peek() {
             return;
         }
-        files::shift(
-            &self.settings_sel,
-            delta,
-            super::settings::setting_rows(self).len(),
-        );
+        self.settings
+            .shift(delta, super::settings::setting_rows(self).len());
     }
 
     pub(in crate::tui::sigil_view) fn selected_setting(&self) -> Option<super::settings::Setting> {
         super::settings::setting_rows(self)
-            .get(self.settings_sel.peek())
+            .get(self.settings.cursor.peek())
             .map(|row| row.setting)
     }
 
@@ -92,7 +89,7 @@ impl App {
             Some(Overlay::Settings) | None => {
                 let open = !self.settings_open.peek();
                 if open {
-                    self.settings_sel.set(0);
+                    self.settings.cursor.set(0);
                 }
                 self.settings_open.set(open);
             }
@@ -103,7 +100,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn open_hotkeys(&self) {
-        self.hotkeys.sel.set(0);
+        self.hotkeys.list.cursor.set(0);
         self.stop_recording();
         self.hotkeys.open.set(true);
     }
@@ -130,7 +127,7 @@ impl App {
         if self.hotkeys.recording.peek() {
             return;
         }
-        files::shift(&self.hotkeys.sel, delta, Hotkey::ALL.len());
+        self.hotkeys.list.shift(delta, Hotkey::ALL.len());
     }
 
     pub(in crate::tui::sigil_view) fn edit_hotkey(&self) {
@@ -191,7 +188,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn record_chord(&self, key: char, leader: bool) {
-        let action = Hotkey::ALL[self.hotkeys.sel.peek().min(Hotkey::ALL.len() - 1)];
+        let action = Hotkey::ALL[self.hotkeys.list.at(Hotkey::ALL.len())];
         let mut assigned = false;
         self.model_mut(|model| {
             assigned = model.prefs.hotkeys.assign(action, key, leader);

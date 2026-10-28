@@ -92,7 +92,6 @@ impl<P: Provider> Loop<P> {
             return Err(Error::Config("SUMMONR_MODEL is empty".to_string()));
         }
         let system_prompt = system_prompt.into();
-        let (max_tokens, max_live_millis) = session.budget_limits();
         let run_base = (session.spent_tokens(), session.elapsed_millis());
         let depth = session.depth();
         let tools = ToolRegistry::with_policy_and_search(workspace, policy, search)?;
@@ -117,11 +116,6 @@ impl<P: Provider> Loop<P> {
             session,
             verify: None,
             check_file: None,
-            budget: Budget {
-                max_tokens,
-                max_secs: max_live_millis
-                    .map(|millis| millis.saturating_add(999).saturating_div(1_000)),
-            },
             run_base,
             context_sample: None,
             context_window: None,
@@ -145,7 +139,6 @@ impl<P: Provider> Loop<P> {
             mcp_board: crate::mcp::Board::default(),
             inbox: std::collections::VecDeque::new(),
             steer_shared: None,
-            depth,
             tasks: true,
             interactive: false,
             spawned: BTreeMap::new(),
@@ -330,8 +323,12 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn budget(&self) -> &Budget {
-        &self.budget
+    pub fn budget(&self) -> Budget {
+        let (max_tokens, millis) = self.session.budget_limits();
+        Budget {
+            max_tokens,
+            max_secs: millis.map(|millis| millis.saturating_add(999).saturating_div(1_000)),
+        }
     }
 
     #[must_use]

@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
 const AGENT: &str = "summonr";
+const PRODUCTS: [&str; 3] = ["summon", "summoner", "summonr"];
 const SOURCE: &str = "summonr:lifecycle";
 const DISPLAY: &str = "summonr:display";
 
@@ -222,7 +223,7 @@ fn target(
     env: impl Fn(&str) -> Option<OsString>,
 ) -> Option<Target> {
     if env("HERDR_ENV").as_deref() != Some(OsStr::new("1"))
-        || !matches!(executable, Some(name) if name == "summon" || name == "summoner" || name == "summonr")
+        || !executable.is_some_and(|name| PRODUCTS.iter().any(|product| name == *product))
     {
         return None;
     }
@@ -260,7 +261,7 @@ fn product(executable: &Path) -> Option<&OsStr> {
         let part = part.as_os_str();
         part == "deps" || part.to_string_lossy().starts_with("test-")
     });
-    (!test && matches!(name.to_str(), Some("summon" | "summoner" | "summonr"))).then_some(name)
+    (!test && PRODUCTS.iter().any(|product| name == *product)).then_some(name)
 }
 
 fn present(value: Option<OsString>) -> Option<OsString> {

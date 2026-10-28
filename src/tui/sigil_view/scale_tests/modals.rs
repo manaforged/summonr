@@ -156,7 +156,7 @@ pub(super) fn select(app: &App, endpoint: &str) {
         .iter()
         .position(|seat| seat.endpoint == endpoint)
         .expect("row");
-    app.picker.sel.set(at);
+    app.picker.list.cursor.set(at);
 }
 
 pub(super) fn rejected_openai(app: &App) {
@@ -201,7 +201,7 @@ fn a_provider_with_regions_and_plans_shows_both_as_choices() {
             .iter()
             .position(|row| row.provider == "zai")
             .expect("zai row");
-        app.auth.sel.set(at);
+        app.auth.list.cursor.set(at);
     };
     let screen = screen(200, 60, zai);
     let regions = ["[international]", "[China]"];
@@ -375,7 +375,7 @@ fn a_probe_result_changes_a_provider_chip_without_moving_its_row() {
         listed(app, vec![], &[(last.as_str(), Reach::KeyRejected)]);
         assert_eq!(names(), before);
         let at = before.len() - 1;
-        app.auth.sel.set(at);
+        app.auth.list.cursor.set(at);
     });
     assert!(screen.contains("key rejected"), "{screen}");
 }

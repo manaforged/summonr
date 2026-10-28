@@ -152,7 +152,7 @@ pub(crate) fn providers_at(url: &str) -> Vec<&'static str> {
     };
     let mut ids: Vec<&str> = preset::presets()
         .filter(|preset| host_port(&preset.base_url).as_deref() == Some(wanted.as_str()))
-        .flat_map(|preset| preset.opencode_ids.iter().copied())
+        .flat_map(|preset| preset.opencode_ids.iter().map(String::as_str))
         .collect();
     ids.sort_unstable();
     ids.dedup();

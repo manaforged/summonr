@@ -3,7 +3,7 @@ use sigil::prelude::NodeBuilder;
 use super::super::ui::Bindings;
 use super::*;
 
-mod context;
+pub(super) mod context;
 
 struct Row {
     overlay: Overlay,
@@ -16,6 +16,7 @@ struct Row {
     viewport: Option<fn(&App) -> Signal<f32>>,
     enter: fn(&App),
     close: Option<fn(&App)>,
+    dismiss: fn(&App),
 }
 
 const ROW: Row = Row {
@@ -29,6 +30,9 @@ const ROW: Row = Row {
     viewport: None,
     enter: |_| {},
     close: None,
+    dismiss: |app| {
+        app.overlay_close();
+    },
 };
 
 static ROWS: [Row; 13] = [
@@ -90,13 +94,20 @@ static ROWS: [Row; 13] = [
         adjust: App::step_tab,
         viewport: Some(|app| {
             if app.picker.open.peek() {
-                app.picker.scroll
+                app.picker.list.scroll
             } else {
-                app.auth.scroll
+                app.auth.list.scroll
             }
         }),
         enter: App::commit_auth,
         close: Some(App::cancel_auth),
+        dismiss: |app| {
+            if app.picker.open.peek() {
+                app.overlay_close();
+            } else {
+                app.dismiss_auth();
+            }
+        },
         ..ROW
     },
     Row {
@@ -107,9 +118,10 @@ static ROWS: [Row; 13] = [
         shift: App::move_model,
         tab: Some(App::cycle_facet),
         adjust: App::step_tab,
-        viewport: Some(|app| app.picker.scroll),
+        viewport: Some(|app| app.picker.list.scroll),
         enter: App::commit_model_edit,
         close: Some(App::cancel_model_edit),
+        ..ROW
     },
     Row {
         overlay: Overlay::Effort,
@@ -191,14 +203,8 @@ impl Overlay {
         let row = self.row();
         let node = row.node?;
         let owner = app.clone();
-        let closer = app.clone();
-        let close: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
-            if closer.overlay() == Some(Self::Auth) && !closer.picker.open.peek() {
-                closer.dismiss_auth();
-            } else {
-                closer.overlay_close();
-            }
-        });
+        let (closer, dismiss) = (app.clone(), row.dismiss);
+        let close: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || dismiss(&closer));
         let node = super::super::ui::dismissing(close, || node(app));
         Some(super::super::ui::keyed(node, &owner, (row.keys)()))
     }
@@ -331,7 +337,7 @@ impl App {
             Some((endpoint, model)) => Cmd::SeatRole(*role, endpoint, model),
             None => Cmd::ClearRole(*role),
         };
-        self.workflow.sel.set(to);
+        self.workflow.list.cursor.set(to);
         drop(self.cmd.send(command));
     }
 }

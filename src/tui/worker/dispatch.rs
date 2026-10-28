@@ -1,30 +1,6 @@
 use super::state::set_mail_reply;
 use super::*;
 
-pub(super) fn waits_for_turn(command: &Cmd) -> bool {
-    matches!(
-        command,
-        Cmd::Command(_)
-            | Cmd::Branch { .. }
-            | Cmd::Login(_)
-            | Cmd::SetKey(..)
-            | Cmd::Logout(_)
-            | Cmd::Merge(_)
-            | Cmd::Discard(_)
-            | Cmd::SetVerify(_)
-            | Cmd::ToggleApproval
-            | Cmd::SetEndpoint(_)
-            | Cmd::SetModel(_)
-            | Cmd::SetSeat(..)
-            | Cmd::SeatRole(..)
-            | Cmd::ClearRole(_)
-            | Cmd::SaveWorkflow(_)
-            | Cmd::ListWorkflows
-            | Cmd::SetModule(..)
-            | Cmd::SetEffort(_)
-    )
-}
-
 impl Worker {
     pub(super) async fn dispatch(&mut self, command: Cmd) -> bool {
         match command {

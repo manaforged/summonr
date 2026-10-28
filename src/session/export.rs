@@ -10,43 +10,41 @@ const ARG_WIDTH: usize = 100;
 
 pub fn export(path: &Path) -> Result<String> {
     let mut out = String::new();
-    for line in log::read(path)? {
-        match line {
-            Line::Session {
-                id,
-                model,
-                workspace,
-                ..
-            } => export_session(&mut out, path, &id.to_string(), &model, &workspace),
-            Line::User {
-                text,
-                source,
-                start,
-                ..
-            } => export_user(&mut out, &text, source.as_deref(), start),
-            Line::Assistant {
-                text, tool_calls, ..
-            } => export_assistant(&mut out, &text, &tool_calls),
-            Line::Interrupted { text, .. } => {
-                out.push_str(&format!("## Assistant (interrupted)\n\n{text}\n\n"));
-            }
-            Line::Tool { text, success, .. } => export_tool(&mut out, &text, success),
-            Line::Receipt { text, .. } => {
-                out.push_str(&format!("> {}\n\n", text.replace('\n', "\n> ")));
-            }
-            Line::Summary { text, .. } => {
-                out.push_str(&format!("## Compacted\n\n{text}\n\n"));
-            }
-            Line::Clear => out.push_str("---\n\n"),
-            Line::Tools { .. }
-            | Line::Budget { .. }
-            | Line::Workflow { .. }
-            | Line::Child { .. }
-            | Line::Charge { .. }
-            | Line::Rewrite { .. }
-            | Line::Close { .. } => {}
+    log::each(path, |line| match line {
+        Line::Session {
+            id,
+            model,
+            workspace,
+            ..
+        } => export_session(&mut out, path, &id.to_string(), &model, &workspace),
+        Line::User {
+            text,
+            source,
+            start,
+            ..
+        } => export_user(&mut out, &text, source.as_deref(), start),
+        Line::Assistant {
+            text, tool_calls, ..
+        } => export_assistant(&mut out, &text, &tool_calls),
+        Line::Interrupted { text, .. } => {
+            out.push_str(&format!("## Assistant (interrupted)\n\n{text}\n\n"));
         }
-    }
+        Line::Tool { text, success, .. } => export_tool(&mut out, &text, success),
+        Line::Receipt { text, .. } => {
+            out.push_str(&format!("> {}\n\n", text.replace('\n', "\n> ")));
+        }
+        Line::Summary { text, .. } => {
+            out.push_str(&format!("## Compacted\n\n{text}\n\n"));
+        }
+        Line::Clear => out.push_str("---\n\n"),
+        Line::Tools { .. }
+        | Line::Budget { .. }
+        | Line::Workflow { .. }
+        | Line::Child { .. }
+        | Line::Charge { .. }
+        | Line::Rewrite { .. }
+        | Line::Close { .. } => {}
+    })?;
     Ok(out)
 }
 

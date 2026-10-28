@@ -13,6 +13,7 @@ mod conn;
 mod defer;
 mod expand;
 mod form;
+mod handshake;
 mod http;
 mod journal;
 mod link;

@@ -107,8 +107,8 @@ pub(super) fn hints(app: &App) -> Hints {
 }
 
 fn listing_hints(app: &App) -> Hints {
-    let rows = matching(app.auth.choices.get(), &app.auth.filter.get());
-    let selected = app.auth.sel.get().min(rows.len().saturating_sub(1));
+    let rows = matching(app.auth.choices.get(), &app.auth.list.query.get());
+    let selected = app.auth.list.cursor.get().min(rows.len().saturating_sub(1));
     let Some(choice) = rows.get(selected) else {
         return Hints::new().key(Key::Esc, "close").right("0 / 0");
     };
@@ -151,14 +151,14 @@ fn chip(choice: &AuthInfo, state: Option<&State>) -> String {
 
 fn listing(app: &App) -> Vec<NodeBuilder> {
     let source = app.clone();
-    let rows = matching(app.auth.choices.get(), &app.auth.filter.get());
-    let selected = app.auth.sel.get().min(rows.len().saturating_sub(1));
+    let rows = matching(app.auth.choices.get(), &app.auth.list.query.get());
+    let selected = app.auth.list.cursor.get().min(rows.len().saturating_sub(1));
     let Some(choice) = rows.get(selected) else {
         return vec![group("No providers match.")];
     };
     let states = app.picker.groups.get();
     let (lookup, shown) = sections(&rows, &states, selected);
-    let explain = canvas::is_window() && app.auth.filter.get().is_empty();
+    let explain = canvas::is_window() && app.auth.list.query.get().is_empty();
     let chrome = LIST_CHROME
         + u16::from(explain)
         + if split(app) {
@@ -176,7 +176,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
                 None => group(name.clone()),
             },
         )
-        .scroll_bind(app.auth.scroll)
+        .scroll_bind(app.auth.list.scroll)
         .follow_row(signal(shown)),
         canvas::overlay_list_row(),
         visible,

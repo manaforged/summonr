@@ -28,13 +28,13 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
             .and_then(|row| {
                 row.env_keys
                     .iter()
-                    .copied()
+                    .map(String::as_str)
                     .find(|key| env_key(&[key]).is_some())
             }),
         model: endpoint.model.clone(),
         base_url: endpoint.base_url.clone(),
         own: preset(name).is_none(),
-        env_hint: preset(name).and_then(|row| row.env_keys.first().copied()),
+        env_hint: preset(name).and_then(|row| row.env_keys.first().map(String::as_str)),
         group: login_group(name, &endpoint),
     };
     if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| flow(spec).signs_in()) {
@@ -280,7 +280,7 @@ pub(crate) fn catalog(wire: Wire) -> Vec<String> {
         if !models.contains(&row.model) {
             models.push(row.model.clone());
         }
-        for (_, canon) in row.aliases {
+        for canon in row.aliases.values() {
             if !models.contains(canon) {
                 models.push(canon.clone());
             }

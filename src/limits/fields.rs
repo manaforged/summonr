@@ -33,6 +33,12 @@ macro_rules! table {
 
 table! {
     cache_ttl: CacheTtl,
+    compact_keep_tail: usize,
+    compact_reserve_tokens: u32,
+    compact_tail_tokens: u32,
+    ledger_max: usize,
+    judge_repairs: usize,
+    prompt_sessions: usize,
     retry_limit: u32,
     retry_base_ms: u64 => retry_base(millis),
     retry_max_ms: u64 => retry_max(millis),

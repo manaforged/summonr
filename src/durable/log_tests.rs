@@ -282,3 +282,9 @@ fn records_after_reads_from_a_line_boundary_and_rejects_a_mid_line_offset() {
     let torn = records_after::<serde_json::Value>(&path, 3).unwrap_err();
     assert_eq!(torn.kind(), std::io::ErrorKind::InvalidData);
 }
+
+fn records_after<T: serde::de::DeserializeOwned>(path: &Path, offset: u64) -> io::Result<Vec<T>> {
+    let mut records = Vec::new();
+    fold(path, offset, |record| records.push(record))?;
+    Ok(records)
+}

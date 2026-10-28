@@ -32,31 +32,14 @@ pub(super) async fn killed(spawned: Spawned, parent: &Path, reason: &str) -> Res
 
 pub(super) fn accounting_at(path: &Path) -> Result<(u64, Usage)> {
     let mut state = State::default();
-    let mut usage = Usage::default();
-    let lines = log::read(path)
+    log::each(path, |line| state.apply(line))
         .map_err(|error| Error::Config(format!("cannot read child session log: {error}")))?;
-    for line in lines {
-        match &line {
-            log::Line::Assistant { usage: meter, .. }
-            | log::Line::Charge {
-                usage: meter,
-                reported: true,
-                ..
-            } => {
-                usage.prompt_tokens = usage
-                    .prompt_tokens
-                    .saturating_add(Usage::clamp(meter.input));
-                usage.completion_tokens = usage
-                    .completion_tokens
-                    .saturating_add(Usage::clamp(meter.output));
-                usage.cached_tokens = usage
-                    .cached_tokens
-                    .saturating_add(Usage::clamp(meter.cached));
-            }
-            _ => {}
-        }
-        state.apply(line);
-    }
+    let usage = Usage {
+        prompt_tokens: Usage::clamp(state.metered.input),
+        completion_tokens: Usage::clamp(state.metered.output),
+        cached_tokens: Usage::clamp(state.metered.cached),
+        ..Usage::default()
+    };
     Ok((state.spent, usage))
 }
 

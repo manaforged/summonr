@@ -20,24 +20,14 @@ pub enum ModuleId {
 impl ModuleId {
     #[must_use]
     pub const fn name(self) -> &'static str {
-        match self {
-            Self::Search => "search",
-            Self::Lsp => "lsp",
-            Self::Jobs => "jobs",
-            Self::Task => "task",
-            Self::Skills => "skills",
-            Self::Mcp => "mcp",
-            Self::Mail => "mail",
-            Self::Browser => "browser",
-            Self::Memory => "memory",
-        }
+        ALL[self as usize].name
     }
 
     #[must_use]
     fn from_name(name: &str) -> Option<Self> {
         ALL.iter()
+            .find(|module| module.name == name)
             .map(|module| module.id)
-            .find(|id| id.name() == name)
     }
 }
 
@@ -57,6 +47,7 @@ where
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Module {
     pub id: ModuleId,
+    pub name: &'static str,
     pub summary: &'static str,
     pub default: bool,
 }
@@ -64,46 +55,55 @@ pub struct Module {
 pub(crate) const ALL: [Module; 9] = [
     Module {
         id: ModuleId::Search,
+        name: "search",
         summary: "the web tool (search, fetch) through Leyline with a browser identity",
         default: false,
     },
     Module {
         id: ModuleId::Lsp,
+        name: "lsp",
         summary: "diagnostics and definition from the curated language modules",
         default: true,
     },
     Module {
         id: ModuleId::Jobs,
+        name: "jobs",
         summary: "background commands that outlive a round; the turn waits or defers",
         default: true,
     },
     Module {
         id: ModuleId::Task,
+        name: "task",
         summary: "child sessions on the same seat: batch, background, poll, kill",
         default: true,
     },
     Module {
         id: ModuleId::Skills,
+        name: "skills",
         summary: "the skill catalog in the system prompt and the skill tool",
         default: true,
     },
     Module {
         id: ModuleId::Mcp,
+        name: "mcp",
         summary: "tools from MCP servers you named; each lists its tools once, then starts on first call and stops when idle",
         default: true,
     },
     Module {
         id: ModuleId::Mail,
+        name: "mail",
         summary: "the model's mail tools: agents, send, inbox, board",
         default: false,
     },
     Module {
         id: ModuleId::Browser,
+        name: "browser",
         summary: "drive a real Chrome: snapshot, click, type, tabs, logins kept",
         default: false,
     },
     Module {
         id: ModuleId::Memory,
+        name: "memory",
         summary: "user and project memory files loaded into every trusted session",
         default: true,
     },
@@ -162,7 +162,7 @@ impl Switches {
                 } else {
                     "on"
                 };
-                format!("{:<7} {state:<40} {}", module.id.name(), module.summary)
+                format!("{:<7} {state:<40} {}", module.name, module.summary)
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -172,7 +172,7 @@ impl Switches {
 pub fn named(name: &str) -> Result<Module> {
     ALL.iter()
         .copied()
-        .find(|module| ModuleId::from_name(name) == Some(module.id))
+        .find(|module| module.name == name)
         .ok_or_else(|| {
             Error::Config(format!(
                 "unknown module `{name}`; `summonr modules` lists them"

@@ -15,7 +15,7 @@ mod tool;
 
 use summonr::Result;
 
-use super::cli::Args;
+use super::cli::{Args, Verb};
 use super::diagnostics;
 use classify::run_classify;
 use commands::{
@@ -26,12 +26,11 @@ use lifecycle::launch;
 use login::run_login;
 use session::{SessionAction, build};
 
-fn store_command(args: &Args) -> bool {
-    args.mail.is_some() || args.cron.is_some() || args.gateway.is_some()
-}
-
 pub(super) async fn run(args: Args) -> Result<i32> {
-    let log = if store_command(&args) {
+    let log = if matches!(
+        args.verb,
+        Some(Verb::Mail(_) | Verb::Cron(_) | Verb::Gateway(_))
+    ) {
         None
     } else {
         diagnostics::Log::start()
@@ -90,15 +89,6 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
 }
 
 async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32>> {
-    if args.logs {
-        return Some(diagnostics::print_logs(log.map(diagnostics::Log::path)));
-    }
-    if args.report {
-        return Some(diagnostics::report(log.map(diagnostics::Log::path)));
-    }
-    if args.doctor {
-        return Some(diagnostics::doctor(log.map(diagnostics::Log::path)));
-    }
     let in_cwd = |run: &dyn Fn(&std::path::Path) -> Result<i32>| {
         Some(
             std::env::current_dir()
@@ -106,80 +96,68 @@ async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32
                 .and_then(|cwd| run(&cwd)),
         )
     };
-    if let Some(words) = &args.mail {
-        return in_cwd(&|cwd| summonr::mail::cli::run(words, cwd));
+    let path = log.map(diagnostics::Log::path);
+    match args.verb.as_ref()? {
+        Verb::Doctor if args.logs => Some(diagnostics::print_logs(path)),
+        Verb::Doctor if args.report => Some(diagnostics::report(path)),
+        Verb::Doctor => Some(diagnostics::doctor(path)),
+        Verb::Mail(words) => in_cwd(&|cwd| summonr::mail::cli::run(words, cwd)),
+        Verb::Cron(words) => in_cwd(&|cwd| summonr::cron::cli::run(words, cwd)),
+        Verb::Gateway(words) => {
+            in_cwd(&|cwd| summonr::gateway::cli::run(words, cwd, &login::read_secret))
+        }
+        Verb::Tool(tool) => Some(tool::run(tool).await),
+        Verb::Acp => Some(acp(args).await),
+        _ => None,
     }
-    if let Some(words) = &args.cron {
-        return in_cwd(&|cwd| summonr::cron::cli::run(words, cwd));
-    }
-    if let Some(words) = &args.gateway {
-        return in_cwd(&|cwd| summonr::gateway::cli::run(words, cwd, &login::read_secret));
-    }
-    if let Some(tool) = &args.tool {
-        return Some(tool::run(tool).await);
-    }
-    if !args.acp {
-        return None;
-    }
-    Some(
-        summonr::acp::serve(
-            args.endpoint.as_deref(),
-            args.model.as_deref(),
-            |endpoint, client, cwd| {
-                build(args, endpoint, client, cwd, None, SessionAction::Create)
-                    .map(summonr::Loop::with_interactive)
-            },
-        )
-        .await,
+}
+
+async fn acp(args: &Args) -> Result<i32> {
+    summonr::acp::serve(
+        args.endpoint.as_deref(),
+        args.model.as_deref(),
+        |endpoint, client, cwd| {
+            build(args, endpoint, client, cwd, None, SessionAction::Create)
+                .map(summonr::Loop::with_interactive)
+        },
     )
+    .await
 }
 
 async fn account(args: &Args) -> Option<Result<i32>> {
-    if args.login
-        && let Some(name) = args.endpoint.as_deref()
-        && (args.url.is_some() || (args.model.is_some() && own(name)))
-    {
-        return Some(
-            summonr::add_endpoint(
+    let done = |result: Result<()>| Some(result.map(|()| 0));
+    match args.verb.as_ref()? {
+        Verb::Login => done(login(args).await),
+        Verb::Logout => Some(logout(args)),
+        Verb::Classify => Some(run_classify(args).await),
+        Verb::Endpoints => done(endpoints::list(args.all, args.live).await),
+        Verb::Mcp(command) => done(mcp(command, args.json).await),
+        _ => None,
+    }
+}
+
+async fn login(args: &Args) -> Result<()> {
+    if let Some(name) = args.endpoint.as_deref() {
+        if args.url.is_some() || (args.model.is_some() && own(name)) {
+            let text = summonr::add_endpoint(
                 name,
                 args.url.as_deref(),
                 args.model.as_deref(),
                 args.default,
             )
-            .await
-            .map(|text| println!("{text}"))
-            .map(|()| 0),
-        );
+            .await?;
+            println!("{text}");
+            return Ok(());
+        }
+        if args.model.is_some()
+            && !args.default
+            && summonr::auth_info(name).is_ok_and(|info| !info.own)
+        {
+            return Err(summonr::Error::Config(format!(
+                "`{name}` is built in; `summonr login {name} --default --model M` saves its model, or `summonr {name} --model M` uses one for a run"
+            )));
+        }
     }
-    if args.login
-        && let Some(name) = args.endpoint.as_deref()
-        && args.model.is_some()
-        && !args.default
-        && summonr::auth_info(name).is_ok_and(|info| !info.own)
-    {
-        return Some(Err(summonr::Error::Config(format!(
-            "`{name}` is built in; `summonr login {name} --default --model M` saves its model, or `summonr {name} --model M` uses one for a run"
-        ))));
-    }
-    if args.login {
-        return Some(login(args).await.map(|()| 0));
-    }
-    if args.logout {
-        return Some(logout(args));
-    }
-    if args.classify {
-        return Some(run_classify(args).await);
-    }
-    if args.list {
-        return Some(endpoints::list(args.all, args.live).await.map(|()| 0));
-    }
-    if let Some(command) = &args.mcp {
-        return Some(mcp(command, args.json).await.map(|()| 0));
-    }
-    None
-}
-
-async fn login(args: &Args) -> Result<()> {
     let Some(name) = args.endpoint.as_deref().filter(|_| args.default) else {
         return run_login(args).await;
     };
@@ -214,44 +192,26 @@ fn logout(args: &Args) -> Result<i32> {
 
 async fn listing(args: &Args) -> Option<Result<i32>> {
     let done = |result: Result<()>| Some(result.map(|()| 0));
-    if args.list_sessions {
-        return done(match args.grep.as_deref() {
+    match args.verb.as_ref()? {
+        Verb::Sessions => done(match args.grep.as_deref() {
             Some(pattern) => grep_sessions(pattern),
             None => print_sessions(),
-        });
-    }
-    if args.export {
-        return done(export_session_cmd(args));
-    }
-    if args.profile {
-        return done(profile(args));
-    }
-    if args.list_workflows {
-        return done(print_workflows());
-    }
-    if args.list_modules {
-        return done(
+        }),
+        Verb::Export => done(export_session_cmd(args)),
+        Verb::Profile => done(profile(args)),
+        Verb::Workflows => done(print_workflows()),
+        Verb::Modules => done(
             workspace()
                 .and_then(|root| summonr::modules::Switches::load(&root))
                 .map(|switches| println!("{}", switches.table())),
-        );
+        ),
+        Verb::Uninstall => Some(uninstall(args)),
+        Verb::Update => Some(update().await),
+        Verb::Install => Some(add(args).await),
+        Verb::Worktrees => done(manage_worktrees(args)),
+        Verb::Diff => done(print_diff(args)),
+        _ => None,
     }
-    if args.uninstall {
-        return Some(uninstall(args));
-    }
-    if args.update {
-        return Some(update().await);
-    }
-    if args.add {
-        return Some(add(args).await);
-    }
-    if args.list_worktrees {
-        return done(manage_worktrees(args));
-    }
-    if args.diff {
-        return done(print_diff(args));
-    }
-    None
 }
 
 fn profile(args: &Args) -> Result<()> {

@@ -5,7 +5,7 @@ use summonr::table::{Row, Table};
 use summonr::{Error, Result};
 
 use super::help::exit_version;
-use super::{Args, exit_help, mcp};
+use super::{Args, Verb, exit_help, mcp};
 
 pub(super) type Input = Peekable<IntoIter<String>>;
 pub(super) type Run = fn(&mut Args, &mut Input) -> Result<()>;
@@ -101,58 +101,68 @@ pub(super) const FLAGS: Table<Args> = Table {
             some(&mut args.grep, pattern)
         }),
         Flag::rest(&["--"], |args, rest| args.prompt.extend(rest)),
-        Flag::switch(&["--stat"], |args| on(&mut args.stat)).scope("diff", |args| args.diff),
+        Flag::switch(&["--stat"], |args| on(&mut args.stat))
+            .scope("diff", |args| matches!(args.verb, Some(Verb::Diff))),
         Flag::value(&["--turn"], "a turn number or `last`", |args, turn| {
             some(&mut args.turn, turn)
         })
-        .scope("diff", |args| args.diff),
-        Flag::switch(&["--all"], |args| on(&mut args.all)).scope("profile", |args| args.profile),
+        .scope("diff", |args| matches!(args.verb, Some(Verb::Diff))),
+        Flag::switch(&["--all"], |args| on(&mut args.all))
+            .scope("profile", |args| matches!(args.verb, Some(Verb::Profile))),
         Flag::value(&["--last"], "a session count", Args::last)
-            .scope("profile", |args| args.profile),
-        Flag::switch(&["--all"], |args| on(&mut args.all)).scope("endpoints", |args| args.list),
-        Flag::switch(&["--check"], |args| on(&mut args.live)).scope("endpoints", |args| args.list),
-        Flag::switch(&["--list"], |args| on(&mut args.add_list)).scope("install", |args| args.add),
-        Flag::switch(&["--key"], |args| on(&mut args.key)).scope("login", |args| args.login),
+            .scope("profile", |args| matches!(args.verb, Some(Verb::Profile))),
+        Flag::switch(&["--all"], |args| on(&mut args.all)).scope("endpoints", |args| {
+            matches!(args.verb, Some(Verb::Endpoints))
+        }),
+        Flag::switch(&["--check"], |args| on(&mut args.live)).scope("endpoints", |args| {
+            matches!(args.verb, Some(Verb::Endpoints))
+        }),
+        Flag::switch(&["--list"], |args| on(&mut args.add_list))
+            .scope("install", |args| matches!(args.verb, Some(Verb::Install))),
+        Flag::switch(&["--key"], |args| on(&mut args.key))
+            .scope("login", |args| matches!(args.verb, Some(Verb::Login))),
         Flag::switch(&["--default"], |args| on(&mut args.default))
-            .scope("login", |args| args.login),
+            .scope("login", |args| matches!(args.verb, Some(Verb::Login))),
         Flag::value(&["--url"], "a base URL", |args, url| {
             some(&mut args.url, url)
         })
-        .scope("login", |args| args.login),
+        .scope("login", |args| matches!(args.verb, Some(Verb::Login))),
         Flag::switch(&["--remove"], |args| on(&mut args.remove))
-            .scope("logout", |args| args.logout),
+            .scope("logout", |args| matches!(args.verb, Some(Verb::Logout))),
         Flag::switch(&["--digest"], |args| on(&mut args.digest))
-            .scope("export", |args| args.export),
-        Flag::switch(&["--logs"], |args| on(&mut args.logs)).scope("doctor", |args| args.doctor),
+            .scope("export", |args| matches!(args.verb, Some(Verb::Export))),
+        Flag::switch(&["--logs"], |args| on(&mut args.logs))
+            .scope("doctor", |args| matches!(args.verb, Some(Verb::Doctor))),
         Flag::switch(&["--report"], |args| on(&mut args.report))
-            .scope("doctor", |args| args.doctor),
+            .scope("doctor", |args| matches!(args.verb, Some(Verb::Doctor))),
         Flag::value(&["--questions"], "JSON or @file", |args, questions| {
             some(&mut args.questions, questions)
         })
-        .scope("classify", |args| args.classify),
+        .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
         Flag::value(&["--noul"], "a yes/no question", |args, question| {
             args.noul.push(question);
             Ok(())
         })
-        .scope("classify", |args| args.classify),
+        .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
         Flag::switch(&["--review"], |args| on(&mut args.review))
-            .scope("classify", |args| args.classify),
+            .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
         Flag::value(&["--set"], "a question set name", |args, set| {
             some(&mut args.set, set)
         })
-        .scope("classify", |args| args.classify),
+        .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
         Flag::value(&["--eval"], "a labelled .jsonl path", |args, path| {
             some(&mut args.eval, path)
         })
-        .scope("classify", |args| args.classify),
+        .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
         Flag::value(&["--gate"], "a confidence from 0 to 1", Args::gate)
-            .scope("classify", |args| args.classify),
+            .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
         Flag::switch(&["--patch"], |args| on(&mut args.review_diff))
-            .scope("classify", |args| args.classify),
+            .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
         Flag::switch(&["--diff"], |args| on(&mut args.review_diff))
-            .scope("classify", |args| args.classify),
-        Flag::switch(&["prune"], |args| on(&mut args.prune_worktrees))
-            .scope("worktrees", |args| args.list_worktrees),
+            .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
+        Flag::switch(&["prune"], |args| on(&mut args.prune_worktrees)).scope("worktrees", |args| {
+            matches!(args.verb, Some(Verb::Worktrees))
+        }),
     ],
     missing: |flag, expected| format!("{flag} requires {expected}"),
     unknown: |flag| format!("unknown option `{flag}`"),
@@ -162,38 +172,38 @@ pub(super) const FLAGS: Table<Args> = Table {
 };
 
 pub(super) const COMMANDS: [(&str, Option<usize>, Run); 23] = [
-    ("endpoints", Some(0), |args, _| on(&mut args.list)),
-    ("sessions", Some(0), |args, _| on(&mut args.list_sessions)),
+    ("endpoints", Some(0), |args, _| verb(args, Verb::Endpoints)),
+    ("sessions", Some(0), |args, _| verb(args, Verb::Sessions)),
     ("resume", None, Args::resume),
-    ("doctor", Some(0), |args, _| on(&mut args.doctor)),
-    ("classify", None, |args, _| on(&mut args.classify)),
-    ("export", Some(1), |args, _| on(&mut args.export)),
-    ("profile", Some(1), |args, _| on(&mut args.profile)),
-    ("workflows", Some(0), |args, _| on(&mut args.list_workflows)),
-    ("modules", Some(0), |args, _| on(&mut args.list_modules)),
-    ("install", Some(1), |args, _| on(&mut args.add)),
-    ("uninstall", Some(1), |args, _| on(&mut args.uninstall)),
-    ("update", Some(0), |args, _| on(&mut args.update)),
-    ("acp", Some(0), |args, _| on(&mut args.acp)),
+    ("doctor", Some(0), |args, _| verb(args, Verb::Doctor)),
+    ("classify", None, |args, _| verb(args, Verb::Classify)),
+    ("export", Some(1), |args, _| verb(args, Verb::Export)),
+    ("profile", Some(1), |args, _| verb(args, Verb::Profile)),
+    ("workflows", Some(0), |args, _| verb(args, Verb::Workflows)),
+    ("modules", Some(0), |args, _| verb(args, Verb::Modules)),
+    ("install", Some(1), |args, _| verb(args, Verb::Install)),
+    ("uninstall", Some(1), |args, _| verb(args, Verb::Uninstall)),
+    ("update", Some(0), |args, _| verb(args, Verb::Update)),
+    ("acp", Some(0), |args, _| verb(args, Verb::Acp)),
     ("mail", None, |args, input| {
-        some(&mut args.mail, input.by_ref().collect())
+        verb(args, Verb::Mail(input.by_ref().collect()))
     }),
     ("cron", None, |args, input| {
-        some(&mut args.cron, input.by_ref().collect())
+        verb(args, Verb::Cron(input.by_ref().collect()))
     }),
     ("gateway", None, |args, input| {
-        some(&mut args.gateway, input.by_ref().collect())
+        verb(args, Verb::Gateway(input.by_ref().collect()))
     }),
     ("tool", None, |args, input| {
-        some(&mut args.tool, input.by_ref().collect())
+        verb(args, Verb::Tool(input.by_ref().collect()))
     }),
     ("mcp", None, |args, input| {
-        some(&mut args.mcp, mcp::parse(input)?)
+        verb(args, Verb::Mcp(mcp::parse(input)?))
     }),
-    ("login", None, |args, _| on(&mut args.login)),
-    ("logout", Some(0), |args, _| on(&mut args.logout)),
-    ("worktrees", Some(0), |args, _| on(&mut args.list_worktrees)),
-    ("diff", Some(1), |args, _| on(&mut args.diff)),
+    ("login", None, |args, _| verb(args, Verb::Login)),
+    ("logout", Some(0), |args, _| verb(args, Verb::Logout)),
+    ("worktrees", Some(0), |args, _| verb(args, Verb::Worktrees)),
+    ("diff", Some(1), |args, _| verb(args, Verb::Diff)),
     ("help", None, |_, input| exit_help(input.next().as_deref())),
 ];
 
@@ -201,7 +211,7 @@ pub(super) type Check = (fn(&Args) -> bool, &'static str);
 
 pub(super) const CONFLICTS: [Check; 3] = [
     (
-        |args| args.grep.is_some() && !args.list_sessions,
+        |args| args.grep.is_some() && !matches!(args.verb, Some(Verb::Sessions)),
         "--grep works with `summonr sessions`",
     ),
     (
@@ -216,6 +226,11 @@ pub(super) const CONFLICTS: [Check; 3] = [
 
 fn on(flag: &mut bool) -> Result<()> {
     *flag = true;
+    Ok(())
+}
+
+fn verb(args: &mut Args, verb: Verb) -> Result<()> {
+    args.verb = Some(verb);
     Ok(())
 }
 

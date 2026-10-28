@@ -88,7 +88,6 @@ impl<P: Provider> Loop<P> {
             None,
         )?;
         child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
-        child.depth = 1;
         child.context_window = self.receiver_window(role);
         child.compact_tokens = self.compact_tokens;
         child.context_sample = self.context_sample;
@@ -249,14 +248,14 @@ impl<P: Provider> Loop<P> {
         if children == 0 {
             return Err(Error::Config("task batch is empty".to_string()));
         }
-        let tokens = self.budget.max_tokens.map(|limit| {
+        let tokens = self.budget().max_tokens.map(|limit| {
             limit
                 .saturating_sub(self.run_tokens())
                 .saturating_sub(self.child_budget_reserved())
                 / children
         });
         let secs = self
-            .budget
+            .budget()
             .max_secs
             .map(|limit| limit.saturating_sub(self.elapsed_secs()));
         if tokens == Some(0) || secs == Some(0) {

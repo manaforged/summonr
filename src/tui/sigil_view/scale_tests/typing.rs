@@ -127,12 +127,12 @@ fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
 
 #[test]
 fn typing_after_slash_model_searches_the_models() {
-    assert_eq!(typed("/model", |app| app.picker.draft.peek()), "ki");
+    assert_eq!(typed("/model", |app| app.picker.list.query.peek()), "ki");
 }
 
 #[test]
 fn typing_after_slash_login_searches_the_providers() {
-    assert_eq!(typed("/login", |app| app.auth.filter.peek()), "ki");
+    assert_eq!(typed("/login", |app| app.auth.list.query.peek()), "ki");
 }
 
 #[test]

@@ -111,7 +111,6 @@ impl<P: Provider> Loop<P> {
             budget.max_tokens,
             budget.max_secs.map(|seconds| seconds.saturating_mul(1_000)),
         )?;
-        self.budget = budget;
         Ok(self)
     }
 

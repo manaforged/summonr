@@ -1,7 +1,5 @@
 use super::*;
 
-use super::keys::KeyCommand;
-
 pub(super) fn composer_keys(mut node: NodeBuilder, app: &App) -> NodeBuilder {
     for modifier in [ModifiersState::SHIFT, ModifiersState::ALT] {
         node = node.key_capture(Shortcut::new(Key::Enter, modifier), |event| {
@@ -80,34 +78,8 @@ pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
             },
         );
     }
-    if canvas::is_window() {
-        for (key, command) in WINDOW_SHORTCUTS {
-            let route = app.clone();
-            node = node.key_capture(
-                Shortcut::new(LogicalKey::character(key), ModifiersState::META),
-                move |event| {
-                    if route.run_key(command) {
-                        event.stop_propagation();
-                    }
-                },
-            );
-        }
-    }
     node
 }
-
-const WINDOW_SHORTCUTS: [(&str, KeyCommand); 10] = [
-    ("k", KeyCommand::Trigger('/')),
-    ("p", KeyCommand::Trigger('@')),
-    (",", KeyCommand::Hotkey(crate::prefs::Hotkey::Options)),
-    ("n", KeyCommand::NewSession),
-    ("1", KeyCommand::Pane(Pane::Files)),
-    ("2", KeyCommand::Pane(Pane::Diff)),
-    ("3", KeyCommand::Pane(Pane::Worktrees)),
-    ("4", KeyCommand::Pane(Pane::Jobs)),
-    ("5", KeyCommand::Pane(Pane::Peers)),
-    ("6", KeyCommand::Pane(Pane::Ledger)),
-];
 
 pub(super) fn chord_letter(text: &str) -> Option<char> {
     let mut chars = text.chars();

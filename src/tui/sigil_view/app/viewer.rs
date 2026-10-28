@@ -11,7 +11,7 @@ impl App {
                 ..layout
             });
         }
-        self.view_scroll.set(0);
+        self.pane_list(Pane::View).select(0);
         self.pane_focus.set(true);
         drop(self.cmd.send(Cmd::View(self.root(), path)));
         self.refresh();
@@ -78,7 +78,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn view_move(&self, delta: isize) {
-        files::shift(&self.view_scroll, delta, self.view_lines());
+        self.pane_list(Pane::View).shift(delta, self.view_lines());
         self.refresh();
     }
 

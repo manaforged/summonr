@@ -97,8 +97,7 @@ impl App {
     fn changed_files(&self, paths: &[String]) {
         let viewing = self.model.get().view.as_ref().map(|view| view.path.clone());
         match self.layout.peek().secondary {
-            Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
-            Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
+            Some(Pane::Files | Pane::Diff) => self.load(),
             Some(Pane::View) => {
                 if let Some(path) = viewing.filter(|path| paths.contains(path)) {
                     drop(self.cmd.send(Cmd::View(self.root(), path)));
@@ -181,7 +180,7 @@ impl App {
             .iter()
             .find_map(|wanted| shown.iter().position(|row| row == wanted))
             .unwrap_or(0);
-        self.picker.sel.set(sel);
+        self.picker.list.cursor.set(sel);
         self.picker.loading.set(loading);
         self.picker.error.set(error);
     }
@@ -196,7 +195,7 @@ impl App {
                 .position(|choice| ready.contains(&choice.name))
                 .or_else(|| rows.iter().position(|choice| !choice.keyless()))
                 .unwrap_or(0);
-            self.auth.sel.set(at);
+            self.auth.list.cursor.set(at);
         }
         self.auth
             .step

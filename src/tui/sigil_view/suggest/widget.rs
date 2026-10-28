@@ -122,7 +122,7 @@ pub(in crate::tui::sigil_view) fn widget(app: App, width: usize) -> NodeBuilder 
                     pick(row.selected, row.name, row.description.as_str()).pointer_down(
                         move |event| {
                             if event.button == Some(MouseButton::Left) {
-                                click.commands.cursor.set(row.index);
+                                click.commands.list.select(row.index);
                                 click.accept();
                                 event.stop_propagation();
                             }

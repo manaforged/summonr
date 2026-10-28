@@ -333,7 +333,7 @@ impl App {
         let Some(count) = state.options().map(|(options, _)| options.len()) else {
             return false;
         };
-        state.cursor = super::files::cycle(state.cursor, dir, count);
+        state.cursor = crate::tui::sigil_view::ui::cycle(state.cursor, dir, count);
         self.form.set(Some(state));
         true
     }

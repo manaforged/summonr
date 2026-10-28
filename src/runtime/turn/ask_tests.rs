@@ -87,6 +87,17 @@ fn model_question_is_offered_only_when_a_person_can_answer() {
     assert!(!offered(&loop_));
     loop_.steer_with(Arc::new(Steering::default()));
     assert!(offered(&loop_));
-    loop_.depth = 1;
-    assert!(!offered(&loop_));
+    let parent = Some(crate::durable::driver::Parent::Task(loop_.session.id()));
+    let driver = crate::durable::driver::SessionDriver::open(
+        home.path(),
+        workspace.path(),
+        "m",
+        "system",
+        parent,
+    )
+    .unwrap();
+    let client = Client::new("k", "http://127.0.0.1:9/v1").unwrap();
+    let mut child = Loop::open(client, "m", workspace.path(), "system", driver).unwrap();
+    child.steer_with(Arc::new(Steering::default()));
+    assert!(!offered(&child));
 }

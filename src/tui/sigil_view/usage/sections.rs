@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, FlexWrap, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone,
-    container, heatmap, panel, progress, signal, sparkline,
+    AlignItems, FlexWrap, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone, container,
+    heatmap, panel, progress, signal, sparkline,
 };
 use sigil::prelude::{Paint, WidgetLayoutExt};
 use sigil::widgets::SparkMark;
@@ -313,8 +313,4 @@ pub(super) fn bottom(report: &Report, metric: Metric, width: f32) -> NodeBuilder
                 .child(places(report, metric))
                 .child(hours(report)),
         )
-}
-
-pub(super) fn spacer() -> impl IntoNode {
-    container().layout(LayoutStyle::block().grow(1.0))
 }

@@ -98,11 +98,11 @@ impl From<&Preset> for Record {
     fn from(row: &Preset) -> Self {
         Self {
             base_url: Some(row.base_url.clone()),
-            models_url: row.models_url.map(str::to_string),
+            models_url: row.models_url.clone(),
             model: Some(row.model.clone()),
             oauth: row.sign_in(),
             context_window: row.context_window,
-            headers: row.headers.iter().cloned().collect(),
+            headers: row.headers.clone(),
             wire: Some(row.wire),
             ..Self::default()
         }

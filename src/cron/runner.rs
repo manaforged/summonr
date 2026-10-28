@@ -6,6 +6,7 @@ use std::process::Child;
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, Zoned};
 
+use super::launch::Launch;
 use super::report::{self, Report};
 use super::schedule::{self, Schedule};
 use super::store::{self, Job, Origin, Outcome, Run, Task};
@@ -32,8 +33,7 @@ pub(crate) fn zoned(secs: i64, tz: &TimeZone) -> Option<Zoned> {
 }
 
 pub(crate) fn due(job: &Job, last_slot: Option<i64>, now: i64) -> Result<Due> {
-    let plan = schedule::parse(&job.schedule)?;
-    let tz = schedule::zone(job.tz.as_deref())?;
+    let (plan, tz) = plan(job)?;
     let since = last_slot.unwrap_or(job.created);
     let catchup = i64::try_from(crate::limits::limits().cron_catchup_secs).unwrap_or(i64::MAX);
     let floor = now.saturating_sub(catchup);
@@ -41,6 +41,13 @@ pub(crate) fn due(job: &Job, last_slot: Option<i64>, now: i64) -> Result<Due> {
         return Ok(Due::Run(slot));
     }
     Ok(latest(&plan, &tz, since, floor.min(now)).map_or(Due::No, Due::Expired))
+}
+
+fn plan(job: &Job) -> Result<(Schedule, TimeZone)> {
+    Ok((
+        schedule::parse(&job.schedule)?,
+        schedule::zone(job.tz.as_deref())?,
+    ))
 }
 
 fn latest(plan: &Schedule, tz: &TimeZone, from: i64, to: i64) -> Option<i64> {
@@ -58,8 +65,7 @@ fn latest(plan: &Schedule, tz: &TimeZone, from: i64, to: i64) -> Option<i64> {
 }
 
 pub(crate) fn next_fire(job: &Job, now: i64) -> Option<Zoned> {
-    let plan = schedule::parse(&job.schedule).ok()?;
-    let tz = schedule::zone(job.tz.as_deref()).ok()?;
+    let (plan, tz) = plan(job).ok()?;
     plan.next_after(zoned(now.max(job.last_slot().unwrap_or(now)), &tz)?)
 }
 
@@ -278,45 +284,34 @@ fn finish(name: &str, slot: i64, started: i64, outcome: Outcome) -> Result<bool>
 }
 
 fn argv(job: &Job, payload: Option<&Path>) -> Vec<String> {
-    let mut args: Vec<String> = job.endpoint.iter().cloned().collect();
-    if let Some(model) = &job.model {
-        args.extend(["--model".to_string(), model.clone()]);
-    }
-    let max_secs = job
-        .max_secs
-        .unwrap_or(crate::limits::limits().cron_budget_secs);
-    args.extend([
-        "--json".to_string(),
-        "--max-secs".to_string(),
-        max_secs.to_string(),
-    ]);
-    if let Some(tokens) = job.max_tokens {
-        args.extend(["--max-tokens".to_string(), tokens.to_string()]);
-    }
-    if job.worktree {
-        args.push("--worktree".to_string());
-    }
-    let (flags, text) = match &job.task {
-        Task::Prompt(prompt) => (["-p", "--"].as_slice(), prompt),
-        Task::Goal(goal) => (["--goal"].as_slice(), goal),
-    };
-    let text = match payload {
-        Some(path) => {
+    let task = match (payload, &job.task) {
+        (None, task) => task.clone(),
+        (Some(path), task) => {
             let shown = if job.worktree {
                 path
             } else {
                 path.strip_prefix(&job.dir).unwrap_or(path)
             };
-            format!(
-                "{text}\n\n{}",
-                PAYLOAD_NOTE.replace("{FILE}", &shown.display().to_string())
-            )
+            let note = PAYLOAD_NOTE.replace("{FILE}", &shown.display().to_string());
+            match task {
+                Task::Prompt(text) => Task::Prompt(format!("{text}\n\n{note}")),
+                Task::Goal(text) => Task::Goal(format!("{text}\n\n{note}")),
+            }
         }
-        None => text.clone(),
     };
-    args.extend(flags.iter().map(ToString::to_string));
-    args.push(text);
-    args
+    Launch {
+        endpoint: job.endpoint.as_deref(),
+        model: job.model.as_deref(),
+        session: None,
+        max_secs: Some(
+            job.max_secs
+                .unwrap_or(crate::limits::limits().cron_budget_secs),
+        ),
+        max_tokens: job.max_tokens,
+        worktree: job.worktree,
+        task: &task,
+    }
+    .argv()
 }
 
 pub(super) fn stop_running(job: &Job) -> bool {

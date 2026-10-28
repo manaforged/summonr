@@ -296,17 +296,16 @@ impl ToolRegistry {
         op: Option<&str>,
         call: &ToolCall,
     ) -> Result<ToolOutput> {
-        match kind {
-            Builtin::Browser => self
-                .browse(&call.function.arguments)
-                .await
-                .map(ToolOutput::ok),
-            Builtin::Task => Err(Error::Tool(format!("unknown tool `{name}`"))),
-            kind => self.run_parsed(kind, &arguments_of(name, op, call)?).await,
-        }
-    }
-
-    async fn run_parsed(&self, kind: Builtin, args: &Value) -> Result<ToolOutput> {
+        let args = &match kind {
+            Builtin::Browser => {
+                return self
+                    .browse(&call.function.arguments)
+                    .await
+                    .map(ToolOutput::ok);
+            }
+            Builtin::Task => return Err(Error::Tool(format!("unknown tool `{name}`"))),
+            _ => arguments_of(name, op, call)?,
+        };
         match kind {
             Builtin::Read => blocking(|| self.read(args)).map(|out| self.dedup_read(args, out)),
             Builtin::Search => blocking(|| self.search_files(args)).map(ToolOutput::ok),
@@ -316,7 +315,7 @@ impl ToolRegistry {
             Builtin::RunCommand => self.run_command(args).await,
             Builtin::Todo => parse_todo(args).map(ToolOutput::ok),
             Builtin::Web => self.web(args).await.map(ToolOutput::ok),
-            Builtin::Lsp => self.lsp(&args.to_string()).await,
+            Builtin::Lsp => self.lsp(args).await,
             Builtin::Browser | Builtin::Task => Err(Error::Tool("unknown tool".to_string())),
         }
     }

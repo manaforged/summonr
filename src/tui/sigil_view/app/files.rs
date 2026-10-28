@@ -1,13 +1,5 @@
 use super::*;
 
-impl App {
-    pub(in crate::tui::sigil_view) fn file_rows(&self) -> Vec<FileRow> {
-        let model = self.model.get();
-        let expanded = self.expanded.peek();
-        file_rows(&model.files, &expanded)
-    }
-}
-
 pub(in crate::tui::sigil_view) fn save(path: Option<&Path>, prefs: &Prefs) -> Result<(), String> {
     let path = path.ok_or_else(|| "settings not saved: home directory unavailable".to_string())?;
     prefs::save_in(path, prefs).map_err(|error| format!("settings not saved: {error}"))
@@ -80,6 +72,10 @@ pub(in crate::tui::sigil_view) struct FileRow {
     pub(in crate::tui::sigil_view) depth: usize,
     pub(in crate::tui::sigil_view) dir: bool,
     pub(in crate::tui::sigil_view) open: bool,
+    pub(in crate::tui::sigil_view) status: String,
+    pub(in crate::tui::sigil_view) badge: Option<(String, sigil::prelude::Tone)>,
+    pub(in crate::tui::sigil_view) note: Option<String>,
+    pub(in crate::tui::sigil_view) detail: Vec<String>,
 }
 
 impl FileRow {
@@ -90,32 +86,45 @@ impl FileRow {
             depth: 0,
             dir: false,
             open,
+            status: String::new(),
+            badge: None,
+            note: None,
+            detail: Vec::new(),
         }
+    }
+
+    pub(in crate::tui::sigil_view) fn status(mut self, status: String) -> Self {
+        self.status = status;
+        self
+    }
+
+    pub(in crate::tui::sigil_view) fn badge(
+        mut self,
+        label: impl Into<String>,
+        tone: sigil::prelude::Tone,
+    ) -> Self {
+        self.badge = Some((label.into(), tone));
+        self
+    }
+
+    pub(in crate::tui::sigil_view) fn note(mut self, note: Option<String>) -> Self {
+        self.note = note;
+        self
+    }
+
+    pub(in crate::tui::sigil_view) fn detail(
+        mut self,
+        lines: impl IntoIterator<Item = String>,
+    ) -> Self {
+        if self.open {
+            self.detail = lines.into_iter().collect();
+        }
+        self
     }
 }
 
-pub(in crate::tui::sigil_view) fn pick(cursor: &Signal<usize>, len: usize) -> usize {
-    cursor.peek().min(len.saturating_sub(1))
-}
-
-pub(in crate::tui::sigil_view) fn shift(cursor: &Signal<usize>, delta: isize, len: usize) {
-    cursor.set(
-        pick(cursor, len)
-            .saturating_add_signed(delta)
-            .min(len.saturating_sub(1)),
-    );
-}
-
-pub(in crate::tui::sigil_view) fn cycle(at: usize, delta: isize, len: usize) -> usize {
-    (at as isize + delta).rem_euclid(len.max(1) as isize) as usize
-}
-
-pub(in crate::tui::sigil_view) fn toggle(open: &Signal<Option<String>>, path: &str) {
-    let other = open.peek().as_deref() != Some(path);
-    open.set(other.then(|| path.to_string()));
-}
-
 pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String]) -> Vec<FileRow> {
+    let expanded: std::collections::HashSet<&str> = expanded.iter().map(String::as_str).collect();
     let mut rows: Vec<FileRow> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut sorted: Vec<&String> = files.iter().collect();
@@ -131,19 +140,15 @@ pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String
             } else {
                 format!("{prefix}/{part}")
             };
+            let shut = !last && !expanded.contains(path.as_str());
             if !hidden && seen.insert(path.clone()) {
-                let open = last || expanded.contains(&path);
                 rows.push(FileRow {
-                    path: path.clone(),
-                    name: (*part).to_string(),
                     depth,
                     dir: !last,
-                    open,
+                    ..FileRow::flat(path.clone(), (*part).to_string(), !shut)
                 });
             }
-            if !last && !expanded.contains(&path) {
-                hidden = true;
-            }
+            hidden |= shut;
             prefix = path;
         }
     }

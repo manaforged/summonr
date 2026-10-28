@@ -24,7 +24,7 @@ impl<P: Provider> Loop<P> {
         if calls.is_empty() {
             return Vec::new();
         }
-        if self.depth != 0 {
+        if self.session.depth() != 0 {
             return rejected(calls.len(), "child sessions cannot delegate another task");
         }
         let args = match batch_args(calls) {

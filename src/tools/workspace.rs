@@ -19,6 +19,7 @@ pub(in crate::tools) mod write;
 pub(crate) use apply_patch::patch_files;
 pub(crate) use image::{IMAGES_MAX_BYTES, attach, image_type};
 use list::{format_directory, format_tree};
+use ops::EditOp;
 
 impl ToolRegistry {
     pub(super) fn read(&self, args: &Value) -> Result<ToolOutput> {
@@ -286,10 +287,11 @@ fn edited_text(original: &str, args: &Value) -> Result<(String, bool)> {
     }
     match edits {
         Some(ops) if ops.is_empty() => Err(Error::Tool("edits is empty".to_string())),
-        Some(ops) if sequence => edit::apply_sequence(original, ops),
-        Some(ops) => edit::apply_many(original, ops),
-        None => edit::apply_one(original, args)
-            .map_err(|error| edit::edit_error_context(error, original, args)),
+        Some(ops) => {
+            let ops: Vec<EditOp> = ops.iter().map(EditOp::parse).collect();
+            edit::apply_many(original, &ops, sequence)
+        }
+        None => edit::apply_one(original, &EditOp::parse(args)),
     }
 }
 

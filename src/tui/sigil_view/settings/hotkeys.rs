@@ -47,7 +47,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                         .gap(canvas::overlay_gap()),
                 )
                 .children_reactive(move || {
-                    let selected = paint.hotkeys.sel.get().min(Hotkey::ALL.len() - 1);
+                    let selected = paint.hotkeys.list.cursor.get().min(Hotkey::ALL.len() - 1);
                     let visible = canvas::overlay_shown(Hotkey::ALL.len(), paint.viewport.get().1);
                     let recording = paint.hotkeys.recording.get();
                     let armed = paint.hotkeys.armed.get();
@@ -106,7 +106,7 @@ fn entry(
     .pointer_down(move |event| {
         choose.hotkeys.recording.set(false);
         choose.hotkeys.armed.set(false);
-        choose.hotkeys.sel.set(index);
+        choose.hotkeys.list.cursor.set(index);
         choose.edit_hotkey();
         event.stop_propagation();
     })

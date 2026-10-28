@@ -27,9 +27,13 @@ pub(super) struct View {
 impl View {
     pub(super) fn read(app: &App) -> Self {
         let picker = &app.picker;
-        let sections = picker.draft.get().is_empty() && picker.facet.get() == Facet::All;
+        let sections = picker.list.query.get().is_empty() && picker.facet.get() == Facet::All;
         let choices = picker.shown.get();
-        let selected = picker.sel.get().min(choices.len().saturating_sub(1));
+        let selected = picker
+            .list
+            .cursor
+            .get()
+            .min(choices.len().saturating_sub(1));
         Self {
             marks: choices.iter().map(|seat| app.mark(seat)).collect(),
             counts: picker.recent.get(),
@@ -141,7 +145,7 @@ pub(super) fn list(
                 choosable(&source, row, *index)
             }
         })
-        .scroll_bind(app.picker.scroll)
+        .scroll_bind(app.picker.list.scroll)
         .follow_row(signal(shown)),
         canvas::overlay_list_row(),
         visible,
@@ -152,12 +156,12 @@ fn choosable(app: &App, node: NodeBuilder, index: usize) -> NodeBuilder {
     let choose = app.clone();
     let follow = app.clone();
     node.pointer_move(move |_| {
-        if !follow.auth.open.peek() && follow.picker.sel.peek() != index {
-            follow.picker.sel.set(index);
+        if !follow.auth.open.peek() && follow.picker.list.cursor.peek() != index {
+            follow.picker.list.cursor.set(index);
         }
     })
     .pointer_down(move |event| {
-        choose.picker.sel.set(index);
+        choose.picker.list.cursor.set(index);
         choose.commit_model_edit();
         event.stop_propagation();
     })

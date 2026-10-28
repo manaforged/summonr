@@ -19,15 +19,11 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
     paths.reverse();
     let mut totals = Totals::default();
     for path in &paths {
-        let lines = match log::read(path) {
-            Ok(lines) => lines,
-            Err(_) => {
-                totals.skipped += 1;
-                continue;
-            }
-        };
-        totals.read_sessions += 1;
-        totals.add_session(lines);
+        let mut scan = SessionScan::default();
+        match log::each(path, |line| totals.add_line(&mut scan, line)) {
+            Ok(()) => totals.read_sessions += 1,
+            Err(_) => totals.skipped += 1,
+        }
     }
     Ok(totals.render())
 }
@@ -59,34 +55,20 @@ struct SessionScan {
 }
 
 impl Totals {
-    fn add_session(&mut self, lines: Vec<Line>) {
-        let mut scan = SessionScan::default();
-        for line in lines {
-            match line {
-                Line::Assistant {
-                    tool_calls, usage, ..
-                } => self.add_assistant(&mut scan, tool_calls, &usage),
-                Line::Tool {
-                    call,
-                    text,
-                    success,
-                    millis,
-                    ..
-                } => self.add_tool(&mut scan, &call, &text, success, millis),
-                Line::Tools { .. }
-                | Line::Session { .. }
-                | Line::User { .. }
-                | Line::Charge { .. }
-                | Line::Budget { .. }
-                | Line::Workflow { .. }
-                | Line::Child { .. }
-                | Line::Interrupted { .. }
-                | Line::Receipt { .. }
-                | Line::Summary { .. }
-                | Line::Rewrite { .. }
-                | Line::Clear => {}
-                Line::Close { footprint_kb, .. } => self.rss.extend(footprint_kb),
-            }
+    fn add_line(&mut self, scan: &mut SessionScan, line: Line) {
+        match line {
+            Line::Assistant {
+                tool_calls, usage, ..
+            } => self.add_assistant(scan, tool_calls, &usage),
+            Line::Tool {
+                call,
+                text,
+                success,
+                millis,
+                ..
+            } => self.add_tool(scan, &call, &text, success, millis),
+            Line::Close { footprint_kb, .. } => self.rss.extend(footprint_kb),
+            _ => {}
         }
     }
 

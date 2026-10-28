@@ -7,7 +7,11 @@ pub(in crate::runtime) fn force_compact(history: &[Message]) -> Vec<(usize, Mess
         .map(|index| history[*index].content.len())
         .sum::<usize>()
         .div_ceil(2);
-    let keep = live.len().saturating_sub(KEEP_TAIL).max(1).min(live.len());
+    let keep = live
+        .len()
+        .saturating_sub(crate::limits::limits().compact_keep_tail)
+        .max(1)
+        .min(live.len());
     clear_outputs(history, &live[..keep], target).0
 }
 

@@ -32,6 +32,10 @@ async fn dropping_a_client_returns_before_the_close_grace() {
         env: &[],
         cwd: dir.path(),
         wait: std::time::Duration::from_secs(5),
+        base: Env::Clean,
+        framing: crate::rpc::Framing::Line,
+        max: crate::limits::limits().mcp_frame_max_bytes,
+        peer: crate::rpc::Peer::Mcp,
     })
     .unwrap();
     let started = std::time::Instant::now();

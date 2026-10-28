@@ -4,10 +4,11 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
+use tokio::io::AsyncWriteExt;
 use tokio::process::{ChildStdin, ChildStdout};
 
-use super::{Notice, agreed, hello, notification, request};
+use super::frame::{Framing, Lines, Read, encode};
+use super::{Peer, notification, request};
 use crate::error::{Error, Result};
 use crate::process::{Cap, Child, Env, Spec, Tail};
 use crate::tools::command::ProcessGroup;
@@ -19,6 +20,9 @@ pub(crate) struct Client {
     child: Option<Child>,
     stdin: Option<ChildStdin>,
     reader: Lines<ChildStdout>,
+    framing: Framing,
+    max: usize,
+    peer: Peer,
     abandoned: Vec<Value>,
     inflight: Vec<Value>,
     roots: Value,
@@ -29,66 +33,16 @@ pub(crate) struct Client {
     next: i64,
 }
 
-pub(crate) enum Read {
-    Line(String),
-    Oversize,
-    Closed,
-}
-
-pub(crate) struct Lines<R> {
-    reader: BufReader<R>,
-    pending: Vec<u8>,
-    over: bool,
-}
-
-impl<R: AsyncRead + Unpin> Lines<R> {
-    pub(crate) fn new(reader: R) -> Self {
-        Self {
-            reader: BufReader::new(reader),
-            pending: Vec::new(),
-            over: false,
-        }
-    }
-
-    pub(crate) async fn next(&mut self) -> std::io::Result<Read> {
-        loop {
-            let chunk = self.reader.fill_buf().await?;
-            if chunk.is_empty() {
-                return Ok(Read::Closed);
-            }
-            let (take, done) = chunk
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .map_or((chunk.len(), false), |at| (at + 1, true));
-            if !self.over
-                && self.pending.len() + take <= crate::limits::limits().mcp_frame_max_bytes
-            {
-                self.pending.extend_from_slice(&chunk[..take]);
-            } else if !self.over {
-                self.over = true;
-                self.pending = Vec::new();
-            }
-            self.reader.consume(take);
-            if done {
-                break;
-            }
-        }
-        let line = std::mem::take(&mut self.pending);
-        if std::mem::take(&mut self.over) {
-            return Ok(Read::Oversize);
-        }
-        Ok(Read::Line(String::from_utf8(line).unwrap_or_else(
-            |error| String::from_utf8_lossy(error.as_bytes()).into_owned(),
-        )))
-    }
-}
-
 pub(crate) struct Spawn<'a> {
     pub(crate) program: &'a str,
     pub(crate) args: &'a [&'a str],
     pub(crate) env: &'a [(String, String)],
     pub(crate) cwd: &'a Path,
     pub(crate) wait: Duration,
+    pub(crate) base: Env,
+    pub(crate) framing: Framing,
+    pub(crate) max: usize,
+    pub(crate) peer: Peer,
 }
 
 impl Client {
@@ -96,7 +50,7 @@ impl Client {
         let process = crate::process::start(
             Spec {
                 cwd: Some(launch.cwd.to_path_buf()),
-                base: Env::Clean,
+                base: launch.base,
                 ..Spec::new(launch.program, launch.args)
             }
             .envs(launch.env.iter().cloned()),
@@ -109,7 +63,10 @@ impl Client {
             group: process.group,
             child: Some(process.child),
             stdin: Some(process.stdin),
-            reader: Lines::new(process.stdout),
+            reader: Lines::framed(process.stdout, launch.framing, launch.max),
+            framing: launch.framing,
+            max: launch.max,
+            peer: launch.peer.clone(),
             abandoned: Vec::new(),
             inflight: Vec::new(),
             roots: roots(launch.cwd),
@@ -129,20 +86,6 @@ impl Client {
         self.wait = wait;
     }
 
-    pub(crate) async fn initialize(
-        &mut self,
-        name: &str,
-        on_note: impl FnMut(Notice<'_>),
-    ) -> Result<Value> {
-        let capabilities = json!({"roots": {"listChanged": false}, "elicitation": {"form": {}}});
-        let result = self
-            .call("initialize", hello(name, capabilities), on_note)
-            .await?;
-        agreed(&result)?;
-        self.notify("notifications/initialized", json!({})).await?;
-        Ok(result)
-    }
-
     pub(crate) async fn notify(&mut self, method: &str, params: Value) -> Result<()> {
         self.write(&notification(method, params)).await
     }
@@ -155,16 +98,19 @@ impl Client {
     }
 
     async fn cancel(&mut self, id: &Value, reason: &str) {
+        if !self.peer.cancels() {
+            return;
+        }
         let cancel = notification(
             "notifications/cancelled",
             json!({"requestId": id, "reason": reason}),
         );
-        let Ok(line) = frame_line(&cancel) else {
+        let Ok(bytes) = encode(self.framing, &cancel) else {
             return;
         };
         if !matches!(
             self.send(
-                &line,
+                &bytes,
                 Instant::now() + crate::limits::limits().mcp_cancel_write()
             )
             .await,
@@ -176,12 +122,12 @@ impl Client {
 
     async fn send(
         &mut self,
-        line: &str,
+        bytes: &[u8],
         deadline: Instant,
     ) -> std::result::Result<std::io::Result<()>, tokio::time::error::Elapsed> {
         tokio::time::timeout_at(deadline, async {
             let pipe = self.pipe()?;
-            pipe.write_all(line.as_bytes()).await?;
+            pipe.write_all(bytes).await?;
             pipe.flush().await
         })
         .await
@@ -190,9 +136,24 @@ impl Client {
     pub(crate) async fn call(
         &mut self,
         method: &str,
-        mut params: Value,
-        mut on_note: impl FnMut(Notice<'_>),
+        params: Value,
+        mut on_note: impl FnMut(super::Notice<'_>),
     ) -> Result<Value> {
+        let (result, error) = self.exchange(method, params.clone(), &mut on_note).await?;
+        let (result, error) = if self.peer.retries(error.as_ref()) {
+            self.exchange(method, params, &mut on_note).await?
+        } else {
+            (result, error)
+        };
+        super::outcome(self.peer.label(method), result, error)
+    }
+
+    async fn exchange(
+        &mut self,
+        method: &str,
+        mut params: Value,
+        on_note: &mut impl FnMut(super::Notice<'_>),
+    ) -> Result<(Option<Value>, Option<Value>)> {
         if self.broken {
             return Err(Error::Tool(format!(
                 "`{method}` was not sent: an earlier request was cut off"
@@ -206,13 +167,13 @@ impl Client {
         {
             object.insert("_meta".to_string(), json!({"progressToken": id}));
         }
-        let line = frame_line(&request(&id, method, params))?;
+        let bytes = encode(self.framing, &request(&id, method, params))?;
         let wait = self.wait;
         let deadline = Instant::now() + wait;
         self.inflight.push(id.clone());
-        let written = self.send(&line, deadline).await;
+        let written = self.send(&bytes, deadline).await;
         let result = match written {
-            Ok(Ok(())) => self.reply(&id, method, deadline, &mut on_note).await,
+            Ok(Ok(())) => self.reply(&id, method, deadline, on_note).await,
             Ok(Err(error)) => Err(error.into()),
             Err(_elapsed) => {
                 self.broken = true;
@@ -243,9 +204,9 @@ impl Client {
     }
 
     async fn write(&mut self, value: &Value) -> Result<()> {
-        let line = frame_line(value)?;
+        let bytes = encode(self.framing, value)?;
         let pipe = self.pipe()?;
-        pipe.write_all(line.as_bytes()).await?;
+        pipe.write_all(&bytes).await?;
         pipe.flush().await?;
         Ok(())
     }
@@ -302,12 +263,6 @@ fn no_reply(method: &str, wait: Duration) -> Error {
         "`{method}` got no reply in {}s; summonr cancelled it",
         wait.as_secs()
     ))
-}
-
-fn frame_line(value: &Value) -> Result<String> {
-    let mut line = serde_json::to_string(value)?;
-    line.push('\n');
-    Ok(line)
 }
 
 fn roots(cwd: &Path) -> Value {

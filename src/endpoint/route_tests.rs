@@ -95,7 +95,8 @@ fn a_zhipu_key_runs_the_international_coding_plan() {
         super::super::preset::preset(route)
             .unwrap()
             .env_keys
-            .contains(&"ZHIPU_API_KEY")
+            .iter()
+            .any(|key| key == "ZHIPU_API_KEY")
     };
     assert!(reads("zai-intl"));
     assert!(!reads("zai-cn"));
@@ -236,7 +237,7 @@ fn retired_names_keep_their_env_keys() {
         "GLM_API_KEY",
     ] {
         assert!(
-            route.env_keys.contains(&key),
+            route.env_keys.iter().any(|name| name == key),
             "zai-intl no longer reads {key}"
         );
     }

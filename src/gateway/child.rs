@@ -6,8 +6,9 @@ use tokio::sync::oneshot;
 use super::store;
 use super::telegram::Bot;
 use super::turn::Options;
+use crate::cron::launch::Launch;
 use crate::cron::report::Report;
-use crate::cron::store::Outcome;
+use crate::cron::store::{Outcome, Task};
 use crate::error::{Error, Result};
 use crate::process::{Cap, Child, Io, Spec, Tail};
 use crate::tools::command::ProcessGroup;
@@ -37,15 +38,16 @@ pub(crate) fn outcome(seen: &Report, code: Option<i32>, stderr: &[String]) -> St
 }
 
 pub(crate) fn argv(options: &Options, session: Option<&str>, text: &str) -> Vec<String> {
-    let mut args: Vec<String> = options.endpoint.iter().cloned().collect();
-    if let Some(model) = &options.model {
-        args.extend(["--model".to_string(), model.clone()]);
+    Launch {
+        endpoint: options.endpoint.as_deref(),
+        model: options.model.as_deref(),
+        session,
+        max_secs: None,
+        max_tokens: None,
+        worktree: false,
+        task: &Task::Prompt(text.to_string()),
     }
-    if let Some(session) = session {
-        args.extend(["--session".to_string(), session.to_string()]);
-    }
-    args.extend(["--json", "-p", "--", text].map(str::to_string));
-    args
+    .argv()
 }
 
 async fn halt(child: &mut Child, group: Option<ProcessGroup>) -> Result<()> {

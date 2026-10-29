@@ -92,6 +92,7 @@ table! {
     mcp_log_max_bytes: u64,
     mcp_frame_max_bytes: usize,
     lsp_frame_max_bytes: usize,
+    agent_line_max_bytes: usize,
     mcp_stderr_tail_bytes: usize,
     hook_output_max_bytes: usize,
     gateway_stderr_tail_lines: usize,

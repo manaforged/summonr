@@ -218,8 +218,8 @@ fn target(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> Result
     }
     if endpoint
         .api_key
-        .as_deref()
-        .is_none_or(|key| key.trim().is_empty())
+        .as_ref()
+        .is_none_or(|key| key.expose().trim().is_empty())
         && endpoint.oauth.is_none()
     {
         return Err(Error::Config(format!(

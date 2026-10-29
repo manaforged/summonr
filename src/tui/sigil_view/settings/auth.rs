@@ -54,15 +54,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         .header(Some(tab_strip(&app, Tab::Providers)))
         .fixed(canvas::picker_rows(rows))
         .live_hints(move || hints(&state))
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(canvas::overlay_gap()),
-                )
-                .children_reactive(move || body(&paint)),
-        )
+        .child(super::dialog_body(move || body(&paint)))
         .build(app.auth.open, cols, &hotkeys)
 }
 

@@ -103,12 +103,10 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn file_revert(&self, path: &str) {
-        if self.revert_armed.peek().as_deref() != Some(path) {
-            self.revert_armed.set(Some(path.to_string()));
+        if !confirm(&self.revert_armed, path.to_string(), None) {
             self.refresh();
             return;
         }
-        self.revert_armed.set(None);
         self.hunk_mark(path, "", crate::hunks::Op::RejectFile);
     }
 

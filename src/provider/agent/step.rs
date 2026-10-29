@@ -1,12 +1,13 @@
 use serde_json::json;
 
 use super::super::wire::Delta;
+use super::super::wire::anthropic::{Change, EventKind, Opened, Shape};
 use super::super::{
     AssistantMessage, Client, CompletionRequest, Message, Partial, Role, StopReason, ToolCall,
     ToolFunction, ToolKind, Usage,
 };
 use super::bridge;
-use super::frame::{Block, Control, Finished, Frame, LimitStatus, Piece, Rpc, Streamed};
+use super::frame::{Control, Finished, Frame, LimitStatus};
 use super::run::{Call, Run};
 use summonr_core::error::{Error, Result};
 
@@ -57,10 +58,14 @@ impl Run {
         partial: &mut Partial,
     ) -> Result<Step> {
         loop {
-            if !self.pending.is_empty() && !self.reader.buffer().contains(&b'\n') {
+            if !self.pending.is_empty() && !self.reader.buffered() {
                 return Ok(Step::Paused(self.paused()));
             }
-            match self.event().await? {
+            let line = self.line().await?;
+            let Some(frame) = Self::frame(&line)? else {
+                continue;
+            };
+            match frame {
                 Frame::ControlRequest {
                     request_id,
                     request,
@@ -70,9 +75,11 @@ impl Run {
                     }
                 }
                 Frame::StreamEvent {
-                    event: Streamed::ContentBlockDelta { delta },
+                    event,
                     parent_tool_use_id: None,
-                } => self.delta(client, request, partial, delta)?,
+                } if event.kind == EventKind::ContentBlockDelta => {
+                    self.delta(client, request, partial, &event.delta)?;
+                }
                 Frame::Assistant {
                     message,
                     parent_tool_use_id: None,
@@ -99,9 +106,7 @@ impl Run {
     pub(super) async fn control(&mut self, id: String, request: Control) -> Result<Option<Call>> {
         match request {
             Control::McpMessage { message } => {
-                if let Ok(Rpc::ToolsCall { id: rpc, params }) =
-                    serde_json::from_value::<Rpc>(message.clone())
-                {
+                if let Some((rpc, params)) = bridge::call(&message) {
                     return Ok(Some(Call {
                         request: id,
                         rpc,
@@ -110,7 +115,7 @@ impl Run {
                         arguments: params.arguments,
                     }));
                 }
-                let reply = bridge::mcp(&message, &self.tools);
+                let reply = bridge::mcp(&message, &self.listing);
                 self.send(&bridge::reply(&id, json!({"mcp_response": reply})))
                     .await?;
             }
@@ -133,18 +138,16 @@ impl Run {
         client: &Client,
         request: &CompletionRequest<'_>,
         partial: &mut Partial,
-        piece: Piece,
+        change: &Change<'_>,
     ) -> Result<()> {
-        let delta = match piece {
-            Piece::TextDelta { text } => {
-                partial.text.push_str(&text);
-                Delta::Text(text)
-            }
-            Piece::ThinkingDelta { thinking } => {
-                partial.reasoning.push_str(&thinking);
-                Delta::Thinking(thinking)
-            }
-            Piece::Other => return Ok(()),
+        let delta = if !change.thinking.is_empty() {
+            partial.reasoning.push_str(&change.thinking);
+            Delta::Thinking(change.thinking.to_string())
+        } else if !change.text.is_empty() {
+            partial.text.push_str(&change.text);
+            Delta::Text(change.text.to_string())
+        } else {
+            return Ok(());
         };
         client.apply(request, &mut self.sizes, delta)
     }
@@ -170,12 +173,12 @@ impl Run {
         total
     }
 
-    fn collect(&mut self, content: Vec<Block>) {
+    fn collect(&mut self, content: Vec<Opened<'_>>) {
         for block in content {
-            match block {
-                Block::Text { text } => self.text.push_str(&text),
-                Block::Thinking { thinking } => self.reasoning.push_str(&thinking),
-                Block::Other => {}
+            match block.shape {
+                Shape::Text => self.text.push_str(&block.text),
+                Shape::Thinking => self.reasoning.push_str(&block.thinking),
+                Shape::ToolUse | Shape::Other => {}
             }
         }
     }

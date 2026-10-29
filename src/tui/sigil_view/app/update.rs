@@ -254,7 +254,7 @@ impl App {
         });
         if saved {
             self.view_saved.set(text);
-            self.discard_armed.set(false);
+            self.discard_armed.set(None);
         }
     }
 

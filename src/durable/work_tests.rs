@@ -1,4 +1,5 @@
 use super::{Candidate, Decision, StepState, Work, WorkKind};
+use crate::durable::log;
 use crate::durable::tree::snapshot;
 use crate::tools::{Todo, TodoStatus};
 
@@ -72,26 +73,39 @@ fn work_trees_live_in_the_sidecar_and_an_old_inline_file_still_loads() {
         paths: vec!["a.txt".to_string()],
         snapshot: tree.clone(),
     });
-    let path = dir.path().join("work.json");
-    work.save(&path, true).unwrap();
+    let session = dir.path().join("session.jsonl");
+    save(&work, &session);
 
-    let main: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let text = std::fs::read_to_string(&session).unwrap();
+    let main: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
     assert!(
-        main.get("base").is_none(),
-        "work.json carries no file map: {main}"
+        main["work"].get("base").is_none(),
+        "the work record carries no file map: {main}"
     );
-    assert!(main["candidate"].get("snapshot").is_none(), "{main}");
-    assert!(path.with_extension("tree.json").is_file());
-    let loaded = Work::load(&path).unwrap().unwrap();
+    assert!(
+        main["work"]["candidate"].get("snapshot").is_none(),
+        "{main}"
+    );
+    assert!(
+        log::work_path(&session)
+            .with_extension("tree.json")
+            .is_file()
+    );
+    let loaded = Work::at(&session).unwrap();
     assert_eq!(loaded.base, Some(tree.clone()));
     assert_eq!(loaded.candidate.unwrap().snapshot, tree);
 
-    let old = dir.path().join("old.json");
+    let old = tempfile::tempdir().unwrap();
+    let old_session = old.path().join("session.jsonl");
     let mut inline = serde_json::to_value(&work).unwrap();
     inline["base"] = serde_json::to_value(&tree).unwrap();
     inline["candidate"]["snapshot"] = serde_json::to_value(&tree).unwrap();
-    std::fs::write(&old, serde_json::to_vec(&inline).unwrap()).unwrap();
-    let legacy = Work::load(&old).unwrap().unwrap();
+    std::fs::write(
+        log::work_path(&old_session),
+        serde_json::to_vec(&inline).unwrap(),
+    )
+    .unwrap();
+    let legacy = Work::at(&old_session).unwrap();
     assert_eq!(legacy.base, Some(tree.clone()));
     assert_eq!(legacy.candidate.unwrap().snapshot, tree);
 }
@@ -99,16 +113,16 @@ fn work_trees_live_in_the_sidecar_and_an_old_inline_file_still_loads() {
 #[test]
 fn an_empty_tree_pair_writes_no_sidecar_and_clears_a_stale_one() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("work.json");
-    let sidecar = path.with_extension("tree.json");
+    let session = dir.path().join("session.jsonl");
+    let sidecar = log::work_path(&session).with_extension("tree.json");
     let mut work = Work::new("ship", WorkKind::Single);
-    work.save(&path, true).unwrap();
+    work.save_trees(&session).unwrap();
     assert!(!sidecar.exists(), "no file map means no sidecar write");
     work.base = Some(snapshot(dir.path(), &[], None).unwrap());
-    work.save(&path, true).unwrap();
+    work.save_trees(&session).unwrap();
     assert!(sidecar.is_file());
     work.base = None;
-    work.save(&path, true).unwrap();
+    work.save_trees(&session).unwrap();
     assert!(
         !sidecar.exists(),
         "an emptied map removes the stale sidecar"
@@ -160,13 +174,17 @@ fn an_old_checkpoint_with_a_model_made_step_still_runs_the_saved_checks() {
     let mut work = Work::new("plan", WorkKind::Steps);
     work.select("## Steps\n1. first\n", &["false".to_string()])
         .unwrap();
-    let path = dir.path().join("work.json");
+    let session = dir.path().join("session.jsonl");
     let mut saved = serde_json::to_value(&work).unwrap();
     saved["steps"][0]["title"] = "Investigate".into();
     saved["steps"][0]["checks"] = serde_json::json!([]);
     saved["active"] = 0.into();
-    std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
-    let loaded = Work::load(&path).unwrap().unwrap();
+    std::fs::write(
+        log::work_path(&session),
+        serde_json::to_vec(&saved).unwrap(),
+    )
+    .unwrap();
+    let loaded = Work::at(&session).unwrap();
     let commands: Vec<String> = loaded
         .completion_checks()
         .into_iter()
@@ -178,53 +196,64 @@ fn an_old_checkpoint_with_a_model_made_step_still_runs_the_saved_checks() {
 #[test]
 fn a_torn_work_file_starts_fresh() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("work.json");
-    std::fs::write(&path, "").unwrap();
-    assert!(Work::load(&path).unwrap().is_none());
-    Work::new("ship it", WorkKind::Single)
-        .save(&path, false)
-        .unwrap();
-    std::fs::write(path.with_extension(super::TREES), "{\"base\":").unwrap();
-    let loaded = Work::load(&path)
-        .unwrap()
-        .expect("the work survives a torn sidecar");
+    let session = dir.path().join("session.jsonl");
+    std::fs::write(log::work_path(&session), "").unwrap();
+    assert!(Work::at(&session).is_none());
+    std::fs::remove_file(log::work_path(&session)).unwrap();
+    save(&Work::new("ship it", WorkKind::Single), &session);
+    std::fs::write(
+        log::work_path(&session).with_extension(super::TREES),
+        "{\"base\":",
+    )
+    .unwrap();
+    let loaded = Work::at(&session).expect("the work survives a torn sidecar");
     assert!(loaded.base.is_none());
 }
 
 #[test]
 fn an_unreadable_work_path_is_an_error_not_a_missing_file() {
     let dir = tempfile::tempdir().unwrap();
-    let _ = Work::read(dir.path()).unwrap_err();
-    assert!(matches!(
-        Work::read(&dir.path().join("absent.json")),
-        Ok(Err(None))
-    ));
+    let session = dir.path().join("session.jsonl");
+    assert!(matches!(Work::restore(&session, None), Ok(Err(None))));
+    std::fs::create_dir(log::work_path(&session)).unwrap();
+    let _ = Work::restore(&session, None).unwrap_err();
 }
 
 #[test]
 fn an_unreadable_tree_sidecar_is_an_error_not_a_missing_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("work.json");
-    Work::new("ship", WorkKind::Single)
-        .save(&path, false)
-        .unwrap();
-    std::fs::create_dir(path.with_extension(super::TREES)).unwrap();
-    let _ = Work::read(&path).unwrap_err();
+    let session = dir.path().join("session.jsonl");
+    std::fs::create_dir(log::work_path(&session).with_extension(super::TREES)).unwrap();
+    let _ = Work::restore(&session, Some(Work::new("ship", WorkKind::Single))).unwrap_err();
 }
 
 #[test]
 fn a_legacy_tree_sidecar_keeps_its_file_map() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("work.json");
-    Work::new("ship", WorkKind::Single)
-        .save(&path, false)
-        .unwrap();
+    let session = dir.path().join("session.jsonl");
+    save(&Work::new("ship", WorkKind::Single), &session);
     std::fs::write(
-        path.with_extension(super::TREES),
+        log::work_path(&session).with_extension(super::TREES),
         "{\"base\":{\"a.txt\":[1,2,3]},\"candidate\":null}",
     )
     .unwrap();
-    let loaded = Work::load(&path).unwrap().unwrap();
+    let loaded = Work::at(&session).unwrap();
     let base = loaded.base.expect("the legacy base loads");
     assert_ne!(base, crate::durable::tree::Snapshot::default());
+}
+
+fn save(work: &Work, session: &std::path::Path) {
+    work.save_trees(session).unwrap();
+    if !session.exists() {
+        std::fs::write(session, "").unwrap();
+    }
+    log::Log::open(session)
+        .unwrap()
+        .append(
+            &log::Line::Work {
+                work: Box::new(work.clone()),
+            },
+            crate::durable::store::Durability::Renamed,
+        )
+        .unwrap();
 }

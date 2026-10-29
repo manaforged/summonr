@@ -11,10 +11,6 @@ pub(in crate::tui::sigil_view) enum Entry {
     },
     Tool {
         name: String,
-        call: Call,
-    },
-    ToolGroup {
-        name: String,
         calls: Vec<Call>,
     },
     Verify {
@@ -70,8 +66,7 @@ pub(in crate::tui::sigil_view) fn entry_markdown(entry: &Entry) -> String {
         Entry::Thinking(text) => format!("> **Thinking**\n> {}", text.replace('\n', "\n> ")),
         Entry::Receipt(text) => text.clone(),
         Entry::Assistant { text, .. } => text.clone(),
-        Entry::Tool { name, call } => tool_markdown(name, &call.arg, &call.state, &call.output),
-        Entry::ToolGroup { name, calls } => calls
+        Entry::Tool { name, calls } => calls
             .iter()
             .map(|call| tool_markdown(name, &call.arg, &call.state, &call.output))
             .collect::<Vec<_>>()

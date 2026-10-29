@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use summonr_core::error::{Error, ProviderFailure, ProviderFailureKind, Result};

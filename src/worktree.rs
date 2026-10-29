@@ -227,11 +227,21 @@ impl Tree {
 }
 
 pub fn sweep(cwd: &Path) -> Result<Vec<PathBuf>> {
-    let Ok(primary) = primary(cwd) else {
+    let Ok((primary, before)) = listing(cwd) else {
         return Ok(Vec::new());
     };
-    drop(crate::diff::git_env(&primary, &[], &["worktree", "prune"]));
-    Ok(Vec::new())
+    crate::diff::git_env(&primary, &[], &["worktree", "prune"])?;
+    let (_, after) = listing(&primary)?;
+    let kept: std::collections::HashSet<&str> = after
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .collect();
+    Ok(before
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .filter(|path| !kept.contains(path))
+        .map(PathBuf::from)
+        .collect())
 }
 
 pub fn list(cwd: &Path) -> Result<Vec<Tree>> {
@@ -272,14 +282,14 @@ fn locate(primary: &Path, cwd: &Path) -> Result<Option<Tree>> {
 }
 
 fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {
+    Ok(common_dir(primary)?
+        .join("summon")
+        .join(format!("{id}.base")))
+}
+
+pub(crate) fn common_dir(primary: &Path) -> Result<PathBuf> {
     let common = crate::diff::git_env(primary, &[], &["rev-parse", "--git-common-dir"])?;
-    let common = Path::new(&common);
-    let common = if common.is_absolute() {
-        common.to_path_buf()
-    } else {
-        primary.join(common)
-    };
-    Ok(common.join("summon").join(format!("{id}.base")))
+    Ok(primary.join(common))
 }
 
 #[cfg(feature = "gui")]

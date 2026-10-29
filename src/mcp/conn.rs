@@ -5,8 +5,9 @@ use serde_json::{Value, json};
 
 use super::catalog::Listing;
 use super::config::{Launch, Server};
+use super::handshake;
+use super::http::Http;
 use super::journal::Journal;
-use super::{handshake, http};
 use crate::process::Env;
 use crate::rpc::{self, Client, Framing, Notice, Peer};
 use summonr_core::error::{Error, Result};
@@ -15,7 +16,7 @@ const STATELESS: &str = "2026-07-28";
 const LIST_PAGES: usize = 64;
 
 pub(super) struct Conn {
-    transport: Transport,
+    client: Box<Client>,
     stateless: bool,
     offers: Value,
     server: String,
@@ -36,41 +37,41 @@ fn logged<'n>(journal: &Journal, server: &str, notice: Notice<'n>) -> Option<Not
     }
 }
 
-enum Transport {
-    Stdio(Box<Client>),
-    Http(http::Http),
-}
-
 impl Conn {
     pub(super) async fn open(server: &Server, workspace: &Path) -> Result<Self> {
-        let transport = match &server.launch {
+        let wait = crate::limits::limits().mcp_open().min(server.wait);
+        let client = match &server.launch {
             Launch::Stdio { command, args, env } => {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                Transport::Stdio(Box::new(Client::spawn(&rpc::Spawn {
+                Client::spawn(&rpc::Spawn {
                     program: command,
                     args: &args,
                     env,
                     cwd: workspace,
-                    wait: crate::limits::limits().mcp_open().min(server.wait),
+                    wait,
                     base: Env::Clean,
                     framing: Framing::Line,
                     max: crate::limits::limits().mcp_frame_max_bytes,
                     peer: Peer::Mcp,
-                })?))
+                })?
             }
-            Launch::Http { url, headers, auth } => Transport::Http(http::Http::new(
-                url,
-                headers,
-                crate::limits::limits().mcp_open().min(server.wait),
-                auth.clone()
-                    .map(|spec| {
-                        crate::credentials::mcp_auth(*spec, &format!("mcp-{}", server.name))
-                    })
-                    .transpose()?,
-            )?),
+            Launch::Http { url, headers, auth } => Client::attach(
+                Box::new(Http::new(
+                    url,
+                    headers,
+                    server.wait,
+                    auth.clone()
+                        .map(|spec| {
+                            crate::credentials::mcp_auth(*spec, &format!("mcp-{}", server.name))
+                        })
+                        .transpose()?,
+                )?),
+                workspace,
+                wait,
+            ),
         };
         let mut conn = Self {
-            transport,
+            client: Box::new(client),
             stateless: false,
             offers: json!({"tools": {}}),
             server: server.name.clone(),
@@ -78,18 +79,7 @@ impl Conn {
         };
         let (journal, name) = (&conn.journal, conn.server.as_str());
         let mut hear = |notice: Notice<'_>| drop(logged(journal, name, notice));
-        let agreed = match &mut conn.transport {
-            Transport::Stdio(client) => {
-                Some(handshake::initialize_stdio(client, "summonr", &mut hear).await?)
-            }
-            Transport::Http(http) => {
-                http.initialize(
-                    handshake::initialize_params("summonr", json!({})),
-                    &mut hear,
-                )
-                .await?
-            }
-        };
+        let agreed = handshake::initialize(&mut conn.client, "summonr", &mut hear).await?;
         conn.stateless = agreed.is_none();
         if let Some(offers) =
             agreed.and_then(|mut result| result.get_mut("capabilities").map(Value::take))
@@ -99,14 +89,8 @@ impl Conn {
         Ok(conn)
     }
 
-    pub(super) fn ready(&mut self, wait: Duration) -> Result<()> {
-        match &mut self.transport {
-            Transport::Stdio(client) => {
-                client.set_wait(wait);
-                Ok(())
-            }
-            Transport::Http(http) => http.set_wait(wait),
-        }
+    pub(super) fn ready(&mut self, wait: Duration) {
+        self.client.set_wait(wait);
     }
 
     pub(super) async fn listing(&mut self) -> Result<Listing> {
@@ -156,24 +140,15 @@ impl Conn {
     }
 
     pub(super) fn pid(&self) -> Option<u32> {
-        match &self.transport {
-            Transport::Stdio(client) => client.pid(),
-            Transport::Http(_) => None,
-        }
+        self.client.pid()
     }
 
     pub(super) fn alive(&mut self) -> bool {
-        match &mut self.transport {
-            Transport::Stdio(client) => client.alive(),
-            Transport::Http(http) => !http.expired(),
-        }
+        self.client.alive()
     }
 
     pub(super) async fn cancel_inflight(&mut self) {
-        match &mut self.transport {
-            Transport::Stdio(client) => client.cancel_inflight().await,
-            Transport::Http(http) => http.cancel_inflight().await,
-        }
+        self.client.cancel_inflight().await;
     }
 
     pub(super) async fn call(
@@ -199,9 +174,6 @@ impl Conn {
                 on_note(other);
             }
         };
-        match &mut self.transport {
-            Transport::Stdio(client) => client.call(method, params, &mut hear).await,
-            Transport::Http(http) => http.call(method, params, &mut hear).await,
-        }
+        self.client.call(method, params, &mut hear).await
     }
 }

@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
 use std::sync::Arc;
@@ -9,7 +8,6 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use super::{Cmd, Info, Msg};
 
 use crate::provider::Client;
-use crate::provider::UserInput;
 use crate::runtime::Loop;
 use crate::workflow::Workflow;
 
@@ -18,7 +16,7 @@ mod diff;
 mod dispatch;
 mod export;
 
-pub(super) use export::{announce, export_session};
+pub(super) use export::export_session;
 mod execution;
 mod history;
 mod reader;
@@ -28,7 +26,7 @@ mod startup_tests;
 mod state;
 mod steer;
 mod turn;
-pub(in crate::tui) use turn::QUEUED_LATER;
+pub(in crate::tui) use steer::QUEUED_LATER;
 
 use reader::Reader;
 
@@ -50,10 +48,7 @@ struct Worker {
     auto_reply: bool,
     pending_mail: bool,
     last_auto: Instant,
-    steering: Arc<crate::runtime::Steering>,
-    deferred: VecDeque<Cmd>,
-    followups: VecDeque<UserInput>,
-    carried: usize,
+    queue: steer::InputQueue,
     last_turn: Option<crate::Turn>,
     mail_error: Option<String>,
     workflow: Workflow,

@@ -55,7 +55,7 @@
 
 ### `load`
 
-<pre>pub fn <a href="#load">load</a>() -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#prefs">Prefs</a>&gt;</pre>
+<pre>pub fn <a href="#load">load</a>() -&gt; Result&lt;<a href="#prefs">Prefs</a>&gt;</pre>
 
 
 ### `path`

@@ -68,7 +68,7 @@ impl List {
     }
 }
 
-pub(in crate::tui) fn at(cursor: &Signal<usize>, len: usize) -> usize {
+fn at(cursor: &Signal<usize>, len: usize) -> usize {
     cursor.peek().min(len.saturating_sub(1))
 }
 

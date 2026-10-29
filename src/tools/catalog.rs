@@ -5,10 +5,8 @@ use summonr_types::catalog::{Gate, catalog};
 use crate::provider::ToolDefinition;
 
 use super::ToolRegistry;
+use summonr_core::error::{Error, Result};
 
-mod browser;
-mod patch;
-pub(crate) use patch::shaped;
 pub(super) use summonr_types::catalog::retired;
 pub(crate) use summonr_types::catalog::{Builtin, readonly, retired_op};
 
@@ -40,6 +38,28 @@ impl ToolRegistry {
         self.skills = switches.enabled(ModuleId::Skills);
         self.probed = std::sync::OnceLock::new();
         Ok(())
+    }
+
+    pub(in crate::tools) fn set_browser(&mut self, on: bool) -> Result<()> {
+        self.browser = if on {
+            Some(match self.browser.take() {
+                Some(held) => held,
+                None => crate::browser::Browser::discover()?,
+            })
+        } else {
+            None
+        };
+        Ok(())
+    }
+
+    pub(in crate::tools) async fn browse(&self, arguments: &str) -> Result<String> {
+        let session = self.session.lock().ok().and_then(|held| held.clone());
+        let browser = self
+            .browser
+            .as_ref()
+            .ok_or_else(|| Error::Tool("the browser module is off".to_string()))?;
+        let resolve = |path: &str| self.resolve_read(path, crate::tools::paths::Shield::Contained);
+        browser.call(arguments, &resolve, session.as_deref()).await
     }
 
     pub(crate) fn definitions(&self) -> Vec<ToolDefinition> {
@@ -158,10 +178,18 @@ fn shaped_tool(mut definition: ToolDefinition) -> ToolDefinition {
     definition
 }
 
-pub(super) fn apply_patch() -> ToolDefinition {
-    shaped_tool(catalog().apply_patch.clone())
+pub(crate) fn shaped(definitions: Vec<ToolDefinition>, patch: bool) -> Vec<ToolDefinition> {
+    let mut shaped = definitions;
+    if patch {
+        shaped.push(shaped_tool(catalog().apply_patch.clone()));
+    }
+    shaped
 }
 
 pub(super) fn help(kind: Builtin) -> String {
     fill_text(&summonr_types::catalog::help(kind))
 }
+
+#[cfg(test)]
+#[path = "catalog/patch_tests.rs"]
+mod tests;

@@ -8,6 +8,8 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+summonr-core = { path = "../core" }
+summonr-types = { path = "../types" }
 base64 = { workspace = true }
 leyline = { workspace = true }
 rand = { workspace = true }

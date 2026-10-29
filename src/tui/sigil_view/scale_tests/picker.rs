@@ -87,7 +87,7 @@ fn cycling_to_related_sessions_selects_the_current_branch() {
         ])));
         app.sessions.scope();
         app.sessions.scope();
-        assert_eq!(app.sessions.selected.peek(), 1);
+        assert_eq!(app.sessions.list.cursor.peek(), 1);
         assert_eq!(app.sessions.rows()[1].id, current);
     });
 }

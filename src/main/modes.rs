@@ -1,5 +1,6 @@
 use summonr::{
-    Client, Event, Job, Loop, NextAction, Result, Turn, UserInput, WorkKind, WorkProgress,
+    Client, Event, Job, Loop, NextAction, Result, StepState, Turn, UserInput, WorkKind,
+    WorkProgress,
 };
 use tokio::io::{self, AsyncReadExt};
 
@@ -61,7 +62,7 @@ async fn work(mut loop_: Loop<Client>, args: &Args, job: Job) -> Result<i32> {
                 args.json,
                 index,
                 total,
-                "start",
+                StepState::Start,
                 job.check(index).as_deref(),
             );
         }
@@ -91,14 +92,14 @@ fn step_outcome(json: bool, index: usize, total: usize, turn: &Turn, after: &Wor
             index,
             total,
             if check.passed {
-                "check passed"
+                StepState::CheckPassed
             } else {
-                "check failed"
+                StepState::CheckFailed
             },
             Some(&check.command),
         );
     } else if after.current != Some(index) || after.terminal() {
-        step_event(json, index, total, "done", None);
+        step_event(json, index, total, StepState::Done, None);
     }
 }
 
@@ -170,24 +171,20 @@ fn print_live(event: &Event) {
 }
 
 fn exit(turn: &Turn, progress: &WorkProgress) -> i32 {
-    if turn.checks.iter().any(|check| !check.passed) {
-        2
-    } else if turn.aborted {
-        3
-    } else {
-        progress.exit_code().unwrap_or(0)
-    }
+    progress.exit_status(turn.checks.iter().any(|check| !check.passed), turn.aborted)
 }
 
-fn step_event(json: bool, index: usize, total: usize, state: &str, check: Option<&str>) {
+fn step_event(json: bool, index: usize, total: usize, state: StepState, check: Option<&str>) {
     if json {
-        println!(
-            "{}",
-            serde_json::json!({ "type": "step", "index": index, "total": total, "state": state, "check": check })
-        );
+        print_json(&Event::Step {
+            index,
+            total,
+            state,
+            check: check.map(str::to_string),
+        });
     } else if let Some(check) = check {
-        eprintln!("\n[step {index}/{total}] {state} · {check}");
+        eprintln!("\n[step {index}/{total}] {} · {check}", state.as_str());
     } else {
-        eprintln!("\n[step {index}/{total}] {state}");
+        eprintln!("\n[step {index}/{total}] {}", state.as_str());
     }
 }

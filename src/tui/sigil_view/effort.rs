@@ -44,7 +44,7 @@ impl Strip {
     }
 
     pub(super) fn picked(self) -> Effort {
-        self.cursor.peek()
+        self.cursor.get()
     }
 }
 

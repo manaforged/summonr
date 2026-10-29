@@ -32,7 +32,7 @@
 
 ### `start`
 
-<pre>pub fn <a href="#start">start</a>(send: impl Fn(<a href="#request">Request</a>) + Send + 'static) -&gt; <a href="summonr.html#result">Result</a>&lt;()&gt;</pre>
+<pre>pub fn <a href="#start">start</a>(send: impl Fn(<a href="#request">Request</a>) + Send + 'static) -&gt; Result&lt;()&gt;</pre>
 
 
 ---

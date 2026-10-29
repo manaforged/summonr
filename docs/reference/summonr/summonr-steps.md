@@ -5,19 +5,12 @@
 | [`Contract`](#contract) | struct |  |
 | [`Step`](#step) | struct |  |
 | [`Item`](#item) | enum |  |
-| [`exit_code`](#exit_code) | fn |  |
 | [`parse`](#parse) | fn |  |
 | [`prompt`](#prompt) | fn |  |
 
 ## Structs
 
 ### `Contract`
-
-**Methods**
-
-| Method | Description |
-| --- | --- |
-| <code>missing(&amp;self, workspace: &amp;Path) -&gt; Vec&lt;String&gt;</code> |  |
 
 **Fields**
 
@@ -65,14 +58,9 @@
 
 ## Functions
 
-### `exit_code`
-
-<pre>pub fn <a href="#exit_code">exit_code</a>(output: &amp;str) -&gt; Option&lt;i32&gt;</pre>
-
-
 ### `parse`
 
-<pre>pub fn <a href="#parse">parse</a>(markdown: &amp;str) -&gt; <a href="summonr.html#result">Result</a>&lt;Vec&lt;<a href="#step">Step</a>&gt;&gt;</pre>
+<pre>pub fn <a href="#parse">parse</a>(markdown: &amp;str) -&gt; Result&lt;Vec&lt;<a href="#step">Step</a>&gt;&gt;</pre>
 
 
 ### `prompt`

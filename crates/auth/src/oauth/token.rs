@@ -48,14 +48,14 @@ pub(super) async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Resu
         .text()
         .await
         .map_err(|error| Error::Transport(error.to_string()))?;
+    let body = serde_json::from_str::<Value>(&text);
     if status >= 400 {
-        return Err(Error::Denied(format!(
-            "token exchange HTTP {status}: {}",
-            text.trim()
-        )));
+        return Err(Error::Denied(match &body {
+            Ok(body) => format!("token exchange HTTP {status}: {}", told(body)),
+            Err(_) => format!("token exchange HTTP {status}"),
+        }));
     }
-    let body: Value =
-        serde_json::from_str(&text).map_err(|error| Error::Denied(error.to_string()))?;
+    let body = body.map_err(|error| Error::Denied(error.to_string()))?;
     let mut chat = minted(&body)?;
     chat.refresh = grant.refresh;
     chat.identity = chat.identity.or(grant.identity);
@@ -185,7 +185,7 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
         ("client_id".to_string(), client.to_string()),
     ];
     if let Some(secret) = &spec.client_secret {
-        form.push(("client_secret".to_string(), secret.clone()));
+        form.push(("client_secret".to_string(), secret.expose().to_string()));
     }
     for (key, value) in &spec.token_params {
         form.push((key.clone(), value.clone()));

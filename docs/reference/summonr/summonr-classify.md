@@ -84,7 +84,7 @@
 
 | Method | Description |
 | --- | --- |
-| <code>check(&amp;self, name: &amp;str) -&gt; <a href="summonr.html#result">Result</a>&lt;()&gt;</code> |  |
+| <code>check(&amp;self, name: &amp;str) -&gt; Result&lt;()&gt;</code> |  |
 | <code>noul(instructions: impl Into&lt;Value&gt;) -&gt; Self</code> |  |
 | <code>score(instructions: impl Into&lt;Value&gt;, levels: impl IntoIterator&lt;Item = impl Into&lt;Value&gt;&gt;) -&gt; Self</code> |  |
 
@@ -114,7 +114,7 @@
 
 ### `ask`
 
-<pre>pub async fn <a href="#ask">ask</a>(endpoint: &amp;<a href="summonr.html#endpoint">Endpoint</a>, state: &amp;Value, questions: &amp;BTreeMap&lt;String, <a href="#question">Question</a>&gt;) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#decision">Decision</a>&gt;</pre>
+<pre>pub async fn <a href="#ask">ask</a>(endpoint: &amp;<a href="summonr.html#endpoint">Endpoint</a>, state: &amp;Value, questions: &amp;BTreeMap&lt;String, <a href="#question">Question</a>&gt;) -&gt; Result&lt;<a href="#decision">Decision</a>&gt;</pre>
 
 
 ### `budget`

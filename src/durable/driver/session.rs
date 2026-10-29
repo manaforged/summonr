@@ -24,7 +24,7 @@ impl SessionDriver {
             turn: None,
             next: 1,
             pending: Vec::new(),
-            saved: AtomicU64::new(0),
+            saved: 0,
             base: None,
             fresh: false,
             last: None,
@@ -50,7 +50,7 @@ impl SessionDriver {
         let caller = workspace;
         let path = log::session_path(home, id);
         let mut state = State::default();
-        log::each(&path, |line| state.apply(line))?;
+        log::records(&path, 0).try_for_each(|line| line.map(|line| state.apply(line)))?;
         if state.id != Some(id) {
             return Err(DriverError::State(format!(
                 "{} is not the log of session {id}",
@@ -62,7 +62,7 @@ impl SessionDriver {
         } else {
             state.workspace.clone()
         };
-        let (work, notice) = match Work::read(&log::work_path(&path))? {
+        let (work, notice) = match Work::restore(&path, state.work.take())? {
             Ok(work) => (Some(work), None),
             Err(notice) => (None, notice),
         };
@@ -85,7 +85,7 @@ impl SessionDriver {
             turn: None,
             next: 1,
             pending: Vec::new(),
-            saved: AtomicU64::new(0),
+            saved: 0,
             base: None,
             fresh: false,
             last: None,
@@ -136,7 +136,7 @@ impl SessionDriver {
         if self.turn.is_some() {
             return Err(DriverError::Busy);
         }
-        let mut lines = log::read(self.log.path())?;
+        let mut lines = log::records(self.log.path(), 0).collect::<std::io::Result<Vec<Line>>>()?;
         if let Some(turn) = turn {
             truncate_to_turn(&mut lines, turn)?;
         }
@@ -145,18 +145,21 @@ impl SessionDriver {
         let child = SessionId::new();
         let path = log::session_path(home, child);
         let mut log = Log::create(&path)?;
-        log.append(&Line::Session {
-            id: child,
-            model: self.state.model.clone(),
-            system: self.state.system.clone(),
-            workspace: self.state.workspace.clone(),
-            parent: self.state.id,
-            depth: 0,
-            revision: Some(crate::revision().to_string()),
-        })?;
+        log.append(
+            &Line::Session {
+                id: child,
+                model: self.state.model.clone(),
+                system: self.state.system.clone(),
+                workspace: self.state.workspace.clone(),
+                parent: self.state.id,
+                depth: 0,
+                revision: Some(crate::revision().to_string()),
+            },
+            store::Durability::Renamed,
+        )?;
         for line in lines {
-            if !matches!(line, Line::Session { .. }) {
-                log.append(&line)?;
+            if !matches!(line, Line::Session { .. } | Line::Work { .. }) {
+                log.append(&line, store::Durability::Renamed)?;
             }
         }
         Ok(path)

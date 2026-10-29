@@ -158,7 +158,13 @@ fn a_key_stored_under_an_old_route_name_still_works() {
     crate::secret::forget("siliconflow").unwrap();
     let endpoint = endpoint.unwrap();
     assert_eq!(endpoint.name, "siliconflow-intl");
-    assert_eq!(endpoint.api_key.as_deref(), Some("sk-old-slot"));
+    assert_eq!(
+        endpoint
+            .api_key
+            .as_ref()
+            .map(summonr_core::secret::Secret::expose),
+        Some("sk-old-slot")
+    );
 }
 
 #[test]

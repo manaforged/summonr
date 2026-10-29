@@ -73,6 +73,10 @@ local_build() {
     return $status
 }
 
+if [ -n "${SUMMONR_SESSION_ID:-}" ] && [ -x "$bin" ]; then
+    exec "$bin" "$@"
+fi
+
 hold
 if stale; then
     if [ -n "$patch" ]; then
@@ -81,7 +85,7 @@ if stale; then
         build --locked
     fi &&
         printf '%s\n' "$head" >"$built" ||
-        echo "summonr: the build failed; starting the previous build" >&2
+        echo "summonr: the build failed; starting the previous build at $bin" >&2
 fi
 release
 

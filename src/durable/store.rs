@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
 mod doc;
+mod retain;
 mod stamp;
-pub(crate) use doc::{Codec, Doc, Encode, Invalid, PrettyJson, Wait, hold};
+pub(crate) use doc::{Codec, Doc, Encode, Invalid, Json, Lines, Toml, Wait, hold};
+pub(crate) use retain::{retain, retention};
 pub(crate) use stamp::{Stamp, forget, memo, settled, stamp};
 
 pub(crate) struct Staged<'a> {

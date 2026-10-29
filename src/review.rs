@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 use crate::provider::Provider;
 use crate::runtime::Loop;
 use crate::verify::Outcome;
@@ -65,27 +67,24 @@ fn parse(reply: &str) -> Verdict {
         pass: false,
         findings: trimmed.to_string(),
     };
-    let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) else {
+    let Some(Ok(reply)) = crate::goal::reply_object::<Reply>(trimmed) else {
         return raw();
     };
-    if end < start {
-        return raw();
-    }
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&trimmed[start..=end]) else {
-        return raw();
-    };
-    let Some(pass) = value.get("pass").and_then(serde_json::Value::as_bool) else {
-        return raw();
-    };
-    let findings = match (
-        pass,
-        value.get("findings").and_then(serde_json::Value::as_str),
-    ) {
+    let findings = match (reply.pass, reply.findings.as_ref().and_then(Value::as_str)) {
         (_, Some(findings)) => findings.to_string(),
         (true, None) => String::new(),
         (false, None) => trimmed.to_string(),
     };
-    Verdict { pass, findings }
+    Verdict {
+        pass: reply.pass,
+        findings,
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct Reply {
+    pass: bool,
+    findings: Option<Value>,
 }
 
 #[cfg(test)]

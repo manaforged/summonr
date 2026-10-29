@@ -31,13 +31,6 @@ enum Rewrite {
     Exact,
 }
 
-pub(crate) fn exit_code(output: &str) -> Option<i32> {
-    output
-        .lines()
-        .find_map(|line| line.strip_prefix("exit "))
-        .and_then(|code| code.trim().parse().ok())
-}
-
 pub(crate) fn kill_job(workspace: &Path, id: &str) -> Result<crate::jobs::Status> {
     let record = crate::jobs::load(workspace, id)?;
     stop_job(workspace, &record)?;

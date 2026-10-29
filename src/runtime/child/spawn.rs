@@ -1,5 +1,4 @@
 use super::brief::{agent_brief, instruction, rebase_paths};
-use super::record::*;
 use super::*;
 use crate::durable::driver::Parent;
 
@@ -23,18 +22,11 @@ impl<P: Provider> Loop<P> {
             },
         );
         Ok(Execution {
-            output: ToolOutput {
-                text: format!(
-                    "started child {id}\naccess: {}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
-                    record.access.name(),
-                    ellipsize(&record.assignment, LAST_CHARS)
-                ),
-                success: true,
-                mutated: false,
-                grant: None,
-                images: Vec::new(),
-                patch: None,
-            },
+            output: ToolOutput::ok(format!(
+                "started child {id}\naccess: {}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
+                record.access.name(),
+                ellipsize(&record.assignment, LAST_CHARS)
+            )),
             usage: Usage::default(),
             millis: 0,
         })
@@ -232,14 +224,9 @@ impl<P: Provider> Loop<P> {
         let success = matches!(record.state, ChildState::Completed(_));
         let mutated = record.record_paths() > 0;
         Ok(Execution {
-            output: ToolOutput {
-                text,
-                success,
-                mutated,
-                grant: None,
-                images: Vec::new(),
-                patch: None,
-            },
+            output: ToolOutput::ok(text)
+                .with_success(success)
+                .with_mutated(mutated),
             usage: done.usage,
             millis: done.millis,
         })
@@ -322,7 +309,7 @@ fn release_unfinished(done: &mut Done) {
         "the delta at {} holds changes and was kept",
         tree.path.display()
     );
-    let Some(result) = result_mut(&mut done.record.state) else {
+    let Some(result) = done.record.state.result_mut() else {
         return;
     };
     result.diagnostic = Some(match result.diagnostic.take() {
@@ -340,7 +327,7 @@ impl ChildRecord {
             }
             self.note_record(&kept);
         }
-        let Some(result) = result_mut(&mut self.state) else {
+        let Some(result) = self.state.result_mut() else {
             return;
         };
         result.kept = landing.held;

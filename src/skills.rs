@@ -5,7 +5,7 @@ use summonr_core::dirs::summonr_home;
 use summonr_core::error::{Error, Result};
 
 const SKILL: &str = "SKILL.md";
-use summonr_core::text::FENCE;
+use summonr_core::text::{FENCE, Frontmatter};
 
 #[must_use]
 pub(crate) fn list(workspace: &Path) -> Vec<(String, String)> {
@@ -64,6 +64,21 @@ pub(crate) fn valid(name: &str) -> bool {
         && name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+pub(crate) fn markdown_entries<T>(
+    dir: &Path,
+    build: impl Fn(String, Frontmatter<'_>) -> Option<T>,
+) -> Vec<T> {
+    summonr_core::walk::children(dir)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "md"))
+        .filter_map(|path| {
+            let stem = path.file_stem()?.to_str()?.to_string();
+            let text = std::fs::read_to_string(&path).ok()?;
+            build(stem, Frontmatter::parse(&text))
+        })
+        .collect()
 }
 
 fn collect(root: PathBuf, rows: &mut Vec<(String, String)>) {
@@ -130,7 +145,7 @@ fn summary(text: &str) -> String {
     match first {
         None => String::new(),
         Some(line) if line != FENCE => heading(line),
-        Some(_) => summonr_core::text::Frontmatter::parse(text)
+        Some(_) => Frontmatter::parse(text)
             .get("description")
             .map_or_else(|| heading(FENCE), summonr_core::text::squash),
     }

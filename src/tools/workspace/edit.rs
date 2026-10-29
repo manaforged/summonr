@@ -21,13 +21,13 @@ pub(super) fn uses_tags(args: &Value) -> bool {
     }
 }
 
-pub(super) struct Patch {
-    pub(super) start: usize,
-    pub(super) end: usize,
-    pub(super) anchor_start: usize,
-    pub(super) anchor_end: usize,
-    pub(super) replacement: Vec<String>,
-    pub(super) relaxed: bool,
+pub(in crate::tools) struct Patch {
+    pub(in crate::tools) start: usize,
+    pub(in crate::tools) end: usize,
+    pub(in crate::tools) anchor_start: usize,
+    pub(in crate::tools) anchor_end: usize,
+    pub(in crate::tools) replacement: Vec<String>,
+    pub(in crate::tools) relaxed: bool,
 }
 
 pub(super) fn apply_one(text: &str, op: &EditOp) -> Result<(String, bool)> {
@@ -71,7 +71,10 @@ fn overlaps(patches: &mut [Patch]) -> bool {
         .any(|pair| pair[1].anchor_start < pair[0].anchor_end)
 }
 
-pub(super) fn apply_patches(original: &str, mut patches: Vec<Patch>) -> Result<(String, bool)> {
+pub(in crate::tools) fn apply_patches(
+    original: &str,
+    mut patches: Vec<Patch>,
+) -> Result<(String, bool)> {
     let relaxed = patches.iter().any(|patch| patch.relaxed);
     if overlaps(&mut patches) {
         return Err(Error::Tool(

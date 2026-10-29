@@ -98,7 +98,7 @@ impl AgentClient {
             env: endpoint
                 .env
                 .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
+                .map(|(key, value)| (key.clone(), value.expose().to_string()))
                 .collect(),
             unset: crate::endpoint::env_unset(&endpoint.name),
             runs: Arc::default(),
@@ -186,9 +186,12 @@ impl AgentClient {
 
 impl Client {
     fn agent(&self) -> Result<&AgentClient> {
-        self.agent
-            .as_ref()
-            .ok_or_else(|| Error::Config("this endpoint has no Claude Code agent".to_string()))
+        match &self.transport {
+            super::client::Transport::ClaudeCode(agent) => Ok(agent),
+            _ => Err(Error::Config(
+                "this endpoint has no Claude Code agent".to_string(),
+            )),
+        }
     }
 
     pub(super) async fn stream_agent(

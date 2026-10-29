@@ -131,7 +131,7 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
 
 pub async fn check_key(name: &str, key: &str) -> Result<Source> {
     let mut endpoint = resolve(Some(name), None, Need::Config)?;
-    endpoint.api_key = Some(key.trim().to_string());
+    endpoint.api_key = Some(Secret::new(key.trim()));
     endpoint.source = None;
     endpoint.oauth = None;
     if let Err(error) = crate::provider::Client::discover(&endpoint).await

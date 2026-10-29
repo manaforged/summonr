@@ -70,7 +70,7 @@ pub(super) fn is_outside(
     outside_cwd: bool,
     extra: &[PathBuf],
 ) -> bool {
-    if matches!(word, "/dev/null" | "/dev/stdout" | "/dev/stderr") {
+    if rules().shell.devices.contains(word) {
         return false;
     }
     if let Some(target) = crate::config::expand_tilde(word) {
@@ -85,7 +85,7 @@ pub(super) fn is_outside(
             .trim_start_matches('{')
             .trim_end_matches('}');
         let head = name.split(['/', '\\']).next().unwrap_or(name);
-        return matches!(head, "HOME" | "TMPDIR" | "TMP" | "TEMP" | "TEMPDIR" | "PWD");
+        return rules().shell.outside_vars.contains(head);
     }
     if Path::new(word).has_root() {
         return !is_inside(Path::new(word), workspace, extra);
@@ -200,7 +200,7 @@ pub(super) fn is_inside(target: &Path, workspace: &Path, extra: &[PathBuf]) -> b
 }
 
 pub(super) fn wipes_root(folded: &str) -> bool {
-    ["rm -rf /", "rm -fr /", "rm -r /"].iter().any(|prefix| {
+    rules().shell.root_wipes.iter().any(|prefix| {
         folded.match_indices(prefix).any(|(index, _)| {
             matches!(
                 folded[index + prefix.len()..].chars().next(),

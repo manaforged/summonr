@@ -113,25 +113,18 @@ pub(super) fn header(state: &ToolState, words: NodeBuilder) -> NodeBuilder {
 pub(in crate::tui::sigil_view) fn flip(
     app: &App,
     index: usize,
-    call: Option<usize>,
+    at: usize,
 ) -> impl Fn(&mut PointerEvent) + 'static {
     let app = app.clone();
     move |event: &mut PointerEvent| {
         if event.button != Some(MouseButton::Left) {
             return;
         }
-        app.model_mut(|model| match call {
-            None => {
-                if let Some(Entry::Tool { call, .. }) = model.entries.get_mut(index) {
-                    call.expanded = !call.expanded;
-                }
-            }
-            Some(at) => {
-                if let Some(Entry::ToolGroup { calls, .. }) = model.entries.get_mut(index)
-                    && let Some(call) = calls.get_mut(at)
-                {
-                    call.expanded = !call.expanded;
-                }
+        app.model_mut(|model| {
+            if let Some(Entry::Tool { calls, .. }) = model.entries.get_mut(index)
+                && let Some(call) = calls.get_mut(at)
+            {
+                call.expanded = !call.expanded;
             }
         });
         event.stop_propagation();
@@ -182,7 +175,7 @@ pub(super) fn tool_card(
     layout: DiffLayout,
     app: &App,
     index: usize,
-    at: Option<usize>,
+    at: usize,
 ) -> NodeBuilder {
     if Builtin::is(name, Builtin::Task)
         && let Some(card) = super::children::task_card(app, &call.id)
@@ -266,7 +259,7 @@ fn group_row(
         _ => detail(name, call, &output),
     };
     let line =
-        branch(at == 0, call_line(verb, arg, detail, false)).pointer_up(flip(app, index, Some(at)));
+        branch(at == 0, call_line(verb, arg, detail, false)).pointer_up(flip(app, index, at));
     let expanded = call.expanded || tools == ToolOutput::Full;
     let column = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))

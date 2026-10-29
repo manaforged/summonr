@@ -11,36 +11,34 @@ use super::{Msg, Worker};
 
 impl Worker {
     pub(super) fn replay(&self) {
-        self.restore();
+        let tokens = Some(self.loop_.unreported_tokens());
+        replay_transcript(self.loop_.session_path(), None, tokens, &self.ui);
         if let Some((objective, _)) = self.loop_.active_goal().ok().flatten() {
             drop(self.ui.send(Msg::System(format!(
                 "unfinished goal: {objective} · /goal with the same text continues it · /goal clear ends it"
             ))));
         }
     }
-
-    pub(super) fn reshow(&self) {
-        self.restore();
-        drop(self.ui.send(Msg::Session(self.loop_.session_id())));
-        drop(self.ui.send(Msg::Replayed));
-    }
-
-    fn restore(&self) {
-        journal(self.loop_.session_path(), &self.ui);
-        drop(self.ui.send(Msg::Event(Event::Unreported {
-            tokens: self.loop_.unreported_tokens(),
-        })));
-    }
 }
 
-pub(super) fn reshow_running(path: &Path, session: &str, ui: &UnboundedSender<Msg>) {
+pub(super) fn replay_transcript(
+    path: &Path,
+    session: Option<String>,
+    tokens: Option<u64>,
+    ui: &UnboundedSender<Msg>,
+) {
     journal(path, ui);
-    drop(ui.send(Msg::Session(session.to_string())));
-    drop(ui.send(Msg::Replayed));
+    if let Some(tokens) = tokens {
+        drop(ui.send(Msg::Event(Event::Unreported { tokens })));
+    }
+    if let Some(session) = session {
+        drop(ui.send(Msg::Session(session)));
+        drop(ui.send(Msg::Replayed));
+    }
 }
 
 fn journal(path: &Path, ui: &UnboundedSender<Msg>) {
-    let lines = match log::read(path) {
+    let lines = match log::records(path, 0).collect::<std::io::Result<Vec<Line>>>() {
         Ok(lines) => lines,
         Err(error) => {
             drop(ui.send(Msg::System(format!("cannot load conversation: {error}"))));
@@ -50,15 +48,13 @@ fn journal(path: &Path, ui: &UnboundedSender<Msg>) {
     for line in lines {
         restore_line(line, ui);
     }
-    match Work::load(&log::work_path(path)) {
-        Ok(Some(work)) => drop(ui.send(Msg::Event(Event::Work {
+    if let Some(work) = Work::at(path) {
+        drop(ui.send(Msg::Event(Event::Work {
             progress: crate::WorkProgress {
                 reason: None,
                 ..work.progress()
             },
-        }))),
-        Ok(None) => {}
-        Err(error) => drop(ui.send(Msg::System(format!("cannot load task progress: {error}")))),
+        })));
     }
 }
 

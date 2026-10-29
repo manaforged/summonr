@@ -41,3 +41,11 @@ fn a_linked_checkout_on_a_summonr_branch_is_listed() {
     };
     assert_eq!(layout.checkouts(), vec![dir.path().join("repo"), linked]);
 }
+
+#[test]
+fn a_turn_lists_every_file_a_multi_file_write_or_a_patch_names() {
+    let write = r#"{"files":[{"path":"a.rs","content":""},{"path":"b.rs","content":""}]}"#;
+    let patch = serde_json::json!({"patch": "*** Begin Patch\n*** Update File: c.rs\n@@\n-x\n+y\n*** End Patch\n"}).to_string();
+    let paths = edited([("write", write), ("edit", patch.as_str())]);
+    assert_eq!(paths, ["a.rs", "b.rs", "c.rs"]);
+}

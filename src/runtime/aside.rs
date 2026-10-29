@@ -1,3 +1,4 @@
+use super::turn::{Missed, Reply};
 use super::*;
 use crate::workflow::Role;
 
@@ -11,11 +12,28 @@ impl<P: Provider> Loop<P> {
         let advertised = self.advertised_tools();
         let read_only = self.tools.is_read_only();
         self.tools.set_read_only(true);
-        let result = self
-            .aside_rounds(role, system, user, &advertised.tools, &advertised.json)
-            .await;
+        let result = self.aside_rounds(role, system, user, &advertised).await;
         self.tools.set_read_only(read_only);
         result
+    }
+
+    pub(super) async fn side_call(
+        &mut self,
+        role: Role,
+        messages: &[Message],
+        advertised: Option<&mail::Advertised>,
+    ) -> Result<std::result::Result<Reply, Missed>> {
+        let request = match advertised {
+            Some(advertised) => self
+                .request(role, messages, &advertised.tools, false)
+                .with_tools_json(&advertised.json),
+            None => self.request(role, messages, &[], false),
+        };
+        let options = CallOptions {
+            stream: false,
+            retry: RetryPolicy::None,
+        };
+        self.call(role, request, options).await
     }
 
     async fn aside_rounds(
@@ -23,8 +41,7 @@ impl<P: Provider> Loop<P> {
         role: Role,
         system: &str,
         user: &str,
-        tools: &[ToolDefinition],
-        json: &crate::provider::ToolsJson,
+        advertised: &mail::Advertised,
     ) -> Result<(String, Usage)> {
         let mut messages = vec![
             Message::system(system.to_string()),
@@ -35,15 +52,8 @@ impl<P: Provider> Loop<P> {
             if let Some(reason) = self.round_abort() {
                 return Err(Error::Config(reason));
             }
-            let request = self
-                .request(role, &messages, tools, false)
-                .with_tools_json(json);
             self.freeze_catalog();
-            let options = CallOptions {
-                stream: false,
-                retry: RetryPolicy::None,
-            };
-            let assistant = match self.call(role, request, options).await? {
+            let assistant = match self.side_call(role, &messages, Some(advertised)).await? {
                 Ok(reply) => reply.message,
                 Err(missed) => return Err(missed.error.error()),
             };

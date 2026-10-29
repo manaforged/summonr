@@ -4,31 +4,30 @@ impl Worker {
     pub(in crate::tui::worker) async fn compact(&mut self) -> bool {
         drop(self.ui.send(Msg::Busy(Some(Activity::Compact))));
         let ui = self.ui.clone();
-        let outcome = attend(
-            Inbox {
-                cmd: &mut self.cmd,
-                reader: &self.reader,
-                followups: &mut self.followups,
-                deferred: &mut self.deferred,
-                ui: &self.ui,
-                answers: None,
-            },
+        let outcome = wait_cancelable(
+            &mut self.cmd,
+            &mut self.queue,
+            &self.reader,
+            &self.ui,
+            None,
             self.loop_
                 .compact_with(move |event| drop(ui.send(Msg::Event(event.clone())))),
         )
         .await;
-        if !matches!(outcome, Attended::Done(Ok(_))) {
+        if !matches!(outcome, Completion::Done(Ok(_))) {
             self.recover();
         }
         drop(self.ui.send(Msg::Busy(None)));
         match outcome {
-            Attended::Done(Ok(true)) => self.system("context compacted: earlier turns summarized"),
-            Attended::Done(Ok(false)) => self.system("nothing to compact yet"),
-            Attended::Done(Err(error)) => self.fail(&error.to_string()),
-            Attended::Cancelled => {
+            Completion::Done(Ok(true)) => {
+                self.system("context compacted: earlier turns summarized")
+            }
+            Completion::Done(Ok(false)) => self.system("nothing to compact yet"),
+            Completion::Done(Err(error)) => self.fail(&error.to_string()),
+            Completion::Cancelled => {
                 self.system("Compaction cancelled. The conversation is unchanged.");
             }
-            Attended::Quit => return false,
+            Completion::Quit => return false,
         }
         true
     }
@@ -40,7 +39,7 @@ impl Worker {
             );
             return true;
         }
-        if clears(plan_path) {
+        if is_stop_word(plan_path) {
             self.clear_steps();
             return true;
         }
@@ -92,7 +91,7 @@ impl Worker {
         if objective.is_empty() {
             return self.goal_status();
         }
-        if clears(objective) {
+        if is_stop_word(objective) {
             self.clear_goal();
             self.leave_goal(crate::WorkKind::Single);
             return true;
@@ -152,7 +151,7 @@ impl Worker {
             };
             let (command, notice, paused) = match job {
                 crate::Job::Goal { objective, .. } => (
-                    "/goal",
+                    crate::SlashCommand::Goal,
                     format!(
                         "goal cleared: {}",
                         objective.lines().next().unwrap_or_default()
@@ -160,7 +159,7 @@ impl Worker {
                     "goal paused: cancelled by user",
                 ),
                 crate::Job::Steps { .. } => (
-                    "/steps",
+                    crate::SlashCommand::Steps,
                     "steps cleared".to_string(),
                     "steps paused: cancelled by user; /steps PLAN.md resumes",
                 ),
@@ -223,7 +222,7 @@ impl Worker {
         }
     }
 
-    fn cleared(&mut self, command: &str, reason: &str, notice: &str) -> bool {
+    fn cleared(&mut self, command: crate::SlashCommand, reason: &str, notice: &str) -> bool {
         if !self.take_clear(command) {
             return false;
         }
@@ -275,6 +274,6 @@ impl Worker {
     }
 }
 
-fn clears(argument: &str) -> bool {
+pub(super) fn is_stop_word(argument: &str) -> bool {
     matches!(argument, "clear" | "stop" | "off" | "cancel")
 }

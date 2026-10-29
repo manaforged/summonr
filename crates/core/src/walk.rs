@@ -40,6 +40,11 @@ impl Walk {
         ..Self::TOOL
     };
 
+    #[must_use]
+    pub const fn tool(no_ignore: bool) -> Self {
+        if no_ignore { Self::RAW } else { Self::TOOL }
+    }
+
     pub fn builder(self, root: &Path) -> WalkBuilder {
         let mut walker = WalkBuilder::new(root);
         walker

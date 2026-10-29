@@ -18,6 +18,7 @@ struct PaneSpec {
     click: Option<fn(&App, &PaneRow)>,
     menu: Menu,
     tree: bool,
+    poll: bool,
 }
 
 const FILES: PaneSpec = PaneSpec {
@@ -38,6 +39,7 @@ const FILES: PaneSpec = PaneSpec {
     }),
     menu: |row| if row.dir { DIR } else { FILE },
     tree: true,
+    poll: false,
 };
 
 const fn listed(list: Pane, rows: fn(&App) -> Vec<PaneRow>, menu: Menu) -> PaneSpec {
@@ -55,7 +57,7 @@ const fn listed(list: Pane, rows: fn(&App) -> Vec<PaneRow>, menu: Menu) -> PaneS
 
 static PANE_SPECS: [PaneSpec; PANES] = [
     FILES,
-    FILES,
+    listed(Pane::Ledger, |_| Vec::new(), |_| &[]),
     PaneSpec {
         load: |_| Some(Cmd::ListFiles),
         ..FILES
@@ -82,11 +84,13 @@ static PANE_SPECS: [PaneSpec; PANES] = [
     },
     PaneSpec {
         load: |_| Some(Cmd::Jobs),
+        poll: true,
         pick: App::open_row,
         ..listed(Pane::Jobs, App::job_rows, |_| JOB)
     },
     PaneSpec {
         load: |_| Some(Cmd::Mcp),
+        poll: true,
         pick: App::open_row,
         ..listed(Pane::Mcp, App::mcp_rows, |_| MCP)
     },
@@ -126,6 +130,10 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn pane_tree(pane: Pane) -> bool {
         spec(pane).tree
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_polls(pane: Pane) -> bool {
+        spec(pane).poll
     }
 
     pub(in crate::tui::sigil_view) fn load(&self) {
@@ -246,3 +254,7 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "panes_tests.rs"]
+mod tests;

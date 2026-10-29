@@ -122,6 +122,7 @@ impl<P: Provider> Loop<P> {
         messages.push(message);
         self.emit_records(events, emit)?;
         self.settle(pre, events, emit).await?;
+        self.capture_deferred(events, emit)?;
         self.session.settle_base()?;
         self.execute_calls(planned, calls, messages, events, emit, usage)
             .await

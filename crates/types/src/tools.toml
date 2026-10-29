@@ -9,7 +9,7 @@ run = "always"
 description = "Read files (N:text; offset/limit, widened by before/after/context; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree, or view an image file. op=help returns the full reference."
 help = """read op reference: every form honors ignore rules unless no_ignore is true; search files with the search tool.
 
-op=file (default with path): N:text lines, one page of up to {read_page_kib} KiB by default; offset starts at line N, limit caps lines (max {read_line_limit}); paths[] shares the page budget across files, reports missing ones inline, and gives each truncated file its own continuation offset; tags true adds hash tags for tag-edits.
+op=file (default with path): N:text lines, one page of up to {read_page_kib} KiB by default; offset N starts at that line, limit caps lines (max {read_line_limit}); paths[] shares the page budget across files, reports missing ones inline, and gives each truncated file its own continuation offset; tags true adds hash tags for tag-edits.
 op=list: directory listing; recursive true or depth N returns a tree; truncation notes say how to narrow.
 op=image: returns the image so you can see it; a model without image input gets a description or a note instead."""
 
@@ -28,6 +28,7 @@ context = { type = "integer", minimum = 0, maximum = 10 }
 tags = { type = "boolean" }
 recursive = { type = "boolean" }
 depth = { type = "integer", minimum = 1 }
+no_ignore = { type = "boolean" }
 op = { type = "string", enum = ["file", "list", "image", "help"] }
 
 [[tool]]
@@ -57,7 +58,13 @@ path = { type = "string" }
 output = { type = "string", enum = ["lines", "files", "count", "folders"] }
 context = { type = "integer", minimum = 0, maximum = { fill = "search_context_max" } }
 literal = { type = "boolean" }
+word = { type = "boolean" }
+depth = { type = "integer", minimum = 1 }
+no_ignore = { type = "boolean" }
+newer = { type = "string" }
 limit = { type = "integer", minimum = 1, maximum = { fill = "search_max" } }
+offset = { type = "integer", minimum = 0 }
+tags = { type = "boolean" }
 op = { type = "string", enum = ["help"] }
 
 [[tool]]
@@ -70,7 +77,7 @@ readonly = false
 advertise = "always"
 run = "always"
 description = "Edit existing files with old+new, edits[], or checked replacements in files[]. expected_matches checks the exact occurrence count; preview true shows the changes without writing. path+to moves a file without staging Git changes. Tags from read disambiguate ranges. New or empty files: write. op=help gives the grammar."
-help = """edit grammar: tags are N:hash strings that a read with tags true returns.
+help = """edit grammar: tags are the N:hash strings that read returns when asked for tags.
 
 - old+new: replace the unique substring (replace_all true replaces every occurrence); expected_matches requires that exact count and replaces those occurrences; without it a whitespace-only mismatch self-corrects and says so
 - tag+new: replace the tagged line(s), end_tag extends the range
@@ -93,10 +100,12 @@ path = { type = "string" }
 old = { type = "string" }
 new = { type = "string" }
 tag = { type = "string" }
+end_tag = { type = "string" }
 text = { type = "string" }
 replace_all = { type = "boolean" }
 expected_matches = { type = "integer", minimum = 1 }
 to = { type = "string" }
+patch = { type = "string" }
 preview = { type = "boolean" }
 op = { type = "string", enum = ["delete", "sequence", "help"] }
 
@@ -112,6 +121,7 @@ additionalProperties = false
 old = { type = "string" }
 new = { type = "string" }
 tag = { type = "string" }
+end_tag = { type = "string" }
 text = { type = "string" }
 replace_all = { type = "boolean" }
 expected_matches = { type = "integer", minimum = 1 }

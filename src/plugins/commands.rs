@@ -5,10 +5,8 @@ use super::{Plugin, enabled};
 use crate::mcp::{Offer, OfferKind};
 use crate::skills;
 use summonr_core::error::Result;
-use summonr_core::text::Frontmatter;
 
 const DIR: &str = "commands";
-const EXTENSION: &str = "md";
 const DESCRIPTION: &str = "description";
 const HINT: &str = "argument-hint";
 const SIGIL: char = '$';
@@ -33,7 +31,7 @@ impl Command {
     }
 
     pub(crate) fn render(&self, arguments: &str, workspace: &Path) -> String {
-        let template = self.plugin.expand(&self.template, workspace);
+        let template = super::expand(&self.template, &self.plugin.vars(workspace));
         let words = crate::policy::shell_words(arguments);
         let mut out = String::with_capacity(template.len() + arguments.len());
         let mut rest = template.as_str();
@@ -178,29 +176,17 @@ fn bare(all: &[Command], name: &str) -> bool {
 }
 
 pub(super) fn load(plugin: &Plugin) -> Vec<Command> {
-    let mut commands: Vec<Command> = summonr_core::walk::children(&plugin.dir.join(DIR))
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == EXTENSION))
-        .filter_map(|path| read(plugin, &path))
-        .collect();
+    let mut commands = skills::markdown_entries(&plugin.dir.join(DIR), |name, front| {
+        skills::valid(&name).then(|| Command {
+            plugin: plugin.clone(),
+            name,
+            description: front.get(DESCRIPTION).unwrap_or_default().to_string(),
+            hint: front.get(HINT).unwrap_or_default().to_string(),
+            template: front.body.trim().to_string(),
+        })
+    });
     commands.sort_by(|left, right| left.name.cmp(&right.name));
     commands
-}
-
-fn read(plugin: &Plugin, path: &Path) -> Option<Command> {
-    let name = path.file_stem()?.to_str()?.to_string();
-    if !skills::valid(&name) {
-        return None;
-    }
-    let text = std::fs::read_to_string(path).ok()?;
-    let front = Frontmatter::parse(&text);
-    Some(Command {
-        plugin: plugin.clone(),
-        name,
-        description: front.get(DESCRIPTION).unwrap_or_default().to_string(),
-        hint: front.get(HINT).unwrap_or_default().to_string(),
-        template: front.body.trim().to_string(),
-    })
 }
 
 #[cfg(test)]

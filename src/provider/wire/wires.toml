@@ -1,0 +1,45 @@
+[[wire]]
+wire = "completions"
+name = "completions"
+path = "/chat/completions"
+sentinel = "[DONE]"
+scheme = "bearer"
+images = { types = ["image/png", "image/jpeg"], tool_types = ["image/png", "image/jpeg"], count = 100, each = 10000000, bytes = 20000000, tool_images = true }
+
+[[wire]]
+wire = "responses"
+name = "responses"
+path = "/responses"
+scheme = "bearer"
+subscription_session = true
+images = { types = ["image/png", "image/jpeg", "image/gif", "image/webp"], tool_types = ["image/png", "image/jpeg", "image/gif", "image/webp"], count = 1500, each = 256000000, bytes = 256000000, tool_images = true }
+
+[[wire]]
+wire = "anthropic"
+name = "anthropic"
+path = "/messages"
+headers = { "anthropic-version" = "2023-06-01" }
+probe = "max_input_tokens"
+scheme = "api_key"
+images = { types = ["image/png", "image/jpeg", "image/gif", "image/webp"], tool_types = ["image/png", "image/jpeg", "image/gif", "image/webp"], count = 100, each = 10000000, bytes = 24000000, tool_images = true }
+
+[[wire]]
+wire = "gemini"
+name = "gemini"
+path = "/models/{model}:streamGenerateContent?alt=sse"
+probe = "inputTokenLimit"
+scheme = "google_key"
+images = { types = ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"], tool_types = ["image/png", "image/jpeg", "image/webp"], count = 3600, each = 15000000, bytes = 15000000, tool_images = false }
+
+[[wire]]
+wire = "decisions"
+name = "decisions"
+sentinel = "[DONE]"
+scheme = "bearer"
+images = { types = ["image/png", "image/jpeg"], tool_types = ["image/png", "image/jpeg"], count = 0, each = 0, bytes = 0, tool_images = true }
+
+[[wire]]
+wire = "agent-sdk"
+name = "agent-sdk"
+scheme = "bearer"
+images = { types = ["image/png", "image/jpeg", "image/gif", "image/webp"], tool_types = ["image/png", "image/jpeg", "image/gif", "image/webp"], count = 100, each = 10000000, bytes = 24000000, tool_images = true }

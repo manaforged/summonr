@@ -1,6 +1,31 @@
 use super::*;
 
 impl Work {
+    pub(super) fn repair_steps(&mut self) {
+        if self.policy != WorkKind::Steps || self.checks.is_empty() {
+            return;
+        }
+        let planned = self
+            .plan
+            .as_deref()
+            .and_then(|plan| crate::steps::parse(plan).ok())
+            .is_some_and(|parsed| {
+                parsed
+                    .iter()
+                    .map(|step| step.text.as_str())
+                    .eq(self.steps.iter().map(|step| step.title.as_str()))
+            });
+        if planned {
+            return;
+        }
+        let all: Vec<usize> = (0..self.checks.len()).collect();
+        for step in &mut self.steps {
+            if step.checks.is_empty() {
+                step.checks = all.clone();
+            }
+        }
+    }
+
     pub(crate) fn select(&mut self, markdown: &str, commands: &[String]) -> Result<(), WorkError> {
         let checks = checks(markdown, self.policy, commands)?;
         if self.policy == WorkKind::Steps {

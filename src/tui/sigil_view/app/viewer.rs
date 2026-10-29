@@ -25,7 +25,7 @@ impl App {
         self.view_saved.set(text.clone());
         self.view_text.set(text);
         self.view_caret.set(0);
-        self.discard_armed.set(false);
+        self.discard_armed.set(None);
         self.view_edit.set(true);
         self.pane_focus.set(true);
         self.refresh();
@@ -35,8 +35,9 @@ impl App {
         if !self.view_edit.peek() {
             return false;
         }
-        if self.view_text.peek() != self.view_saved.peek() && !self.discard_armed.peek() {
-            self.discard_armed.set(true);
+        if self.view_text.peek() != self.view_saved.peek()
+            && !confirm(&self.discard_armed, (), None)
+        {
             let keys = Hints::new()
                 .key(Key::Fixed("ctrl+s"), "save")
                 .key(Key::Esc, "again discard")
@@ -46,7 +47,7 @@ impl App {
             return true;
         }
         self.view_edit.set(false);
-        self.discard_armed.set(false);
+        self.discard_armed.set(None);
         self.refresh();
         true
     }
@@ -57,7 +58,7 @@ impl App {
             return;
         };
         let text = self.view_text.peek();
-        self.discard_armed.set(false);
+        self.discard_armed.set(None);
         drop(self.cmd.send(Cmd::Save(path, text)));
         self.refresh();
     }

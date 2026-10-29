@@ -19,10 +19,12 @@ impl<P: Provider> Loop<P> {
 
     pub(super) fn checkpoint(&mut self) -> Pretask {
         let workspace = self.workspace.clone();
-        let points = (self.session.depth() == 0).then(|| self.checkpoints().cloned());
+        let points = (self.session.depth() == 0)
+            .then(|| self.checkpoints().cloned())
+            .flatten()
+            .filter(|points| !points.deferred());
         let capture = tokio::task::spawn_blocking(move || {
             points
-                .flatten()
                 .and_then(|points| points.capture().err())
                 .map(|error| error.to_string())
         });
@@ -45,6 +47,25 @@ impl<P: Provider> Loop<P> {
             }
         }
         Ok(pre.1.clone())
+    }
+
+    pub(super) fn capture_deferred(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        if self.session.depth() != 0 {
+            return Ok(());
+        }
+        let turn = self.session.turns();
+        let Some(points) = self.checkpoints().filter(|points| points.deferred()) else {
+            return Ok(());
+        };
+        if let Err(error) = points.capture_to(turn) {
+            let text = format!("checkpoint skipped: {error}");
+            self.push_event(events, emit, Event::Note { text })?;
+        }
+        Ok(())
     }
 
     pub(crate) fn rollback(&mut self, turn: Option<usize>) -> Result<(usize, Vec<String>)> {
@@ -75,7 +96,3 @@ impl<P: Provider> Loop<P> {
         Ok((files, session))
     }
 }
-
-#[cfg(test)]
-#[path = "checkpoint_tests.rs"]
-mod tests;

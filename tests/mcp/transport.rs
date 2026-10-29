@@ -106,3 +106,21 @@ pub(crate) fn a_remote_reply_on_a_stream_held_open_returns_at_once() {
         model.tool_results()
     );
 }
+
+pub(crate) fn a_remote_server_request_gets_an_answer() {
+    let session = Session::new();
+    let remote = Remote::start(Mode::Asks);
+    let model = Model::start(vec![
+        Step::Call("remote__echo", json!({})),
+        Step::Text("ok"),
+    ]);
+    session.run(
+        &model,
+        &remote.config(
+            "remote",
+            &format!("timeout_secs = {}", crate::support::slow(5)),
+        ),
+        &[],
+    );
+    assert_eq!(remote.answered(), [json!("server-1")]);
+}

@@ -4,7 +4,7 @@ use super::model::Model;
 
 impl Model {
     pub(super) fn status_line(&self, info: &Info) -> String {
-        let total = self.prompt_tokens + self.completion_tokens;
+        let total = self.tokens(|round| round.prompt) + self.tokens(|round| round.completion);
         let activity = self.busy_since.map_or_else(
             || "ready".to_string(),
             |(activity, start)| {
@@ -32,9 +32,9 @@ impl Model {
     }
 
     fn cache_rate(&self) -> u64 {
-        self.cached_tokens
+        self.tokens(|round| round.cached)
             .saturating_mul(100)
-            .checked_div(self.prompt_tokens)
+            .checked_div(self.tokens(|round| round.prompt))
             .unwrap_or_default()
     }
 }

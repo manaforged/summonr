@@ -7,7 +7,7 @@ pub(super) struct Record {
     pub(super) base_url: Option<String>,
     pub(super) models_url: Option<String>,
     pub(super) model: Option<String>,
-    pub(super) api_key: Option<String>,
+    pub(super) api_key: Option<Secret>,
     pub(super) oauth: Option<crate::config::OAuth>,
     pub(super) body: Option<serde_json::Value>,
     pub(super) context_window: Option<u32>,
@@ -73,21 +73,23 @@ impl Record {
             idle_timeout_secs: self.idle_timeout_secs,
             effort: self.effort,
             price: self.price,
-            env: self.env,
-            headers: self.headers,
+            env: secrets(self.env),
+            headers: secrets(self.headers),
             wire: self.wire.unwrap_or_default(),
             fallback: self.fallback,
             compact_tokens: self.compact_tokens,
             images: self.images,
-            keep_reasoning: self.keep_reasoning.unwrap_or(false),
-            opencode: facts.is_some_and(|preset| preset.opencode),
+            keep_reasoning: self.keep_reasoning.unwrap_or(false)
+                || facts.is_some_and(|preset| preset.keep_reasoning),
+            session_headers: facts
+                .map(|preset| preset.session_headers.clone())
+                .unwrap_or_default(),
             prompt_cache_key: facts.is_some_and(|preset| preset.prompt_cache_key),
             assistant_after_tool: facts.is_some_and(|preset| preset.assistant_after_tool),
             cache_ttl: self
                 .cache_ttl
                 .or_else(|| facts.and_then(|preset| preset.cache_ttl))
                 .unwrap_or(crate::limits::limits().cache_ttl),
-            cache_header: facts.and_then(|preset| preset.cache_header.clone()),
             cache_marks: facts.is_some_and(|preset| preset.cache_marks),
             reasoning,
         }
@@ -115,7 +117,11 @@ impl From<&FileEndpoint> for Record {
             base_url: row.base_url.as_deref().map(trim_slash),
             models_url: row.models_url.as_deref().map(trim_slash),
             model: row.model.clone(),
-            api_key: row.api_key.clone().filter(|key| !key.trim().is_empty()),
+            api_key: row
+                .api_key
+                .as_deref()
+                .filter(|key| !key.trim().is_empty())
+                .map(Secret::new),
             oauth: row.auth.clone(),
             body: row.body.as_ref().map(json),
             context_window: row.context_window,
@@ -134,4 +140,11 @@ impl From<&FileEndpoint> for Record {
             thinking_off: row.thinking_off,
         }
     }
+}
+
+fn secrets(values: BTreeMap<String, String>) -> BTreeMap<String, Secret> {
+    values
+        .into_iter()
+        .map(|(key, value)| (key, Secret::new(value)))
+        .collect()
 }

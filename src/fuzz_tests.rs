@@ -45,6 +45,9 @@ fn a_journal_of_garbage_reads_without_a_panic() {
     let path = dir.path().join("session.jsonl");
     for input in inputs(0x5eed_0002, 2_000) {
         std::fs::write(&path, &input).unwrap();
-        drop(crate::durable::log::read(&path));
+        drop(
+            crate::durable::log::records::<crate::durable::log::Line>(&path, 0)
+                .collect::<std::io::Result<Vec<_>>>(),
+        );
     }
 }

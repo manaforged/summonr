@@ -28,7 +28,7 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         model: "jev-latest".to_string(),
         base_url: Some("https://api.typesafe.ai/v1/systemone".to_string()),
         models_url: None,
-        api_key: Some("k".to_string()),
+        api_key: Some(summonr_core::secret::Secret::new("k")),
         source: None,
         reasoning: crate::provider::Reasoning::default(),
         oauth: None,
@@ -44,11 +44,10 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         compact_tokens: None,
         images: None,
         keep_reasoning: false,
-        opencode: false,
+        session_headers: Default::default(),
         prompt_cache_key: false,
         assistant_after_tool: false,
         cache_ttl: crate::limits::limits().cache_ttl,
-        cache_header: None,
         cache_marks: false,
     }
 }

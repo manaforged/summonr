@@ -75,12 +75,10 @@ impl<P: Provider> Loop<P> {
             Message::system(system.to_string()),
             Message::user(user.to_string()),
         ];
-        let request = self.request(workflow::Role::Judge, &messages, &[], false);
-        let options = CallOptions {
-            stream: false,
-            retry: RetryPolicy::None,
-        };
-        match self.call(workflow::Role::Judge, request, options).await? {
+        match self
+            .side_call(workflow::Role::Judge, &messages, None)
+            .await?
+        {
             Ok(reply) => {
                 let usage = reply.message.usage.clone();
                 let text = reply.message.content.unwrap_or_default();

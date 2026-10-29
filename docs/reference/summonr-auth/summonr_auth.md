@@ -6,16 +6,16 @@
 | [`Prompt`](#prompt) | struct |  |
 | [`Spec`](#spec) | struct |  |
 | [`Error`](#error) | enum |  |
-| [`Grant`](#grant) | enum |  |
 | [`Method`](#method) | enum |  |
 | [`Scheme`](#scheme) | enum |  |
-| [`TokenStyle`](#tokenstyle) | enum |  |
 | [`Store`](#store) | trait |  |
 | [`builder`](#builder) | fn |  |
 | [`http`](#http) | fn |  |
 | [`Answer`](#answer) | type |  |
 | [`Result`](#result) | type |  |
 | [`AGENT`](#agent) | const |  |
+| [`Grant`](#grant) | use |  |
+| [`TokenStyle`](#tokenstyle) | use |  |
 
 ## Structs
 
@@ -46,6 +46,7 @@
 | --- | --- |
 | <code>new(say: impl FnMut(&amp;str) + Send + 'static, ask: impl FnMut(String) -&gt; <a href="#answer">Answer</a> + Send + 'static) -&gt; Self</code> |  |
 | <code>notice(&amp;mut self, line: &amp;str)</code> |  |
+| <code>async request(&amp;mut self, line: &amp;str) -&gt; <a href="#result">Result</a>&lt;String&gt;</code> |  |
 | <code>telling(say: impl FnMut(&amp;str) + Send + 'static) -&gt; Self</code> |  |
 
 
@@ -65,17 +66,17 @@
 | <code>authorize_url: Option&lt;String&gt;</code> |  |
 | <code>claim_headers: BTreeMap&lt;String, String&gt;</code> |  |
 | <code>client_id: String</code> |  |
-| <code>client_secret: Option&lt;String&gt;</code> |  |
+| <code>client_secret: Option&lt;Secret&gt;</code> |  |
 | <code>device_url: Option&lt;String&gt;</code> |  |
 | <code>exchange_url: Option&lt;String&gt;</code> |  |
-| <code>grant: <a href="#grant">Grant</a></code> |  |
+| <code>grant: Grant</code> |  |
 | <code>pkce: bool</code> |  |
 | <code>redirect_uri: Option&lt;String&gt;</code> |  |
-| <code>refresh_token: Option&lt;String&gt;</code> |  |
+| <code>refresh_token: Option&lt;Secret&gt;</code> |  |
 | <code>required_scope: Option&lt;String&gt;</code> |  |
 | <code>scope: Option&lt;String&gt;</code> |  |
 | <code>token_params: BTreeMap&lt;String, String&gt;</code> |  |
-| <code>token_style: <a href="#tokenstyle">TokenStyle</a></code> |  |
+| <code>token_style: TokenStyle</code> |  |
 | <code>token_url: String</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Default</code>, <code>Debug</code>, <code>Serialize</code>, <code>Deserialize&lt;'de&gt;</code>
@@ -104,33 +105,13 @@
 **Trait implementations:** <code>Error</code>, <code>Debug</code>, <code>Display</code>
 
 
-### `Grant`
-
-**Methods**
-
-| Method | Description |
-| --- | --- |
-| <code>browser(self) -&gt; bool</code> |  |
-| <code>interactive(self) -&gt; bool</code> |  |
-
-**Variants**
-
-| Variant | Description |
-| --- | --- |
-| <code>AuthorizationCode</code> |  |
-| <code>DeviceCode</code> |  |
-| <code>RefreshToken</code> |  |
-
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>, <code>Deserialize&lt;'de&gt;</code>
-
-
 ### `Method`
 
 **Variants**
 
 | Variant | Description |
 | --- | --- |
-| <code>Key(String)</code> |  |
+| <code>Key(Secret)</code> |  |
 | <code>Login(Box&lt;<a href="#spec">Spec</a>&gt;)</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Debug</code>
@@ -152,19 +133,7 @@
 | <code>Bearer</code> |  |
 | <code>GoogleKey</code> |  |
 
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>
-
-
-### `TokenStyle`
-
-**Variants**
-
-| Variant | Description |
-| --- | --- |
-| <code>Form</code> |  |
-| <code>Json</code> |  |
-
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>, <code>Deserialize&lt;'de&gt;</code>
+**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>, <code>Deserialize&lt;'de&gt;</code>
 
 
 ## Traits
@@ -210,6 +179,14 @@
 ### `AGENT`
 
 <pre>pub const <a href="#agent">AGENT</a>: &amp;str</pre>
+
+
+## Re-exports
+
+### `Grant`
+
+
+### `TokenStyle`
 
 
 ---

@@ -64,29 +64,23 @@ impl<P: Provider> Run<P> {
         }
     }
 
-    async fn drive(
-        &mut self,
-        emit: impl FnMut(&Event),
-    ) -> std::result::Result<Result<Turn>, tokio::time::error::Elapsed> {
-        match self.deadline {
-            Some(deadline) => {
-                tokio::time::timeout(
-                    deadline,
-                    Box::pin(self.child.turn_with(self.assignment.as_str(), emit)),
-                )
-                .await
-            }
-            None => Ok(self.child.turn_with(self.assignment.as_str(), emit).await),
-        }
+    async fn drive(&mut self, emit: impl FnMut(&Event)) -> Option<Result<Turn>> {
+        let Some(deadline) = self.deadline else {
+            return Some(self.child.turn_with(self.assignment.as_str(), emit).await);
+        };
+        let mut outcome = None;
+        let turn = Box::pin(self.child.turn_with(self.assignment.as_str(), emit));
+        crate::supervise::within(deadline, async { outcome = Some(turn.await) }).await;
+        outcome
     }
 
     fn outcome_state(
         &mut self,
-        outcome: std::result::Result<Result<Turn>, tokio::time::error::Elapsed>,
+        outcome: Option<Result<Turn>>,
         access: Access,
     ) -> (ChildState, Usage) {
         match outcome {
-            Ok(Ok(turn)) => {
+            Some(Ok(turn)) => {
                 let state = if turn.aborted {
                     ChildState::Aborted(self.child.result(
                         &turn.text,
@@ -106,7 +100,7 @@ impl<P: Provider> Run<P> {
                 };
                 (state, turn.usage)
             }
-            Ok(Err(error)) => {
+            Some(Err(error)) => {
                 let diagnostic = match self.child.abort_note(&error.to_string()) {
                     Ok(()) => error.to_string(),
                     Err(abort) => format!("{error}; cannot close child turn: {abort}"),
@@ -122,7 +116,7 @@ impl<P: Provider> Run<P> {
                     Usage::default(),
                 )
             }
-            Err(_) => (
+            None => (
                 ChildState::Aborted(self.deadline_result(access)),
                 Usage::default(),
             ),
@@ -149,7 +143,7 @@ impl<P: Provider> Run<P> {
         match accounting_at(self.child.session.path()) {
             Ok((_, reported)) => {
                 usage = reported;
-                if let Some(result) = result_mut(&mut self.record.state) {
+                if let Some(result) = self.record.state.result_mut() {
                     result.usage.clone_from(&usage);
                 }
             }

@@ -159,3 +159,18 @@ async fn an_earlier_message_that_changes_its_image_starts_a_new_claude_process()
         "a changed earlier image kept the old process"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_claude_code_line_over_the_cap_fails_the_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let wide = "  *'\"type\":\"user\"'*)\n    big=$(head -c 9000000 /dev/zero | tr '\\0' x)\n    printf '{\"type\":\"system\",\"subtype\":\"padding\",\"pad\":\"%s\"}\\n' \"$big\"\n";
+    let script = PLAIN.replacen("  *'\"type\":\"user\"'*)\n", wide, 1);
+    let client = client_at(dir.path(), &script);
+    let messages = vec![Message::system("sys"), Message::user("first")];
+    let error = client
+        .stream(&ask(&messages, &[]), &mut Partial::default())
+        .await
+        .expect_err("a line over the cap must fail the turn")
+        .to_string();
+    assert!(error.contains("over 8 MiB"), "{error}");
+}

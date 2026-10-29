@@ -1,45 +1,50 @@
 use serde_json::{Value, json};
 
-use super::super::{Message, ToolDefinition};
-use super::frame::Rpc;
+use super::super::Message;
+use super::frame::CallParams;
+use crate::rpc::{self, Ask, Frame};
 
 pub(super) const SERVER: &str = "summonr";
 
-pub(super) fn mcp(message: &Value, tools: &[ToolDefinition]) -> Value {
-    let id = &message["id"];
-    if id.is_null() {
+pub(super) fn mcp(message: &Value, tools: &[Value]) -> Value {
+    let Ok(Frame::Request { id, method, params }) = rpc::frame(message.clone()) else {
         return json!({"jsonrpc": "2.0", "result": {}});
-    }
-    match serde_json::from_value::<Rpc>(message.clone()) {
-        Ok(Rpc::Initialize { id, params }) => crate::rpc::response(
-            &id,
-            json!({
-                "protocolVersion": params["protocolVersion"],
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": SERVER, "version": env!("CARGO_PKG_VERSION")}
-            }),
-        ),
-        Ok(Rpc::ToolsList { id }) => crate::rpc::response(
-            &id,
-            json!({"tools": tools.iter().map(listed).collect::<Vec<_>>()}),
-        ),
-        Ok(Rpc::ToolsCall { .. } | Rpc::Other) | Err(_) => {
-            crate::rpc::failure(id, -32601, "method not found")
-        }
-    }
+    };
+    let reply = match rpc::ask(&method) {
+        Ask::Initialize => Ok(json!({
+            "protocolVersion": params["protocolVersion"],
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": SERVER, "version": env!("CARGO_PKG_VERSION")}
+        })),
+        Ask::ToolsList => Ok(json!({"tools": tools})),
+        Ask::Roots
+        | Ask::Elicit
+        | Ask::Ping
+        | Ask::Authenticate
+        | Ask::SessionNew
+        | Ask::SessionPrompt
+        | Ask::SessionCancel
+        | Ask::ToolsCall
+        | Ask::Unsupported => Err(rpc::unsupported(&method)),
+    };
+    rpc::answer(&id, reply)
 }
 
-fn listed(tool: &ToolDefinition) -> Value {
-    json!({
-        "name": tool.function.name,
-        "description": tool.function.description,
-        "inputSchema": tool.function.parameters
-    })
+pub(super) fn call(message: &Value) -> Option<(Value, CallParams)> {
+    let Ok(Frame::Request { id, method, params }) = rpc::frame(message.clone()) else {
+        return None;
+    };
+    if rpc::ask(&method) != Ask::ToolsCall {
+        return None;
+    }
+    serde_json::from_value(params)
+        .ok()
+        .map(|params| (id, params))
 }
 
 pub(super) fn called(id: &Value, result: Option<&Message>) -> Value {
     let Some(message) = result else {
-        return crate::rpc::response(
+        return rpc::response(
             id,
             json!({
                 "content": [{"type": "text", "text": "summonr did not run this call"}],
@@ -53,7 +58,7 @@ pub(super) fn called(id: &Value, result: Option<&Message>) -> Value {
             |image| json!({"type": "image", "data": image.data, "mimeType": image.media_type}),
         ),
     );
-    crate::rpc::response(id, json!({"content": content, "isError": message.failed}))
+    rpc::response(id, json!({"content": content, "isError": message.failed}))
 }
 
 pub(super) fn user(message: &Message) -> Value {

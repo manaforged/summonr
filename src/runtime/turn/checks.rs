@@ -85,7 +85,7 @@ impl<P: Provider> Loop<P> {
         emit(&Event::Work {
             progress: progress.clone(),
         });
-        Ok(progress.exit_code().unwrap_or(3))
+        Ok(progress.exit_status(false, !progress.terminal()))
     }
 
     fn restore_check_file(&self) {
@@ -156,7 +156,13 @@ impl<P: Provider> Loop<P> {
             ));
         }
         let mut status = Vec::new();
-        if !progress.todos.is_empty() {
+        let open_tasks = progress
+            .todos
+            .iter()
+            .any(|todo| todo.status != crate::tools::TodoStatus::Done);
+        let lasting = progress.kind != WorkKind::Single;
+        let unfinished = lasting || open_tasks || self.session.turn_open();
+        if open_tasks || (lasting && !progress.todos.is_empty()) {
             let mut done = 0;
             let mut pending = 0;
             let mut completed = None;
@@ -188,7 +194,7 @@ impl<P: Provider> Loop<P> {
                 continue;
             };
             if !matches!(report.state, crate::jobs::JobState::Running)
-                && !completed.insert(job.command.clone())
+                && (!unfinished || !completed.insert(job.command.clone()))
             {
                 continue;
             }
@@ -217,10 +223,10 @@ impl<P: Provider> Loop<P> {
                 | crate::jobs::JobState::Dead => {}
             }
         }
-        if let Some(failed) = self
-            .session
-            .history()
-            .iter()
+        if let Some(failed) = unfinished
+            .then(|| self.session.history())
+            .into_iter()
+            .flatten()
             .rev()
             .find(|message| message.role == crate::provider::Role::Tool)
             .filter(|message| message.failed)

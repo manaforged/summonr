@@ -29,6 +29,7 @@ pub(crate) enum Invalid {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Wait {
+    Never,
     Forever,
     Within(fn() -> Duration),
 }
@@ -41,9 +42,32 @@ pub(crate) struct Doc<C> {
     codec: PhantomData<fn() -> C>,
 }
 
-pub(crate) struct PrettyJson<T>(PhantomData<fn() -> T>);
+pub(crate) struct Json<T>(PhantomData<fn() -> T>);
 
-impl<T: Serialize + DeserializeOwned> Codec for PrettyJson<T> {
+pub(crate) struct Toml<T>(PhantomData<fn() -> T>);
+
+pub(crate) struct Lines;
+
+impl Codec for Lines {
+    type Value = Vec<String>;
+
+    fn decode(_: &Path, text: &str) -> Result<Vec<String>> {
+        Ok(text
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect())
+    }
+}
+
+impl Encode for Lines {
+    fn encode(value: &Vec<String>) -> Result<String> {
+        Ok(value.iter().map(|line| format!("{line}\n")).collect())
+    }
+}
+
+impl<T: Serialize + DeserializeOwned> Codec for Json<T> {
     type Value = T;
 
     fn decode(path: &Path, text: &str) -> Result<T> {
@@ -52,9 +76,23 @@ impl<T: Serialize + DeserializeOwned> Codec for PrettyJson<T> {
     }
 }
 
-impl<T: Serialize + DeserializeOwned> Encode for PrettyJson<T> {
+impl<T: Serialize + DeserializeOwned> Encode for Json<T> {
     fn encode(value: &T) -> Result<String> {
-        Ok(serde_json::to_string_pretty(value)?)
+        Ok(serde_json::to_string(value)?)
+    }
+}
+
+impl<T: Serialize + DeserializeOwned> Codec for Toml<T> {
+    type Value = T;
+
+    fn decode(path: &Path, text: &str) -> Result<T> {
+        toml::from_str(text).map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))
+    }
+}
+
+impl<T: Serialize + DeserializeOwned> Encode for Toml<T> {
+    fn encode(value: &T) -> Result<String> {
+        toml::to_string(value).map_err(|error| Error::Config(error.to_string()))
     }
 }
 
@@ -93,7 +131,7 @@ where
     where
         C: Encode,
     {
-        let held = hold(&self.path, self.wait)?;
+        let held = self.hold()?;
         let mut value = self.strict()?;
         let changed = change(&mut value)?;
         if changed {
@@ -102,6 +140,24 @@ where
         }
         drop(held);
         Ok(changed)
+    }
+
+    pub(crate) fn replace(&self, value: &C::Value) -> Result<()>
+    where
+        C: Encode,
+    {
+        let held = self.hold()?;
+        write(&self.path, C::encode(value)?, self.durability)?;
+        forget(&self.path);
+        drop(held);
+        Ok(())
+    }
+
+    fn hold(&self) -> Result<Option<std::fs::File>> {
+        match self.wait {
+            Wait::Never => Ok(None),
+            wait => hold(&self.path, wait).map(Some),
+        }
     }
 
     fn strict(&self) -> Result<C::Value> {
@@ -115,6 +171,7 @@ where
 
 pub(crate) fn hold(path: &Path, wait: Wait) -> Result<std::fs::File> {
     let limit = match wait {
+        Wait::Never => return lock(path, false)?.ok_or_else(|| locked(path, None)),
         Wait::Forever => return lock(path, true)?.ok_or_else(|| locked(path, None)),
         Wait::Within(limit) => limit(),
     };

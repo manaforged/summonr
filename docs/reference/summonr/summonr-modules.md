@@ -2,78 +2,37 @@
 
 | Item | Kind | Description |
 | --- | --- | --- |
-| [`Module`](#module) | struct |  |
-| [`Switches`](#switches) | struct |  |
-| [`ModuleId`](#moduleid) | enum |  |
-| [`named`](#named) | fn |  |
+| [`load`](#load) | fn |  |
 | [`set`](#set) | fn |  |
-
-## Structs
-
-### `Module`
-
-**Fields**
-
-| Field | Description |
-| --- | --- |
-| <code>default: bool</code> |  |
-| <code>id: <a href="#moduleid">ModuleId</a></code> |  |
-| <code>summary: &amp;'static str</code> |  |
-
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>
-
-
-### `Switches`
-
-**Methods**
-
-| Method | Description |
-| --- | --- |
-| <code>enabled(&amp;self, id: <a href="#moduleid">ModuleId</a>) -&gt; bool</code> |  |
-| <code>load(workspace: &amp;Path) -&gt; <a href="summonr.html#result">Result</a>&lt;Self&gt;</code> |  |
-| <code>table(&amp;self) -&gt; String</code> |  |
-
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>StructuralPartialEq</code>
-
-
-## Enums
-
-### `ModuleId`
-
-**Methods**
-
-| Method | Description |
-| --- | --- |
-| <code>from_name(name: &amp;str) -&gt; Option&lt;Self&gt;</code> |  |
-| <code>const name(self) -&gt; &amp;'static str</code> |  |
-
-**Variants**
-
-| Variant | Description |
-| --- | --- |
-| <code>Browser</code> |  |
-| <code>Jobs</code> |  |
-| <code>Lsp</code> |  |
-| <code>Mail</code> |  |
-| <code>Mcp</code> |  |
-| <code>Memory</code> |  |
-| <code>Search</code> |  |
-| <code>Skills</code> |  |
-| <code>Task</code> |  |
-
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>Ord</code>, <code>PartialEq</code>, <code>PartialOrd</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>
-
+| [`Module`](#module) | use |  |
+| [`ModuleId`](#moduleid) | use |  |
+| [`Switches`](#switches) | use |  |
+| [`named`](#named) | use |  |
 
 ## Functions
 
-### `named`
+### `load`
 
-<pre>pub fn <a href="#named">named</a>(name: &amp;str) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#module">Module</a>&gt;</pre>
+<pre>pub fn <a href="#load">load</a>(workspace: &amp;Path) -&gt; Result&lt;Switches&gt;</pre>
 
 
 ### `set`
 
-<pre>pub fn <a href="#set">set</a>(id: <a href="#moduleid">ModuleId</a>, on: bool) -&gt; <a href="summonr.html#result">Result</a>&lt;()&gt;</pre>
+<pre>pub fn <a href="#set">set</a>(id: ModuleId, on: bool) -&gt; Result&lt;()&gt;</pre>
+
+
+## Re-exports
+
+### `Module`
+
+
+### `ModuleId`
+
+
+### `Switches`
+
+
+### `named`
 
 
 ---

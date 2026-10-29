@@ -17,7 +17,7 @@ fn task_progress_replays_the_current_numbered_plan() {
         )
         .expect("select plan");
     let (ui, mut inbox) = unbounded_channel();
-    history::reshow_running(driver.path(), "fixture", &ui);
+    history::replay_transcript(driver.path(), Some("fixture".to_string()), None, &ui);
     let progress = std::iter::from_fn(|| inbox.try_recv().ok())
         .find_map(|message| match message {
             Msg::Event(crate::Event::Work { progress }) => Some(progress),

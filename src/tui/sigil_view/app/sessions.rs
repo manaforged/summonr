@@ -38,7 +38,8 @@ impl App {
         if id == self.model.get().session {
             return Err("the open session cannot be deleted".to_string());
         }
-        if self.sessions.arm(id) {
+        let window = Some(crate::limits::limits().repeat_window());
+        if confirm(&self.sessions.armed, id.to_string(), window) {
             drop(self.cmd.send(Cmd::DeleteSession(id.to_string())));
             return Ok(());
         }
@@ -83,10 +84,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn delete_session(&self) {
         let rows = self.sessions.rows();
-        let Some(info) = rows.get(crate::tui::sigil_view::ui::at(
-            &self.sessions.selected,
-            rows.len(),
-        )) else {
+        let Some(info) = rows.get(self.sessions.list.at(rows.len())) else {
             return;
         };
         let again = crate::tui::sigil_view::ui::alt_label('d');
@@ -96,10 +94,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn resume_session(&self) {
         let rows = self.sessions.rows();
-        if let Some(info) = rows.get(crate::tui::sigil_view::ui::at(
-            &self.sessions.selected,
-            rows.len(),
-        )) {
+        if let Some(info) = rows.get(self.sessions.list.at(rows.len())) {
             if info.id != self.model.get().session {
                 drop(self.cmd.send(Cmd::Command(format!("/resume {}", info.id))));
             }

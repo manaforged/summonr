@@ -16,35 +16,29 @@ const TEST: &str = include_str!("limits_test.toml");
 #[cfg(test)]
 const TEST_WINDOWS: &str = include_str!("limits_test_windows.toml");
 
-fn parse<T: serde::de::DeserializeOwned>(text: &str, name: &str) -> T {
-    match toml::from_str(text) {
-        Ok(table) => table,
-        Err(error) => panic!("the {name} limits table is invalid: {error}"),
-    }
-}
-
 impl Limits {
     pub(crate) fn built_in() -> Self {
-        parse(BUILT_IN, "built-in")
+        summonr_core::table::embedded("limits", BUILT_IN)
     }
 
     pub(crate) fn retry_policy(&self, reach: Reach) -> leyline::RetryPolicy {
-        let policy = leyline::RetryPolicy::transient()
+        self.retry_policy_for(reach, true)
+    }
+
+    pub(crate) fn retry_policy_for(&self, reach: Reach, rate_limits: bool) -> leyline::RetryPolicy {
+        let mut triggers = vec![leyline::RetryTrigger::ServerError];
+        if rate_limits {
+            triggers.push(leyline::RetryTrigger::Status(429));
+        }
+        if reach == Reach::Remote {
+            triggers.push(leyline::RetryTrigger::ConnectionError);
+        }
+        leyline::RetryPolicy::transient()
             .max_retries(self.retry_limit)
             .initial_backoff(self.retry_base())
             .max_backoff(self.retry_max())
-            .max_retry_after(self.retry_after_max());
-        match reach {
-            Reach::Remote => policy.retry_on([
-                leyline::RetryTrigger::ConnectionError,
-                leyline::RetryTrigger::Status(429),
-                leyline::RetryTrigger::ServerError,
-            ]),
-            Reach::Local => policy.retry_on([
-                leyline::RetryTrigger::Status(429),
-                leyline::RetryTrigger::ServerError,
-            ]),
-        }
+            .max_retry_after(self.retry_after_max())
+            .retry_on(triggers)
     }
 
     pub(crate) fn retry_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
@@ -75,9 +69,12 @@ fn load() -> Limits {
 
 #[cfg(test)]
 fn load() -> Limits {
-    let test = Limits::built_in().overlay(&parse(TEST, "test"));
+    let test = Limits::built_in().overlay(&summonr_core::table::embedded("test limits", TEST));
     if cfg!(windows) {
-        test.overlay(&parse(TEST_WINDOWS, "windows test"))
+        test.overlay(&summonr_core::table::embedded(
+            "windows test limits",
+            TEST_WINDOWS,
+        ))
     } else {
         test
     }

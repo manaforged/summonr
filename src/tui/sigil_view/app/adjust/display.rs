@@ -62,7 +62,7 @@ impl App {
         });
     }
 
-    pub(super) fn cycle_run_mode(&self) {
+    pub(in crate::tui::sigil_view) fn cycle_run_mode(&self) {
         let (goal, work) = {
             let model = self.model.peek();
             (model.snapshot.goal, model.snapshot.work)

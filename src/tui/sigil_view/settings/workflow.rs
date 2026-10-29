@@ -43,20 +43,12 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .key(Key::Esc, "close")
             }
         })
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(canvas::overlay_gap()),
-                )
-                .children_reactive(move || {
-                    if paint.workflow.naming.get() {
-                        return naming(&paint);
-                    }
-                    selections(&paint)
-                }),
-        )
+        .child(super::dialog_body(move || {
+            if paint.workflow.naming.get() {
+                return naming(&paint);
+            }
+            selections(&paint)
+        }))
         .build(app.workflow.open, app.viewport.peek().0, &hotkeys)
 }
 

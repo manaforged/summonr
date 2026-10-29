@@ -84,10 +84,7 @@ fn leak(text: String) -> &'static str {
 pub fn catalog() -> &'static Catalog {
     static LOADED: OnceLock<Catalog> = OnceLock::new();
     LOADED.get_or_init(|| {
-        let data: Data = match toml::from_str(include_str!("tools.toml")) {
-            Ok(data) => data,
-            Err(error) => panic!("the built-in tools table is invalid: {error}"),
-        };
+        let data: Data = summonr_core::table::embedded("tool", include_str!("tools.toml"));
         let tools = data
             .tool
             .into_iter()
@@ -240,3 +237,7 @@ pub fn retired_op(name: &str) -> Option<&'static str> {
 pub fn readonly(name: &str) -> bool {
     Builtin::of(name).is_some_and(Builtin::readonly)
 }
+
+#[cfg(test)]
+#[path = "catalog_tests.rs"]
+mod tests;

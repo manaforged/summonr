@@ -194,7 +194,6 @@ fn listing_never_starts_claude_code() {
     .unwrap();
     std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
     let home = home.offline();
-    let checked = home.list(&["--all", "--check"]);
     for args in [&[][..], &["--all"]] {
         home.list(args);
     }
@@ -202,10 +201,10 @@ fn listing_never_starts_claude_code() {
         !marker.exists(),
         "summonr started Claude Code to list models"
     );
+    let checked = home.list(&["--all", "--check"]);
     assert!(
-        checked
-            .lines()
-            .any(|line| line.contains(" claude ") && line.contains(" models")),
+        checked.lines().any(|line| line.contains(" claude ")
+            && line.contains("Sign in to your Claude subscription")),
         "{checked}"
     );
 }

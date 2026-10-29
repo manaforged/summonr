@@ -122,7 +122,8 @@ fn busy_row(app: &App, width: usize) -> NodeBuilder {
             LayoutStyle::flex_row()
                 .fill_width()
                 .shrink(0.0)
-                .min_size(0.0, 0.0),
+                .min_size(0.0, 0.0)
+                .padding_top(super::canvas::cell().h),
         )
         .child(
             sigil::kernel::text(move || split(true))

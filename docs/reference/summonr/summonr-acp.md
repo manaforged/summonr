@@ -8,7 +8,7 @@
 
 ### `serve`
 
-<pre>pub async fn <a href="#serve">serve</a>&lt;F&gt;(name: Option&lt;&amp;str&gt;, model: Option&lt;&amp;str&gt;, build: F) -&gt; <a href="summonr.html#result">Result</a>&lt;i32&gt; where F: FnMut(&amp;<a href="summonr.html#endpoint">Endpoint</a>, <a href="summonr.html#client">Client</a>, &amp;Path) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="summonr.html#loop">Loop</a>&lt;<a href="summonr.html#client">Client</a>&gt;&gt;</pre>
+<pre>pub async fn <a href="#serve">serve</a>&lt;F&gt;(name: Option&lt;&amp;str&gt;, model: Option&lt;&amp;str&gt;, build: F) -&gt; Result&lt;i32&gt; where F: FnMut(&amp;<a href="summonr.html#endpoint">Endpoint</a>, <a href="summonr.html#client">Client</a>, &amp;Path) -&gt; Result&lt;<a href="summonr.html#loop">Loop</a>&lt;<a href="summonr.html#client">Client</a>&gt;&gt;</pre>
 
 
 ---

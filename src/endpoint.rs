@@ -5,17 +5,18 @@ use crate::credentials::{flow, logged_in};
 use crate::provider::{Effort, Price, Reasoning};
 use crate::secret::{self, Source};
 use summonr_core::error::{Error, Result};
+use summonr_core::secret::Secret;
 
 pub(crate) const ENV_ENDPOINT: &str = "env";
 const PLAN_PATH_MARKER: &str = "/coding/";
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Endpoint {
     pub name: String,
     pub model: String,
     pub base_url: Option<String>,
     pub models_url: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key: Option<Secret>,
     pub source: Option<Source>,
     pub oauth: Option<crate::config::OAuth>,
     pub body: Option<serde_json::Value>,
@@ -23,56 +24,29 @@ pub struct Endpoint {
     pub idle_timeout_secs: Option<u64>,
     pub effort: Option<Effort>,
     pub price: Option<Price>,
-    pub env: BTreeMap<String, String>,
-    pub headers: BTreeMap<String, String>,
+    pub env: BTreeMap<String, Secret>,
+    pub headers: BTreeMap<String, Secret>,
     pub wire: Wire,
     pub fallback: Vec<String>,
     pub compact_tokens: Option<u32>,
     pub images: Option<bool>,
     pub keep_reasoning: bool,
-    pub opencode: bool,
+    pub session_headers: BTreeMap<String, SessionValue>,
     pub prompt_cache_key: bool,
     pub assistant_after_tool: bool,
     pub cache_ttl: CacheTtl,
-    pub cache_header: Option<String>,
     pub cache_marks: bool,
     pub(crate) reasoning: Reasoning,
 }
 
-impl std::fmt::Debug for Endpoint {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("Endpoint")
-            .field("name", &self.name)
-            .field("model", &self.model)
-            .field("base_url", &self.base_url)
-            .field("models_url", &self.models_url)
-            .field("api_key", &self.api_key.is_some())
-            .field("source", &self.source)
-            .field("oauth", &self.oauth.is_some())
-            .field("body", &self.body)
-            .field("context_window", &self.context_window)
-            .field("idle_timeout_secs", &self.idle_timeout_secs)
-            .field("effort", &self.effort)
-            .field("price", &self.price)
-            .field("env", &self.env.keys().collect::<Vec<_>>())
-            .field("headers", &self.headers.keys().collect::<Vec<_>>())
-            .field("wire", &self.wire)
-            .field("fallback", &self.fallback)
-            .field("compact_tokens", &self.compact_tokens)
-            .field("images", &self.images)
-            .field("keep_reasoning", &self.keep_reasoning)
-            .field("opencode", &self.opencode)
-            .field("prompt_cache_key", &self.prompt_cache_key)
-            .field("assistant_after_tool", &self.assistant_after_tool)
-            .field("cache_ttl", &self.cache_ttl)
-            .field("cache_header", &self.cache_header)
-            .field("reasoning", &self.reasoning)
-            .finish()
-    }
-}
-
 pub(crate) use summonr_types::endpoint::{CacheTtl, Wire};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionValue {
+    SessionId,
+    RequestId,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LoginFlow {
@@ -270,6 +244,7 @@ use info::LoginGroup;
 use keys::*;
 pub(crate) use preset::label;
 use preset::preset;
+pub(crate) use preset::wire as deserialize_wire;
 pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
 use record::Record;
 pub(crate) use resolve::default_model_selection;

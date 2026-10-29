@@ -31,6 +31,8 @@ pub enum Event {
         #[serde(default)]
         reasoning_tokens: u32,
         cached_tokens: u32,
+        #[serde(default)]
+        cache_write_tokens: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         millis: Option<u64>,
         #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -105,6 +107,12 @@ pub enum Event {
     },
     Work {
         progress: crate::WorkProgress,
+    },
+    Step {
+        index: usize,
+        total: usize,
+        state: StepState,
+        check: Option<String>,
     },
     Child {
         id: String,
@@ -185,3 +193,31 @@ pub fn progress_text(progress: f64, total: Option<f64>, message: Option<&str>) -
     );
     message.map_or_else(|| amount.clone(), |message| format!("{amount} · {message}"))
 }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StepState {
+    #[serde(rename = "start")]
+    Start,
+    #[serde(rename = "check passed")]
+    CheckPassed,
+    #[serde(rename = "check failed")]
+    CheckFailed,
+    #[serde(rename = "done")]
+    Done,
+}
+
+impl StepState {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::CheckPassed => "check passed",
+            Self::CheckFailed => "check failed",
+            Self::Done => "done",
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "event_tests.rs"]
+mod tests;

@@ -153,7 +153,7 @@ async fn redeemed(
         form.push(("state".to_string(), state.to_string()));
     }
     if let Some(secret) = &parts.spec.client_secret {
-        form.push(("client_secret".to_string(), secret.clone()));
+        form.push(("client_secret".to_string(), secret.expose().to_string()));
     }
     for (key, value) in &parts.spec.token_params {
         form.push((key.clone(), value.clone()));

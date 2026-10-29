@@ -101,6 +101,7 @@ pub(super) fn body(
         head: Value::Object(body),
         messages: Some(serde_json::to_vec(&contents)?),
         slot: Slot::Contents,
+        raw_tools: false,
     })
 }
 

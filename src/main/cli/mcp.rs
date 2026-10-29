@@ -127,9 +127,15 @@ impl AddFlags {
             command,
         } = self;
         let advice = match (url, command.split_first()) {
-            (Some(url), None) if env.is_empty() => return Ok(McpLaunch::Url { url, headers }),
+            (Some(url), None) if env.is_empty() => {
+                return Ok(McpLaunch::Http {
+                    url,
+                    headers,
+                    auth: None,
+                });
+            }
             (None, Some((command, args))) if headers.is_empty() => {
-                return Ok(McpLaunch::Command {
+                return Ok(McpLaunch::Stdio {
                     command: command.clone(),
                     args: args.to_vec(),
                     env,

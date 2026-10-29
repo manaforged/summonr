@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use super::fmt::*;
 use super::health::Health;
-use super::{Call, Round, TOP};
+use super::{Call, History, Round, TOP};
+use crate::durable::log::Usage;
 
 pub(super) struct View<'a> {
     pub(super) model: &'a str,
@@ -10,9 +11,9 @@ pub(super) struct View<'a> {
     pub(super) rounds: &'a [Round],
     pub(super) calls: &'a [Call],
     pub(super) harness: u64,
-    pub(super) extra: (u64, u64, u64, u64),
+    pub(super) extra: Usage,
     pub(super) prefix: u64,
-    pub(super) history: (u64, u64, u64, u64),
+    pub(super) history: History,
     pub(super) footprint_kb: Option<u64>,
 }
 
@@ -28,12 +29,19 @@ pub(super) fn render(view: &View) -> String {
         history,
         footprint_kb,
     } = *view;
-    let model_ms = rounds.iter().map(|round| round.millis).sum::<u64>() + extra.0;
+    let mut sum = extra;
+    for round in rounds {
+        sum.add(round.usage);
+    }
+    let Usage {
+        input,
+        cached,
+        output,
+        millis: model_ms,
+        ..
+    } = sum;
     let tool_ms = calls.iter().map(|call| call.millis).sum::<u64>();
     let total = model_ms + tool_ms + harness;
-    let input = rounds.iter().map(|round| round.input).sum::<u64>() + extra.1;
-    let cached = rounds.iter().map(|round| round.cached).sum::<u64>() + extra.2;
-    let output = rounds.iter().map(|round| round.output).sum::<u64>() + extra.3;
     let mut out = String::new();
     line(
         &mut out,
@@ -66,17 +74,19 @@ pub(super) fn render(view: &View) -> String {
             count(input),
             share(cached, input),
             count(output),
-            count(rounds.first().map_or(0, |round| round.input)),
-            count(rounds.last().map_or(0, |round| round.input))
+            count(rounds.first().map_or(0, |round| round.usage.input)),
+            count(rounds.last().map_or(0, |round| round.usage.input))
         ),
     );
     if !rounds.is_empty() {
-        let warm_input: u64 = rounds.iter().skip(1).map(|round| round.input).sum();
-        let warm_cached: u64 = rounds.iter().skip(1).map(|round| round.cached).sum();
+        let mut warm = Usage::default();
+        for round in &rounds[1..] {
+            warm.add(round.usage);
+        }
         let uncached = input.saturating_sub(cached);
         let avg_request: u64 =
             rounds.iter().map(|round| round.request_bytes).sum::<u64>() / rounds.len() as u64;
-        let final_history = history.0 + history.1 + history.2 + history.3;
+        let final_history = history.bytes();
         line(
             &mut out,
             format!(
@@ -84,28 +94,28 @@ pub(super) fn render(view: &View) -> String {
                 count(prefix),
                 count(avg_request),
                 count(final_history),
-                share(history.2, final_history.max(1))
+                share(history.tool, final_history.max(1))
             ),
         );
         line(
             &mut out,
             format!(
                 "cache    cold {} hit · warm {} hit · uncached {} in ({} per round)",
-                share(rounds[0].cached, rounds[0].input),
-                share(warm_cached, warm_input),
+                share(rounds[0].usage.cached, rounds[0].usage.input),
+                share(warm.cached, warm.input),
                 count(uncached),
                 count(uncached / rounds.len() as u64)
             ),
         );
     }
-    if extra.0 > 0 {
+    if extra.millis > 0 {
         line(
             &mut out,
             format!(
                 "        compaction and side calls {} · in {} · out {}",
-                secs(extra.0),
-                count(extra.1),
-                count(extra.3)
+                secs(extra.millis),
+                count(extra.input),
+                count(extra.output)
             ),
         );
     }
@@ -146,18 +156,18 @@ pub(super) fn render(view: &View) -> String {
     );
 
     let mut waits: Vec<&Round> = rounds.iter().collect();
-    waits.sort_by_key(|round| std::cmp::Reverse(round.millis));
+    waits.sort_by_key(|round| std::cmp::Reverse(round.usage.millis));
     section(
         &mut out,
         "slowest model rounds",
         waits.iter().take(TOP).map(|round| {
             format!(
                 "{:>8}  round {:<3} in {} ({} cached) · out {} · {} call(s)",
-                secs(round.millis),
+                secs(round.usage.millis),
                 round.index,
-                count(round.input),
-                share(round.cached, round.input),
-                count(round.output),
+                count(round.usage.input),
+                share(round.usage.cached, round.usage.input),
+                count(round.usage.output),
                 round.calls
             )
         }),

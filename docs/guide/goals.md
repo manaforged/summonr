@@ -84,7 +84,7 @@ Before the first turn, summonr runs the metric on the unchanged workspace; that 
 | `timeout_secs` | Optional. The metric command's time limit; the default is the check's. |
 | `protect` | Optional list of files the model must not change, such as the benchmark script and its inputs. A turn that changes one is reverted without running the metric. |
 
-Every attempt goes in the run's ledger, which the model reads at the start of each turn: the baseline, then each value and whether it was kept or reverted. summonr holds the best value in the session's `work.json`, outside the workspace, and the check file is protected as above. The metric command's own files are not protected unless you list them in `protect`; a model that can rewrite the benchmark can fake a better number.
+Every attempt goes in the run's ledger, which the model reads at the start of each turn: the baseline, then each value and whether it was kept or reverted. summonr holds the best value in the session log, outside the workspace, and the check file is protected as above. The metric command's own files are not protected unless you list them in `protect`; a model that can rewrite the benchmark can fake a better number.
 
 Reverting uses the same turn checkpoints as `/undo`, so a metric goal works in a git repository or a plain folder. In a git repository, those checkpoints skip files that `.gitignore` covers, so keep the files the model changes, and the files in `protect`, out of ignored paths. Repeated identical failures do not end a metric goal; a budget does.
 

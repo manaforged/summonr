@@ -10,7 +10,7 @@ pub(super) fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endp
         None => None,
     };
     if let Some((key, source)) = endpoint.known_key()? {
-        endpoint.api_key = Some(key);
+        endpoint.api_key = Some(Secret::new(key));
         endpoint.source = Some(source);
         return Ok(endpoint);
     }
@@ -21,7 +21,7 @@ impl Endpoint {
     fn known_key(&self) -> Result<Option<(String, Source)>> {
         let custom = preset(&self.name).is_none();
         if custom && let Some(key) = &self.api_key {
-            return Ok(Some((key.clone(), Source::Config)));
+            return Ok(Some((key.expose().to_string(), Source::Config)));
         }
         let own = if custom {
             secret::get(&self.name)?
@@ -81,7 +81,7 @@ fn fallback_key(
         .filter(|row| endpoint.own_base(row))
         .and_then(|row| row.default_key.as_deref())
     {
-        endpoint.api_key = Some(key.to_string());
+        endpoint.api_key = Some(Secret::new(key));
         endpoint.source = Some(Source::Builtin);
         return Ok(endpoint);
     }

@@ -31,6 +31,51 @@ pub(super) fn todo(arguments: &str) -> Event {
 }
 
 #[test]
+fn work_sections_and_busy_status_have_a_blank_row_between_them() {
+    for (cols, rows) in [(100, 30), (60, 18)] {
+        for (tasks, agents) in [(true, false), (false, true), (true, true)] {
+            let lines = frame_with(busy_info(), cols, rows, State::Busy, |app| {
+                if tasks {
+                    app.update(Msg::Event(todo(
+                        r#"{"items":[{"text":"Map decode owners","status":"active"}]}"#,
+                    )));
+                }
+                if agents {
+                    super::children::task_call(app);
+                    super::children::spawn(
+                        app,
+                        super::children::IDS[0],
+                        "Inspect decode paths",
+                        true,
+                    );
+                }
+            });
+            let shown = lines.join("\n");
+            let status = if agents { "task ·" } else { "thinking" };
+            for label in ["Subagents", "Tasks", status] {
+                if let Some(row) = find(&lines, label) {
+                    assert!(
+                        row > 0 && lines[row - 1].trim().is_empty(),
+                        "{cols}x{rows}: {label}\n{shown}"
+                    );
+                } else {
+                    assert!(
+                        label != status
+                            && !(tasks && label == "Tasks")
+                            && !(agents && label == "Subagents"),
+                        "{cols}x{rows}: missing {label}\n{shown}"
+                    );
+                }
+            }
+            assert!(
+                composer_top(&lines) > find(&lines, status).expect("busy status remains visible"),
+                "{shown}"
+            );
+        }
+    }
+}
+
+#[test]
 fn a_work_plan_stays_above_the_composer_without_opening_a_pane() {
     let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
         app.update(Msg::Event(Event::Work {

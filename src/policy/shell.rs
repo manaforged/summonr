@@ -25,10 +25,10 @@ pub(super) fn shell(program: &str) -> bool {
         .unwrap_or_default()
         .trim_matches(['\'', '"'])
         .to_ascii_lowercase();
-    matches!(
-        name.strip_suffix(".exe").unwrap_or(&name),
-        "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish" | "cmd" | "powershell" | "pwsh"
-    )
+    rules()
+        .shell
+        .shells
+        .contains(name.strip_suffix(".exe").unwrap_or(&name))
 }
 
 pub(super) fn wrapper(name: &str) -> bool {
@@ -180,16 +180,18 @@ pub(super) fn pipes_to_shell(command: &str) -> bool {
 }
 
 pub(super) fn interpreter(name: &str) -> bool {
-    matches!(
-        name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.'),
-        "python" | "node" | "perl" | "ruby" | "php" | "deno" | "bun"
-    )
+    rules()
+        .shell
+        .interpreters
+        .contains(name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.'))
 }
 
 pub(super) fn reads_stdin(args: &[&str]) -> bool {
     args.contains(&"-")
         || args.iter().all(|arg| match arg.strip_prefix("--") {
-            Some(long) => !["eval", "print", "command"]
+            Some(long) => !rules()
+                .shell
+                .code_flags
                 .iter()
                 .any(|flag| long.starts_with(flag)),
             None => arg.starts_with('-') && !arg.contains(['c', 'e', 'E', 'm']),
@@ -201,7 +203,8 @@ pub(super) fn runs_substitution(segments: &[String]) -> bool {
         let mut words = segment.split_whitespace();
         words.next().is_some_and(|verb| {
             let name = verb.rsplit('/').next().unwrap_or(verb).to_ascii_lowercase();
-            shell(&name) || interpreter(&name) || matches!(name.as_str(), "source" | ".")
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            shell(&name) || interpreter(&name) || rules().shell.sourcing.contains(&name)
         }) && words.any(|word| word.starts_with("<("))
     })
 }
@@ -209,9 +212,12 @@ pub(super) fn runs_substitution(segments: &[String]) -> bool {
 pub(super) fn builtin_deny(command: &str, segments: &[String]) -> bool {
     let folded = collapse(command);
     catastrophic(command)
-        || folded.contains("git push --force")
-        || folded.contains("git push -f")
-        || folded.contains("git push --mirror")
+        || rules()
+            .shell
+            .denied_text
+            .iter()
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            .any(|text| folded.contains(text.as_str()))
         || pipes_to_shell(command)
         || runs_substitution(segments)
         || escalates(command)
@@ -220,18 +226,25 @@ pub(super) fn builtin_deny(command: &str, segments: &[String]) -> bool {
 
 pub(super) fn catastrophic(command: &str) -> bool {
     let folded = collapse(command);
+    let shell = &rules().shell;
     wipes_root(&folded)
-        || folded.contains("mkfs")
-        || folded.contains(":(){ :|:& };:")
-        || folded.contains("chmod -r 777 /")
-        || (folded.contains("dd if=") && folded.contains("of=/dev/"))
+        || shell
+            .catastrophic
+            .iter()
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            .any(|text| folded.contains(text.as_str()))
+        || shell
+            .device_write
+            .iter()
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            .all(|text| folded.contains(text.as_str()))
 }
 
 fn escalates(command: &str) -> bool {
     !running_as_root()
         && unquoted(command, &["&&", "||", "|", ";", "\n", "&"])
             .iter()
-            .any(|segment| matches!(command_word(segment, true), Some("sudo" | "doas")))
+            .any(|segment| command_word(segment, true).is_some_and(escalator))
 }
 
 pub(super) fn command_word(segment: &str, stop_at_escalator: bool) -> Option<&str> {
@@ -240,8 +253,12 @@ pub(super) fn command_word(segment: &str, stop_at_escalator: bool) -> Option<&st
         .map(|word| word.rsplit('/').next().unwrap_or(word))
         .find(|word| {
             !word.contains('=') && !word.starts_with('-') && !wrapper(word)
-                || stop_at_escalator && matches!(*word, "sudo" | "doas")
+                || stop_at_escalator && escalator(word)
         })
+}
+
+fn escalator(word: &str) -> bool {
+    rules().shell.escalators.contains(word)
 }
 
 #[cfg(unix)]
@@ -262,8 +279,7 @@ pub(super) fn powers_off(segments: &[String]) -> bool {
             .split_whitespace()
             .find(|word| !word.contains('='))
             .map(|word| word.rsplit('/').next().unwrap_or(word).to_ascii_lowercase())
-            .is_some_and(|verb| {
-                matches!(verb.as_str(), "shutdown" | "reboot" | "halt" | "poweroff")
-            })
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            .is_some_and(|verb| rules().shell.power_off.contains(&verb))
     })
 }

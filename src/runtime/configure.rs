@@ -19,17 +19,7 @@ impl<P: Provider> Loop<P> {
             &model,
             &system_prompt,
         )?;
-        let mut loop_ = Self::with_parts(
-            provider,
-            model,
-            workspace,
-            system_prompt,
-            session,
-            Policy::discover(workspace)?,
-            Some(crate::web::Search::discover()?),
-        )?;
-        loop_.join_mail();
-        Ok(loop_)
+        Self::open(provider, model, workspace, system_prompt, session)
     }
 
     pub fn resume_path(

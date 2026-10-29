@@ -1,27 +1,20 @@
-use std::io::Read as _;
 use std::path::Path;
-
-use serde_json::Value;
 
 use crate::provider::{CompletionRequest, Image, Message, Provider, Source, UserInput};
 use summonr_core::error::{Error, Result};
 
-use super::{ToolOutput, ToolRegistry, object_string};
+use super::{ToolOutput, ToolRegistry};
 
 pub(crate) const IMAGES_MAX_BYTES: usize = 10 * 1024 * 1024;
 
 impl ToolRegistry {
-    pub(super) fn show_image(&self, arguments: &Value) -> Result<ToolOutput> {
-        let path = object_string(arguments, "path")?;
-        let canonical = self.resolve_read(path, crate::tools::paths::Shield::Contained)?;
-        let mut head = Vec::new();
-        std::fs::File::open(&canonical)
-            .and_then(|file| file.take(12).read_to_end(&mut head))
-            .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
-        image_type(&head).ok_or_else(|| {
-            Error::Tool(format!("`{path}` is not a PNG, JPEG, GIF, or WebP image"))
-        })?;
-        self.read_file(arguments, super::read::READ_PAGE_BYTES)
+    pub(super) fn show_image(&self, path: &str) -> Result<ToolOutput> {
+        match self.open_text(path)? {
+            super::read::Opened::Image(image) => Ok(image),
+            super::read::Opened::Text(_) => Err(Error::Tool(format!(
+                "`{path}` is not a PNG, JPEG, GIF, or WebP image"
+            ))),
+        }
     }
 
     pub(super) fn image_outcome(

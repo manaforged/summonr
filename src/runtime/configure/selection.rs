@@ -32,7 +32,12 @@ impl<P: Provider> Loop<P> {
         self.set_compact_tokens(endpoint.compact_tokens);
         self.set_effort(endpoint.effort_for(self.chosen_effort));
         self.set_price(endpoint.price);
-        self.set_env(endpoint.env.clone());
+        self.set_env(
+            endpoint
+                .env
+                .iter()
+                .map(|(key, value)| (key.clone(), value.expose().to_string())),
+        );
     }
 
     pub(crate) fn set_role_model(

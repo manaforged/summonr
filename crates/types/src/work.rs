@@ -81,6 +81,17 @@ impl WorkProgress {
             WorkPhase::Plan | WorkPhase::Execute | WorkPhase::Verify | WorkPhase::Review => None,
         }
     }
+
+    #[must_use]
+    pub fn exit_status(&self, checks_failed: bool, aborted: bool) -> i32 {
+        if checks_failed {
+            2
+        } else if aborted {
+            3
+        } else {
+            self.exit_code().unwrap_or(0)
+        }
+    }
 }
 
 impl Display for WorkProgress {

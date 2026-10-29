@@ -56,12 +56,12 @@ pub(super) fn entries() -> Vec<Entry> {
         },
         Entry::Tool {
             name: "edit".to_string(),
-            call: Call::new(
+            calls: vec![Call::new(
                 "d1".to_string(),
                 "src/demo.rs".to_string(),
                 ToolState::Ok,
                 DIFF.to_string(),
-            ),
+            )],
         },
         Entry::Chart(vec![
             Round {

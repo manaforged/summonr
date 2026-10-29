@@ -10,7 +10,7 @@ pub(in crate::tui::sigil_view) use dialog::dismissing;
 pub(in crate::tui) use dialog::{Dialog, Size};
 pub(in crate::tui) use hints::{FILTER_HINT, Hints, Key, alt_label};
 pub(in crate::tui::sigil_view) use keys::{Bindings, KeyAction, alt, keyed, press};
-pub(in crate::tui) use list::{List, at, cycle, shift};
+pub(in crate::tui) use list::{List, cycle, shift};
 pub(in crate::tui) use prompt::{Action, ActionKind, Prompt};
 pub(in crate::tui) use rows::{
     blank, field, field_width, filter_column, filter_field, group, heading, notice, overlay_list,

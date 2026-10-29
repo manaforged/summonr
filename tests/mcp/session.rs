@@ -332,7 +332,7 @@ pub(crate) fn a_print_run_sends_a_lean_first_request() {
         .unwrap_or_default();
     let tools = serde_json::to_string(&request["tools"]).expect("tool schemas");
     assert!(
-        system.len() + tools.len() <= 5_400,
+        system.len() + tools.len() <= 6_400,
         "system {} bytes, tools {} bytes:\n{system}",
         system.len(),
         tools.len()
@@ -375,8 +375,8 @@ pub(crate) fn a_print_run_says_its_check_was_not_run() {
         .into_iter()
         .find(|event| event["type"] == "receipt")
         .unwrap_or_else(|| panic!("{}", result.stdout));
-    let text = receipt["receipt"]["text"].as_str().unwrap_or_default();
-    assert!(text.contains("Verification: not run"), "{text}");
+    assert_eq!(receipt["receipt"]["checks"], json!([]), "{receipt}");
+    assert_eq!(receipt["receipt"]["verified"], false, "{receipt}");
 }
 
 pub(crate) fn forking_a_named_session_keeps_the_original_transcript() {

@@ -267,3 +267,11 @@ fn a_new_file_keeps_its_trailing_whitespace_in_the_patch() {
     let patch = diff::patch(root, Some("new.txt")).unwrap();
     assert!(patch.ends_with("+text\n+   \n"), "{patch:?}");
 }
+
+#[test]
+fn a_split_hunk_keeps_crlf_line_endings() {
+    let patch = "--- a/w.bat\r\n+++ b/w.bat\r\n@@ -1 +1 @@\r\n-echo a\r\n+echo b\r\n";
+    let hunks = split("w.bat", patch);
+    assert_eq!(hunks.len(), 1);
+    assert_eq!(hunks[0].patch, patch);
+}

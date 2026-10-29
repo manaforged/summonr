@@ -197,7 +197,7 @@ impl Policy {
             Some(Block::Outside(path)) => {
                 return Err(format!(
                     "`{path}` is outside the workspace: {}",
-                    outside_hint(&path)
+                    write_denied(&path)
                 ));
             }
             None => {}
@@ -337,7 +337,7 @@ mod shell;
 mod verbs;
 
 use blocks::*;
-pub(crate) use blocks::{grant_from_error, outside_hint, reads_only, write_denied};
+pub(crate) use blocks::{grant_from_error, reads_only, write_denied};
 use paths::*;
 use shell::*;
 

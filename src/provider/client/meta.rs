@@ -175,7 +175,7 @@ impl Client {
     }
 
     pub async fn discover(endpoint: &crate::Endpoint) -> Result<Vec<Model>> {
-        if wire::spec(endpoint.wire).child() {
+        if let Transport::ClaudeCode(agent) = Transport::of(endpoint) {
             let program = endpoint.base_url.as_deref().unwrap_or_default();
             if !std::path::Path::new(program).is_file()
                 && crate::askpass::on_path(program).is_none()
@@ -184,9 +184,7 @@ impl Client {
                     "{program} not found; install Claude Code and run `claude auth login`"
                 )));
             }
-            super::super::agent::AgentClient::new(endpoint, program)
-                .status()
-                .await?;
+            agent.status().await?;
             return Ok(crate::catalog::listing(&endpoint.name).map_or_else(
                 || crate::catalog::offered(&endpoint.name, Cost::Plan),
                 |listing| listing.models,
@@ -285,7 +283,7 @@ impl Client {
 
     pub(super) async fn probe(&self, model: &str) -> Option<u32> {
         let base = &self.base;
-        if let Some(field) = wire::spec(self.wire).probe {
+        if let Some(field) = wire::spec(self.wire).probe.as_deref() {
             let mut url = url::Url::parse(&format!("{base}/models/")).ok()?;
             url.path_segments_mut()
                 .ok()?

@@ -50,18 +50,21 @@ impl AgentClient {
                 format!("Claude Code did not return its sign-in status: {error}"),
             )
         })??;
-        let status: Status = serde_json::from_str(&output).map_err(|error| {
-            Error::Config(format!(
+        match serde_json::from_str::<Status>(&output) {
+            Ok(status)
+                if exit.success()
+                    && status.logged_in
+                    && status.auth_method == Some(Method::Subscription) =>
+            {
+                Ok(())
+            }
+            Err(error) if exit.success() => Err(Error::Config(format!(
                 "Claude Code returned an invalid sign-in status: {error}"
-            ))
-        })?;
-        if exit.success() && status.logged_in && status.auth_method == Some(Method::Subscription) {
-            Ok(())
-        } else {
-            Err(Error::provider(
+            ))),
+            Ok(_) | Err(_) => Err(Error::provider(
                 ProviderFailureKind::MissingKey,
                 "Sign in to your Claude subscription through Claude Code",
-            ))
+            )),
         }
     }
 

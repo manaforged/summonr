@@ -2,7 +2,7 @@
 
 | Item | Kind | Description |
 | --- | --- | --- |
-| [`Seat`](#seat) | struct |  |
+| [`ModelSelection`](#modelselection) | struct |  |
 | [`Workflow`](#workflow) | struct |  |
 | [`default_name`](#default_name) | fn |  |
 | [`load`](#load) | fn |  |
@@ -10,7 +10,7 @@
 
 ## Structs
 
-### `Seat`
+### `ModelSelection`
 
 **Fields**
 
@@ -43,17 +43,17 @@
 
 ### `default_name`
 
-<pre>pub fn <a href="#default_name">default_name</a>() -&gt; <a href="summonr.html#result">Result</a>&lt;Option&lt;String&gt;&gt;</pre>
+<pre>pub fn <a href="#default_name">default_name</a>() -&gt; Result&lt;Option&lt;String&gt;&gt;</pre>
 
 
 ### `load`
 
-<pre>pub fn <a href="#load">load</a>(name: &amp;str) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#workflow">Workflow</a>&gt;</pre>
+<pre>pub fn <a href="#load">load</a>(name: &amp;str) -&gt; Result&lt;<a href="#workflow">Workflow</a>&gt;</pre>
 
 
 ### `names`
 
-<pre>pub fn <a href="#names">names</a>() -&gt; <a href="summonr.html#result">Result</a>&lt;Vec&lt;String&gt;&gt;</pre>
+<pre>pub fn <a href="#names">names</a>() -&gt; Result&lt;Vec&lt;String&gt;&gt;</pre>
 
 
 ---

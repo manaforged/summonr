@@ -43,7 +43,8 @@
 
 | Method | Description |
 | --- | --- |
-| <code>event(&amp;self, event: <a href="summonr.html#event">Event</a>)</code> |  |
+| <code>client(&amp;self, endpoint: &amp;<a href="summonr.html#endpoint">Endpoint</a>) -&gt; Result&lt;<a href="summonr.html#client">Client</a>&gt;</code> |  |
+| <code>event(&amp;self, event: Event)</code> |  |
 | <code>open_login(&amp;self, note: String)</code> |  |
 | <code>secret(&amp;self, request: <a href="summonr-askpass.html#request">Request</a>)</code> |  |
 
@@ -59,12 +60,12 @@
 
 ### `profile`
 
-<pre>pub fn <a href="#profile">profile</a>(args: impl Iterator&lt;Item = String&gt;) -&gt; <a href="summonr.html#result">Result</a>&lt;()&gt;</pre>
+<pre>pub fn <a href="#profile">profile</a>(args: impl Iterator&lt;Item = String&gt;) -&gt; Result&lt;()&gt;</pre>
 
 
 ### `run`
 
-<pre>pub fn <a href="#run">run</a>(loop_: <a href="summonr.html#loop">Loop</a>&lt;<a href="summonr.html#client">Client</a>&gt;, workspace: PathBuf, info: <a href="#info">Info</a>, ui: <a href="#ui">Ui</a>, inbox: <a href="#inbox">Inbox</a>, gui: bool, factory: <a href="summonr-tui-hub.html#factory">Factory</a>) -&gt; <a href="summonr.html#result">Result</a>&lt;i32&gt;</pre>
+<pre>pub fn <a href="#run">run</a>(loop_: <a href="summonr.html#loop">Loop</a>&lt;<a href="summonr.html#client">Client</a>&gt;, workspace: PathBuf, info: <a href="#info">Info</a>, ui: <a href="#ui">Ui</a>, inbox: <a href="#inbox">Inbox</a>, gui: bool, factory: <a href="summonr-tui-hub.html#factory">Factory</a>) -&gt; Result&lt;i32&gt;</pre>
 
 
 ---

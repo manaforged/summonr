@@ -39,6 +39,12 @@ impl Model {
     }
 
     pub(in crate::tui::sigil_view) fn clear(&mut self) {
+        self.clear_transcript();
+        self.entries
+            .push(Entry::System("history cleared".to_string()));
+    }
+
+    pub(super) fn clear_transcript(&mut self) {
         self.committed = 0;
         self.entries.clear();
         self.tools.clear();
@@ -48,8 +54,6 @@ impl Model {
         self.plan_current = None;
         self.plan_total = 0;
         self.plan_objective.clear();
-        self.entries
-            .push(Entry::System("history cleared".to_string()));
     }
 
     pub(in crate::tui::sigil_view) fn apply_event(&mut self, event: Event) {
@@ -91,6 +95,7 @@ impl Model {
                 completion_tokens,
                 reasoning_tokens,
                 cached_tokens,
+                cache_write_tokens: _,
                 millis: _,
                 prefix_hash,
                 cost,
@@ -105,7 +110,8 @@ impl Model {
             Event::Approval { .. }
             | Event::Elicit { .. }
             | Event::Spawned { .. }
-            | Event::Session { .. } => {}
+            | Event::Session { .. }
+            | Event::Step { .. } => {}
             Event::Unreported { tokens } => self.unreported_tokens = tokens,
             Event::Child { id, event } => self.apply_child(&id, *event),
         }
@@ -252,9 +258,5 @@ impl Model {
             prefix_hash,
             cost,
         });
-        self.prompt_tokens += u64::from(prompt);
-        self.completion_tokens += u64::from(completion);
-        self.reasoning_tokens += u64::from(reasoning);
-        self.cached_tokens += u64::from(cached);
     }
 }

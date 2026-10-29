@@ -136,6 +136,18 @@ impl ToolOutput {
             ..Self::ok(text)
         }
     }
+
+    #[must_use]
+    pub fn with_success(mut self, success: bool) -> Self {
+        self.success = success;
+        self
+    }
+
+    #[must_use]
+    pub fn with_mutated(mut self, mutated: bool) -> Self {
+        self.mutated = mutated;
+        self
+    }
 }
 
 #[derive(Default)]

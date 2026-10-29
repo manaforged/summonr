@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use leyline::{RequestBuilder, Session};
+use summonr_core::secret::Secret;
 
 mod oauth;
 pub mod open;
@@ -81,7 +82,8 @@ pub trait Store: Send + Sync {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Scheme {
     #[default]
     Bearer,
@@ -101,7 +103,7 @@ impl Scheme {
 
 #[derive(Clone, Debug)]
 pub enum Method {
-    Key(String),
+    Key(Secret),
     Login(Box<Spec>),
 }
 
@@ -128,7 +130,7 @@ impl Issued {
 }
 
 enum Held {
-    Key(String),
+    Key(Secret),
     Login(Box<LoginState>),
 }
 
@@ -166,7 +168,7 @@ impl Auth {
 
     pub async fn token(&self, http: &Session) -> Result<String> {
         match self.held.as_ref() {
-            Held::Key(key) => Ok(key.clone()),
+            Held::Key(key) => Ok(key.expose().to_string()),
             Held::Login(login) => oauth::token(parts(login), http, self.store.as_ref()).await,
         }
     }

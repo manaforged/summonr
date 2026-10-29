@@ -19,7 +19,7 @@ fn thinking(call: &CompletionRequest<'_>, reasoning: &Reasoning) -> Option<Value
     let step = reasoning.plan(call.traits).step(call.effort);
     match (call.traits.thinking, step) {
         (Thinking::Budget, Step::Level(level)) => {
-            Some(json!({"thinkingBudget": budget(level), "includeThoughts": thoughts}))
+            Some(json!({"thinkingBudget": budget(call, level), "includeThoughts": thoughts}))
         }
         (Thinking::Budget, Step::Off(_)) => Some(json!({"thinkingBudget": 0})),
         (Thinking::Level, Step::Level(level)) => {
@@ -36,11 +36,10 @@ fn thinking(call: &CompletionRequest<'_>, reasoning: &Reasoning) -> Option<Value
     }
 }
 
-fn budget(level: Effort) -> i32 {
-    match level {
-        Effort::None => 0,
-        Effort::Minimal | Effort::Low => 1024,
-        Effort::Medium => 8192,
-        Effort::High | Effort::XHigh | Effort::Max => -1,
-    }
+fn budget(call: &CompletionRequest<'_>, level: Effort) -> i32 {
+    call.traits
+        .thinking_budgets
+        .iter()
+        .find_map(|(effort, budget)| (*effort == level).then_some(*budget))
+        .unwrap_or(-1)
 }

@@ -24,7 +24,7 @@
 
 ### `Factory`
 
-<pre>pub type <a href="#factory">Factory</a> = Arc&lt;(dyn Fn(<a href="#open">Open</a>, <a href="summonr-tui.html#ui">Ui</a>) -&gt; <a href="summonr.html#result">Result</a>&lt;(<a href="summonr.html#loop">Loop</a>&lt;<a href="summonr.html#client">Client</a>&gt;, Option&lt;<a href="summonr-workflow.html#workflow">Workflow</a>&gt;)&gt; + Send + Sync)&gt;</pre>
+<pre>pub type <a href="#factory">Factory</a> = Arc&lt;(dyn Fn(<a href="#open">Open</a>, <a href="summonr-tui.html#ui">Ui</a>) -&gt; Result&lt;(<a href="summonr.html#loop">Loop</a>&lt;<a href="summonr.html#client">Client</a>&gt;, Option&lt;<a href="summonr-workflow.html#workflow">Workflow</a>&gt;)&gt; + Send + Sync)&gt;</pre>
 
 
 ---

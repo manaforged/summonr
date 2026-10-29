@@ -195,6 +195,22 @@ pub(crate) struct Xargs {
 }
 
 #[derive(Deserialize)]
+pub(crate) struct Shell {
+    pub(crate) shells: BTreeSet<String>,
+    pub(crate) interpreters: BTreeSet<String>,
+    pub(crate) sourcing: BTreeSet<String>,
+    pub(crate) code_flags: Vec<String>,
+    pub(crate) escalators: BTreeSet<String>,
+    pub(crate) power_off: BTreeSet<String>,
+    pub(crate) denied_text: Vec<String>,
+    pub(crate) catastrophic: Vec<String>,
+    pub(crate) device_write: Vec<String>,
+    pub(crate) root_wipes: Vec<String>,
+    pub(crate) devices: BTreeSet<String>,
+    pub(crate) outside_vars: BTreeSet<String>,
+}
+
+#[derive(Deserialize)]
 pub(crate) struct Roots {
     pub(crate) top: Vec<String>,
     pub(crate) nested: Vec<String>,
@@ -225,6 +241,7 @@ pub(crate) struct Rules {
     pub(crate) inquiry_flags: BTreeSet<String>,
     pub(crate) text_hazards: Vec<TextHazard>,
     pub(crate) wrappers: HashMap<String, BTreeSet<String>>,
+    pub(crate) shell: Shell,
     pub(crate) xargs: Xargs,
     pub(crate) roots: Roots,
     pub(crate) git: Git,
@@ -234,10 +251,7 @@ pub(crate) struct Rules {
 const BUILT_IN: &str = include_str!("rules.toml");
 
 fn load() -> Rules {
-    let mut rules: Rules = match toml::from_str(BUILT_IN) {
-        Ok(rules) => rules,
-        Err(error) => panic!("the built-in policy rules table is invalid: {error}"),
-    };
+    let mut rules: Rules = summonr_core::table::embedded("policy rule", BUILT_IN);
     rules.index = rules
         .verbs
         .iter()

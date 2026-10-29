@@ -133,25 +133,9 @@ impl App {
     fn poll(&self) {
         let app = self.clone();
         effect(move || {
-            let command: Option<fn() -> Cmd> = match app.layout.get().secondary {
-                Some(super::Pane::Jobs) => Some(|| Cmd::Jobs),
-                Some(super::Pane::Mcp) => Some(|| Cmd::Mcp),
-                Some(
-                    super::Pane::Chat
-                    | super::Pane::Ledger
-                    | super::Pane::Files
-                    | super::Pane::Diff
-                    | super::Pane::Worktrees
-                    | super::Pane::Peers
-                    | super::Pane::View,
-                )
-                | None => None,
-            };
-            if let Some(command) = command {
+            if app.layout.get().secondary.is_some_and(App::pane_polls) {
                 let poll = app.clone();
-                interval(crate::limits::limits().beat(), move || {
-                    drop(poll.cmd.send(command()))
-                });
+                interval(crate::limits::limits().beat(), move || poll.load());
             }
         });
     }

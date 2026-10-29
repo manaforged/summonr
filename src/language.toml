@@ -1,0 +1,85 @@
+[[module]]
+id = "rust"
+markers = ["Cargo.toml"]
+servers = [{ name = "rust-analyzer", args = [] }]
+commands = ["cargo", "rustc"]
+options = { checkOnSave = false, cargo = { allTargets = false, buildScripts = { enable = false } }, procMacro = { enable = false } }
+check = { command = "cargo test" }
+
+[[module]]
+id = "typescript"
+markers = ["package.json"]
+servers = [
+    { name = "typescript-language-server", args = ["--stdio"] },
+    { name = "biome", args = ["lsp-proxy"] },
+]
+commands = ["npm", "pnpm", "yarn", "bun", "node --test", "tsc"]
+options = {}
+check = { command = "npm test", requires = { file = "package.json", pointer = "/scripts/test" } }
+
+[[module]]
+id = "python"
+markers = ["pyproject.toml", "setup.py"]
+servers = [
+    { name = "pyright-langserver", args = ["--stdio"] },
+    { name = "ruff", args = ["server"] },
+]
+commands = ["pytest", "python -m pytest", "ruff", "mypy", "pyright"]
+options = {}
+
+[[module]]
+id = "go"
+markers = ["go.mod"]
+servers = [{ name = "gopls", args = [] }]
+commands = ["go test", "go build", "go vet"]
+options = {}
+check = { command = "go test ./..." }
+
+[[extension]]
+name = "rs"
+language_id = "rust"
+module = "rust"
+
+[[extension]]
+name = "go"
+language_id = "go"
+module = "go"
+
+[[extension]]
+name = "ts"
+language_id = "typescript"
+module = "typescript"
+
+[[extension]]
+name = "tsx"
+language_id = "typescriptreact"
+module = "typescript"
+
+[[extension]]
+name = "js"
+language_id = "javascript"
+module = "typescript"
+
+[[extension]]
+name = "mjs"
+language_id = "javascript"
+module = "typescript"
+
+[[extension]]
+name = "cjs"
+language_id = "javascript"
+module = "typescript"
+
+[[extension]]
+name = "jsx"
+language_id = "javascriptreact"
+module = "typescript"
+
+[[extension]]
+name = "py"
+language_id = "python"
+module = "python"
+
+[[extension]]
+name = "toml"
+language_id = "toml"

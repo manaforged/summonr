@@ -85,11 +85,7 @@ const YAHOO: &str = r#"<li class="first"><div class="dd fst algo algo-sr relsrch
 <li><div class="dd algo algo-sr"><div class="compTitle"><a href="https://r.search.yahoo.com/_ylt=x/RV=2/RU=https%3a%2f%2fsearch.yahoo.com%2fpreferences/RK=2/RS=y-"><h3 class="title">Preferences</h3></a></div></div></li>"#;
 
 fn engine(name: &str) -> &'static super::results::Engine {
-    engines()
-        .unwrap()
-        .iter()
-        .find(|engine| engine.name == name)
-        .unwrap()
+    engines().iter().find(|engine| engine.name == name).unwrap()
 }
 
 #[test]

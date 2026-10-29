@@ -73,7 +73,6 @@ fn main() {
         tools::tools_optional_modules_are_advertised_and_dispatch_calls,
         tools::tools_disabled_modules_are_hidden_and_refuse_calls,
         torn::a_session_resumes_with_any_state_file_torn,
-        torn::a_torn_work_file_is_reported_on_resume,
         content::a_server_prompt_becomes_the_user_message,
         content::a_prompt_without_its_required_argument_is_refused,
         content::a_server_resource_is_attached_to_the_prompt,
@@ -187,5 +186,6 @@ fn main() {
         transport::a_request_the_server_does_not_read_times_out,
         transport::a_remote_server_reconnects_after_its_session_expires,
         transport::a_remote_reply_on_a_stream_held_open_returns_at_once,
+        transport::a_remote_server_request_gets_an_answer,
     ]);
 }

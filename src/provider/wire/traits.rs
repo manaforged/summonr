@@ -39,6 +39,15 @@ pub(crate) struct Traits {
     pub(crate) bound: bool,
     pub(crate) output: u32,
     pub(crate) patch: bool,
+    #[serde(deserialize_with = "budgets")]
+    pub(crate) thinking_budgets: &'static [(Effort, i32)],
+}
+
+fn budgets<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<&'static [(Effort, i32)], D::Error> {
+    let rows = std::collections::BTreeMap::<Effort, i32>::deserialize(deserializer)?;
+    Ok(rows.into_iter().collect::<Vec<_>>().leak())
 }
 
 #[derive(Deserialize)]
@@ -68,9 +77,7 @@ struct Catalog {
 }
 
 static ROWS: LazyLock<Vec<Row>> = LazyLock::new(|| {
-    toml::from_str::<Catalog>(include_str!("models.toml"))
-        .expect("models.toml parses")
-        .rows
+    summonr_core::table::embedded::<Catalog>("model", include_str!("models.toml")).rows
 });
 
 pub(crate) fn traits(model: &str) -> Traits {

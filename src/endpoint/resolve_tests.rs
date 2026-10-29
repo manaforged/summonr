@@ -38,7 +38,7 @@ fn a_remote_endpoint_without_a_key_still_takes_the_catalog_window() {
 fn a_local_url_stays_unset_so_the_probe_runs() {
     let mut endpoint = grok();
     endpoint.base_url = Some("http://127.0.0.1:8080/v1".to_string());
-    endpoint.api_key = Some("present".to_string());
+    endpoint.api_key = Some(summonr_core::secret::Secret::new("present"));
     assert_eq!(super::with_catalog_window(endpoint).context_window, None);
 }
 

@@ -103,21 +103,34 @@ struct Verdict {
     reason: String,
 }
 
-fn parse_verdict(reply: &str) -> Result<Verdict> {
+#[derive(serde::Deserialize)]
+struct Reply {
+    verdict: Option<String>,
+    done: Option<bool>,
+    reason: Option<String>,
+}
+
+pub(crate) fn reply_object<T: serde::de::DeserializeOwned>(
+    reply: &str,
+) -> Option<serde_json::Result<T>> {
     let trimmed = reply.trim();
-    let start = trimmed.find('{').ok_or_else(malformed_judge)?;
-    let end = trimmed.rfind('}').ok_or_else(malformed_judge)?;
-    if end < start {
-        return Err(malformed_judge());
-    }
-    let value: serde_json::Value =
-        serde_json::from_str(&trimmed[start..=end]).map_err(|error| {
-            Error::provider(
+    let start = trimmed.find('{')?;
+    let end = trimmed.rfind('}')?;
+    (start <= end).then(|| serde_json::from_str(&trimmed[start..=end]))
+}
+
+fn parse_verdict(reply: &str) -> Result<Verdict> {
+    let reply: Reply = match reply_object(reply).ok_or_else(malformed_judge)? {
+        Ok(reply) => reply,
+        Err(error) if error.is_data() => return Err(malformed_judge()),
+        Err(error) => {
+            return Err(Error::provider(
                 ProviderFailureKind::Malformed,
                 format!("goal judge returned invalid JSON: {error}"),
-            )
-        })?;
-    let state = match value.get("verdict").and_then(|verdict| verdict.as_str()) {
+            ));
+        }
+    };
+    let state = match reply.verdict.as_deref() {
         Some("done") => State::Done,
         Some("continue") => State::Continue,
         Some("stalled") => State::Stalled,
@@ -128,17 +141,13 @@ fn parse_verdict(reply: &str) -> Result<Verdict> {
                 format!("goal judge returned unknown verdict `{value}`"),
             ));
         }
-        None => match value.get("done").and_then(serde_json::Value::as_bool) {
+        None => match reply.done {
             Some(true) => State::Done,
             Some(false) => State::Continue,
             None => return Err(malformed_judge()),
         },
     };
-    let reason = value
-        .get("reason")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(malformed_judge)?
-        .to_string();
+    let reason = reply.reason.ok_or_else(malformed_judge)?;
     Ok(Verdict { state, reason })
 }
 

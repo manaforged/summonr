@@ -7,7 +7,7 @@ use summonr_core::error::{Error, Result};
 use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_string, object_usize};
 
 mod apply_patch;
-mod edit;
+pub(in crate::tools) mod edit;
 mod image;
 mod list;
 mod ops;
@@ -44,7 +44,7 @@ impl ToolRegistry {
             Some(Some(ReadOp::File)) => self.read_file(args, read::READ_PAGE_BYTES),
             Some(Some(ReadOp::List)) => self.list_dir(args).map(ToolOutput::ok),
             Some(Some(ReadOp::Search)) => self.search_files(args).map(ToolOutput::ok),
-            Some(Some(ReadOp::Image)) => self.show_image(args),
+            Some(Some(ReadOp::Image)) => self.show_image(object_string(args, "path")?),
             Some(Some(ReadOp::Help)) => {
                 Ok(ToolOutput::ok(super::catalog::help(super::Builtin::Read)))
             }
@@ -234,7 +234,10 @@ impl ToolRegistry {
                 out.push('\n');
             }
         }
-        Ok(ToolOutput::mutated(out.trim_end().to_string(), None))
+        Ok(ToolOutput::mutated(
+            out.trim_end().to_string(),
+            write::patch_of(&planned),
+        ))
     }
 
     fn plan_edit(
@@ -310,10 +313,11 @@ impl ToolRegistry {
             .and_then(Value::as_u64)
             .or_else(|| object_bool(args, "recursive").then_some(u64::MAX))
             .map(|depth| usize::try_from(depth).unwrap_or(usize::MAX));
+        let base = summonr_core::walk::Walk::tool(object_bool(args, "no_ignore"));
         if let Some(depth) = depth {
-            return format_tree(path, &dir, depth);
+            return format_tree(path, &dir, depth, base);
         }
-        format_directory(path, &dir)
+        format_directory(path, &dir, base)
     }
 
     pub(super) fn skill(&self, args: &Value) -> Result<String> {

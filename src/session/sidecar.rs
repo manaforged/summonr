@@ -1,27 +1,29 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::durable::log;
-use crate::durable::store;
+use crate::durable::store::{Doc, Durability, Invalid, Json, Wait};
 
 pub(crate) struct Sidecar<T> {
-    path: PathBuf,
+    doc: Doc<Json<BTreeMap<String, T>>>,
     entries: BTreeMap<String, T>,
     dirty: bool,
 }
 
 impl<T: Serialize + DeserializeOwned> Sidecar<T> {
     pub(crate) fn load(home: &Path, file: &str) -> Self {
-        let path = log::sessions_dir(home).join(file);
-        let entries = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+        let doc = Doc::new(
+            log::sessions_dir(home).join(file),
+            Durability::Renamed,
+            Invalid::Fail,
+            Wait::Forever,
+        );
+        let entries = doc.load().unwrap_or_default();
         Self {
-            path,
+            doc,
             entries,
             dirty: false,
         }
@@ -44,11 +46,8 @@ impl<T: Serialize + DeserializeOwned> Sidecar<T> {
         let live: BTreeSet<&str> = live.into_iter().collect();
         let before = self.entries.len();
         self.entries.retain(|id, _| live.contains(id.as_str()));
-        if !self.dirty && self.entries.len() == before {
-            return;
-        }
-        if let Ok(bytes) = serde_json::to_vec(&self.entries) {
-            drop(store::write(&self.path, bytes, store::Durability::Renamed));
+        if self.dirty || self.entries.len() != before {
+            drop(self.doc.replace(&self.entries));
         }
     }
 }

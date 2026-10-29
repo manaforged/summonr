@@ -17,36 +17,24 @@ impl Worker {
             Cmd::Login(name) => return self.login(&name).await,
             Cmd::SetKey(name, key) => return self.set_key(&name, &key).await,
             Cmd::Cancel | Cmd::Open(_) | Cmd::SteerQueued | Cmd::Answer(..) => {}
-            command @ (Cmd::Replay
-            | Cmd::Dequeue
-            | Cmd::Export(_)
-            | Cmd::Logout(_)
-            | Cmd::Steer(_)
-            | Cmd::Queue(_)
-            | Cmd::Send(..)
-            | Cmd::Tick
-            | Cmd::LoginAnswer(_)) => self.session_command(command).await,
-            command @ (Cmd::SetEffort(_)
-            | Cmd::SetVerify(_)
-            | Cmd::ToggleApproval
-            | Cmd::SetEndpoint(_)
-            | Cmd::SetModel(_)
-            | Cmd::SelectModel(..)
-            | Cmd::SetMail(_)
-            | Cmd::SetModule(..)
-            | Cmd::AssignModel(..)
-            | Cmd::ClearRole(_)
-            | Cmd::SaveWorkflow(_)
-            | Cmd::ListWorkflows) => self.configure(command).await,
-            Cmd::Merge(path) => self.merge(&path),
-            Cmd::Discard(path) => self.discard(&path),
-            command => self.reader.run(command).await,
-        }
-        true
-    }
-
-    async fn configure(&mut self, command: Cmd) {
-        match command {
+            Cmd::Replay => super::history::replay_transcript(
+                self.loop_.session_path(),
+                Some(self.loop_.session_id()),
+                Some(self.loop_.unreported_tokens()),
+                &self.ui,
+            ),
+            Cmd::Dequeue => self.recover(),
+            Cmd::Export(target) => self.export(target),
+            Cmd::Logout(name) => self.logout(&name).await,
+            Cmd::Steer(text) | Cmd::Queue(text) => {
+                self.queue.followups.push_back(text);
+                self.queue.announce(&self.ui);
+            }
+            Cmd::Send(to, text) => turn::mail(&self.ui, &self.loop_.session_id(), &to, &text),
+            Cmd::Tick => self.tick(),
+            Cmd::LoginAnswer(_) => {
+                self.system("the sign-in already ended; the pasted code was not sent")
+            }
             Cmd::SetEffort(effort) => {
                 self.dial = effort;
                 self.loop_.choose_effort(effort);
@@ -68,8 +56,11 @@ impl Worker {
             Cmd::ClearRole(role) => self.clear_role(role),
             Cmd::SaveWorkflow(name) => self.save_workflow(&name),
             Cmd::ListWorkflows => self.send_workflow(),
-            _ => {}
+            Cmd::Merge(path) => self.merge(&path),
+            Cmd::Discard(path) => self.discard(&path),
+            command => self.reader.run(command).await,
         }
+        true
     }
 
     fn merge(&mut self, path: &std::path::Path) {
@@ -91,25 +82,6 @@ impl Worker {
             Err(error) => self.system(&format!("worktree kept: {error}")),
         }
         self.reader.trees();
-    }
-
-    async fn session_command(&mut self, command: Cmd) {
-        match command {
-            Cmd::Replay => self.reshow(),
-            Cmd::Dequeue => self.recover(),
-            Cmd::Export(target) => self.export(target),
-            Cmd::Logout(name) => self.logout(&name).await,
-            Cmd::Steer(text) | Cmd::Queue(text) => {
-                self.followups.push_back(text);
-                announce(&self.ui, &self.steering, &self.followups, &self.deferred);
-            }
-            Cmd::Send(to, text) => turn::mail(&self.ui, &self.loop_.session_id(), &to, &text),
-            Cmd::Tick => self.tick(),
-            Cmd::LoginAnswer(_) => {
-                self.system("the sign-in already ended; the pasted code was not sent")
-            }
-            _ => {}
-        }
     }
 
     fn toggle_approval(&mut self) {

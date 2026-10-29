@@ -95,6 +95,46 @@ impl ToolRegistry {
     }
 }
 
+pub(in crate::tools) fn patch_of(changes: &[Change]) -> Option<String> {
+    let patch: Vec<String> = changes
+        .iter()
+        .enumerate()
+        // complexity: bounded by the files in one tool call
+        .filter_map(|(index, change)| change_patch(&changes[..index], change))
+        .collect();
+    (!patch.is_empty()).then(|| patch.join("\n"))
+}
+
+fn change_patch(earlier: &[Change], change: &Change) -> Option<String> {
+    let path = &change.display;
+    let after = match &change.action {
+        Action::Move { display, .. } => {
+            return Some(format!("--- a/{path}\n+++ b/{display}"));
+        }
+        Action::Write(content) => content.as_str(),
+        Action::Delete => "",
+    };
+    let before = match staged(earlier, &change.dest) {
+        Some(content) => content.unwrap_or_default().to_string(),
+        None => current(&change.dest, path).unwrap_or_default(),
+    };
+    let old: Vec<&str> = before.lines().collect();
+    let new: Vec<&str> = after.lines().collect();
+    let hunks = super::spans::patch(&old, &new)?;
+    let side = |lines: &[&str], prefix: &str| {
+        if lines.is_empty() {
+            "/dev/null".to_string()
+        } else {
+            format!("{prefix}/{path}")
+        }
+    };
+    Some(format!(
+        "--- {}\n+++ {}\n{hunks}",
+        side(&old, "a"),
+        side(&new, "b")
+    ))
+}
+
 pub(in crate::tools) fn staged<'a>(changes: &'a [Change], dest: &Path) -> Option<Option<&'a str>> {
     changes
         .iter()

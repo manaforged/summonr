@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::durable::store;
+use crate::durable::store::{self, Doc, Durability, Encode, Invalid, Toml, Wait};
 use summonr_core::error::{Error, Result};
 
 const FILE: &str = "jobs.toml";
@@ -258,10 +258,17 @@ pub(crate) fn check_name(name: &str) -> Result<()> {
     }
 }
 
+fn book() -> Result<Doc<Toml<Book>>> {
+    Ok(Doc::new(
+        dir()?.join(FILE),
+        Durability::Synced,
+        Invalid::Fail,
+        Wait::Forever,
+    ))
+}
+
 pub(crate) fn load() -> Result<Vec<Job>> {
-    let path = dir()?.join(FILE);
-    let _guard = store::lock(&path, true)?;
-    read(&path)
+    Ok(book()?.load()?.job)
 }
 
 pub(crate) fn get(name: &str) -> Result<Job> {
@@ -272,17 +279,14 @@ pub(crate) fn get(name: &str) -> Result<Job> {
 }
 
 pub(crate) fn update<T>(change: impl FnOnce(&mut Vec<Job>) -> Result<T>) -> Result<T> {
-    let path = dir()?.join(FILE);
-    let _guard = store::lock(&path, true)?;
-    let mut jobs = read(&path)?;
-    let out = change(&mut jobs)?;
-    trim(&mut jobs)?;
-    let text = toml::to_string(&Book { job: jobs })
-        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
-    if store::read_or_empty(&path)? != text {
-        store::write(&path, text, store::Durability::Synced)?;
-    }
-    Ok(out)
+    let mut out = None;
+    book()?.update(|book| {
+        let before = Toml::<Book>::encode(book)?;
+        out = Some(change(&mut book.job)?);
+        trim(&mut book.job)?;
+        Ok(Toml::<Book>::encode(book)? != before)
+    })?;
+    out.ok_or_else(|| Error::Config(format!("{FILE}: the change did not run")))
 }
 
 pub(crate) fn with_job<T>(name: &str, change: impl FnOnce(&mut Job) -> Result<T>) -> Result<T> {
@@ -316,13 +320,6 @@ pub(crate) fn settle(
         }
         Ok(())
     })
-}
-
-fn read(path: &Path) -> Result<Vec<Job>> {
-    let text = store::read_or_empty(path)?;
-    toml::from_str::<Book>(&text)
-        .map(|book| book.job)
-        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))
 }
 
 pub(super) fn unknown(name: &str) -> Error {

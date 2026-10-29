@@ -1,11 +1,11 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::super::wire::anthropic::Counted;
+use super::super::wire::anthropic::{Counted, Event, Opened};
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub(super) enum Frame {
+pub(super) enum Frame<'a> {
     ControlRequest {
         request_id: String,
         request: Control,
@@ -14,12 +14,14 @@ pub(super) enum Frame {
         response: Reply,
     },
     StreamEvent {
-        event: Streamed,
+        #[serde(borrow)]
+        event: Box<Event<'a>>,
         #[serde(default)]
         parent_tool_use_id: Option<String>,
     },
     Assistant {
-        message: AssistantContent,
+        #[serde(borrow)]
+        message: AssistantContent<'a>,
         #[serde(default)]
         parent_tool_use_id: Option<String>,
     },
@@ -50,23 +52,6 @@ pub(super) enum Control {
 #[derive(Deserialize)]
 pub(super) struct Origin {
     pub(super) name: String,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "method")]
-pub(super) enum Rpc {
-    #[serde(rename = "initialize")]
-    Initialize {
-        id: Value,
-        #[serde(default)]
-        params: Value,
-    },
-    #[serde(rename = "tools/list")]
-    ToolsList { id: Value },
-    #[serde(rename = "tools/call")]
-    ToolsCall { id: Value, params: CallParams },
-    #[serde(other)]
-    Other,
 }
 
 #[derive(Deserialize)]
@@ -102,49 +87,13 @@ pub(super) enum ReplyKind {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub(super) enum Streamed {
-    ContentBlockDelta {
-        delta: Piece,
-    },
-    #[serde(other)]
-    Other,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub(super) enum Piece {
-    TextDelta {
-        text: String,
-    },
-    ThinkingDelta {
-        thinking: String,
-    },
-    #[serde(other)]
-    Other,
-}
-
-#[derive(Deserialize)]
-pub(super) struct AssistantContent {
+pub(super) struct AssistantContent<'a> {
     #[serde(default)]
     pub(super) id: String,
-    #[serde(default)]
-    pub(super) content: Vec<Block>,
+    #[serde(borrow, default)]
+    pub(super) content: Vec<Opened<'a>>,
     #[serde(default)]
     pub(super) usage: Option<Counted>,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub(super) enum Block {
-    Text {
-        text: String,
-    },
-    Thinking {
-        thinking: String,
-    },
-    #[serde(other)]
-    Other,
 }
 
 #[derive(Deserialize)]

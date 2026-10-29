@@ -8,7 +8,9 @@ use regex::{Regex, RegexBuilder, escape};
 use super::app::App;
 use super::canvas;
 use super::model::{Entry, Model, entry_markdown};
-use super::ui::{Dialog, Hints, Key, Size, filter_column, filter_field, overlay_list, pick, plain};
+use super::ui::{
+    Dialog, Hints, Key, List, Size, filter_column, filter_field, overlay_list, pick, plain,
+};
 use crate::session::Prompt;
 use sigil::prelude::{NodeBuilder, Signal};
 use sigil::prelude::{NodeEventsExt, container, signal, virtual_list};
@@ -25,9 +27,7 @@ enum Mode {
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
     pub(super) open: Signal<bool>,
-    pub(super) query: Signal<String>,
-    pub(super) caret: Signal<usize>,
-    pub(super) selected: Signal<usize>,
+    pub(super) list: List,
     pub(super) target: Signal<Option<usize>>,
     mode: Signal<Mode>,
     saved: Signal<Result<Arc<Vec<Prompt>>, String>>,
@@ -38,9 +38,7 @@ impl Picker {
     pub(super) fn new() -> Self {
         Self {
             open: signal(false),
-            query: signal(String::new()),
-            caret: signal(0),
-            selected: signal(0),
+            list: List::new(),
             target: signal(None),
             mode: signal(Mode::Conversation),
             saved: signal(Ok(Arc::new(Vec::new()))),
@@ -64,9 +62,8 @@ impl Picker {
 
     fn show(self, mode: Mode, query: &str) {
         self.mode.set(mode);
-        self.query.set(query.to_string());
-        self.caret.set(query.len());
-        self.selected.set(0);
+        self.list.type_query(query.to_string());
+        self.list.select(0);
         self.warning.set(String::new());
         self.open.set(true);
     }
@@ -113,7 +110,7 @@ impl Picker {
             .key(Key::UpDown, "select")
             .key(Key::Enter, action)
             .key(Key::Esc, "close")
-            .count(self.selected.get(), total)
+            .count(self.list.cursor.get(), total)
     }
 
     fn detail(self, index: usize) -> String {
@@ -138,7 +135,7 @@ impl Picker {
     }
 
     pub(super) fn pattern(self) -> Result<Regex, String> {
-        let query = self.query.get();
+        let query = self.list.query.get();
         RegexBuilder::new(&escape(query.trim()))
             .case_insensitive(true)
             .build()
@@ -209,7 +206,7 @@ impl Picker {
 
     pub(super) fn shift(self, model: &Model, delta: isize) {
         let len = self.rows(model).map_or(0, |rows| rows.len());
-        super::app::shift(&self.selected, delta, len);
+        self.list.shift(delta, len);
     }
 }
 
@@ -239,7 +236,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let live = app.clone();
     Dialog::new(Size::Normal, picker.title(), Hints::new())
         .live_hints(move || picker.hints(&live.model.get()))
-        .child(filter_field(picker.query, picker.caret))
+        .child(filter_field(picker.list.query, picker.list.caret))
         .child(results(app, picker))
         .build(picker.open, cols, &keys)
 }
@@ -261,7 +258,7 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
         }
         match picker.rows(&paint.model.get()) {
             Ok(rows) => {
-                let selected = picker.selected.get().min(rows.len().saturating_sub(1));
+                let selected = picker.list.cursor.get().min(rows.len().saturating_sub(1));
                 if rows.is_empty() {
                     items.push(plain("no matches · edit the search"));
                 }
@@ -275,7 +272,7 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                     virtual_list(rows, move |index, (entry, preview): &(usize, String)| {
                         row(source.clone(), picker, index, *entry, preview, selected)
                     })
-                    .follow_row(picker.selected),
+                    .follow_row(picker.list.cursor),
                     height,
                     10,
                 ));
@@ -298,7 +295,7 @@ fn row(
     let title = preview.to_string();
     let detail = picker.detail(entry);
     pick(index == selected, title, detail).pointer_down(move |event| {
-        choose.search.selected.set(index);
+        choose.search.list.select(index);
         choose.jump();
         event.stop_propagation();
     })

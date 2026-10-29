@@ -1,10 +1,9 @@
 use std::path::Path;
 
 use super::{Plugin, enabled};
-use summonr_core::text::Frontmatter;
+use crate::skills;
 
 const DIR: &str = "agents";
-const EXTENSION: &str = "md";
 const HEADER: &str =
     "Agents (pass one as `agent` to the task tool; the child follows its instructions):";
 
@@ -96,23 +95,16 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
 }
 
 pub(super) fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
-    summonr_core::walk::children(&plugin.dir.join(DIR))
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == EXTENSION))
-        .filter_map(|path| {
-            let stem = path.file_stem()?.to_str()?.to_string();
-            let text = std::fs::read_to_string(&path).ok()?;
-            let front = Frontmatter::parse(&text);
-            let name = front.get("name").map_or(stem, str::to_string);
-            crate::skills::valid(&name).then(|| Agent {
-                plugin: plugin.name.clone(),
-                name,
-                description: front.get("description").unwrap_or_default().to_string(),
-                tools: front.list("tools"),
-                instructions: plugin.expand(front.body.trim(), workspace),
-            })
+    skills::markdown_entries(&plugin.dir.join(DIR), |stem, front| {
+        let name = front.get("name").map_or(stem, str::to_string);
+        skills::valid(&name).then(|| Agent {
+            plugin: plugin.name.clone(),
+            name,
+            description: front.get("description").unwrap_or_default().to_string(),
+            tools: front.list("tools"),
+            instructions: super::expand(front.body.trim(), &plugin.vars(workspace)),
         })
-        .collect()
+    })
 }
 
 #[cfg(test)]

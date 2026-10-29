@@ -155,14 +155,17 @@ pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String
     rows
 }
 
-pub(in crate::tui::sigil_view) fn armed(
-    slot: &Cell<Option<std::time::Instant>>,
-    window: std::time::Duration,
+pub(in crate::tui::sigil_view) type Confirm<K> = Signal<Option<(K, std::time::Instant)>>;
+
+pub(in crate::tui::sigil_view) fn confirm<K: Clone + PartialEq + 'static>(
+    slot: &Confirm<K>,
+    key: K,
+    window: Option<std::time::Duration>,
 ) -> bool {
     let now = std::time::Instant::now();
-    let repeat = slot
-        .get()
-        .is_some_and(|last| now.duration_since(last) <= window);
-    slot.set(if repeat { None } else { Some(now) });
+    let repeat = slot.peek().is_some_and(|(armed, at)| {
+        armed == key && window.is_none_or(|window| now.duration_since(at) <= window)
+    });
+    slot.set(if repeat { None } else { Some((key, now)) });
     repeat
 }

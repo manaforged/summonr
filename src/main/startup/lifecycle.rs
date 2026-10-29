@@ -156,14 +156,11 @@ fn land(
                     .collect::<String>()
             );
             if args.json {
-                let event = summonr::Event::Merged {
+                modes::print_json(&summonr::Event::Merged {
                     branch: tree.branch.clone(),
                     base: tree.base.clone(),
                     files,
-                };
-                if let Ok(line) = serde_json::to_string(&event) {
-                    println!("{line}");
-                }
+                });
             }
             code
         }

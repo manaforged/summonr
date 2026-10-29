@@ -3,10 +3,7 @@
 | Item | Kind | Description |
 | --- | --- | --- |
 | [`by_name`](#by_name) | fn |  |
-| [`diff`](#diff) | fn |  |
-| [`errors`](#errors) | fn |  |
-| [`review`](#review) | fn |  |
-| [`NAMES`](#names) | const |  |
+| [`NAMES`](#names) | static |  |
 
 ## Functions
 
@@ -15,26 +12,11 @@
 <pre>pub fn <a href="#by_name">by_name</a>(name: &amp;str) -&gt; Option&lt;BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;&gt;</pre>
 
 
-### `diff`
-
-<pre>pub fn <a href="#diff">diff</a>() -&gt; BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;</pre>
-
-
-### `errors`
-
-<pre>pub fn <a href="#errors">errors</a>() -&gt; BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;</pre>
-
-
-### `review`
-
-<pre>pub fn <a href="#review">review</a>() -&gt; BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;</pre>
-
-
-## Constants
+## Statics
 
 ### `NAMES`
 
-<pre>pub const <a href="#names">NAMES</a>: &amp;[&amp;str]</pre>
+<pre>pub static <a href="#names">NAMES</a>: LazyLock&lt;Vec&lt;&amp;'static str&gt;&gt;</pre>
 
 
 ---

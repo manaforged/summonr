@@ -326,3 +326,22 @@ fn a_resumed_session_keeps_a_finished_tool_result_and_closes_the_cut_turn() {
         .collect();
     assert_eq!(results, ["file body"]);
 }
+
+#[test]
+fn work_resumes_from_the_session_log_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let id = {
+        let mut driver =
+            SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+        driver.work = Some(Work::new("ship the parser", WorkKind::Goal));
+        driver.checkpoint().unwrap();
+        driver.id()
+    };
+    let path = log::session_path(dir.path(), id);
+    drop(std::fs::remove_file(log::work_path(&path)));
+    let resumed = SessionDriver::resume(dir.path(), id, dir.path()).unwrap();
+    assert_eq!(
+        resumed.work.as_ref().map(|work| work.objective.as_str()),
+        Some("ship the parser")
+    );
+}

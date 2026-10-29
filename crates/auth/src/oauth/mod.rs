@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use leyline::Session;
 use serde::{Deserialize, Serialize};
+use summonr_core::secret::Secret;
 
 use crate::{Error, Issued, Parts, Prompt, Result, Store};
 
@@ -18,41 +19,16 @@ pub(crate) use store::{parse_stored, stale};
 pub(crate) use token::minted;
 pub(crate) use token::stamped;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Grant {
-    #[default]
-    RefreshToken,
-    DeviceCode,
-    AuthorizationCode,
-}
-
-impl Grant {
-    pub fn interactive(self) -> bool {
-        matches!(self, Self::DeviceCode | Self::AuthorizationCode)
-    }
-
-    pub fn browser(self) -> bool {
-        matches!(self, Self::AuthorizationCode)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TokenStyle {
-    #[default]
-    Form,
-    Json,
-}
+pub use summonr_types::oauth::{Grant, TokenStyle};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Spec {
     pub token_url: String,
     pub client_id: String,
     #[serde(default)]
-    pub client_secret: Option<String>,
+    pub client_secret: Option<Secret>,
     #[serde(default)]
-    pub refresh_token: Option<String>,
+    pub refresh_token: Option<Secret>,
     #[serde(default)]
     pub scope: Option<String>,
     #[serde(default)]
@@ -142,7 +118,11 @@ async fn renew(parts: &Parts<'_>, http: &Session, store: &dyn Store) -> Result<S
     }
     let seed = Issued {
         access: String::new(),
-        refresh: parts.spec.refresh_token.clone(),
+        refresh: parts
+            .spec
+            .refresh_token
+            .as_ref()
+            .map(|token| token.expose().to_string()),
         expires: None,
         identity: None,
         client: None,
@@ -163,7 +143,11 @@ pub(crate) async fn login(
         Grant::RefreshToken => {
             let seed = Issued {
                 access: String::new(),
-                refresh: parts.spec.refresh_token.clone(),
+                refresh: parts
+                    .spec
+                    .refresh_token
+                    .as_ref()
+                    .map(|token| token.expose().to_string()),
                 expires: None,
                 identity: None,
                 client: None,

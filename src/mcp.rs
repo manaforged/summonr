@@ -14,7 +14,7 @@ mod defer;
 mod expand;
 
 mod handshake;
-mod http;
+pub(crate) mod http;
 mod journal;
 mod link;
 mod manage;
@@ -24,12 +24,13 @@ mod probe;
 mod status;
 mod tool;
 
-pub(crate) use config::{expand_vars, scan};
+pub use config::Launch as McpLaunch;
+pub(crate) use config::scan;
 pub use defer::call_label;
 pub(crate) use defer::{Resolved, SEARCH_TOOL, effective};
 pub(crate) use expand::wanted;
 use link::{Gate, Link};
-pub use manage::{McpLaunch, add, remove};
+pub use manage::{add, remove};
 pub(crate) use offer::{Offer, OfferKind, offers};
 use output::output;
 pub use probe::probe;

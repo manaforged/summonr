@@ -1,4 +1,5 @@
 use super::*;
+use crate::provider::StopReason;
 
 use serde_json::json;
 

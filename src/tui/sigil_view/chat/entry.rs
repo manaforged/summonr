@@ -38,12 +38,11 @@ mod tools;
 mod verb;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use live::{Content, content};
-pub(in crate::tui::sigil_view) use live::{Mark, Prose, mark, revision};
+pub(in crate::tui::sigil_view) use live::{Mark, Prose, bits, mark, revision};
 mod live;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use steps::slot;
 pub(in crate::tui::sigil_view) use steps::{Slot, slots, subagents};
-#[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use tools::glyph;
 pub(in crate::tui::sigil_view) use tools::tool_label;
 pub(in crate::tui::sigil_view) use tools::workspace_relative;
@@ -63,12 +62,10 @@ pub(in crate::tui::sigil_view) fn row(
     let tools = prefs.tools;
     let layout = prefs.diff_layout;
     match entry {
-        Entry::Tool { name, call } => {
-            tools::tool_card(&name, &call, tools, layout, app, index, None)
-        }
-        Entry::ToolGroup { name, calls } => {
-            tools::group_card(&name, &calls, tools, layout, app, index)
-        }
+        Entry::Tool { name, calls } => match calls.as_slice() {
+            [call] => tools::tool_card(&name, call, tools, layout, app, index, 0),
+            calls => tools::group_card(&name, calls, tools, layout, app, index),
+        },
         entry => passive(entry, live, prefs, app, index),
     }
 }
@@ -141,7 +138,7 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> 
             bytes,
             label: name,
         } => picture(source, bytes, name),
-        Entry::Tool { .. } | Entry::ToolGroup { .. } => container(),
+        Entry::Tool { .. } => container(),
     }
 }
 
@@ -203,7 +200,9 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
             )
             .is_ok()
             {
-                drop(std::process::Command::new("open").arg(&path).spawn());
+                drop(std::thread::spawn(move || {
+                    summonr_auth::open::external(&path)
+                }));
             }
         });
     picture

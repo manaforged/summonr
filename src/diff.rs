@@ -2,7 +2,6 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::durable::log::{self, Line};
 use crate::worktree;
 use summonr_core::error::{Error, Result};
 
@@ -14,9 +13,10 @@ mod turn;
 use git::{git, numstat_row};
 pub(crate) use git::{git_apply, git_env, git_output, git_paths, nul_paths};
 pub(crate) use layout::{Layout, STATE_DIR, inside_git, layout, state_dir};
-pub use turn::{SESSION_BASE, TurnId, turn_patch, turn_stats};
+pub(crate) use turn::edited;
+pub use turn::{SESSION_BASE, TurnId, turn_patch, turn_stats, turns};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
 pub struct Stat {
     pub path: String,
     pub added: u32,
@@ -338,60 +338,48 @@ pub(crate) fn hunks(root: &Path, path: &str) -> Result<Vec<(usize, usize)>> {
             ],
         )?
     };
-    Ok(text.lines().filter_map(hunk_header).collect())
+    Ok(parse_hunks(&text)
+        .into_iter()
+        .map(|hunk| hunk.new)
+        .filter(|(_, count)| *count > 0)
+        .collect())
 }
 
-fn hunk_header(line: &str) -> Option<(usize, usize)> {
-    let rest = line.strip_prefix("@@ ")?;
-    let plus = rest.split(' ').find(|word| word.starts_with('+'))?;
-    let (start, count) = plus[1..].split_once(',').unwrap_or((&plus[1..], "1"));
-    let count: usize = count.parse().ok()?;
-    (count > 0).then(|| (start.parse().ok().unwrap_or(1), count))
+pub(crate) struct ParsedHunk<'a> {
+    pub(crate) offset: usize,
+    pub(crate) header: &'a str,
+    pub(crate) new: (usize, usize),
+    pub(crate) body: &'a str,
 }
 
-pub(crate) fn edited<'a>(calls: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
-    let mut paths: Vec<String> = Vec::new();
-    for (name, arguments) in calls {
-        if !crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits) {
-            continue;
-        }
-        let Ok(args) = serde_json::from_str::<serde_json::Value>(arguments) else {
-            continue;
-        };
-        let Some(path) = args.get("path").and_then(serde_json::Value::as_str) else {
-            continue;
-        };
-        if !paths.iter().any(|seen| seen == path) {
-            paths.push(path.to_string());
-        }
-    }
-    paths
-}
-
-pub fn turns(journal: &Path) -> Result<Vec<Vec<String>>> {
-    let mut turns: Vec<Vec<String>> = Vec::new();
-    for line in log::read(journal)? {
-        match line {
-            Line::User { start: true, .. } => turns.push(Vec::new()),
-            Line::Assistant { tool_calls, .. } => {
-                let Some(turn) = turns.last_mut() else {
-                    continue;
-                };
-                for path in edited(tool_calls.iter().map(|call| {
-                    (
-                        call.function.name.as_str(),
-                        call.function.arguments.as_str(),
-                    )
-                })) {
-                    if !turn.contains(&path) {
-                        turn.push(path);
-                    }
-                }
+pub(crate) fn parse_hunks(patch: &str) -> Vec<ParsedHunk<'_>> {
+    let mut starts: Vec<usize> = patch
+        .match_indices("@@ ")
+        .map(|(at, _)| at)
+        .filter(|at| *at == 0 || patch.as_bytes()[at - 1] == b'\n')
+        .collect();
+    starts.push(patch.len());
+    starts
+        .windows(2)
+        .map(|pair| {
+            let body = &patch[pair[0]..pair[1]];
+            let header = body.lines().next().unwrap_or_default();
+            ParsedHunk {
+                offset: pair[0],
+                header,
+                new: new_range(header),
+                body,
             }
-            _ => {}
-        }
-    }
-    Ok(turns)
+        })
+        .collect()
+}
+
+fn new_range(header: &str) -> (usize, usize) {
+    let Some(plus) = header.split(' ').find(|word| word.starts_with('+')) else {
+        return (1, 0);
+    };
+    let (start, count) = plus[1..].split_once(',').unwrap_or((&plus[1..], "1"));
+    (start.parse().unwrap_or(1), count.parse().unwrap_or(0))
 }
 
 #[cfg(test)]

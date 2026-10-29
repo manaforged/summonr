@@ -85,7 +85,7 @@ fn unsupported(command: &str) -> bool {
         || command.contains(" --bytes")
 }
 
-fn pipe_stage(command: &str) -> Option<Pipe> {
+pub(super) fn pipe_stage(command: &str) -> Option<Pipe> {
     let mut words = command.split_whitespace();
     let verb = words.next()?.rsplit('/').next()?;
     let n = match (words.next(), words.next(), words.next()) {

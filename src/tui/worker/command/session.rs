@@ -152,15 +152,15 @@ impl Worker {
         true
     }
 
-    pub(in crate::tui::worker) fn take_clear(&mut self, head: &str) -> bool {
-        let position = self.deferred.iter().position(|command| {
+    pub(in crate::tui::worker) fn take_clear(&mut self, head: crate::SlashCommand) -> bool {
+        let position = self.queue.deferred.iter().position(|command| {
             matches!(
                 command,
                 Cmd::Command(line)
-                    if line.trim_start().starts_with(head)
-                        && matches!(argument(line, self.loop_.workspace()), Ok(Some("clear" | "stop" | "off" | "cancel")))
+                    if crate::parse_command(line) == Some(head)
+                        && argument(line, self.loop_.workspace()).is_ok_and(|word| word.is_some_and(super::work::is_stop_word))
             )
         });
-        position.is_some_and(|index| self.deferred.remove(index).is_some())
+        position.is_some_and(|index| self.queue.deferred.remove(index).is_some())
     }
 }

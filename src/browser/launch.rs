@@ -87,7 +87,7 @@ impl Browser {
 }
 
 async fn arm(session: &mut charm::Session) -> Result<()> {
-    for pattern in crate::web::PRIVATE_URL_PATTERNS {
+    for pattern in crate::web::PRIVATE_URL_PATTERNS.iter() {
         session
             .route(
                 charm::UrlMatch::Glob((*pattern).to_string()),

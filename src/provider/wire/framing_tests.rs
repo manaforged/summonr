@@ -5,7 +5,10 @@ fn framing_reads_each_dialect_off_the_wire() {
     let anthropic = b"event: message_start\ndata: {\"type\":\"message_start\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\"}\n\n";
     let mut framing = Frames::default();
     let frames = framing
-        .push(anthropic, spec(crate::endpoint::Wire::Anthropic).sentinel)
+        .push(
+            anthropic,
+            spec(crate::endpoint::Wire::Anthropic).sentinel.as_deref(),
+        )
         .unwrap();
     assert_eq!(
         frames.len(),
@@ -20,7 +23,10 @@ fn framing_reads_each_dialect_off_the_wire() {
     let gemini = b"data: {\"candidates\":[]}\r\n\r\n";
     let mut framing = Frames::default();
     let frames = framing
-        .push(gemini, spec(crate::endpoint::Wire::Gemini).sentinel)
+        .push(
+            gemini,
+            spec(crate::endpoint::Wire::Gemini).sentinel.as_deref(),
+        )
         .unwrap();
     assert_eq!(frames.len(), 1, "a CRLF boundary must frame like an LF one");
 }
@@ -91,7 +97,7 @@ fn bytes_reach_an_answer_through_the_contract_alone() {
     fn run<W: Chat>(wire: crate::endpoint::Wire, bytes: &[u8], model: &str) -> AssistantMessage {
         let mut frames = Frames::default();
         let mut stream = W::Stream::new(model);
-        for frame in frames.push(bytes, spec(wire).sentinel).unwrap() {
+        for frame in frames.push(bytes, spec(wire).sentinel.as_deref()).unwrap() {
             drop(stream.on(frame).unwrap());
         }
         stream.finish()

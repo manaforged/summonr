@@ -52,7 +52,7 @@ fn file(root: &Path) -> PathBuf {
         .map_or_else(|| root.join(".summonr").join(FILE), |dir| dir.join(FILE))
 }
 
-fn doc(root: &Path) -> store::Doc<store::PrettyJson<Marks>> {
+fn doc(root: &Path) -> store::Doc<store::Json<Marks>> {
     store::Doc::new(
         file(root),
         store::Durability::Renamed,
@@ -67,38 +67,30 @@ pub(crate) fn load(root: &Path) -> Marks {
 
 impl Hunk {
     pub(crate) fn body(&self) -> &str {
-        self.patch
-            .match_indices("@@ ")
-            .find(|(at, _)| *at == 0 || self.patch.as_bytes()[at - 1] == b'\n')
-            .map_or(self.patch.as_str(), |(at, _)| &self.patch[at..])
+        let offset = diff::parse_hunks(&self.patch)
+            .first()
+            .map_or(0, |hunk| hunk.offset);
+        &self.patch[offset..]
     }
 }
 
 pub(crate) fn split(path: &str, patch: &str) -> Vec<Hunk> {
-    let mut head = String::new();
-    let mut bodies: Vec<String> = Vec::new();
-    for line in patch.lines() {
-        if line.starts_with("@@ ") {
-            bodies.push(String::new());
-        }
-        let target = bodies.last_mut().unwrap_or(&mut head);
-        target.push_str(line);
-        target.push('\n');
-    }
-    bodies
+    let parsed = diff::parse_hunks(patch);
+    let head = &patch[..parsed.first().map_or(0, |hunk| hunk.offset)];
+    parsed
         .into_iter()
-        .map(|body| {
-            let header = body.lines().next().unwrap_or_default().to_string();
+        .map(|hunk| {
             let mut hash = Fnv64::default();
             hash.write(path.as_bytes());
-            for line in body.lines().skip(1) {
+            for line in hunk.body.lines().skip(1) {
                 hash.write_u8(b'\n');
                 hash.write(line.as_bytes());
             }
+            let newline = if hunk.body.ends_with('\n') { "" } else { "\n" };
             Hunk {
                 id: format!("{:016x}", hash.finish()),
-                header,
-                patch: format!("{head}{body}"),
+                header: hunk.header.to_string(),
+                patch: format!("{head}{}{newline}", hunk.body),
             }
         })
         .collect()

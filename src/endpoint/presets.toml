@@ -159,7 +159,7 @@ aliases = { "grok" = "grok-4.7", "grok-4-7" = "grok-4.7", "grok4.7" = "grok-4.7"
 oauth = "supergrok"
 opencode_ids = ["xai"]
 prompt_cache_key = true
-cache_header = "x-grok-conv-id"
+session_headers = { "x-grok-conv-id" = "session_id" }
 
 [preset.reasoning]
 off = "unsupported"
@@ -205,7 +205,7 @@ off = "unsupported"
 
 [[preset]]
 name = "openrouter"
-cache_header = "x-session-id"
+session_headers = { "x-session-id" = "session_id" }
 base_url = "https://openrouter.ai/api/v1"
 model = "openai/gpt-4o"
 env_keys = ["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"]
@@ -428,7 +428,7 @@ off = "none"
 
 [[preset]]
 name = "fireworks"
-cache_header = "x-session-affinity"
+session_headers = { "x-session-affinity" = "session_id" }
 base_url = "https://api.fireworks.ai/inference/v1"
 model = ""
 env_keys = ["FIREWORKS_API_KEY"]
@@ -520,7 +520,8 @@ base_url = "https://opencode.ai/inference/v1"
 model = "glm-5.3-flash"
 env_keys = ["OPENCODE_API_KEY"]
 missing = "run `summonr login opencode-zen` or set OPENCODE_API_KEY"
-opencode = true
+session_headers = { "x-opencode-session" = "session_id", "x-opencode-request" = "request_id" }
+keep_reasoning = true
 opencode_ids = ["opencode"]
 [[preset]]
 name = "go"
@@ -529,7 +530,8 @@ base_url = "https://opencode.ai/zen/go/v1"
 model = "glm-5.3-flash"
 env_keys = ["OPENCODE_GO_API_KEY", "OPENCODE_API_KEY"]
 missing = "run `summonr login go` or set OPENCODE_GO_API_KEY"
-opencode = true
+session_headers = { "x-opencode-session" = "session_id", "x-opencode-request" = "request_id" }
+keep_reasoning = true
 opencode_ids = ["opencode-go"]
 plan = true
 

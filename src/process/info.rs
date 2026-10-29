@@ -1,9 +1,9 @@
 #[cfg(unix)]
 pub(crate) fn table() -> Vec<(u32, u32, String)> {
-    let Ok(output) = std::process::Command::new("ps")
-        .args(["-axo", "pid=,ppid=,command="])
-        .output()
-    else {
+    let Ok(output) = super::output(
+        super::Spec::new("ps", ["-axo", "pid=,ppid=,command="]),
+        None,
+    ) else {
         return Vec::new();
     };
     String::from_utf8_lossy(&output.stdout)
@@ -28,13 +28,13 @@ pub(crate) fn table() -> Vec<(u32, u32, String)> {
 
 #[cfg(unix)]
 fn ps(field: &str, pid: u32) -> Option<String> {
-    std::process::Command::new("ps")
-        .args(["-o", field, "-p"])
-        .arg(pid.to_string())
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    super::output(
+        super::Spec::new("ps", ["-o", field, "-p", &pid.to_string()]),
+        None,
+    )
+    .ok()
+    .filter(|output| output.status.success())
+    .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 #[cfg(unix)]

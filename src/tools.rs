@@ -10,7 +10,7 @@ use summonr_core::error::{Error, Result};
 mod args;
 mod budget;
 pub(crate) use summonr_types::{Abort, Hold, Kept, ToolOutput, progress_text};
-pub use summonr_types::{AbortCode, Event};
+pub use summonr_types::{AbortCode, Event, StepState};
 mod catalog;
 mod dedup;
 pub(crate) use catalog::{Builtin, readonly, retired_op, shaped};
@@ -37,10 +37,6 @@ pub(crate) fn blocking<T>(work: impl FnOnce() -> T) -> T {
     } else {
         work()
     }
-}
-
-pub(crate) fn command_exit_code(output: &str) -> Option<i32> {
-    command::exit_code(output)
 }
 
 pub(crate) struct ToolRegistry {

@@ -115,6 +115,7 @@ fn the_context_meter_draws_no_caption_text() {
                 completion_tokens: 20,
                 reasoning_tokens: 0,
                 cached_tokens: 0,
+                cache_write_tokens: 0,
                 millis: None,
                 prefix_hash: String::new(),
                 cost: None,

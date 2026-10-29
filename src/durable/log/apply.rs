@@ -55,6 +55,7 @@ impl State {
             } => self.apply_charge(usage, reported),
             Line::Summary { text, tail } => self.apply_summary(text, &tail),
             Line::Rewrite { edits } => self.apply_rewrite(edits),
+            Line::Work { work } => self.work = Some(*work),
             end @ (Line::Clear | Line::Close { .. }) => self.apply_end(&end),
         }
     }

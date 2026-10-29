@@ -5,11 +5,8 @@ impl Client {
         endpoint: &crate::endpoint::Endpoint,
         prompt: &mut summonr_auth::Prompt,
     ) -> Result<()> {
-        if wire::spec(endpoint.wire).child() {
-            let program = endpoint.base_url.as_deref().unwrap_or_default();
-            return super::super::agent::AgentClient::new(endpoint, program)
-                .login(prompt)
-                .await;
+        if let Transport::ClaudeCode(agent) = Transport::of(endpoint) {
+            return agent.login(prompt).await;
         }
         let auth = crate::credentials::auth(endpoint)?;
         let http = crate::credentials::http(crate::limits::limits().auth())?;
@@ -44,15 +41,12 @@ impl Client {
             .read(opts.idle_timeout);
         let builder = leyline::Session::builder().timeout(timeouts);
         let mut headers = headers;
-        if opts.opencode
-            && !headers
-                .iter()
-                .any(|(key, _)| key.eq_ignore_ascii_case("x-opencode-session"))
-        {
-            headers.push((
-                "x-opencode-session".to_string(),
-                uuid::Uuid::now_v7().to_string(),
-            ));
+        let named: std::collections::HashSet<String> =
+            headers.iter().map(|(key, _)| key.clone()).collect();
+        for (key, value) in &opts.session_headers {
+            if *value == crate::endpoint::SessionValue::SessionId && !named.contains(key) {
+                headers.push((key.clone(), uuid::Uuid::now_v7().to_string()));
+            }
         }
         let http = builder
             .build()
@@ -67,16 +61,15 @@ impl Client {
             auth,
             body,
             headers,
-            opencode: opts.opencode,
+            session_headers: opts.session_headers,
             keep_reasoning: false,
             assistant_after_tool: false,
             images: true,
             name: String::new(),
             prompt_cache_key: opts.prompt_cache_key,
             cache_ttl: crate::limits::limits().cache_ttl,
-            cache_header: None,
             cache_marks: false,
-            agent: None,
+            transport: wire::codec(opts.wire).map_or(Transport::Classify, |_| Transport::Http),
             wire: opts.wire,
             reasoning: Reasoning::default(),
             idle: opts.idle_timeout,

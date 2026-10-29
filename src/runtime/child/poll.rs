@@ -25,14 +25,8 @@ impl<P: Provider> Loop<P> {
                 .and_then(|id| self.session.child(id))
                 .ok_or_else(|| Error::Tool(format!("unknown child `{id}`")))?;
             return Ok(Execution {
-                output: ToolOutput {
-                    text: serde_json::to_string(&settled)?,
-                    success: matches!(settled.state, ChildState::Completed(_)),
-                    mutated: false,
-                    grant: None,
-                    images: Vec::new(),
-                    patch: None,
-                },
+                output: ToolOutput::ok(serde_json::to_string(&settled)?)
+                    .with_success(matches!(settled.state, ChildState::Completed(_))),
                 usage: Usage::default(),
                 millis: 0,
             });
@@ -53,23 +47,16 @@ impl<P: Provider> Loop<P> {
                 return Err(Error::Tool(format!("unknown child `{id}`")));
             };
             return Ok(Execution {
-                output: ToolOutput {
-                    text: format!(
-                        "child {id}\nstate: running\nelapsed: {}s\nassignment: {}\nlast: {}",
-                        spawned.started.elapsed().as_secs(),
-                        ellipsize(&spawned.record.assignment, LAST_CHARS),
-                        if spawned.last.is_empty() {
-                            "starting"
-                        } else {
-                            spawned.last.as_str()
-                        }
-                    ),
-                    success: true,
-                    mutated: false,
-                    grant: None,
-                    images: Vec::new(),
-                    patch: None,
-                },
+                output: ToolOutput::ok(format!(
+                    "child {id}\nstate: running\nelapsed: {}s\nassignment: {}\nlast: {}",
+                    spawned.started.elapsed().as_secs(),
+                    ellipsize(&spawned.record.assignment, LAST_CHARS),
+                    if spawned.last.is_empty() {
+                        "starting"
+                    } else {
+                        spawned.last.as_str()
+                    }
+                )),
                 usage: Usage::default(),
                 millis: 0,
             });

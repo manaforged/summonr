@@ -7,7 +7,7 @@ use sigil::prelude::{
 };
 
 use super::{App, UNTITLED, section};
-use crate::session::{self, SessionInfo};
+use crate::session::{self, DAY, HOUR, SessionInfo};
 use crate::tui::hub::{Live, Open, Status};
 
 const PREVIEW_CELLS: usize = 36;
@@ -16,8 +16,6 @@ const RENAME: &str = "Rename";
 const DELETE: &str = "Delete";
 const NOW: &str = "now";
 const MINUTE: u64 = 60;
-const HOUR: u64 = 60 * MINUTE;
-const DAY: u64 = 24 * HOUR;
 
 pub(super) fn sessions(app: &App) -> NodeBuilder {
     let live = {

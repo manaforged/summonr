@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::*;
+use crate::tools::args::{nonblank, typed};
 use crate::tools::workspace::write;
 
 #[derive(serde::Deserialize)]
@@ -10,35 +11,51 @@ enum Operation {
     Definition,
 }
 
+#[derive(serde::Deserialize)]
+struct LspArgs {
+    op: Option<String>,
+    path: Option<String>,
+    line: Option<u64>,
+    character: Option<u64>,
+    #[serde(default)]
+    references: bool,
+    new_name: Option<String>,
+}
+
+impl LspArgs {
+    fn path(&self, operation: &str) -> Result<&str> {
+        nonblank(self.path.as_deref())
+            .ok_or_else(|| Error::Tool(format!("{operation} requires a non-empty path")))
+    }
+
+    fn new_name(&self) -> Option<&str> {
+        nonblank(self.new_name.as_deref()).map(str::trim)
+    }
+}
+
 impl ToolRegistry {
     pub(in crate::tools) async fn lsp(&self, args: &Value) -> Result<ToolOutput> {
-        if let Some(operation) = super::super::args::named(args, "op") {
-            return match serde::Deserialize::deserialize(&args["op"]) {
-                Ok(Operation::Diagnostics) => self.diagnostics(args).await,
-                Ok(Operation::Definition) => self.definition(args).await,
+        let args: LspArgs = typed("lsp", args)?;
+        if let Some(operation) = nonblank(args.op.as_deref()) {
+            return match serde_json::from_value(Value::String(operation.to_string())) {
+                Ok(Operation::Diagnostics) => self.diagnostics(&args).await,
+                Ok(Operation::Definition) => self.definition(&args).await,
                 Err(_) => Err(Error::Tool(format!("unknown lsp operation `{operation}`"))),
             };
         }
-        let placed = |field| {
-            args.get(field)
-                .and_then(Value::as_u64)
-                .is_some_and(|n| n > 0)
-        };
-        if placed("line")
-            || placed("character")
-            || args.get("references").and_then(Value::as_bool) == Some(true)
-            || args
-                .get("new_name")
-                .and_then(Value::as_str)
-                .is_some_and(|name| !name.trim().is_empty())
+        let placed = |field: Option<u64>| field.is_some_and(|n| n > 0);
+        if placed(args.line)
+            || placed(args.character)
+            || args.references
+            || args.new_name().is_some()
         {
-            return self.definition(args).await;
+            return self.definition(&args).await;
         }
-        self.diagnostics(args).await
+        self.diagnostics(&args).await
     }
 
-    pub(in crate::tools) async fn diagnostics(&self, args: &Value) -> Result<ToolOutput> {
-        let path = nonempty_path(args, "diagnostics")?;
+    async fn diagnostics(&self, args: &LspArgs) -> Result<ToolOutput> {
+        let path = args.path("diagnostics")?;
         let file = self.resolve_existing(path)?;
         let request_path = file.clone();
         let (text, _) = self
@@ -52,25 +69,20 @@ impl ToolRegistry {
         Ok(ToolOutput::ok(text))
     }
 
-    pub(in crate::tools) async fn definition(&self, args: &Value) -> Result<ToolOutput> {
-        let path = nonempty_path(args, "definition")?;
+    async fn definition(&self, args: &LspArgs) -> Result<ToolOutput> {
+        let path = args.path("definition")?;
         let file = self.resolve_existing(path)?;
-        let line = object_usize(args, "line").unwrap_or(1).max(1) as u32;
-        let character = match object_usize(args, "character") {
+        let line = args.line.unwrap_or(1).max(1) as u32;
+        let character = match args.character {
             Some(character) => character.max(1) as u32,
-            None if args.get("line").is_some() => {
+            None if args.line.is_some() => {
                 return Err(Error::Tool(format!(
                     "definition at line {line} needs `character`; use the column a read search hit prints (path:line:col)"
                 )));
             }
             None => 1,
         };
-        let new_name = args
-            .get("new_name")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|name| !name.is_empty());
-        if let Some(new_name) = new_name {
+        if let Some(new_name) = args.new_name() {
             if self.policy.is_read_only() {
                 return Err(Error::Denied(
                     "this session is read-only; no rename".to_string(),
@@ -92,7 +104,7 @@ impl ToolRegistry {
                 .await?;
             return self.apply_workspace_edit(&edit);
         }
-        let refs = object_bool(args, "references");
+        let refs = args.references;
         let request_path = file.clone();
         let text = self
             .with_lsp(
@@ -157,9 +169,10 @@ impl ToolRegistry {
         for op in ops {
             names.push(self.plan_lsp_change(op, &mut changes)?);
         }
+        let patch = write::patch_of(&changes);
         self.apply_changes(&changes)?;
         let text = format!("renamed {}", names.join(", "));
-        Ok(ToolOutput::mutated(text, None))
+        Ok(ToolOutput::mutated(text, patch))
     }
 
     fn plan_lsp_change(&self, op: Change, changes: &mut Vec<write::Change>) -> Result<String> {

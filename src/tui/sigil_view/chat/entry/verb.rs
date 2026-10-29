@@ -75,7 +75,7 @@ pub(super) struct Step {
     pub(super) name: String,
     pub(super) call: Call,
     pub(super) index: usize,
-    pub(super) at: Option<usize>,
+    pub(super) at: usize,
 }
 
 impl Step {

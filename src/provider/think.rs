@@ -60,38 +60,3 @@ fn prefix_len(buf: &str, tag: &str) -> usize {
         .find(|&n| buf.ends_with(&tag[..n]))
         .unwrap_or(0)
 }
-
-pub(super) fn split(content: &str) -> (String, String) {
-    let mut text = String::new();
-    let mut thought = String::new();
-    let mut scan = Scan::default();
-    scan.push(
-        content,
-        |part| text.push_str(part),
-        |part| thought.push_str(part),
-    );
-    scan.finish(|part| text.push_str(part), |part| thought.push_str(part));
-    (text, thought)
-}
-
-pub(super) fn hoist(message: &mut super::AssistantMessage) {
-    let Some(content) = message.content.take() else {
-        return;
-    };
-    let (text, thought) = split(&content);
-    message.content = empty_to_none(text);
-    if thought.is_empty() {
-        return;
-    }
-    if message
-        .reasoning_content
-        .as_deref()
-        .is_none_or(str::is_empty)
-    {
-        message.reasoning_content = Some(thought);
-    }
-}
-
-fn empty_to_none(text: String) -> Option<String> {
-    (!text.is_empty()).then_some(text)
-}

@@ -198,10 +198,7 @@ fn secrets_in(text: &str) -> Vec<String> {
 fn shapes() -> &'static [Shape] {
     static LOADED: OnceLock<Shapes> = OnceLock::new();
     &LOADED
-        .get_or_init(|| match toml::from_str(TOKENS) {
-            Ok(shapes) => shapes,
-            Err(error) => panic!("the token shapes table is invalid: {error}"),
-        })
+        .get_or_init(|| summonr_core::table::embedded("token shape", TOKENS))
         .token
 }
 

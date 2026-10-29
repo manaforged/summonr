@@ -21,51 +21,15 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn adjust_setting(&self) {
-        use super::settings::Setting;
-
         if self.picker.open.peek() {
             return;
         }
-        let Some(setting) = self.selected_setting() else {
-            return;
-        };
-        match setting {
-            Setting::Verify => self.toggle_verify(),
-            Setting::Workflow => self.open_workflow(),
-            Setting::Endpoint => self.cycle_endpoint(),
-            Setting::Model => self.begin_model_edit(),
-            Setting::Reasoning => self.set_visibility(|prefs| &mut prefs.reasoning, None),
-            Setting::Tools => self.toggle_tools(),
-            setting => self.adjust_display(setting),
+        if let Some(row) = super::settings::setting_rows(self).get(self.settings.cursor.peek()) {
+            (row.action)(self);
         }
     }
 
-    fn adjust_display(&self, setting: super::settings::Setting) {
-        use super::settings::Setting;
-
-        match setting {
-            Setting::DiffLayout => {
-                self.set_diff_layout(self.model.get().prefs.diff_layout.toggle());
-            }
-            Setting::Mail => self.toggle_mail(),
-            Setting::Module(id) => self.toggle_module(id),
-            Setting::Theme => self.toggle_theme(),
-            Setting::Background => self.toggle_background(),
-            Setting::Notify => self.flip(|prefs| prefs.notify = prefs.notify.toggle()),
-            Setting::Hotkeys => self.open_hotkeys(),
-            Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
-            Setting::Motion => self.toggle_motion(),
-            Setting::Mode => self.cycle_run_mode(),
-            Setting::Verify
-            | Setting::Workflow
-            | Setting::Endpoint
-            | Setting::Model
-            | Setting::Reasoning
-            | Setting::Tools => {}
-        }
-    }
-
-    fn toggle_motion(&self) {
+    pub(in crate::tui::sigil_view) fn toggle_motion(&self) {
         self.flip(|prefs| prefs.animations = !prefs.animations);
         self.splash_since.set(std::time::Instant::now());
         self.splash_revealed.set(!self.model.get().prefs.animations);
@@ -221,7 +185,7 @@ impl App {
         self.refresh();
     }
 
-    fn toggle_background(&self) {
+    pub(in crate::tui::sigil_view) fn toggle_background(&self) {
         self.model_mut(|model| {
             model.prefs.background = model.prefs.background.toggle();
             model.entries.invalidate();

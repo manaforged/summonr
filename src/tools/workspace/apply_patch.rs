@@ -64,6 +64,7 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
             )));
         }
     }
+    let diff = super::write::patch_of(&changes);
     registry.apply_changes(&changes)?;
     if let Some(dest) = changes
         .iter()
@@ -77,7 +78,7 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
     {
         out.push_str(&check.text);
     }
-    Ok(ToolOutput::mutated(out.trim_end().to_string(), None))
+    Ok(ToolOutput::mutated(out.trim_end().to_string(), diff))
 }
 
 impl Section {

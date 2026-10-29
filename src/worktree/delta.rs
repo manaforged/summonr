@@ -82,14 +82,7 @@ fn seal(path: &Path, head: &str, snapshot: &str) -> Result<()> {
 }
 
 fn objects_dir(primary: &Path) -> Result<PathBuf> {
-    let text = diff::git_env(primary, &[], &["rev-parse", "--git-common-dir"])?;
-    let common = PathBuf::from(&text);
-    let common = if common.is_absolute() {
-        common
-    } else {
-        primary.join(common)
-    };
-    Ok(common.join("objects"))
+    Ok(super::common_dir(primary)?.join("objects"))
 }
 
 fn link_names(primary: &Path) -> Vec<String> {

@@ -59,6 +59,6 @@ pub(crate) fn task_progress_reaches_the_next_provider_turn() {
         .find(|message| message["role"] == "user")
         .and_then(|message| message["content"].as_str())
         .expect("current user input");
-    assert!(input.contains("✓ First task"), "{input}");
-    assert!(input.contains("● Second task"), "{input}");
+    assert!(input.contains("Current: Second task"), "{input}");
+    assert!(input.contains("Last completed: First task"), "{input}");
 }

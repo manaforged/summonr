@@ -36,9 +36,8 @@ pub(super) fn pane(
         ]),
         blank(),
     ];
-    let key = key_line(choice, state);
-    if let Some(key) = key {
-        let rejected = tier == Some(State::KeyRejected);
+    let rejected = tier == Some(State::KeyRejected);
+    if let Some(key) = key_line(choice, rejected) {
         nodes.push(kv(
             "key",
             key,
@@ -136,7 +135,7 @@ fn route_choice(
     )
 }
 
-fn key_line(choice: &AuthInfo, state: &str) -> Option<String> {
+fn key_line(choice: &AuthInfo, rejected: bool) -> Option<String> {
     if choice.keyless() {
         return Some("none needed".to_string());
     }
@@ -145,9 +144,9 @@ fn key_line(choice: &AuthInfo, state: &str) -> Option<String> {
     }
     let signed_in = choice.flow.signs_in() && choice.configured;
     Some(match (choice.env, choice.configured && !signed_in) {
-        (Some(env), _) if state == State::KeyRejected.word() => format!("${env} · rejected"),
+        (Some(env), _) if rejected => format!("${env} · rejected"),
         (Some(env), _) => format!("${env}"),
-        (None, true) if state == State::KeyRejected.word() => "stored · rejected".to_string(),
+        (None, true) if rejected => "stored · rejected".to_string(),
         (None, true) => choice
             .source
             .map_or_else(|| "stored".to_string(), |source| source.label().to_string()),

@@ -123,15 +123,10 @@ fn walk_all(query: &Query, shared: &Shared) {
     let Some((first, rest)) = dirs.split_first() else {
         return;
     };
-    let base = if query.no_ignore {
-        Walk::RAW
-    } else {
-        Walk::TOOL
-    };
     let mut walker = Walk {
         guard: Some(crate::policy::protected_read),
         depth: query.depth,
-        ..base
+        ..Walk::tool(query.no_ignore)
     }
     .builder(&first.path);
     walker.git_global(true);

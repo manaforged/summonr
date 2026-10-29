@@ -407,3 +407,118 @@ async fn cancelling_a_reply_preserves_its_job() -> crate::Result<()> {
     );
     Ok(())
 }
+
+fn call(name: &str, arguments: serde_json::Value) -> Reply {
+    Reply::Call(crate::provider::ToolCall {
+        id: name.to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: name.to_string(),
+            arguments: arguments.to_string(),
+        },
+        continuation: None,
+    })
+}
+
+#[tokio::test]
+async fn a_finished_task_list_stays_out_of_the_next_turn() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let status = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(workspace.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    let provider = Scripted::new([
+        call(
+            "todo",
+            serde_json::json!({"items": [
+                {"text": "first", "status": "done"},
+                {"text": "second", "status": "done"}
+            ]}),
+        ),
+        call(
+            "write",
+            serde_json::json!({"path": "done.txt", "content": "done\n"}),
+        ),
+        Reply::Text("done"),
+        Reply::Text("answer"),
+    ]);
+    let sent = provider.sent();
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    loop_
+        .turn_with(UserInput::from("do the tasks"), |_| {})
+        .await
+        .unwrap();
+    loop_
+        .turn_with(UserInput::from("an unrelated question"), |_| {})
+        .await
+        .unwrap();
+    let sent = sent.lock().unwrap();
+    let prompt = &sent.last().unwrap().last().unwrap().content;
+    assert!(prompt.contains("an unrelated question"), "{prompt}");
+    assert!(!prompt.contains("Tasks: 2 done"), "{prompt}");
+    assert!(!prompt.contains("Last completed"), "{prompt}");
+}
+
+#[tokio::test]
+async fn a_finished_turn_leaves_its_failed_jobs_out_of_the_next_turn() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let status = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(workspace.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    let provider = Scripted::new([
+        call(
+            "todo",
+            serde_json::json!({"items": [{"text": "first", "status": "done"}]}),
+        ),
+        call(
+            "write",
+            serde_json::json!({"path": "done.txt", "content": "done\n"}),
+        ),
+        Reply::Text("done"),
+        Reply::Text("answer"),
+    ]);
+    let sent = provider.sent();
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    loop_
+        .turn_with(UserInput::from("do the tasks"), |_| {})
+        .await
+        .unwrap();
+    let (id, path, _, exit) = crate::jobs::prepare(workspace.path()).unwrap();
+    crate::jobs::write(
+        &path,
+        &crate::jobs::Record {
+            id,
+            pid: std::process::id(),
+            command: "old verification".to_string(),
+            workspace: workspace.path().display().to_string(),
+            started: crate::mail::now(),
+            background: true,
+            session: Some(loop_.session_id()),
+            log: None,
+        },
+    )
+    .unwrap();
+    std::fs::write(exit, "1").unwrap();
+    loop_
+        .turn_with(UserInput::from("an unrelated question"), |_| {})
+        .await
+        .unwrap();
+    let sent = sent.lock().unwrap();
+    let prompt = &sent.last().unwrap().last().unwrap().content;
+    assert!(prompt.contains("an unrelated question"), "{prompt}");
+    assert!(!prompt.contains("old verification"), "{prompt}");
+}

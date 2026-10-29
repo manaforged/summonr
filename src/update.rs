@@ -1,10 +1,11 @@
 use std::cmp::Ordering;
+use std::ffi::OsStr;
 use std::path::Path;
-use std::process::Command;
 
 use leyline::Session;
 use sha2::{Digest, Sha256};
 
+use crate::process::{self, Spec};
 use summonr_core::error::{Error, Result};
 
 const RELEASES: &str = "https://github.com/manaforged/summonr/releases";
@@ -174,21 +175,25 @@ fn check(archive: &[u8], listed: &[u8], asset: &str) -> Result<()> {
 fn unpack(stage: &Path, asset: &str, archive: &[u8]) -> Result<()> {
     let file = stage.join(asset);
     std::fs::write(&file, archive)?;
-    let status = Command::new("tar")
-        .arg("-xf")
-        .arg(&file)
-        .arg("-C")
-        .arg(stage)
-        .status()
-        .map_err(|error| Error::Setup(format!("cannot run tar to unpack {asset}: {error}")))?;
-    if !status.success() {
+    let tar = Spec::new(
+        "tar",
+        [
+            OsStr::new("-xf"),
+            file.as_os_str(),
+            OsStr::new("-C"),
+            stage.as_os_str(),
+        ],
+    );
+    let output = process::output(tar, None)
+        .map_err(|error| Error::Setup(format!("cannot unpack {asset}: {error}")))?;
+    if !output.status.success() {
         return Err(Error::Setup(format!("tar could not unpack {asset}")));
     }
     Ok(())
 }
 
 fn runs_as(fresh: &Path, version: &str) -> Result<()> {
-    let output = Command::new(fresh).arg("--version").output();
+    let output = process::output(Spec::new(fresh, ["--version"]), None);
     let printed = output
         .as_ref()
         .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())

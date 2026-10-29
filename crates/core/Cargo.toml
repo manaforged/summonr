@@ -9,8 +9,10 @@ publish = false
 
 [dependencies]
 ignore = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+toml = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 base64 = { workspace = true }

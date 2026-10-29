@@ -60,7 +60,7 @@ pub(crate) fn save_prefs(path: &Path, before: &Prefs, prefs: &Prefs) -> Result<(
             document["mail"] = value(prefs.mail);
             wrote = true;
         }
-        for key in ["plan_mode", "ban_comments", "ban_tests", "last_endpoint"] {
+        for key in super::decode::RETIRED {
             wrote |= document.as_table_mut().remove(key).is_some();
         }
         Ok(wrote)

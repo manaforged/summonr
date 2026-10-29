@@ -8,34 +8,22 @@ use super::wire::Accumulate;
 
 use super::{
     AssistantMessage, Client, CompletionRequest, Partial, StopReason, ToolCall, ToolFunction,
-    ToolKind, think,
+    ToolKind,
 };
 use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 impl Client {
-    pub(super) async fn complete_stream(
-        &self,
-        request: &CompletionRequest<'_>,
-        partial: &mut Partial,
-    ) -> Result<AssistantMessage> {
-        let spec = super::wire::spec(self.wire);
-        if spec.child() {
-            return self.stream_agent(request, partial).await;
-        }
-        (spec.transport.codec()?.stream)(self, request, partial).await
-    }
-
     async fn stream_wire<W: super::wire::Chat>(
         &self,
         request: &CompletionRequest<'_>,
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         let body = self.request(request, true)?;
-        let route = self.cache_header.as_ref().map(|_| request.session.clone());
         let model = body.model().map(str::to_string);
         let bytes = body.to_bytes()?;
         drop(body);
-        let url = format!("{}{}", self.base, W::path(&request.model, true));
+        let spec = super::wire::spec(self.wire);
+        let url = spec.url(&self.base, &request.model);
         let sink = super::capture::Sink::open(self.wire, "stream");
         if let Some(sink) = &sink {
             sink.write("request", &String::from_utf8_lossy(&bytes));
@@ -46,10 +34,7 @@ impl Client {
                 bytes,
                 model.as_deref(),
                 &request.session,
-                super::client::Routing {
-                    cache: route.as_deref(),
-                    beta: W::beta(request),
-                },
+                W::beta(request),
                 true,
             )
             .await?
@@ -77,9 +62,7 @@ impl Client {
             if let Some(sink) = &sink {
                 sink.write("chunk", &String::from_utf8_lossy(&chunk));
             }
-            let parsed = frames
-                .push(&chunk, super::wire::spec(self.wire).sentinel)
-                .map_err(cut)?;
+            let parsed = frames.push(&chunk, spec.sentinel.as_deref()).map_err(cut)?;
             let produced = self.take(&mut state, &parsed, request).map_err(cut)?;
             let thinking = state
                 .state
@@ -170,8 +153,8 @@ struct Spill<'p, S: super::wire::Accumulate> {
 
 impl<S: super::wire::Accumulate> Drop for Spill<'_, S> {
     fn drop(&mut self) {
-        if let Some(state) = self.state.as_mut() {
-            state.spill(self.partial);
+        if let Some(state) = self.state.as_ref() {
+            state.reply().write_partial(self.partial);
         }
     }
 }
@@ -240,8 +223,7 @@ pub(crate) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) -> Result<(
     Ok(())
 }
 
-pub(super) fn finish(mut message: AssistantMessage) -> Result<AssistantMessage> {
-    think::hoist(&mut message);
+pub(super) fn finish(message: AssistantMessage) -> Result<AssistantMessage> {
     validate(
         message.content.as_deref().unwrap_or_default(),
         &message.tool_calls,

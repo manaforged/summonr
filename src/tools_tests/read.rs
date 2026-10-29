@@ -191,3 +191,38 @@ fn a_directory_listing_gives_file_sizes_in_bytes() {
     let listing = run(&tools, "read", serde_json::json!({"path": "."}));
     assert!(listing.contains("calc.py\tfile\t36 bytes"), "{listing}");
 }
+
+#[test]
+fn a_listing_with_no_ignore_shows_skipped_folders() {
+    let (dir, tools) = workspace(&[("main.rs", "fn main() {}\n")]);
+    std::fs::create_dir(dir.path().join("target")).unwrap();
+    std::fs::write(dir.path().join("target/report.json"), "{}\n").unwrap();
+    let hidden = run(
+        &tools,
+        "read",
+        serde_json::json!({"op": "list", "path": "."}),
+    );
+    assert!(!hidden.contains("target/"), "{hidden}");
+    let shown = run(
+        &tools,
+        "read",
+        serde_json::json!({"op": "list", "path": ".", "no_ignore": true}),
+    );
+    assert!(shown.contains("target/"), "{shown}");
+}
+
+#[test]
+fn a_flat_listing_leaves_out_gitignored_files() {
+    let (_dir, tools) = workspace(&[
+        (".gitignore", "secret.env\n"),
+        ("secret.env", "TOKEN=x\n"),
+        ("main.rs", "fn main() {}\n"),
+    ]);
+    let listed = run(
+        &tools,
+        "read",
+        serde_json::json!({"op": "list", "path": "."}),
+    );
+    assert!(listed.contains("main.rs"), "{listed}");
+    assert!(!listed.contains("secret.env"), "{listed}");
+}

@@ -7,7 +7,9 @@ fn row() -> crate::config::OAuth {
         client_secret: None,
         refresh_token: None,
         scope: None,
-        grant: Some("device_code".to_string()),
+        grant: Some(summonr_types::oauth::Lenient::Known(
+            summonr_types::oauth::Grant::DeviceCode,
+        )),
         device_url: Some("https://example.invalid/device".to_string()),
         exchange_url: None,
         ..crate::config::OAuth::default()
@@ -43,7 +45,7 @@ fn a_row_with_no_grant_named_is_a_refresh_login() {
     let mut plain = row();
     plain.grant = None;
     plain.device_url = None;
-    plain.refresh_token = Some("r".to_string());
+    plain.refresh_token = Some(summonr_core::secret::Secret::new("r"));
     assert_eq!(spec(&plain).unwrap().grant, Grant::RefreshToken);
     assert_eq!(flow(&plain), LoginFlow::Key);
     assert_eq!(flow(&row()), LoginFlow::Device);

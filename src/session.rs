@@ -36,8 +36,6 @@ pub struct SessionInfo {
     pub depth: u8,
 }
 
-const PEEK_LINES: usize = 64;
-
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Summary {
     cwd: Option<String>,
@@ -51,22 +49,9 @@ pub(crate) struct Summary {
 
 impl Summary {
     pub(crate) fn peek(path: &Path) -> (Self, bool) {
-        if let Ok(head) = log::head(path, PEEK_LINES) {
-            let (summary, found) = Self::from_lines(&head);
-            if found {
-                return (summary, true);
-            }
-        }
-        match log::scan(path) {
-            Ok(lines) => Self::from_lines(&lines.collect::<Vec<Line>>()),
-            Err(_) => (Self::default(), false),
-        }
-    }
-
-    fn from_lines(lines: &[Line]) -> (Self, bool) {
         let mut summary = Self::default();
-        for line in lines {
-            match line {
+        for line in log::records::<Line>(path, 0).filter_map(Result::ok) {
+            match &line {
                 Line::Session {
                     workspace,
                     model,

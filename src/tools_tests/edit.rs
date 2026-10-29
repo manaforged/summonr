@@ -185,3 +185,39 @@ fn patch_move_destinations_are_checked_before_any_changes() {
     );
     assert!(!dir.path().join("c.txt").exists());
 }
+
+#[test]
+fn an_applied_patch_returns_a_diff_of_every_file_it_changed() {
+    let (_dir, tools) = workspace(&[("a.txt", "one\ntwo\n")]);
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "apply_patch".to_string(),
+            arguments: serde_json::json!({"patch": "*** Begin Patch\n*** Update File: a.txt\n@@\n one\n-two\n+three\n*** Add File: b.txt\n+new\n*** End Patch\n"}).to_string(),
+        },
+        continuation: None,
+    };
+    let output = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call))
+        .unwrap();
+    let patch = output
+        .patch
+        .expect("the result carries the change as a diff");
+    let lines: Vec<&str> = patch.lines().collect();
+    for expected in [
+        "--- a/a.txt",
+        "+++ b/a.txt",
+        "-two",
+        "+three",
+        "--- /dev/null",
+        "+++ b/b.txt",
+        "+new",
+    ] {
+        assert!(lines.contains(&expected), "{expected} missing from {patch}");
+    }
+}

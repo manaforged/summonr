@@ -81,10 +81,10 @@ summonr ignores its own output files when it checks whether the workspace change
 
 | Code | Meaning | Source |
 | --- | --- | --- |
-| 0 | Done. In goal and step modes, the work completed. | `WorkProgress::exit_code` in `src/durable/work/progress.rs` |
+| 0 | Done. In goal and step modes, the work completed. | `WorkProgress::exit_status` in `crates/types/src/work.rs` |
 | 1 | Harness error: bad arguments, config error, or internal failure. The message goes to stderr as `summonr: <error>`. | `src/main.rs` |
-| 2 | A check failed, including a goal or step run that stopped short and then failed the check at exit. | `exit` in `src/main/modes.rs`, `Loop::stop_work` in `src/runtime/turn/checks.rs` |
-| 3 | Stopped short (budget, stall, or aborted turn) with no check configured, or the check passed but the goal was not met. | `src/main/modes.rs`, `src/durable/work/progress.rs` |
+| 2 | A check failed, including a goal or step run that stopped short and then failed the check at exit. | `WorkProgress::exit_status` in `crates/types/src/work.rs` |
+| 3 | Stopped short (budget, stall, or aborted turn) with no check configured, or the check passed but the goal was not met. | `WorkProgress::exit_status` in `crates/types/src/work.rs` |
 | 130 | Interrupted by `SIGINT`, or Ctrl+C on Windows. | `until_signal` in `src/main.rs` |
 | 143 | Terminated by `SIGTERM` (Unix). | `until_signal` in `src/main.rs` |
 | 129 | Hung up by `SIGHUP` (Unix). | `until_signal` in `src/main.rs` |
@@ -112,7 +112,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `delta` | `text` |
 | `reasoning` | `text` |
 | `note` | `text` |
-| `usage` | `prompt_tokens`, `completion_tokens`, `reasoning_tokens`, `cached_tokens`, optional `millis`, `prefix_hash`, `cost` |
+| `usage` | `prompt_tokens`, `completion_tokens`, `reasoning_tokens`, `cached_tokens`, `cache_write_tokens` (prompt tokens written to the provider cache), optional `millis`, `prefix_hash`, `cost` |
 | `unreported` | `tokens` |
 | `mail` | `from`, `text` |
 | `aborted` | `code` (`time_budget`, `token_budget`, `interrupted`, `cancelled`, or `error`), `reason` (free text) |
@@ -134,7 +134,7 @@ A step that contains ``Run `CMD` `` is gated on `CMD` and on `.summonr/check.tom
 2. Document the flag in README.md.
 ```
 
-Step mode also prints `{"type":"step","index":N,"total":N,"state":"...","check":...}`. On a `start` event, `check` holds the step's `Run` commands joined with ` && `, or null when the step has none.
+Step mode also prints `{"type":"step","index":N,"total":N,"state":"...","check":...}`. `state` is `start`, `check passed`, `check failed`, or `done`. On a `start` event, `check` holds the step's `Run` commands joined with ` && `, or null when the step has none.
 
 With `--json`, a run that fails with exit code 1 or ends on a signal prints a last `aborted` event: code `error` with the message, or code `interrupted`.
 
@@ -172,7 +172,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
   - `~/.summonr/credentials.toml`: stored keys.
   - `~/.summonr/sessions/<id>/session.jsonl`: the session log.
   - `~/.summonr/skills/<name>/SKILL.md`, `~/.summonr/bin/<name>/`.
-- Key lookup order: the endpoint's environment variable, then `credentials.toml`, then `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message unless it is local or keyless. `SUMMONR_API_KEY` applies only with `SUMMONR_BASE_URL`.
+- Key lookup order: a built-in endpoint uses its environment variable, then `credentials.toml` (its own entry, then one it shares with a sibling endpoint), then `api_key` in `config.toml`, then the built-in default. An endpoint you define uses `api_key` in `config.toml`, then `credentials.toml`, then the environment variable of a known host at the same `base_url`. An endpoint with no key fails with the missing-key message unless it is local or keyless. `SUMMONR_API_KEY` applies only with `SUMMONR_BASE_URL`.
 - `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`. Use one key, not both. The checks decide exit code 2. The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. If the check file changes during a run anyway, summonr restores it, a `note` event says so, and the run keeps the check it loaded at start.
 - A file that summonr's own stdout or stderr is redirected to, for example `--json > ci/events.jsonl` inside the repository, never counts as a change.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't widen it.

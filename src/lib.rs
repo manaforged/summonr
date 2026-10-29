@@ -127,7 +127,7 @@ pub const INDEX_ENTRY: &str = tools::INDEX_ENTRY;
 pub fn index_files(root: &std::path::Path) -> i32 {
     i32::from(tools::build_file_index(root).is_err())
 }
-pub use tools::{AbortCode, Event, ToolResult, attach, run_tool};
+pub use tools::{AbortCode, Event, StepState, ToolResult, attach, run_tool};
 pub use verify::{Receipt, check_commands};
 pub use worktree::{
     Tree, add as add_worktree, finish as finish_worktree, in_git, list as list_worktrees,

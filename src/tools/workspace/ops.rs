@@ -222,9 +222,9 @@ pub(super) fn replace_text_patch(
         });
     }
     let (byte, line_index) = if global_matches == 1 {
-        let byte = text.find(old).ok_or_else(|| {
-            Error::Tool("replace_text.old disappeared while resolving the edit".to_string())
-        })?;
+        let byte = text
+            .find(old)
+            .ok_or_else(|| Error::Tool("old disappeared while resolving the edit".to_string()))?;
         (
             byte,
             text[..byte].bytes().filter(|byte| *byte == b'\n').count(),
@@ -260,7 +260,7 @@ fn tagged_match(text: &str, tag: &str, old: &str) -> Result<(usize, usize)> {
         .collect::<Vec<_>>();
     if matches.len() != 1 {
         return Err(Error::Tool(format!(
-            "replace_text.old must start exactly once on the anchored line; found {}",
+            "old must start exactly once on the anchored line; found {}",
             matches.len()
         )));
     }
@@ -376,7 +376,7 @@ fn replace_patch(
 
 fn insert_patch(text: &str, tag: &str, body: &str) -> Result<Patch> {
     if body.is_empty() {
-        return Err(Error::Tool("insert_after.text is empty".to_string()));
+        return Err(Error::Tool("text is empty".to_string()));
     }
     let (anchor, _) = resolve_span(text, tag, None)?;
     Ok(Patch {

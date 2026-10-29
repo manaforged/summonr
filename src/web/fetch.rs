@@ -1,4 +1,5 @@
-use std::net::{IpAddr, ToSocketAddrs};
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::sync::LazyLock;
 
 use leyline::http::StatusCode;
 use leyline::{Response, Session};
@@ -6,10 +7,28 @@ use url::Url;
 
 use super::results::markup::{Space, attr, collapse, decode, strip, text};
 use super::{Format, Search};
-use crate::browser::wall::WALL;
 use summonr_core::error::{Error, Result};
 
 pub(crate) const OUT_MAX: usize = 32 * 1024;
+
+const PRIVATE_HOSTS: &[&str] = &[
+    "localhost",
+    "localhost.",
+    "*.localhost",
+    "*.local",
+    "*.internal",
+    "127.0.0.1",
+    "0.0.0.0",
+    "[::1]",
+    "metadata.google.internal",
+];
+
+pub(crate) static PRIVATE_URL_PATTERNS: LazyLock<Vec<String>> = LazyLock::new(|| {
+    PRIVATE_HOSTS
+        .iter()
+        .flat_map(|host| [format!("*://{host}/*"), format!("*://{host}:*/*")])
+        .collect()
+});
 
 fn header(url: &Url, body: &str) -> String {
     format!("web_fetch {url}\n{body}")
@@ -19,19 +38,14 @@ impl Search {
     pub(crate) async fn fetch(&self, raw: &str, format: Format) -> Result<String> {
         let url = check_url(raw)?;
         let host = url.host_str().unwrap_or("").to_string();
-        let lookup = {
-            let host = host.clone();
-            tokio::task::spawn_blocking(move || super::fetch_targets(&host))
-                .await
-                .unwrap_or(Err(()))
-        };
-        let addrs =
-            lookup.map_err(|()| Error::Tool("web_fetch: that host is not allowed".to_string()))?;
+        let addrs = public_targets(&host)
+            .await
+            .ok_or_else(|| Error::Tool("web_fetch: that host is not allowed".to_string()))?;
         let session = super::pinned_session(&host, &addrs)?;
         let response = Self::request(&session, &url).await?;
         if let Some(browser) = self
             .browser()
-            .filter(|_| WALL.status(response.status().as_u16()))
+            .filter(|_| super::wall().status(response.status().as_u16()))
         {
             return Ok(header(&url, &browser.render(&url, format).await?));
         }
@@ -48,7 +62,7 @@ impl Search {
             return Err(Error::Tool("web_fetch: binary body".to_string()));
         }
         let body = page_body(&text, &ctype, format);
-        if let Some(browser) = self.browser().filter(|_| WALL.body(&body, &text)) {
+        if let Some(browser) = self.browser().filter(|_| super::wall().body(&body, &text)) {
             return Ok(header(&url, &browser.render(&url, format).await?));
         }
         Ok(header(&url, &body))
@@ -128,19 +142,20 @@ pub(super) fn host_blocked(host: &str) -> bool {
         .trim_matches(|c| c == '[' || c == ']')
         .trim_end_matches('.')
         .to_ascii_lowercase();
-    if host.is_empty()
-        || host == "localhost"
-        || host.ends_with(".localhost")
-        || host.ends_with(".local")
-        || host.ends_with(".internal")
-        || host == "metadata.google.internal"
-    {
+    if host.is_empty() {
         return true;
     }
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        return ip_blocked(ip);
-    }
-    false
+    // complexity: bounded by the fixed PRIVATE_HOSTS list
+    let named = PRIVATE_HOSTS.iter().any(|entry| {
+        let entry = entry
+            .trim_matches(|c| c == '[' || c == ']')
+            .trim_end_matches('.');
+        match entry.strip_prefix('*') {
+            Some(suffix) => host.ends_with(suffix),
+            None => host == entry,
+        }
+    });
+    named || host.parse::<IpAddr>().is_ok_and(ip_blocked)
 }
 
 pub(super) fn ip_blocked(ip: IpAddr) -> bool {
@@ -167,14 +182,20 @@ pub(super) fn ip_blocked(ip: IpAddr) -> bool {
     }
 }
 
-pub(super) fn resolves_blocked(host: &str) -> bool {
-    if host.parse::<IpAddr>().is_ok() {
-        return false;
-    }
-    (host, 443).to_socket_addrs().map_or(true, |addrs| {
-        let addrs: Vec<_> = addrs.collect();
-        addrs.is_empty() || addrs.iter().any(|addr| ip_blocked(addr.ip()))
-    })
+pub(super) fn fetch_targets(host: &str) -> Option<Vec<SocketAddr>> {
+    let addrs: Vec<SocketAddr> = match host.parse::<IpAddr>() {
+        Ok(ip) => vec![SocketAddr::new(ip, 443)],
+        Err(_) => (host, 443).to_socket_addrs().ok()?.collect(),
+    };
+    (!addrs.is_empty() && !addrs.iter().any(|addr| ip_blocked(addr.ip()))).then_some(addrs)
+}
+
+pub(super) async fn public_targets(host: &str) -> Option<Vec<SocketAddr>> {
+    let host = host.to_string();
+    tokio::task::spawn_blocking(move || fetch_targets(&host))
+        .await
+        .ok()
+        .flatten()
 }
 
 fn looks_like_html(text: &str) -> bool {

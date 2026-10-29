@@ -27,7 +27,7 @@ pub(super) fn row(
             },
         );
     pick(index == selected, title, detail).pointer_down(move |event| {
-        choose.sessions.selected.set(index);
+        choose.sessions.list.select(index);
         choose.resume_session();
         event.stop_propagation();
     })

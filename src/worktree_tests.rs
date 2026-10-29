@@ -363,3 +363,24 @@ fn a_linked_worktree_is_found_from_its_own_folder_and_the_primary_is_not() {
     assert!(super::tree_at(&primary).is_none());
     drop(tree.remove());
 }
+
+#[test]
+fn a_sweep_reports_the_worktrees_it_pruned() {
+    let (root, primary) = repo();
+    let gone = root.path().join("gone");
+    git(
+        &primary,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "gone",
+            gone.to_str().unwrap(),
+        ],
+    );
+    std::fs::remove_dir_all(&gone).unwrap();
+    let pruned = super::sweep(&primary).unwrap();
+    let names: Vec<_> = pruned.iter().filter_map(|path| path.file_name()).collect();
+    assert_eq!(names, ["gone"]);
+}

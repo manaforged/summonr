@@ -1,7 +1,8 @@
+use std::ffi::OsStr;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use super::Stat;
+use crate::process::{self, Spec};
 use summonr_core::error::{Error, Result};
 
 pub(super) fn numstat_row(line: &str) -> Option<Stat> {
@@ -40,24 +41,11 @@ pub(crate) fn git_output(
     args: &[&str],
     input: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
-    use std::io::Write;
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .envs(env.iter().copied())
-        .args(args)
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-        stdin.write_all(input)?;
-    }
-    let output = child.wait_with_output()?;
+    let argv = [OsStr::new("-C"), root.as_os_str()]
+        .into_iter()
+        .chain(args.iter().map(OsStr::new));
+    let spec = Spec::new("git", argv).envs(env.iter().copied());
+    let output = process::output(spec, input)?;
     let different = args.starts_with(&["diff", "--no-index"])
         && output.status.code() == Some(1)
         && !output.stdout.is_empty();

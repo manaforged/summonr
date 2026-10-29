@@ -6,7 +6,7 @@ mod client;
 mod frame;
 mod peer;
 
-pub(crate) use client::{Client, Spawn};
+pub(crate) use client::{Client, HttpTransport, Pending, Spawn};
 pub(crate) use frame::{Framing, Lines, Read};
 pub(crate) use peer::{Lsp, Peer};
 
@@ -132,10 +132,18 @@ pub(crate) fn notice<'a>(method: &str, params: &'a Value) -> Notice<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Ask {
     Roots,
     Elicit,
     Ping,
+    Initialize,
+    Authenticate,
+    SessionNew,
+    SessionPrompt,
+    SessionCancel,
+    ToolsList,
+    ToolsCall,
     Unsupported,
 }
 
@@ -144,7 +152,27 @@ pub(crate) fn ask(method: &str) -> Ask {
         "roots/list" => Ask::Roots,
         "elicitation/create" => Ask::Elicit,
         "ping" => Ask::Ping,
+        "initialize" => Ask::Initialize,
+        "authenticate" => Ask::Authenticate,
+        "session/new" => Ask::SessionNew,
+        "session/prompt" => Ask::SessionPrompt,
+        "session/cancel" => Ask::SessionCancel,
+        "tools/list" => Ask::ToolsList,
+        "tools/call" => Ask::ToolsCall,
         _unsupported => Ask::Unsupported,
+    }
+}
+
+pub(crate) const NOT_FOUND: i64 = -32601;
+
+pub(crate) fn unsupported(method: &str) -> (i64, String) {
+    (NOT_FOUND, format!("{method} is not supported"))
+}
+
+pub(crate) fn answer(id: &Value, reply: std::result::Result<Value, (i64, String)>) -> Value {
+    match reply {
+        Ok(result) => response(id, result),
+        Err((code, message)) => failure(id, code, &message),
     }
 }
 

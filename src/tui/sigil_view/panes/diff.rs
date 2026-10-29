@@ -170,7 +170,11 @@ fn file_actions(app: &App, changed: &PaneRow) -> NodeBuilder {
     if reverted > 0 {
         row = row.child(chip(format!("{reverted} reverted"), Tone::Warn));
     }
-    let label = if app.revert_armed.peek().as_deref() == Some(target.as_str()) {
+    let label = if app
+        .revert_armed
+        .peek()
+        .is_some_and(|(armed, _)| armed == target)
+    {
         CONFIRM_REVERT
     } else {
         REVERT_FILE

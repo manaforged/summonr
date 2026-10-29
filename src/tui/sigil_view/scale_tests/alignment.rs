@@ -8,6 +8,7 @@ fn usage(tokens: u32) -> Event {
         completion_tokens: 0,
         reasoning_tokens: 0,
         cached_tokens: 0,
+        cache_write_tokens: 0,
         millis: None,
         prefix_hash: String::new(),
         cost: None,

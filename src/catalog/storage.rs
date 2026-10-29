@@ -1,32 +1,12 @@
 use std::any::Any;
-use std::marker::PhantomData;
-use std::path::Path;
 use std::sync::Arc;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::durable::store::{self, Codec, Doc, Durability, Encode, Invalid, Wait};
+use crate::durable::store::{self, Doc, Durability, Encode, Invalid, Json, Wait};
 use summonr_core::dirs::summonr_home;
-use summonr_core::error::{Error, Result};
-
-pub(super) struct Json<T>(PhantomData<fn() -> T>);
-
-impl<T: Serialize + DeserializeOwned> Codec for Json<T> {
-    type Value = T;
-
-    fn decode(path: &Path, text: &str) -> Result<T> {
-        let file = path.file_name().unwrap_or_default().to_string_lossy();
-        serde_json::from_str(text)
-            .map_err(|error| Error::Config(format!("{file} is corrupt: {error}")))
-    }
-}
-
-impl<T: Serialize + DeserializeOwned> Encode for Json<T> {
-    fn encode(value: &T) -> Result<String> {
-        Ok(serde_json::to_string(value)?)
-    }
-}
+use summonr_core::error::Result;
 
 pub(super) fn doc<T: Serialize + DeserializeOwned + Default>(file: &str) -> Result<Doc<Json<T>>> {
     Ok(Doc::new(

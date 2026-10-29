@@ -1,6 +1,8 @@
 use std::ffi::{OsStr, OsString};
+use std::io::{Read, Write as _};
 use std::path::PathBuf;
-use std::process::Stdio;
+use std::process::{Output, Stdio};
+use std::time::{Duration, Instant};
 
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
 
@@ -209,6 +211,69 @@ pub(crate) fn spawn_blocking(spec: Spec) -> Result<std::process::Child> {
     spec.command()
         .spawn()
         .map_err(|error| failed(&program, &error))
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Deadline {
+    pub(crate) after: Duration,
+    pub(crate) poll: Duration,
+}
+
+pub(crate) fn output(spec: Spec, input: Option<&[u8]>) -> Result<Output> {
+    Ok(fed(spec, input)?.wait_with_output()?)
+}
+
+pub(crate) fn output_within(
+    spec: Spec,
+    input: Option<&[u8]>,
+    deadline: Deadline,
+) -> Result<Option<Output>> {
+    let mut child = fed(spec, input)?;
+    let (closed, wake) = std::sync::mpsc::channel();
+    let stdout = drain(child.stdout.take(), closed.clone());
+    let stderr = drain(child.stderr.take(), closed.clone());
+    let until = Instant::now() + deadline.after;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= until {
+            drop(child.kill());
+            drop(child.wait());
+            return Ok(None);
+        }
+        wake.recv_timeout(deadline.poll).unwrap_or(());
+    };
+    Ok(Some(Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    }))
+}
+
+fn fed(mut spec: Spec, input: Option<&[u8]>) -> Result<std::process::Child> {
+    spec.stdin = if input.is_some() { Io::Pipe } else { Io::Null };
+    spec.stdout = Io::Pipe;
+    spec.stderr = Io::Pipe;
+    let mut child = spawn_blocking(spec)?;
+    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+        stdin.write_all(input)?;
+    }
+    Ok(child)
+}
+
+fn drain(
+    pipe: Option<impl Read + Send + 'static>,
+    closed: std::sync::mpsc::Sender<()>,
+) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut pipe) = pipe {
+            drop(pipe.read_to_end(&mut bytes));
+        }
+        closed.send(()).unwrap_or(());
+        bytes
+    })
 }
 
 pub(crate) fn pipes(

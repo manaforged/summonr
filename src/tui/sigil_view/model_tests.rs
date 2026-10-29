@@ -30,7 +30,7 @@ fn singles(model: &Model) -> usize {
     model
         .entries
         .iter()
-        .filter(|entry| matches!(entry, Entry::Tool { .. }))
+        .filter(|entry| matches!(entry, Entry::Tool { calls, .. } if calls.len() == 1))
         .count()
 }
 
@@ -39,7 +39,9 @@ fn group_sizes(model: &Model) -> Vec<usize> {
         .entries
         .iter()
         .filter_map(|entry| {
-            if let Entry::ToolGroup { calls, .. } = entry {
+            if let Entry::Tool { calls, .. } = entry
+                && calls.len() > 1
+            {
                 Some(calls.len())
             } else {
                 None
@@ -58,8 +60,8 @@ fn repeated_reads_fold_into_one_group_and_each_call_finishes() {
     assert_eq!(group_sizes(&model), vec![3]);
     assert_eq!(singles(&model), 0);
     let finished = model.entries.iter().any(|entry| {
-        matches!(entry, Entry::ToolGroup { calls, .. }
-            if calls.iter().all(|call| matches!(call.state, ToolState::Ok) && call.output.starts_with("output")))
+        matches!(entry, Entry::Tool { calls, .. }
+            if calls.len() > 1 && calls.iter().all(|call| matches!(call.state, ToolState::Ok) && call.output.starts_with("output")))
     });
     assert!(finished, "every grouped call must carry its own result");
 }
@@ -129,6 +131,7 @@ fn children_spawned_in_the_same_minute_keep_their_own_tokens() {
                 completion_tokens: 0,
                 reasoning_tokens: 0,
                 cached_tokens: 0,
+                cache_write_tokens: 0,
                 millis: None,
                 prefix_hash: String::new(),
                 cost: None,
@@ -229,6 +232,7 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
                 completion_tokens: 2,
                 reasoning_tokens: 0,
                 cached_tokens: 0,
+                cache_write_tokens: 0,
                 millis: None,
                 prefix_hash: String::new(),
                 cost: Some(0.25),

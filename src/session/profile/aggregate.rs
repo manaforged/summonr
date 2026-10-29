@@ -20,8 +20,13 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
     let mut totals = Totals::default();
     for path in &paths {
         let mut scan = SessionScan::default();
-        match log::each(path, |line| totals.add_line(&mut scan, line)) {
-            Ok(()) => totals.read_sessions += 1,
+        match log::records(path, 0).collect::<std::io::Result<Vec<_>>>() {
+            Ok(lines) => {
+                for line in lines {
+                    totals.add_line(&mut scan, line);
+                }
+                totals.read_sessions += 1;
+            }
             Err(_) => totals.skipped += 1,
         }
     }
@@ -36,11 +41,8 @@ struct Totals {
     failed: usize,
     millis: u64,
     chars: u64,
-    input: u64,
-    output: u64,
-    cached: u64,
-    warm_input: u64,
-    warm_cached: u64,
+    usage: Usage,
+    warm: Usage,
     health: Health,
     first_edit: Vec<usize>,
     rss: Vec<u64>,
@@ -73,12 +75,9 @@ impl Totals {
     }
 
     fn add_assistant(&mut self, scan: &mut SessionScan, tool_calls: Vec<ToolCall>, usage: &Usage) {
-        self.input = self.input.saturating_add(usage.input);
-        self.output = self.output.saturating_add(usage.output);
-        self.cached = self.cached.saturating_add(usage.cached);
+        self.usage.add(*usage);
         if scan.warm {
-            self.warm_input = self.warm_input.saturating_add(usage.input);
-            self.warm_cached = self.warm_cached.saturating_add(usage.cached);
+            self.warm.add(*usage);
         } else {
             scan.warm = true;
         }
@@ -128,15 +127,15 @@ impl Totals {
             &mut out,
             format!(
                 "tokens  in {} ({} cached · cold {} hit · warm {} hit · uncached {}) · out {}",
-                count(self.input),
-                share(self.cached, self.input),
+                count(self.usage.input),
+                share(self.usage.cached, self.usage.input),
                 share(
-                    self.cached.saturating_sub(self.warm_cached),
-                    self.input.saturating_sub(self.warm_input)
+                    self.usage.cached.saturating_sub(self.warm.cached),
+                    self.usage.input.saturating_sub(self.warm.input)
                 ),
-                share(self.warm_cached, self.warm_input),
-                count(self.input.saturating_sub(self.cached)),
-                count(self.output)
+                share(self.warm.cached, self.warm.input),
+                count(self.usage.input.saturating_sub(self.usage.cached)),
+                count(self.usage.output)
             ),
         );
         for text in self.health.lines() {

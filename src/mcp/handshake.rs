@@ -6,15 +6,15 @@ use summonr_core::error::{Error, Result};
 const PROTOCOL: &str = "2025-11-25";
 const SUPPORTED: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
-pub(super) fn initialize_params(name: &str, capabilities: Value) -> Value {
+fn initialize_params(name: &str) -> Value {
     json!({
         "protocolVersion": PROTOCOL,
-        "capabilities": capabilities,
+        "capabilities": {"roots": {"listChanged": false}, "elicitation": {"form": {}}},
         "clientInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")}
     })
 }
 
-pub(super) fn validate_version(result: &Value) -> Result<String> {
+fn validate_version(result: &Value) -> Result<String> {
     let version = result
         .get("protocolVersion")
         .and_then(Value::as_str)
@@ -28,18 +28,23 @@ pub(super) fn validate_version(result: &Value) -> Result<String> {
     )))
 }
 
-pub(super) async fn initialize_stdio(
+pub(super) async fn initialize(
     client: &mut Client,
     name: &str,
     on_note: impl FnMut(Notice<'_>),
-) -> Result<Value> {
-    let capabilities = json!({"roots": {"listChanged": false}, "elicitation": {"form": {}}});
-    let result = client
-        .call("initialize", initialize_params(name, capabilities), on_note)
-        .await?;
-    validate_version(&result)?;
+) -> Result<Option<Value>> {
+    let result = match client
+        .attempt("initialize", initialize_params(name), on_note)
+        .await?
+    {
+        Ok(result) => result,
+        Err(_refused) if !client.piped() => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let version = validate_version(&result)?;
+    client.agree(&version);
     client
         .notify("notifications/initialized", json!({}))
         .await?;
-    Ok(result)
+    Ok(Some(result))
 }

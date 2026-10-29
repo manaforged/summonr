@@ -4,6 +4,7 @@ use notify::event::{EventKind, ModifyKind};
 use notify::{Event as NotifyEvent, RecursiveMode, Watcher};
 
 use crate::diff;
+use crate::process::{self, Spec};
 use summonr_core::error::{Error, Result};
 use summonr_core::walk::Walk;
 
@@ -96,16 +97,16 @@ pub(super) fn unignored(root: &Path, mut paths: Vec<String>) -> Vec<String> {
 }
 
 pub(super) fn clipboard() -> Result<Vec<u8>> {
-    let out = std::process::Command::new("/usr/bin/osascript")
-        .args(["-e", "get the clipboard as «class PNGf»"])
-        .stderr(std::process::Stdio::null())
-        .output()?;
+    let script = Spec::new(
+        "/usr/bin/osascript",
+        ["-e", "get the clipboard as «class PNGf»"],
+    );
+    let out = process::output(script, None)?;
     if out.status.success() {
         return png(&String::from_utf8_lossy(&out.stdout));
     }
-    let out = std::process::Command::new("/usr/bin/pbpaste")
-        .stderr(std::process::Stdio::null())
-        .output()?;
+    let paste = Spec::new("/usr/bin/pbpaste", Vec::<&str>::new());
+    let out = process::output(paste, None)?;
     if !out.status.success() {
         return Err(Error::Tool(format!("pbpaste failed: {}", out.status)));
     }

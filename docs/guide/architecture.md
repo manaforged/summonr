@@ -42,13 +42,13 @@ summonr keeps the plan between turns. Each turn is "do this item" plus whatever 
 
 summonr does not ask the model whether the job is done. The gate is `.summonr/check.toml`: each command exits 0 or the turn fails. In goal mode a judge completion only answers continue or stop, and only after the gates are already green (`src/goal.rs`).
 
-Crash the process. Run the same command. Resume reads the session log back into the conversation and `work.json` back into Work, then aborts the turn the dead process left open (`src/durable/driver.rs`). Resume checks the saved plan and workspace against the requested job. If the gate list changes during a turn, summonr selects the current checks before verification.
+Crash the process. Run the same command. Resume reads the session log back into the conversation and its last Work record back into Work, then aborts the turn the dead process left open (`src/durable/driver.rs`). Resume checks the saved plan and workspace against the requested job. If the gate list changes during a turn, summonr selects the current checks before verification.
 
 ## Where it lives in the tree
 
 | Piece | File |
 |---|---|
-| Work, Plan, stages, `work.json` | `src/durable/work.rs` |
+| Work, Plan, stages | `src/durable/work.rs` |
 | Session driver: the one seam `Loop` talks to | `src/durable/driver.rs` |
 | Conversation log, `session.jsonl` | `src/durable/log.rs` |
 | Changed files (Git listing or directory walk, content fingerprints) | `src/durable/tree.rs` |
@@ -61,7 +61,7 @@ Crash the process. Run the same command. Resume reads the session log back into 
 | Runtime tool availability and schema limits | `src/tools/catalog.rs` |
 | argv (`summonr grok`, `--steps`, `--goal`) | `src/main/cli.rs` |
 
-A session is `~/.summonr/sessions/<id>/session.jsonl` (append-only messages) plus `work.json` (the job, rewritten atomically after every transition). The changed-file manifest reads Git without writing it. Outside Git, it walks the directory. Both paths fingerprint file content, permissions, and symlink targets in addition to recording size and modification time.
+A session is `~/.summonr/sessions/<id>/session.jsonl`: append-only messages, plus a Work record for the job after every transition. The changed-file manifest reads Git without writing it. Outside Git, it walks the directory. Both paths fingerprint file content, permissions, and symlink targets in addition to recording size and modification time.
 
 On disk the names are summonr: `~/.summonr/sessions/`, `.summonr/jobs/`, `SUMMONR_*`.
 

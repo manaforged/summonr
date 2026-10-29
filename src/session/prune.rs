@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
-use crate::durable::log;
+use crate::durable::{log, store};
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -15,10 +15,7 @@ pub fn prune(keep: Option<&str>) {
         let Ok(home) = summonr_core::dirs::summonr_home() else {
             return;
         };
-        let retain = crate::config::file()
-            .map_or(crate::limits::limits().session_retain(), |file| {
-                file.sessions.retain()
-            });
+        let retain = store::retention();
         let period = Duration::from_secs(crate::limits::limits().session_prune_secs);
         if due(&home, period, SystemTime::now()) {
             prune_in(&home, retain, keep.as_deref(), SystemTime::now());
@@ -36,7 +33,7 @@ pub(crate) fn due(home: &Path, period: Duration, now: SystemTime) -> bool {
     if recent || !log::sessions_dir(home).is_dir() {
         return false;
     }
-    crate::durable::store::write(&stamp, b"", crate::durable::store::Durability::Renamed).is_ok()
+    store::write(&stamp, b"", store::Durability::Renamed).is_ok()
 }
 
 pub(crate) fn prune_in(
@@ -45,31 +42,13 @@ pub(crate) fn prune_in(
     keep: Option<&str>,
     now: SystemTime,
 ) -> usize {
-    let mut removed = 0;
-    for entry in summonr_core::walk::children(&log::sessions_dir(home)) {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        let stale = entry.file_type().is_ok_and(|kind| kind.is_dir())
-            && keep != Some(name)
-            && last_activity(&path)
-                .is_some_and(|last| now.duration_since(last).is_ok_and(|age| age > retain));
-        if stale && super::catalog::remove_in(home, name).is_ok() {
-            removed += 1;
-        }
-    }
-    removed
-}
-
-fn last_activity(dir: &Path) -> Option<SystemTime> {
-    let own = std::fs::metadata(dir).and_then(|meta| meta.modified()).ok();
-    std::fs::read_dir(dir)
-        .ok()?
-        .flatten()
-        .filter_map(|entry| entry.metadata().and_then(|meta| meta.modified()).ok())
-        .chain(own)
-        .max()
+    store::retain(&log::sessions_dir(home), retain, now, |path| {
+        let name = path.file_name().and_then(|name| name.to_str());
+        path.is_dir()
+            && name.is_some_and(|name| {
+                keep != Some(name) && super::catalog::remove_in(home, name).is_ok()
+            })
+    })
 }
 
 #[cfg(test)]

@@ -1,18 +1,19 @@
 use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::provider::{AssistantMessage, CompletionRequest, Partial, Reasoning};
+use crate::provider::{AssistantMessage, CompletionRequest, Reasoning};
 use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 pub(crate) mod anthropic;
 pub(crate) mod completions;
 pub(crate) mod decisions;
 pub(crate) mod gemini;
+pub(crate) mod reply;
 pub(crate) mod responses;
 mod spec;
 pub(crate) mod traits;
 
-pub(crate) use spec::{ImageBudget, spec};
+pub(crate) use spec::{Codec, ImageBudget, codec, spec};
 
 pub(crate) fn tools(
     call: &CompletionRequest<'_>,
@@ -183,10 +184,20 @@ impl Slot {
     }
 }
 
+pub(crate) struct Encoding<'a> {
+    pub(crate) reasoning: &'a Reasoning,
+    pub(crate) cache: crate::endpoint::CacheTtl,
+    pub(crate) stream: bool,
+    pub(crate) keep_reasoning: bool,
+    pub(crate) cache_marks: bool,
+    pub(crate) assistant_after_tool: bool,
+}
+
 pub(crate) struct Wired {
     pub(crate) head: Value,
     pub(crate) messages: Option<Vec<u8>>,
     pub(crate) slot: Slot,
+    pub(crate) raw_tools: bool,
 }
 
 impl Wired {
@@ -195,6 +206,7 @@ impl Wired {
             head,
             messages: None,
             slot: Slot::Messages,
+            raw_tools: false,
         }
     }
 
@@ -212,9 +224,9 @@ pub(crate) trait Accumulate {
     fn new(model: &str) -> Self;
     fn on(&mut self, frame: &str) -> Result<Vec<Delta>>;
     fn finish(self) -> AssistantMessage;
-    fn spill(&mut self, partial: &mut Partial);
+    fn reply(&self) -> &reply::ReplyBuilder;
     fn finished(&self) -> bool {
-        false
+        self.reply().finished
     }
     fn thinking(&self) -> bool {
         false
@@ -224,26 +236,24 @@ pub(crate) trait Accumulate {
 pub(crate) trait Chat {
     type Stream: Accumulate + Send;
 
-    fn path(model: &str, stream: bool) -> String;
-
     fn beta(_call: &CompletionRequest<'_>) -> Option<(&'static str, &'static str)> {
         None
     }
 
-    fn body(
-        call: &CompletionRequest<'_>,
-        reasoning: &Reasoning,
-        cache: crate::endpoint::CacheTtl,
-        stream: bool,
-    ) -> Result<Wired>;
+    fn body(call: &CompletionRequest<'_>, encoding: &Encoding<'_>) -> Result<Wired>;
 
     #[cfg(test)]
     fn request(call: &CompletionRequest<'_>, stream: bool) -> Result<Value> {
         Self::body(
             call,
-            &call.reasoning,
-            crate::limits::limits().cache_ttl,
-            stream,
+            &Encoding {
+                reasoning: &call.reasoning,
+                cache: crate::limits::limits().cache_ttl,
+                stream,
+                keep_reasoning: false,
+                cache_marks: false,
+                assistant_after_tool: false,
+            },
         )?
         .value()
     }

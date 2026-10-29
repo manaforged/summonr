@@ -75,6 +75,8 @@ struct Record {
     line: log::Line,
 }
 
+impl log::Fill for Record {}
+
 pub(super) struct Journals(Sidecar<Entry>);
 
 impl Journals {
@@ -107,20 +109,25 @@ impl Journals {
 }
 
 fn full(path: &Path, size: Option<u64>) -> Option<Entry> {
-    let mut entry = Entry {
+    let entry = Entry {
         size,
         resume: Some(Resume { model: None }),
         ..Entry::default()
     };
-    log::fold(path, 0, |record| entry.add(record)).ok()?;
-    Some(entry)
+    extend(entry, path, 0)
 }
 
 fn grown(cached: &Entry, path: &Path, size: u64) -> Option<Entry> {
     cached.resume.as_ref()?;
-    let mut entry = cached.clone();
-    log::fold(path, cached.size?, |record| entry.add(record)).ok()?;
+    let mut entry = extend(cached.clone(), path, cached.size?)?;
     entry.size = Some(size);
+    Some(entry)
+}
+
+fn extend(mut entry: Entry, path: &Path, from: u64) -> Option<Entry> {
+    for record in log::records(path, from) {
+        entry.add(record.ok()?);
+    }
     Some(entry)
 }
 

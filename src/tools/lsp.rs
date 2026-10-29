@@ -11,7 +11,8 @@ use crate::process::Env;
 use crate::rpc::{Client, Framing, Peer, Spawn};
 use summonr_core::error::{Error, Result};
 
-use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize};
+use super::workspace::edit;
+use super::{ToolOutput, ToolRegistry};
 
 pub(super) struct Conn {
     client: Client,
@@ -134,7 +135,7 @@ impl Conn {
         character: u32,
     ) -> Result<String> {
         let result = self
-            .at(path, line, character, "textDocument/definition")
+            .at(path, line, character, "textDocument/definition", json!({}))
             .await?;
         let locations = locations(&result);
         if locations.is_empty() {
@@ -149,19 +150,9 @@ impl Conn {
         line: u32,
         character: u32,
     ) -> Result<String> {
-        self.did_open(path).await?;
-        let uri = file_uri(path)?;
-        let line = line.saturating_sub(1);
-        let character = character.saturating_sub(1);
+        let context = json!({ "context": { "includeDeclaration": true } });
         let result = self
-            .request(
-                "textDocument/references",
-                json!({
-                    "textDocument": { "uri": uri },
-                    "position": { "line": line, "character": character },
-                    "context": { "includeDeclaration": true }
-                }),
-            )
+            .at(path, line, character, "textDocument/references", context)
             .await?;
         let locations = locations(&result);
         if locations.is_empty() {
@@ -177,34 +168,26 @@ impl Conn {
         character: u32,
         new_name: &str,
     ) -> Result<Value> {
-        self.did_open(path).await?;
-        let uri = file_uri(path)?;
-        let line = line.saturating_sub(1);
-        let character = character.saturating_sub(1);
-        self.request(
-            "textDocument/rename",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": { "line": line, "character": character },
-                "newName": new_name
-            }),
-        )
-        .await
+        let name = json!({ "newName": new_name });
+        self.at(path, line, character, "textDocument/rename", name)
+            .await
     }
 
-    async fn at(&mut self, path: &Path, line: u32, character: u32, method: &str) -> Result<Value> {
+    async fn at(
+        &mut self,
+        path: &Path,
+        line: u32,
+        character: u32,
+        method: &str,
+        mut params: Value,
+    ) -> Result<Value> {
         self.did_open(path).await?;
-        let uri = file_uri(path)?;
-        let line = line.saturating_sub(1);
-        let character = character.saturating_sub(1);
-        self.request(
-            method,
-            json!({
-                "textDocument": { "uri": uri },
-                "position": { "line": line, "character": character }
-            }),
-        )
-        .await
+        params["textDocument"] = json!({ "uri": file_uri(path)? });
+        params["position"] = json!({
+            "line": line.saturating_sub(1),
+            "character": character.saturating_sub(1)
+        });
+        self.request(method, params).await
     }
 
     async fn did_open(&mut self, path: &Path) -> Result<()> {

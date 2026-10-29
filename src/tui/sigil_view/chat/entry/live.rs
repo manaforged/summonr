@@ -41,8 +41,7 @@ pub(in crate::tui::sigil_view) fn mark(entry: &Entry, live: bool, rev: u64, pros
     let (size, state) = match entry {
         Entry::Assistant { text, done } => (text_size(text, prose), u8::from(*done)),
         Entry::Thinking(text) => (text_size(text, prose), 0),
-        Entry::Tool { call, .. } => (call.output.len(), bits(&call.state, call.expanded)),
-        Entry::ToolGroup { calls, .. } => {
+        Entry::Tool { calls, .. } => {
             let size: usize = calls.iter().map(|call| call.output.len()).sum();
             let state = calls.iter().fold(0_u8, |state, call| {
                 state
@@ -64,7 +63,7 @@ pub(in crate::tui::sigil_view) fn mark(entry: &Entry, live: bool, rev: u64, pros
     (size, state, live, rev)
 }
 
-fn bits(state: &ToolState, expanded: bool) -> u8 {
+pub(in crate::tui::sigil_view) fn bits(state: &ToolState, expanded: bool) -> u8 {
     u8::from(!matches!(state, ToolState::Running))
         + u8::from(matches!(state, ToolState::Failed))
         + u8::from(expanded) * 4
@@ -80,7 +79,10 @@ fn text_size(text: &str, prose: Prose) -> usize {
 #[cfg(feature = "gui")]
 fn children(entry: &Entry, model: &Model) -> u64 {
     use std::hash::{Hash, Hasher};
-    let Entry::Tool { call, .. } = entry else {
+    let Entry::Tool { calls, .. } = entry else {
+        return 0;
+    };
+    let [call] = calls.as_slice() else {
         return 0;
     };
     let mut hasher = std::hash::DefaultHasher::new();

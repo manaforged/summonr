@@ -68,6 +68,7 @@ pub(crate) fn body(
         head: Value::Object(head),
         messages: Some(serde_json::to_vec(&turns)?),
         slot: super::super::Slot::Messages,
+        raw_tools: false,
     })
 }
 

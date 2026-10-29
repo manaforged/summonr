@@ -383,10 +383,8 @@ fn a_search_jump_opens_that_tool_and_keeps_the_saved_setting() {
         let opened = model.entries.iter().any(|entry| {
             matches!(
                 entry,
-                crate::tui::sigil_view::model::Entry::Tool {
-                    call: crate::tui::sigil_view::model::Call { expanded: true, .. },
-                    ..
-                }
+                crate::tui::sigil_view::model::Entry::Tool { calls, .. }
+                    if calls.iter().any(|call| call.expanded)
             )
         });
         state = Some((opened, model.prefs.tools));

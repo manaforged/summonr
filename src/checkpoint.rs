@@ -33,7 +33,7 @@ impl Checkpoints {
         std::fs::create_dir_all(&dir).ok()?;
         let index = dir.join(format!("{session}.index"));
         match &store {
-            Some(store) => init(workspace, store)?,
+            Some(_) => {}
             None if !index.exists() => match crate::diff::layout(workspace) {
                 Some(layout) => seed_from(workspace, &layout, &index),
                 None => seed(workspace, &index),
@@ -50,15 +50,26 @@ impl Checkpoints {
     }
 
     pub(crate) fn capture(&self) -> Result<()> {
-        let tree = self.tree()?;
+        self.capture_to(self.count() + 1)
+    }
+
+    pub(crate) fn capture_to(&self, turn: usize) -> Result<()> {
         let mut trees = self.trees();
-        trees.push(tree);
+        if trees.len() >= turn {
+            return Ok(());
+        }
+        let tree = self.tree()?;
+        trees.resize(turn, tree);
         store::write(
             &self.log,
             format!("{}\n", trees.join("\n")),
             store::Durability::Renamed,
         )?;
         Ok(())
+    }
+
+    pub(crate) fn deferred(&self) -> bool {
+        self.store.is_some()
     }
 
     pub(crate) fn count(&self) -> usize {
@@ -115,6 +126,10 @@ impl Checkpoints {
     }
 
     pub(crate) fn tree(&self) -> Result<String> {
+        if let Some(store) = &self.store {
+            init(&self.root, store)
+                .ok_or_else(|| Error::Config("cannot create the checkpoint store".to_string()))?;
+        }
         let skipped = self.skipped()?;
         let excluded: Vec<String> = skipped
             .iter()

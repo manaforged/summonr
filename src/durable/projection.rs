@@ -10,6 +10,7 @@ fn usage_event(usage: &Usage, prefix_hash: String, cost: Option<f64>) -> Option<
         completion_tokens: Tokens::clamp(usage.output),
         reasoning_tokens: Tokens::clamp(usage.reasoning),
         cached_tokens: Tokens::clamp(usage.cached),
+        cache_write_tokens: Tokens::clamp(usage.written),
         millis: Some(usage.millis),
         prefix_hash,
         cost,

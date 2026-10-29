@@ -1,5 +1,6 @@
 use super::*;
 use crate::provider::Effort;
+use crate::provider::StopReason;
 
 use crate::provider::{
     FunctionDefinition, Image, Message, Role, ToolCall, ToolDefinition, ToolFunction, ToolKind,
@@ -156,10 +157,12 @@ fn asking_for_effort_turns_thinking_on_and_never_sends_a_budget() {
 
 #[test]
 fn every_stop_reason_maps_to_one_of_ours() {
-    assert_eq!(stop_reason(Some("tool_use")), StopReason::ToolCalls);
-    assert_eq!(stop_reason(Some("max_tokens")), StopReason::Length);
-    assert_eq!(stop_reason(Some("end_turn")), StopReason::Stop);
-    assert_eq!(stop_reason(None), StopReason::Stop);
+    let stop = |raw: &str| {
+        crate::provider::client::ending(crate::endpoint::Wire::Anthropic, raw, "").unwrap()
+    };
+    assert_eq!(stop("tool_use"), Some(StopReason::ToolCalls));
+    assert_eq!(stop("max_tokens"), Some(StopReason::Length));
+    assert_eq!(stop("end_turn"), Some(StopReason::Stop));
 }
 
 fn asked<'a>(model: &str, messages: &'a [Message], effort: Effort) -> CompletionRequest<'a> {
@@ -265,9 +268,14 @@ fn replayed_tool_arguments_keep_the_bytes_the_model_produced() {
     assistant.tool_calls = vec![call("toolu_1", "lookup", r#"{"zeta": 1.50, "alpha":"x"}"#)];
     let wired = <Wire as crate::provider::wire::Chat>::body(
         &ask(&[message(Role::User, "go"), assistant]),
-        &Reasoning::default(),
-        crate::limits::limits().cache_ttl,
-        false,
+        &crate::provider::wire::Encoding {
+            reasoning: &crate::provider::Reasoning::default(),
+            cache: crate::limits::limits().cache_ttl,
+            stream: false,
+            keep_reasoning: false,
+            cache_marks: false,
+            assistant_after_tool: false,
+        },
     )
     .unwrap();
     let raw = String::from_utf8(wired.messages.expect("the history is written raw")).unwrap();

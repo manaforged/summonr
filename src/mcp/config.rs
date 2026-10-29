@@ -7,11 +7,12 @@ use serde_json::Value;
 use crate::config;
 use crate::durable::store;
 use summonr_core::error::{Error, Result};
+use summonr_core::secret::Secret;
 
 pub(crate) use summonr_types::mcp::Entry;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Launch {
+pub enum Launch {
     Stdio {
         command: String,
         args: Vec<String>,
@@ -75,7 +76,11 @@ fn server(entry: Entry, name: String, workspace: &Path) -> Result<Option<Server>
 
 fn launch(entry: Entry) -> Option<Launch> {
     let user_config = entry.user_config;
-    let fill = |text: &str| expand_vars(text, &user_config);
+    let vars = crate::plugins::Vars {
+        user_config: Some(&user_config),
+        ..Default::default()
+    };
+    let fill = |text: &str| crate::plugins::expand(text, &vars);
     if let Some(url) = entry.url {
         let mut headers: Vec<(String, String)> = entry
             .headers
@@ -92,8 +97,14 @@ fn launch(entry: Entry) -> Option<Launch> {
             headers,
             auth: entry.auth.map(|auth| {
                 Box::new(crate::config::OAuth {
-                    client_secret: auth.client_secret.as_deref().map(&fill),
-                    refresh_token: auth.refresh_token.as_deref().map(&fill),
+                    client_secret: auth
+                        .client_secret
+                        .as_ref()
+                        .map(|value| Secret::new(fill(value.expose()))),
+                    refresh_token: auth
+                        .refresh_token
+                        .as_ref()
+                        .map(|value| Secret::new(fill(value.expose()))),
                     ..auth
                 })
             }),
@@ -262,16 +273,6 @@ fn toml_map(value: Option<&toml::Value>) -> BTreeMap<String, Entry> {
         .flatten()
         .filter_map(|(name, entry)| Some((name.clone(), entry.clone().try_into().ok()?)))
         .collect()
-}
-
-pub(crate) fn expand_vars(text: &str, user_config: &BTreeMap<String, String>) -> String {
-    let text = scan(text, crate::plugins::USER_CONFIG, |name| {
-        user_config.get(name).cloned()
-    });
-    scan(&text, "${", |inner| {
-        let (name, fallback) = inner.split_once(":-").unwrap_or((inner, ""));
-        Some(std::env::var(name).unwrap_or_else(|_unset| fallback.to_string()))
-    })
 }
 
 pub(crate) fn scan(text: &str, open: &str, resolve: impl Fn(&str) -> Option<String>) -> String {

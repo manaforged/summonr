@@ -1,8 +1,8 @@
 #[cfg(test)]
 use serde_json::Value;
 
-use super::{Chat, Wired};
-use crate::provider::{CompletionRequest, Reasoning, StopReason};
+use super::{Chat, Encoding, Wired};
+use crate::provider::CompletionRequest;
 
 mod body;
 
@@ -11,6 +11,7 @@ mod part;
 mod stream;
 
 pub(crate) use event::Counted;
+pub(crate) use event::{Change, Event, EventKind, Opened, Shape};
 pub(crate) use stream::Stream;
 
 const BINDING: &str = "thinking-binding-controls-2026-08-01";
@@ -20,21 +21,15 @@ pub(crate) struct Wire;
 impl Chat for Wire {
     type Stream = Stream;
 
-    fn path(_model: &str, _stream: bool) -> String {
-        "/messages".to_string()
-    }
-
     fn beta(call: &CompletionRequest<'_>) -> Option<(&'static str, &'static str)> {
         call.traits.bound.then_some(("anthropic-beta", BINDING))
     }
 
     fn body(
         call: &CompletionRequest<'_>,
-        reasoning: &Reasoning,
-        cache: crate::endpoint::CacheTtl,
-        stream: bool,
+        encoding: &Encoding<'_>,
     ) -> summonr_core::error::Result<Wired> {
-        body::body(call, reasoning, cache, stream)
+        body::body(call, encoding.reasoning, encoding.cache, encoding.stream)
     }
 }
 
@@ -50,14 +45,6 @@ pub(crate) fn request(
         stream,
     )?
     .value()
-}
-
-pub(crate) fn stop_reason(raw: Option<&str>) -> StopReason {
-    match raw {
-        Some("tool_use") => StopReason::ToolCalls,
-        Some("max_tokens" | "model_context_window_exceeded") => StopReason::Length,
-        _ => StopReason::Stop,
-    }
 }
 
 #[cfg(test)]

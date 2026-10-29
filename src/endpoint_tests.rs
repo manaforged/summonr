@@ -261,7 +261,10 @@ fn another_tools_credential_files_are_never_read() {
     for name in ["openrouter", "kimi-intl"] {
         let endpoint =
             super::keys::fill_key(super::keys::builtin(name).expect("built-in"), false).unwrap();
-        let key = endpoint.api_key.unwrap_or_default();
+        let key = endpoint
+            .api_key
+            .map(|key| key.expose().to_string())
+            .unwrap_or_default();
         assert!(
             !key.contains("from-opencode") && !key.contains("from-cli"),
             "{name} took another tool's key: {key}"
@@ -286,4 +289,13 @@ fn a_preset_row_keeps_its_configured_idle_timeout() {
         toml::from_str("[endpoint.grok]\nidle_timeout_secs = 7\n").unwrap();
     let endpoint = super::resolve::selection(&file, "grok").unwrap();
     assert_eq!(endpoint.idle_timeout_secs, Some(7));
+}
+
+#[test]
+fn a_built_in_login_with_a_misspelled_grant_is_rejected() {
+    let table = "[[preset]]\nname = \"x\"\nbase_url = \"https://x.example/v1\"\noauth = \"lab\"\n\n[oauth.lab]\ntoken_url = \"https://x.example/token\"\nclient_id = \"id\"\nlabel = \"Lab\"\ngrant = \"devce_code\"\n";
+    let Err(error) = super::preset::table(table) else {
+        panic!("a misspelled grant must not load");
+    };
+    assert!(error.contains("devce_code"), "got {error}");
 }

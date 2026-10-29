@@ -152,11 +152,6 @@ pub(crate) fn write_denied(path: &str) -> String {
     )
 }
 
-#[must_use]
-pub(crate) fn outside_hint(path: &str) -> String {
-    write_denied(path)
-}
-
 pub(crate) fn grant_from_error(error: &Error) -> Option<Grant> {
     match error {
         Error::Denied(message) | Error::Tool(message) => grant_from_message(message),

@@ -39,20 +39,3 @@ pub(in crate::tui) fn export_session(
     };
     drop(ui.send(message));
 }
-
-pub(in crate::tui) fn announce(
-    ui: &UnboundedSender<Msg>,
-    steering: &Arc<crate::runtime::Steering>,
-    followups: &VecDeque<UserInput>,
-    deferred: &VecDeque<Cmd>,
-) {
-    let steering = steering.lock().map_or(0, |queue| queue.len());
-    let held = deferred
-        .iter()
-        .filter(|command| matches!(command, Cmd::Submit(_)))
-        .count();
-    drop(ui.send(Msg::Queued {
-        steering,
-        queued: followups.len() + held,
-    }));
-}

@@ -42,10 +42,7 @@ impl Worker {
             auto_reply: info.prefs.mail,
             pending_mail: false,
             last_auto: Instant::now(),
-            steering,
-            deferred: VecDeque::new(),
-            followups: VecDeque::new(),
-            carried: 0,
+            queue: super::steer::InputQueue::new(steering),
             last_turn: None,
             mail_error: None,
             last_diff: None,
@@ -73,20 +70,20 @@ impl Worker {
     }
 
     pub(super) async fn next(&mut self) -> Option<Cmd> {
-        if self.carried > 0
-            && let Some(next) = self.followups.pop_front()
+        if self.queue.carried > 0
+            && let Some(next) = self.queue.followups.pop_front()
         {
-            self.carried -= 1;
-            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
+            self.queue.carried -= 1;
+            self.queue.announce(&self.ui);
             return Some(Cmd::Submit(next));
         }
-        self.carried = 0;
-        if let Some(command) = self.deferred.pop_front() {
-            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
+        self.queue.carried = 0;
+        if let Some(command) = self.queue.deferred.pop_front() {
+            self.queue.announce(&self.ui);
             return Some(command);
         }
-        if let Some(next) = self.followups.pop_front() {
-            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
+        if let Some(next) = self.queue.followups.pop_front() {
+            self.queue.announce(&self.ui);
             return Some(Cmd::Submit(next));
         }
         let command = self.cmd.recv().await?;

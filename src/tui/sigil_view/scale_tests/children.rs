@@ -123,7 +123,10 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
         );
     })
     .join("\n");
-    assert_eq!(running, "2", "the Subagents header and one row");
+    assert_eq!(
+        running, "3",
+        "one blank row, the Subagents header, and one child row"
+    );
     assert!(
         done.contains("◆ Subagent completed in") && done.contains("“Benchmark startup and RSS”"),
         "{done}"
@@ -394,6 +397,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
                 completion_tokens: 2,
                 reasoning_tokens: 0,
                 cached_tokens: 0,
+                cache_write_tokens: 0,
                 millis: None,
                 prefix_hash: String::new(),
                 cost: Some(0.25),
@@ -408,11 +412,11 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         );
         assert_eq!(panels::strip_rows(&app), 0);
         app.toggle_agents();
-        assert_eq!(panels::strip_rows(&app), 2);
-        app.clear_agent(&crate::child::tag(IDS[1]));
-        assert_eq!(panels::strip_rows(&app), 2);
-        spawn(&app, IDS[2], "New background child", true);
         assert_eq!(panels::strip_rows(&app), 3);
+        app.clear_agent(&crate::child::tag(IDS[1]));
+        assert_eq!(panels::strip_rows(&app), 3);
+        spawn(&app, IDS[2], "New background child", true);
+        assert_eq!(panels::strip_rows(&app), 4);
         act(
             &app,
             IDS[0],

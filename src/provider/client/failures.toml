@@ -56,3 +56,48 @@ status = [
     { marker = "rate", code = 429 },
     { marker = "exhausted", code = 429 },
 ]
+
+[stop.anthropic]
+"*" = "stop"
+tool_use = "tool_calls"
+max_tokens = "length"
+model_context_window_exceeded = "length"
+refusal = "blocked"
+pause_turn = "blocked"
+
+[stop.completions]
+"*" = "other"
+stop = "stop"
+tool_calls = "tool_calls"
+length = "length"
+model_context_window_exceeded = "length"
+content_filter = "blocked"
+sensitive = "blocked"
+network_error = "server"
+insufficient_system_resource = "server"
+
+[stop.gemini]
+"*" = "other"
+STOP = "stop"
+MAX_TOKENS = "length"
+SAFETY = "blocked"
+RECITATION = "blocked"
+LANGUAGE = "blocked"
+BLOCKLIST = "blocked"
+PROHIBITED_CONTENT = "blocked"
+SPII = "blocked"
+IMAGE_SAFETY = "blocked"
+IMAGE_PROHIBITED_CONTENT = "blocked"
+IMAGE_RECITATION = "blocked"
+ESCALATION = "blocked"
+PUP_LIMITED_DISABLED = "blocked"
+MALFORMED_FUNCTION_CALL = "malformed_tool_call"
+UNEXPECTED_TOOL_CALL = "http"
+TOO_MANY_TOOL_CALLS = "http"
+MISSING_THOUGHT_SIGNATURE = "http"
+MALFORMED_RESPONSE = "http"
+
+[stop.responses]
+completed = "stop"
+max_output_tokens = "length"
+content_filter = "blocked"

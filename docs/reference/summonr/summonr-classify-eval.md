@@ -62,7 +62,7 @@
 
 ### `load`
 
-<pre>pub fn <a href="#load">load</a>(text: &amp;str) -&gt; <a href="summonr.html#result">Result</a>&lt;Vec&lt;<a href="#example">Example</a>&gt;&gt;</pre>
+<pre>pub fn <a href="#load">load</a>(text: &amp;str) -&gt; Result&lt;Vec&lt;<a href="#example">Example</a>&gt;&gt;</pre>
 
 
 ### `report`
@@ -72,12 +72,12 @@
 
 ### `run`
 
-<pre>pub async fn <a href="#run">run</a>(endpoint: &amp;<a href="summonr.html#endpoint">Endpoint</a>, examples: &amp;[<a href="#example">Example</a>], questions: &amp;BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;, budget: usize) -&gt; <a href="summonr.html#result">Result</a>&lt;Vec&lt;<a href="summonr-classify.html#decision">Decision</a>&gt;&gt;</pre>
+<pre>pub async fn <a href="#run">run</a>(endpoint: &amp;<a href="summonr.html#endpoint">Endpoint</a>, examples: &amp;[<a href="#example">Example</a>], questions: &amp;BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;, budget: usize) -&gt; Result&lt;Vec&lt;<a href="summonr-classify.html#decision">Decision</a>&gt;&gt;</pre>
 
 
 ### `score`
 
-<pre>pub fn <a href="#score">score</a>(examples: &amp;[<a href="#example">Example</a>], decided: &amp;[<a href="summonr-classify.html#decision">Decision</a>], floor: f64) -&gt; <a href="summonr.html#result">Result</a>&lt;(BTreeMap&lt;String, <a href="#tally">Tally</a>&gt;, Vec&lt;<a href="#miss">Miss</a>&gt;)&gt;</pre>
+<pre>pub fn <a href="#score">score</a>(examples: &amp;[<a href="#example">Example</a>], decided: &amp;[<a href="summonr-classify.html#decision">Decision</a>], floor: f64) -&gt; Result&lt;(BTreeMap&lt;String, <a href="#tally">Tally</a>&gt;, Vec&lt;<a href="#miss">Miss</a>&gt;)&gt;</pre>
 
 
 ---

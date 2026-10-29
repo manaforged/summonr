@@ -52,6 +52,7 @@ image_bytes = 5000000
 mcp_log_max_bytes = 1048576
 mcp_frame_max_bytes = 4194304
 lsp_frame_max_bytes = 16777216
+agent_line_max_bytes = 268435456
 mcp_stderr_tail_bytes = 2048
 hook_output_max_bytes = 65536
 gateway_stderr_tail_lines = 20

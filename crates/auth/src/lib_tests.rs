@@ -1,4 +1,5 @@
 use super::*;
+use summonr_core::secret::Secret;
 
 struct Memory(Mutex<std::collections::BTreeMap<String, String>>);
 
@@ -54,7 +55,12 @@ async fn whole(stream: &mut tokio::net::TcpStream) -> String {
 
 #[test]
 fn a_key_endpoint_needs_no_login_and_is_ready() {
-    let auth = Auth::new(Method::Key("k".into()), Scheme::Bearer, "zai", store());
+    let auth = Auth::new(
+        Method::Key(Secret::new("k")),
+        Scheme::Bearer,
+        "zai",
+        store(),
+    );
     assert!(!auth.is_login());
     assert!(auth.ready().unwrap());
 }
@@ -356,7 +362,7 @@ async fn a_rejected_token_without_expiry_is_refreshed_on_the_next_call() {
     let spec = Spec {
         token_url,
         client_id: "cli".into(),
-        refresh_token: Some("seed".into()),
+        refresh_token: Some(Secret::new("seed")),
         ..Spec::default()
     };
     let auth = Auth::new(Method::Login(Box::new(spec)), Scheme::Bearer, "svc", kept);
@@ -384,4 +390,56 @@ fn a_token_reply_without_an_access_token_names_no_secret() {
     let error = error.to_string();
     assert!(!error.contains("secret"), "got {error}");
     assert!(error.contains("refresh_token"), "got {error}");
+}
+
+#[tokio::test]
+async fn a_refused_token_exchange_never_repeats_the_reply_body() {
+    let issuer = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("the mock token endpoint binds");
+    let base = format!(
+        "http://{}",
+        issuer.local_addr().expect("the mock has an address")
+    );
+    let served = tokio::spawn(async move {
+        for (status, body) in [
+            ("200 OK", r#"{"access_token":"first"}"#),
+            (
+                "401 Unauthorized",
+                r#"{"error":"invalid_grant","access_token":"exchange-reply-value"}"#,
+            ),
+        ] {
+            let (mut stream, _) = issuer.accept().await.expect("the mock takes a call");
+            whole(&mut stream).await;
+            let reply = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            tokio::io::AsyncWriteExt::write_all(&mut stream, reply.as_bytes())
+                .await
+                .expect("the mock answers");
+        }
+    });
+    let spec = Spec {
+        token_url: format!("{base}/token"),
+        exchange_url: Some(format!("{base}/exchange")),
+        client_id: "cli".into(),
+        refresh_token: Some(Secret::new("seed")),
+        ..Spec::default()
+    };
+    let auth = Auth::new(
+        Method::Login(Box::new(spec)),
+        Scheme::Bearer,
+        "svc",
+        store(),
+    );
+    let http = http(Duration::from_secs(5), Duration::from_secs(5)).expect("a client builds");
+    let error = auth
+        .token(&http)
+        .await
+        .expect_err("a refused exchange fails the sign-in")
+        .to_string();
+    served.await.expect("the mock finishes");
+    assert!(error.contains("invalid_grant"), "got {error}");
+    assert!(!error.contains("exchange-reply-value"), "got {error}");
 }

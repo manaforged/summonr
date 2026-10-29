@@ -4,7 +4,7 @@ use sigil::prelude::{
 
 use super::app::App;
 use super::canvas;
-use super::ui::{Dialog, Hints, Key, Size, pick};
+use super::ui::{Dialog, Hints, Key, List, Size, pick};
 use crate::tui::matching::all_words;
 
 const ROW_MARKER: usize = 2;
@@ -13,35 +13,33 @@ const DIALOG_PADDING: f32 = 16.0;
 #[derive(Clone, Copy)]
 pub(super) struct View {
     pub(super) open: Signal<bool>,
-    pub(super) query: Signal<String>,
+    list: List,
     focus: Signal<u64>,
-    scroll: Signal<f32>,
 }
 
 impl View {
     pub(super) fn new() -> Self {
         Self {
             open: signal(false),
-            query: signal(String::new()),
+            list: List::new(),
             focus: signal(0),
-            scroll: signal(0.0),
         }
     }
 
     pub(super) fn show(self) {
-        self.query.set(String::new());
-        self.scroll.set(0.0);
+        self.list.query.set(String::new());
+        self.list.scroll.set(0.0);
         self.focus.set(self.focus.peek() + 1);
         self.open.set(true);
     }
 }
 
 pub(super) fn shift(app: &App, delta: isize) {
-    let total = lines(app, &app.help.query.peek()).len();
+    let total = lines(app, &app.help.list.query.peek()).len();
     let row = canvas::overlay_list_row();
     let max = total.saturating_sub(visible(app)) as f32 * row;
-    let next = delta as f32 * row + app.help.scroll.peek();
-    app.help.scroll.set(next.clamp(0.0, max));
+    let next = delta as f32 * row + app.help.list.scroll.peek();
+    app.help.list.scroll.set(next.clamp(0.0, max));
 }
 
 fn visible(app: &App) -> usize {
@@ -65,12 +63,8 @@ fn row_cells(cols: u16) -> usize {
 }
 
 pub(super) fn layer(app: App) -> NodeBuilder {
-    let View {
-        query,
-        focus,
-        scroll,
-        ..
-    } = app.help;
+    let View { list, focus, .. } = app.help;
+    let List { query, scroll, .. } = list;
     let keys = app.clone();
     let cols = app.viewport.peek().0;
     let visible = visible(&app) as f32;

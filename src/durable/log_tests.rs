@@ -55,10 +55,17 @@ fn a_resumed_session_keeps_the_reply_phase_and_commentary() {
     };
     std::fs::write(&path, "").unwrap();
     let mut log = Log::open(&path).unwrap();
-    log.append(&answer(Vec::new(), Some(said.clone()))).unwrap();
+    log.append(
+        &answer(Vec::new(), Some(said.clone())),
+        crate::durable::store::Durability::Renamed,
+    )
+    .unwrap();
     drop(log);
     let mut state = State::default();
-    for line in read(&path).unwrap() {
+    for line in records::<Line>(&path, 0)
+        .collect::<io::Result<Vec<_>>>()
+        .unwrap()
+    {
         state.apply(line);
     }
     let last = state.history.last().expect("the reply is in history");
@@ -156,7 +163,9 @@ fn records_skip_a_malformed_line_in_the_middle_of_the_log() {
         "{\"kind\":\"clear\"}\n{\"kind\":\"clear\"\n{\"kind\":\"clear\"}\n",
     )
     .unwrap();
-    let lines = read(&path).unwrap();
+    let lines = records::<Line>(&path, 0)
+        .collect::<io::Result<Vec<_>>>()
+        .unwrap();
     assert_eq!(lines, [Line::Clear, Line::Clear]);
 }
 
@@ -226,15 +235,20 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
         ChildState::Completed(empty),
     ] {
         journal
-            .append(&Line::Child {
-                record: ChildRecord {
-                    state,
-                    ..record.clone()
+            .append(
+                &Line::Child {
+                    record: ChildRecord {
+                        state,
+                        ..record.clone()
+                    },
                 },
-            })
+                crate::durable::store::Durability::Renamed,
+            )
             .expect("child record");
     }
-    let records = read(&path).expect("read journal");
+    let records = records::<Line>(&path, 0)
+        .collect::<io::Result<Vec<_>>>()
+        .expect("read journal");
     assert_eq!(records.len(), 5);
     for (line, expected) in records.into_iter().zip([
         Event::Assistant {
@@ -283,8 +297,25 @@ fn records_after_reads_from_a_line_boundary_and_rejects_a_mid_line_offset() {
     assert_eq!(torn.kind(), std::io::ErrorKind::InvalidData);
 }
 
-fn records_after<T: serde::de::DeserializeOwned>(path: &Path, offset: u64) -> io::Result<Vec<T>> {
-    let mut records = Vec::new();
-    fold(path, offset, |record| records.push(record))?;
-    Ok(records)
+fn records_after<T: Fill>(path: &Path, offset: u64) -> io::Result<Vec<T>> {
+    records(path, offset).collect()
+}
+
+#[test]
+fn a_journal_usage_record_reports_its_cache_writes() {
+    use crate::durable::projection::AssistantEvents;
+    let line: Line = serde_json::from_str(
+        r#"{"kind":"assistant","text":"hi","usage":{"input":100,"output":20,"reasoning":0,"cached":40,"written":7,"millis":5}}"#,
+    )
+    .expect("a journal assistant line parses");
+    let written = line
+        .into_events(AssistantEvents::Skip)
+        .into_iter()
+        .find_map(|event| match event {
+            Event::Usage {
+                cache_write_tokens, ..
+            } => Some(cache_write_tokens),
+            _ => None,
+        });
+    assert_eq!(written, Some(7));
 }

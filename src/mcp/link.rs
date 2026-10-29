@@ -15,7 +15,7 @@ use super::catalog::{self, Listing};
 use super::config::Server;
 use super::conn::Conn;
 use super::status::McpState;
-use super::tool::Tool;
+use super::tool::{self, Tool};
 use super::{Answer, McpProgress, McpUpdate};
 use summonr_types::Form;
 
@@ -37,17 +37,8 @@ impl Link {
             None => Self::list(&server, &workspace, &slot).await?,
         };
         let started = AtomicBool::new(slot.lock().await.is_some());
-        let tools = listing
-            .tools
-            .iter()
-            .filter_map(|item| Tool::parse(&server.name, item))
-            .filter(|tool| {
-                server
-                    .allow
-                    .as_ref()
-                    // complexity: bounded by a BTreeSet lookup, O(log n)
-                    .is_none_or(|allow| allow.contains(&tool.name))
-            })
+        let tools = tool::offered(&server, &listing.tools)
+            .map(|(_, tool)| tool)
             .collect();
         Ok(Arc::new(Self {
             server,
@@ -70,7 +61,7 @@ impl Link {
         supervise::register(ServerKind::Mcp, &server.name, conn.pid(), server.idle, slot);
         let listing = conn.listing().await?;
         catalog::save(&server.key, &listing);
-        conn.ready(server.wait)?;
+        conn.ready(server.wait);
         if server.idle.is_some() {
             *held = None;
         }
@@ -153,7 +144,7 @@ impl Link {
             catalog::save(&self.server.key, &listing);
             self.remember(&listing.tools);
         }
-        conn.ready(self.server.wait)?;
+        conn.ready(self.server.wait);
         supervise::register(
             ServerKind::Mcp,
             &self.server.name,

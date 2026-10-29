@@ -82,14 +82,14 @@ fn form(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> Nod
         Entry::Thinking(text) => message::thinking(&text, prefs.reasoning, live, app),
         Entry::System(body) => message::quiet(body),
         Entry::Aborted(reason) | Entry::Error(reason) => message::error(reason),
-        Entry::Tool { ref name, ref call } if Builtin::is(name, Builtin::Task) => {
-            match child::cards(app, &call.id) {
-                Some(cards) => cards,
-                None => terminal::row(entry, live, prefs, app, index),
-            }
-        }
+        Entry::Tool {
+            ref name,
+            ref calls,
+        } if Builtin::is(name, Builtin::Task) => match child::cards(app, &calls[0].id) {
+            Some(cards) => cards,
+            None => terminal::row(entry, live, prefs, app, index),
+        },
         entry @ (Entry::Tool { .. }
-        | Entry::ToolGroup { .. }
         | Entry::Receipt(_)
         | Entry::Verify { .. }
         | Entry::Mail { .. }

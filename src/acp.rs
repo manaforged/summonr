@@ -8,7 +8,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::endpoint::{self, Endpoint};
 use crate::provider::Client;
-use crate::rpc::{self, Frame, Read};
+use crate::rpc::{self, Ask, Frame, Read};
 use crate::runtime::Loop;
 use crate::tools::Event;
 use summonr_core::error::{Error, Result};
@@ -60,18 +60,24 @@ where
         let Ok(Frame::Request { id, method, params }) = rpc::parse(line) else {
             return;
         };
-        let reply = match method.as_str() {
-            "initialize" => Ok(json!({
+        let reply = match rpc::ask(&method) {
+            Ask::Initialize => Ok(json!({
                 "protocolVersion": 1,
                 "agentCapabilities": {"loadSession": false},
                 "authMethods": []
             })),
-            "authenticate" => Ok(json!({})),
-            "session/new" => self.open(&params),
-            "session/prompt" => self.prompt(&params, input).await,
-            other => Err((-32601, format!("{other} is not supported"))),
+            Ask::Authenticate => Ok(json!({})),
+            Ask::SessionNew => self.open(&params),
+            Ask::SessionPrompt => self.prompt(&params, input).await,
+            Ask::Roots
+            | Ask::Elicit
+            | Ask::Ping
+            | Ask::SessionCancel
+            | Ask::ToolsList
+            | Ask::ToolsCall
+            | Ask::Unsupported => Err(rpc::unsupported(&method)),
         };
-        drop(self.out.send(frame_line(&answer(&id, reply))));
+        drop(self.out.send(frame_line(&rpc::answer(&id, reply))));
     }
 
     fn connect(&self, endpoint: &Endpoint, tag: &Arc<OnceLock<String>>) -> Result<Client> {
@@ -154,14 +160,14 @@ where
                         };
                         match rpc::parse(&line) {
                             Ok(Frame::Notification { method, params })
-                                if method == "session/cancel"
+                                if rpc::ask(&method) == Ask::SessionCancel
                                     && params.get("sessionId").and_then(Value::as_str) == Some(session.as_str()) =>
                             {
                                 break None;
                             }
                             Ok(Frame::Request { id, .. }) => {
                                 let busy = Err((-32000, "a prompt is already running".to_string()));
-                                drop(out.send(frame_line(&answer(&id, busy))));
+                                drop(out.send(frame_line(&rpc::answer(&id, busy))));
                             }
                             Ok(Frame::Notification { .. } | Frame::Response { .. }) | Err(_) => {}
                         }
@@ -245,6 +251,7 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
         | Event::Receipt { .. }
         | Event::Spawned { .. }
         | Event::Session { .. }
+        | Event::Step { .. }
         | Event::Child { .. } => return,
     };
     drop(out.send(frame_line(&update(session, content))));
@@ -269,13 +276,6 @@ fn update(session: &str, content: Value) -> Value {
         "session/update",
         json!({"sessionId": session, "update": content}),
     )
-}
-
-fn answer(id: &Value, reply: Reply) -> Value {
-    match reply {
-        Ok(result) => rpc::response(id, result),
-        Err((code, message)) => rpc::failure(id, code, &message),
-    }
 }
 
 fn failure(error: Error) -> (i64, String) {

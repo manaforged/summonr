@@ -28,7 +28,12 @@ impl Model {
         self.tools.insert(id.clone(), self.entries.len());
         self.entries.push(Entry::Tool {
             name: name.clone(),
-            call: Call::new(id, arg.clone(), ToolState::Running, String::new()),
+            calls: vec![Call::new(
+                id,
+                arg.clone(),
+                ToolState::Running,
+                String::new(),
+            )],
         });
         self.live_tool = Some((name, arg));
     }
@@ -39,49 +44,25 @@ impl Model {
         {
             return false;
         }
-        enum Tail {
-            Group,
-            Single,
+        let joins = matches!(
+            self.entries.last(),
+            Some(Entry::Tool { name: prior, calls })
+                if prior == name
+                    && (calls.len() > 1 || !matches!(calls[0].state, ToolState::Running))
+        );
+        if !joins {
+            return false;
         }
-        let last = self.entries.last();
-        let tail = if matches!(last, Some(Entry::ToolGroup { name: prior, .. }) if prior == name) {
-            Tail::Group
-        } else if matches!(
-            last,
-            Some(Entry::Tool { name: prior, call })
-                if prior == name && !matches!(call.state, ToolState::Running)
-        ) {
-            Tail::Single
-        } else {
+        let index = self.entries.len().saturating_sub(1);
+        let Some(Entry::Tool { calls, .. }) = self.entries.last_mut() else {
             return false;
         };
-        let index = self.entries.len().saturating_sub(1);
-        match tail {
-            Tail::Group => {
-                let Some(Entry::ToolGroup { calls, .. }) = self.entries.last_mut() else {
-                    return false;
-                };
-                calls.push(Call::new(
-                    id.to_string(),
-                    arg,
-                    ToolState::Running,
-                    String::new(),
-                ));
-            }
-            Tail::Single => {
-                let Some(Entry::Tool { call, .. }) = self.entries.pop() else {
-                    return false;
-                };
-                let calls = vec![
-                    call,
-                    Call::new(id.to_string(), arg, ToolState::Running, String::new()),
-                ];
-                self.entries.push(Entry::ToolGroup {
-                    name: name.to_string(),
-                    calls,
-                });
-            }
-        }
+        calls.push(Call::new(
+            id.to_string(),
+            arg,
+            ToolState::Running,
+            String::new(),
+        ));
         self.tools.insert(id.to_string(), index);
         true
     }
@@ -98,19 +79,13 @@ impl Model {
         } else {
             ToolState::Failed
         };
-        if let Some(index) = self.tools.remove(id) {
-            let call = if let Some(Entry::Tool { call, .. }) = self.entries.get_mut(index) {
-                Some(call)
-            } else if let Some(Entry::ToolGroup { calls, .. }) = self.entries.get_mut(index) {
-                calls.iter_mut().find(|call| call.id == id)
-            } else {
-                None
-            };
-            if let Some(call) = call {
-                call.state = state;
-                call.output = output;
-                call.patch = patch;
-            }
+        if let Some(index) = self.tools.remove(id)
+            && let Some(Entry::Tool { calls, .. }) = self.entries.get_mut(index)
+            && let Some(call) = calls.iter_mut().find(|call| call.id == id)
+        {
+            call.state = state;
+            call.output = output;
+            call.patch = patch;
         }
         self.live_tool = Some(("thinking".to_string(), String::new()));
     }

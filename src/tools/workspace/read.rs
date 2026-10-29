@@ -14,7 +14,7 @@ use crate::tools::ToolOutput;
 pub(super) const READ_PAGE_BYTES: usize = super::super::budget::SHAPED_BUDGET;
 const READ_MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 
-enum Opened {
+pub(super) enum Opened {
     Text(BufReader<std::fs::File>),
     Image(ToolOutput),
 }
@@ -173,7 +173,7 @@ impl ToolRegistry {
             .map(ToolOutput::ok)
     }
 
-    fn open_text(&self, path: &str) -> Result<Opened> {
+    pub(super) fn open_text(&self, path: &str) -> Result<Opened> {
         let canonical = self.resolve_read(path, crate::tools::paths::Shield::Contained)?;
         let file = std::fs::File::open(&canonical)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;

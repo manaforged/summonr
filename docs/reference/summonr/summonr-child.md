@@ -2,34 +2,19 @@
 
 | Item | Kind | Description |
 | --- | --- | --- |
-| [`Access`](#access) | enum |  |
 | [`tag`](#tag) | fn |  |
-
-## Enums
-
-### `Access`
-
-**Methods**
-
-| Method | Description |
-| --- | --- |
-| <code>name(self) -&gt; &amp;'static str</code> |  |
-
-**Variants**
-
-| Variant | Description |
-| --- | --- |
-| <code>Implement</code> |  |
-| <code>Research</code> |  |
-
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>, <code>Deserialize&lt;'de&gt;</code>
-
+| [`Access`](#access) | use |  |
 
 ## Functions
 
 ### `tag`
 
 <pre>pub fn <a href="#tag">tag</a>(id: &amp;str) -&gt; String</pre>
+
+
+## Re-exports
+
+### `Access`
 
 
 ---

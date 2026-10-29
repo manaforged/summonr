@@ -9,7 +9,7 @@
 
 ### `sweep`
 
-<pre>pub async fn <a href="#sweep">sweep</a>(endpoint: &amp;<a href="summonr.html#endpoint">Endpoint</a>, state: &amp;Value, questions: &amp;BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;, budget: usize) -&gt; <a href="summonr.html#result">Result</a>&lt;(<a href="summonr-classify.html#decision">Decision</a>, usize)&gt;</pre>
+<pre>pub async fn <a href="#sweep">sweep</a>(endpoint: &amp;<a href="summonr.html#endpoint">Endpoint</a>, state: &amp;Value, questions: &amp;BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;, budget: usize) -&gt; Result&lt;(<a href="summonr-classify.html#decision">Decision</a>, usize)&gt;</pre>
 
 
 ### `windows`

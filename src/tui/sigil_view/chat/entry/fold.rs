@@ -20,19 +20,13 @@ fn flatten(entries: &[Entry], start: usize) -> Vec<Step> {
     for (offset, entry) in entries.iter().enumerate() {
         let index = start + offset;
         match entry {
-            Entry::Tool { name, call } => steps.push(Step {
-                name: name.clone(),
-                call: call.clone(),
-                index,
-                at: None,
-            }),
-            Entry::ToolGroup { name, calls } => {
+            Entry::Tool { name, calls } => {
                 for (at, call) in calls.iter().enumerate() {
                     steps.push(Step {
                         name: name.clone(),
                         call: call.clone(),
                         index,
-                        at: Some(at),
+                        at,
                     });
                 }
             }
@@ -234,8 +228,17 @@ pub(in crate::tui::sigil_view) fn card(
 }
 
 pub(super) fn patch_counts(call: &Call) -> Option<(usize, usize)> {
-    call.patch
+    let patch = call
+        .patch
         .clone()
-        .or_else(|| patch_of(&preview::plain(&call.output)))
-        .map(|patch| super::steps::counts(&patch))
+        .or_else(|| patch_of(&preview::plain(&call.output)))?;
+    let body = || {
+        patch
+            .lines()
+            .filter(|line| !line.starts_with("+++ ") && !line.starts_with("--- "))
+    };
+    Some((
+        body().filter(|line| line.starts_with('+')).count(),
+        body().filter(|line| line.starts_with('-')).count(),
+    ))
 }

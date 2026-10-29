@@ -29,7 +29,7 @@ impl Client {
         };
         loop {
             let read = self.next_read(&clock, id, method).await?;
-            if matches!(read, Read::Closed) && self.stderr.draining() {
+            if matches!(read, Read::Closed) && self.draining() {
                 clock.deadline = clock
                     .deadline
                     .min(Instant::now() + crate::limits::limits().mcp_stderr_settle());
@@ -56,7 +56,7 @@ impl Client {
         match tokio::time::timeout_at(clock.deadline, self.frame()).await {
             Ok(read) => read,
             Err(_elapsed) if self.broken => {
-                self.stderr.abort();
+                self.abort_stderr();
                 self.settle_stderr().await?;
                 Ok(Read::Closed)
             }
@@ -105,10 +105,11 @@ impl Client {
                 Ok(None)
             }
             Read::Oversize => Err(crate::rpc::oversize(method, self.max)),
-            Read::Closed => Err(Error::Tool(format!(
+            Read::Closed if self.piped() => Err(Error::Tool(format!(
                 "the child exited during `{method}`{}",
                 self.stderr_note()
             ))),
+            Read::Closed => Err(Error::Tool(format!("`{method}` returned no response"))),
         }
     }
 
@@ -142,7 +143,14 @@ impl Client {
                     Reply::Error(code, message) => failure(asked, code, &message),
                 }
             }
-            Ask::Unsupported => failure(asked, -32601, &format!("{method} is not supported")),
+            Ask::Initialize
+            | Ask::Authenticate
+            | Ask::SessionNew
+            | Ask::SessionPrompt
+            | Ask::SessionCancel
+            | Ask::ToolsList
+            | Ask::ToolsCall
+            | Ask::Unsupported => crate::rpc::answer(asked, Err(crate::rpc::unsupported(method))),
         }
     }
 }

@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+
 use super::*;
+use crate::endpoint::SessionValue;
 use leyline::http::StatusCode;
 
 mod admit;
@@ -10,17 +13,17 @@ mod login;
 mod meta;
 
 use encode::*;
-pub(crate) use failure::{input_cap, status_code};
+pub(crate) use failure::{ending, input_cap, status_code};
 pub(crate) use meta::response_failure;
 #[cfg(test)]
 pub(crate) use meta::unreachable_message;
 
-fn fixed_headers<'a>(raw: impl Iterator<Item = (&'a String, &'a String)>) -> Vec<(String, String)> {
+fn fixed_headers<'a>(raw: impl Iterator<Item = (&'a str, &'a str)>) -> Vec<(String, String)> {
     let mut headers: Vec<(String, String)> = Vec::new();
     for (key, value) in raw {
         let key = key.to_ascii_lowercase();
         headers.retain(|(kept, _)| *kept != key);
-        headers.push((key, value.clone()));
+        headers.push((key, value.to_string()));
     }
     if !headers.iter().any(|(key, _)| key == "user-agent") {
         headers.push((
@@ -41,10 +44,26 @@ fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
     }
 }
 
-#[derive(Clone, Copy, Default)]
-pub(super) struct Routing<'a> {
-    pub(super) cache: Option<&'a str>,
-    pub(super) beta: Option<(&'static str, &'static str)>,
+pub(super) type Beta = Option<(&'static str, &'static str)>;
+
+#[derive(Clone)]
+pub(super) enum Transport {
+    Http,
+    Classify,
+    ClaudeCode(agent::AgentClient),
+}
+
+impl Transport {
+    pub(super) fn of(endpoint: &crate::endpoint::Endpoint) -> Self {
+        match wire::codec(endpoint.wire) {
+            Some(_) => Self::Http,
+            None if wire::spec(endpoint.wire).child() => {
+                let program = endpoint.base_url.as_deref().map_or("", str::trim);
+                Self::ClaudeCode(agent::AgentClient::new(endpoint, program))
+            }
+            None => Self::Classify,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -56,16 +75,15 @@ pub struct Client {
     pub(super) auth: Auth,
     pub(super) body: Option<Value>,
     pub(super) headers: Vec<(String, String)>,
-    pub(super) opencode: bool,
+    pub(super) session_headers: BTreeMap<String, SessionValue>,
     pub(super) keep_reasoning: bool,
     pub(super) assistant_after_tool: bool,
     pub(super) images: bool,
     pub(super) name: String,
     pub(super) prompt_cache_key: bool,
     pub(super) cache_ttl: crate::endpoint::CacheTtl,
-    pub(super) cache_header: Option<String>,
     pub(super) cache_marks: bool,
-    pub(super) agent: Option<agent::AgentClient>,
+    pub(super) transport: Transport,
     pub(super) wire: Wire,
     pub(super) reasoning: Reasoning,
     pub(super) idle: Option<Duration>,
@@ -75,7 +93,7 @@ pub struct Client {
 #[derive(Default)]
 pub(super) struct Opts {
     pub wire: Wire,
-    pub opencode: bool,
+    pub session_headers: BTreeMap<String, SessionValue>,
     pub models_base: Option<String>,
     pub prompt_cache_key: bool,
     pub idle_timeout: Option<Duration>,
@@ -89,7 +107,7 @@ impl Client {
         }
         Self::build(
             &base_url.into(),
-            crate::credentials::bearer(key),
+            crate::credentials::bearer(key)?,
             None,
             fixed_headers(std::iter::empty()),
             Opts::default(),
@@ -105,7 +123,12 @@ impl Client {
             .ok_or_else(|| {
                 Error::Config(format!("endpoint `{}` needs a base_url", endpoint.name))
             })?;
-        let headers = fixed_headers(endpoint.headers.iter());
+        let headers = fixed_headers(
+            endpoint
+                .headers
+                .iter()
+                .map(|(key, value)| (key.as_str(), value.expose())),
+        );
         let idle_timeout = request_timeout(endpoint.idle_timeout_secs)?;
         let mut client = Self::build(
             base,
@@ -114,7 +137,7 @@ impl Client {
             headers,
             Opts {
                 wire: endpoint.wire,
-                opencode: endpoint.opencode,
+                session_headers: endpoint.session_headers.clone(),
                 models_base: endpoint.models_url.clone(),
                 prompt_cache_key: endpoint.prompt_cache_key,
                 idle_timeout,
@@ -126,10 +149,12 @@ impl Client {
         client.assistant_after_tool = endpoint.assistant_after_tool;
         client.name.clone_from(&endpoint.name);
         client.cache_ttl = endpoint.cache_ttl;
-        client.cache_header.clone_from(&endpoint.cache_header);
         client.cache_marks = endpoint.cache_marks;
-        if wire::spec(endpoint.wire).child() {
-            client.agent = Some(agent::AgentClient::new(endpoint, base));
+        client.transport = Transport::of(endpoint);
+        if client.plan_responses() {
+            client
+                .session_headers
+                .insert("session-id".to_string(), SessionValue::SessionId);
         }
         client.reasoning.clone_from(&endpoint.reasoning);
         Ok(client)
@@ -159,7 +184,7 @@ impl Client {
     pub(super) async fn get(&self, url: String) -> Result<Value> {
         let token = self.token().await?;
         let response = self
-            .attach(self.http.get(&url), &token, None)
+            .attach(self.http.get(&url), &token, None, true)
             .send()
             .await
             .map_err(|error| self.unreachable(&error))?;
@@ -173,36 +198,42 @@ impl Client {
         Ok(value)
     }
 
+    fn codec(&self) -> Result<wire::Codec> {
+        match (&self.transport, wire::codec(self.wire)) {
+            (Transport::Http, Some(codec)) => Ok(codec),
+            _ => Err(Error::Config(
+                "this endpoint sends no chat request".to_string(),
+            )),
+        }
+    }
+
     pub(crate) fn request<'a>(
         &self,
         request: &'a CompletionRequest<'a>,
         stream: bool,
     ) -> Result<Body<'a>> {
-        let reasoning = &self.reasoning;
-        let cache = self.cache_ttl;
+        let codec = self.codec()?;
         let admitted = self.admit(request);
         let call = &CompletionRequest {
             messages: &admitted,
             ..request.clone()
         };
-        let spec = wire::spec(self.wire);
-        let wired = (spec.transport.codec()?.body)(call, reasoning, cache, stream)?;
-        let completions = spec.encodes_messages;
-        let messages = if completions {
-            Some(serde_json::to_vec(&Messages {
-                list: call.messages,
+        let wired = (codec.body)(
+            call,
+            &wire::Encoding {
+                reasoning: &self.reasoning,
+                cache: self.cache_ttl,
+                stream,
                 keep_reasoning: self.keeps_reasoning(),
-                cached: self.cache_marks || call.traits.family == wire::traits::Family::Anthropic,
+                cache_marks: self.cache_marks,
                 assistant_after_tool: self.assistant_after_tool,
-            })?)
-        } else {
-            wired.messages
-        };
+            },
+        )?;
         let tools = request
             .tools_json
-            .filter(|_| completions)
+            .filter(|_| wired.raw_tools)
             .map(|encoded| encoded.sorted.as_slice());
-        let mut body = Body::new(wired.head, wired.slot, messages, tools);
+        let mut body = Body::new(wired.head, wired.slot, wired.messages, tools);
         self.extend_body(&mut body, request);
         Ok(body)
     }
@@ -246,6 +277,7 @@ impl Client {
         request: leyline::RequestBuilder,
         token: &str,
         session: Option<&str>,
+        rate_limits: bool,
     ) -> leyline::RequestBuilder {
         let mut request = self
             .auth
@@ -253,11 +285,11 @@ impl Client {
             .apply(request.header("user-agent", summonr_auth::AGENT), token)
             .retry(
                 crate::limits::limits()
-                    .retry_policy(self.reach())
+                    .retry_policy_for(self.reach(), rate_limits)
                     .allow_non_idempotent(true),
             );
-        for (key, value) in wire::spec(self.wire).headers {
-            request = request.header(*key, *value);
+        for (key, value) in &wire::spec(self.wire).headers {
+            request = request.header(key.as_str(), value.as_str());
         }
         for (key, value) in self.auth.stamped() {
             request = request.header(key.as_str(), value.as_str());
@@ -274,10 +306,10 @@ impl Client {
         body: Vec<u8>,
         model: Option<&str>,
         session: &str,
-        routing: Routing<'_>,
+        beta: Beta,
         stream: bool,
     ) -> Result<leyline::Response> {
-        let response = self.post_json(url, body, session, routing, stream).await?;
+        let response = self.post_json(url, body, session, beta, stream).await?;
         let status = response.status();
         if status.is_success() {
             return Ok(response);
@@ -293,17 +325,14 @@ impl Client {
         url: &str,
         body: Vec<u8>,
         session: &str,
-        routing: Routing<'_>,
+        beta: Beta,
         stream: bool,
     ) -> Result<leyline::Response> {
         let token = self.token().await?;
         let mut request = self
-            .attach(self.http.post(url), &token, Some(session))
+            .attach(self.http.post(url), &token, Some(session), !stream)
             .header("content-type", "application/json");
-        if let (Some(name), Some(value)) = (&self.cache_header, routing.cache) {
-            request = request.header(name.as_str(), value);
-        }
-        if let Some((name, value)) = routing.beta {
+        if let Some((name, value)) = beta {
             request = request.header(name, value);
         }
         let request = request.body(body);
@@ -313,11 +342,31 @@ impl Client {
             .await
             .map_err(|error| self.unreachable(&error))
     }
+
+    async fn run(
+        &self,
+        request: &CompletionRequest<'_>,
+        partial: Option<&mut Partial>,
+    ) -> Result<AssistantMessage> {
+        match (&self.transport, partial) {
+            (Transport::Http, Some(partial)) => {
+                (self.codec()?.stream)(self, request, partial).await
+            }
+            (Transport::Http, None) => {
+                (self.codec()?.stream)(self, request, &mut Partial::default()).await
+            }
+            (Transport::ClaudeCode(_), Some(partial)) => self.stream_agent(request, partial).await,
+            (Transport::ClaudeCode(_), None) => self.complete_agent(request).await,
+            (Transport::Classify, _) => Err(Error::Config(
+                "a classify endpoint does not run sessions".to_string(),
+            )),
+        }
+    }
 }
 
 impl Provider for Client {
     fn keeps_reasoning(&self) -> bool {
-        self.opencode || self.keep_reasoning
+        self.keep_reasoning
     }
 
     fn takes_images(&self) -> bool {
@@ -328,12 +377,7 @@ impl Provider for Client {
         &'a self,
         request: &'a CompletionRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-        Box::pin(async move {
-            if wire::spec(self.wire).child() {
-                return self.complete_agent(request).await;
-            }
-            self.stream(request, &mut Partial::default()).await
-        })
+        Box::pin(self.run(request, None))
     }
 
     fn stream<'a>(
@@ -341,7 +385,7 @@ impl Provider for Client {
         request: &'a CompletionRequest<'a>,
         partial: &'a mut Partial,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-        Box::pin(async move { self.complete_stream(request, partial).await })
+        Box::pin(self.run(request, Some(partial)))
     }
 
     fn child(&self) -> Option<Self> {

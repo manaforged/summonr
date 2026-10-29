@@ -209,10 +209,9 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn tree_discard_armed(&self, path: PathBuf) {
-        if self.worktree_discard.peek().as_ref() == Some(&path) {
+        if confirm(&self.worktree_discard, path.clone(), None) {
             self.tree_discard(path);
         } else {
-            self.worktree_discard.set(Some(path));
             self.refresh();
         }
     }

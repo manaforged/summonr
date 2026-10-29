@@ -15,17 +15,11 @@ pub(crate) struct Wire;
 impl Chat for Wire {
     type Stream = Stream;
 
-    fn path(_model: &str, _stream: bool) -> String {
-        "/responses".to_string()
-    }
-
     fn body(
         call: &CompletionRequest<'_>,
-        reasoning: &Reasoning,
-        _cache: crate::endpoint::CacheTtl,
-        stream: bool,
+        encoding: &super::Encoding<'_>,
     ) -> summonr_core::error::Result<super::Wired> {
-        body(call, reasoning, stream).map(super::Wired::head)
+        body(call, encoding.reasoning, encoding.stream).map(super::Wired::head)
     }
 }
 

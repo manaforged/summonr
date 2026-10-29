@@ -1,6 +1,7 @@
 use serde_json::{Map, Value, json};
 
-use crate::policy::{Clip, Native, verb_row};
+use super::native::{Pipe, pipe_stage};
+use crate::policy::{Native, verb_row};
 
 const QUIET: &[&str] = &["2>/dev/null", "2>&1"];
 const SHELL: &[char] = &['&', ';', '>', '<', '`', '$', '(', ')', '\n'];
@@ -84,7 +85,10 @@ const MDFIND: &[(&str, Find)] = &[("-name", Find::Words), ("-onlyin", Find::With
 
 pub(crate) fn native_search_args(command: &str) -> Option<Value> {
     let (head, limit) = match command.split_once('|') {
-        Some((head, stage)) => (head, Some(head_count(stage)?)),
+        Some((head, stage)) => match pipe_stage(stage)? {
+            Pipe::Head(count) => (head, Some(count)),
+            Pipe::Tail(_) => return None,
+        },
         None => (command, None),
     };
     // complexity: bounded by the two fixed quiet redirects
@@ -108,29 +112,6 @@ pub(crate) fn native_search_args(command: &str) -> Option<Value> {
         set(&mut args, "limit", json!(limit));
     }
     Some(Value::Object(args))
-}
-
-fn head_count(stage: &str) -> Option<usize> {
-    let mut words = stage.split_whitespace();
-    let verb = words.next()?.rsplit('/').next()?;
-    matches!(verb_row(verb)?.clip?, Clip::Head).then_some(())?;
-    let (first, second) = (words.next(), words.next());
-    if words.next().is_some() {
-        return None;
-    }
-    let count = match (first, second) {
-        (None, None) => "10".to_string(),
-        (Some(flag), None) => flag
-            .strip_prefix("-n")
-            .or_else(|| flag.strip_prefix('-'))?
-            .to_string(),
-        (Some(flag), Some(count)) => {
-            (flag == "-n").then_some(())?;
-            count.to_string()
-        }
-        (None, Some(_)) => return None,
-    };
-    count.parse().ok()
 }
 
 fn set(args: &mut Map<String, Value>, key: &str, value: Value) {

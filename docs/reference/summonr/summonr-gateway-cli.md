@@ -8,7 +8,7 @@
 
 ### `run`
 
-<pre>pub fn <a href="#run">run</a>(args: &amp;[String], cwd: &amp;Path, read_secret: &amp;dyn Fn(&amp;str) -&gt; <a href="summonr.html#result">Result</a>&lt;String&gt;) -&gt; <a href="summonr.html#result">Result</a>&lt;i32&gt;</pre>
+<pre>pub fn <a href="#run">run</a>(args: &amp;[String], cwd: &amp;Path, read_secret: &amp;dyn Fn(&amp;str) -&gt; Result&lt;String&gt;) -&gt; Result&lt;i32&gt;</pre>
 
 
 ---

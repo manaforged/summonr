@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Deserializer};
 
-use super::{File, tilde};
+use super::{File, OAuth, tilde};
 use summonr_core::error::{Error, Result};
 use summonr_types::endpoint::Wire;
 
@@ -19,7 +19,7 @@ fn bad(path: &Path, message: &str) -> Error {
     Error::Config(format!("{}: {message}", tilde(path)))
 }
 
-const RETIRED: &[&str] = &["last_endpoint", "plan_mode", "ban_comments", "ban_tests"];
+pub(super) const RETIRED: &[&str] = &["last_endpoint", "plan_mode", "ban_comments", "ban_tests"];
 
 pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
     let mut table: toml::Table = toml::from_str(text).map_err(|error| {
@@ -55,6 +55,12 @@ pub(super) fn warn_unknown(path: &Path, file: &File) {
             row.other
                 .keys()
                 .map(move |key| format!("endpoint.{name}.{key}"))
+        }))
+        .chain(file.endpoint.iter().flat_map(|(name, row)| {
+            row.auth
+                .iter()
+                .flat_map(OAuth::unknown)
+                .map(move |(key, value)| format!("endpoint.{name}.auth.{key} = \"{value}\""))
         }))
         .chain(file.provider.iter().flat_map(|(name, choice)| {
             choice

@@ -151,8 +151,3 @@ pub fn prompt(step: &Step, total: usize, plan_path: &str) -> String {
     }
     text
 }
-
-#[must_use]
-pub fn exit_code(output: &str) -> Option<i32> {
-    crate::tools::command_exit_code(output)
-}

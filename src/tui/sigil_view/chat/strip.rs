@@ -3,8 +3,8 @@ use sigil::prelude::{
     button, container,
 };
 
+use super::entry::{bits, glyph};
 use super::{Agent, App};
-use crate::tui::ToolState;
 use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{Hints, Key};
 
@@ -13,14 +13,6 @@ fn text(
     text_style: TextStyle,
 ) -> sigil::kernel::TextBuilder {
     text_style.on(sigil::kernel::text(body).nowrap())
-}
-
-fn mark(agent: &Agent) -> (&'static str, TextStyle) {
-    match agent.state() {
-        ToolState::Running => ("○", TextStyle::xs(Token::Gray11)),
-        ToolState::Ok => ("●", TextStyle::xs(Token::Success11)),
-        ToolState::Failed => ("●", TextStyle::xs(Token::Error11)),
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -100,14 +92,6 @@ fn fixed(
 
 type View = sigil::prelude::Signal<(bool, Vec<Agent>, Vec<crate::mail::Agent>)>;
 
-fn state_code(agent: &Agent) -> u8 {
-    match agent.state() {
-        ToolState::Running => 0,
-        ToolState::Ok => 1,
-        ToolState::Failed => 2,
-    }
-}
-
 fn field(view: View, id: String, pick: impl Fn(&Agent) -> String + 'static) -> impl Fn() -> String {
     move || {
         view.with(|(_, rows, _)| {
@@ -129,7 +113,7 @@ fn doing(agent: &Agent, roots: &[String]) -> String {
 }
 
 fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> NodeBuilder {
-    let (glyph, tone) = mark(agent);
+    let (glyph, tone) = glyph(&agent.state());
     let roots = app.roots.clone();
     let mut line = container()
         .layout(
@@ -223,7 +207,7 @@ fn shown(app: &App) -> (bool, Vec<Agent>, Vec<crate::mail::Agent>) {
 pub(in crate::tui::sigil_view) fn rows(app: &App) -> usize {
     let (_, rows, headless) = shown(app);
     let count = rows.len() + headless.len();
-    count + usize::from(count > 0)
+    count + 2 * usize::from(count > 0)
 }
 
 pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder {
@@ -263,6 +247,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                         .layout(
                             LayoutStyle::flex_row()
                                 .fill_width()
+                                .padding_top(super::canvas::cell().h)
                                 .gap(8.0)
                                 .align_items(AlignItems::Center),
                         )
@@ -287,7 +272,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 let key = Row::Agent {
                     id: agent.id.clone(),
                     title: agent.title.clone(),
-                    state: state_code(agent),
+                    state: bits(&agent.state(), false),
                     detail: expanded,
                     clear: expanded && agent.background,
                     widths,

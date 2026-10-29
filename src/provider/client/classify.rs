@@ -23,7 +23,7 @@ impl Client {
                 serde_json::to_vec(&body)?,
                 Some(model),
                 "classify",
-                super::Routing::default(),
+                None,
                 false,
             )
             .await?

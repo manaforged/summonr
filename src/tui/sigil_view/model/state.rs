@@ -169,16 +169,6 @@ impl Entries {
         entry
     }
 
-    pub(in crate::tui::sigil_view) fn pop(&mut self) -> Option<Entry> {
-        self.sync();
-        let entry = self.inner.pop();
-        self.sync();
-        if matches!(entry, Some(Entry::User(_))) {
-            self.reask();
-        }
-        entry
-    }
-
     pub(in crate::tui::sigil_view) fn clear(&mut self) {
         self.invalidate();
         self.inner.clear();

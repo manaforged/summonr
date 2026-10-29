@@ -5,7 +5,6 @@
 | [`Source`](#source) | struct |  |
 | [`Outcome`](#outcome) | enum |  |
 | [`run`](#run) | fn |  |
-| [`RELEASES`](#releases) | const |  |
 
 ## Structs
 
@@ -53,14 +52,7 @@
 
 ### `run`
 
-<pre>pub async fn <a href="#run">run</a>(source: &amp;<a href="#source">Source</a>&lt;'_&gt;, exe: &amp;Path) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#outcome">Outcome</a>&gt;</pre>
-
-
-## Constants
-
-### `RELEASES`
-
-<pre>pub const <a href="#releases">RELEASES</a>: &amp;str</pre>
+<pre>pub async fn <a href="#run">run</a>(source: &amp;<a href="#source">Source</a>&lt;'_&gt;, exe: &amp;Path) -&gt; Result&lt;<a href="#outcome">Outcome</a>&gt;</pre>
 
 
 ---

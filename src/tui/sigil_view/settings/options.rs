@@ -37,47 +37,39 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 .key(Key::Esc, "close")
                 .count(count.settings.cursor.get(), setting_rows(&count).len())
         })
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(canvas::overlay_gap()),
-                )
-                .children_reactive(move || {
-                    let rows = setting_rows(&paint);
-                    let selected = paint
-                        .settings
-                        .cursor
-                        .get()
-                        .min(rows.len().saturating_sub(1));
-                    let items = list_items(&rows);
-                    let visible = canvas::overlay_shown(items.len(), paint.viewport.get().1);
-                    let top = items
-                        .iter()
-                        .position(|item| matches!(item, Item::Model(index) if *index == selected))
-                        .map_or(0, |at| at.saturating_sub(1))
-                        .min(items.len().saturating_sub(visible));
-                    if canvas::is_window() {
-                        let end = (top + visible).min(items.len());
-                        let page = items[top..end].iter().fold(
-                            container().layout(LayoutStyle::flex_column().fill_width()),
-                            |node, item| node.child(item_node(&paint, &rows, item, selected)),
-                        );
-                        return vec![page];
-                    }
-                    let lookup = rows.clone();
-                    let source = paint.clone();
-                    vec![overlay_list(
-                        virtual_list(items, move |_, item: &Item| {
-                            item_node(&source, &lookup, item, selected)
-                        })
-                        .scroll_into_view(top),
-                        canvas::overlay_list_row(),
-                        visible,
-                    )]
-                }),
-        )
+        .child(super::dialog_body(move || {
+            let rows = setting_rows(&paint);
+            let selected = paint
+                .settings
+                .cursor
+                .get()
+                .min(rows.len().saturating_sub(1));
+            let items = list_items(&rows);
+            let visible = canvas::overlay_shown(items.len(), paint.viewport.get().1);
+            let top = items
+                .iter()
+                .position(|item| matches!(item, Item::Model(index) if *index == selected))
+                .map_or(0, |at| at.saturating_sub(1))
+                .min(items.len().saturating_sub(visible));
+            if canvas::is_window() {
+                let end = (top + visible).min(items.len());
+                let page = items[top..end].iter().fold(
+                    container().layout(LayoutStyle::flex_column().fill_width()),
+                    |node, item| node.child(item_node(&paint, &rows, item, selected)),
+                );
+                return vec![page];
+            }
+            let lookup = rows.clone();
+            let source = paint.clone();
+            vec![overlay_list(
+                virtual_list(items, move |_, item: &Item| {
+                    item_node(&source, &lookup, item, selected)
+                })
+                .scroll_into_view(top),
+                canvas::overlay_list_row(),
+                visible,
+            )]
+        }))
         .build(app.settings_open, app.viewport.peek().0, &hotkeys)
 }
 

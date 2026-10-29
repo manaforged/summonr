@@ -77,7 +77,6 @@ pub(super) fn each(
     }
     let prefix = root.to_string_lossy().into_owned();
     let prefix = prefix.trim_end_matches('/').as_bytes().to_vec();
-    let words: Vec<&[u8]> = words.iter().map(String::as_bytes).collect();
     let mut entry: Vec<u8> = Vec::new();
     let mut inside = false;
     while let (Some(shared), Some(len)) = (number(&mut reader), number(&mut reader)) {
@@ -94,10 +93,11 @@ pub(super) fn each(
             continue;
         }
         inside = true;
-        if !named(&entry, &words) {
+        let name = String::from_utf8_lossy(&entry);
+        if !super::filter::named(words, Path::new(name.as_ref())) {
             continue;
         }
-        let path = PathBuf::from(String::from_utf8_lossy(&entry).into_owned());
+        let path = PathBuf::from(name.into_owned());
         if !visit(path) {
             return;
         }
@@ -107,22 +107,6 @@ pub(super) fn each(
 fn under(entry: &[u8], prefix: &[u8]) -> bool {
     entry.starts_with(prefix)
         && (prefix.is_empty() || entry.get(prefix.len()).is_none_or(|next| *next == b'/'))
-}
-
-fn named(entry: &[u8], words: &[&[u8]]) -> bool {
-    if words.is_empty() {
-        return true;
-    }
-    let name = entry
-        .iter()
-        .rposition(|byte| *byte == b'/')
-        .map_or(entry, |slash| &entry[slash + 1..]);
-    words.iter().all(|word| {
-        !word.is_ascii()
-            || name
-                .windows(word.len().max(1))
-                .any(|window| window.eq_ignore_ascii_case(word))
-    })
 }
 
 fn number(reader: &mut impl Read) -> Option<usize> {

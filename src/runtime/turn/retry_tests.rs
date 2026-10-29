@@ -141,7 +141,9 @@ async fn run_failing(
             .iter()
             .any(|message| message.content.contains("hi there"))
     );
-    let lines = crate::durable::log::read(loop_.session_path()).expect("read durable result");
+    let lines = crate::durable::log::records::<crate::durable::log::Line>(loop_.session_path(), 0)
+        .collect::<std::io::Result<Vec<_>>>()
+        .expect("read durable result");
     (result.is_ok(), sent.len(), lines)
 }
 

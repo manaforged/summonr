@@ -1,6 +1,20 @@
 pub(super) use super::app::App;
 pub(super) use super::canvas;
 
+use std::rc::Rc;
+
+use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, container};
+
+fn dialog_body(children: impl Fn() -> Vec<NodeBuilder> + 'static) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .gap(canvas::overlay_gap()),
+        )
+        .children_reactive(children)
+}
+
 mod auth;
 mod hotkeys;
 mod models;
@@ -39,6 +53,23 @@ pub(super) struct Row {
     pub(super) setting: Setting,
     pub(super) label: String,
     pub(super) value: String,
+    pub(super) action: Rc<dyn Fn(&App)>,
+}
+
+fn row(
+    group: &'static str,
+    setting: Setting,
+    label: impl Into<String>,
+    value: impl Into<String>,
+    action: impl Fn(&App) + 'static,
+) -> Row {
+    Row {
+        group,
+        setting,
+        label: label.into(),
+        value: value.into(),
+        action: Rc::new(action),
+    }
 }
 
 pub(super) fn setting_rows(app: &App) -> Vec<Row> {
@@ -52,122 +83,153 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     } else {
         "auto"
     };
-    let rows = [
-        ("session", Setting::Mode, "run mode", mode.to_string()),
-        (
+    let verify = snapshot
+        .verify
+        .as_deref()
+        .map_or_else(|| "off".to_string(), |command| format!("on · {command}"));
+    let endpoint = snapshot.relay.as_deref().map_or_else(
+        || snapshot.endpoint.clone(),
+        |relay| format!("{} · {relay}", snapshot.endpoint),
+    );
+    let workflow = snapshot.workflow.as_deref().unwrap_or("off");
+    let mail = if prefs.mail {
+        "starts a turn"
+    } else {
+        "waits for the next turn"
+    };
+    let mut rows = vec![
+        row(
+            "session",
+            Setting::Mode,
+            "run mode",
+            mode,
+            App::cycle_run_mode,
+        ),
+        row(
             "session",
             Setting::Verify,
             "verify",
-            snapshot
-                .verify
-                .as_deref()
-                .map_or_else(|| "off".to_string(), |command| format!("on · {command}")),
+            verify,
+            App::toggle_verify,
         ),
-        (
+        row(
             "session",
             Setting::Workflow,
             "workflow",
-            snapshot
-                .workflow
-                .clone()
-                .unwrap_or_else(|| "off".to_string()),
+            workflow,
+            App::open_workflow,
         ),
-        (
+        row(
             "model",
             Setting::Endpoint,
             "endpoint",
-            snapshot.relay.as_deref().map_or_else(
-                || snapshot.endpoint.clone(),
-                |relay| format!("{} · {relay}", snapshot.endpoint),
-            ),
+            endpoint,
+            App::cycle_endpoint,
         ),
-        ("model", Setting::Model, "model", snapshot.model.clone()),
-        (
+        row(
+            "model",
+            Setting::Model,
+            "model",
+            snapshot.model.as_str(),
+            App::begin_model_edit,
+        ),
+        row(
             "model",
             Setting::Reasoning,
             "reasoning",
-            prefs.reasoning.name().to_string(),
+            prefs.reasoning.name(),
+            |app| {
+                app.set_visibility(|prefs| &mut prefs.reasoning, None);
+            },
         ),
-        (
+        row(
             "harness",
             Setting::Tools,
             "tools",
-            prefs.tools.name().to_string(),
+            prefs.tools.name(),
+            App::toggle_tools,
         ),
-        (
+        row(
             "harness",
             Setting::Mail,
             "incoming mail",
-            if prefs.mail {
-                "starts a turn"
-            } else {
-                "waits for the next turn"
-            }
-            .to_string(),
+            mail,
+            App::toggle_mail,
         ),
     ];
     let modules = app.modules.peek();
-    let module_rows = crate::modules::ALL.iter().map(|module| Row {
-        group: "modules",
-        setting: Setting::Module(module.id),
-        label: format!("{} tools", module.id.name()),
-        value: on_off(modules.get(&module.id).copied().unwrap_or(module.default)).to_string(),
-    });
-    let interface = [
-        ("interface", Setting::Theme, "theme", prefs.theme.clone()),
-        (
+    rows.extend(crate::modules::ALL.iter().map(|module| {
+        let id = module.id;
+        let on = on_off(modules.get(&id).copied().unwrap_or(module.default));
+        row(
+            "modules",
+            Setting::Module(id),
+            format!("{} tools", id.name()),
+            on,
+            move |app| {
+                app.toggle_module(id);
+            },
+        )
+    }));
+    let hotkeys = format!("{} bindings", crate::prefs::Hotkey::ALL.len());
+    rows.extend([
+        row(
+            "interface",
+            Setting::Theme,
+            "theme",
+            prefs.theme.as_str(),
+            App::toggle_theme,
+        ),
+        row(
             "interface",
             Setting::Background,
             "background",
-            prefs.background.name().to_string(),
+            prefs.background.name(),
+            App::toggle_background,
         ),
-        (
+        row(
             "interface",
             Setting::Notify,
             "notify",
-            prefs.notify.label().to_string(),
+            prefs.notify.label(),
+            |app| {
+                app.flip(|prefs| prefs.notify = prefs.notify.toggle());
+            },
         ),
-        (
+        row(
             "interface",
             Setting::DiffLayout,
             "diff layout",
-            prefs.diff_layout.name().to_string(),
+            prefs.diff_layout.name(),
+            |app| {
+                app.set_diff_layout(app.model.get().prefs.diff_layout.toggle());
+            },
         ),
-        (
+        row(
             "interface",
             Setting::Splash,
             "splash",
-            on_off(prefs.splash).to_string(),
+            on_off(prefs.splash),
+            |app| {
+                app.flip(|prefs| prefs.splash = !prefs.splash);
+            },
         ),
-        (
+        row(
             "interface",
             Setting::Motion,
             "motion",
-            on_off(prefs.animations).to_string(),
+            on_off(prefs.animations),
+            App::toggle_motion,
         ),
-        (
+        row(
             "interface",
             Setting::Hotkeys,
             "hotkeys",
-            format!("{} bindings", crate::prefs::Hotkey::ALL.len()),
+            hotkeys,
+            App::open_hotkeys,
         ),
-    ];
-    rows.into_iter()
-        .map(Row::from)
-        .chain(module_rows)
-        .chain(interface.into_iter().map(Row::from))
-        .collect()
-}
-
-impl From<(&'static str, Setting, &str, String)> for Row {
-    fn from((group, setting, label, value): (&'static str, Setting, &str, String)) -> Self {
-        Self {
-            group,
-            setting,
-            label: label.to_string(),
-            value,
-        }
-    }
+    ]);
+    rows
 }
 
 const fn on_off(value: bool) -> &'static str {

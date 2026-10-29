@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -18,28 +17,9 @@ mod fetch;
 mod results;
 
 pub(crate) use fetch::OUT_MAX;
-use fetch::{check_url, host_blocked, resolves_blocked};
+pub(crate) use fetch::PRIVATE_URL_PATTERNS;
+use fetch::{check_url, fetch_targets, host_blocked, public_targets};
 const INERT_SCHEMES: [&str; 3] = ["about", "data", "chrome-error"];
-pub(crate) const PRIVATE_URL_PATTERNS: &[&str] = &[
-    "*://localhost/*",
-    "*://localhost:*/*",
-    "*://localhost./*",
-    "*://localhost.:*/*",
-    "*://*.localhost/*",
-    "*://*.localhost:*/*",
-    "*://*.local/*",
-    "*://*.local:*/*",
-    "*://*.internal/*",
-    "*://*.internal:*/*",
-    "*://127.0.0.1/*",
-    "*://127.0.0.1:*/*",
-    "*://0.0.0.0/*",
-    "*://0.0.0.0:*/*",
-    "*://[::1]/*",
-    "*://[::1]:*/*",
-    "*://metadata.google.internal/*",
-    "*://metadata.google.internal:*/*",
-];
 use results::markup::{Space, collapse};
 pub(crate) use results::wall;
 use results::{Engine, Hit, Window, engines, format_hits, parse_page};
@@ -156,7 +136,7 @@ impl Search {
         let mut failure = None;
         let mut found = None;
         let mut tried = 0;
-        for engine in engines()? {
+        for engine in engines() {
             if self.cooldowns.blocked(&engine.name, Instant::now()) {
                 continue;
             }
@@ -175,7 +155,7 @@ impl Search {
                 }
             }
         }
-        if found.is_none() && failure.is_none() && tried < engines()?.len() {
+        if found.is_none() && failure.is_none() && tried < engines().len() {
             return Err(Error::Tool(
                 "web_search engines are blocked after rate limits; try again in a minute"
                     .to_string(),
@@ -276,20 +256,6 @@ fn client() -> Result<Session> {
     )
 }
 
-pub(super) fn fetch_targets(host: &str) -> std::result::Result<Vec<std::net::SocketAddr>, ()> {
-    let addrs = match host.parse::<std::net::IpAddr>() {
-        Ok(ip) => vec![std::net::SocketAddr::new(ip, 443)],
-        Err(_) => match (host, 443).to_socket_addrs() {
-            Ok(addrs) => addrs.collect::<Vec<_>>(),
-            Err(_) => return Err(()),
-        },
-    };
-    if addrs.is_empty() || addrs.iter().any(|addr| fetch::ip_blocked(addr.ip())) {
-        return Err(());
-    }
-    Ok(addrs)
-}
-
 pub(super) fn pinned_session(host: &str, addrs: &[std::net::SocketAddr]) -> Result<Session> {
     crate::credentials::session(
         http_builder().dns(DnsConfig::new().resolve_host(host, addrs.iter().copied())),
@@ -299,11 +265,9 @@ pub(super) fn pinned_session(host: &str, addrs: &[std::net::SocketAddr]) -> Resu
 
 pub(crate) async fn allowed_url(raw: &str) -> Result<String> {
     let url = check_url(raw)?;
-    let host = url.host_str().unwrap_or("").to_string();
-    tokio::task::spawn_blocking(move || fetch_targets(&host))
+    public_targets(url.host_str().unwrap_or(""))
         .await
-        .unwrap_or(Err(()))
-        .map_err(|()| Error::Tool("browser: that host is not allowed".to_string()))?;
+        .ok_or_else(|| Error::Tool("browser: that host is not allowed".to_string()))?;
     Ok(url.to_string())
 }
 
@@ -314,13 +278,8 @@ pub(crate) async fn reachable(raw: &str) -> bool {
     if INERT_SCHEMES.contains(&url.scheme()) {
         return true;
     }
-    let host = url.host_str().unwrap_or("").to_string();
-    if url.scheme() != "https" || host_blocked(&host) {
-        return false;
-    }
-    tokio::task::spawn_blocking(move || !resolves_blocked(&host))
-        .await
-        .unwrap_or(false)
+    let host = url.host_str().unwrap_or("");
+    url.scheme() == "https" && !host_blocked(host) && public_targets(host).await.is_some()
 }
 
 fn safe_redirect(url: &Url) -> bool {
@@ -329,7 +288,7 @@ fn safe_redirect(url: &Url) -> bool {
         && url.username().is_empty()
         && url.password().is_none()
         && !host_blocked(host)
-        && !resolves_blocked(host)
+        && fetch_targets(host).is_some()
 }
 
 fn host_of(url: &str) -> String {

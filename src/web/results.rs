@@ -97,23 +97,17 @@ struct Freshness {
     values: HashMap<Window, String>,
 }
 
-fn table() -> std::result::Result<&'static Table, &'static str> {
-    static TABLE: OnceLock<std::result::Result<Table, String>> = OnceLock::new();
-    TABLE
-        .get_or_init(|| toml::from_str(ENGINES).map_err(|error| error.to_string()))
-        .as_ref()
-        .map_err(String::as_str)
+fn table() -> &'static Table {
+    static TABLE: OnceLock<Table> = OnceLock::new();
+    TABLE.get_or_init(|| summonr_core::table::embedded("search engine", ENGINES))
 }
 
-pub(super) fn engines() -> Result<&'static [Engine]> {
-    table()
-        .map(|table| table.engine.as_slice())
-        .map_err(|error| Error::Tool(format!("web_search engines: {error}")))
+pub(super) fn engines() -> &'static [Engine] {
+    &table().engine
 }
 
 pub(crate) fn wall() -> &'static Block {
-    static NONE: Block = Block::NONE;
-    table().map_or(&NONE, |table| &table.wall)
+    &table().wall
 }
 
 impl Engine {

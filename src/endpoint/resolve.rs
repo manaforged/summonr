@@ -123,7 +123,8 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
                 .unwrap_or_default(),
         ),
         api_key: env_key(&["SUMMONR_API_KEY"])
-            .or_else(|| super::preset::env_default().and_then(|preset| env_key(&preset.env_keys))),
+            .or_else(|| super::preset::env_default().and_then(|preset| env_key(&preset.env_keys)))
+            .map(Secret::new),
         body: std::env::var("SUMMONR_MAX_TOKENS")
             .ok()
             .and_then(|value| value.trim().parse::<u32>().ok())

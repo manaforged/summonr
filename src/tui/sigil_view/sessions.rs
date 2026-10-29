@@ -3,13 +3,14 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::session::SessionInfo;
+use crate::tui::matching::all_words;
 use sigil::prelude::{NodeBuilder, Signal};
 use sigil::prelude::{container, signal, virtual_list};
 
 use super::app::App;
 use super::canvas;
 use super::ui::{
-    Bindings, Dialog, Hints, Key, Size, alt, filter_column, filter_field, overlay_list, plain,
+    Bindings, Dialog, Hints, Key, List, Size, alt, filter_column, filter_field, overlay_list, plain,
 };
 
 mod resume_row;
@@ -20,15 +21,13 @@ const CURRENT: &str = " (current)";
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
     pub(super) open: Signal<bool>,
-    pub(super) query: Signal<String>,
-    pub(super) caret: Signal<usize>,
-    pub(super) selected: Signal<usize>,
+    pub(super) list: List,
     scope: Signal<Scope>,
     current: Signal<String>,
     loading: Signal<bool>,
     choices: Signal<Vec<(SessionInfo, bool)>>,
     error: Signal<String>,
-    armed: Signal<Option<(String, std::time::Instant)>>,
+    pub(super) armed: Signal<Option<(String, std::time::Instant)>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -42,9 +41,7 @@ impl Picker {
     pub(super) fn new() -> Self {
         Self {
             open: signal(false),
-            query: signal(String::new()),
-            caret: signal(0),
-            selected: signal(0),
+            list: List::new(),
             scope: signal(Scope::Project),
             current: signal(String::new()),
             loading: signal(false),
@@ -56,9 +53,8 @@ impl Picker {
 
     pub(super) fn start(self, current: &str, related: bool) {
         self.open.set(true);
-        self.query.set(String::new());
-        self.caret.set(0);
-        self.selected.set(0);
+        self.list.type_query(String::new());
+        self.list.select(0);
         self.scope.set(if related {
             Scope::Related
         } else {
@@ -84,7 +80,7 @@ impl Picker {
 
     fn focus(self) {
         if self.scope.peek() == Scope::Related {
-            self.selected.set(
+            self.list.select(
                 self.rows()
                     .iter()
                     .position(|info| info.id == self.current.peek())
@@ -93,27 +89,12 @@ impl Picker {
         }
     }
 
-    pub(super) fn arm(self, id: &str) -> bool {
-        let now = std::time::Instant::now();
-        let window = crate::limits::limits().repeat_window();
-        let repeat = self
-            .armed
-            .peek()
-            .is_some_and(|(armed, at)| armed == id && now.duration_since(at) <= window);
-        self.armed.set(if repeat {
-            None
-        } else {
-            Some((id.to_string(), now))
-        });
-        repeat
-    }
-
     pub(super) fn note(self, text: &str) {
         self.error.set(text.to_string());
     }
 
     pub(super) fn rows(self) -> Vec<SessionInfo> {
-        let query = self.query.get().to_lowercase();
+        let query = self.list.query.get();
         let scope = self.scope.get();
         let choices = self.choices.get();
         let rows = if scope == Scope::Related {
@@ -134,9 +115,8 @@ impl Picker {
                     info.cwd.as_deref().unwrap_or(""),
                     info.model.as_deref().unwrap_or(""),
                     info.preview
-                )
-                .to_lowercase();
-                query.split_whitespace().all(|word| text.contains(word))
+                );
+                all_words(&text, &query)
             })
             .collect()
     }
@@ -266,7 +246,7 @@ impl Picker {
             self.armed.set(None);
             self.error.set(String::new());
         }
-        super::app::shift(&self.selected, delta, self.rows().len());
+        self.list.shift(delta, self.rows().len());
     }
 
     pub(super) fn scope(self) {
@@ -277,7 +257,7 @@ impl Picker {
             Scope::All => Scope::Related,
             Scope::Related => Scope::Project,
         });
-        self.selected.set(0);
+        self.list.select(0);
         self.focus();
     }
 }
@@ -301,9 +281,9 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 .key(Key::Tab, "scope")
                 .key(Key::Alt('d'), "delete")
                 .key(Key::Esc, "close")
-                .count(picker.selected.get(), picker.rows().len())
+                .count(picker.list.cursor.get(), picker.rows().len())
         })
-        .child(filter_field(picker.query, picker.caret))
+        .child(filter_field(picker.list.query, picker.list.caret))
         .child(container().children_reactive(move || {
             let note = picker.error.get();
             if note.is_empty() || picker.rows().is_empty() {
@@ -326,7 +306,7 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
     let paint = app.clone();
     filter_column().children_reactive(move || {
         let rows = picker.rows();
-        let selected = picker.selected.get().min(rows.len().saturating_sub(1));
+        let selected = picker.list.cursor.get().min(rows.len().saturating_sub(1));
         if rows.is_empty() {
             return vec![plain(picker.empty())];
         }
@@ -336,7 +316,7 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
             virtual_list(rows, move |index, info: &SessionInfo| {
                 row(source.clone(), picker, index, info, selected)
             })
-            .follow_row(paint.sessions.selected),
+            .follow_row(paint.sessions.list.cursor),
             canvas::overlay_list_row(),
             shown,
         )]

@@ -1,6 +1,4 @@
 use std::path::PathBuf;
-#[cfg(windows)]
-use std::process::Stdio;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::process::{Env, Io, Spec};
@@ -195,13 +193,10 @@ pub(in crate::tools) fn kill_group(pid: u32) {
     #[cfg(unix)]
     signal(pid, libc::SIGKILL);
     #[cfg(windows)]
-    drop(
-        std::process::Command::new("taskkill")
-            .args(["/F", "/T", "/PID", &pid.to_string()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status(),
-    );
+    drop(crate::process::output(
+        Spec::new("taskkill", ["/F", "/T", "/PID", &pid.to_string()]),
+        None,
+    ));
 }
 
 #[cfg(unix)]

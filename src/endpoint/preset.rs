@@ -48,15 +48,15 @@ pub(super) struct Preset {
     #[serde(default)]
     pub(super) context_window: Option<u32>,
     #[serde(default)]
-    pub(super) opencode: bool,
+    pub(super) session_headers: BTreeMap<String, SessionValue>,
+    #[serde(default)]
+    pub(super) keep_reasoning: bool,
     #[serde(default)]
     pub(super) prompt_cache_key: bool,
     #[serde(default)]
     pub(super) assistant_after_tool: bool,
     #[serde(default)]
     pub(super) cache_ttl: Option<CacheTtl>,
-    #[serde(default)]
-    pub(super) cache_header: Option<String>,
     #[serde(default)]
     pub(super) cache_marks: bool,
     #[serde(default)]
@@ -116,9 +116,10 @@ impl Preset {
 mod row;
 
 use row::File;
+pub(crate) use row::wire;
 
 pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
-    let File { mut preset, oauth } = toml::from_str(text).map_err(|error| error.to_string())?;
+    let File { mut preset, oauth } = summonr_core::table::parse(text)?;
     let mut seen = std::collections::BTreeSet::new();
     for row in &mut preset {
         row.check(&oauth)?;

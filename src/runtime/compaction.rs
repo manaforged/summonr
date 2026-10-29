@@ -72,20 +72,12 @@ impl<P: Provider> Loop<P> {
         request_messages.extend_from_slice(slice);
         request_messages.push(Message::user(SUMMARY_ASK.to_string()));
         let advertised = self.advertised_tools();
-        let request = self
-            .request(
+        match self
+            .side_call(
                 workflow::Role::Summary,
                 &request_messages,
-                &advertised.tools,
-                false,
+                Some(&advertised),
             )
-            .with_tools_json(&advertised.json);
-        let options = CallOptions {
-            stream: false,
-            retry: RetryPolicy::None,
-        };
-        match self
-            .call(workflow::Role::Summary, request, options)
             .await?
             .map_err(|missed| missed.error)
         {
@@ -107,6 +99,31 @@ impl<P: Provider> Loop<P> {
             }
             Err(wait_error) => Err(wait_error.error()),
         }
+    }
+
+    async fn summarize_until(
+        &mut self,
+        messages: &[Message],
+        keep_from: usize,
+        usage: &mut Usage,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Option<String>> {
+        let Some(reply) = self
+            .summarize(&messages[0], &messages[1..keep_from])
+            .await?
+        else {
+            return Ok(None);
+        };
+        usage.add(&reply.usage);
+        self.emit_records(events, emit)?;
+        if let Some(reason) = self.round_abort() {
+            return Err(Error::Config(reason));
+        }
+        let summary = reply.content.unwrap_or_default();
+        self.session.compact(&summary, &messages[keep_from..])?;
+        self.tools.forget_reads();
+        Ok(Some(summary))
     }
 
     pub(super) async fn auto_compact(
@@ -154,7 +171,7 @@ impl<P: Provider> Loop<P> {
             return Ok(true);
         }
         let Some(summary) = self
-            .summarize(&messages[0], &messages[1..keep_from])
+            .summarize_until(messages, keep_from, usage, events, emit)
             .await?
         else {
             self.summary_wait = crate::limits::limits().summary_retry_rounds;
@@ -171,14 +188,6 @@ impl<P: Provider> Loop<P> {
             )?;
             return Ok(false);
         };
-        usage.add(&summary.usage);
-        self.emit_records(events, emit)?;
-        if let Some(reason) = self.round_abort() {
-            return Err(Error::Config(reason));
-        }
-        let summary = summary.content.unwrap_or_default();
-        self.session.compact(&summary, &messages[keep_from..])?;
-        self.tools.forget_reads();
         messages.truncate(1);
         messages.extend(self.session.history().iter().cloned());
         self.compact_hook(&summary, events, emit).await?;
@@ -247,21 +256,21 @@ impl<P: Provider> Loop<P> {
         else {
             return Ok(false);
         };
-        let Some(reply) = self
-            .summarize(&messages[0], &messages[1..keep_from])
+        if self
+            .summarize_until(
+                &messages,
+                keep_from,
+                &mut Usage::default(),
+                &mut Vec::new(),
+                &mut emit,
+            )
             .await?
-        else {
+            .is_none()
+        {
             return Err(Error::Config(
                 "the compaction summary failed; the context is unchanged".to_string(),
             ));
-        };
-        self.emit_records(&mut Vec::new(), &mut emit)?;
-        if let Some(reason) = self.round_abort() {
-            return Err(Error::Config(reason));
         }
-        let summary = reply.content.unwrap_or_default();
-        self.session.compact(&summary, &messages[keep_from..])?;
-        self.tools.forget_reads();
         Ok(true)
     }
 }

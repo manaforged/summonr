@@ -4232,6 +4232,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "summonr-core",
+ "summonr-types",
  "thiserror 2.0.20",
  "tokio",
  "url",
@@ -4244,9 +4246,11 @@ dependencies = [
  "base64",
  "dunce",
  "ignore",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
+ "toml 0.8.23",
 ]
 
 [[package]]

@@ -60,7 +60,6 @@ pub(crate) struct Store {
     file: PathBuf,
     backend: Backend,
     seal: Option<[u8; KEY_LEN]>,
-    wrap_tool: Option<PathBuf>,
 }
 
 impl Store {
@@ -81,7 +80,6 @@ impl Store {
             file,
             backend: backend(&choice)?,
             seal: None,
-            wrap_tool: None,
         })
     }
 
@@ -91,7 +89,6 @@ impl Store {
             file,
             backend: Backend::File,
             seal: Some(seal),
-            wrap_tool: None,
         }
     }
 
@@ -232,9 +229,9 @@ impl Store {
         match self.backend {
             Backend::File => file_wrap(&self.file),
             #[cfg(any(target_os = "macos", all(test, unix)))]
-            Backend::Security(_) => os_wrap_key(self.wrap_tool.as_deref()),
+            Backend::Security(_) => os_wrap_key(),
             #[cfg(not(target_os = "macos"))]
-            Backend::Native => os_wrap_key(self.wrap_tool.as_deref()),
+            Backend::Native => os_wrap_key(),
         }
     }
 }

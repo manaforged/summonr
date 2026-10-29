@@ -111,7 +111,9 @@ fn the_tree_cache_drops_workspaces_past_the_retention() {
     std::fs::write(&stale, "{}").unwrap();
     let retain = std::time::Duration::from_secs(60);
     let later = std::time::SystemTime::now() + retain * 2;
-    super::cache::prune(cache.path(), &kept, retain, later);
+    crate::durable::store::retain(cache.path(), retain, later, |path| {
+        path != kept && std::fs::remove_file(path).is_ok()
+    });
     assert!(kept.exists());
     assert!(!stale.exists());
 }
@@ -138,7 +140,10 @@ fn a_cached_tree_exactly_at_the_retention_age_is_kept() {
     let retain = Duration::from_secs(60);
     backdate(&old, retain * 2);
     let at = std::fs::metadata(&edge).unwrap().modified().unwrap();
-    super::cache::prune(cache, &cache.join("keep.json"), retain, at + retain);
+    let keep = cache.join("keep.json");
+    crate::durable::store::retain(cache, retain, at + retain, |path| {
+        path != keep && std::fs::remove_file(path).is_ok()
+    });
     assert!(edge.is_file());
     assert!(!old.exists());
 }

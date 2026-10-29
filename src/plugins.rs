@@ -11,16 +11,14 @@ use summonr_core::error::{Error, Result};
 
 pub(crate) mod agents;
 pub(crate) mod commands;
+mod expand;
 pub(crate) mod lsp;
 mod manage;
 
+pub(crate) use expand::{USER_CONFIG, Vars, expand};
 pub use manage::{Installed, check_servers, install, list, uninstall};
 
 pub(super) const MANIFEST: &str = ".claude-plugin/plugin.json";
-const ROOTS: [&str; 2] = ["${CLAUDE_PLUGIN_ROOT}", "${SUMMONR_PLUGIN_ROOT}"];
-const DATA: [&str; 2] = ["${CLAUDE_PLUGIN_DATA}", "${SUMMONR_PLUGIN_DATA}"];
-const PROJECT: &str = "${CLAUDE_PROJECT_DIR}";
-pub(super) const USER_CONFIG: &str = "${user_config.";
 pub(super) const UNSUPPORTED: [(&str, &str); 4] = [
     ("monitors", "monitors"),
     ("output-styles", "output styles"),
@@ -63,10 +61,6 @@ impl Plugin {
         }
     }
 
-    pub(super) fn declared(&self, key: &str) -> Vec<PathBuf> {
-        self.paths(key)
-    }
-
     fn hook_files(&self) -> Vec<PathBuf> {
         let mut files = vec![self.dir.join("hooks/hooks.json")];
         files.extend(self.paths("hooks"));
@@ -96,21 +90,12 @@ impl Plugin {
         Some(self.dir.join("bin")).filter(|dir| dir.is_dir())
     }
 
-    pub(crate) fn expand(&self, text: &str, workspace: &Path) -> String {
-        let root = self.dir.to_string_lossy();
-        let mut text = ROOTS
-            .iter()
-            .fold(text.to_string(), |text, token| text.replace(token, &root));
-        if DATA.iter().any(|token| text.contains(token))
-            && let Ok(data) = data_dir(&self.name)
-        {
-            drop(std::fs::create_dir_all(&data));
-            let data = data.to_string_lossy();
-            text = DATA
-                .iter()
-                .fold(text, |text, token| text.replace(token, &data));
+    pub(crate) fn vars<'a>(&'a self, workspace: &'a Path) -> Vars<'a> {
+        Vars {
+            plugin: Some(self),
+            workspace: Some(workspace),
+            user_config: None,
         }
-        text.replace(PROJECT, &workspace.to_string_lossy())
     }
 
     pub(crate) fn mcp_json(&self) -> Vec<Value> {
@@ -149,7 +134,7 @@ impl Plugin {
             .into_iter()
             .map(|(name, mut entry)| {
                 for text in fields(&mut entry) {
-                    *text = self.expand(text, workspace);
+                    *text = expand(text, &self.vars(workspace));
                 }
                 (format!("{}{separator}{name}", self.name), entry)
             })
@@ -268,10 +253,10 @@ pub(super) fn require_tree(plugin: &Plugin) -> Result<()> {
             .map(|_| ())
             .map_err(|error| error.to_string())
     })?;
-    for path in plugin.declared("mcpServers") {
+    for path in plugin.paths("mcpServers") {
         json_file(&path)?;
     }
-    for path in plugin.declared("hooks") {
+    for path in plugin.paths("hooks") {
         json_file(&path)?;
     }
     Ok(())

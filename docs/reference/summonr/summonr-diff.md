@@ -46,7 +46,7 @@
 | <code>path: String</code> |  |
 | <code>removed: u32</code> |  |
 
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>
+**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>Hash</code>, <code>StructuralPartialEq</code>, <code>FromStr</code>, <code>Serialize</code>
 
 
 ## Enums
@@ -68,27 +68,27 @@
 
 ### `patch`
 
-<pre>pub fn <a href="#patch">patch</a>(root: &amp;Path, path: Option&lt;&amp;str&gt;) -&gt; <a href="summonr.html#result">Result</a>&lt;String&gt;</pre>
+<pre>pub fn <a href="#patch">patch</a>(root: &amp;Path, path: Option&lt;&amp;str&gt;) -&gt; Result&lt;String&gt;</pre>
 
 
 ### `stats`
 
-<pre>pub fn <a href="#stats">stats</a>(root: &amp;Path) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#diff">Diff</a>&gt;</pre>
+<pre>pub fn <a href="#stats">stats</a>(root: &amp;Path) -&gt; Result&lt;<a href="#diff">Diff</a>&gt;</pre>
 
 
 ### `turn_patch`
 
-<pre>pub fn <a href="#turn_patch">turn_patch</a>(root: &amp;Path, session: &amp;str, id: <a href="#turnid">TurnId</a>, path: Option&lt;&amp;str&gt;) -&gt; <a href="summonr.html#result">Result</a>&lt;String&gt;</pre>
+<pre>pub fn <a href="#turn_patch">turn_patch</a>(root: &amp;Path, session: &amp;str, id: <a href="#turnid">TurnId</a>, path: Option&lt;&amp;str&gt;) -&gt; Result&lt;String&gt;</pre>
 
 
 ### `turn_stats`
 
-<pre>pub fn <a href="#turn_stats">turn_stats</a>(root: &amp;Path, session: &amp;str, id: <a href="#turnid">TurnId</a>) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#diff">Diff</a>&gt;</pre>
+<pre>pub fn <a href="#turn_stats">turn_stats</a>(root: &amp;Path, session: &amp;str, id: <a href="#turnid">TurnId</a>) -&gt; Result&lt;<a href="#diff">Diff</a>&gt;</pre>
 
 
 ### `turns`
 
-<pre>pub fn <a href="#turns">turns</a>(journal: &amp;Path) -&gt; <a href="summonr.html#result">Result</a>&lt;Vec&lt;Vec&lt;String&gt;&gt;&gt;</pre>
+<pre>pub fn <a href="#turns">turns</a>(journal: &amp;Path) -&gt; Result&lt;Vec&lt;Vec&lt;String&gt;&gt;&gt;</pre>
 
 
 ## Constants

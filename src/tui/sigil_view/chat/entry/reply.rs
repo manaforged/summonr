@@ -7,18 +7,12 @@ use sigil::reactive::derived;
 use sigil::widgets::DiffBuilder;
 
 use super::{patch_of, patch_path, patch_view};
+use crate::diff::Stat;
 use crate::prefs::DiffLayout;
 use crate::tui::sigil_view::chat::App;
 use crate::tui::sigil_view::text_style::TextStyle;
 
 const FENCE: &str = "```";
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct StatLine {
-    path: String,
-    added: u32,
-    removed: u32,
-}
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum Shown {
@@ -27,7 +21,7 @@ enum Shown {
         patch: String,
     },
     Stat {
-        rows: Vec<StatLine>,
+        rows: Vec<Stat>,
         summary: Option<String>,
     },
 }
@@ -123,7 +117,7 @@ fn patch_node(app: &App, layout: DiffLayout, path: Option<String>, patch: String
     }
 }
 
-fn stat_node(rows: &[StatLine], summary: Option<&str>) -> NodeBuilder {
+fn stat_node(rows: &[Stat], summary: Option<&str>) -> NodeBuilder {
     let mut column = container()
         .layout(
             LayoutStyle::flex_column()
@@ -155,7 +149,7 @@ fn stat_node(rows: &[StatLine], summary: Option<&str>) -> NodeBuilder {
     column
 }
 
-fn stat_head(row: &StatLine) -> NodeBuilder {
+fn stat_head(row: &Stat) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -312,73 +306,32 @@ fn classify(body: &str) -> Option<Shown> {
     Some(Shown::Stat { rows, summary })
 }
 
-fn stats_of(body: &str) -> Option<(Vec<StatLine>, Option<String>)> {
+fn stats_of(body: &str) -> Option<(Vec<Stat>, Option<String>)> {
     let mut rows = Vec::new();
     let mut summary = None;
-    for line in body.lines() {
-        let line = line.trim();
-        if skipped(line) {
+    for line in body.lines().map(str::trim) {
+        if line.is_empty()
+            || line.starts_with('$')
+            || line == "---"
+            || line.starts_with("summonr diff")
+        {
             continue;
         }
-        if let Some(row) = stat_line(line) {
+        if let Ok(row) = line.parse() {
             rows.push(row);
-            continue;
-        }
-        if summary.is_none() && summary_line(line) {
+        } else if summary.is_none()
+            && line.split_once(" file").is_some_and(|(count, rest)| {
+                !count.is_empty()
+                    && count.bytes().all(|byte| byte.is_ascii_digit())
+                    && rest.contains(" vs ")
+            })
+        {
             summary = Some(line.to_string());
-            continue;
+        } else {
+            return None;
         }
-        return None;
     }
     (!rows.is_empty()).then_some((rows, summary))
-}
-
-fn skipped(line: &str) -> bool {
-    line.is_empty()
-        || line.starts_with('$')
-        || line == "---"
-        || line
-            .trim_start_matches('$')
-            .trim()
-            .starts_with("summonr diff")
-}
-
-fn summary_line(line: &str) -> bool {
-    let Some((count, rest)) = line.split_once(" file") else {
-        return false;
-    };
-    !count.is_empty() && count.chars().all(|ch| ch.is_ascii_digit()) && rest.contains(" vs ")
-}
-
-fn stat_line(line: &str) -> Option<StatLine> {
-    let rest = line.strip_prefix('+')?;
-    let (added, rest) = number(rest)?;
-    let rest = rest.trim_start();
-    let rest = rest.strip_prefix('−').or_else(|| rest.strip_prefix('-'))?;
-    let (removed, rest) = number(rest)?;
-    let trimmed = rest.trim();
-    let path = trimmed.strip_suffix("  new").unwrap_or(trimmed).trim();
-    if path.is_empty() || path.contains(' ') {
-        return None;
-    }
-    Some(StatLine {
-        path: path.to_string(),
-        added,
-        removed,
-    })
-}
-
-fn number(text: &str) -> Option<(u32, &str)> {
-    let end = text
-        .char_indices()
-        .find(|(_, ch)| !ch.is_ascii_digit())
-        .map(|(index, _)| index)
-        .unwrap_or(text.len());
-    if end == 0 {
-        return None;
-    }
-    let value = text[..end].parse().ok()?;
-    Some((value, &text[end..]))
 }
 
 #[cfg(test)]

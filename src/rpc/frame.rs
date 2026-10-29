@@ -42,6 +42,10 @@ impl<R: AsyncRead + Unpin> Lines<R> {
         }
     }
 
+    pub(crate) fn buffered(&self) -> bool {
+        self.reader.buffer().contains(&b'\n')
+    }
+
     pub(crate) async fn next(&mut self) -> std::io::Result<Read> {
         match self.framing {
             Framing::Line => self.line().await,

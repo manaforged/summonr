@@ -33,8 +33,8 @@ impl ToolRegistry {
         if entry.0 != stamp {
             *entry = (stamp, Vec::new());
         }
-        let text = match clip(&out.text, &entry.1) {
-            Clip::Repeat => {
+        let text = match omit_shown(&out.text, &entry.1) {
+            Omitted::Repeat => {
                 return ToolOutput {
                     text: format!(
                         "{path} lines {}-{} already shown by earlier reads; file unchanged",
@@ -43,8 +43,8 @@ impl ToolRegistry {
                     ..out
                 };
             }
-            Clip::Partial(text) => text,
-            Clip::Fresh => out.text,
+            Omitted::Partial(text) => text,
+            Omitted::Fresh => out.text,
         };
         entry.1.push(served);
         entry.1.sort_unstable();
@@ -63,25 +63,25 @@ impl ToolRegistry {
     }
 }
 
-enum Clip {
+enum Omitted {
     Fresh,
     Repeat,
     Partial(String),
 }
 
-fn clip(text: &str, shown: &[(usize, usize)]) -> Clip {
+fn omit_shown(text: &str, shown: &[(usize, usize)]) -> Omitted {
     if shown.is_empty() {
-        return Clip::Fresh;
+        return Omitted::Fresh;
     }
     let mut lines = text.lines();
     let Some(header) = lines.next() else {
-        return Clip::Fresh;
+        return Omitted::Fresh;
     };
     let Some((path, rest)) = header.split_once("  lines ") else {
-        return Clip::Fresh;
+        return Omitted::Fresh;
     };
     let Some((_, total_rest)) = rest.split_once('/') else {
-        return Clip::Fresh;
+        return Omitted::Fresh;
     };
     let total = total_rest.split_whitespace().next().unwrap_or(total_rest);
     let mut kept = Vec::new();
@@ -105,16 +105,16 @@ fn clip(text: &str, shown: &[(usize, usize)]) -> Clip {
         }
     }
     if skipped == 0 {
-        return Clip::Fresh;
+        return Omitted::Fresh;
     }
     if kept.is_empty() {
-        return Clip::Repeat;
+        return Omitted::Repeat;
     }
     let Some(first) = line_no(kept[0]) else {
-        return Clip::Fresh;
+        return Omitted::Fresh;
     };
     let Some(last) = kept.last().copied().and_then(line_no) else {
-        return Clip::Fresh;
+        return Omitted::Fresh;
     };
     let mut out = format!("{path}  lines {first}-{last}/{total}  [{skipped} already shown]");
     for line in kept {
@@ -125,7 +125,7 @@ fn clip(text: &str, shown: &[(usize, usize)]) -> Clip {
         out.push('\n');
         out.push_str(line);
     }
-    Clip::Partial(out)
+    Omitted::Partial(out)
 }
 
 fn line_no(line: &str) -> Option<usize> {

@@ -10,7 +10,7 @@ pub mod mcp;
 mod message;
 pub mod modules;
 mod notify;
-mod oauth;
+pub mod oauth;
 pub mod plugins;
 pub mod prefs;
 mod reasoning;
@@ -22,7 +22,7 @@ mod work;
 pub use oauth::OAuth;
 
 pub use child::{Access, ChildScope};
-pub use event::{Abort, AbortCode, Event, Hold, Kept, progress_text};
+pub use event::{Abort, AbortCode, Event, Hold, Kept, StepState, progress_text};
 pub use receipt::{Outcome, Receipt};
 pub use work::{Todo, TodoStatus, WorkKind, WorkPhase, WorkProgress};
 

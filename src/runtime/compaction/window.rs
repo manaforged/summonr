@@ -5,18 +5,20 @@ fn under_pressure(estimated_tokens: usize, window: u32) -> bool {
         >= (window as usize).saturating_mul(crate::limits::limits().compact_percent)
 }
 
+fn smaller(left: Option<u32>, right: Option<u32>) -> Option<u32> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.min(right)),
+        (left, right) => left.or(right),
+    }
+}
+
 pub(super) fn fired_ceiling(
     chars: usize,
     estimated_tokens: usize,
     known: Option<u32>,
     compact_tokens: Option<u32>,
 ) -> Option<Option<u32>> {
-    let token_ceiling = match (known, compact_tokens) {
-        (Some(window), Some(cap)) => Some(window.min(cap)),
-        (Some(window), None) => Some(window),
-        (None, Some(cap)) => Some(cap),
-        (None, None) => None,
-    };
+    let token_ceiling = smaller(known, compact_tokens);
     let token_trip = token_ceiling.is_some_and(|ceiling| under_pressure(estimated_tokens, ceiling));
     let char_trip = known.is_none() && chars >= crate::limits::limits().compact_chars;
     if token_trip {
@@ -37,25 +39,14 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn known_window(&self) -> Option<u32> {
-        let round = self.receiver_window(crate::workflow::Role::Implement);
         let summary = self
             .selections
             .get(&workflow::Role::Summary)
             .and_then(|(_, _, window)| *window);
-        match (round, summary) {
-            (Some(round), Some(summary)) => Some(round.min(summary)),
-            (Some(round), None) => Some(round),
-            (None, Some(summary)) => Some(summary),
-            (None, None) => None,
-        }
+        smaller(self.receiver_window(workflow::Role::Implement), summary)
     }
 
     pub(crate) fn pressure_window(&self) -> Option<u32> {
-        match (self.known_window(), self.compact_tokens) {
-            (Some(window), Some(cap)) => Some(window.min(cap)),
-            (Some(window), None) => Some(window),
-            (None, Some(cap)) => Some(cap),
-            (None, None) => None,
-        }
+        smaller(self.known_window(), self.compact_tokens)
     }
 }

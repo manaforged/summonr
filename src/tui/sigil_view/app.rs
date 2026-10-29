@@ -69,7 +69,7 @@ pub(in crate::tui::sigil_view) struct Asked {
 
 pub(super) use super::ui::shift;
 pub(super) use files::PaneRow;
-use files::{armed, file_url, read_git_branch, save};
+use files::{Confirm, confirm, file_url, read_git_branch, save};
 
 mod secret;
 mod state;
@@ -158,13 +158,13 @@ pub(super) struct App {
     pub(super) diff_recent: Signal<bool>,
     pub(super) diff_session: Signal<bool>,
     pub(super) options_menu: Signal<bool>,
-    pub(super) revert_armed: Signal<Option<String>>,
-    pub(super) worktree_discard: Signal<Option<PathBuf>>,
+    pub(super) revert_armed: Confirm<String>,
+    pub(super) worktree_discard: Confirm<PathBuf>,
     pub(super) view_edit: Signal<bool>,
     pub(super) view_text: Signal<String>,
     pub(super) view_caret: Signal<usize>,
     view_saved: Signal<String>,
-    discard_armed: Signal<bool>,
+    discard_armed: Confirm<()>,
     pub(super) copy: Signal<Option<String>>,
     pub(super) approval: Signal<Option<Asked>>,
     pub(super) form: Signal<Option<FormState>>,
@@ -175,8 +175,8 @@ pub(super) struct App {
     copy_pending: Signal<Option<(Option<PathBuf>, String)>>,
     pub(super) open_file: Signal<Option<PathBuf>>,
     pub(super) quit: Signal<bool>,
-    quit_armed: Rc<Cell<Option<std::time::Instant>>>,
-    escape_armed: Rc<Cell<Option<std::time::Instant>>>,
+    quit_armed: Confirm<()>,
+    escape_armed: Confirm<()>,
     pub(super) editor_requested: Signal<bool>,
     pub(super) commands: Picker,
     pub(super) sessions: super::sessions::Picker,
@@ -287,7 +287,7 @@ impl App {
             view_text: signal(String::new()),
             view_caret: signal(0),
             view_saved: signal(String::new()),
-            discard_armed: signal(false),
+            discard_armed: signal(None),
             copy: signal(None),
             approval: signal(None),
             form: signal(None),
@@ -298,8 +298,8 @@ impl App {
             copy_pending: signal(None),
             open_file: signal(None),
             quit: signal(false),
-            quit_armed: Rc::new(Cell::new(None)),
-            escape_armed: Rc::new(Cell::new(None)),
+            quit_armed: signal(None),
+            escape_armed: signal(None),
             editor_requested: signal(false),
             commands: Picker::new(),
             sessions: super::sessions::Picker::new(),

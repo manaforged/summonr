@@ -62,7 +62,7 @@ async fn run_on(base: String, wire: crate::endpoint::Wire) -> (Result<AssistantM
     let mut partial = Partial::default();
     let outcome = tokio::time::timeout(
         Duration::from_secs(10),
-        client.complete_stream(&request, &mut partial),
+        crate::provider::Provider::stream(&client, &request, &mut partial),
     )
     .await
     .expect("a stream that produces nothing must end, not hang");
@@ -243,7 +243,7 @@ async fn a_server_silent_before_its_headers_fails_after_the_idle_timeout() {
     let mut partial = Partial::default();
     let outcome = tokio::time::timeout(
         Duration::from_secs(10),
-        client.complete_stream(&request, &mut partial),
+        crate::provider::Provider::stream(&client, &request, &mut partial),
     )
     .await
     .expect("a server that never sends headers must fail after idle_timeout_secs");
@@ -273,4 +273,50 @@ async fn a_frame_that_is_not_json_fails_the_stream() {
         panic!("expected a provider failure, got {outcome:?}");
     };
     assert_eq!(failure.kind, ProviderFailureKind::Malformed);
+}
+
+#[tokio::test]
+async fn a_rate_limited_stream_reaches_the_server_once() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = std::sync::Arc::clone(&seen);
+    std::thread::spawn(move || {
+        for socket in listener.incoming() {
+            let Ok(mut socket) = socket else {
+                return;
+            };
+            read_request(&mut socket);
+            count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            drop(socket.write_all(
+                b"HTTP/1.1 429 Too Many Requests\r\nretry-after: 0\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}",
+            ));
+        }
+    });
+    let (outcome, _) = run(base).await;
+    assert!(outcome.is_err(), "{outcome:?}");
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn an_anthropic_answer_keeps_a_literal_think_tag() {
+    let (outcome, _) = run_on(
+        server(
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n",
+            "",
+            0,
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+             data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"wrap it in <think>x</think> tags\"}}\n\n\
+             data: {\"type\":\"content_block_stop\",\"index\":0}\n\n\
+             data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n\
+             data: {\"type\":\"message_stop\"}\n\n",
+        ),
+        crate::endpoint::Wire::Anthropic,
+    )
+    .await;
+    let message = outcome.unwrap();
+    assert_eq!(
+        message.content.as_deref(),
+        Some("wrap it in <think>x</think> tags")
+    );
 }

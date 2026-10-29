@@ -1,16 +1,15 @@
 use std::path::Path;
 
 use summonr_core::error::{Error, Result};
-use summonr_core::walk::SKIP_DIRS;
 use summonr_core::walk::{self, Walk};
 
 const LIST_MAX: usize = 200;
 
-pub(super) fn format_tree(path: &str, dir: &Path, depth: usize) -> Result<String> {
+pub(super) fn format_tree(path: &str, dir: &Path, depth: usize, base: Walk) -> Result<String> {
     let mut rows = Vec::new();
     let walk = Walk {
         depth: Some(depth),
-        ..Walk::TOOL
+        ..base
     };
     for entry in walk.entries(dir).skip(1) {
         let rel = entry
@@ -43,16 +42,16 @@ pub(super) fn format_tree(path: &str, dir: &Path, depth: usize) -> Result<String
     Ok(out)
 }
 
-pub(super) fn format_directory(path: &str, dir: &Path) -> Result<String> {
+pub(super) fn format_directory(path: &str, dir: &Path, base: Walk) -> Result<String> {
+    std::fs::read_dir(dir)
+        .map_err(|error| Error::Tool(format!("cannot list `{path}`: {error}")))?;
     let mut entries = Vec::new();
-    for entry in std::fs::read_dir(dir)
-        .map_err(|error| Error::Tool(format!("cannot list `{path}`: {error}")))?
-    {
-        let entry = entry.map_err(|error| Error::Tool(format!("cannot list `{path}`: {error}")))?;
+    let walk = Walk {
+        depth: Some(1),
+        ..base
+    };
+    for entry in walk.entries(dir).skip(1) {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if SKIP_DIRS.contains(&name.as_str()) {
-            continue;
-        }
         let meta = entry.metadata().ok();
         let kind = if meta.as_ref().is_some_and(std::fs::Metadata::is_dir) {
             "dir"

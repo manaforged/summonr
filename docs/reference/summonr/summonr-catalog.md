@@ -51,7 +51,7 @@
 | <code>display: Option&lt;String&gt;</code> |  |
 | <code>family: Option&lt;String&gt;</code> |  |
 | <code>id: String</code> |  |
-| <code>price: Option&lt;provider::request::Price&gt;</code> |  |
+| <code>price: Option&lt;Price&gt;</code> |  |
 | <code>reasoning: bool</code> |  |
 | <code>release: Option&lt;u64&gt;</code> |  |
 | <code>tools: Option&lt;bool&gt;</code> |  |
@@ -100,7 +100,7 @@
 
 ### `refresh_registry`
 
-<pre>pub async fn <a href="#refresh_registry">refresh_registry</a>() -&gt; <a href="summonr.html#result">Result</a>&lt;()&gt;</pre>
+<pre>pub async fn <a href="#refresh_registry">refresh_registry</a>() -&gt; Result&lt;()&gt;</pre>
 
 
 ### `tokens`

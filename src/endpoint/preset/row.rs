@@ -28,7 +28,7 @@ pub(super) struct ReasoningRow {
 
 type Checked<T> = std::result::Result<T, String>;
 
-pub(super) fn wire<'de, D: Deserializer<'de>>(
+pub(crate) fn wire<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Wire, D::Error> {
     let named = String::deserialize(deserializer)?;
@@ -68,10 +68,15 @@ impl Preset {
             .login
             .as_deref()
             .map(|named| {
-                logins
+                let login = logins
                     .get(named)
-                    .cloned()
-                    .ok_or_else(|| format!("`{name}` names unknown login `{named}`"))
+                    .ok_or_else(|| format!("`{name}` names unknown login `{named}`"))?;
+                match login.unknown().first() {
+                    Some((key, value)) => {
+                        Err(format!("login `{named}` has unknown {key} `{value}`"))
+                    }
+                    None => Ok(login.clone()),
+                }
             })
             .transpose()?;
         if let Some(key) = self

@@ -21,7 +21,7 @@ enum Source {
 #[derive(Default)]
 pub(in crate::tools) struct Launches {
     source: Mutex<Option<Source>>,
-    built: Mutex<BTreeMap<&'static str, Arc<Launch>>>,
+    built: Mutex<BTreeMap<language::Language, Arc<Launch>>>,
 }
 
 impl Launches {
@@ -66,7 +66,7 @@ impl Launches {
     }
 
     fn built(&self, module: &'static language::Module) -> Result<Arc<Launch>> {
-        if let Some(launch) = lock(&self.built)?.get(module.id) {
+        if let Some(launch) = lock(&self.built)?.get(&module.id) {
             return Ok(launch.clone());
         }
         let launch = Arc::new(built(module)?);
@@ -96,9 +96,7 @@ fn resolve(workspace: &Path) -> Result<Source> {
 }
 
 fn handles(module: &language::Module, path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| module.extensions.contains(&extension))
+    module.handles(path)
 }
 
 pub(in crate::tools) fn available(workspace: &Path) -> bool {
@@ -141,11 +139,11 @@ pub(super) fn workspace_module(workspace: &Path) -> Result<Option<String>> {
 
 pub(super) fn built(module: &language::Module) -> Result<Launch> {
     let mut names = Vec::new();
-    for server in module.servers {
-        names.push(server.name);
-        if on_path(server.name).is_some() {
-            let mut command = vec![server.name.to_string()];
-            command.extend(server.args.iter().map(|arg| (*arg).to_string()));
+    for server in &module.servers {
+        names.push(server.name.as_str());
+        if on_path(&server.name).is_some() {
+            let mut command = vec![server.name.clone()];
+            command.extend(server.args.iter().cloned());
             return Ok(Launch {
                 origin: Origin::Host,
                 key: module.id.to_string(),

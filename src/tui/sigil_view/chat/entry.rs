@@ -28,20 +28,14 @@ mod children;
 mod collapse;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) mod fold;
-mod reply;
-#[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use reply::diff_card;
 pub(in crate::tui::sigil_view) mod preview;
+pub(in crate::tui::sigil_view) mod reply;
 mod steps;
 mod tools;
 #[cfg(feature = "gui")]
 mod verb;
-#[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use live::{Content, content};
-pub(in crate::tui::sigil_view) use live::{Mark, Prose, bits, mark, revision};
+pub(in crate::tui::sigil_view) use live::{Revision, bits, revision};
 mod live;
-#[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use steps::slot;
 pub(in crate::tui::sigil_view) use steps::{Slot, slots, subagents};
 pub(in crate::tui::sigil_view) use tools::glyph;
 pub(in crate::tui::sigil_view) use tools::tool_label;

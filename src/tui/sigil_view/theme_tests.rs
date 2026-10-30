@@ -46,6 +46,69 @@ fn auto_follows_the_terminal_backdrop() {
     assert_eq!(Palette::named("auto"), Palette::SPACE);
 }
 
+#[test]
+fn applying_custom_colors_repaints_a_mounted_view_without_changing_the_theme_name() {
+    use crate::tui::sigil_view::{app::App, profile::info, view::root};
+    use sigil::Host;
+    use sigil::events::EventRouter;
+    use sigil::reactive::Runtime;
+    use sigil::terminal::Screen;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    Runtime::scope("installed-palette", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let folder = workspace.path().join(".summonr");
+        std::fs::create_dir(&folder).expect("theme folder");
+        let file = folder.join("theme.toml");
+        std::fs::write(&file, "base = \"#102030\"\n").expect("initial theme");
+        let (commands, _receiver) = unbounded_channel();
+        let mut context = info();
+        context.config = Some(workspace.path().join("config.toml"));
+        let app = App::new(context, workspace.path().to_owned(), commands);
+        app.resize(80, 24);
+        app.refresh();
+        let mut host = Host::cells();
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(80, 24);
+        let mut router = EventRouter::new();
+        let mut background = || {
+            screen
+                .frame(&mut host, &mut router, [], (80, 24))
+                .expect("settle theme");
+            screen
+                .frame(&mut host, &mut router, [], (80, 24))
+                .expect("paint theme")
+                .get(0, 0)
+                .expect("background cell")
+                .bg
+        };
+        assert_eq!(
+            background(),
+            Ink::Exact(Rgba8 {
+                r: 16,
+                g: 32,
+                b: 48,
+                a: 255
+            })
+        );
+        std::fs::write(&file, "base = \"#405060\"\n").expect("updated theme");
+        app.apply_theme();
+        app.refresh();
+        assert_eq!(
+            background(),
+            Ink::Exact(Rgba8 {
+                r: 64,
+                g: 80,
+                b: 96,
+                a: 255
+            })
+        );
+        app.toggle_background();
+        assert_eq!(background(), Ink::Bare);
+    });
+}
+
 fn luminance(color: Rgba8) -> f64 {
     let channel = |value: u8| {
         let value = f64::from(value) / 255.0;

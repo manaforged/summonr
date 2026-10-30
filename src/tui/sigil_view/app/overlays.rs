@@ -167,6 +167,7 @@ static ROWS: [Row; 13] = [
         keys: settings::settings_keys,
         node: Some(settings::settings_layer),
         shift: App::move_setting,
+        viewport: Some(|app| app.settings.scroll),
         adjust: |app, delta| {
             if app.selected_setting() == Some(super::settings::Setting::Endpoint) {
                 app.cycle_model(delta >= 0);

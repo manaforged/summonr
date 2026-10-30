@@ -69,7 +69,7 @@ leyline = { workspace = true }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "441cf15b45d85afde220572ecb19f2cc623edcf5", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "d6f7c249e80d27b578dc3574284f86370fa78d66", default-features = false, features = ["terminal", "inspect"] }
 ignore = { workspace = true }
 grep-matcher = "0.1"
 grep-regex = "0.1"

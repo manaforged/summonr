@@ -48,11 +48,12 @@ fn hits() {}
     assert!(patch.contains("+    line_hash(line)"), "{patch}");
     assert!(!patch.contains("diff --git"), "{patch}");
     assert!(!patch.contains("index "), "{patch}");
-    let Part::Prose(code) = &parts[4] else {
+    let Part::Code { lang, body, closed } = &parts[4] else {
         panic!("code");
     };
-    assert!(code.contains("fn hits() {}"), "{code}");
-    assert!(code.contains("```rust"), "{code}");
+    assert_eq!(lang, "rust");
+    assert_eq!(body, "fn hits() {}");
+    assert!(*closed);
 
     let (rows, _) = stats_of("+3 −6 src/hashline.rs\n1 file · +3 −6 · vs HEAD").unwrap();
     assert_eq!(rows[0].path, "src/hashline.rs");
@@ -66,8 +67,8 @@ fn a_command_log_is_not_a_stat_card() {
 
 fn kind(part: &Part) -> &'static str {
     match part {
-        Part::Prose(text) if text.contains("```") => "code",
         Part::Prose(_) => "prose",
+        Part::Code { .. } => "code",
         Part::Shown(Shown::Stat { .. }) => "stat",
         Part::Shown(Shown::Patch { .. }) => "patch",
     }

@@ -150,11 +150,13 @@ impl App {
             return;
         }
         if !self.picker.open.peek() {
-            self.picker.groups.update(|held| held.extend(groups));
-            if self.auth.open.peek() {
-                self.picker.choices.set(std::rc::Rc::new(rows));
-                self.picker.facts.set(std::rc::Rc::new(facts));
-            }
+            batch(|| {
+                self.picker.groups.update(|held| held.extend(groups));
+                if self.auth.open.peek() {
+                    self.picker.choices.set(Rc::new(rows));
+                    self.picker.facts.set(Rc::new(facts));
+                }
+            });
             return;
         }
         let snapshot = self.model.peek().snapshot.clone();
@@ -170,15 +172,16 @@ impl App {
             rows.insert(0, current.clone());
         }
         let selected = self.picked_model();
-        self.picker.facts.set(Rc::new(facts));
-        self.picker.causes.update(|held| {
-            held.retain(|name, _| !groups.contains_key(name));
-            held.extend(causes);
+        batch(|| {
+            self.picker.facts.set(Rc::new(facts));
+            self.picker.causes.update(|held| {
+                held.retain(|name, _| !groups.contains_key(name));
+                held.extend(causes);
+            });
+            self.picker.groups.update(|held| held.extend(groups));
+            self.picker.choices.set(Rc::new(rows));
+            self.picker.recent.set(counts);
         });
-        self.picker.groups.update(|held| held.extend(groups));
-        self.picker.choices.set(Rc::new(rows));
-        self.picker.recent.set(counts);
-        self.rank();
         let shown = self.picker.shown.peek();
         let sel = [selected.unwrap_or_default(), current]
             .iter()

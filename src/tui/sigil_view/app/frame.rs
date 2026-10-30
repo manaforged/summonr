@@ -26,8 +26,6 @@ impl App {
                 self.splash.set(false);
             }
             self.status.set(model.status_line(&self.info));
-            self.theme_name.set(model.prefs.theme.clone());
-            self.backdrop.set(model.prefs.background);
         });
     }
 

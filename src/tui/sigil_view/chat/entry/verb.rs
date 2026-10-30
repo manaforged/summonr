@@ -1,9 +1,8 @@
 use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Radius, Token, container};
 
-use super::fold::patch_counts;
-use super::preview;
 use super::tools::workspace_relative;
 use super::tree::label;
+use super::{patch_of, preview};
 use crate::tools::Builtin;
 use crate::tui::ToolState;
 use crate::tui::sigil_view::model::Call;
@@ -71,20 +70,16 @@ impl StepVerb {
     }
 }
 
-pub(super) struct Step {
-    pub(super) name: String,
-    pub(super) call: Call,
+pub(super) struct Step<'a> {
+    pub(super) name: &'a str,
+    pub(super) call: &'a Call,
     pub(super) index: usize,
     pub(super) at: usize,
 }
 
-impl Step {
+impl Step<'_> {
     pub(super) fn kind(&self) -> StepVerb {
-        StepVerb::of(&self.name)
-    }
-
-    pub(super) fn counts(&self) -> Option<(usize, usize)> {
-        patch_counts(&self.call)
+        StepVerb::of(self.name)
     }
 
     pub(super) fn chips(&self, roots: &[String]) -> Vec<String> {
@@ -96,8 +91,8 @@ impl Step {
             StepVerb::Explored | StepVerb::Edited => {
                 shown.split(", ").map(str::to_string).collect()
             }
-            StepVerb::Searched => vec![shown.clone()],
-            StepVerb::Ran
+            StepVerb::Searched
+            | StepVerb::Ran
             | StepVerb::Fetched
             | StepVerb::Inspected
             | StepVerb::Loaded
@@ -128,7 +123,7 @@ pub(super) fn chip(body: String) -> NodeBuilder {
         .child(label(body, TextStyle::xs(Token::Gray11).mono()).ellipsize())
 }
 
-pub(super) fn step_meta(step: &Step) -> Option<(String, TextStyle)> {
+pub(super) fn step_meta(step: &Step<'_>) -> Option<(String, TextStyle)> {
     let output = preview::plain(&step.call.output);
     match step.call.state {
         ToolState::Running => Some(("running…".to_string(), TextStyle::xs(Token::Gray10))),
@@ -143,12 +138,12 @@ pub(super) fn step_meta(step: &Step) -> Option<(String, TextStyle)> {
     }
 }
 
-fn ok_meta(step: &Step, output: &str) -> Option<(String, TextStyle)> {
+fn ok_meta(step: &Step<'_>, output: &str) -> Option<(String, TextStyle)> {
     let muted = TextStyle::xs(Token::Gray10);
     match step.kind() {
-        StepVerb::Edited => step
-            .counts()
-            .map(|(adds, dels)| (format!("+{adds} −{dels}"), muted)),
+        StepVerb::Edited => {
+            patch_counts(step.call).map(|(adds, dels)| (format!("+{adds} −{dels}"), muted))
+        }
         StepVerb::Explored => {
             crate::tools::read_span(output).map(|(from, to)| (format!("lines {from}–{to}"), muted))
         }
@@ -178,4 +173,20 @@ fn ok_meta(step: &Step, output: &str) -> Option<(String, TextStyle)> {
         | StepVerb::Delegated
         | StepVerb::Called => None,
     }
+}
+
+pub(super) fn patch_counts(call: &Call) -> Option<(usize, usize)> {
+    let patch = call
+        .patch
+        .clone()
+        .or_else(|| patch_of(&preview::plain(&call.output)))?;
+    let body = || {
+        patch
+            .lines()
+            .filter(|line| !line.starts_with("+++ ") && !line.starts_with("--- "))
+    };
+    Some((
+        body().filter(|line| line.starts_with('+')).count(),
+        body().filter(|line| line.starts_with('-')).count(),
+    ))
 }

@@ -8,13 +8,14 @@ use sigil::prelude::{
 
 use super::body::{close, dim};
 use super::{App, Pane};
+use crate::tui::sigil_view::ui::input_keys;
 
 pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
     let Some(view) = model.view.as_ref() else {
         return column.child(dim("no file open".to_string()));
     };
-    let editing = app.view_edit.peek();
+    let editing = app.view_edit.get();
     let edit = app.clone();
     let save = app.clone();
     let leave = app.clone();
@@ -54,7 +55,7 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     column = column.child(bar);
     if editing {
         return column.child(node(move || {
-            text_edit(app.view_text)
+            input_keys(&app, text_edit(app.view_text))
                 .caret_position(app.view_caret)
                 .autofocus()
                 .layout(

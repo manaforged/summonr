@@ -1,3 +1,5 @@
+use sigil::widgets::CursorEdge;
+
 use super::*;
 use crate::tui::sigil_view::ui::{Hints, Key};
 
@@ -79,7 +81,8 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn view_move(&self, delta: isize) {
-        self.pane_list(Pane::View).shift(delta, self.view_lines());
+        self.pane_list(Pane::View)
+            .shift(delta, self.view_lines(), CursorEdge::Clamp);
         self.refresh();
     }
 

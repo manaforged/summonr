@@ -1,4 +1,5 @@
 use sigil::prelude::Paint;
+use sigil::widgets::CursorEdge;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -8,12 +9,10 @@ use regex::{Regex, RegexBuilder, escape};
 use super::app::App;
 use super::canvas;
 use super::model::{Entry, Model, entry_markdown};
-use super::ui::{
-    Dialog, Hints, Key, List, Size, filter_column, filter_field, overlay_list, pick, plain,
-};
+use super::ui::{Dialog, Hints, Key, List, Size, filter_field, pick};
 use crate::session::Prompt;
 use sigil::prelude::{NodeBuilder, Signal};
-use sigil::prelude::{NodeEventsExt, container, signal, virtual_list};
+use sigil::prelude::{container, signal};
 
 const SNIPPET_CELLS: usize = 180;
 
@@ -206,7 +205,7 @@ impl Picker {
 
     pub(super) fn shift(self, model: &Model, delta: isize) {
         let len = self.rows(model).map_or(0, |rows| rows.len());
-        self.list.shift(delta, len);
+        self.list.shift(delta, len, CursorEdge::Clamp);
     }
 }
 
@@ -234,69 +233,41 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let cols = app.viewport.peek().0;
     let keys = app.model.peek().prefs.hotkeys.clone();
     let live = app.clone();
+    let source = app.clone();
     Dialog::new(Size::Normal, picker.title(), Hints::new())
         .live_hints(move || picker.hints(&live.model.get()))
-        .child(filter_field(picker.list.query, picker.list.caret))
-        .child(results(app, picker))
-        .build(picker.open, cols, &keys)
-}
-
-fn results(app: App, picker: Picker) -> NodeBuilder {
-    let paint = app.clone();
-    filter_column().children_reactive(move || {
-        let warning = picker.warning.get();
-        let mut items: Vec<NodeBuilder> = Vec::new();
-        if !warning.is_empty() {
-            items.push(
-                container().child(
-                    sigil::kernel::text(warning)
-                        .nowrap()
-                        .font_size(12.0)
-                        .text_color(sigil::prelude::Token::Error11),
-                ),
-            );
-        }
-        match picker.rows(&paint.model.get()) {
-            Ok(rows) => {
-                let selected = picker.list.cursor.get().min(rows.len().saturating_sub(1));
-                if rows.is_empty() {
-                    items.push(plain("no matches · edit the search"));
-                }
+        .child(filter_field(&app, picker.list.query, picker.list.caret))
+        .child(container().children_reactive(move || {
+            let warning = picker.warning.get();
+            if warning.is_empty() {
+                Vec::new()
+            } else {
+                vec![
+                    container().child(
+                        sigil::kernel::text(warning)
+                            .nowrap()
+                            .font_size(12.0)
+                            .text_color(sigil::prelude::Token::Error11),
+                    ),
+                ]
+            }
+        }))
+        .collection(
+            picker.list,
+            move || picker.rows(&source.model.get()),
+            || "no matches · edit the search".to_string(),
+            move |_| {
                 let height = if picker.is_history() {
                     canvas::overlay_list_row() * 2.0
                 } else {
                     canvas::overlay_list_row()
                 };
-                let source = paint.clone();
-                items.push(overlay_list(
-                    virtual_list(rows, move |index, (entry, preview): &(usize, String)| {
-                        row(source.clone(), picker, index, *entry, preview, selected)
-                    })
-                    .follow_row(picker.list.cursor),
-                    height,
-                    10,
-                ));
-            }
-            Err(error) => items.push(plain(error)),
-        }
-        items
-    })
-}
-
-fn row(
-    app: App,
-    picker: Picker,
-    index: usize,
-    entry: usize,
-    preview: &str,
-    selected: usize,
-) -> NodeBuilder {
-    let choose = app.clone();
-    let title = preview.to_string();
-    let detail = picker.detail(entry);
-    pick(index == selected, title, detail).pointer_down(move |event| {
-        choose.search.list.select(index);
-        choose.jump();
-        event.stop_propagation();
-    })
+                Some((height, 10))
+            },
+            move |(entry, preview), selected| {
+                pick(selected, preview.clone(), picker.detail(*entry))
+            },
+            move || app.jump(),
+        )
+        .build(picker.open, cols, &keys)
 }

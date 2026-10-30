@@ -1,17 +1,16 @@
 use sigil::prelude::Paint;
+use sigil::widgets::CursorEdge;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::session::SessionInfo;
 use crate::tui::matching::all_words;
 use sigil::prelude::{NodeBuilder, Signal};
-use sigil::prelude::{container, signal, virtual_list};
+use sigil::prelude::{container, signal};
 
 use super::app::App;
 use super::canvas;
-use super::ui::{
-    Bindings, Dialog, Hints, Key, List, Size, alt, filter_column, filter_field, overlay_list, plain,
-};
+use super::ui::{Bindings, Dialog, Hints, Key, List, Size, alt, filter_field};
 
 mod resume_row;
 use resume_row::row;
@@ -246,7 +245,7 @@ impl Picker {
             self.armed.set(None);
             self.error.set(String::new());
         }
-        self.list.shift(delta, self.rows().len());
+        self.list.shift(delta, self.rows().len(), CursorEdge::Clamp);
     }
 
     pub(super) fn scope(self) {
@@ -273,6 +272,8 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.sessions;
     let cols = app.viewport.peek().0;
     let keys = app.model.peek().prefs.hotkeys.clone();
+    let viewport = app.viewport;
+    let source = app.clone();
     Dialog::new(Size::Normal, picker.heading(), Hints::new())
         .live_hints(move || {
             Hints::new()
@@ -283,7 +284,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 .key(Key::Esc, "close")
                 .count(picker.list.cursor.get(), picker.rows().len())
         })
-        .child(filter_field(picker.list.query, picker.list.caret))
+        .child(filter_field(&app, picker.list.query, picker.list.caret))
         .child(container().children_reactive(move || {
             let note = picker.error.get();
             if note.is_empty() || picker.rows().is_empty() {
@@ -298,27 +299,20 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 ]
             }
         }))
-        .child(list(app, picker))
+        .collection(
+            picker.list,
+            move || Ok(picker.rows()),
+            move || picker.empty(),
+            move |len| {
+                (len > 0).then(|| {
+                    (
+                        canvas::overlay_list_row(),
+                        canvas::overlay_shown(len, viewport.get().1),
+                    )
+                })
+            },
+            move |info, selected| row(&source, picker, info, selected),
+            move || app.resume_session(),
+        )
         .build(picker.open, cols, &keys)
-}
-
-fn list(app: App, picker: Picker) -> NodeBuilder {
-    let paint = app.clone();
-    filter_column().children_reactive(move || {
-        let rows = picker.rows();
-        let selected = picker.list.cursor.get().min(rows.len().saturating_sub(1));
-        if rows.is_empty() {
-            return vec![plain(picker.empty())];
-        }
-        let source = paint.clone();
-        let shown = canvas::overlay_shown(rows.len(), paint.viewport.get().1);
-        vec![overlay_list(
-            virtual_list(rows, move |index, info: &SessionInfo| {
-                row(source.clone(), picker, index, info, selected)
-            })
-            .follow_row(paint.sessions.list.cursor),
-            canvas::overlay_list_row(),
-            shown,
-        )]
-    })
 }

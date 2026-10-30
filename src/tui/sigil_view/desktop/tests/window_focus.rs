@@ -5,7 +5,62 @@ use super::super::Pane;
 use super::harness::{command, drive, graded, named, settings, typed, unconfigured};
 use super::in_window;
 use crate::mcp::{Field, FieldKind, Form};
-use crate::tui::Snapshot;
+use crate::tui::{Msg, Snapshot};
+
+#[test]
+fn typing_replaces_the_desktop_composer_selection() {
+    if !in_window("window_focus::typing_replaces_the_desktop_composer_selection") {
+        return;
+    }
+    let mut keys = vec![named(
+        Key::Home,
+        ModifiersState::CONTROL | ModifiersState::SHIFT,
+    )];
+    keys.extend(typed("X"));
+    let seen = drive(
+        |app| app.replace("replace me".to_owned()),
+        keys,
+        |app| app.draft.peek(),
+    );
+    assert_eq!(seen.read, "X");
+}
+
+#[test]
+fn a_modal_round_trip_keeps_the_composer_selection() {
+    if !in_window("window_focus::a_modal_round_trip_keeps_the_composer_selection") {
+        return;
+    }
+    let mut keys = vec![
+        named(Key::Home, ModifiersState::CONTROL | ModifiersState::SHIFT),
+        command(","),
+        named(Key::Escape, ModifiersState::empty()),
+    ];
+    keys.extend(typed("X"));
+    let seen = drive(
+        |app| app.replace("replace me".to_owned()),
+        keys,
+        |app| (app.settings_open.peek(), app.draft.peek()),
+    );
+    assert_eq!(seen.read, (false, "X".to_owned()));
+}
+
+#[test]
+fn keyboard_folder_expansion_updates_the_files_pane() {
+    if !in_window("window_focus::keyboard_folder_expansion_updates_the_files_pane") {
+        return;
+    }
+    let seen = drive(
+        |app| {
+            app.update(Msg::Files(vec!["src/lib.rs".to_owned()]));
+            app.toggle_pane(Pane::Files);
+            app.focus_pane(true);
+        },
+        vec![named(Key::ArrowRight, ModifiersState::empty())],
+        |app| app.pane_list(Pane::Files).is_expanded(&"src".to_owned()),
+    );
+    assert!(seen.read, "the folder expanded");
+    assert!(seen.shows(|text| text == "lib.rs"), "{}", seen.text());
+}
 
 fn question() -> Form {
     Form {

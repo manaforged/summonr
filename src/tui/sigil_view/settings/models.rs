@@ -8,7 +8,8 @@ use super::{App, canvas};
 use crate::endpoint::State;
 use crate::recent::ModelId;
 use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, alt, group, notice, tab_strip,
+    Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, alt, browser_columns, browser_layout,
+    group, input_keys, notice, tab_strip,
 };
 
 mod detail;
@@ -71,7 +72,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         })
         .child(
             container().child(
-                text_field(app.picker.list.query)
+                input_keys(&app, text_field(app.picker.list.query))
                     .placeholder("Search models, providers, or type a model id")
                     .focus_when(app.picker.focus)
                     .autofocus()
@@ -111,16 +112,9 @@ fn hints(app: &App) -> Hints {
         })
 }
 
-fn split(cols: u16) -> bool {
-    cols >= SPLIT_COLS && !canvas::is_window()
-}
-
 fn body(paint: &App) -> Vec<NodeBuilder> {
     let view = Rc::new(View::read(paint));
-    let (cols, term_rows) = paint.viewport.get();
-    let span = Size::Page.cells(cols);
-    let wide = split(cols);
-    let visible = canvas::list_rows(term_rows, LIST_CHROME + u16::from(!wide));
+    let (wide, span, visible) = browser_layout(paint.viewport.get(), SPLIT_COLS, (LIST_CHROME, 1));
     let grid = Grid::new(span, wide);
     let rows = view.rows();
     let fixing = rows
@@ -135,42 +129,30 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
         None => empty(paint),
     };
     let height = (visible + 1) as f32 * canvas::overlay_list_row();
-    let column = |layout: LayoutStyle| container().layout(layout);
     let frame = LayoutStyle::flex_column().height(height).shrink(0.0);
     if !wide {
         let narrow = span.saturating_sub(10);
         let rows = if paint.auth.open.get() {
             super::auth::step_pane(paint, narrow, visible)
                 .into_iter()
-                .fold(column(frame.fill_width()), |node, child| node.child(child))
+                .fold(container().layout(frame.fill_width()), |node, child| {
+                    node.child(child)
+                })
         } else {
-            column(frame.fill_width()).child(grid.header()).child(list)
+            container()
+                .layout(frame.fill_width())
+                .child(grid.header())
+                .child(list)
         };
         return vec![rows, strip(paint, &view, selection.as_ref(), narrow)];
     }
-    let rows = column(frame.width(grid.cells() * canvas::cell().w))
-        .child(grid.header())
-        .child(list);
     let width = span.saturating_sub(grid.cells() as usize + 6);
-    let pane = side(paint, selection.as_ref(), fixing, (width, visible));
-    vec![
-        column(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(canvas::cell().w * 3.0),
-        )
-        .child(rows)
-        .child(
-            pane.into_iter().fold(
-                column(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(canvas::overlay_gap()),
-                ),
-                |node, child| node.child(child),
-            ),
-        ),
-    ]
+    browser_columns(
+        [grid.header(), list],
+        frame.width(grid.cells() * canvas::cell().w),
+        side(paint, selection.as_ref(), fixing, (width, visible)),
+        canvas::cell().w * 3.0,
+    )
 }
 
 fn empty(paint: &App) -> NodeBuilder {

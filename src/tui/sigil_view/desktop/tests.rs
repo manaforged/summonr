@@ -18,6 +18,8 @@ use crate::tools::Event;
 use crate::tui::{Msg, Snapshot};
 
 mod harness;
+mod settings;
+mod transcript;
 mod window_chrome;
 mod window_composer;
 mod window_focus;

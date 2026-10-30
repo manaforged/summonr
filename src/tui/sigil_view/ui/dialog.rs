@@ -2,15 +2,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use sigil::prelude::{
-    IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Signal, WidgetLayoutExt,
-    container, effect, modal, signal,
+    IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Paint, Signal,
+    WidgetLayoutExt, container, effect, modal, signal, virtual_list,
 };
-use sigil::reactive::untrack;
+use sigil::reactive::{defer, untrack};
 
 use crate::prefs::Hotkeys;
 use crate::tui::sigil_view::canvas;
 
 use super::hints::Hints;
+use super::{List, filter_column, overlay_list, plain};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui) enum Size {
@@ -124,6 +125,52 @@ impl Dialog {
     pub(in crate::tui) fn child(mut self, node: impl IntoNode + 'static) -> Self {
         self.body = self.body.child(node);
         self
+    }
+
+    #[must_use]
+    pub(in crate::tui) fn collection<T: 'static>(
+        self,
+        list: List,
+        rows: impl Fn() -> Result<Vec<T>, String> + 'static,
+        empty: impl Fn() -> String + 'static,
+        viewport: impl Fn(usize) -> Option<(f32, usize)> + 'static,
+        render: impl Fn(&T, bool) -> NodeBuilder + Clone + 'static,
+        activate: impl Fn() + Clone + 'static,
+    ) -> Self {
+        self.child(filter_column().children_reactive(move || {
+            let rows = match rows() {
+                Ok(rows) => rows,
+                Err(error) => return vec![plain(error)],
+            };
+            let cursor = list.cursor.get();
+            let selected = cursor.min(rows.len().saturating_sub(1));
+            if cursor != selected {
+                defer(move || list.select(selected));
+            }
+            let viewport = viewport(rows.len());
+            let mut children = Vec::new();
+            if rows.is_empty() {
+                children.push(plain(empty()));
+            }
+            if let Some((height, shown)) = viewport {
+                let render = render.clone();
+                let activate = activate.clone();
+                children.push(overlay_list(
+                    virtual_list(rows, move |index, item: &T| {
+                        let activate = activate.clone();
+                        render(item, index == selected).pointer_down(move |event| {
+                            list.select(index);
+                            activate();
+                            event.stop_propagation();
+                        })
+                    })
+                    .follow_row(list.cursor),
+                    height,
+                    shown,
+                ));
+            }
+            children
+        }))
     }
 
     #[must_use]

@@ -38,7 +38,7 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
         a: (scene::GLASS * 255.0) as u8,
         ..scene::PLATE
     };
-    let mut clear = surface::theme(&app.theme_name.peek(), app.backdrop.peek());
+    let mut clear = surface::theme(app.appearance.peek());
     clear.register_token(
         "surface",
         ThemeValue::Color(Rgba8 {
@@ -78,7 +78,11 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
                 )
                 .bg(tint)
                 .child(blank(width, rows.saturating_sub(y)))
-                .child(chat::inline_layer(app.clone(), inner, surface::editor(app))),
+                .child(chat::inline_layer(
+                    app.clone(),
+                    inner,
+                    surface::terminal_editor(app),
+                )),
         )
         .child(
             container()

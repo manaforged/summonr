@@ -7,15 +7,15 @@ use sigil::prelude::{
 };
 
 use super::super::App;
+use super::preview;
 use super::tools::{call_output, flip, glyph, workspace_relative};
 use super::tree::label;
-use super::verb::{Step, StepVerb, chip, step_meta};
-use super::{patch_of, preview};
+use super::verb::{Step, StepVerb, chip, patch_counts, step_meta};
 use crate::tui::ToolState;
-use crate::tui::sigil_view::model::{Call, Entry};
+use crate::tui::sigil_view::model::Entry;
 use crate::tui::sigil_view::text_style::TextStyle;
 
-fn flatten(entries: &[Entry], start: usize) -> Vec<Step> {
+fn flatten(entries: &[Entry], start: usize) -> Vec<Step<'_>> {
     let mut steps = Vec::new();
     for (offset, entry) in entries.iter().enumerate() {
         let index = start + offset;
@@ -23,8 +23,8 @@ fn flatten(entries: &[Entry], start: usize) -> Vec<Step> {
             Entry::Tool { name, calls } => {
                 for (at, call) in calls.iter().enumerate() {
                     steps.push(Step {
-                        name: name.clone(),
-                        call: call.clone(),
+                        name,
+                        call,
                         index,
                         at,
                     });
@@ -54,7 +54,7 @@ struct Totals {
     running: bool,
 }
 
-fn totals(steps: &[Step], roots: &[String]) -> Totals {
+fn totals(steps: &[Step<'_>], roots: &[String]) -> Totals {
     let mut sum = Totals {
         steps: steps.len(),
         edited: HashSet::new(),
@@ -69,7 +69,7 @@ fn totals(steps: &[Step], roots: &[String]) -> Totals {
         }
         let path = workspace_relative(&step.call.arg, roots);
         sum.edited.insert(path);
-        if let Some((adds, dels)) = step.counts() {
+        if let Some((adds, dels)) = patch_counts(step.call) {
             sum.adds += adds;
             sum.dels += dels;
         }
@@ -139,7 +139,7 @@ fn summary(
     head
 }
 
-fn step_row(step: &Step, app: &App, layout: crate::prefs::DiffLayout) -> NodeBuilder {
+fn step_row(step: &Step<'_>, app: &App, layout: crate::prefs::DiffLayout) -> NodeBuilder {
     let kind = step.kind();
     let tone = match step.call.state {
         ToolState::Failed => glyph(&step.call.state).1,
@@ -156,7 +156,7 @@ fn step_row(step: &Step, app: &App, layout: crate::prefs::DiffLayout) -> NodeBui
         )
         .pointer_up(flip(app, step.index, step.at))
         .child(label(kind.icon(), tone))
-        .child(label(kind.verb(&step.name), TextStyle::sm(Token::Gray11)));
+        .child(label(kind.verb(step.name), TextStyle::sm(Token::Gray11)));
     for item in step.chips(&app.roots) {
         line = line.child(chip(item));
     }
@@ -171,7 +171,7 @@ fn step_row(step: &Step, app: &App, layout: crate::prefs::DiffLayout) -> NodeBui
         return column;
     }
     let output = preview::plain(&step.call.output);
-    match call_output(&step.name, &step.call, &output, true, layout, app) {
+    match call_output(step.name, step.call, &output, true, layout, app) {
         Some(body) => column.child(body),
         None => column,
     }
@@ -183,62 +183,41 @@ pub(in crate::tui::sigil_view) fn card(
     unfolded: Option<bool>,
     open: Signal<Option<bool>>,
 ) -> NodeBuilder {
-    let (entries, worked, layout) = app.model.with(|model| {
+    app.model.with(|model| {
         let live = model.busy_since.is_some() && range.end == model.entries.len();
-        (
-            model
-                .entries
-                .get(range.clone())
-                .unwrap_or_default()
-                .to_vec(),
-            model
-                .busy_since
-                .as_ref()
-                .filter(|_| live)
-                .map(|(_, since)| since.elapsed().as_secs()),
-            model.prefs.diff_layout,
-        )
-    });
-    let steps = flatten(&entries, range.start);
-    let sum = totals(&steps, &app.roots);
-    let unfolded = unfolded.unwrap_or(sum.running || worked.is_some());
-    let mut card = container()
-        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
-        .border_w(1)
-        .border_color(Token::Border)
-        .rounded(Radius::Lg)
-        .child(summary(&sum, worked, unfolded, open));
-    if unfolded {
-        let mut list = container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .padding_x(14.0)
-                    .padding_y(6.0)
-                    .min_size(0.0, 0.0),
-            )
-            .border_top(1)
-            .border_color(Token::Border);
-        for step in &steps {
-            list = list.child(step_row(step, app, layout));
+        let worked = model
+            .busy_since
+            .as_ref()
+            .filter(|_| live)
+            .map(|(_, since)| since.elapsed().as_secs());
+        let steps = flatten(
+            model.entries.get(range.clone()).unwrap_or_default(),
+            range.start,
+        );
+        let sum = totals(&steps, &app.roots);
+        let unfolded = unfolded.unwrap_or(sum.running || worked.is_some());
+        let mut card = container()
+            .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+            .border_w(1)
+            .border_color(Token::Border)
+            .rounded(Radius::Lg)
+            .child(summary(&sum, worked, unfolded, open));
+        if unfolded {
+            let mut list = container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .padding_x(14.0)
+                        .padding_y(6.0)
+                        .min_size(0.0, 0.0),
+                )
+                .border_top(1)
+                .border_color(Token::Border);
+            for step in &steps {
+                list = list.child(step_row(step, app, model.prefs.diff_layout));
+            }
+            card = card.child(list);
         }
-        card = card.child(list);
-    }
-    card
-}
-
-pub(super) fn patch_counts(call: &Call) -> Option<(usize, usize)> {
-    let patch = call
-        .patch
-        .clone()
-        .or_else(|| patch_of(&preview::plain(&call.output)))?;
-    let body = || {
-        patch
-            .lines()
-            .filter(|line| !line.starts_with("+++ ") && !line.starts_with("--- "))
-    };
-    Some((
-        body().filter(|line| line.starts_with('+')).count(),
-        body().filter(|line| line.starts_with('-')).count(),
-    ))
+        card
+    })
 }

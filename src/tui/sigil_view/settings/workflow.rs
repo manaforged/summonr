@@ -6,7 +6,9 @@ use sigil::prelude::{
 
 use super::{App, canvas};
 use crate::tui::Cmd;
-use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, overlay_list, pick, press};
+use crate::tui::sigil_view::ui::{
+    Bindings, Dialog, Hints, Key, Size, input_keys, overlay_list, pick, press,
+};
 use crate::workflow::Role;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
@@ -65,7 +67,7 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
     let save = app.clone();
     vec![
         container().child(
-            text_edit(app.workflow.list.query)
+            input_keys(app, text_edit(app.workflow.list.query))
                 .caret_position(app.workflow.list.caret)
                 .placeholder("Workflow name")
                 .submit(move |_| save.commit_workflow())

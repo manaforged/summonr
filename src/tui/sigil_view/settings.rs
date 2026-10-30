@@ -1,8 +1,6 @@
 pub(super) use super::app::App;
 pub(super) use super::canvas;
 
-use std::rc::Rc;
-
 use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, container};
 
 fn dialog_body(children: impl Fn() -> Vec<NodeBuilder> + 'static) -> NodeBuilder {
@@ -47,28 +45,68 @@ pub(super) enum Setting {
     Hotkeys,
 }
 
-#[derive(Clone)]
-pub(super) struct Row {
-    pub(super) group: &'static str,
-    pub(super) setting: Setting,
-    pub(super) label: String,
-    pub(super) value: String,
-    pub(super) action: Rc<dyn Fn(&App)>,
+impl Setting {
+    pub(super) fn all() -> impl Iterator<Item = Self> {
+        [
+            Self::Mode,
+            Self::Verify,
+            Self::Workflow,
+            Self::Endpoint,
+            Self::Model,
+            Self::Reasoning,
+            Self::Tools,
+            Self::Mail,
+        ]
+        .into_iter()
+        .chain(
+            crate::modules::ALL
+                .iter()
+                .map(|module| Self::Module(module.id)),
+        )
+        .chain([
+            Self::Theme,
+            Self::Background,
+            Self::Notify,
+            Self::DiffLayout,
+            Self::Splash,
+            Self::Motion,
+            Self::Hotkeys,
+        ])
+    }
+
+    pub(super) fn activate(self, app: &App) {
+        match self {
+            Self::Mode => app.cycle_run_mode(),
+            Self::Verify => app.toggle_verify(),
+            Self::Workflow => app.open_workflow(),
+            Self::Endpoint => app.cycle_endpoint(),
+            Self::Model => app.begin_model_edit(),
+            Self::Reasoning => app.set_visibility(|prefs| &mut prefs.reasoning, None),
+            Self::Tools => app.toggle_tools(),
+            Self::Mail => app.toggle_mail(),
+            Self::Module(id) => app.toggle_module(id),
+            Self::Theme => app.toggle_theme(),
+            Self::Background => app.toggle_background(),
+            Self::Notify => app.flip(|prefs| prefs.notify = prefs.notify.toggle()),
+            Self::DiffLayout => app.set_diff_layout(app.model.get().prefs.diff_layout.toggle()),
+            Self::Splash => app.flip(|prefs| prefs.splash = !prefs.splash),
+            Self::Motion => app.toggle_motion(),
+            Self::Hotkeys => app.open_hotkeys(),
+        }
+    }
 }
 
-fn row(
-    group: &'static str,
-    setting: Setting,
-    label: impl Into<String>,
-    value: impl Into<String>,
-    action: impl Fn(&App) + 'static,
-) -> Row {
+pub(super) struct Row {
+    pub(super) group: &'static str,
+    pub(super) label: String,
+    pub(super) value: String,
+}
+
+fn row(group: &'static str, label: impl Into<String>, value: impl Into<String>) -> Row {
     Row {
         group,
-        setting,
         label: label.into(),
         value: value.into(),
-        action: Rc::new(action),
     }
 }
 
@@ -97,139 +135,40 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     } else {
         "waits for the next turn"
     };
-    let mut rows = vec![
-        row(
-            "session",
-            Setting::Mode,
-            "run mode",
-            mode,
-            App::cycle_run_mode,
-        ),
-        row(
-            "session",
-            Setting::Verify,
-            "verify",
-            verify,
-            App::toggle_verify,
-        ),
-        row(
-            "session",
-            Setting::Workflow,
-            "workflow",
-            workflow,
-            App::open_workflow,
-        ),
-        row(
-            "model",
-            Setting::Endpoint,
-            "endpoint",
-            endpoint,
-            App::cycle_endpoint,
-        ),
-        row(
-            "model",
-            Setting::Model,
-            "model",
-            snapshot.model.as_str(),
-            App::begin_model_edit,
-        ),
-        row(
-            "model",
-            Setting::Reasoning,
-            "reasoning",
-            prefs.reasoning.name(),
-            |app| {
-                app.set_visibility(|prefs| &mut prefs.reasoning, None);
-            },
-        ),
-        row(
-            "harness",
-            Setting::Tools,
-            "tools",
-            prefs.tools.name(),
-            App::toggle_tools,
-        ),
-        row(
-            "harness",
-            Setting::Mail,
-            "incoming mail",
-            mail,
-            App::toggle_mail,
-        ),
-    ];
-    let modules = app.modules.peek();
-    rows.extend(crate::modules::ALL.iter().map(|module| {
-        let id = module.id;
-        let on = on_off(modules.get(&id).copied().unwrap_or(module.default));
-        row(
-            "modules",
-            Setting::Module(id),
-            format!("{} tools", id.name()),
-            on,
-            move |app| {
-                app.toggle_module(id);
-            },
-        )
-    }));
-    let hotkeys = format!("{} bindings", crate::prefs::Hotkey::ALL.len());
-    rows.extend([
-        row(
-            "interface",
-            Setting::Theme,
-            "theme",
-            prefs.theme.as_str(),
-            App::toggle_theme,
-        ),
-        row(
-            "interface",
-            Setting::Background,
-            "background",
-            prefs.background.name(),
-            App::toggle_background,
-        ),
-        row(
-            "interface",
-            Setting::Notify,
-            "notify",
-            prefs.notify.label(),
-            |app| {
-                app.flip(|prefs| prefs.notify = prefs.notify.toggle());
-            },
-        ),
-        row(
-            "interface",
-            Setting::DiffLayout,
-            "diff layout",
-            prefs.diff_layout.name(),
-            |app| {
-                app.set_diff_layout(app.model.get().prefs.diff_layout.toggle());
-            },
-        ),
-        row(
-            "interface",
-            Setting::Splash,
-            "splash",
-            on_off(prefs.splash),
-            |app| {
-                app.flip(|prefs| prefs.splash = !prefs.splash);
-            },
-        ),
-        row(
-            "interface",
-            Setting::Motion,
-            "motion",
-            on_off(prefs.animations),
-            App::toggle_motion,
-        ),
-        row(
-            "interface",
-            Setting::Hotkeys,
-            "hotkeys",
-            hotkeys,
-            App::open_hotkeys,
-        ),
-    ]);
-    rows
+    let modules = app.modules.get();
+    Setting::all()
+        .map(|setting| match setting {
+            Setting::Mode => row("session", "run mode", mode),
+            Setting::Verify => row("session", "verify", &verify),
+            Setting::Workflow => row("session", "workflow", workflow),
+            Setting::Endpoint => row("model", "endpoint", &endpoint),
+            Setting::Model => row("model", "model", &snapshot.model),
+            Setting::Reasoning => row("model", "reasoning", prefs.reasoning.name()),
+            Setting::Tools => row("harness", "tools", prefs.tools.name()),
+            Setting::Mail => row("harness", "incoming mail", mail),
+            Setting::Module(id) => row(
+                "modules",
+                format!("{} tools", id.name()),
+                on_off(
+                    modules
+                        .get(&id)
+                        .copied()
+                        .unwrap_or(crate::modules::ALL[id as usize].default),
+                ),
+            ),
+            Setting::Theme => row("interface", "theme", &prefs.theme),
+            Setting::Background => row("interface", "background", prefs.background.name()),
+            Setting::Notify => row("interface", "notify", prefs.notify.label()),
+            Setting::DiffLayout => row("interface", "diff layout", prefs.diff_layout.name()),
+            Setting::Splash => row("interface", "splash", on_off(prefs.splash)),
+            Setting::Motion => row("interface", "motion", on_off(prefs.animations)),
+            Setting::Hotkeys => row(
+                "interface",
+                "hotkeys",
+                format!("{} bindings", crate::prefs::Hotkey::ALL.len()),
+            ),
+        })
+        .collect()
 }
 
 const fn on_off(value: bool) -> &'static str {

@@ -4,6 +4,8 @@ use sigil::prelude::{
 };
 use sigil::widgets::{RowRender, TextEditBuilder, VirtualListBuilder};
 
+use super::input_keys;
+use crate::tui::sigil_view::app::App;
 use crate::tui::sigil_view::canvas;
 use crate::tui::sigil_view::text_style::TextStyle;
 
@@ -106,8 +108,54 @@ pub(in crate::tui) fn overlay_list<T: 'static, R: RowRender<T>>(
         .child(list.row_height(row).height(height).viewport_height(height))
 }
 
-pub(in crate::tui) fn filter_field(query: Signal<String>, caret: Signal<usize>) -> TextEditBuilder {
-    text_edit(query)
+pub(in crate::tui) fn browser_split(cols: u16, threshold: u16) -> bool {
+    cols >= threshold && !canvas::is_window()
+}
+
+pub(in crate::tui) fn browser_layout(
+    (cols, rows): (u16, u16),
+    threshold: u16,
+    (chrome, below): (u16, u16),
+) -> (bool, usize, usize) {
+    let split = browser_split(cols, threshold);
+    (
+        split,
+        super::Size::Page.cells(cols),
+        canvas::list_rows(rows, chrome.saturating_add(if split { 0 } else { below })),
+    )
+}
+
+pub(in crate::tui) fn browser_columns(
+    list: impl IntoIterator<Item = NodeBuilder>,
+    layout: LayoutStyle,
+    detail: Vec<NodeBuilder>,
+    gap: f32,
+) -> Vec<NodeBuilder> {
+    let list = list
+        .into_iter()
+        .fold(container().layout(layout), |node, child| node.child(child));
+    let detail = detail.into_iter().fold(
+        container().layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .gap(canvas::overlay_gap()),
+        ),
+        |node, child| node.child(child),
+    );
+    vec![
+        container()
+            .layout(LayoutStyle::flex_row().fill_width().gap(gap))
+            .child(list)
+            .child(detail),
+    ]
+}
+
+pub(in crate::tui::sigil_view) fn filter_field(
+    app: &App,
+    query: Signal<String>,
+    caret: Signal<usize>,
+) -> TextEditBuilder {
+    input_keys(app, text_edit(query))
         .caret_position(caret)
         .placeholder(super::FILTER_HINT)
         .height(canvas::overlay_list_row())

@@ -1,13 +1,12 @@
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, container, signal, virtual_list,
-};
+use sigil::prelude::{LayoutStyle, NodeBuilder, NodeEventsExt, signal, virtual_list};
 
 use super::{App, canvas};
 use crate::AuthInfo;
 use crate::endpoint::State;
 use crate::tui::sigil_view::app::{Login, Note, matching, section};
 use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, Size, Tab, alt, group, overlay_list, pick, tab_strip,
+    Bindings, Dialog, Hints, Key, Size, Tab, alt, browser_columns, browser_layout, browser_split,
+    group, overlay_list, pick, tab_strip,
 };
 
 mod detail;
@@ -41,10 +40,6 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     bindings
 }
 
-fn split(app: &App) -> bool {
-    app.viewport.get().0 >= SPLIT_COLS && !canvas::is_window()
-}
-
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let state = app.clone();
@@ -61,18 +56,13 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
 fn body(app: &App) -> Vec<NodeBuilder> {
     let listing_app = app.clone();
     let listing = matches!(app.auth.step.get(), Login::List(_));
-    if !listing && !split(app) {
-        return form(app, span(app));
+    let cols = app.viewport.get().0;
+    if !listing && !browser_split(cols, SPLIT_COLS) {
+        return form(app, Size::Page.cells(cols));
     }
     vec![
         field(app, Input::Search, listing),
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .children_reactive(move || self::listing(&listing_app)),
+        super::dialog_body(move || self::listing(&listing_app)),
     ]
 }
 
@@ -130,11 +120,6 @@ fn listing_hints(app: &App) -> Hints {
         .right(format!("{} / {}", selected + 1, rows.len()))
 }
 
-fn span(app: &App) -> usize {
-    let (cols, _) = app.viewport.get();
-    Size::Page.cells(cols)
-}
-
 fn chip(choice: &AuthInfo, state: Option<&State>) -> String {
     state
         .filter(|state| state.failed() || choice.login.signs_in())
@@ -151,14 +136,12 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
     let states = app.picker.groups.get();
     let (lookup, shown) = sections(&rows, &states, selected);
     let explain = canvas::is_window() && app.auth.list.query.get().is_empty();
-    let chrome = LIST_CHROME
-        + u16::from(explain)
-        + if split(app) {
-            0
-        } else {
-            NARROW_NOTE_ROWS as u16
-        };
-    let visible = canvas::list_rows(canvas::picker_rows(app.viewport.get().1), chrome);
+    let (cols, term_rows) = app.viewport.get();
+    let (split, span, visible) = browser_layout(
+        (cols, canvas::picker_rows(term_rows)),
+        SPLIT_COLS,
+        (LIST_CHROME + u16::from(explain), NARROW_NOTE_ROWS as u16),
+    );
     let state = chip(choice, states.get(&choice.name));
     let list = overlay_list(
         virtual_list(
@@ -173,8 +156,8 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         canvas::overlay_list_row(),
         visible,
     );
-    if !split(app) {
-        let wide = span(app).saturating_sub(10);
+    if !split {
+        let wide = span.saturating_sub(10);
         let note = match app.auth.step.get() {
             Login::List(note) => note,
             Login::Key(_) | Login::Checking | Login::SignIn { .. } | Login::Confirm => {
@@ -196,25 +179,13 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         nodes.extend(below.into_iter().take(NARROW_NOTE_ROWS));
         return nodes;
     }
-    let width = span(app).saturating_sub(LIST_CELLS as usize + 12);
-    let pane = step_pane(app, width, visible).into_iter().fold(
-        container().layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(canvas::overlay_gap()),
-        ),
-        |node, child| node.child(child),
-    );
-    vec![
-        container()
-            .layout(LayoutStyle::flex_row().fill_width().gap(16.0))
-            .child(
-                container()
-                    .layout(LayoutStyle::flex_column().width(LIST_CELLS * canvas::cell().w))
-                    .child(list),
-            )
-            .child(pane),
-    ]
+    let width = span.saturating_sub(LIST_CELLS as usize + 12);
+    browser_columns(
+        [list],
+        LayoutStyle::flex_column().width(LIST_CELLS * canvas::cell().w),
+        step_pane(app, width, visible),
+        16.0,
+    )
 }
 
 pub(super) fn step_pane(app: &App, width: usize, rows: usize) -> Vec<NodeBuilder> {

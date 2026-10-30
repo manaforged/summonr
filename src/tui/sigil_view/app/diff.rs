@@ -1,3 +1,5 @@
+use sigil::widgets::CursorEdge;
+
 use super::*;
 
 impl App {
@@ -130,7 +132,7 @@ impl App {
             return self.hunk_move(delta);
         }
         self.pane_list(Pane::Diff)
-            .shift(delta, self.diff_rows().len());
+            .shift(delta, self.diff_rows().len(), CursorEdge::Clamp);
         self.refresh();
     }
 

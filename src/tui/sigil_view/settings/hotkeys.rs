@@ -1,10 +1,8 @@
-use sigil::prelude::{NodeBuilder, NodeEventsExt, Tone, virtual_list};
+use sigil::prelude::{NodeBuilder, Tone};
 
 use super::{App, canvas};
 use crate::prefs::Hotkey;
-use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, Size, notice, overlay_list, pick, press,
-};
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, notice, pick, press};
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     vec![press("r", |app, event| {
@@ -18,6 +16,8 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let state = app.clone();
+    let choose = app.clone();
+    let viewport = app.viewport;
     let hotkeys = app.model.peek().prefs.hotkeys.clone();
     Dialog::new(Size::Reading, "Hotkeys", Hints::new())
         .live_hints(move || {
@@ -37,15 +37,21 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .key(Key::Esc, "close")
             }
         })
-        .child(super::dialog_body(move || {
-            let selected = paint.hotkeys.list.cursor.get().min(Hotkey::ALL.len() - 1);
-            let visible = canvas::overlay_shown(Hotkey::ALL.len(), paint.viewport.get().1);
-            let recording = paint.hotkeys.recording.get();
-            let armed = paint.hotkeys.armed.get();
-            let note = paint.hotkeys.note.get();
-            let rows: Vec<(Hotkey, String)> = {
+        .child(super::dialog_body({
+            let note = app.hotkeys.note;
+            move || match note.get() {
+                text if text.is_empty() => Vec::new(),
+                text => vec![notice(text, Tone::Error)],
+            }
+        }))
+        .collection(
+            app.hotkeys.list,
+            move || {
+                let selected = paint.hotkeys.list.cursor.get().min(Hotkey::ALL.len() - 1);
+                let recording = paint.hotkeys.recording.get();
+                let armed = paint.hotkeys.armed.get();
                 let model = paint.model.get();
-                Hotkey::ALL
+                Ok(Hotkey::ALL
                     .iter()
                     .copied()
                     .map(|action| {
@@ -60,46 +66,29 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                         };
                         (action, binding)
                     })
-                    .collect()
-            };
-            let source = paint.clone();
-            let mut items: Vec<NodeBuilder> = Vec::new();
-            if !note.is_empty() {
-                items.push(notice(note, Tone::Error));
-            }
-            items.push(overlay_list(
-                virtual_list(rows, move |index, row: &(Hotkey, String)| {
-                    entry(source.clone(), index, row, selected)
-                })
-                .scroll_into_view(selected),
-                canvas::overlay_list_row(),
-                visible,
-            ));
-            items
-        }))
+                    .collect())
+            },
+            String::new,
+            move |len| {
+                Some((
+                    canvas::overlay_list_row(),
+                    canvas::overlay_shown(len, viewport.get().1),
+                ))
+            },
+            |(action, binding), active| {
+                pick(
+                    active,
+                    action.name(),
+                    format!("{binding} · {}", description(*action)),
+                )
+            },
+            move || {
+                choose.hotkeys.recording.set(false);
+                choose.hotkeys.armed.set(false);
+                choose.edit_hotkey();
+            },
+        )
         .build(app.hotkeys.open, app.viewport.peek().0, &hotkeys)
-}
-
-fn entry(
-    app: App,
-    index: usize,
-    (action, binding): &(Hotkey, String),
-    selected: usize,
-) -> NodeBuilder {
-    let choose = app.clone();
-    let active = index == selected;
-    pick(
-        active,
-        action.name().to_string(),
-        format!("{} · {}", binding, description(*action)),
-    )
-    .pointer_down(move |event| {
-        choose.hotkeys.recording.set(false);
-        choose.hotkeys.armed.set(false);
-        choose.hotkeys.list.cursor.set(index);
-        choose.edit_hotkey();
-        event.stop_propagation();
-    })
 }
 
 const fn description(action: Hotkey) -> &'static str {

@@ -89,7 +89,12 @@ pub(in crate::tui::sigil_view) struct Composed {
     pub(in crate::tui::sigil_view) shimmer: Option<Shimmer>,
 }
 
-pub(in crate::tui::sigil_view) fn compose(cols: u16, rows: u16, app: &App) -> Composed {
+pub(in crate::tui::sigil_view) fn compose(
+    cols: u16,
+    rows: u16,
+    app: &App,
+    elapsed: u64,
+) -> Composed {
     if cols == 0 || rows == 0 {
         return Composed::default();
     }
@@ -107,11 +112,7 @@ pub(in crate::tui::sigil_view) fn compose(cols: u16, rows: u16, app: &App) -> Co
     let mut plate = glass(card);
     let revealed =
         app.splash_revealed.peek() || !model.prefs.animations || !app.draft.peek().is_empty();
-    let elapsed = if revealed {
-        u64::MAX / 2
-    } else {
-        u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
-    };
+    let elapsed = if revealed { u64::MAX / 2 } else { elapsed };
     let placed = place(
         card_kind,
         [body_x, body_y],

@@ -18,6 +18,7 @@ const MAGIC: &[u8] = b"SMNR1";
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 const FILE: &str = "credentials.toml";
+#[cfg(any(target_os = "macos", all(test, unix)))]
 const LOCKED: &str = "the keychain did not answer; unlock it";
 const CHOICES: &str = "secrets must be \"file\" or \"keychain\"";
 

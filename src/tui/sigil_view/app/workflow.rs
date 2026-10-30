@@ -1,3 +1,5 @@
+use sigil::widgets::CursorEdge;
+
 use super::*;
 
 impl App {
@@ -22,7 +24,9 @@ impl App {
         if self.workflow.naming.peek() {
             return;
         }
-        self.workflow.list.shift(delta, Role::ALL.len());
+        self.workflow
+            .list
+            .shift(delta, Role::ALL.len(), CursorEdge::Clamp);
     }
 
     pub(in crate::tui::sigil_view) fn cycle_workflow(&self, delta: isize) {

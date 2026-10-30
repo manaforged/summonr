@@ -4,7 +4,7 @@ use sigil::prelude::{
 
 use super::app::App;
 use super::canvas;
-use super::ui::{Dialog, Hints, Key, List, Size, pick};
+use super::ui::{Dialog, Hints, Key, List, Size, input_keys, pick};
 use crate::tui::matching::all_words;
 
 const ROW_MARKER: usize = 2;
@@ -75,7 +75,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .key(Key::Esc, "close");
     Dialog::new(Size::Reading, "Help", hints)
         .child(
-            text_field(query)
+            input_keys(&app, text_field(query))
                 .placeholder("find")
                 .focus_when(focus)
                 .autofocus()

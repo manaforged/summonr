@@ -65,12 +65,7 @@ impl App {
         if draft.contains('@') && !self.commands.mentions() {
             drop(self.cmd.send(Cmd::ListFiles));
         }
-        if self.commands.change(
-            draft,
-            &self.model.peek().snapshot.levels,
-            &self.model.peek().snapshot.endpoint,
-            &self.picker.facts.peek(),
-        ) {
+        if self.commands.change(draft) {
             drop(self.cmd.send(Cmd::Offers));
         }
     }

@@ -2,7 +2,7 @@ use sigil::prelude::Paint;
 use sigil::prelude::{
     AlignItems, ControlSize, JustifyContent, LayoutBuilderExt, LayoutStyle, LogicalKey,
     ModifiersState, NodeBuilder, NodeEventsExt, Shortcut, Token, Tone, WidgetLayoutExt, button,
-    container, icon_button, node, notice_band, spacer, text_edit,
+    container, icon_button, node, notice_band, spacer,
 };
 
 use super::{App, Pane, chat};

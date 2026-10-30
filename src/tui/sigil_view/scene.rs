@@ -43,7 +43,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let beats_per_second = 1.0 / crate::limits::limits().animation().as_secs_f64().max(0.001);
     let sky = sigil::reactive::derived(move || {
         let (cols, rows) = stars.viewport.get();
-        drop(stars.theme_name.get());
+        let _appearance = stars.appearance.get();
         let beats = sky_seconds(&stars) * beats_per_second;
         moving(cols, rows, beats, stars.sky)
     });
@@ -113,8 +113,7 @@ fn card(app: App) -> sigil::prelude::Signal<Rc<[Line]>> {
     let mut generation = 0_u64;
     let base = sigil::reactive::derived(move || {
         let (cols, rows) = painter.viewport.get();
-        drop(painter.theme_name.get());
-        let _backdrop = painter.backdrop.get();
+        let _appearance = painter.appearance.get();
         let _blank = blank.get();
         let _since = painter.splash_since.get();
         inputs.with(|_| ());
@@ -124,7 +123,9 @@ fn card(app: App) -> sigil::prelude::Signal<Rc<[Line]>> {
         generation = generation.wrapping_add(1);
         (
             generation,
-            sigil::reactive::untrack(|| compose(cols, rows, &painter)),
+            sigil::reactive::untrack(|| {
+                compose(cols, rows, &painter, logo::shimmer_clock(&painter))
+            }),
         )
     });
     let mut painted = Painted::default();

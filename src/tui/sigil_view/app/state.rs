@@ -1,5 +1,7 @@
+use super::facet::{Facet, ranked};
 use super::*;
 use crate::tui::sigil_view::ui::List;
+use sigil::prelude::derived;
 
 #[derive(Clone)]
 pub(in crate::tui::sigil_view) struct ModelPicker {
@@ -14,7 +16,7 @@ pub(in crate::tui::sigil_view) struct ModelPicker {
     pub(in crate::tui::sigil_view) causes: Signal<std::collections::BTreeMap<String, String>>,
     pub(in crate::tui::sigil_view) recent: Signal<[usize; 3]>,
     pub(in crate::tui::sigil_view) older: Signal<bool>,
-    pub(in crate::tui::sigil_view) facet: Signal<super::facet::Facet>,
+    pub(in crate::tui::sigil_view) facet: Signal<Facet>,
     pub(in crate::tui::sigil_view) hidden: Signal<usize>,
     pub(in crate::tui::sigil_view) note: Signal<String>,
     pub(in crate::tui::sigil_view) loading: Signal<bool>,
@@ -27,19 +29,40 @@ pub(in crate::tui::sigil_view) struct ModelPicker {
 
 impl ModelPicker {
     pub(super) fn new() -> Self {
+        let list = List::new();
+        let choices = signal(Rc::<Vec<ModelId>>::default());
+        let facts = signal(Rc::<
+            std::collections::BTreeMap<ModelId, crate::catalog::Model>,
+        >::default());
+        let groups = signal(std::collections::BTreeMap::<String, State>::new());
+        let recent = signal([0; 3]);
+        let older = signal(false);
+        let facet = signal(Facet::All);
+        let result = derived(move || {
+            let (rows, hidden) = ranked(
+                &choices.get(),
+                recent.get(),
+                &facts.get(),
+                &groups.get(),
+                &list.query.get(),
+                facet.get(),
+                older.get(),
+            );
+            (Rc::new(rows), hidden)
+        });
         Self {
             open: signal(false),
-            list: List::new(),
-            choices: signal(Rc::default()),
-            shown: signal(Rc::default()),
-            facts: signal(Rc::default()),
+            list,
+            choices,
+            shown: derived(move || result.with(|(rows, _)| Rc::clone(rows))),
+            facts,
             default: signal(None),
-            groups: signal(std::collections::BTreeMap::new()),
+            groups,
             causes: signal(std::collections::BTreeMap::new()),
-            recent: signal([0; 3]),
-            older: signal(false),
-            facet: signal(super::facet::Facet::All),
-            hidden: signal(0),
+            recent,
+            older,
+            facet,
+            hidden: derived(move || result.with(|(_, hidden)| *hidden)),
             note: signal(String::new()),
             loading: signal(false),
             error: signal(String::new()),

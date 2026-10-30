@@ -12,7 +12,14 @@ fn median(mut values: Vec<u64>) -> u64 {
 #[test]
 fn an_idle_splash_frame_repaints_only_what_twinkles() {
     Runtime::scope("splash-idle", || {
-        let (_app, mut host, mut screen) = super::tests::splash_screen(SIZE.0, SIZE.1);
+        let mut app = super::tests::splash_app(SIZE.0, SIZE.1);
+        app.sky = 1;
+        let clock = sigil::prelude::signal(0.0);
+        app.sky_clock.set(Some(clock));
+        let mut host = sigil::Host::cells();
+        let tree = app.clone();
+        host.mount(move || crate::tui::sigil_view::view::root(tree));
+        let mut screen = sigil::terminal::Screen::new(SIZE.0, SIZE.1);
         let mut router = sigil::events::EventRouter::new();
         let mut written = Vec::new();
         for _ in 0..5 {
@@ -21,12 +28,12 @@ fn an_idle_splash_frame_repaints_only_what_twinkles() {
         }
         let (mut nodes, mut cells, mut bytes) = (Vec::new(), Vec::new(), Vec::new());
         profile::enable();
-        for _ in 0..40 {
-            screen.frame(&mut host, &mut router, [], SIZE).unwrap();
-            screen.flush(&mut std::io::sink()).unwrap();
-            std::thread::park_timeout(BEAT);
+        for frame in 1..=40 {
             profile::reset();
             profile::begin_frame(BackendStatus::TERMINAL);
+            let elapsed = BEAT * frame;
+            app.splash_since.set(std::time::Instant::now() - elapsed);
+            clock.set(elapsed.as_secs_f64());
             screen.frame(&mut host, &mut router, [], SIZE).unwrap();
             written.clear();
             screen.flush(&mut written).unwrap();

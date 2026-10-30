@@ -67,13 +67,6 @@ pub(super) fn dim(text: String) -> NodeBuilder {
 }
 
 pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
-    drop((
-        app.diff_view.get(),
-        app.pane_list(pane).cursor.get(),
-        app.hunk_list.cursor.get(),
-        app.note_target.get(),
-        app.pane_focus.get(),
-    ));
     let style = LayoutStyle::flex_column()
         .width(width)
         .padding(16.0)
@@ -134,7 +127,11 @@ pub(super) fn listing(
     if rows.is_empty() {
         return column.child(empty(none));
     }
-    let cursor = app.pane_list(pane).at(rows.len());
+    let cursor = app
+        .pane_list(pane)
+        .cursor
+        .get()
+        .min(rows.len().saturating_sub(1));
     let tree = App::pane_tree(pane);
     for (index, row) in rows.into_iter().enumerate() {
         let (menu, point) = (app.clone(), app.clone());
@@ -204,7 +201,7 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
                 )
                 .font_size(14.0)
                 .font_weight(500)
-                .text_color(if app.pane_focus.peek() && !canvas::is_window() {
+                .text_color(if app.pane_focus.get() && !canvas::is_window() {
                     sigil::prelude::Token::Accent
                 } else {
                     sigil::prelude::Token::Gray12

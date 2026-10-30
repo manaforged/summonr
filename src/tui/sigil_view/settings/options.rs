@@ -1,9 +1,7 @@
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, container, virtual_list,
-};
+use sigil::prelude::{NodeBuilder, NodeEventsExt, signal, virtual_list};
 
 use super::{App, canvas};
-use super::{Row, setting_rows};
+use super::{Row, Setting, setting_rows};
 use crate::tui::sigil_view::ui::{
     Bindings, Dialog, Hints, Key, Size, group, overlay_list, pick, press,
 };
@@ -35,7 +33,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 .key(Key::UpDown, "move")
                 .key(Key::Enter, "change")
                 .key(Key::Esc, "close")
-                .count(count.settings.cursor.get(), setting_rows(&count).len())
+                .count(count.settings.cursor.get(), Setting::all().count())
         })
         .child(super::dialog_body(move || {
             let rows = setting_rows(&paint);
@@ -46,26 +44,17 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 .min(rows.len().saturating_sub(1));
             let items = list_items(&rows);
             let visible = canvas::overlay_shown(items.len(), paint.viewport.get().1);
-            let top = items
+            let shown = items
                 .iter()
                 .position(|item| matches!(item, Item::Model(index) if *index == selected))
-                .map_or(0, |at| at.saturating_sub(1))
-                .min(items.len().saturating_sub(visible));
-            if canvas::is_window() {
-                let end = (top + visible).min(items.len());
-                let page = items[top..end].iter().fold(
-                    container().layout(LayoutStyle::flex_column().fill_width()),
-                    |node, item| node.child(item_node(&paint, &rows, item, selected)),
-                );
-                return vec![page];
-            }
-            let lookup = rows.clone();
+                .unwrap_or(0);
             let source = paint.clone();
             vec![overlay_list(
                 virtual_list(items, move |_, item: &Item| {
-                    item_node(&source, &lookup, item, selected)
+                    item_node(&source, &rows, item, selected)
                 })
-                .scroll_into_view(top),
+                .scroll_bind(paint.settings.scroll)
+                .follow_row(signal(shown)),
                 canvas::overlay_list_row(),
                 visible,
             )]
@@ -76,7 +65,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
 fn item_node(app: &App, rows: &[Row], item: &Item, selected: usize) -> NodeBuilder {
     match item {
         Item::Heading(name) => group(*name),
-        Item::Model(index) => entry(app.clone(), &rows[*index], *index, *index == selected),
+        Item::Model(index) => entry(app, &rows[*index], *index, *index == selected),
     }
 }
 
@@ -96,7 +85,7 @@ fn list_items(rows: &[Row]) -> Vec<Item> {
     items
 }
 
-fn entry(app: App, row: &Row, index: usize, active: bool) -> NodeBuilder {
+fn entry(app: &App, row: &Row, index: usize, active: bool) -> NodeBuilder {
     let choose = app.clone();
     pick(active, row.label.clone(), row.value.clone()).pointer_down(move |event| {
         if choose.settings.cursor.peek() == index {

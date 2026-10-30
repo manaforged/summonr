@@ -4,7 +4,7 @@ use sigil::prelude::{
 
 use super::super::{App, canvas};
 use crate::tui::sigil_view::app::{Login, Note};
-use crate::tui::sigil_view::ui::{Size, group, notice};
+use crate::tui::sigil_view::ui::{Size, group, input_keys, notice};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Input {
@@ -89,7 +89,7 @@ pub(super) fn field(app: &App, input: Input, focus: bool) -> NodeBuilder {
     } else {
         app.auth.key
     };
-    let field = text_field(value).placeholder(input.placeholder());
+    let field = input_keys(app, text_field(value)).placeholder(input.placeholder());
     let field = if focus {
         field.focus_when(app.auth.focus).autofocus()
     } else {

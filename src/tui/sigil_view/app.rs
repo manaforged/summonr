@@ -141,8 +141,7 @@ pub(super) struct App {
     pub(super) sky: u64,
     pub(super) sky_clock: Signal<Option<Signal<f64>>>,
     pub(super) settle: Signal<bool>,
-    pub(super) theme_name: Signal<String>,
-    pub(super) backdrop: Signal<prefs::Background>,
+    pub(super) appearance: Signal<theme::Palette>,
     pub(super) viewport: Signal<(u16, u16)>,
     pub(super) layout: Signal<Layout>,
     pub(super) pane_focus: Signal<bool>,
@@ -219,13 +218,14 @@ impl Attachment {
 
 impl App {
     pub(super) fn new(info: Info, workspace: PathBuf, cmd: UnboundedSender<Cmd>) -> Self {
-        let model = Model::new(&info);
+        let model = signal(Rc::new(Model::new(&info)));
+        let picker = ModelPicker::new();
         let git_branch = read_git_branch(&workspace);
         let draft = signal(String::new());
         let caret = signal(0);
         let app = Self {
             inline: info.inline,
-            model: signal(Rc::new(model)),
+            model,
             search: super::search::Picker::new(),
             help: super::help::View::new(),
             cmd,
@@ -264,8 +264,7 @@ impl App {
             sky: super::scene::fresh_sky(),
             sky_clock: signal(None),
             settle: signal(false),
-            theme_name: signal(info.prefs.theme.clone()),
-            backdrop: signal(info.prefs.background),
+            appearance: signal(theme::palette()),
             viewport: signal((80, 24)),
             layout: signal(Layout::parse(&info.prefs.layout).unwrap_or_default()),
             pane_focus: signal(false),
@@ -301,11 +300,11 @@ impl App {
             quit_armed: signal(None),
             escape_armed: signal(None),
             editor_requested: signal(false),
-            commands: Picker::new(),
+            commands: Picker::new(draft, model, picker.facts),
             sessions: super::sessions::Picker::new(),
             usage: super::usage::Panel::new(),
             effort: super::effort::Strip::new(),
-            picker: ModelPicker::new(),
+            picker,
             workflow: WorkflowDialog::new(),
             auth: AuthDialog::new(),
             hotkeys: HotkeyDialog::new(),

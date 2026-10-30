@@ -154,6 +154,6 @@ mod tests {
             String::new(),
         );
         call.patch = Some(patch.to_owned());
-        assert_eq!(super::super::fold::patch_counts(&call), Some((2, 1)));
+        assert_eq!(super::super::verb::patch_counts(&call), Some((2, 1)));
     }
 }

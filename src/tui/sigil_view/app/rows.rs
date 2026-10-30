@@ -8,7 +8,7 @@ use crate::supervise::ServerKind;
 impl App {
     pub(in crate::tui::sigil_view) fn file_rows(&self) -> Vec<PaneRow> {
         let model = self.model.get();
-        let expanded = self.pane_list(Pane::Files).open.peek();
+        let expanded = self.pane_list(Pane::Files).expanded.get();
         files::file_rows(&model.files, &expanded)
     }
 
@@ -19,7 +19,7 @@ impl App {
             .jobs
             .iter()
             .map(|(record, status)| {
-                let open = list.is_open(&record.id);
+                let open = list.is_expanded(&record.id);
                 PaneRow::flat(record.id.clone(), record.command.clone(), open)
                     .badge(status.label(), job_tone(status.state))
                     .detail(status.text.lines().map(str::to_string))
@@ -34,7 +34,7 @@ impl App {
             .mcp
             .iter()
             .map(|server| {
-                let open = list.is_open(&server.name);
+                let open = list.is_expanded(&server.name);
                 PaneRow::flat(server.name.clone(), server.name.clone(), open)
                     .status(summary(server))
                     .badge(server.state.label(), mcp_tone(server.state))

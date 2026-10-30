@@ -15,7 +15,7 @@ use crate::tui::sigil_view::text_style::TextStyle;
 const FENCE: &str = "```";
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-enum Shown {
+pub(in crate::tui::sigil_view) enum Shown {
     Patch {
         path: Option<String>,
         patch: String,
@@ -27,8 +27,13 @@ enum Shown {
 }
 
 #[derive(Clone, PartialEq)]
-enum Part {
+pub(in crate::tui::sigil_view) enum Part {
     Prose(String),
+    Code {
+        lang: String,
+        body: String,
+        closed: bool,
+    },
     Shown(Shown),
 }
 
@@ -43,6 +48,10 @@ impl IntoNode for Piece {
             Self::Prose(list, index) => markdown(derived(move || {
                 list.with(|list| match list.get(index) {
                     Some(Part::Prose(text)) => text.clone(),
+                    Some(Part::Code { lang, body, closed }) => {
+                        let end = if *closed { FENCE } else { "" };
+                        format!("{FENCE}{lang}\n{body}\n{end}")
+                    }
                     _ => String::new(),
                 })
             }))
@@ -73,7 +82,9 @@ pub(super) fn body(source: Signal<String>, app: &App) -> NodeBuilder {
                     .iter()
                     .enumerate()
                     .map(|(index, part)| match part {
-                        Part::Prose(_) => ((index, None), Piece::Prose(list, index)),
+                        Part::Prose(_) | Part::Code { .. } => {
+                            ((index, None), Piece::Prose(list, index))
+                        }
                         Part::Shown(shown) => (
                             (index, Some(fingerprint(shown))),
                             Piece::Shown(Box::new((shown.clone(), app.clone(), layout))),
@@ -102,7 +113,11 @@ pub(in crate::tui::sigil_view) fn diff_card(app: &App, text: &str) -> Option<Nod
     classify(text).map(|shown| paint(shown, app, layout))
 }
 
-fn paint(shown: Shown, app: &App, layout: DiffLayout) -> NodeBuilder {
+pub(in crate::tui::sigil_view) fn paint(
+    shown: Shown,
+    app: &App,
+    layout: DiffLayout,
+) -> NodeBuilder {
     match shown {
         Shown::Patch { path, patch } => container().child(patch_node(app, layout, path, patch)),
         Shown::Stat { rows, summary } => stat_node(&rows, summary.as_deref()),
@@ -182,8 +197,8 @@ fn stat_head(row: &Stat) -> NodeBuilder {
         )
 }
 
-#[cfg(test)]
-fn parts(body: &str) -> Vec<Part> {
+#[cfg(any(test, feature = "gui"))]
+pub(in crate::tui::sigil_view) fn parts(body: &str) -> Vec<Part> {
     let mut parse = Parse::default();
     parse.feed(body);
     parse.finish()
@@ -191,7 +206,7 @@ fn parts(body: &str) -> Vec<Part> {
 
 #[derive(Clone)]
 struct Fence {
-    opener: String,
+    lang: String,
     lines: Vec<String>,
 }
 
@@ -231,7 +246,7 @@ impl Parse {
             self.fence = match self.fence.take() {
                 Some(open) => self.step_fence(open, line),
                 None if is_fence(line) => Some(Fence {
-                    opener: line.to_string(),
+                    lang: line.trim_start().trim_start_matches('`').trim().to_string(),
                     lines: Vec::new(),
                 }),
                 None => {
@@ -247,21 +262,17 @@ impl Parse {
             open.lines.push(line.to_string());
             return Some(open);
         }
-        if let Some(shown) = classify(&open.lines.join("\n")) {
-            self.push_prose();
-            self.out.push(Part::Shown(shown));
-        } else {
-            self.unfence(&open);
-            self.prose_line(line);
-        }
+        let body = open.lines.join("\n");
+        self.push_prose();
+        self.out.push(match classify(&body) {
+            Some(shown) => Part::Shown(shown),
+            None => Part::Code {
+                lang: open.lang,
+                body,
+                closed: true,
+            },
+        });
         None
-    }
-
-    fn unfence(&mut self, open: &Fence) {
-        self.prose_line(&open.opener);
-        for line in &open.lines {
-            self.prose_line(line);
-        }
     }
 
     fn prose_line(&mut self, line: &str) {
@@ -284,7 +295,12 @@ impl Parse {
 
     fn finish(mut self) -> Vec<Part> {
         if let Some(open) = self.fence.take() {
-            self.unfence(&open);
+            self.push_prose();
+            self.out.push(Part::Code {
+                lang: open.lang,
+                body: open.lines.join("\n"),
+                closed: false,
+            });
         }
         self.push_prose();
         self.out

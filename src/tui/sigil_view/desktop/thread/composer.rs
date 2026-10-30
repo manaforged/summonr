@@ -1,4 +1,5 @@
 use super::*;
+use crate::tui::sigil_view::view::editor;
 use sigil::prelude::Radius;
 
 const PLACEHOLDER: &str = "Ask anything; @ attaches a file, / runs a command";
@@ -9,29 +10,8 @@ const APPROVAL_AUTO: &str = "auto";
 const APPROVAL_ASK: &str = "ask on risky";
 
 pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
-    let changed = app.clone();
-    let paste = app.clone();
-    let paste_meta = app.clone();
-    let (value, caret) = if editing {
-        (app.view_text, app.view_caret)
-    } else {
-        (app.draft, app.caret)
-    };
     let typing = app.clone();
-    container()
-        .key_capture(Shortcut::ctrl(LogicalKey::character("v")), move |event| {
-            if paste.clipboard() {
-                event.stop_propagation();
-            }
-        })
-        .key_capture(
-            Shortcut::new(LogicalKey::character("v"), ModifiersState::META),
-            move |event| {
-                if paste_meta.clipboard() {
-                    event.stop_propagation();
-                }
-            },
-        )
+    let mut composer = container()
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
@@ -65,22 +45,27 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                 .border_color(Token::Border)
                 .child(mentions::chips(app.clone(), editing))
                 .child(
-                    text_edit(value)
-                        .caret_position(caret)
+                    editor(&app, editing)
                         .placeholder(if editing { EDITING } else { PLACEHOLDER })
-                        .change(move |draft| {
-                            if !editing {
-                                changed.change(draft);
-                            }
-                        })
-                        .focus_when(app.editor_focus)
                         .autofocus()
                         .layout(LayoutStyle::flex_column().fill_width().height(72.0))
                         .font_size(BODY)
                         .text_color(Token::OnSurface),
                 )
                 .child(tools(&app, editing)),
-        )
+        );
+    for modifiers in [ModifiersState::CONTROL, ModifiersState::META] {
+        let paste = app.clone();
+        composer = composer.key_capture(
+            Shortcut::new(LogicalKey::character("v"), modifiers),
+            move |event| {
+                if paste.clipboard() {
+                    event.stop_propagation();
+                }
+            },
+        );
+    }
+    composer
 }
 
 fn tools(app: &App, editing: bool) -> NodeBuilder {

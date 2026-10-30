@@ -21,6 +21,31 @@ fn session(id: &str, parent: Option<&str>) -> crate::session::SessionInfo {
 }
 
 #[test]
+fn filtering_sessions_keeps_the_cursor_on_the_visible_result() {
+    let selected = std::cell::Cell::new(usize::MAX);
+    let shown = screens(
+        110,
+        34,
+        |app| {
+            app.open_sessions(false);
+            app.update(Msg::Sessions(Ok(vec![
+                (session("first", None), true),
+                (session("second", None), true),
+                (session("third", None), true),
+            ])));
+            app.sessions.list.select(2);
+        },
+        &[
+            &|app: &App| app.sessions.list.type_query("first".to_string()),
+            &|app: &App| selected.set(app.sessions.list.cursor.peek()),
+        ],
+    );
+    assert!(shown[1].contains("Session first"), "{}", shown[1]);
+    assert!(!shown[1].contains("Session third"), "{}", shown[1]);
+    assert_eq!(selected.get(), 0, "cursor must follow the filtered result");
+}
+
+#[test]
 fn a_session_delete_confirmation_is_visible_with_existing_rows() {
     let screen = picker(80, |app| {
         app.open_sessions(false);

@@ -1,3 +1,5 @@
+use sigil::widgets::CursorEdge;
+
 use super::overlays::context::{Act, CHANGE, DIR, FILE, JOB, MCP, PEER, TREE};
 use super::*;
 use crate::tui::sigil_view::ui::List;
@@ -157,7 +159,7 @@ impl App {
             Some(shift) => shift(self, delta),
             None => {
                 self.pane_list(pane)
-                    .shift(delta, self.pane_rows(pane).len());
+                    .shift(delta, self.pane_rows(pane).len(), CursorEdge::Clamp);
                 self.refresh();
             }
         }
@@ -193,7 +195,7 @@ impl App {
         match spec(pane).collapse {
             Some(collapse) => collapse(self),
             None => {
-                self.pane_list(pane).close();
+                self.pane_list(pane).collapse_all();
                 self.refresh();
             }
         }

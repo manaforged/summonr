@@ -36,6 +36,8 @@ mod surface;
 pub(super) use keys::KeyCommand;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use keys::shell;
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use surface::editor;
 
 pub(super) fn root(app: App) -> NodeBuilder {
     let screen = app.clone();
@@ -67,10 +69,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
                     .bg(sigil::prelude::Token::Surface)
                     .child(chat)
                     .child(dialog)
-                    .theme(surface::theme(
-                        &screen.theme_name.get(),
-                        screen.backdrop.get(),
-                    )),
+                    .theme(surface::theme(screen.appearance.get())),
             ]
         })
 }

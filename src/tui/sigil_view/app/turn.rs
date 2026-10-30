@@ -137,12 +137,10 @@ impl App {
             return false;
         }
         let typed = self.draft.peek();
-        let Some(name) = self.commands.complete(
-            &typed,
-            self.caret.peek(),
-            &self.model.get(),
-            &self.picker.facts.peek(),
-        ) else {
+        let Some(name) = self
+            .commands
+            .complete(&typed, self.caret.peek(), &self.model.get())
+        else {
             return false;
         };
         self.completion(&name);

@@ -1,3 +1,5 @@
+use sigil::widgets::CursorEdge;
+
 use super::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -46,7 +48,8 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn hunk_move(&self, delta: isize) {
-        self.hunk_list.shift(delta, self.hunks().len());
+        self.hunk_list
+            .shift(delta, self.hunks().len(), CursorEdge::Clamp);
         self.refresh();
     }
 

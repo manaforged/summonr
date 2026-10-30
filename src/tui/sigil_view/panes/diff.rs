@@ -27,11 +27,11 @@ const NO_CHANGES: Empty = Empty {
     window: "No changes yet. Files the agent edits show here while the turn runs.",
     terminal: "no changes",
 };
-use crate::tui::sigil_view::ui::{Hints, Key};
+use crate::tui::sigil_view::ui::{Hints, Key, input_keys};
 
 pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder {
     let model = app.model.get();
-    if let Some(path) = app.diff_view.peek() {
+    if let Some(path) = app.diff_view.get() {
         let back = app.clone();
         column = column
             .child(header(
@@ -80,7 +80,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                 crate::tui::sigil_view::chat::entry::Fit::of(cols),
             ));
         }
-        let cursor = app.hunk_list.cursor.peek();
+        let cursor = app.hunk_list.cursor.get();
         let notes = format!(
             "{} · {}",
             summonr_core::text::plural(hunks.len(), "hunk"),
@@ -172,7 +172,7 @@ fn file_actions(app: &App, changed: &PaneRow) -> NodeBuilder {
     }
     let label = if app
         .revert_armed
-        .peek()
+        .get()
         .is_some_and(|(armed, _)| armed == target)
     {
         CONFIRM_REVERT
@@ -232,13 +232,13 @@ fn undo_rows(
 
 fn scope(app: &App) -> NodeBuilder {
     let toggle = app.clone();
-    let label = if app.diff_recent.peek() {
+    let label = if app.diff_recent.get() {
         SCOPE_RECENT
     } else {
         SCOPE_ALL
     };
     let session = app.clone();
-    let whole = if app.diff_session.peek() {
+    let whole = if app.diff_session.get() {
         SESSION_ON
     } else {
         SESSION_OFF
@@ -271,7 +271,7 @@ fn hunk_view(
     };
     let editing = app
         .note_target
-        .peek()
+        .get()
         .is_some_and(|(target, id)| target == path && id == hunk.id);
     let (menu, items) = (app.clone(), app.clone());
     let mut card = container()
@@ -304,7 +304,7 @@ fn hunk_view(
         let commit = app.clone();
         let edit = app.clone();
         card = card.child(node(move || {
-            text_edit(edit.note_text)
+            input_keys(&edit, text_edit(edit.note_text))
                 .caret_position(edit.note_caret)
                 .submit(move |text| commit.note_commit(text))
                 .autofocus()
@@ -325,7 +325,7 @@ fn hunk_view(
                 Hints::new()
                     .key(Key::Enter, "save")
                     .key(Key::Esc, "cancel")
-                    .text(&app.model.peek().prefs.hotkeys)
+                    .text(&app.model.get().prefs.hotkeys)
             ))
             .wrap()
             .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))

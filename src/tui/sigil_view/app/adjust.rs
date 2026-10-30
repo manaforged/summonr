@@ -1,3 +1,6 @@
+use sigil::widgets::CursorEdge;
+
+use super::settings::Setting;
 use super::*;
 
 const AUTO_COMMAND: &str = "/auto";
@@ -11,21 +14,19 @@ impl App {
             return;
         }
         self.settings
-            .shift(delta, super::settings::setting_rows(self).len());
+            .shift(delta, Setting::all().count(), CursorEdge::Clamp);
     }
 
-    pub(in crate::tui::sigil_view) fn selected_setting(&self) -> Option<super::settings::Setting> {
-        super::settings::setting_rows(self)
-            .get(self.settings.cursor.peek())
-            .map(|row| row.setting)
+    pub(in crate::tui::sigil_view) fn selected_setting(&self) -> Option<Setting> {
+        Setting::all().nth(self.settings.cursor.peek())
     }
 
     pub(in crate::tui::sigil_view) fn adjust_setting(&self) {
         if self.picker.open.peek() {
             return;
         }
-        if let Some(row) = super::settings::setting_rows(self).get(self.settings.cursor.peek()) {
-            (row.action)(self);
+        if let Some(setting) = self.selected_setting() {
+            setting.activate(self);
         }
     }
 
@@ -90,7 +91,9 @@ impl App {
         if self.hotkeys.recording.peek() {
             return;
         }
-        self.hotkeys.list.shift(delta, Hotkey::ALL.len());
+        self.hotkeys
+            .list
+            .shift(delta, Hotkey::ALL.len(), CursorEdge::Clamp);
     }
 
     pub(in crate::tui::sigil_view) fn edit_hotkey(&self) {
@@ -198,7 +201,9 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn apply_theme(&self) {
         let prefs = self.model.peek().prefs.clone();
-        for problem in theme::install(&prefs, &self.workspace, self.info.config.as_deref()) {
+        let problems = theme::install(&prefs, &self.workspace, self.info.config.as_deref());
+        self.appearance.set(theme::palette());
+        for problem in problems {
             self.push_entry(Entry::System(problem));
         }
     }

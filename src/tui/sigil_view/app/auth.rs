@@ -1,3 +1,5 @@
+use sigil::widgets::CursorEdge;
+
 pub(in crate::tui::sigil_view) use super::note::Note;
 use rank::best_match;
 pub(in crate::tui::sigil_view) use rank::matching;
@@ -137,7 +139,9 @@ impl App {
         if !self.auth_listing() || self.picker.open.peek() {
             return;
         }
-        self.auth.list.shift(delta, self.filtered_auth().len());
+        self.auth
+            .list
+            .shift(delta, self.filtered_auth().len(), CursorEdge::Clamp);
     }
 
     pub(in crate::tui::sigil_view) fn auth_choice(&self) -> Option<crate::endpoint::AuthInfo> {

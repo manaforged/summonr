@@ -7,52 +7,11 @@ use sigil::prelude::{
 use super::super::App;
 use crate::prefs::Visibility;
 use crate::tui::sigil_view::chat::entry::label;
+use crate::tui::sigil_view::chat::entry::reply::{self, Part, parts};
 use crate::tui::sigil_view::text_style::TextStyle;
 
 const FENCE: &str = "```";
 const LINE: f32 = 22.0;
-
-enum Block {
-    Prose(String),
-    Code { lang: String, body: String },
-}
-
-fn blocks(body: &str) -> Vec<Block> {
-    let mut out = Vec::new();
-    let mut prose = Vec::new();
-    let mut code: Option<(String, Vec<&str>)> = None;
-    for line in body.lines() {
-        let fence = line.trim_start().strip_prefix(FENCE);
-        match (code.take(), fence) {
-            (Some((lang, lines)), Some(_)) => out.push(Block::Code {
-                lang,
-                body: lines.join("\n"),
-            }),
-            (Some((lang, mut lines)), None) => {
-                lines.push(line);
-                code = Some((lang, lines));
-            }
-            (None, Some(lang)) => {
-                if !prose.is_empty() {
-                    out.push(Block::Prose(prose.join("\n")));
-                    prose.clear();
-                }
-                code = Some((lang.trim().to_string(), Vec::new()));
-            }
-            (None, None) => prose.push(line),
-        }
-    }
-    if let Some((lang, lines)) = code {
-        out.push(Block::Code {
-            lang,
-            body: lines.join("\n"),
-        });
-    }
-    if !prose.is_empty() {
-        out.push(Block::Prose(prose.join("\n")));
-    }
-    out
-}
 
 pub(super) fn user(body: String) -> NodeBuilder {
     container()
@@ -78,9 +37,6 @@ pub(super) fn user(body: String) -> NodeBuilder {
 }
 
 fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
-    if let Some(card) = crate::tui::sigil_view::chat::entry::diff_card(app, &body) {
-        return card;
-    }
     let copy = app.clone();
     let copied = body.clone();
     let head = container()
@@ -128,13 +84,21 @@ pub(super) fn assistant(body: &str, app: &App) -> NodeBuilder {
     if body.trim().is_empty() {
         return column;
     }
-    for block in blocks(body) {
+    let layout = app.model.get().prefs.diff_layout;
+    for block in parts(body) {
         column = column.child(match block {
-            Block::Prose(text) => container()
+            Part::Prose(text) => container()
                 .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
                 .line_height_px(LINE)
                 .child(markdown(signal(text))),
-            Block::Code { lang, body } => code_block(app, lang, body),
+            Part::Code { lang, body, closed } => {
+                if !closed && let Some(card) = reply::diff_card(app, &body) {
+                    card
+                } else {
+                    code_block(app, lang, body)
+                }
+            }
+            Part::Shown(shown) => reply::paint(shown, app, layout),
         });
     }
     column
@@ -208,26 +172,5 @@ pub(super) fn error(reason: String) -> NodeBuilder {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Block, blocks};
-
-    #[test]
-    fn fenced_code_splits_out_with_its_language() {
-        let parts = blocks("intro\n```rust\nfn a() {}\n```\nafter");
-        let shapes: Vec<(bool, String)> = parts
-            .into_iter()
-            .map(|block| match block {
-                Block::Prose(text) => (false, text),
-                Block::Code { lang, body } => (true, format!("{lang}:{body}")),
-            })
-            .collect();
-        assert_eq!(
-            shapes,
-            vec![
-                (false, "intro".to_string()),
-                (true, "rust:fn a() {}".to_string()),
-                (false, "after".to_string()),
-            ]
-        );
-    }
-}
+#[path = "message_tests.rs"]
+mod tests;

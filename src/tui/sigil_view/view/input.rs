@@ -1,4 +1,5 @@
 use super::*;
+use crate::prefs::EditorKey;
 
 pub(super) fn composer_keys(mut node: NodeBuilder, app: &App) -> NodeBuilder {
     for modifier in [ModifiersState::SHIFT, ModifiersState::ALT] {
@@ -63,7 +64,11 @@ pub(super) fn leader_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
             },
         );
     }
-    node
+    let fallback = app.clone();
+    node.key(Shortcut::ctrl(LogicalKey::character("x")), move |event| {
+        fallback.arm_leader();
+        event.stop_propagation();
+    })
 }
 
 pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder {
@@ -132,14 +137,10 @@ fn ctrl_action(app: &App, key: char) -> Ctrl {
     if app.hotkeys.recording.peek() || app.hotkeys.armed.peek() {
         return held_ctrl(app, key);
     }
-    if yields_cut(app, key) {
+    if key == 'x' || EditorKey::yields(key, false) {
         return Ctrl::Fall;
     }
     if app.route_hotkey(key) {
-        return Ctrl::Stop;
-    }
-    if key == 'x' {
-        app.arm_leader();
         return Ctrl::Stop;
     }
     readline(app, key)
@@ -184,17 +185,15 @@ fn motion(key: char) -> Option<Key> {
     }
 }
 
-fn yields_cut(app: &App, key: char) -> bool {
-    key == 'x'
-        && crate::prefs::EditorKey::yields(key, app.draft.peek().is_empty())
-        && app.editor.selection().is_some()
-}
-
 enum Ctrl {
     Stop,
     Rewrite(Key),
     Fall,
 }
+
+#[cfg(test)]
+#[path = "input_tests.rs"]
+mod tests;
 
 pub(super) fn escape(app: &App) {
     if app.overlay_close() {

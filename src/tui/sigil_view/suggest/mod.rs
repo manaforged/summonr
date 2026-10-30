@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use super::app::App;
 use super::canvas;
 use super::model::Model;
@@ -5,7 +7,8 @@ use super::ui::List;
 use crate::mcp::OfferKind;
 use crate::tui::matching_commands;
 use crate::{SlashCommand, parse_command};
-use sigil::prelude::{Signal, signal};
+use sigil::prelude::{Signal, derived, signal};
+use sigil::widgets::CursorEdge;
 
 const LIMIT: usize = 9;
 const MAX_WIDTH: usize = 72;
@@ -17,36 +20,52 @@ type Facts = std::collections::BTreeMap<crate::recent::ModelId, crate::catalog::
 pub(super) struct Picker {
     list: List,
     hidden: Signal<bool>,
-    args: Signal<std::rc::Rc<(String, Vec<crate::provider::Effort>, Rows)>>,
+    args: Signal<Rc<(String, Rows)>>,
 }
 
 impl Picker {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(
+        draft: Signal<String>,
+        model: Signal<Rc<Model>>,
+        facts: Signal<Rc<Facts>>,
+    ) -> Self {
+        let list = List::new();
+        let head = derived(move || {
+            draft.with(|draft| {
+                draft
+                    .split_once(' ')
+                    .map_or("", |(head, _)| head)
+                    .to_string()
+            })
+        });
+        let snapshot = derived(move || {
+            model.with(|model| {
+                (
+                    model.snapshot.endpoint.clone(),
+                    model.snapshot.levels.clone(),
+                )
+            })
+        });
+        let args = derived(move || {
+            let head = head.get();
+            let rows = snapshot.with(|(endpoint, levels)| {
+                facts.with(|facts| arguments(&head, endpoint, levels, facts))
+            });
+            Rc::new((head, rows))
+        });
         Self {
-            list: List::new(),
+            list,
             hidden: signal(false),
-            args: signal(std::rc::Rc::default()),
+            args,
         }
     }
 
-    pub(super) fn change(
-        self,
-        draft: &str,
-        levels: &[crate::provider::Effort],
-        endpoint: &str,
-        facts: &Facts,
-    ) -> bool {
+    pub(super) fn change(self, draft: &str) -> bool {
         let refresh = draft.starts_with('/')
             && (!self.list.query.peek().starts_with('/') || self.hidden.peek());
         self.list.cursor.set(0);
         self.hidden.set(false);
         self.list.query.set(draft.to_string());
-        let head = draft.split_once(' ').map_or("", |(head, _)| head);
-        if self.args.peek().0 != head || self.args.peek().1 != levels {
-            let rows = arguments(head, endpoint, levels, facts);
-            self.args
-                .set(std::rc::Rc::new((head.to_string(), levels.to_vec(), rows)));
-        }
         refresh
     }
 
@@ -71,7 +90,7 @@ impl Picker {
         if count == 0 || self.hidden.peek() {
             return false;
         }
-        self.list.cycle(delta, count);
+        self.list.shift(delta, count, CursorEdge::Wrap);
         true
     }
 
@@ -89,30 +108,13 @@ impl Picker {
         (row.0 != draft).then(|| (row.0.clone(), command))
     }
 
-    pub(super) fn complete(
-        self,
-        draft: &str,
-        caret: usize,
-        model: &Model,
-        facts: &Facts,
-    ) -> Option<String> {
+    pub(super) fn complete(self, draft: &str, caret: usize, model: &Model) -> Option<String> {
         let rows = self.rows(draft, caret, model);
         if rows.is_empty() || self.hidden.peek() {
             return None;
         }
         let mut cursor = self.list.at(rows.len());
         if rows[cursor].0 == draft && !usage(draft).is_empty() {
-            let rows = arguments(
-                draft,
-                &model.snapshot.endpoint,
-                &model.snapshot.levels,
-                facts,
-            );
-            self.args.set(std::rc::Rc::new((
-                draft.to_string(),
-                model.snapshot.levels.clone(),
-                rows,
-            )));
             return Some(format!("{draft} "));
         }
         if rows[cursor].0 == draft && rows.len() > 1 {
@@ -125,7 +127,7 @@ impl Picker {
     fn head(self, draft: &str) -> Option<&str> {
         let (head, typed) = draft.split_once(' ')?;
         let held = self.args.get();
-        (held.0 == head && !held.2.is_empty() && !typed.contains(char::is_whitespace))
+        (held.0 == head && !held.1.is_empty() && !typed.contains(char::is_whitespace))
             .then_some(head)
     }
 
@@ -175,7 +177,7 @@ impl Picker {
             let mut ranked: Vec<_> = self
                 .args
                 .get()
-                .2
+                .1
                 .iter()
                 .filter_map(|(value, about)| {
                     let score = sigil::prelude::fuzzy_score(&typed, value)?.score;

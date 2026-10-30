@@ -9,6 +9,7 @@ use toml_edit::DocumentMut;
 
 #[cfg(target_os = "macos")]
 use crate::durable::store;
+#[cfg(any(target_os = "macos", all(test, unix)))]
 use crate::process::{self, Deadline, Spec};
 use summonr_core::error::{Error, Result};
 
@@ -60,6 +61,7 @@ pub(super) fn decode_wrap_bytes(bytes: &[u8]) -> Result<[u8; KEY_LEN]> {
     decode_wrap(text)
 }
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 pub(super) fn find(tool: &Path, account: &str) -> Result<Option<String>> {
     match run(
         tool,
@@ -72,13 +74,16 @@ pub(super) fn find(tool: &Path, account: &str) -> Result<Option<String>> {
     }
 }
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 const ITEM_NOT_FOUND: i32 = 44;
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 pub(super) struct SecurityExit {
     code: i32,
     reason: String,
 }
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 impl From<SecurityExit> for Error {
     fn from(exit: SecurityExit) -> Self {
         Error::Config(format!("security exit {}: {}", exit.code, exit.reason))
@@ -90,6 +95,7 @@ pub(super) fn security(tool: &Path, args: &[&str], stdin: Option<String>) -> Res
     run(tool, args, stdin)?.map_err(Error::from)
 }
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 fn run(
     tool: &Path,
     args: &[&str],
@@ -233,6 +239,7 @@ pub(super) fn os_wrap_key() -> Result<[u8; KEY_LEN]> {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub(super) fn wrap_via_security(tool: &Path) -> Result<[u8; KEY_LEN]> {
     match find(tool, SEAL)? {
         Some(encoded) => decode_wrap(&encoded),

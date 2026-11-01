@@ -66,7 +66,10 @@ better = "lower"
 target = 240.0
 noise = 1.5
 protect = ["bench.py"]
+lanes = ["climb-b"]
 ```
+
+`lanes` are other session names. When a turn is kept, the harness puts the finding in each session's inbox: the number, the turn diff, and the text that model wrote. The model does not send it. The other session's next goal turn starts with that finding. Any endpoint can be that session.
 
 ```sh
 summonr --goal "make bench.py faster" --max-secs 28800

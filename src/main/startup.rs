@@ -209,7 +209,7 @@ fn profile(args: &Args) -> Result<()> {
 
 async fn add(args: &Args) -> Result<i32> {
     if args.add_list {
-        println!("{}", summonr::list_plugins()?);
+        println!("{}", summonr::Plugin::list()?);
         return Ok(0);
     }
     let Some(path) = args.prompt.first() else {
@@ -217,9 +217,9 @@ async fn add(args: &Args) -> Result<i32> {
             "summonr plugin install PATH  (or plugin list)".to_string(),
         ));
     };
-    let installed = summonr::install_plugin(std::path::Path::new(path))?;
-    println!("{}", installed.report);
-    for line in summonr::check_plugin_servers(&installed, &workspace()?).await? {
+    let installed = summonr::Plugin::install(std::path::Path::new(path))?;
+    println!("{}", installed.report());
+    for line in installed.check_servers(&workspace()?).await? {
         println!("{line}");
     }
     println!("restart summonr to load it");
@@ -232,7 +232,7 @@ fn uninstall(args: &Args) -> Result<i32> {
             "summonr plugin remove NAME".to_string(),
         ));
     };
-    if !summonr::uninstall_plugin(name)? {
+    if !summonr::Plugin::remove(name)? {
         return Err(summonr::Error::Config(format!(
             "no plugin named {name} is installed"
         )));

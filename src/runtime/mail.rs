@@ -4,13 +4,17 @@ impl<P: Provider> Loop<P> {
     pub(super) fn join_mail(&mut self) {
         self.mailbox = None;
         if self.session.depth() == 0 {
-            self.mailbox = crate::mail::Mailbox::join(
-                &self.session_id(),
-                self.name().as_deref(),
-                &self.model,
-                &self.workspace,
-            );
+            self.roster();
         }
+    }
+
+    pub(super) fn roster(&mut self) {
+        self.mailbox = crate::mail::Mailbox::join(
+            &self.session_id(),
+            self.name().as_deref(),
+            &self.model,
+            &self.workspace,
+        );
     }
 
     pub(super) fn tool_definitions(&self) -> Vec<crate::provider::ToolDefinition> {

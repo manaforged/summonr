@@ -199,6 +199,7 @@ fn shown(app: &App) -> (bool, Vec<Agent>, Vec<crate::mail::Agent>) {
         .peers
         .iter()
         .filter(|peer| peer.parent.as_deref() == Some(model.session.as_str()))
+        .filter(|peer| !hidden.contains(&peer.id))
         .cloned()
         .collect();
     (expanded, rows, headless)
@@ -290,50 +291,55 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 .map(|peer| super::cell_width(&peer.status.to_string()))
                 .max()
                 .unwrap_or(0);
-            for peer in headless {
-                let title = peer.label().to_string();
-                let status = peer.status.to_string();
-                let tone = match peer.status {
-                    crate::mail::Presence::Working => Token::Accent11,
-                    crate::mail::Presence::Joined
-                    | crate::mail::Presence::Idle
-                    | crate::mail::Presence::Unknown => Token::Gray10,
-                };
-                nodes.push((
-                    Row::Headless {
-                        id: peer.id,
-                        title: title.clone(),
-                        model: peer.model.clone(),
-                        status: status.clone(),
-                    },
-                    container()
-                        .layout(
-                            LayoutStyle::flex_row()
-                                .fill_width()
-                                .gap(8.0)
-                                .min_size(0.0, 0.0)
-                                .align_items(AlignItems::Center),
-                        )
-                        .child(text("○", TextStyle::xs(tone)))
-                        .child(text("Headless", TextStyle::xs(Token::Accent11)))
-                        .child(
-                            text(title, TextStyle::xs(Token::Gray12))
-                                .ellipsize()
-                                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
-                        )
-                        .child(fixed(
-                            peer.model,
-                            TextStyle::xs(Token::Gray10),
-                            model_width,
-                            JustifyContent::Start,
-                        ))
-                        .child(fixed(
-                            status,
-                            TextStyle::xs(tone),
-                            status_width,
-                            JustifyContent::Start,
-                        )),
-                ));
+            if expanded {
+                for peer in headless {
+                    let title = peer.label().to_string();
+                    let status = peer.status.to_string();
+                    let tone = match peer.status {
+                        crate::mail::Presence::Working => Token::Accent11,
+                        crate::mail::Presence::Joined
+                        | crate::mail::Presence::Idle
+                        | crate::mail::Presence::Unknown => Token::Gray10,
+                    };
+                    nodes.push((
+                        Row::Headless {
+                            id: peer.id,
+                            title: title.clone(),
+                            model: peer.model.clone(),
+                            status: status.clone(),
+                        },
+                        container()
+                            .layout(
+                                LayoutStyle::flex_row()
+                                    .fill_width()
+                                    .gap(8.0)
+                                    .min_size(0.0, 0.0)
+                                    .align_items(AlignItems::Center),
+                            )
+                            .child(button("○", TextStyle::xs(tone)).on_click({
+                                let id = peer.id.clone();
+                                let app = app.clone();
+                                move || app.clear_agent(&id)
+                            }))
+                            .child(
+                                text(title, TextStyle::xs(Token::Gray12))
+                                    .ellipsize()
+                                    .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
+                            )
+                            .child(fixed(
+                                peer.model,
+                                TextStyle::xs(Token::Gray10),
+                                model_width,
+                                JustifyContent::Start,
+                            ))
+                            .child(fixed(
+                                status,
+                                TextStyle::xs(tone),
+                                status_width,
+                                JustifyContent::Start,
+                            )),
+                    ));
+                }
             }
             nodes
         })

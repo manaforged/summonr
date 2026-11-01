@@ -31,6 +31,8 @@ struct Args {
     kill: bool,
     #[serde(default)]
     agent: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
     #[serde(skip)]
     call: String,
 }
@@ -48,6 +50,7 @@ pub(super) struct Spawned {
     started: Instant,
     last: String,
     reserved_tokens: u64,
+    staying: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Spawned {
@@ -65,6 +68,7 @@ mod brief;
 mod poll;
 mod record;
 mod run;
+
 mod spawn;
 
 use run::{Guard, Run};
@@ -82,7 +86,7 @@ pub(super) struct Done {
 pub(super) fn definition() -> ToolDefinition {
     tool(
         "task",
-        "Delegate one assignment to a child on the same provider and model. Same tools except task. Several calls in one response run together and do not see each other's edits. background true returns an id; pass child to poll, kill true to stop. implement edits an isolated checkout that shares the parent build cache when this workspace is a git repository, and edits this workspace otherwise. The parent applies each finished child's edits on its own and lists the files that landed. A conflict keeps that checkout. research is read-only.",
+        "Delegate one assignment to a child on the same provider and model. The child keeps its transcript. Mail to its name is the next turn. The parent turn ending does not stop it. kill true does. Same tools except task. background true returns an id; pass child to poll. implement edits an isolated checkout that shares the parent build cache when this workspace is a git repository, and edits this workspace otherwise. The parent applies each finished child's edits on its own and lists the files that landed. A conflict keeps that checkout. research is read-only.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -91,7 +95,8 @@ pub(super) fn definition() -> ToolDefinition {
                 "background": {"type": "boolean"},
                 "child": {"type": "string"},
                 "kill": {"type": "boolean"},
-                "agent": {"type": "string", "description": "name of an agent from <agents>"}
+                "agent": {"type": "string", "description": "name of an agent from <agents>"},
+                "name": {"type": "string", "description": "session name. mail to this name is the next turn"}
             },
             "additionalProperties": false
         }),

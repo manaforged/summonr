@@ -61,36 +61,45 @@ pub(crate) fn snapshot(
     exclude: &[PathBuf],
     previous: Option<&Snapshot>,
 ) -> io::Result<Snapshot> {
-    let taken = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let mut files = BTreeMap::new();
-    let mut stamps = BTreeMap::new();
-    let mut hashed = 0;
-    let own = own_outputs();
-    for relative in listing(root)? {
-        let path = root.join(&relative);
-        // complexity: bounded by the summonr state directories the driver excludes
-        if exclude.iter().any(|exclude| path.starts_with(exclude)) {
-            continue;
+    let walk = || {
+        let taken = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let mut files = BTreeMap::new();
+        let mut stamps = BTreeMap::new();
+        let mut hashed = 0;
+        let own = own_outputs();
+        for relative in listing(root)? {
+            let path = root.join(&relative);
+            // complexity: bounded by the summonr state directories the driver excludes
+            if exclude.iter().any(|exclude| path.starts_with(exclude)) {
+                continue;
+            }
+            let name = relative.to_string_lossy().replace('\\', "/");
+            if crate::policy::workspace_control(&relative) || crate::diff::ignored::hidden(&name) {
+                continue;
+            }
+            if let Some((entry, stamp, fresh)) = mark(&path, &name, previous, &own)? {
+                hashed += usize::from(fresh);
+                stamps.insert(name.clone(), stamp);
+                files.insert(name, entry);
+            }
         }
-        let name = relative.to_string_lossy().replace('\\', "/");
-        if crate::policy::workspace_control(&relative) || crate::diff::ignored::hidden(&name) {
-            continue;
-        }
-        if let Some((entry, stamp, fresh)) = mark(&path, &name, previous, &own)? {
-            hashed += usize::from(fresh);
-            stamps.insert(name.clone(), stamp);
-            files.insert(name, entry);
-        }
+        Ok(Snapshot {
+            files: Arc::new(files),
+            taken,
+            stamps: Arc::new(stamps),
+            hashed,
+        })
+    };
+    let threaded = tokio::runtime::Handle::try_current()
+        .is_ok_and(|handle| handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+    if threaded {
+        tokio::task::block_in_place(walk)
+    } else {
+        walk()
     }
-    Ok(Snapshot {
-        files: Arc::new(files),
-        taken,
-        stamps: Arc::new(stamps),
-        hashed,
-    })
 }
 
 fn mark(
@@ -324,6 +333,7 @@ fn device_of(_: &Metadata) -> Option<u64> {
     None
 }
 
+pub(crate) mod base;
 mod cache;
 mod own;
 

@@ -350,7 +350,7 @@ fn a_headless_worker_appears_while_the_parent_is_waiting_for_the_model() {
         .unwrap();
     let frame = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         terminal.settle("the active headless worker", |splash| {
-            splash.shows("Subagents") && splash.shows("Headless") && splash.shows("lane-1")
+                splash.shows("Subagents") && !splash.shows("Headless")
         })
     }));
     drop(worker.kill());

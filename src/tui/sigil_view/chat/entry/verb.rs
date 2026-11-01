@@ -32,7 +32,7 @@ impl StepVerb {
             Some(Builtin::Search) => Self::Searched,
             Some(Builtin::Browser) => Self::Fetched,
             Some(Builtin::Edit | Builtin::Write) => Self::Edited,
-            Some(Builtin::RunCommand) => Self::Ran,
+            Some(Builtin::RunCommand | Builtin::Monitor) => Self::Ran,
             Some(Builtin::Web) => Self::Fetched,
             Some(Builtin::Lsp) => Self::Inspected,
             Some(Builtin::Skill) => Self::Loaded,

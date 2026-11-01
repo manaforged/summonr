@@ -624,7 +624,7 @@ While a turn runs, the composer status also counts waiting input (`2 queued, ↑
 
 Cancelling a reply preserves its background commands and unfinished objective. Continue by inspecting the existing job id; `run_command` with `kill: true` stops that job. Shutdown and budget stops still terminate owned jobs.
 
-Headless summonr sessions launched by a shell command inherit `SUMMONR_PARENT_SESSION`. They register as independent workers on launch and resume, and appear in the originating conversation's Subagents strip with their name, model, and presence. Native child tasks keep their own task lifecycle.
+A shell session launched with `SUMMONR_PARENT_SESSION` is a subagent of that session. It appears in that conversation's Subagents strip with its name, model, and presence. Collapse hides the row. The clear control removes it. A dead process drops off the strip. A native child task uses the same strip.
 
 `/pane jobs` lists this workspace's background commands (the records under `.summonr/jobs/`). Each row is the command and its state (`running`, `exit N`, `killed`, or `dead`); Enter or `→` expands the job's status lines, and the right-click menu offers view log (the job's `.log` in the view pane) and kill job (the same stop `run_command` performs for `{"job": ID, "kill": true}`). The list refreshes on its own while the pane is open.
 

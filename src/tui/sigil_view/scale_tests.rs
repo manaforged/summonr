@@ -373,15 +373,33 @@ fn headless_workers_appear_in_the_originating_conversation() {
         }).join("\n");
         println!("{width} columns:\n{shown}");
         assert!(
-            shown.contains("Subagents") && shown.contains("Headless"),
-            "{shown}"
+            shown.contains("Subagents") && !shown.contains("Headless") && !shown.contains("Attention"),
+            "collapsed strip should keep the count and hide the rows: {shown}"
+        );
+        let open = frame_with(busy_info(), width, 30, State::Busy, |app| {
+            let parent = app.model.peek().session.clone();
+            let peers = serde_json::from_value(serde_json::json!([
+                {"id": "worker-a", "name": "Attention", "model": "gpt-6.1-sol", "cwd": "/work", "pid": 1, "status": "working", "last_seen": 0, "parent": parent},
+                {"id": "worker-c", "name": "MoE", "model": "claude-opus", "cwd": "/work", "pid": 3, "status": "idle", "last_seen": 0, "parent": parent},
+                {"id": "worker-d", "name": "Prefill", "model": "gpt-6.1-sol", "cwd": "/work", "pid": 4, "status": "joined", "last_seen": 0, "parent": parent},
+                {"id": "worker-b", "name": "Unrelated", "model": "other-model", "cwd": "/work", "pid": 2, "status": "working", "last_seen": 0, "parent": "other-session"}
+            ])).expect("headless worker records");
+            app.update(Msg::Peers(peers));
+            app.toggle_agents();
+        }).join("\n");
+        assert!(
+            open.contains("Attention")
+                && open.contains("gpt-6.1-sol")
+                && open.contains("working")
+                && !open.contains("Headless")
+                && !open.contains("Unrelated"),
+            "{open}"
         );
         assert!(
-            shown.contains("Attention")
-                && shown.contains("gpt-6.1-sol")
-                && shown.contains("working"),
-            "{shown}"
+            open.contains("MoE") && open.contains("Prefill"),
+            "{open}"
         );
+        let shown = open;
         assert!(
             !shown.contains("Unrelated"),
             "another conversation's worker leaked into the strip: {shown}"

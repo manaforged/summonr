@@ -270,6 +270,9 @@ impl<P: Provider> Loop<P> {
         let commands = self.verify.clone().unwrap_or_default();
         self.tools.clear_wrote();
         self.prepare_work(&input.text, &commands)?;
+        if self.is_goal() {
+            self.prefix_findings(&mut input);
+        }
         let harness = self.harness_note(&self.work_progress()?);
         if !self.note_sent(&harness) {
             if input.source.is_none() {
@@ -286,6 +289,24 @@ impl<P: Provider> Loop<P> {
         messages.push(Message::system(self.system_prompt.clone()));
         messages.extend(history.iter().cloned());
         Ok(messages)
+    }
+
+    fn prefix_findings(&mut self, input: &mut crate::provider::UserInput) {
+        let Some(mailbox) = self.mailbox.as_mut() else {
+            return;
+        };
+        let Ok(mail) = mailbox.poll() else {
+            return;
+        };
+        let notes: Vec<String> = mail
+            .into_iter()
+            .map(|note| note.text)
+            .filter(|text| !text.trim().is_empty())
+            .collect();
+        if notes.is_empty() {
+            return;
+        }
+        input.text = format!("{}\n\n{}", notes.join("\n\n"), input.text);
     }
 
     fn prepare_work(&mut self, text: &str, commands: &[String]) -> Result<()> {

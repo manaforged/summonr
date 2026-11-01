@@ -24,6 +24,8 @@ pub(crate) struct Metric {
     pub(crate) timeout_secs: Option<u64>,
     #[serde(default)]
     pub(crate) protect: Vec<String>,
+    #[serde(default)]
+    pub(crate) lanes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]

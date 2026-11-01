@@ -257,6 +257,20 @@ impl Mailbox {
         roster(&self.agents(), &self.id)
     }
 
+    pub(crate) fn wake(session: &str, text: &str) -> Result<()> {
+        let dir = dir()?;
+        let id = clean_id(session);
+        let mail = Mail {
+            ts: now(),
+            from: "monitor".to_string(),
+            name: "monitor".to_string(),
+            kind: default_kind(),
+            text: text.to_string(),
+        };
+        append(&dir, &[id], &mail)?;
+        Ok(())
+    }
+
     pub(crate) fn send(&self, to: &str, text: &str) -> Result<usize> {
         let mail = Mail {
             ts: now(),

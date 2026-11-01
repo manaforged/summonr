@@ -79,7 +79,7 @@ pub(crate) struct SessionDriver {
     next: u64,
     pending: Vec<Line>,
     saved: u64,
-    base: Option<base::Pending>,
+    base: Option<tree::base::Pending>,
     fresh: bool,
     last: Option<Snapshot>,
     notice: Option<String>,
@@ -226,39 +226,20 @@ impl SessionDriver {
         self.checkpoint()
     }
 
-    fn tree_cache(&self) -> Option<PathBuf> {
-        log::home_of(self.log.path()).map(|home| tree::cache_dir(&canonical(home)))
-    }
-
-    fn excludes(&self) -> Vec<PathBuf> {
-        self.log
-            .path()
-            .parent()
-            .and_then(Path::parent)
-            .map(canonical)
-            .into_iter()
-            .chain(self.tree_cache())
-            .collect()
-    }
-
     fn remember_tree(&mut self) {
-        if let (Some(cache), Some(last)) = (self.tree_cache(), self.last.as_mut()) {
+        if let (Some(cache), Some(last)) =
+            (tree::base::cache_path(self.log.path()), self.last.as_mut())
+        {
             tree::remember(&cache, &self.workspace, last);
         }
     }
 
     fn snapshot(&mut self, previous: Option<&Snapshot>) -> Result<Snapshot, DriverError> {
-        let excludes = self.excludes();
-        let previous = previous.or(self.last.as_ref());
-        let capture = || tree::snapshot(&self.workspace, &excludes, previous);
-        let threaded = tokio::runtime::Handle::try_current().is_ok_and(|handle| {
-            handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
-        });
-        let snapshot = if threaded {
-            tokio::task::block_in_place(capture)
-        } else {
-            capture()
-        }?;
+        let snapshot = tree::snapshot(
+            &self.workspace,
+            &tree::base::excludes(self.log.path()),
+            previous.or(self.last.as_ref()),
+        )?;
         self.last = Some(snapshot.clone());
         Ok(snapshot)
     }
@@ -353,7 +334,6 @@ impl From<DriverError> for summonr_core::error::Error {
         Self::Config(error.to_string())
     }
 }
-
 #[cfg(test)]
 #[path = "driver_tests.rs"]
 mod tests;

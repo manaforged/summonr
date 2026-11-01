@@ -13,10 +13,9 @@ pub(crate) mod agents;
 pub(crate) mod commands;
 mod expand;
 pub(crate) mod lsp;
-mod manage;
+pub(crate) mod manage;
 
 pub(crate) use expand::{USER_CONFIG, Vars, expand};
-pub use manage::{Installed, check_servers, install, list, uninstall};
 
 pub(super) const MANIFEST: &str = ".claude-plugin/plugin.json";
 pub(super) const UNSUPPORTED: [(&str, &str); 4] = [

@@ -2,7 +2,16 @@
 
 Optional capabilities are compiled modules. `summonr module list` lists them with their state. A project may turn a module off. A project can't turn a module on.
 
-You extend summonr outside the process, with files and child processes. This keeps summonr's memory small (27 MB in our benchmark runs) and its first-round prefix short. There is no in-process package loader and no marketplace.
+You extend summonr outside the process, with files and child processes. This keeps summonr's memory small (27 MB in our benchmark runs) and its first-round prefix short. There is no in-process package loader and no marketplace. An extension is a plugin: a directory of skills, commands, agents, hooks, and MCP servers. Pi and oh-my-pi put that in one TypeScript file that runs inside the process. summonr splits the same jobs across files and does not run them inside the process.
+
+| A Pi extension does this | An extension ships this |
+| --- | --- |
+| Slash command, skill, sub-agent | `commands/`, `skills/`, `agents/` |
+| A tool the model calls | An MCP server or `bin/` |
+| Block a tool call | A hook |
+| Run code on every turn | Nothing. The harness owns that. |
+
+A workflow a person adds is an agent plus a command, not a `[workflows]` seat map. `workflows/` in a plugin is not loaded. Copy `plugins/hillclimb` for a new one.
 
 After the first model round, the advertised tool list and the skill catalog stay frozen until the process exits. A module switch in `/settings` still writes the config for the next process.
 

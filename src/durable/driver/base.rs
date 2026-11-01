@@ -1,7 +1,5 @@
 use super::*;
 
-pub(super) type Pending = std::thread::JoinHandle<std::io::Result<Snapshot>>;
-
 impl SessionDriver {
     pub(super) fn begin_base(&mut self) {
         drop(self.settle_pending());
@@ -16,17 +14,11 @@ impl SessionDriver {
             })
             .or(self.last.as_ref())
             .cloned();
-        let workspace = self.workspace.clone();
-        let excludes = self.excludes();
-        let cache = self.tree_cache();
-        self.base = Some(std::thread::spawn(move || {
-            let previous = previous.or_else(|| {
-                cache
-                    .as_deref()
-                    .and_then(|cache| tree::remembered(cache, &workspace))
-            });
-            tree::snapshot(&workspace, &excludes, previous.as_ref())
-        }));
+        self.base = Some(tree::base::begin(
+            self.workspace.clone(),
+            self.log.path(),
+            previous,
+        ));
         self.fresh = true;
     }
 
@@ -45,9 +37,7 @@ impl SessionDriver {
         let Some(task) = self.base.take() else {
             return Ok(false);
         };
-        let base = task
-            .join()
-            .unwrap_or_else(|payload| std::panic::resume_unwind(payload))?;
+        let base = tree::base::settle(task)?;
         self.last = Some(base.clone());
         if let Some(work) = self.work.as_mut() {
             work.base = Some(base);

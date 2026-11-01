@@ -187,6 +187,27 @@ required = ["name"]
 additionalProperties = false
 
 [[tool]]
+kind = "monitor"
+claude = "Monitor"
+acp_kind = "execute"
+verb = "Monitor"
+readonly = false
+advertise = "always"
+run = "writable"
+description = "Watch a command. Each stdout line wakes this session. Silence does not. Print only when the check finds something to correct. timeout_ms kills the command (default 300000, max 3600000). persistent runs until the session ends."
+
+[tool.schema]
+type = "object"
+required = ["description", "command"]
+additionalProperties = false
+
+[tool.schema.properties]
+description = { type = "string" }
+command = { type = "string" }
+timeout_ms = { type = "integer", minimum = 1000, maximum = 3600000 }
+persistent = { type = "boolean" }
+
+[[tool]]
 kind = "lsp"
 claude_aliases = ["LSP"]
 acp_kind = "search"

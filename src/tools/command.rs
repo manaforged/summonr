@@ -9,6 +9,7 @@ pub(super) mod digest;
 mod native;
 mod native_search;
 pub(super) mod proc;
+mod monitor;
 mod run;
 
 pub(crate) use digest::searchish;
@@ -142,7 +143,7 @@ impl ToolRegistry {
         }
     }
 
-    fn gate_command(
+    pub(super) fn gate_command(
         &self,
         command: &str,
         cwd: &Path,
@@ -300,7 +301,7 @@ impl ToolRegistry {
             .into_result()
     }
 
-    fn command_dir(&self, args: &serde_json::Value) -> Result<PathBuf> {
+    pub(super) fn command_dir(&self, args: &serde_json::Value) -> Result<PathBuf> {
         let Some(dir) = args
             .get("workdir")
             .and_then(serde_json::Value::as_str)

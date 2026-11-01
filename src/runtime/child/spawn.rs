@@ -4,11 +4,15 @@ use crate::durable::driver::Parent;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
+        let named = args.name.is_some();
         let tree = child_tree(&self.workspace, args.access)?;
-        let run = self.task_start(args, budget, tree)?;
+        let mut run = self.task_start(args, budget, tree)?;
         let record = run.record.clone();
         let path = run.child.session.path().to_path_buf();
         let id = record.id.to_string();
+        let name = run.child.name().unwrap_or_else(|| id.clone());
+        let staying = run.staying.clone();
+        run.stay = named;
         let handle = tokio::spawn(run.execute(self.events.0.clone()));
         self.spawned.insert(
             id.clone(),
@@ -19,11 +23,13 @@ impl<P: Provider> Loop<P> {
                 started: Instant::now(),
                 last: String::new(),
                 reserved_tokens: budget.max_tokens.unwrap_or_default(),
+                staying,
             },
         );
         Ok(Execution {
             output: ToolOutput::ok(format!(
-                "started child {id}\naccess: {}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
+                "started child {id}\nname: {}\naccess: {}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
+                name,
                 record.access.name(),
                 ellipsize(&record.assignment, LAST_CHARS)
             )),
@@ -86,6 +92,10 @@ impl<P: Provider> Loop<P> {
         child.effort = self.effort_for(role);
         child.price = self.price_for(role);
         child = child.with_budget(budget.clone())?;
+        if let Some(name) = args.name.as_deref() {
+            child.set_name(name)?;
+        }
+        child.roster();
 
         let record = ChildRecord {
             version: 1,
@@ -119,6 +129,8 @@ impl<P: Provider> Loop<P> {
             assignment: opener,
             deadline: budget.max_secs.map(crate::limits::seconds),
             started: Instant::now(),
+            staying: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            stay: false,
         })
     }
 
@@ -134,8 +146,13 @@ impl<P: Provider> Loop<P> {
             || args.assignment.clone(),
             |tree| rebase_paths(&args.assignment, &self.workspace, &tree.path),
         );
+        let stay = if args.name.is_some() {
+            " Finish the assigned task, then stay. Mail to your name is the next turn."
+        } else {
+            " Finish only the assigned task."
+        };
         let opener = format!(
-            "Harness: child. Finish only the assigned task. {instruction} Your working directory is {}.\n\n{brief}{assignment}",
+            "Harness: child.{stay} {instruction} Your working directory is {}.\n\n{brief}{assignment}",
             workspace.display()
         );
         Ok((opener, tools))

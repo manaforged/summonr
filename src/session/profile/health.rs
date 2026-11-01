@@ -51,7 +51,8 @@ impl Health {
                 | Builtin::Todo
                 | Builtin::Web
                 | Builtin::Browser
-                | Builtin::Task,
+                | Builtin::Task
+                | Builtin::Monitor
             )
             | None => {}
         }

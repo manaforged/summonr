@@ -286,6 +286,7 @@ impl ToolRegistry {
             Builtin::Write => self.write_file(args).await,
             Builtin::Skill => self.skill(args).map(ToolOutput::ok),
             Builtin::RunCommand => self.run_command(args).await,
+            Builtin::Monitor => self.monitor(args).await,
             Builtin::Todo => parse_todo(args).map(ToolOutput::ok),
             Builtin::Web => self.web(args).await.map(ToolOutput::ok),
             Builtin::Lsp => self.lsp(args).await,

@@ -149,6 +149,7 @@ pub enum Builtin {
     Lsp,
     Skill,
     RunCommand,
+    Monitor,
     Todo,
     Web,
     Browser,

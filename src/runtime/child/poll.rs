@@ -108,7 +108,11 @@ impl<P: Provider> Loop<P> {
         loop {
             self.drain(events, emit);
             self.settle_ready(events, emit, usage).await?;
-            if self.spawned.is_empty() {
+            if !self
+                .spawned
+                .values()
+                .any(|spawned| !spawned.staying.load(std::sync::atomic::Ordering::Relaxed))
+            {
                 break;
             }
             if !announced {
@@ -136,6 +140,7 @@ impl<P: Provider> Loop<P> {
         Ok(self
             .spawned
             .values()
+            .filter(|spawned| !spawned.staying.load(std::sync::atomic::Ordering::Relaxed))
             .map(|spawned| {
                 format!(
                     "child {} `{}`",
@@ -218,6 +223,12 @@ impl<P: Provider> Loop<P> {
             let Some(spawned) = self.spawned.remove(id) else {
                 continue;
             };
+            if reason == "the parent turn ended"
+                && spawned.staying.load(std::sync::atomic::Ordering::Relaxed)
+            {
+                self.spawned.insert(id.clone(), spawned);
+                continue;
+            }
             let done = killed(spawned, &self.workspace, reason).await?;
             records.push(done.record.clone());
             usage.add(&self.task_settle(done)?.usage);

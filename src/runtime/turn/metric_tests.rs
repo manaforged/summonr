@@ -180,3 +180,30 @@ async fn the_model_is_told_the_metric_command_the_noise_bar_and_the_revert_befor
         "the first request did not state the metric rules: {first:?}"
     );
 }
+
+#[tokio::test]
+async fn a_kept_metric_tells_the_other_session() {
+    let mut other = metric_goal(CLIMB, Vec::new());
+    other.loop_.set_name("climb-b").unwrap();
+    other.loop_.join_mail();
+    assert!(other.loop_.mailbox.is_some(), "mail did not join");
+    let check = format!("{CLIMB}lanes = [\"climb-b\"]\n");
+    let mut run = metric_goal(&check, attempt("score", "12\n").into_iter().collect());
+    run.loop_.turn("raise the score").await.unwrap();
+    let messages = other
+        .loop_
+        .begin_turn(crate::provider::UserInput::from("next"))
+        .unwrap();
+    let prompt = messages
+        .iter()
+        .map(|message| message.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(prompt.contains("number: 12"), "{prompt}");
+    assert!(prompt.contains("tried it"), "{prompt}");
+    assert!(prompt.contains("score"), "{prompt}");
+    assert!(
+        prompt.contains("diff --git") || prompt.contains("---"),
+        "the other session's next prompt has no diff: {prompt}"
+    );
+}

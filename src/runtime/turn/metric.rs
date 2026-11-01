@@ -86,6 +86,7 @@ impl<P: Provider> Loop<P> {
             ),
         };
         let best = if kept {
+            text.push_str(&self.tell_lanes(reading.as_ref().map(|(_, value)| *value)));
             reading.as_ref().map(|(_, value)| *value)
         } else {
             let (_, files) = self.rollback(None)?;
@@ -116,6 +117,80 @@ impl<P: Provider> Loop<P> {
         )?;
         Ok(Some(outcome))
     }
+
+    fn tell_lanes(&self, value: Option<f64>) -> String {
+        let Some((metric, _)) = self.goal_metric() else {
+            return String::new();
+        };
+        if metric.lanes.is_empty() {
+            return String::new();
+        }
+        let Some(value) = value else {
+            return "; lanes were not told".to_string();
+        };
+        let patch = crate::diff::turn_patch(
+            &self.workspace,
+            &self.session_id(),
+            crate::diff::TurnId::Last,
+            None,
+        )
+        .unwrap_or_default();
+        let finding = finding(value, &patch, &self.port_text());
+        let Ok(dir) = crate::mail::dir() else {
+            return "; lanes were not told".to_string();
+        };
+        let agents = crate::mail::live(&dir);
+        let mut by_name = std::collections::HashMap::new();
+        for agent in &agents {
+            if !agent.name.is_empty() {
+                by_name.insert(agent.name.as_str(), agent);
+            }
+            if !agent.id.is_empty() {
+                by_name.insert(agent.id.as_str(), agent);
+            }
+        }
+        let mut notes = Vec::new();
+        for lane in &metric.lanes {
+            let Some(agent) = by_name.get(lane.as_str()) else {
+                notes.push(format!("{lane}: not on the roster"));
+                continue;
+            };
+            if agent.id == self.session_id() {
+                continue;
+            }
+            match crate::mail::Mailbox::wake(&agent.id, &finding) {
+                Ok(()) => notes.push(format!("told {lane}")),
+                Err(error) => notes.push(format!("{lane}: {error}")),
+            }
+        }
+        if notes.is_empty() {
+            String::new()
+        } else {
+            format!("; {}", notes.join("; "))
+        }
+    }
+
+    fn port_text(&self) -> String {
+        self.session
+            .history()
+            .iter()
+            .rev()
+            .find(|message| {
+                message.role == crate::provider::Role::Assistant && !message.content.trim().is_empty()
+            })
+            .map(|message| message.content.trim().to_string())
+            .unwrap_or_default()
+    }
+}
+
+fn finding(value: f64, patch: &str, port: &str) -> String {
+    let mut text = format!("number: {value}\n");
+    if !port.is_empty() {
+        text.push_str(port);
+        text.push('\n');
+    }
+    text.push_str(patch);
+    text
 }
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ fn metric(pattern: Option<&str>, better: Better, noise: f64, target: Option<f64>
         noise,
         timeout_secs: None,
         protect: Vec::new(),
+        lanes: Vec::new(),
     }
 }
 

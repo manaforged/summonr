@@ -132,6 +132,10 @@ impl Worker {
             return;
         }
         self.queue_mail();
+        let monitor = mail.iter().any(|message| message.from == "monitor");
+        if monitor {
+            self.pending_mail = true;
+        }
         if !self.pending_mail {
             for message in mail {
                 drop(self.ui.send(Msg::Mail {
@@ -185,7 +189,7 @@ pub(super) fn publish_peers(
 ) {
     let peers: Vec<_> = peers
         .into_iter()
-        .filter(|agent| agent.id != session)
+        .filter(|agent| agent.id != session && crate::jobs::alive(agent.pid))
         .collect();
     let last = previous.as_deref().unwrap_or(&[]);
     let same = last.len() == peers.len()

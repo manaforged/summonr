@@ -106,10 +106,7 @@ pub use endpoint::{
 };
 pub use goal::prompt as goal_prompt;
 pub use jobs::live as live_jobs;
-pub use plugins::{
-    Installed as InstalledPlugin, check_servers as check_plugin_servers, install as install_plugin,
-    list as list_plugins, uninstall as uninstall_plugin,
-};
+pub use plugins::manage::Plugin;
 pub use prompt::{Sources, system_prompt};
 pub(crate) use provider::dollars;
 pub use provider::{Client, Delta, Effort, Usage, UserInput};

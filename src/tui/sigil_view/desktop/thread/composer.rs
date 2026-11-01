@@ -152,12 +152,92 @@ fn approval_chip(app: App) -> NodeBuilder {
 }
 
 fn send(app: App, editing: bool) -> NodeBuilder {
+    let gate = app.clone();
+    let label = app.clone();
     let draft = app.draft;
     let attached = app.attached;
-    button("Send")
-        .primary()
-        .size(ControlSize::Compact)
-        .disabled(move || editing || (draft.get().trim().is_empty() && attached.get() == 0))
-        .activate(move || app.submit())
-        .into()
+    button(move || {
+        if running(&label) {
+            "Stop".to_string()
+        } else {
+            "Send".to_string()
+        }
+    })
+    .primary()
+    .size(ControlSize::Compact)
+    .disabled(move || {
+        !running(&gate) && (editing || (draft.get().trim().is_empty() && attached.get() == 0))
+    })
+    .activate(move || {
+        if running(&app) {
+            app.interrupt();
+        } else {
+            app.submit();
+        }
+    })
+    .into()
+}
+
+fn running(app: &App) -> bool {
+    app.model
+        .get()
+        .busy_since
+        .is_some_and(|(activity, _)| activity != crate::tui::Activity::Branch)
+}
+
+#[cfg(test)]
+mod tests {
+    use sigil::app::FrameHooks;
+    use sigil::events::EventRouter;
+    use sigil::reactive::Runtime;
+    use sigil::scene::SceneCommand;
+    use sigil::Host;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    use super::super::App;
+    use crate::tui::{Fact, Msg};
+
+    #[test]
+    fn stop_replaces_send_while_a_turn_is_running() {
+        let idle = labels(false);
+        let running = labels(true);
+        assert!(
+            idle.iter().any(|text| text == "Send") && !idle.iter().any(|text| text == "Stop"),
+            "idle composer: {idle:?}"
+        );
+        assert!(
+            running.iter().any(|text| text == "Stop") && !running.iter().any(|text| text == "Send"),
+            "running composer: {running:?}"
+        );
+    }
+
+    fn labels(busy: bool) -> Vec<String> {
+        Runtime::scope("summonr-stop", || {
+            let workspace = tempfile::tempdir().expect("workspace");
+            let (commands, _receiver) = unbounded_channel();
+            let app = App::new(
+                crate::tui::sigil_view::profile::info(),
+                workspace.path().to_owned(),
+                commands,
+            );
+            if busy {
+                app.update(Msg::Fact(Fact::Busy(Some(crate::tui::Activity::Turn))));
+            }
+            app.refresh();
+            let mut host = Host::new();
+            let tree = app.clone();
+            host.mount(move || super::composer(tree, false));
+            let mut router = EventRouter::new();
+            host.frame(&mut router, (1200.0, 800.0), 1.0, FrameHooks::default());
+            host.scene((1200.0, 800.0))
+                .expect("scene")
+                .commands
+                .into_iter()
+                .filter_map(|command| match command {
+                    SceneCommand::GlyphRun(draw) => Some(draw.run.text.clone()),
+                    _ => None,
+                })
+                .collect()
+        })
+    }
 }

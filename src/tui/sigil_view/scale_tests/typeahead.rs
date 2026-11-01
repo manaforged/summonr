@@ -1,3 +1,4 @@
+use crate::tui::{Fact};
 use super::{State, busy_info, frame_with};
 
 #[test]
@@ -22,11 +23,11 @@ fn reopening_hidden_slash_completion_refreshes_the_offers() {
 #[test]
 fn skill_typeahead_matches_fuzzy_names() {
     let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(crate::tui::Msg::Offers(vec![crate::mcp::Offer {
+        app.update(crate::tui::Msg::Fact(Fact::Offers(vec![crate::mcp::Offer {
             kind: crate::mcp::OfferKind::Prompt,
             insert: "/probe-custom-skill".to_owned(),
             about: "custom skill".to_owned(),
-        }]));
+        }])));
         app.replace("/pcs".to_owned());
     })
     .join("\n");
@@ -98,14 +99,14 @@ fn slash_typeahead_shows_command_names_and_syntax_without_descriptions() {
 #[test]
 fn mention_typeahead_keeps_peer_details() {
     let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(crate::tui::Msg::Peers(vec![
+        app.update(crate::tui::Msg::Fact(Fact::Peers(vec![
             serde_json::from_value(serde_json::json!({
                 "id": "0123456789abcdef0123456789abcdef", "name": "build-peer",
                 "model": "peer-model", "cwd": "/work/summonr", "pid": 1,
                 "status": "idle", "last_seen": 0
             }))
             .expect("peer record"),
-        ]));
+        ])));
         app.replace("@build".to_string());
     })
     .join("\n");
@@ -122,12 +123,12 @@ fn mention_typeahead_keeps_peer_details() {
 #[test]
 fn steering_enter_mid_turn_sends_the_message_into_the_running_turn() {
     use super::super::app::App;
-    use crate::tui::{Activity, Cmd, Msg};
+    use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
     sigil::reactive::Runtime::scope("steer-now", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
         app.replace("stop, check the tests instead".to_owned());
         app.submit();
         let sent: Vec<Cmd> = std::iter::from_fn(|| sent.try_recv().ok()).collect();
@@ -142,17 +143,17 @@ fn steering_enter_mid_turn_sends_the_message_into_the_running_turn() {
 #[test]
 fn steering_waits_in_the_queue_while_an_approval_is_open() {
     use super::super::app::App;
-    use crate::tui::{Activity, Cmd, Msg};
+    use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
     sigil::reactive::Runtime::scope("steer-approval", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        app.update(Msg::Busy(Some(Activity::Turn)));
-        app.update(Msg::Event(crate::Event::Approval {
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+        app.update(Msg::Fact(Fact::Event(crate::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
             persist: false,
             dialog: 1,
-        }));
+        })));
         app.replace("yes".to_owned());
         app.submit();
         let sent: Vec<Cmd> = std::iter::from_fn(|| sent.try_recv().ok()).collect();
@@ -167,23 +168,23 @@ fn steering_waits_in_the_queue_while_an_approval_is_open() {
 #[test]
 fn enter_on_an_empty_composer_never_answers_a_pending_approval() {
     use super::super::app::App;
-    use crate::tui::{Activity, Cmd, Msg};
+    use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
     sigil::reactive::Runtime::scope("queue-approval", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
         app.replace("also check the tests".to_owned());
         app.submit();
-        app.update(Msg::Queued {
+        app.update(Msg::Fact(Fact::Queued {
             steering: 0,
             queued: 1,
-        });
-        app.update(Msg::Event(crate::Event::Approval {
+        }));
+        app.update(Msg::Fact(Fact::Event(crate::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
             persist: false,
             dialog: 1,
-        }));
+        })));
         app.submit();
         let steered = std::iter::from_fn(|| sent.try_recv().ok())
             .filter(|command| matches!(command, Cmd::SteerQueued))
@@ -194,12 +195,12 @@ fn enter_on_an_empty_composer_never_answers_a_pending_approval() {
 
 #[test]
 fn messages_sent_into_the_turn_no_longer_count_as_queued() {
-    use crate::tui::Msg;
+    use crate::tui::{Fact, Intent, Msg};
     let shown = frame_with(busy_info(), 110, 30, State::Busy, |app| {
-        app.update(Msg::Queued {
+        app.update(Msg::Fact(Fact::Queued {
             steering: 1,
             queued: 0,
-        });
+        }));
     })
     .join("\n");
     assert!(!shown.contains("queued"), "{shown}");
@@ -221,16 +222,16 @@ fn up_brings_back_a_draft_cleared_with_ctrl_c() {
 #[test]
 fn enter_on_an_empty_composer_sends_queued_messages_into_the_turn() {
     use super::super::app::App;
-    use crate::tui::{Activity, Cmd, Msg};
+    use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
     sigil::reactive::Runtime::scope("queue-steer", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        app.update(Msg::Busy(Some(Activity::Turn)));
-        app.update(Msg::Queued {
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+        app.update(Msg::Fact(Fact::Queued {
             steering: 0,
             queued: 1,
-        });
+        }));
         app.submit();
         let steered = std::iter::from_fn(|| sent.try_recv().ok())
             .filter(|command| matches!(command, Cmd::SteerQueued))

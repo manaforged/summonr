@@ -1,4 +1,5 @@
 use super::Worker;
+use crate::tui::{Fact, Intent};
 use crate::endpoint::Endpoint;
 use crate::provider::Client;
 use crate::runtime::Loop;
@@ -209,11 +210,11 @@ impl Worker {
                 })
             })
             .collect();
-        drop(self.ui.send(Msg::Workflow {
+        drop(self.ui.send(Msg::Fact(Fact::Workflow {
             name: self.loop_.workflow(),
             names: workflow::names().unwrap_or_default(),
             selections,
-        }));
+        })));
     }
 
     fn list_workflows(&self) {
@@ -298,7 +299,7 @@ impl Worker {
 
     pub(super) fn send_settings(&self) {
         drop(
-            self.ui.send(Msg::Settings(Snapshot {
+            self.ui.send(Msg::Fact(Fact::Settings(Snapshot {
                 model: self.loop_.model().to_string(),
                 relay: self.relay.clone(),
                 work: self.loop_.is_work(),
@@ -321,7 +322,7 @@ impl Worker {
                     crate::endpoint::Requirement::ModelAndKey,
                 )
                 .is_err(),
-            })),
+            }))),
         );
     }
 }
@@ -340,13 +341,13 @@ pub(super) fn set_run_mode(
 
 pub(super) fn announce_run_mode(loop_: &Loop<Client>, ui: &UnboundedSender<Msg>) {
     let mode = loop_.mode();
-    drop(ui.send(Msg::RunMode(mode)));
+    drop(ui.send(Msg::Intent(Intent::RunMode(mode))));
     let text = match mode {
         crate::WorkKind::Steps => "work mode: run the steps in order with a check per step",
         crate::WorkKind::Goal => "goal mode: keep going until the objective is met",
         crate::WorkKind::Single => "auto mode: full tools",
     };
-    drop(ui.send(Msg::System(text.to_string())));
+    drop(ui.send(Msg::Fact(Fact::System(text.to_string()))));
 }
 
 fn verify_display(commands: &[String]) -> Option<String> {

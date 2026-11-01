@@ -74,9 +74,13 @@ impl Panel {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
-    let (cols, rows) = app.viewport.peek();
-    let width = Size::Page.width(cols);
-    let height = f32::from(rows.saturating_sub(CHROME_ROWS).max(4)) * canvas::cell().h;
+    let viewport = app.viewport.peek();
+    let width = Size::Page.width(viewport);
+    let height = if canvas::is_window() {
+        canvas::frame_body(viewport)
+    } else {
+        f32::from(viewport.1.saturating_sub(CHROME_ROWS).max(4)) * canvas::cell().h
+    };
     let page = container()
         .focusable(true)
         .on_added(|_, id| request_focus(id))
@@ -90,13 +94,13 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .key(Key::Esc, "close");
     Dialog::new(Size::Page, "Usage", hints)
         .header(Some(tab_strip(&app, Tab::Usage)))
-        .fixed(rows)
+        .fixed(viewport.1)
         .child(
             container()
                 .layout(LayoutStyle::block().fill_width().height(height))
                 .child(scroll(page).fill().follow_end(false)),
         )
-        .build(app.usage.open, cols, &app.model.peek().prefs.hotkeys)
+        .build(app.usage.open, viewport, &app.model.peek().prefs.hotkeys)
 }
 
 fn page(app: &App, width: f32) -> Vec<NodeBuilder> {

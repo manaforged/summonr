@@ -83,7 +83,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         )
         .child(container().children_reactive(move || vec![facets::chips(&chips)]))
         .child(container().children_reactive(move || body(&paint)))
-        .build(app.picker.open, cols, &hotkeys)
+        .build(app.picker.open, (cols, rows), &hotkeys)
 }
 
 fn hints(app: &App) -> Hints {

@@ -1,3 +1,4 @@
+use crate::tui::{Fact, Intent};
 use sigil::Host;
 use sigil::app::cell_width;
 use sigil::events::EventRouter;
@@ -93,27 +94,27 @@ fn paint_steps(
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(base, workspace.path().to_owned(), commands);
         app.resize(cols, rows);
-        app.update(Msg::User("Review the change".to_owned()));
+        app.update(Msg::Intent(Intent::User("Review the change".to_owned())));
         if state == State::Tool {
-            app.update(Msg::Event(Event::ToolCall {
+            app.update(Msg::Fact(Fact::Event(Event::ToolCall {
                 id: "t1".to_owned(),
                 name: "read".to_owned(),
                 arguments: r#"{"path":"src/main.rs"}"#.to_owned(),
-            }));
-            app.update(Msg::Event(Event::ToolResult {
+            })));
+            app.update(Msg::Fact(Fact::Event(Event::ToolResult {
                 id: "t1".to_owned(),
                 success: true,
                 mutated: false,
                 output: "fn main() {}".to_owned(),
                 millis: Some(4),
                 patch: None,
-            }));
+            })));
         }
-        app.update(Msg::Event(Event::Assistant {
+        app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: "Measured layout.".to_owned(),
-        }));
+        })));
         if state != State::Idle {
-            app.update(Msg::Busy(Some(Activity::Turn)));
+            app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
         }
         setup(&app);
         app.refresh();
@@ -276,16 +277,16 @@ fn secret_prompt_renders_as_a_modal() {
 #[test]
 fn retry_shows_one_live_thinking_row() {
     let shown = frame_with(busy_info(), 110, 40, State::Idle, |app| {
-        app.update(Msg::Event(Event::Reasoning {
+        app.update(Msg::Fact(Fact::Event(Event::Reasoning {
             text: "Plan the change.".to_owned(),
-        }));
-        app.update(Msg::Event(Event::Assistant {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: "Cancelled.".to_owned(),
-        }));
-        app.update(Msg::Event(Event::Reasoning {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::Reasoning {
             text: "Plan the change.".to_owned(),
-        }));
-        app.update(Msg::Busy(Some(Activity::Turn)));
+        })));
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
     })
     .join("\n");
     assert_eq!(shown.matches("thinking…").count(), 1, "{shown}");
@@ -300,9 +301,9 @@ fn expanded_thinking_renders_in_full_live_and_after_the_turn() {
         let body = body.clone();
         move |app: &App| {
             app.model_mut(|model| model.prefs.reasoning = crate::prefs::Visibility::Expanded);
-            app.update(Msg::Event(Event::Reasoning { text: body }));
+            app.update(Msg::Fact(Fact::Event(Event::Reasoning { text: body })));
             if busy {
-                app.update(Msg::Busy(Some(Activity::Turn)));
+                app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
             }
         }
     };
@@ -350,7 +351,7 @@ fn your_line_is_the_text_you_sent() {
 
 #[test]
 fn a_cleared_transcript_shows_the_note_in_place_of_the_prompt() {
-    let shots = screens(80, 24, |_| {}, &[&|app: &App| app.update(Msg::Cleared)]);
+    let shots = screens(80, 24, |_| {}, &[&|app: &App| app.update(Msg::Fact(Fact::Cleared))]);
     let last = shots.last().map(String::as_str).unwrap_or_default();
     assert!(
         last.contains("history cleared") && !last.contains("Review the change"),
@@ -369,7 +370,7 @@ fn headless_workers_appear_in_the_originating_conversation() {
                 {"id": "worker-d", "name": "Prefill", "model": "gpt-6.1-sol", "cwd": "/work", "pid": 4, "status": "joined", "last_seen": 0, "parent": parent},
                 {"id": "worker-b", "name": "Unrelated", "model": "other-model", "cwd": "/work", "pid": 2, "status": "working", "last_seen": 0, "parent": "other-session"}
             ])).expect("headless worker records");
-            app.update(Msg::Peers(peers));
+            app.update(Msg::Fact(Fact::Peers(peers)));
         }).join("\n");
         println!("{width} columns:\n{shown}");
         assert!(
@@ -384,7 +385,7 @@ fn headless_workers_appear_in_the_originating_conversation() {
                 {"id": "worker-d", "name": "Prefill", "model": "gpt-6.1-sol", "cwd": "/work", "pid": 4, "status": "joined", "last_seen": 0, "parent": parent},
                 {"id": "worker-b", "name": "Unrelated", "model": "other-model", "cwd": "/work", "pid": 2, "status": "working", "last_seen": 0, "parent": "other-session"}
             ])).expect("headless worker records");
-            app.update(Msg::Peers(peers));
+            app.update(Msg::Fact(Fact::Peers(peers)));
             app.toggle_agents();
         }).join("\n");
         assert!(
@@ -399,23 +400,14 @@ fn headless_workers_appear_in_the_originating_conversation() {
             open.contains("MoE") && open.contains("Prefill"),
             "{open}"
         );
-        let shown = open;
-        assert!(
-            !shown.contains("Unrelated"),
-            "another conversation's worker leaked into the strip: {shown}"
-        );
-        assert!(
-            shown.contains("MoE") && shown.contains("Prefill"),
-            "{shown}"
-        );
-        let working = shown
+        let working = open
             .lines()
             .find(|line| line.contains("working"))
             .expect("working row");
-        let idle = shown
+        let idle = open
             .lines()
             .find(|line| line.contains("idle"))
             .expect("idle row");
-        assert_eq!(working.find("working"), idle.find("idle"), "{shown}");
+        assert_eq!(working.find("working"), idle.find("idle"), "{open}");
     }
 }

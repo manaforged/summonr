@@ -69,9 +69,33 @@ pub(super) fn cell() -> Metrics {
 }
 
 pub(super) const DIALOG_CELLS: f32 = 72.0;
-pub(super) const WINDOW_DIALOG_W: f32 = 520.0;
-pub(super) const WINDOW_PAGE_FRACTION: f32 = 0.86;
-pub(super) const WINDOW_PAGE_MAX_W: f32 = 1180.0;
+const WINDOW_INSET: f32 = 24.0;
+const WINDOW_ASPECT_MIN: f32 = 1.15;
+const WINDOW_ASPECT_MAX: f32 = 1.8;
+const WINDOW_MIN_W: f32 = 420.0;
+const WINDOW_MIN_H: f32 = 280.0;
+const WINDOW_LIST_CHROME: f32 = 112.0;
+
+pub(super) fn window_frame((cols, rows): (u16, u16)) -> (f32, f32) {
+    let cell = cell();
+    let avail_w = (f32::from(cols) * cell.w - 2.0 * WINDOW_INSET).max(WINDOW_MIN_W);
+    let avail_h = (f32::from(rows) * cell.h - 2.0 * WINDOW_INSET).max(WINDOW_MIN_H);
+    let aspect = (avail_w / avail_h).clamp(WINDOW_ASPECT_MIN, WINDOW_ASPECT_MAX);
+    let height_from_width = avail_w / aspect;
+    if height_from_width <= avail_h {
+        (avail_w, height_from_width)
+    } else {
+        (avail_h * aspect, avail_h)
+    }
+}
+
+pub(super) fn frame_body(viewport: (u16, u16)) -> f32 {
+    (window_frame(viewport).1 - WINDOW_LIST_CHROME).max(overlay_list_row())
+}
+
+pub(super) fn frame_rows(viewport: (u16, u16)) -> usize {
+    (frame_body(viewport) / overlay_list_row()).floor() as usize
+}
 const WINDOW_FRAME_BORDER: i16 = 1;
 
 pub(in crate::tui::sigil_view) fn frame_border() -> i16 {
@@ -119,25 +143,55 @@ pub(super) fn page_rows(rows: u16) -> u16 {
     rows.saturating_sub(PAGE_CHROME).max(8)
 }
 
-pub(super) fn list_rows(rows: u16, chrome: u16) -> usize {
-    if WINDOW.load(Ordering::Relaxed) {
-        8
+pub(super) fn list_rows(viewport: (u16, u16), chrome: u16) -> usize {
+    if is_window() {
+        frame_rows(viewport)
     } else {
-        usize::from(page_rows(rows).saturating_sub(chrome)).max(1)
+        usize::from(page_rows(viewport.1).saturating_sub(chrome)).max(1)
     }
 }
 
-pub(super) fn overlay_shown(count: usize, rows: u16) -> usize {
-    overlay_room(count, rows, DIALOG_CHROME)
-}
-
-pub(super) fn overlay_room(count: usize, rows: u16, used: u16) -> usize {
-    let room = if WINDOW.load(Ordering::Relaxed) {
-        8
+pub(super) fn overlay_shown(count: usize, viewport: (u16, u16)) -> usize {
+    let room = if is_window() {
+        frame_rows(viewport)
     } else {
-        usize::from(rows.saturating_sub(used)).max(1)
+        usize::from(viewport.1.saturating_sub(DIALOG_CHROME)).max(1)
     };
     count.clamp(1, room)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Flag(bool);
+
+    impl Drop for Flag {
+        fn drop(&mut self) {
+            WINDOW.store(self.0, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn a_window_menu_fills_the_pane() {
+        let _flag = Flag(WINDOW.swap(true, Ordering::Relaxed));
+        let viewport = (160, 100);
+        let frame = window_frame(viewport);
+        let pane_w = f32::from(viewport.0) * cell().w - 48.0;
+        let pane_h = f32::from(viewport.1) * cell().h - 48.0;
+        assert!((frame.0 - pane_w).abs() < 1.0, "width {}", frame.0);
+        assert!((frame.1 - pane_h).abs() < 1.0, "height {}", frame.1);
+        let wide = window_frame((400, 80));
+        let aspect = wide.0 / wide.1;
+        assert!(aspect <= 1.81, "{aspect}");
+        assert!(
+            (wide.1 - (f32::from(80) * cell().h - 48.0)).abs() < 1.0,
+            "{}",
+            wide.1
+        );
+        let width = crate::tui::sigil_view::ui::Size::Normal.width(viewport);
+        assert!((width - frame.0).abs() < 1.0, "{width}");
+    }
 }
 
 #[cfg(feature = "gui")]

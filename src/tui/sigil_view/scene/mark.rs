@@ -146,9 +146,25 @@ fn bars(bar: i32, gap: i32) -> [i32; 6] {
 }
 
 const WIDTH: i32 = 27;
+const STEM: i32 = 5;
+const GLYPH_ASPECT: f32 = 252.0 / 224.0;
+const WIDTH_RANGE: [i32; 2] = [20, 48];
+
+fn width() -> i32 {
+    width_for(sigil::terminal::caps().and_then(|caps| caps.cell))
+}
+
+fn width_for(cell: Option<[u16; 2]>) -> i32 {
+    let rows = bars(3, 2)[5] as f32;
+    cell.map_or(WIDTH, |[w, h]| {
+        ((rows * f32::from(h) / f32::from(w) * GLYPH_ASPECT).round() as i32)
+            .clamp(WIDTH_RANGE[0], WIDTH_RANGE[1])
+    })
+}
 
 fn outline() -> [(i32, i32); 12] {
-    let (width, vert) = (WIDTH, 5);
+    let width = width();
+    let vert = (width * STEM + WIDTH / 2) / WIDTH;
     let y = bars(3, 2);
     [
         (0, y[0]),
@@ -167,7 +183,7 @@ fn outline() -> [(i32, i32); 12] {
 }
 
 fn stack(built: i32, clock: Option<u64>) -> Grid {
-    let (width, y) = (WIDTH, bars(3, 2));
+    let (width, y) = (width(), bars(3, 2));
     let outline = outline();
     let mut grid: Grid =
         vec![vec![None; (width + 1 + LAYERS * 2) as usize]; (y[5] + 1 + LAYERS) as usize];

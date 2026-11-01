@@ -135,7 +135,7 @@ pub(super) fn drive<T>(
 }
 
 pub(super) fn settings(snapshot: Snapshot) -> impl FnOnce(&App) {
-    move |app| app.update(Msg::Settings(snapshot))
+    move |app| app.update(Msg::Fact(Fact::Settings(snapshot)))
 }
 
 pub(super) fn graded() -> Snapshot {

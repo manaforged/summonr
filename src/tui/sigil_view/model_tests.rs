@@ -1,3 +1,4 @@
+use crate::tui::{Fact, Intent};
 use crate::tools::Event;
 use crate::tui::{Activity, Msg, ToolState};
 
@@ -8,22 +9,22 @@ fn model() -> Model {
 }
 
 fn call(model: &mut Model, id: &str, name: &str) {
-    model.apply(Msg::Event(Event::ToolCall {
+    model.apply(Msg::Fact(Fact::Event(Event::ToolCall {
         id: id.to_string(),
         name: name.to_string(),
         arguments: "{}".to_string(),
-    }));
+    })));
 }
 
 fn finish(model: &mut Model, id: &str) {
-    model.apply(Msg::Event(Event::ToolResult {
+    model.apply(Msg::Fact(Fact::Event(Event::ToolResult {
         id: id.to_string(),
         success: true,
         mutated: false,
         output: format!("output {id}"),
         millis: None,
         patch: None,
-    }));
+    })));
 }
 
 fn singles(model: &Model) -> usize {
@@ -80,7 +81,7 @@ fn edits_never_fold_into_a_group() {
 #[test]
 fn inline_commits_each_settled_entry_once_and_restarts_after_reset() {
     let mut model = model();
-    model.apply(Msg::User("hello".to_string()));
+    model.apply(Msg::Intent(Intent::User("hello".to_string())));
     let first = model.commit_lines();
     assert!(first.contains("hello"), "{first}");
     assert_eq!(
@@ -89,7 +90,7 @@ fn inline_commits_each_settled_entry_once_and_restarts_after_reset() {
         "an entry must reach the scrollback once"
     );
 
-    model.apply(Msg::Busy(Some(Activity::Turn)));
+    model.apply(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
     call(&mut model, "7", "search");
     assert_eq!(
         model.commit_lines(),
@@ -97,11 +98,11 @@ fn inline_commits_each_settled_entry_once_and_restarts_after_reset() {
         "a running tool stays in the live region"
     );
     finish(&mut model, "7");
-    model.apply(Msg::Busy(None));
+    model.apply(Msg::Fact(Fact::Busy(None)));
     assert!(model.commit_lines().contains("search"));
 
-    model.apply(Msg::Reset);
-    model.apply(Msg::User("again".to_string()));
+    model.apply(Msg::Intent(Intent::Reset));
+    model.apply(Msg::Intent(Intent::User("again".to_string())));
     assert!(model.commit_lines().contains("again"));
 }
 
@@ -145,27 +146,27 @@ fn children_spawned_in_the_same_minute_keep_their_own_tokens() {
 #[test]
 fn answer_stays_last_after_the_check_receipt_and_goal_verdict() {
     let mut model = model();
-    model.apply(Msg::User("make the tests pass".to_string()));
-    model.apply(Msg::Busy(Some(Activity::Turn)));
-    model.apply(Msg::Event(Event::Delta {
+    model.apply(Msg::Intent(Intent::User("make the tests pass".to_string())));
+    model.apply(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+    model.apply(Msg::Fact(Fact::Event(Event::Delta {
         text: "Result: 4 passed.".to_string(),
-    }));
-    model.apply(Msg::Event(Event::Verify {
+    })));
+    model.apply(Msg::Fact(Fact::Event(Event::Verify {
         command: "python3 -m pytest -q".to_string(),
         passed: true,
-    }));
-    model.apply(Msg::Event(Event::Assistant {
+    })));
+    model.apply(Msg::Fact(Fact::Event(Event::Assistant {
         text: "Result: 4 passed.".to_string(),
-    }));
-    model.apply(Msg::Receipt("Turn receipt · 3 files read".to_string()));
-    model.apply(Msg::Outcome("goal achieved".to_string()));
+    })));
+    model.apply(Msg::Fact(Fact::Receipt("Turn receipt · 3 files read".to_string())));
+    model.apply(Msg::Fact(Fact::Outcome("goal achieved".to_string())));
     assert!(
         matches!(model.entries.iter().last(), Some(Entry::Assistant { text, .. }) if text == "Result: 4 passed."),
         "the answer must be the last row of the turn"
     );
     let held = model.commit_lines();
     assert!(!held.contains("4 passed."), "{held}");
-    model.apply(Msg::Busy(None));
+    model.apply(Msg::Fact(Fact::Busy(None)));
     let lines = held + &model.commit_lines();
     let verdict = lines
         .find("goal achieved")
@@ -213,8 +214,8 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
         (ChildState::Completed(empty), false),
     ] {
         let mut model = model();
-        model.apply(Msg::Busy(Some(Activity::Turn)));
-        model.apply(Msg::Event(Event::Child {
+        model.apply(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+        model.apply(Msg::Fact(Fact::Event(Event::Child {
             id: record.id.to_string(),
             event: Box::new(Event::Spawned {
                 assignment: record.assignment.clone(),
@@ -224,8 +225,8 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
                 workspace: "/w".to_owned(),
                 agent: String::new(),
             }),
-        }));
-        model.apply(Msg::Event(Event::Child {
+        })));
+        model.apply(Msg::Fact(Fact::Event(Event::Child {
             id: record.id.to_string(),
             event: Box::new(Event::Usage {
                 prompt_tokens: 5,
@@ -237,7 +238,7 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
                 prefix_hash: String::new(),
                 cost: Some(0.25),
             }),
-        }));
+        })));
         let line = Line::Child {
             record: ChildRecord {
                 state,
@@ -246,7 +247,7 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
         };
         for _ in 0..2 {
             for event in line.events() {
-                model.apply(Msg::Event(event));
+                model.apply(Msg::Fact(Fact::Event(event)));
             }
         }
         assert!(model.agents[0].done);
@@ -260,19 +261,19 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
 #[test]
 fn a_streamed_token_rebuilds_only_the_live_row() {
     let mut model = model();
-    model.apply(Msg::User("first".to_string()));
-    model.apply(Msg::Busy(Some(Activity::Turn)));
+    model.apply(Msg::Intent(Intent::User("first".to_string())));
+    model.apply(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
     call(&mut model, "1", "run_command");
     finish(&mut model, "1");
-    model.apply(Msg::Event(Event::Delta {
+    model.apply(Msg::Fact(Fact::Event(Event::Delta {
         text: "partial".to_string(),
-    }));
+    })));
     let before: Vec<u64> = (0..model.entries.len())
         .map(|at| model.entries.rev(at))
         .collect();
-    model.apply(Msg::Event(Event::Delta {
+    model.apply(Msg::Fact(Fact::Event(Event::Delta {
         text: " answer".to_string(),
-    }));
+    })));
     let after: Vec<u64> = (0..model.entries.len())
         .map(|at| model.entries.rev(at))
         .collect();

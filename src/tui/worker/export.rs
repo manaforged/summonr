@@ -1,3 +1,4 @@
+use crate::tui::{Fact, Intent};
 use super::*;
 
 pub(in crate::tui) fn export_session(
@@ -34,8 +35,8 @@ pub(in crate::tui) fn export_session(
         Ok(out)
     });
     let message = match written {
-        Ok(out) => Msg::System(format!("exported to {}", out.display())),
-        Err(error) => Msg::Failed(error.to_string()),
+        Ok(out) => Msg::Fact(Fact::System(format!("exported to {}", out.display()))),
+        Err(error) => Msg::Fact(Fact::Failed(error.to_string())),
     };
     drop(ui.send(message));
 }

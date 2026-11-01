@@ -293,6 +293,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 .unwrap_or(0);
             if expanded {
                 for peer in headless {
+                    let clear_id = peer.id.clone();
                     let title = peer.label().to_string();
                     let status = peer.status.to_string();
                     let tone = match peer.status {
@@ -316,11 +317,15 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                                     .min_size(0.0, 0.0)
                                     .align_items(AlignItems::Center),
                             )
-                            .child(button("○", TextStyle::xs(tone)).on_click({
-                                let id = peer.id.clone();
-                                let app = app.clone();
-                                move || app.clear_agent(&id)
-                            }))
+                            .child({
+                                let id = clear_id;
+                                let clear = app.clone();
+                                button("○")
+                                    .ghost()
+                                    .size(ControlSize::Compact)
+                                    .accessible(format!("Clear subagent {title}"))
+                                    .activate(move || clear.clear_agent(&id))
+                            })
                             .child(
                                 text(title, TextStyle::xs(Token::Gray12))
                                     .ellipsize()

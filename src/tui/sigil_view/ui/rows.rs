@@ -120,8 +120,11 @@ pub(in crate::tui) fn browser_layout(
     let split = browser_split(cols, threshold);
     (
         split,
-        super::Size::Page.cells(cols),
-        canvas::list_rows(rows, chrome.saturating_add(if split { 0 } else { below })),
+        super::Size::Page.cells((cols, rows)),
+        canvas::list_rows(
+            (cols, rows),
+            chrome.saturating_add(if split { 0 } else { below }),
+        ),
     )
 }
 

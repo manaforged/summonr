@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
+use crate::tui::{Fact, Intent};
 
 use notify::Event as NotifyEvent;
 use tokio::sync::mpsc::UnboundedSender;
@@ -60,7 +61,7 @@ impl Reader {
         let reader = self.clone();
         let task = tokio::task::spawn_blocking(move || reader.serve(command));
         if save && let Err(error) = task.await {
-            self.send(Msg::System(format!("save task failed: {error}")));
+            self.send(Msg::Fact(Fact::System(format!("save task failed: {error}"))));
         }
     }
 
@@ -68,7 +69,7 @@ impl Reader {
         match command {
             Cmd::ListPrompts(session) => {
                 let result = prompts(session.as_deref()).map_err(|error| error.to_string());
-                self.send(Msg::Prompts { session, result });
+                self.send(Msg::Fact(Fact::Prompts { session, result }));
             }
             Cmd::ListSessions => {
                 let roots = crate::session::roots(&self.workspace);
@@ -84,7 +85,7 @@ impl Reader {
                             .collect()
                     })
                     .map_err(|error| error.to_string());
-                self.send(Msg::Sessions(rows));
+                self.send(Msg::Fact(Fact::Sessions(rows)));
             }
             Cmd::ListUsage => {
                 let prices = endpoint::ready(endpoint::Requirement::Key)
@@ -96,22 +97,22 @@ impl Reader {
                 let rows = summonr_home()
                     .and_then(|home| crate::session::spend(&home, &roots, &prices))
                     .map_err(|error| error.to_string());
-                self.send(Msg::Usage(rows));
+                self.send(Msg::Fact(Fact::Usage(rows)));
             }
             Cmd::DeleteSession(id) => {
                 match crate::session::remove(&id) {
-                    Ok(name) => self.send(Msg::System(format!("deleted session {name}"))),
-                    Err(error) => self.send(Msg::Failed(error.to_string())),
+                    Ok(name) => self.send(Msg::Fact(Fact::System(format!("deleted session {name}")))),
+                    Err(error) => self.send(Msg::Fact(Fact::Failed(error.to_string()))),
                 }
                 self.serve(Cmd::ListSessions);
             }
-            Cmd::ListFiles => self.send(Msg::Files(files(&self.workspace))),
+            Cmd::ListFiles => self.send(Msg::Fact(Fact::Files(files(&self.workspace)))),
             Cmd::Jobs => self.jobs(),
             Cmd::Mcp => self.mcp(),
             Cmd::KillJob(id) => self.kill(&id),
-            Cmd::Clipboard => self.send(Msg::Clipboard(
+            Cmd::Clipboard => self.send(Msg::Fact(Fact::Clipboard(
                 clipboard().map_err(|error| error.to_string()),
-            )),
+            ))),
             Cmd::Diff(root) => self.diff(root.as_deref().unwrap_or(&self.workspace)),
             Cmd::SessionDiff(session) => self.session_diff(&session),
             Cmd::Patch(root, path) => self.patch(root, path),
@@ -129,7 +130,7 @@ impl Reader {
                 if let Err(error) =
                     summonr_home().and_then(|home| crate::recent::pin(&home, &selection, on))
                 {
-                    self.send(Msg::ModelNote(format!("pin not saved: {error}")));
+                    self.send(Msg::Fact(Fact::ModelNote(format!("pin not saved: {error}"))));
                 }
             }
             Cmd::SaveDefault(selection) => {
@@ -140,8 +141,8 @@ impl Reader {
                     crate::config::save_default_model(&path, pair)
                 });
                 self.send(match saved {
-                    Ok(()) => Msg::Defaulted(selection),
-                    Err(error) => Msg::ModelNote(error.to_string()),
+                    Ok(()) => Msg::Fact(Fact::Defaulted(selection)),
+                    Err(error) => Msg::Fact(Fact::ModelNote(error.to_string())),
                 });
             }
             _ => {}
@@ -152,20 +153,20 @@ impl Reader {
         let result = crate::durable::store::stage(&file, text.as_bytes(), true)
             .and_then(crate::durable::store::Staged::commit)
             .map_err(|error| error.to_string());
-        self.send(Msg::Saved { file, text, result });
+        self.send(Msg::Fact(Fact::Saved { file, text, result }));
     }
 
     fn show(&self, root: Option<&Path>, path: String) {
         let root = root.unwrap_or(&self.workspace);
         match view(root, &path) {
-            Ok((text, added, image)) => self.send(Msg::View {
+            Ok((text, added, image)) => self.send(Msg::Fact(Fact::View {
                 file: root.join(&path),
                 path,
                 text,
                 added,
                 image,
-            }),
-            Err(error) => self.send(Msg::System(format!("cannot view {path}: {error}"))),
+            })),
+            Err(error) => self.send(Msg::Fact(Fact::System(format!("cannot view {path}: {error}")))),
         }
     }
 
@@ -173,15 +174,15 @@ impl Reader {
         let dir = root.clone().unwrap_or_else(|| self.workspace.clone());
         let result = diff::patch(&dir, (!path.is_empty()).then_some(path.as_str()))
             .map_err(|error| error.to_string());
-        self.send(Msg::Patch {
+        self.send(Msg::Fact(Fact::Patch {
             root: root.clone(),
             path,
             result,
-        });
-        self.send(Msg::Review {
+        }));
+        self.send(Msg::Fact(Fact::Review {
             root,
             result: Ok(crate::hunks::load(&dir)),
-        });
+        }));
     }
 
     fn review(&self, root: Option<PathBuf>, path: String, hunk: String, op: crate::hunks::Op) {
@@ -194,15 +195,15 @@ impl Reader {
         let dir = root.clone().unwrap_or_else(|| self.workspace.clone());
         let result = crate::hunks::apply(&dir, &path, &hunk, op).map_err(|error| error.to_string());
         if let (Some(note), Ok(_)) = (note, &result) {
-            self.send(Msg::System(note));
+            self.send(Msg::Fact(Fact::System(note)));
         }
-        self.send(Msg::Review { root, result });
+        self.send(Msg::Fact(Fact::Review { root, result }));
     }
 
     pub(super) fn diff(&self, root: &Path) {
         match diff::stats(root) {
-            Ok(diff) => self.send(Msg::Diff(diff)),
-            Err(error) => self.send(Msg::DiffFailed(error.to_string())),
+            Ok(diff) => self.send(Msg::Fact(Fact::Diff(diff))),
+            Err(error) => self.send(Msg::Fact(Fact::DiffFailed(error.to_string()))),
         }
     }
 
@@ -213,7 +214,7 @@ impl Reader {
                 session: Some(session.to_string()),
                 files: Vec::new(),
             });
-        self.send(Msg::Diff(diff));
+        self.send(Msg::Fact(Fact::Diff(diff)));
     }
 
     pub(super) fn jobs(&self) {
@@ -225,13 +226,13 @@ impl Reader {
                     .map(|status| (record, status))
             })
             .collect();
-        self.send(Msg::Jobs(jobs));
+        self.send(Msg::Fact(Fact::Jobs(jobs)));
     }
 
     fn mcp(&self) {
         match crate::mcp::status(&self.workspace, Some(&self.board)) {
-            Ok(servers) => self.send(Msg::Mcp(servers)),
-            Err(error) => self.send(Msg::System(format!("mcp status: {error}"))),
+            Ok(servers) => self.send(Msg::Fact(Fact::Mcp(servers))),
+            Err(error) => self.send(Msg::Fact(Fact::System(format!("mcp status: {error}")))),
         }
         self.offers();
     }
@@ -239,21 +240,21 @@ impl Reader {
     fn offers(&self) {
         let mut offers = crate::mcp::offers(&self.workspace);
         offers.extend(crate::plugins::commands::offers(&self.workspace));
-        self.send(Msg::Offers(offers));
+        self.send(Msg::Fact(Fact::Offers(offers)));
     }
 
     fn kill(&self, id: &str) {
         match crate::tools::command::kill_job(&self.workspace, id) {
-            Ok(status) => self.send(Msg::System(format!("job {id}: {}", status.label()))),
-            Err(error) => self.send(Msg::System(format!("job {id} not stopped: {error}"))),
+            Ok(status) => self.send(Msg::Fact(Fact::System(format!("job {id}: {}", status.label())))),
+            Err(error) => self.send(Msg::Fact(Fact::System(format!("job {id} not stopped: {error}")))),
         }
         self.jobs();
     }
 
     pub(super) fn trees(&self) {
         match worktree::status(&self.workspace) {
-            Ok(trees) => self.send(Msg::Trees(trees)),
-            Err(error) => self.send(Msg::System(format!("worktrees unavailable: {error}"))),
+            Ok(trees) => self.send(Msg::Fact(Fact::Trees(trees))),
+            Err(error) => self.send(Msg::Fact(Fact::System(format!("worktrees unavailable: {error}")))),
         }
     }
 
@@ -282,7 +283,7 @@ impl Reader {
         let (root, mut watcher) = match started {
             Ok(started) => started,
             Err(error) => {
-                self.send(Msg::System(format!("workspace watch unavailable: {error}")));
+                self.send(Msg::Fact(Fact::System(format!("workspace watch unavailable: {error}"))));
                 return;
             }
         };
@@ -302,16 +303,16 @@ impl Reader {
                 match event {
                     Ok(event) => paths.extend(relative(&root, &event)),
                     Err(error) => {
-                        self.send(Msg::System(format!("workspace watch failed: {error}")))
+                        self.send(Msg::Fact(Fact::System(format!("workspace watch failed: {error}"))))
                     }
                 }
             }
             let changed = unignored(&root, paths);
             let dirs = changed.iter().map(|path| root.join(path));
             if let Err(error) = watch(&mut watcher, dirs.filter(|dir| dir.is_dir()).collect()) {
-                self.send(Msg::System(format!("workspace watch failed: {error}")));
+                self.send(Msg::Fact(Fact::System(format!("workspace watch failed: {error}"))));
             }
-            if !changed.is_empty() && self.ui.send(Msg::Changed(changed)).is_err() {
+            if !changed.is_empty() && self.ui.send(Msg::Fact(Fact::Changed(changed))).is_err() {
                 return;
             }
         }

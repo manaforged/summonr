@@ -9,7 +9,7 @@ use sigil::prelude::ImageSource;
 use crate::prefs::{Prefs, ToolOutput};
 use crate::tools::Event;
 
-use crate::tui::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
+use crate::tui::{Activity, Fact, Info, Intent, Msg, Round, Snapshot, ToolState, tool_arg};
 
 pub(super) use super::app;
 use super::panes::ledger::LedgerRow;
@@ -193,56 +193,56 @@ impl Model {
 
     pub(super) fn apply(&mut self, msg: Msg) -> bool {
         match msg {
-            Msg::Bye => return false,
-            Msg::Live(live) => self.live = live,
-            Msg::Event(event) => self.apply_event(event),
-            msg @ (Msg::User(_)
-            | Msg::Image(_)
-            | Msg::Receipt(_)
-            | Msg::System(_)
-            | Msg::Approval(_)
-            | Msg::Outcome(_)
-            | Msg::Mail { .. }
-            | Msg::Failed(_)) => self.entry(msg),
-            msg @ (Msg::Session(_)
-            | Msg::Calling(_)
-            | Msg::Busy(_)
-            | Msg::Queued { .. }
-            | Msg::Cleared
-            | Msg::Reset
-            | Msg::RunMode(_)
-            | Msg::Settings(_)) => self.status(msg),
-            msg @ (Msg::Peers(_)
-            | Msg::Files(_)
-            | Msg::Diff(_)
-            | Msg::DiffFailed(_)
-            | Msg::Trees(_)
-            | Msg::Offers(_)
-            | Msg::Jobs(_)
-            | Msg::Mcp(_)
-            | Msg::Changed(_)
-            | Msg::Edited(_)
-            | Msg::View { .. }
-            | Msg::Patch { .. }
-            | Msg::Review { .. }) => self.pane_data(msg),
-            Msg::OpenLogin(_)
-            | Msg::OpenHelp
-            | Msg::Secret(_)
-            | Msg::Clipboard(_)
-            | Msg::Named(_)
-            | Msg::Models { .. }
-            | Msg::ModelNote(_)
-            | Msg::Defaulted(_)
-            | Msg::Sessions(_)
-            | Msg::Usage(_)
-            | Msg::Prompts { .. }
-            | Msg::Workflow { .. }
-            | Msg::Resume(_)
-            | Msg::Replayed
-            | Msg::LoginStep { .. }
-            | Msg::LoginDone { .. }
-            | Msg::Restored(_)
-            | Msg::Saved { .. } => {}
+            Msg::Intent(Intent::Bye) => return false,
+            Msg::Fact(Fact::Live(live)) => self.live = live,
+            Msg::Fact(Fact::Event(event)) => self.apply_event(event),
+            msg @ (Msg::Intent(Intent::User(_))
+            | Msg::Intent(Intent::Image(_))
+            | Msg::Fact(Fact::Receipt(_))
+            | Msg::Fact(Fact::System(_))
+            | Msg::Fact(Fact::Approval(_))
+            | Msg::Fact(Fact::Outcome(_))
+            | Msg::Fact(Fact::Mail { .. })
+            | Msg::Fact(Fact::Failed(_))) => self.entry(msg),
+            msg @ (Msg::Fact(Fact::Session(_))
+            | Msg::Fact(Fact::Calling(_))
+            | Msg::Fact(Fact::Busy(_))
+            | Msg::Fact(Fact::Queued { .. })
+            | Msg::Fact(Fact::Cleared)
+            | Msg::Intent(Intent::Reset)
+            | Msg::Intent(Intent::RunMode(_))
+            | Msg::Fact(Fact::Settings(_))) => self.status(msg),
+            msg @ (Msg::Fact(Fact::Peers(_))
+            | Msg::Fact(Fact::Files(_))
+            | Msg::Fact(Fact::Diff(_))
+            | Msg::Fact(Fact::DiffFailed(_))
+            | Msg::Fact(Fact::Trees(_))
+            | Msg::Fact(Fact::Offers(_))
+            | Msg::Fact(Fact::Jobs(_))
+            | Msg::Fact(Fact::Mcp(_))
+            | Msg::Fact(Fact::Changed(_))
+            | Msg::Fact(Fact::Edited(_))
+            | Msg::Fact(Fact::View { .. })
+            | Msg::Fact(Fact::Patch { .. })
+            | Msg::Fact(Fact::Review { .. })) => self.pane_data(msg),
+            Msg::Intent(Intent::OpenLogin(_))
+            | Msg::Intent(Intent::OpenHelp)
+            | Msg::Fact(Fact::Secret(_))
+            | Msg::Fact(Fact::Clipboard(_))
+            | Msg::Fact(Fact::Named(_))
+            | Msg::Fact(Fact::Models { .. })
+            | Msg::Fact(Fact::ModelNote(_))
+            | Msg::Fact(Fact::Defaulted(_))
+            | Msg::Fact(Fact::Sessions(_))
+            | Msg::Fact(Fact::Usage(_))
+            | Msg::Fact(Fact::Prompts { .. })
+            | Msg::Fact(Fact::Workflow { .. })
+            | Msg::Intent(Intent::Resume(_))
+            | Msg::Fact(Fact::Replayed)
+            | Msg::Fact(Fact::LoginStep { .. })
+            | Msg::Fact(Fact::LoginDone { .. })
+            | Msg::Fact(Fact::Restored(_))
+            | Msg::Fact(Fact::Saved { .. }) => {}
         }
         if self.ledger.iter().all(|row| row.mark.settled()) {
             self.todos_expanded = false;
@@ -253,14 +253,14 @@ impl Model {
 
     fn entry(&mut self, msg: Msg) {
         match msg {
-            Msg::User(text) => self.entries.push(Entry::User(text)),
-            Msg::Image(image) => self.entries.push(image_entry(image)),
-            Msg::Receipt(text) => self.receipt(&text),
-            Msg::System(text) => self.entries.push(Entry::System(text)),
-            Msg::Approval(text) => self.approval_note(text),
-            Msg::Outcome(text) => self.trail(Entry::System(text)),
-            Msg::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
-            Msg::Failed(text) => {
+            Msg::Intent(Intent::User(text)) => self.entries.push(Entry::User(text)),
+            Msg::Intent(Intent::Image(image)) => self.entries.push(image_entry(image)),
+            Msg::Fact(Fact::Receipt(text)) => self.receipt(&text),
+            Msg::Fact(Fact::System(text)) => self.entries.push(Entry::System(text)),
+            Msg::Fact(Fact::Approval(text)) => self.approval_note(text),
+            Msg::Fact(Fact::Outcome(text)) => self.trail(Entry::System(text)),
+            Msg::Fact(Fact::Mail { from, text }) => self.entries.push(Entry::Mail { from, text }),
+            Msg::Fact(Fact::Failed(text)) => {
                 self.set_busy(None);
                 self.entries.push(Entry::Error(text));
             }
@@ -270,17 +270,17 @@ impl Model {
 
     fn status(&mut self, msg: Msg) {
         match msg {
-            Msg::Session(id) => self.session = id,
-            Msg::Calling(name) => self.live_tool = Some((name, "…".to_string())),
-            Msg::Busy(busy) => self.set_busy(busy),
-            Msg::Queued { steering, queued } => self.queued = (steering, queued),
-            Msg::Cleared => self.clear(),
-            Msg::Reset => self.reset(),
-            Msg::RunMode(mode) => {
+            Msg::Fact(Fact::Session(id)) => self.session = id,
+            Msg::Fact(Fact::Calling(name)) => self.live_tool = Some((name, "…".to_string())),
+            Msg::Fact(Fact::Busy(busy)) => self.set_busy(busy),
+            Msg::Fact(Fact::Queued { steering, queued }) => self.queued = (steering, queued),
+            Msg::Fact(Fact::Cleared) => self.clear(),
+            Msg::Intent(Intent::Reset) => self.reset(),
+            Msg::Intent(Intent::RunMode(mode)) => {
                 self.snapshot.work = mode == crate::WorkKind::Steps;
                 self.snapshot.goal = mode == crate::WorkKind::Goal;
             }
-            Msg::Settings(snapshot) => {
+            Msg::Fact(Fact::Settings(snapshot)) => {
                 if (&snapshot.endpoint, &snapshot.model)
                     != (&self.snapshot.endpoint, &self.snapshot.model)
                 {
@@ -294,30 +294,30 @@ impl Model {
 
     fn pane_data(&mut self, msg: Msg) {
         match msg {
-            Msg::Peers(peers) => self.peers = peers,
-            Msg::Files(files) => self.files = files,
-            Msg::Diff(diff) => {
+            Msg::Fact(Fact::Peers(peers)) => self.peers = peers,
+            Msg::Fact(Fact::Files(files)) => self.files = files,
+            Msg::Fact(Fact::Diff(diff)) => {
                 self.diff = diff;
                 self.diff_error = None;
             }
-            Msg::DiffFailed(error) => {
+            Msg::Fact(Fact::DiffFailed(error)) => {
                 self.diff = crate::diff::Diff::default();
                 self.patch = None;
                 self.diff_error = Some(error);
             }
-            Msg::Trees(trees) => self.trees = trees,
-            Msg::Offers(offers) => self.offers = offers,
-            Msg::Jobs(jobs) => self.jobs = jobs,
-            Msg::Mcp(servers) => self.mcp = servers,
-            Msg::Changed(_) => {}
-            Msg::Edited(paths) => self.recent = paths,
-            Msg::View {
+            Msg::Fact(Fact::Trees(trees)) => self.trees = trees,
+            Msg::Fact(Fact::Offers(offers)) => self.offers = offers,
+            Msg::Fact(Fact::Jobs(jobs)) => self.jobs = jobs,
+            Msg::Fact(Fact::Mcp(servers)) => self.mcp = servers,
+            Msg::Fact(Fact::Changed(_)) => {}
+            Msg::Fact(Fact::Edited(paths)) => self.recent = paths,
+            Msg::Fact(Fact::View {
                 path,
                 file,
                 text,
                 added,
                 image,
-            } => {
+            }) => {
                 self.view = Some(View {
                     path,
                     file,
@@ -326,8 +326,8 @@ impl Model {
                     image: image.and_then(|bytes| decode(&bytes, 1920, 1200).ok()),
                 })
             }
-            Msg::Patch { path, result, .. } => self.patch = Some((path, result)),
-            Msg::Review { root, result } => self.review_marks(root, result),
+            Msg::Fact(Fact::Patch { path, result, .. }) => self.patch = Some((path, result)),
+            Msg::Fact(Fact::Review { root, result }) => self.review_marks(root, result),
             _msg => unreachable!("apply routes only pane data"),
         }
     }

@@ -29,7 +29,7 @@ pub(super) use super::settings;
 pub(super) use super::suggest;
 use super::suggest::Picker;
 use super::theme;
-pub(super) use crate::tui::{Activity, Cmd, Info, Msg};
+pub(super) use crate::tui::{Activity, Cmd, Fact, Info, Intent, Msg};
 
 mod adjust;
 mod attachments;

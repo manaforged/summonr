@@ -20,13 +20,13 @@ impl Worker {
     }
 
     pub(in crate::tui::worker) async fn shell(&mut self, command: &str, send: bool) -> bool {
-        drop(self.ui.send(Msg::Busy(Some(Activity::Shell))));
+        drop(self.ui.send(Msg::Fact(Fact::Busy(Some(Activity::Shell)))));
         let id = format!("shell-{}", self.loop_.session_id());
-        drop(self.ui.send(Msg::Event(crate::tools::Event::ToolCall {
+        drop(self.ui.send(Msg::Fact(Fact::Event(crate::tools::Event::ToolCall {
             id: id.clone(),
             name: "run_command".to_string(),
             arguments: serde_json::json!({ "command": command }).to_string(),
-        })));
+        }))));
         let started = std::time::Instant::now();
         let outcome = wait_cancelable(
             &mut self.cmd,
@@ -44,15 +44,15 @@ impl Worker {
             Completion::Done(Err(error)) => (error.to_string(), false),
             Completion::Cancelled | Completion::Quit => ("command cancelled".to_string(), false),
         };
-        drop(self.ui.send(Msg::Event(crate::tools::Event::ToolResult {
+        drop(self.ui.send(Msg::Fact(Fact::Event(crate::tools::Event::ToolResult {
             id,
             success,
             mutated: false,
             output: output.clone(),
             millis: u64::try_from(started.elapsed().as_millis()).ok(),
             patch: None,
-        })));
-        drop(self.ui.send(Msg::Busy(None)));
+        }))));
+        drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         if send && completed {
             self.turn(UserInput::from(shell_prompt(command, &output)))
                 .await
@@ -87,7 +87,7 @@ impl Worker {
     ) -> Option<bool> {
         match command {
             crate::SlashCommand::Exit => {
-                drop(self.ui.send(Msg::Bye));
+                drop(self.ui.send(Msg::Intent(Intent::Bye)));
                 Some(false)
             }
             crate::SlashCommand::Login => {
@@ -109,7 +109,7 @@ impl Worker {
     fn local(&mut self, command: crate::SlashCommand, line: &str, argument: Option<&str>) -> bool {
         match command {
             crate::SlashCommand::Help => {
-                drop(self.ui.send(Msg::OpenHelp));
+                drop(self.ui.send(Msg::Intent(Intent::OpenHelp)));
                 true
             }
             crate::SlashCommand::Workflow => {
@@ -170,7 +170,7 @@ impl Worker {
 
     pub(in crate::tui::worker) fn clear(&mut self) -> bool {
         match self.loop_.clear_history() {
-            Ok(()) => drop(self.ui.send(Msg::Cleared)),
+            Ok(()) => drop(self.ui.send(Msg::Fact(Fact::Cleared))),
             Err(error) => self.fail(&error.to_string()),
         }
         true

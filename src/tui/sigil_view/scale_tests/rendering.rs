@@ -2,9 +2,9 @@ use super::*;
 
 fn reply(body: &str, cols: u16) -> sigil::terminal::Grid {
     paint(busy_info(), cols, 60, State::Idle, |app| {
-        app.update(Msg::Event(Event::Assistant {
+        app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: body.to_string(),
-        }));
+        })));
     })
 }
 
@@ -103,15 +103,15 @@ fn unknown_diagrams_and_invalid_charts_keep_their_source() {
 fn a_streamed_diagram_reaches_the_same_completed_reply_renderer() {
     let body = "```mermaid\ngraph LR\nA[Start] --> B[Finish]\n```";
     let shown = frame_with(busy_info(), 110, 60, State::Idle, |app| {
-        app.update(Msg::Event(Event::Delta {
+        app.update(Msg::Fact(Fact::Event(Event::Delta {
             text: body[..25].to_string(),
-        }));
-        app.update(Msg::Event(Event::Delta {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::Delta {
             text: body[25..].to_string(),
-        }));
-        app.update(Msg::Event(Event::Assistant {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: body.to_string(),
-        }));
+        })));
     })
     .join("\n");
     assert!(

@@ -3,14 +3,14 @@ use sigil::terminal::Ink;
 use super::super::canvas::palette;
 use super::{State, busy_info, frame_with, paint};
 use crate::session::Spend;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 #[test]
 fn an_empty_local_usage_scope_explains_how_to_show_other_workspaces() {
     let shown = frame_with(busy_info(), 100, 30, State::Idle, |app| {
         app.replace("/usage".to_owned());
         app.submit();
-        app.update(Msg::Usage(Ok(vec![spend("m", "/other", 100)])));
+        app.update(Msg::Fact(Fact::Usage(Ok(vec![spend("m", "/other", 100)]))));
         app.overlay_enter();
     })
     .join("\n");
@@ -38,10 +38,10 @@ fn the_usage_page_shows_totals_trend_models_and_workspaces() {
     let shown = frame_with(busy_info(), 160, 90, State::Idle, |app| {
         app.replace("/usage".to_owned());
         app.submit();
-        app.update(Msg::Usage(Ok(vec![
+        app.update(Msg::Fact(Fact::Usage(Ok(vec![
             spend("glm-5.3-flash", "/w/summonr", 2_000_000),
             spend("deepseek-v4-flash", "/w/webshop", 500_000),
-        ])));
+        ]))));
     })
     .join("\n");
     for part in [
@@ -63,10 +63,10 @@ fn a_shared_day_paints_each_models_color() {
     let grid = paint(busy_info(), 140, 60, State::Idle, |app| {
         app.replace("/usage".to_owned());
         app.submit();
-        app.update(Msg::Usage(Ok(vec![
+        app.update(Msg::Fact(Fact::Usage(Ok(vec![
             spend("glm-5.3-flash", "/w/summonr", 2_000_000),
             spend("deepseek-v4-flash", "/w/webshop", 1_000_000),
-        ])));
+        ]))));
     });
     let accent = Ink::Exact(palette().accent);
     let yellow = Ink::Exact(palette().yellow);
@@ -94,10 +94,10 @@ fn a_narrow_usage_page_keeps_a_model_off_the_workspace_row() {
     let lines = frame_with(busy_info(), 84, 70, State::Idle, |app| {
         app.replace("/usage".to_owned());
         app.submit();
-        app.update(Msg::Usage(Ok(vec![
+        app.update(Msg::Fact(Fact::Usage(Ok(vec![
             spend("glm-5.3-flash", "/w/summonr", 2_000_000),
             spend("deepseek-v4-flash", "/w/webshop", 1_000_000),
-        ])));
+        ]))));
     });
     let Some(row) = lines.iter().find(|line| line.contains("glm-5.3-flash")) else {
         panic!("{}", lines.join("\n"));
@@ -114,11 +114,11 @@ fn todays_bar_fills_its_column_inside_the_chart_frame() {
         let grid = paint(busy_info(), cols, rows, State::Idle, |app| {
             app.replace("/usage".to_owned());
             app.submit();
-            app.update(Msg::Usage(Ok(vec![spend(
+            app.update(Msg::Fact(Fact::Usage(Ok(vec![spend(
                 "glm-5.3-flash",
                 "/w/calc",
                 30_000,
-            )])));
+            )]))));
         });
         let accent = Ink::Exact(palette().accent);
         let mut filled = 0;
@@ -156,11 +156,11 @@ fn the_usage_cards_line_up_and_the_daily_chart_frame_closes() {
         let grid = paint(busy_info(), cols, rows, State::Idle, |app| {
             app.replace("/usage".to_owned());
             app.submit();
-            app.update(Msg::Usage(Ok(vec![spend(
+            app.update(Msg::Fact(Fact::Usage(Ok(vec![spend(
                 "glm-5.3-flash",
                 "/w/calc",
                 30_000,
-            )])));
+            )]))));
         });
         let text = grid.text();
         let lines: Vec<&str> = text.lines().collect();

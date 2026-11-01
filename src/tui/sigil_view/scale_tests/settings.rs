@@ -65,12 +65,12 @@ fn the_window_title_drops_control_characters_from_the_workspace() {
 
 #[test]
 fn the_turn_notification_names_how_the_turn_ended() {
-    use crate::tui::Msg;
+    use crate::tui::{Fact, Intent, Msg};
     let mut seen = Vec::new();
     let _ = frame_with(busy_info(), 110, 30, State::Idle, |app| {
         seen.push(app.ending());
-        app.update(Msg::User("next".to_owned()));
-        app.update(Msg::Failed("provider timed out".to_owned()));
+        app.update(Msg::Intent(Intent::User("next".to_owned())));
+        app.update(Msg::Fact(Fact::Failed("provider timed out".to_owned())));
         seen.push(app.ending());
     });
     assert_eq!(seen, ["turn finished", "turn failed"]);

@@ -29,7 +29,7 @@ async fn input_typed_while_a_command_runs_reports_the_waiting_steer() {
     assert!(matches!(outcome, Completion::Done(())));
     let counts: Vec<(usize, usize)> = std::iter::from_fn(|| inbox.try_recv().ok())
         .filter_map(|message| match message {
-            Msg::Queued { steering, queued } => Some((steering, queued)),
+            Msg::Fact(Fact::Queued { steering, queued }) => Some((steering, queued)),
             _other => None,
         })
         .collect();

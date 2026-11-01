@@ -64,8 +64,7 @@ pub(super) fn line(text: impl Into<String>) -> NodeBuilder {
 }
 
 fn form_cells(app: &App) -> usize {
-    let (cols, _) = app.viewport.get();
-    Size::Normal.cells(cols).saturating_sub(2)
+    Size::Normal.cells(app.viewport.get()).saturating_sub(2)
 }
 
 pub(super) fn notes(note: &Note, width: usize) -> Vec<NodeBuilder> {

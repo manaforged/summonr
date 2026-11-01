@@ -170,3 +170,17 @@ fn the_shimmer_head_repeats_every_lap_even_at_the_end_of_the_clock() {
         .collect();
     assert_eq!(late, early);
 }
+
+#[test]
+fn the_mark_keeps_the_glyph_proportion_for_the_measured_cell() {
+    let rows = f32::from(super::bars(3, 2)[5] as u16);
+    for [w, h] in [[10_u16, 20_u16], [14, 37], [8, 15]] {
+        let width = super::width_for(Some([w, h])) as f32 * f32::from(w);
+        let ratio = width / (rows * f32::from(h));
+        assert!(
+            (ratio / super::GLYPH_ASPECT - 1.0).abs() < 0.05,
+            "{w}x{h}: {ratio}"
+        );
+    }
+    assert_eq!(super::width_for(None), super::WIDTH);
+}

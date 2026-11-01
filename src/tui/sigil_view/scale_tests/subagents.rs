@@ -2,13 +2,13 @@ use super::super::app::App;
 use super::children::{IDS, act, spawn, task_call};
 use super::{State, busy_info, frame_with};
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 #[test]
 fn a_running_subagent_reads_as_its_task_not_its_status_dump() {
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
         task_call(app);
-        app.update(Msg::Event(Event::Child {
+        app.update(Msg::Fact(Fact::Event(Event::Child {
             id: IDS[0].to_owned(),
             event: Box::new(Event::Spawned {
                 assignment: "Fix total() so it rounds to cents.".to_owned(),
@@ -18,7 +18,7 @@ fn a_running_subagent_reads_as_its_task_not_its_status_dump() {
                 workspace: "/w/repo-children/abc".to_owned(),
                 agent: String::new(),
             }),
-        }));
+        })));
         act(
             app,
             IDS[0],
@@ -28,12 +28,12 @@ fn a_running_subagent_reads_as_its_task_not_its_status_dump() {
                 arguments: r#"{"path":"/w/repo-children/abc/cart.py"}"#.to_owned(),
             },
         );
-        app.update(Msg::Event(Event::ToolCall {
+        app.update(Msg::Fact(Fact::Event(Event::ToolCall {
             id: "p1".to_owned(),
             name: "task".to_owned(),
             arguments: format!(r#"{{"child":"{}"}}"#, IDS[0]),
-        }));
-        app.update(Msg::Event(Event::ToolResult {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::ToolResult {
             id: "p1".to_owned(),
             success: true,
             mutated: false,
@@ -43,7 +43,7 @@ fn a_running_subagent_reads_as_its_task_not_its_status_dump() {
             ),
             millis: None,
             patch: None,
-        }));
+        })));
     })
     .join("\n");
     assert!(!shown.contains(IDS[0]), "no raw child id: {shown}");
@@ -82,11 +82,11 @@ fn subagents_read_as_one_line_each_that_flips_when_done() {
                 text: "total() rounds to cents".to_owned(),
             },
         );
-        app.update(Msg::Event(Event::ToolCall {
+        app.update(Msg::Fact(Fact::Event(Event::ToolCall {
             id: "p1".to_owned(),
             name: "task".to_owned(),
             arguments: format!(r#"{{"child":"{}"}}"#, IDS[1]),
-        }));
+        })));
     })
     .join("\n");
     assert!(
@@ -117,12 +117,12 @@ fn subagents_spawned_by_separate_calls_each_get_their_own_line() {
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
         for (at, (id, assignment)) in IDS.iter().zip(assignments).enumerate() {
             let call = format!("s{at}");
-            app.update(Msg::Event(Event::ToolCall {
+            app.update(Msg::Fact(Fact::Event(Event::ToolCall {
                 id: call.clone(),
                 name: "task".to_owned(),
                 arguments: r#"{"background":true}"#.to_owned(),
-            }));
-            app.update(Msg::Event(Event::Child {
+            })));
+            app.update(Msg::Fact(Fact::Event(Event::Child {
                 id: (*id).to_owned(),
                 event: Box::new(Event::Spawned {
                     assignment: assignment.to_owned(),
@@ -132,15 +132,15 @@ fn subagents_spawned_by_separate_calls_each_get_their_own_line() {
                     workspace: String::new(),
                     agent: String::new(),
                 }),
-            }));
-            app.update(Msg::Event(Event::ToolResult {
+            })));
+            app.update(Msg::Fact(Fact::Event(Event::ToolResult {
                 id: call,
                 success: true,
                 mutated: false,
                 output: format!("started child {id}\nstate: running"),
                 millis: None,
                 patch: None,
-            }));
+            })));
         }
         act(
             app,
@@ -176,14 +176,14 @@ fn parallel_spawn_calls_each_get_their_own_subagent_line() {
     let calls = ["call_a", "call_b", "call_c"];
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
         for call in calls {
-            app.update(Msg::Event(Event::ToolCall {
+            app.update(Msg::Fact(Fact::Event(Event::ToolCall {
                 id: call.to_owned(),
                 name: "task".to_owned(),
                 arguments: r#"{"background":true}"#.to_owned(),
-            }));
+            })));
         }
         for ((id, assignment), call) in IDS.iter().zip(assignments).zip(calls) {
-            app.update(Msg::Event(Event::Child {
+            app.update(Msg::Fact(Fact::Event(Event::Child {
                 id: (*id).to_owned(),
                 event: Box::new(Event::Spawned {
                     assignment: assignment.to_owned(),
@@ -193,17 +193,17 @@ fn parallel_spawn_calls_each_get_their_own_subagent_line() {
                     workspace: String::new(),
                     agent: String::new(),
                 }),
-            }));
+            })));
         }
         for (id, call) in IDS.iter().zip(calls) {
-            app.update(Msg::Event(Event::ToolResult {
+            app.update(Msg::Fact(Fact::Event(Event::ToolResult {
                 id: call.to_owned(),
                 success: true,
                 mutated: false,
                 output: format!("started child {id}\nstate: running"),
                 millis: None,
                 patch: None,
-            }));
+            })));
         }
     })
     .join("\n");
@@ -222,7 +222,7 @@ fn a_spawn_drawn_before_its_subagent_exists_redraws_as_the_subagent_line() {
         let (commands, _sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(120, 30);
-        app.update(Msg::Busy(Some(crate::tui::Activity::Turn)));
+        app.update(Msg::Fact(Fact::Busy(Some(crate::tui::Activity::Turn))));
         let mut host = Host::cells();
         let tree = app.clone();
         host.mount(move || root(tree));
@@ -235,23 +235,23 @@ fn a_spawn_drawn_before_its_subagent_exists_redraws_as_the_subagent_line() {
                 .text()
         };
         for call in ["call_a", "call_b"] {
-            app.update(Msg::Event(Event::ToolCall {
+            app.update(Msg::Fact(Fact::Event(Event::ToolCall {
                 id: call.to_owned(),
                 name: "task".to_owned(),
                 arguments: r#"{"background":true}"#.to_owned(),
-            }));
+            })));
         }
         frame(&mut screen);
         for (id, call) in IDS.iter().zip(["call_a", "call_b"]) {
             spawn_on(&app, id, call, "Round total to cents.");
-            app.update(Msg::Event(Event::ToolResult {
+            app.update(Msg::Fact(Fact::Event(Event::ToolResult {
                 id: call.to_owned(),
                 success: true,
                 mutated: false,
                 output: format!("started child {id}\nstate: running"),
                 millis: None,
                 patch: None,
-            }));
+            })));
         }
         frame(&mut screen);
         act(
@@ -272,7 +272,7 @@ fn a_spawn_drawn_before_its_subagent_exists_redraws_as_the_subagent_line() {
 }
 
 fn spawn_on(app: &App, id: &str, call: &str, assignment: &str) {
-    app.update(Msg::Event(Event::Child {
+    app.update(Msg::Fact(Fact::Event(Event::Child {
         id: id.to_owned(),
         event: Box::new(Event::Spawned {
             assignment: assignment.to_owned(),
@@ -282,18 +282,18 @@ fn spawn_on(app: &App, id: &str, call: &str, assignment: &str) {
             workspace: String::new(),
             agent: String::new(),
         }),
-    }));
+    })));
 }
 
 #[test]
 fn consecutive_subagent_lines_sit_on_consecutive_rows() {
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
         for (id, call) in IDS.iter().zip(["call_a", "call_b", "call_c"]) {
-            app.update(Msg::Event(Event::ToolCall {
+            app.update(Msg::Fact(Fact::Event(Event::ToolCall {
                 id: call.to_owned(),
                 name: "task".to_owned(),
                 arguments: r#"{"background":true}"#.to_owned(),
-            }));
+            })));
             spawn_on(app, id, call, "Round total to cents.");
         }
     });
@@ -314,19 +314,19 @@ fn consecutive_subagent_lines_sit_on_consecutive_rows() {
 #[test]
 fn a_spawn_result_before_its_subagent_shows_a_starting_line_not_raw_output() {
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
-        app.update(Msg::Event(Event::ToolCall {
+        app.update(Msg::Fact(Fact::Event(Event::ToolCall {
             id: "call_a".to_owned(),
             name: "task".to_owned(),
             arguments: r#"{"assignment":"Round total to cents.","background":true}"#.to_owned(),
-        }));
-        app.update(Msg::Event(Event::ToolResult {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::ToolResult {
             id: "call_a".to_owned(),
             success: true,
             mutated: false,
             output: format!("started child {}\nstate: running\npoll with task", IDS[0]),
             millis: None,
             patch: None,
-        }));
+        })));
     })
     .join("\n");
     assert!(!shown.contains("started child"), "{shown}");

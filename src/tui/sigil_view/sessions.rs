@@ -270,7 +270,6 @@ pub(super) fn keys() -> Bindings {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.sessions;
-    let cols = app.viewport.peek().0;
     let keys = app.model.peek().prefs.hotkeys.clone();
     let viewport = app.viewport;
     let source = app.clone();
@@ -307,12 +306,12 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 (len > 0).then(|| {
                     (
                         canvas::overlay_list_row(),
-                        canvas::overlay_shown(len, viewport.get().1),
+                        canvas::overlay_shown(len, viewport.get()),
                     )
                 })
             },
             move |info, selected| row(&source, picker, info, selected),
             move || app.resume_session(),
         )
-        .build(picker.open, cols, &keys)
+        .build(picker.open, viewport.get(), &keys)
 }

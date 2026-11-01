@@ -22,9 +22,13 @@ mod worker;
 use worker::worker;
 
 pub(crate) enum Msg {
+    Fact(Fact),
+    Intent(Intent),
+}
+
+/// Something the world or the worker reports to the interface.
+pub(crate) enum Fact {
     Secret(crate::askpass::Request),
-    User(String),
-    Image(crate::provider::Image),
     Receipt(String),
     Calling(String),
     Event(Event),
@@ -39,10 +43,6 @@ pub(crate) enum Msg {
     Outcome(String),
     Session(String),
     Cleared,
-    Reset,
-    RunMode(crate::WorkKind),
-    OpenLogin(String),
-    OpenHelp,
     Settings(Snapshot),
     Models {
         request: u64,
@@ -104,7 +104,6 @@ pub(crate) enum Msg {
         root: Option<PathBuf>,
         result: std::result::Result<crate::hunks::Marks, String>,
     },
-    Resume(String),
     Live(Vec<hub::Live>),
     Named(String),
     Approval(String),
@@ -120,6 +119,17 @@ pub(crate) enum Msg {
         result: std::result::Result<String, String>,
         rejected: bool,
     },
+}
+
+/// Something the user asks the model to do.
+pub(crate) enum Intent {
+    User(String),
+    Image(crate::provider::Image),
+    Reset,
+    RunMode(crate::WorkKind),
+    OpenLogin(String),
+    OpenHelp,
+    Resume(String),
     Bye,
 }
 

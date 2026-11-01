@@ -50,7 +50,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         .fixed(canvas::picker_rows(rows))
         .live_hints(move || hints(&state))
         .child(super::dialog_body(move || body(&paint)))
-        .build(app.auth.open, cols, &hotkeys)
+        .build(app.auth.open, (cols, rows), &hotkeys)
 }
 
 fn body(app: &App) -> Vec<NodeBuilder> {
@@ -58,7 +58,7 @@ fn body(app: &App) -> Vec<NodeBuilder> {
     let listing = matches!(app.auth.step.get(), Login::List(_));
     let cols = app.viewport.get().0;
     if !listing && !browser_split(cols, SPLIT_COLS) {
-        return form(app, Size::Page.cells(cols));
+        return form(app, Size::Page.cells(app.viewport.get()));
     }
     vec![
         field(app, Input::Search, listing),

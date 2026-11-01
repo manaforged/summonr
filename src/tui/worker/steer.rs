@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, PoisonError};
 
 use tokio::sync::mpsc::UnboundedSender;
+use crate::tui::{Fact, Intent};
 
 use super::{Cmd, Msg};
 use crate::provider::UserInput;
@@ -35,10 +36,10 @@ impl InputQueue {
             .iter()
             .filter(|command| matches!(command, Cmd::Submit(_)))
             .count();
-        drop(ui.send(Msg::Queued {
+        drop(ui.send(Msg::Fact(Fact::Queued {
             steering,
             queued: self.followups.len() + held,
-        }));
+        })));
     }
 
     pub(super) fn take(&mut self, pick: impl Fn(&UserInput) -> bool) -> Vec<UserInput> {
@@ -76,7 +77,7 @@ impl InputQueue {
         self.deferred
             .extend(self.followups.drain(..).map(Cmd::Submit));
         self.deferred.push_back(command);
-        drop(ui.send(Msg::System(note)));
+        drop(ui.send(Msg::Fact(Fact::System(note))));
         self.announce(ui);
     }
 
@@ -91,11 +92,11 @@ impl InputQueue {
                 if self.followups.is_empty() && self.deferred.is_empty() && steerable(&input) =>
             {
                 steer(&self.steering, [input], workspace);
-                drop(ui.send(Msg::System(SENT_NOW.to_string())));
+                drop(ui.send(Msg::Fact(Fact::System(SENT_NOW.to_string()))));
             }
             Cmd::Steer(input) => {
                 self.followups.push_back(input);
-                drop(ui.send(Msg::System(QUEUED_LATER.to_string())));
+                drop(ui.send(Msg::Fact(Fact::System(QUEUED_LATER.to_string()))));
             }
             Cmd::Queue(input) | Cmd::Submit(input) => self.followups.push_back(input),
             Cmd::SteerQueued => {
@@ -106,12 +107,12 @@ impl InputQueue {
                     steer(&self.steering, now, workspace);
                     SENT_NOW
                 };
-                drop(ui.send(Msg::System(note.to_string())));
+                drop(ui.send(Msg::Fact(Fact::System(note.to_string()))));
             }
             Cmd::Dequeue => {
                 let pending = self.take(|_| true);
                 if !pending.is_empty() {
-                    drop(ui.send(Msg::Restored(pending)));
+                    drop(ui.send(Msg::Fact(Fact::Restored(pending))));
                 }
             }
             _command => unreachable!("during_turn routes only queue commands"),

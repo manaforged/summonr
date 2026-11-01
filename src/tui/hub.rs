@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::Msg;
+use super::{Fact, Intent, Msg};
 use crate::provider::Client;
 use crate::runtime::Loop;
 use crate::tools::Event;
@@ -56,7 +56,7 @@ impl Status {
 }
 
 pub(crate) fn status(prev: Status, msg: &Msg) -> Status {
-    if let Msg::Busy(activity) = msg {
+    if let Msg::Fact(Fact::Busy(activity)) = msg {
         return if activity.is_some() {
             Status::Working
         } else if matches!(prev, Status::Working | Status::NeedsYou) {
@@ -74,7 +74,7 @@ pub(crate) fn status(prev: Status, msg: &Msg) -> Status {
             prev
         };
     }
-    if matches!(msg, Msg::Failed(_)) && prev == Status::Working {
+    if matches!(msg, Msg::Fact(Fact::Failed(_))) && prev == Status::Working {
         return Status::Failed;
     }
     prev
@@ -89,10 +89,10 @@ pub(crate) const fn seen(status: Status) -> Status {
 }
 
 fn asking(msg: &Msg) -> Option<bool> {
-    if let Msg::Event(Event::Approval { detail, .. }) = msg {
+    if let Msg::Fact(Fact::Event(Event::Approval { detail, .. })) = msg {
         return Some(detail.is_some());
     }
-    if let Msg::Event(Event::Elicit { form, .. }) = msg {
+    if let Msg::Fact(Fact::Event(Event::Elicit { form, .. })) = msg {
         return Some(form.is_some());
     }
     None

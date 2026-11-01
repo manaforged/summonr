@@ -51,7 +51,7 @@ fn command_k_opens_the_command_list_and_command_p_a_file_mention() {
 fn escape_closes_the_list_and_the_pane_without_cancelling_the_turn() {
     let listed = drive(
         |app| {
-            app.update(Msg::Busy(Some(Activity::Turn)));
+            app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
             app.replace("/se".to_owned());
         },
         vec![named(Key::Escape, ModifiersState::empty())],
@@ -61,7 +61,7 @@ fn escape_closes_the_list_and_the_pane_without_cancelling_the_turn() {
     assert!(!listed.read);
     let paned = drive(
         |app| {
-            app.update(Msg::Busy(Some(Activity::Turn)));
+            app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
             app.toggle_pane(Pane::Files);
         },
         vec![
@@ -134,7 +134,7 @@ fn the_title_bar_drops_the_model_button_and_shows_changes_only_when_dirty() {
         clean.text()
     );
     let dirty = drive(
-        |app| app.update(Msg::Diff(changed("HEAD", &[("a.rs", 3, 1)]))),
+        |app| app.update(Msg::Fact(Fact::Diff(changed("HEAD", &[("a.rs", 3, 1)])))),
         Vec::new(),
         |_| (),
     );
@@ -203,8 +203,8 @@ fn the_status_row_shows_a_notice() {
 fn approval_notes_replace_each_other_instead_of_stacking() {
     let seen = drive(
         |app| {
-            app.update(Msg::Approval("approval mode: on".to_owned()));
-            app.update(Msg::Approval("auto approval".to_owned()));
+            app.update(Msg::Fact(Fact::Approval("approval mode: on".to_owned())));
+            app.update(Msg::Fact(Fact::Approval("auto approval".to_owned())));
         },
         Vec::new(),
         |app| {

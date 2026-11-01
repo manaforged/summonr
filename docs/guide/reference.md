@@ -935,7 +935,7 @@ Copy [`theme.example.toml`](../../theme.example.toml) to `~/.summonr/theme.toml`
 
 ## Herdr
 
-When `summonr` runs inside a [Herdr](https://herdr.dev) pane, it reports lifecycle state through Herdr's CLI (`pane report-agent`). `idle` is the prompt; `working` is a turn. The summonr session id is the native session reference. `/name TEXT` becomes the pane title and `$summary` token. Child sessions do not report, so a nested `task` does not steal the pane. Herdr has no built-in `summonr` kind. This reporter is the integration.
+When `summonr` runs inside a [Herdr](https://herdr.dev) pane, it reports lifecycle state through Herdr's CLI (`pane report-agent`). `idle` is the prompt; `working` is a turn. The summonr session id is the native session reference. `/name TEXT` becomes the pane title and `$summary` token. Child sessions do not report, so a nested `task` does not steal the pane. Herdr has no built-in `summonr` kind. This reporter is the integration. The Herdr desktop app does not run that CLI. There, the interactive terminal reports `idle`, `working`, and `blocked` (an approval is waiting) with the OSC 7501 escape sequence, and clears the report when summonr exits.
 
 ## Docs
 

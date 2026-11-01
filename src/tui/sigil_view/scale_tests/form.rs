@@ -1,3 +1,4 @@
+use crate::tui::{Fact};
 use serde_json::json;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -83,10 +84,10 @@ fn opened(workspace: &std::path::Path, form: Form) -> (App, UnboundedReceiver<Cm
     let (commands, receiver) = unbounded_channel();
     let app = App::new(busy_info(), workspace.to_owned(), commands);
     app.resize(100, 30);
-    app.update(Msg::Event(Event::Elicit {
+    app.update(Msg::Fact(Fact::Event(Event::Elicit {
         form: Some(form),
         dialog: 1,
-    }));
+    })));
     (app, receiver)
 }
 
@@ -185,10 +186,10 @@ fn a_question_shows_one_key_line_and_no_bare_cancel() {
         )],
     };
     let lines = frame_with(busy_info(), 100, 30, State::Idle, move |app| {
-        app.update(Msg::Event(Event::Elicit {
+        app.update(Msg::Fact(Fact::Event(Event::Elicit {
             form: Some(form),
             dialog: 1,
-        }));
+        })));
     });
     let shown = lines.join("\n");
     assert!(shown.contains("2. SQLite"), "{shown}");
@@ -306,10 +307,10 @@ fn a_question_gives_back_the_unsent_draft_when_it_closes() {
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(100, 30);
         app.replace("my draft".to_owned());
-        app.update(Msg::Event(Event::Elicit {
+        app.update(Msg::Fact(Fact::Event(Event::Elicit {
             form: Some(form()),
             dialog: 1,
-        }));
+        })));
         app.form_reply(Reply::Cancel);
         assert_eq!(app.draft.peek(), "my draft");
     });

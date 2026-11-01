@@ -1,4 +1,5 @@
 use super::{Msg, Worker};
+use crate::tui::{Fact, Intent};
 use crate::tools::Event;
 
 impl Worker {
@@ -7,7 +8,7 @@ impl Worker {
             Ok(diff) => diff,
             Err(error) => {
                 self.last_diff = None;
-                drop(self.ui.send(Msg::DiffFailed(error.to_string())));
+                drop(self.ui.send(Msg::Fact(Fact::DiffFailed(error.to_string()))));
                 return;
             }
         };
@@ -20,13 +21,13 @@ impl Worker {
                     _ => None,
                 })
             });
-            drop(self.ui.send(Msg::Edited(crate::diff::edited(calls))));
+            drop(self.ui.send(Msg::Fact(Fact::Edited(crate::diff::edited(calls)))));
             if self.last_diff.as_ref() == Some(&diff) {
                 return;
             }
         }
         self.last_diff = Some(diff.clone());
-        drop(self.ui.send(Msg::Diff(diff)));
+        drop(self.ui.send(Msg::Fact(Fact::Diff(diff))));
     }
 
     pub(super) fn tree_at(

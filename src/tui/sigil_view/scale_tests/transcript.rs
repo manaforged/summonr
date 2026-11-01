@@ -1,7 +1,7 @@
 use super::super::app::App;
 use super::screens;
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 #[test]
 fn mounted_terminal_prose_streams_and_replaces_the_final_answer() {
@@ -9,20 +9,20 @@ fn mounted_terminal_prose_streams_and_replaces_the_final_answer() {
         100,
         30,
         |app| {
-            app.update(Msg::Event(Event::Delta {
+            app.update(Msg::Fact(Fact::Event(Event::Delta {
                 text: "First word".to_owned(),
-            }));
+            })));
         },
         &[
             &|app: &App| {
-                app.update(Msg::Event(Event::Delta {
+                app.update(Msg::Fact(Fact::Event(Event::Delta {
                     text: " second word".to_owned(),
-                }));
+                })));
             },
             &|app: &App| {
-                app.update(Msg::Event(Event::Assistant {
+                app.update(Msg::Fact(Fact::Event(Event::Assistant {
                     text: "Final answer".to_owned(),
-                }));
+                })));
             },
         ],
     );

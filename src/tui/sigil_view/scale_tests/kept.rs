@@ -1,7 +1,7 @@
 use super::children::{IDS, spawn, task_call};
 use super::{State, busy_info, frame_with};
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 #[test]
 fn a_child_kept_after_a_conflict_says_so_and_how_to_remove_it() {
@@ -31,14 +31,14 @@ fn a_child_kept_after_a_conflict_says_so_and_how_to_remove_it() {
     let shown = frame_with(busy_info(), 140, 40, State::Idle, |app| {
         task_call(app);
         spawn(app, IDS[0], "append a License section", false);
-        app.update(Msg::Event(Event::ToolResult {
+        app.update(Msg::Fact(Fact::Event(Event::ToolResult {
             id: "t1".to_owned(),
             success: true,
             mutated: true,
             output: record.to_string(),
             millis: None,
             patch: None,
-        }));
+        })));
     })
     .join("\n");
     assert!(

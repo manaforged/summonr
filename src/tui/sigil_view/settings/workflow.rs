@@ -51,7 +51,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
             }
             selections(&paint)
         }))
-        .build(app.workflow.open, app.viewport.peek().0, &hotkeys)
+        .build(app.workflow.open, app.viewport.peek(), &hotkeys)
 }
 
 fn title(app: &App) -> String {

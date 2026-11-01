@@ -13,7 +13,7 @@ const MAX_TIMEOUT_MS: u64 = 3_600_000;
 const BATCH: Duration = Duration::from_millis(200);
 
 impl ToolRegistry {
-    pub(super) fn monitor(&self, args: &serde_json::Value) -> Result<ToolOutput> {
+    pub(in crate::tools) async fn monitor(&self, args: &serde_json::Value) -> Result<ToolOutput> {
         let description = object_string(args, "description")?;
         let command = object_string(args, "command")?;
         if description.trim().is_empty() || command.trim().is_empty() {

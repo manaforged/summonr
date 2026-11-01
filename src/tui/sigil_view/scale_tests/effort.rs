@@ -1,7 +1,7 @@
 use super::super::app::App;
 use super::{State, busy_info, frame_with};
 use crate::provider::Effort;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 fn screen(setup: impl FnOnce(&App)) -> String {
     frame_with(busy_info(), 100, 24, State::Idle, setup).join("\n")
@@ -15,7 +15,7 @@ fn run(app: &App, line: &str) {
 fn selection(app: &App, levels: &[Effort]) {
     let mut snapshot = app.model.peek().snapshot.clone();
     snapshot.levels = levels.to_vec();
-    app.update(Msg::Settings(snapshot));
+    app.update(Msg::Fact(Fact::Settings(snapshot)));
 }
 
 #[test]

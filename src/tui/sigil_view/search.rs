@@ -230,7 +230,8 @@ fn one_line(text: &str) -> String {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.search;
-    let cols = app.viewport.peek().0;
+    let viewport = app.viewport.peek();
+    let view = app.viewport;
     let keys = app.model.peek().prefs.hotkeys.clone();
     let live = app.clone();
     let source = app.clone();
@@ -262,12 +263,18 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 } else {
                     canvas::overlay_list_row()
                 };
-                Some((height, 10))
+                let shown = canvas::overlay_shown(32, view.get());
+                let shown = if picker.is_history() {
+                    (shown / 2).max(1)
+                } else {
+                    shown
+                };
+                Some((height, shown))
             },
             move |(entry, preview), selected| {
                 pick(selected, preview.clone(), picker.detail(*entry))
             },
             move || app.jump(),
         )
-        .build(picker.open, cols, &keys)
+        .build(picker.open, viewport, &keys)
 }

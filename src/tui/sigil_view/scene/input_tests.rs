@@ -1,3 +1,4 @@
+use crate::tui::{Fact, Intent};
 use crate::tui::sigil_view::{app::App, profile::info, view::root};
 use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
@@ -141,11 +142,11 @@ fn splash_hides_usage_meters_until_the_first_prompt_even_with_a_known_window() {
         let app = App::new(info(), workspace.path().to_owned(), commands);
         app.resize(110, 30);
         app.splash.set(true);
-        app.update(crate::tui::Msg::Settings(crate::tui::Snapshot {
+        app.update(crate::tui::Msg::Fact(Fact::Settings(crate::tui::Snapshot {
             model: "profile".to_string(),
             context_window: Some(200_000),
             ..crate::tui::Snapshot::default()
-        }));
+        })));
         let fresh = render(&app, 110, 30);
         assert!(
             !fresh.contains("ctx") && !fresh.contains("cache"),
@@ -158,7 +159,7 @@ fn splash_hides_usage_meters_until_the_first_prompt_even_with_a_known_window() {
             started.contains("ctx") && started.contains("cache"),
             "{started}"
         );
-        app.update(crate::tui::Msg::Reset);
+        app.update(crate::tui::Msg::Intent(Intent::Reset));
         let reset = render(&app, 110, 30);
         assert!(
             !reset.contains("ctx") && !reset.contains("cache"),

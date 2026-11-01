@@ -4,6 +4,7 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 
 use super::{Msg, Reader, add};
+use crate::tui::Fact;
 use crate::catalog::Model;
 use crate::endpoint::{self, State};
 use crate::provider::Client;
@@ -174,7 +175,7 @@ impl Board {
         for row in &self.rows[top..] {
             add(&mut sent, row.clone());
         }
-        Msg::Models {
+        Msg::Fact(Fact::Models {
             request,
             pinned,
             recent: head - pinned,
@@ -184,7 +185,7 @@ impl Board {
             causes: self.causes.clone(),
             loading,
             error: errors.join("; "),
-        }
+        })
     }
 
     fn discovered(&mut self, name: String, mut models: Vec<Model>) {
@@ -273,7 +274,7 @@ impl Reader {
 mod tests {
     use super::Board;
     use crate::catalog::{Cost, Model};
-    use crate::tui::Msg;
+    use crate::tui::{Fact, Msg};
 
     fn model(id: &str, cost: Cost) -> Model {
         let mut model = Model::named(id);
@@ -295,7 +296,7 @@ mod tests {
             ],
         );
         let msg = board.snapshot(2, None, false, &[]);
-        let Msg::Models { rows, .. } = msg else {
+        let Msg::Fact(Fact::Models { rows, .. }) = msg else {
             panic!("models message");
         };
         let ids: Vec<&str> = rows.iter().map(|row| row.model.as_str()).collect();

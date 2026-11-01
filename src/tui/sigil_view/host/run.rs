@@ -1,8 +1,10 @@
 use std::cell::Cell;
 use std::time::Duration;
 
+use crate::tui::{Fact, Intent};
 use sigil::reactive::defer;
 use sigil::tasks::on_message_or_close;
+use sigil::terminal::Activity;
 
 use tokio::task::JoinHandle;
 
@@ -37,6 +39,7 @@ pub(crate) fn run(
         session: String::new(),
         busy: None,
         asking: false,
+        activity: None,
         select: false,
     }));
     let inline = info.inline;
@@ -60,9 +63,9 @@ pub(crate) fn run(
             sigil::run(config, move || {
                 let app = App::new(info.clone(), workspace.clone(), commands.clone());
                 if let Err(error) = calibrate(&mut std::io::stdout()) {
-                    app.update(Msg::System(format!(
+                    app.update(Msg::Fact(Fact::System(format!(
                         "Could not measure terminal text widths: {error}"
-                    )));
+                    ))));
                 }
                 if let Ok((cols, rows)) = crossterm::terminal::size() {
                     app.resize(cols, rows);
@@ -212,6 +215,7 @@ struct Pump {
     session: String,
     busy: Option<bool>,
     asking: bool,
+    activity: Option<Activity>,
     select: bool,
 }
 
@@ -237,6 +241,7 @@ impl Pump {
         let notify = app.model.get().prefs.notify;
         self.track_busy(&app, busy, notify);
         self.track_asking(&app, notify);
+        self.track_activity(&app, busy);
         if !events.is_empty() {
             app.refresh();
         }
@@ -275,6 +280,23 @@ impl Pump {
                 app.place()
             ))));
             self.asking = true;
+        }
+    }
+
+    fn track_activity(&mut self, app: &App, busy: bool) {
+        let activity = if app.approval.peek().is_some() {
+            Activity::Blocked
+        } else if busy {
+            Activity::Working
+        } else {
+            Activity::Idle
+        };
+        if self.activity != Some(activity) {
+            drop(sigil::terminal::activity(
+                crate::herdr::AGENT,
+                Some(activity),
+            ));
+            self.activity = Some(activity);
         }
     }
 

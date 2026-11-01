@@ -5,7 +5,7 @@ use super::super::app::App;
 use super::{State, busy_info, frame_with, screens};
 use crate::catalog::Model;
 use crate::recent::ModelId;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 fn session(id: &str, parent: Option<&str>) -> crate::session::SessionInfo {
     crate::session::SessionInfo {
@@ -28,11 +28,11 @@ fn filtering_sessions_keeps_the_cursor_on_the_visible_result() {
         34,
         |app| {
             app.open_sessions(false);
-            app.update(Msg::Sessions(Ok(vec![
+            app.update(Msg::Fact(Fact::Sessions(Ok(vec![
                 (session("first", None), true),
                 (session("second", None), true),
                 (session("third", None), true),
-            ])));
+            ]))));
             app.sessions.list.select(2);
         },
         &[
@@ -49,10 +49,10 @@ fn filtering_sessions_keeps_the_cursor_on_the_visible_result() {
 fn a_session_delete_confirmation_is_visible_with_existing_rows() {
     let screen = picker(80, |app| {
         app.open_sessions(false);
-        app.update(Msg::Sessions(Ok(vec![
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![
             (session("first", None), true),
             (session("second", None), true),
-        ])));
+        ]))));
         app.delete_session();
     });
     let notice = format!(
@@ -78,7 +78,7 @@ fn a_changed_target_and_a_reopened_picker_need_a_new_delete_confirmation() {
         ];
         app.open_sessions(false);
         assert!(matches!(sent.try_recv(), Ok(Cmd::ListSessions)));
-        app.update(Msg::Sessions(Ok(rows.clone())));
+        app.update(Msg::Fact(Fact::Sessions(Ok(rows.clone()))));
         app.delete_session();
         app.overlay_move(1);
         app.delete_session();
@@ -89,7 +89,7 @@ fn a_changed_target_and_a_reopened_picker_need_a_new_delete_confirmation() {
         app.overlay_close();
         app.open_sessions(false);
         assert!(matches!(sent.try_recv(), Ok(Cmd::ListSessions)));
-        app.update(Msg::Sessions(Ok(rows)));
+        app.update(Msg::Fact(Fact::Sessions(Ok(rows))));
         app.overlay_move(1);
         app.delete_session();
         assert!(
@@ -106,10 +106,10 @@ fn cycling_to_related_sessions_selects_the_current_branch() {
     let _screen = picker(100, |app| {
         app.open_sessions(false);
         let current = app.model.peek().session.clone();
-        app.update(Msg::Sessions(Ok(vec![
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![
             (session("parent", None), true),
             (session(&current, Some("parent")), true),
-        ])));
+        ]))));
         app.sessions.scope();
         app.sessions.scope();
         assert_eq!(app.sessions.list.cursor.peek(), 1);
@@ -130,7 +130,7 @@ fn open(app: &App, rows: &[(&str, Option<u64>)], pinned: usize) {
     app.replace("/model".to_owned());
     app.submit();
     let selection = |id: &str| ModelId::new("openrouter", id);
-    app.update(Msg::Models {
+    app.update(Msg::Fact(Fact::Models {
         request: 1,
         rows: rows.iter().map(|(id, _)| selection(id)).collect(),
         facts: rows
@@ -147,7 +147,7 @@ fn open(app: &App, rows: &[(&str, Option<u64>)], pinned: usize) {
         recent: 0,
         loading: false,
         error: String::new(),
-    });
+    }));
 }
 
 fn picker(cols: u16, setup: impl FnOnce(&App)) -> String {
@@ -293,7 +293,7 @@ fn every_resume_row_keeps_its_id_project_and_model_under_a_long_title() {
         long.model = Some("glm-5.3-flash".to_string());
         let mut short = session("2b23f73d8f780000", None);
         short.preview = "say hi".to_string();
-        app.update(Msg::Sessions(Ok(vec![(long, true), (short, true)])));
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(long, true), (short, true)]))));
     });
     let screen = lines.join("\n");
     let first = super::find(&lines, "Add sub").expect("first session row");
@@ -305,7 +305,7 @@ fn every_resume_row_keeps_its_id_project_and_model_under_a_long_title() {
 fn the_session_filter_is_one_labelled_row_above_the_list() {
     let lines = frame_with(busy_info(), 120, 30, State::Idle, |app| {
         app.open_sessions(false);
-        app.update(Msg::Sessions(Ok(vec![(session("first", None), true)])));
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(session("first", None), true)]))));
     });
     let screen = lines.join("\n");
     let field = super::find(&lines, super::super::ui::FILTER_HINT).expect(&screen);
@@ -354,9 +354,9 @@ fn alt_hints_name_the_option_key_on_macos() {
 #[test]
 fn resume_lists_the_current_session_and_marks_it() {
     let screen = picker(120, |app| {
-        app.update(Msg::Session("current".to_owned()));
+        app.update(Msg::Fact(Fact::Session("current".to_owned())));
         app.open_sessions(false);
-        app.update(Msg::Sessions(Ok(vec![(session("current", None), true)])));
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(session("current", None), true)]))));
     });
     assert!(screen.contains("Session current"), "{screen}");
     assert!(screen.contains("(current)"), "{screen}");

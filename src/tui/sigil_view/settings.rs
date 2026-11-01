@@ -4,13 +4,13 @@ pub(super) use super::canvas;
 use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, container};
 
 fn dialog_body(children: impl Fn() -> Vec<NodeBuilder> + 'static) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(canvas::overlay_gap()),
-        )
-        .children_reactive(children)
+    let mut layout = LayoutStyle::flex_column()
+        .fill_width()
+        .gap(canvas::overlay_gap());
+    if canvas::is_window() {
+        layout = layout.grow(1.0).fill_height().min_size(0.0, 0.0);
+    }
+    container().layout(layout).children_reactive(children)
 }
 
 mod auth;

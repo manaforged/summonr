@@ -1,3 +1,4 @@
+use crate::tui::{Fact, Intent};
 use super::*;
 
 impl App {
@@ -36,7 +37,7 @@ impl App {
                     session: prompt.session.id.clone(),
                     turn: prompt.turn,
                 }));
-                self.update(Msg::Busy(Some(Activity::Branch)));
+                self.update(Msg::Fact(Fact::Busy(Some(Activity::Branch))));
                 self.search.open.set(false);
                 self.refresh();
                 return;

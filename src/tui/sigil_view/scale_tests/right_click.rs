@@ -12,7 +12,7 @@ use super::super::app::App;
 use super::super::pane::Pane;
 use super::super::view::root;
 use super::busy_info;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 fn right(phase: PointerPhase, x: f32, y: f32) -> ShellEvent {
     ShellEvent::Pointer(PointerEvent::new(PointerEventInit {
@@ -37,7 +37,7 @@ fn a_right_click_on_a_file_row_opens_its_menu_on_screen() {
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(120, 30);
-        app.update(Msg::Files(vec!["README.md".to_owned()]));
+        app.update(Msg::Fact(Fact::Files(vec!["README.md".to_owned()])));
         app.toggle_pane(Pane::Files);
         app.refresh();
         let mut host = Host::cells();

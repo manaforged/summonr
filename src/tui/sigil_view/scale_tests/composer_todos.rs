@@ -2,7 +2,7 @@ use super::super::app::App;
 use super::{State, busy_info, composer_top, find, frame_with};
 use crate::durable::work::{WorkKind, WorkPhase, WorkProgress};
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 fn progress(ledger: Vec<String>, todos: Vec<crate::tools::Todo>) -> WorkProgress {
     WorkProgress {
@@ -36,9 +36,9 @@ fn work_sections_and_busy_status_have_a_blank_row_between_them() {
         for (tasks, agents) in [(true, false), (false, true), (true, true)] {
             let lines = frame_with(busy_info(), cols, rows, State::Busy, |app| {
                 if tasks {
-                    app.update(Msg::Event(todo(
+                    app.update(Msg::Fact(Fact::Event(todo(
                         r#"{"items":[{"text":"Map decode owners","status":"active"}]}"#,
-                    )));
+                    ))));
                 }
                 if agents {
                     super::children::task_call(app);
@@ -78,7 +78,7 @@ fn work_sections_and_busy_status_have_a_blank_row_between_them() {
 #[test]
 fn a_work_plan_stays_above_the_composer_without_opening_a_pane() {
     let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
-        app.update(Msg::Event(Event::Work {
+        app.update(Msg::Fact(Fact::Event(Event::Work {
             progress: progress(
                 vec![
                     "[/] Keep tasks inline".to_owned(),
@@ -86,7 +86,7 @@ fn a_work_plan_stays_above_the_composer_without_opening_a_pane() {
                 ],
                 Vec::new(),
             ),
-        }));
+        })));
         assert_eq!(app.layout.peek().secondary, None);
     });
     let shown = lines.join("\n");
@@ -99,9 +99,9 @@ fn a_work_plan_stays_above_the_composer_without_opening_a_pane() {
 #[test]
 fn the_task_shortcut_expands_and_scrolls_the_inline_list() {
     let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
-        app.update(Msg::Event(todo(
+        app.update(Msg::Fact(Fact::Event(todo(
             r#"{"items":[{"text":"First task","status":"done"},{"text":"Second task","status":"active"},{"text":"Third task"},{"text":"Fourth task"},{"text":"Fifth task"},{"text":"Sixth task"},{"text":"Seventh task"},{"text":"Last task"}]}"#,
-        )));
+        ))));
         assert!(app.route_hotkey('t'));
         assert!(app.scroll_todos(2));
         assert_eq!(app.layout.peek().secondary, None);
@@ -116,12 +116,12 @@ fn the_task_shortcut_expands_and_scrolls_the_inline_list() {
 #[test]
 fn child_tasks_use_the_same_inline_strip() {
     let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
-        app.update(Msg::Event(Event::Child {
+        app.update(Msg::Fact(Fact::Event(Event::Child {
             id: "01a104ac000000000000000000001111".to_owned(),
             event: Box::new(todo(
                 r#"{"items":[{"text":"Check child result","status":"active"},{"text":"Report findings"}]}"#,
             )),
-        }));
+        })));
         assert!(app.route_hotkey('t'));
         assert_eq!(app.layout.peek().secondary, None);
     });
@@ -142,7 +142,7 @@ fn the_task_shortcut_still_opens_the_ledger_without_active_tasks() {
         r#"{"items":[{"text":"All finished","status":"done"}]}"#,
     ] {
         let lines = frame_with(busy_info(), 160, 40, State::Idle, |app: &App| {
-            app.update(Msg::Event(todo(arguments)));
+            app.update(Msg::Fact(Fact::Event(todo(arguments))));
             assert_eq!(app.layout.peek().secondary, None);
             assert!(app.route_hotkey('t'));
             assert_eq!(
@@ -158,18 +158,18 @@ fn the_task_shortcut_still_opens_the_ledger_without_active_tasks() {
 fn todo_rows_of_a_child_leave_the_strip_when_the_child_finishes() {
     let child = "01a104ac000000000000000000001111".to_owned();
     let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
-        app.update(Msg::Event(Event::Child {
+        app.update(Msg::Fact(Fact::Event(Event::Child {
             id: child.clone(),
             event: Box::new(todo(
                 r#"{"items":[{"text":"Check child result","status":"active"}]}"#,
             )),
-        }));
-        app.update(Msg::Event(Event::Child {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::Child {
             id: child.clone(),
             event: Box::new(Event::Assistant {
                 text: "checked".to_owned(),
             }),
-        }));
+        })));
     });
     let shown = lines.join("\n");
     assert!(!shown.contains("Check child result"), "{shown}");
@@ -178,14 +178,14 @@ fn todo_rows_of_a_child_leave_the_strip_when_the_child_finishes() {
 #[test]
 fn todo_list_from_work_survives_a_parent_tool_call() {
     let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
-        app.update(Msg::Event(todo(
+        app.update(Msg::Fact(Fact::Event(todo(
             r#"{"items":[{"text":"Keep me","status":"active"}]}"#,
-        )));
-        app.update(Msg::Event(Event::ToolCall {
+        ))));
+        app.update(Msg::Fact(Fact::Event(Event::ToolCall {
             id: "t2".to_owned(),
             name: "todo".to_owned(),
             arguments: r#"{"items":[]}"#.to_owned(),
-        }));
+        })));
     });
     let shown = lines.join("\n");
     assert!(shown.contains("Keep me"), "{shown}");
@@ -195,18 +195,18 @@ fn todo_list_from_work_survives_a_parent_tool_call() {
 fn todo_rows_of_a_finished_child_stay_gone_after_a_late_update() {
     let child = "01a104ac000000000000000000002222".to_owned();
     let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
-        app.update(Msg::Event(Event::Child {
+        app.update(Msg::Fact(Fact::Event(Event::Child {
             id: child.clone(),
             event: Box::new(Event::Assistant {
                 text: "checked".to_owned(),
             }),
-        }));
-        app.update(Msg::Event(Event::Child {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::Child {
             id: child.clone(),
             event: Box::new(todo(
                 r#"{"items":[{"text":"Late child row","status":"active"}]}"#,
             )),
-        }));
+        })));
     });
     let shown = lines.join("\n");
     assert!(!shown.contains("Late child row"), "{shown}");
@@ -224,7 +224,7 @@ fn a_numbered_prompt_does_not_open_the_task_strip() {
             Vec::new(),
         );
         single.kind = WorkKind::Single;
-        app.update(Msg::Event(Event::Work { progress: single }));
+        app.update(Msg::Fact(Fact::Event(Event::Work { progress: single })));
     });
     let shown = lines.join("\n");
     assert!(find(&lines, "Tasks").is_none(), "{shown}");
@@ -249,18 +249,18 @@ fn task_progress_updates_the_mounted_counter_and_clears_finished_work() {
                 .collect(),
         ),
     };
-    let one = |app: &App| app.update(Msg::Event(tasks(1)));
-    let five = |app: &App| app.update(Msg::Event(tasks(5)));
-    let complete = |app: &App| app.update(Msg::Event(tasks(6)));
-    let reset = |app: &App| app.update(Msg::Reset);
+    let one = |app: &App| app.update(Msg::Fact(Fact::Event(tasks(1))));
+    let five = |app: &App| app.update(Msg::Fact(Fact::Event(tasks(5))));
+    let complete = |app: &App| app.update(Msg::Fact(Fact::Event(tasks(6))));
+    let reset = |app: &App| app.update(Msg::Intent(Intent::Reset));
     let restart = |app: &App| {
-        app.update(Msg::Session("another-session".to_owned()));
-        app.update(Msg::Event(tasks(0)));
+        app.update(Msg::Fact(Fact::Session("another-session".to_owned())));
+        app.update(Msg::Fact(Fact::Event(tasks(0))));
     };
     let frames = super::screens(
         100,
         30,
-        |app| app.update(Msg::Event(tasks(0))),
+        |app| app.update(Msg::Fact(Fact::Event(tasks(0)))),
         &[&one, &five, &reset, &restart, &complete],
     );
     for (frame, count) in frames.iter().zip(["Tasks 0/6", "Tasks 1/6", "Tasks 5/6"]) {

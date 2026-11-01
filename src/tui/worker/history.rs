@@ -8,15 +8,16 @@ use crate::session::user_text;
 use crate::tools::Event;
 
 use super::{Msg, Worker};
+use crate::tui::{Fact, Intent};
 
 impl Worker {
     pub(super) fn replay(&self) {
         let tokens = Some(self.loop_.unreported_tokens());
         replay_transcript(self.loop_.session_path(), None, tokens, &self.ui);
         if let Some((objective, _)) = self.loop_.active_goal().ok().flatten() {
-            drop(self.ui.send(Msg::System(format!(
+            drop(self.ui.send(Msg::Fact(Fact::System(format!(
                 "unfinished goal: {objective} · /goal with the same text continues it · /goal clear ends it"
-            ))));
+            )))));
         }
     }
 }
@@ -29,11 +30,11 @@ pub(super) fn replay_transcript(
 ) {
     journal(path, ui);
     if let Some(tokens) = tokens {
-        drop(ui.send(Msg::Event(Event::Unreported { tokens })));
+        drop(ui.send(Msg::Fact(Fact::Event(Event::Unreported { tokens }))));
     }
     if let Some(session) = session {
-        drop(ui.send(Msg::Session(session)));
-        drop(ui.send(Msg::Replayed));
+        drop(ui.send(Msg::Fact(Fact::Session(session))));
+        drop(ui.send(Msg::Fact(Fact::Replayed)));
     }
 }
 
@@ -41,7 +42,7 @@ fn journal(path: &Path, ui: &UnboundedSender<Msg>) {
     let lines = match log::records(path, 0).collect::<std::io::Result<Vec<Line>>>() {
         Ok(lines) => lines,
         Err(error) => {
-            drop(ui.send(Msg::System(format!("cannot load conversation: {error}"))));
+            drop(ui.send(Msg::Fact(Fact::System(format!("cannot load conversation: {error}")))));
             return;
         }
     };
@@ -49,12 +50,12 @@ fn journal(path: &Path, ui: &UnboundedSender<Msg>) {
         restore_line(line, ui);
     }
     if let Some(work) = Work::at(path) {
-        drop(ui.send(Msg::Event(Event::Work {
+        drop(ui.send(Msg::Fact(Fact::Event(Event::Work {
             progress: crate::WorkProgress {
                 reason: None,
                 ..work.progress()
             },
-        })));
+        }))));
     }
 }
 
@@ -69,13 +70,13 @@ fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
         } => {
             let text = user_text(text, source.as_deref()).to_string();
             let message = if *start || source.is_some() {
-                Msg::User(text)
+                Msg::Intent(Intent::User(text))
             } else {
-                Msg::System(text)
+                Msg::Fact(Fact::System(text))
             };
             drop(ui.send(message));
             for image in images {
-                drop(ui.send(Msg::Image(image.clone())));
+                drop(ui.send(Msg::Intent(Intent::Image(image.clone()))));
             }
             return;
         }
@@ -83,15 +84,15 @@ fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
             text,
             receipt: None,
         } => {
-            drop(ui.send(Msg::Receipt(text.clone())));
+            drop(ui.send(Msg::Fact(Fact::Receipt(text.clone()))));
         }
-        Line::Clear => drop(ui.send(Msg::Cleared)),
+        Line::Clear => drop(ui.send(Msg::Fact(Fact::Cleared))),
         _ => {}
     }
     for event in line.events() {
-        drop(ui.send(Msg::Event(event)));
+        drop(ui.send(Msg::Fact(Fact::Event(event))));
     }
     if matches!(line, Line::Interrupted { .. }) {
-        drop(ui.send(Msg::System("Partial answer · interrupted".to_string())));
+        drop(ui.send(Msg::Fact(Fact::System("Partial answer · interrupted".to_string()))));
     }
 }

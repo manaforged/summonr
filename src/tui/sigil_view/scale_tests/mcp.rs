@@ -1,3 +1,4 @@
+use crate::tui::{Fact};
 use super::*;
 use crate::mcp::{McpState, McpTransport, ServerStatus};
 use crate::supervise::ServerKind;
@@ -21,7 +22,7 @@ fn the_mcp_pane_shows_each_server_with_its_state_size_and_last_error() {
     let shown = frame_with(busy_info(), 160, 40, State::Idle, |app| {
         app.replace("/mcp".to_owned());
         app.submit();
-        app.update(Msg::Mcp(vec![
+        app.update(Msg::Fact(Fact::Mcp(vec![
             server("github", McpState::Live, 2048, None),
             server(
                 "broken",
@@ -29,7 +30,7 @@ fn the_mcp_pane_shows_each_server_with_its_state_size_and_last_error() {
                 0,
                 Some("cannot start `broken-mcp`"),
             ),
-        ]));
+        ])));
     })
     .join("\n");
     for needle in [
@@ -79,7 +80,7 @@ fn a_refresh_leaves_the_start_screen_once_the_transcript_has_an_entry() {
         app.resize(160, 40);
         app.refresh();
         assert!(app.splash.peek());
-        app.update(Msg::System("checked the workspace".to_owned()));
+        app.update(Msg::Fact(Fact::System("checked the workspace".to_owned())));
         assert!(app.splash.peek(), "the update itself left the start screen");
         app.refresh();
         assert!(!app.splash.peek());

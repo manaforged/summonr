@@ -9,7 +9,7 @@ use crate::catalog::{Cost, Model};
 use crate::endpoint::State as Reach;
 use crate::provider::Price;
 use crate::recent::ModelId;
-use crate::tui::{Cmd, Msg};
+use crate::tui::{Cmd, Fact, Intent, Msg};
 
 fn model(id: &str, edit: impl FnOnce(&mut Model)) -> Model {
     let mut model = Model::named(id);
@@ -18,7 +18,7 @@ fn model(id: &str, edit: impl FnOnce(&mut Model)) -> Model {
 }
 
 fn listed(app: &App, rows: Vec<(ModelId, Model)>, groups: &[(&str, Reach)]) {
-    app.update(Msg::Models {
+    app.update(Msg::Fact(Fact::Models {
         request: app.picker.request.get(),
         rows: rows
             .iter()
@@ -34,7 +34,7 @@ fn listed(app: &App, rows: Vec<(ModelId, Model)>, groups: &[(&str, Reach)]) {
         recent: 0,
         loading: false,
         error: String::new(),
-    });
+    }));
 }
 
 fn open(app: &App, rows: Vec<(ModelId, Model)>, groups: &[(&str, Reach)]) {
@@ -62,19 +62,19 @@ fn claude_code_auth_in_the_model_picker_logs_in_and_selects_the_requested_model(
             app.commit_model_edit();
             assert!(app.auth.open.peek());
             assert!(matches!(app.auth.step.peek(), Login::SignIn { .. }));
-            app.update(Msg::LoginStep {
+            app.update(Msg::Fact(Fact::LoginStep {
                 text: String::new(),
                 url: "https://auth.example.test/login".into(),
                 code: String::new(),
                 asking: true,
-            });
+            }));
             app.replace_auth_key("test-code".into());
             app.commit_auth();
-            app.update(Msg::LoginDone {
+            app.update(Msg::Fact(Fact::LoginDone {
                 name: "claude".into(),
                 result: Ok("Signed in".into()),
                 rejected: false,
-            });
+            }));
             assert!(!app.auth.open.peek());
         },
     );

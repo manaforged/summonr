@@ -8,7 +8,7 @@ use super::replay::ReplayState;
 use super::{Factory, Live, Open, Status, seen, status};
 use crate::provider::Client;
 use crate::runtime::Loop;
-use crate::tui::{Cmd, Info, Msg, Ui, worker};
+use crate::tui::{Cmd, Fact, Info, Intent, Msg, Ui, worker};
 use crate::workflow::Workflow;
 
 pub(in crate::tui) struct Started {
@@ -111,7 +111,7 @@ impl Hub {
     }
 
     fn message(&mut self, key: u64, msg: Msg) {
-        if matches!(msg, Msg::Secret(_) | Msg::OpenLogin(_)) {
+        if matches!(msg, Msg::Fact(Fact::Secret(_)) | Msg::Intent(Intent::OpenLogin(_))) {
             drop(self.app.send(msg));
             return;
         }
@@ -120,17 +120,17 @@ impl Hub {
             return;
         };
         let changed = session.observe(&msg, active);
-        let finished = matches!(msg, Msg::Busy(None));
+        let finished = matches!(msg, Msg::Fact(Fact::Busy(None)));
         if !active {
             session.stale |= session.replay.working();
-        } else if matches!(msg, Msg::Replayed) {
+        } else if matches!(msg, Msg::Fact(Fact::Replayed)) {
             session.replay.resend(&self.app);
         } else {
             drop(self.app.send(msg));
         }
         if active && finished && session.stale {
             session.stale = false;
-            drop(self.app.send(Msg::Reset));
+            drop(self.app.send(Msg::Intent(Intent::Reset)));
             drop(session.cmd.send(Cmd::Replay));
         }
         if changed {
@@ -149,12 +149,12 @@ impl Hub {
         let made = tokio::task::block_in_place(|| factory(open, Ui(tx.clone())));
         match made {
             Ok((loop_, workflow)) => {
-                drop(self.app.send(Msg::Reset));
-                drop(self.app.send(Msg::Busy(None)));
+                drop(self.app.send(Msg::Intent(Intent::Reset)));
+                drop(self.app.send(Msg::Fact(Fact::Busy(None))));
                 self.active = self.spawn(loop_, (tx, rx), workflow);
                 self.publish();
             }
-            Err(error) => drop(self.app.send(Msg::Failed(error.to_string()))),
+            Err(error) => drop(self.app.send(Msg::Fact(Fact::Failed(error.to_string())))),
         }
     }
 
@@ -167,7 +167,7 @@ impl Hub {
         };
         self.active = key;
         session.status = seen(session.status);
-        drop(self.app.send(Msg::Reset));
+        drop(self.app.send(Msg::Intent(Intent::Reset)));
         drop(session.cmd.send(Cmd::Replay));
         self.publish();
     }
@@ -224,7 +224,7 @@ impl Hub {
                 active: *key == self.active,
             })
             .collect();
-        drop(self.app.send(Msg::Live(live)));
+        drop(self.app.send(Msg::Fact(Fact::Live(live))));
     }
 
     async fn quit(self) {
@@ -251,19 +251,19 @@ impl Session {
         let settled = if active { seen(next) } else { next };
         let mut changed = self.status != settled;
         self.status = settled;
-        if let Msg::User(text) = msg
+        if let Msg::Intent(Intent::User(text)) = msg
             && self.title.is_none()
         {
             self.title = Some(text.clone());
             changed = true;
         }
-        if let Msg::Named(name) = msg
+        if let Msg::Fact(Fact::Named(name)) = msg
             && self.title.as_ref() != Some(name)
         {
             self.title = Some(name.clone());
             changed = true;
         }
-        if let Msg::Session(id) = msg
+        if let Msg::Fact(Fact::Session(id)) = msg
             && self.id != *id
         {
             self.id = id.clone();

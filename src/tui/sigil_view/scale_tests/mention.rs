@@ -3,7 +3,7 @@ use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
 use super::{State, busy_info, frame_with};
-use crate::tui::{Cmd, Msg};
+use crate::tui::{Cmd, Fact, Intent, Msg};
 
 fn peer() -> crate::mail::Agent {
     serde_json::from_value(serde_json::json!({
@@ -17,7 +17,7 @@ fn peer() -> crate::mail::Agent {
 #[test]
 fn typing_at_offers_peer_sessions_by_name() {
     let lines = frame_with(busy_info(), 100, 24, State::Idle, |app| {
-        app.update(Msg::Peers(vec![peer()]));
+        app.update(Msg::Fact(Fact::Peers(vec![peer()])));
         app.replace("@summ".to_string());
     });
     assert!(
@@ -35,7 +35,7 @@ fn a_prompt_that_names_a_peer_is_sent_to_it() {
         std::fs::write(workspace.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        app.update(Msg::Peers(vec![peer()]));
+        app.update(Msg::Fact(Fact::Peers(vec![peer()])));
         app.replace("@summonr-2, the schema landed".to_string());
         app.submit();
         let mut routed = None;

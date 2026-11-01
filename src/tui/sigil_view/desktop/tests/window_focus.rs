@@ -5,7 +5,7 @@ use super::super::Pane;
 use super::harness::{command, drive, graded, named, settings, typed, unconfigured};
 use super::in_window;
 use crate::mcp::{Field, FieldKind, Form};
-use crate::tui::{Msg, Snapshot};
+use crate::tui::{Fact, Intent, Msg, Snapshot};
 
 #[test]
 fn typing_replaces_the_desktop_composer_selection() {
@@ -51,7 +51,7 @@ fn keyboard_folder_expansion_updates_the_files_pane() {
     }
     let seen = drive(
         |app| {
-            app.update(Msg::Files(vec!["src/lib.rs".to_owned()]));
+            app.update(Msg::Fact(Fact::Files(vec!["src/lib.rs".to_owned()])));
             app.toggle_pane(Pane::Files);
             app.focus_pane(true);
         },
@@ -287,11 +287,11 @@ fn reverting_a_file_and_discarding_a_worktree_each_take_two_clicks() {
 fn switching_sessions_drops_the_previous_review_marks() {
     let seen = drive(
         |app| {
-            app.update(crate::tui::Msg::Review {
+            app.update(crate::tui::Msg::Fact(Fact::Review {
                 root: None,
                 result: Ok(crate::hunks::Marks::default()),
             });
-            app.update(crate::tui::Msg::Reset);
+            app.update(crate::tui::Msg::Intent(Intent::Reset));
         },
         Vec::new(),
         |app| app.model.peek().marks.is_none(),

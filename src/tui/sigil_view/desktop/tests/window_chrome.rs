@@ -4,7 +4,7 @@ use super::super::{Pane, rail};
 use super::harness::{changed, drive};
 use super::in_window;
 use crate::tui::hub::{Live, Status};
-use crate::tui::{Cmd, Msg};
+use crate::tui::{Cmd, Fact, Intent, Msg};
 
 #[test]
 fn the_rail_offers_its_panes_and_new_sessions_as_named_buttons() {
@@ -44,11 +44,11 @@ fn live_sessions_show_their_titles_and_tell_twins_apart() {
     };
     let seen = drive(
         |app| {
-            app.update(Msg::Live(vec![
+            app.update(Msg::Fact(Fact::Live(vec![
                 live("aaaaaaaaaaaaaaaa", "fix tests"),
                 live("bbbbbbbbbbbbbbbb", "fix tests"),
                 live("cccccccccccccccc", ""),
-            ]));
+            ])));
         },
         Vec::new(),
         |_| (),
@@ -85,12 +85,12 @@ fn the_changes_pane_stays_open_and_can_scope_to_this_session() {
     let seen = drive(
         |app| {
             app.toggle_pane(Pane::Diff);
-            app.update(Msg::Diff(changed("HEAD", &[])));
+            app.update(Msg::Fact(Fact::Diff(changed("HEAD", &[]))));
         },
         Vec::new(),
         |app| {
             app.toggle_session();
-            app.update(Msg::Diff(changed("HEAD", &[])));
+            app.update(Msg::Fact(Fact::Diff(changed("HEAD", &[]))));
             app.layout.peek().secondary
         },
     );
@@ -152,7 +152,7 @@ fn the_picker_wheel_scrolls_without_moving_the_selection() {
             app.begin_model_edit();
             let selection = |id: String| crate::recent::ModelId::new("openrouter", &id);
             let names: Vec<String> = (0..40).map(|n| format!("model-{n}")).collect();
-            app.update(Msg::Models {
+            app.update(Msg::Fact(Fact::Models {
                 request: 1,
                 rows: names.iter().cloned().map(selection).collect(),
                 facts: names
@@ -165,7 +165,7 @@ fn the_picker_wheel_scrolls_without_moving_the_selection() {
                 recent: 0,
                 loading: false,
                 error: String::new(),
-            });
+            }));
         },
         Vec::new(),
         |app| {

@@ -8,7 +8,7 @@ use crate::display::ellipsize;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let secret = app.secret;
-    let cols = app.viewport.peek().0;
+    let viewport = app.viewport.peek();
     let hints = Hints::new()
         .key(Key::Enter, "submit")
         .key(Key::Esc, "cancel")
@@ -41,5 +41,5 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                     ]
                 }),
         )
-        .build(app.secret_dialog, cols, &app.model.peek().prefs.hotkeys)
+        .build(app.secret_dialog, viewport, &app.model.peek().prefs.hotkeys)
 }

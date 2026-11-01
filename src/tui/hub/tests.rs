@@ -1,13 +1,13 @@
 use super::{Status, seen, status};
 use crate::tools::Event;
-use crate::tui::{Activity, Msg};
+use crate::tui::{Activity, Fact, Intent, Msg};
 
 fn approval(detail: Option<&str>) -> Msg {
-    Msg::Event(Event::Approval {
+    Msg::Fact(Fact::Event(Event::Approval {
         detail: detail.map(str::to_string),
         persist: false,
         dialog: 1,
-    })
+    }))
 }
 
 #[test]
@@ -15,7 +15,7 @@ fn session_status_follows_the_turn_and_its_questions() {
     let cases = [
         (
             Status::Idle,
-            Msg::Busy(Some(Activity::Turn)),
+            Msg::Fact(Fact::Busy(Some(Activity::Turn))),
             Status::Working,
         ),
         (
@@ -24,28 +24,28 @@ fn session_status_follows_the_turn_and_its_questions() {
             Status::NeedsYou,
         ),
         (Status::NeedsYou, approval(None), Status::Working),
-        (Status::NeedsYou, Msg::Busy(None), Status::Review),
-        (Status::Working, Msg::Busy(None), Status::Review),
-        (Status::Idle, Msg::Busy(None), Status::Idle),
+        (Status::NeedsYou, Msg::Fact(Fact::Busy(None)), Status::Review),
+        (Status::Working, Msg::Fact(Fact::Busy(None)), Status::Review),
+        (Status::Idle, Msg::Fact(Fact::Busy(None)), Status::Idle),
         (
             Status::Working,
-            Msg::Failed("provider down".into()),
+            Msg::Fact(Fact::Failed("provider down".into())),
             Status::Failed,
         ),
         (
             Status::Idle,
-            Msg::Failed("no such session".into()),
+            Msg::Fact(Fact::Failed("no such session".into())),
             Status::Idle,
         ),
-        (Status::Failed, Msg::Busy(None), Status::Failed),
+        (Status::Failed, Msg::Fact(Fact::Busy(None)), Status::Failed),
         (Status::Idle, approval(None), Status::Idle),
-        (Status::Review, Msg::System("note".into()), Status::Review),
+        (Status::Review, Msg::Fact(Fact::System("note".into())), Status::Review),
         (
             Status::Working,
-            Msg::Event(Event::Elicit {
+            Msg::Fact(Fact::Event(Event::Elicit {
                 form: None,
                 dialog: 1,
-            }),
+            })),
             Status::Working,
         ),
     ];
@@ -65,43 +65,43 @@ fn viewing_a_session_clears_finished_states_only() {
 #[test]
 fn switching_back_restores_the_turn_then_its_open_question() {
     let mut replay = super::replay::ReplayState::default();
-    replay.record(&Msg::Busy(Some(Activity::Turn)), false);
+    replay.record(&Msg::Fact(Fact::Busy(Some(Activity::Turn))), false);
     replay.record(&approval(Some("git push --force")), false);
     let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
     replay.resend(&app);
     let first = inbox.try_recv().unwrap();
-    assert!(matches!(first, Msg::Busy(Some(Activity::Turn))));
+    assert!(matches!(first, Msg::Fact(Fact::Busy(Some(Activity::Turn)))));
     let mut last = None;
     while let Ok(msg) = inbox.try_recv() {
         last = Some(msg);
     }
     assert!(matches!(
         last,
-        Some(Msg::Event(Event::Approval { detail: Some(ref detail), .. })) if detail == "git push --force"
+        Some(Msg::Fact(Fact::Event(Event::Approval { detail: Some(ref detail), .. }))) if detail == "git push --force"
     ));
 }
 
 #[test]
 fn an_answered_question_is_not_asked_again_on_switch() {
     let mut replay = super::replay::ReplayState::default();
-    replay.record(&Msg::Busy(Some(Activity::Turn)), false);
+    replay.record(&Msg::Fact(Fact::Busy(Some(Activity::Turn))), false);
     replay.record(&approval(Some("rm -rf build")), false);
     replay.record(&approval(None), false);
     let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
     replay.resend(&app);
     while let Ok(msg) = inbox.try_recv() {
-        assert!(!matches!(msg, Msg::Event(Event::Approval { .. })));
+        assert!(!matches!(msg, Msg::Fact(Fact::Event(Event::Approval { .. }))));
     }
 }
 
 #[test]
 fn text_handed_back_while_away_returns_once_on_switch() {
-    let restored = || Msg::Restored(vec![crate::provider::UserInput::from("finish the docs")]);
+    let restored = || Msg::Fact(Fact::Restored(vec![crate::provider::UserInput::from("finish the docs")]));
     let handed = |replay: &mut super::replay::ReplayState| {
         let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
         replay.resend(&app);
         std::iter::from_fn(|| inbox.try_recv().ok())
-            .filter(|msg| matches!(msg, Msg::Restored(_)))
+            .filter(|msg| matches!(msg, Msg::Fact(Fact::Restored(_))))
             .count()
     };
     let mut away = super::replay::ReplayState::default();
@@ -159,7 +159,7 @@ async fn until<T>(
 }
 
 fn active(msg: &Msg) -> Option<(String, usize)> {
-    if let Msg::Live(live) = msg {
+    if let Msg::Fact(Fact::Live(live)) = msg {
         return live
             .iter()
             .find(|entry| entry.active)
@@ -192,7 +192,7 @@ async fn a_new_session_takes_the_view_and_the_first_comes_back_in_place() {
     })
     .await;
     until("the new session's id", &mut inbox, |msg| {
-        matches!(msg, Msg::Session(id) if *id == second).then_some(())
+        matches!(msg, Msg::Fact(Fact::Session(id)) if *id == second).then_some(())
     })
     .await;
     started
@@ -200,7 +200,7 @@ async fn a_new_session_takes_the_view_and_the_first_comes_back_in_place() {
         .send(crate::tui::Cmd::Open(super::Open::Resume(first_id.clone())))
         .unwrap();
     until("the reset", &mut inbox, |msg| {
-        matches!(msg, Msg::Reset).then_some(())
+        matches!(msg, Msg::Intent(Intent::Reset)).then_some(())
     })
     .await;
     let wanted = first_id.clone();
@@ -209,7 +209,7 @@ async fn a_new_session_takes_the_view_and_the_first_comes_back_in_place() {
     })
     .await;
     until("the first session's id", &mut inbox, |msg| {
-        matches!(msg, Msg::Session(id) if *id == first_id).then_some(())
+        matches!(msg, Msg::Fact(Fact::Session(id)) if *id == first_id).then_some(())
     })
     .await;
     started.commands.send(crate::tui::Cmd::Quit).unwrap();
@@ -232,7 +232,7 @@ async fn naming_a_session_publishes_its_title() {
         .send(crate::tui::Cmd::Command("/name fix tests".to_string()))
         .unwrap();
     until("the named title", &mut inbox, |msg| {
-        let Msg::Live(live) = msg else {
+        let Msg::Fact(Fact::Live(live)) = msg else {
             return None;
         };
         live.iter()

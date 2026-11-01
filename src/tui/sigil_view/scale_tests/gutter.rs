@@ -2,7 +2,7 @@ use sigil::app::cell_width;
 
 use super::{State, busy_info, find, frame, frame_with};
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 const TODO: &str =
     r#"{"items":[{"text":"Plan","status":"in_progress"},{"text":"Ship","status":"pending"}]}"#;
@@ -19,7 +19,7 @@ fn chrome_rows_start_at_the_gutter() {
     for cols in [40, 110, 200] {
         let seen = std::cell::RefCell::new(None);
         let full = frame_with(busy_info(), cols, 40, State::Busy, |app| {
-            app.update(Msg::Event(super::composer_todos::todo(TODO)));
+            app.update(Msg::Fact(Fact::Event(super::composer_todos::todo(TODO))));
             let (chat, side) = app.layout.get().split(cols);
             seen.replace(Some(if side == 0 { cols } else { chat + 1 }));
         });
@@ -84,19 +84,19 @@ fn a_diff_card_leaves_one_row_before_the_next_tool() {
             ),
             ("r", "run_command", r#"{"command":"pytest -q"}"#, "4 passed"),
         ] {
-            app.update(Msg::Event(Event::ToolCall {
+            app.update(Msg::Fact(Fact::Event(Event::ToolCall {
                 id: id.to_owned(),
                 name: name.to_owned(),
                 arguments: arguments.to_owned(),
-            }));
-            app.update(Msg::Event(Event::ToolResult {
+            })));
+            app.update(Msg::Fact(Fact::Event(Event::ToolResult {
                 id: id.to_owned(),
                 success: true,
                 mutated: false,
                 output: output.to_owned(),
                 millis: Some(4),
                 patch: None,
-            }));
+            })));
         }
     });
     let new = find(&full, "new_line").expect("diff row");

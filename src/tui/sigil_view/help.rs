@@ -43,11 +43,11 @@ pub(super) fn shift(app: &App, delta: isize) {
 }
 
 fn visible(app: &App) -> usize {
-    canvas::overlay_shown(usize::MAX, app.viewport.peek().1).saturating_sub(1)
+    canvas::overlay_shown(usize::MAX, app.viewport.peek()).saturating_sub(1)
 }
 
 fn lines(app: &App, query: &str) -> Vec<String> {
-    let width = row_cells(app.viewport.peek().0);
+    let width = row_cells(app.viewport.peek());
     crate::tui::help_text(&app.model.get().prefs.hotkeys)
         .lines()
         .filter(|line| all_words(line, query))
@@ -55,9 +55,9 @@ fn lines(app: &App, query: &str) -> Vec<String> {
         .collect()
 }
 
-fn row_cells(cols: u16) -> usize {
+fn row_cells(viewport: (u16, u16)) -> usize {
     let cell = canvas::cell().w;
-    let dialog = Size::Normal.width(cols) / cell;
+    let dialog = Size::Normal.width(viewport) / cell;
     let padding = (DIALOG_PADDING / cell).ceil();
     ((dialog - padding).max(0.0) as usize).saturating_sub(ROW_MARKER)
 }
@@ -66,7 +66,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let View { list, focus, .. } = app.help;
     let List { query, scroll, .. } = list;
     let keys = app.clone();
-    let cols = app.viewport.peek().0;
+    let viewport = app.viewport.peek();
     let visible = visible(&app) as f32;
     let rows = derived(move || lines(&keys, &query.get()));
     let hints = Hints::new()
@@ -91,5 +91,5 @@ pub(super) fn layer(app: App) -> NodeBuilder {
             .viewport_height(canvas::overlay_list_row() * visible)
             .scroll_bind(scroll),
         )
-        .build(app.help.open, cols, &app.model.peek().prefs.hotkeys)
+        .build(app.help.open, viewport, &app.model.peek().prefs.hotkeys)
 }

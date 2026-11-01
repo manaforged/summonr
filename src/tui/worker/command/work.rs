@@ -2,7 +2,7 @@ use super::*;
 
 impl Worker {
     pub(in crate::tui::worker) async fn compact(&mut self) -> bool {
-        drop(self.ui.send(Msg::Busy(Some(Activity::Compact))));
+        drop(self.ui.send(Msg::Fact(Fact::Busy(Some(Activity::Compact)))));
         let ui = self.ui.clone();
         let outcome = wait_cancelable(
             &mut self.cmd,
@@ -11,13 +11,13 @@ impl Worker {
             &self.ui,
             None,
             self.loop_
-                .compact_with(move |event| drop(ui.send(Msg::Event(event.clone())))),
+                .compact_with(move |event| drop(ui.send(Msg::Fact(Fact::Event(event.clone()))))),
         )
         .await;
         if !matches!(outcome, Completion::Done(Ok(_))) {
             self.recover();
         }
-        drop(self.ui.send(Msg::Busy(None)));
+        drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         match outcome {
             Completion::Done(Ok(true)) => {
                 self.system("context compacted: earlier turns summarized")
@@ -199,7 +199,7 @@ impl Worker {
             && self.loop_.active_goal().ok().flatten().is_none()
         {
             self.loop_.set_mode(mode);
-            drop(self.ui.send(Msg::RunMode(mode)));
+            drop(self.ui.send(Msg::Intent(Intent::RunMode(mode))));
         }
     }
 

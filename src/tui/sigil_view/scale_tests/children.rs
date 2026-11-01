@@ -1,7 +1,7 @@
 use super::super::app::App;
 use super::{State, busy_info, frame_with, screens};
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 pub(super) const IDS: [&str; 3] = [
     "01a104ac000000000000000000001111",
@@ -10,7 +10,7 @@ pub(super) const IDS: [&str; 3] = [
 ];
 
 pub(super) fn spawn(app: &App, id: &str, assignment: &str, background: bool) {
-    app.update(Msg::Event(Event::Child {
+    app.update(Msg::Fact(Fact::Event(Event::Child {
         id: id.to_owned(),
         event: Box::new(Event::Spawned {
             assignment: assignment.to_owned(),
@@ -20,22 +20,22 @@ pub(super) fn spawn(app: &App, id: &str, assignment: &str, background: bool) {
             workspace: String::new(),
             agent: String::new(),
         }),
-    }));
+    })));
 }
 
 pub(super) fn act(app: &App, id: &str, event: Event) {
-    app.update(Msg::Event(Event::Child {
+    app.update(Msg::Fact(Fact::Event(Event::Child {
         id: id.to_owned(),
         event: Box::new(event),
-    }));
+    })));
 }
 
 pub(super) fn task_call(app: &App) {
-    app.update(Msg::Event(Event::ToolCall {
+    app.update(Msg::Fact(Fact::Event(Event::ToolCall {
         id: "t1".to_owned(),
         name: "task".to_owned(),
         arguments: "{}".to_owned(),
-    }));
+    })));
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
 fn a_child_in_its_own_checkout_shows_paths_from_that_checkout() {
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
         task_call(app);
-        app.update(Msg::Event(Event::Child {
+        app.update(Msg::Fact(Fact::Event(Event::Child {
             id: IDS[0].to_owned(),
             event: Box::new(Event::Spawned {
                 assignment: "Fix the parser.".to_owned(),
@@ -147,7 +147,7 @@ fn a_child_in_its_own_checkout_shows_paths_from_that_checkout() {
                 workspace: "/w/repo-children/abc".to_owned(),
                 agent: String::new(),
             }),
-        }));
+        })));
         act(
             app,
             IDS[0],
@@ -190,19 +190,19 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
         }),
     };
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
-        app.update(Msg::Event(Event::ToolCall {
+        app.update(Msg::Fact(Fact::Event(Event::ToolCall {
             id: "t9".to_owned(),
             name: "task".to_owned(),
             arguments: format!(r#"{{"id":"{}"}}"#, IDS[0]),
-        }));
-        app.update(Msg::Event(Event::ToolResult {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::ToolResult {
             id: "t9".to_owned(),
             success: true,
             mutated: false,
             output: serde_json::to_string(&record).unwrap(),
             millis: None,
             patch: None,
-        }));
+        })));
     })
     .join("\n");
     assert!(shown.contains("Subagent Fix the parser"), "{shown}");
@@ -346,7 +346,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
         app.resize(100, 30);
-        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
         spawn(&app, IDS[0], "Keep the parent working", true);
         spawn(&app, IDS[1], "Foreground child", false);
         app.toggle_agents();
@@ -434,22 +434,22 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
 }
 
 fn read(app: &App, id: &str) {
-    app.update(Msg::Event(Event::ToolCall {
+    app.update(Msg::Fact(Fact::Event(Event::ToolCall {
         id: id.to_owned(),
         name: "read".to_owned(),
         arguments: r#"{"path":"a.txt"}"#.to_owned(),
-    }));
+    })));
 }
 
 fn done(app: &App, id: &str, output: &str) {
-    app.update(Msg::Event(Event::ToolResult {
+    app.update(Msg::Fact(Fact::Event(Event::ToolResult {
         id: id.to_owned(),
         success: true,
         mutated: false,
         output: output.to_owned(),
         millis: Some(3),
         patch: None,
-    }));
+    })));
 }
 
 #[test]

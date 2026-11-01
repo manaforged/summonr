@@ -1,3 +1,4 @@
+use crate::tui::{Fact};
 use super::*;
 use crate::durable::driver::SessionDriver;
 use crate::provider::Effort;
@@ -20,7 +21,7 @@ fn task_progress_replays_the_current_numbered_plan() {
     history::replay_transcript(driver.path(), Some("fixture".to_string()), None, &ui);
     let progress = std::iter::from_fn(|| inbox.try_recv().ok())
         .find_map(|message| match message {
-            Msg::Event(crate::Event::Work { progress }) => Some(progress),
+            Msg::Fact(Fact::Event(crate::Event::Work { progress })) => Some(progress),
             _ => None,
         })
         .expect("replay must restore the checkpoint task progress");
@@ -62,7 +63,7 @@ async fn startup_effort_reaches_the_composer_before_a_model_switch() {
     worker(loop_, receiver, ui, info).await;
     let settings: Vec<_> = std::iter::from_fn(|| inbox.try_recv().ok())
         .filter_map(|msg| match msg {
-            Msg::Settings(snapshot) => Some(snapshot),
+            Msg::Fact(Fact::Settings(snapshot)) => Some(snapshot),
             _msg => None,
         })
         .collect();
@@ -145,7 +146,7 @@ async fn a_session_opened_with_an_unfinished_goal_says_how_to_go_on() {
     worker(loop_, receiver, ui, info).await;
     let notes: Vec<String> = std::iter::from_fn(|| inbox.try_recv().ok())
         .filter_map(|msg| match msg {
-            Msg::System(text) => Some(text),
+            Msg::Fact(Fact::System(text)) => Some(text),
             _msg => None,
         })
         .collect();

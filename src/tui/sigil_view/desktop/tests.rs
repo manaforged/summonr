@@ -15,7 +15,7 @@ use super::{App, rail, root, thread};
 use crate::catalog::Model;
 use crate::recent::ModelId;
 use crate::tools::Event;
-use crate::tui::{Msg, Snapshot};
+use crate::tui::{Fact, Intent, Msg, Snapshot};
 
 mod harness;
 mod settings;
@@ -107,12 +107,12 @@ fn row(runs: &[(String, f32)], text: &str) -> f32 {
 fn the_context_meter_draws_no_caption_text() {
     let runs = texts(
         |app| {
-            app.update(Msg::Settings(Snapshot {
+            app.update(Msg::Fact(Fact::Settings(Snapshot {
                 model: "stub-model".to_owned(),
                 context_window: Some(200_000),
                 ..Snapshot::default()
-            }));
-            app.update(Msg::Event(Event::Usage {
+            })));
+            app.update(Msg::Fact(Fact::Event(Event::Usage {
                 prompt_tokens: 1500,
                 completion_tokens: 20,
                 reasoning_tokens: 0,
@@ -121,7 +121,7 @@ fn the_context_meter_draws_no_caption_text() {
                 millis: None,
                 prefix_hash: String::new(),
                 cost: None,
-            }));
+            })));
         },
         thread::status::meters,
     );
@@ -178,7 +178,7 @@ fn the_window_model_picker_rows_sit_between_header_and_hints() {
         |app| {
             app.begin_model_edit();
             let selection = |id: &str| ModelId::new("openrouter", id);
-            app.update(Msg::Models {
+            app.update(Msg::Fact(Fact::Models {
                 request: 1,
                 rows: names.iter().map(|id| selection(id)).collect(),
                 facts: names
@@ -191,7 +191,60 @@ fn the_window_model_picker_rows_sit_between_header_and_hints() {
                 recent: 0,
                 loading: false,
                 error: String::new(),
-            });
+            }));
+        },
+        root,
+    );
+    let header = row(&runs, "MODEL");
+    let hints = runs
+        .iter()
+        .filter(|(text, _)| text.contains("refresh"))
+        .map(|(_, y)| *y)
+        .fold(f32::MAX, f32::min);
+    for name in names {
+        let at = row(&runs, name);
+        assert!(
+            header < at && at < hints,
+            "{name} at {at}, header {header}, hints {hints}: {}",
+            shown(&runs)
+        );
+    }
+}
+
+#[test]
+fn a_slash_in_the_window_composer_lists_commands() {
+    let runs = texts(|app| app.replace("/sett".to_owned()), thread::main_col);
+    assert!(
+        runs.iter().any(|(text, _)| text == "commands")
+            && runs.iter().any(|(text, _)| text.starts_with("/settings")),
+        "{}",
+        shown(&runs)
+    );
+}
+
+#[test]
+fn the_window_composer_takes_typing_at_launch() {
+    let draft = Runtime::scope("summonr-desktop-focus", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(
+            super::super::profile::info(),
+            workspace.path().to_owned(),
+            commands,
+        );
+        app.refresh();
+        let mut host = Host::new();
+        let tree = app.clone();
+        host.mount(move || root(tree.clone()));
+        let mut router = EventRouter::new();
+        host.frame(&mut router, VIEW, 0.0, FrameHooks::default());
+        host.route(&mut router, key("x"));
+        host.frame(&mut router, VIEW, 0.0, FrameHooks::default());
+        app.draft.peek()
+    });
+    assert_eq!(draft, "x");
+}
+);
         },
         root,
     );

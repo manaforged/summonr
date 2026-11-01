@@ -1,6 +1,6 @@
 use super::{State, busy_info, composer_top, find, frame_with, paint};
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 fn footer(lines: &[String]) -> String {
     lines
@@ -13,7 +13,7 @@ fn footer(lines: &[String]) -> String {
 #[test]
 fn the_footer_shows_spend_beside_the_meters_and_no_rate() {
     let lines = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Event(Event::Usage {
+        app.update(Msg::Fact(Fact::Event(Event::Usage {
             prompt_tokens: 1200,
             completion_tokens: 300,
             reasoning_tokens: 0,
@@ -22,7 +22,7 @@ fn the_footer_shows_spend_beside_the_meters_and_no_rate() {
             millis: Some(2000),
             prefix_hash: String::new(),
             cost: Some(0.0412),
-        }));
+        })));
     });
     let line = footer(&lines);
     let spend = line.find("$0.04").unwrap_or_else(|| panic!("{line}"));
@@ -63,9 +63,9 @@ fn a_short_transcript_keeps_the_composer_under_it_and_the_footer_at_the_bottom()
 fn a_long_transcript_keeps_the_composer_at_the_bottom() {
     let lines = frame_with(busy_info(), 110, 30, State::Idle, |app| {
         for at in 0..60 {
-            app.update(Msg::Event(Event::Assistant {
+            app.update(Msg::Fact(Fact::Event(Event::Assistant {
                 text: format!("line {at}"),
-            }));
+            })));
         }
     });
     let composer = composer_top(&lines);
@@ -90,20 +90,20 @@ fn the_context_meter_shows_only_when_the_window_is_known() {
     let unknown = footer(&frame_with(busy_info(), 110, 30, State::Idle, |_| {}));
     assert!(!unknown.contains("ctx"), "{unknown}");
     let known = footer(&frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Settings(crate::tui::Snapshot {
+        app.update(Msg::Fact(Fact::Settings(crate::tui::Snapshot {
             model: "stub-model".to_owned(),
             context_window: Some(200_000),
             ..crate::tui::Snapshot::default()
-        }));
+        })));
     }));
     assert!(known.contains("ctx"), "{known}");
     let small = footer(&frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Settings(crate::tui::Snapshot {
+        app.update(Msg::Fact(Fact::Settings(crate::tui::Snapshot {
             model: "stub-model".to_owned(),
             context_window: Some(200_000),
             ..crate::tui::Snapshot::default()
-        }));
-        app.update(Msg::Event(Event::Usage {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::Usage {
             prompt_tokens: 1500,
             completion_tokens: 20,
             reasoning_tokens: 0,
@@ -112,7 +112,7 @@ fn the_context_meter_shows_only_when_the_window_is_known() {
             millis: None,
             prefix_hash: String::new(),
             cost: None,
-        }));
+        })));
     }));
     let ctx = small.split("cache").next().unwrap_or_default();
     assert!(ctx.contains("ctx") && ctx.contains("1%"), "{small}");
@@ -121,12 +121,12 @@ fn the_context_meter_shows_only_when_the_window_is_known() {
 #[test]
 fn an_unseated_session_shows_no_provider_instead_of_a_model() {
     let lines = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Settings(crate::tui::Snapshot {
+        app.update(Msg::Fact(Fact::Settings(crate::tui::Snapshot {
             model: "glm-5.3-flash".to_owned(),
             endpoint: "zai".to_owned(),
             unconfigured: true,
             ..crate::tui::Snapshot::default()
-        }));
+        })));
     });
     let screen = lines.join("\n");
     assert!(screen.contains("no provider"), "{screen}");
@@ -142,7 +142,7 @@ fn a_meter_card_opens_on_a_click_and_closes_on_a_click_outside() {
         let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
         let app = super::super::app::App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(110, 30);
-        app.update(Msg::User("started conversation".to_string()));
+        app.update(Msg::Intent(Intent::User("started conversation".to_string())));
         app.refresh();
         let mut host = sigil::Host::cells();
         let tree = app.clone();
@@ -225,7 +225,7 @@ fn live(session: &str, status: crate::tui::hub::Status, active: bool) -> crate::
 }
 
 fn spent(app: &super::super::app::App) {
-    app.update(Msg::Event(Event::Usage {
+    app.update(Msg::Fact(Fact::Event(Event::Usage {
         prompt_tokens: 1200,
         completion_tokens: 300,
         reasoning_tokens: 0,
@@ -234,7 +234,7 @@ fn spent(app: &super::super::app::App) {
         millis: Some(2000),
         prefix_hash: String::new(),
         cost: Some(0.0412),
-    }));
+    })));
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn the_footer_counts_other_sessions_and_the_ones_waiting_on_you() {
     let shown = |sessions: Vec<crate::tui::hub::Live>| {
         footer(&frame_with(busy_info(), 140, 30, State::Idle, |app| {
             spent(app);
-            app.update(Msg::Live(sessions));
+            app.update(Msg::Fact(Fact::Live(sessions)));
         }))
     };
     let waiting = shown(vec![
@@ -271,16 +271,16 @@ fn a_long_workspace_path_takes_the_room_the_footer_leaves() {
     info.workspace = format!("/home/someone/{}checkout-name", "nested/".repeat(20));
     let row = |window: Option<u32>| {
         footer(&frame_with(info.clone(), 110, 30, State::Idle, |app| {
-            app.update(Msg::Settings(crate::tui::Snapshot {
+            app.update(Msg::Fact(Fact::Settings(crate::tui::Snapshot {
                 model: "stub-model".to_owned(),
                 context_window: window,
                 ..crate::tui::Snapshot::default()
-            }));
+            })));
             spent(app);
-            app.update(Msg::Live(vec![
+            app.update(Msg::Fact(Fact::Live(vec![
                 live("this", crate::tui::hub::Status::Working, true),
                 live("b", crate::tui::hub::Status::NeedsYou, false),
-            ]));
+            ])));
         }))
     };
     for window in [None, Some(200_000)] {

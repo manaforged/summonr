@@ -3,42 +3,42 @@ use super::*;
 impl App {
     pub(in crate::tui::sigil_view) fn update(&self, msg: Msg) {
         match msg {
-            Msg::Secret(request) => self.secret_open(request),
-            Msg::Clipboard(read) => self.pasted(read),
-            Msg::LoginStep {
+            Msg::Fact(Fact::Secret(request)) => self.secret_open(request),
+            Msg::Fact(Fact::Clipboard(read)) => self.pasted(read),
+            Msg::Fact(Fact::LoginStep {
                 text,
                 url,
                 code,
                 asking,
-            } => self.auth_progress(text, url, code, asking),
-            Msg::LoginDone {
+            }) => self.auth_progress(text, url, code, asking),
+            Msg::Fact(Fact::LoginDone {
                 name,
                 result,
                 rejected,
-            } => self.auth_done(&name, result, rejected),
-            Msg::OpenHelp => self.help.show(),
-            Msg::OpenLogin(note) => self.login_opened(note),
+            }) => self.auth_done(&name, result, rejected),
+            Msg::Intent(Intent::OpenHelp) => self.help.show(),
+            Msg::Intent(Intent::OpenLogin(note)) => self.login_opened(note),
             msg => self.update_loaded(msg),
         }
     }
 
     fn update_loaded(&self, msg: Msg) {
         match msg {
-            Msg::Prompts { session, result } => self.prompts_loaded(session, result),
-            Msg::Restored(inputs) => self.restore(inputs),
-            Msg::Saved { file, text, result } => self.save_done(file, text, result),
-            Msg::Resume(id) => self.open_session(crate::tui::hub::Open::Resume(id)),
-            Msg::Sessions(rows) => self.sessions.update(rows),
-            Msg::Usage(rows) => self.usage.update(rows),
-            msg @ Msg::Models { .. } => self.models_loaded(msg),
-            Msg::ModelNote(note) => self.picker.note.set(note),
-            Msg::Defaulted(selection) => self.defaulted(selection),
-            Msg::Workflow {
+            Msg::Fact(Fact::Prompts { session, result }) => self.prompts_loaded(session, result),
+            Msg::Fact(Fact::Restored(inputs)) => self.restore(inputs),
+            Msg::Fact(Fact::Saved { file, text, result }) => self.save_done(file, text, result),
+            Msg::Intent(Intent::Resume(id)) => self.open_session(crate::tui::hub::Open::Resume(id)),
+            Msg::Fact(Fact::Sessions(rows)) => self.sessions.update(rows),
+            Msg::Fact(Fact::Usage(rows)) => self.usage.update(rows),
+            msg @ Msg::Fact(Fact::Models { .. }) => self.models_loaded(msg),
+            Msg::Fact(Fact::ModelNote(note)) => self.picker.note.set(note),
+            Msg::Fact(Fact::Defaulted(selection)) => self.defaulted(selection),
+            Msg::Fact(Fact::Workflow {
                 name,
                 names,
                 selections,
-            } => self.workflow_loaded(name, names, selections),
-            msg @ Msg::Patch { .. } => self.patch_loaded(msg),
+            }) => self.workflow_loaded(name, names, selections),
+            msg @ Msg::Fact(Fact::Patch { .. }) => self.patch_loaded(msg),
             msg => self.apply_msg(msg),
         }
     }
@@ -54,22 +54,22 @@ impl App {
 
     fn prepare(&self, msg: &Msg) {
         match msg {
-            Msg::Event(crate::Event::Work { .. }) => self.load(),
-            Msg::Event(crate::Event::Approval {
+            Msg::Fact(Fact::Event(crate::Event::Work { .. })) => self.load(),
+            Msg::Fact(Fact::Event(crate::Event::Approval {
                 detail,
                 persist,
                 dialog,
-            }) => {
+            })) => {
                 self.approval.set(detail.clone().map(|detail| Asked {
                     detail,
                     persist: *persist,
                     dialog: *dialog,
                 }));
             }
-            Msg::Event(crate::Event::Elicit { form, dialog }) => {
+            Msg::Fact(Fact::Event(crate::Event::Elicit { form, dialog })) => {
                 self.form_open(form.clone(), *dialog);
             }
-            Msg::Diff(diff) => {
+            Msg::Fact(Fact::Diff(diff)) => {
                 if self.diff_session.peek()
                     && self.root().is_none()
                     && diff.base != crate::diff::SESSION_BASE
@@ -81,17 +81,17 @@ impl App {
                     drop(self.cmd.send(Cmd::Patch(self.root(), path)));
                 }
             }
-            Msg::Reset => {
+            Msg::Intent(Intent::Reset) => {
                 self.approval.set(None);
                 self.form_close();
             }
-            Msg::Busy(None) => {
+            Msg::Fact(Fact::Busy(None)) => {
                 self.approval.set(None);
                 self.form_close();
                 self.secret_finish(false);
                 drop(self.cmd.send(Cmd::Offers));
             }
-            Msg::Changed(paths) => {
+            Msg::Fact(Fact::Changed(paths)) => {
                 self.changed_files(paths);
             }
             _ => {}
@@ -112,7 +112,7 @@ impl App {
     }
 
     fn patch_loaded(&self, msg: Msg) {
-        let Msg::Patch { root, path, result } = &msg else {
+        let Msg::Fact(Fact::Patch { root, path, result }) = &msg else {
             return;
         };
         if self
@@ -132,7 +132,7 @@ impl App {
     }
 
     fn models_loaded(&self, msg: Msg) {
-        let Msg::Models {
+        let Msg::Fact(Fact::Models {
             request,
             mut rows,
             facts,
@@ -142,7 +142,7 @@ impl App {
             recent,
             loading,
             error,
-        } = msg
+        }) = msg
         else {
             return;
         };

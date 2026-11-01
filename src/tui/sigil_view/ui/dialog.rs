@@ -21,25 +21,49 @@ pub(in crate::tui) enum Size {
 }
 
 impl Size {
-    pub(in crate::tui) fn width(self, cols: u16) -> f32 {
-        if canvas::is_window() {
-            let window = f32::from(cols) * canvas::cell().w;
-            return match self {
-                Self::Normal => canvas::WINDOW_DIALOG_W,
-                Self::Reading | Self::Page => (window * canvas::WINDOW_PAGE_FRACTION)
-                    .clamp(canvas::WINDOW_DIALOG_W, canvas::WINDOW_PAGE_MAX_W),
-            };
+    pub(in crate::tui) fn width(self, viewport: (u16, u16)) -> f32 {
+        match self {
+            Self::Normal | Self::Reading | Self::Page if canvas::is_window() => {
+                canvas::window_frame(viewport).0
+            }
+            Self::Normal | Self::Reading | Self::Page => {
+                f32::from(viewport.0.saturating_sub(2)) * canvas::cell().w
+            }
         }
-        let max_cells = match self {
-            Self::Normal | Self::Reading => canvas::DIALOG_CELLS,
-            Self::Page => f32::from(cols),
-        };
-        (f32::from(cols.saturating_sub(4)) * canvas::cell().w).min(max_cells * canvas::cell().w)
     }
 
     #[must_use]
-    pub(in crate::tui) fn cells(self, cols: u16) -> usize {
-        (self.width(cols) / canvas::cell().w) as usize
+    pub(in crate::tui) fn cells(self, viewport: (u16, u16)) -> usize {
+        (self.width(viewport) / canvas::cell().w) as usize
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Size;
+
+    #[test]
+    fn a_menu_uses_the_terminal_width() {
+        assert!(
+            Size::Normal.cells((140, 40)) >= 130,
+            "{}",
+            Size::Normal.cells((140, 40))
+        );
+        assert!(Size::Reading.cells((140, 40)) >= 130);
+        assert!(Size::Page.cells((80, 24)) >= 70);
+    }
+}
+
+fn body_layout() -> LayoutStyle {
+    let layout = LayoutStyle::flex_column()
+        .fill_width()
+        .padding_x(8.0)
+        .padding_y(canvas::overlay_gap() * 4.0)
+        .gap(canvas::overlay_gap());
+    if canvas::is_window() {
+        layout.grow(1.0).fill_height().min_size(0.0, 0.0)
+    } else {
+        layout
     }
 }
 
@@ -92,13 +116,7 @@ impl Dialog {
             title: title.into(),
             header: None,
             rows: None,
-            body: container().layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .padding_x(8.0)
-                    .padding_y(canvas::overlay_gap() * 4.0)
-                    .gap(canvas::overlay_gap()),
-            ),
+            body: container().layout(body_layout()),
             hints: Rc::new(move || hints.clone()),
         }
     }
@@ -177,10 +195,10 @@ impl Dialog {
     pub(in crate::tui) fn build(
         self,
         open: Signal<bool>,
-        cols: u16,
+        viewport: (u16, u16),
         keys: &Hotkeys,
     ) -> NodeBuilder {
-        let width = self.size.width(cols);
+        let width = self.size.width(viewport);
         let hints = self.hints;
         let keys = keys.clone();
         let bar = container()
@@ -203,12 +221,15 @@ impl Dialog {
             .filter(|_| canvas::is_window());
         let backdrop = dismiss.is_some();
         let shown = dismiss.map_or(open, |close| backdrop_signal(open, close));
-        let shell = modal(shown)
+        let mut shell = modal(shown)
             .trap(true)
             .dismiss_on_backdrop(backdrop)
             .escape_closes(!backdrop)
             .width(width)
             .border_w(canvas::frame_border());
+        if canvas::is_window() {
+            shell = shell.height(canvas::window_frame(viewport).1);
+        }
         let shell = match self.header {
             Some(header) => shell.child(
                 container()

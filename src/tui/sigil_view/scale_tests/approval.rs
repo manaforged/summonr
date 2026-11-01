@@ -10,7 +10,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use super::super::app::App;
 use super::super::view::root;
 use super::busy_info;
-use crate::tui::{Activity, Msg};
+use crate::tui::{Activity, Fact, Intent, Msg};
 
 fn press(key: &str) -> ShellEvent {
     ShellEvent::Key(KeyEvent::new(KeyEventInit {
@@ -29,12 +29,12 @@ fn pending_after_n(draft: &str) -> bool {
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(100, 30);
-        app.update(Msg::Busy(Some(Activity::Turn)));
-        app.update(Msg::Event(crate::Event::Approval {
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+        app.update(Msg::Fact(Fact::Event(crate::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
             persist: true,
             dialog: 1,
-        }));
+        })));
         app.replace(draft.to_owned());
         let mut host = Host::cells();
         let tree = app.clone();
@@ -87,11 +87,11 @@ fn a_question_mark_opens_help_only_from_an_empty_composer() {
 
 fn approval_screen(persist: bool) -> String {
     super::frame_with(busy_info(), 100, 30, super::State::Busy, |app| {
-        app.update(Msg::Event(crate::Event::Approval {
+        app.update(Msg::Fact(Fact::Event(crate::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
             persist,
             dialog: 1,
-        }));
+        })));
     })
     .join("\n")
 }

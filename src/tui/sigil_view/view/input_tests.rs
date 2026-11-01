@@ -73,18 +73,18 @@ fn drive<T>(
 #[cfg(not(target_os = "macos"))]
 #[test]
 fn cutting_file_text_uses_the_file_selection_with_an_empty_composer() {
-    use crate::tui::Msg;
+    use crate::tui::{Fact, Intent, Msg};
 
     let seen = drive(
         |app| {
             app.view_open("notes.txt".to_owned());
-            app.update(Msg::View {
+            app.update(Msg::Fact(Fact::View {
                 path: "notes.txt".to_owned(),
                 file: "notes.txt".into(),
                 text: "file text".to_owned(),
                 added: Vec::new(),
                 image: None,
-            });
+            }));
             app.edit_start();
         },
         root,

@@ -1,4 +1,5 @@
 use super::export::export_session;
+use crate::tui::{Fact, Intent};
 use super::*;
 
 impl Worker {
@@ -27,7 +28,7 @@ impl Worker {
         ) {
             Ok(endpoint) => endpoint.reasoning.levels_for(loop_.model()),
             Err(error) => {
-                drop(ui.send(Msg::Failed(error.to_string())));
+                drop(ui.send(Msg::Fact(Fact::Failed(error.to_string()))));
                 Vec::new()
             }
         };
@@ -55,7 +56,7 @@ impl Worker {
 
     pub(super) async fn run(mut self) {
         self.replay();
-        drop(self.ui.send(Msg::Session(self.loop_.session_id())));
+        drop(self.ui.send(Msg::Fact(Fact::Session(self.loop_.session_id()))));
         if let Some(name) = self.loop_.workflow() {
             self.system(&format!("workflow {name} · {}", self.workflow.summary()));
         }
@@ -108,21 +109,21 @@ impl Worker {
 
     pub(super) fn tick(&mut self) {
         for event in self.loop_.child_events() {
-            drop(self.ui.send(Msg::Event(event)));
+            drop(self.ui.send(Msg::Fact(Fact::Event(event))));
         }
         self.loop_.mail_heartbeat(crate::mail::Presence::Idle);
         self.peers();
         let mail = match self.loop_.mail_poll() {
             Ok(mail) => {
                 if self.mail_error.take().is_some() {
-                    drop(self.ui.send(Msg::System("mail recovered".to_string())));
+                    drop(self.ui.send(Msg::Fact(Fact::System("mail recovered".to_string()))));
                 }
                 mail
             }
             Err(error) => {
                 let text = format!("mail poll failed: {error}");
                 if self.mail_error.as_ref() != Some(&text) {
-                    drop(self.ui.send(Msg::System(text.clone())));
+                    drop(self.ui.send(Msg::Fact(Fact::System(text.clone()))));
                     self.mail_error = Some(text);
                 }
                 Vec::new()
@@ -138,10 +139,10 @@ impl Worker {
         }
         if !self.pending_mail {
             for message in mail {
-                drop(self.ui.send(Msg::Mail {
+                drop(self.ui.send(Msg::Fact(Fact::Mail {
                     from: message.sender().to_string(),
                     text: message.text.clone(),
-                }));
+                })));
             }
         }
     }
@@ -153,11 +154,11 @@ impl Worker {
     }
 
     pub(super) fn system(&self, text: &str) {
-        drop(self.ui.send(Msg::System(text.to_string())));
+        drop(self.ui.send(Msg::Fact(Fact::System(text.to_string()))));
     }
 
     pub(super) fn outcome(&self, text: &str) {
-        drop(self.ui.send(Msg::Outcome(text.to_string())));
+        drop(self.ui.send(Msg::Fact(Fact::Outcome(text.to_string()))));
     }
 
     pub(super) fn export(&self, target: Option<String>) {
@@ -170,7 +171,7 @@ impl Worker {
     }
 
     pub(super) fn fail(&self, text: &str) {
-        drop(self.ui.send(Msg::Failed(text.to_string())));
+        drop(self.ui.send(Msg::Fact(Fact::Failed(text.to_string()))));
     }
 }
 
@@ -189,7 +190,7 @@ pub(super) fn publish_peers(
 ) {
     let peers: Vec<_> = peers
         .into_iter()
-        .filter(|agent| agent.id != session && crate::jobs::alive(agent.pid))
+        .filter(|agent| agent.id != session)
         .collect();
     let last = previous.as_deref().unwrap_or(&[]);
     let same = last.len() == peers.len()
@@ -205,6 +206,6 @@ pub(super) fn publish_peers(
         });
     if !same {
         *previous = Some(peers.clone());
-        drop(ui.send(Msg::Peers(peers)));
+        drop(ui.send(Msg::Fact(Fact::Peers(peers))));
     }
 }

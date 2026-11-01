@@ -8,7 +8,7 @@ use super::super::app::App;
 use super::super::view::root;
 use super::busy_info;
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 const ANSWER: &str = "The functions in calc.py:\n\n1. add(a, b) returns the sum\n2. sub(a, b) returns the difference\n3. mul(a, b) returns the product\n4. div(a, b) returns the quotient; exact int division returns an int, otherwise a float; raises ValueError on zero or NaN divisors and never returns infinity for any input";
 
@@ -19,10 +19,10 @@ fn frames(sizes: &[(u16, u16)]) -> String {
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         let (cols, rows) = sizes[0];
         app.resize(cols, rows);
-        app.update(Msg::User("list the functions in calc.py".to_owned()));
-        app.update(Msg::Event(Event::Assistant {
+        app.update(Msg::Intent(Intent::User("list the functions in calc.py".to_owned())));
+        app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: ANSWER.to_owned(),
-        }));
+        })));
         app.refresh();
         let mut host = Host::cells();
         let tree = app.clone();

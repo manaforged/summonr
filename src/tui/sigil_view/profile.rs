@@ -16,7 +16,7 @@ use super::view::root;
 use crate::durable::store::{Durability, write};
 use crate::prefs::{FPS_DEFAULT, FPS_MAX, FPS_MIN, Prefs};
 use crate::tools::Event;
-use crate::tui::{Info, Msg};
+use crate::tui::{Fact, Info, Intent, Msg};
 use summonr_core::error::{Error, Result};
 
 struct Options {
@@ -148,10 +148,10 @@ async fn capture(options: &Options) -> Result<()> {
     let app = App::new(info(), workspace.path().to_owned(), commands);
     app.resize(options.cols, options.rows);
     for index in 0..options.history {
-        app.update(Msg::User(format!("Review change {index}")));
-        app.update(Msg::Event(Event::Assistant {
+        app.update(Msg::Intent(Intent::User(format!("Review change {index}"))));
+        app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: format!("Change {index}: measured layout, terminal output, and memory usage."),
-        }));
+        })));
     }
     scenes::seed(&app, options.scenario);
     app.refresh();
@@ -247,9 +247,9 @@ fn update(app: &App, options: &Options, index: u16) -> (u16, u16) {
     if options.scenario == Scenario::Resize {
         app.resize(width, options.rows);
     } else if options.scenario == Scenario::Stream {
-        app.update(Msg::Event(Event::Delta {
+        app.update(Msg::Fact(Fact::Event(Event::Delta {
             text: format!(" token{index}"),
-        }));
+        })));
         app.refresh();
     }
     (width, options.rows)

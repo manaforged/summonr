@@ -71,14 +71,14 @@ pub(super) fn root(app: App) -> NodeBuilder {
 
 const PANE_SHARE: f32 = 0.4;
 const PANE_MIN: f32 = 360.0;
-const PANE_MAX: f32 = 760.0;
+const PANE_CAP: f32 = 0.62;
 
 fn pane(app: App, offset: Signal<f32>) -> NodeBuilder {
     let Some(pane) = app.layout.get().secondary else {
         return closed();
     };
     let window = f32::from(app.viewport.get().0) * super::canvas::cell().w;
-    let width = (window * PANE_SHARE).clamp(PANE_MIN, PANE_MAX);
+    let width = pane_width(window);
     let focus = app.clone();
     let focused = app.pane_focus.get();
     let content = super::panes::body::pane_body(app, pane, width);
@@ -103,6 +103,23 @@ fn pane(app: App, offset: Signal<f32>) -> NodeBuilder {
         })
         .on_scroll(ScrollEvent::stop_propagation)
         .child(scroll(content).fill().scroll_bind(offset))
+}
+
+fn pane_width(window: f32) -> f32 {
+    let share = window * PANE_SHARE;
+    let cap = (window * PANE_CAP).max(PANE_MIN);
+    share.clamp(PANE_MIN, cap)
+}
+
+#[cfg(test)]
+mod pane_tests {
+    use super::pane_width;
+
+    #[test]
+    fn a_side_pane_grows_with_the_window() {
+        assert!((pane_width(1280.0) - 512.0).abs() < 1.0);
+        assert!(pane_width(2400.0) > 760.0, "{}", pane_width(2400.0));
+    }
 }
 
 fn closed() -> NodeBuilder {

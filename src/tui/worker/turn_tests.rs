@@ -1,3 +1,4 @@
+use crate::tui::{Fact};
 use std::collections::VecDeque;
 
 use super::super::steer::{InputQueue, steerable};
@@ -95,7 +96,7 @@ fn steering_queue_count_keeps_messages_held_behind_a_deferred_command() {
         .messages()
         .into_iter()
         .filter_map(|msg| match msg {
-            Msg::Queued { queued, .. } => Some(queued),
+            Msg::Fact(Fact::Queued { queued, .. }) => Some(queued),
             _other => None,
         })
         .last();
@@ -139,7 +140,7 @@ fn blank_enter_says_why_when_only_shell_and_slash_lines_wait() {
     assert!(steered.is_empty());
     assert!(notes.iter().any(|msg| matches!(
         msg,
-        Msg::System(text) if text.contains("after the turn")
+        Msg::Fact(Fact::System(text)) if text.contains("after the turn")
     )));
 }
 

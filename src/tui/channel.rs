@@ -1,6 +1,6 @@
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use super::Msg;
+use super::{Fact, Intent, Msg};
 use crate::tools::Event;
 
 #[derive(Clone)]
@@ -16,15 +16,15 @@ pub fn channel() -> (Ui, Inbox) {
 
 impl Ui {
     pub fn open_login(&self, note: String) {
-        drop(self.0.send(Msg::OpenLogin(note)));
+        drop(self.0.send(Msg::Intent(Intent::OpenLogin(note))));
     }
 
     pub fn secret(&self, request: crate::askpass::Request) {
-        drop(self.0.send(Msg::Secret(request)));
+        drop(self.0.send(Msg::Fact(Fact::Secret(request))));
     }
 
     pub fn event(&self, event: Event) {
-        drop(self.0.send(Msg::Event(event)));
+        drop(self.0.send(Msg::Fact(Fact::Event(event))));
     }
 
     pub fn client(&self, endpoint: &crate::endpoint::Endpoint) -> crate::Result<crate::Client> {
@@ -39,9 +39,9 @@ pub(crate) fn client(
     let ui = ui.clone();
     Ok(crate::Client::connect(endpoint)?.on_stream(move |delta| {
         let message = match delta {
-            crate::Delta::Text(text) => Msg::Event(Event::Delta { text: text.clone() }),
-            crate::Delta::Thinking(text) => Msg::Event(Event::Reasoning { text: text.clone() }),
-            crate::Delta::Call(name) => Msg::Calling(name.clone()),
+            crate::Delta::Text(text) => Msg::Fact(Fact::Event(Event::Delta { text: text.clone() })),
+            crate::Delta::Thinking(text) => Msg::Fact(Fact::Event(Event::Reasoning { text: text.clone() })),
+            crate::Delta::Call(name) => Msg::Fact(Fact::Calling(name.clone())),
             crate::Delta::Progress => return,
         };
         drop(ui.send(message));

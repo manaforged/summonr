@@ -26,7 +26,7 @@ impl Worker {
             },
         );
         let login = crate::provider::Client::login(&endpoint, &mut prompt);
-        drop(self.ui.send(Msg::Busy(Some(Activity::Login))));
+        drop(self.ui.send(Msg::Fact(Fact::Busy(Some(Activity::Login)))));
         let outcome = self.wait(Some(answers), login).await;
         let running = match outcome {
             Completion::Done(Ok(())) => {
@@ -48,7 +48,7 @@ impl Worker {
             }
             Completion::Quit => false,
         };
-        drop(self.ui.send(Msg::Busy(None)));
+        drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         running
     }
 
@@ -80,11 +80,11 @@ impl Worker {
     }
 
     fn report(&self, name: &str, result: std::result::Result<String, String>, rejected: bool) {
-        drop(self.ui.send(Msg::LoginDone {
+        drop(self.ui.send(Msg::Fact(Fact::LoginDone {
             name: name.to_string(),
             result,
             rejected,
-        }));
+        })));
     }
 
     async fn wait<T>(
@@ -122,7 +122,7 @@ impl Worker {
 fn step(line: &str, asking: bool) -> Msg {
     let rest = line.strip_prefix("open ").unwrap_or_default();
     let (url, code) = rest.split_once(" and enter ").unwrap_or((rest, ""));
-    Msg::LoginStep {
+    Msg::Fact(Fact::LoginStep {
         text: if rest.is_empty() {
             line.to_string()
         } else {
@@ -131,7 +131,7 @@ fn step(line: &str, asking: bool) -> Msg {
         url: url.to_string(),
         code: code.to_string(),
         asking,
-    }
+    })
 }
 
 async fn checked(name: &str, key: &str) -> std::result::Result<String, (String, bool)> {

@@ -1,3 +1,4 @@
+use crate::tui::{Intent};
 use sigil::Host;
 use sigil::events::{
     EventRouter, KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
@@ -79,7 +80,7 @@ fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
             let app = App::new(busy_info(), workspace.path().to_owned(), commands);
             assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
             app.resize(160, 40);
-            app.update(crate::tui::Msg::User("Earlier message".to_owned()));
+            app.update(crate::tui::Msg::Intent(Intent::User("Earlier message".to_owned())));
             app.replace("first".to_owned());
             let mut host = Host::cells();
             let tree = app.clone();

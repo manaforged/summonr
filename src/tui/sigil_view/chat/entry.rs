@@ -176,7 +176,12 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
     if !canvas::is_window() && caps().is_none_or(|caps| caps.graphics.is_none()) {
         return wrap(TextStyle::sm(sigil::prelude::Token::Gray11).on(text("[attached image]")));
     }
-    let (width, height) = (source.width() as f32, source.height() as f32);
+    let aspect = if canvas::is_window() {
+        1.0
+    } else {
+        caps().unwrap_or_default().cell_aspect()
+    };
+    let (width, height) = (source.width() as f32, source.height() as f32 * aspect);
     let id = source.id();
     let kind = crate::tools::image_type(&bytes).and_then(|media| media.strip_prefix("image/"));
     let picture = container()

@@ -1,3 +1,4 @@
+use crate::tui::{Fact};
 use sigil::profile::{self, BackendStatus, Counter};
 use sigil::reactive::Runtime;
 
@@ -84,7 +85,7 @@ fn the_splash_never_asks_to_wake_sooner_than_a_beat() {
 fn a_busy_splash_ticks_the_app_clock() {
     Runtime::scope("splash-busy-ticks", || {
         let (app, mut host, mut screen) = super::tests::splash_screen(SIZE.0, SIZE.1);
-        app.update(crate::tui::Msg::Busy(Some(crate::tui::Activity::Turn)));
+        app.update(crate::tui::Msg::Fact(Fact::Busy(Some(crate::tui::Activity::Turn))));
         let mut router = sigil::events::EventRouter::new();
         let beat = crate::limits::limits().animation();
         for _ in 0..40 {

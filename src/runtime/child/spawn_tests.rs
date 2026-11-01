@@ -348,7 +348,11 @@ async fn two_messages_to_the_same_name_stay_on_one_session() {
 
 #[tokio::test]
 async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
-    let (mut parent, _dirs) = parent(vec![Reply::Text("landed"), Reply::Text("unnamed done")]);
+    let (mut parent, _dirs) = parent(vec![
+        Reply::Text("landed"),
+        Reply::Text("unnamed done"),
+        Reply::Text("ported"),
+    ]);
     let budget = parent.task_budget(1).unwrap();
     parent
         .task_spawn(named("find the loader", "climb-b"), &budget)
@@ -360,7 +364,10 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
         .load(std::sync::atomic::Ordering::Relaxed)
     {
         parent.drain(&mut Vec::new(), &mut |_| {});
-        assert!(started.elapsed() < std::time::Duration::from_secs(5), "named child did not record its first turn");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "named child did not record its first turn"
+        );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     parent.drain(&mut Vec::new(), &mut |_| {});
@@ -369,18 +376,52 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
         "parent missing the first text: {}",
         parent.spawned[&id].last
     );
+    parent
+        .task_spawn(args("finish", "research", true), &budget)
+        .unwrap();
+    let unnamed = parent
+        .spawned
+        .keys()
+        .find(|key| key.as_str() != id)
+        .cloned()
+        .unwrap();
+    while !parent.spawned[&unnamed].handle.is_finished() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
     let running = parent
-        .await_children(&mut Vec::new(), &mut |_| {}, &mut crate::provider::Usage::default())
+        .await_children(
+            &mut Vec::new(),
+            &mut |_| {},
+            &mut crate::provider::Usage::default(),
+        )
         .await
         .unwrap();
     assert!(
         !running.iter().any(|line| line.contains(&id)),
         "judge_work would skip: {running:?}"
     );
+    assert!(!parent.spawned.contains_key(&unnamed));
+    crate::mail::Mailbox::wake(&id, "port the win").unwrap();
+    let sent = parent.provider.sent();
+    while !sent.lock().unwrap().iter().any(|messages| {
+        messages.iter().any(|message| message.content.contains("port the win"))
+    }) {
+        parent.drain(&mut Vec::new(), &mut |_| {});
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "the second mail did not become a turn"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(parent.spawned.contains_key(&id));
+    assert_eq!(parent.spawned[&id].record.id.to_string(), id);
     parent
-        .kill_spawned("the parent turn ended", &mut crate::provider::Usage::default())
+        .kill_spawned(
+            "the parent turn ended",
+            &mut crate::provider::Usage::default(),
+        )
         .await
         .unwrap();
-    assert!(parent.spawned.contains_key(&id));
     assert_eq!(parent.spawned[&id].record.id.to_string(), id);
 }

@@ -1,3 +1,4 @@
+use crate::tui::{Fact};
 use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -20,7 +21,7 @@ fn cycling_effort_uses_supported_levels() {
             Effort::XHigh,
             Effort::Max,
         ];
-        app.update(crate::tui::Msg::Settings(snapshot));
+        app.update(crate::tui::Msg::Fact(Fact::Settings(snapshot)));
         let mut stops = Vec::new();
         for _ in 0..4 {
             app.cycle_effort(1);
@@ -41,7 +42,7 @@ fn cycling_effort_uses_supported_levels() {
 #[test]
 fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused() {
     use super::super::{app::Facet, view::root};
-    use crate::tui::Msg;
+    use crate::tui::{Fact, Intent, Msg};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use sigil::{Host, events::EventRouter, terminal::Screen};
     use tokio::sync::mpsc::error::TryRecvError;
@@ -54,7 +55,7 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         app.resize(100, 30);
         let mut snapshot = app.model.peek().snapshot.clone();
         snapshot.levels = vec![Effort::Low, Effort::Medium, Effort::High];
-        app.update(Msg::Settings(snapshot));
+        app.update(Msg::Fact(Fact::Settings(snapshot)));
         app.replace("unchanged draft".to_owned());
         let mut host = Host::cells();
         let tree = app.clone();
@@ -95,7 +96,7 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         assert_eq!(app.draft.peek(), "unchanged draft");
         let mut snapshot = app.model.peek().snapshot.clone();
         snapshot.approval = true;
-        app.update(Msg::Settings(snapshot));
+        app.update(Msg::Fact(Fact::Settings(snapshot)));
         let shown = screen
             .frame(&mut host, &mut router, [], (100, 30))
             .expect("approval mode")
@@ -145,7 +146,7 @@ fn tab_cycles_back_to_the_lowest_supported_level() {
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         let mut snapshot = app.model.peek().snapshot.clone();
         snapshot.levels = vec![Effort::Low, Effort::Medium, Effort::High];
-        app.update(crate::tui::Msg::Settings(snapshot));
+        app.update(crate::tui::Msg::Fact(Fact::Settings(snapshot)));
         for _ in 0..3 {
             app.cycle_effort(1);
         }

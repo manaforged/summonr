@@ -6,7 +6,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
-const AGENT: &str = "summonr";
+pub(crate) const AGENT: &str = "summonr";
 const PRODUCTS: [&str; 3] = ["summon", "summoner", "summonr"];
 const SOURCE: &str = "summonr:lifecycle";
 const DISPLAY: &str = "summonr:display";

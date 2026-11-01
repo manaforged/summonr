@@ -35,7 +35,7 @@ impl Worker {
             }),
         };
         match selected {
-            Ok(info) => drop(self.ui.send(Msg::Resume(info.id))),
+            Ok(info) => drop(self.ui.send(Msg::Intent(Intent::Resume(info.id)))),
             Err(error) => self.fail(&error.to_string()),
         }
         true
@@ -46,7 +46,7 @@ impl Worker {
             Some(name) => match self.loop_.set_name(name) {
                 Ok(()) => {
                     let named = self.loop_.name().unwrap_or_else(|| name.to_string());
-                    drop(self.ui.send(Msg::Named(named)));
+                    drop(self.ui.send(Msg::Fact(Fact::Named(named))));
                     self.system(&format!("session named {name}"));
                 }
                 Err(error) => self.fail(&error.to_string()),
@@ -65,11 +65,11 @@ impl Worker {
                 self.last_turn = None;
                 match session {
                     Some(id) => {
-                        drop(self.ui.send(Msg::Reset));
+                        drop(self.ui.send(Msg::Intent(Intent::Reset)));
                         self.replay();
-                        drop(self.ui.send(Msg::Session(id)));
+                        drop(self.ui.send(Msg::Fact(Fact::Session(id))));
                     }
-                    None => drop(self.ui.send(Msg::Cleared)),
+                    None => drop(self.ui.send(Msg::Fact(Fact::Cleared))),
                 }
                 self.send_settings();
                 self.system(&match files {
@@ -121,7 +121,7 @@ impl Worker {
                 self.system(&format!(
                     "Forked to session {id}. This branch continues here."
                 ));
-                drop(self.ui.send(Msg::Session(id)));
+                drop(self.ui.send(Msg::Fact(Fact::Session(id))));
             }
             Err(error) => self.fail(&error.to_string()),
         }
@@ -131,15 +131,15 @@ impl Worker {
     pub(in crate::tui::worker) fn branch(&mut self, session: &str, turn: usize) -> bool {
         if self.loop_.session_id() != session {
             self.fail("The active session changed. Run /fork TEXT again.");
-            drop(self.ui.send(Msg::Busy(None)));
+            drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
             return true;
         }
         match self.loop_.fork_at(Some(turn)) {
             Ok(id) => {
                 self.last_turn = None;
-                drop(self.ui.send(Msg::Reset));
+                drop(self.ui.send(Msg::Intent(Intent::Reset)));
                 self.replay();
-                drop(self.ui.send(Msg::Session(id)));
+                drop(self.ui.send(Msg::Fact(Fact::Session(id))));
                 self.send_settings();
                 self.system(&format!(
                     "Branched after turn {}. Workspace files are unchanged. Use /resume to return to the parent.",
@@ -148,7 +148,7 @@ impl Worker {
             }
             Err(error) => self.fail(&error.to_string()),
         }
-        drop(self.ui.send(Msg::Busy(None)));
+        drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         true
     }
 

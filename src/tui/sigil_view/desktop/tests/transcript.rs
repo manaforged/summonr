@@ -1,17 +1,17 @@
 use super::harness::drive;
 use super::in_window;
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 const CHILD: &str = "01a104ac000000000000000000001111";
 
 fn child_task(app: &super::App) {
-    app.update(Msg::Event(Event::ToolCall {
+    app.update(Msg::Fact(Fact::Event(Event::ToolCall {
         id: "task-call".to_owned(),
         name: "task".to_owned(),
         arguments: "{}".to_owned(),
-    }));
-    app.update(Msg::Event(Event::Child {
+    })));
+    app.update(Msg::Fact(Fact::Event(Event::Child {
         id: CHILD.to_owned(),
         event: Box::new(Event::Spawned {
             assignment: "Check the parser".to_owned(),
@@ -21,7 +21,7 @@ fn child_task(app: &super::App) {
             workspace: String::new(),
             agent: String::new(),
         }),
-    }));
+    })));
 }
 
 #[test]
@@ -43,12 +43,12 @@ fn a_mounted_child_row_shows_completion_when_the_child_finishes() {
         return;
     }
     let seen = drive(child_task, Vec::new(), |app| {
-        app.update(Msg::Event(Event::Child {
+        app.update(Msg::Fact(Fact::Event(Event::Child {
             id: CHILD.to_owned(),
             event: Box::new(Event::Assistant {
                 text: "Parser checked".to_owned(),
             }),
-        }));
+        })));
     });
     assert!(
         seen.shows(|text| text.starts_with("completed in ") && text.ends_with("“Check the parser”")),
@@ -64,9 +64,9 @@ fn approval_replacement_updates_the_mounted_transcript() {
         return;
     }
     let seen = drive(
-        |app| app.update(Msg::Approval("approval mode: on".to_owned())),
+        |app| app.update(Msg::Fact(Fact::Approval("approval mode: on".to_owned()))),
         Vec::new(),
-        |app| app.update(Msg::Approval("approval mode:off".to_owned())),
+        |app| app.update(Msg::Fact(Fact::Approval("approval mode:off".to_owned()))),
     );
     assert!(
         seen.shows(|text| text == "approval mode:off"),

@@ -72,7 +72,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
             move |len| {
                 Some((
                     canvas::overlay_list_row(),
-                    canvas::overlay_shown(len, viewport.get().1),
+                    canvas::overlay_shown(len, viewport.get()),
                 ))
             },
             |(action, binding), active| {
@@ -88,7 +88,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 choose.edit_hotkey();
             },
         )
-        .build(app.hotkeys.open, app.viewport.peek().0, &hotkeys)
+        .build(app.hotkeys.open, app.viewport.peek(), &hotkeys)
 }
 
 const fn description(action: Hotkey) -> &'static str {

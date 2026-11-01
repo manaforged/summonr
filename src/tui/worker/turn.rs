@@ -4,6 +4,7 @@ use super::execution::ExecutionClass;
 use super::settings::set_run_mode;
 use super::state::set_mail_reply;
 use super::{Cmd, Msg, Worker};
+use crate::tui::{Fact, Intent};
 use crate::provider::UserInput;
 use crate::tools::Event;
 use crate::tui::Activity;
@@ -23,9 +24,9 @@ impl Worker {
     }
 
     async fn run_turn(&mut self, input: Input) -> bool {
-        drop(self.ui.send(Msg::Busy(Some(Activity::Turn))));
+        drop(self.ui.send(Msg::Fact(Fact::Busy(Some(Activity::Turn)))));
         let sender = self.ui.clone();
-        let emit = move |event: &Event| drop(sender.send(Msg::Event(event.clone())));
+        let emit = move |event: &Event| drop(sender.send(Msg::Fact(Fact::Event(event.clone()))));
         let (cancelled, result, quit) = {
             let session_path = self.loop_.session_path().to_path_buf();
             let session_id = self.loop_.session_id();
@@ -51,7 +52,7 @@ impl Worker {
                             break None;
                         }
                         Some(Cmd::Quit) => {
-                            drop(self.ui.send(Msg::Bye));
+                            drop(self.ui.send(Msg::Intent(Intent::Bye)));
                             quit = true;
                             break None;
                         }
@@ -114,7 +115,7 @@ impl Worker {
             {
                 self.fail(&format!("cancellation not recorded: {error}"));
             }
-            drop(self.ui.send(Msg::Busy(None)));
+            drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         } else if let Some(Err(error)) = result {
             if let Err(abort) = self.abort(crate::tools::AbortCode::Error, "turn failed") {
                 self.fail(&format!(
@@ -123,11 +124,11 @@ impl Worker {
             } else {
                 self.fail(&format!("{error} · F5 or /retry continues"));
             }
-            drop(self.ui.send(Msg::Busy(None)));
+            drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         } else {
             self.carry_steering();
             self.send_diff(true);
-            drop(self.ui.send(Msg::Busy(None)));
+            drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
             if self.loop_.is_work()
                 && self
                     .loop_
@@ -146,7 +147,7 @@ impl Worker {
             reason: reason.to_string(),
         };
         self.loop_
-            .abort_with(&abort, |event| drop(ui.send(Msg::Event(event.clone()))))
+            .abort_with(&abort, |event| drop(ui.send(Msg::Fact(Fact::Event(event.clone())))))
     }
 
     fn carry_steering(&mut self) {
@@ -175,7 +176,7 @@ impl Worker {
             }
         }
         if !pending.is_empty() {
-            drop(self.ui.send(Msg::Restored(pending)));
+            drop(self.ui.send(Msg::Fact(Fact::Restored(pending))));
         }
         self.queue.announce(&self.ui);
     }
@@ -191,7 +192,7 @@ fn live_peers(
     }
     match crate::mail::dir() {
         Ok(dir) => super::state::publish_peers(crate::mail::live(&dir), session_id, peers, ui),
-        Err(error) => drop(ui.send(Msg::System(error.to_string()))),
+        Err(error) => drop(ui.send(Msg::Fact(Fact::System(error.to_string())))),
     }
 }
 
@@ -206,7 +207,7 @@ pub(super) fn mail(ui: &UnboundedSender<Msg>, from: &str, to: &[String], text: &
         ),
         Err(error) => format!("mail failed: {error}"),
     };
-    drop(ui.send(Msg::System(note)));
+    drop(ui.send(Msg::Fact(Fact::System(note))));
 }
 
 #[cfg(test)]

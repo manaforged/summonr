@@ -3,10 +3,10 @@ use super::{State, busy_info, frame_with, screens};
 use crate::catalog::Model;
 use crate::endpoint::State as Reach;
 use crate::recent::ModelId;
-use crate::tui::{Msg, Snapshot};
+use crate::tui::{Fact, Intent, Msg, Snapshot};
 
 fn models(app: &App, rows: &[(&str, &str)], groups: &[(&str, Reach)]) {
-    app.update(Msg::Models {
+    app.update(Msg::Fact(Fact::Models {
         request: app.picker.request.get(),
         rows: rows
             .iter()
@@ -25,7 +25,7 @@ fn models(app: &App, rows: &[(&str, &str)], groups: &[(&str, Reach)]) {
         recent: 0,
         loading: false,
         error: String::new(),
-    });
+    }));
 }
 
 fn endpoint(name: &str) -> Snapshot {
@@ -53,11 +53,11 @@ fn ready_models_follow_a_late_key_rejection() {
         &[&|app: &App| {
             app.auth.open.set(true);
             app.auth.step.set(Login::Checking);
-            app.update(Msg::LoginDone {
+            app.update(Msg::Fact(Fact::LoginDone {
                 name: "openai".to_owned(),
                 result: Err("key rejected".to_owned()),
                 rejected: true,
-            });
+            }));
             app.cancel_auth();
         }],
     );
@@ -70,12 +70,12 @@ fn ready_models_follow_a_late_key_rejection() {
 fn model_completion_uses_the_changed_endpoint() {
     let mut completed = String::new();
     let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Settings(endpoint("first")));
+        app.update(Msg::Fact(Fact::Settings(endpoint("first"))));
         app.begin_model_edit();
         models(app, &[("first", "solar"), ("second", "luna")], &[]);
         app.cancel_model_edit();
         app.replace("/model lun".to_owned());
-        app.update(Msg::Settings(endpoint("second")));
+        app.update(Msg::Fact(Fact::Settings(endpoint("second"))));
         assert!(app.complete(), "the model argument must complete");
         completed = app.draft.peek();
     });
@@ -86,7 +86,7 @@ fn model_completion_uses_the_changed_endpoint() {
 fn a_completed_command_sees_a_late_catalog_update() {
     let mut completed = String::new();
     let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Settings(endpoint("first")));
+        app.update(Msg::Fact(Fact::Settings(endpoint("first"))));
         app.begin_model_edit();
         models(app, &[("first", "legacy")], &[]);
         app.cancel_model_edit();

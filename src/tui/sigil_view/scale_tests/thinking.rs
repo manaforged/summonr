@@ -9,7 +9,7 @@ use super::super::view::root;
 use super::busy_info;
 use crate::prefs::Visibility;
 use crate::tools::Event;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 const COLS: u16 = 100;
 const ROWS: u16 = 30;
@@ -31,13 +31,13 @@ fn only_the_thinking_header_folds_the_reasoning() {
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(info, workspace.path().to_owned(), commands);
         app.resize(COLS, ROWS);
-        app.update(Msg::User("why".to_owned()));
-        app.update(Msg::Event(Event::Reasoning {
+        app.update(Msg::Intent(Intent::User("why".to_owned())));
+        app.update(Msg::Fact(Fact::Event(Event::Reasoning {
             text: "copy this reasoning line".to_owned(),
-        }));
-        app.update(Msg::Event(Event::Assistant {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: "done".to_owned(),
-        }));
+        })));
         app.refresh();
         let mut host = Host::cells();
         let tree = app.clone();

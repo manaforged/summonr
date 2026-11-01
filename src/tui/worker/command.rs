@@ -4,6 +4,7 @@ use super::reader::Reader;
 use super::settings::{announce_run_mode, set_run_mode};
 use super::steer::InputQueue;
 use super::{Cmd, Msg, Worker};
+use crate::tui::{Fact, Intent};
 
 mod flow;
 mod network;

@@ -3,7 +3,7 @@ use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
 use super::{State, busy_info, frame_with, paint};
-use crate::tui::{Activity, Cmd, Msg};
+use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
 
 fn paste_png(app: &App) {
     let file = tempfile::Builder::new()
@@ -70,7 +70,7 @@ fn steering_an_image_only_draft_goes_into_the_running_turn() {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
         paste_png(&app);
         app.submit();
         let mut steered = None;
@@ -87,10 +87,10 @@ fn steering_an_image_only_draft_goes_into_the_running_turn() {
 fn an_attached_image_keeps_its_info_band_during_active_and_queued_turns() {
     let note = |state, queued| {
         let grid = paint(busy_info(), 110, 34, state, |app| {
-            app.update(Msg::Queued {
+            app.update(Msg::Fact(Fact::Queued {
                 steering: 0,
                 queued,
-            });
+            }));
             paste_png(app);
         });
         let shown = grid.text();

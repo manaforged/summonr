@@ -1,6 +1,6 @@
 use super::super::pane::Pane;
 use super::screens;
-use crate::tui::Msg;
+use crate::tui::{Fact, Intent, Msg};
 
 #[test]
 fn arrow_down_in_the_view_pane_scrolls_the_file() {
@@ -10,13 +10,13 @@ fn arrow_down_in_the_view_pane_scrolls_the_file() {
         30,
         |app| {
             app.view_open("notes.txt".to_owned());
-            app.update(Msg::View {
+            app.update(Msg::Fact(Fact::View {
                 path: "notes.txt".to_owned(),
                 file: std::path::PathBuf::from("notes.txt"),
                 text: text.clone(),
                 added: Vec::new(),
                 image: None,
-            });
+            }));
             assert_eq!(app.layout.peek().secondary, Some(Pane::View));
         },
         &[&|app| app.view_move(20)],

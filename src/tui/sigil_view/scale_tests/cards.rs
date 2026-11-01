@@ -1,20 +1,21 @@
+use crate::tui::{Fact};
 use super::super::app::App;
 use super::*;
 
 fn tool(app: &App, name: &str, arguments: &str, success: bool, output: &str) {
-    app.update(Msg::Event(Event::ToolCall {
+    app.update(Msg::Fact(Fact::Event(Event::ToolCall {
         id: name.to_owned(),
         name: name.to_owned(),
         arguments: arguments.to_owned(),
-    }));
-    app.update(Msg::Event(Event::ToolResult {
+    })));
+    app.update(Msg::Fact(Fact::Event(Event::ToolResult {
         id: name.to_owned(),
         success,
         mutated: false,
         output: output.to_owned(),
         millis: Some(4),
         patch: None,
-    }));
+    })));
 }
 
 #[test]
@@ -142,19 +143,19 @@ fn a_failed_run_names_its_exit_code() {
 fn consecutive_reads_collapse_into_one_explored_line() {
     let shown = card(110, |app| {
         for (id, path) in [("r1", "a.py"), ("r2", "b.py")] {
-            app.update(Msg::Event(Event::ToolCall {
+            app.update(Msg::Fact(Fact::Event(Event::ToolCall {
                 id: id.to_owned(),
                 name: "read".to_owned(),
                 arguments: format!(r#"{{"path":"{path}"}}"#),
-            }));
-            app.update(Msg::Event(Event::ToolResult {
+            })));
+            app.update(Msg::Fact(Fact::Event(Event::ToolResult {
                 id: id.to_owned(),
                 success: true,
                 mutated: false,
                 output: format!("{path}  lines 1-10/10\n10:"),
                 millis: Some(4),
                 patch: None,
-            }));
+            })));
         }
     });
     assert!(shown.contains("● Explored 2 files"), "{shown}");
@@ -239,12 +240,12 @@ fn tool_headers_name_the_call() {
 #[test]
 fn an_edit_result_draws_the_patch_it_carries() {
     let shown = card(160, |app| {
-        app.update(Msg::Event(Event::ToolCall {
+        app.update(Msg::Fact(Fact::Event(Event::ToolCall {
             id: "e1".to_owned(),
             name: "edit".to_owned(),
             arguments: r#"{"path":"calc.py"}"#.to_owned(),
-        }));
-        app.update(Msg::Event(Event::ToolResult {
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::ToolResult {
             id: "e1".to_owned(),
             success: true,
             mutated: true,
@@ -254,7 +255,7 @@ fn an_edit_result_draws_the_patch_it_carries() {
                 "@@ -1,2 +1,2 @@\n def mean(values):\n-    return total + 1\n+    return total"
                     .to_owned(),
             ),
-        }));
+        })));
     });
     assert!(shown.contains("● Edit calc.py"), "{shown}");
     assert!(shown.contains("return total + 1"), "{shown}");

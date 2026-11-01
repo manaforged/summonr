@@ -1,4 +1,5 @@
 use super::state::set_mail_reply;
+use crate::tui::{Fact, Intent};
 use super::*;
 
 impl Worker {
@@ -97,7 +98,7 @@ impl Worker {
                     "auto approval: destructive commands and policy asks still require approval"
                 }
             };
-            drop(self.ui.send(Msg::Approval(note.to_string())));
+            drop(self.ui.send(Msg::Fact(Fact::Approval(note.to_string()))));
         }
         self.send_settings();
     }

@@ -1,3 +1,4 @@
+use crate::tui::{Fact};
 use super::*;
 use crate::tui::sigil_view::view::root;
 use sigil::Host;
@@ -110,7 +111,7 @@ fn image_paste_shortcuts_queue_the_clipboard_image_during_a_turn() {
             let (commands, mut sent) = unbounded_channel();
             let app = App::new(profile::info(), workspace.path().to_owned(), commands);
             assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
-            app.update(Msg::Busy(Some(Activity::Turn)));
+            app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
             let mut events = vec![
                 sigil::terminal::map_key(&crossterm::event::KeyEvent::new(
                     crossterm::event::KeyCode::Char('v'),
@@ -121,7 +122,7 @@ fn image_paste_shortcuts_queue_the_clipboard_image_during_a_turn() {
             app.intake(&mut events);
             assert!(events.is_empty(), "the paste shortcut reached the editor");
             assert!(matches!(sent.try_recv(), Ok(Cmd::Clipboard)));
-            app.update(Msg::Clipboard(Ok(png.get_ref().clone())));
+            app.update(Msg::Fact(Fact::Clipboard(Ok(png.get_ref().clone()))));
             assert_eq!(app.attached.peek(), 1);
             app.submit();
             let Cmd::Steer(input) = sent.try_recv().expect("send the image-only input") else {

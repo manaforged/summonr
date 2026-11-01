@@ -213,7 +213,7 @@ fn coverage(report: &Report) -> String {
     if let Some(built) = report.indexed {
         out.push_str(&format!(
             "; from the file index of {} ago, so files made since appear after the refresh this search started",
-            summonr_core::text::duration(crate::mail::now().saturating_sub(built))
+            summonr_core::text::duration(summonr_core::clock::now().saturating_sub(built))
         ));
     }
     if report.links > 0 {

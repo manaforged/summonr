@@ -264,7 +264,7 @@ impl Log {
             line: &'a Line,
         }
         let mut bytes = serde_json::to_vec(&At {
-            at: now_millis(),
+            at: summonr_core::clock::now_millis(),
             line,
         })?;
         bytes.push(b'\n');
@@ -306,14 +306,6 @@ fn heal(path: &Path) -> io::Result<()> {
             .open(path)?
             .set_len(complete as u64)
     }
-}
-
-fn now_millis() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| {
-            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
-        })
 }
 
 mod apply;

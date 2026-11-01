@@ -62,7 +62,7 @@ fn endpoint(job: &Job) -> String {
     if let Some(name) = &job.endpoint {
         return name.clone();
     }
-    match crate::endpoint::resolve(None, None, crate::endpoint::Need::Key) {
+    match crate::endpoint::resolve(None, None, crate::endpoint::Requirement::Key) {
         Ok(found) => {
             let pick = crate::endpoint::chosen_by(None, None)
                 .map_or_else(|| FIRST_SET_UP.to_string(), |pick| pick.to_string());

@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 
 use super::*;
 use crate::provider::Spec;
+use summonr_core::catalog::{Catalog, Row};
 
 const HOST_ID: &str = "{host_id}";
 
@@ -75,6 +76,16 @@ pub(super) struct Preset {
     pub(super) key_from: Vec<String>,
 }
 
+impl Row for Preset {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn retired(&self) -> &[String] {
+        &self.replaces
+    }
+}
+
 pub(super) fn env_default() -> Option<&'static Preset> {
     presets().find(|preset| preset.env_default)
 }
@@ -118,29 +129,18 @@ mod row;
 use row::File;
 pub(crate) use row::wire;
 
-pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
+pub(super) fn table(text: &str) -> std::result::Result<Catalog<Preset>, String> {
     let File { mut preset, oauth } = summonr_core::table::parse(text)?;
-    let mut seen = std::collections::BTreeSet::new();
     for row in &mut preset {
         row.check(&oauth)?;
-        if !seen.insert(row.name.clone()) {
-            return Err(format!("preset `{}` is listed twice", row.name));
-        }
     }
-    if let Some(old) = preset
-        .iter()
-        .flat_map(|row| &row.replaces)
-        .find(|old| seen.contains(*old))
-    {
-        return Err(format!("`{old}` is retired but is still a preset"));
-    }
-    Ok(preset)
+    Catalog::from_rows("provider preset", preset)
 }
 
 const PRESETS: &str = include_str!("presets.toml");
 
-pub(super) fn listed() -> &'static [Preset] {
-    static ROWS: OnceLock<Vec<Preset>> = OnceLock::new();
+pub(super) fn listed() -> &'static Catalog<Preset> {
+    static ROWS: OnceLock<Catalog<Preset>> = OnceLock::new();
     ROWS.get_or_init(|| match table(PRESETS) {
         Ok(rows) => rows,
         Err(error) => panic!("the built-in provider table is invalid: {error}"),
@@ -148,7 +148,7 @@ pub(super) fn listed() -> &'static [Preset] {
 }
 
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {
-    listed().iter().filter(|preset| !preset.off)
+    listed().rows().iter().filter(|preset| !preset.off)
 }
 
 pub(super) fn preset(name: &str) -> Option<&'static Preset> {

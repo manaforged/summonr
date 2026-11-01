@@ -18,7 +18,7 @@ fn an_empty_local_usage_scope_explains_how_to_show_other_workspaces() {
 }
 
 fn spend(model: &str, workspace: &str, input: u64) -> Spend {
-    let hour = crate::mail::now() / 3600 * 3600;
+    let hour = summonr_core::clock::now() / 3600 * 3600;
     Spend {
         model: model.to_owned(),
         hour,

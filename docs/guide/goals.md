@@ -150,12 +150,12 @@ When a `--goal` or `--steps` run stops short, summonr runs the configured check 
 ## Review what a run changed
 
 ```sh
-summonr diff                    # the patch against the base
-summonr diff --stat
-summonr diff --turn last --json
+summonr session diff                    # the patch against the base
+summonr session diff --stat
+summonr session diff --turn last --json
 ```
 
-`summonr diff [PATH]` shows changes against the base: the worktree base with `--worktree`, `HEAD` otherwise. `--turn` takes `N`, `last`, or `session`. In the interface, the same data is the diff pane; see [Using the terminal](terminal.md).
+`summonr session diff [PATH]` shows changes against the base: the worktree base with `--worktree`, `HEAD` otherwise. `--turn` takes `N`, `last`, or `session`. In the interface, the same data is the diff pane; see [Using the terminal](terminal.md).
 
 ## Script it
 
@@ -183,7 +183,7 @@ review = "zai"
 judge = "grok"
 ```
 
-`summonr -w cheap-scout`, `/workflow cheap-scout` in the interface, or the `workflow` key picks one. `summonr workflows` lists them. In the interface every card action has a verb:
+`summonr -w cheap-scout`, `/workflow cheap-scout` in the interface, or the `workflow` key picks one. `summonr workflow list` lists them. In the interface every card action has a verb:
 
 | Command | Action |
 | --- | --- |

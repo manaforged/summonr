@@ -13,7 +13,7 @@ pub(crate) mod store;
 mod view;
 
 pub(crate) fn now() -> i64 {
-    i64::try_from(crate::mail::now()).unwrap_or(i64::MAX)
+    i64::try_from(summonr_core::clock::now()).unwrap_or(i64::MAX)
 }
 
 pub(crate) fn guard() -> Result<()> {

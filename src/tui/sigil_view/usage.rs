@@ -6,8 +6,8 @@ use sigil::prelude::{
 use super::app::App;
 use super::canvas::{self, palette};
 use super::ui::{Dialog, Hints, Key, Size, Tab, tab_strip};
-use crate::mail::now;
 use crate::session::Spend;
+use summonr_core::clock::now;
 
 mod report;
 mod sections;

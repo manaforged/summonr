@@ -1,7 +1,10 @@
 use summonr::{Error, Result, is_endpoint};
 
-use flags::{COMMANDS, CONFLICTS, FLAGS, Input};
+use commands::COMMANDS;
+use flags::{ALIASES, CONFLICTS, FLAGS, Input};
 
+#[path = "cli/commands.rs"]
+mod commands;
 #[path = "cli/flags.rs"]
 mod flags;
 #[path = "cli/help.rs"]
@@ -79,6 +82,7 @@ pub(super) struct Args {
     pub(super) url: Option<String>,
     pub(super) default: bool,
     pub(super) remove: bool,
+    pub(super) add: bool,
     pub(super) questions: Option<String>,
     pub(super) noul: Vec<String>,
     pub(super) review: bool,
@@ -130,11 +134,11 @@ impl Args {
     fn step(&mut self, input: &mut Input, arg: &str, command: bool) -> Result<Step> {
         if let Some(row) = FLAGS.find(arg, self) {
             FLAGS.apply(row, arg, self, input)?;
-        } else if let Some((name, most, run)) =
-            COMMANDS.iter().find(|(name, ..)| command && *name == arg)
-        {
-            self.arity = most.map(|most| (*name, most));
-            run(self, input)?;
+        } else if let Some(row) = COMMANDS.iter().find(|row| command && row.name == arg) {
+            self.arity = row.most.map(|most| (row.name, most));
+            (row.run)(self, input)?;
+        } else if let Some((_, full)) = ALIASES.iter().find(|(old, _)| command && *old == arg) {
+            self.subcommand(full, input)?;
         } else if arg.starts_with('-') {
             return Err(misplaced(arg));
         } else {
@@ -173,7 +177,10 @@ impl Args {
     }
 
     fn verb(&self) -> Option<&'static str> {
-        FLAGS.scoped(self)
+        self.arity
+            .map(|(name, _)| name)
+            .filter(|name| name.contains(' '))
+            .or_else(|| FLAGS.scoped(self))
     }
 
     fn endpoint_slot(&self, command: bool) -> bool {
@@ -182,6 +189,11 @@ impl Args {
     }
 
     fn check_names(&self) -> Result<()> {
+        if self.add && (self.endpoint.is_none() || (self.url.is_none() && self.model.is_none())) {
+            return Err(Error::Config(
+                "`summonr endpoint add NAME --url URL [--model NAME]`".to_string(),
+            ));
+        }
         if matches!(self.verb, Some(Verb::Login))
             && self.url.is_none()
             && let Some(name) = self.endpoint.as_deref()
@@ -250,7 +262,7 @@ fn misplaced(option: &str) -> Error {
 
 fn unlisted(login: bool) -> &'static str {
     if login {
-        "; add a server with `summonr login NAME --url URL [--model NAME]`"
+        "; add a server with `summonr endpoint add NAME --url URL [--model NAME]`"
     } else {
         ""
     }
@@ -261,7 +273,7 @@ fn unknown(name: &str, tail: &str) -> Error {
     let hint = summonr::closest_endpoint(name, &names, summonr::EndpointNear::Typo)
         .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
     Error::Config(format!(
-        "unknown endpoint `{name}`: {hint}`summonr endpoints` lists them{tail}"
+        "unknown endpoint `{name}`: {hint}`summonr endpoint list` lists them{tail}"
     ))
 }
 

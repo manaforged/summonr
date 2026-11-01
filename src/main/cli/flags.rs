@@ -4,8 +4,9 @@ use std::vec::IntoIter;
 use summonr::table::{Row, Table};
 use summonr::{Error, Result};
 
+use super::commands::SUBCOMMANDS;
 use super::help::exit_version;
-use super::{Args, Verb, exit_help, mcp};
+use super::{Args, Verb, exit_help};
 
 pub(super) type Input = Peekable<IntoIter<String>>;
 pub(super) type Run = fn(&mut Args, &mut Input) -> Result<()>;
@@ -15,7 +16,7 @@ pub(super) const FLAGS: Table<Args> = Table {
     rows: &[
         Flag::value(
             &["-e", "--endpoint"],
-            "a name from `summonr endpoints`",
+            "a name from `summonr endpoint list`",
             |args, name| some(&mut args.endpoint, name),
         )
         .help("NAME", "endpoint: {endpoints}"),
@@ -36,7 +37,7 @@ pub(super) const FLAGS: Table<Args> = Table {
         Flag::switch(&["-p", "--print"], Args::print).help("", "run one prompt and exit"),
         Flag::switch(&["--json"], |args| on(&mut args.json)).help(
             "",
-            "print JSON (with -p, diff, worktrees, mcp, classify, cron list)",
+            "print JSON (with -p, session diff, worktree list, mcp, classify, cron list)",
         ),
         Flag::switch(&["-c", "--continue"], |args| on(&mut args.resume))
             .help("", "resume the last session here"),
@@ -102,23 +103,26 @@ pub(super) const FLAGS: Table<Args> = Table {
         }),
         Flag::rest(&["--"], |args, rest| args.prompt.extend(rest)),
         Flag::switch(&["--stat"], |args| on(&mut args.stat))
-            .scope("diff", |args| matches!(args.verb, Some(Verb::Diff))),
+            .scope("session diff", |args| matches!(args.verb, Some(Verb::Diff))),
         Flag::value(&["--turn"], "a turn number or `last`", |args, turn| {
             some(&mut args.turn, turn)
         })
-        .scope("diff", |args| matches!(args.verb, Some(Verb::Diff))),
-        Flag::switch(&["--all"], |args| on(&mut args.all))
-            .scope("profile", |args| matches!(args.verb, Some(Verb::Profile))),
-        Flag::value(&["--last"], "a session count", Args::last)
-            .scope("profile", |args| matches!(args.verb, Some(Verb::Profile))),
-        Flag::switch(&["--all"], |args| on(&mut args.all)).scope("endpoints", |args| {
+        .scope("session diff", |args| matches!(args.verb, Some(Verb::Diff))),
+        Flag::switch(&["--all"], |args| on(&mut args.all)).scope("session profile", |args| {
+            matches!(args.verb, Some(Verb::Profile))
+        }),
+        Flag::value(&["--last"], "a session count", Args::last).scope("session profile", |args| {
+            matches!(args.verb, Some(Verb::Profile))
+        }),
+        Flag::switch(&["--all"], |args| on(&mut args.all)).scope("endpoint list", |args| {
             matches!(args.verb, Some(Verb::Endpoints))
         }),
-        Flag::switch(&["--check"], |args| on(&mut args.live)).scope("endpoints", |args| {
+        Flag::switch(&["--check"], |args| on(&mut args.live)).scope("endpoint list", |args| {
             matches!(args.verb, Some(Verb::Endpoints))
         }),
-        Flag::switch(&["--list"], |args| on(&mut args.add_list))
-            .scope("install", |args| matches!(args.verb, Some(Verb::Install))),
+        Flag::switch(&["--list"], |args| on(&mut args.add_list)).scope("plugin list", |args| {
+            matches!(args.verb, Some(Verb::Install))
+        }),
         Flag::switch(&["--key"], |args| on(&mut args.key))
             .scope("login", |args| matches!(args.verb, Some(Verb::Login))),
         Flag::switch(&["--default"], |args| on(&mut args.default))
@@ -126,11 +130,14 @@ pub(super) const FLAGS: Table<Args> = Table {
         Flag::value(&["--url"], "a base URL", |args, url| {
             some(&mut args.url, url)
         })
-        .scope("login", |args| matches!(args.verb, Some(Verb::Login))),
+        .scope("endpoint add", |args| {
+            matches!(args.verb, Some(Verb::Login))
+        }),
         Flag::switch(&["--remove"], |args| on(&mut args.remove))
             .scope("logout", |args| matches!(args.verb, Some(Verb::Logout))),
-        Flag::switch(&["--digest"], |args| on(&mut args.digest))
-            .scope("export", |args| matches!(args.verb, Some(Verb::Export))),
+        Flag::switch(&["--digest"], |args| on(&mut args.digest)).scope("session export", |args| {
+            matches!(args.verb, Some(Verb::Export))
+        }),
         Flag::switch(&["--logs"], |args| on(&mut args.logs))
             .scope("doctor", |args| matches!(args.verb, Some(Verb::Doctor))),
         Flag::switch(&["--report"], |args| on(&mut args.report))
@@ -160,9 +167,10 @@ pub(super) const FLAGS: Table<Args> = Table {
             .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
         Flag::switch(&["--diff"], |args| on(&mut args.review_diff))
             .scope("classify", |args| matches!(args.verb, Some(Verb::Classify))),
-        Flag::switch(&["prune"], |args| on(&mut args.prune_worktrees)).scope("worktrees", |args| {
-            matches!(args.verb, Some(Verb::Worktrees))
-        }),
+        Flag::switch(&["prune"], |args| on(&mut args.prune_worktrees))
+            .scope("worktree list", |args| {
+                matches!(args.verb, Some(Verb::Worktrees))
+            }),
     ],
     missing: |flag, expected| format!("{flag} requires {expected}"),
     unknown: |flag| format!("unknown option `{flag}`"),
@@ -171,40 +179,18 @@ pub(super) const FLAGS: Table<Args> = Table {
     pairs: false,
 };
 
-pub(super) const COMMANDS: [(&str, Option<usize>, Run); 23] = [
-    ("endpoints", Some(0), |args, _| verb(args, Verb::Endpoints)),
-    ("sessions", Some(0), |args, _| verb(args, Verb::Sessions)),
-    ("resume", None, Args::resume),
-    ("doctor", Some(0), |args, _| verb(args, Verb::Doctor)),
-    ("classify", None, |args, _| verb(args, Verb::Classify)),
-    ("export", Some(1), |args, _| verb(args, Verb::Export)),
-    ("profile", Some(1), |args, _| verb(args, Verb::Profile)),
-    ("workflows", Some(0), |args, _| verb(args, Verb::Workflows)),
-    ("modules", Some(0), |args, _| verb(args, Verb::Modules)),
-    ("install", Some(1), |args, _| verb(args, Verb::Install)),
-    ("uninstall", Some(1), |args, _| verb(args, Verb::Uninstall)),
-    ("update", Some(0), |args, _| verb(args, Verb::Update)),
-    ("acp", Some(0), |args, _| verb(args, Verb::Acp)),
-    ("mail", None, |args, input| {
-        verb(args, Verb::Mail(input.by_ref().collect()))
-    }),
-    ("cron", None, |args, input| {
-        verb(args, Verb::Cron(input.by_ref().collect()))
-    }),
-    ("gateway", None, |args, input| {
-        verb(args, Verb::Gateway(input.by_ref().collect()))
-    }),
-    ("tool", None, |args, input| {
-        verb(args, Verb::Tool(input.by_ref().collect()))
-    }),
-    ("mcp", None, |args, input| {
-        verb(args, Verb::Mcp(mcp::parse(input)?))
-    }),
-    ("login", None, |args, _| verb(args, Verb::Login)),
-    ("logout", Some(0), |args, _| verb(args, Verb::Logout)),
-    ("worktrees", Some(0), |args, _| verb(args, Verb::Worktrees)),
-    ("diff", Some(1), |args, _| verb(args, Verb::Diff)),
-    ("help", None, |_, input| exit_help(input.next().as_deref())),
+pub(super) const ALIASES: [(&str, &str); 11] = [
+    ("sessions", "session list"),
+    ("resume", "session resume"),
+    ("export", "session export"),
+    ("profile", "session profile"),
+    ("diff", "session diff"),
+    ("endpoints", "endpoint list"),
+    ("worktrees", "worktree list"),
+    ("modules", "module list"),
+    ("workflows", "workflow list"),
+    ("install", "plugin install"),
+    ("uninstall", "plugin remove"),
 ];
 
 pub(super) type Check = (fn(&Args) -> bool, &'static str);
@@ -212,7 +198,7 @@ pub(super) type Check = (fn(&Args) -> bool, &'static str);
 pub(super) const CONFLICTS: [Check; 3] = [
     (
         |args| args.grep.is_some() && !matches!(args.verb, Some(Verb::Sessions)),
-        "--grep works with `summonr sessions`",
+        "--grep works with `summonr sessions`; use `summonr session search TEXT`",
     ),
     (
         |args| args.here && args.worktree,
@@ -229,7 +215,7 @@ fn on(flag: &mut bool) -> Result<()> {
     Ok(())
 }
 
-fn verb(args: &mut Args, verb: Verb) -> Result<()> {
+pub(super) fn verb(args: &mut Args, verb: Verb) -> Result<()> {
     args.verb = Some(verb);
     Ok(())
 }
@@ -252,12 +238,45 @@ fn effort(level: &str) -> Result<summonr::Effort> {
 }
 
 impl Args {
-    fn resume(&mut self, input: &mut Input) -> Result<()> {
+    pub(super) fn resume(&mut self, input: &mut Input) -> Result<()> {
         match input.next_if(|next| !next.starts_with('-')) {
             Some(key) => self.session = Some(key),
             None => self.resume = true,
         }
         Ok(())
+    }
+
+    pub(super) fn noun(&mut self, noun: &str, input: &mut Input) -> Result<()> {
+        let verbs = SUBCOMMANDS
+            .iter()
+            .filter_map(|row| row.name.strip_prefix(noun)?.strip_prefix(' '));
+        let word = input.next_if(|word| !word.starts_with('-'));
+        match word
+            .as_deref()
+            .and_then(|word| verbs.clone().find(|verb| *verb == word))
+        {
+            Some(verb) => self.subcommand(&format!("{noun} {verb}"), input),
+            None => Err(Error::Config(format!(
+                "`summonr {noun}` takes one of: {}",
+                verbs.collect::<Vec<_>>().join(", ")
+            ))),
+        }
+    }
+
+    pub(super) fn subcommand(&mut self, full: &str, input: &mut Input) -> Result<()> {
+        let Some(row) = SUBCOMMANDS.iter().find(|row| row.name == full) else {
+            return Err(Error::Config(format!("unknown command `{full}`")));
+        };
+        self.arity = row.most.map(|most| (row.name, most));
+        (row.run)(self, input)
+    }
+
+    pub(super) fn search(&mut self, input: &mut Input) -> Result<()> {
+        let pattern = input
+            .next()
+            .ok_or_else(|| Error::Config("summonr session search TEXT".to_string()))?;
+        some(&mut self.grep, pattern)?;
+        verb(self, Verb::Sessions)
     }
 
     fn last(&mut self, raw: String) -> Result<()> {

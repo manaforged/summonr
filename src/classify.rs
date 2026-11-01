@@ -196,7 +196,7 @@ pub async fn ask(
 fn target(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> Result<()> {
     if !crate::provider::wire::spec(endpoint.wire).classifies() {
         return Err(Error::Config(format!(
-            "`{}` is not a classify endpoint; see `summonr endpoints`",
+            "`{}` is not a classify endpoint; see `summonr endpoint list`",
             endpoint.name
         )));
     }

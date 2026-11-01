@@ -330,6 +330,7 @@ fn stats_of(body: &str) -> Option<(Vec<Stat>, Option<String>)> {
             || line.starts_with('$')
             || line == "---"
             || line.starts_with("summonr diff")
+            || line.starts_with("summonr session diff")
         {
             continue;
         }

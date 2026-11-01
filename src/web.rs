@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use leyline::{
-    Browser, CompressionConfig, DnsConfig, Family, RedirectAction, RedirectPolicy, Session,
-};
+use leyline::{Browser, Redirect, Session};
 use url::Url;
 
 use crate::config;
@@ -234,16 +232,11 @@ fn http_builder() -> leyline::SessionBuilder {
         crate::limits::limits().web_search(),
         crate::limits::limits().web_connect(),
     )
-    .browser(Browser::latest(Family::Chrome))
-    .compression(CompressionConfig::new().max_body_size(crate::limits::limits().web_body_bytes))
-    .redirect(RedirectPolicy::custom(|attempt| {
-        if attempt.previous.len() >= crate::limits::limits().web_redirect_max
-            || !safe_redirect(attempt.url)
-        {
-            RedirectAction::Stop
-        } else {
-            RedirectAction::Follow
-        }
+    .browser(Browser::chrome())
+    .max_body_size(crate::limits::limits().web_body_bytes)
+    .redirect(Redirect::custom(|attempt| {
+        attempt.previous().len() < crate::limits::limits().web_redirect_max
+            && attempt.url().is_some_and(safe_redirect)
     }))
 }
 
@@ -252,13 +245,17 @@ fn client() -> Result<Session> {
         http_builder(),
         crate::limits::limits()
             .retry_policy(crate::limits::Reach::Remote)
-            .retry_on([leyline::RetryTrigger::ConnectionError]),
+            .when(|attempt| {
+                attempt.error().is_some_and(|error| {
+                    error.is_retryable() && error.kind() != leyline::Kind::Timeout
+                })
+            }),
     )
 }
 
 pub(super) fn pinned_session(host: &str, addrs: &[std::net::SocketAddr]) -> Result<Session> {
     crate::credentials::session(
-        http_builder().dns(DnsConfig::new().resolve_host(host, addrs.iter().copied())),
+        http_builder().resolve(host, addrs.iter().copied()),
         crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
     )
 }

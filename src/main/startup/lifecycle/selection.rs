@@ -1,13 +1,13 @@
-use summonr::{Client, Endpoint, Error, Need, Result};
+use summonr::{Client, Endpoint, Error, Requirement, Result};
 
 use super::{Ui, use_tui};
 use crate::cli::Args;
 
 pub(super) async fn selection(args: &Args, adopted: &[String]) -> Result<Endpoint> {
     let need = if use_tui(args) {
-        Need::Model
+        Requirement::Model
     } else {
-        Need::ModelAndKey
+        Requirement::ModelAndKey
     };
     let (name, model) = (args.endpoint.as_deref(), args.model.as_deref());
     let endpoint = match summonr::resolve_endpoint(name, model, need) {
@@ -30,7 +30,7 @@ async fn served(name: Option<&str>, model: Option<&str>, error: Error) -> Error 
     let Error::Config(text) = error else {
         return error;
     };
-    let Ok(bare) = summonr::resolve_endpoint(name, model, Need::Config) else {
+    let Ok(bare) = summonr::resolve_endpoint(name, model, Requirement::Config) else {
         return Error::Config(text);
     };
     if !bare.model.is_empty() {

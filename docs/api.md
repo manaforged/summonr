@@ -14,29 +14,31 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr [ENDPOINT] -p PROMPT`, `summonr [ENDPOINT] PROMPT` | Run one prompt and exit |
 | `summonr [ENDPOINT] --goal TEXT` | Work until `.summonr/check.toml` passes and a judge call agrees; with a `[metric]` table, keep a turn only when its number beats the best, revert it otherwise, and stop at the target or a budget |
 | `summonr [ENDPOINT] --steps PLAN.md` | Run each numbered step under `## Steps`, and gate each step on its check |
-| `summonr -c`, `summonr --session ID`, `summonr resume [ID\|NAME]` | Resume the last session here, or a session by short id, id prefix, or name |
-| `summonr sessions` | List sessions, tab-separated: id, name, directory, preview |
-| `summonr sessions --grep TEXT` | Search past sessions, newest first: id, start time, directory, matching line; at most 50 lines; exit 1 and `no matches` on stderr when none |
-| `summonr export [ID\|NAME]` | Print a session as Markdown |
-| `summonr profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS (shared pages excluded, so lower than RSS) and the peak resident set on Linux |
-| `summonr diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
-| `summonr worktrees [--json]`, `summonr worktrees prune [--json]` | List session worktrees, or drop records of missing directories and print the removed paths |
-| `summonr endpoints [--all] [--check]` | List the endpoints that are set up and their key source, offline; `--all` adds the rest, `--check` asks each for its models |
+| `summonr -c`, `summonr --session ID`, `summonr session resume [ID\|NAME]` | Resume the last session here, or a session by short id, id prefix, or name |
+| `summonr session list` | List sessions, tab-separated: id, name, directory, preview |
+| `summonr session search TEXT` | Search past sessions, newest first: id, start time, directory, matching line; at most 50 lines; exit 1 and `no matches` on stderr when none |
+| `summonr session export [ID\|NAME]` | Print a session as Markdown |
+| `summonr session profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS (shared pages excluded, so lower than RSS) and the peak resident set on Linux |
+| `summonr session diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
+| `summonr worktree list [--json]`, `summonr worktree prune [--json]` | List session worktrees, or drop records of missing directories and print the removed paths |
+| `summonr endpoint list [--all] [--check]` | List the endpoints that are set up and their key source, offline; `--all` adds the rest, `--check` asks each for its models |
 | `summonr login [NAME] [--key]`, `summonr logout NAME` | List, store, or forget keys and subscription sign-ins |
-| `summonr login NAME --url URL [--model M]`, `summonr logout NAME --remove` | Add or update your own OpenAI-compatible server, or remove it |
-| `summonr modules` | List compiled modules and their state |
-| `summonr workflows` | List configured workflows |
+| `summonr endpoint add NAME --url URL [--model M]`, `summonr endpoint remove NAME` | Add or update your own OpenAI-compatible server, or remove it |
+| `summonr module list` | List compiled modules and their state |
+| `summonr workflow list` | List configured workflows |
 | `summonr mcp list\|get NAME [--json]`, `summonr mcp add NAME -- CMD\|--url URL`, `summonr mcp remove NAME` | List MCP servers with state, tools, and schema size; add or remove a `[mcp.NAME]` table |
-| `summonr install PATH`, `summonr install --list`, `summonr uninstall NAME` | Install a plugin directory, list plugins, or remove one |
+| `summonr plugin install PATH`, `summonr plugin list`, `summonr plugin remove NAME` | Install a plugin directory, list plugins, or remove one |
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
 | `summonr update` | Replace the installed binary with the latest release after a SHA-256 check; exit 0 when updated or already current |
-| `summonr tool NAME [JSON]` | Run one tool in the current directory and print its result; a module tool needs its module on. Exit 0 on success, 1 on a tool error |
+| `summonr tool run NAME [JSON]` | Run one tool in the current directory and print its result; a module tool needs its module on. Exit 0 on success, 1 on a tool error |
 | `summonr mail [agents\|send\|inbox\|board]` | Read and write peer mail between agent sessions on this machine |
 | `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|token\|install\|uninstall\|status` | Run a prompt or goal on a schedule; `install` adds the once-a-minute OS tick; `token NAME` prints a webhook token |
 | `summonr gateway setup telegram\|telegram\|pair CODE\|unpair ID\|status\|webhook [--port N]` | Drive sessions from a paired Telegram chat, or fire cron jobs from a loopback webhook |
 | `summonr classify ...` | Ask typed questions of a decisions endpoint |
 | `summonr doctor [--logs\|--report]` | List per-run JSONL logs, report incomplete and crashed runs, or print the last crashed or failed run with the home folder shown as `~` |
 | `summonr --help`, `summonr --version` | Print help, or the version and revision |
+
+The earlier forms (`sessions`, `resume`, `export`, `profile`, `diff`, `endpoints`, `worktrees`, `modules`, `workflows`, `install`, `uninstall`, `tool NAME`, `login NAME --url`, `logout NAME --remove`) still run for one release with the same output and exit codes.
 
 ## Quick paths
 
@@ -70,12 +72,12 @@ summonr ignores its own output files when it checks whether the workspace change
 | Isolate a session in a git worktree | `--worktree` (branch `summonr/<id>`); `--here` is the default |
 | Name or fork a session | `--name TEXT`; `--fork` forks the last session here, or `--session ID --fork` forks that session |
 | Run workflow roles on their own models | `-w NAME`, from `[workflows.NAME]` |
-| Review what a turn changed | `summonr diff --turn last --json` |
+| Review what a turn changed | `summonr session diff --turn last --json` |
 | Drive a session from an editor | `summonr acp` |
 | Classify text | `summonr classify --set NAME [STATE]`, `--questions JSON\|@FILE`, `--noul QUESTION`, `--patch`, `--review --session ID`, `--eval FILE`, `--gate NUMBER` |
 | Start a job from a web request | `summonr cron add NAME --manual -p PROMPT`, `TOKEN=$(summonr cron token NAME)`, `summonr gateway webhook`, then `POST /run/NAME` with `Authorization: Bearer TOKEN` (202 fired with `log`, 401 bad token or job, 405 method, 408 slow, 409 paused, 411 chunked, 413 too large, 429 too soon with `Retry-After`; errors are `{"error": ...}`) |
 | Run on a schedule | `summonr cron add NAME --cron "0 3 * * *" --goal TEXT`, then `summonr cron install` once |
-| Save a transcript | `summonr export [ID\|NAME]`; add `--digest` for the condensed form |
+| Save a transcript | `summonr session export [ID\|NAME]`; add `--digest` for the condensed form |
 
 ## Exit codes
 
@@ -144,11 +146,11 @@ When a goal or steps run stops short, the exit check's `verify` events and a fin
 
 One JSON object per job and line: `name`, `schedule`, `next` (RFC 3339 time, or null when paused or manual), `last` (the last run's outcome or null), `paused`, `dir`, `endpoint`, and `task` (`{"prompt": ...}` or `{"goal": ...}`). An outcome is `running`, `done` (exit 0), `check_failed` (exit 2), `unfinished` (exit 3), `error` (any other exit), `overlap` (the previous run was still going), or `expired` (missed by more than the catch-up window).
 
-### `summonr diff --json`
+### `summonr session diff --json`
 
 One object: `{"base": string, "files": [{"path", "added", "removed", "new"}]}`. With `--turn`, `base` is `"turn N"` and `session` holds the session id.
 
-### `summonr worktrees --json`
+### `summonr worktree list --json`
 
 One array. Each row has `branch`, `base`, `path`, `ahead`, `dirty`, and `session`.
 
@@ -156,7 +158,7 @@ One array. Each row has `branch`, `base`, `path`, `ahead`, `dirty`, and `session
 
 One pretty-printed object: `model`, `answers`, and `usage` with `input_tokens`, `output_tokens`, and `cost`. With `--patch`, the output is an array of `{"path", "answers"}` rows.
 
-### `summonr export`
+### `summonr session export`
 
 Markdown on stdout. It is not JSON.
 

@@ -51,7 +51,7 @@ pub(super) fn apply_workflow(
         let endpoint = resolve_endpoint(
             Some(&selection.endpoint),
             selection.model.as_deref(),
-            summonr::Need::ModelAndKey,
+            summonr::Requirement::ModelAndKey,
         )?;
         let client = provider(&endpoint, ui, json)?;
         Ok((client, endpoint))

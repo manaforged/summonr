@@ -331,7 +331,7 @@ pub(crate) fn unknown_off(off: &[String]) -> Option<String> {
         .collect();
     (!unknown.is_empty()).then(|| {
         format!(
-            "[plugins] off names plugins that are not installed: {}; `summonr uninstall NAME` removes the name",
+            "[plugins] off names plugins that are not installed: {}; `summonr plugin remove NAME` removes the name",
             unknown.join(", ")
         )
     })

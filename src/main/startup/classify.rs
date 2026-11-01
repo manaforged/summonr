@@ -84,7 +84,7 @@ fn classify_endpoint(args: &Args) -> Result<summonr::Endpoint> {
     resolve_endpoint(
         Some(&name),
         args.model.as_deref(),
-        summonr::Need::ModelAndKey,
+        summonr::Requirement::ModelAndKey,
     )
 }
 

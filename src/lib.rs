@@ -96,9 +96,9 @@ pub use config::tilde;
 pub use durable::store::lock as lock_file;
 pub use durable::work::{WorkKind, WorkProgress};
 pub use endpoint::{
-    AuthInfo, Endpoint, LoginFlow, Near as EndpointNear, Need, Pick, State as EndpointState,
-    add_server as add_endpoint, adopt_keys, auth_info, check_key, chosen_by as endpoint_chosen_by,
-    closest as closest_endpoint, fallbacks as endpoint_fallbacks,
+    AuthInfo, Endpoint, LoginFlow, Near as EndpointNear, Origin, Requirement,
+    State as EndpointState, add_server as add_endpoint, adopt_keys, auth_info, check_key,
+    chosen_by as endpoint_chosen_by, closest as closest_endpoint, fallbacks as endpoint_fallbacks,
     first_classify as classify_endpoint, is_named as is_endpoint, login_endpoint, logout,
     names as endpoint_names, ordered_names as endpoint_names_ordered,
     remove_server as remove_endpoint, resolve as resolve_endpoint,

@@ -40,7 +40,7 @@ fn turn_prompts_summarize_tasks_and_show_background_job_state() {
                 pid: std::process::id(),
                 command: command.to_string(),
                 workspace: workspace.path().display().to_string(),
-                started: crate::mail::now(),
+                started: summonr_core::clock::now(),
                 background: true,
                 session: Some(driver.id().to_string()),
                 log: None,
@@ -162,7 +162,7 @@ async fn a_fallback_to_a_blind_model_folds_the_next_attached_image() {
     let fallback = Scripted::new([Reply::Text("ok"), Reply::Text("ok")]);
     let sent = fallback.sent();
     let second =
-        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Need::Config).unwrap();
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Requirement::Config).unwrap();
     loop_.set_fallbacks([(fallback, second)]);
     loop_
         .turn_with(UserInput::from("hi"), |_| {})
@@ -256,7 +256,7 @@ async fn a_fallback_takes_its_endpoint_settings_and_price() {
     loop_.set_compact_tokens(Some(200_000));
     loop_.set_effort(Some(Effort::Low));
     let mut second =
-        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Need::Config).unwrap();
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Requirement::Config).unwrap();
     let price = Price {
         input: 9.0,
         output: 9.0,
@@ -288,7 +288,7 @@ async fn a_fallback_keeps_the_effort_the_user_chose_later() {
     let primary = Scripted::new([Reply::Fail("the primary is down")]);
     let mut loop_ = blind_session(workspace.path(), home.path(), primary);
     let mut second =
-        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Need::Config).unwrap();
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Requirement::Config).unwrap();
     second.effort = Some(Effort::Low);
     loop_.set_fallbacks([(Scripted::new([Reply::Text("ok")]), second)]);
     loop_.choose_effort(Some(Effort::Max));
@@ -505,7 +505,7 @@ async fn a_finished_turn_leaves_its_failed_jobs_out_of_the_next_turn() {
             pid: std::process::id(),
             command: "old verification".to_string(),
             workspace: workspace.path().display().to_string(),
-            started: crate::mail::now(),
+            started: summonr_core::clock::now(),
             background: true,
             session: Some(loop_.session_id()),
             log: None,

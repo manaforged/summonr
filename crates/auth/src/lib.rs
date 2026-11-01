@@ -245,11 +245,7 @@ pub fn http(timeout: Duration, connect: Duration) -> Result<Session> {
 }
 
 pub fn builder(timeout: Duration, connect: Duration) -> leyline::SessionBuilder {
-    Session::builder().timeout(
-        leyline::TimeoutConfig::new()
-            .total(timeout)
-            .connect(connect),
-    )
+    Session::builder().timeout(leyline::Timeout::new().total(timeout).connect(connect))
 }
 
 #[cfg(test)]

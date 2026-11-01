@@ -23,7 +23,7 @@ impl Worker {
         let levels = match crate::endpoint::resolve(
             Some(&info.endpoint),
             Some(loop_.model()),
-            crate::endpoint::Need::Config,
+            crate::endpoint::Requirement::Config,
         ) {
             Ok(endpoint) => endpoint.reasoning.levels_for(loop_.model()),
             Err(error) => {

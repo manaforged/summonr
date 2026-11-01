@@ -77,9 +77,12 @@ pub(super) fn client_at(dir: &std::path::Path, script: &str) -> Client {
     let stub = dir.join("claude");
     std::fs::write(&stub, script).unwrap();
     std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let mut selection =
-        crate::endpoint::resolve(Some("claude"), Some("claude-opus-5-5"), crate::Need::Config)
-            .unwrap();
+    let mut selection = crate::endpoint::resolve(
+        Some("claude"),
+        Some("claude-opus-5-5"),
+        crate::Requirement::Config,
+    )
+    .unwrap();
     selection.base_url = Some(stub.display().to_string());
     Client::connect(&selection).unwrap()
 }

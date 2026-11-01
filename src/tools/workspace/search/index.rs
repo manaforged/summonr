@@ -126,7 +126,8 @@ pub(super) fn refresh(root: &Path, slow: bool) {
         return;
     }
     let fresh = covered.as_ref().is_some_and(|index| {
-        crate::mail::now().saturating_sub(index.built) < crate::limits::limits().search_index_secs
+        summonr_core::clock::now().saturating_sub(index.built)
+            < crate::limits::limits().search_index_secs
     });
     let root = covered.map_or_else(|| root.to_path_buf(), |index| index.root);
     if fresh
@@ -207,7 +208,7 @@ pub(crate) fn build(root: &Path) -> std::io::Result<()> {
         out,
         "{MAGIC}\n{}\n{}",
         root.to_string_lossy(),
-        crate::mail::now()
+        summonr_core::clock::now()
     )?;
     let mut last: Vec<u8> = Vec::new();
     let entries = Walk {

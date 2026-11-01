@@ -61,7 +61,7 @@ In the files tree, `ctrl+→` focuses it, `↑↓` move, `←→` collapse or ex
 
 ### Worktrees and jobs
 
-`/pane worktrees` lists this repository's `summonr/*` worktrees: branch, commits ahead of the base, dirty or clean, the session that ran there, and the directory. Enter or `→` opens its diff. The right-click menu offers show diff, merge (fast-forward only; a dirty tree is refused), remove worktree (only when clean and fully merged), and insert path. `summonr worktrees` prints the same rows, `--json` as JSON, and `summonr worktrees prune --json` prints the removed paths as a JSON array.
+`/pane worktrees` lists this repository's `summonr/*` worktrees: branch, commits ahead of the base, dirty or clean, the session that ran there, and the directory. Enter or `→` opens its diff. The right-click menu offers show diff, merge (fast-forward only; a dirty tree is refused), remove worktree (only when clean and fully merged), and insert path. `summonr worktree list` prints the same rows, `--json` as JSON, and `summonr worktree prune --json` prints the removed paths as a JSON array.
 
 `/pane jobs` lists this workspace's background commands. Each row is the command and its state: `running`, `exit N`, `killed`, or `dead`. Enter or `→` expands its status lines. The right-click menu offers view log (the job's `.log` in the view pane) and kill job, the same stop as `run_command` with `{"job": ID, "kill": true}`.
 
@@ -101,9 +101,9 @@ A pane `diff_split_min_cols` columns or wider (100 by default) shows a file's hu
 
 ### From the command line
 
-The same data is `summonr diff [PATH]` (the patch), `summonr diff --stat`, and `summonr diff --json`. `summonr diff` never lists generated caches (`__pycache__/`, `*.pyc`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`) or summonr state under `.summonr/` other than `check.toml` and `policy.toml`, even without a `.gitignore`.
+The same data is `summonr session diff [PATH]` (the patch), `summonr session diff --stat`, and `summonr session diff --json`. `summonr session diff` never lists generated caches (`__pycache__/`, `*.pyc`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`) or summonr state under `.summonr/` other than `check.toml` and `policy.toml`, even without a `.gitignore`.
 
-`summonr diff --turn N` shows what turn N changed: from the checkpoint taken at its start to the next turn's checkpoint, or to the workspace for the newest turn.
+`summonr session diff --turn N` shows what turn N changed: from the checkpoint taken at its start to the next turn's checkpoint, or to the workspace for the newest turn.
 
 | `--turn` value | Shows |
 | --- | --- |
@@ -127,9 +127,9 @@ Press `e` to edit in place. The keyboard goes to the file (type, Enter, arrows, 
 | --- | --- |
 | Name a session | `summonr --name TEXT` or `/name TEXT` |
 | Resume a session | `--session` with a name, the short id, or an id prefix |
-| List sessions | `summonr sessions` (names and short ids, with a header row on a terminal) |
-| Search past sessions | `summonr sessions --grep TEXT` |
-| Export a transcript as Markdown | `summonr export [ID\|NAME]`, or `/export [PATH]` in the session |
+| List sessions | `summonr session list` (names and short ids, with a header row on a terminal) |
+| Search past sessions | `summonr session search TEXT` |
+| Export a transcript as Markdown | `summonr session export [ID\|NAME]`, or `/export [PATH]` in the session |
 | Show the binary path and crashed or incomplete runs | `summonr doctor` |
 | List the last 20 per-run diagnostic logs | `summonr doctor --logs` |
 
@@ -137,9 +137,9 @@ Press `e` to edit in place. The keyboard goes to the file (type, Enter, arrows, 
 
 Every place that shows a session id shows the short id, its first 12 characters. They encode the start time, so two sessions started in the same millisecond share one; resuming by it then lists the full ids to choose from.
 
-`/undo` continues in a copy of the session with a new id, so `summonr sessions` lists both.
+`/undo` continues in a copy of the session with a new id, so `summonr session list` lists both.
 
-`summonr sessions --grep TEXT` searches past sessions newest first, case-insensitively. It prints the session id, its start time, its directory, and each matching line, and exits 1 when nothing matches. The model can run it through `run_command` to recall earlier work.
+`summonr session search TEXT` searches past sessions newest first, case-insensitively. It prints the session id, its start time, its directory, and each matching line, and exits 1 when nothing matches. The model can run it through `run_command` to recall earlier work.
 
 Diagnostic logs older than 14 days are removed unless their process is still active. Session directories under `~/.summonr/sessions/` with no file change for 30 days are removed once per start, except the session that run opens. Set another period in days, 1 or more, in `~/.summonr/config.toml`:
 

@@ -7,7 +7,7 @@ use crate::endpoint::{CacheTtl, Endpoint};
 
 pub(super) fn endpoint(name: &str, model: &str) -> Endpoint {
     let mut endpoint =
-        crate::endpoint::resolve(Some(name), Some(model), crate::Need::Config).unwrap();
+        crate::endpoint::resolve(Some(name), Some(model), crate::Requirement::Config).unwrap();
     endpoint.api_key = Some(summonr_core::secret::Secret::new("k"));
     endpoint
 }
@@ -314,7 +314,8 @@ fn a_steer_after_a_tool_result_reaches_every_endpoint_after_that_result() {
     messages.push(Message::user("also check the docs"));
     let mut checked = 0;
     for name in crate::endpoint::names().unwrap() {
-        let Ok(endpoint) = crate::endpoint::resolve(Some(&name), None, crate::Need::Config) else {
+        let Ok(endpoint) = crate::endpoint::resolve(Some(&name), None, crate::Requirement::Config)
+        else {
             continue;
         };
         let request = CompletionRequest::new(

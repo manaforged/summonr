@@ -1,3 +1,5 @@
+pub mod catalog;
+pub mod clock;
 pub mod dirs;
 pub mod error;
 pub mod secret;

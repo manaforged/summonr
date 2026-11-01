@@ -156,7 +156,9 @@ impl Client {
                     .unwrap_or_default();
                 let hint = crate::endpoint::closest(model, &known, crate::endpoint::Near::Relative)
                     .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
-                format!("{name} has no model `{model}`: {hint}`summonr endpoints` lists its models")
+                format!(
+                    "{name} has no model `{model}`: {hint}`summonr endpoint list` lists its models"
+                )
             }
             (
                 ProviderFailureKind::MissingKey

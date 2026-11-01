@@ -122,7 +122,7 @@ Before a crate can move, its upward imports must go. Measured against this map, 
 
 ## Worktrees
 
-`--goal` and `--steps` edit the directory you launched from. Pass `--worktree` to call `git worktree add` (`src/worktree.rs`). Branch `summonr/<id>`, directory `<repo>-worktrees/<id>`. On exit 0 the harness `merge --ff-only` into the branch you started on, then `worktree remove`. Dirty trees and non-fast-forward merges stay. `summonr worktrees prune` only drops records for directories that are already gone. `--here` is the default. Interactive sessions stay in cwd unless you pass `--worktree`.
+`--goal` and `--steps` edit the directory you launched from. Pass `--worktree` to call `git worktree add` (`src/worktree.rs`). Branch `summonr/<id>`, directory `<repo>-worktrees/<id>`. On exit 0 the harness `merge --ff-only` into the branch you started on, then `worktree remove`. Dirty trees and non-fast-forward merges stay. `summonr worktree prune` only drops records for directories that are already gone. `--here` is the default. Interactive sessions stay in cwd unless you pass `--worktree`.
 
 Each `implement` child gets a child checkout in `<repo>-children/<id>`. The checkout shares the parent's `target/`, `node_modules`, and any path listed in `.summonr/linked` or `.agents/linked`. The parent applies each finished child's edits on its own. Generated files (`__pycache__`, `*.pyc`, and the pytest, mypy, and ruff caches) never land.
 

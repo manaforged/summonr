@@ -80,10 +80,10 @@ summonr anthropic -p "why does cargo test fail?"    # one prompt, then exit
 summonr anthropic --goal "make cargo test pass" --max-secs 1800
 ```
 
-- [Models and sign-in](docs/guide/models.md): the built-in providers, coding-plan sign-in, and your own OpenAI-compatible server with `summonr login NAME --url URL`.
+- [Models and sign-in](docs/guide/models.md): the built-in providers, coding-plan sign-in, and your own OpenAI-compatible server with `summonr endpoint add NAME --url URL`.
 - [Goals and checks](docs/guide/goals.md): `--goal`, budgets, exit codes, numbered steps, `--worktree`, and one-shot `-p` runs.
-- [Using the terminal](docs/guide/terminal.md): `/undo`, child sessions, `summonr export`, and memory.
-- [Extending summonr](docs/guide/extending.md): skills, MCP servers, hooks, CLIs, `summonr install`, `summonr acp`, and project instructions.
+- [Using the terminal](docs/guide/terminal.md): `/undo`, child sessions, `summonr session export`, and memory.
+- [Extending summonr](docs/guide/extending.md): skills, MCP servers, hooks, CLIs, `summonr plugin install`, `summonr acp`, and project instructions.
 
 ## Coordinate work live
 
@@ -138,7 +138,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 
 Commands run as your account with no sandbox, and only irreversible destruction asks first. [Safety and policy](docs/guide/safety.md) lists what asks, `confirm = "risky"`, and `--strict`.
 
-MCP limits, project instructions, and why there is no in-process plugin loader are in [Extending summonr](docs/guide/extending.md). Memory and `summonr export` are in [Using the terminal](docs/guide/terminal.md), and key storage is in [Models and sign-in](docs/guide/models.md). Config lives under `~/.summonr`.
+MCP limits, project instructions, and why there is no in-process plugin loader are in [Extending summonr](docs/guide/extending.md). Memory and `summonr session export` are in [Using the terminal](docs/guide/terminal.md), and key storage is in [Models and sign-in](docs/guide/models.md). Config lives under `~/.summonr`.
 
 ## Docs
 

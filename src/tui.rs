@@ -279,7 +279,7 @@ pub struct Info {
     pub relay: Option<String>,
     pub session: String,
     pub endpoint: String,
-    pub pick: Option<crate::endpoint::Pick>,
+    pub pick: Option<crate::endpoint::Origin>,
     pub prefs: Prefs,
     pub splash: bool,
     pub inline: bool,

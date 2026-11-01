@@ -1,12 +1,12 @@
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Need {
+pub enum Requirement {
     Config,
     Model,
     Key,
     ModelAndKey,
 }
 
-impl Need {
+impl Requirement {
     pub(super) const fn key(self) -> bool {
         matches!(self, Self::Key | Self::ModelAndKey)
     }
@@ -25,7 +25,7 @@ impl Need {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Pick {
+pub enum Origin {
     Flag,
     ModelFlag,
     Env,
@@ -33,7 +33,7 @@ pub enum Pick {
     Default,
 }
 
-impl std::fmt::Display for Pick {
+impl std::fmt::Display for Origin {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::Flag => "flag",

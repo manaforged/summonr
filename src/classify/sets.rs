@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use serde::Deserialize;
+use summonr_core::catalog::{Catalog, Row};
 
 use super::Question;
 
@@ -11,25 +12,26 @@ struct Set {
     questions: BTreeMap<String, Question>,
 }
 
+impl Row for Set {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 #[derive(Deserialize)]
 struct Table {
     set: Vec<Set>,
 }
 
-static SETS: LazyLock<Vec<Set>> = LazyLock::new(|| {
-    summonr_core::table::embedded::<Table>("question set", include_str!("sets.toml")).set
+static SETS: LazyLock<Catalog<Set>> = LazyLock::new(|| {
+    let Table { set } =
+        summonr_core::table::embedded::<Table>("question set", include_str!("sets.toml"));
+    Catalog::from_rows("question set", set).unwrap_or_else(|error| panic!("{error}"))
 });
 
-static BY_NAME: LazyLock<BTreeMap<&'static str, &'static BTreeMap<String, Question>>> =
-    LazyLock::new(|| {
-        SETS.iter()
-            .map(|set| (set.name.as_str(), &set.questions))
-            .collect()
-    });
-
 pub static NAMES: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| SETS.iter().map(|set| set.name.as_str()).collect());
+    LazyLock::new(|| SETS.rows().iter().map(|set| set.name.as_str()).collect());
 
 pub fn by_name(name: &str) -> Option<BTreeMap<String, Question>> {
-    BY_NAME.get(name).map(|&questions| questions.clone())
+    SETS.get(name).map(|set| set.questions.clone())
 }

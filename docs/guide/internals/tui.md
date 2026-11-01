@@ -83,6 +83,22 @@ with [sequencing](https://www.carbondesignsystem.com/building-blocks/foundations
 to preserve information hierarchy. These principles guide the score; they
 do not prescribe its exact durations.
 
+## Headless terminal captures
+
+The existing `--profile-tui` developer runner captures the actual terminal UI without a desktop, credentials, network, or live agents. Keep `--profile` as the customer session profiler; do not add a second capture command.
+
+```sh
+cargo run --features gui -- --profile-tui agents --frames 1 --history 0 --cols 120 --rows 40 --output /tmp/agents.png
+cargo run --features gui -- --profile-tui help --frames 1 --history 0 --cols 120 --rows 40 --output /tmp/help.png
+cargo run --features gui -- --profile-tui agents-failed --frames 1 --history 0 --cols 120 --rows 40 --output /tmp/agents-failed.png
+```
+
+`gui` supplies Sigil's existing CPU image renderer here; these commands do not open a window or require a GPU. Each run writes `.png`, `.json` (frame trace), `.ansi`, and `.txt` artifacts with the same stem. Images use the bundled monospace font at 10×20 pixels per terminal cell. A terminal-only build still writes traces, ANSI, and text; requesting a `.png` output on that build fails with a build instruction.
+
+The `help`, `agents`, and `agents-failed` scenarios exercise production UI state through existing application events. They verify expected visible content before accepting a capture. A clipped or missing scene fails instead of reporting a successful screenshot. Add reproduction inputs in the private `profile_scenes.rs` owner, not a new replay framework. `idle`, `stream`, and `resize` retain their existing profiling behavior.
+
+For A/B work, run the same scenario, dimensions, history, frame count, FPS, and build profile on each revision with different output stems. Compare the text and PNGs, inspect the matching frame traces, and run the relevant behavioral tests. A pixel difference is not proof of better UX or performance. Captures use Sigil's terminal cells, not a particular terminal application's font rasterization; PTY tests remain the end-to-end terminal boundary.
+
 ## Composer Tab bindings
 
 Owner: `view/input.rs::tab_shortcuts`, attached to `view/keys.rs::shell`

@@ -5,7 +5,7 @@ use super::commands::workspace;
 pub(super) async fn run(tool: &[String]) -> Result<i32> {
     let Some(name) = tool.first() else {
         return Err(summonr::Error::Config(
-            "summonr tool NAME [JSON]: invoke a tool directly".to_string(),
+            "summonr tool run NAME [JSON]: invoke a tool directly".to_string(),
         ));
     };
     let arguments = match tool.get(1..) {

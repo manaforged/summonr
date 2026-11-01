@@ -29,7 +29,7 @@ impl App {
         crate::endpoint::resolve(
             Some(&self.model.peek().snapshot.endpoint),
             None,
-            crate::endpoint::Need::ModelAndKey,
+            crate::endpoint::Requirement::ModelAndKey,
         )
         .is_err()
     }

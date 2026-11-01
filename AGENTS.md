@@ -31,7 +31,7 @@ export ANTHROPIC_API_KEY=...
 summonr anthropic -p "say hi"
 ```
 
-`summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoints` lists the endpoints you have set up and where each key comes from; `--all` shows the rest and `--check` tests each one. Add any OpenAI-compatible server with `summonr login NAME --url URL [--model M]`, and remove it with `summonr logout NAME --remove`. The same server can be one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
+`summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoint list` lists the endpoints you have set up and where each key comes from; `--all` shows the rest and `--check` tests each one. Add any OpenAI-compatible server with `summonr endpoint add NAME --url URL [--model M]`, and remove it with `summonr endpoint remove NAME`. The same server can be one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
 
 ## Drive it from a script
 
@@ -68,7 +68,7 @@ summonr cron log nightly      # what the last run did and whether the check pass
 
 `summonr cron add NAME --manual -p PROMPT` with `summonr cron token NAME` and `summonr gateway webhook` starts a job from `POST /run/NAME`. `summonr gateway telegram` drives sessions from a paired Telegram chat.
 
-summonr runs commands as your account with no sandbox, so run unattended goals in a container when they should not touch the rest of the machine. `--worktree` works in a separate git worktree: on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch, and on failure it keeps the worktree. `--steps PLAN.md` runs a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
+summonr runs commands as your account with no sandbox, so run unattended goals in a container when they should not touch the rest of the machine. `--worktree` works in a separate git worktree: on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch, and on failure it keeps the worktree. `--steps PLAN.md` runs a numbered plan with a check per step. `summonr session diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
 
 ## Give it project instructions
 
@@ -86,7 +86,7 @@ summonr loads no third-party code into its process. Add capability from outside:
 | An MCP server | `summonr mcp add NAME -- CMD`, or a `[mcp.NAME]` table in `~/.summonr/config.toml` |
 | A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
 | A CLI | Any program on `PATH`; the model calls it through `run_command` |
-| A plugin | `summonr install PATH` for a Claude Code layout directory: skills, commands, agents, MCP servers, hooks, language servers, and `bin/` |
+| A plugin | `summonr plugin install PATH` for a Claude Code layout directory: skills, commands, agents, MCP servers, hooks, language servers, and `bin/` |
 
 [Extending summonr](https://raw.githubusercontent.com/manaforged/summonr/main/docs/guide/extending.md) has the details. The [reference](https://raw.githubusercontent.com/manaforged/summonr/main/docs/guide/reference.md) lists every flag, slash command, config key, and environment variable.
 

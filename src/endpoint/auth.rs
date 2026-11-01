@@ -5,7 +5,7 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
     let file = config::file()?;
     let route = super::route::pick(&file, name);
     let name = route.as_str();
-    let endpoint = resolve(Some(name), None, Need::Config)?;
+    let endpoint = resolve(Some(name), None, Requirement::Config)?;
     let offered = offered_login(name, &endpoint);
     let external = matches!(endpoint.wire, Wire::AgentSdk);
     let provider = super::route::provider_of(name).to_string();
@@ -100,7 +100,7 @@ fn offered_login(name: &str, endpoint: &Endpoint) -> Option<crate::config::OAuth
 }
 
 pub fn login_endpoint(name: &str) -> Result<Endpoint> {
-    let mut endpoint = resolve(Some(name), None, Need::Config)?;
+    let mut endpoint = resolve(Some(name), None, Requirement::Config)?;
     if endpoint.oauth.is_none() {
         endpoint.oauth = offered_login(name, &endpoint);
         endpoint.api_key = None;
@@ -130,7 +130,7 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
 }
 
 pub async fn check_key(name: &str, key: &str) -> Result<Source> {
-    let mut endpoint = resolve(Some(name), None, Need::Config)?;
+    let mut endpoint = resolve(Some(name), None, Requirement::Config)?;
     endpoint.api_key = Some(Secret::new(key.trim()));
     endpoint.source = None;
     endpoint.oauth = None;
@@ -190,7 +190,7 @@ fn removed(name: &str, forgot: Forgot) -> Result<String> {
     Ok(match forgot {
         Forgot::Token => format!("✓ Signed out of {name}."),
         Forgot::Key => format!("✓ Removed the stored key for {name}."),
-        Forgot::Nothing if resolve(Some(name), None, Need::Config)?.keyless() => format!(
+        Forgot::Nothing if resolve(Some(name), None, Requirement::Config)?.keyless() => format!(
             "{name} needs no key, so nothing was stored. `summonr logout {name} --remove` deletes the endpoint."
         ),
         Forgot::Nothing => format!("Nothing is stored for {name}."),
@@ -220,7 +220,7 @@ pub fn adopt_keys() -> Result<Vec<String>> {
     Ok(moved)
 }
 
-pub(crate) fn ready(need: Need) -> (Vec<Endpoint>, Vec<String>) {
+pub(crate) fn ready(need: Requirement) -> (Vec<Endpoint>, Vec<String>) {
     let mut names = match names() {
         Ok(names) => names,
         Err(error) => return (Vec::new(), vec![error.to_string()]),
@@ -260,13 +260,13 @@ pub(crate) fn ready(need: Need) -> (Vec<Endpoint>, Vec<String>) {
 
 pub fn first_classify() -> Option<String> {
     names().unwrap_or_default().into_iter().find(|name| {
-        resolve(Some(name), None, Need::Key)
+        resolve(Some(name), None, Requirement::Key)
             .is_ok_and(|endpoint| crate::provider::wire::spec(endpoint.wire).classifies())
     })
 }
 
 pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
-    let (endpoints, _) = ready(Need::ModelAndKey);
+    let (endpoints, _) = ready(Requirement::ModelAndKey);
     if endpoints.is_empty() {
         return None;
     }

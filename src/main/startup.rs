@@ -180,7 +180,7 @@ fn own(name: &str) -> bool {
 fn logout(args: &Args) -> Result<i32> {
     let Some(name) = args.endpoint.as_deref() else {
         return Err(summonr::Error::Config(
-            "logout needs an endpoint name".to_string(),
+            "name an endpoint: `summonr logout NAME` or `summonr endpoint remove NAME`".to_string(),
         ));
     };
     let text = if args.remove {
@@ -214,7 +214,7 @@ async fn add(args: &Args) -> Result<i32> {
     }
     let Some(path) = args.prompt.first() else {
         return Err(summonr::Error::Config(
-            "summonr install PATH  (or install --list)".to_string(),
+            "summonr plugin install PATH  (or plugin list)".to_string(),
         ));
     };
     let installed = summonr::install_plugin(std::path::Path::new(path))?;
@@ -228,7 +228,9 @@ async fn add(args: &Args) -> Result<i32> {
 
 fn uninstall(args: &Args) -> Result<i32> {
     let Some(name) = args.prompt.first() else {
-        return Err(summonr::Error::Config("summonr uninstall NAME".to_string()));
+        return Err(summonr::Error::Config(
+            "summonr plugin remove NAME".to_string(),
+        ));
     };
     if !summonr::uninstall_plugin(name)? {
         return Err(summonr::Error::Config(format!(

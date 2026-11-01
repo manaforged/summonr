@@ -16,7 +16,7 @@ struct Live {
 }
 
 async fn steered(name: &str, ask: &str, input: UserInput) -> std::result::Result<Live, String> {
-    let endpoint = crate::endpoint::resolve(Some(name), None, crate::Need::Key)
+    let endpoint = crate::endpoint::resolve(Some(name), None, crate::Requirement::Key)
         .map_err(|error| error.to_string())?;
     let client = crate::provider::Client::connect(&endpoint).map_err(|error| error.to_string())?;
     let workspace = tempfile::tempdir().unwrap();

@@ -33,7 +33,7 @@ impl Worker {
         let endpoint = crate::endpoint::resolve(
             Some(endpoint.unwrap_or(&self.endpoint)),
             model,
-            crate::endpoint::Need::ModelAndKey,
+            crate::endpoint::Requirement::ModelAndKey,
         );
         self.drive(endpoint).await;
     }
@@ -120,11 +120,12 @@ impl Worker {
     }
 
     pub(super) fn assign_model(&mut self, role: Role, endpoint: &str, model: Option<&str>) {
-        let resolved =
-            crate::endpoint::resolve(Some(endpoint), model, crate::endpoint::Need::ModelAndKey)
-                .and_then(|endpoint| {
-                    Self::client(&self.ui, &endpoint).map(|client| (endpoint, client))
-                });
+        let resolved = crate::endpoint::resolve(
+            Some(endpoint),
+            model,
+            crate::endpoint::Requirement::ModelAndKey,
+        )
+        .and_then(|endpoint| Self::client(&self.ui, &endpoint).map(|client| (endpoint, client)));
         match resolved {
             Ok((endpoint, client)) => {
                 if endpoint.context_window.is_none() {
@@ -255,7 +256,7 @@ impl Worker {
             let endpoint = crate::endpoint::resolve(
                 Some(&selection.endpoint),
                 selection.model.as_deref(),
-                crate::endpoint::Need::ModelAndKey,
+                crate::endpoint::Requirement::ModelAndKey,
             )?;
             Ok((Self::client(ui, &endpoint)?, endpoint))
         });
@@ -317,7 +318,7 @@ impl Worker {
                 unconfigured: crate::endpoint::resolve(
                     Some(&self.endpoint),
                     None,
-                    crate::endpoint::Need::ModelAndKey,
+                    crate::endpoint::Requirement::ModelAndKey,
                 )
                 .is_err(),
             })),

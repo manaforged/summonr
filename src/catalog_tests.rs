@@ -62,8 +62,12 @@ fn a_december_release_keeps_its_own_year() {
 }
 
 fn selection(images: Option<bool>) -> crate::Endpoint {
-    let mut endpoint =
-        crate::endpoint::resolve(Some("zai"), Some("glm-5.3-flash"), crate::Need::Config).unwrap();
+    let mut endpoint = crate::endpoint::resolve(
+        Some("zai"),
+        Some("glm-5.3-flash"),
+        crate::Requirement::Config,
+    )
+    .unwrap();
     endpoint.name = "env".to_string();
     endpoint.base_url = Some("http://172.17.0.1:8095/zai/v1".to_string());
     endpoint.images = images;

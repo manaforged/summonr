@@ -18,16 +18,46 @@ fn interactive() -> String {
         .join("\n")
 }
 
-pub(super) fn exit_help(verb: Option<&str>) -> ! {
-    let endpoints = summonr::endpoint_names().map_or_else(
-        |_| "the built-in endpoint names".to_string(),
-        |names| names.join(", "),
-    );
-    let text = include_str!("../help.txt")
+/// The verb sections, rendered from the command rows.
+pub(super) fn verbs() -> String {
+    let rows: std::collections::BTreeMap<&str, &super::commands::Command> =
+        super::commands::COMMANDS
+            .iter()
+            .chain(super::commands::SUBCOMMANDS.iter())
+            .map(|row| (row.name, row))
+            .collect();
+    let mut out = String::new();
+    for (title, names) in super::commands::SECTIONS {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push('\n');
+        out.push_str(title);
+        out.push(':');
+        for name in names {
+            let Some(row) = rows.get(name) else {
+                panic!("the help section `{title}` names the unknown command `{name}`");
+            };
+            for line in row.help.split('\n') {
+                out.push_str("\n  ");
+                out.push_str(line);
+            }
+        }
+    }
+    out
+}
+
+/// The full `summonr --help` text.
+pub(super) fn text() -> String {
+    include_str!("../help.txt")
         .replace("{options}", &super::FLAGS.help_lines())
-        .replace("{endpoints}", &endpoints)
         .replace("{commands}", &interactive())
-        .replace("{sets}", &summonr::classify::sets::NAMES.join(", "));
+        .replace("{verbs}", &verbs())
+        .replace("{sets}", &summonr::classify::sets::NAMES.join(", "))
+}
+
+pub(super) fn exit_help(verb: Option<&str>) -> ! {
+    let text = text();
     let lines: Vec<&str> = verb.map_or_else(Vec::new, |verb| {
         text.lines()
             .filter(|line| {

@@ -36,7 +36,8 @@ async fn usage_exhaustion_stops_before_retry_or_fallback() -> Result<()> {
         text: "fixture failure",
     };
     let mut loop_ = Loop::open(primary, "m", workspace.path(), "system", driver)?;
-    let endpoint = crate::endpoint::resolve(Some("openai"), Some("alias"), crate::Need::Config)?;
+    let endpoint =
+        crate::endpoint::resolve(Some("openai"), Some("alias"), crate::Requirement::Config)?;
     loop_.set_fallbacks([(fallback, endpoint)]);
     let failure = loop_
         .turn("finish the kernel candidate")

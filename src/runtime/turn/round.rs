@@ -266,7 +266,7 @@ impl<P: Provider> Loop<P> {
         let read_only = self.session.depth() > 0 && self.tools.is_read_only();
         self.tools.set_read_only(read_only);
         self.summary_wait = 0;
-        self.turn_started = crate::mail::now();
+        self.turn_started = summonr_core::clock::now();
         let commands = self.verify.clone().unwrap_or_default();
         self.tools.clear_wrote();
         self.prepare_work(&input.text, &commands)?;

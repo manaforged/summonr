@@ -68,7 +68,7 @@ summonr works until the check exits 0 and a second model call agrees the goal is
 See what the last turn changed:
 
 ```sh
-summonr diff --turn last
+summonr session diff --turn last
 ```
 
 ## Next steps

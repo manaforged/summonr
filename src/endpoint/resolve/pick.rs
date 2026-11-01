@@ -18,7 +18,7 @@ pub(crate) fn default_model_selection() -> Option<crate::recent::ModelId> {
     ))
 }
 
-type Chosen = (Option<String>, Option<String>, Option<Pick>);
+type Chosen = (Option<String>, Option<String>, Option<Origin>);
 
 pub(crate) fn choose(
     file: &File,
@@ -34,16 +34,16 @@ pub(crate) fn choose(
     };
     let env = |key: &str| given(std::env::var(key).ok().as_deref());
     let (chosen, remembered, reason) = if let Some(name) = given(name) {
-        (Some(name), None, Some(Pick::Flag))
+        (Some(name), None, Some(Origin::Flag))
     } else if let Some(name) = env("SUMMONR_ENDPOINT") {
-        (Some(name), None, Some(Pick::Env))
+        (Some(name), None, Some(Origin::Env))
     } else {
         remembered(file, last)
     };
     let reason = if given(model).is_some() {
-        Some(Pick::ModelFlag)
+        Some(Origin::ModelFlag)
     } else if env("SUMMONR_MODEL").is_some() {
-        Some(Pick::Env)
+        Some(Origin::Env)
     } else {
         reason.filter(|_| chosen.is_some())
     };
@@ -54,10 +54,10 @@ pub(crate) fn choose(
 fn remembered(file: &File, last: Option<(String, String)>) -> Chosen {
     let config = config_shown();
     let candidates = [
-        last.map(|(name, model)| (name, Some(model), Pick::LastUsed)),
+        last.map(|(name, model)| (name, Some(model), Origin::LastUsed)),
         file.default
             .clone()
-            .map(|name| (name, file.default_model.clone(), Pick::Default)),
+            .map(|name| (name, file.default_model.clone(), Origin::Default)),
     ];
     let mut notes = Vec::new();
     let mut found = (None, None, None);
@@ -68,10 +68,10 @@ fn remembered(file: &File, last: Option<(String, String)>) -> Chosen {
                 break;
             }
             Err(reason) => notes.push(match pick {
-                Pick::Default => format!(
+                Origin::Default => format!(
                     "summonr: `default = \"{name}\"` in {config} is skipped: {reason}. Fix that endpoint, or remove `default`"
                 ),
-                Pick::LastUsed | Pick::Flag | Pick::ModelFlag | Pick::Env => format!(
+                Origin::LastUsed | Origin::Flag | Origin::ModelFlag | Origin::Env => format!(
                     "summonr: the last used endpoint `{name}` is skipped: {reason}. Pick another with /model"
                 ),
             }),
@@ -107,7 +107,7 @@ pub(crate) enum Keys {
 }
 
 fn set_up_in(file: &File, name: &str, keys: Keys) -> bool {
-    resolve(Some(name), None, Need::ModelAndKey).is_ok_and(|endpoint| {
+    resolve(Some(name), None, Requirement::ModelAndKey).is_ok_and(|endpoint| {
         !crate::provider::wire::spec(endpoint.wire).classifies()
             && (endpoint.source.is_some_and(|source| {
                 source != Source::Builtin && !(keys == Keys::Stored && source == Source::Env)

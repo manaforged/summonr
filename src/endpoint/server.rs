@@ -49,7 +49,7 @@ fn saved_url(name: &str) -> Result<String> {
 }
 
 pub fn set_default(name: &str, model: Option<&str>) -> Result<String> {
-    let endpoint = resolve(Some(name), model, Need::ModelAndKey)?;
+    let endpoint = resolve(Some(name), model, Requirement::ModelAndKey)?;
     config::save_default_model(&config::path()?, Some((name, &endpoint.model)))?;
     Ok(format!(
         "✓ {name} is the default endpoint: {}. Run `summonr` to start on it.",

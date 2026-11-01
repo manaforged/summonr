@@ -54,7 +54,7 @@ pub(super) fn newer(args: &Value) -> Result<Option<u64>> {
         .parse()
         .map_err(|_parse: std::num::ParseIntError| invalid())?;
     Ok(Some(
-        crate::mail::now().saturating_sub(count.saturating_mul(scale)),
+        summonr_core::clock::now().saturating_sub(count.saturating_mul(scale)),
     ))
 }
 

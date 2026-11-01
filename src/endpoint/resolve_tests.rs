@@ -1,7 +1,11 @@
 #[test]
 fn a_fallback_that_does_not_resolve_is_reported_as_skipped() {
-    let mut endpoint =
-        super::super::resolve(Some("zai"), Some("glm-5.3-flash"), crate::Need::Config).unwrap();
+    let mut endpoint = super::super::resolve(
+        Some("zai"),
+        Some("glm-5.3-flash"),
+        crate::Requirement::Config,
+    )
+    .unwrap();
     endpoint.fallback = vec!["no-such-fallback-selection".to_string()];
     let (ready, skipped) = super::fallbacks(&endpoint, |_| Ok(()));
     assert!(ready.is_empty());

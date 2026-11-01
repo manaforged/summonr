@@ -18,7 +18,7 @@ impl Journal {
     pub(super) fn append(&self, server: &str, level: &str, logger: Option<&str>, data: &Value) {
         let source =
             logger.map_or_else(|| server.to_string(), |logger| format!("{server}/{logger}"));
-        let line = format!("{} {source} {level} {data}\n", crate::mail::now());
+        let line = format!("{} {source} {level} {data}\n", summonr_core::clock::now());
         crate::tools::blocking(|| self.write(line.as_bytes()));
     }
 

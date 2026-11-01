@@ -14,7 +14,7 @@ pub fn fallbacks<P>(
     let mut ready = Vec::new();
     let mut skipped = Vec::new();
     for name in &endpoint.fallback {
-        match resolve(Some(name), None, Need::ModelAndKey)
+        match resolve(Some(name), None, Requirement::ModelAndKey)
             .and_then(|fallback| Ok((connect(&fallback)?, fallback)))
         {
             Ok(pair) => ready.push(pair),
@@ -35,19 +35,19 @@ pub fn vision() -> Result<Option<Endpoint>> {
     names.sort_unstable();
     Ok(names
         .into_iter()
-        .find_map(|name| resolve(Some(name), None, Need::ModelAndKey).ok()))
+        .find_map(|name| resolve(Some(name), None, Requirement::ModelAndKey).ok()))
 }
 
-pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<Pick> {
+pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<Origin> {
     let env = std::env::var("SUMMONR_BASE_URL").is_ok_and(|base| !base.trim().is_empty());
     if env && name.is_none() {
-        return Some(Pick::Env);
+        return Some(Origin::Env);
     }
     let file = config::file().ok()?;
     choose(&file, last_used(), name, model).2
 }
 
-pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<Endpoint> {
+pub fn resolve(name: Option<&str>, model: Option<&str>, need: Requirement) -> Result<Endpoint> {
     if let Ok(base) = std::env::var("SUMMONR_BASE_URL")
         && !base.trim().is_empty()
         && matches!(name, None | Some(ENV_ENDPOINT))
@@ -135,7 +135,7 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
     layer.endpoint(ENV_ENDPOINT, hosted(base))
 }
 
-fn unchosen(file: &File, need: Need) -> Result<String> {
+fn unchosen(file: &File, need: Requirement) -> Result<String> {
     match first_ready(file) {
         Some(name) => Ok(name),
         None if need.key() => Err(Error::Setup(no_endpoint())),
@@ -150,7 +150,7 @@ fn unknown(chosen: &str) -> Error {
     let hint = closest(chosen, &names, Near::Typo)
         .map_or_else(String::new, |name| format!("did you mean `{name}`? "));
     Error::Config(format!(
-        "unknown endpoint `{chosen}`: {hint}`summonr endpoints` lists them"
+        "unknown endpoint `{chosen}`: {hint}`summonr endpoint list` lists them"
     ))
 }
 

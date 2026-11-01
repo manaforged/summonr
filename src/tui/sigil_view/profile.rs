@@ -34,6 +34,9 @@ enum Scenario {
     Idle = 1,
     Stream,
     Resize,
+    Help,
+    Agents,
+    AgentsFailed,
 }
 
 impl Scenario {
@@ -42,6 +45,9 @@ impl Scenario {
             "idle" => Ok(Self::Idle),
             "stream" => Ok(Self::Stream),
             "resize" => Ok(Self::Resize),
+            "help" => Ok(Self::Help),
+            "agents" => Ok(Self::Agents),
+            "agents-failed" => Ok(Self::AgentsFailed),
             unknown => Err(Error::Config(format!("unknown profile scenario {unknown}"))),
         }
     }
@@ -73,6 +79,14 @@ impl Options {
             options.set(&name, value)?;
         }
         options.validate()?;
+        if options.output.extension().is_some_and(|ext| ext == "png") {
+            if !cfg!(feature = "gui") {
+                return Err(Error::Config(String::from(
+                    "terminal PNG capture requires a build with --features gui; no window is opened",
+                )));
+            }
+            options.output.set_extension("json");
+        }
         Ok(options)
     }
 
@@ -102,7 +116,7 @@ impl Options {
             || !(FPS_MIN..=FPS_MAX).contains(&self.fps)
         {
             return Err(Error::Config(format!(
-                "profile-tui: idle|stream|resize; frames 1..120, history 0..1000, cols 40..512, rows 10..200, fps {FPS_MIN}..{FPS_MAX}",
+                "profile-tui: idle|stream|resize|help|agents|agents-failed; frames 1..120, history 0..1000, cols 40..512, rows 10..200, fps {FPS_MIN}..{FPS_MAX}",
             )));
         }
         Ok(())
@@ -110,7 +124,9 @@ impl Options {
 
     fn cause(&self) -> profile::Cause {
         match self.scenario {
-            Scenario::Idle => profile::Cause::Idle,
+            Scenario::Idle | Scenario::Help | Scenario::Agents | Scenario::AgentsFailed => {
+                profile::Cause::Idle
+            }
             Scenario::Stream => profile::Cause::Input,
             Scenario::Resize => profile::Cause::Resize,
         }
@@ -137,6 +153,7 @@ async fn capture(options: &Options) -> Result<()> {
             text: format!("Change {index}: measured layout, terminal output, and memory usage."),
         }));
     }
+    scenes::seed(&app, options.scenario);
     app.refresh();
     let mut host = Host::cells();
     let tree = app.clone();
@@ -162,6 +179,9 @@ async fn capture(options: &Options) -> Result<()> {
     let grid = screen
         .frame(&mut host, &mut router, [], size)
         .map_err(|error| Error::Tool(error.to_string()))?;
+    scenes::verify(options.scenario, &grid.text())?;
+    #[cfg(feature = "gui")]
+    save_image(grid, &host, options)?;
     let mut ansi = Vec::new();
     render(&mut ansi, &Grid::new(0, 0), grid, ColorDepth::Truecolor)?;
     write(
@@ -172,6 +192,28 @@ async fn capture(options: &Options) -> Result<()> {
     write(
         &options.output.with_extension("txt"),
         grid.text(),
+        Durability::Renamed,
+    )?;
+    eprintln!(
+        "UI capture: {} (+ .ansi, .txt{})",
+        options.output.display(),
+        if cfg!(feature = "gui") { ", .png" } else { "" }
+    );
+    Ok(())
+}
+
+#[cfg(feature = "gui")]
+fn save_image(grid: &Grid, host: &Host, options: &Options) -> Result<()> {
+    let image = grid
+        .image(host.theme(), sigil::geometry::PhysicalSize::new(10, 20))
+        .map_err(|error| Error::Tool(error.to_string()))?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut png, image::ImageFormat::Png)
+        .map_err(|error| Error::Tool(error.to_string()))?;
+    write(
+        &options.output.with_extension("png"),
+        png.get_ref(),
         Durability::Renamed,
     )?;
     Ok(())
@@ -257,6 +299,9 @@ pub(super) fn info() -> Info {
 fn frame_budget(fps: u32) -> std::time::Duration {
     crate::limits::limits().frame_window() / fps.clamp(FPS_MIN, FPS_MAX)
 }
+
+#[path = "profile_scenes.rs"]
+mod scenes;
 
 #[cfg(test)]
 #[path = "profile_tests.rs"]

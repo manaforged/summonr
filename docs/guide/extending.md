@@ -1,6 +1,6 @@
 # Extending summonr
 
-Optional capabilities are compiled modules. `summonr modules` lists them with their state. A project may turn a module off. A project can't turn a module on.
+Optional capabilities are compiled modules. `summonr module list` lists them with their state. A project may turn a module off. A project can't turn a module on.
 
 You extend summonr outside the process, with files and child processes. This keeps summonr's memory small (27 MB in our benchmark runs) and its first-round prefix short. There is no in-process package loader and no marketplace.
 
@@ -44,7 +44,7 @@ Put the binary on `PATH` or under `~/.summonr/bin/<name>/`. The model runs it wi
 
 ## Install a plugin
 
-A plugin is a directory in the Claude Code plugin layout. `summonr install PATH` copies it to `~/.summonr/plugins/<name>/`; the name comes from `.claude-plugin/plugin.json`, or from the directory name. Copying does not run anything inside summonr. After the copy, install connects to each MCP server the plugin adds. Restart summonr to load the plugin.
+A plugin is a directory in the Claude Code plugin layout. `summonr plugin install PATH` copies it to `~/.summonr/plugins/<name>/`; the name comes from `.claude-plugin/plugin.json`, or from the directory name. Copying does not run anything inside summonr. After the copy, install connects to each MCP server the plugin adds. Restart summonr to load the plugin.
 
 | Part | What summonr does with it |
 | --- | --- |
@@ -60,7 +60,7 @@ A plugin is a directory in the Claude Code plugin layout. `summonr install PATH`
 
 Nothing a plugin ships runs inside summonr. Skills, commands, and agents are files. Hooks and `bin/` tools run once per call. An MCP server starts once to list its tools, then on first use; a language server starts on first use. Both stop on their own when idle. Beyond `servers_max` live servers, the least recently used idle server stops. `/mcp` shows each running server's memory on macOS and Linux.
 
-`summonr install --list` lists plugins and what each adds. `summonr uninstall NAME` deletes the directory and `~/.summonr/plugin-data/<name>/`, and it removes that name from `[plugins] off`. `[plugins] off = ["NAME"]` in `~/.summonr/config.toml` keeps one installed but unloaded. A name in `off` that is not installed is an error when a session starts and when you run `summonr install --list`.
+`summonr plugin list` lists plugins and what each adds. `summonr plugin remove NAME` deletes the directory and `~/.summonr/plugin-data/<name>/`, and it removes that name from `[plugins] off`. `[plugins] off = ["NAME"]` in `~/.summonr/config.toml` keeps one installed but unloaded. A name in `off` that is not installed is an error when a session starts and when you run `summonr plugin list`.
 
 `install` refuses a directory that adds nothing summonr loads, and it refuses `plugin.json`, `.mcp.json`, `hooks.json`, `.lsp.json`, `mcp.toml`, or `hooks.toml` when the file is present, not empty, and does not parse. The same parse check applies to a JSON file the manifest points at. It connects to each new MCP server. If a server does not answer, `install` exits 1 and keeps the copy. Installing the same name again replaces the directory and keeps `~/.summonr/plugin-data/<name>/`. A hook whose type is not `command` is skipped and does not run.
 

@@ -28,7 +28,7 @@ fn waiting(ready: &[endpoint::Endpoint], errors: &mut Vec<String>) -> Vec<(Strin
             let found = endpoint::auth_info(&name).and_then(|info| {
                 Ok((
                     info,
-                    endpoint::resolve(Some(&name), None, endpoint::Need::Config)?,
+                    endpoint::resolve(Some(&name), None, endpoint::Requirement::Config)?,
                 ))
             });
             let (info, endpoint) = match found {
@@ -204,7 +204,7 @@ impl Board {
 
 impl Reader {
     pub(super) async fn models(&self, request: u64, only: Option<String>) {
-        let (endpoints, mut errors) = endpoint::ready(endpoint::Need::Key);
+        let (endpoints, mut errors) = endpoint::ready(endpoint::Requirement::Key);
         let setup = waiting(&endpoints, &mut errors);
         let names: Vec<&str> = endpoints
             .iter()

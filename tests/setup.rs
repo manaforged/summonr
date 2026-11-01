@@ -193,10 +193,9 @@ fn a_local_server_takes_a_new_model_and_becomes_the_default_from_the_shell() {
         "{config}"
     );
     let (_, help) = summonr(home, &["login", "--help"]);
-    assert!(
-        help.contains("--url") && help.contains("--default"),
-        "{help}"
-    );
+    assert!(help.contains("--default"), "{help}");
+    let (_, help) = summonr(home, &["endpoint", "add", "--help"]);
+    assert!(help.contains("--url"), "{help}");
 }
 
 #[test]

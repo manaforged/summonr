@@ -134,7 +134,8 @@ pub(crate) fn since(workspace: &Path, started: u64, session: Option<&str>) -> Ve
 }
 
 fn prune(workspace: &Path, record: &Record) -> bool {
-    let cutoff = crate::mail::now().saturating_sub(crate::limits::limits().job_retain().as_secs());
+    let cutoff =
+        summonr_core::clock::now().saturating_sub(crate::limits::limits().job_retain().as_secs());
     let exit = exit_path(workspace, &record.id);
     if check_id(&record.id).is_err()
         || record.started >= cutoff
@@ -236,7 +237,7 @@ pub(crate) fn stamp(
     background: bool,
     session: Option<String>,
 ) -> Result<Record> {
-    let started = crate::mail::now();
+    let started = summonr_core::clock::now();
     Ok(Record {
         id: id.to_string(),
         pid,

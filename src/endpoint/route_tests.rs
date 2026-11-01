@@ -154,7 +154,7 @@ fn no_route_shares_its_providers_name() {
 #[test]
 fn a_key_stored_under_an_old_route_name_still_works() {
     crate::secret::set("siliconflow", "sk-old-slot").unwrap();
-    let endpoint = super::super::resolve(Some("siliconflow"), None, crate::Need::Config);
+    let endpoint = super::super::resolve(Some("siliconflow"), None, crate::Requirement::Config);
     crate::secret::forget("siliconflow").unwrap();
     let endpoint = endpoint.unwrap();
     assert_eq!(endpoint.name, "siliconflow-intl");

@@ -99,7 +99,7 @@ pub async fn check_servers(installed: &Installed, workspace: &Path) -> Result<Ve
             }
             Err(error) => {
                 return Err(Error::Setup(format!(
-                    "{name}: not reachable: {error}\nkept in {}; fix the command or run `summonr uninstall {}`",
+                    "{name}: not reachable: {error}\nkept in {}; fix the command or run `summonr plugin remove {}`",
                     crate::config::tilde(&installed.dir),
                     installed.name
                 )));

@@ -1,10 +1,9 @@
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::OnceLock;
+use std::collections::BTreeSet;
 
 pub(crate) use summonr_types::endpoint::{Access, Choice, Region};
 
-use super::preset::{Preset, presets};
+use super::preset::{Preset, listed, presets};
 use super::*;
 
 impl Preset {
@@ -18,19 +17,6 @@ impl Preset {
             .is_none_or(|region| self.region == Some(region))
             && choice.access.is_none_or(|access| self.access() == access)
     }
-}
-
-fn retired() -> &'static BTreeMap<&'static str, &'static str> {
-    static INDEX: OnceLock<BTreeMap<&'static str, &'static str>> = OnceLock::new();
-    INDEX.get_or_init(|| {
-        let mut index = BTreeMap::new();
-        for preset in presets() {
-            for old in &preset.replaces {
-                index.insert(old.as_str(), preset.name.as_str());
-            }
-        }
-        index
-    })
 }
 
 pub(super) fn routes(provider: &str) -> impl Iterator<Item = &'static Preset> + '_ {
@@ -67,8 +53,8 @@ pub(super) fn pick(file: &File, name: &str) -> String {
     if owned {
         return name.to_string();
     }
-    if let Some(route) = retired().get(name) {
-        return (*route).to_string();
+    if let Some(current) = listed().get(name).filter(|preset| preset.name != name) {
+        return current.name.clone();
     }
     let options: Vec<&Preset> = routes(name).collect();
     if options.len() < 2 {
@@ -215,14 +201,8 @@ pub(crate) fn provider_names(file: &File) -> Vec<String> {
             names.push(preset.provider.clone());
         }
     }
-    let shipped: BTreeSet<&str> = super::preset::listed()
-        .iter()
-        .map(|preset| preset.name.as_str())
-        .collect();
     for (name, row) in &file.endpoint {
-        let builtin = shipped.contains(name.as_str())
-            || retired().contains_key(name.as_str())
-            || seen.contains(name);
+        let builtin = listed().get(name).is_some() || seen.contains(name);
         let owned = row.base_url.is_some() && preset(name).is_none();
         if (!builtin || owned) && seen.insert(name.clone()) {
             names.push(name.clone());

@@ -86,8 +86,12 @@ fn a_local_url_does_not_inherit_the_catalog_window() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
-    let mut endpoint =
-        crate::endpoint::resolve(Some("zai"), Some("glm-5.3-flash"), crate::Need::Config).unwrap();
+    let mut endpoint = crate::endpoint::resolve(
+        Some("zai"),
+        Some("glm-5.3-flash"),
+        crate::Requirement::Config,
+    )
+    .unwrap();
     endpoint.base_url = Some(format!("http://{addr}/v1"));
     let client = Client::connect(&endpoint).unwrap();
     let window = tokio::runtime::Builder::new_current_thread()
@@ -122,7 +126,7 @@ fn an_overflow_names_the_context_cap() {
 #[test]
 fn a_client_lists_models_from_the_models_base_not_the_chat_base() {
     let mut endpoint =
-        crate::endpoint::resolve(Some("deepseek"), None, crate::Need::Config).unwrap();
+        crate::endpoint::resolve(Some("deepseek"), None, crate::Requirement::Config).unwrap();
     endpoint.base_url = Some("https://api.perplexity.ai".to_string());
     endpoint.models_url = Some("https://api.perplexity.ai/v1".to_string());
     endpoint.api_key = Some(summonr_core::secret::Secret::new("k"));
@@ -236,8 +240,12 @@ fn a_401_with_no_key_sent_names_the_missing_key_not_a_rejected_one() {
             ));
         }
     });
-    let mut endpoint =
-        crate::endpoint::resolve(Some("zai"), Some("glm-5.3-flash"), crate::Need::Config).unwrap();
+    let mut endpoint = crate::endpoint::resolve(
+        Some("zai"),
+        Some("glm-5.3-flash"),
+        crate::Requirement::Config,
+    )
+    .unwrap();
     endpoint.base_url = Some(format!("http://{address}/v1"));
     endpoint.models_url = None;
     endpoint.api_key = None;

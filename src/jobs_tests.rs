@@ -12,7 +12,7 @@ fn finished(workspace: &Path, started: u64) -> PathBuf {
 #[test]
 fn a_finished_job_past_retention_is_pruned_and_a_recent_one_is_kept() {
     let dir = tempfile::tempdir().unwrap();
-    let now = crate::mail::now();
+    let now = summonr_core::clock::now();
     let old = finished(
         dir.path(),
         now - crate::limits::limits().job_retain().as_secs() - 60,

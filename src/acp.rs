@@ -37,7 +37,7 @@ where
         }
     });
     let mut server = Server {
-        endpoint: endpoint::resolve(name, model, crate::endpoint::Need::ModelAndKey)
+        endpoint: endpoint::resolve(name, model, crate::endpoint::Requirement::ModelAndKey)
             .map_err(|error| error.to_string()),
         build,
         out,

@@ -204,7 +204,7 @@ fn sessions_grep_finds_text_from_a_past_session() {
     assert_eq!(text.trim(), "no matches");
     let alone = summonr(home.path(), work.path(), port, &["--grep", "walrus"]);
     assert!(
-        alone.contains("--grep works with `summonr sessions`"),
+        alone.contains("--grep works with `summonr sessions`; use `summonr session search TEXT`"),
         "{alone}"
     );
 }
@@ -216,7 +216,7 @@ fn a_mistyped_command_is_not_sent_to_the_model() {
     let (port, bodies) = provider();
     configure(home.path(), port, "");
     let text = summonr(home.path(), work.path(), port, &["sesions"]);
-    assert!(text.contains("did you mean `sessions`"), "{text}");
+    assert!(text.contains("did you mean `session`"), "{text}");
     assert!(bodies.lock().unwrap().is_empty(), "{text}");
 }
 

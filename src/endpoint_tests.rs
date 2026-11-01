@@ -117,13 +117,13 @@ fn the_last_model_wins_over_the_config_default_and_a_stale_one_falls_back() {
     let (name, model, reason) = choose(&file, last, None, None);
     assert_eq!(
         (name.as_deref(), model.as_deref(), reason),
-        (Some("other"), Some("o"), Some(super::Pick::LastUsed))
+        (Some("other"), Some("o"), Some(super::Origin::LastUsed))
     );
     let gone = Some(("gone".to_string(), "g".to_string()));
     let (name, model, reason) = choose(&file, gone, None, None);
     assert_eq!(
         (name.as_deref(), model.as_deref(), reason),
-        (Some("lab"), Some("m"), Some(super::Pick::Default))
+        (Some("lab"), Some("m"), Some(super::Origin::Default))
     );
 }
 
@@ -136,6 +136,12 @@ fn the_provider_table_rejects_rows_it_cannot_honor() {
         (
             "duplicate row",
             format!("{base}\n[[preset]]\nname = \"x\"\nbase_url = \"https://y.example/v1\"\n"),
+        ),
+        (
+            "retired name still a row",
+            format!(
+                "{base}replaces = [\"y\"]\n\n[[preset]]\nname = \"y\"\nbase_url = \"https://y.example/v1\"\n"
+            ),
         ),
         (
             "lowercase env key",
@@ -159,6 +165,7 @@ fn an_off_row_is_listed_but_hidden() {
     assert!(!super::preset::presets().any(|row| row.name == "claude-pro"));
     assert!(
         super::preset::listed()
+            .rows()
             .iter()
             .any(|row| row.name == "claude-pro" && row.off),
         "claude-pro stays in the table with off = true"
@@ -275,7 +282,7 @@ fn another_tools_credential_files_are_never_read() {
 #[test]
 fn an_explicit_effort_reaches_the_provider_unchanged() {
     use crate::provider::Effort;
-    let endpoint = super::resolve(Some("deepseek"), None, crate::Need::Config).unwrap();
+    let endpoint = super::resolve(Some("deepseek"), None, crate::Requirement::Config).unwrap();
     assert_eq!(endpoint.effort_for(Some(Effort::None)), Some(Effort::None));
     assert_eq!(
         endpoint.effort_for(Some(Effort::Medium)),

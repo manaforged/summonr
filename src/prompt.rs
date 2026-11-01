@@ -212,7 +212,7 @@ const DEFAULT: &str = "You are an expert coding assistant running inside summonr
 <rules>
 - Use search to find text in files or files by name, anywhere on disk; read for files and directories; run_command for builds, tests, and git
 - Unsure of a tool's options? call it with op=help for the full reference
-- A tool missing from the schemas is an off or empty module: web (search, fetch), mail (agents, send, inbox, board), MCP, skills, LSP, jobs, child tasks. Name the step (`summonr modules`, `summonr mcp add NAME -- CMD`, `~/.summonr/skills/<name>/SKILL.md`) instead of hunting the harness
+- A tool missing from the schemas is an off or empty module: web (search, fetch), mail (agents, send, inbox, board), MCP, skills, LSP, jobs, child tasks. Name the step (`summonr module list`, `summonr mcp add NAME -- CMD`, `~/.summonr/skills/<name>/SKILL.md`) instead of hunting the harness
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
 - write is for new files and complete rewrites
 - Be concise in your responses

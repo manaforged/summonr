@@ -1,10 +1,11 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
 use crate::durable::store;
+use summonr_core::clock::now;
 use summonr_core::dirs::summonr_home;
 use summonr_core::error::{Error, Result};
 
@@ -98,13 +99,6 @@ pub(crate) struct Mailbox {
 struct Stamp {
     len: u64,
     modified: Option<SystemTime>,
-}
-
-pub(crate) fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
 }
 
 pub(crate) fn slug(cwd: &str) -> String {

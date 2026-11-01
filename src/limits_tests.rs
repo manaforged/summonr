@@ -15,8 +15,10 @@ fn a_limits_table_in_config_overrides_only_the_keys_it_names() {
 
 #[test]
 fn an_endpoint_without_a_ttl_takes_the_limits_default() {
-    let anthropic = crate::endpoint::resolve(Some("anthropic"), None, crate::Need::Config).unwrap();
+    let anthropic =
+        crate::endpoint::resolve(Some("anthropic"), None, crate::Requirement::Config).unwrap();
     assert_eq!(anthropic.cache_ttl, limits().cache_ttl);
-    let plan = crate::endpoint::resolve(Some("minimax-plan"), None, crate::Need::Config).unwrap();
+    let plan =
+        crate::endpoint::resolve(Some("minimax-plan"), None, crate::Requirement::Config).unwrap();
     assert_eq!(plan.cache_ttl, CacheTtl::FiveMinutes);
 }

@@ -58,7 +58,7 @@ pub(super) async fn list(all: bool, live: bool) -> Result<()> {
     }
     let hidden = names.len() - shown.len();
     if hidden > 0 {
-        eprintln!("{hidden} more not set up · summonr endpoints --all");
+        eprintln!("{hidden} more not set up · summonr endpoint list --all");
     }
     Ok(())
 }
@@ -108,7 +108,7 @@ async fn row(name: &str, set_up: bool, live: bool) -> Row {
 }
 
 async fn check(name: &str, info: &AuthInfo) -> String {
-    match summonr::resolve_endpoint(Some(name), None, summonr::Need::ModelAndKey) {
+    match summonr::resolve_endpoint(Some(name), None, summonr::Requirement::ModelAndKey) {
         Err(error) => format!("{} · {error}", State::Error),
         Ok(endpoint) if endpoint.base_url.is_none() => "adapter".to_string(),
         Ok(endpoint) => match Client::discover(&endpoint).await {

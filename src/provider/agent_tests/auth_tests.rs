@@ -31,7 +31,7 @@ fn endpoint(dir: &std::path::Path, mode: &str) -> crate::Endpoint {
         r#"{"loggedIn":false,"authMethod":null}"#,
     )
     .expect("write the signed-out fixture status");
-    let mut endpoint = crate::endpoint::resolve(Some("claude"), None, crate::Need::Config)
+    let mut endpoint = crate::endpoint::resolve(Some("claude"), None, crate::Requirement::Config)
         .expect("resolve the built-in Claude Code route");
     endpoint.base_url = Some(program.display().to_string());
     endpoint

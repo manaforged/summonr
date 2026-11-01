@@ -1,7 +1,7 @@
 use super::super::app::App;
 use super::{State, busy_info, frame_with};
 use crate::provider::Effort;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 fn screen(setup: impl FnOnce(&App)) -> String {
     frame_with(busy_info(), 100, 24, State::Idle, setup).join("\n")
@@ -55,12 +55,10 @@ fn enter_on_the_effort_strip_sets_the_chosen_level() {
 fn effort_keyboard_navigation_repaints_the_highlight_without_a_model_update() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use sigil::Host;
-    use sigil::events::EventRouter;
-    use sigil::reactive::Runtime;
     use sigil::terminal::Screen;
     use tokio::sync::mpsc::unbounded_channel;
 
-    Runtime::scope("effort-keyboard", || {
+    sigil::reactive::Owner::scope("effort-keyboard", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -71,10 +69,9 @@ fn effort_keyboard_navigation_repaints_the_highlight_without_a_model_update() {
         let mut host = Host::cells();
         host.mount(move || super::super::view::root(app));
         let mut screen = Screen::new(100, 24);
-        let mut router = EventRouter::new();
         for _ in 0..2 {
             screen
-                .frame(&mut host, &mut router, [], (100, 24))
+                .frame(&mut host, [], (100, 24))
                 .expect("open effort strip");
         }
         for (code, modifiers, expected) in [
@@ -87,10 +84,10 @@ fn effort_keyboard_navigation_repaints_the_highlight_without_a_model_update() {
         ] {
             let key = sigil::terminal::map_key(&KeyEvent::new(code, modifiers)).expect("key");
             screen
-                .frame(&mut host, &mut router, [key], (100, 24))
+                .frame(&mut host, [key], (100, 24))
                 .expect("navigate effort strip");
             let grid = screen
-                .frame(&mut host, &mut router, [], (100, 24))
+                .frame(&mut host, [], (100, 24))
                 .expect("paint selected effort");
             let text = grid.text();
             let (y, row) = text

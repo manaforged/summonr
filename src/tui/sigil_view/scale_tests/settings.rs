@@ -51,7 +51,7 @@ fn the_notify_row_shows_the_choice_and_cycles_it() {
 #[test]
 fn the_window_title_drops_control_characters_from_the_workspace() {
     use super::super::app::App;
-    sigil::reactive::Runtime::scope("title-controls", || {
+    sigil::reactive::Owner::scope("title-controls", || {
         let (commands, _sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(
             busy_info(),

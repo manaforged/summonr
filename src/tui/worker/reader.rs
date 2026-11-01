@@ -1,8 +1,8 @@
+use crate::tui::Fact;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
-use crate::tui::{Fact, Intent};
 
 use notify::Event as NotifyEvent;
 use tokio::sync::mpsc::UnboundedSender;
@@ -61,7 +61,9 @@ impl Reader {
         let reader = self.clone();
         let task = tokio::task::spawn_blocking(move || reader.serve(command));
         if save && let Err(error) = task.await {
-            self.send(Msg::Fact(Fact::System(format!("save task failed: {error}"))));
+            self.send(Msg::Fact(Fact::System(format!(
+                "save task failed: {error}"
+            ))));
         }
     }
 
@@ -101,7 +103,9 @@ impl Reader {
             }
             Cmd::DeleteSession(id) => {
                 match crate::session::remove(&id) {
-                    Ok(name) => self.send(Msg::Fact(Fact::System(format!("deleted session {name}")))),
+                    Ok(name) => {
+                        self.send(Msg::Fact(Fact::System(format!("deleted session {name}"))))
+                    }
                     Err(error) => self.send(Msg::Fact(Fact::Failed(error.to_string()))),
                 }
                 self.serve(Cmd::ListSessions);
@@ -130,7 +134,9 @@ impl Reader {
                 if let Err(error) =
                     summonr_home().and_then(|home| crate::recent::pin(&home, &selection, on))
                 {
-                    self.send(Msg::Fact(Fact::ModelNote(format!("pin not saved: {error}"))));
+                    self.send(Msg::Fact(Fact::ModelNote(format!(
+                        "pin not saved: {error}"
+                    ))));
                 }
             }
             Cmd::SaveDefault(selection) => {
@@ -166,7 +172,9 @@ impl Reader {
                 added,
                 image,
             })),
-            Err(error) => self.send(Msg::Fact(Fact::System(format!("cannot view {path}: {error}")))),
+            Err(error) => self.send(Msg::Fact(Fact::System(format!(
+                "cannot view {path}: {error}"
+            )))),
         }
     }
 
@@ -245,8 +253,13 @@ impl Reader {
 
     fn kill(&self, id: &str) {
         match crate::tools::command::kill_job(&self.workspace, id) {
-            Ok(status) => self.send(Msg::Fact(Fact::System(format!("job {id}: {}", status.label())))),
-            Err(error) => self.send(Msg::Fact(Fact::System(format!("job {id} not stopped: {error}")))),
+            Ok(status) => self.send(Msg::Fact(Fact::System(format!(
+                "job {id}: {}",
+                status.label()
+            )))),
+            Err(error) => self.send(Msg::Fact(Fact::System(format!(
+                "job {id} not stopped: {error}"
+            )))),
         }
         self.jobs();
     }
@@ -254,7 +267,9 @@ impl Reader {
     pub(super) fn trees(&self) {
         match worktree::status(&self.workspace) {
             Ok(trees) => self.send(Msg::Fact(Fact::Trees(trees))),
-            Err(error) => self.send(Msg::Fact(Fact::System(format!("worktrees unavailable: {error}")))),
+            Err(error) => self.send(Msg::Fact(Fact::System(format!(
+                "worktrees unavailable: {error}"
+            )))),
         }
     }
 
@@ -283,7 +298,9 @@ impl Reader {
         let (root, mut watcher) = match started {
             Ok(started) => started,
             Err(error) => {
-                self.send(Msg::Fact(Fact::System(format!("workspace watch unavailable: {error}"))));
+                self.send(Msg::Fact(Fact::System(format!(
+                    "workspace watch unavailable: {error}"
+                ))));
                 return;
             }
         };
@@ -302,15 +319,17 @@ impl Reader {
             for event in events {
                 match event {
                     Ok(event) => paths.extend(relative(&root, &event)),
-                    Err(error) => {
-                        self.send(Msg::Fact(Fact::System(format!("workspace watch failed: {error}"))))
-                    }
+                    Err(error) => self.send(Msg::Fact(Fact::System(format!(
+                        "workspace watch failed: {error}"
+                    )))),
                 }
             }
             let changed = unignored(&root, paths);
             let dirs = changed.iter().map(|path| root.join(path));
             if let Err(error) = watch(&mut watcher, dirs.filter(|dir| dir.is_dir()).collect()) {
-                self.send(Msg::Fact(Fact::System(format!("workspace watch failed: {error}"))));
+                self.send(Msg::Fact(Fact::System(format!(
+                    "workspace watch failed: {error}"
+                ))));
             }
             if !changed.is_empty() && self.ui.send(Msg::Fact(Fact::Changed(changed))).is_err() {
                 return;

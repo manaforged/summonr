@@ -23,7 +23,10 @@ impl ReplayState {
         if let Msg::Fact(Fact::Busy(busy)) = msg {
             self.busy = *busy;
             self.asking = None;
-        } else if let Msg::Fact(Fact::Event(event @ (Event::Approval { .. } | Event::Elicit { .. }))) = msg {
+        } else if let Msg::Fact(Fact::Event(
+            event @ (Event::Approval { .. } | Event::Elicit { .. }),
+        )) = msg
+        {
             self.asking = super::asking(msg)
                 .filter(|asking| *asking)
                 .map(|_| event.clone());
@@ -67,10 +70,7 @@ impl ReplayState {
                 selections,
             })
         }));
-        out.extend(
-            self.mode
-                .map(|mode| Msg::Intent(Intent::RunMode(mode))),
-        );
+        out.extend(self.mode.map(|mode| Msg::Intent(Intent::RunMode(mode))));
         let (steering, queued) = self.queued.unwrap_or_default();
         out.push(Msg::Fact(Fact::Queued { steering, queued }));
         out.extend(
@@ -78,7 +78,9 @@ impl ReplayState {
                 .take()
                 .map(|restored| Msg::Fact(Fact::Restored(restored))),
         );
-        out.push(Msg::Fact(Fact::Changed(self.changed.clone().unwrap_or_default())));
+        out.push(Msg::Fact(Fact::Changed(
+            self.changed.clone().unwrap_or_default(),
+        )));
         out.extend(
             self.asking
                 .clone()

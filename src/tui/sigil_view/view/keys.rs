@@ -9,6 +9,7 @@ mod nav;
 
 pub(in crate::tui::sigil_view) use bindings::KeyCommand;
 use bindings::bindings;
+use sigil::prelude::Widget;
 
 impl App {
     pub(in crate::tui::sigil_view) fn run_key(&self, command: KeyCommand) -> bool {
@@ -79,9 +80,12 @@ impl App {
         } else if self.pane_back() || self.pane_dismiss() {
         } else if self.form_stage().is_some() {
             self.form_reply(Reply::Cancel);
-        } else {
+            return;
+        } else if !self.turn_running() {
             super::input::escape(self);
+            return;
         }
+        self.cancel_running();
     }
 
     fn enter(&self) -> bool {

@@ -3,11 +3,10 @@ use std::rc::Rc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sigil::Host;
-use sigil::clipboard::{ClipError, Clipboard, Delivery};
-use sigil::events::{EventRouter, ShellEvent};
+use sigil::clipboard::{Clipboard, Delivery};
+use sigil::events::ShellEvent;
 use sigil::kernel::NodeBuilder;
-use sigil::prelude::{NodeEventsExt, button};
-use sigil::reactive::Runtime;
+use sigil::prelude::{Widget, button};
 use sigil::terminal::{Screen, map_key};
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -18,7 +17,7 @@ use crate::tui::sigil_view::view::root;
 struct MemoryClipboard(Rc<RefCell<String>>);
 
 impl Clipboard for MemoryClipboard {
-    fn set(&self, text: &str) -> Result<Delivery, ClipError> {
+    fn set(&self, text: &str) -> Result<Delivery, sigil::Error> {
         self.0.replace(text.to_owned());
         Ok(Delivery::Confirmed)
     }
@@ -38,7 +37,7 @@ fn drive<T>(
     keys: Vec<ShellEvent>,
     read: impl FnOnce(&App) -> T,
 ) -> (T, String) {
-    Runtime::scope("input-shortcuts", || {
+    sigil::reactive::Owner::scope("input-shortcuts", || {
         let copied = Rc::new(RefCell::new(String::new()));
         sigil::clipboard::install(MemoryClipboard(Rc::clone(&copied)));
         let workspace = tempfile::tempdir().expect("workspace");
@@ -54,15 +53,12 @@ fn drive<T>(
         let tree = app.clone();
         host.mount(move || view(tree));
         let mut screen = Screen::new(160, 40);
-        let mut router = EventRouter::new();
         for _ in 0..2 {
-            screen
-                .frame(&mut host, &mut router, [], (160, 40))
-                .expect("focus input");
+            screen.frame(&mut host, [], (160, 40)).expect("focus input");
         }
         for event in keys {
             screen
-                .frame(&mut host, &mut router, [event], (160, 40))
+                .frame(&mut host, [event], (160, 40))
                 .expect("route shortcut");
         }
         let text = copied.borrow().clone();

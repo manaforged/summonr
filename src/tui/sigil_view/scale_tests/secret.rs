@@ -1,6 +1,4 @@
 use sigil::Host;
-use sigil::events::EventRouter;
-use sigil::reactive::Runtime;
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -17,12 +15,12 @@ fn app(workspace: &std::path::Path) -> App {
     app
 }
 
-fn render(host: &mut Host, screen: &mut Screen, router: &mut EventRouter) -> String {
+fn render(host: &mut Host, screen: &mut Screen) -> String {
     for _ in 0..2 {
-        screen.frame(host, router, [], (100, 30)).unwrap();
+        screen.frame(host, [], (100, 30)).unwrap();
     }
     screen
-        .frame(host, router, [], (100, 30))
+        .frame(host, [], (100, 30))
         .unwrap()
         .text()
         .to_string()
@@ -30,7 +28,7 @@ fn render(host: &mut Host, screen: &mut Screen, router: &mut EventRouter) -> Str
 
 #[test]
 fn the_credential_dialog_shows_each_typed_character() {
-    Runtime::scope("secret-typing", || {
+    sigil::reactive::Owner::scope("secret-typing", || {
         let workspace = tempfile::tempdir().unwrap();
         let app = app(workspace.path());
         app.set_secret(Some(("Password for git:".to_string(), 0)));
@@ -38,17 +36,16 @@ fn the_credential_dialog_shows_each_typed_character() {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
-        let mut router = EventRouter::new();
-        drop(render(&mut host, &mut screen, &mut router));
+        drop(render(&mut host, &mut screen));
         app.set_secret(Some(("Password for git:".to_string(), 5)));
-        let shown = render(&mut host, &mut screen, &mut router);
+        let shown = render(&mut host, &mut screen);
         assert_eq!(shown.matches('•').count(), 5, "{shown}");
     });
 }
 
 #[test]
 fn closing_the_credential_dialog_cancels_the_request() {
-    Runtime::scope("secret-close", || {
+    sigil::reactive::Owner::scope("secret-close", || {
         let workspace = tempfile::tempdir().unwrap();
         let app = app(workspace.path());
         let (request, answer) = crate::askpass::request("Password for git:");

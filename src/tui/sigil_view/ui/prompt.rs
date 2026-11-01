@@ -1,13 +1,11 @@
 use std::rc::Rc;
 
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Tone, button, container,
-    notice_band,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, Tone, button, container, notice_band};
 
 use crate::prefs::Hotkeys;
 
 use super::hints::Hints;
+use sigil::prelude::Widget;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui) enum ActionKind {

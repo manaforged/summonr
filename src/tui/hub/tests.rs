@@ -24,7 +24,11 @@ fn session_status_follows_the_turn_and_its_questions() {
             Status::NeedsYou,
         ),
         (Status::NeedsYou, approval(None), Status::Working),
-        (Status::NeedsYou, Msg::Fact(Fact::Busy(None)), Status::Review),
+        (
+            Status::NeedsYou,
+            Msg::Fact(Fact::Busy(None)),
+            Status::Review,
+        ),
         (Status::Working, Msg::Fact(Fact::Busy(None)), Status::Review),
         (Status::Idle, Msg::Fact(Fact::Busy(None)), Status::Idle),
         (
@@ -39,7 +43,11 @@ fn session_status_follows_the_turn_and_its_questions() {
         ),
         (Status::Failed, Msg::Fact(Fact::Busy(None)), Status::Failed),
         (Status::Idle, approval(None), Status::Idle),
-        (Status::Review, Msg::Fact(Fact::System("note".into())), Status::Review),
+        (
+            Status::Review,
+            Msg::Fact(Fact::System("note".into())),
+            Status::Review,
+        ),
         (
             Status::Working,
             Msg::Fact(Fact::Event(Event::Elicit {
@@ -90,13 +98,20 @@ fn an_answered_question_is_not_asked_again_on_switch() {
     let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
     replay.resend(&app);
     while let Ok(msg) = inbox.try_recv() {
-        assert!(!matches!(msg, Msg::Fact(Fact::Event(Event::Approval { .. }))));
+        assert!(!matches!(
+            msg,
+            Msg::Fact(Fact::Event(Event::Approval { .. }))
+        ));
     }
 }
 
 #[test]
 fn text_handed_back_while_away_returns_once_on_switch() {
-    let restored = || Msg::Fact(Fact::Restored(vec![crate::provider::UserInput::from("finish the docs")]));
+    let restored = || {
+        Msg::Fact(Fact::Restored(vec![crate::provider::UserInput::from(
+            "finish the docs",
+        )]))
+    };
     let handed = |replay: &mut super::replay::ReplayState| {
         let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
         replay.resend(&app);

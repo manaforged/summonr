@@ -20,9 +20,8 @@ watch="$root/src $root/Cargo.toml $root/Cargo.lock $root/build.rs $root/.git/HEA
 patch=
 if [ -n "$sigil" ] && [ -f "$sigil/crates/sigil/Cargo.toml" ]; then
     url=$(sed -n 's/^sigil = .*git = "\([^"]*\)".*/\1/p' "$root/Cargo.toml")
-    patch="patch.\"$url\".sigil-ui.path=\"$sigil/crates/sigil\""
+    patch="patch.\"$url\".sigil-ui.git=\"file://$sigil\""
     head="$head $(git -C "$sigil" rev-parse HEAD 2>/dev/null)"
-    watch="$watch $sigil/crates/sigil/src $sigil/crates/sigil/Cargo.toml"
 fi
 
 stale() {

@@ -4,6 +4,7 @@ use sigil::layout::Dimension;
 use sigil::prelude::Paint;
 use sigil::reactive::untrack;
 use sigil::widgets::TextEditBuilder;
+use sigil::prelude::Widget;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let (cols, _rows) = app.viewport.get();

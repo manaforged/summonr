@@ -1,6 +1,6 @@
 use super::super::pane::Pane;
 use super::screens;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 #[test]
 fn arrow_down_in_the_view_pane_scrolls_the_file() {

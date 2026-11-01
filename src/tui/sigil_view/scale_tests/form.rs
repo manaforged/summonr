@@ -1,4 +1,4 @@
-use crate::tui::{Fact};
+use crate::tui::Fact;
 use serde_json::json;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -108,7 +108,7 @@ fn sent(receiver: &mut UnboundedReceiver<Cmd>) -> FormAnswer {
 
 #[test]
 fn a_filled_form_is_checked_per_field_and_sent_after_review() {
-    Runtime::scope("form-send", || {
+    sigil::reactive::Owner::scope("form-send", || {
         let workspace = tempfile::tempdir().unwrap();
         let (app, mut receiver) = open(workspace.path());
         typed(&app, "");
@@ -152,7 +152,7 @@ fn a_filled_form_is_checked_per_field_and_sent_after_review() {
 
 #[test]
 fn enter_on_the_review_sends_the_answers() {
-    Runtime::scope("form-review-enter", || {
+    sigil::reactive::Owner::scope("form-review-enter", || {
         let workspace = tempfile::tempdir().unwrap();
         let (app, mut receiver) = open(workspace.path());
         typed(&app, "Ada");
@@ -200,7 +200,7 @@ fn a_question_shows_one_key_line_and_no_bare_cancel() {
 
 #[test]
 fn cancelling_the_form_sends_cancel() {
-    Runtime::scope("form-cancel", || {
+    sigil::reactive::Owner::scope("form-cancel", || {
         let workspace = tempfile::tempdir().unwrap();
         let (app, mut receiver) = open(workspace.path());
         app.form_reply(Reply::Cancel);
@@ -210,7 +210,7 @@ fn cancelling_the_form_sends_cancel() {
 
 #[test]
 fn model_question_picks_with_arrows_and_sends_without_review() {
-    Runtime::scope("form-model-pick", || {
+    sigil::reactive::Owner::scope("form-model-pick", || {
         let workspace = tempfile::tempdir().unwrap();
         let form = Form {
             server: None,
@@ -242,7 +242,7 @@ fn model_question_picks_with_arrows_and_sends_without_review() {
 
 #[test]
 fn model_question_toggles_several_and_takes_a_typed_answer() {
-    Runtime::scope("form-model-many", || {
+    sigil::reactive::Owner::scope("form-model-many", || {
         let workspace = tempfile::tempdir().unwrap();
         let form = Form {
             server: None,
@@ -299,7 +299,7 @@ fn model_question_toggles_several_and_takes_a_typed_answer() {
 
 #[test]
 fn a_question_gives_back_the_unsent_draft_when_it_closes() {
-    Runtime::scope("form-draft", || {
+    sigil::reactive::Owner::scope("form-draft", || {
         let workspace = tempfile::tempdir().unwrap();
         std::fs::create_dir(workspace.path().join(".git")).unwrap();
         std::fs::write(workspace.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
@@ -318,7 +318,7 @@ fn a_question_gives_back_the_unsent_draft_when_it_closes() {
 
 #[test]
 fn a_typed_answer_shows_once_and_the_picker_points_to_it() {
-    Runtime::scope("form-typed-answer", || {
+    sigil::reactive::Owner::scope("form-typed-answer", || {
         let workspace = tempfile::tempdir().unwrap();
         let form = Form {
             server: None,

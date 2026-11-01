@@ -1,7 +1,7 @@
 use super::super::app::App;
 use super::screens;
 use crate::tools::Event;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 #[test]
 fn mounted_terminal_prose_streams_and_replaces_the_final_answer() {

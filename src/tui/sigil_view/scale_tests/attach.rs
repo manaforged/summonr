@@ -1,9 +1,8 @@
-use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
 use super::{State, busy_info, frame_with, paint};
-use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
+use crate::tui::{Activity, Cmd, Fact, Msg};
 
 fn paste_png(app: &App) {
     let file = tempfile::Builder::new()
@@ -20,7 +19,7 @@ fn paste_png(app: &App) {
 fn copying_after_an_image_says_the_picture_stays() {
     use crate::tui::sigil_view::model::Entry;
 
-    Runtime::scope("copy-image", || {
+    sigil::reactive::Owner::scope("copy-image", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -66,7 +65,7 @@ fn an_image_pasted_during_a_turn_shows_as_attached() {
 
 #[test]
 fn steering_an_image_only_draft_goes_into_the_running_turn() {
-    Runtime::scope("attach-queue", || {
+    sigil::reactive::Owner::scope("attach-queue", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);

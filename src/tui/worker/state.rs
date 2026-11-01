@@ -1,6 +1,6 @@
 use super::export::export_session;
-use crate::tui::{Fact, Intent};
 use super::*;
+use crate::tui::Fact;
 
 impl Worker {
     pub(super) fn new(
@@ -56,7 +56,10 @@ impl Worker {
 
     pub(super) async fn run(mut self) {
         self.replay();
-        drop(self.ui.send(Msg::Fact(Fact::Session(self.loop_.session_id()))));
+        drop(
+            self.ui
+                .send(Msg::Fact(Fact::Session(self.loop_.session_id()))),
+        );
         if let Some(name) = self.loop_.workflow() {
             self.system(&format!("workflow {name} · {}", self.workflow.summary()));
         }
@@ -116,7 +119,10 @@ impl Worker {
         let mail = match self.loop_.mail_poll() {
             Ok(mail) => {
                 if self.mail_error.take().is_some() {
-                    drop(self.ui.send(Msg::Fact(Fact::System("mail recovered".to_string()))));
+                    drop(
+                        self.ui
+                            .send(Msg::Fact(Fact::System("mail recovered".to_string()))),
+                    );
                 }
                 mail
             }

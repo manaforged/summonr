@@ -5,7 +5,7 @@ use super::super::app::App;
 use super::{State, busy_info, frame_with, screens};
 use crate::catalog::Model;
 use crate::recent::ModelId;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 fn session(id: &str, parent: Option<&str>) -> crate::session::SessionInfo {
     crate::session::SessionInfo {
@@ -65,9 +65,9 @@ fn a_session_delete_confirmation_is_visible_with_existing_rows() {
 #[test]
 fn a_changed_target_and_a_reopened_picker_need_a_new_delete_confirmation() {
     use crate::tui::Cmd;
-    use sigil::reactive::Runtime;
+
     use tokio::sync::mpsc::unbounded_channel;
-    Runtime::scope("session-delete", || {
+    sigil::reactive::Owner::scope("session-delete", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -293,7 +293,10 @@ fn every_resume_row_keeps_its_id_project_and_model_under_a_long_title() {
         long.model = Some("glm-5.3-flash".to_string());
         let mut short = session("2b23f73d8f780000", None);
         short.preview = "say hi".to_string();
-        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(long, true), (short, true)]))));
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![
+            (long, true),
+            (short, true),
+        ]))));
     });
     let screen = lines.join("\n");
     let first = super::find(&lines, "Add sub").expect("first session row");
@@ -305,7 +308,10 @@ fn every_resume_row_keeps_its_id_project_and_model_under_a_long_title() {
 fn the_session_filter_is_one_labelled_row_above_the_list() {
     let lines = frame_with(busy_info(), 120, 30, State::Idle, |app| {
         app.open_sessions(false);
-        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(session("first", None), true)]))));
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(
+            session("first", None),
+            true,
+        )]))));
     });
     let screen = lines.join("\n");
     let field = super::find(&lines, super::super::ui::FILTER_HINT).expect(&screen);
@@ -356,7 +362,10 @@ fn resume_lists_the_current_session_and_marks_it() {
     let screen = picker(120, |app| {
         app.update(Msg::Fact(Fact::Session("current".to_owned())));
         app.open_sessions(false);
-        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(session("current", None), true)]))));
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(
+            session("current", None),
+            true,
+        )]))));
     });
     assert!(screen.contains("Session current"), "{screen}");
     assert!(screen.contains("(current)"), "{screen}");

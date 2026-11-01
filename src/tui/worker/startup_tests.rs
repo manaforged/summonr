@@ -1,7 +1,7 @@
-use crate::tui::{Fact};
 use super::*;
 use crate::durable::driver::SessionDriver;
 use crate::provider::Effort;
+use crate::tui::Fact;
 use tokio::sync::mpsc::unbounded_channel;
 
 #[test]

@@ -1,16 +1,11 @@
 use std::rc::Rc;
 
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, WidgetLayoutExt, container, text_field,
-};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Tone, container, text_field};
 
 use super::{App, canvas};
 use crate::endpoint::State;
 use crate::recent::ModelId;
-use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, alt, browser_columns, browser_layout,
-    group, input_keys, notice, tab_strip,
-};
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, alt, browser_columns, browser_layout, group, input_keys, notice, tab_strip};
 
 mod detail;
 mod facets;
@@ -25,6 +20,7 @@ use list::View;
 use row::Grid;
 pub(in crate::tui::sigil_view::settings) use row::{price, tone};
 use rows::{ModelRow, fix, names};
+use sigil::prelude::Widget;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     let mut bindings = vec![(

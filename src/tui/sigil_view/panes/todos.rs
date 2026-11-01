@@ -1,5 +1,5 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder};
+use sigil::prelude::{LayoutStyle, NodeBuilder};
 
 use super::App;
 use super::body::{Empty, empty, header};
@@ -10,6 +10,7 @@ const NO_LEDGER: Empty = Empty {
 };
 use super::ledger::Mark;
 use crate::tui::sigil_view::chat::todos::tally;
+use sigil::prelude::Widget;
 
 pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();

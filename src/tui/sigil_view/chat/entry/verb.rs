@@ -1,4 +1,4 @@
-use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Radius, Token, container};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, Radius, Token, container};
 
 use super::tools::workspace_relative;
 use super::tree::label;

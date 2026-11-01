@@ -1,10 +1,9 @@
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Tone, WidgetLayoutExt, container, text_field,
-};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, Tone, container, text_field};
 
 use super::super::{App, canvas};
 use crate::tui::sigil_view::app::{Login, Note};
 use crate::tui::sigil_view::ui::{Size, group, input_keys, notice};
+use sigil::prelude::Widget;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Input {

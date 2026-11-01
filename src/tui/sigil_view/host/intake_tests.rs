@@ -1,13 +1,12 @@
-use crate::tui::{Fact};
 use super::*;
+use crate::tui::Fact;
 use crate::tui::sigil_view::view::root;
 use sigil::Host;
-use sigil::events::EventRouter;
 use sigil::terminal::Screen;
 
 #[test]
 fn bracketed_paste_normalizes_folds_and_keeps_shift_enter_in_the_editor() {
-    Runtime::scope("terminal-paste", || {
+    sigil::reactive::Owner::scope("terminal-paste", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(profile::info(), workspace.path().to_owned(), commands);
@@ -17,16 +16,15 @@ fn bracketed_paste_normalizes_folds_and_keeps_shift_enter_in_the_editor() {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
-        let mut router = EventRouter::new();
         for _ in 0..2 {
             screen
-                .frame(&mut host, &mut router, [], (100, 30))
+                .frame(&mut host, [], (100, 30))
                 .expect("focus composer");
         }
         let mut events = vec![sigil::terminal::paste("first\r\nsecond\rthird")];
         app.intake(&mut events);
         screen
-            .frame(&mut host, &mut router, events, (100, 30))
+            .frame(&mut host, events, (100, 30))
             .expect("paste normalized text");
         assert_eq!(app.draft.peek(), "first\nsecond\nthird");
         let mut events = vec![
@@ -38,7 +36,7 @@ fn bracketed_paste_normalizes_folds_and_keeps_shift_enter_in_the_editor() {
         ];
         app.intake(&mut events);
         screen
-            .frame(&mut host, &mut router, events, (100, 30))
+            .frame(&mut host, events, (100, 30))
             .expect("insert newline through intake");
         assert_eq!(app.draft.peek(), "first\nsecond\nthird\n");
         assert!(sent.try_recv().is_err(), "modified enter submitted");
@@ -56,7 +54,7 @@ fn bracketed_paste_normalizes_folds_and_keeps_shift_enter_in_the_editor() {
 
 #[test]
 fn bracketed_image_paths_attach_without_submitting_and_secret_pastes_stay_private() {
-    Runtime::scope("terminal-image-secret", || {
+    sigil::reactive::Owner::scope("terminal-image-secret", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let path = workspace.path().join("shot.png");
         image::RgbaImage::new(2, 2)
@@ -93,7 +91,6 @@ fn bracketed_image_paths_attach_without_submitting_and_secret_pastes_stay_privat
 
 use crate::tui::sigil_view::profile;
 use crate::tui::{Activity, Cmd};
-use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
 #[test]
@@ -106,7 +103,7 @@ fn image_paste_shortcuts_queue_the_clipboard_image_during_a_turn() {
         crossterm::event::KeyModifiers::ALT,
         crossterm::event::KeyModifiers::CONTROL,
     ] {
-        Runtime::scope("image-paste-shortcuts", || {
+        sigil::reactive::Owner::scope("image-paste-shortcuts", || {
             let workspace = tempfile::tempdir().expect("workspace");
             let (commands, mut sent) = unbounded_channel();
             let app = App::new(profile::info(), workspace.path().to_owned(), commands);

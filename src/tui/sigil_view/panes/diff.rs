@@ -1,9 +1,6 @@
 use sigil::layout::Dimension;
 use sigil::prelude::Paint;
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Tone,
-    WidgetLayoutExt, button, chip, container, list_row, node, spacer, text_edit,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, MouseButton, NodeBuilder, Tone, button, chip, container, list_row, node, spacer, text_edit};
 
 use std::collections::BTreeSet;
 
@@ -28,6 +25,7 @@ const NO_CHANGES: Empty = Empty {
     terminal: "no changes",
 };
 use crate::tui::sigil_view::ui::{Hints, Key, input_keys};
+use sigil::prelude::Widget;
 
 pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder {
     let model = app.model.get();

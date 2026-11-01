@@ -1,6 +1,6 @@
-use crate::tui::{Fact, Intent};
 use crate::tools::Event;
 use crate::tui::{Activity, Msg, ToolState};
+use crate::tui::{Fact, Intent};
 
 use super::{Entry, Model};
 
@@ -158,7 +158,9 @@ fn answer_stays_last_after_the_check_receipt_and_goal_verdict() {
     model.apply(Msg::Fact(Fact::Event(Event::Assistant {
         text: "Result: 4 passed.".to_string(),
     })));
-    model.apply(Msg::Fact(Fact::Receipt("Turn receipt · 3 files read".to_string())));
+    model.apply(Msg::Fact(Fact::Receipt(
+        "Turn receipt · 3 files read".to_string(),
+    )));
     model.apply(Msg::Fact(Fact::Outcome("goal achieved".to_string())));
     assert!(
         matches!(model.entries.iter().last(), Some(Entry::Assistant { text, .. }) if text == "Result: 4 passed."),

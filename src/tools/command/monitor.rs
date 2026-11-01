@@ -56,10 +56,10 @@ impl ToolRegistry {
         let group = super::proc::ProcessGroup::new(pid);
         let label = description.to_string();
         if !persistent {
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(timeout_ms));
+            drop(tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
                 super::proc::kill_group(pid);
-            });
+            }));
         }
         std::thread::spawn(move || {
             watch(child, stdout, group, session, label);
@@ -99,10 +99,10 @@ fn watch(
         flush(&session, &label, &batch);
     }
     group.disarm();
-    let _ = child.wait();
+    drop(child.wait());
 }
 
 fn flush(session: &str, label: &str, batch: &str) {
     let text = format!("{label}: {batch}");
-    let _ = crate::mail::Mailbox::wake(session, &text);
+    drop(crate::mail::Mailbox::wake(session, &text));
 }

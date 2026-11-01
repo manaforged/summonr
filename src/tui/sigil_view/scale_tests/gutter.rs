@@ -2,7 +2,7 @@ use sigil::app::cell_width;
 
 use super::{State, busy_info, find, frame, frame_with};
 use crate::tools::Event;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 const TODO: &str =
     r#"{"items":[{"text":"Plan","status":"in_progress"},{"text":"Ship","status":"pending"}]}"#;

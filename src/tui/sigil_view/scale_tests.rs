@@ -1,8 +1,6 @@
 use crate::tui::{Fact, Intent};
 use sigil::Host;
 use sigil::app::cell_width;
-use sigil::events::EventRouter;
-use sigil::reactive::Runtime;
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -87,7 +85,7 @@ fn paint_steps(
     setup: impl FnOnce(&App),
     steps: &[&dyn Fn(&App)],
 ) -> Vec<sigil::terminal::Grid> {
-    Runtime::scope("summonr-scale", || {
+    sigil::reactive::Owner::scope("summonr-scale", || {
         let workspace = tempfile::tempdir().expect("workspace");
         std::fs::create_dir(workspace.path().join(".git")).expect("git dir");
         std::fs::write(workspace.path().join(".git/HEAD"), "ref: refs/heads/main\n").expect("head");
@@ -122,15 +120,12 @@ fn paint_steps(
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(cols, rows);
-        let mut router = EventRouter::new();
         let mut settle = || {
             for _ in 0..2 {
-                screen
-                    .frame(&mut host, &mut router, [], (cols, rows))
-                    .expect("frame");
+                screen.frame(&mut host, [], (cols, rows)).expect("frame");
             }
             screen
-                .frame(&mut host, &mut router, [], (cols, rows))
+                .frame(&mut host, [], (cols, rows))
                 .expect("frame")
                 .clone()
         };
@@ -351,7 +346,12 @@ fn your_line_is_the_text_you_sent() {
 
 #[test]
 fn a_cleared_transcript_shows_the_note_in_place_of_the_prompt() {
-    let shots = screens(80, 24, |_| {}, &[&|app: &App| app.update(Msg::Fact(Fact::Cleared))]);
+    let shots = screens(
+        80,
+        24,
+        |_| {},
+        &[&|app: &App| app.update(Msg::Fact(Fact::Cleared))],
+    );
     let last = shots.last().map(String::as_str).unwrap_or_default();
     assert!(
         last.contains("history cleared") && !last.contains("Review the change"),
@@ -374,13 +374,15 @@ fn headless_workers_appear_in_the_originating_conversation() {
         }).join("\n");
         println!("{width} columns:\n{shown}");
         assert!(
-            shown.contains("Subagents") && !shown.contains("Headless") && !shown.contains("Attention"),
+            shown.contains("Subagents")
+                && !shown.contains("Headless")
+                && !shown.contains("Attention"),
             "collapsed strip should keep the count and hide the rows: {shown}"
         );
         let open = frame_with(busy_info(), width, 30, State::Busy, |app| {
             let parent = app.model.peek().session.clone();
             let peers = serde_json::from_value(serde_json::json!([
-                {"id": "worker-a", "name": "Attention", "model": "gpt-6.1-sol", "cwd": "/work", "pid": 1, "status": "working", "last_seen": 0, "parent": parent},
+                {"id": "worker-a", "name": "Attention", "model": "gpt-6.1-sol", "cwd": "/work", "pid": 1, "status": "working", "tool": "read", "last_seen": 0, "parent": parent},
                 {"id": "worker-c", "name": "MoE", "model": "claude-opus", "cwd": "/work", "pid": 3, "status": "idle", "last_seen": 0, "parent": parent},
                 {"id": "worker-d", "name": "Prefill", "model": "gpt-6.1-sol", "cwd": "/work", "pid": 4, "status": "joined", "last_seen": 0, "parent": parent},
                 {"id": "worker-b", "name": "Unrelated", "model": "other-model", "cwd": "/work", "pid": 2, "status": "working", "last_seen": 0, "parent": "other-session"}
@@ -396,10 +398,7 @@ fn headless_workers_appear_in_the_originating_conversation() {
                 && !open.contains("Unrelated"),
             "{open}"
         );
-        assert!(
-            open.contains("MoE") && open.contains("Prefill"),
-            "{open}"
-        );
+        assert!(open.contains("MoE") && open.contains("Prefill"), "{open}");
         let working = open
             .lines()
             .find(|line| line.contains("working"))
@@ -409,5 +408,10 @@ fn headless_workers_appear_in_the_originating_conversation() {
             .find(|line| line.contains("idle"))
             .expect("idle row");
         assert_eq!(working.find("working"), idle.find("idle"), "{open}");
+        assert!(
+            working.contains('●') && working.contains("read"),
+            "{working}"
+        );
+        assert!(idle.contains('○') && !idle.contains('●'), "{idle}");
     }
 }

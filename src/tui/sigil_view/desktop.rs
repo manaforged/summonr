@@ -1,11 +1,9 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Theme, Token, container,
-};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Theme, Token, container};
 
 use sigil::events::ScrollEvent;
 use sigil::layout::Position;
-use sigil::prelude::{NodeEventsExt, Signal, scroll};
+use sigil::prelude::{Signal, scroll};
 
 use super::view::shell;
 use crate::tui::Cmd;
@@ -17,8 +15,6 @@ pub(super) use super::pane::Pane;
 pub(super) mod entry;
 mod icons;
 mod rail;
-#[cfg(test)]
-mod tests;
 mod thread;
 
 pub(super) fn root(app: App) -> NodeBuilder {
@@ -129,3 +125,6 @@ fn closed() -> NodeBuilder {
 fn open(app: &App, pane: Pane) -> bool {
     app.layout.get().secondary == Some(pane)
 }
+
+#[cfg(test)]
+mod tests;

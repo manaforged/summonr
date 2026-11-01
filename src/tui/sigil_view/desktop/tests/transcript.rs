@@ -1,7 +1,7 @@
 use super::harness::drive;
 use super::in_window;
 use crate::tools::Event;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 const CHILD: &str = "01a104ac000000000000000000001111";
 

@@ -1,15 +1,11 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, button, container,
-    text_edit, virtual_list,
-};
+use sigil::prelude::{LayoutStyle, NodeBuilder, button, container, text_edit, virtual_list};
 
 use super::{App, canvas};
 use crate::tui::Cmd;
-use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, Size, input_keys, overlay_list, pick, press,
-};
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, input_keys, overlay_list, pick, press};
 use crate::workflow::Role;
+use sigil::prelude::Widget;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     vec![

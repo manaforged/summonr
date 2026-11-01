@@ -1,10 +1,11 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, container, notice_band};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Tone, container, notice_band};
 
 use crate::tui::sigil_view::ui::{Action, ActionKind, Hints, Key, Prompt};
 
 use super::App;
 use super::busy_status;
+use sigil::prelude::Widget;
 
 pub(in crate::tui::sigil_view) use super::strip::{agents, rows as strip_rows};
 

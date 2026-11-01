@@ -188,10 +188,9 @@ fn running(app: &App) -> bool {
 #[cfg(test)]
 mod tests {
     use sigil::app::FrameHooks;
-    use sigil::events::EventRouter;
-    use sigil::reactive::Runtime;
-    use sigil::scene::SceneCommand;
+
     use sigil::Host;
+    use sigil::scene::SceneCommand;
     use tokio::sync::mpsc::unbounded_channel;
 
     use super::super::App;
@@ -212,7 +211,7 @@ mod tests {
     }
 
     fn labels(busy: bool) -> Vec<String> {
-        Runtime::scope("summonr-stop", || {
+        sigil::reactive::Owner::scope("summonr-stop", || {
             let workspace = tempfile::tempdir().expect("workspace");
             let (commands, _receiver) = unbounded_channel();
             let app = App::new(
@@ -227,8 +226,7 @@ mod tests {
             let mut host = Host::new();
             let tree = app.clone();
             host.mount(move || super::composer(tree, false));
-            let mut router = EventRouter::new();
-            host.frame(&mut router, (1200.0, 800.0), 1.0, FrameHooks::default());
+            host.frame((1200.0, 800.0), 1.0, FrameHooks::default());
             host.scene((1200.0, 800.0))
                 .expect("scene")
                 .commands

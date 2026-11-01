@@ -1,6 +1,5 @@
-use crate::tui::{Fact, Intent};
 use crate::tui::sigil_view::{app::App, profile::info, view::root};
-use sigil::reactive::Runtime;
+use crate::tui::{Fact, Intent};
 use tokio::sync::mpsc::unbounded_channel;
 
 fn render(app: &App, cols: u16, rows: u16) -> String {
@@ -8,21 +7,20 @@ fn render(app: &App, cols: u16, rows: u16) -> String {
     let tree = app.clone();
     host.mount(move || root(tree));
     let mut screen = sigil::terminal::Screen::new(cols, rows);
-    let mut router = sigil::events::EventRouter::new();
     for _ in 0..3 {
         screen
-            .frame(&mut host, &mut router, [], (cols, rows))
+            .frame(&mut host, [], (cols, rows))
             .expect("splash frame");
     }
     screen
-        .frame(&mut host, &mut router, [], (cols, rows))
+        .frame(&mut host, [], (cols, rows))
         .expect("settled splash frame")
         .text()
 }
 
 #[test]
 fn splash_composer_grows_for_multiline_and_wrapped_prompts_without_leaving() {
-    Runtime::scope("splash-growing-composer", || {
+    sigil::reactive::Owner::scope("splash-growing-composer", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(info(), workspace.path().to_owned(), commands);
@@ -58,7 +56,7 @@ fn splash_composer_grows_for_multiline_and_wrapped_prompts_without_leaving() {
 
 #[test]
 fn a_long_splash_draft_grows_down_under_the_card() {
-    Runtime::scope("splash-draft-grows-down", || {
+    sigil::reactive::Owner::scope("splash-draft-grows-down", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(info(), workspace.path().to_owned(), commands);
@@ -93,7 +91,7 @@ fn a_long_splash_draft_grows_down_under_the_card() {
 
 #[test]
 fn slash_and_mention_drafts_keep_the_splash() {
-    Runtime::scope("splash-typeahead", || {
+    sigil::reactive::Owner::scope("splash-typeahead", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, mut receiver) = unbounded_channel();
         let app = App::new(info(), workspace.path().to_owned(), commands);
@@ -136,17 +134,19 @@ fn slash_and_mention_drafts_keep_the_splash() {
 
 #[test]
 fn splash_hides_usage_meters_until_the_first_prompt_even_with_a_known_window() {
-    Runtime::scope("splash-meter-lifecycle", || {
+    sigil::reactive::Owner::scope("splash-meter-lifecycle", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(info(), workspace.path().to_owned(), commands);
         app.resize(110, 30);
         app.splash.set(true);
-        app.update(crate::tui::Msg::Fact(Fact::Settings(crate::tui::Snapshot {
-            model: "profile".to_string(),
-            context_window: Some(200_000),
-            ..crate::tui::Snapshot::default()
-        })));
+        app.update(crate::tui::Msg::Fact(Fact::Settings(
+            crate::tui::Snapshot {
+                model: "profile".to_string(),
+                context_window: Some(200_000),
+                ..crate::tui::Snapshot::default()
+            },
+        )));
         let fresh = render(&app, 110, 30);
         assert!(
             !fresh.contains("ctx") && !fresh.contains("cache"),
@@ -170,7 +170,7 @@ fn splash_hides_usage_meters_until_the_first_prompt_even_with_a_known_window() {
 
 #[test]
 fn a_server_prompt_line_is_sent_as_a_turn_and_an_unknown_command_is_not() {
-    Runtime::scope("slash-turn", || {
+    sigil::reactive::Owner::scope("slash-turn", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut receiver) = unbounded_channel();
         let app = App::new(info(), workspace.path().to_owned(), commands);
@@ -212,13 +212,12 @@ pub(super) fn splash_app(cols: u16, rows: u16) -> App {
 
 #[test]
 fn a_model_change_on_the_splash_keeps_the_star_clock() {
-    Runtime::scope("splash-clock", || {
+    sigil::reactive::Owner::scope("splash-clock", || {
         let (app, mut host, mut screen) = splash_screen(80, 24);
-        let mut router = sigil::events::EventRouter::new();
         screen.set_dt(0.1);
         let mut frames = |count: usize| {
             for _ in 0..count {
-                screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+                screen.frame(&mut host, [], (80, 24)).unwrap();
             }
         };
         frames(5);
@@ -239,12 +238,11 @@ fn a_model_change_on_the_splash_keeps_the_star_clock() {
 
 #[test]
 fn a_covering_overlay_pauses_the_splash_clock() {
-    Runtime::scope("splash-covered", || {
+    sigil::reactive::Owner::scope("splash-covered", || {
         let (app, mut host, mut screen) = splash_screen(80, 24);
-        let mut router = sigil::events::EventRouter::new();
         let mut frames = |count: usize| {
             for _ in 0..count {
-                screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+                screen.frame(&mut host, [], (80, 24)).unwrap();
             }
         };
         frames(3);
@@ -283,14 +281,11 @@ fn named(key: sigil::prelude::Key) -> sigil::events::ShellEvent {
 
 #[test]
 fn the_splash_keeps_the_line_stack_s_when_f2_is_pressed() {
-    Runtime::scope("splash-mark", || {
+    sigil::reactive::Owner::scope("splash-mark", || {
         let (_app, mut host, mut screen) = splash_screen(120, 40);
-        let mut router = sigil::events::EventRouter::new();
         let mut shown = |events: Vec<sigil::events::ShellEvent>| {
-            screen
-                .frame(&mut host, &mut router, events, (120, 40))
-                .unwrap();
-            screen.frame(&mut host, &mut router, [], (120, 40)).unwrap();
+            screen.frame(&mut host, events, (120, 40)).unwrap();
+            screen.frame(&mut host, [], (120, 40)).unwrap();
             screen.text()
         };
         for events in [vec![], vec![named(sigil::prelude::Key::F2)]] {
@@ -305,7 +300,7 @@ fn the_splash_keeps_the_line_stack_s_when_f2_is_pressed() {
 
 #[test]
 fn a_long_workdir_on_a_narrow_splash_stays_on_its_row() {
-    Runtime::scope("splash-narrow", || {
+    sigil::reactive::Owner::scope("splash-narrow", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = unbounded_channel();
         let mut details = info();
@@ -336,7 +331,7 @@ fn a_long_workdir_on_a_narrow_splash_stays_on_its_row() {
 
 #[test]
 fn a_start_without_the_splash_reveals_without_a_panic() {
-    Runtime::scope("splash-off-reveal", || {
+    sigil::reactive::Owner::scope("splash-off-reveal", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(info(), workspace.path().to_owned(), commands);
@@ -349,7 +344,6 @@ fn a_start_without_the_splash_reveals_without_a_panic() {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = sigil::terminal::Screen::new(80, 24);
-        let mut router = sigil::events::EventRouter::new();
         let panics = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let seen = std::sync::Arc::clone(&panics);
         let previous = std::panic::take_hook();
@@ -363,14 +357,14 @@ fn a_start_without_the_splash_reveals_without_a_panic() {
         );
         let end = std::time::Instant::now() + reveal * 2;
         while std::time::Instant::now() < end && !app.splash_revealed.peek() {
-            screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+            screen.frame(&mut host, [], (80, 24)).unwrap();
             if app.splash_since.get().elapsed().as_millis() < reveal.as_millis().saturating_sub(40)
             {
                 assert!(!app.splash_revealed.peek(), "the wordmark was cut short");
             }
             std::thread::park_timeout(crate::limits::limits().animation());
         }
-        screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+        screen.frame(&mut host, [], (80, 24)).unwrap();
         std::panic::set_hook(previous);
         assert!(app.splash_revealed.peek(), "the reveal never finished");
         assert_eq!(
@@ -383,7 +377,7 @@ fn a_start_without_the_splash_reveals_without_a_panic() {
 
 #[test]
 fn a_meteor_in_flight_keeps_the_animation_cadence() {
-    Runtime::scope("splash-meteor", || {
+    sigil::reactive::Owner::scope("splash-meteor", || {
         let (app, _host, _screen) = splash_screen(120, 40);
         let beat = crate::limits::limits().animation();
         let seconds = beat.as_secs_f64() * 2.0;

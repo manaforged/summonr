@@ -1,10 +1,9 @@
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Paint, Token, container,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, Token, container};
 
 use super::super::canvas;
 use crate::tui::sigil_view::app::App;
 use crate::tui::sigil_view::text_style::TextStyle;
+use sigil::prelude::Widget;
 
 const CHIP_GAP_WINDOW: f32 = 14.0;
 

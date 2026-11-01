@@ -1,6 +1,6 @@
 use super::{Msg, Worker};
-use crate::tui::{Fact, Intent};
 use crate::tools::Event;
+use crate::tui::Fact;
 
 impl Worker {
     pub(super) fn send_diff(&mut self, announce: bool) {
@@ -21,7 +21,10 @@ impl Worker {
                     _ => None,
                 })
             });
-            drop(self.ui.send(Msg::Fact(Fact::Edited(crate::diff::edited(calls)))));
+            drop(
+                self.ui
+                    .send(Msg::Fact(Fact::Edited(crate::diff::edited(calls)))),
+            );
             if self.last_diff.as_ref() == Some(&diff) {
                 return;
             }

@@ -1,12 +1,11 @@
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, NodeBuilder, Token, container, effect, signal, tabs,
-};
+use sigil::prelude::{AlignItems, NodeBuilder, Token, container, effect, signal, tabs};
 
 use crate::tui::sigil_view::app::App;
 use crate::tui::sigil_view::canvas;
 use crate::tui::sigil_view::text_style::TextStyle;
 
 use super::rows::row;
+use sigil::prelude::Widget;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui) enum Tab {

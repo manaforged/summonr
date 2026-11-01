@@ -186,16 +186,16 @@ const MAIL_WAIT: std::time::Duration = std::time::Duration::from_millis(50);
 pub(crate) async fn next_mail<P: Provider>(child: &mut Loop<P>) -> String {
     loop {
         child.mail_heartbeat(crate::mail::Presence::Idle);
-        if let Some(mailbox) = child.mailbox.as_mut() {
-            if let Ok(notes) = mailbox.poll() {
-                let text = notes
-                    .into_iter()
-                    .map(|note| note.text)
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
-                if !text.trim().is_empty() {
-                    return text;
-                }
+        if let Some(mailbox) = child.mailbox.as_mut()
+            && let Ok(notes) = mailbox.poll()
+        {
+            let text = notes
+                .into_iter()
+                .map(|note| note.text)
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            if !text.trim().is_empty() {
+                return text;
             }
         }
         tokio::time::sleep(MAIL_WAIT).await;

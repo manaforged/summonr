@@ -111,7 +111,10 @@ impl Hub {
     }
 
     fn message(&mut self, key: u64, msg: Msg) {
-        if matches!(msg, Msg::Fact(Fact::Secret(_)) | Msg::Intent(Intent::OpenLogin(_))) {
+        if matches!(
+            msg,
+            Msg::Fact(Fact::Secret(_)) | Msg::Intent(Intent::OpenLogin(_))
+        ) {
             drop(self.app.send(msg));
             return;
         }

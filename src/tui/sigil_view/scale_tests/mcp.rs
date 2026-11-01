@@ -1,7 +1,7 @@
-use crate::tui::{Fact};
 use super::*;
 use crate::mcp::{McpState, McpTransport, ServerStatus};
 use crate::supervise::ServerKind;
+use crate::tui::Fact;
 
 fn server(name: &str, state: McpState, schema_bytes: usize, detail: Option<&str>) -> ServerStatus {
     ServerStatus {
@@ -47,7 +47,7 @@ fn the_mcp_pane_shows_each_server_with_its_state_size_and_last_error() {
 
 #[test]
 fn a_page_command_on_the_start_screen_opens_its_pane() {
-    sigil::reactive::Runtime::scope("summonr-splash", || {
+    sigil::reactive::Owner::scope("summonr-splash", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
         let base = Info {
@@ -69,7 +69,7 @@ fn a_page_command_on_the_start_screen_opens_its_pane() {
 
 #[test]
 fn a_refresh_leaves_the_start_screen_once_the_transcript_has_an_entry() {
-    sigil::reactive::Runtime::scope("summonr-refresh", || {
+    sigil::reactive::Owner::scope("summonr-refresh", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
         let base = Info {

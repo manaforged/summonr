@@ -290,7 +290,7 @@ fn switching_sessions_drops_the_previous_review_marks() {
             app.update(crate::tui::Msg::Fact(Fact::Review {
                 root: None,
                 result: Ok(crate::hunks::Marks::default()),
-            });
+            }));
             app.update(crate::tui::Msg::Intent(Intent::Reset));
         },
         Vec::new(),

@@ -1,13 +1,11 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, NodeEventsExt,
-    container, list_row_with,
-};
+use sigil::prelude::{LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, container, list_row_with};
 
 use super::panes::ledger::{LedgerRow, Mark};
 use super::{App, Model, Pane, canvas};
 use crate::tools::Builtin;
 use crate::tui::sigil_view::ui::pick;
+use sigil::prelude::Widget;
 
 #[derive(Clone, PartialEq)]
 struct TodosView {

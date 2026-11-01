@@ -1,13 +1,11 @@
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Token,
-    Tone, WidgetLayoutExt, container, list_row_with, notice_band, section_label, text_edit,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Token, Tone, container, list_row_with, notice_band, section_label, text_edit};
 use sigil::widgets::{RowRender, TextEditBuilder, VirtualListBuilder};
 
 use super::input_keys;
 use crate::tui::sigil_view::app::App;
 use crate::tui::sigil_view::canvas;
 use crate::tui::sigil_view::text_style::TextStyle;
+use sigil::prelude::Widget;
 
 pub(super) fn row(padding: f32) -> LayoutStyle {
     LayoutStyle::flex_row()

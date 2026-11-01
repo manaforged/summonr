@@ -14,7 +14,7 @@ use super::model::Entry;
 use crate::provider::Client;
 use crate::runtime::Loop;
 use crate::tui::hub::{Factory, Started, start};
-use crate::tui::{Fact, Info, Intent, Msg};
+use crate::tui::{Info, Intent, Msg};
 use summonr_core::error::{Error, Result};
 
 const TITLE: &str = env!("CARGO_PKG_NAME");

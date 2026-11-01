@@ -103,7 +103,8 @@ async fn a_child_gets_its_brief_and_its_own_tools() {
     );
     assert!(!child_tools.iter().any(|name| name.starts_with("task")));
     assert!(
-        run.assignment.starts_with("Harness: child. Finish only the assigned task."),
+        run.assignment
+            .starts_with("Harness: child. Finish only the assigned task."),
         "{}",
         run.assignment
     );
@@ -329,7 +330,10 @@ async fn two_messages_to_the_same_name_stay_on_one_session() {
         .unwrap();
     let id = run.child.session_id();
     assert_eq!(run.child.name().as_deref(), Some("climb-b"));
-    assert!(run.child.mailbox.is_some(), "the child is not on the roster");
+    assert!(
+        run.child.mailbox.is_some(),
+        "the child is not on the roster"
+    );
     let agents = crate::mail::live(&crate::mail::dir().unwrap());
     let resolved = agents.iter().find(|agent| agent.answers_to("climb-b"));
     assert_eq!(resolved.map(|agent| agent.id.as_str()), Some(id.as_str()));
@@ -405,7 +409,9 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
     crate::mail::Mailbox::wake(&id, "port the win").unwrap();
     let sent = parent.provider.sent();
     while !sent.lock().unwrap().iter().any(|messages| {
-        messages.iter().any(|message| message.content.contains("port the win"))
+        messages
+            .iter()
+            .any(|message| message.content.contains("port the win"))
     }) {
         parent.drain(&mut Vec::new(), &mut |_| {});
         assert!(

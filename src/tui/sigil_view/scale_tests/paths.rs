@@ -1,5 +1,5 @@
-use crate::tui::{Fact};
 use super::*;
+use crate::tui::Fact;
 
 #[test]
 fn a_tool_card_shows_workspace_paths_relative_in_its_output_too() {

@@ -1,12 +1,10 @@
-use sigil::prelude::{
-    AlignItems, ControlSize, JustifyContent, LayoutBuilderExt, LayoutStyle, NodeBuilder, Token,
-    button, container,
-};
+use sigil::prelude::{AlignItems, ControlSize, JustifyContent, LayoutStyle, NodeBuilder, Token, Tone, button, container};
 
 use super::entry::{bits, glyph};
 use super::{Agent, App};
 use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{Hints, Key};
+use sigil::prelude::Widget;
 
 fn text(
     body: impl Into<sigil::kernel::TextContent>,
@@ -296,11 +294,11 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                     let clear_id = peer.id.clone();
                     let title = peer.label().to_string();
                     let status = peer.status.to_string();
-                    let tone = match peer.status {
-                        crate::mail::Presence::Working => Token::Accent11,
-                        crate::mail::Presence::Joined
-                        | crate::mail::Presence::Idle
-                        | crate::mail::Presence::Unknown => Token::Gray10,
+                    let working = peer.status == crate::mail::Presence::Working;
+                    let tone = if working {
+                        Token::Success11
+                    } else {
+                        Token::Gray10
                     };
                     nodes.push((
                         Row::Headless {
@@ -320,8 +318,13 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                             .child({
                                 let id = clear_id;
                                 let clear = app.clone();
-                                button("○")
+                                button(if working { "●" } else { "○" })
                                     .ghost()
+                                    .tone(if working {
+                                        Tone::Success
+                                    } else {
+                                        Tone::Neutral
+                                    })
                                     .size(ControlSize::Compact)
                                     .accessible(format!("Clear subagent {title}"))
                                     .activate(move || clear.clear_agent(&id))
@@ -341,6 +344,12 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                                 status,
                                 TextStyle::xs(tone),
                                 status_width,
+                                JustifyContent::Start,
+                            ))
+                            .child(fixed(
+                                peer.tool.clone(),
+                                TextStyle::xs(Token::Gray11),
+                                super::cell_width(&peer.tool),
                                 JustifyContent::Start,
                             )),
                     ));

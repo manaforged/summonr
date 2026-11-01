@@ -1,5 +1,4 @@
-use crate::tui::{Fact};
-use sigil::reactive::Runtime;
+use crate::tui::Fact;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
@@ -9,7 +8,7 @@ use crate::tui::Cmd;
 
 #[test]
 fn cycling_effort_uses_supported_levels() {
-    Runtime::scope("shift-tab-effort", || {
+    sigil::reactive::Owner::scope("shift-tab-effort", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -42,12 +41,12 @@ fn cycling_effort_uses_supported_levels() {
 #[test]
 fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused() {
     use super::super::{app::Facet, view::root};
-    use crate::tui::{Fact, Intent, Msg};
+    use crate::tui::{Fact, Msg};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use sigil::{Host, events::EventRouter, terminal::Screen};
+    use sigil::{Host, terminal::Screen};
     use tokio::sync::mpsc::error::TryRecvError;
 
-    Runtime::scope("mounted-tab-controls", || {
+    sigil::reactive::Owner::scope("mounted-tab-controls", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -61,14 +60,13 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
-        let mut router = EventRouter::new();
         for _ in 0..2 {
             screen
-                .frame(&mut host, &mut router, [], (100, 30))
+                .frame(&mut host, [], (100, 30))
                 .expect("focus composer");
         }
         let shown = screen
-            .frame(&mut host, &mut router, [], (100, 30))
+            .frame(&mut host, [], (100, 30))
             .expect("auto mode")
             .text();
         assert!(shown.contains("● auto"), "{shown}");
@@ -76,7 +74,7 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         let tab = sigil::terminal::map_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
             .expect("Tab");
         screen
-            .frame(&mut host, &mut router, [tab], (100, 30))
+            .frame(&mut host, [tab], (100, 30))
             .expect("press Tab");
         assert!(matches!(
             sent.try_recv(),
@@ -87,7 +85,7 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
             sigil::terminal::map_key(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
                 .expect("Shift Tab");
         screen
-            .frame(&mut host, &mut router, [shifted], (100, 30))
+            .frame(&mut host, [shifted], (100, 30))
             .expect("press Shift Tab");
         assert!(matches!(sent.try_recv(), Ok(Cmd::ToggleApproval)));
         assert!(matches!(sent.try_recv(), Err(TryRecvError::Empty)));
@@ -98,7 +96,7 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         snapshot.approval = true;
         app.update(Msg::Fact(Fact::Settings(snapshot)));
         let shown = screen
-            .frame(&mut host, &mut router, [], (100, 30))
+            .frame(&mut host, [], (100, 30))
             .expect("approval mode")
             .text();
         assert!(shown.contains("● approval"), "{shown}");
@@ -108,7 +106,7 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         let tab = sigil::terminal::map_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
             .expect("completion Tab");
         screen
-            .frame(&mut host, &mut router, [tab], (100, 30))
+            .frame(&mut host, [tab], (100, 30))
             .expect("complete command");
         assert_eq!(app.draft.peek(), "/settings");
         assert_eq!(app.model.get().snapshot.effort, Some(Effort::Low));
@@ -117,19 +115,19 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         app.begin_model_edit();
         assert!(matches!(sent.try_recv(), Ok(Cmd::ListModels { .. })));
         screen
-            .frame(&mut host, &mut router, [], (100, 30))
+            .frame(&mut host, [], (100, 30))
             .expect("model overlay");
         let shifted =
             sigil::terminal::map_key(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
                 .expect("overlay Shift Tab");
         screen
-            .frame(&mut host, &mut router, [shifted], (100, 30))
+            .frame(&mut host, [shifted], (100, 30))
             .expect("previous model filter");
         assert_eq!(app.picker.facet.peek(), Facet::Long);
         let tab = sigil::terminal::map_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
             .expect("overlay Tab");
         screen
-            .frame(&mut host, &mut router, [tab], (100, 30))
+            .frame(&mut host, [tab], (100, 30))
             .expect("next model filter");
         assert_eq!(app.picker.facet.peek(), Facet::All);
         assert!(matches!(sent.try_recv(), Err(TryRecvError::Empty)));
@@ -140,7 +138,7 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
 
 #[test]
 fn tab_cycles_back_to_the_lowest_supported_level() {
-    Runtime::scope("tab-effort-wrap", || {
+    sigil::reactive::Owner::scope("tab-effort-wrap", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);

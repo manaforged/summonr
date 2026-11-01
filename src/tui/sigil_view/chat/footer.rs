@@ -1,16 +1,15 @@
-use sigil::layout::LengthPercentageAuto;
+use sigil::layout::Dimension;
 use sigil::layout::Position;
 use sigil::prelude::AlignItems;
-use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
-use sigil::prelude::NodeEventsExt;
 use sigil::prelude::Paint;
 use sigil::prelude::container;
 use sigil::prelude::spacer;
 
 use super::{App, canvas, cell_width};
+use sigil::prelude::Widget;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Target {
@@ -309,7 +308,7 @@ fn meter_button(
                 .layout(
                     LayoutStyle::block()
                         .position(Position::Absolute)
-                        .inset_bottom(LengthPercentageAuto::Percent(1.0))
+                        .inset_bottom(Dimension::Percent(1.0))
                         .inset_right(0.0),
                 )
                 .pointer_down(|event| event.stop_propagation())

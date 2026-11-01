@@ -1,12 +1,10 @@
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Paint,
-    Signal, Token, container, signal,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, Signal, Token, container, signal};
 
 use super::app::App;
 use super::canvas;
 use super::text_style::TextStyle;
 use crate::provider::Effort;
+use sigil::prelude::Widget;
 
 #[derive(Clone, Copy)]
 pub(super) struct Strip {

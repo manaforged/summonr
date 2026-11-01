@@ -135,26 +135,24 @@ fn an_unseated_session_shows_no_provider_instead_of_a_model() {
 
 #[test]
 fn a_meter_card_opens_on_a_click_and_closes_on_a_click_outside() {
-    use sigil::events::{EventRouter, PointerPhase};
+    use sigil::events::PointerPhase;
     use sigil::terminal::{Screen, pointer};
-    let shown = sigil::reactive::Runtime::scope("meter-card", || {
+    let shown = sigil::reactive::Owner::scope("meter-card", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
         let app = super::super::app::App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(110, 30);
-        app.update(Msg::Intent(Intent::User("started conversation".to_string())));
+        app.update(Msg::Intent(Intent::User(
+            "started conversation".to_string(),
+        )));
         app.refresh();
         let mut host = sigil::Host::cells();
         let tree = app.clone();
         host.mount(move || super::super::view::root(tree));
         let mut screen = Screen::new(110, 30);
-        let mut router = EventRouter::new();
         let mut text = String::new();
         for _ in 0..2 {
-            text = screen
-                .frame(&mut host, &mut router, [], (110, 30))
-                .unwrap()
-                .text();
+            text = screen.frame(&mut host, [], (110, 30)).unwrap().text();
         }
         let lines: Vec<String> = text.lines().map(str::to_owned).collect();
         let row = lines
@@ -168,11 +166,9 @@ fn a_meter_card_opens_on_a_click_and_closes_on_a_click_outside() {
             let (col, row) = (col as u16, row as u16);
             for phase in phases {
                 let event = pointer(*phase, col, row);
-                screen
-                    .frame(&mut host, &mut router, [event], (110, 30))
-                    .unwrap();
+                screen.frame(&mut host, [event], (110, 30)).unwrap();
             }
-            let grid = screen.frame(&mut host, &mut router, [], (110, 30)).unwrap();
+            let grid = screen.frame(&mut host, [], (110, 30)).unwrap();
             grid.text().contains("╭ cache")
         };
         let click = [PointerPhase::Move, PointerPhase::Down, PointerPhase::Up];

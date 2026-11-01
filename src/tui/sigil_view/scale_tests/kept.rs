@@ -1,7 +1,7 @@
 use super::children::{IDS, spawn, task_call};
 use super::{State, busy_info, frame_with};
 use crate::tools::Event;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 #[test]
 fn a_child_kept_after_a_conflict_says_so_and_how_to_remove_it() {

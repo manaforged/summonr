@@ -1,9 +1,5 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{
-    AlignItems, ControlSize, JustifyContent, LayoutBuilderExt, LayoutStyle, LogicalKey,
-    ModifiersState, NodeBuilder, NodeEventsExt, Shortcut, Token, Tone, WidgetLayoutExt, button,
-    container, icon_button, node, notice_band, spacer,
-};
+use sigil::prelude::{AlignItems, ControlSize, JustifyContent, LayoutStyle, LogicalKey, ModifiersState, NodeBuilder, Shortcut, Token, Tone, button, container, icon_button, node, notice_band, spacer};
 
 use super::{App, Pane, chat};
 use crate::session;

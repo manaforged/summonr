@@ -1,7 +1,4 @@
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, Signal, WidgetLayoutExt, container, request_focus,
-    scroll, segmented, signal, spacer,
-};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Signal, container, request_focus, scroll, segmented, signal, spacer};
 
 use super::app::App;
 use super::canvas::{self, palette};
@@ -16,6 +13,7 @@ mod trend;
 use report::{METRICS, Metric, Report};
 use sections::{bottom, cards, colored};
 use trend::trend;
+use sigil::prelude::Widget;
 
 const RANGES: [&str; 4] = ["24h", "7d", "30d", "all"];
 const CHROME_ROWS: u16 = 8;

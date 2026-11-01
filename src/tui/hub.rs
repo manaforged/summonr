@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::{Fact, Intent, Msg};
+use super::{Fact, Msg};
 use crate::provider::Client;
 use crate::runtime::Loop;
 use crate::tools::Event;

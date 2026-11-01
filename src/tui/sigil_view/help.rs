@@ -1,11 +1,10 @@
-use sigil::prelude::{
-    NodeBuilder, Signal, WidgetLayoutExt, derived, signal, text_field, virtual_list,
-};
+use sigil::prelude::{NodeBuilder, Signal, derived, signal, text_field, virtual_list};
 
 use super::app::App;
 use super::canvas;
 use super::ui::{Dialog, Hints, Key, List, Size, input_keys, pick};
 use crate::tui::matching::all_words;
+use sigil::prelude::Widget;
 
 const ROW_MARKER: usize = 2;
 const DIALOG_PADDING: f32 = 16.0;

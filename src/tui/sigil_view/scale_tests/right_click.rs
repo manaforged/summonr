@@ -1,10 +1,9 @@
 use sigil::Host;
 use sigil::events::{
-    EventRouter, ModifiersState, MouseButton, MouseButtons, PointerEvent, PointerEventInit,
-    PointerKind, PointerPhase, ShellEvent,
+    ModifiersState, MouseButton, MouseButtons, PointerEvent, PointerEventInit, PointerKind,
+    PointerPhase, ShellEvent,
 };
 use sigil::geometry::Point;
-use sigil::reactive::Runtime;
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -12,7 +11,7 @@ use super::super::app::App;
 use super::super::pane::Pane;
 use super::super::view::root;
 use super::busy_info;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 fn right(phase: PointerPhase, x: f32, y: f32) -> ShellEvent {
     ShellEvent::Pointer(PointerEvent::new(PointerEventInit {
@@ -32,7 +31,7 @@ fn right(phase: PointerPhase, x: f32, y: f32) -> ShellEvent {
 
 #[test]
 fn a_right_click_on_a_file_row_opens_its_menu_on_screen() {
-    Runtime::scope("pane-context-menu", || {
+    sigil::reactive::Owner::scope("pane-context-menu", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -44,11 +43,10 @@ fn a_right_click_on_a_file_row_opens_its_menu_on_screen() {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(120, 30);
-        let mut router = EventRouter::new();
         let mut text = String::new();
         for _ in 0..3 {
             text = screen
-                .frame(&mut host, &mut router, [], (120, 30))
+                .frame(&mut host, [], (120, 30))
                 .expect("frame")
                 .text();
         }
@@ -66,12 +64,10 @@ fn a_right_click_on_a_file_row_opens_its_menu_on_screen() {
             right(PointerPhase::Down, x, y),
             right(PointerPhase::Up, x, y),
         ];
-        screen
-            .frame(&mut host, &mut router, clicks, (120, 30))
-            .expect("frame");
+        screen.frame(&mut host, clicks, (120, 30)).expect("frame");
         for _ in 0..2 {
             text = screen
-                .frame(&mut host, &mut router, [], (120, 30))
+                .frame(&mut host, [], (120, 30))
                 .expect("frame")
                 .text();
         }

@@ -1,7 +1,4 @@
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Paint,
-    PointerEvent, Token, container,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Token, container};
 
 use super::super::{App, Call, Entry};
 use super::tree::{branch, label, tree};
@@ -10,6 +7,7 @@ use crate::prefs::{DiffLayout, ToolOutput};
 use crate::tools::Builtin;
 use crate::tui::ToolState;
 use crate::tui::sigil_view::text_style::TextStyle;
+use sigil::prelude::Widget;
 
 pub(super) type Detail = Option<(String, TextStyle)>;
 

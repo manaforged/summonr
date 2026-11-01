@@ -1,11 +1,10 @@
 use super::*;
 use crate::tui::sigil_view::profile::info;
-use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
 #[test]
 fn arrows_in_the_ledger_leave_the_files_cursor_alone() {
-    Runtime::scope("ledger-arrows", || {
+    sigil::reactive::Owner::scope("ledger-arrows", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(info(), workspace.path().to_owned(), commands);

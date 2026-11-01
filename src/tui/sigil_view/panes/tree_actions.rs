@@ -1,11 +1,10 @@
 use std::path::Path;
 
-use sigil::prelude::{
-    ControlSize, LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, button, container,
-};
+use sigil::prelude::{ControlSize, LayoutStyle, NodeBuilder, Tone, button, container};
 
 use super::super::app::App;
 use super::super::canvas;
+use sigil::prelude::Widget;
 
 const MERGE: &str = "Merge";
 const DISCARD: &str = "Discard";

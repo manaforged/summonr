@@ -40,7 +40,9 @@ pub(crate) fn client(
     Ok(crate::Client::connect(endpoint)?.on_stream(move |delta| {
         let message = match delta {
             crate::Delta::Text(text) => Msg::Fact(Fact::Event(Event::Delta { text: text.clone() })),
-            crate::Delta::Thinking(text) => Msg::Fact(Fact::Event(Event::Reasoning { text: text.clone() })),
+            crate::Delta::Thinking(text) => {
+                Msg::Fact(Fact::Event(Event::Reasoning { text: text.clone() }))
+            }
             crate::Delta::Call(name) => Msg::Fact(Fact::Calling(name.clone())),
             crate::Delta::Progress => return,
         };

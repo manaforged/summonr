@@ -208,14 +208,25 @@ impl App {
         self.caret.set(kept.len());
     }
 
+    pub(in crate::tui::sigil_view) fn turn_running(&self) -> bool {
+        matches!(
+            self.model.get().busy_since,
+            Some((activity, _)) if activity != Activity::Branch
+        )
+    }
+
+    pub(in crate::tui::sigil_view) fn cancel_running(&self) {
+        if self.turn_running() {
+            drop(self.cmd.send(Cmd::Cancel));
+        }
+    }
+
     pub(in crate::tui::sigil_view) fn interrupt(&self) {
         if self.overlay_close() {
             return;
         }
-        if let Some((activity, _)) = self.model.get().busy_since {
-            if activity != Activity::Branch {
-                drop(self.cmd.send(Cmd::Cancel));
-            }
+        if self.turn_running() {
+            self.cancel_running();
         } else if self.draft.peek().is_empty() && self.attachments.borrow().is_empty() {
             if confirm(
                 &self.quit_armed,

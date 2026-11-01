@@ -1,4 +1,4 @@
-use sigil::prelude::{NodeBuilder, Token, WidgetLayoutExt, effect, segmented, signal};
+use sigil::prelude::{NodeBuilder, Token, effect, segmented, signal};
 
 use super::super::models::{price, tone};
 use super::App;
@@ -7,6 +7,7 @@ use crate::endpoint::{State, Toggle};
 use crate::tui::sigil_view::canvas;
 use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{alt_label, blank, field as kv, heading, part as text};
+use sigil::prelude::Widget;
 
 const CONTEXT: usize = 8;
 const PRICE: usize = 16;

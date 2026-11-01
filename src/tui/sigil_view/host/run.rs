@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::time::Duration;
 
-use crate::tui::{Fact, Intent};
+use crate::tui::Fact;
 use sigil::reactive::defer;
 use sigil::tasks::on_message_or_close;
 use sigil::terminal::Activity;

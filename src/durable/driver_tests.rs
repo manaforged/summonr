@@ -200,10 +200,7 @@ fn the_snapshot_skips_the_session_store_and_the_tree_cache() {
     let dir = tempfile::tempdir().unwrap();
     let driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
     let cache = tree::cache_dir(&canonical(dir.path()));
-    assert_eq!(
-        tree::base::cache_path(driver.path()),
-        Some(cache.clone())
-    );
+    assert_eq!(tree::base::cache_path(driver.path()), Some(cache.clone()));
     let excludes = tree::base::excludes(driver.path());
     assert!(excludes.contains(&cache), "{excludes:?}");
     assert!(

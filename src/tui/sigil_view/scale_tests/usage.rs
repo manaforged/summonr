@@ -3,7 +3,7 @@ use sigil::terminal::Ink;
 use super::super::canvas::palette;
 use super::{State, busy_info, frame_with, paint};
 use crate::session::Spend;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 #[test]
 fn an_empty_local_usage_scope_explains_how_to_show_other_workspaces() {

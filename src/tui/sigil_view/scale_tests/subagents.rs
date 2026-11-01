@@ -2,7 +2,7 @@ use super::super::app::App;
 use super::children::{IDS, act, spawn, task_call};
 use super::{State, busy_info, frame_with};
 use crate::tools::Event;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 #[test]
 fn a_running_subagent_reads_as_its_task_not_its_status_dump() {
@@ -214,10 +214,10 @@ fn parallel_spawn_calls_each_get_their_own_subagent_line() {
 #[test]
 fn a_spawn_drawn_before_its_subagent_exists_redraws_as_the_subagent_line() {
     use super::super::view::root;
-    use sigil::{Host, events::EventRouter, reactive::Runtime, terminal::Screen};
+    use sigil::{Host, terminal::Screen};
     use tokio::sync::mpsc::unbounded_channel;
 
-    Runtime::scope("spawn-redraw", || {
+    sigil::reactive::Owner::scope("spawn-redraw", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -227,10 +227,9 @@ fn a_spawn_drawn_before_its_subagent_exists_redraws_as_the_subagent_line() {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(120, 30);
-        let mut router = EventRouter::new();
         let mut frame = |screen: &mut Screen| {
             screen
-                .frame(&mut host, &mut router, [], (120, 30))
+                .frame(&mut host, [], (120, 30))
                 .expect("frame")
                 .text()
         };

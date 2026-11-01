@@ -1,16 +1,14 @@
 use sigil::Host;
 use sigil::events::{
-    EventRouter, KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
-    ShellEvent,
+    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, ShellEvent,
 };
-use sigil::reactive::Runtime;
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
 use super::super::view::root;
 use super::busy_info;
-use crate::tui::{Activity, Fact, Intent, Msg};
+use crate::tui::{Activity, Fact, Msg};
 
 fn press(key: &str) -> ShellEvent {
     ShellEvent::Key(KeyEvent::new(KeyEventInit {
@@ -24,7 +22,7 @@ fn press(key: &str) -> ShellEvent {
 }
 
 fn pending_after_n(draft: &str) -> bool {
-    Runtime::scope("approval-keys", || {
+    sigil::reactive::Owner::scope("approval-keys", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -40,13 +38,10 @@ fn pending_after_n(draft: &str) -> bool {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
-        let mut router = EventRouter::new();
         for _ in 0..2 {
-            screen.frame(&mut host, &mut router, [], (100, 30)).unwrap();
+            screen.frame(&mut host, [], (100, 30)).unwrap();
         }
-        screen
-            .frame(&mut host, &mut router, [press("n")], (100, 30))
-            .unwrap();
+        screen.frame(&mut host, [press("n")], (100, 30)).unwrap();
         app.approval.peek().is_some()
     })
 }
@@ -58,7 +53,7 @@ fn a_plain_key_answers_an_approval_only_from_an_empty_composer() {
 }
 
 fn after_key(draft: &str, key: &str, check: impl FnOnce(&App) -> bool) -> bool {
-    Runtime::scope("composer-keys", || {
+    sigil::reactive::Owner::scope("composer-keys", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -68,13 +63,10 @@ fn after_key(draft: &str, key: &str, check: impl FnOnce(&App) -> bool) -> bool {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
-        let mut router = EventRouter::new();
         for _ in 0..2 {
-            screen.frame(&mut host, &mut router, [], (100, 30)).unwrap();
+            screen.frame(&mut host, [], (100, 30)).unwrap();
         }
-        screen
-            .frame(&mut host, &mut router, [press(key)], (100, 30))
-            .unwrap();
+        screen.frame(&mut host, [press(key)], (100, 30)).unwrap();
         check(&app)
     })
 }
@@ -115,7 +107,7 @@ fn the_approval_band_lists_its_answer_keys() {
 
 #[test]
 fn a_long_single_line_paste_folds_as_one_line() {
-    let folded = Runtime::scope("paste-fold", || {
+    let folded = sigil::reactive::Owner::scope("paste-fold", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);

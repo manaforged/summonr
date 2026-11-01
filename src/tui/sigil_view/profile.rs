@@ -2,9 +2,7 @@ use std::env;
 use std::path::PathBuf;
 
 use sigil::Host;
-use sigil::events::EventRouter;
 use sigil::profile;
-use sigil::reactive::Runtime;
 use sigil::terminal::{ColorDepth, Grid, Screen, render};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::unbounded_channel;
@@ -136,7 +134,7 @@ impl Options {
 pub fn run(args: impl Iterator<Item = String>) -> Result<()> {
     let options = Options::parse(args)?;
     block_in_place(|| {
-        Runtime::scope("summonr-profile", || {
+        sigil::reactive::Owner::scope("summonr-profile", || {
             Handle::current().block_on(capture(&options))
         })
     })
@@ -159,7 +157,6 @@ async fn capture(options: &Options) -> Result<()> {
     let tree = app.clone();
     host.mount(move || root(tree));
     let mut screen = Screen::new(options.cols, options.rows);
-    let mut router = EventRouter::new();
     let mut output = Vec::new();
     profile::enable();
     profile::reset();
@@ -169,7 +166,7 @@ async fn capture(options: &Options) -> Result<()> {
         profile::interact(options.cause());
         size = update(&app, options, index);
         output.clear();
-        paint(&mut screen, &mut host, &mut router, size, &mut output)?;
+        paint(&mut screen, &mut host, size, &mut output)?;
         counts(options, size, output.len());
         profile::tick_frame();
         sleep(frame_budget(options.fps)).await;
@@ -177,7 +174,7 @@ async fn capture(options: &Options) -> Result<()> {
     profile::dump(&options.output)?;
     profile::disable();
     let grid = screen
-        .frame(&mut host, &mut router, [], size)
+        .frame(&mut host, [], size)
         .map_err(|error| Error::Tool(error.to_string()))?;
     scenes::verify(options.scenario, &grid.text())?;
     #[cfg(feature = "gui")]
@@ -222,14 +219,13 @@ fn save_image(grid: &Grid, host: &Host, options: &Options) -> Result<()> {
 fn paint(
     screen: &mut Screen,
     host: &mut Host,
-    router: &mut EventRouter,
     size: (u16, u16),
     output: &mut Vec<u8>,
 ) -> Result<()> {
     {
         let _phase = profile::span(profile::Phase::TuiPaint);
         screen
-            .frame(host, router, [], size)
+            .frame(host, [], size)
             .map_err(|error| Error::Tool(error.to_string()))?;
     }
     let _phase = profile::span(profile::Phase::TuiWrite);

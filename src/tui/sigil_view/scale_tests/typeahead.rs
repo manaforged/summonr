@@ -1,11 +1,11 @@
-use crate::tui::{Fact};
 use super::{State, busy_info, frame_with};
+use crate::tui::Fact;
 
 #[test]
 fn reopening_hidden_slash_completion_refreshes_the_offers() {
     use super::super::app::App;
     use crate::tui::Cmd;
-    sigil::reactive::Runtime::scope("skill-reopen", || {
+    sigil::reactive::Owner::scope("skill-reopen", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -23,11 +23,13 @@ fn reopening_hidden_slash_completion_refreshes_the_offers() {
 #[test]
 fn skill_typeahead_matches_fuzzy_names() {
     let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(crate::tui::Msg::Fact(Fact::Offers(vec![crate::mcp::Offer {
-            kind: crate::mcp::OfferKind::Prompt,
-            insert: "/probe-custom-skill".to_owned(),
-            about: "custom skill".to_owned(),
-        }])));
+        app.update(crate::tui::Msg::Fact(Fact::Offers(vec![
+            crate::mcp::Offer {
+                kind: crate::mcp::OfferKind::Prompt,
+                insert: "/probe-custom-skill".to_owned(),
+                about: "custom skill".to_owned(),
+            },
+        ])));
         app.replace("/pcs".to_owned());
     })
     .join("\n");
@@ -38,7 +40,7 @@ fn skill_typeahead_matches_fuzzy_names() {
 fn submitting_a_skill_passes_its_arguments_to_the_worker() {
     use super::super::app::App;
     use crate::tui::Cmd;
-    sigil::reactive::Runtime::scope("skill-submit", || {
+    sigil::reactive::Owner::scope("skill-submit", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let skill = workspace.path().join(".claude/skills/probe-ui");
         std::fs::create_dir_all(&skill).expect("skill directory");
@@ -123,8 +125,8 @@ fn mention_typeahead_keeps_peer_details() {
 #[test]
 fn steering_enter_mid_turn_sends_the_message_into_the_running_turn() {
     use super::super::app::App;
-    use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
-    sigil::reactive::Runtime::scope("steer-now", || {
+    use crate::tui::{Activity, Cmd, Fact, Msg};
+    sigil::reactive::Owner::scope("steer-now", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -143,8 +145,8 @@ fn steering_enter_mid_turn_sends_the_message_into_the_running_turn() {
 #[test]
 fn steering_waits_in_the_queue_while_an_approval_is_open() {
     use super::super::app::App;
-    use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
-    sigil::reactive::Runtime::scope("steer-approval", || {
+    use crate::tui::{Activity, Cmd, Fact, Msg};
+    sigil::reactive::Owner::scope("steer-approval", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -168,8 +170,8 @@ fn steering_waits_in_the_queue_while_an_approval_is_open() {
 #[test]
 fn enter_on_an_empty_composer_never_answers_a_pending_approval() {
     use super::super::app::App;
-    use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
-    sigil::reactive::Runtime::scope("queue-approval", || {
+    use crate::tui::{Activity, Cmd, Fact, Msg};
+    sigil::reactive::Owner::scope("queue-approval", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -195,7 +197,7 @@ fn enter_on_an_empty_composer_never_answers_a_pending_approval() {
 
 #[test]
 fn messages_sent_into_the_turn_no_longer_count_as_queued() {
-    use crate::tui::{Fact, Intent, Msg};
+    use crate::tui::{Fact, Msg};
     let shown = frame_with(busy_info(), 110, 30, State::Busy, |app| {
         app.update(Msg::Fact(Fact::Queued {
             steering: 1,
@@ -222,8 +224,8 @@ fn up_brings_back_a_draft_cleared_with_ctrl_c() {
 #[test]
 fn enter_on_an_empty_composer_sends_queued_messages_into_the_turn() {
     use super::super::app::App;
-    use crate::tui::{Activity, Cmd, Fact, Intent, Msg};
-    sigil::reactive::Runtime::scope("queue-steer", || {
+    use crate::tui::{Activity, Cmd, Fact, Msg};
+    sigil::reactive::Owner::scope("queue-steer", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);

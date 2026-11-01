@@ -6,10 +6,10 @@ use summonr_core::error::{Error, Result};
 use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize};
 
 pub(super) mod digest;
+mod monitor;
 mod native;
 mod native_search;
 pub(super) mod proc;
-mod monitor;
 mod run;
 
 pub(crate) use digest::searchish;

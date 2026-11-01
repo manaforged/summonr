@@ -1,8 +1,5 @@
 use sigil::kernel::{Cx, IntoNode, NodeId};
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Token,
-    container, markdown, text,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Token, container, markdown, text};
 use sigil::reactive::derived;
 use sigil::widgets::DiffBuilder;
 
@@ -11,6 +8,7 @@ use crate::diff::Stat;
 use crate::prefs::DiffLayout;
 use crate::tui::sigil_view::chat::App;
 use crate::tui::sigil_view::text_style::TextStyle;
+use sigil::prelude::Widget;
 
 const FENCE: &str = "```";
 

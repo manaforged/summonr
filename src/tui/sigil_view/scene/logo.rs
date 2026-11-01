@@ -4,6 +4,7 @@ use super::space::{PLATE, Plate, STAR_BRIGHT};
 use super::*;
 use sigil::animation::Easing;
 use sigil::prelude::Paint;
+use sigil::prelude::Widget;
 
 const COMPOSER_ROWS: u16 = 7;
 const WORD_WIPE_MS: u64 = 480;

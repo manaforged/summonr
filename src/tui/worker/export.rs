@@ -1,5 +1,5 @@
-use crate::tui::{Fact, Intent};
 use super::*;
+use crate::tui::Fact;
 
 pub(in crate::tui) fn export_session(
     session: &std::path::Path,

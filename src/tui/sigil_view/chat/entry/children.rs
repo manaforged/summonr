@@ -1,4 +1,4 @@
-use sigil::prelude::{AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Token, container};
+use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Token, container};
 
 use super::super::{Agent, App, Call};
 use super::preview;
@@ -8,6 +8,7 @@ use crate::child::{ChildRecord, ChildState};
 use crate::tools::{Builtin, Hold, Kept};
 use crate::tui::ToolState;
 use crate::tui::sigil_view::text_style::TextStyle;
+use sigil::prelude::Widget;
 
 fn task_title(kid: &Agent, roots: &[String]) -> String {
     if kid.assignment.is_empty() {

@@ -1,12 +1,10 @@
-use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Rgba8,
-    container, panel,
-};
+use sigil::prelude::{AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Rgba8, container, panel};
 
 use super::super::canvas::palette;
 use super::report::{Metric, Report};
 use super::sections::{colored, ink, strong};
 use crate::session::{DAY, HOUR};
+use sigil::prelude::Widget;
 
 const TICKS: usize = 6;
 const PLOT: f32 = 144.0;

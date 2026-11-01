@@ -1,10 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use sigil::prelude::{
-    IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Paint, Signal,
-    WidgetLayoutExt, container, effect, modal, signal, virtual_list,
-};
+use sigil::prelude::{IntoNode, LayoutStyle, NodeBuilder, Paint, Signal, container, effect, modal, signal, virtual_list};
 use sigil::reactive::{defer, untrack};
 
 use crate::prefs::Hotkeys;
@@ -12,6 +9,7 @@ use crate::tui::sigil_view::canvas;
 
 use super::hints::Hints;
 use super::{List, filter_column, overlay_list, plain};
+use sigil::prelude::Widget;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui) enum Size {

@@ -1,7 +1,7 @@
 use super::super::app::App;
 use super::{State, busy_info, frame_with, screens};
 use crate::tools::Event;
-use crate::tui::{Fact, Intent, Msg};
+use crate::tui::{Fact, Msg};
 
 pub(super) const IDS: [&str; 3] = [
     "01a104ac000000000000000000001111",
@@ -262,9 +262,9 @@ fn a_child_that_recovers_from_a_failed_command_reads_done_and_one_that_aborts_re
 #[test]
 fn clicking_the_strip_header_expands_it() {
     use super::super::view::root;
-    use sigil::{Host, events::EventRouter, reactive::Runtime, terminal::Screen};
+    use sigil::{Host, terminal::Screen};
 
-    Runtime::scope("strip-header", || {
+    sigil::reactive::Owner::scope("strip-header", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -274,14 +274,11 @@ fn clicking_the_strip_header_expands_it() {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
-        let mut router = EventRouter::new();
         for _ in 0..2 {
-            screen
-                .frame(&mut host, &mut router, [], (100, 30))
-                .expect("frame");
+            screen.frame(&mut host, [], (100, 30)).expect("frame");
         }
         let shown = screen
-            .frame(&mut host, &mut router, [], (100, 30))
+            .frame(&mut host, [], (100, 30))
             .expect("frame")
             .text();
         let (row, line) = shown
@@ -294,13 +291,12 @@ fn clicking_the_strip_header_expands_it() {
         screen
             .frame(
                 &mut host,
-                &mut router,
                 sigil::terminal::click(col as u16, row as u16),
                 (100, 30),
             )
             .expect("click header");
         let expanded = screen
-            .frame(&mut host, &mut router, [], (100, 30))
+            .frame(&mut host, [], (100, 30))
             .expect("frame")
             .text();
         assert!(
@@ -319,10 +315,10 @@ fn clicking_the_strip_header_expands_it() {
         ))
         .expect("a");
         screen
-            .frame(&mut host, &mut router, [ctrl_x, a], (100, 30))
+            .frame(&mut host, [ctrl_x, a], (100, 30))
             .expect("chord");
         let collapsed = screen
-            .frame(&mut host, &mut router, [], (100, 30))
+            .frame(&mut host, [], (100, 30))
             .expect("frame")
             .text();
         assert!(
@@ -337,10 +333,10 @@ fn clicking_the_strip_header_expands_it() {
 fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
     use super::super::{chat::panels, view::root};
     use crate::tui::{Activity, Cmd};
-    use sigil::{Host, events::EventRouter, reactive::Runtime, terminal::Screen};
+    use sigil::{Host, terminal::Screen};
     use tokio::sync::mpsc::{error::TryRecvError, unbounded_channel};
 
-    Runtime::scope("clear-background", || {
+    sigil::reactive::Owner::scope("clear-background", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -354,14 +350,11 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
-        let mut router = EventRouter::new();
         for _ in 0..2 {
-            screen
-                .frame(&mut host, &mut router, [], (100, 30))
-                .expect("frame");
+            screen.frame(&mut host, [], (100, 30)).expect("frame");
         }
         let shown = screen
-            .frame(&mut host, &mut router, [], (100, 30))
+            .frame(&mut host, [], (100, 30))
             .expect("frame")
             .text();
         let (row, line) = shown
@@ -373,7 +366,6 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         screen
             .frame(
                 &mut host,
-                &mut router,
                 sigil::terminal::click(col as u16, row as u16),
                 (100, 30),
             )

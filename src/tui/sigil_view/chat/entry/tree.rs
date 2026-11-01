@@ -2,7 +2,8 @@ use sigil::kernel::TextBuilder;
 use sigil::prelude::Token;
 
 use crate::tui::sigil_view::text_style::TextStyle;
-use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, container};
+use sigil::prelude::{LayoutStyle, NodeBuilder, container};
+use sigil::prelude::Widget;
 
 pub(in crate::tui::sigil_view) fn label(
     body: impl Into<String>,

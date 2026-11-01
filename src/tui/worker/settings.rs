@@ -1,8 +1,8 @@
 use super::Worker;
-use crate::tui::{Fact, Intent};
 use crate::endpoint::Endpoint;
 use crate::provider::Client;
 use crate::runtime::Loop;
+use crate::tui::{Fact, Intent};
 use crate::tui::{Msg, Snapshot};
 use crate::workflow::{self, ModelSelection, Role, Workflow};
 use tokio::sync::mpsc::UnboundedSender;

@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, PoisonError};
 
+use crate::tui::Fact;
 use tokio::sync::mpsc::UnboundedSender;
-use crate::tui::{Fact, Intent};
 
 use super::{Cmd, Msg};
 use crate::provider::UserInput;

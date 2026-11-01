@@ -1,13 +1,11 @@
 use sigil::kernel::{Cx, IntoNode, NodeId};
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Paint, PointerEvent,
-    Signal, container, markdown_inline,
-};
+use sigil::prelude::{LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, container, markdown_inline};
 
 use super::super::App;
 use super::wrap;
 use crate::prefs::Visibility;
 use crate::tui::sigil_view::text_style::TextStyle;
+use sigil::prelude::Widget;
 
 pub(super) fn collapsible(
     body: Signal<String>,

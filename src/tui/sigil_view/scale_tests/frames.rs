@@ -1,4 +1,3 @@
-use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::{App, Login, Note};
@@ -59,7 +58,7 @@ fn a_narrow_login_note_shows_its_second_line() {
 }
 
 fn guarded(act: impl FnOnce(&App) -> bool) -> bool {
-    Runtime::scope("summonr-frames", || {
+    sigil::reactive::Owner::scope("summonr-frames", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);

@@ -1,5 +1,6 @@
 use super::*;
 use crate::prefs::EditorKey;
+use sigil::prelude::Widget;
 
 pub(super) fn composer_keys(mut node: NodeBuilder, app: &App) -> NodeBuilder {
     for modifier in [ModifiersState::SHIFT, ModifiersState::ALT] {

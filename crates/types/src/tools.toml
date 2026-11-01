@@ -192,7 +192,7 @@ claude = "Monitor"
 acp_kind = "execute"
 verb = "Monitor"
 readonly = false
-advertise = "always"
+advertise = "task_list"
 run = "writable"
 description = "Watch a command. Each stdout line wakes this session. Silence does not. Print only when the check finds something to correct. timeout_ms kills the command (default 300000, max 3600000). persistent runs until the session ends."
 

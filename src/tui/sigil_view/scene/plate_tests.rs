@@ -1,16 +1,11 @@
 use super::tests::splash_screen;
 use sigil::prelude::Rgba8;
-use sigil::reactive::Runtime;
 use sigil::terminal::Ink;
 
 fn splash_grid() -> sigil::terminal::Grid {
     let (_app, mut host, mut screen) = splash_screen(120, 40);
-    let mut router = sigil::events::EventRouter::new();
-    screen.frame(&mut host, &mut router, [], (120, 40)).unwrap();
-    screen
-        .frame(&mut host, &mut router, [], (120, 40))
-        .unwrap()
-        .clone()
+    screen.frame(&mut host, [], (120, 40)).unwrap();
+    screen.frame(&mut host, [], (120, 40)).unwrap().clone()
 }
 
 fn spot(grid: &sigil::terminal::Grid, needle: &str) -> (usize, usize) {
@@ -41,7 +36,7 @@ fn backgrounds(
 
 #[test]
 fn splash_window_frames_the_card_and_the_composer_once() {
-    Runtime::scope("splash-window-frame", || {
+    sigil::reactive::Owner::scope("splash-window-frame", || {
         let grid = splash_grid();
         let text = grid.text();
         let (_, prompt) = spot(&grid, "❯");
@@ -73,7 +68,7 @@ fn splash_window_frames_the_card_and_the_composer_once() {
 
 #[test]
 fn splash_window_lets_the_sky_show_through_the_card() {
-    Runtime::scope("splash-window-card", || {
+    sigil::reactive::Owner::scope("splash-window-card", || {
         let grid = splash_grid();
         let (_, prompt) = spot(&grid, "❯");
         let left = (0..120)
@@ -106,7 +101,7 @@ fn splash_window_lets_the_sky_show_through_the_card() {
 
 #[test]
 fn splash_window_tints_the_composer_instead_of_covering_the_sky() {
-    Runtime::scope("splash-window-composer", || {
+    sigil::reactive::Owner::scope("splash-window-composer", || {
         let grid = splash_grid();
         let (col, row) = spot(&grid, "❯");
         let cells: Vec<_> = backgrounds(&grid, col + 2..col + 80, row)
@@ -151,14 +146,10 @@ fn splash_window_tints_the_composer_instead_of_covering_the_sky() {
 
 #[test]
 fn a_wide_splash_sets_the_wordmark_beside_the_s_in_solid_white_cells() {
-    Runtime::scope("splash-lockup", || {
+    sigil::reactive::Owner::scope("splash-lockup", || {
         let (_app, mut host, mut screen) = splash_screen(120, 40);
-        let mut router = sigil::events::EventRouter::new();
-        screen.frame(&mut host, &mut router, [], (120, 40)).unwrap();
-        let grid = screen
-            .frame(&mut host, &mut router, [], (120, 40))
-            .unwrap()
-            .clone();
+        screen.frame(&mut host, [], (120, 40)).unwrap();
+        let grid = screen.frame(&mut host, [], (120, 40)).unwrap().clone();
         let text = grid.text();
         assert!(!text.contains('█'), "{text}");
         let white = sigil::terminal::Ink::Exact(super::palette().text);
@@ -183,14 +174,10 @@ fn a_wide_splash_sets_the_wordmark_beside_the_s_in_solid_white_cells() {
 
 #[test]
 fn a_wide_splash_centers_the_wordmark_and_facts_on_the_face_of_the_s() {
-    Runtime::scope("splash-center", || {
+    sigil::reactive::Owner::scope("splash-center", || {
         let (_app, mut host, mut screen) = splash_screen(160, 48);
-        let mut router = sigil::events::EventRouter::new();
-        screen.frame(&mut host, &mut router, [], (160, 48)).unwrap();
-        let grid = screen
-            .frame(&mut host, &mut router, [], (160, 48))
-            .unwrap()
-            .clone();
+        screen.frame(&mut host, [], (160, 48)).unwrap();
+        let grid = screen.frame(&mut host, [], (160, 48)).unwrap().clone();
         let text = grid.text();
         let lines: Vec<&str> = text.lines().collect();
         let face_top = lines.iter().position(|line| line.contains('┏')).unwrap();
@@ -226,7 +213,7 @@ fn a_wide_splash_centers_the_wordmark_and_facts_on_the_face_of_the_s() {
 
 #[test]
 fn the_splash_glass_reaches_the_window_frame() {
-    Runtime::scope("splash-glass-edge", || {
+    sigil::reactive::Owner::scope("splash-glass-edge", || {
         let (app, _host, _screen) = splash_screen(120, 40);
         let card = super::compose(120, 40, &app, 0).plate.area;
         let window = super::window_area(&app, 120, 40);
@@ -239,7 +226,7 @@ fn the_splash_glass_reaches_the_window_frame() {
 
 #[test]
 fn the_splash_card_is_two_rows_taller_than_its_body() {
-    Runtime::scope("splash-card-height", || {
+    sigil::reactive::Owner::scope("splash-card-height", || {
         let (cols, rows) = (160, 120);
         let (app, _host, _screen) = splash_screen(cols, rows);
         let facts = super::facts(&app.model.get(), &app);
@@ -255,7 +242,7 @@ fn the_splash_card_is_two_rows_taller_than_its_body() {
 
 #[test]
 fn the_wordmark_overlaps_the_s_and_facts_fade_during_the_final_settle() {
-    Runtime::scope("splash-wordmark-sequence", || {
+    sigil::reactive::Owner::scope("splash-wordmark-sequence", || {
         let (app, _host, _screen) = splash_screen(120, 40);
         let settled = super::compose(120, 40, &app, 0).plate;
         let white = sigil::terminal::Ink::Exact(super::palette().text);
@@ -315,7 +302,7 @@ fn the_wordmark_overlaps_the_s_and_facts_fade_during_the_final_settle() {
 
 #[test]
 fn compact_cards_skip_the_beats_for_elements_they_do_not_show() {
-    Runtime::scope("splash-compact-sequence", || {
+    sigil::reactive::Owner::scope("splash-compact-sequence", || {
         for (cols, rows, facts_start, end) in [(60, 40, 600, 760), (120, 20, 640, 800)] {
             let (app, _host, _screen) = splash_screen(cols, rows);
             let settled = super::compose(cols, rows, &app, 0).plate;
@@ -340,7 +327,7 @@ fn compact_cards_skip_the_beats_for_elements_they_do_not_show() {
 
 #[test]
 fn typing_or_disabling_animations_skips_the_whole_splash_sequence() {
-    Runtime::scope("splash-reveal-skip", || {
+    sigil::reactive::Owner::scope("splash-reveal-skip", || {
         let (app, _host, _screen) = splash_screen(120, 40);
         let settled = super::compose(120, 40, &app, 0).plate;
         app.splash_revealed.set(false);

@@ -1,11 +1,9 @@
 use super::{App, Model, composer_hint, suggest};
 use crate::tui::sigil_view::canvas::GUTTER;
-use sigil::events::NodeEventsExt;
 use sigil::layout::Overflow;
 use sigil::layout::Position;
 use sigil::prelude::AlignItems;
 use sigil::prelude::IntoNode;
-use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
@@ -16,6 +14,7 @@ use sigil::prelude::node;
 use sigil::prelude::notice_band;
 
 use crate::tui::sigil_view::ui::{Hints, Key};
+use sigil::prelude::Widget;
 
 pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     app: App,

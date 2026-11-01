@@ -219,10 +219,9 @@ impl App {
                 .agents
                 .iter()
                 .any(|agent| agent.id == id && agent.background);
-            let peer = model
-                .peers
-                .iter()
-                .any(|peer| peer.id == id && peer.parent.as_deref() == Some(model.session.as_str()));
+            let peer = model.peers.iter().any(|peer| {
+                peer.id == id && peer.parent.as_deref() == Some(model.session.as_str())
+            });
             if child || peer {
                 model.agents_hidden.insert(id.to_owned());
             }

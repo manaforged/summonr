@@ -1,14 +1,12 @@
 use sigil::kernel::ObjectFit;
 use sigil::layout::Dimension;
 use sigil::layout::Overflow;
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, WidgetLayoutExt, button,
-    container, image, node, text_edit,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, button, container, image, node, text_edit};
 
 use super::body::{close, dim};
 use super::{App, Pane};
 use crate::tui::sigil_view::ui::input_keys;
+use sigil::prelude::Widget;
 
 pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();

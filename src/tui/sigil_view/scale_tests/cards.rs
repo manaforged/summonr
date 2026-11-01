@@ -1,6 +1,6 @@
-use crate::tui::{Fact};
 use super::super::app::App;
 use super::*;
+use crate::tui::Fact;
 
 fn tool(app: &App, name: &str, arguments: &str, success: bool, output: &str) {
     app.update(Msg::Fact(Fact::Event(Event::ToolCall {

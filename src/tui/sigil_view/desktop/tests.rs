@@ -3,11 +3,9 @@ use std::collections::BTreeMap;
 use sigil::Host;
 use sigil::app::FrameHooks;
 use sigil::events::{
-    EventRouter, KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
-    ShellEvent,
+    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, ShellEvent,
 };
 use sigil::kernel::NodeBuilder;
-use sigil::reactive::Runtime;
 use sigil::scene::SceneCommand;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -15,7 +13,7 @@ use super::{App, rail, root, thread};
 use crate::catalog::Model;
 use crate::recent::ModelId;
 use crate::tools::Event;
-use crate::tui::{Fact, Intent, Msg, Snapshot};
+use crate::tui::{Fact, Msg, Snapshot};
 
 mod harness;
 mod settings;
@@ -55,11 +53,19 @@ fn key(text: &str) -> ShellEvent {
     }))
 }
 
+fn fit(app: &App) {
+    let cell = super::super::canvas::cell();
+    app.resize(
+        (VIEW.0 / cell.w).floor().max(1.0) as u16,
+        (VIEW.1 / cell.h).floor().max(1.0) as u16,
+    );
+}
+
 fn texts(
     setup: impl FnOnce(&App),
     view: impl Fn(App) -> NodeBuilder + 'static,
 ) -> Vec<(String, f32)> {
-    Runtime::scope("summonr-desktop", || {
+    sigil::reactive::Owner::scope("summonr-desktop", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(
@@ -67,13 +73,13 @@ fn texts(
             workspace.path().to_owned(),
             commands,
         );
+        fit(&app);
         setup(&app);
         app.refresh();
         let mut host = Host::new();
         host.mount(move || view(app.clone()));
-        let mut router = EventRouter::new();
         for _ in 0..3 {
-            host.frame(&mut router, VIEW, 1.0, FrameHooks::default());
+            host.frame(VIEW, 1.0, FrameHooks::default());
         }
         host.scene(VIEW)
             .expect("scene")
@@ -224,7 +230,7 @@ fn a_slash_in_the_window_composer_lists_commands() {
 
 #[test]
 fn the_window_composer_takes_typing_at_launch() {
-    let draft = Runtime::scope("summonr-desktop-focus", || {
+    let draft = sigil::reactive::Owner::scope("summonr-desktop-focus", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(
@@ -236,63 +242,9 @@ fn the_window_composer_takes_typing_at_launch() {
         let mut host = Host::new();
         let tree = app.clone();
         host.mount(move || root(tree.clone()));
-        let mut router = EventRouter::new();
-        host.frame(&mut router, VIEW, 0.0, FrameHooks::default());
-        host.route(&mut router, key("x"));
-        host.frame(&mut router, VIEW, 0.0, FrameHooks::default());
-        app.draft.peek()
-    });
-    assert_eq!(draft, "x");
-}
-);
-        },
-        root,
-    );
-    let header = row(&runs, "MODEL");
-    let hints = runs
-        .iter()
-        .filter(|(text, _)| text.contains("refresh"))
-        .map(|(_, y)| *y)
-        .fold(f32::MAX, f32::min);
-    for name in names {
-        let at = row(&runs, name);
-        assert!(
-            header < at && at < hints,
-            "{name} at {at}, header {header}, hints {hints}: {}",
-            shown(&runs)
-        );
-    }
-}
-
-#[test]
-fn a_slash_in_the_window_composer_lists_commands() {
-    let runs = texts(|app| app.replace("/sett".to_owned()), thread::main_col);
-    assert!(
-        runs.iter().any(|(text, _)| text == "commands")
-            && runs.iter().any(|(text, _)| text.starts_with("/settings")),
-        "{}",
-        shown(&runs)
-    );
-}
-
-#[test]
-fn the_window_composer_takes_typing_at_launch() {
-    let draft = Runtime::scope("summonr-desktop-focus", || {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let (commands, _receiver) = unbounded_channel();
-        let app = App::new(
-            super::super::profile::info(),
-            workspace.path().to_owned(),
-            commands,
-        );
-        app.refresh();
-        let mut host = Host::new();
-        let tree = app.clone();
-        host.mount(move || root(tree.clone()));
-        let mut router = EventRouter::new();
-        host.frame(&mut router, VIEW, 0.0, FrameHooks::default());
-        host.route(&mut router, key("x"));
-        host.frame(&mut router, VIEW, 0.0, FrameHooks::default());
+        host.frame(VIEW, 0.0, FrameHooks::default());
+        host.route(key("x"));
+        host.frame(VIEW, 0.0, FrameHooks::default());
         app.draft.peek()
     });
     assert_eq!(draft, "x");

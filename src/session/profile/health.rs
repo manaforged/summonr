@@ -52,7 +52,7 @@ impl Health {
                 | Builtin::Web
                 | Builtin::Browser
                 | Builtin::Task
-                | Builtin::Monitor
+                | Builtin::Monitor,
             )
             | None => {}
         }

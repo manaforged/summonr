@@ -1,9 +1,8 @@
-use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
 use super::{State, busy_info, frame_with};
-use crate::tui::{Cmd, Fact, Intent, Msg};
+use crate::tui::{Cmd, Fact, Msg};
 
 fn peer() -> crate::mail::Agent {
     serde_json::from_value(serde_json::json!({
@@ -29,7 +28,7 @@ fn typing_at_offers_peer_sessions_by_name() {
 
 #[test]
 fn a_prompt_that_names_a_peer_is_sent_to_it() {
-    Runtime::scope("mention-send", || {
+    sigil::reactive::Owner::scope("mention-send", || {
         let workspace = tempfile::tempdir().unwrap();
         std::fs::create_dir(workspace.path().join(".git")).unwrap();
         std::fs::write(workspace.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
@@ -85,7 +84,7 @@ fn a_plugin_command_is_offered_after_a_slash_and_not_on_an_empty_composer() {
 
 #[test]
 fn a_typed_command_that_does_not_exist_is_sent_as_typed() {
-    Runtime::scope("unknown-command", || {
+    sigil::reactive::Owner::scope("unknown-command", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);

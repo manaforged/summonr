@@ -2,9 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use sigil::Host;
-use sigil::clipboard::{ClipError, Clipboard, Delivery};
-use sigil::events::{EventRouter, PointerPhase};
-use sigil::reactive::Runtime;
+use sigil::clipboard::{Clipboard, Delivery};
+use sigil::events::PointerPhase;
 use sigil::terminal::{Screen, pointer};
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -19,7 +18,7 @@ const REPLY: &str = "The quick brown fox jumps over the lazy dog";
 struct Recorder(Rc<RefCell<Vec<String>>>);
 
 impl Clipboard for Recorder {
-    fn set(&self, text: &str) -> Result<Delivery, ClipError> {
+    fn set(&self, text: &str) -> Result<Delivery, sigil::Error> {
         self.0.borrow_mut().push(text.to_owned());
         Ok(Delivery::Confirmed)
     }
@@ -31,7 +30,7 @@ impl Clipboard for Recorder {
 
 #[test]
 fn dragging_across_a_reply_copies_it_and_says_so() {
-    let (copied, footer) = Runtime::scope("copy-notice", || {
+    let (copied, footer) = sigil::reactive::Owner::scope("copy-notice", || {
         let copied = Rc::new(RefCell::new(Vec::new()));
         sigil::clipboard::install(Recorder(Rc::clone(&copied)));
         let workspace = tempfile::tempdir().unwrap();
@@ -47,9 +46,8 @@ fn dragging_across_a_reply_copies_it_and_says_so() {
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
-        let mut router = EventRouter::new();
-        screen.frame(&mut host, &mut router, [], (100, 30)).unwrap();
-        let grid = screen.frame(&mut host, &mut router, [], (100, 30)).unwrap();
+        screen.frame(&mut host, [], (100, 30)).unwrap();
+        let grid = screen.frame(&mut host, [], (100, 30)).unwrap();
         let text = grid.text();
         let (row, line) = text
             .lines()
@@ -66,11 +64,9 @@ fn dragging_across_a_reply_copies_it_and_says_so() {
             pointer(PointerPhase::Move, end, row),
             pointer(PointerPhase::Up, end, row),
         ] {
-            screen
-                .frame(&mut host, &mut router, [event], (100, 30))
-                .unwrap();
+            screen.frame(&mut host, [event], (100, 30)).unwrap();
         }
-        let grid = screen.frame(&mut host, &mut router, [], (100, 30)).unwrap();
+        let grid = screen.frame(&mut host, [], (100, 30)).unwrap();
         let footer = grid.text().lines().last().unwrap_or_default().to_owned();
         let copied = copied.borrow().clone();
         (copied, footer)

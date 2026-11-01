@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::{App, Facet, Login};
@@ -9,7 +8,7 @@ use crate::catalog::{Cost, Model};
 use crate::endpoint::State as Reach;
 use crate::provider::Price;
 use crate::recent::ModelId;
-use crate::tui::{Cmd, Fact, Intent, Msg};
+use crate::tui::{Cmd, Fact, Msg};
 
 fn model(id: &str, edit: impl FnOnce(&mut Model)) -> Model {
     let mut model = Model::named(id);
@@ -192,7 +191,7 @@ fn ctrl_right_from_models_opens_providers() {
 }
 
 fn sent(prepare: impl FnOnce(&App), act: impl FnOnce(&App)) -> Vec<Cmd> {
-    Runtime::scope("summonr-modals", || {
+    sigil::reactive::Owner::scope("summonr-modals", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -314,7 +313,7 @@ fn favoriting_a_provider_fix_row_pins_nothing() {
 
 #[test]
 fn a_filter_chip_counts_the_rows_it_shows() {
-    Runtime::scope("summonr-modals", || {
+    sigil::reactive::Owner::scope("summonr-modals", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);

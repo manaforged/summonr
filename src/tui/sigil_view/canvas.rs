@@ -2,12 +2,12 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sigil::events::ScrollDelta;
-use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Rgba8;
 use sigil::prelude::Tone;
 use sigil::prelude::container;
+use sigil::prelude::Widget;
 
 pub(super) fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
     let channel = |a: u8, b: u8| {
@@ -160,40 +160,6 @@ pub(super) fn overlay_shown(count: usize, viewport: (u16, u16)) -> usize {
     count.clamp(1, room)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct Flag(bool);
-
-    impl Drop for Flag {
-        fn drop(&mut self) {
-            WINDOW.store(self.0, Ordering::Relaxed);
-        }
-    }
-
-    #[test]
-    fn a_window_menu_fills_the_pane() {
-        let _flag = Flag(WINDOW.swap(true, Ordering::Relaxed));
-        let viewport = (160, 100);
-        let frame = window_frame(viewport);
-        let pane_w = f32::from(viewport.0) * cell().w - 48.0;
-        let pane_h = f32::from(viewport.1) * cell().h - 48.0;
-        assert!((frame.0 - pane_w).abs() < 1.0, "width {}", frame.0);
-        assert!((frame.1 - pane_h).abs() < 1.0, "height {}", frame.1);
-        let wide = window_frame((400, 80));
-        let aspect = wide.0 / wide.1;
-        assert!(aspect <= 1.81, "{aspect}");
-        assert!(
-            (wide.1 - (f32::from(80) * cell().h - 48.0)).abs() < 1.0,
-            "{}",
-            wide.1
-        );
-        let width = crate::tui::sigil_view::ui::Size::Normal.width(viewport);
-        assert!((width - frame.0).abs() < 1.0, "{width}");
-    }
-}
-
 #[cfg(feature = "gui")]
 pub(super) fn window_cells() {
     WINDOW.store(true, Ordering::Relaxed);
@@ -242,4 +208,38 @@ pub(super) fn scroll_lines(delta: ScrollDelta) -> f32 {
         return 0.0;
     };
     point.y
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Flag(bool);
+
+    impl Drop for Flag {
+        fn drop(&mut self) {
+            WINDOW.store(self.0, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn a_window_menu_fills_the_pane() {
+        let _flag = Flag(WINDOW.swap(true, Ordering::Relaxed));
+        let viewport = (160, 100);
+        let frame = window_frame(viewport);
+        let pane_w = f32::from(viewport.0) * cell().w - 48.0;
+        let pane_h = f32::from(viewport.1) * cell().h - 48.0;
+        assert!((frame.0 - pane_w).abs() < 1.0, "width {}", frame.0);
+        assert!((frame.1 - pane_h).abs() < 1.0, "height {}", frame.1);
+        let wide = window_frame((400, 80));
+        let aspect = wide.0 / wide.1;
+        assert!(aspect <= 1.81, "{aspect}");
+        assert!(
+            (wide.1 - (80.0 * cell().h - 48.0)).abs() < 1.0,
+            "{}",
+            wide.1
+        );
+        let width = crate::tui::sigil_view::ui::Size::Normal.width(viewport);
+        assert!((width - frame.0).abs() < 1.0, "{width}");
+    }
 }

@@ -1,9 +1,10 @@
-use sigil::prelude::{AlignItems, LayoutBuilderExt, NodeBuilder, hint_bar};
+use sigil::prelude::{AlignItems, NodeBuilder, hint_bar};
 
 use crate::prefs::{Hotkey, Hotkeys};
 use crate::tui::sigil_view::canvas;
 
 use super::rows::row;
+use sigil::prelude::Widget;
 
 const SEPARATOR: &str = " · ";
 const WINDOW_KEYS: usize = 2;

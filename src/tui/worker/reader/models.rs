@@ -4,11 +4,11 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 
 use super::{Msg, Reader, add};
-use crate::tui::Fact;
 use crate::catalog::Model;
 use crate::endpoint::{self, State};
 use crate::provider::Client;
 use crate::recent::{self, ModelId};
+use crate::tui::Fact;
 use summonr_core::dirs::summonr_home;
 
 fn due(name: &str, only: Option<&str>) -> bool {

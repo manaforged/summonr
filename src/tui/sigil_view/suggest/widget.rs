@@ -1,12 +1,11 @@
 use super::{App, LIMIT, MAX_WIDTH, canvas, mention, usage};
 use crate::tui::sigil_view::ui::{Hints, Key, group, pick};
-use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
-use sigil::prelude::NodeEventsExt;
 use sigil::prelude::Paint;
 use sigil::prelude::container;
+use sigil::prelude::Widget;
 
 #[derive(Clone, PartialEq)]
 struct SuggestRow {

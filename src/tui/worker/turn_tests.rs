@@ -1,4 +1,4 @@
-use crate::tui::{Fact};
+use crate::tui::Fact;
 use std::collections::VecDeque;
 
 use super::super::steer::{InputQueue, steerable};

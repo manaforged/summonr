@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use sigil::prelude::{ListRowSlots, NodeBuilder, NodeEventsExt, Tone, signal, virtual_list};
+use sigil::prelude::{ListRowSlots, NodeBuilder, Tone, signal, virtual_list};
 
 use super::super::{App, canvas};
 use super::row::{self, Grid, Shown};
@@ -11,6 +11,7 @@ use crate::endpoint::State;
 use crate::recent::ModelId;
 use crate::tui::sigil_view::app::{Facet, Mark};
 use crate::tui::sigil_view::ui::{alt_label, group, overlay_list, slotted};
+use sigil::prelude::Widget;
 
 pub(super) struct View {
     pub(super) choices: Rc<Vec<ModelId>>,

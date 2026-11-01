@@ -1,8 +1,5 @@
-use sigil::prelude::{
-    AlignItems, FlexWrap, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone, container,
-    heatmap, panel, progress, signal, sparkline,
-};
-use sigil::prelude::{Paint, WidgetLayoutExt};
+use sigil::prelude::{AlignItems, FlexWrap, LayoutStyle, NodeBuilder, Rgba8, Tone, container, heatmap, panel, progress, signal, sparkline};
+use sigil::prelude::{Paint};
 use sigil::widgets::SparkMark;
 
 use super::super::canvas::{self, blend, palette};
@@ -10,6 +7,7 @@ use super::report::{Metric, Report, hit, turn_secs};
 
 use crate::provider::{compact, dollars};
 use crate::session::Total;
+use sigil::prelude::Widget;
 
 const MODEL_ROWS: usize = 8;
 const SPARK_POINTS: usize = 24;

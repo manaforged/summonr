@@ -1,10 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, ListRowSlots, MenuItem, NodeBuilder, Signal, Tone, container,
-    context_menu, dot, list_row_with, signal,
-};
+use sigil::prelude::{LayoutStyle, ListRowSlots, MenuItem, NodeBuilder, Signal, Tone, container, context_menu, dot, list_row_with, signal};
 
 use super::{App, UNTITLED, section};
 use crate::session::{self, DAY, HOUR, SessionInfo};

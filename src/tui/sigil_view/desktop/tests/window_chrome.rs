@@ -4,7 +4,7 @@ use super::super::{Pane, rail};
 use super::harness::{changed, drive};
 use super::in_window;
 use crate::tui::hub::{Live, Status};
-use crate::tui::{Cmd, Fact, Intent, Msg};
+use crate::tui::{Cmd, Fact, Msg};
 
 #[test]
 fn the_rail_offers_its_panes_and_new_sessions_as_named_buttons() {

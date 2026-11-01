@@ -1,10 +1,7 @@
 use std::rc::Rc;
 
 use sigil::kernel::TextContent;
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Tone, WidgetLayoutExt,
-    button, container, icon_button, list_row_with, section_label, sidebar, signal, spacer, tooltip,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Tone, button, container, icon_button, list_row_with, section_label, sidebar, signal, spacer, tooltip};
 
 use super::{App, Pane};
 use super::{icons, open};

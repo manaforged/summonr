@@ -1,18 +1,16 @@
-use sigil::prelude::{LayoutStyle, NodeBuilder, NodeEventsExt, signal, virtual_list};
+use sigil::prelude::{LayoutStyle, NodeBuilder, signal, virtual_list};
 
 use super::{App, canvas};
 use crate::AuthInfo;
 use crate::endpoint::State;
 use crate::tui::sigil_view::app::{Login, Note, matching, section};
-use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, Size, Tab, alt, browser_columns, browser_layout, browser_split,
-    group, overlay_list, pick, tab_strip,
-};
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, Tab, alt, browser_columns, browser_layout, browser_split, group, overlay_list, pick, tab_strip};
 
 mod detail;
 mod form;
 
 use form::{Input, field, form, notes};
+use sigil::prelude::Widget;
 
 const SPLIT_COLS: u16 = 110;
 const LIST_CELLS: f32 = 58.0;

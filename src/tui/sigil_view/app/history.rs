@@ -1,5 +1,5 @@
-use crate::tui::{Fact, Intent};
 use super::*;
+use crate::tui::Fact;
 
 impl App {
     pub(in crate::tui::sigil_view) fn page_history(&self, direction: f32) {

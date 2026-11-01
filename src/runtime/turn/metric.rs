@@ -176,7 +176,8 @@ impl<P: Provider> Loop<P> {
             .iter()
             .rev()
             .find(|message| {
-                message.role == crate::provider::Role::Assistant && !message.content.trim().is_empty()
+                message.role == crate::provider::Role::Assistant
+                    && !message.content.trim().is_empty()
             })
             .map(|message| message.content.trim().to_string())
             .unwrap_or_default()

@@ -1,10 +1,11 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, container};
+use sigil::prelude::{LayoutStyle, NodeBuilder, container};
 
 use super::app::App;
 use super::canvas;
 use super::ui::{Dialog, Hints, Key, Size, group};
 use crate::display::ellipsize;
+use sigil::prelude::Widget;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let secret = app.secret;

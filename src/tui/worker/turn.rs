@@ -4,10 +4,10 @@ use super::execution::ExecutionClass;
 use super::settings::set_run_mode;
 use super::state::set_mail_reply;
 use super::{Cmd, Msg, Worker};
-use crate::tui::{Fact, Intent};
 use crate::provider::UserInput;
 use crate::tools::Event;
 use crate::tui::Activity;
+use crate::tui::{Fact, Intent};
 
 enum Input {
     User(UserInput),
@@ -146,8 +146,9 @@ impl Worker {
             code,
             reason: reason.to_string(),
         };
-        self.loop_
-            .abort_with(&abort, |event| drop(ui.send(Msg::Fact(Fact::Event(event.clone())))))
+        self.loop_.abort_with(&abort, |event| {
+            drop(ui.send(Msg::Fact(Fact::Event(event.clone()))))
+        })
     }
 
     fn carry_steering(&mut self) {

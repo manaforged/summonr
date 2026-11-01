@@ -1,10 +1,8 @@
-use crate::tui::{Intent};
+use crate::tui::Intent;
 use sigil::Host;
 use sigil::events::{
-    EventRouter, KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
-    ShellEvent,
+    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, ShellEvent,
 };
-use sigil::reactive::Runtime;
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -39,7 +37,7 @@ fn typed(command: &str, read: impl FnOnce(&App) -> String) -> String {
 }
 
 fn after<T>(command: &str, keys: Vec<ShellEvent>, read: impl FnOnce(&App) -> T) -> T {
-    Runtime::scope("dialog-typing", || {
+    sigil::reactive::Owner::scope("dialog-typing", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
@@ -48,22 +46,15 @@ fn after<T>(command: &str, keys: Vec<ShellEvent>, read: impl FnOnce(&App) -> T) 
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(160, 40);
-        let mut router = EventRouter::new();
         for _ in 0..2 {
-            screen
-                .frame(&mut host, &mut router, [], (160, 40))
-                .expect("frame");
+            screen.frame(&mut host, [], (160, 40)).expect("frame");
         }
         app.replace(command.to_owned());
         app.submit();
         for _ in 0..2 {
-            screen
-                .frame(&mut host, &mut router, [], (160, 40))
-                .expect("frame");
+            screen.frame(&mut host, [], (160, 40)).expect("frame");
         }
-        screen
-            .frame(&mut host, &mut router, keys, (160, 40))
-            .expect("frame");
+        screen.frame(&mut host, keys, (160, 40)).expect("frame");
         read(&app)
     })
 }
@@ -74,22 +65,23 @@ fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
     use crossterm::event::{KeyCode, KeyEvent as TerminalKey, KeyModifiers};
 
     for modifier in [KeyModifiers::SHIFT, KeyModifiers::ALT] {
-        Runtime::scope("composer-line-break", || {
+        sigil::reactive::Owner::scope("composer-line-break", || {
             let workspace = tempfile::tempdir().expect("workspace");
             let (commands, mut sent) = unbounded_channel();
             let app = App::new(busy_info(), workspace.path().to_owned(), commands);
             assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
             app.resize(160, 40);
-            app.update(crate::tui::Msg::Intent(Intent::User("Earlier message".to_owned())));
+            app.update(crate::tui::Msg::Intent(Intent::User(
+                "Earlier message".to_owned(),
+            )));
             app.replace("first".to_owned());
             let mut host = Host::cells();
             let tree = app.clone();
             host.mount(move || root(tree));
             let mut screen = Screen::new(160, 40);
-            let mut router = EventRouter::new();
             for _ in 0..2 {
                 screen
-                    .frame(&mut host, &mut router, [], (160, 40))
+                    .frame(&mut host, [], (160, 40))
                     .expect("focus the composer");
             }
             let events = [
@@ -97,7 +89,7 @@ fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
                     .expect("map the line-break chord"),
             ];
             screen
-                .frame(&mut host, &mut router, events, (160, 40))
+                .frame(&mut host, events, (160, 40))
                 .expect("insert the line break");
             assert_eq!(app.draft.peek(), "first\n", "{modifier:?}");
             assert_eq!(app.caret.peek(), 6);
@@ -106,13 +98,12 @@ fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
                 "{modifier:?}+Enter submitted the draft"
             );
             screen
-                .frame(&mut host, &mut router, [press("second")], (160, 40))
+                .frame(&mut host, [press("second")], (160, 40))
                 .expect("type the second line");
             assert_eq!(app.draft.peek(), "first\nsecond");
             screen
                 .frame(
                     &mut host,
-                    &mut router,
                     [sigil::terminal::key_down(sigil::prelude::Key::Enter)],
                     (160, 40),
                 )

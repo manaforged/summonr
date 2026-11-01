@@ -1,13 +1,9 @@
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, container, signal,
-    virtual_list,
-};
+use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, container, signal, virtual_list};
 
 use super::{App, canvas};
 use super::{Row, Setting, setting_rows};
-use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, Size, group, overlay_list, pick, press,
-};
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, group, overlay_list, pick, press};
+use sigil::prelude::Widget;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     vec![
@@ -100,32 +96,11 @@ fn column_count(width: f32) -> usize {
     (width / COLUMN_MIN).floor().max(1.0) as usize
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{Item, column_count, sections, spread};
-
-    #[test]
-    fn a_wide_menu_gains_a_side() {
-        assert_eq!(column_count(400.0), 1);
-        assert_eq!(column_count(900.0), 2);
-        let items = [
-            Item::Heading("session"),
-            Item::Model(0),
-            Item::Heading("model"),
-            Item::Model(1),
-        ];
-        let columns = spread(sections(&items), 2);
-        assert_eq!(columns.len(), 2);
-        assert_eq!(columns[0].len(), 1);
-        assert_eq!(columns[1].len(), 1);
-    }
-}
-
 fn sections(items: &[Item]) -> Vec<std::ops::Range<usize>> {
     let mut out = Vec::new();
     let mut start = 0;
-    for index in 1..items.len() {
-        if matches!(items[index], Item::Heading(_)) {
+    for (index, item) in items.iter().enumerate().skip(1) {
+        if matches!(item, Item::Heading(_)) {
             out.push(start..index);
             start = index;
         }
@@ -189,4 +164,25 @@ fn entry(app: &App, row: &Row, index: usize, active: bool) -> NodeBuilder {
         }
         event.stop_propagation();
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Item, column_count, sections, spread};
+
+    #[test]
+    fn a_wide_menu_gains_a_side() {
+        assert_eq!(column_count(400.0), 1);
+        assert_eq!(column_count(900.0), 2);
+        let items = [
+            Item::Heading("session"),
+            Item::Model(0),
+            Item::Heading("model"),
+            Item::Model(1),
+        ];
+        let columns = spread(sections(&items), 2);
+        assert_eq!(columns.len(), 2);
+        assert_eq!(columns[0].len(), 1);
+        assert_eq!(columns[1].len(), 1);
+    }
 }

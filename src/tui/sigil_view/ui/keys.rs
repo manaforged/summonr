@@ -2,9 +2,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use sigil::kernel::TextCursor;
-use sigil::prelude::{
-    KeyEvent, LogicalKey, ModifiersState, NodeBuilder, NodeEventsExt, Shortcut, WidgetLayoutExt,
-};
+use sigil::prelude::{KeyEvent, LogicalKey, ModifiersState, NodeBuilder, Shortcut, Widget};
 
 use crate::prefs::EditorKey;
 use crate::tui::sigil_view::app::App;
@@ -14,7 +12,7 @@ const OPTION_GLYPHS: [(&str, &str); 3] = [("p", "π"), ("d", "∂"), ("o", "ø")
 pub(in crate::tui::sigil_view) type KeyAction = fn(&App, &mut KeyEvent);
 pub(in crate::tui::sigil_view) type Bindings = Vec<(Shortcut, KeyAction)>;
 
-pub(in crate::tui::sigil_view) fn input_keys<T: WidgetLayoutExt>(app: &App, input: T) -> T {
+pub(in crate::tui::sigil_view) fn input_keys<T: sigil::prelude::Widget>(app: &App, input: T) -> T {
     let app = app.clone();
     input.map_node(move |node| {
         let cursor = Rc::new(Cell::new(None::<TextCursor>));

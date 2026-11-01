@@ -42,7 +42,9 @@ fn journal(path: &Path, ui: &UnboundedSender<Msg>) {
     let lines = match log::records(path, 0).collect::<std::io::Result<Vec<Line>>>() {
         Ok(lines) => lines,
         Err(error) => {
-            drop(ui.send(Msg::Fact(Fact::System(format!("cannot load conversation: {error}")))));
+            drop(ui.send(Msg::Fact(Fact::System(format!(
+                "cannot load conversation: {error}"
+            )))));
             return;
         }
     };
@@ -93,6 +95,8 @@ fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
         drop(ui.send(Msg::Fact(Fact::Event(event))));
     }
     if matches!(line, Line::Interrupted { .. }) {
-        drop(ui.send(Msg::Fact(Fact::System("Partial answer · interrupted".to_string()))));
+        drop(ui.send(Msg::Fact(Fact::System(
+            "Partial answer · interrupted".to_string(),
+        ))));
     }
 }

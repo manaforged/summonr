@@ -1,12 +1,11 @@
 use super::*;
 use crate::tui::sigil_view::app::{Notice, NoticeKind};
 use crate::tui::sigil_view::profile::info;
-use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
 #[test]
 fn a_notice_takes_its_width_and_a_gap_from_the_workspace_path() {
-    Runtime::scope("footer-place-notice", || {
+    sigil::reactive::Owner::scope("footer-place-notice", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = unbounded_channel();
         let mut details = info();
@@ -30,7 +29,7 @@ fn a_notice_takes_its_width_and_a_gap_from_the_workspace_path() {
 
 #[test]
 fn a_long_workspace_path_keeps_its_last_directory() {
-    Runtime::scope("footer-keeps-leaf", || {
+    sigil::reactive::Owner::scope("footer-keeps-leaf", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = unbounded_channel();
         let mut details = info();

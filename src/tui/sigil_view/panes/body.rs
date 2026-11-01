@@ -2,12 +2,10 @@ use sigil::layout::Overflow;
 use sigil::prelude::AlignItems;
 use sigil::prelude::Disclosure;
 use sigil::prelude::IntoNode;
-use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::ListRowSlots;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
-use sigil::prelude::NodeEventsExt;
 use sigil::prelude::Paint;
 use sigil::prelude::container;
 use sigil::prelude::context_menu;
@@ -16,6 +14,7 @@ use sigil::prelude::list_row_with;
 
 use super::{App, Pane, PaneRow, diff, todos, tree_actions, view};
 use crate::tui::sigil_view::canvas;
+use sigil::prelude::Widget;
 
 pub(super) type Extra = fn(&App, &PaneRow) -> NodeBuilder;
 

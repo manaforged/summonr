@@ -50,12 +50,11 @@ fn auto_follows_the_terminal_backdrop() {
 fn applying_custom_colors_repaints_a_mounted_view_without_changing_the_theme_name() {
     use crate::tui::sigil_view::{app::App, profile::info, view::root};
     use sigil::Host;
-    use sigil::events::EventRouter;
-    use sigil::reactive::Runtime;
+
     use sigil::terminal::Screen;
     use tokio::sync::mpsc::unbounded_channel;
 
-    Runtime::scope("installed-palette", || {
+    sigil::reactive::Owner::scope("installed-palette", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let folder = workspace.path().join(".summonr");
         std::fs::create_dir(&folder).expect("theme folder");
@@ -71,13 +70,10 @@ fn applying_custom_colors_repaints_a_mounted_view_without_changing_the_theme_nam
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(80, 24);
-        let mut router = EventRouter::new();
         let mut background = || {
+            screen.frame(&mut host, [], (80, 24)).expect("settle theme");
             screen
-                .frame(&mut host, &mut router, [], (80, 24))
-                .expect("settle theme");
-            screen
-                .frame(&mut host, &mut router, [], (80, 24))
+                .frame(&mut host, [], (80, 24))
                 .expect("paint theme")
                 .get(0, 0)
                 .expect("background cell")

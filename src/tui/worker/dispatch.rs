@@ -1,6 +1,6 @@
 use super::state::set_mail_reply;
-use crate::tui::{Fact, Intent};
 use super::*;
+use crate::tui::Fact;
 
 impl Worker {
     pub(super) async fn dispatch(&mut self, command: Cmd) -> bool {

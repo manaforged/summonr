@@ -3,7 +3,7 @@ use super::{State, busy_info, frame_with, screens};
 use crate::catalog::Model;
 use crate::endpoint::State as Reach;
 use crate::recent::ModelId;
-use crate::tui::{Fact, Intent, Msg, Snapshot};
+use crate::tui::{Fact, Msg, Snapshot};
 
 fn models(app: &App, rows: &[(&str, &str)], groups: &[(&str, Reach)]) {
     app.update(Msg::Fact(Fact::Models {

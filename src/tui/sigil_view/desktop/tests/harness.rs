@@ -1,19 +1,17 @@
 use sigil::Host;
 use sigil::app::FrameHooks;
 use sigil::events::{
-    EventRouter, KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
-    ShellEvent,
+    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, ShellEvent,
 };
 use sigil::kernel::Role;
 use sigil::prelude::Key;
-use sigil::reactive::Runtime;
 use sigil::scene::SceneCommand;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::{App, root};
 use super::VIEW;
 use crate::provider::Effort;
-use crate::tui::{Cmd, Msg, Snapshot};
+use crate::tui::{Cmd, Fact, Msg, Snapshot};
 
 pub(super) struct Seen<T> {
     pub(super) read: T,
@@ -77,7 +75,7 @@ pub(super) fn drive<T>(
     keys: Vec<ShellEvent>,
     read: impl FnOnce(&App) -> T,
 ) -> Seen<T> {
-    Runtime::scope("summonr-window", || {
+    sigil::reactive::Owner::scope("summonr-window", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, mut receiver) = unbounded_channel();
         let app = App::new(
@@ -85,27 +83,27 @@ pub(super) fn drive<T>(
             workspace.path().to_owned(),
             commands,
         );
+        super::fit(&app);
         setup(&app);
         app.refresh();
         let mut host = Host::new();
         let tree = app.clone();
         host.mount(move || root(tree.clone()));
-        let mut router = EventRouter::new();
         for _ in 0..3 {
-            host.frame(&mut router, VIEW, 1.0, FrameHooks::default());
+            host.frame(VIEW, 1.0, FrameHooks::default());
         }
         for key in keys {
-            host.route(&mut router, key);
-            host.frame(&mut router, VIEW, 1.0, FrameHooks::default());
+            host.route(key);
+            host.frame(VIEW, 1.0, FrameHooks::default());
         }
         let read = read(&app);
-        host.frame(&mut router, VIEW, 1.0, FrameHooks::default());
+        host.frame(VIEW, 1.0, FrameHooks::default());
         let mut sent = Vec::new();
         while let Ok(cmd) = receiver.try_recv() {
             sent.push(cmd);
         }
         let controls = host
-            .accessibility_tree(&router)
+            .accessibility_tree()
             .nodes
             .iter()
             .filter_map(|(_, node)| {

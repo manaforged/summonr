@@ -23,6 +23,7 @@ pub(super) enum Wait {
 impl Wait {
     pub(super) fn chosen(explicit: Option<u64>, detach: bool) -> Self {
         match explicit {
+            Some(seconds) if detach => Self::Detach(seconds),
             Some(seconds) => Self::Kill(seconds),
             None if detach => Self::Detach(crate::limits::limits().command_wait_secs),
             None => Self::Kill(crate::limits::limits().command_kill_secs),
@@ -119,7 +120,12 @@ impl ToolRegistry {
     }
 
     fn finished(&self, log_path: PathBuf, command: &str, code: i32) -> Result<ToolOutput> {
-        let (note, text) = logged(&log_path, command)?;
+        let (note, text) = match logged(&log_path, command) {
+            Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                Default::default()
+            }
+            logged => logged?,
+        };
         Ok(ToolOutput {
             success: code == 0,
             mutated: may_write(command),
@@ -170,7 +176,12 @@ impl ToolRegistry {
         jobs::write(
             &jobs::dir(&self.workspace).join(format!("{}.json", started.id)),
             &record,
-        )
+        )?;
+        self.detached_jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(started.id.clone());
+        Ok(())
     }
 
     fn discard_job(&self, id: &str) {

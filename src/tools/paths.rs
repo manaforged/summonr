@@ -55,6 +55,42 @@ pub(in crate::tools) enum Shield {
     Always,
 }
 
+fn cannot_open(path: &str, target: &Path, error: &std::io::Error) -> Error {
+    let near = nearby(target).join(", ");
+    Error::Tool(if near.is_empty() {
+        format!("cannot open `{path}`: {error}")
+    } else {
+        format!("cannot open `{path}`: {error}; nearby: {near}")
+    })
+}
+
+fn nearby(target: &Path) -> Vec<String> {
+    let stem = target
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or_default();
+    let prefix: String = stem.chars().take(3).collect();
+    let Some(dir) = target.ancestors().skip(1).find(|dir| dir.is_dir()) else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .map(|entry| entry.path().display().to_string())
+        .filter(|name| {
+            Path::new(name)
+                .file_name()
+                .and_then(|file| file.to_str())
+                .is_some_and(|file| file.starts_with(&prefix))
+        })
+        .collect();
+    names.sort();
+    names.truncate(5);
+    names
+}
+
 impl ToolRegistry {
     pub(crate) fn exists(&self, path: &str) -> Result<bool> {
         Ok(self.lexical(path)?.exists())
@@ -105,7 +141,7 @@ impl ToolRegistry {
         let requested = self.workspace.join(cleaned.as_ref());
         let opened = existing(&requested)
             .canonicalize()
-            .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?;
+            .map_err(|error| cannot_open(path, &requested, &error))?;
         let normal = crate::policy::normalize(&requested);
         let shielded = shield == Shield::Always;
         if [&requested, &normal, &opened].into_iter().any(|path| {
@@ -122,7 +158,7 @@ impl ToolRegistry {
         let candidate = self.lexical(path)?;
         let canonical = existing(&candidate)
             .canonicalize()
-            .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?;
+            .map_err(|error| cannot_open(path, &candidate, &error))?;
         self.ensure_inside(&canonical)?;
         Ok(canonical)
     }

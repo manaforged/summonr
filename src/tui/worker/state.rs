@@ -42,6 +42,7 @@ impl Worker {
             relay: info.relay,
             auto_reply: info.prefs.mail,
             pending_mail: false,
+            mail_held: false,
             last_auto: Instant::now(),
             queue: super::steer::InputQueue::new(steering),
             last_turn: None,
@@ -107,13 +108,7 @@ impl Worker {
     }
 
     fn show_delivered(&mut self, input: &crate::provider::UserInput) {
-        if let Some(at) = self
-            .queue
-            .recorded
-            .iter()
-            .position(|text| *text == input.text)
-        {
-            self.queue.recorded.remove(at);
+        if self.queue.take_recorded(&input.text) {
             return;
         }
         drop(
@@ -179,7 +174,7 @@ impl Worker {
         }
         self.queue_mail();
         let monitor = mail.iter().any(|message| message.from == "monitor");
-        if monitor {
+        if monitor && !self.mail_held {
             self.pending_mail = true;
         }
         if !self.pending_mail {
@@ -193,7 +188,7 @@ impl Worker {
     }
 
     pub(super) fn queue_mail(&mut self) {
-        if self.auto_reply {
+        if self.auto_reply && !self.mail_held {
             self.pending_mail = true;
         }
     }

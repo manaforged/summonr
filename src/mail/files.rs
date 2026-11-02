@@ -20,11 +20,20 @@ impl Mailbox {
 }
 
 fn pending(path: &Path, cursor: u64) -> Result<bool> {
-    match std::fs::metadata(path) {
-        Ok(meta) => Ok(meta.len() != cursor),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error.into()),
+    use std::io::{Read as _, Seek as _, SeekFrom};
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let len = file.metadata()?.len();
+    if len == cursor {
+        return Ok(false);
     }
+    file.seek(SeekFrom::Start(if len < cursor { 0 } else { cursor }))?;
+    let mut unread = Vec::new();
+    file.read_to_end(&mut unread)?;
+    Ok(unread.contains(&b'\n'))
 }
 
 fn board_path(dir: &Path, cwd: &Path) -> PathBuf {

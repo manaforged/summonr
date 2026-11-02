@@ -40,6 +40,7 @@ pub enum SlashCommand {
     Demo,
     Undo,
     Clear,
+    Stop,
     Auto,
     Goal,
     Exit,

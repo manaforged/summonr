@@ -123,6 +123,7 @@ impl Worker {
                 true
             }
             crate::SlashCommand::Clear => self.clear(),
+            crate::SlashCommand::Stop => self.stop_all(),
             crate::SlashCommand::Status => self.session(),
             crate::SlashCommand::Usage => self.usage(argument),
             crate::SlashCommand::Resume => self.resume(argument),

@@ -219,6 +219,9 @@ impl ToolRegistry {
             || Ok(()),
         )
         .await?;
+        if status.state != crate::jobs::JobState::Running {
+            self.see_job(id);
+        }
         Ok(ToolOutput {
             success: matches!(
                 status.state,
@@ -264,8 +267,35 @@ impl ToolRegistry {
         self.stop_matching(|_| true)
     }
 
-    pub(crate) fn stop_detached(&self, started: u64) -> Result<Vec<String>> {
-        self.stop_matching(|record| record.detached && record.started >= started)
+    pub(crate) fn stop_detached(&self) -> Result<Vec<String>> {
+        let ids = std::mem::take(
+            &mut *self
+                .detached_jobs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        self.stop_matching(|record| ids.contains(&record.id))
+    }
+
+    pub(crate) fn clear_detached(&self) {
+        self.detached_jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+
+    pub(crate) fn see_job(&self, id: &str) {
+        self.seen_jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id.to_string());
+    }
+
+    pub(crate) fn job_seen(&self, id: &str) -> bool {
+        self.seen_jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(id)
     }
 
     fn stop_matching(&self, stops: impl Fn(&crate::jobs::Record) -> bool) -> Result<Vec<String>> {

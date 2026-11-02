@@ -2,6 +2,8 @@ use super::*;
 use crate::provider::scripted::{Reply, Scripted, Sent};
 use crate::provider::{ToolFunction, ToolKind};
 
+mod hold;
+mod jobs;
 mod steering;
 
 struct Run {

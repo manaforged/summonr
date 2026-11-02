@@ -161,3 +161,103 @@ fn steering_queue_runs_an_effort_change_after_messages_queued_before_it() {
     ));
     assert!(matches!(deferred.back(), Some(Cmd::SetEffort(_))));
 }
+
+fn worker() -> (
+    super::Worker,
+    tokio::sync::mpsc::UnboundedReceiver<Msg>,
+    [tempfile::TempDir; 2],
+) {
+    let home = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let client = crate::provider::Client::new("test", "http://127.0.0.1:9/v1").unwrap();
+    let driver = crate::durable::driver::SessionDriver::open(
+        home.path(),
+        workspace.path(),
+        "gpt-5.4",
+        "system",
+        None,
+    )
+    .unwrap();
+    let loop_ =
+        crate::runtime::Loop::open(client, "gpt-5.4", workspace.path(), "system", driver).unwrap();
+    let info = super::super::Info {
+        version: String::new(),
+        model: "gpt-5.4".to_string(),
+        relay: None,
+        session: loop_.session_id(),
+        endpoint: "openai".to_string(),
+        pick: None,
+        prefs: crate::prefs::Prefs::default(),
+        splash: false,
+        inline: false,
+        strict: false,
+        workspace: workspace.path().display().to_string(),
+        workflow: None,
+        config: None,
+    };
+    let (_commands, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (ui, inbox) = tokio::sync::mpsc::unbounded_channel();
+    (
+        super::Worker::new(loop_, receiver, ui, info),
+        inbox,
+        [home, workspace],
+    )
+}
+
+#[tokio::test]
+async fn escape_restores_a_deferred_submit_and_keeps_the_after_turn_command() {
+    let (mut worker, mut inbox, _dirs) = worker();
+    worker.queue.deferred = VecDeque::from([
+        Cmd::Submit(UserInput::from("first")),
+        Cmd::Command("/model opus".to_string()),
+    ]);
+    worker.queue.followups = VecDeque::from([UserInput::from("second")]);
+    worker.recover();
+    let restored = std::iter::from_fn(|| inbox.try_recv().ok())
+        .find_map(|msg| match msg {
+            Msg::Fact(Fact::Restored(inputs)) => Some(inputs),
+            _other => None,
+        })
+        .expect("restored draft");
+    let restored = restored
+        .iter()
+        .map(|input| input.text.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(restored, ["first", "second"]);
+    assert!(matches!(
+        worker.queue.deferred.iter().collect::<Vec<_>>().as_slice(),
+        [Cmd::Command(line)] if line == "/model opus"
+    ));
+}
+
+#[test]
+fn dequeue_clears_the_recorded_text_of_what_it_takes() {
+    let fixture = Fixture::new();
+    let path = fixture.workspace.path().to_path_buf();
+    let mut queue = fixture.queue(VecDeque::new(), VecDeque::new());
+    queue.during_turn(Cmd::Submit(UserInput::from("again")), &path, &fixture.ui);
+    assert_eq!(queue.recorded, ["again"]);
+    queue.during_turn(Cmd::Dequeue, &path, &fixture.ui);
+    assert!(queue.recorded.is_empty());
+}
+
+#[test]
+fn identical_pending_rows_follow_the_steering_queue() {
+    let mut fixture = Fixture::new();
+    let path = fixture.workspace.path().to_path_buf();
+    let mut queue = fixture.queue(VecDeque::new(), VecDeque::new());
+    for _ in 0..2 {
+        queue.during_turn(Cmd::Steer(UserInput::from("same")), &path, &fixture.ui);
+    }
+    fixture.steering.lock().unwrap().pop_front();
+    queue.announce(&fixture.ui);
+    let rows = fixture
+        .messages()
+        .into_iter()
+        .filter_map(|msg| match msg {
+            Msg::Fact(Fact::Pending(rows)) => Some(rows),
+            _other => None,
+        })
+        .last();
+    assert_eq!(rows, Some(vec![(true, "same".to_string())]));
+}

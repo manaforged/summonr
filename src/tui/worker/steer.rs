@@ -84,7 +84,15 @@ impl InputQueue {
             }
             !take
         });
+        for input in &taken {
+            self.take_recorded(&input.text);
+        }
         taken
+    }
+
+    pub(super) fn take_recorded(&mut self, text: &str) -> bool {
+        let at = self.recorded.iter().position(|shown| shown == text);
+        at.map(|at| self.recorded.remove(at)).is_some()
     }
 
     fn take_sent(&self) -> Vec<UserInput> {

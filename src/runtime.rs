@@ -141,6 +141,8 @@ pub struct Loop<P> {
     summary_wait: usize,
     outputs_cleared: bool,
     job_watch: Vec<crate::jobs::Record>,
+    job_known: HashSet<String>,
+    judge_turns: bool,
     workspace: PathBuf,
     mailbox: Option<Mailbox>,
     mail_module: bool,

@@ -59,6 +59,7 @@ impl<P: Provider> Loop<P> {
         self.forget_children(crate::child::ChildScope::All);
         self.session = session;
         self.tools.set_session(&self.session.id().to_string());
+        self.rewatch_jobs(None);
         self.mailbox = None;
         self.join_mail();
         self.schema = None;
@@ -115,8 +116,9 @@ impl<P: Provider> Loop<P> {
         if abort.code.child_scope() == crate::child::ChildScope::All {
             self.tools.stop_jobs()?;
         } else {
-            self.tools.stop_detached(self.turn_started)?;
+            self.tools.stop_detached()?;
         }
+        self.watch_jobs();
         self.emit_records(&mut Vec::new(), &mut emit)?;
         self.sync_usage(&mut emit);
         Ok(())

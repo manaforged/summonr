@@ -1,4 +1,3 @@
-use super::close::Answer;
 use super::*;
 
 impl<P: Provider> Loop<P> {
@@ -28,10 +27,6 @@ impl<P: Provider> Loop<P> {
         )
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one close path for a finished provider round"
-    )]
     pub(super) async fn finish_turn(
         &mut self,
         message: Message,
@@ -39,27 +34,11 @@ impl<P: Provider> Loop<P> {
         mut emit: impl FnMut(&Event),
         round: usize,
         usage: &mut Usage,
-        attempt: Attempt,
-        reasoning: String,
-        meter: Meter,
-        meta: UsageMeta,
         pre: &mut Pretask,
     ) -> Result<Turn> {
         let snapshot = self.settle(pre, events, &mut emit).await?;
-        if message.content.trim().is_empty() {
-            return self.reject_empty(attempt, meter.millis, events, &mut emit);
-        }
-        let answer = Answer {
-            attempt,
-            text: &message.content,
-            reasoning: &reasoning,
-            meter,
-            meta,
-        };
-        self.record_answer(answer, events, &mut emit)?;
         if !self.executes_work() {
             self.close_plain(snapshot, events)?;
-            self.watch_jobs();
             return self.close_turn(
                 Ending::Done(Vec::new()),
                 message.content,
@@ -168,7 +147,9 @@ impl<P: Provider> Loop<P> {
         if !verdict.passed {
             return Ok(Decision::Automatic);
         }
-        let decision = self.goal_decision(reply, receipt, emit, usage).await?;
+        let decision = self
+            .goal_decision(reply, receipt, events, emit, usage)
+            .await?;
         if reviewed || !matches!(decision, Decision::Automatic) {
             *verdict = self.verdict(checks, events, emit)?;
         }
@@ -221,6 +202,7 @@ impl<P: Provider> Loop<P> {
         &mut self,
         reply: &str,
         evidence: &str,
+        events: &[Event],
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Decision> {
@@ -250,6 +232,7 @@ impl<P: Provider> Loop<P> {
             "" => evidence.to_string(),
             open => format!("{evidence}\nOpen tasks: {open}"),
         };
+        let evidence = goal::with_corrections(&evidence, events);
         let decision = goal::decision(self, &objective, reply, &evidence, usage).await;
         self.sync_usage(emit);
         Ok(decision)
@@ -264,6 +247,7 @@ impl<P: Provider> Loop<P> {
         round: usize,
         usage: &mut Usage,
     ) -> Result<Turn> {
+        self.watch_jobs();
         let progress = self.work_progress()?;
         self.push_event(events, &mut emit, Event::Work { progress })?;
         let (note, checks) = match ending {

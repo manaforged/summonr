@@ -117,10 +117,9 @@ fn fail_parse(error: &summonr::Error) -> ! {
 }
 
 fn fail(error: &dyn std::fmt::Display) -> ! {
-    eprintln!(
-        "{}: {error}",
-        option_env!("CARGO_BIN_NAME").unwrap_or("summonr")
-    );
+    use std::io::Write;
+    let name = option_env!("CARGO_BIN_NAME").unwrap_or("summonr");
+    drop(writeln!(std::io::stderr(), "{name}: {error}"));
     summonr::stop_children();
     std::process::exit(1)
 }

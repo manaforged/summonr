@@ -11,7 +11,26 @@ state, call order, special cases for test inputs, or changed test expectations, 
 changed environment for the check (a stub or shim on PATH, an edited file outside the \
 workspace, a faked clock or tool); reply `continue` and name the trick. `continue` when work remains; name what remains. For an open-ended objective, `done` needs the outcome the agent committed to and the evidence that shows it, on something a user would notice; formatting, renames, comments, docs, a test run alone, or the agent's belief that it is done are `continue`, so name the bigger gap. `stalled` when the response reports no concrete action on the objective; a question the agent could answer from the workspace is `continue`, not `stalled`. \
 `impossible` when the objective cannot be met in this workspace; name the blocker. When two \
-tests expect different results for the same input, reply `impossible` and name both tests.";
+tests expect different results for the same input, reply `impossible` and name both tests. \
+A user message in the harness evidence overrides the objective; when it tells the agent to stop \
+or leave the work, reply `done`.";
+
+pub(crate) fn with_corrections(evidence: &str, events: &[crate::Event]) -> String {
+    let said = events
+        .iter()
+        .filter_map(|event| match event {
+            crate::Event::Steered { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if said.is_empty() {
+        return evidence.to_string();
+    }
+    format!(
+        "{evidence}\n\nMessages the user sent during this turn, in order:\n{}",
+        said.join("\n")
+    )
+}
 
 pub(crate) async fn decision<P: Provider>(
     loop_: &mut Loop<P>,

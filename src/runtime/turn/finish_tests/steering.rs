@@ -4,11 +4,11 @@ use super::*;
 mod mail;
 
 #[tokio::test]
-async fn steering_waits_for_the_reply_in_a_main_session() {
+async fn steering_interrupts_the_reply_in_a_main_session() {
     let steering = Arc::new(Steering::default());
     let sender = Arc::clone(&steering);
     let provider =
-        Scripted::new([Reply::Text("first"), Reply::Text("second")]).on_complete(move |round| {
+        Scripted::new([Reply::Pending, Reply::Text("first")]).on_complete(move |round| {
             if round == 0 {
                 sender
                     .lock()

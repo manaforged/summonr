@@ -241,7 +241,10 @@ async fn dispatch(
             })?;
         }
         let opener = factory(args, endpoint, super::commands::workspace()?);
-        summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui, opener)
+        let stderr = crate::diagnostics::park_stderr();
+        let result = summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui, opener);
+        crate::diagnostics::restore_stderr(stderr);
+        result
     } else {
         splash.line();
         modes::print(loop_, args).await

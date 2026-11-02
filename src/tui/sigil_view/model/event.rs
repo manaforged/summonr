@@ -203,12 +203,7 @@ impl Model {
                 if files.len() == 1 { "" } else { "s" }
             ))),
             Event::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
-            Event::Steered { text } => {
-                if let Some(at) = self.pending.iter().position(|row| row.1 == text) {
-                    self.pending.remove(at);
-                }
-                self.entries.push(Entry::User(text));
-            }
+            Event::Steered { text } => self.entries.push(Entry::User(text)),
             Event::Note { text } => {
                 if text.starts_with("stream failed; retrying once")
                     && let Some(at) = self

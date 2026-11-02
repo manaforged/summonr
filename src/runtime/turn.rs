@@ -52,6 +52,12 @@ pub(super) enum RetryPolicy {
     Round,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Trigger {
+    User,
+    Mail,
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct CallOptions {
     pub(super) stream: bool,
@@ -165,12 +171,11 @@ impl<P: Provider> Loop<P> {
         } else {
             provider.complete(&request)
         };
-        let input = self.input_wait();
-        let interrupts = options.retry == RetryPolicy::Round && self.input_interrupts();
+        let input = self.reply_input_wait();
         let waited = tokio::select! {
             biased;
             result = Self::wait(completion, remaining) => result,
-            result = input, if interrupts => {
+            result = input, if options.retry == RetryPolicy::Round => {
                 Err(result.err().map_or(WaitError::Steered, WaitError::Provider))
             }
         };
@@ -258,15 +263,22 @@ impl<P: Provider> Loop<P> {
     pub async fn turn_with(
         &mut self,
         input: impl Into<UserInput>,
+        emit: impl FnMut(&Event),
+    ) -> Result<Turn> {
+        self.run_input(input.into(), Trigger::User, emit).await
+    }
+
+    async fn run_input(
+        &mut self,
+        input: UserInput,
+        trigger: Trigger,
         mut emit: impl FnMut(&Event),
     ) -> Result<Turn> {
         let _report = self.herdr.turn();
         let mut events = Vec::new();
-        let mut input = self
-            .expand_mcp(input.into(), &mut events, &mut emit)
-            .await?;
+        let mut input = self.expand_mcp(input, &mut events, &mut emit).await?;
         self.tools.fold_unseen_images(&mut input).await?;
-        let messages = self.begin_turn(input)?;
+        let messages = self.begin_turn(input, trigger)?;
         self.measure_baseline(&mut events, &mut emit).await?;
         let mut pre = self.checkpoint();
         let mut usage = Usage::default();
@@ -324,8 +336,8 @@ impl<P: Provider> Loop<P> {
         if self.inbox.is_empty() {
             return Err(Error::Config("there is no pending peer mail".to_string()));
         }
-        self.turn_with("[summon: peer mail is pending in this Work]", emit)
-            .await
+        let input = UserInput::from("[summon: peer mail is pending in this Work]");
+        self.run_input(input, Trigger::Mail, emit).await
     }
 
     pub(super) fn sync_usage(&mut self, emit: &mut impl FnMut(&Event)) {

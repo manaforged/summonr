@@ -216,6 +216,7 @@ const DEFAULT: &str = "You are an expert coding assistant running inside summonr
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
 - write is for new files and complete rewrites
 - Be concise in your responses
+- Finish the whole request before you reply. Stop only when it is done or when the next step needs a decision that only the user can make
 </rules>";
 
 #[cfg(test)]

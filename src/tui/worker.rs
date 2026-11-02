@@ -47,6 +47,7 @@ struct Worker {
     relay: Option<String>,
     auto_reply: bool,
     pending_mail: bool,
+    mail_held: bool,
     last_auto: Instant,
     queue: steer::InputQueue,
     last_turn: Option<crate::Turn>,

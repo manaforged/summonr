@@ -39,6 +39,7 @@ table! {
     ledger_max: usize,
     judge_repairs: usize,
     stall_rounds: usize,
+    turn_continues: usize,
     judge_turns: bool,
     job_quiet_secs: u64,
     prompt_sessions: usize,

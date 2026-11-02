@@ -23,6 +23,7 @@ commands = [
   { name = "/new", takes = "bare", help = "start another session beside this one" },
   { name = "/name", takes = "value", usage = "[TEXT]", help = "name this session" },
   { name = "/clear", takes = "bare", help = "start a fresh context; files stay" },
+  { name = "/stop", takes = "bare", help = "stop the turn, every background agent, and every job" },
   { name = "/compact", takes = "bare", help = "summarize earlier turns" },
   { name = "/retry", takes = "bare", help = "continue a failed or cancelled turn (F5)" },
   { name = "/undo", takes = "value", usage = "[files [N]]", help = "undo the last turn; files N restores files" },

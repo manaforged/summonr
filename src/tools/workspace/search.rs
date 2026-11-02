@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use grep_regex::{RegexMatcher, RegexMatcherBuilder};
@@ -16,6 +17,14 @@ const GREP_FILE_HITS: usize = 20;
 const GREP_FILE_MAX: u64 = 1024 * 1024;
 pub(in crate::tools) const CONTEXT_MAX: usize = 10;
 const OUTPUT_MAX: usize = 50 * 1024;
+
+struct CancelOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
 
 enum SearchJob {
     Help(String),
@@ -35,10 +44,11 @@ impl SearchJob {
         let report = walk::run(&query)?;
         let slow = started.elapsed().as_millis()
             >= u128::from(crate::limits::limits().search_index_after_ms);
+        let cancelled = query.cancelled.load(Ordering::Relaxed);
         for root in query
             .roots
             .iter()
-            .filter(|root| query.indexable(&root.path))
+            .filter(|root| !cancelled && query.indexable(&root.path))
         {
             index::refresh(&root.path, slow);
         }
@@ -53,17 +63,19 @@ impl SearchJob {
 
 impl ToolRegistry {
     pub(in crate::tools) fn search_files(&self, args: &Value) -> Result<String> {
-        self.search_job(args)?.run()
+        self.search_job(args, Arc::default())?.run()
     }
 
     pub(in crate::tools) async fn search_cancellable(&self, args: &Value) -> Result<String> {
-        let job = self.search_job(args)?;
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let job = self.search_job(args, Arc::clone(&cancelled))?;
+        let _cancel = CancelOnDrop(cancelled);
         tokio::task::spawn_blocking(move || job.run())
             .await
             .map_err(|error| Error::Tool(format!("search failed: {error}")))?
     }
 
-    fn search_job(&self, args: &Value) -> Result<SearchJob> {
+    fn search_job(&self, args: &Value, cancelled: Arc<AtomicBool>) -> Result<SearchJob> {
         if args.get("op").and_then(Value::as_str) == Some("help") {
             return Ok(SearchJob::Help(crate::tools::catalog::help(
                 crate::tools::Builtin::Search,
@@ -71,12 +83,12 @@ impl ToolRegistry {
         }
         let (roots, missing) = self.search_roots(args)?;
         Ok(SearchJob::Walk {
-            query: Arc::new(self.query(args, roots)?),
+            query: Arc::new(self.query(args, roots, cancelled)?),
             missing,
         })
     }
 
-    fn query(&self, args: &Value, roots: Vec<Root>) -> Result<Query> {
+    fn query(&self, args: &Value, roots: Vec<Root>, cancelled: Arc<AtomicBool>) -> Result<Query> {
         let literal = object_bool(args, "literal") || object_bool(args, "fixed_strings");
         let pattern = patterns(args, literal);
         let glob = text_arg(args, "glob", "include").map(widened);
@@ -110,6 +122,7 @@ impl ToolRegistry {
             roots,
             depth: object_usize(args, "depth"),
             deadline: Instant::now() + crate::limits::limits().search(),
+            cancelled,
             limit: object_usize(args, "limit")
                 .unwrap_or(GREP_DEFAULT)
                 .clamp(1, GREP_MAX),
@@ -257,6 +270,7 @@ struct Query {
     shown: PathBuf,
     depth: Option<usize>,
     deadline: Instant,
+    cancelled: Arc<AtomicBool>,
     matcher: Option<RegexMatcher>,
     limit: usize,
     before: usize,
@@ -364,6 +378,10 @@ pub(in crate::tools) mod index;
 mod render;
 mod scan;
 mod walk;
+
+#[cfg(test)]
+#[path = "search_tests.rs"]
+mod tests;
 
 fn relative(base: &Path, path: &Path) -> String {
     path.strip_prefix(base)

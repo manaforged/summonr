@@ -185,20 +185,12 @@ fn an_assignment_names_the_childs_checkout_not_the_parent() {
 }
 
 #[tokio::test]
-async fn a_failed_turn_drops_the_updates_its_background_children_left_queued() {
+async fn a_failed_turn_keeps_its_background_children() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("ok"), Reply::Text("child done")]);
     parent.turn("hi").await.unwrap();
     let id = spawn_background(&mut parent);
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     abort(&mut parent, AbortCode::Error, "provider failed");
-    let late: Vec<_> = parent
-        .child_events()
-        .into_iter()
-        .filter(
-            |event| matches!(event, crate::tools::Event::Child { id: child, .. } if *child == id),
-        )
-        .collect();
-    assert!(late.is_empty(), "{late:?}");
+    assert!(parent.spawned.contains_key(&id));
 }
 
 fn call(id: &str, name: &str, arguments: &serde_json::Value) -> crate::provider::ToolCall {

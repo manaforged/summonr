@@ -1,5 +1,32 @@
+use super::close::Answer;
 use super::*;
 use crate::tools::Builtin;
+
+#[derive(Default)]
+struct Pace {
+    stalls: usize,
+    continues: usize,
+    planned: bool,
+    acted: bool,
+}
+
+impl Pace {
+    fn note_calls(&mut self, message: &Message) {
+        self.stalls = 0;
+        self.planned |= message
+            .tool_calls
+            .iter()
+            .any(|call| Builtin::is(&call.function.name, Builtin::Todo));
+        if acts(message) {
+            self.acted = true;
+            self.continues = 0;
+        }
+    }
+
+    fn stalled(&self) -> bool {
+        self.stalls >= crate::limits::limits().stall_rounds
+    }
+}
 
 impl<P: Provider> Loop<P> {
     pub(super) async fn run_turn(
@@ -12,19 +39,15 @@ impl<P: Provider> Loop<P> {
         reached: &mut usize,
     ) -> Result<Turn> {
         let abort;
-        let mut stalls = 0;
-        let mut planned = false;
-        let mut acted = false;
+        let mut pace = Pace::default();
         let tools = self
             .open_turn(&mut messages, usage, events, &mut emit)
             .await?;
-
         loop {
             while self.budget().max_tokens.is_some() && self.child_budget_reserved() > 0 {
                 self.await_children(events, &mut emit, usage).await?;
             }
             *reached = reached.saturating_add(1);
-            let round = *reached;
             if let Some(reason) = self
                 .open_round(&mut messages, tools.json.len(), usage, events, &mut emit)
                 .await?
@@ -32,7 +55,7 @@ impl<P: Provider> Loop<P> {
                 abort = reason;
                 break;
             }
-            let Some((assistant, request_chars, (durable_attempt, meter, meta))) = self
+            let Some((assistant, request_chars, (attempt, meter, meta))) = self
                 .round_call(&mut messages, &tools, events, &mut emit)
                 .await?
             else {
@@ -41,91 +64,149 @@ impl<P: Provider> Loop<P> {
             };
             let (message, stop_reason, reasoning) =
                 self.take_reply(assistant, request_chars, usage);
-            if stop_reason == StopReason::Length && message.tool_calls.is_empty() {
-                let mut steered = Vec::new();
-                self.steer_length(
-                    &message,
-                    &reasoning,
-                    durable_attempt,
-                    meter,
-                    meta,
-                    &mut steered,
-                    events,
-                    &mut emit,
-                )
-                .await?;
-                messages.push(message);
-                messages.append(&mut steered);
-                continue;
-            }
-            if !message.tool_calls.is_empty() {
-                stalls = 0;
-                planned |= message
-                    .tool_calls
-                    .iter()
-                    .any(|call| Builtin::is(&call.function.name, Builtin::Todo));
-                acted |= acts(&message);
-            }
-            if message.tool_calls.is_empty() {
-                let steered = self.steer_waiting();
-                let open = if steered {
-                    None
-                } else {
-                    self.open_work(&message.content, (&mut stalls, planned, acted), usage)
-                        .await?
-                };
-                if steered || open.is_some() {
-                    let reply = (message, reasoning, durable_attempt, meter, meta);
-                    self.hold_reply(reply, &mut messages, events, &mut emit)?;
-                    if let Some(note) = open {
-                        self.inject(note, &mut messages)?;
-                        let text = "work is still open; the turn continues".to_string();
-                        self.push_event(events, &mut emit, Event::Note { text })?;
-                    }
-                    continue;
-                }
-            }
-            if message.tool_calls.is_empty() {
+            let reply = (message, reasoning, attempt, meter, meta);
+            let scope = (&mut messages, &mut *pre, &mut *events);
+            if let Some(message) = self
+                .take_round(reply, stop_reason, &mut pace, scope, &mut emit, usage)
+                .await?
+            {
                 return self
-                    .finish_turn(
-                        message,
-                        events,
-                        emit,
-                        round,
-                        usage,
-                        durable_attempt,
-                        reasoning,
-                        meter,
-                        meta,
-                        pre,
-                    )
+                    .finish_turn(message, events, emit, *reached, usage, pre)
                     .await;
             }
-            self.continue_with(
-                (message, reasoning, durable_attempt, meter, meta),
-                &mut messages,
-                pre,
-                events,
-                &mut emit,
-                usage,
-            )
-            .await?;
         }
         self.abort_turn(abort, events, emit, usage, *reached, pre)
             .await
     }
 
-    fn hold_reply(
+    async fn take_round(
         &mut self,
         reply: (Message, String, Attempt, Meter, UsageMeta),
+        stop_reason: StopReason,
+        pace: &mut Pace,
+        (messages, pre, events): (&mut Vec<Message>, &mut Pretask, &mut Vec<Event>),
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<Option<Message>> {
+        let (message, reasoning, attempt, meter, meta) = reply;
+        if !message.tool_calls.is_empty() {
+            pace.note_calls(&message);
+            let reply = (message, reasoning, attempt, meter, meta);
+            self.continue_with(reply, messages, pre, events, emit, usage)
+                .await?;
+            return Ok(None);
+        }
+        if stop_reason == StopReason::Length {
+            let mut steered = Vec::new();
+            self.steer_length(
+                &message,
+                &reasoning,
+                attempt,
+                meter,
+                meta,
+                &mut steered,
+                events,
+                emit,
+            )
+            .await?;
+            messages.push(message);
+            messages.append(&mut steered);
+            return Ok(None);
+        }
+        let reply = (message, reasoning, attempt, meter, meta);
+        self.close_reply(reply, pace, (messages, pre, events), emit, usage)
+            .await
+    }
+
+    async fn close_reply(
+        &mut self,
+        (message, reasoning, attempt, meter, meta): (Message, String, Attempt, Meter, UsageMeta),
+        pace: &mut Pace,
+        (messages, pre, events): (&mut Vec<Message>, &mut Pretask, &mut Vec<Event>),
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<Option<Message>> {
+        let capped = pace.continues >= crate::limits::limits().turn_continues;
+        let steered = self.steer_waiting();
+        let tasks = if steered {
+            None
+        } else {
+            self.open_tasks(pace)?
+        };
+        let holds = !capped && (steered || tasks.is_some());
+        if !holds && message.content.trim().is_empty() {
+            self.settle(pre, events, emit).await?;
+            return self.reject_empty(attempt, meter.millis, events, emit);
+        }
+        let answer = Answer {
+            attempt,
+            text: &message.content,
+            reasoning: &reasoning,
+            meter,
+            meta,
+        };
+        self.record_answer(answer, events, emit)?;
+        if capped && (steered || tasks.is_some() || self.judge_due(pace)) {
+            self.note_cap(pace, events, emit)?;
+        }
+        let note = if capped {
+            None
+        } else if holds {
+            tasks
+        } else {
+            self.judge_reply(&message.content, pace, events, emit, usage)
+                .await?
+        };
+        if !holds && note.is_none() {
+            return Ok(Some(message));
+        }
+        self.keep_reply(message, messages, events, emit)?;
+        if steered {
+            let before = messages.len();
+            self.take_mail(messages, events, emit)?;
+            pace.continues += usize::from(messages.len() == before);
+        }
+        if let Some(note) = note {
+            self.continue_turn(note, pace, messages, events, emit)?;
+        }
+        Ok(None)
+    }
+
+    fn note_cap(
+        &mut self,
+        pace: &Pace,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        let text = format!(
+            "the turn ended after {} continuations (turn_continues); send a message to keep going",
+            pace.continues
+        );
+        self.push_event(events, emit, Event::Note { text })
+    }
+
+    fn continue_turn(
+        &mut self,
+        note: String,
+        pace: &mut Pace,
         messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        let (message, reasoning, attempt, meter, meta) = reply;
-        self.session
-            .finish_provider(attempt, &message.content, &reasoning, meter, meta)?;
-        self.emit_records(events, emit)?;
+        pace.stalls += 1;
+        pace.continues += 1;
+        self.inject(note, messages)?;
+        let text = "work is still open; the turn continues".to_string();
+        self.push_event(events, emit, Event::Note { text })
+    }
+
+    fn keep_reply(
+        &mut self,
+        message: Message,
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
         if !message.content.is_empty() {
             let text = message.content.clone();
             self.push_event(events, emit, Event::Assistant { text })?;
@@ -134,19 +215,12 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
-    async fn open_work(
-        &mut self,
-        reply: &str,
-        (stalls, planned, acted): (&mut usize, bool, bool),
-        usage: &mut Usage,
-    ) -> Result<Option<String>> {
-        let limits = crate::limits::limits();
-        if *stalls >= limits.stall_rounds || self.session.stage() == Some(Stage::Plan) {
+    fn open_tasks(&self, pace: &Pace) -> Result<Option<String>> {
+        if pace.stalled() || self.session.stage() == Some(Stage::Plan) || !pace.planned {
             return Ok(None);
         }
         let todos = match self.session.work_progress() {
-            Ok(progress) if planned => progress.todos,
-            Ok(_) => Vec::new(),
+            Ok(progress) => progress.todos,
             Err(crate::durable::driver::DriverError::NoWork) => return Ok(None),
             Err(error) => return Err(Error::from(error)),
         };
@@ -155,21 +229,42 @@ impl<P: Provider> Loop<P> {
             .filter(|todo| todo.open())
             .map(crate::tools::Todo::line)
             .collect::<Vec<_>>();
-        let note = if !open.is_empty() {
-            Some(format!("{OPEN_WORK}\n{}", open.join("\n")))
-        } else if limits.judge_turns && !self.is_goal() && acted {
-            let objective = self.session.objective().map_err(Error::from)?;
-            match goal::judged(self, &objective, reply, TURN_EVIDENCE, usage).await {
-                Ok(Decision::GoalContinue(reason)) => Some(format!("{UNFINISHED}\n{reason}")),
-                _ => None,
-            }
-        } else {
-            None
-        };
-        if note.is_some() {
-            *stalls += 1;
+        Ok((!open.is_empty()).then(|| format!("{OPEN_WORK}\n{}", open.join("\n"))))
+    }
+
+    fn judge_due(&self, pace: &Pace) -> bool {
+        self.judge_turns
+            && pace.acted
+            && !pace.stalled()
+            && !self.is_goal()
+            && self.session.stage() != Some(Stage::Plan)
+    }
+
+    async fn judge_reply(
+        &mut self,
+        reply: &str,
+        pace: &Pace,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<Option<String>> {
+        if !self.judge_due(pace) {
+            return Ok(None);
         }
-        Ok(note)
+        let Ok(objective) = self.session.objective() else {
+            return Ok(None);
+        };
+        let evidence = goal::with_corrections(TURN_EVIDENCE, events);
+        let decision = goal::judged(self, &objective, reply, &evidence, usage).await;
+        self.sync_usage(emit);
+        match decision {
+            Ok(Decision::GoalContinue(reason)) => Ok(Some(format!("{UNFINISHED}\n{reason}"))),
+            Ok(_) => Ok(None),
+            Err(text) => {
+                self.push_event(events, emit, Event::Note { text })?;
+                Ok(None)
+            }
+        }
     }
 
     async fn continue_with(
@@ -268,6 +363,9 @@ impl<P: Provider> Loop<P> {
                     self.emit_records(events, emit)?;
                     self.sync_usage(emit);
                     self.take_mail(messages, events, emit)?;
+                    if self.round_abort().is_some() {
+                        return Ok(None);
+                    }
                     continue;
                 }
                 WaitError::Deadline(_) => None,
@@ -342,22 +440,30 @@ impl<P: Provider> Loop<P> {
         )
     }
 
-    pub(super) fn begin_turn(&mut self, mut input: UserInput) -> Result<Vec<Message>> {
+    pub(super) fn begin_turn(
+        &mut self,
+        mut input: UserInput,
+        trigger: Trigger,
+    ) -> Result<Vec<Message>> {
         if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
         let read_only = self.session.depth() > 0 && self.tools.is_read_only();
         self.tools.set_read_only(read_only);
         self.summary_wait = 0;
-        self.job_watch.clear();
         self.turn_started = summonr_core::clock::now();
         let commands = self.verify.clone().unwrap_or_default();
         self.tools.clear_wrote();
-        self.prepare_work(&input.text, &commands)?;
+        self.tools.clear_detached();
+        self.prepare_work(&input.text, &commands, trigger)?;
         if self.is_goal() {
             self.prefix_findings(&mut input);
         }
-        let harness = self.harness_note(&self.work_progress()?);
+        let exited = self.finished_jobs().join("\n");
+        let mut harness = self.harness_note(&self.work_progress()?);
+        if !exited.is_empty() {
+            harness = format!("{harness}\n\nHarness: {exited}");
+        }
         if !self.note_sent(&harness) {
             if input.source.is_none() {
                 input.source = Some(crate::provider::Source {
@@ -393,12 +499,19 @@ impl<P: Provider> Loop<P> {
         input.text = format!("{}\n\n{}", notes.join("\n\n"), input.text);
     }
 
-    fn prepare_work(&mut self, text: &str, commands: &[String]) -> Result<()> {
+    fn prepare_work(&mut self, text: &str, commands: &[String], trigger: Trigger) -> Result<()> {
+        let objective = match trigger {
+            Trigger::User => text.to_string(),
+            Trigger::Mail => self
+                .session
+                .objective()
+                .unwrap_or_else(|_no_work| text.to_string()),
+        };
         if self.is_goal() && self.session.goal_objective()?.is_none() {
-            self.select_goal(text, commands)?;
+            self.select_goal(&objective, commands)?;
         }
         self.session
-            .prepare_turn_work(text, commands)
+            .prepare_turn_work(&objective, commands)
             .map_err(Error::from)
     }
 

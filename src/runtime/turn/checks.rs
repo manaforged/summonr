@@ -44,6 +44,8 @@ impl<P: Provider> Loop<P> {
             if running_now {
                 running.push(label.clone());
                 unsettled.push(record.id.clone());
+            } else {
+                self.tools.see_job(&record.id);
             }
             let outcome = Outcome {
                 command: label,
@@ -197,6 +199,7 @@ impl<P: Provider> Loop<P> {
         drop(self.kill_spawned(&abort.reason, usage).await?);
         self.tools.stop_jobs()?;
         self.session.abort(&abort, Some(&receipt))?;
+        self.watch_jobs();
         self.emit_records(events, &mut emit)?;
         self.sync_usage(&mut emit);
         Ok(Turn {
@@ -213,7 +216,7 @@ impl<P: Provider> Loop<P> {
         let mut parts = Vec::new();
         if let Some(reason) = self.session.last_close_reason() {
             parts.push(format!(
-                "Harness: the previous turn stopped early ({reason})."
+                "Harness: the previous turn stopped early ({reason}). It owes nothing unless the new message asks to resume it."
             ));
         }
         parts.push(harness_section(&Harness {
@@ -287,7 +290,7 @@ impl<P: Provider> Loop<P> {
                 crate::jobs::JobState::Running => {
                     status.push(format!("Running job {}: {}", job.id, job.command))
                 }
-                crate::jobs::JobState::Exited(0) if !job_success => {
+                crate::jobs::JobState::Exited(0) if !job_success && !self.job_reported(&job.id) => {
                     status.push(format!("Latest successful job {}: {}", job.id, job.command));
                     job_success = true;
                 }

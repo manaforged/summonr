@@ -9,13 +9,13 @@ pub(super) struct Answer<'a> {
 }
 
 impl<P: Provider> Loop<P> {
-    pub(super) fn reject_empty(
+    pub(super) fn reject_empty<T>(
         &mut self,
         attempt: Attempt,
         millis: u64,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<Turn> {
+    ) -> Result<T> {
         self.session.fail_provider(
             attempt,
             "assistant returned neither text nor a tool call",
@@ -64,31 +64,74 @@ impl<P: Provider> Loop<P> {
         self.session.stage() == Some(Stage::Execute) && (self.is_work() || self.is_goal())
     }
 
-    pub(super) fn watch_jobs(&mut self) {
+    fn owned_jobs(&self) -> Vec<jobs::Record> {
         let session = self.session.id().to_string();
-        self.job_watch = crate::jobs::since(&self.workspace, 0, Some(&session))
+        jobs::since(&self.workspace, 0, Some(&session))
             .into_iter()
-            .filter(|record| !crate::jobs::finished(&self.workspace, record))
-            .collect();
+            .filter(|record| record.session.as_deref() == Some(session.as_str()))
+            .collect()
+    }
+
+    pub(crate) fn watch_jobs(&mut self) {
+        for record in self.owned_jobs() {
+            if self.job_known.insert(record.id.clone()) {
+                self.job_watch.push(record);
+            }
+        }
+    }
+
+    pub(crate) fn rewatch_jobs(&mut self, last_write: Option<std::time::SystemTime>) {
+        self.job_watch.clear();
+        self.job_known.clear();
+        for record in self.owned_jobs() {
+            self.job_known.insert(record.id.clone());
+            let exited_since = std::fs::metadata(jobs::exit_path(&self.workspace, &record.id))
+                .and_then(|meta| meta.modified())
+                .ok()
+                .zip(last_write)
+                .is_some_and(|(exited, written)| exited >= written);
+            if exited_since || !jobs::finished(&self.workspace, &record) {
+                self.job_watch.push(record);
+            }
+        }
     }
 
     pub(crate) fn finished_jobs(&mut self) -> Vec<String> {
         let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut self.job_watch)
             .into_iter()
-            .partition(|record| crate::jobs::finished(&self.workspace, record));
+            .partition(|record| jobs::finished(&self.workspace, record));
         self.job_watch = waiting;
         done.iter()
-            .map(|record| {
-                let state = crate::jobs::status(&self.workspace, record)
-                    .map_or_else(|error| error.to_string(), |status| status.label());
-                format!(
-                    "background job {} finished ({state}): {}\nlog: {}",
-                    record.id,
-                    record.command,
-                    crate::jobs::log_path(&self.workspace, record).display()
-                )
-            })
+            .filter_map(|record| self.job_exit_note(record))
             .collect()
+    }
+
+    fn job_exit_note(&self, record: &jobs::Record) -> Option<String> {
+        if self.tools.job_seen(&record.id) {
+            return None;
+        }
+        let state = match jobs::status(&self.workspace, record) {
+            Ok(status) if status.state == jobs::JobState::Killed => return None,
+            Ok(status) => status.label(),
+            Err(error) => error.to_string(),
+        };
+        self.reported_jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(record.id.clone());
+        Some(format!(
+            "background job {} finished ({state}): {}\nlog: {}",
+            record.id,
+            record.command,
+            jobs::log_path(&self.workspace, record).display()
+        ))
+    }
+
+    pub(super) fn job_reported(&self, id: &str) -> bool {
+        self.reported_jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(id)
     }
 
     pub(super) fn defer_running(

@@ -248,6 +248,41 @@ const fn profile() -> &'static str {
     }
 }
 
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "std has no dup2 or tcgetattr wrapper")]
+pub(crate) fn park_stderr() -> Option<i32> {
+    let null = File::options().write(true).open("/dev/null").ok()?;
+    // SAFETY: dup and dup2 take plain descriptors; stderr and the open null file are valid here.
+    unsafe {
+        let saved = libc::dup(libc::STDERR_FILENO);
+        (saved >= 0 && libc::dup2(std::os::fd::AsRawFd::as_raw_fd(&null), libc::STDERR_FILENO) >= 0)
+            .then_some(saved)
+    }
+}
+
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "std has no dup2 or tcgetattr wrapper")]
+pub(crate) fn restore_stderr(saved: Option<i32>) {
+    let Some(saved) = saved else { return };
+    // SAFETY: saved came from dup in park_stderr, and termios is a plain out buffer for tcgetattr.
+    unsafe {
+        let mut termios = std::mem::zeroed::<libc::termios>();
+        let alive = libc::isatty(saved) == 0 || libc::tcgetattr(saved, &raw mut termios) == 0;
+        if alive {
+            libc::dup2(saved, libc::STDERR_FILENO);
+        }
+        libc::close(saved);
+    }
+}
+
+#[cfg(not(unix))]
+pub(crate) fn park_stderr() -> Option<i32> {
+    None
+}
+
+#[cfg(not(unix))]
+pub(crate) fn restore_stderr(_saved: Option<i32>) {}
+
 fn hook(path: PathBuf, run: String) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -262,13 +297,14 @@ fn hook(path: PathBuf, run: String) {
             }),
             true,
         );
-        match result {
-            Ok(()) => eprintln!("summonr: crash recorded in {}", path.display()),
-            Err(error) => eprintln!(
-                "summonr: cannot write crash record to {}: {error}",
+        let note = match result {
+            Ok(()) => format!("summonr: crash recorded in {}\n", path.display()),
+            Err(error) => format!(
+                "summonr: cannot write crash record to {}: {error}\n",
                 path.display()
             ),
-        }
+        };
+        drop(io::stderr().write_all(note.as_bytes()));
         previous(info);
     }));
 }

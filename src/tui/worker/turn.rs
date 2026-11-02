@@ -16,6 +16,7 @@ enum Input {
 
 impl Worker {
     pub(super) async fn turn(&mut self, input: UserInput) -> bool {
+        self.mail_held = false;
         self.run_turn(Input::User(input)).await
     }
 
@@ -26,7 +27,14 @@ impl Worker {
     async fn run_turn(&mut self, input: Input) -> bool {
         drop(self.ui.send(Msg::Fact(Fact::Busy(Some(Activity::Turn)))));
         let sender = self.ui.clone();
-        let emit = move |event: &Event| drop(sender.send(Msg::Fact(Fact::Event(event.clone()))));
+        let delivered = std::sync::Arc::new(tokio::sync::Notify::new());
+        let arrived = std::sync::Arc::clone(&delivered);
+        let emit = move |event: &Event| {
+            if matches!(event, Event::Steered { .. }) {
+                delivered.notify_one();
+            }
+            drop(sender.send(Msg::Fact(Fact::Event(event.clone()))));
+        };
         let (cancelled, result, quit) = {
             let session_path = self.loop_.session_path().to_path_buf();
             let session_id = self.loop_.session_id();
@@ -54,6 +62,11 @@ impl Worker {
                         Some(Cmd::Quit) => {
                             drop(self.ui.send(Msg::Intent(Intent::Bye)));
                             quit = true;
+                            break None;
+                        }
+                        Some(Cmd::Command(line)) if crate::parse_command(&line) == Some(crate::SlashCommand::Stop) => {
+                            self.queue.defer(Cmd::Command(line), &self.ui);
+                            cancelled = true;
                             break None;
                         }
                         Some(command) if command.execution_class() == ExecutionClass::AfterTurn => {
@@ -87,6 +100,7 @@ impl Worker {
                         Some(Cmd::Mail | Cmd::LoginAnswer(_) | Cmd::Open(_)) => {}
                         Some(command) => self.reader.run(command).await,
                     },
+                    () = arrived.notified() => self.queue.announce(&self.ui),
                     done = &mut turn => break Some(done),
                 }
             };
@@ -115,6 +129,8 @@ impl Worker {
             self.recover();
         }
         if cancelled {
+            self.mail_held = true;
+            self.pending_mail = false;
             if let Err(error) = self.abort(crate::tools::AbortCode::Cancelled, "cancelled by user")
             {
                 self.fail(&format!("cancellation not recorded: {error}"));
@@ -144,6 +160,14 @@ impl Worker {
         }
     }
 
+    pub(super) fn stop_all(&mut self) -> bool {
+        match self.abort(crate::tools::AbortCode::Interrupted, "stopped by user") {
+            Ok(()) => self.system("stopped background agents and jobs"),
+            Err(error) => self.fail(&format!("stop failed: {error}")),
+        }
+        true
+    }
+
     fn abort(&mut self, code: crate::tools::AbortCode, reason: &str) -> crate::Result<()> {
         let ui = &self.ui;
         let abort = crate::tools::Abort {
@@ -166,7 +190,7 @@ impl Worker {
 
     pub(super) fn recover(&mut self) {
         let mut pending = self.queue.take_steering();
-        pending.extend(self.queue.followups.drain(..));
+        pending.extend(self.queue.take(|_| true));
         self.queue.carried = 0;
         self.queue.recorded.clear();
         while let Ok(command) = self.cmd.try_recv() {

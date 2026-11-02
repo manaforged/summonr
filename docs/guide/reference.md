@@ -246,9 +246,10 @@ cache_ttl = "5m"
 | `clear_percent` | `50` | With a known window, share of it at which old tool outputs clear, once per summary. |
 | `clear_tokens` | `100000` | Prompt size in tokens at which old tool outputs clear, when that comes before `clear_percent`. |
 | `clear_keep` | `3` | Newest tool outputs that a clear keeps. |
-| `clear_at_least_percent` | `20` | Share of the clear trigger that a clear must free; a smaller clear would cost a cache rewrite for little, so it waits. |
+| `clear_at_least_percent` | `100` | Share of the clear trigger that a clear must free; a smaller clear would cost a cache rewrite for little, so it waits. |
 | `compact_chars` | `256000` | Prompt size in characters that starts compaction when the model window is unknown. A known window compacts at `compact_percent` of that window. `compact_tokens` does not replace this cap. |
 | `summary_retry_rounds` | `8` | Rounds before a failed compaction summary retries. |
+| `turn_continues` | `10` | Continuations that open tasks or the judge can inject in one turn. Tool calls do not reset the count. |
 | `job_wait_secs` | `120` | Wait on a job or hook before it is reported still running. |
 | `command_wait_secs` | `120` | Time before a `run_command` continues as a background job. |
 | `command_kill_secs` | `3600` | Hard stop for a foreground command with no `timeout_secs`. |
@@ -521,7 +522,7 @@ The screen is a set of panes on one session. `ctrl+x e` (or `/pane files`) opens
 
 In the diff pane `t` keeps only the files the last turn edited (the header says `· last turn`), `c` copies the patch on show to the clipboard (OSC 52 in the terminal; the system clipboard in the window), and a pane `diff_split_min_cols` columns or wider (100 by default) shows a file's hunks side by side, old on the left; a narrower pane shows the unified diff. The window's Changes pane also has Accept, Revert, and Note buttons on each hunk, a Revert file button and review counts on each file, and Undo after a revert; an undone hunk is not reported to the model. Revert file and the Worktrees pane's Discard ask for a second click before they act; the Worktrees pane also has a Merge button. Its This session button lists just the files this session's turns changed, from the checkpoint taken before its first turn, so changes that were already in the tree stay out. `summonr session diff --turn N` shows what turn N changed: from the checkpoint taken at its start to the next turn's checkpoint, or to the workspace for the newest turn. `--turn last` is the newest turn that changed files, in the newest session for this workspace, and `--turn session` spans every turn of that session; its summary reads `all turns of session <short id>`. Without `--stat` or `--json`, it writes the same summary line as `--stat` to stderr before the patch. A resumed session keeps numbering its turns. The summary reads `turn N of session <short id>`; the JSON has `base: "turn N"` and `session` with the session id. A diff of the whole workspace still reads `vs HEAD`. A file that summonr's own output is redirected to stays out of every later checkpoint in that workspace, in every session, so `--turn` never lists it. A change to `.summonr/check.toml` or `.summonr/policy.toml` is never a touched path.
 
-While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it is running), the seconds so far, the output rate, and the waiting count. A message sent during the turn goes into the running turn: the model reads it at the next round, and the reply, command, and jobs in progress keep running. `tab` queues a message for after the turn, and `esc` is the interrupt. A message waits in the queue for the next turn instead while an approval or a question is open, while earlier messages or commands still wait, or when it starts with `!` or `/`; `enter` on an empty composer sends the waiting plain messages into the running turn.
+While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it is running), the seconds so far, the output rate, and the waiting count. A message sent during the turn goes into the running turn: a reply in progress stops and the model starts again with the message, while a running command and background jobs keep running and the model reads the message when the command ends. `tab` queues a message for after the turn, and `esc` is the interrupt. A message waits in the queue for the next turn instead while an approval or a question is open, while earlier messages or commands still wait, or when it starts with `!` or `/`; `enter` on an empty composer sends the waiting plain messages into the running turn.
 
 The output rate is tokens per second. While text streams it is an estimate: characters received in the last three seconds, divided by the characters per token measured on the previous round (4 until then), over that span. When the provider reports the round's usage, the rate becomes exact: output tokens over the time between the first and last streamed chunk, or over the whole round when nothing streamed, as in a round that only called tools.
 
@@ -537,10 +538,10 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 
 | Key | Idle composer | During a turn |
 | --- | --- | --- |
-| `enter` | send | send into the running turn at the next round, or queue it for the next turn as described above; on an empty composer, send the waiting plain messages into the running turn |
+| `enter` | send | send into the running turn, or queue it for the next turn as described above; on an empty composer, send the waiting plain messages into the running turn |
 | `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri`; in `/model`, cycle the filter: all, ready, ★, plan, free, think, vision, ≥1M; during a turn, queue the draft for after the turn; otherwise cycle reasoning effort (in the window, `tab` moves focus instead) | effort takes effect when the turn ends |
 | `↑` | recall earlier prompts; with input queued, pull it back into the editor | |
-| `esc` | dismiss; twice within two seconds opens the session tree | close an open list or side pane first, then a pending question; otherwise cancel the turn |
+| `esc` | dismiss; twice within two seconds opens the session tree | close an open list, then return focus from a focused side pane, then cancel the turn; with a question open, close a side pane, then the question, and the turn keeps running |
 | `ctrl+c` | clear the draft; on an empty draft, twice within two seconds quits | cancel the turn |
 | `ctrl+d` | quit when the draft is empty; otherwise delete the character after the caret | |
 | `pgup` `pgdn` | scroll the transcript a page | same |
@@ -575,6 +576,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `/new` | start another session beside this one |
 | `/name [TEXT]` | name this session |
 | `/clear` | start a fresh context; files stay |
+| `/stop` | stop the turn, every background agent, and every job |
 | `/compact` | summarize earlier turns |
 | `/retry` | continue a failed or cancelled turn (F5) |
 | `/undo [files [N]]` | undo the last turn; files N restores files to their state before turn N, in a git repository or not. Outside a repository the checkpoints live in `~/.summonr/checkpoints` and skip `target`, `node_modules`, `dist`, and `__pycache__`. |
@@ -622,7 +624,9 @@ While a turn runs, the composer status also counts waiting input (`2 waiting · 
 
 `/pane worktrees` lists the `summonr/*` worktrees of this repository: branch, commits ahead of the base, dirty or clean, the session that ran there, and the directory. Enter or `→` opens that worktree's diff (`esc` comes back); the right-click menu offers show diff, merge (the same ff-only merge a run ends with; a dirty tree is refused), remove worktree (only when clean and fully merged), and insert path. `summonr worktree list` prints the same rows; `summonr worktree list --json` as JSON. `summonr worktree prune --json` prints the removed paths as a JSON array.
 
-Cancelling a reply preserves its background commands and unfinished objective. Continue by inspecting the existing job id; `run_command` with `kill: true` stops that job. Shutdown and budget stops still terminate owned jobs.
+Cancelling a reply, or a turn that fails, preserves its explicit background commands and unfinished objective; a cancel or failure stops only the commands that continued as jobs during that turn after `command_wait_secs`. Continue by inspecting the existing job id; `run_command` with `kill: true` stops that job. Shutdown and budget stops still terminate owned jobs. Messages that wait for the next turn return to the composer on a cancel or a failure, and commands that wait still run after the turn.
+
+summonr watches this session's background commands across turns and after a resume. When one exits without the model reading its result, the session reports it after the turn ends, or in the harness note of the next turn, once. A job another session owns, or a job with no session, starts no turn.
 
 A shell session launched with `SUMMONR_PARENT_SESSION` is a subagent of that session. It appears in that conversation's Subagents strip with its name, model, and presence. Collapse hides the row. The clear control removes it. A dead process drops off the strip. A native child task uses the same strip.
 
@@ -865,7 +869,7 @@ A provider reply of 429, a 5xx status, or a connection error is retried up to th
 
 A language server gets 30 s to start and 30 s to answer an `lsp` call. The diagnostics check after an edit waits 5 s and is skipped when the server is slower. A server that misses a deadline keeps running, so a slow first index can finish in the background.
 
-Tool results reach the model unchanged. A reply with no tool call ends the turn unless tasks are open or the judge finds work the agent can still do, up to `stall_rounds` such replies; a token or wall-clock budget that you set also ends a turn early. A reply cut off at the output limit gets one note saying so. A message you send during a turn gets one note asking the model to fold it into the work. The compaction summary request sends the session's tools and history unchanged, so it reuses the prompt cache; a failed summary retries after 8 rounds.
+Tool results reach the model unchanged. A reply with no tool call ends the turn unless tasks are open or the judge finds work the agent can still do, up to `stall_rounds` such replies in a row and `turn_continues` continuations in the turn, which tool calls do not reset. At `turn_continues` the turn ends with a note. A judge that fails shows a note and the turn ends. The judge reads the messages you sent during the turn, so a message that says to stop ends the turn. A token or wall-clock budget that you set also ends a turn early. A reply cut off at the output limit gets one note saying so. A message you send during a turn gets one note asking the model to fold it into the work. The compaction summary request sends the session's tools and history unchanged, so it reuses the prompt cache; a failed summary retries after 8 rounds.
 
 User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.toml`. A nonempty command allow list must match on every overlay (intersection). Deny lists accumulate. `write` globs in policy.toml are a narrowing filter on paths relative to a writable root; extra roots themselves come only from `write_roots`, `--add-dir`, and `/write`. Empty lists add no restriction, except that `strict = true` with an empty allow list denies all commands. Repository policy can narrow user permissions, never widen them. Children inherit these restrictions.
 

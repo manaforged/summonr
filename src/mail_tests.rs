@@ -194,3 +194,29 @@ fn a_long_board_folds_to_one_line_per_key_and_a_short_one_is_left_alone() {
     assert_eq!(board.len(), 2);
     assert_eq!(file(dir.path()).lines().count(), 2);
 }
+
+#[test]
+fn a_partial_inbox_line_is_not_pending_until_its_newline_arrives() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = Path::new("/work");
+    let mut mailbox = Mailbox::open(dir.path(), "s1", None, "summonr", "model", cwd).unwrap();
+    let mail = Mail {
+        ts: now(),
+        from: "peer".to_string(),
+        name: String::new(),
+        kind: default_kind(),
+        text: "hello".to_string(),
+    };
+    let line = serde_json::to_string(&mail).unwrap();
+    let (head, tail) = line.split_at(line.len() / 2);
+    let path = inbox_path(dir.path(), "s1");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, head).unwrap();
+    assert!(!mailbox.pending().unwrap());
+    assert!(mailbox.poll().unwrap().is_empty());
+    assert!(!mailbox.pending().unwrap());
+    std::fs::write(&path, format!("{head}{tail}\n")).unwrap();
+    assert!(mailbox.pending().unwrap());
+    assert_eq!(mailbox.poll().unwrap(), vec![mail]);
+    assert!(!mailbox.pending().unwrap());
+}

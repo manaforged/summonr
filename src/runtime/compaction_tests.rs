@@ -428,14 +428,18 @@ async fn old_tool_outputs_clear_once_in_one_batch_before_the_summary_trigger() -
     let mut session = super::super::Loop::open(provider, "m", workspace.path(), "system", driver)?;
     session.set_context_window(Some(100_000));
     let turn = session.turn("read the files").await?;
-    let clears = turn
-        .events
-        .iter()
-        .filter(
-            |event| matches!(event, crate::tools::Event::Note { text } if text.contains("cleared")),
-        )
-        .count();
+    assert_eq!(turn.text, "done");
     let sent = sent.lock().expect("captured requests");
+    let cleared = |request: &Vec<crate::provider::Message>| {
+        request
+            .iter()
+            .filter(|message| message.content.starts_with("[cleared"))
+            .count()
+    };
+    let clears = sent
+        .windows(2)
+        .filter(|pair| cleared(&pair[1]) > cleared(&pair[0]))
+        .count();
     let last = sent.last().expect("final request");
     let output = |id: &str| {
         last.iter()
@@ -443,7 +447,7 @@ async fn old_tool_outputs_clear_once_in_one_batch_before_the_summary_trigger() -
             .map(|message| message.content.clone())
             .unwrap_or_default()
     };
-    assert_eq!(clears, 0, "routine output pruning must be silent");
+    assert_eq!(clears, 1, "outputs clear in one batch per summary");
     assert!(
         output("t1").starts_with("[cleared"),
         "{}",

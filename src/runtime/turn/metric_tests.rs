@@ -192,7 +192,7 @@ async fn a_kept_metric_tells_the_other_session() {
     run.loop_.turn("raise the score").await.unwrap();
     let messages = other
         .loop_
-        .begin_turn(crate::provider::UserInput::from("next"))
+        .begin_turn(crate::provider::UserInput::from("next"), Trigger::User)
         .unwrap();
     let prompt = messages
         .iter()

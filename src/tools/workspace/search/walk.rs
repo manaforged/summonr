@@ -109,6 +109,10 @@ pub(super) fn run(query: &Arc<Query>) -> Result<Report> {
     Ok(shared.take())
 }
 
+fn overdue(query: &Query) -> bool {
+    query.cancelled.load(Ordering::Relaxed) || Instant::now() >= query.deadline
+}
+
 fn walk_all(query: &Query, shared: &Shared) {
     let (files, dirs): (Vec<&Root>, Vec<&Root>) =
         query.roots.iter().partition(|root| root.path.is_file());
@@ -143,7 +147,7 @@ fn walk_all(query: &Query, shared: &Shared) {
             if shared.stop.load(Ordering::Relaxed) {
                 return WalkState::Quit;
             }
-            if Instant::now() >= query.deadline {
+            if overdue(query) {
                 shared.halt();
                 return WalkState::Quit;
             }
@@ -176,7 +180,7 @@ fn from_index(query: &Query, shared: &Shared, root: &Root, searcher: &mut Search
         return false;
     };
     index::each(&found, &root.path, &query.name, |path| {
-        if shared.stop.load(Ordering::Relaxed) || Instant::now() >= query.deadline {
+        if shared.stop.load(Ordering::Relaxed) || overdue(query) {
             shared.halt();
             return false;
         }

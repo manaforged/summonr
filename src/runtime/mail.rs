@@ -137,9 +137,26 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn input_wait(&self) -> impl std::future::Future<Output = Result<()>> + use<P> {
+        self.watch_input(true)
+    }
+
+    pub(super) fn reply_input_wait(
+        &self,
+    ) -> impl std::future::Future<Output = Result<()>> + use<P> {
+        self.watch_input(self.input_interrupts())
+    }
+
+    fn watch_input(
+        &self,
+        with_mail: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + use<P> {
         let steering = self.steer_shared.clone();
-        let mail = self.mailbox.as_ref().map(crate::mail::Mailbox::changed);
-        let queued = !self.inbox.is_empty();
+        let mail = self
+            .mailbox
+            .as_ref()
+            .filter(|_mailbox| with_mail)
+            .map(crate::mail::Mailbox::changed);
+        let queued = with_mail && !self.inbox.is_empty();
         async move {
             if queued {
                 return Ok(());

@@ -29,9 +29,14 @@ impl<P: Provider> Loop<P> {
         system_prompt: impl Into<String>,
         path: &Path,
     ) -> Result<Self> {
+        let last_write = std::fs::metadata(path)
+            .and_then(|meta| meta.modified())
+            .ok();
         let session = resume_driver(workspace.as_ref(), path)?;
         let workspace = session.workspace().to_path_buf();
-        Self::open(provider, model, workspace, system_prompt, session)
+        let mut resumed = Self::open(provider, model, workspace, system_prompt, session)?;
+        resumed.rewatch_jobs(last_write);
+        Ok(resumed)
     }
 
     pub fn fork_path(
@@ -90,7 +95,7 @@ impl<P: Provider> Loop<P> {
             crate::herdr::Reporter::discover(&session.id().to_string(), workspace, &model, depth);
         let config = crate::config::file()?;
         crate::plugins::warn_unknown_off(&config.plugins.off);
-        Ok(Self {
+        let mut opened = Self {
             provider,
             model,
             selections: BTreeMap::new(),
@@ -117,6 +122,8 @@ impl<P: Provider> Loop<P> {
             summary_wait: 0,
             outputs_cleared: false,
             job_watch: Vec::new(),
+            job_known: HashSet::new(),
+            judge_turns: crate::limits::limits().judge_turns,
             workspace: dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf()),
             mailbox: None,
             mail_module: false,
@@ -136,7 +143,9 @@ impl<P: Provider> Loop<P> {
             catalog_frozen: false,
             reported_jobs: std::sync::Mutex::new(std::collections::HashSet::new()),
             children_lock: None,
-        })
+        };
+        opened.rewatch_jobs(None);
+        Ok(opened)
     }
 
     pub(crate) fn steer_with(&mut self, source: std::sync::Arc<super::turn::Steering>) {

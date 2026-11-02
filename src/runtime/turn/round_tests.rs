@@ -54,7 +54,9 @@ fn turn_prompts_summarize_tasks_and_show_background_job_state() {
     }
     let mut loop_ =
         Loop::open(Scripted::default(), "m", workspace.path(), "system", driver).unwrap();
-    let messages = loop_.begin_turn(UserInput::from("work")).unwrap();
+    let messages = loop_
+        .begin_turn(UserInput::from("work"), Trigger::User)
+        .unwrap();
     let prompt = &messages.last().unwrap().content;
     assert!(prompt.contains("Current: verify reads"), "{prompt}");
     assert!(
@@ -318,9 +320,10 @@ async fn cancelling_a_reply_preserves_its_job() -> crate::Result<()> {
         },
         continuation: None,
     };
-    parent.begin_turn(crate::provider::UserInput::from(
-        "finish the kernel candidate",
-    ))?;
+    parent.begin_turn(
+        crate::provider::UserInput::from("finish the kernel candidate"),
+        Trigger::User,
+    )?;
     let release = workspace.path().join("release");
     assert!(
         std::process::Command::new("mkfifo")
@@ -356,7 +359,10 @@ async fn cancelling_a_reply_preserves_its_job() -> crate::Result<()> {
         crate::jobs::status(workspace.path(), &record)?.state,
         crate::jobs::JobState::Running
     );
-    let resumed = parent.begin_turn(crate::provider::UserInput::from("what is the status"))?;
+    let resumed = parent.begin_turn(
+        crate::provider::UserInput::from("what is the status"),
+        Trigger::User,
+    )?;
     let prompt = &resumed.last().expect("resumed prompt").content;
     assert!(prompt.contains("what is the status"), "{prompt}");
     assert!(!prompt.contains("finish the kernel candidate"), "{prompt}");

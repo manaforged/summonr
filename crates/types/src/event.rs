@@ -164,7 +164,7 @@ pub enum AbortCode {
 impl AbortCode {
     #[must_use]
     pub fn child_scope(self) -> crate::ChildScope {
-        if self == Self::Cancelled {
+        if matches!(self, Self::Cancelled | Self::Error) {
             crate::ChildScope::Foreground
         } else {
             crate::ChildScope::All

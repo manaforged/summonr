@@ -1,7 +1,7 @@
 use sigil::Host;
 use sigil::app::FrameHooks;
 use sigil::events::{
-    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, ShellEvent,
+    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, Event,
 };
 use sigil::kernel::Role;
 use sigil::prelude::Key;
@@ -38,8 +38,8 @@ impl<T> Seen<T> {
     }
 }
 
-fn press(key: LogicalKey, modifiers: ModifiersState, text: Option<&str>) -> ShellEvent {
-    ShellEvent::Key(KeyEvent::new(KeyEventInit {
+fn press(key: LogicalKey, modifiers: ModifiersState, text: Option<&str>) -> Event {
+    Event::Key(KeyEvent::new(KeyEventInit {
         key,
         physical: PhysicalKey::Unidentified,
         modifiers,
@@ -49,11 +49,11 @@ fn press(key: LogicalKey, modifiers: ModifiersState, text: Option<&str>) -> Shel
     }))
 }
 
-pub(super) fn named(key: Key, modifiers: ModifiersState) -> ShellEvent {
+pub(super) fn named(key: Key, modifiers: ModifiersState) -> Event {
     press(LogicalKey::named(key), modifiers, None)
 }
 
-pub(super) fn typed(text: &str) -> Vec<ShellEvent> {
+pub(super) fn typed(text: &str) -> Vec<Event> {
     text.chars()
         .map(|ch| {
             let key = ch.to_string();
@@ -66,13 +66,13 @@ pub(super) fn typed(text: &str) -> Vec<ShellEvent> {
         .collect()
 }
 
-pub(super) fn command(letter: &str) -> ShellEvent {
+pub(super) fn command(letter: &str) -> Event {
     press(LogicalKey::character(letter), ModifiersState::META, None)
 }
 
 pub(super) fn drive<T>(
     setup: impl FnOnce(&App),
-    keys: Vec<ShellEvent>,
+    keys: Vec<Event>,
     read: impl FnOnce(&App) -> T,
 ) -> Seen<T> {
     sigil::reactive::Owner::scope("summonr-window", || {

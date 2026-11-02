@@ -32,13 +32,17 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr update` | Replace the installed binary with the latest release after a SHA-256 check; exit 0 when updated or already current |
 | `summonr tool run NAME [JSON]` | Run one tool in the current directory and print its result; a module tool needs its module on. Exit 0 on success, 1 on a tool error |
 | `summonr mail [agents\|send\|inbox\|board]` | Read and write peer mail between agent sessions on this machine |
-| `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|token\|install\|uninstall\|status` | Run a prompt or goal on a schedule; `install` adds the once-a-minute OS tick; `token NAME` prints a webhook token |
+| `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|token\|install\|uninstall\|status` | Schedule a prompt, goal, or direct session wake-up; `install` adds the once-a-minute OS tick; `token NAME` prints a webhook token |
 | `summonr gateway setup telegram\|telegram\|pair CODE\|unpair ID\|status\|webhook [--port N]` | Drive sessions from a paired Telegram chat, or fire cron jobs from a loopback webhook |
 | `summonr classify ...` | Ask typed questions of a decisions endpoint |
 | `summonr doctor [--logs\|--report]` | List per-run JSONL logs, report incomplete and crashed runs, or print the last crashed or failed run with the home folder shown as `~` |
 | `summonr --help`, `summonr --version` | Print help, or the version and revision |
 
 The earlier forms (`sessions`, `resume`, `export`, `profile`, `diff`, `endpoints`, `worktrees`, `modules`, `workflows`, `install`, `uninstall`, `tool NAME`, `login NAME --url`, `logout NAME --remove`) still run for one release with the same output and exit codes.
+
+For recurring check-ins in an existing session, use `summonr cron add NAME --every 5m --wake SESSION -p PROMPT`, then `summonr cron install` if the OS tick is not installed. `--wake` takes a live session name or exact id and delivers the prompt through its wake-up mailbox, without a model subprocess or new session. A missing target records a failed run. It cannot be combined with `--goal` or `--worktree`. `--mail SESSION` remains a completion notification for ordinary scheduled runs.
+
+The `task` tool accepts `workspace: "shared"` for path-owned editing lanes in the parent's checkout. Edits are visible immediately; the harness does not reconcile or roll them back. Assign disjoint paths. The default, `workspace: "isolated"`, keeps existing per-child checkouts and completion reconciliation. Research tasks remain read-only in either mode. Named children stay for mail after their first assignment; no crash-recovery guarantee is added by shared mode.
 
 ## Quick paths
 

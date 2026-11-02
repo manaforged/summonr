@@ -143,4 +143,6 @@ fn steer(
         input
     }));
     queue.extend(notes.map(UserInput::from));
+    drop(queue);
+    steering.notify();
 }

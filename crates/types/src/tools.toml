@@ -360,7 +360,7 @@ verb = "Tasks"
 readonly = true
 advertise = "task_list"
 run = "task_list"
-description = "Maintain the Work task list; status pending|active|done. Update statuses as tasks start or finish, not just when making the initial plan. A done item does not replace the completion check."
+description = "Maintain the Work task list; status pending|active|done|blocked. Keep one for any request with more than one step. Update statuses as tasks start or finish, not just when making the initial plan. The turn keeps going while any item is pending or active. Mark an item blocked only when the user or an outside event must act first, and name who in its text; keep working on the rest. A done item does not replace the completion check."
 
 [tool.schema]
 type = "object"
@@ -376,7 +376,7 @@ required = ["text"]
 
 [tool.schema.properties.items.items.properties]
 text = { type = "string" }
-status = { type = "string", enum = ["pending", "active", "done"] }
+status = { type = "string", enum = ["pending", "active", "done", "blocked"] }
 
 [[tool]]
 kind = "task"

@@ -95,6 +95,46 @@ async fn a_pushed_answer_wakes_the_waiting_dialog() {
 }
 
 #[tokio::test]
+async fn steering_cancels_a_form_without_consuming_the_message_as_an_answer() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("session home");
+    let mut loop_ = session(workspace.path(), home.path());
+    let steering = Arc::new(Steering::default());
+    loop_.steer_with(Arc::clone(&steering));
+    let mut events = Vec::new();
+    let mut respond = |event: &Event| {
+        if matches!(event, Event::Elicit { form: Some(_), .. }) {
+            steering
+                .lock()
+                .expect("steering queue")
+                .push_back(UserInput::from("stop now"));
+            steering.notify();
+        }
+    };
+    let answer = tokio::time::timeout(
+        Duration::from_secs(5),
+        loop_.elicit(form(), &mut events, &mut respond),
+    )
+    .await
+    .expect("steering must interrupt the form")
+    .expect("form result");
+    assert_eq!(answer.action, FormAction::Cancel);
+    assert!(matches!(
+        events.last(),
+        Some(Event::Elicit { form: None, .. })
+    ));
+    assert_eq!(
+        steering
+            .lock()
+            .expect("steering queue")
+            .front()
+            .expect("pending message")
+            .text,
+        "stop now"
+    );
+}
+
+#[tokio::test]
 async fn an_answer_to_a_closed_dialog_never_answers_the_next_one() {
     let steering = Steering::default();
     let closed = steering.open_dialog();

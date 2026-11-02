@@ -91,6 +91,9 @@ impl Report {
 }
 
 pub(super) fn render(job: &Job, run: &Run) -> Option<String> {
+    if run.job.is_none() {
+        return run.reason.clone();
+    }
     let record = crate::jobs::load(&job.dir, run.job.as_deref()?).ok()?;
     let log = crate::jobs::log_path(&job.dir, &record);
     let report = Report::load(&log);
@@ -116,7 +119,7 @@ pub(super) fn render(job: &Job, run: &Run) -> Option<String> {
 
 pub(super) fn raw(job: &Job, run: &Run) -> Result<String> {
     let Some(id) = run.job.as_deref() else {
-        return Ok(String::new());
+        return Ok(run.reason.clone().unwrap_or_default());
     };
     Ok(match crate::jobs::load(&job.dir, id) {
         Ok(record) => crate::jobs::status(&job.dir, &record)?.text,

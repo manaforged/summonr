@@ -1,5 +1,5 @@
 use super::record::*;
-use super::spawn::child_tree;
+use super::spawn::{child_tree, selected_workspace};
 use super::*;
 
 impl<P: Provider> Loop<P> {
@@ -107,10 +107,14 @@ impl<P: Provider> Loop<P> {
             Ok(budget) => budget,
             Err(error) => return rejected(count, &error.to_string()),
         };
+        if let Err(error) = self.hold_children() {
+            return rejected(count, &error.to_string());
+        }
         let mut runs = Vec::with_capacity(count);
         for args in args {
             let access = args.access;
-            let started = match child_tree(&self.workspace, access) {
+            let choice = selected_workspace(args.name.is_some(), args.workspace);
+            let started = match child_tree(&self.workspace, access, choice) {
                 Ok(tree) => self.task_start(args, &budget, tree),
                 Err(error) => Err(error),
             };

@@ -5,7 +5,10 @@ use sigil::prelude::{LayoutStyle, NodeBuilder, Tone, container, text_field};
 use super::{App, canvas};
 use crate::endpoint::State;
 use crate::recent::ModelId;
-use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, alt, browser_columns, browser_layout, group, input_keys, notice, tab_strip};
+use crate::tui::sigil_view::ui::{
+    Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, alt, browser_columns, browser_layout,
+    group, input_keys, notice, tab_strip,
+};
 
 mod detail;
 mod facets;

@@ -47,6 +47,38 @@ fn install_reports_the_hillclimb_skill_command_and_agent() {
     }
 }
 
+#[test]
+fn install_reports_the_lanes_skill_and_command() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/lanes");
+    let installed = super::manage::Plugin::install(&src).expect("install lanes");
+    let report = installed.report();
+    assert!(report.contains("skills 1"), "{report}");
+    assert!(report.contains("commands lanes"), "{report}");
+    assert!(!report.contains("agents"), "{report}");
+    let lead = body(&src.join("commands/lanes.md"));
+    assert_eq!(lead, body(&src.join("skills/lanes/SKILL.md")));
+    assert!(lead.contains("| Lane agent | `climb` |"), "{lead}");
+    assert!(lead.contains("| Start lane | `task`"), "{lead}");
+    assert!(lead.contains("| Steer lane | `send` |"), "{lead}");
+    assert!(lead.contains("| Tick | `summonr cron add"), "{lead}");
+    let blob = std::fs::read_to_string(src.join("commands/lanes.md")).expect("command");
+    for banned in ["/Users/"] {
+        assert!(
+            !blob.to_lowercase().contains(&banned.to_lowercase()),
+            "{banned}"
+        );
+    }
+}
+
+fn body(path: &std::path::Path) -> String {
+    let text =
+        std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    text.split_once("---")
+        .and_then(|(_, rest)| rest.split_once("---"))
+        .map(|(_, rest)| rest.trim().to_string())
+        .unwrap_or_else(|| panic!("{} has no frontmatter", path.display()))
+}
+
 fn procedure(path: &std::path::Path) -> String {
     let text =
         std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));

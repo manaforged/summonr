@@ -4,8 +4,8 @@ use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
-use sigil::prelude::container;
 use sigil::prelude::Widget;
+use sigil::prelude::container;
 
 #[derive(Clone, PartialEq)]
 struct SuggestRow {

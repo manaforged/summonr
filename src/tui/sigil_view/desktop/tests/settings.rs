@@ -1,5 +1,5 @@
 use sigil::events::{
-    ModifiersState, ScrollDelta, ScrollEvent, ScrollEventInit, ScrollPhase, ShellEvent,
+    ModifiersState, ScrollDelta, ScrollEvent, ScrollEventInit, ScrollPhase, Event,
 };
 use sigil::geometry::Point;
 use sigil::prelude::Key;
@@ -16,7 +16,7 @@ fn scrolling_settings_reveals_rows_without_changing_selection() {
     }
     let seen = drive(
         |app| app.toggle_options(),
-        vec![ShellEvent::Scroll(ScrollEvent::new(ScrollEventInit {
+        vec![Event::Scroll(ScrollEvent::new(ScrollEventInit {
             position: Point::new(VIEW.0 / 2.0, VIEW.1 / 2.0),
             delta: ScrollDelta::Pixels(Point::new(0.0, -10_000.0)),
             modifiers: ModifiersState::empty(),

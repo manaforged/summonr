@@ -217,6 +217,10 @@ impl SessionDriver {
         self.state.depth
     }
 
+    pub(crate) fn parent(&self) -> Option<SessionId> {
+        self.state.parent
+    }
+
     fn execute(&mut self) -> Result<(), DriverError> {
         self.work
             .as_mut()

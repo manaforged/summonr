@@ -41,7 +41,7 @@ impl Worker {
             let (mut cancelled, mut quit) = (false, false);
             let result = loop {
                 tokio::select! {
-                    done = &mut turn => break Some(done),
+                    biased;
                     command = self.cmd.recv() => match command {
                         None => {
                             quit = true;
@@ -83,7 +83,8 @@ impl Worker {
                         Some(Cmd::Tick) => live_peers(&session_id, &mut self.last_peers, &self.ui),
                         Some(Cmd::Mail | Cmd::LoginAnswer(_) | Cmd::Open(_)) => {}
                         Some(command) => self.reader.run(command).await,
-                    }
+                    },
+                    done = &mut turn => break Some(done),
                 }
             };
             (cancelled, result, quit)

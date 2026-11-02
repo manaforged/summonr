@@ -1,5 +1,32 @@
 use super::*;
 
+impl Mailbox {
+    pub(crate) fn pending(&self) -> Result<bool> {
+        pending(&inbox_path(&self.dir, &self.id), self.cursor)
+    }
+
+    pub(crate) fn changed(&self) -> impl std::future::Future<Output = Result<()>> + use<> {
+        let path = inbox_path(&self.dir, &self.id);
+        let cursor = self.cursor;
+        async move {
+            loop {
+                if pending(&path, cursor)? {
+                    return Ok(());
+                }
+                tokio::time::sleep(crate::limits::limits().mail_poll()).await;
+            }
+        }
+    }
+}
+
+fn pending(path: &Path, cursor: u64) -> Result<bool> {
+    match std::fs::metadata(path) {
+        Ok(meta) => Ok(meta.len() != cursor),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn board_path(dir: &Path, cwd: &Path) -> PathBuf {
     dir.join("board")
         .join(format!("{}.jsonl", slug(&cwd.display().to_string())))

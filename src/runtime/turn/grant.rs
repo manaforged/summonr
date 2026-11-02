@@ -79,6 +79,7 @@ impl<P: Provider> Loop<P> {
         call: &ToolCall,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
     ) -> Result<Result<ToolOutput>> {
         let mut asked = Vec::new();
         for _ in 0..4 {
@@ -91,7 +92,14 @@ impl<P: Provider> Loop<P> {
             if !self.ask_grant(grant, &mut asked, events, emit).await? {
                 break;
             }
-            output = self.tools.execute_outcome(call).await;
+            if self.steer_waiting() {
+                return Ok(Err(Error::Tool(
+                    self.steered("not run: interrupted by an incoming message"),
+                )));
+            }
+            let (retried, child_usage) = self.run_or_wake(call, events, emit).await?;
+            usage.add(&child_usage);
+            output = retried;
         }
         Ok(output)
     }

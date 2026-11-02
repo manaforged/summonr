@@ -74,7 +74,7 @@ summonr runs commands as your account with no sandbox, so run unattended goals i
 
 When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. Your user-level files load in every session: `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md`, from the account's home directory. A home `~/.summonr/SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it. `--no-trust` ignores the workspace files. Memory files under `~/.summonr/memory` load into trusted sessions too; `memory = false` under `[modules]` turns them off.
 
-An implement child works in `<repo>-children/<id>`. That checkout shares the parent's `target/` and `node_modules`. The parent applies each finished child's edits on its own. When two children change the same lines, that checkout stays on disk, and summonr never deletes it. A research child stays on the parent workspace. `--worktree` still isolates the whole session in a git worktree.
+A named implement child edits this checkout. An unnamed implement child works in `<repo>-children/<id>`. That checkout shares the parent's `target/` and `node_modules`. The parent applies each finished unnamed child's edits on its own. When two of those children change the same lines, that checkout stays on disk, and summonr never deletes it. A research child stays on the parent workspace. `--worktree` still isolates the whole session in a git worktree.
 
 ## Extend it
 

@@ -8,9 +8,11 @@ use std::rc::Rc;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-use sigil::events::ShellEvent;
+use sigil::events::Event;
 use sigil::prelude::{Key, LogicalKey, ModifiersState};
-use sigil::terminal::{Hooks, bell, calibrate, focused, set_mouse_capture, set_title, suspend};
+use sigil::terminal::{
+    Hooks, MouseTracking, bell, calibrate, focused, set_mouse_tracking, set_title, suspend,
+};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::app::App;

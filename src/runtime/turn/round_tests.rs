@@ -522,3 +522,119 @@ async fn a_finished_turn_leaves_its_failed_jobs_out_of_the_next_turn() {
     assert!(prompt.contains("an unrelated question"), "{prompt}");
     assert!(!prompt.contains("old verification"), "{prompt}");
 }
+
+fn todo_session(
+    todos: serde_json::Value,
+    replies: Vec<Reply>,
+) -> (
+    Loop<Scripted>,
+    crate::provider::scripted::Sent,
+    [tempfile::TempDir; 2],
+) {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    let mut script = vec![call("todo", serde_json::json!({ "items": todos }))];
+    script.extend(replies);
+    let provider = Scripted::new(script);
+    let sent = provider.sent();
+    let loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    (loop_, sent, [workspace, home])
+}
+
+#[tokio::test]
+async fn a_reply_with_open_tasks_continues_the_turn() {
+    let (mut loop_, sent, _dirs) = todo_session(
+        serde_json::json!([
+            {"text": "ticket 1", "status": "done"},
+            {"text": "ticket 2", "status": "pending"}
+        ]),
+        vec![
+            Reply::Text("ticket 1 landed; ticket 2 is next"),
+            call(
+                "todo",
+                serde_json::json!({"items": [
+                    {"text": "ticket 1", "status": "done"},
+                    {"text": "ticket 2", "status": "done"}
+                ]}),
+            ),
+            Reply::Text("both tickets landed"),
+        ],
+    );
+    let turn = loop_
+        .turn_with(UserInput::from("land both tickets"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(turn.text, "both tickets landed");
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 4, "{sent:?}");
+    let note = &sent[2].last().unwrap().content;
+    assert!(note.contains("Open tasks:\n○ ticket 2"), "{note}");
+}
+
+#[tokio::test]
+async fn a_reply_with_only_blocked_tasks_ends_the_turn() {
+    let (mut loop_, sent, _dirs) = todo_session(
+        serde_json::json!([
+            {"text": "ticket 1", "status": "done"},
+            {"text": "push the release: waiting on the user", "status": "blocked"}
+        ]),
+        vec![Reply::Text("ticket 1 landed; the push waits on you")],
+    );
+    let turn = loop_
+        .turn_with(UserInput::from("land and push"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(turn.text, "ticket 1 landed; the push waits on you");
+    assert_eq!(sent.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn replies_that_never_act_end_the_turn_at_the_stall_cap() {
+    let (mut loop_, sent, _dirs) = todo_session(
+        serde_json::json!([{"text": "ticket 2", "status": "active"}]),
+        vec![
+            Reply::Text("first"),
+            Reply::Text("second"),
+            Reply::Text("third"),
+        ],
+    );
+    let turn = loop_
+        .turn_with(UserInput::from("land it"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(turn.text, "third");
+    assert_eq!(
+        sent.lock().unwrap().len(),
+        1 + 1 + crate::limits::limits().stall_rounds
+    );
+}
+
+#[tokio::test]
+async fn a_goal_with_a_green_check_and_open_tasks_is_not_complete() {
+    let (mut loop_, _sent, _dirs) = todo_session(
+        serde_json::json!([{"text": "ticket 14", "status": "pending"}]),
+        vec![
+            Reply::Text("tests pass"),
+            Reply::Text("tests pass"),
+            Reply::Text("tests pass"),
+            Reply::Text(r#"{"verdict": "continue", "reason": "ticket 14 is open"}"#),
+        ],
+    );
+    loop_
+        .select_goal("land all tickets", &["true".to_string()])
+        .unwrap();
+    loop_.set_mode(crate::WorkKind::Goal);
+    loop_
+        .turn_with(UserInput::from("land all tickets"), |_| {})
+        .await
+        .unwrap();
+    let progress = loop_.work_progress().unwrap();
+    assert_ne!(
+        progress.phase,
+        summonr_types::WorkPhase::Completed,
+        "{progress:?}"
+    );
+}

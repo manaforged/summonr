@@ -1,6 +1,9 @@
 use sigil::layout::Dimension;
 use sigil::prelude::Paint;
-use sigil::prelude::{AlignItems, LayoutStyle, MouseButton, NodeBuilder, Tone, button, chip, container, list_row, node, spacer, text_edit};
+use sigil::prelude::{
+    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Tone, button, chip, container, list_row,
+    node, spacer, text_edit,
+};
 
 use std::collections::BTreeSet;
 

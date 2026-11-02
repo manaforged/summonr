@@ -36,6 +36,7 @@ pub(in crate::tui::sigil_view) use live::{Revision, bits, revision};
 mod live;
 pub(in crate::tui::sigil_view) use steps::{Slot, slots, subagents};
 pub(in crate::tui::sigil_view) use tools::glyph;
+pub(in crate::tui::sigil_view) use tools::loading_mark;
 pub(in crate::tui::sigil_view) use tools::tool_label;
 pub(in crate::tui::sigil_view) use tools::workspace_relative;
 #[cfg(feature = "gui")]

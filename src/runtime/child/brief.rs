@@ -27,7 +27,7 @@ pub(super) fn instruction(access: Access, isolated: bool) -> &'static str {
             "You are in an isolated checkout of the parent workspace. It shares the parent build cache. Do not commit. Do not delete target or node_modules. The parent applies your edits when you finish, even if another child fails. Background commands stay with the parent."
         }
         (Access::Implement, false) => {
-            "Edit this workspace. You may build, test, and lint here. Background commands stay with the parent."
+            "Edit only your assigned paths in this shared workspace; other lanes may be writing here. Edits are immediately visible and are not reconciled or rolled back by the harness. Do not commit. Background commands stay with the parent."
         }
         (Access::Research, _) => "This assignment is read-only. Do not change the workspace.",
     }

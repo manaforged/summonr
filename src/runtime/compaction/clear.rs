@@ -38,7 +38,10 @@ fn clear_outputs(
             break;
         }
         let message = &history[index];
-        let cleared = format!("[cleared {} chars]", message.content.len());
+        let cleared = format!(
+            "[cleared {} chars; run the call again before relying on it]",
+            message.content.len()
+        );
         if cleared.len() >= message.content.len() {
             continue;
         }

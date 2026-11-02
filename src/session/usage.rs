@@ -5,7 +5,7 @@ use std::time::UNIX_EPOCH;
 mod charges;
 
 use self::charges::{Charge, Journals};
-use super::catalog::list_in;
+use super::catalog::sessions_in;
 use summonr_core::error::Result;
 use summonr_types::Price;
 
@@ -100,7 +100,7 @@ pub(crate) fn spend(
     prices: &BTreeMap<String, Price>,
 ) -> Result<Vec<Spend>> {
     let mut totals: BTreeMap<(String, u64, String), Spend> = BTreeMap::new();
-    let sessions = list_in(home)?;
+    let sessions = sessions_in(home)?;
     let mut journals = Journals::load(home);
     for info in &sessions {
         let Some(entry) = journals.entry(info) else {

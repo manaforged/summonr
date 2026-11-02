@@ -92,6 +92,7 @@ pub(crate) struct Mailbox {
     cursor: u64,
     last_beat: u64,
     status: Presence,
+    tool: String,
     stamp: Option<Stamp>,
 }
 
@@ -203,6 +204,7 @@ impl Mailbox {
             cursor,
             last_beat: 0,
             status: Presence::Unknown,
+            tool: String::new(),
             stamp: None,
         };
         mailbox.write_record(model, cwd, Presence::Joined);
@@ -215,7 +217,7 @@ impl Mailbox {
             .join(format!("{}.json", clean_id(&self.id)))
     }
 
-    fn write_record(&mut self, model: &str, cwd: &Path, status: Presence) {
+    fn record_body(&self, model: &str, cwd: &Path, status: Presence) -> Option<(PathBuf, String)> {
         let record = Agent {
             id: self.id.clone(),
             name: self.name.clone(),
@@ -225,13 +227,19 @@ impl Mailbox {
             pid: std::process::id(),
             status,
             last_seen: now(),
+            tool: self.tool.clone(),
             parent: std::env::var_os(crate::session::PARENT_ENV)
                 .map(|value| value.to_string_lossy().into_owned()),
         };
-        let Ok(body) = serde_json::to_string(&record) else {
+        let body = serde_json::to_string(&record).ok()?;
+        Some((self.record_path(), body))
+    }
+
+    fn write_record(&mut self, model: &str, cwd: &Path, status: Presence) {
+        let Some((path, body)) = self.record_body(model, cwd, status) else {
             return;
         };
-        if store::write(&self.record_path(), body, store::Durability::Renamed).is_err() {
+        if store::write(&path, body, store::Durability::Renamed).is_err() {
             return;
         }
         self.last_seen_write(now());
@@ -247,6 +255,15 @@ impl Mailbox {
             return;
         }
         self.write_record(model, cwd, status);
+    }
+
+    pub(crate) fn note_tool(&mut self, model: &str, cwd: &Path, tool: &str, _parent: Option<&str>) {
+        if self.tool == tool {
+            return;
+        }
+        self.tool = tool.to_string();
+        self.status = Presence::Working;
+        self.write_record(model, cwd, Presence::Working);
     }
 
     pub(crate) fn agents(&self) -> Vec<Agent> {

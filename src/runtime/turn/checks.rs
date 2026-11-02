@@ -1,6 +1,88 @@
 use super::*;
 
 impl<P: Provider> Loop<P> {
+    pub(super) async fn await_jobs(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<(Vec<Outcome>, Vec<String>, Vec<String>)> {
+        let mut outcomes: Vec<(String, Outcome)> = Vec::new();
+        let mut running = Vec::new();
+        let mut unsettled = Vec::new();
+        let session = self.session.id().to_string();
+        let workspace = self.workspace.clone();
+        let mut owned: BTreeMap<String, jobs::Record> = BTreeMap::new();
+        for id in self.session.jobs() {
+            if let Ok(record) = jobs::load(&self.workspace, &id) {
+                owned.insert(record.id.clone(), record);
+            }
+        }
+        for record in jobs::since(&self.workspace, self.turn_started, Some(&session)) {
+            owned.insert(record.id.clone(), record);
+        }
+        for record in owned.into_values() {
+            let label = format!("job {} `{}`", record.id, record.command);
+            let status = jobs::wait(
+                &workspace,
+                &record.id,
+                crate::limits::limits().job_wait_secs,
+                || {
+                    self.push_event(
+                        events,
+                        emit,
+                        Event::Note {
+                            text: format!("waiting for background {label}"),
+                        },
+                    )
+                },
+            )
+            .await?;
+            if status.state == jobs::JobState::Killed {
+                continue;
+            }
+            let running_now = status.state == jobs::JobState::Running;
+            if running_now {
+                running.push(label.clone());
+                unsettled.push(record.id.clone());
+            }
+            let outcome = Outcome {
+                command: label,
+                passed: status.state == jobs::JobState::Exited(0),
+                output: if running_now {
+                    format!(
+                        "still running after {}s; wait for it or kill it\n{}",
+                        crate::limits::limits().job_wait_secs,
+                        status.text
+                    )
+                } else {
+                    status.text
+                },
+            };
+            match outcomes
+                .iter_mut()
+                .find(|(command, _)| *command == record.command)
+            {
+                Some((_, latest)) => *latest = outcome,
+                None => outcomes.push((record.command, outcome)),
+            }
+        }
+        for (_, outcome) in &outcomes {
+            self.push_event(
+                events,
+                emit,
+                Event::Verify {
+                    command: outcome.command.clone(),
+                    passed: outcome.passed,
+                },
+            )?;
+        }
+        Ok((
+            outcomes.into_iter().map(|(_, outcome)| outcome).collect(),
+            running,
+            unsettled,
+        ))
+    }
+
     pub(super) async fn run_verify(
         &mut self,
         events: &mut Vec<Event>,
@@ -176,6 +258,9 @@ impl<P: Provider> Loop<P> {
                         completed = Some(&todo.text);
                     }
                     crate::tools::TodoStatus::Pending => pending += 1,
+                    crate::tools::TodoStatus::Blocked => {
+                        status.push(format!("Blocked: {}", todo.text))
+                    }
                 }
             }
             if let Some(completed) = completed {
@@ -212,10 +297,16 @@ impl<P: Provider> Loop<P> {
                 | crate::jobs::JobState::Dead
                     if !job_failure =>
                 {
-                    status.push(format!(
-                        "Unresolved job failure {} ({:?}): {}",
-                        job.id, report.state, job.command
-                    ));
+                    let mut seen = self
+                        .reported_jobs
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if seen.insert(job.id.clone()) {
+                        status.push(format!(
+                            "Unresolved job failure {} ({:?}): {}",
+                            job.id, report.state, job.command
+                        ));
+                    }
                     job_failure = true;
                 }
                 crate::jobs::JobState::Exited(_)

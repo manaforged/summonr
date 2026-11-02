@@ -127,12 +127,6 @@ impl Worker {
                 return None;
             }
         }
-        if let Some(check) = crate::language::check(self.loop_.workspace()) {
-            self.system(&format!(
-                "check: {check} (detected; set check in .summonr/check.toml to change it)"
-            ));
-            return Some(vec![check.to_string()]);
-        }
         self.system(
             "check: none; the judge decides when the goal is met. Set check = \"CMD\" in .summonr/check.toml to gate it",
         );

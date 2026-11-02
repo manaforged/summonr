@@ -181,6 +181,7 @@ impl Session {
             .env("HOME", self.home.path())
             .env("USERPROFILE", self.home.path())
             .env("SUMMONR_HOME", self.home.path())
+            .env_remove("SUMMONR_PARENT_SESSION")
             .env(
                 "SUMMONR_MODELS_URL",
                 format!("http://127.0.0.1:{}/registry.json", model.port),
@@ -235,6 +236,7 @@ impl Session {
             .env("HOME", self.home.path())
             .env("USERPROFILE", self.home.path())
             .env("SUMMONR_HOME", self.home.path())
+            .env_remove("SUMMONR_PARENT_SESSION")
             .stdin(Stdio::null())
             .output()
             .unwrap();

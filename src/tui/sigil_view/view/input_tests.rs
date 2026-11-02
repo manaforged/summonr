@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sigil::Host;
 use sigil::clipboard::{Clipboard, Delivery};
-use sigil::events::ShellEvent;
+use sigil::events::Event;
 use sigil::kernel::NodeBuilder;
 use sigil::prelude::{Widget, button};
 use sigil::terminal::{Screen, map_key};
@@ -27,14 +27,14 @@ impl Clipboard for MemoryClipboard {
     }
 }
 
-fn key(code: KeyCode, modifiers: KeyModifiers) -> ShellEvent {
+fn key(code: KeyCode, modifiers: KeyModifiers) -> Event {
     map_key(&KeyEvent::new(code, modifiers)).expect("map editor key")
 }
 
 fn drive<T>(
     setup: impl FnOnce(&App),
     view: impl FnOnce(App) -> NodeBuilder + 'static,
-    keys: Vec<ShellEvent>,
+    keys: Vec<Event>,
     read: impl FnOnce(&App) -> T,
 ) -> (T, String) {
     sigil::reactive::Owner::scope("input-shortcuts", || {

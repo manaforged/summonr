@@ -1,7 +1,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use sigil::prelude::{IntoNode, LayoutStyle, NodeBuilder, Paint, Signal, container, effect, modal, signal, virtual_list};
+use sigil::prelude::{
+    IntoNode, LayoutStyle, NodeBuilder, Paint, Signal, container, effect, modal, signal,
+    virtual_list,
+};
 use sigil::reactive::{defer, untrack};
 
 use crate::prefs::Hotkeys;

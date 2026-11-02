@@ -80,12 +80,9 @@ impl App {
         } else if self.pane_back() || self.pane_dismiss() {
         } else if self.form_stage().is_some() {
             self.form_reply(Reply::Cancel);
-            return;
-        } else if !self.turn_running() {
+        } else {
             super::input::escape(self);
-            return;
         }
-        self.cancel_running();
     }
 
     fn enter(&self) -> bool {

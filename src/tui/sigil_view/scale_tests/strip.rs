@@ -5,7 +5,7 @@ use crate::tools::Event;
 fn row(lines: &[String]) -> String {
     lines
         .iter()
-        .find(|line| line.trim_start().starts_with("○") || line.trim_start().starts_with("●"))
+        .find(|line| line.contains("tok"))
         .cloned()
         .unwrap_or_default()
 }
@@ -25,10 +25,8 @@ fn running(app: &super::super::app::App, assignment: &str) {
 }
 
 fn title(row: &str) -> String {
-    let after = row
-        .trim_start()
-        .split_once(' ')
-        .map_or("", |(_, rest)| rest);
+    let after = row.trim_start().trim_start_matches(['✳', '●']).trim_start();
+    let after = after.strip_prefix("Subagent").unwrap_or(after).trim_start();
     after.split(" · ").next().unwrap_or_default().to_owned()
 }
 

@@ -1,5 +1,8 @@
-use sigil::prelude::{AlignItems, FlexWrap, LayoutStyle, NodeBuilder, Rgba8, Tone, container, heatmap, panel, progress, signal, sparkline};
-use sigil::prelude::{Paint};
+use sigil::prelude::Paint;
+use sigil::prelude::{
+    AlignItems, FlexWrap, LayoutStyle, NodeBuilder, Rgba8, Tone, container, heatmap, panel,
+    progress, signal, sparkline,
+};
 use sigil::widgets::SparkMark;
 
 use super::super::canvas::{self, blend, palette};

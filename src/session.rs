@@ -86,12 +86,14 @@ impl Summary {
         self.open_bytes = bytes;
     }
 
+    pub(crate) fn in_workspace(&self, roots: &[String]) -> bool {
+        self.cwd
+            .as_deref()
+            .is_some_and(|cwd| roots.iter().any(|root| root == cwd))
+    }
+
     pub(crate) fn here(&self, roots: &[String]) -> bool {
-        self.depth == 0
-            && self
-                .cwd
-                .as_deref()
-                .is_some_and(|cwd| roots.iter().any(|root| root == cwd))
+        self.depth == 0 && self.in_workspace(roots)
     }
 
     pub(crate) fn into_info(self, id: String, path: PathBuf) -> SessionInfo {

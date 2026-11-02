@@ -171,7 +171,7 @@ async fn capture(options: &Options) -> Result<()> {
         profile::tick_frame();
         sleep(frame_budget(options.fps)).await;
     }
-    profile::dump(&options.output)?;
+    profile::dump(&options.output).map_err(|error| Error::Tool(error.to_string()))?;
     profile::disable();
     let grid = screen
         .frame(&mut host, [], size)
@@ -180,7 +180,8 @@ async fn capture(options: &Options) -> Result<()> {
     #[cfg(feature = "gui")]
     save_image(grid, &host, options)?;
     let mut ansi = Vec::new();
-    render(&mut ansi, &Grid::new(0, 0), grid, ColorDepth::Truecolor)?;
+    render(&mut ansi, &Grid::new(0, 0), grid, ColorDepth::Truecolor)
+        .map_err(|error| Error::Tool(error.to_string()))?;
     write(
         &options.output.with_extension("ansi"),
         ansi,
@@ -229,7 +230,7 @@ fn paint(
             .map_err(|error| Error::Tool(error.to_string()))?;
     }
     let _phase = profile::span(profile::Phase::TuiWrite);
-    screen.flush(output)?;
+    screen.flush(output).map_err(|error| Error::Tool(error.to_string()))?;
     Ok(())
 }
 

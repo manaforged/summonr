@@ -49,6 +49,7 @@ fn job(schedule: &str, created: i64) -> Job {
         chat: false,
         notify: Notify::default(),
         mail: None,
+        wake: None,
         paused: false,
         fails: 0,
         created,
@@ -187,6 +188,7 @@ fn jobs_round_trip_through_toml() {
         slot: 2,
         started: 3,
         job: Some("j1".to_string()),
+        reason: None,
         outcome: Outcome::CheckFailed,
         origin: super::store::Origin::Webhook,
     });

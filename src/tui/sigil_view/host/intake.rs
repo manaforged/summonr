@@ -3,7 +3,7 @@ use sigil::prelude::KeyPhase;
 use super::*;
 
 impl App {
-    pub(super) fn intake(&self, events: &mut Vec<ShellEvent>) {
+    pub(super) fn intake(&self, events: &mut Vec<Event>) {
         let mut staged = false;
         for event in std::mem::take(events) {
             if let Some(text) = pasted(&event) {
@@ -19,7 +19,7 @@ impl App {
                 }
                 continue;
             }
-            let ShellEvent::Key(key) = &event else {
+            let Event::Key(key) = &event else {
                 events.push(event);
                 continue;
             };
@@ -70,11 +70,11 @@ impl App {
     }
 }
 
-fn pasted(event: &ShellEvent) -> Option<&str> {
-    if let ShellEvent::Paste(text) = event {
+fn pasted(event: &Event) -> Option<&str> {
+    if let Event::Paste(text) = event {
         return Some(text);
     }
-    let ShellEvent::Key(key) = event else {
+    let Event::Key(key) = event else {
         return None;
     };
     if key.phase != KeyPhase::Down {

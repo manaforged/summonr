@@ -86,7 +86,7 @@ fn children_the_turn_waits_on_sit_under_their_task_call() {
     })
     .join("\n");
     assert!(
-        shown.contains("◆ Subagent running: “Find duplicated helpers”"),
+        shown.contains("✳ Subagent running: “Find duplicated helpers”"),
         "{shown}"
     );
     assert!(shown.contains("Read src/main.rs"), "{shown}");
@@ -303,7 +303,7 @@ fn clicking_the_strip_header_expands_it() {
             expanded.contains("closes"),
             "header click did not expand:\n{expanded}"
         );
-        assert!(app.model.get().agents_expanded);
+        assert!(app.model.get().agents_view.open());
         let ctrl_x = sigil::terminal::map_key(&crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('x'),
             crossterm::event::KeyModifiers::CONTROL,
@@ -325,7 +325,64 @@ fn clicking_the_strip_header_expands_it() {
             collapsed.contains("shows all"),
             "ctrl+x a did not collapse:\n{collapsed}"
         );
-        assert!(!app.model.get().agents_expanded);
+        assert!(!app.model.get().agents_view.open());
+    });
+}
+
+#[test]
+fn a_full_strip_counts_every_child_and_caps_the_rows() {
+    use super::super::view::root;
+    use sigil::{Host, terminal::Screen};
+
+    sigil::reactive::Owner::scope("strip-cap", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _sent) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(100, 40);
+        for index in 0..8 {
+            spawn(
+                &app,
+                &format!("01a104ac00000000000000000000{index:04x}"),
+                &format!("lane {index}"),
+                true,
+            );
+        }
+        let mut host = Host::cells();
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(100, 40);
+        let shown = screen
+            .frame(&mut host, [], (100, 40))
+            .expect("frame")
+            .text();
+        assert!(shown.contains("2 more"), "{shown}");
+        assert!(shown.contains("lane 0"), "{shown}");
+        assert!(!shown.contains("lane 7"), "{shown}");
+    });
+}
+
+#[test]
+fn a_split_opens_the_selected_child_beside_the_list() {
+    use super::super::view::root;
+    use sigil::terminal::Screen;
+
+    sigil::reactive::Owner::scope("strip-split", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _sent) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(120, 40);
+        spawn(&app, "01a104ac000000000000000000000001", "lane 0", true);
+        app.open_agents_split();
+        let mut host = sigil::Host::cells();
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(120, 40);
+        let shown = screen
+            .frame(&mut host, [], (120, 40))
+            .expect("frame")
+            .text();
+        assert!(shown.contains("selected"), "{shown}");
+        assert!(shown.contains("lane 0"), "{shown}");
     });
 }
 

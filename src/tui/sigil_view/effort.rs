@@ -1,4 +1,6 @@
-use sigil::prelude::{AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, Signal, Token, container, signal};
+use sigil::prelude::{
+    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, Signal, Token, container, signal,
+};
 
 use super::app::App;
 use super::canvas;

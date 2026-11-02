@@ -47,9 +47,14 @@ impl<P: Provider> Loop<P> {
         let dialog = shared.open_dialog();
         let _blocked = self.herdr.blocked(status);
         self.push_event(events, emit, open(dialog))?;
-        let input = tokio::time::timeout(crate::limits::limits().grant_wait(), shared.next())
-            .await
-            .ok();
+        let input = tokio::select! {
+            biased;
+            result = self.input_wait() => {
+                result?;
+                None
+            }
+            result = tokio::time::timeout(crate::limits::limits().grant_wait(), shared.next()) => result.ok(),
+        };
         Ok((dialog, input))
     }
 }
@@ -60,6 +65,7 @@ pub(crate) struct Steering {
     answers: Mutex<VecDeque<UserInput>>,
     dialog: std::sync::atomic::AtomicU64,
     wake: tokio::sync::Notify,
+    changed: tokio::sync::Notify,
 }
 
 impl Steering {
@@ -67,6 +73,24 @@ impl Steering {
         &self,
     ) -> std::sync::LockResult<std::sync::MutexGuard<'_, VecDeque<UserInput>>> {
         self.queue.lock()
+    }
+
+    pub(crate) fn notify(&self) {
+        self.changed.notify_one();
+    }
+
+    pub(crate) async fn changed(&self) {
+        loop {
+            let notified = self.changed.notified();
+            if !self
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_empty()
+            {
+                return;
+            }
+            notified.await;
+        }
     }
 
     #[cfg(test)]

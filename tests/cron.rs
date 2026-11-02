@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn quiet<'a>(args: &[&'a str]) -> Vec<&'a str> {
     let mut args = args.to_vec();
@@ -293,6 +294,87 @@ fn cron_run_takes_notify_for_this_run() {
     assert_eq!(code, 1, "{text}");
     assert!(!text.contains("unknown option"), "{text}");
     assert!(text.contains("nosuch"), "{text}");
+}
+
+#[test]
+fn wake_delivers_to_the_existing_session_without_a_model_or_child_job() {
+    let home = tempfile::tempdir().unwrap();
+    let mail = home.path().join(".summonr/mail");
+    std::fs::create_dir_all(mail.join("agents")).unwrap();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let agent = serde_json::json!({
+        "id": "orchestrator-id", "name": "orchestrator", "kind": "summonr",
+        "model": "unused", "cwd": home.path(), "pid": std::process::id(),
+        "status": "idle", "last_seen": now, "tool": "",
+    });
+    std::fs::write(mail.join("agents/orchestrator-id.json"), agent.to_string()).unwrap();
+    let (code, text) = run(
+        home.path(),
+        &[
+            "add",
+            "tick",
+            "--manual",
+            "--wake",
+            "orchestrator",
+            "-p",
+            "inspect lanes",
+        ],
+    );
+    assert_eq!(code, 0, "{text}");
+    let (code, text) = run(home.path(), &["run", "tick"]);
+    assert_eq!(code, 0, "{text}");
+    let messages = std::fs::read_to_string(mail.join("inbox/orchestrator-id.jsonl")).unwrap();
+    let message: serde_json::Value = serde_json::from_str(messages.trim()).unwrap();
+    assert_eq!(message["text"], "inspect lanes");
+    assert_eq!(message["from"], "monitor");
+    let (_, log) = run(home.path(), &["log", "tick"]);
+    assert!(log.contains("delivered wake-up to 1 session"), "{log}");
+    assert!(!home.path().join(".summonr/sessions").exists());
+    assert!(!home.path().join(".summonr/jobs").exists());
+    std::fs::remove_file(mail.join("agents/orchestrator-id.json")).unwrap();
+    let (code, text) = run(home.path(), &["run", "tick"]);
+    assert_ne!(code, 0, "{text}");
+    let (_, log) = run(home.path(), &["log", "tick"]);
+    assert!(log.contains("error"), "{log}");
+    assert!(log.contains("no session named orchestrator"), "{log}");
+    assert!(!home.path().join(".summonr/sessions").exists());
+}
+
+#[test]
+fn wake_rejects_goals_worktrees_and_broadcasts() {
+    let home = tempfile::tempdir().unwrap();
+    for (args, expected) in [
+        (
+            vec![
+                "add", "tick", "--manual", "--wake", "one", "--goal", "inspect",
+            ],
+            "--wake requires -p PROMPT",
+        ),
+        (
+            vec![
+                "add",
+                "tick",
+                "--manual",
+                "--wake",
+                "one",
+                "-p",
+                "inspect",
+                "--worktree",
+            ],
+            "cannot use --goal or --worktree",
+        ),
+        (
+            vec!["add", "tick", "--manual", "--wake", "all", "-p", "inspect"],
+            "--wake needs one session name or id",
+        ),
+    ] {
+        let (code, text) = run(home.path(), &args);
+        assert_ne!(code, 0, "{text}");
+        assert!(text.contains(expected), "{text}");
+    }
 }
 
 #[test]

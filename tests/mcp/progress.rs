@@ -24,7 +24,7 @@ pub(crate) fn task_progress_reaches_the_next_provider_turn() {
     let budget = crate::support::slow(20).to_string();
     let result = session.run(
         &model,
-        "",
+        "[limits]\nstall_rounds = 0\n",
         &["--goal", "track the tasks", "--max-secs", &budget, "--json"],
     );
     assert_eq!(result.code, Some(0), "{}", result.stdout);

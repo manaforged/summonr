@@ -91,6 +91,7 @@ pub(super) enum Overlay {
     Settings,
     Context,
     Cache,
+    Agents,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

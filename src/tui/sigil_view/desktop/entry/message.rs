@@ -1,5 +1,8 @@
 use sigil::layout::Dimension;
-use sigil::prelude::{AlignItems, JustifyContent, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Radius, Token, button, container, markdown, signal};
+use sigil::prelude::{
+    AlignItems, JustifyContent, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Radius,
+    Token, button, container, markdown, signal,
+};
 
 use super::super::App;
 use crate::prefs::Visibility;

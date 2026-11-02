@@ -4,7 +4,6 @@ markers = ["Cargo.toml"]
 servers = [{ name = "rust-analyzer", args = [] }]
 commands = ["cargo", "rustc"]
 options = { checkOnSave = false, cargo = { allTargets = false, buildScripts = { enable = false } }, procMacro = { enable = false } }
-check = { command = "cargo test" }
 
 [[module]]
 id = "typescript"
@@ -15,7 +14,6 @@ servers = [
 ]
 commands = ["npm", "pnpm", "yarn", "bun", "node --test", "tsc"]
 options = {}
-check = { command = "npm test", requires = { file = "package.json", pointer = "/scripts/test" } }
 
 [[module]]
 id = "python"
@@ -33,7 +31,6 @@ markers = ["go.mod"]
 servers = [{ name = "gopls", args = [] }]
 commands = ["go test", "go build", "go vet"]
 options = {}
-check = { command = "go test ./..." }
 
 [[extension]]
 name = "rs"

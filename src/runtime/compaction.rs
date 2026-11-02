@@ -123,6 +123,7 @@ impl<P: Provider> Loop<P> {
         let summary = reply.content.unwrap_or_default();
         self.session.compact(&summary, &messages[keep_from..])?;
         self.tools.forget_reads();
+        self.outputs_cleared = false;
         Ok(Some(summary))
     }
 
@@ -143,8 +144,10 @@ impl<P: Provider> Loop<P> {
         let estimated_tokens = self.estimated_prompt_tokens(chars, tool_bytes);
         let known = self.known_window();
         if let Some(window) = known
+            && !self.outputs_cleared
             && self.clear_old_outputs(messages, chars, estimated_tokens, window)?
         {
+            self.outputs_cleared = true;
             return Ok(true);
         }
         let Some(window) = fired_ceiling(chars, estimated_tokens, known, self.compact_tokens)

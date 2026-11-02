@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -139,6 +139,8 @@ pub struct Loop<P> {
     chosen_effort: Option<Effort>,
     turn_started: u64,
     summary_wait: usize,
+    outputs_cleared: bool,
+    job_watch: Vec<crate::jobs::Record>,
     workspace: PathBuf,
     mailbox: Option<Mailbox>,
     mail_module: bool,
@@ -156,6 +158,8 @@ pub struct Loop<P> {
     spawned: BTreeMap<String, child::Spawned>,
     events: (UnboundedSender<Event>, UnboundedReceiver<Event>),
     catalog_frozen: bool,
+    reported_jobs: Mutex<HashSet<String>>,
+    children_lock: Option<std::fs::File>,
 }
 
 mod aside;

@@ -20,10 +20,10 @@ use sigil::prelude::Rgba8;
 use sigil::prelude::Role;
 use sigil::prelude::Shortcut;
 use sigil::prelude::Theme;
+use sigil::prelude::Widget;
 use sigil::prelude::container;
 use sigil::prelude::text_edit;
 use sigil::style::ThemeValue;
-use sigil::prelude::Widget;
 
 mod input;
 mod keys;

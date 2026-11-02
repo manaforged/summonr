@@ -1,5 +1,7 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, container, list_row_with};
+use sigil::prelude::{
+    LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, container, list_row_with,
+};
 
 use super::panes::ledger::{LedgerRow, Mark};
 use super::{App, Model, Pane, canvas};

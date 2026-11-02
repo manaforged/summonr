@@ -112,7 +112,7 @@ impl Work {
         }
         self.record_check(passed);
         if !passed {
-            return self.fail("Repair the failed completion check.".to_string());
+            return self.fail("The completion check failed. The objective is unchanged: keep working toward it, and leave the check green.".to_string());
         }
         let Some(active) = self.resume_index() else {
             self.status = Status::Completed;

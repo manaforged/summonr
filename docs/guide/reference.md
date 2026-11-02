@@ -178,7 +178,7 @@ git diff | summonr kimi -p
 | `classify --patch` | Rank the files of the working patch by risk. |
 | `classify --review --session ID` | Review a session. |
 | `classify --set NAME --eval FILE` | Score a question set against labeled cases in FILE. `--json` prints answers and probabilities, and `--gate N` sets the confidence floor for every `classify` form. |
-| `cron add NAME SCHEDULE TASK` | Add a job. SCHEDULE is `--cron EXPR`, `--every 30m`, `--at TIME`, or `--manual`; TASK is `-p PROMPT` or `--goal GOAL`. Takes `--dir`, `-e`/`--endpoint`, `--model`, `--tz`, `--max-secs`, `--max-tokens`, `--worktree`, `--chat`, `--notify never\|failure\|always`, and `--mail SESSION`. See Cron. |
+| `cron add NAME SCHEDULE TASK` | Add a job. SCHEDULE is `--cron EXPR`, `--every 30m`, `--at TIME`, or `--manual`; TASK is `-p PROMPT` or `--goal GOAL`. Takes `--dir`, `-e`/`--endpoint`, `--model`, `--tz`, `--max-secs`, `--max-tokens`, `--worktree`, `--chat`, `--notify never\|failure\|always`, `--mail SESSION`, and `--wake SESSION`. See Cron. |
 | `cron edit NAME [FLAGS]` | Change a job with the same flags as `add`. |
 | `cron list [--json]` | List jobs. |
 | `cron show NAME` | Show one job, including the endpoint its runs use. |
@@ -243,7 +243,7 @@ cache_ttl = "5m"
 | `connect_secs` | `20` | Connect timeout. |
 | `compact_percent` | `80` | Share of the context window that starts a summary. Old tool output clears earlier, at `clear_percent`. |
 | `elide_percent` | `60` | Share of the context window that compaction aims for by clearing old tool output; it summarizes only when clearing cannot get there. |
-| `clear_percent` | `50` | With a known window, share of it at which old tool outputs clear. |
+| `clear_percent` | `50` | With a known window, share of it at which old tool outputs clear, once per summary. |
 | `clear_tokens` | `100000` | Prompt size in tokens at which old tool outputs clear, when that comes before `clear_percent`. |
 | `clear_keep` | `3` | Newest tool outputs that a clear keeps. |
 | `clear_at_least_percent` | `20` | Share of the clear trigger that a clear must free; a smaller clear would cost a cache rewrite for little, so it waits. |
@@ -475,7 +475,7 @@ The `body` table of an endpoint is merged last, so it can still set any field by
 | Work | `/steps FILE`, `--steps` | steps end (auto), `/auto` | Run a plan's `## Steps` one at a time, each with its check. |
 | Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto`; the session returns to the mode it had before | Loop until the configured check passes; without a check, the judge decides. |
 
-`/goal` with no check configured uses a check detected from the project: `cargo test` for `Cargo.toml`, `go test ./...` for `go.mod`, and `npm test` when `package.json` declares a `test` script. A Python project gets no detected check, and the judge decides. `/goal` prints the detected check and says how to set another in `.summonr/check.toml`.
+`/goal` with no check in `.summonr/check.toml` runs with no check: the judge decides when the goal is met. `/goal` says so and how to set one.
 
 ### Confirmation
 
@@ -639,7 +639,21 @@ In an interactive session the model can call `ask` to put one to four questions 
 
 ## Child sessions
 
-The `task` tool delegates work to fresh child sessions. Only an interactive session offers it: `-p`, `--steps`, `--goal`, and `summonr acp` runs have no steering channel, so the model does not get `task` there. A model can emit several `task` calls in one response. summonr runs them concurrently. Each `implement` child edits an isolated checkout in `<repo>-children/<id>` that shares the parent's `target/` and `node_modules`. The parent applies each finished child's edits on its own. Generated files (`__pycache__`, `*.pyc`, and the pytest, mypy, and ruff caches) and summonr state under `.summonr/` other than `check.toml` and `policy.toml` never land. A child never inherits goal or steps mode: an implement child works in plain working mode. A child's first message names only its own checkout. Children started together do not see each other's edits. When two children change the same lines, that child's checkout stays on disk and the others still land. The child shows as a conflict, not a failure: `kept <repo>-children/<id>: conflicts with the parent`, followed by an `rm -rf` hint that removes the checkout when you are done. Task card titles use workspace-relative paths, and a card with one child takes that child's title. summonr never deletes a kept checkout. The receipt lists the files that landed. Implement children get the parent's file, shell, and language-server tools; background commands stay with the parent. The parent verifies after they finish. A `task` call may name a plugin agent with `agent`; its instructions open the child's first message, and its `tools` list limits what the child may call. The child's row names that agent. Pass `--worktree` on the session to isolate the whole run in a git worktree.
+The `task` tool delegates work to fresh child sessions. Only an interactive session offers it: `-p`, `--steps`, `--goal`, and `summonr acp` runs have no steering channel, so the model does not get `task` there. A model can emit several `task` calls in one response. summonr runs them concurrently.
+
+A named `implement` child edits this checkout. Omit `workspace` for that. Pass `workspace` `isolated` to force a separate checkout. An unnamed `implement` child edits an isolated checkout in `<repo>-children/<id>` that shares the parent's `target/` and `node_modules`. The parent applies each finished unnamed child's edits on its own. Generated files (`__pycache__`, `*.pyc`, and the pytest, mypy, and ruff caches) and summonr state under `.summonr/` other than `check.toml` and `policy.toml` never land. Mail to the child's name is its next turn and stops its running command. A child tool call does not start a parent turn.
+
+A child never inherits goal or steps mode: an implement child works in plain working mode. A named child edits this checkout, so the other children see those edits. An unnamed child's first message names only its own checkout.
+
+When two unnamed children change the same lines, that child's checkout stays on disk and the others still land. The child shows as a conflict, not a failure: `kept <repo>-children/<id>: conflicts with the parent`, followed by an `rm -rf` hint that removes the checkout when you are done.
+
+Task card titles use workspace-relative paths, and a card with one child takes that child's title. summonr never deletes a kept checkout. The receipt lists the files that landed.
+
+Implement children get the parent's file, shell, and language-server tools; background commands stay with the parent. The parent verifies after they finish.
+
+A `task` call may name a plugin agent with `agent`; its instructions open the child's first message, and its `tools` list limits what the child may call. The child's row names that agent. Pass `--worktree` on the session to isolate the whole run in a git worktree.
+
+With `workspace: "shared"`, an `implement` child edits the parent checkout directly. Assign disjoint paths: edits are visible immediately and the harness does not reconcile or roll them back. No child checkout is created. The default `workspace: "isolated"` retains checkout isolation and completion reconciliation.
 
 A `research` child reads the parent workspace. It cannot write files or start background commands. It can run a foreground command. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task`, `web`, an MCP tool, or peer mail gets a refusal, and a research child that calls `edit` or `write` is told it is read-only. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
 
@@ -658,7 +672,7 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | `edit` | always | Change or move a file; hashes from `read`; `edits` for a batch |
 | `write` | always | New or empty files; `files` for several |
 | `run_command` | always | `workdir` / `background` / `job` / `kill`; full log path |
-| `todo` | not in a one-shot `-p` prompt | Replaces the Work task list; status `pending`, `active`, or `done`. Update it as tasks start or finish. |
+| `todo` | not in a one-shot `-p` prompt | Replaces the task list; status `pending`, `active`, `done`, or `blocked`. While an item is `pending` or `active`, a reply with no tool call neither ends the turn nor completes a goal, up to `[limits] stall_rounds` idle replies; `0` turns this off. |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
 | `lsp` | `lsp` on | Diagnostics for a `path`; definition, `references`, or `new_name` at `line` and `character` |
 | `web` | `search` on (off by default) | `query` searches; `url` fetches as markdown, text, or html |
@@ -723,11 +737,14 @@ Each file loads up to `memory_bytes` (25,000 bytes). A longer file loads its new
 
 ## Cron
 
+`--wake SESSION` delivers the prompt directly to an existing live session's wake-up mailbox. It starts no model subprocess or new session and needs no endpoint key. Names and exact ids use the existing mail resolver. A missing target fails the run and is recorded in `cron log`. Use `-p`; goals and worktrees are not supported for wake-ups. `--mail` remains a completion notification for ordinary scheduled runs. Install the OS tick with `summonr cron install` before relying on recurring delivery.
+
 `summonr cron` runs a prompt or a goal on a schedule, headless, in the directory you add it from:
 
 ```sh
 summonr cron add nightly --cron "0 3 * * 1-5" --goal "make cargo test pass"
 summonr cron add digest --every 6h -p "summarize what changed in git log since yesterday" --mail summonr-1
+summonr cron add check-in --every 5m --wake summonr-1 -p "inspect lanes, share wins, and check running jobs"
 summonr cron add once --at 09:00 -p "check the release notes"
 summonr cron add triage --manual -p "triage the alert in the payload"
 summonr cron install

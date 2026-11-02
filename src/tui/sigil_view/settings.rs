@@ -1,8 +1,8 @@
 pub(super) use super::app::App;
 pub(super) use super::canvas;
 
-use sigil::prelude::{LayoutStyle, NodeBuilder, container};
 use sigil::prelude::Widget;
+use sigil::prelude::{LayoutStyle, NodeBuilder, container};
 
 fn dialog_body(children: impl Fn() -> Vec<NodeBuilder> + 'static) -> NodeBuilder {
     let mut layout = LayoutStyle::flex_column()

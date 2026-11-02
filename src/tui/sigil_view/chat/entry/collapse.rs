@@ -1,5 +1,7 @@
 use sigil::kernel::{Cx, IntoNode, NodeId};
-use sigil::prelude::{LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, container, markdown_inline};
+use sigil::prelude::{
+    LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, container, markdown_inline,
+};
 
 use super::super::App;
 use super::wrap;

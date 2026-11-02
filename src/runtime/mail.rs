@@ -2,13 +2,11 @@ use super::*;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn join_mail(&mut self) {
-        self.mailbox = None;
-        if self.session.depth() == 0 {
-            self.roster();
-        }
+        self.roster();
     }
 
     pub(super) fn roster(&mut self) {
+        drop(self.mailbox.take());
         self.mailbox = crate::mail::Mailbox::join(
             &self.session_id(),
             self.name().as_deref(),
@@ -94,6 +92,18 @@ impl<P: Provider> Loop<P> {
         }
     }
 
+    pub(crate) fn mail_note_tool(&mut self, tool: &str) {
+        let parent = self.session.parent().map(|id| id.to_string());
+        if let Some(mailbox) = &mut self.mailbox {
+            mailbox.note_tool(
+                &self.model.clone(),
+                &self.workspace.clone(),
+                tool,
+                parent.as_deref(),
+            );
+        }
+    }
+
     pub(crate) fn mail_poll(&mut self) -> Result<Vec<crate::mail::Mail>> {
         let mail = match &mut self.mailbox {
             Some(mailbox) => mailbox.poll()?,
@@ -101,6 +111,47 @@ impl<P: Provider> Loop<P> {
         };
         self.inbox.extend(mail.iter().cloned());
         Ok(mail)
+    }
+
+    pub(super) fn steered(&self, lead: &str) -> String {
+        let notes = match self.tools.stop_jobs() {
+            Ok(notes) => notes,
+            Err(error) => vec![format!("could not stop background jobs: {error}")],
+        };
+        if notes.is_empty() {
+            return lead.to_string();
+        }
+        let body = notes.join("\n");
+        if lead.is_empty() {
+            body
+        } else {
+            format!("{lead}\n{body}")
+        }
+    }
+
+    pub(super) fn input_wait(&self) -> impl std::future::Future<Output = Result<()>> + use<P> {
+        let steering = self.steer_shared.clone();
+        let mail = self.mailbox.as_ref().map(crate::mail::Mailbox::changed);
+        let queued = !self.inbox.is_empty();
+        async move {
+            if queued {
+                return Ok(());
+            }
+            tokio::select! {
+                () = async {
+                    match steering {
+                        Some(shared) => shared.changed().await,
+                        None => std::future::pending().await,
+                    }
+                } => Ok(()),
+                result = async {
+                    match mail {
+                        Some(changed) => changed.await,
+                        None => std::future::pending().await,
+                    }
+                } => result,
+            }
+        }
     }
 
     pub(super) fn take_peer_mail(

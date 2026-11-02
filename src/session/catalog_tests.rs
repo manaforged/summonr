@@ -92,7 +92,7 @@ fn a_session_list_reads_a_prompt_written_after_the_header() {
     let path = journal(home.path(), OLDER);
     let head = header(OLDER, "/work/alpha", 0);
     std::fs::write(&path, &head).unwrap();
-    assert_eq!(list_in(home.path()).unwrap()[0].preview, "");
+    assert!(list_in(home.path()).unwrap().is_empty());
     std::fs::write(&path, head + &prompt("trace the leak")).unwrap();
     assert_eq!(list_in(home.path()).unwrap()[0].preview, "trace the leak");
 }
@@ -146,15 +146,28 @@ fn continue_ignores_a_linked_worktree_that_summonr_did_not_make() {
 }
 
 #[test]
-fn an_open_session_of_unchanged_size_is_served_from_the_index() {
+fn an_unstarted_session_stays_off_the_resume_list() {
     let home = tempfile::tempdir().unwrap();
     let path = journal(home.path(), OLDER);
     std::fs::write(&path, header(OLDER, "/work/alpha", 0)).unwrap();
+    assert!(
+        list_in(home.path()).unwrap().is_empty(),
+        "a header with no prompt is not a session to resume"
+    );
+}
+
+#[test]
+fn an_open_session_of_unchanged_size_is_served_from_the_index() {
+    let home = tempfile::tempdir().unwrap();
+    let path = journal(home.path(), OLDER);
+    let alpha = header(OLDER, "/work/alpha", 0) + &prompt("trace the leak");
+    let omega = header(OLDER, "/work/omega", 0) + &prompt("trace the leak");
+    std::fs::write(&path, &alpha).unwrap();
     assert_eq!(
         list_in(home.path()).unwrap()[0].cwd.as_deref(),
         Some("/work/alpha")
     );
-    std::fs::write(&path, header(OLDER, "/work/omega", 0)).unwrap();
+    std::fs::write(&path, &omega).unwrap();
     assert_eq!(
         list_in(home.path()).unwrap()[0].cwd.as_deref(),
         Some("/work/alpha")

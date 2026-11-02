@@ -1,0 +1,6 @@
+{
+  "name": "lanes",
+  "description": "Lead named hillclimb lanes. One child per lane, a steer message, and a scheduled tick.",
+  "version": "0.1.0",
+  "author": { "name": "Manaforge" }
+}

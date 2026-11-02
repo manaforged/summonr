@@ -4,7 +4,7 @@ pub(super) mod entry;
 mod footer;
 pub(super) mod form;
 pub(super) mod panels;
-mod strip;
+pub(in crate::tui::sigil_view) mod strip;
 mod surface;
 pub(super) mod todos;
 

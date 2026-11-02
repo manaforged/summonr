@@ -1,7 +1,7 @@
 use sigil::Host;
 use sigil::events::{
     ModifiersState, MouseButton, MouseButtons, PointerEvent, PointerEventInit, PointerKind,
-    PointerPhase, ShellEvent,
+    PointerPhase, Event,
 };
 use sigil::geometry::Point;
 use sigil::terminal::Screen;
@@ -13,8 +13,8 @@ use super::super::view::root;
 use super::busy_info;
 use crate::tui::{Fact, Msg};
 
-fn right(phase: PointerPhase, x: f32, y: f32) -> ShellEvent {
-    ShellEvent::Pointer(PointerEvent::new(PointerEventInit {
+fn right(phase: PointerPhase, x: f32, y: f32) -> Event {
+    Event::Pointer(PointerEvent::new(PointerEventInit {
         position: Point::new(x, y),
         delta: Point::new(0.0, 0.0),
         kind: PointerKind::Mouse,

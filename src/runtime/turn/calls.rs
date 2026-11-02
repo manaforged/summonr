@@ -14,6 +14,11 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
     ) -> Result<()> {
         let (planned, calls) = self.screen(planned, calls, messages, events, emit).await?;
+        if self.steer_waiting() {
+            return self
+                .run_serial(planned, calls, messages, events, emit, usage)
+                .await;
+        }
         if calls.is_empty() {
             return Ok(());
         }
@@ -27,7 +32,7 @@ impl<P: Provider> Loop<P> {
         let is_task = |call: &ToolCall| Builtin::is(&call.function.name, Builtin::Task);
         let mut pending = planned.into_iter().zip(calls).peekable();
         while let Some((planned, call)) = pending.next() {
-            if !is_task(&call) {
+            if !is_task(&call) || self.steer_waiting() {
                 self.run_serial(vec![planned], vec![call], messages, events, emit, usage)
                     .await?;
                 continue;
@@ -103,10 +108,12 @@ impl<P: Provider> Loop<P> {
         let ran = futures::future::join_all(ran).await;
         let mut outputs = Vec::with_capacity(ran.len());
         for ((output, millis), call) in ran.into_iter().zip(calls) {
+            let mut usage = Usage::default();
             outputs.push((
-                self.with_grant(output, call, events, emit).await?,
+                self.with_grant(output, call, events, emit, &mut usage)
+                    .await?,
                 millis,
-                None,
+                Some(usage),
             ));
         }
         Ok(outputs)
@@ -163,10 +170,15 @@ impl<P: Provider> Loop<P> {
         let (sender, mut updates) = tokio::sync::mpsc::unbounded_channel();
         let mut report = move |update| drop(sender.send(update));
         let running = hub.call(&alias, arguments, &policy, &mut report);
-        tokio::pin!(running);
+        let input = self.input_wait();
+        tokio::pin!(running, input);
         let output = loop {
             tokio::select! {
                 biased;
+                result = &mut input => {
+                    result?;
+                    break Err(Error::Tool("MCP call interrupted by an incoming message; the server may have completed changes".to_string()));
+                }
                 Some(update) = updates.recv() => self.heard(&call.id, update, events, emit).await?,
                 output = &mut running => break output,
             }
@@ -198,7 +210,16 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<(Result<ToolOutput>, Option<Usage>)> {
+        if self.steer_waiting() {
+            return Ok((
+                Err(Error::Tool(
+                    self.steered("not run: interrupted by an incoming message"),
+                )),
+                None,
+            ));
+        }
         let name = &call.function.name;
+        self.mail_note_tool(name);
         if Builtin::is(name, Builtin::Task) {
             return Ok(match self.task_execute(call, events, emit).await {
                 Ok(execution) => (Ok(execution.output), Some(execution.usage)),
@@ -217,9 +238,10 @@ impl<P: Provider> Loop<P> {
         if is_mail_tool(name) {
             return Ok((self.mail_execute(call).map(ToolOutput::ok), None));
         }
-        let (output, usage) = self.run_or_wake(call, events, emit).await?;
+        let (output, mut usage) = self.run_or_wake(call, events, emit).await?;
         Ok((
-            self.with_grant(output, call, events, emit).await?,
+            self.with_grant(output, call, events, emit, &mut usage)
+                .await?,
             Some(usage),
         ))
     }
@@ -309,87 +331,5 @@ impl<P: Provider> Loop<P> {
             Err(crate::durable::driver::DriverError::NoWork) => Ok(()),
             Err(error) => Err(Error::from(error)),
         }
-    }
-
-    pub(super) async fn await_jobs(
-        &mut self,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<(Vec<Outcome>, Vec<String>, Vec<String>)> {
-        let mut outcomes: Vec<(String, Outcome)> = Vec::new();
-        let mut running = Vec::new();
-        let mut unsettled = Vec::new();
-        let session = self.session.id().to_string();
-        let workspace = self.workspace.clone();
-        let mut owned: BTreeMap<String, jobs::Record> = BTreeMap::new();
-        for id in self.session.jobs() {
-            if let Ok(record) = jobs::load(&self.workspace, &id) {
-                owned.insert(record.id.clone(), record);
-            }
-        }
-        for record in jobs::since(&self.workspace, self.turn_started, Some(&session)) {
-            owned.insert(record.id.clone(), record);
-        }
-        for record in owned.into_values() {
-            let label = format!("job {} `{}`", record.id, record.command);
-            let status = jobs::wait(
-                &workspace,
-                &record.id,
-                crate::limits::limits().job_wait_secs,
-                || {
-                    self.push_event(
-                        events,
-                        emit,
-                        Event::Note {
-                            text: format!("waiting for background {label}"),
-                        },
-                    )
-                },
-            )
-            .await?;
-            if status.state == jobs::JobState::Killed {
-                continue;
-            }
-            let running_now = status.state == jobs::JobState::Running;
-            if running_now {
-                running.push(label.clone());
-                unsettled.push(record.id.clone());
-            }
-            let outcome = Outcome {
-                command: label,
-                passed: status.state == jobs::JobState::Exited(0),
-                output: if running_now {
-                    format!(
-                        "still running after {}s; wait for it or kill it\n{}",
-                        crate::limits::limits().job_wait_secs,
-                        status.text
-                    )
-                } else {
-                    status.text
-                },
-            };
-            match outcomes
-                .iter_mut()
-                .find(|(command, _)| *command == record.command)
-            {
-                Some((_, latest)) => *latest = outcome,
-                None => outcomes.push((record.command, outcome)),
-            }
-        }
-        for (_, outcome) in &outcomes {
-            self.push_event(
-                events,
-                emit,
-                Event::Verify {
-                    command: outcome.command.clone(),
-                    passed: outcome.passed,
-                },
-            )?;
-        }
-        Ok((
-            outcomes.into_iter().map(|(_, outcome)| outcome).collect(),
-            running,
-            unsettled,
-        ))
     }
 }

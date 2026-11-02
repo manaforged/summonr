@@ -1,7 +1,9 @@
 use sigil::kernel::ObjectFit;
 use sigil::layout::Dimension;
 use sigil::layout::Overflow;
-use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, button, container, image, node, text_edit};
+use sigil::prelude::{
+    AlignItems, LayoutStyle, NodeBuilder, Paint, button, container, image, node, text_edit,
+};
 
 use super::body::{close, dim};
 use super::{App, Pane};

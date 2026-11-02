@@ -140,7 +140,8 @@ impl App {
         if let Some(path) = self.open_file.peek() {
             self.open_file.set(None);
             if let Ok(Err(error)) | Err(error) =
-                suspend(|| edit(&path, &editor())).map_err(Error::from)
+                suspend(|| edit(&path, &editor()))
+                    .map_err(|error| Error::Tool(error.to_string()))
             {
                 self.push_entry(Entry::Error(error.to_string()));
             }
@@ -149,7 +150,9 @@ impl App {
         if self.editor_requested.peek() {
             self.editor_requested.set(false);
             let draft = self.draft.peek();
-            match suspend(|| edit_external(&draft, &editor())).map_err(Error::from) {
+            match suspend(|| edit_external(&draft, &editor()))
+                .map_err(|error| Error::Tool(error.to_string()))
+            {
                 Ok(Ok(draft)) => self.edit(&draft),
                 Ok(Err(error)) | Err(error) => {
                     self.push_entry(Entry::Error(error.to_string()));
@@ -220,7 +223,7 @@ struct Pump {
 }
 
 impl Pump {
-    fn turn(&mut self, events: &mut Vec<ShellEvent>) {
+    fn turn(&mut self, events: &mut Vec<Event>) {
         let Some(app) = self.app.borrow().clone() else {
             return;
         };
@@ -248,7 +251,11 @@ impl Pump {
         let select = app.select.peek();
         if self.select != select {
             self.select = select;
-            drop(set_mouse_capture(!select && !app.inline));
+            drop(set_mouse_tracking(if !select && !app.inline {
+                MouseTracking::Drags
+            } else {
+                MouseTracking::Off
+            }));
         }
         app.commit();
         app.open_out();

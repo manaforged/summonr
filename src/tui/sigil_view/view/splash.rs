@@ -1,8 +1,8 @@
 use super::*;
 use crate::tui::sigil_view::suggest;
 use sigil::prelude::Paint;
-use sigil::reactive::{derived, untrack};
 use sigil::prelude::Widget;
+use sigil::reactive::{derived, untrack};
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let surface = app.clone();

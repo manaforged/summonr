@@ -2,7 +2,9 @@ use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, container, signal, vi
 
 use super::{App, canvas};
 use super::{Row, Setting, setting_rows};
-use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, group, overlay_list, pick, press};
+use crate::tui::sigil_view::ui::{
+    Bindings, Dialog, Hints, Key, Size, group, overlay_list, pick, press,
+};
 use sigil::prelude::Widget;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {

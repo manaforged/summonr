@@ -1,4 +1,6 @@
-use sigil::prelude::{AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Rgba8, container, panel};
+use sigil::prelude::{
+    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Rgba8, container, panel,
+};
 
 use super::super::canvas::palette;
 use super::report::{Metric, Report};

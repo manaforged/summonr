@@ -14,6 +14,8 @@ pub(crate) struct Agent {
     pub pid: u32,
     pub status: Presence,
     pub last_seen: u64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tool: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
 }

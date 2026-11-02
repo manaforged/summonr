@@ -48,7 +48,13 @@ async fn delete_outside(
     let output = loop_.tools.execute_outcome(&call).await;
     let mut events = Vec::new();
     let output = loop_
-        .with_grant(output, &call, &mut events, &mut reply)
+        .with_grant(
+            output,
+            &call,
+            &mut events,
+            &mut reply,
+            &mut Usage::default(),
+        )
         .await
         .unwrap()
         .unwrap();
@@ -61,14 +67,14 @@ fn user() -> Arc<Steering> {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn steering_answer_never_comes_from_a_steer_waiting_in_the_queue() {
+async fn queued_steering_cancels_approval_without_consuming_the_message() {
     let steering = user();
     steering
         .lock()
         .unwrap()
         .push_back(UserInput::from("also update the docs"));
     let (exists, text, _) = delete_outside(Some(Arc::clone(&steering)), &["y"]).await;
-    assert!(!exists, "{text}");
+    assert!(exists, "{text}");
     let waiting: Vec<String> = steering
         .lock()
         .unwrap()
@@ -104,6 +110,52 @@ async fn a_destructive_command_asks_the_user_first() {
 async fn a_confirmed_destructive_command_runs() {
     let (exists, text, _) = delete_outside(Some(user()), &["y"]).await;
     assert!(!exists, "{text}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn steering_interrupts_a_command_after_approval() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("session home");
+    let target = tempfile::tempdir().expect("deletion target");
+    let mut loop_ = session(workspace.path(), home.path()).with_unrestricted_commands();
+    let steering = user();
+    loop_.steer_with(Arc::clone(&steering));
+    let call = command(&format!(
+        "{DELETE} '{}'; touch started; sleep 30; touch escaped",
+        target.path().display()
+    ));
+    let output = loop_.tools.execute_outcome(&call).await;
+    assert!(crate::tools::needed_grant(&output).is_some());
+    let sender = async {
+        while !workspace.path().join("started").exists() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        steering
+            .lock()
+            .expect("steering queue")
+            .push_back(UserInput::from("stop now"));
+        steering.notify();
+    };
+    let mut events = Vec::new();
+    let mut reply = steering.replying(&["y"]);
+    let mut usage = Usage::default();
+    let executing = loop_.with_grant(output, &call, &mut events, &mut reply, &mut usage);
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(executing, sender)
+    })
+    .await
+    .expect("steering must interrupt the approved command");
+    let Err(error) = result.expect("grant result") else {
+        panic!("command must be interrupted");
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("interrupted by an incoming message")
+    );
+    assert!(!target.path().exists());
+    assert!(!workspace.path().join("escaped").exists());
 }
 
 #[tokio::test]

@@ -227,7 +227,7 @@ async fn task_calls_beside_a_todo_update_start_together() {
         call(
             "t0",
             "todo",
-            &serde_json::json!({ "items": [{ "text": "look around" }] }),
+            &serde_json::json!({ "items": [{ "text": "look around", "status": "done" }] }),
         ),
         research("t1", "find the config loader"),
         research("t2", "find the session store"),
@@ -325,17 +325,18 @@ async fn a_research_child_can_run_a_foreground_command() {
 async fn two_messages_to_the_same_name_stay_on_one_session() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("first"), Reply::Text("second")]);
     let budget = parent.task_budget(1).unwrap();
+    let name = format!("climb-{}", parent.session_id());
     let mut run = parent
-        .task_start_in(named("look at the loader", "climb-b"), &budget, None)
+        .task_start_in(named("look at the loader", &name), &budget, None)
         .unwrap();
     let id = run.child.session_id();
-    assert_eq!(run.child.name().as_deref(), Some("climb-b"));
+    assert_eq!(run.child.name().as_deref(), Some(name.as_str()));
     assert!(
         run.child.mailbox.is_some(),
         "the child is not on the roster"
     );
     let agents = crate::mail::live(&crate::mail::dir().unwrap());
-    let resolved = agents.iter().find(|agent| agent.answers_to("climb-b"));
+    let resolved = agents.iter().find(|agent| agent.answers_to(&name));
     assert_eq!(resolved.map(|agent| agent.id.as_str()), Some(id.as_str()));
     crate::mail::Mailbox::wake(&id, "port the win").unwrap();
     crate::mail::Mailbox::wake(&id, "port the next win").unwrap();
@@ -348,6 +349,53 @@ async fn two_messages_to_the_same_name_stay_on_one_session() {
     assert!(text.contains("port the win"), "{text}");
     assert!(text.contains("port the next win"), "{text}");
     assert_eq!(run.child.session_id(), id);
+}
+
+#[tokio::test]
+async fn shared_lanes_publish_writes_without_finishing_or_reconciling() {
+    let (mut parent, _dirs) = parent(Vec::new());
+    parent.tools.set_unrestricted();
+    assert!(
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&parent.workspace)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let budget = parent.task_budget(5).unwrap();
+    let mut lanes = Vec::new();
+    for index in 0..5 {
+        let args = serde_json::from_value(serde_json::json!({
+            "assignment": format!("write lane-{index}.txt"),
+            "access": "implement",
+            "workspace": "shared",
+            "background": true,
+        }))
+        .unwrap();
+        lanes.push(parent.task_start_in(args, &budget, None).unwrap());
+    }
+    for (index, lane) in lanes.iter().enumerate() {
+        let path = format!("lane-{index}.txt");
+        let call = call(
+            "write",
+            "write",
+            &serde_json::json!({
+                "path": path,
+                "content": "verified win",
+            }),
+        );
+        lane.child.tools.execute_for_test(&call).await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(parent.workspace.join(path)).unwrap(),
+            "verified win"
+        );
+    }
+    drop(lanes);
+    assert_eq!(
+        std::fs::read_to_string(parent.workspace.join("lane-0.txt")).unwrap(),
+        "verified win"
+    );
 }
 
 #[tokio::test]

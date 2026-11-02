@@ -5,7 +5,9 @@ use crate::durable::driver::Parent;
 impl<P: Provider> Loop<P> {
     pub(super) fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
         let named = args.name.is_some();
-        let tree = child_tree(&self.workspace, args.access)?;
+        let choice = selected_workspace(named, args.workspace);
+        self.hold_children()?;
+        let tree = child_tree(&self.workspace, args.access, choice)?;
         let mut run = self.task_start(args, budget, tree)?;
         let record = run.record.clone();
         let path = run.child.session.path().to_path_buf();
@@ -24,13 +26,15 @@ impl<P: Provider> Loop<P> {
                 last: String::new(),
                 reserved_tokens: budget.max_tokens.unwrap_or_default(),
                 staying,
+                tool: String::new(),
             },
         );
         Ok(Execution {
             output: ToolOutput::ok(format!(
-                "started child {id}\nname: {}\naccess: {}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
+                "started child {id}\nname: {}\naccess: {}\n{}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
                 name,
                 record.access.name(),
+                running_place(&record.workspace),
                 ellipsize(&record.assignment, LAST_CHARS)
             )),
             usage: Usage::default(),
@@ -89,7 +93,13 @@ impl<P: Provider> Loop<P> {
         child.context_window = self.receiver_window(role);
         child.compact_tokens = self.compact_tokens;
         child.context_sample = self.context_sample;
-        child.effort = self.effort_for(role);
+        child.effort = match args.effort.as_deref() {
+            Some(text) => Some(
+                crate::provider::Effort::parse(text)
+                    .ok_or_else(|| Error::Tool(format!("task effort {text:?} is not a level")))?,
+            ),
+            None => self.effort_for(role),
+        };
         child.price = self.price_for(role);
         child = child.with_budget(budget.clone())?;
         if let Some(name) = args.name.as_deref() {
@@ -104,7 +114,7 @@ impl<P: Provider> Loop<P> {
             assignment: args.assignment.clone(),
             model: model.clone(),
             workspace,
-            depth: 1,
+            depth: self.session.depth().saturating_add(1),
             access: args.access,
             background: args.background,
             call: Some(args.call.clone()),
@@ -303,8 +313,61 @@ impl<P: Provider> Loop<P> {
     }
 }
 
-pub(super) fn child_tree(workspace: &Path, access: Access) -> Result<Option<Tree>> {
-    if access != Access::Implement || !worktree::in_git(workspace) {
+pub(super) fn selected_workspace(named: bool, choice: Option<Workspace>) -> Workspace {
+    match choice {
+        Some(choice) => choice,
+        None if named => Workspace::Shared,
+        None => Workspace::Isolated,
+    }
+}
+
+fn hold_note(path: &Path) -> String {
+    std::fs::read_to_string(crate::durable::store::lock_path(path))
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .next()
+                .filter(|line| !line.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "another session".to_string())
+}
+
+impl<P: Provider> Loop<P> {
+    pub(super) fn hold_children(&mut self) -> Result<()> {
+        if self.children_lock.is_some() {
+            return Ok(());
+        }
+        let path = self.workspace.join(".summonr").join("lead");
+        let held = crate::durable::store::lock(&path, false).map_err(|error| {
+            Error::Tool(format!("cannot lock this checkout for children: {error}"))
+        })?;
+        let Some(mut file) = held else {
+            return Err(Error::Tool(format!(
+                "this checkout already has a lead running children: {}",
+                hold_note(&path)
+            )));
+        };
+        let note = format!(
+            "pid {} session {} image {}\n",
+            std::process::id(),
+            self.session_id(),
+            current_image()
+        );
+        drop(file.set_len(0));
+        drop(std::io::Write::write_all(&mut file, note.as_bytes()));
+        self.children_lock = Some(file);
+        Ok(())
+    }
+}
+
+pub(super) fn child_tree(
+    workspace: &Path,
+    access: Access,
+    selection: Workspace,
+) -> Result<Option<Tree>> {
+    if access != Access::Implement || selection == Workspace::Shared || !worktree::in_git(workspace)
+    {
         return Ok(None);
     }
     worktree::open_delta(workspace).map(Some)

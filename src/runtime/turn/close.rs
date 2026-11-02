@@ -64,6 +64,33 @@ impl<P: Provider> Loop<P> {
         self.session.stage() == Some(Stage::Execute) && (self.is_work() || self.is_goal())
     }
 
+    pub(super) fn watch_jobs(&mut self) {
+        let session = self.session.id().to_string();
+        self.job_watch = crate::jobs::since(&self.workspace, 0, Some(&session))
+            .into_iter()
+            .filter(|record| !crate::jobs::finished(&self.workspace, record))
+            .collect();
+    }
+
+    pub(crate) fn finished_jobs(&mut self) -> Vec<String> {
+        let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut self.job_watch)
+            .into_iter()
+            .partition(|record| crate::jobs::finished(&self.workspace, record));
+        self.job_watch = waiting;
+        done.iter()
+            .map(|record| {
+                let state = crate::jobs::status(&self.workspace, record)
+                    .map_or_else(|error| error.to_string(), |status| status.label());
+                format!(
+                    "background job {} finished ({state}): {}\nlog: {}",
+                    record.id,
+                    record.command,
+                    crate::jobs::log_path(&self.workspace, record).display()
+                )
+            })
+            .collect()
+    }
+
     pub(super) fn defer_running(
         &mut self,
         running: &[String],

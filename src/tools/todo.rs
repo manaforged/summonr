@@ -34,7 +34,7 @@ fn todos(value: &Value) -> Result<Vec<Todo>> {
             .unwrap_or("pending");
         let status = TodoStatus::parse(name).ok_or_else(|| {
             Error::Tool(format!(
-                "todo status `{name}` is not one of pending, active, done"
+                "todo status `{name}` is not one of pending, active, done, blocked"
             ))
         })?;
         todos.push(Todo {

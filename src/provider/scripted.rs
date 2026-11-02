@@ -9,6 +9,7 @@ use super::{AssistantMessage, CompletionRequest, Message, Provider, StopReason, 
 
 pub(crate) enum Reply {
     Text(&'static str),
+    Pending,
     Call(ToolCall),
     Calls(Vec<ToolCall>),
     Fail(&'static str),
@@ -77,6 +78,7 @@ impl Provider for Scripted {
         let reply = self.replies.lock().unwrap().pop_front();
         Box::pin(async move {
             match reply {
+                Some(Reply::Pending) => std::future::pending().await,
                 Some(Reply::Text(text)) => Ok(AssistantMessage {
                     content: Some(text.to_string()),
                     ..AssistantMessage::default()

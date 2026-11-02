@@ -12,8 +12,8 @@ use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
 use sigil::prelude::Rgba8;
-use sigil::prelude::container;
 use sigil::prelude::Widget;
+use sigil::prelude::container;
 
 pub(in crate::tui::sigil_view) use input::window_area;
 

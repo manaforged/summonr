@@ -98,7 +98,9 @@ fn args_reason(
         .find(|rule| {
             rule.gate <= gate
                 && any_hit(&rule.when, args)
-                && !(rule.broad && narrow(args, workspace, cwd))
+                && !(rule.broad
+                    && narrow(args, workspace, cwd)
+                    && (gate == Gate::Risky || !outside(args, workspace, cwd)))
         })
         .map(|rule| rule.reason.as_str())
 }
@@ -118,6 +120,16 @@ fn sub_reason(
         // complexity: bounded by one BTreeSet lookup per subcommand rule
         .find(|rule| rule.gate <= gate && rule.names.contains(sub) && any_hit(&rule.when, rest))
         .map(|rule| rule.reason.as_str())
+}
+
+fn outside(args: &[String], workspace: &Path, cwd: Option<&Path>) -> bool {
+    let workspace = super::paths::resolved(workspace);
+    found_roots(args).iter().any(|target| {
+        let path = cwd
+            .and_then(|cwd| resolve(target, cwd))
+            .unwrap_or_else(|| std::path::PathBuf::from(target.as_str()));
+        !super::paths::resolved(&path).starts_with(&workspace)
+    })
 }
 
 fn narrow(args: &[String], workspace: &Path, cwd: Option<&Path>) -> bool {

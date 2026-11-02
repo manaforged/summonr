@@ -59,6 +59,7 @@ impl<P: Provider> Loop<P> {
         self.record_answer(answer, events, &mut emit)?;
         if !self.executes_work() {
             self.close_plain(snapshot, events)?;
+            self.watch_jobs();
             return self.close_turn(
                 Ending::Done(Vec::new()),
                 message.content,
@@ -226,8 +227,18 @@ impl<P: Provider> Loop<P> {
         let Some(objective) = self.session.goal_objective()? else {
             return Ok(Decision::Automatic);
         };
-        if self.metric.is_some()
-            || self
+        if self.metric.is_some() {
+            return Ok(Decision::GoalComplete);
+        }
+        let todos = self.session.work_progress()?.todos;
+        let open = todos
+            .iter()
+            .filter(|todo| todo.open() && crate::limits::limits().stall_rounds > 0)
+            .map(|todo| todo.text.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        if open.is_empty()
+            && self
                 .session
                 .completion_checks()?
                 .iter()
@@ -235,7 +246,11 @@ impl<P: Provider> Loop<P> {
         {
             return Ok(Decision::GoalComplete);
         }
-        let decision = goal::decision(self, &objective, reply, evidence, usage).await;
+        let evidence = match open.as_str() {
+            "" => evidence.to_string(),
+            open => format!("{evidence}\nOpen tasks: {open}"),
+        };
+        let decision = goal::decision(self, &objective, reply, &evidence, usage).await;
         self.sync_usage(emit);
         Ok(decision)
     }

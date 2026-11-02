@@ -265,11 +265,11 @@ fn a_covering_overlay_pauses_the_splash_clock() {
     });
 }
 
-fn named(key: sigil::prelude::Key) -> sigil::events::ShellEvent {
+fn named(key: sigil::prelude::Key) -> sigil::events::Event {
     use sigil::events::{
         KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
     };
-    sigil::events::ShellEvent::Key(KeyEvent::new(KeyEventInit {
+    sigil::events::Event::Key(KeyEvent::new(KeyEventInit {
         key: LogicalKey::named(key),
         physical: PhysicalKey::Unidentified,
         modifiers: ModifiersState::empty(),
@@ -283,7 +283,7 @@ fn named(key: sigil::prelude::Key) -> sigil::events::ShellEvent {
 fn the_splash_keeps_the_line_stack_s_when_f2_is_pressed() {
     sigil::reactive::Owner::scope("splash-mark", || {
         let (_app, mut host, mut screen) = splash_screen(120, 40);
-        let mut shown = |events: Vec<sigil::events::ShellEvent>| {
+        let mut shown = |events: Vec<sigil::events::Event>| {
             screen.frame(&mut host, events, (120, 40)).unwrap();
             screen.frame(&mut host, [], (120, 40)).unwrap();
             screen.text()

@@ -1,4 +1,5 @@
 use super::*;
+use crate::tools::Builtin;
 
 impl<P: Provider> Loop<P> {
     pub(super) async fn run_turn(
@@ -11,6 +12,9 @@ impl<P: Provider> Loop<P> {
         reached: &mut usize,
     ) -> Result<Turn> {
         let abort;
+        let mut stalls = 0;
+        let mut planned = false;
+        let mut acted = false;
         let tools = self
             .open_turn(&mut messages, usage, events, &mut emit)
             .await?;
@@ -54,21 +58,32 @@ impl<P: Provider> Loop<P> {
                 messages.append(&mut steered);
                 continue;
             }
-            if message.tool_calls.is_empty() && self.steer_waiting() {
-                self.session.finish_provider(
-                    durable_attempt,
-                    &message.content,
-                    &reasoning,
-                    meter,
-                    meta,
-                )?;
-                self.emit_records(events, &mut emit)?;
-                if !message.content.is_empty() {
-                    let text = message.content.clone();
-                    self.push_event(events, &mut emit, Event::Assistant { text })?;
+            if !message.tool_calls.is_empty() {
+                stalls = 0;
+                planned |= message
+                    .tool_calls
+                    .iter()
+                    .any(|call| Builtin::is(&call.function.name, Builtin::Todo));
+                acted |= acts(&message);
+            }
+            if message.tool_calls.is_empty() {
+                let steered = self.steer_waiting();
+                let open = if steered {
+                    None
+                } else {
+                    self.open_work(&message.content, (&mut stalls, planned, acted), usage)
+                        .await?
+                };
+                if steered || open.is_some() {
+                    let reply = (message, reasoning, durable_attempt, meter, meta);
+                    self.hold_reply(reply, &mut messages, events, &mut emit)?;
+                    if let Some(note) = open {
+                        self.inject(note, &mut messages)?;
+                        let text = "work is still open; the turn continues".to_string();
+                        self.push_event(events, &mut emit, Event::Note { text })?;
+                    }
+                    continue;
                 }
-                messages.push(message);
-                continue;
             }
             if message.tool_calls.is_empty() {
                 return self
@@ -98,6 +113,63 @@ impl<P: Provider> Loop<P> {
         }
         self.abort_turn(abort, events, emit, usage, *reached, pre)
             .await
+    }
+
+    fn hold_reply(
+        &mut self,
+        reply: (Message, String, Attempt, Meter, UsageMeta),
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        let (message, reasoning, attempt, meter, meta) = reply;
+        self.session
+            .finish_provider(attempt, &message.content, &reasoning, meter, meta)?;
+        self.emit_records(events, emit)?;
+        if !message.content.is_empty() {
+            let text = message.content.clone();
+            self.push_event(events, emit, Event::Assistant { text })?;
+        }
+        messages.push(message);
+        Ok(())
+    }
+
+    async fn open_work(
+        &mut self,
+        reply: &str,
+        (stalls, planned, acted): (&mut usize, bool, bool),
+        usage: &mut Usage,
+    ) -> Result<Option<String>> {
+        let limits = crate::limits::limits();
+        if *stalls >= limits.stall_rounds || self.session.stage() == Some(Stage::Plan) {
+            return Ok(None);
+        }
+        let todos = match self.session.work_progress() {
+            Ok(progress) if planned => progress.todos,
+            Ok(_) => Vec::new(),
+            Err(crate::durable::driver::DriverError::NoWork) => return Ok(None),
+            Err(error) => return Err(Error::from(error)),
+        };
+        let open = todos
+            .iter()
+            .filter(|todo| todo.open())
+            .map(crate::tools::Todo::line)
+            .collect::<Vec<_>>();
+        let note = if !open.is_empty() {
+            Some(format!("{OPEN_WORK}\n{}", open.join("\n")))
+        } else if limits.judge_turns && !self.is_goal() && acted {
+            let objective = self.session.objective().map_err(Error::from)?;
+            match goal::judged(self, &objective, reply, TURN_EVIDENCE, usage).await {
+                Ok(Decision::GoalContinue(reason)) => Some(format!("{UNFINISHED}\n{reason}")),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if note.is_some() {
+            *stalls += 1;
+        }
+        Ok(note)
     }
 
     async fn continue_with(
@@ -187,6 +259,17 @@ impl<P: Provider> Loop<P> {
                 Err(missed) => missed,
             };
             let error = match error {
+                WaitError::Steered => {
+                    messages.extend(interrupted);
+                    let stopped = self.steered("");
+                    if !stopped.is_empty() {
+                        messages.push(Message::system(stopped));
+                    }
+                    self.emit_records(events, emit)?;
+                    self.sync_usage(emit);
+                    self.take_mail(messages, events, emit)?;
+                    continue;
+                }
                 WaitError::Deadline(_) => None,
                 WaitError::Provider(error) => {
                     messages.extend(interrupted);
@@ -266,6 +349,7 @@ impl<P: Provider> Loop<P> {
         let read_only = self.session.depth() > 0 && self.tools.is_read_only();
         self.tools.set_read_only(read_only);
         self.summary_wait = 0;
+        self.job_watch.clear();
         self.turn_started = summonr_core::clock::now();
         let commands = self.verify.clone().unwrap_or_default();
         self.tools.clear_wrote();
@@ -354,3 +438,16 @@ impl<P: Provider> Loop<P> {
 #[cfg(test)]
 #[path = "round_tests.rs"]
 mod tests;
+
+fn acts(message: &Message) -> bool {
+    message
+        .tool_calls
+        .iter()
+        .any(|call| Builtin::of(&call.function.name).is_some_and(|tool| !tool.readonly()))
+}
+
+const OPEN_WORK: &str = "[summon control: the reply had no tool call, but tasks are still open. Continue with the next one now. Mark a task done when it is finished, or blocked when only the user or an outside event can move it, and name who in its text.]\nOpen tasks:";
+
+const UNFINISHED: &str = "[summon control: the reply had no tool call, but the judge found work you can still do without the user. Continue it now. If only the user can unblock what is left, say so in one line.]\nWhat is left:";
+
+const TURN_EVIDENCE: &str = "Interactive turn. Reply done when nothing is left that the agent can do without the user, including when the only remaining step needs the user's approval. Reply continue only when the agent stopped with work it can still do; name that work.";

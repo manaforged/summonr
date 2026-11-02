@@ -257,7 +257,7 @@ fn a_listed_session_reads_its_first_prompt_after_a_torn_tail_is_healed() {
     );
     std::fs::write(&journal, format!("{head}{}", torn(&prompt))).unwrap();
     let first = super::catalog::list_in(home.path()).unwrap();
-    assert_eq!(first[0].preview, "");
+    assert!(first.is_empty(), "{first:?}");
     std::fs::write(&journal, format!("{head}{prompt}")).unwrap();
     let healed = super::catalog::list_in(home.path()).unwrap();
     assert_eq!(healed[0].preview, "trace the leak");

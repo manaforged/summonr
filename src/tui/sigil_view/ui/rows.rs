@@ -1,4 +1,7 @@
-use sigil::prelude::{AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Token, Tone, container, list_row_with, notice_band, section_label, text_edit};
+use sigil::prelude::{
+    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Token, Tone, container,
+    list_row_with, notice_band, section_label, text_edit,
+};
 use sigil::widgets::{RowRender, TextEditBuilder, VirtualListBuilder};
 
 use super::input_keys;

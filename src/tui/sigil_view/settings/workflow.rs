@@ -3,7 +3,9 @@ use sigil::prelude::{LayoutStyle, NodeBuilder, button, container, text_edit, vir
 
 use super::{App, canvas};
 use crate::tui::Cmd;
-use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, input_keys, overlay_list, pick, press};
+use crate::tui::sigil_view::ui::{
+    Bindings, Dialog, Hints, Key, Size, input_keys, overlay_list, pick, press,
+};
 use crate::workflow::Role;
 use sigil::prelude::Widget;
 

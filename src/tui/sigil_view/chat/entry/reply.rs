@@ -1,5 +1,7 @@
 use sigil::kernel::{Cx, IntoNode, NodeId};
-use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Token, container, markdown, text};
+use sigil::prelude::{
+    AlignItems, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Token, container, markdown, text,
+};
 use sigil::reactive::derived;
 use sigil::widgets::DiffBuilder;
 

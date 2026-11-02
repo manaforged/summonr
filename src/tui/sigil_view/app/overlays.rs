@@ -35,7 +35,7 @@ const ROW: Row = Row {
     },
 };
 
-static ROWS: [Row; 13] = [
+static ROWS: [Row; 14] = [
     Row {
         overlay: Overlay::Secret,
         open: |app| app.secret_dialog,
@@ -191,6 +191,13 @@ static ROWS: [Row; 13] = [
         open: |app| app.cache_open,
         enter: App::close_meters,
         close: Some(App::close_meters),
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Agents,
+        open: App::agents_sheet_open,
+        node: Some(crate::tui::sigil_view::chat::strip::sheet),
+        close: Some(App::close_agents_sheet),
         ..ROW
     },
 ];

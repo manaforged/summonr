@@ -122,6 +122,7 @@ pub enum TodoStatus {
     Pending,
     Active,
     Done,
+    Blocked,
 }
 
 impl TodoStatus {
@@ -130,13 +131,14 @@ impl TodoStatus {
             "pending" => Some(Self::Pending),
             "active" | "in_progress" => Some(Self::Active),
             "done" | "completed" => Some(Self::Done),
+            "blocked" => Some(Self::Blocked),
             _ => None,
         }
     }
 
     pub fn acp(self) -> &'static str {
         match self {
-            Self::Pending => "pending",
+            Self::Pending | Self::Blocked => "pending",
             Self::Active => "in_progress",
             Self::Done => "completed",
         }
@@ -155,7 +157,12 @@ impl Todo {
             TodoStatus::Done => "✓",
             TodoStatus::Active => "●",
             TodoStatus::Pending => "○",
+            TodoStatus::Blocked => "!",
         }
+    }
+
+    pub fn open(&self) -> bool {
+        matches!(self.status, TodoStatus::Active | TodoStatus::Pending)
     }
 
     pub fn line(&self) -> String {

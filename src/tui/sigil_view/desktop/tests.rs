@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use sigil::Host;
 use sigil::app::FrameHooks;
 use sigil::events::{
-    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, ShellEvent,
+    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, Event,
 };
 use sigil::kernel::NodeBuilder;
 use sigil::scene::SceneCommand;
@@ -42,8 +42,8 @@ fn in_window(test: &str) -> bool {
     false
 }
 
-fn key(text: &str) -> ShellEvent {
-    ShellEvent::Key(KeyEvent::new(KeyEventInit {
+fn key(text: &str) -> Event {
+    Event::Key(KeyEvent::new(KeyEventInit {
         key: LogicalKey::character(text),
         physical: PhysicalKey::Unidentified,
         modifiers: ModifiersState::empty(),

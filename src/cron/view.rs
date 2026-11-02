@@ -59,6 +59,9 @@ pub(super) fn added(verb: &str, job: &Job) -> String {
 }
 
 fn endpoint(job: &Job) -> String {
+    if let Some(session) = &job.wake {
+        return format!("mail to {session} (no model call)");
+    }
     if let Some(name) = &job.endpoint {
         return name.clone();
     }
@@ -191,6 +194,7 @@ pub(super) fn show(job: &Job) -> String {
     ));
     lines.push(format!("notify: {}", store::name(&job.notify)));
     optional(&mut lines, "mail", job.mail.as_deref());
+    optional(&mut lines, "wake", job.wake.as_deref());
     if job.chat {
         lines.push("chat: yes".to_string());
     }
@@ -248,14 +252,16 @@ pub(super) fn json(job: &Job) -> serde_json::Value {
         "dir": job.dir,
         "task": job.task,
         "endpoint": job.endpoint,
+        "wake": job.wake,
     })
 }
 
 pub(super) fn warn(job: &Job, spec: &Spec, adding: bool) {
     let notes = [
         spec.mail.as_deref().and_then(mail_missing),
+        spec.wake.as_deref().and_then(mail_missing),
         spec.chat.then(chat_missing).flatten(),
-        adding
+        (adding && job.wake.is_none())
             .then(|| key_missing(job.endpoint.as_deref()))
             .flatten(),
     ];

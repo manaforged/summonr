@@ -20,19 +20,31 @@ pub(crate) async fn decision<P: Provider>(
     evidence: &str,
     usage: &mut crate::provider::Usage,
 ) -> Decision {
+    judged(loop_, objective, reply, evidence, usage)
+        .await
+        .unwrap_or_else(Decision::GoalContinue)
+}
+
+pub(crate) async fn judged<P: Provider>(
+    loop_: &mut Loop<P>,
+    objective: &str,
+    reply: &str,
+    evidence: &str,
+    usage: &mut crate::provider::Usage,
+) -> std::result::Result<Decision, String> {
     let evidence = judge_user(objective, reply, evidence);
     let mut prompt = evidence.clone();
     let mut repairs = 0;
     let verdict = loop {
         let (reply, judge_usage) = match loop_.judge(JUDGE_SYSTEM, &prompt).await {
             Ok(reply) => reply,
-            Err(error) => return Decision::GoalContinue(format!("judge unavailable: {error}")),
+            Err(error) => return Err(format!("judge unavailable: {error}")),
         };
         usage.add(&judge_usage);
         match parse_verdict(&reply) {
             Ok(verdict) => break verdict,
             Err(error) if repairs >= crate::limits::limits().judge_repairs => {
-                return Decision::GoalContinue(format!(
+                return Err(format!(
                     "goal judge stayed malformed after {} repairs: {error}",
                     crate::limits::limits().judge_repairs
                 ));
@@ -43,12 +55,12 @@ pub(crate) async fn decision<P: Provider>(
             }
         }
     };
-    match verdict.state {
+    Ok(match verdict.state {
         State::Done => Decision::GoalComplete,
         State::Continue => Decision::GoalContinue(verdict.reason),
         State::Stalled => Decision::GoalStop(format!("stalled: {}", verdict.reason)),
         State::Impossible => Decision::GoalStop(format!("impossible: {}", verdict.reason)),
-    }
+    })
 }
 
 #[must_use]

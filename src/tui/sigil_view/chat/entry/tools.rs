@@ -1,4 +1,8 @@
-use sigil::prelude::{AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Token, container};
+use sigil::kernel::TextBuilder;
+use sigil::prelude::{
+    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Token,
+    container,
+};
 
 use super::super::{App, Call, Entry};
 use super::tree::{branch, label, tree};
@@ -11,12 +15,22 @@ use sigil::prelude::Widget;
 
 pub(super) type Detail = Option<(String, TextStyle)>;
 
+const LOADING: [&str; 4] = ["✳", "✢", "∗", "✻"];
+
 pub(in crate::tui::sigil_view) fn glyph(state: &ToolState) -> (&'static str, TextStyle) {
     match state {
         ToolState::Running => ("○", TextStyle::xs(Token::Gray11)),
         ToolState::Ok => ("●", TextStyle::xs(Token::Success11)),
         ToolState::Failed => ("●", TextStyle::xs(Token::Error11)),
     }
+}
+
+pub(in crate::tui::sigil_view) fn loading_mark(ticks: Signal<u64>) -> TextBuilder {
+    let body = move || {
+        let at = usize::try_from(ticks.get() % LOADING.len() as u64).unwrap_or(0);
+        LOADING[at].to_owned()
+    };
+    TextStyle::xs(Token::Accent11).on(sigil::kernel::text(body).nowrap())
 }
 
 pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]) -> String {
@@ -191,7 +205,7 @@ pub(super) fn tool_card(
         && call.arg.is_empty()
         && !matches!(call.state, ToolState::Failed)
     {
-        return super::children::starting_card();
+        return super::children::starting_card(app.ticks);
     }
     let shown = workspace_relative(&call.arg, &app.roots);
     let (verb, arg) = (tool_label(name), shown.as_str());

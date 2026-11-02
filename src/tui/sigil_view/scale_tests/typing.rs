@@ -1,7 +1,7 @@
 use crate::tui::Intent;
 use sigil::Host;
 use sigil::events::{
-    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, ShellEvent,
+    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, Event,
 };
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
@@ -10,8 +10,8 @@ use super::super::app::{App, Overlay};
 use super::super::view::root;
 use super::busy_info;
 
-fn press(key: &str) -> ShellEvent {
-    ShellEvent::Key(KeyEvent::new(KeyEventInit {
+fn press(key: &str) -> Event {
+    Event::Key(KeyEvent::new(KeyEventInit {
         key: LogicalKey::character(key),
         physical: PhysicalKey::Unidentified,
         modifiers: ModifiersState::empty(),
@@ -21,8 +21,8 @@ fn press(key: &str) -> ShellEvent {
     }))
 }
 
-fn arrow(key: sigil::prelude::Key) -> ShellEvent {
-    ShellEvent::Key(KeyEvent::new(KeyEventInit {
+fn arrow(key: sigil::prelude::Key) -> Event {
+    Event::Key(KeyEvent::new(KeyEventInit {
         key: LogicalKey::named(key),
         physical: PhysicalKey::Unidentified,
         modifiers: ModifiersState::empty(),
@@ -36,7 +36,7 @@ fn typed(command: &str, read: impl FnOnce(&App) -> String) -> String {
     after(command, vec![press("k"), press("i")], read)
 }
 
-fn after<T>(command: &str, keys: Vec<ShellEvent>, read: impl FnOnce(&App) -> T) -> T {
+fn after<T>(command: &str, keys: Vec<Event>, read: impl FnOnce(&App) -> T) -> T {
     sigil::reactive::Owner::scope("dialog-typing", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, _receiver) = unbounded_channel();

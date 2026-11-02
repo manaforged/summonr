@@ -61,6 +61,32 @@ fn sessions_in_one_workspace_get_distinct_names() {
 }
 
 #[test]
+fn a_running_tool_stays_off_the_parent_inbox() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = Path::new("/work/summonr");
+    let mut child =
+        Mailbox::open(dir.path(), "child", Some("child"), "summonr", "model", cwd).unwrap();
+    let _parent = Mailbox::open(
+        dir.path(),
+        "parent",
+        Some("parent"),
+        "summonr",
+        "model",
+        cwd,
+    )
+    .unwrap();
+    child.note_tool("model", cwd, "shell", Some("parent"));
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let mail = read_inbox(dir.path(), "parent").unwrap();
+    assert!(mail.is_empty(), "{mail:?}");
+    let record: Agent = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("agents/child.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(record.tool, "shell");
+}
+
+#[test]
 fn mail_to_a_name_arrives_under_the_senders_name() {
     let dir = tempfile::tempdir().unwrap();
     let cwd = Path::new("/work/summonr");

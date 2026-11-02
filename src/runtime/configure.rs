@@ -115,6 +115,8 @@ impl<P: Provider> Loop<P> {
             chosen_effort: None,
             turn_started: 0,
             summary_wait: 0,
+            outputs_cleared: false,
+            job_watch: Vec::new(),
             workspace: dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf()),
             mailbox: None,
             mail_module: false,
@@ -132,6 +134,8 @@ impl<P: Provider> Loop<P> {
             spawned: BTreeMap::new(),
             events: tokio::sync::mpsc::unbounded_channel(),
             catalog_frozen: false,
+            reported_jobs: std::sync::Mutex::new(std::collections::HashSet::new()),
+            children_lock: None,
         })
     }
 
@@ -363,16 +367,20 @@ pub(super) fn open_driver(
     model: &str,
     system: &str,
 ) -> Result<SessionDriver> {
-    let parent = std::env::var_os(crate::session::PARENT_ENV)
-        .map(|value| value.to_string_lossy().parse())
-        .transpose()
-        .map_err(|error| Error::Config(format!("invalid parent session: {error}")))?;
+    let parent = if cfg!(test) {
+        None
+    } else {
+        std::env::var_os(crate::session::PARENT_ENV)
+            .map(|value| value.to_string_lossy().parse())
+            .transpose()
+            .map_err(|error| Error::Config(format!("invalid parent session: {error}")))?
+    };
     SessionDriver::open(
         home.as_ref(),
         workspace,
         model,
         system,
-        parent.map(Parent::Session),
+        parent.map(Parent::Task),
     )
     .map_err(Error::from)
 }

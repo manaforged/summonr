@@ -72,6 +72,7 @@ pub(super) struct Missed {
 pub(super) enum WaitError {
     Deadline(Duration),
     Provider(Error),
+    Steered,
 }
 
 impl WaitError {
@@ -81,7 +82,7 @@ impl WaitError {
             Self::Deadline(remaining) => {
                 elapsed.max(u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX))
             }
-            Self::Provider(_) => elapsed,
+            Self::Provider(_) | Self::Steered => elapsed,
         }
     }
 
@@ -89,6 +90,7 @@ impl WaitError {
         match self {
             Self::Deadline(_) => Error::Config(Abort::time_limit().reason),
             Self::Provider(error) => error,
+            Self::Steered => Error::Config("interrupted by an incoming message".to_string()),
         }
     }
 }
@@ -163,7 +165,15 @@ impl<P: Provider> Loop<P> {
         } else {
             provider.complete(&request)
         };
-        let message = match Self::wait(completion, remaining).await {
+        let input = self.input_wait();
+        let waited = tokio::select! {
+            biased;
+            result = Self::wait(completion, remaining) => result,
+            result = input, if options.retry == RetryPolicy::Round => {
+                Err(result.err().map_or(WaitError::Steered, WaitError::Provider))
+            }
+        };
+        let message = match waited {
             Ok(message) => message,
             Err(error) => {
                 let interrupted = (!partial.text.is_empty()).then(|| Message {
@@ -175,6 +185,9 @@ impl<P: Provider> Loop<P> {
                     let millis = error.millis(started);
                     let (diagnostic, billable) = match &error {
                         WaitError::Deadline(_) => (Abort::time_limit().reason, true),
+                        WaitError::Steered => {
+                            ("interrupted by an incoming message".to_string(), true)
+                        }
                         WaitError::Provider(error) => (error.to_string(), super::billable(error)),
                     };
                     self.session

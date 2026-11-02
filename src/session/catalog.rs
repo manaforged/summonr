@@ -25,16 +25,24 @@ pub(crate) fn latest_in(
     let want = roots(workspace);
     let sessions = journals_in(home)?;
     let mut index = Index::load(home);
+    let mut fallback = None;
     let found = sessions
         .iter()
         .rev()
         .filter(|(id, _, _)| skip != Some(id.as_str()))
         .find_map(|(id, path, len)| {
             let summary = index.summary(id, path, *len)?;
-            summary
-                .here(&want)
-                .then(|| summary.into_info(id.clone(), path.clone()))
-        });
+            if !summary.in_workspace(&want) {
+                return None;
+            }
+            let info = summary.clone().into_info(id.clone(), path.clone());
+            if summary.here(&want) {
+                return Some(info);
+            }
+            fallback.get_or_insert(info);
+            None
+        })
+        .or(fallback);
     index.save(&sessions);
     Ok(found)
 }
@@ -254,6 +262,10 @@ pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt
 }
 
 pub(crate) fn list_in(home: &Path) -> Result<Vec<SessionInfo>> {
+    Ok(sessions_in(home)?.into_iter().filter(resume_row).collect())
+}
+
+pub(crate) fn sessions_in(home: &Path) -> Result<Vec<SessionInfo>> {
     let sessions = journals_in(home)?;
     let mut index = Index::load(home);
     let infos = sessions
@@ -265,10 +277,13 @@ pub(crate) fn list_in(home: &Path) -> Result<Vec<SessionInfo>> {
                     .into_info(id.clone(), path.clone()),
             )
         })
-        .filter(|info| info.depth == 0)
         .collect();
     index.save(&sessions);
     Ok(infos)
+}
+
+fn resume_row(info: &SessionInfo) -> bool {
+    info.depth == 0 && (info.name.is_some() || !info.preview.is_empty())
 }
 
 pub(crate) fn ids_in(home: &Path) -> Result<Vec<(String, PathBuf)>> {

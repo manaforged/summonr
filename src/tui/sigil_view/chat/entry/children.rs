@@ -1,4 +1,4 @@
-use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Token, container};
+use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Signal, Token, container};
 
 use super::super::{Agent, App, Call};
 use super::preview;
@@ -17,7 +17,7 @@ fn task_title(kid: &Agent, roots: &[String]) -> String {
     Agent::title_of(&workspace_relative(&kid.assignment, roots))
 }
 
-fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
+fn subagent_line(kid: &Agent, roots: &[String], ticks: Signal<u64>) -> NodeBuilder {
     let title = task_title(kid, roots);
     let (tone, status, doing) = match kid.state() {
         ToolState::Running => {
@@ -36,6 +36,11 @@ fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
             None,
         ),
     };
+    let mark = if matches!(kid.state(), ToolState::Running) {
+        super::tools::loading_mark(ticks)
+    } else {
+        label("◆", TextStyle::xs(tone))
+    };
     let mut line = container()
         .layout(
             LayoutStyle::flex_row()
@@ -44,8 +49,8 @@ fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(label("◆", TextStyle::xs(tone)))
-        .child(label("Subagent", TextStyle::xs(Token::Gray12).bold()));
+        .child(mark)
+        .child(label("Subagent", TextStyle::xs(Token::Accent11).bold()));
     if !kid.agent.is_empty() {
         line = line.child(label(kid.agent.clone(), TextStyle::xs(Token::Info11)));
     }
@@ -69,7 +74,7 @@ fn subagent_line(kid: &Agent, roots: &[String]) -> NodeBuilder {
     }
 }
 
-pub(super) fn starting_card() -> NodeBuilder {
+pub(super) fn starting_card(ticks: Signal<u64>) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -78,8 +83,8 @@ pub(super) fn starting_card() -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(label("◆", TextStyle::xs(Token::Accent11)))
-        .child(label("Subagent", TextStyle::xs(Token::Gray12).bold()))
+        .child(super::tools::loading_mark(ticks))
+        .child(label("Subagent", TextStyle::xs(Token::Accent11).bold()))
         .child(label("starting…", TextStyle::xs(Token::Gray10)))
 }
 
@@ -120,7 +125,7 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
     });
     let mut card = container().layout(LayoutStyle::flex_column().fill_width().gap(0.0));
     for kid in kids {
-        card = card.child(subagent_line(kid, &kid.roots(&app.roots)));
+        card = card.child(subagent_line(kid, &kid.roots(&app.roots), app.ticks));
         if let Some((_, kept)) = kept.as_ref().filter(|(tag, _)| *tag == kid.id) {
             card = card.child(branch(
                 true,

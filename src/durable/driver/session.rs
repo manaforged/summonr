@@ -8,11 +8,7 @@ impl SessionDriver {
         system: &str,
         parent: Option<Parent>,
     ) -> Result<Self, DriverError> {
-        let (parent, depth) = match parent {
-            Some(Parent::Session(id)) => (Some(id), 0),
-            Some(Parent::Task(id)) => (Some(id), 1),
-            None => (None, 0),
-        };
+        let (parent, depth) = parent_depth(parent);
         let id = SessionId::new();
         let path = log::session_path(home, id);
         let mut driver = Self {
@@ -143,6 +139,10 @@ impl SessionDriver {
         let home = log::home_of(self.log.path())
             .ok_or_else(|| DriverError::State("session log has no home".to_string()))?;
         let child = SessionId::new();
+        let (parent, depth) = match self.state.id {
+            Some(id) => parent_depth(Some(Parent::Session(id))),
+            None => (None, 0),
+        };
         let path = log::session_path(home, child);
         let mut log = Log::create(&path)?;
         log.append(
@@ -151,8 +151,8 @@ impl SessionDriver {
                 model: self.state.model.clone(),
                 system: self.state.system.clone(),
                 workspace: self.state.workspace.clone(),
-                parent: self.state.id,
-                depth: 0,
+                parent,
+                depth,
                 revision: Some(crate::revision().to_string()),
             },
             store::Durability::Renamed,
@@ -163,6 +163,14 @@ impl SessionDriver {
             }
         }
         Ok(path)
+    }
+}
+
+fn parent_depth(parent: Option<Parent>) -> (Option<SessionId>, u8) {
+    match parent {
+        Some(Parent::Session(id)) => (Some(id), 0),
+        Some(Parent::Task(id)) => (Some(id), 1),
+        None => (None, 0),
     }
 }
 

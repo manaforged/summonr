@@ -2,9 +2,9 @@ use super::*;
 use crate::tui::sigil_view::ui::input_keys;
 use sigil::layout::Dimension;
 use sigil::prelude::Paint;
+use sigil::prelude::Widget;
 use sigil::reactive::untrack;
 use sigil::widgets::TextEditBuilder;
-use sigil::prelude::Widget;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let (cols, _rows) = app.viewport.get();

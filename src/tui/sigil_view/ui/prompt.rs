@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
-use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, Tone, button, container, notice_band};
+use sigil::prelude::{
+    AlignItems, LayoutStyle, NodeBuilder, Paint, Tone, button, container, notice_band,
+};
 
 use crate::prefs::Hotkeys;
 

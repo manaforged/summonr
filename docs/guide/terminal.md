@@ -150,22 +150,23 @@ retain_days = 90
 
 ## Child sessions
 
-The `task` tool delegates work to fresh child sessions. Only an interactive session offers it; `-p`, `--steps`, `--goal`, and `summonr acp` runs have no steering channel, so the model does not get `task` there. The model can emit several `task` calls in one response, and summonr runs them concurrently. Every child tool call, result, and answer streams into the parent transcript under the child id.
+The `task` tool delegates work to fresh child sessions. Only an interactive session offers it; `-p`, `--steps`, `--goal`, and `summonr acp` runs have no steering channel, so the model does not get `task` there. The model can emit several `task` calls in one response, and summonr runs them concurrently. A child tool call does not start a parent turn. Mail to the child's name does, and it stops that child's running command and background jobs. The parent transcript keeps the child's answers under the child id.
 
 | Kind | Workspace | Can |
 | --- | --- | --- |
-| `implement` | An isolated checkout in `<repo>-children/<id>` that shares the parent's `target/` and `node_modules` | Use the parent's file, shell, and language-server tools; background commands stay with the parent |
+| `implement`, named | This checkout. Pass `workspace` `isolated` to force a separate checkout | Use the parent's file, shell, and language-server tools. Edits are visible immediately |
+| `implement`, unnamed | An isolated checkout in `<repo>-children/<id>` that shares the parent's `target/` and `node_modules` | Use the parent's file, shell, and language-server tools; background commands stay with the parent |
 | `research` | The parent workspace | Read and search; a foreground shell command; no writes, no background commands |
 
 The `task` module is on by default. Turn it off in the Modules rows of `/settings`, or with `task = false` under `[modules]` in `~/.summonr/config.toml`.
 
 ### Implement children
 
-The parent applies each finished child's edits on its own, then verifies. Generated files (`__pycache__`, `*.pyc`, and the pytest, mypy, and ruff caches) and summonr state under `.summonr/` other than `check.toml` and `policy.toml` never land. The receipt lists the files that landed.
+The parent applies each finished unnamed child's edits on its own, then verifies. Generated files (`__pycache__`, `*.pyc`, and the pytest, mypy, and ruff caches) and summonr state under `.summonr/` other than `check.toml` and `policy.toml` never land. The receipt lists the files that landed.
 
-A child never inherits goal or steps mode: it works in plain working mode. Its first message names only its own checkout, and children started together do not see each other's edits.
+A child never inherits goal or steps mode: it works in plain working mode. A named child edits this checkout, so the other children see those edits. An unnamed child's first message names only its own checkout.
 
-When two children change the same lines, that child's checkout stays on disk and the others still land. The child shows as a conflict, not a failure: `kept <repo>-children/<id>: conflicts with the parent`, followed by an `rm -rf` hint that removes the checkout when you are done. summonr never deletes a kept checkout. Pass `--worktree` on the session to isolate the whole run in a git worktree.
+When two unnamed children change the same lines, that child's checkout stays on disk and the others still land. The child shows as a conflict, not a failure: `kept <repo>-children/<id>: conflicts with the parent`, followed by an `rm -rf` hint that removes the checkout when you are done. summonr never deletes a kept checkout. Pass `--worktree` on the session to isolate the whole run in a git worktree.
 
 ### Limits and budgets
 

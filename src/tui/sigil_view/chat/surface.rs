@@ -1,10 +1,13 @@
 use std::rc::Rc;
 
 use sigil::prelude::IntoNode;
-use sigil::prelude::{LayoutStyle, NodeBuilder, Signal, container, effect, empty_state, fragment, node, signal, virtual_list};
+use sigil::prelude::{
+    LayoutStyle, NodeBuilder, Signal, container, effect, empty_state, fragment, node, signal,
+    virtual_list,
+};
 use sigil::reactive::untrack;
 use sigil::reactive::{defer, derived};
-use sigil::style::{NumericAtomKind};
+use sigil::style::NumericAtomKind;
 
 use super::composer;
 use super::entry;

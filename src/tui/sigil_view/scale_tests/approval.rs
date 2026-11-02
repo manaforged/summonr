@@ -1,6 +1,6 @@
 use sigil::Host;
 use sigil::events::{
-    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, ShellEvent,
+    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, Event,
 };
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
@@ -10,8 +10,8 @@ use super::super::view::root;
 use super::busy_info;
 use crate::tui::{Activity, Fact, Msg};
 
-fn press(key: &str) -> ShellEvent {
-    ShellEvent::Key(KeyEvent::new(KeyEventInit {
+fn press(key: &str) -> Event {
+    Event::Key(KeyEvent::new(KeyEventInit {
         key: LogicalKey::character(key),
         physical: PhysicalKey::Unidentified,
         modifiers: ModifiersState::empty(),

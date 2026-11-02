@@ -53,6 +53,29 @@ impl Extend<Entry> for Entries {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(in crate::tui::sigil_view) enum AgentsView {
+    #[default]
+    Collapsed,
+    Strip,
+    Split,
+    Sheet,
+}
+
+impl AgentsView {
+    pub(in crate::tui::sigil_view) fn open(self) -> bool {
+        !matches!(self, Self::Collapsed)
+    }
+
+    pub(in crate::tui::sigil_view) fn toggle(self) -> Self {
+        if self.open() {
+            Self::Collapsed
+        } else {
+            Self::Strip
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct Model {
     pub(super) session: String,
@@ -88,7 +111,8 @@ pub(super) struct Model {
     pub(super) live_tool: Option<(String, String)>,
     pub(super) agents: Vec<Agent>,
     pub(super) agents_hidden: BTreeSet<String>,
-    pub(super) agents_expanded: bool,
+    pub(super) agents_view: AgentsView,
+    pub(super) agents_cursor: usize,
     pub(super) prefs: Prefs,
     pub(super) snapshot: Snapshot,
     pub(super) pick: Option<crate::endpoint::Origin>,
@@ -177,7 +201,8 @@ impl Model {
             live_tool: None,
             agents: Vec::new(),
             agents_hidden: BTreeSet::new(),
-            agents_expanded: false,
+            agents_view: AgentsView::Collapsed,
+            agents_cursor: 0,
             prefs: info.prefs.clone(),
             snapshot: Snapshot {
                 model: info.model.clone(),

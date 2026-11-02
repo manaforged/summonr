@@ -98,7 +98,14 @@ impl<P: Provider> Run<P> {
                     event: Box::new(event.clone()),
                 }));
             };
-            drop(self.child.turn_with(prompt.as_str(), emit).await);
+            if let Err(error) = self.child.turn_with(prompt.as_str(), emit).await {
+                drop(sender.send(Event::Child {
+                    id: id.to_string(),
+                    event: Box::new(Event::Note {
+                        text: error.to_string(),
+                    }),
+                }));
+            }
         }
     }
 
@@ -181,8 +188,6 @@ impl<P: Provider> Run<P> {
     }
 }
 
-const MAIL_WAIT: std::time::Duration = std::time::Duration::from_millis(50);
-
 pub(crate) async fn next_mail<P: Provider>(child: &mut Loop<P>) -> String {
     loop {
         child.mail_heartbeat(crate::mail::Presence::Idle);
@@ -198,6 +203,6 @@ pub(crate) async fn next_mail<P: Provider>(child: &mut Loop<P>) -> String {
                 return text;
             }
         }
-        tokio::time::sleep(MAIL_WAIT).await;
+        tokio::time::sleep(crate::limits::limits().mail_poll()).await;
     }
 }

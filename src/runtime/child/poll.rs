@@ -1,8 +1,22 @@
+use std::future::Future;
+use std::task::{Context, Poll, Waker};
+
 use super::record::*;
 use super::*;
 use tokio::task::JoinError;
 
 const WAITING_CHARS: usize = 60;
+
+fn poll_ready(
+    handle: &mut tokio::task::JoinHandle<Done>,
+) -> Option<std::result::Result<Done, JoinError>> {
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    match std::pin::Pin::new(handle).poll(&mut context) {
+        Poll::Ready(joined) => Some(joined),
+        Poll::Pending => None,
+    }
+}
 
 enum Wake {
     Event(Event),
@@ -46,16 +60,22 @@ impl<P: Provider> Loop<P> {
             let Some(spawned) = self.spawned.get(id) else {
                 return Err(Error::Tool(format!("unknown child `{id}`")));
             };
+            let tool = if spawned.tool.is_empty() {
+                "idle"
+            } else {
+                spawned.tool.as_str()
+            };
+            let last = if spawned.last.is_empty() {
+                "starting"
+            } else {
+                spawned.last.as_str()
+            };
             return Ok(Execution {
                 output: ToolOutput::ok(format!(
-                    "child {id}\nstate: running\nelapsed: {}s\nassignment: {}\nlast: {}",
+                    "child {id}\nstate: running\n{}\nelapsed: {}s\ntool: {tool}\nassignment: {}\nlast: {last}",
+                    running_place(&spawned.record.workspace),
                     spawned.started.elapsed().as_secs(),
                     ellipsize(&spawned.record.assignment, LAST_CHARS),
-                    if spawned.last.is_empty() {
-                        "starting"
-                    } else {
-                        spawned.last.as_str()
-                    }
                 )),
                 usage: Usage::default(),
                 millis: 0,
@@ -277,20 +297,58 @@ impl<P: Provider> Loop<P> {
         let Some(spawned) = self.spawned.get_mut(id) else {
             return;
         };
-        let last = match &**event {
-            Event::ToolCall {
-                name, arguments, ..
-            } => format!("{name} {}", ellipsize(arguments, LAST_CHARS)),
+        match &**event {
+            Event::ToolCall { name, .. } => {
+                spawned.tool = name.clone();
+                return;
+            }
             Event::ToolResult {
                 success: false,
                 output,
                 ..
-            } => format!("failed: {}", ellipsize(output, LAST_CHARS)),
-            Event::Assistant { text } | Event::Note { text } => ellipsize(text, LAST_CHARS),
-            Event::Aborted { reason, .. } => format!("aborted: {}", ellipsize(reason, LAST_CHARS)),
-            _ => return,
-        };
-        spawned.last = last;
+            } => {
+                spawned.tool.clear();
+                spawned.last = format!("failed: {}", ellipsize(output, LAST_CHARS));
+            }
+            Event::Assistant { text } | Event::Note { text } => {
+                spawned.tool.clear();
+                spawned.last = ellipsize(text, LAST_CHARS);
+            }
+            Event::Aborted { reason, .. } => {
+                spawned.tool.clear();
+                spawned.last = format!("aborted: {}", ellipsize(reason, LAST_CHARS));
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn reap_finished(&mut self) -> Vec<String> {
+        let ready: Vec<String> = self
+            .spawned
+            .iter()
+            .filter(|(_, spawned)| spawned.handle.is_finished())
+            .map(|(id, _)| id.clone())
+            .collect();
+        let mut notes = Vec::new();
+        for id in ready {
+            let Some(mut spawned) = self.spawned.remove(&id) else {
+                continue;
+            };
+            let Some(joined) = poll_ready(&mut spawned.handle) else {
+                self.spawned.insert(id, spawned);
+                continue;
+            };
+            let done = self.joined(spawned, joined);
+            let note = match self.task_settle(done) {
+                Ok(execution) => format!(
+                    "child {id} exited\n{}",
+                    ellipsize(&execution.output.text, LAST_CHARS)
+                ),
+                Err(error) => format!("child {id} exited: {error}"),
+            };
+            notes.push(note);
+        }
+        notes
     }
 
     pub(in crate::runtime) async fn run_or_wake(
@@ -308,12 +366,26 @@ impl<P: Provider> Loop<P> {
             self.settle_ready(events, emit, &mut usage).await?;
         }
         if !waits || self.spawned.is_empty() {
-            return Ok((self.tools.execute_outcome(call).await, usage));
+            let input = self.input_wait();
+            let output = tokio::select! {
+                biased;
+                result = input, if crate::tools::Builtin::is(&call.function.name, crate::tools::Builtin::RunCommand) => {
+                    result?;
+                    Err(Error::Tool(self.steered("interrupted by an incoming message; any completed changes remain")))
+                },
+                output = self.tools.execute_outcome(call) => output,
+            };
+            return Ok((output, usage));
         }
         let ids: Vec<String> = self.spawned.keys().cloned().collect();
+        let input = self.input_wait();
         let handles = self.spawned.values_mut().map(|spawned| &mut spawned.handle);
         let (index, joined) = tokio::select! {
             biased;
+            result = input => {
+                result?;
+                return Ok((Err(Error::Tool(self.steered("job wait interrupted by an incoming message"))), usage));
+            },
             (joined, index, _) = futures::future::select_all(handles) => (index, joined),
             output = self.tools.execute_outcome(call) => return Ok((output, usage)),
         };

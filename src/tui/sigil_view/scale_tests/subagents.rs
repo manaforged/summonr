@@ -94,7 +94,7 @@ fn subagents_read_as_one_line_each_that_flips_when_done() {
         "{shown}"
     );
     assert!(
-        shown.contains("◆ Subagent running: “Add a --dry-run flag to cli.py”"),
+        shown.contains("✳ Subagent running: “Add a --dry-run flag to cli.py”"),
         "{shown}"
     );
     assert!(
@@ -153,7 +153,7 @@ fn subagents_spawned_by_separate_calls_each_get_their_own_line() {
         );
     })
     .join("\n");
-    assert_eq!(shown.matches("◆ Subagent running").count(), 3, "{shown}");
+    assert_eq!(shown.matches("✳ Subagent running").count(), 3, "{shown}");
     assert!(!shown.contains("started child"), "{shown}");
     assert!(
         shown.contains("“Fix total() in pricing.py to round to cents”"),
@@ -207,7 +207,7 @@ fn parallel_spawn_calls_each_get_their_own_subagent_line() {
         }
     })
     .join("\n");
-    assert_eq!(shown.matches("◆ Subagent running").count(), 3, "{shown}");
+    assert_eq!(shown.matches("✳ Subagent running").count(), 3, "{shown}");
     assert!(!shown.contains("started child"), "{shown}");
 }
 
@@ -266,7 +266,7 @@ fn a_spawn_drawn_before_its_subagent_exists_redraws_as_the_subagent_line() {
             shown.contains("◆ Subagent completed in"),
             "the line follows the child: {shown}"
         );
-        assert!(shown.contains("◆ Subagent running"), "{shown}");
+        assert!(shown.contains("✳ Subagent running"), "{shown}");
     });
 }
 
@@ -299,7 +299,7 @@ fn consecutive_subagent_lines_sit_on_consecutive_rows() {
     let rows: Vec<usize> = shown
         .iter()
         .enumerate()
-        .filter(|(_, line)| line.contains("◆ Subagent"))
+        .filter(|(_, line)| line.contains("✳ Subagent running"))
         .map(|(at, _)| at)
         .collect();
     assert_eq!(rows.len(), 3, "{}", shown.join("\n"));
@@ -329,7 +329,7 @@ fn a_spawn_result_before_its_subagent_shows_a_starting_line_not_raw_output() {
     })
     .join("\n");
     assert!(!shown.contains("started child"), "{shown}");
-    assert!(shown.contains("◆ Subagent starting"), "{shown}");
+    assert!(shown.contains("✳ Subagent starting"), "{shown}");
 }
 
 #[test]
@@ -356,12 +356,12 @@ fn a_narrow_subagent_row_keeps_its_activity_and_names_a_listing_as_a_directory()
         .iter()
         .filter(|line| {
             let line = line.trim_start();
-            line.starts_with("○") || line.starts_with("◆")
+            line.starts_with("✳") || line.starts_with("◆")
         })
         .collect();
     assert!(
-        rows.iter().any(|row| row.contains('○')) && rows.iter().any(|row| row.contains('◆')),
-        "{}",
+        rows.len() >= 2,
+        "the transcript and the strip both show the subagent:\n{}",
         shown.join("\n")
     );
     for row in rows {
@@ -388,7 +388,7 @@ fn a_long_subagent_activity_leaves_the_task_title_readable() {
         .iter()
         .filter(|line| {
             let trimmed = line.trim_start();
-            (trimmed.starts_with('○') || trimmed.starts_with('◆')) && line.contains("· Read cli.py")
+            (trimmed.starts_with('✳') || trimmed.starts_with('◆')) && line.contains("· Read cli.py")
         })
         .collect();
     assert!(rows.len() >= 2, "{}", shown.join("\n"));

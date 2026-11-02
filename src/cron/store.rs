@@ -60,6 +60,8 @@ pub(crate) struct Run {
     pub started: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
     pub outcome: Outcome,
     #[serde(default)]
     pub origin: Origin,
@@ -87,6 +89,8 @@ pub(crate) struct Job {
     pub notify: Notify,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wake: Option<String>,
     #[serde(default)]
     pub chat: bool,
     #[serde(default)]
@@ -311,6 +315,7 @@ pub(crate) fn settle(
                 slot,
                 started,
                 job: None,
+                reason: None,
                 outcome: Outcome::Running,
                 origin: Origin::Local,
             });

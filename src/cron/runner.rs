@@ -114,6 +114,7 @@ fn expire(job: &mut Job, slot: i64, now: i64) {
         slot,
         started: now,
         job: None,
+        reason: None,
         outcome: Outcome::Expired,
         origin: Origin::Local,
     });
@@ -155,6 +156,7 @@ pub(crate) fn fire(name: &str, payload: Option<&[u8]>) -> Result<i64> {
             slot: now,
             started: now,
             job: None,
+            reason: None,
             outcome: Outcome::Running,
             origin: Origin::Webhook,
         });
@@ -207,10 +209,24 @@ pub(crate) fn exec(
         eprintln!("cron job `{name}` is still running; this run was skipped");
         return Ok(1);
     };
+    if let Some(session) = &job.wake {
+        let Task::Prompt(text) = &job.task else {
+            return Err(Error::Config("wake jobs require a prompt".to_string()));
+        };
+        let delivered = crate::mail::deliver("monitor", std::slice::from_ref(session), text);
+        let text = match &delivered {
+            Ok(count) => format!("delivered wake-up to {count} session"),
+            Err(error) => error.to_string(),
+        };
+        let code = i32::from(delivered.is_err());
+        conclude(&job, slot, started, Some(code), None, Some(&text))?;
+        delivered?;
+        return Ok(code);
+    }
     let (mut child, exit, log) = match start_child(&job, slot, started, payload) {
         Ok(started_child) => started_child,
         Err(error) => {
-            conclude(&job, slot, started, None, None)?;
+            conclude(&job, slot, started, None, None, None)?;
             return Err(error);
         }
     };
@@ -219,7 +235,7 @@ pub(crate) fn exec(
         Some(code) => durable::write(&exit, format!("{code}\n"), durable::Durability::Renamed)?,
         None => crate::jobs::write_killed(&exit, &[])?,
     }
-    conclude(&job, slot, started, code, Some(&log))?;
+    conclude(&job, slot, started, code, Some(&log), None)?;
     Ok(code.unwrap_or(1))
 }
 
@@ -258,11 +274,19 @@ fn conclude(
     started: i64,
     code: Option<i32>,
     log: Option<&Path>,
+    reason: Option<&str>,
 ) -> Result<()> {
+    if let Some(reason) = reason {
+        store::settle(&job.name, slot, started, |run| {
+            run.reason = Some(reason.to_string())
+        })?;
+    }
     let outcome = Outcome::from_code(code);
     let paused = finish(&job.name, slot, started, outcome)?;
     if report::wanted(job.notify, outcome) {
-        let reason = log.and_then(|log| Report::load(log).reason(outcome));
+        let reason = log
+            .and_then(|log| Report::load(log).reason(outcome))
+            .or_else(|| reason.map(str::to_owned));
         report::notify(job, outcome, reason.as_deref(), paused);
     }
     Ok(())

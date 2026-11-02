@@ -35,19 +35,6 @@ pub(crate) struct Module {
     pub(crate) servers: Vec<Server>,
     pub(crate) commands: Vec<String>,
     pub(crate) options: Value,
-    pub(crate) check: Option<Check>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct Check {
-    pub(crate) command: String,
-    pub(crate) requires: Option<Requirement>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct Requirement {
-    pub(crate) file: String,
-    pub(crate) pointer: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,27 +122,6 @@ pub(crate) fn present(workspace: &Path) -> Vec<&'static Module> {
         .collect()
 }
 
-#[must_use]
-pub(crate) fn check(workspace: &Path) -> Option<&'static str> {
-    TABLE
-        .module
-        .iter()
-        .filter(|module| has_marker(workspace, module))
-        .filter_map(|module| module.check.as_ref())
-        .find(|check| {
-            check.requires.as_ref().is_none_or(|requirement| {
-                std::fs::read_to_string(workspace.join(&requirement.file))
-                    .ok()
-                    .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-                    .and_then(|value| value.pointer(&requirement.pointer).cloned())
-                    .is_some_and(|script| {
-                        script.as_str().is_some_and(|text| !text.trim().is_empty())
-                    })
-            })
-        })
-        .map(|check| check.command.as_str())
-}
-
 pub(crate) fn options(module: &Module) -> Value {
     module.options.clone()
 }
@@ -197,7 +163,3 @@ fn marked(workspace: &Path, path: &Path, module: &Module) -> bool {
     }
     false
 }
-
-#[cfg(test)]
-#[path = "language_tests.rs"]
-mod tests;

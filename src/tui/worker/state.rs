@@ -114,6 +114,18 @@ impl Worker {
         for event in self.loop_.child_events() {
             drop(self.ui.send(Msg::Fact(Fact::Event(event))));
         }
+        for note in self.loop_.reap_finished() {
+            self.system(&note);
+            if let Err(error) = crate::mail::Mailbox::wake(&self.loop_.session_id(), &note) {
+                self.system(&format!("child exit was not delivered: {error}"));
+            }
+        }
+        for note in self.loop_.finished_jobs() {
+            self.system(&note);
+            if let Err(error) = crate::mail::Mailbox::wake(&self.loop_.session_id(), &note) {
+                self.system(&format!("job exit was not delivered: {error}"));
+            }
+        }
         self.loop_.mail_heartbeat(crate::mail::Presence::Idle);
         self.peers();
         let mail = match self.loop_.mail_poll() {
@@ -209,6 +221,7 @@ pub(super) fn publish_peers(
                 && a.cwd == b.cwd
                 && a.pid == b.pid
                 && a.status == b.status
+                && a.tool == b.tool
         });
     if !same {
         *previous = Some(peers.clone());

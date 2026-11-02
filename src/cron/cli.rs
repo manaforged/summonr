@@ -155,6 +155,17 @@ fn apply(job: &mut Job, spec: &Spec) -> Result<()> {
     job.chat = job.chat || spec.chat;
     job.notify = spec.notify.unwrap_or(job.notify);
     job.mail = spec.mail.clone().or(job.mail.take());
+    job.wake = spec.wake.clone().or(job.wake.take());
+    if let Some(session) = &job.wake {
+        if session.is_empty() || session == "all" {
+            return Err(usage("--wake needs one session name or id"));
+        }
+        if !matches!(job.task, store::Task::Prompt(_)) || job.worktree {
+            return Err(usage(
+                "--wake requires -p PROMPT and cannot use --goal or --worktree",
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -272,7 +283,12 @@ fn log(name: &str, show: Show) -> Result<i32> {
     for run in job.runs.iter().skip(skip) {
         println!("{}", view::run_line(run, &tz));
     }
-    if let Some(run) = job.runs.iter().rev().find(|run| run.job.is_some()) {
+    if let Some(run) = job
+        .runs
+        .iter()
+        .rev()
+        .find(|run| run.job.is_some() || run.reason.is_some())
+    {
         let text = if show.raw {
             Some(report::raw(&job, run)?)
         } else {

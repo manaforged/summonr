@@ -24,6 +24,8 @@ struct Args {
     #[serde(default)]
     access: Access,
     #[serde(default)]
+    workspace: Option<Workspace>,
+    #[serde(default)]
     background: bool,
     #[serde(default)]
     child: Option<String>,
@@ -33,8 +35,18 @@ struct Args {
     agent: Option<String>,
     #[serde(default)]
     name: Option<String>,
+    #[serde(default)]
+    effort: Option<String>,
     #[serde(skip)]
     call: String,
+}
+
+#[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum Workspace {
+    #[default]
+    Isolated,
+    Shared,
 }
 
 pub(super) struct Execution {
@@ -51,6 +63,7 @@ pub(super) struct Spawned {
     last: String,
     reserved_tokens: u64,
     staying: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    tool: String,
 }
 
 impl Spawned {
@@ -86,17 +99,19 @@ pub(super) struct Done {
 pub(super) fn definition() -> ToolDefinition {
     tool(
         "task",
-        "Delegate one assignment to a child on the same provider and model. The child keeps its transcript. Mail to its name is the next turn. The parent turn ending does not stop it. kill true does. Same tools except task. background true returns an id; pass child to poll. implement edits an isolated checkout that shares the parent build cache when this workspace is a git repository, and edits this workspace otherwise. The parent applies each finished child's edits on its own and lists the files that landed. A conflict keeps that checkout. research is read-only.",
+        "Delegate one assignment to a child on the same provider and model. The child keeps its transcript. Mail to its name is its next turn and stops its running command and background jobs. A child tool call does not start a parent turn. The parent turn ending does not stop it. kill true does. Same tools except task. background true returns an id; pass child to poll. A named child edits this checkout. An unnamed implement child gets an isolated checkout in a Git repository; completed edits are reconciled and conflicts keep that checkout. Pass workspace isolated or shared to force one. Do not start a summonr process. research is always read-only.",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "assignment": {"type": "string"},
                 "access": {"type": "string", "enum": ["implement", "research"], "default": "implement"},
+                "workspace": {"type": "string", "enum": ["isolated", "shared"], "description": "Omit for a named child to edit this checkout, or for an unnamed child to get an isolated checkout. Pass isolated or shared to force one."},
                 "background": {"type": "boolean"},
                 "child": {"type": "string"},
                 "kill": {"type": "boolean"},
                 "agent": {"type": "string", "description": "name of an agent from <agents>"},
-                "name": {"type": "string", "description": "session name. mail to this name is the next turn"}
+                "name": {"type": "string", "description": "session name. mail to this name is the next turn"},
+                "effort": {"type": "string", "description": "child effort: minimal, low, medium, high, xhigh, or max. Omit to inherit the parent."}
             },
             "additionalProperties": false
         }),
@@ -120,4 +135,18 @@ impl<P: Provider> Loop<P> {
             .map(|spawned| spawned.reserved_tokens)
             .fold(0, u64::saturating_add)
     }
+}
+
+pub(super) fn current_image() -> String {
+    std::env::current_exe()
+        .map_or_else(|_| "unknown".to_string(), |path| path.display().to_string())
+}
+
+pub(super) fn running_place(workspace: &Path) -> String {
+    format!(
+        "workspace: {}\npid: {}\nimage: {}",
+        workspace.display(),
+        std::process::id(),
+        current_image()
+    )
 }

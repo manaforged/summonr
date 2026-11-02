@@ -4,7 +4,10 @@ use super::{App, canvas};
 use crate::AuthInfo;
 use crate::endpoint::State;
 use crate::tui::sigil_view::app::{Login, Note, matching, section};
-use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, Tab, alt, browser_columns, browser_layout, browser_split, group, overlay_list, pick, tab_strip};
+use crate::tui::sigil_view::ui::{
+    Bindings, Dialog, Hints, Key, Size, Tab, alt, browser_columns, browser_layout, browser_split,
+    group, overlay_list, pick, tab_strip,
+};
 
 mod detail;
 mod form;

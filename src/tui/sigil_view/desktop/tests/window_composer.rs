@@ -48,7 +48,12 @@ fn command_k_opens_the_command_list_and_command_p_a_file_mention() {
 }
 
 #[test]
-fn escape_closes_the_list_and_cancels_the_running_turn() {
+fn escape_closes_the_list_and_the_pane_without_cancelling_the_turn() {
+    if !in_window(
+        "window_composer::escape_closes_the_list_and_the_pane_without_cancelling_the_turn",
+    ) {
+        return;
+    }
     let listed = drive(
         |app| {
             app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
@@ -57,7 +62,7 @@ fn escape_closes_the_list_and_cancels_the_running_turn() {
         vec![named(Key::Escape, ModifiersState::empty())],
         |app| app.suggesting(),
     );
-    assert!(listed.sent.iter().any(|cmd| matches!(cmd, Cmd::Cancel)));
+    assert!(!listed.sent.iter().any(|cmd| matches!(cmd, Cmd::Cancel)));
     assert!(!listed.read);
     let paned = drive(
         |app| {
@@ -70,7 +75,7 @@ fn escape_closes_the_list_and_cancels_the_running_turn() {
         ],
         |app| app.layout.peek().secondary,
     );
-    assert!(paned.sent.iter().any(|cmd| matches!(cmd, Cmd::Cancel)));
+    assert!(!paned.sent.iter().any(|cmd| matches!(cmd, Cmd::Cancel)));
     assert_eq!(paned.read, None);
 }
 

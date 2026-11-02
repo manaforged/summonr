@@ -6,8 +6,8 @@ use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Rgba8;
 use sigil::prelude::Tone;
-use sigil::prelude::container;
 use sigil::prelude::Widget;
+use sigil::prelude::container;
 
 pub(super) fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
     let channel = |a: u8, b: u8| {

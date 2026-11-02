@@ -209,7 +209,30 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn toggle_agents(&self) {
-        self.model_mut(|model| model.agents_expanded = !model.agents_expanded);
+        self.model_mut(|model| model.agents_view = model.agents_view.toggle());
+        self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn agents_sheet_open(&self) -> sigil::reactive::Signal<bool> {
+        let model = self.model.clone();
+        sigil::reactive::derived(move || {
+            model.get().agents_view == crate::tui::sigil_view::model::AgentsView::Sheet
+        })
+    }
+
+    pub(in crate::tui::sigil_view) fn open_agents_split(&self) {
+        self.model_mut(|model| {
+            model.agents_view = crate::tui::sigil_view::model::AgentsView::Split;
+        });
+        self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn close_agents_sheet(&self) {
+        self.model_mut(|model| {
+            if model.agents_view == crate::tui::sigil_view::model::AgentsView::Sheet {
+                model.agents_view = crate::tui::sigil_view::model::AgentsView::Strip;
+            }
+        });
         self.refresh();
     }
 

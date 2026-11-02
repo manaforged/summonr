@@ -98,7 +98,7 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     }
     if children && matches!(mode, crate::WorkKind::Steps | crate::WorkKind::Goal) {
         parts.push(
-            "Spawn a child only for disjoint paths. An implement child gets an isolated checkout that shares the parent build cache. The parent runs the completion check."
+            "Name a child to edit this checkout. An unnamed implement child gets an isolated checkout that shares the parent build cache. Mail to the child's name is its next turn and stops its running command. Do not start a summonr process. The parent runs the completion check."
                 .to_string(),
         );
     }

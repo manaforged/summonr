@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde_json::json;
 
 use crate::support::http::{Mode, Remote};
@@ -17,6 +19,44 @@ pub(crate) fn a_call_with_no_reply_is_cancelled_at_the_timeout() {
         "{:?}",
         model.tool_results()
     );
+    let received = session.received("fixture1");
+    let call = calls(&received, "tools/call")[0]["id"].clone();
+    let cancelled = calls(&received, "notifications/cancelled");
+    assert_eq!(cancelled.len(), 1, "{received:?}");
+    assert_eq!(cancelled[0]["params"]["requestId"], call);
+}
+
+pub(crate) fn peer_mail_interrupts_a_pending_mcp_call() {
+    let session = Session::new();
+    let model = Model::start(vec![
+        Step::Call("fixture1__hang", json!({})),
+        Step::Text("stopped"),
+    ]);
+    let outcome = std::thread::scope(|scope| {
+        let sender = scope.spawn(|| {
+            let deadline =
+                std::time::Instant::now() + Duration::from_secs(crate::support::slow(10));
+            while calls(&session.received("fixture1"), "tools/call").is_empty() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "MCP call never started"
+                );
+                crate::support::pause(Duration::from_millis(10));
+            }
+            let (sent, output) = session.cli(&["mail", "send", "all", "stop now"]);
+            assert!(sent, "{output}");
+            assert!(output.contains("sent to 1 inbox(es)"), "{output}");
+        });
+        let outcome = session.run(
+            &model,
+            &session.server("fixture1", "timeout_secs = 30"),
+            &[],
+        );
+        sender.join().expect("peer sender");
+        outcome
+    });
+    assert_eq!(outcome.code, Some(0), "{}", outcome.stdout);
+    assert!(model.tool_results()[0].contains("MCP call interrupted by an incoming message"));
     let received = session.received("fixture1");
     let call = calls(&received, "tools/call")[0]["id"].clone();
     let cancelled = calls(&received, "notifications/cancelled");

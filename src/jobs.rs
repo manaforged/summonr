@@ -137,10 +137,7 @@ fn prune(workspace: &Path, record: &Record) -> bool {
     let cutoff =
         summonr_core::clock::now().saturating_sub(crate::limits::limits().job_retain().as_secs());
     let exit = exit_path(workspace, &record.id);
-    if check_id(&record.id).is_err()
-        || record.started >= cutoff
-        || (!exit.is_file() && alive_since(record.pid, record.started))
-    {
+    if check_id(&record.id).is_err() || record.started >= cutoff || !finished(workspace, record) {
         return false;
     }
     let root = dir(workspace);
@@ -154,6 +151,10 @@ fn prune(workspace: &Path, record: &Record) -> bool {
     true
 }
 
+pub(crate) fn finished(workspace: &Path, record: &Record) -> bool {
+    exit_path(workspace, &record.id).is_file() || !alive_since(record.pid, record.started)
+}
+
 pub(crate) fn status(workspace: &Path, record: &Record) -> Result<Status> {
     report(workspace, record, true)
 }
@@ -161,7 +162,12 @@ pub(crate) fn status(workspace: &Path, record: &Record) -> Result<Status> {
 fn report(workspace: &Path, record: &Record, list_children: bool) -> Result<Status> {
     let log = log_path(workspace, record);
     let exit = exit_path(workspace, &record.id);
-    let bytes = std::fs::metadata(&log).map(|meta| meta.len()).unwrap_or(0);
+    let meta = std::fs::metadata(&log).ok();
+    let bytes = meta.as_ref().map_or(0, std::fs::Metadata::len);
+    let quiet = meta
+        .and_then(|meta| meta.modified().ok())
+        .and_then(|modified| modified.elapsed().ok())
+        .map_or(0, |quiet| quiet.as_secs());
     let mut children = String::new();
     let state = if !exit.is_file() && alive_since(record.pid, record.started) {
         if list_children {
@@ -184,6 +190,11 @@ fn report(workspace: &Path, record: &Record, list_children: bool) -> Result<Stat
     } else {
         JobState::Dead
     };
+    let quiet = if state == JobState::Running && quiet >= crate::limits::limits().job_quiet_secs {
+        format!(", no new output for {}m", quiet / 60)
+    } else {
+        String::new()
+    };
     let preview = if log.is_file() {
         preview(&log, 8 * 1024)?
     } else {
@@ -191,7 +202,7 @@ fn report(workspace: &Path, record: &Record, list_children: bool) -> Result<Stat
     };
     Ok(Status {
         text: format!(
-            "job {id}\ncommand: {command}\nworkspace: {cwd}\npid: {pid}\nstate: {state}\n{children}log: {log} ({bytes} bytes)\n{preview}",
+            "job {id}\ncommand: {command}\nworkspace: {cwd}\npid: {pid}\nstate: {state}\n{children}log: {log} ({bytes} bytes{quiet})\n{preview}",
             id = record.id,
             command = record.command,
             cwd = record.workspace,

@@ -9,7 +9,7 @@ impl<P: Provider> Loop<P> {
     }
 }
 
-const STEER_NOTE: &str = "Harness: the user sent this while you were working. Answer it.";
+const STEER_NOTE: &str = "Harness: the user sent this while you were working. Fold it into the current work and keep going; answer in one line only if it asks a question.";
 
 pub(super) fn drain_steer(
     queue: &mut std::collections::VecDeque<UserInput>,

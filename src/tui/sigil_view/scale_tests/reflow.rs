@@ -24,7 +24,7 @@ fn frames(sizes: &[(u16, u16)]) -> String {
             text: ANSWER.to_owned(),
         })));
         app.refresh();
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(cols, rows);

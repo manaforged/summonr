@@ -135,8 +135,16 @@ fn an_unseated_session_shows_no_provider_instead_of_a_model() {
 
 #[test]
 fn a_meter_card_opens_on_a_click_and_closes_on_a_click_outside() {
-    use sigil::events::PointerPhase;
-    use sigil::terminal::{Screen, pointer};
+    use sigil::events::{Event, PointerPhase};
+    use sigil::terminal::{Screen, cell_point};
+    fn pointer(phase: PointerPhase, col: u16, row: u16) -> Event {
+        let at = cell_point(col, row);
+        match phase {
+            PointerPhase::Down => Event::pointer_down(at),
+            PointerPhase::Up => Event::pointer_up(at),
+            _ => Event::pointer_drag(at),
+        }
+    }
     let shown = sigil::reactive::Owner::scope("meter-card", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -146,7 +154,7 @@ fn a_meter_card_opens_on_a_click_and_closes_on_a_click_outside() {
             "started conversation".to_string(),
         )));
         app.refresh();
-        let mut host = sigil::Host::cells();
+        let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || super::super::view::root(tree));
         let mut screen = Screen::new(110, 30);
@@ -200,7 +208,7 @@ fn the_model_reads_in_the_same_ink_as_the_workspace_path() {
             .rposition(|line| line.contains(needle))
             .unwrap_or_else(|| panic!("{needle} on screen:\n{shown}"));
         let cells: Vec<String> = (0..grid.cols())
-            .filter_map(|col| grid.get(col, row).map(|cell| cell.text.to_string()))
+            .filter_map(|col| grid.get(col, row).map(|cell| cell.text().to_string()))
             .collect();
         let col = (0..cells.len())
             .find(|&col| cells[col..].concat().starts_with(needle) && !cells[col].is_empty())

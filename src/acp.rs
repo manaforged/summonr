@@ -242,6 +242,7 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
         | Event::Usage { .. }
         | Event::Unreported { .. }
         | Event::Mail { .. }
+        | Event::Steered { .. }
         | Event::Merged { .. }
         | Event::Delta { .. }
         | Event::Reasoning { .. }

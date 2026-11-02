@@ -1,4 +1,4 @@
-use sigil::kernel::TextBuilder;
+use sigil::prelude::TextBuilder;
 use sigil::prelude::Token;
 
 use crate::tui::sigil_view::text_style::TextStyle;
@@ -9,7 +9,7 @@ pub(in crate::tui::sigil_view) fn label(
     body: impl Into<String>,
     text_style: TextStyle,
 ) -> TextBuilder {
-    text_style.on(sigil::kernel::text(body.into()).nowrap())
+    text_style.on(sigil::prelude::text(body.into()).nowrap())
 }
 
 pub(super) fn fill(body: impl Into<String>, text_style: TextStyle) -> TextBuilder {

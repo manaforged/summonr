@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn peer_mail_interrupts_a_pending_provider_request() {
+async fn peer_mail_waits_for_the_reply_in_a_main_session() {
     let mail = tempfile::tempdir().unwrap();
     let sender = crate::mail::Mailbox::open(
         mail.path(),
@@ -22,7 +22,7 @@ async fn peer_mail_interrupts_a_pending_provider_request() {
     )
     .unwrap();
     let provider =
-        Scripted::new([Reply::Pending, Reply::Text("stopped")]).on_complete(move |round| {
+        Scripted::new([Reply::Text("first"), Reply::Text("stopped")]).on_complete(move |round| {
             if round == 0 {
                 sender.send("receiver", "stop the command").unwrap();
             }
@@ -37,7 +37,7 @@ async fn peer_mail_interrupts_a_pending_provider_request() {
         report
             .events
             .iter()
-            .any(|event| matches!(event, Event::Assistant { text } if text == "stopped"))
+            .any(|event| matches!(event, Event::Assistant { text } if text == "first"))
     );
     let sent = run.sent.lock().unwrap();
     assert_eq!(sent.len(), 2);

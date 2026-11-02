@@ -56,12 +56,12 @@ fn the_s_entrance_starts_immediately_and_builds_a_layer_every_120_ms() {
         let mut plate = super::super::input::glass([0, 0, 40, 24]);
         paint(&mut plate, [0, 0], Mark::Lines, elapsed);
         assert_eq!(
-            plate.cells.iter().any(|cell| cell.text != " "),
+            plate.cells.iter().any(|cell| cell.text() != " "),
             started,
             "S layers at {elapsed} ms"
         );
         assert_eq!(
-            plate.cells.iter().any(|cell| cell.text == "┏"),
+            plate.cells.iter().any(|cell| cell.text() == "┏"),
             face,
             "S face at {elapsed} ms"
         );

@@ -39,6 +39,7 @@ pub(crate) enum Fact {
         steering: usize,
         queued: usize,
     },
+    Pending(Vec<(bool, String)>),
     System(String),
     Outcome(String),
     Session(String),

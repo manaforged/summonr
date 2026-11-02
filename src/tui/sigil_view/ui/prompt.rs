@@ -94,7 +94,7 @@ impl Prompt {
             .chain((!hints.is_empty()).then_some(&hints))
         {
             band = band.child(
-                sigil::kernel::text(fit(line))
+                sigil::prelude::text(fit(line))
                     .nowrap()
                     .text_color(sigil::prelude::Token::OnSurface),
             );

@@ -1,5 +1,6 @@
 use super::*;
 use crate::tui::sigil_view::canvas::ink;
+use sigil::prelude::HostMode;
 use sigil::terminal::Ink;
 
 #[test]
@@ -66,7 +67,7 @@ fn applying_custom_colors_repaints_a_mounted_view_without_changing_the_theme_nam
         let app = App::new(context, workspace.path().to_owned(), commands);
         app.resize(80, 24);
         app.refresh();
-        let mut host = Host::cells();
+        let mut host = Host::new(HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(80, 24);

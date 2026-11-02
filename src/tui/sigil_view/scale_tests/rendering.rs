@@ -60,19 +60,19 @@ fn supported_chart_fences_render_bars_and_preserve_labels() {
             );
             let labels = (0..grid.rows())
                 .find(|&row| {
-                    grid.row(row).iter().any(|cell| cell.text == "P")
-                        && grid.row(row).iter().any(|cell| cell.text == "F")
+                    grid.row(row).iter().any(|cell| cell.text() == "P")
+                        && grid.row(row).iter().any(|cell| cell.text() == "F")
                 })
                 .expect("chart labels row");
             let row = grid.row(labels);
             let passed = row
                 .iter()
-                .position(|cell| cell.text == "P")
+                .position(|cell| cell.text() == "P")
                 .expect("Passed")
                 + 3;
             let failed = row
                 .iter()
-                .position(|cell| cell.text == "F")
+                .position(|cell| cell.text() == "F")
                 .expect("Failed")
                 + 3;
             let plot = grid.row(labels.checked_sub(7).expect("plot above labels"));

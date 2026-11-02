@@ -3,7 +3,7 @@ use crate::tui::{Fact, Intent};
 use tokio::sync::mpsc::unbounded_channel;
 
 fn render(app: &App, cols: u16, rows: u16) -> String {
-    let mut host = sigil::Host::cells();
+    let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
     let tree = app.clone();
     host.mount(move || root(tree));
     let mut screen = sigil::terminal::Screen::new(cols, rows);
@@ -193,7 +193,7 @@ fn a_server_prompt_line_is_sent_as_a_turn_and_an_unknown_command_is_not() {
 pub(super) fn splash_screen(cols: u16, rows: u16) -> (App, sigil::Host, sigil::terminal::Screen) {
     let app = splash_app(cols, rows);
     app.animate();
-    let mut host = sigil::Host::cells();
+    let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
     let tree = app.clone();
     host.mount(move || root(tree));
     (app, host, sigil::terminal::Screen::new(cols, rows))
@@ -266,17 +266,8 @@ fn a_covering_overlay_pauses_the_splash_clock() {
 }
 
 fn named(key: sigil::prelude::Key) -> sigil::events::Event {
-    use sigil::events::{
-        KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey,
-    };
-    sigil::events::Event::Key(KeyEvent::new(KeyEventInit {
-        key: LogicalKey::named(key),
-        physical: PhysicalKey::Unidentified,
-        modifiers: ModifiersState::empty(),
-        repeat: false,
-        phase: KeyPhase::Down,
-        text: None,
-    }))
+    use sigil::events::{KeyEvent, KeyPhase, LogicalKey, ModifiersState, PhysicalKey};
+    sigil::events::Event::key(LogicalKey::named(key), KeyPhase::Down)
 }
 
 #[test]
@@ -314,7 +305,7 @@ fn a_long_workdir_on_a_narrow_splash_stays_on_its_row() {
         let lines: Vec<String> = plate
             .cells
             .chunks(usize::from(plate.area[2]))
-            .map(|row| row.iter().map(|cell| cell.text.to_string()).collect())
+            .map(|row| row.iter().map(|cell| cell.text().to_string()).collect())
             .collect();
         let at = lines
             .iter()
@@ -340,7 +331,7 @@ fn a_start_without_the_splash_reveals_without_a_panic() {
         app.splash_revealed.set(false);
         app.resize(80, 24);
         app.animate();
-        let mut host = sigil::Host::cells();
+        let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = sigil::terminal::Screen::new(80, 24);

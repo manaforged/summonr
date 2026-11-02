@@ -64,6 +64,33 @@ fn an_image_pasted_during_a_turn_shows_as_attached() {
 }
 
 #[test]
+fn tab_queues_a_running_draft_without_a_transcript_entry() {
+    sigil::reactive::Owner::scope("tab-queue", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, mut sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+        app.replace("after this".to_string());
+        assert!(app.queue_draft());
+        let mut queued = None;
+        while let Ok(command) = sent.try_recv() {
+            if let Cmd::Queue(input) = command {
+                queued = Some(input.text);
+            }
+        }
+        assert_eq!(queued.as_deref(), Some("after this"));
+        assert!(app.draft.peek().is_empty());
+        assert!(
+            !app.model
+                .get()
+                .entries
+                .iter()
+                .any(|entry| matches!(entry, crate::tui::sigil_view::model::Entry::User(_)))
+        );
+    });
+}
+
+#[test]
 fn steering_an_image_only_draft_goes_into_the_running_turn() {
     sigil::reactive::Owner::scope("attach-queue", || {
         let workspace = tempfile::tempdir().unwrap();
@@ -90,6 +117,8 @@ fn an_attached_image_keeps_its_info_band_during_active_and_queued_turns() {
                 steering: 0,
                 queued,
             }));
+            let rows = (0..queued).map(|_| (false, "later".to_string())).collect();
+            app.update(Msg::Fact(Fact::Pending(rows)));
             paste_png(app);
         });
         let shown = grid.text();
@@ -99,13 +128,13 @@ fn an_attached_image_keeps_its_info_band_during_active_and_queued_turns() {
             .expect("attachment notice");
         let cell = (0..grid.cols())
             .filter_map(|col| grid.get(col, row))
-            .find(|cell| cell.text == "1")
+            .find(|cell| cell.text() == "1")
             .expect("image count cell");
         let caption = shown.lines().nth(row).expect("notice row").trim();
         if state != State::Idle {
             assert!(shown.contains("thinking"), "{shown}");
             if queued > 0 {
-                assert!(shown.contains("1 queued"), "{shown}");
+                assert!(shown.contains("1 waiting"), "{shown}");
             }
         }
         (cell.fg, cell.bg, caption.to_owned())

@@ -1,4 +1,5 @@
-use sigil::layout::Dimension;
+use sigil::prelude::Dimension;
+use sigil::prelude::Widget;
 use sigil::prelude::{
     AlignItems, JustifyContent, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Radius,
     Token, button, container, markdown, signal,
@@ -32,7 +33,7 @@ pub(super) fn user(body: String) -> NodeBuilder {
                 )
                 .bg(Token::SurfaceHover)
                 .rounded(Radius::Lg)
-                .child(TextStyle::sm(Token::Gray12).on(sigil::kernel::text(body))),
+                .child(TextStyle::sm(Token::Gray12).on(sigil::prelude::text(body))),
         )
 }
 
@@ -145,7 +146,7 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
         column = column.child(
             TextStyle::sm(Token::Gray10)
                 .italic()
-                .on(sigil::kernel::text(body.to_string()))
+                .on(sigil::prelude::text(body.to_string()))
                 .line_height_px(LINE),
         );
     }
@@ -155,7 +156,7 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
 pub(super) fn quiet(body: String) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
-        .child(TextStyle::xs(Token::Gray10).on(sigil::kernel::text(body)))
+        .child(TextStyle::xs(Token::Gray10).on(sigil::prelude::text(body)))
 }
 
 pub(super) fn error(reason: String) -> NodeBuilder {
@@ -168,7 +169,7 @@ pub(super) fn error(reason: String) -> NodeBuilder {
                 .align_items(AlignItems::Start),
         )
         .child(label("⚠", TextStyle::xs(Token::Error11)))
-        .child(TextStyle::xs(Token::Error11).on(sigil::kernel::text(reason)))
+        .child(TextStyle::xs(Token::Error11).on(sigil::prelude::text(reason)))
 }
 
 #[cfg(test)]

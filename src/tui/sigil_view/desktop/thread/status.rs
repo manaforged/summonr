@@ -1,4 +1,5 @@
 use super::*;
+use sigil::prelude::Widget;
 use sigil::prelude::{Radius, progress, signal};
 
 use crate::tui::sigil_view::speed::Speed;

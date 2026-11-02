@@ -47,9 +47,10 @@ impl<P: Provider> Loop<P> {
         let dialog = shared.open_dialog();
         let _blocked = self.herdr.blocked(status);
         self.push_event(events, emit, open(dialog))?;
+        let interrupts = self.input_interrupts();
         let input = tokio::select! {
             biased;
-            result = self.input_wait() => {
+            result = self.input_wait(), if interrupts => {
                 result?;
                 None
             }

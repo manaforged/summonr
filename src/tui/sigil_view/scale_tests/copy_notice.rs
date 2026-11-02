@@ -3,8 +3,9 @@ use std::rc::Rc;
 
 use sigil::Host;
 use sigil::clipboard::{Clipboard, Delivery};
+use sigil::events::Event as SigilEvent;
 use sigil::events::PointerPhase;
-use sigil::terminal::{Screen, pointer};
+use sigil::terminal::{Screen, cell_point};
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
@@ -42,7 +43,7 @@ fn dragging_across_a_reply_copies_it_and_says_so() {
             text: REPLY.to_owned(),
         })));
         app.refresh();
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
@@ -58,11 +59,11 @@ fn dragging_across_a_reply_copies_it_and_says_so() {
         let end = start + REPLY.len() as u16 - 1;
         let row = row as u16;
         for event in [
-            pointer(PointerPhase::Move, start, row),
-            pointer(PointerPhase::Down, start, row),
-            pointer(PointerPhase::Move, start + 5, row),
-            pointer(PointerPhase::Move, end, row),
-            pointer(PointerPhase::Up, end, row),
+            SigilEvent::pointer_drag(cell_point(start, row)),
+            SigilEvent::pointer_down(cell_point(start, row)),
+            SigilEvent::pointer_drag(cell_point(start + 5, row)),
+            SigilEvent::pointer_drag(cell_point(end, row)),
+            SigilEvent::pointer_up(cell_point(end, row)),
         ] {
             screen.frame(&mut host, [event], (100, 30)).unwrap();
         }

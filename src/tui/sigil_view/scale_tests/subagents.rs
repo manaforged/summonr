@@ -223,7 +223,7 @@ fn a_spawn_drawn_before_its_subagent_exists_redraws_as_the_subagent_line() {
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(120, 30);
         app.update(Msg::Fact(Fact::Busy(Some(crate::tui::Activity::Turn))));
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(120, 30);

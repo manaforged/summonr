@@ -49,7 +49,7 @@ pub(in crate::tui::sigil_view) fn strip(app: &App, active: Tab) -> NodeBuilder {
     if canvas::is_window() {
         return line;
     }
-    line.child(TextStyle::xs(Token::Gray9).on(sigil::kernel::text(TAB_HINT).nowrap()))
+    line.child(TextStyle::xs(Token::Gray9).on(sigil::prelude::text(TAB_HINT).nowrap()))
 }
 
 const TAB_HINT: &str = "←/→";

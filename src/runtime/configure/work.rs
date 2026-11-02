@@ -114,6 +114,8 @@ impl<P: Provider> Loop<P> {
         self.session.abort(abort, None)?;
         if abort.code.child_scope() == crate::child::ChildScope::All {
             self.tools.stop_jobs()?;
+        } else {
+            self.tools.stop_detached(self.turn_started)?;
         }
         self.emit_records(&mut Vec::new(), &mut emit)?;
         self.sync_usage(&mut emit);

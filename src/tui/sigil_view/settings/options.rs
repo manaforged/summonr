@@ -134,7 +134,7 @@ fn columns(app: &App, rows: &[Row], items: &[Item], selected: usize, width: f32)
     let count = column_count(width).min(sections(items).len().max(1));
     let mut line = container().layout(
         LayoutStyle::flex_row()
-            .fill()
+            .fill_width()
             .gap(COLUMN_GAP)
             .align_items(AlignItems::Start),
     );

@@ -32,7 +32,7 @@ pub(super) fn tab_shortcuts(node: NodeBuilder, app: &App) -> NodeBuilder {
     node.key_capture(
         Shortcut::new(Key::Tab, ModifiersState::empty()),
         move |event| {
-            if complete.overlay_tab(1) || complete.complete() {
+            if complete.overlay_tab(1) || complete.complete() || complete.queue_draft() {
                 event.stop_propagation();
             } else if !canvas::is_window() {
                 event.stop_propagation();

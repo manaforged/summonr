@@ -1,8 +1,8 @@
-use sigil::layout::Dimension;
+use sigil::prelude::Dimension;
 use sigil::prelude::Paint;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Tone, button, chip, container, list_row,
-    node, spacer, text_edit,
+    AlignItems, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, Tone, button, chip, container,
+    list_row, node, spacer, text_edit,
 };
 
 use std::collections::BTreeSet;
@@ -45,7 +45,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             }));
         let Some((_, result)) = model.patch.as_ref().filter(|(seen, _)| *seen == path) else {
             return column.child(
-                sigil::kernel::text("loading…")
+                sigil::prelude::text("loading…")
                     .nowrap()
                     .font_size(12.0)
                     .text_color(sigil::prelude::Token::Gray11),
@@ -55,7 +55,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             Ok(text) => text,
             Err(error) => {
                 return column.child(
-                    sigil::kernel::text(error.clone())
+                    sigil::prelude::text(error.clone())
                         .wrap()
                         .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
                         .font_size(12.0)
@@ -66,7 +66,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
         let hunks = app.hunks();
         if text.trim().is_empty() {
             column = column.child(
-                sigil::kernel::text("no changes left in this file")
+                sigil::prelude::text("no changes left in this file")
                     .nowrap()
                     .font_size(12.0)
                     .text_color(sigil::prelude::Token::Gray11),
@@ -92,7 +92,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                 .text(&model.prefs.hotkeys)
         );
         column = column.child(
-            sigil::kernel::text(notes)
+            sigil::prelude::text(notes)
                 .wrap()
                 .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
                 .font_size(12.0)
@@ -209,7 +209,7 @@ fn undo_rows(
         column = column.child(
             actions()
                 .child(
-                    sigil::kernel::text(label)
+                    sigil::prelude::text(label)
                         .nowrap()
                         .ellipsize()
                         .layout(
@@ -278,7 +278,7 @@ fn hunk_view(
     let mut card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
         .child(context_menu(
-            list_row(focused, hunk.header.clone(), String::new())
+            list_row(focused, hunk.header.clone(), ListRowSlots::default())
                 .layout(
                     LayoutStyle::flex_row()
                         .fill_width()
@@ -321,7 +321,7 @@ fn hunk_view(
                 .rounded(sigil::prelude::Radius::Md)
         }));
         card = card.child(
-            sigil::kernel::text(format!(
+            sigil::prelude::text(format!(
                 "{} · sent with your next prompt",
                 Hints::new()
                     .key(Key::Enter, "save")
@@ -335,7 +335,7 @@ fn hunk_view(
         );
     } else if let Some(comment) = note.and_then(|note| note.comment) {
         card = card.child(
-            sigil::kernel::text(format!("note: {comment}"))
+            sigil::prelude::text(format!("note: {comment}"))
                 .wrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Info11)

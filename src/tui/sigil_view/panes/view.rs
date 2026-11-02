@@ -1,6 +1,6 @@
-use sigil::kernel::ObjectFit;
-use sigil::layout::Dimension;
-use sigil::layout::Overflow;
+use sigil::prelude::Dimension;
+use sigil::prelude::ObjectFit;
+use sigil::prelude::Overflow;
 use sigil::prelude::{
     AlignItems, LayoutStyle, NodeBuilder, Paint, button, container, image, node, text_edit,
 };
@@ -35,7 +35,7 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                         .overflow_x(Overflow::Hidden),
                 )
                 .child(
-                    sigil::kernel::text(view.path.clone())
+                    sigil::prelude::text(view.path.clone())
                         .nowrap()
                         .font_size(14.0)
                         .font_weight(500)
@@ -95,13 +95,13 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
         }
         body = body.child(
             row.child(
-                sigil::kernel::text(number.to_string())
+                sigil::prelude::text(number.to_string())
                     .nowrap()
                     .font_size(12.0)
                     .text_color(sigil::prelude::Token::Gray11),
             )
             .child(
-                sigil::kernel::text(line.replace('\t', "    "))
+                sigil::prelude::text(line.replace('\t', "    "))
                     .nowrap()
                     .ellipsize()
                     .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))

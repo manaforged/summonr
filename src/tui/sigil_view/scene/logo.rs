@@ -196,7 +196,7 @@ const SHADE: f32 = 0.45;
 
 fn solid(plate: &mut Plate, at: [u16; 2], ink: Rgba8) {
     if let Some(cell) = plate.cell(at) {
-        cell.text = " ".into();
+        cell.set_text(" ");
         cell.bg = super::ink(ink);
     }
 }
@@ -355,10 +355,7 @@ fn runs(cells: &[Cell]) -> Vec<Run> {
         found.push(Run {
             start,
             width: end - start,
-            text: cells[start..end]
-                .iter()
-                .map(|cell| cell.text.as_str())
-                .collect(),
+            text: cells[start..end].iter().map(|cell| cell.text()).collect(),
             surface: shown(cell.bg, palette().base),
             ink: shown(cell.fg, palette().text),
             bold: cell.bold,
@@ -378,7 +375,7 @@ fn node(run: &Run) -> NodeBuilder {
         )
         .bg(run.surface)
         .child(
-            sigil::kernel::text(run.text.clone())
+            sigil::prelude::text(run.text.clone())
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .font_family(sigil::prelude::FontFamily::Mono)

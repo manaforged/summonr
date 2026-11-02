@@ -17,8 +17,8 @@ fn splash_stars_hold_still_and_only_twinkle() {
         cells
             .iter()
             .enumerate()
-            .filter(|(_, cell)| star(&cell.text))
-            .map(|(at, cell)| (at, cell.text.clone()))
+            .filter(|(_, cell)| star(cell.text()))
+            .map(|(at, cell)| (at, cell.text().to_owned()))
             .collect::<Vec<_>>()
     };
     let mut twinkled = 0;
@@ -54,7 +54,7 @@ fn a_splash_tick_redraws_only_its_moving_cells() {
 fn splash_has_at_most_two_bright_points_even_with_a_meteor_on_a_large_screen() {
     for tick in 0..880 {
         let cells = super::space(200, 60, tick, 0);
-        let bright = cells.iter().filter(|cell| cell.text == "✦").count();
+        let bright = cells.iter().filter(|cell| cell.text() == "✦").count();
         assert!(bright <= 2, "tick {tick}: {bright} simultaneous sparkles");
     }
 }
@@ -64,7 +64,7 @@ fn splash_meteor_is_a_fading_streak() {
     let head = |tick| {
         super::moving(96, 28, tick as f64, 0)
             .iter()
-            .filter(|spot| spot.cell.text == "✦" && spot.cell.bold)
+            .filter(|spot| spot.cell.text() == "✦" && spot.cell.bold)
             .count()
     };
     assert_eq!(head(200), 0, "a meteor outside its flight");
@@ -85,7 +85,7 @@ fn each_launch_draws_a_different_galaxy() {
     for seed in [1, 2, 3] {
         let flying = super::space(96, 28, 24, seed);
         assert_eq!(
-            flying.iter().filter(|cell| cell.text == "✦").count(),
+            flying.iter().filter(|cell| cell.text() == "✦").count(),
             1,
             "launch {seed} has no meteor head"
         );
@@ -99,7 +99,7 @@ fn splash_has_one_brief_sparkle_every_two_seconds_with_quiet_gaps() {
     let mut lit_frames = 0;
     for tick in 120..420 {
         let cells = super::space(200, 60, tick, 0);
-        let bright = cells.iter().filter(|cell| cell.text == "✦").count();
+        let bright = cells.iter().filter(|cell| cell.text() == "✦").count();
         assert!(bright <= 1, "tick {tick}: {bright} stationary sparkles");
         if bright == 1 {
             lit_frames += 1;
@@ -130,7 +130,7 @@ fn the_stars_crowd_the_band_and_range_in_brightness() {
                 continue;
             };
             tally[0] += 1;
-            tally[1] += u32::from(star(&cell.text));
+            tally[1] += u32::from(star(cell.text()));
         }
         let density = |[cells, stars]: [u32; 2]| stars as f32 / cells.max(1) as f32;
         assert!(
@@ -139,8 +139,8 @@ fn the_stars_crowd_the_band_and_range_in_brightness() {
             density(band),
             density(open)
         );
-        let count = |glyph: &str| sky.iter().filter(|cell| cell.text == glyph).count();
-        let faint = sky.iter().filter(|cell| braille(&cell.text)).count();
+        let count = |glyph: &str| sky.iter().filter(|cell| cell.text() == glyph).count();
+        let faint = sky.iter().filter(|cell| braille(cell.text())).count();
         let bright = count("·") + count("•");
         assert!(
             faint >= 5 * bright && bright >= 10 && count("•") >= 1,
@@ -184,7 +184,7 @@ fn the_galaxy_dust_paints_in_few_colours_and_long_runs() {
     }
     let stars = super::space(cols, rows, 30, 0)
         .iter()
-        .filter(|cell| braille(&cell.text))
+        .filter(|cell| braille(cell.text()))
         .count();
     assert!(stars >= 150, "only {stars} stars");
 }

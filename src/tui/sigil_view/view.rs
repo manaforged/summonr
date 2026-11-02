@@ -8,7 +8,6 @@ pub(super) use super::theme::Palette;
 
 use super::app::{App, Overlay};
 use super::scene;
-use sigil::layout::Position;
 use sigil::prelude::Key;
 use sigil::prelude::KeyEvent;
 use sigil::prelude::LayoutStyle;
@@ -16,6 +15,7 @@ use sigil::prelude::LogicalKey;
 use sigil::prelude::ModifiersState;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
+use sigil::prelude::Position;
 use sigil::prelude::Rgba8;
 use sigil::prelude::Role;
 use sigil::prelude::Shortcut;

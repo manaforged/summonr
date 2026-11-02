@@ -2,6 +2,7 @@ use super::*;
 use crate::tui::Fact;
 use crate::tui::sigil_view::view::root;
 use sigil::Host;
+use sigil::prelude::HostMode;
 use sigil::terminal::Screen;
 
 #[test]
@@ -12,7 +13,7 @@ fn bracketed_paste_normalizes_folds_and_keeps_shift_enter_in_the_editor() {
         let app = App::new(profile::info(), workspace.path().to_owned(), commands);
         assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
         app.resize(100, 30);
-        let mut host = Host::cells();
+        let mut host = Host::new(HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
@@ -21,7 +22,7 @@ fn bracketed_paste_normalizes_folds_and_keeps_shift_enter_in_the_editor() {
                 .frame(&mut host, [], (100, 30))
                 .expect("focus composer");
         }
-        let mut events = vec![sigil::terminal::paste("first\r\nsecond\rthird")];
+        let mut events = vec![sigil::events::Event::paste("first\r\nsecond\rthird")];
         app.intake(&mut events);
         screen
             .frame(&mut host, events, (100, 30))
@@ -41,7 +42,7 @@ fn bracketed_paste_normalizes_folds_and_keeps_shift_enter_in_the_editor() {
         assert_eq!(app.draft.peek(), "first\nsecond\nthird\n");
         assert!(sent.try_recv().is_err(), "modified enter submitted");
         let long = "fold this line\r\n".repeat(crate::limits::limits().paste_fold_lines);
-        let mut events = vec![sigil::terminal::paste(&long)];
+        let mut events = vec![sigil::events::Event::paste(&long)];
         app.intake(&mut events);
         assert!(events.is_empty(), "long paste bypassed folding");
         assert!(app.draft.peek().contains("[pasted "));
@@ -68,7 +69,10 @@ fn bracketed_image_paths_attach_without_submitting_and_secret_pastes_stay_privat
             crossterm::event::KeyModifiers::NONE,
         ))
         .expect("map enter");
-        let mut events = vec![sigil::terminal::paste(&path.display().to_string()), enter];
+        let mut events = vec![
+            sigil::events::Event::paste(&path.display().to_string()),
+            enter,
+        ];
         app.intake(&mut events);
         assert!(events.is_empty());
         assert_eq!(app.attached.peek(), 1);
@@ -76,7 +80,7 @@ fn bracketed_image_paths_attach_without_submitting_and_secret_pastes_stay_privat
         assert!(sent.try_recv().is_err());
         let (request, answer) = crate::askpass::request("Fixture password:");
         app.secret_open(request);
-        let mut events = vec![sigil::terminal::paste("fixture-password\r\nignored")];
+        let mut events = vec![sigil::events::Event::paste("fixture-password\r\nignored")];
         app.intake(&mut events);
         assert!(events.is_empty());
         assert!(app.draft.peek().is_empty());

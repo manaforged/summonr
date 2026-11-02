@@ -9,6 +9,7 @@ use crate::tui::Activity;
 
 mod widget;
 
+pub(in crate::tui::sigil_view) use widget::pending_rows;
 pub(super) use widget::widget;
 
 pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Option<String> {
@@ -17,9 +18,9 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Optio
             Some((name, arg)) => format!("{name} {arg}").trim_end().to_string(),
             None => activity.label().to_string(),
         };
-        let waiting = match model.queued.1 {
-            0 => String::new(),
-            n => format!(" · {n} queued · ↑ edits"),
+        let waiting = match model.pending.len() {
+            0 => " · tab queues".to_string(),
+            n => format!(" · {n} waiting · ↑ edits"),
         };
         let now = Instant::now();
         let speed = model

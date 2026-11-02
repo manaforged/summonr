@@ -41,7 +41,7 @@ fn a_long_subagent_title_leaves_its_share_to_the_rest_of_the_row() {
         running(app, &long)
     }));
     assert!(narrow.trim_end().ends_with("0s · 0 tok"), "{narrow}");
-    assert!(narrow.contains("· Run hyperfine ./summ…"), "{narrow}");
+    assert!(narrow.contains("· Run hyperfine ./su"), "{narrow}");
 }
 
 #[test]

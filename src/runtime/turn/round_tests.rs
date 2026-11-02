@@ -44,6 +44,7 @@ fn turn_prompts_summarize_tasks_and_show_background_job_state() {
                 background: true,
                 session: Some(driver.id().to_string()),
                 log: None,
+                detached: false,
             },
         )
         .unwrap();
@@ -509,6 +510,7 @@ async fn a_finished_turn_leaves_its_failed_jobs_out_of_the_next_turn() {
             background: true,
             session: Some(loop_.session_id()),
             log: None,
+            detached: false,
         },
     )
     .unwrap();

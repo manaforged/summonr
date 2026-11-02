@@ -37,14 +37,16 @@ pub(super) fn ink(index: usize) -> Rgba8 {
 }
 
 pub(super) fn colored(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::block().shrink(0.0))
-        .child(sigil::kernel::text(value.into()).nowrap().text_color(color))
+    container().layout(LayoutStyle::block().shrink(0.0)).child(
+        sigil::prelude::text(value.into())
+            .nowrap()
+            .text_color(color),
+    )
 }
 
 pub(super) fn strong(value: impl Into<String>) -> NodeBuilder {
     container().child(
-        sigil::kernel::text(value.into())
+        sigil::prelude::text(value.into())
             .nowrap()
             .font_weight(700)
             .text_color(palette().text),
@@ -65,7 +67,7 @@ fn row(children: Vec<NodeBuilder>) -> NodeBuilder {
 fn wrapped(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
-        .child(sigil::kernel::text(value.into()).wrap().text_color(color))
+        .child(sigil::prelude::text(value.into()).wrap().text_color(color))
 }
 
 fn column(children: Vec<NodeBuilder>) -> NodeBuilder {

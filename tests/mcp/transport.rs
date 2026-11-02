@@ -26,7 +26,7 @@ pub(crate) fn a_call_with_no_reply_is_cancelled_at_the_timeout() {
     assert_eq!(cancelled[0]["params"]["requestId"], call);
 }
 
-pub(crate) fn peer_mail_interrupts_a_pending_mcp_call() {
+pub(crate) fn peer_mail_waits_for_a_pending_mcp_call() {
     let session = Session::new();
     let model = Model::start(vec![
         Step::Call("fixture1__hang", json!({})),
@@ -47,21 +47,12 @@ pub(crate) fn peer_mail_interrupts_a_pending_mcp_call() {
             assert!(sent, "{output}");
             assert!(output.contains("sent to 1 inbox(es)"), "{output}");
         });
-        let outcome = session.run(
-            &model,
-            &session.server("fixture1", "timeout_secs = 30"),
-            &[],
-        );
+        let outcome = session.run(&model, &session.server("fixture1", "timeout_secs = 1"), &[]);
         sender.join().expect("peer sender");
         outcome
     });
     assert_eq!(outcome.code, Some(0), "{}", outcome.stdout);
-    assert!(model.tool_results()[0].contains("MCP call interrupted by an incoming message"));
-    let received = session.received("fixture1");
-    let call = calls(&received, "tools/call")[0]["id"].clone();
-    let cancelled = calls(&received, "notifications/cancelled");
-    assert_eq!(cancelled.len(), 1, "{received:?}");
-    assert_eq!(cancelled[0]["params"]["requestId"], call);
+    assert!(!model.tool_results()[0].contains("interrupted by an incoming message"));
 }
 
 pub(crate) fn a_timed_out_reply_does_not_break_the_next_call() {

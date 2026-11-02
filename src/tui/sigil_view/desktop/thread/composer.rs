@@ -1,6 +1,7 @@
 use super::*;
 use crate::tui::sigil_view::view::editor;
 use sigil::prelude::Radius;
+use sigil::prelude::Widget;
 
 const PLACEHOLDER: &str = "Ask anything; @ attaches a file, / runs a command";
 const EDITING: &str = "Editing the file: ctrl+s saves, esc leaves";
@@ -43,6 +44,10 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                 .bg(Token::SurfaceSubtle)
                 .border_w(1)
                 .border_color(Token::Border)
+                .child(chat::pending_rows(
+                    &app,
+                    (COLUMN / chat::canvas::cell().w) as usize,
+                ))
                 .child(mentions::chips(app.clone(), editing))
                 .child(
                     editor(&app, editing)
@@ -223,7 +228,7 @@ mod tests {
                 app.update(Msg::Fact(Fact::Busy(Some(crate::tui::Activity::Turn))));
             }
             app.refresh();
-            let mut host = Host::new();
+            let mut host = Host::new(sigil::prelude::HostMode::Pixel);
             let tree = app.clone();
             host.mount(move || super::composer(tree, false));
             host.frame((1200.0, 800.0), 1.0, FrameHooks::default());
@@ -232,7 +237,7 @@ mod tests {
                 .commands
                 .into_iter()
                 .filter_map(|command| match command {
-                    SceneCommand::GlyphRun(draw) => Some(draw.run.text.clone()),
+                    SceneCommand::GlyphRun(draw) => Some(draw.text.clone()),
                     _ => None,
                 })
                 .collect()

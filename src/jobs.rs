@@ -22,6 +22,8 @@ pub(crate) struct Record {
     pub session: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub detached: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -258,6 +260,7 @@ pub(crate) fn stamp(
         background,
         session,
         log: None,
+        detached: false,
     })
 }
 

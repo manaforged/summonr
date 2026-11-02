@@ -16,10 +16,11 @@ pub(super) use super::panes;
 pub(super) use super::speed::Speed;
 pub(super) use super::suggest;
 pub(super) use composer::busy_status;
+pub(in crate::tui::sigil_view) use composer::pending_rows;
 pub(in crate::tui::sigil_view) use footer::Target;
 pub(super) use sigil::app::cell_width;
 #[cfg(feature = "gui")]
 pub(super) use surface::transcript;
 pub(super) use surface::{inline_layer, layer};
 
-const ACTIVITY_SHARE: sigil::layout::Dimension = sigil::layout::Dimension::Percent(0.4);
+const ACTIVITY_SHARE: sigil::prelude::Dimension = sigil::prelude::Dimension::Percent(0.4);

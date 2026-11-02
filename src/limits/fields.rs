@@ -42,6 +42,7 @@ table! {
     judge_turns: bool,
     job_quiet_secs: u64,
     prompt_sessions: usize,
+    queue_rows: usize,
     retry_limit: u32,
     retry_base_ms: u64 => retry_base(millis),
     retry_max_ms: u64 => retry_max(millis),

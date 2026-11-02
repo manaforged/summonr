@@ -367,9 +367,12 @@ impl<P: Provider> Loop<P> {
         }
         if !waits || self.spawned.is_empty() {
             let input = self.input_wait();
+            let stops =
+                crate::tools::Builtin::is(&call.function.name, crate::tools::Builtin::RunCommand)
+                    && (waits || self.input_interrupts());
             let output = tokio::select! {
                 biased;
-                result = input, if crate::tools::Builtin::is(&call.function.name, crate::tools::Builtin::RunCommand) => {
+                result = input, if stops => {
                     result?;
                     Err(Error::Tool(self.steered("interrupted by an incoming message; any completed changes remain")))
                 },

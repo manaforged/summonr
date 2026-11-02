@@ -1,7 +1,6 @@
 use sigil::Host;
 use sigil::events::{
-    ModifiersState, MouseButton, MouseButtons, PointerEvent, PointerEventInit, PointerKind,
-    PointerPhase, Event,
+    Event, ModifiersState, MouseButton, MouseButtons, PointerEvent, PointerKind, PointerPhase,
 };
 use sigil::geometry::Point;
 use sigil::terminal::Screen;
@@ -14,19 +13,13 @@ use super::busy_info;
 use crate::tui::{Fact, Msg};
 
 fn right(phase: PointerPhase, x: f32, y: f32) -> Event {
-    Event::Pointer(PointerEvent::new(PointerEventInit {
-        position: Point::new(x, y),
-        delta: Point::new(0.0, 0.0),
-        kind: PointerKind::Mouse,
-        button: Some(MouseButton::Right),
-        buttons: if phase == PointerPhase::Down {
+    Event::pointer(phase, Point::new(x, y))
+        .button(Some(MouseButton::Right))
+        .buttons(if phase == PointerPhase::Down {
             MouseButtons::RIGHT
         } else {
             MouseButtons::EMPTY
-        },
-        modifiers: ModifiersState::empty(),
-        phase,
-    }))
+        })
 }
 
 #[test]
@@ -39,7 +32,7 @@ fn a_right_click_on_a_file_row_opens_its_menu_on_screen() {
         app.update(Msg::Fact(Fact::Files(vec!["README.md".to_owned()])));
         app.toggle_pane(Pane::Files);
         app.refresh();
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(120, 30);

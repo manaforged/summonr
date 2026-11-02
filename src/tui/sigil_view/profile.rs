@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use sigil::Host;
 use sigil::profile;
-use sigil::terminal::{ColorDepth, Grid, Screen, render};
+use sigil::terminal::{ColorDepth, Grid, Screen};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::block_in_place;
@@ -153,7 +153,7 @@ async fn capture(options: &Options) -> Result<()> {
     }
     scenes::seed(&app, options.scenario);
     app.refresh();
-    let mut host = Host::cells();
+    let mut host = Host::new(sigil::prelude::HostMode::Cell);
     let tree = app.clone();
     host.mount(move || root(tree));
     let mut screen = Screen::new(options.cols, options.rows);
@@ -180,7 +180,7 @@ async fn capture(options: &Options) -> Result<()> {
     #[cfg(feature = "gui")]
     save_image(grid, &host, options)?;
     let mut ansi = Vec::new();
-    render(&mut ansi, &Grid::new(0, 0), grid, ColorDepth::Truecolor)
+    Host::ansi(&mut ansi, &Grid::new(0, 0), grid, ColorDepth::Truecolor)
         .map_err(|error| Error::Tool(error.to_string()))?;
     write(
         &options.output.with_extension("ansi"),
@@ -230,7 +230,9 @@ fn paint(
             .map_err(|error| Error::Tool(error.to_string()))?;
     }
     let _phase = profile::span(profile::Phase::TuiWrite);
-    screen.flush(output).map_err(|error| Error::Tool(error.to_string()))?;
+    screen
+        .flush(output)
+        .map_err(|error| Error::Tool(error.to_string()))?;
     Ok(())
 }
 

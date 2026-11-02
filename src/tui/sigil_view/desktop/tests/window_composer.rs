@@ -1,6 +1,6 @@
 use sigil::events::ModifiersState;
-use sigil::kernel::Role;
 use sigil::prelude::Key;
+use sigil::prelude::Role;
 
 use super::super::Pane;
 use super::harness::{changed, command, drive, graded, named, settings, unconfigured};
@@ -48,9 +48,9 @@ fn command_k_opens_the_command_list_and_command_p_a_file_mention() {
 }
 
 #[test]
-fn escape_closes_the_list_and_the_pane_without_cancelling_the_turn() {
+fn escape_closes_the_list_then_cancels_the_turn_and_keeps_the_pane() {
     if !in_window(
-        "window_composer::escape_closes_the_list_and_the_pane_without_cancelling_the_turn",
+        "window_composer::escape_closes_the_list_then_cancels_the_turn_and_keeps_the_pane",
     ) {
         return;
     }
@@ -69,14 +69,11 @@ fn escape_closes_the_list_and_the_pane_without_cancelling_the_turn() {
             app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
             app.toggle_pane(Pane::Files);
         },
-        vec![
-            named(Key::Escape, ModifiersState::empty()),
-            named(Key::Escape, ModifiersState::empty()),
-        ],
+        vec![named(Key::Escape, ModifiersState::empty())],
         |app| app.layout.peek().secondary,
     );
-    assert!(!paned.sent.iter().any(|cmd| matches!(cmd, Cmd::Cancel)));
-    assert_eq!(paned.read, None);
+    assert!(paned.sent.iter().any(|cmd| matches!(cmd, Cmd::Cancel)));
+    assert_eq!(paned.read, Some(Pane::Files));
 }
 
 #[test]

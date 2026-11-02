@@ -131,7 +131,7 @@ fn todays_bar_fills_its_column_inside_the_chart_frame() {
             filled += 1;
             let framed = (bar + 1..grid.cols()).any(|col| {
                 grid.get(col, row).is_some_and(|cell| {
-                    cell.text
+                    cell.text()
                         .chars()
                         .any(|c| matches!(c, '│' | '┃' | '▕' | '▐'))
                 })

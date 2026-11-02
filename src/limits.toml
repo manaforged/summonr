@@ -128,3 +128,4 @@ stall_rounds = 2
 judge_turns = true
 job_quiet_secs = 600
 prompt_sessions = 64
+queue_rows = 3

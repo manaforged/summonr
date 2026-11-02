@@ -15,7 +15,8 @@ pub(super) fn drain_steer(
     queue: &mut std::collections::VecDeque<UserInput>,
     session: &mut SessionDriver,
     messages: &mut Vec<Message>,
-) -> Result<()> {
+) -> Result<Vec<String>> {
+    let mut delivered = Vec::new();
     while let Some(input) = queue.pop_front() {
         let steered = with_note(&input);
         if let Err(error) = session.steer(&steered) {
@@ -23,8 +24,9 @@ pub(super) fn drain_steer(
             return Err(Error::from(error));
         }
         messages.push(Message::user(steered));
+        delivered.extend(input.source.map(|source| source.text));
     }
-    Ok(())
+    Ok(delivered)
 }
 
 fn with_note(input: &UserInput) -> UserInput {

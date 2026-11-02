@@ -17,13 +17,20 @@ const GREP_FILE_MAX: u64 = 1024 * 1024;
 pub(in crate::tools) const CONTEXT_MAX: usize = 10;
 const OUTPUT_MAX: usize = 50 * 1024;
 
-impl ToolRegistry {
-    pub(in crate::tools) fn search_files(&self, args: &Value) -> Result<String> {
-        if args.get("op").and_then(Value::as_str) == Some("help") {
-            return Ok(crate::tools::catalog::help(crate::tools::Builtin::Search));
-        }
-        let (roots, missing) = self.search_roots(args)?;
-        let query = Arc::new(self.query(args, roots)?);
+enum SearchJob {
+    Help(String),
+    Walk {
+        query: Arc<Query>,
+        missing: Vec<String>,
+    },
+}
+
+impl SearchJob {
+    fn run(self) -> Result<String> {
+        let (query, missing) = match self {
+            Self::Help(text) => return Ok(text),
+            Self::Walk { query, missing } => (query, missing),
+        };
         let started = Instant::now();
         let report = walk::run(&query)?;
         let slow = started.elapsed().as_millis()
@@ -40,6 +47,32 @@ impl ToolRegistry {
             out
         } else {
             format!("not searched: {}\n{out}", missing.join("; "))
+        })
+    }
+}
+
+impl ToolRegistry {
+    pub(in crate::tools) fn search_files(&self, args: &Value) -> Result<String> {
+        self.search_job(args)?.run()
+    }
+
+    pub(in crate::tools) async fn search_cancellable(&self, args: &Value) -> Result<String> {
+        let job = self.search_job(args)?;
+        tokio::task::spawn_blocking(move || job.run())
+            .await
+            .map_err(|error| Error::Tool(format!("search failed: {error}")))?
+    }
+
+    fn search_job(&self, args: &Value) -> Result<SearchJob> {
+        if args.get("op").and_then(Value::as_str) == Some("help") {
+            return Ok(SearchJob::Help(crate::tools::catalog::help(
+                crate::tools::Builtin::Search,
+            )));
+        }
+        let (roots, missing) = self.search_roots(args)?;
+        Ok(SearchJob::Walk {
+            query: Arc::new(self.query(args, roots)?),
+            missing,
         })
     }
 

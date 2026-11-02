@@ -1,9 +1,9 @@
-use sigil::kernel::{Cx, IntoNode, NodeId};
 use sigil::prelude::{
     AlignItems, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Token, container, markdown, text,
 };
 use sigil::reactive::derived;
 use sigil::widgets::DiffBuilder;
+use sigil::{Cx, NodeId, prelude::IntoNode};
 
 use super::{patch_of, patch_path, patch_view};
 use crate::diff::Stat;

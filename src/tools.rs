@@ -281,7 +281,7 @@ impl ToolRegistry {
         };
         match kind {
             Builtin::Read => blocking(|| self.read(args)).map(|out| self.dedup_read(args, out)),
-            Builtin::Search => blocking(|| self.search_files(args)).map(ToolOutput::ok),
+            Builtin::Search => self.search_cancellable(args).await.map(ToolOutput::ok),
             Builtin::Edit => self.edit_file(args).await,
             Builtin::Write => self.write_file(args).await,
             Builtin::Skill => self.skill(args).map(ToolOutput::ok),

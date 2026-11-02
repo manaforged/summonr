@@ -1,4 +1,3 @@
-use sigil::layout::Overflow;
 use sigil::prelude::AlignItems;
 use sigil::prelude::Disclosure;
 use sigil::prelude::IntoNode;
@@ -6,11 +5,12 @@ use sigil::prelude::LayoutStyle;
 use sigil::prelude::ListRowSlots;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
+use sigil::prelude::Overflow;
 use sigil::prelude::Paint;
 use sigil::prelude::container;
 use sigil::prelude::context_menu;
 use sigil::prelude::icon_button;
-use sigil::prelude::list_row_with;
+use sigil::prelude::list_row;
 
 use super::{App, Pane, PaneRow, diff, todos, tree_actions, view};
 use crate::tui::sigil_view::canvas;
@@ -46,11 +46,11 @@ const NO_PEERS: Empty = Empty {
 
 pub(super) fn empty(text: &Empty) -> NodeBuilder {
     let line = if canvas::is_window() {
-        sigil::kernel::text(text.window)
+        sigil::prelude::text(text.window)
             .wrap()
             .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
     } else {
-        sigil::kernel::text(text.terminal).nowrap()
+        sigil::prelude::text(text.terminal).nowrap()
     };
     line.font_size(12.0)
         .text_color(sigil::prelude::Token::Gray11)
@@ -58,7 +58,7 @@ pub(super) fn empty(text: &Empty) -> NodeBuilder {
 }
 
 pub(super) fn dim(text: String) -> NodeBuilder {
-    sigil::kernel::text(text)
+    sigil::prelude::text(text)
         .nowrap()
         .font_size(12.0)
         .text_color(sigil::prelude::Token::Gray11)
@@ -147,7 +147,7 @@ pub(super) fn listing(
             badge: row.badge.clone().map(|(label, tone)| (label.into(), tone)),
             ..ListRowSlots::default()
         };
-        let mut item = list_row_with(index == cursor, row.name.clone(), slots);
+        let mut item = list_row(index == cursor, row.name.clone(), slots);
         if let Some(extra) = trailing {
             item = item.child(extra(app, &row));
         }
@@ -189,7 +189,7 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
                 .gap(8.0),
         )
         .child(
-            sigil::kernel::text(title)
+            sigil::prelude::text(title)
                 .nowrap()
                 .ellipsize()
                 .layout(
@@ -207,7 +207,7 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
                 }),
         )
         .child(
-            sigil::kernel::text(note)
+            sigil::prelude::text(note)
                 .nowrap()
                 .layout(LayoutStyle::block().shrink(0.0))
                 .font_size(12.0)
@@ -227,7 +227,7 @@ pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {
         .bg(sigil::prelude::Token::Gray1);
     for line in lines {
         detail = detail.child(
-            sigil::kernel::text(line)
+            sigil::prelude::text(line)
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .ellipsize()

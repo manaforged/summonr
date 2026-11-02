@@ -1,6 +1,7 @@
 use crate::tui::{Fact, Intent};
 use sigil::Host;
 use sigil::app::cell_width;
+use sigil::prelude::HostMode;
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -116,7 +117,7 @@ fn paint_steps(
         }
         setup(&app);
         app.refresh();
-        let mut host = Host::cells();
+        let mut host = Host::new(HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(cols, rows);
@@ -325,7 +326,7 @@ fn the_side_pane_does_not_add_a_full_height_rule() {
             (0..30)
                 .filter(|&row| {
                     grid.get(col, row)
-                        .is_some_and(|cell| cell.text == "│" || cell.text == "┃")
+                        .is_some_and(|cell| cell.text() == "│" || cell.text() == "┃")
                 })
                 .count()
                 > 20

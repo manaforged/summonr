@@ -1,5 +1,6 @@
 use sigil::Host;
-use sigil::terminal::{Screen, click};
+use sigil::events::Event as SigilEvent;
+use sigil::terminal::{Screen, cell_point};
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
@@ -37,7 +38,7 @@ fn only_the_thinking_header_folds_the_reasoning() {
             text: "done".to_owned(),
         })));
         app.refresh();
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(COLS, ROWS);
@@ -48,7 +49,9 @@ fn only_the_thinking_header_folds_the_reasoning() {
         screen.frame(&mut host, [], size).unwrap();
         let shown = lines(screen.frame(&mut host, [], size).unwrap());
         let body = row_of(&shown, "copy this reasoning line");
-        screen.frame(&mut host, click(10, body), size).unwrap();
+        screen
+            .frame(&mut host, SigilEvent::click(cell_point(10, body)), size)
+            .unwrap();
         let after = lines(screen.frame(&mut host, [], size).unwrap());
         assert_eq!(app.model.peek().prefs.reasoning, Visibility::Expanded);
         assert!(
@@ -59,7 +62,9 @@ fn only_the_thinking_header_folds_the_reasoning() {
             after.join("\n")
         );
         let header = row_of(&after, "✻ thinking");
-        screen.frame(&mut host, click(4, header), size).unwrap();
+        screen
+            .frame(&mut host, SigilEvent::click(cell_point(4, header)), size)
+            .unwrap();
         screen.frame(&mut host, [], size).unwrap();
         assert_eq!(app.model.peek().prefs.reasoning, Visibility::Collapsed);
     });

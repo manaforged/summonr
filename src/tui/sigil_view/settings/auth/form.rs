@@ -55,7 +55,7 @@ pub(super) fn form(app: &App, width: usize) -> Vec<NodeBuilder> {
 
 pub(super) fn line(text: impl Into<String>) -> NodeBuilder {
     container().child(
-        sigil::kernel::text(text.into())
+        sigil::prelude::text(text.into())
             .nowrap()
             .text_color(sigil::prelude::Token::OnSurface)
             .font_size(14.0),

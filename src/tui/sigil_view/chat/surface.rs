@@ -7,7 +7,6 @@ use sigil::prelude::{
 };
 use sigil::reactive::untrack;
 use sigil::reactive::{defer, derived};
-use sigil::style::NumericAtomKind;
 
 use super::composer;
 use super::entry;
@@ -81,7 +80,7 @@ fn fit(app: App) -> NodeBuilder {
                 .shrink(1.0)
                 .min_size(0.0, 0.0),
         )
-        .animate(NumericAtomKind::Height, height)
+        .animate_height(height)
 }
 
 fn pin(child: NodeBuilder) -> NodeBuilder {

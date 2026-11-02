@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::tui::Fact;
 use sigil::reactive::defer;
-use sigil::tasks::on_message_or_close;
+use sigil::tasks::on_message;
 use sigil::terminal::Activity;
 
 use tokio::task::JoinHandle;
@@ -77,7 +77,7 @@ pub(crate) fn run(
                     let receiver = app.clone();
                     let ended = ended.clone();
                     let dirty = Rc::new(Cell::new(false));
-                    on_message_or_close(
+                    on_message(
                         ui_rx,
                         move |msg| {
                             receiver.update(msg);
@@ -140,8 +140,7 @@ impl App {
         if let Some(path) = self.open_file.peek() {
             self.open_file.set(None);
             if let Ok(Err(error)) | Err(error) =
-                suspend(|| edit(&path, &editor()))
-                    .map_err(|error| Error::Tool(error.to_string()))
+                suspend(|| edit(&path, &editor())).map_err(|error| Error::Tool(error.to_string()))
             {
                 self.push_entry(Entry::Error(error.to_string()));
             }

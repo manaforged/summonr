@@ -32,7 +32,7 @@ fn the_credential_dialog_shows_each_typed_character() {
         let workspace = tempfile::tempdir().unwrap();
         let app = app(workspace.path());
         app.set_secret(Some(("Password for git:".to_string(), 0)));
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);

@@ -95,7 +95,7 @@ async fn a_pushed_answer_wakes_the_waiting_dialog() {
 }
 
 #[tokio::test]
-async fn steering_cancels_a_form_without_consuming_the_message_as_an_answer() {
+async fn steering_leaves_a_form_open_in_a_main_session() {
     let workspace = tempfile::tempdir().expect("workspace");
     let home = tempfile::tempdir().expect("session home");
     let mut loop_ = session(workspace.path(), home.path());
@@ -111,18 +111,12 @@ async fn steering_cancels_a_form_without_consuming_the_message_as_an_answer() {
             steering.notify();
         }
     };
-    let answer = tokio::time::timeout(
-        Duration::from_secs(5),
+    let waited = tokio::time::timeout(
+        Duration::from_millis(200),
         loop_.elicit(form(), &mut events, &mut respond),
     )
-    .await
-    .expect("steering must interrupt the form")
-    .expect("form result");
-    assert_eq!(answer.action, FormAction::Cancel);
-    assert!(matches!(
-        events.last(),
-        Some(Event::Elicit { form: None, .. })
-    ));
+    .await;
+    assert!(waited.is_err(), "the form must stay open");
     assert_eq!(
         steering
             .lock()

@@ -1,9 +1,10 @@
+use sigil::prelude::Widget;
 use std::rc::Rc;
 
-use sigil::kernel::TextContent;
+use sigil::prelude::TextContent;
 use sigil::prelude::{
     AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Tone, button, container, icon_button,
-    list_row_with, section_label, sidebar, signal, spacer, tooltip,
+    list_row, section_label, sidebar, signal, spacer, tooltip,
 };
 
 use super::{App, Pane};
@@ -161,7 +162,7 @@ fn selection(app: &App, narrow: bool) -> NodeBuilder {
                 .activate(move || open.open_providers()),
         );
     }
-    list_row_with(
+    list_row(
         false,
         app.model.get().snapshot.endpoint.clone(),
         ListRowSlots {

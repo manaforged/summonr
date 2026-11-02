@@ -66,7 +66,7 @@ fn effort_keyboard_navigation_repaints_the_highlight_without_a_model_update() {
         selection(&app, &[Effort::Low, Effort::Medium, Effort::High]);
         run(&app, "/effort low");
         run(&app, "/effort");
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         host.mount(move || super::super::view::root(app));
         let mut screen = Screen::new(100, 24);
         for _ in 0..2 {

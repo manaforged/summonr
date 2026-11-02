@@ -67,13 +67,13 @@ fn user() -> Arc<Steering> {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn queued_steering_cancels_approval_without_consuming_the_message() {
+async fn queued_steering_leaves_the_approval_open_in_a_main_session() {
     let steering = user();
     steering
         .lock()
         .unwrap()
         .push_back(UserInput::from("also update the docs"));
-    let (exists, text, _) = delete_outside(Some(Arc::clone(&steering)), &["y"]).await;
+    let (exists, text, _) = delete_outside(Some(Arc::clone(&steering)), &["n"]).await;
     assert!(exists, "{text}");
     let waiting: Vec<String> = steering
         .lock()
@@ -114,7 +114,7 @@ async fn a_confirmed_destructive_command_runs() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn steering_interrupts_a_command_after_approval() {
+async fn steering_lets_an_approved_command_finish_in_a_main_session() {
     let workspace = tempfile::tempdir().expect("workspace");
     let home = tempfile::tempdir().expect("session home");
     let target = tempfile::tempdir().expect("deletion target");
@@ -122,7 +122,7 @@ async fn steering_interrupts_a_command_after_approval() {
     let steering = user();
     loop_.steer_with(Arc::clone(&steering));
     let call = command(&format!(
-        "{DELETE} '{}'; touch started; sleep 30; touch escaped",
+        "{DELETE} '{}'; touch started; sleep 0.2; touch finished",
         target.path().display()
     ));
     let output = loop_.tools.execute_outcome(&call).await;
@@ -141,21 +141,14 @@ async fn steering_interrupts_a_command_after_approval() {
     let mut reply = steering.replying(&["y"]);
     let mut usage = Usage::default();
     let executing = loop_.with_grant(output, &call, &mut events, &mut reply, &mut usage);
-    let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
         tokio::join!(executing, sender)
     })
     .await
-    .expect("steering must interrupt the approved command");
-    let Err(error) = result.expect("grant result") else {
-        panic!("command must be interrupted");
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("interrupted by an incoming message")
-    );
+    .expect("the approved command must finish");
+    result.expect("grant result").expect("command output");
     assert!(!target.path().exists());
-    assert!(!workspace.path().join("escaped").exists());
+    assert!(workspace.path().join("finished").exists());
 }
 
 #[tokio::test]

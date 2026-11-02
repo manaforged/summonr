@@ -1,4 +1,3 @@
-use sigil::kernel::ObjectFit;
 use sigil::prelude::AlignItems;
 use sigil::prelude::DiffView;
 use sigil::prelude::ImageSource;
@@ -6,6 +5,7 @@ use sigil::prelude::IntoNode;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
+use sigil::prelude::ObjectFit;
 use sigil::prelude::Paint;
 use sigil::prelude::chart;
 use sigil::prelude::container;

@@ -1,5 +1,6 @@
 use super::*;
 use crate::tui::sigil_view::suggest::mention;
+use sigil::prelude::Widget;
 
 fn spans(draft: &str) -> Vec<(std::ops::Range<usize>, String)> {
     let mut found = Vec::new();

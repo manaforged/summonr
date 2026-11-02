@@ -1,6 +1,6 @@
 use super::*;
 use crate::tui::sigil_view::ui::input_keys;
-use sigil::layout::Dimension;
+use sigil::prelude::Dimension;
 use sigil::prelude::Paint;
 use sigil::prelude::Widget;
 use sigil::reactive::untrack;

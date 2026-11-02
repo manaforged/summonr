@@ -321,6 +321,76 @@ async fn a_research_child_can_run_a_foreground_command() {
     drop(dirs);
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn incoming_input_interrupts_a_child_and_leaves_main_session_jobs_alone() {
+    let start = crate::provider::ToolCall {
+        id: "start".to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({"command": "sleep 30", "background": true}).to_string(),
+        },
+        continuation: None,
+    };
+    let (mut parent, _dirs) = parent(vec![Reply::Text("first")]);
+    let budget = parent.task_budget(1).unwrap();
+    let name = format!("steered-{}", parent.session_id());
+    let mut run = parent
+        .task_start_in(named("wait", &name), &budget, None)
+        .unwrap();
+    parent.tools.execute_outcome(&start).await.unwrap();
+    assert_eq!(parent.steered("lead"), "lead");
+    assert_eq!(parent.tools.stop_jobs().unwrap().len(), 1);
+    assert!(run.child.input_interrupts());
+    let steering = std::sync::Arc::new(crate::runtime::Steering::default());
+    run.child.steer_with(std::sync::Arc::clone(&steering));
+    run.child.tools.set_read_only(false);
+    let workspace = run.child.workspace().to_path_buf();
+    let command = ToolCall {
+        id: "stopped".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({
+                "command": "touch child-started; sleep 30; touch child-escaped"
+            })
+            .to_string(),
+        },
+        continuation: None,
+    };
+    let sender = async {
+        while !workspace.join("child-started").exists() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        steering
+            .lock()
+            .unwrap()
+            .push_back(crate::provider::UserInput::from("stop now"));
+        steering.notify();
+    };
+    let mut events = Vec::new();
+    let mut emit = |_: &crate::tools::Event| {};
+    let waited = run.child.run_or_wake(&command, &mut events, &mut emit);
+    let (outcome, ()) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::join!(waited, sender)
+    })
+    .await
+    .unwrap();
+    let (output, _) = outcome.unwrap();
+    let Err(error) = output else {
+        panic!("the command must be interrupted");
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("interrupted by an incoming message")
+    );
+    assert!(!workspace.join("child-escaped").exists());
+}
+
 #[tokio::test]
 async fn two_messages_to_the_same_name_stay_on_one_session() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("first"), Reply::Text("second")]);

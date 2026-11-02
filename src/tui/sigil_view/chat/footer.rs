@@ -1,10 +1,10 @@
-use sigil::layout::Dimension;
-use sigil::layout::Position;
 use sigil::prelude::AlignItems;
+use sigil::prelude::Dimension;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
+use sigil::prelude::Position;
 use sigil::prelude::container;
 use sigil::prelude::spacer;
 
@@ -140,7 +140,7 @@ fn footer_row(
     );
     if place.with(|place| !place.is_empty()) {
         row = row.child(
-            sigil::kernel::text(place)
+            sigil::prelude::text(place)
                 .nowrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray12),
@@ -156,13 +156,13 @@ fn footer_row(
                         .gap(8.0),
                 )
                 .child(
-                    sigil::kernel::text("⎇")
+                    sigil::prelude::text("⎇")
                         .nowrap()
                         .font_size(12.0)
                         .text_color(sigil::prelude::Token::Gray11),
                 )
                 .child(
-                    sigil::kernel::text(branch.clone())
+                    sigil::prelude::text(branch.clone())
                         .nowrap()
                         .font_size(12.0)
                         .text_color(sigil::prelude::Token::Warn11),
@@ -176,7 +176,7 @@ fn footer_row(
             super::super::app::NoticeKind::Failed => sigil::prelude::Token::Error11,
         };
         row = row.child(
-            sigil::kernel::text(move || {
+            sigil::prelude::text(move || {
                 view.with(|view| {
                     view.0
                         .as_ref()
@@ -191,7 +191,7 @@ fn footer_row(
     }
     if let Some((_, waiting)) = elsewhere {
         row = row.child(
-            sigil::kernel::text(move || {
+            sigil::prelude::text(move || {
                 view.with(|view| {
                     view.2
                         .as_ref()
@@ -210,7 +210,7 @@ fn footer_row(
     }
     if spend.is_some() {
         row = row.child(
-            sigil::kernel::text(move || view.with(|view| view.1.clone().unwrap_or_default()))
+            sigil::prelude::text(move || view.with(|view| view.1.clone().unwrap_or_default()))
                 .nowrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray12),
@@ -259,7 +259,7 @@ fn meter(caption: &str, percent: u64, fill: sigil::prelude::Token) -> NodeBuilde
                 .gap(8.0),
         )
         .child(
-            sigil::kernel::text(caption)
+            sigil::prelude::text(caption)
                 .nowrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
@@ -279,7 +279,7 @@ fn meter(caption: &str, percent: u64, fill: sigil::prelude::Token) -> NodeBuilde
                 ),
         )
         .child(
-            sigil::kernel::text(format!("{percent}%"))
+            sigil::prelude::text(format!("{percent}%"))
                 .nowrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray12),
@@ -333,7 +333,7 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
         .layout(LayoutStyle::flex_column().width(card_width as f32 * canvas::cell().w))
         .bg(sigil::prelude::Token::Gray1);
     card = card.child(
-        sigil::kernel::text(format!(
+        sigil::prelude::text(format!(
             "╭{title}{}╮",
             "─".repeat(card_width.saturating_sub(cell_width(title) + 2))
         ))
@@ -352,7 +352,7 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
                         .gap(0.0),
                 )
                 .child(
-                    sigil::kernel::text(format!("│ {key}"))
+                    sigil::prelude::text(format!("│ {key}"))
                         .nowrap()
                         .font_size(12.0)
                         .font_family(sigil::prelude::FontFamily::Mono)
@@ -360,7 +360,7 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
                 )
                 .child(spacer())
                 .child(
-                    sigil::kernel::text(format!("{value} │"))
+                    sigil::prelude::text(format!("{value} │"))
                         .nowrap()
                         .font_size(12.0)
                         .font_family(sigil::prelude::FontFamily::Mono)
@@ -369,7 +369,7 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
         );
     }
     card.child(
-        sigil::kernel::text(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))))
+        sigil::prelude::text(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))))
             .nowrap()
             .font_size(12.0)
             .font_family(sigil::prelude::FontFamily::Mono)

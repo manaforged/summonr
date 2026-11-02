@@ -245,7 +245,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
             } else {
                 vec![
                     container().child(
-                        sigil::kernel::text(warning)
+                        sigil::prelude::text(warning)
                             .nowrap()
                             .font_size(12.0)
                             .text_color(sigil::prelude::Token::Error11),

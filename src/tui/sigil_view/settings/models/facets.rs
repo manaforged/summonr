@@ -35,7 +35,8 @@ pub(super) fn chips(app: &App) -> NodeBuilder {
                 TextStyle::sm(Token::Gray11)
             };
             let chip = container().child(
-                text_style.on(sigil::kernel::text(format!(" {} {count} ", facet.label())).nowrap()),
+                text_style
+                    .on(sigil::prelude::text(format!(" {} {count} ", facet.label())).nowrap()),
             );
             let chip = if on {
                 chip.bg(canvas::blend(
@@ -53,5 +54,5 @@ pub(super) fn chips(app: &App) -> NodeBuilder {
             }))
         })
         .child(container().layout(LayoutStyle::flex_row().grow(1.0)))
-        .child(TextStyle::xs(Token::Gray9).on(sigil::kernel::text("tab next filter").nowrap()))
+        .child(TextStyle::xs(Token::Gray9).on(sigil::prelude::text("tab next filter").nowrap()))
 }

@@ -10,6 +10,10 @@ pub(super) struct RetryState {
 }
 
 impl<P: Provider> Loop<P> {
+    pub(super) fn interrupted(&self) -> bool {
+        self.input_interrupts() && self.steer_waiting()
+    }
+
     pub(super) fn steer_waiting(&self) -> bool {
         !self.inbox.is_empty()
             || self
@@ -34,7 +38,11 @@ impl<P: Provider> Loop<P> {
             let mut queue = shared
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            super::steer::drain_steer(&mut queue, &mut self.session, messages)?;
+            let delivered = super::steer::drain_steer(&mut queue, &mut self.session, messages);
+            drop(queue);
+            for text in delivered? {
+                self.push_event(events, emit, Event::Steered { text })?;
+            }
         }
         let (mail, overflow) = self.take_peer_mail(crate::limits::limits().mail_per_round)?;
         for mail in mail {

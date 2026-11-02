@@ -2,6 +2,19 @@ use super::*;
 
 impl App {
     pub(in crate::tui::sigil_view) fn submit(&self) {
+        self.send_draft(false);
+    }
+
+    pub(in crate::tui::sigil_view) fn queue_draft(&self) -> bool {
+        let running = matches!(self.model.get().busy_since, Some((Activity::Turn, _)));
+        if !running || self.draft.peek().trim().is_empty() {
+            return false;
+        }
+        self.send_draft(true);
+        true
+    }
+
+    fn send_draft(&self, later: bool) {
         if matches!(self.model.get().busy_since, Some((Activity::Branch, _))) {
             return;
         }
@@ -30,8 +43,9 @@ impl App {
             return;
         }
         self.splash.set(false);
-        self.record_user(&text, pending, &mut input);
-        let command = self.queue_command(input);
+        let waits = self.model.get().busy_since.is_some();
+        self.record_user(&text, pending, &mut input, waits);
+        let command = self.queue_command(input, later);
         drop(self.cmd.send(command));
         self.scroll_y.set(self.max_scroll.peek());
         self.refresh();
@@ -79,11 +93,19 @@ impl App {
         false
     }
 
-    fn record_user(&self, text: &str, pending: Vec<Attachment>, input: &mut UserInput) {
+    fn record_user(
+        &self,
+        text: &str,
+        pending: Vec<Attachment>,
+        input: &mut UserInput,
+        waits: bool,
+    ) {
         self.model_mut(|model| {
-            model.entries.push(Entry::User(text.to_owned()));
+            if !waits {
+                model.entries.push(Entry::User(text.to_owned()));
+            }
             for attachment in pending {
-                if let Some(source) = attachment.source {
+                if let Some(source) = attachment.source.filter(|_| !waits) {
                     model.entries.push(Entry::Image {
                         source,
                         bytes: attachment.image.bytes().unwrap_or_default().into(),
@@ -95,18 +117,15 @@ impl App {
         });
     }
 
-    fn queue_command(&self, input: UserInput) -> Cmd {
+    fn queue_command(&self, input: UserInput, later: bool) -> Cmd {
         let activity = self.model.get().busy_since.map(|(activity, _)| activity);
         match activity {
             Some(Activity::Turn)
-                if self.approval.peek().is_none() && self.form.peek().is_none() =>
+                if !later && self.approval.peek().is_none() && self.form.peek().is_none() =>
             {
                 Cmd::Steer(input)
             }
-            Some(_) => {
-                self.push_entry(Entry::System(crate::tui::worker::QUEUED_LATER.to_string()));
-                Cmd::Queue(input)
-            }
+            Some(_) => Cmd::Queue(input),
             None => Cmd::Submit(input),
         }
     }

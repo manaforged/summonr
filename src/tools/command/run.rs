@@ -163,7 +163,10 @@ impl ToolRegistry {
     }
 
     fn register(&self, command: &str, started: &StartedCommand) -> Result<()> {
-        let record = self.job_record(&started.id, started.pid, command)?;
+        let record = jobs::Record {
+            detached: true,
+            ..self.job_record(&started.id, started.pid, command)?
+        };
         jobs::write(
             &jobs::dir(&self.workspace).join(format!("{}.json", started.id)),
             &record,

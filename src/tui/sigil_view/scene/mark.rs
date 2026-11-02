@@ -106,7 +106,7 @@ pub(super) fn paint(
             let Some(glyph) = glyph else { continue };
             if let Some(cell) = plate.cell([x + col as u16, y + row as u16]) {
                 let mut buffer = [0; 4];
-                cell.text = (&*glyph.text.encode_utf8(&mut buffer)).into();
+                cell.set_text(glyph.text.encode_utf8(&mut buffer));
                 cell.fg = ink(glyph.fg);
             }
         }

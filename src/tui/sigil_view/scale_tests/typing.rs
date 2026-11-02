@@ -1,8 +1,6 @@
 use crate::tui::Intent;
 use sigil::Host;
-use sigil::events::{
-    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, Event,
-};
+use sigil::events::{Event, KeyEvent, KeyPhase, LogicalKey, ModifiersState, PhysicalKey};
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -11,25 +9,11 @@ use super::super::view::root;
 use super::busy_info;
 
 fn press(key: &str) -> Event {
-    Event::Key(KeyEvent::new(KeyEventInit {
-        key: LogicalKey::character(key),
-        physical: PhysicalKey::Unidentified,
-        modifiers: ModifiersState::empty(),
-        repeat: false,
-        phase: KeyPhase::Down,
-        text: Some(key.into()),
-    }))
+    Event::key(LogicalKey::character(key), KeyPhase::Down).text(Some(key.into()))
 }
 
 fn arrow(key: sigil::prelude::Key) -> Event {
-    Event::Key(KeyEvent::new(KeyEventInit {
-        key: LogicalKey::named(key),
-        physical: PhysicalKey::Unidentified,
-        modifiers: ModifiersState::empty(),
-        repeat: false,
-        phase: KeyPhase::Down,
-        text: None,
-    }))
+    Event::key(LogicalKey::named(key), KeyPhase::Down)
 }
 
 fn typed(command: &str, read: impl FnOnce(&App) -> String) -> String {
@@ -42,7 +26,7 @@ fn after<T>(command: &str, keys: Vec<Event>, read: impl FnOnce(&App) -> T) -> T 
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(160, 40);
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(160, 40);
@@ -75,7 +59,7 @@ fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
                 "Earlier message".to_owned(),
             )));
             app.replace("first".to_owned());
-            let mut host = Host::cells();
+            let mut host = Host::new(sigil::prelude::HostMode::Cell);
             let tree = app.clone();
             host.mount(move || root(tree));
             let mut screen = Screen::new(160, 40);
@@ -104,7 +88,7 @@ fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
             screen
                 .frame(
                     &mut host,
-                    [sigil::terminal::key_down(sigil::prelude::Key::Enter)],
+                    [sigil::events::Event::key_down(sigil::prelude::Key::Enter)],
                     (160, 40),
                 )
                 .expect("submit with plain Enter");

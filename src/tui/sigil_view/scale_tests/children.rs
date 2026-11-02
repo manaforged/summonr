@@ -270,7 +270,7 @@ fn clicking_the_strip_header_expands_it() {
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(100, 30);
         spawn(&app, IDS[0], "Keep the parent working", true);
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
@@ -291,7 +291,7 @@ fn clicking_the_strip_header_expands_it() {
         screen
             .frame(
                 &mut host,
-                sigil::terminal::click(col as u16, row as u16),
+                sigil::events::Event::click(sigil::terminal::cell_point(col as u16, row as u16)),
                 (100, 30),
             )
             .expect("click header");
@@ -347,7 +347,7 @@ fn a_full_strip_counts_every_child_and_caps_the_rows() {
                 true,
             );
         }
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 40);
@@ -373,7 +373,7 @@ fn a_split_opens_the_selected_child_beside_the_list() {
         app.resize(120, 40);
         spawn(&app, "01a104ac000000000000000000000001", "lane 0", true);
         app.open_agents_split();
-        let mut host = sigil::Host::cells();
+        let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(120, 40);
@@ -403,7 +403,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         spawn(&app, IDS[0], "Keep the parent working", true);
         spawn(&app, IDS[1], "Foreground child", false);
         app.toggle_agents();
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
@@ -423,7 +423,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         screen
             .frame(
                 &mut host,
-                sigil::terminal::click(col as u16, row as u16),
+                sigil::events::Event::click(sigil::terminal::cell_point(col as u16, row as u16)),
                 (100, 30),
             )
             .expect("click Clear");

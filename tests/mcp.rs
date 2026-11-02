@@ -182,7 +182,7 @@ fn main() {
         protocol::an_aborted_call_is_cancelled,
         protocol::a_cancel_sent_at_exit_reaches_a_slow_server,
         transport::a_call_with_no_reply_is_cancelled_at_the_timeout,
-        transport::peer_mail_interrupts_a_pending_mcp_call,
+        transport::peer_mail_waits_for_a_pending_mcp_call,
         transport::a_timed_out_reply_does_not_break_the_next_call,
         transport::a_request_the_server_does_not_read_times_out,
         transport::a_remote_server_reconnects_after_its_session_expires,

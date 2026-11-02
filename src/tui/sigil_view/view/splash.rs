@@ -75,7 +75,7 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
                         .shrink(0.0)
                         .padding_x(cell.w * 2.0)
                         .padding_bottom(cell.h * 2.0)
-                        .overflow(sigil::layout::Overflow::Hidden),
+                        .overflow(sigil::prelude::Overflow::Hidden),
                 )
                 .bg(tint)
                 .child(blank(width, rows.saturating_sub(y)))
@@ -105,7 +105,7 @@ fn blank(width: u16, rows: u16) -> NodeBuilder {
         ),
         |column, _| {
             column.child(
-                sigil::kernel::text(line.clone())
+                sigil::prelude::text(line.clone())
                     .nowrap()
                     .font_family(sigil::prelude::FontFamily::Mono),
             )

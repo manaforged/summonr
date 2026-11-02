@@ -1,12 +1,12 @@
 use super::{App, Model, composer_hint, suggest};
 use crate::tui::sigil_view::canvas::GUTTER;
-use sigil::layout::Overflow;
-use sigil::layout::Position;
 use sigil::prelude::AlignItems;
 use sigil::prelude::IntoNode;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
+use sigil::prelude::Overflow;
 use sigil::prelude::Paint;
+use sigil::prelude::Position;
 use sigil::prelude::Tone;
 use sigil::prelude::container;
 use sigil::prelude::divider_horizontal;
@@ -46,7 +46,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                         .gap(8.0),
                 )
                 .child(
-                    sigil::kernel::text("❯")
+                    sigil::prelude::text("❯")
                         .nowrap()
                         .font_size(12.0)
                         .text_color(sigil::prelude::Token::Gray12),
@@ -88,9 +88,46 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                 )
                 .bg(sigil::prelude::Token::Surface)
                 .child(header_row(app.clone()))
+                .child(pending_rows(&app, inner_width))
                 .child(editor_area)
                 .child(hint_row(app.clone(), inner_width)),
         )
+}
+
+pub(in crate::tui::sigil_view) fn pending_rows(app: &App, width: usize) -> NodeBuilder {
+    let update = app.clone();
+    let pending = sigil::reactive::derived(move || update.model.get().pending.clone());
+    container()
+        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+        .children_reactive(move || {
+            let rows = pending.get();
+            let room = crate::limits::limits().queue_rows;
+            let mut lines: Vec<String> = rows
+                .iter()
+                .take(room)
+                .map(|(next, text)| {
+                    let label = if *next { "next" } else { "after turn" };
+                    let first = text.lines().next().unwrap_or_default();
+                    crate::display::ellipsize(
+                        &format!("{label} · {first}"),
+                        crate::display::Span::Cells(width),
+                    )
+                })
+                .collect();
+            if rows.len() > room {
+                lines.push(format!("+{} more", rows.len() - room));
+            }
+            lines.into_iter().map(pending_line).collect::<Vec<_>>()
+        })
+}
+
+fn pending_line(line: String) -> NodeBuilder {
+    container().child(
+        sigil::prelude::text(line)
+            .nowrap()
+            .font_size(12.0)
+            .text_color(sigil::prelude::Token::Gray11),
+    )
 }
 
 fn rule() -> NodeBuilder {
@@ -209,7 +246,7 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
             vec![
                 node(rule()),
                 node(
-                    sigil::kernel::text(text)
+                    sigil::prelude::text(text)
                         .nowrap()
                         .font_size(12.0)
                         .text_color(sigil::prelude::Token::Gray11),
@@ -226,7 +263,7 @@ fn mode_label(mode: ModeText) -> NodeBuilder {
         sigil::prelude::Token::Error11,
         sigil::prelude::Token::Success11,
     ][usize::from(class).min(2)];
-    let title = sigil::kernel::text(text)
+    let title = sigil::prelude::text(text)
         .nowrap()
         .font_size(12.0)
         .text_color(tone);
@@ -239,7 +276,7 @@ fn model_label(model: String) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0))
         .child(
-            sigil::kernel::text(model)
+            sigil::prelude::text(model)
                 .nowrap()
                 .ellipsize()
                 .font_size(12.0)

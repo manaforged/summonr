@@ -56,7 +56,7 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         snapshot.levels = vec![Effort::Low, Effort::Medium, Effort::High];
         app.update(Msg::Fact(Fact::Settings(snapshot)));
         app.replace("unchanged draft".to_owned());
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);

@@ -134,14 +134,14 @@ fn saved(app: &App) -> NodeBuilder {
                 .padding_x(8.0),
         )
         .child(
-            sigil::kernel::text("saved:")
+            sigil::prelude::text("saved:")
                 .nowrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         );
     if names.is_empty() {
         row = row.child(
-            sigil::kernel::text("none")
+            sigil::prelude::text("none")
                 .nowrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),

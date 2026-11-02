@@ -59,6 +59,9 @@ pub enum Event {
         from: String,
         text: String,
     },
+    Steered {
+        text: String,
+    },
     Aborted {
         reason: String,
         #[serde(default)]

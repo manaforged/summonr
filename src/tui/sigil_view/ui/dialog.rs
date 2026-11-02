@@ -56,16 +56,11 @@ mod tests {
 }
 
 fn body_layout() -> LayoutStyle {
-    let layout = LayoutStyle::flex_column()
+    LayoutStyle::flex_column()
         .fill_width()
         .padding_x(8.0)
         .padding_y(canvas::overlay_gap() * 4.0)
-        .gap(canvas::overlay_gap());
-    if canvas::is_window() {
-        layout.grow(1.0).fill_height().min_size(0.0, 0.0)
-    } else {
-        layout
-    }
+        .gap(canvas::overlay_gap())
 }
 
 type Dismiss = Rc<dyn Fn()>;

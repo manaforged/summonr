@@ -84,6 +84,7 @@ jiff = "0.2.38"
 httparse = "1.10"
 
 [dev-dependencies]
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "d6f7c249e80d27b578dc3574284f86370fa78d66", default-features = false, features = ["kittest"] }
 summonr-core = { path = "crates/core", features = ["test-home"] }
 fastrand = "2.5"
 tokio = { version = "1", features = ["test-util"] }

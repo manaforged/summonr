@@ -113,7 +113,14 @@ impl<P: Provider> Loop<P> {
         Ok(mail)
     }
 
+    pub(in crate::runtime) fn input_interrupts(&self) -> bool {
+        self.session.depth() > 0
+    }
+
     pub(super) fn steered(&self, lead: &str) -> String {
+        if !self.input_interrupts() {
+            return lead.to_string();
+        }
         let notes = match self.tools.stop_jobs() {
             Ok(notes) => notes,
             Err(error) => vec![format!("could not stop background jobs: {error}")],

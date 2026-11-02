@@ -20,9 +20,9 @@ Typing `/` opens the command list above the composer. Each row shows the `/comma
 
 ## Send and steer a turn
 
-While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it runs), the round, the seconds so far, the output rate, and the queue count. The composer status counts waiting input, as in `2 queued, ↑ edits`.
+While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it runs), the seconds so far, the output rate, and the waiting count. Waiting messages appear as text above the composer, marked `next` or `after turn`.
 
-A message you send during a turn goes into the running turn. The model reads it after its current tool calls. It carries a note that asks the model to answer it in its next reply. The message waits in the queue for the next turn instead when:
+`enter` during a turn sends a message into it. The model reads it at the next round, and the reply, command, and jobs in progress keep running. The message joins the transcript when the model receives it, and `↑` on an empty composer pulls waiting messages back until then. `esc` is the interrupt. `tab` queues a message for after the turn, and it also waits for the next turn when:
 
 - an approval or a question is open,
 - earlier messages or commands still wait, or

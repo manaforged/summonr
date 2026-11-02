@@ -1,4 +1,5 @@
 use super::*;
+use sigil::prelude::Widget;
 use sigil::prelude::{MenuItem, menu, tooltip};
 
 const OPTIONS: &str = "Settings";

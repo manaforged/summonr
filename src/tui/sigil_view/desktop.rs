@@ -1,8 +1,9 @@
 use sigil::prelude::Paint;
+use sigil::prelude::Widget;
 use sigil::prelude::{LayoutStyle, NodeBuilder, Theme, Token, container};
 
 use sigil::events::ScrollEvent;
-use sigil::layout::Position;
+use sigil::prelude::Position;
 use sigil::prelude::{Signal, scroll};
 
 use super::view::shell;

@@ -10,8 +10,8 @@ You do not edit a lane file. Do not start a `summonr` process. Do not use the `m
 | Job | Tool |
 |---|---|
 | Lane agent | `climb` |
-| Start lane | `task`, agent `climb`, `background` true, `name` the lane name, `effort` when the task names one |
-| Steer lane | `send` |
+| Start lane | `task`, agent `climb`, `background` true, `name` the lane name, `effort` when the task names one. Omit `workspace`. A named child edits this checkout. |
+| Steer lane | `send`. That stops the lane's running command and its background jobs. |
 | Tick | `summonr cron add --every <interval> --mail "$SUMMONR_SESSION_ID" --prompt "<tick>"` |
 
 Start every lane in one turn. The tick prompt names the lanes. On each tick, list them, then:

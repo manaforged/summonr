@@ -151,5 +151,5 @@ fn card(
 fn label(text: &str, color: Token, bold: bool) -> NodeBuilder {
     let text_style = TextStyle::sm(color);
     let text_style = if bold { text_style.bold() } else { text_style };
-    container().child(text_style.on(sigil::kernel::text(text).nowrap()))
+    container().child(text_style.on(sigil::prelude::text(text).nowrap()))
 }

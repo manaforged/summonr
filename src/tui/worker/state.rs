@@ -79,15 +79,20 @@ impl Worker {
         {
             self.queue.carried -= 1;
             self.queue.announce(&self.ui);
+            self.show_delivered(&next);
             return Some(Cmd::Submit(next));
         }
         self.queue.carried = 0;
         if let Some(command) = self.queue.deferred.pop_front() {
             self.queue.announce(&self.ui);
+            if let Cmd::Submit(input) = &command {
+                self.show_delivered(input);
+            }
             return Some(command);
         }
         if let Some(next) = self.queue.followups.pop_front() {
             self.queue.announce(&self.ui);
+            self.show_delivered(&next);
             return Some(Cmd::Submit(next));
         }
         let command = self.cmd.recv().await?;
@@ -98,6 +103,28 @@ impl Worker {
                 Some(Cmd::Mail)
             }
             command => Some(command),
+        }
+    }
+
+    fn show_delivered(&mut self, input: &crate::provider::UserInput) {
+        if let Some(at) = self
+            .queue
+            .recorded
+            .iter()
+            .position(|text| *text == input.text)
+        {
+            self.queue.recorded.remove(at);
+            return;
+        }
+        drop(
+            self.ui
+                .send(Msg::Intent(crate::tui::Intent::User(input.text.clone()))),
+        );
+        for image in &input.images {
+            drop(
+                self.ui
+                    .send(Msg::Intent(crate::tui::Intent::Image(image.clone()))),
+            );
         }
     }
 

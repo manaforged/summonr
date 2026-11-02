@@ -1,6 +1,6 @@
 use sigil::prelude::{
     AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Token, Tone, container,
-    list_row_with, notice_band, section_label, text_edit,
+    list_row, notice_band, section_label, text_edit,
 };
 use sigil::widgets::{RowRender, TextEditBuilder, VirtualListBuilder};
 
@@ -45,7 +45,7 @@ pub(in crate::tui) fn slotted(
             mark.unwrap_or(" ")
         )
     };
-    list_row_with(
+    list_row(
         selected,
         name.into(),
         ListRowSlots {
@@ -62,7 +62,7 @@ pub(in crate::tui) fn group(title: impl Into<String>) -> NodeBuilder {
 pub(in crate::tui) fn heading(parts: Vec<(String, TextStyle)>) -> NodeBuilder {
     parts.into_iter().fold(
         container().layout(row(8.0).align_items(AlignItems::Center)),
-        |line, (text, text_style)| line.child(text_style.on(sigil::kernel::text(text).nowrap())),
+        |line, (text, text_style)| line.child(text_style.on(sigil::prelude::text(text).nowrap())),
     )
 }
 
@@ -176,7 +176,7 @@ pub(in crate::tui) fn filter_column() -> NodeBuilder {
 
 pub(in crate::tui) fn plain(text: impl Into<String>) -> NodeBuilder {
     container().child(
-        sigil::kernel::text(text.into())
+        sigil::prelude::text(text.into())
             .nowrap()
             .text_color(Token::OnSurface),
     )

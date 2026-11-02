@@ -1,4 +1,5 @@
 use sigil::prelude::Paint;
+use sigil::prelude::Widget;
 use sigil::prelude::{
     AlignItems, ControlSize, JustifyContent, LayoutStyle, LogicalKey, ModifiersState, NodeBuilder,
     Shortcut, Token, Tone, button, container, icon_button, node, notice_band, spacer,
@@ -26,15 +27,19 @@ const CRUMB: &str = "›";
 const EXPLAIN: &str = "Explain this repo";
 const ADD_PROVIDER: &str = "Add a provider";
 
-pub(super) fn quiet(content: impl Into<sigil::kernel::TextContent>) -> sigil::kernel::TextBuilder {
-    sigil::kernel::text(content)
+pub(super) fn quiet(
+    content: impl Into<sigil::prelude::TextContent>,
+) -> sigil::prelude::TextBuilder {
+    sigil::prelude::text(content)
         .nowrap()
         .font_size(META)
         .text_color(Token::OnSurfaceMuted)
 }
 
-pub(super) fn strong(content: impl Into<sigil::kernel::TextContent>) -> sigil::kernel::TextBuilder {
-    sigil::kernel::text(content)
+pub(super) fn strong(
+    content: impl Into<sigil::prelude::TextContent>,
+) -> sigil::prelude::TextBuilder {
+    sigil::prelude::text(content)
         .nowrap()
         .font_size(BODY)
         .font_weight(600)
@@ -241,7 +246,7 @@ fn home(app: &App, actions: NodeBuilder) -> NodeBuilder {
                 .align_items(AlignItems::Center),
         )
         .child(
-            sigil::kernel::text(workspace_name(app))
+            sigil::prelude::text(workspace_name(app))
                 .nowrap()
                 .font_size(20.0)
                 .font_weight(600)

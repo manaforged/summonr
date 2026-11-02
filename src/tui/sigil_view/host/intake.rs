@@ -14,7 +14,7 @@ impl App {
                     match self.stage(&text) {
                         Some(true) => staged = true,
                         Some(false) => {}
-                        None => events.push(sigil::terminal::paste(&text)),
+                        None => events.push(sigil::events::Event::paste(&text)),
                     }
                 }
                 continue;

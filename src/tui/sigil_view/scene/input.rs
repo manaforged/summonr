@@ -15,13 +15,9 @@ pub(in crate::tui::sigil_view) fn glass(area: [u16; 4]) -> Plate {
         a: (GLASS * 255.0) as u8,
         ..PLATE
     });
-    Plate::new(
-        area,
-        Cell {
-            bg: tint,
-            ..Cell::blank()
-        },
-    )
+    let mut blank = Cell::blank();
+    blank.bg = tint;
+    Plate::new(area, blank)
 }
 
 pub(in crate::tui::sigil_view) fn overlay(
@@ -36,14 +32,11 @@ pub(in crate::tui::sigil_view) fn overlay(
         if grapheme != " "
             && let Some(cell) = plate.cell([col, y])
         {
-            *cell = Cell {
-                text: grapheme.into(),
-                fg: ink(color),
-                bg: cell.bg,
-                bold: false,
-                italic: false,
-                ..Cell::blank()
-            };
+            let bg = cell.bg;
+            *cell = Cell::blank();
+            cell.set_text(grapheme);
+            cell.fg = ink(color);
+            cell.bg = bg;
         }
         col = col.saturating_add(cell_width(grapheme) as u16);
     }

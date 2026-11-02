@@ -92,7 +92,7 @@ impl<P: Provider> Loop<P> {
             if !self.ask_grant(grant, &mut asked, events, emit).await? {
                 break;
             }
-            if self.steer_waiting() {
+            if self.interrupted() {
                 return Ok(Err(Error::Tool(
                     self.steered("not run: interrupted by an incoming message"),
                 )));

@@ -166,10 +166,11 @@ impl<P: Provider> Loop<P> {
             provider.complete(&request)
         };
         let input = self.input_wait();
+        let interrupts = options.retry == RetryPolicy::Round && self.input_interrupts();
         let waited = tokio::select! {
             biased;
             result = Self::wait(completion, remaining) => result,
-            result = input, if options.retry == RetryPolicy::Round => {
+            result = input, if interrupts => {
                 Err(result.err().map_or(WaitError::Steered, WaitError::Provider))
             }
         };

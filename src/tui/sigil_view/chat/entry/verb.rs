@@ -1,3 +1,5 @@
+#[cfg(feature = "gui")]
+use sigil::prelude::Widget;
 use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, Radius, Token, container};
 
 use super::tools::workspace_relative;

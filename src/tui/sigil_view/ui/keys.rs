@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use sigil::kernel::TextCursor;
+use sigil::prelude::TextCursor;
 use sigil::prelude::{KeyEvent, LogicalKey, ModifiersState, NodeBuilder, Shortcut, Widget};
 
 use crate::prefs::EditorKey;
@@ -17,7 +17,7 @@ pub(in crate::tui::sigil_view) fn input_keys<T: sigil::prelude::Widget>(app: &Ap
     input.map_node(move |node| {
         let cursor = Rc::new(Cell::new(None::<TextCursor>));
         let field = Rc::clone(&cursor);
-        node.mutate(move |node| field.set(node.a11y.text_cursor))
+        node.mutate(move |node| field.set(node.text_cursor()))
             .key_capture(Shortcut::ctrl(LogicalKey::character("x")), move |event| {
                 let selected = cursor.get().is_some_and(|cursor| {
                     cursor

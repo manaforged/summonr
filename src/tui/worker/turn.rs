@@ -80,7 +80,10 @@ impl Worker {
                         Some(Cmd::Answer(dialog, text)) => {
                             self.queue.steering.answer(dialog, UserInput::from(text));
                         }
-                        Some(Cmd::Tick) => live_peers(&session_id, &mut self.last_peers, &self.ui),
+                        Some(Cmd::Tick) => {
+                            live_peers(&session_id, &mut self.last_peers, &self.ui);
+                            self.queue.announce(&self.ui);
+                        }
                         Some(Cmd::Mail | Cmd::LoginAnswer(_) | Cmd::Open(_)) => {}
                         Some(command) => self.reader.run(command).await,
                     },
@@ -165,6 +168,7 @@ impl Worker {
         let mut pending = self.queue.take_steering();
         pending.extend(self.queue.followups.drain(..));
         self.queue.carried = 0;
+        self.queue.recorded.clear();
         while let Ok(command) = self.cmd.try_recv() {
             match command {
                 Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input) => pending.push(input),

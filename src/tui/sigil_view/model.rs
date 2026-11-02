@@ -107,6 +107,7 @@ pub(super) struct Model {
     pub(super) rounds: usize,
     pub(super) speed: Speed,
     pub(super) queued: (usize, usize),
+    pub(super) pending: Vec<(bool, String)>,
     pub(super) busy_since: Option<(Activity, Instant)>,
     pub(super) live_tool: Option<(String, String)>,
     pub(super) agents: Vec<Agent>,
@@ -197,6 +198,7 @@ impl Model {
             rounds: 0,
             speed: Speed::default(),
             queued: (0, 0),
+            pending: Vec::new(),
             busy_since: None,
             live_tool: None,
             agents: Vec::new(),
@@ -233,6 +235,7 @@ impl Model {
             | Msg::Fact(Fact::Calling(_))
             | Msg::Fact(Fact::Busy(_))
             | Msg::Fact(Fact::Queued { .. })
+            | Msg::Fact(Fact::Pending(_))
             | Msg::Fact(Fact::Cleared)
             | Msg::Intent(Intent::Reset)
             | Msg::Intent(Intent::RunMode(_))
@@ -299,6 +302,7 @@ impl Model {
             Msg::Fact(Fact::Calling(name)) => self.live_tool = Some((name, "…".to_string())),
             Msg::Fact(Fact::Busy(busy)) => self.set_busy(busy),
             Msg::Fact(Fact::Queued { steering, queued }) => self.queued = (steering, queued),
+            Msg::Fact(Fact::Pending(rows)) => self.pending = rows,
             Msg::Fact(Fact::Cleared) => self.clear(),
             Msg::Intent(Intent::Reset) => self.reset(),
             Msg::Intent(Intent::RunMode(mode)) => {

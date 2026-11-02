@@ -1,3 +1,5 @@
+#[cfg(feature = "gui")]
+use sigil::prelude::Widget;
 use std::collections::HashSet;
 use std::ops::Range;
 

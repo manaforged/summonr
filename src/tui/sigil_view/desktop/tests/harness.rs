@@ -1,10 +1,9 @@
 use sigil::Host;
 use sigil::app::FrameHooks;
-use sigil::events::{
-    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, Event,
-};
-use sigil::kernel::Role;
+use sigil::events::{Event, KeyEvent, KeyPhase, LogicalKey, ModifiersState, PhysicalKey};
+use sigil::prelude::HostMode;
 use sigil::prelude::Key;
+use sigil::prelude::Role;
 use sigil::scene::SceneCommand;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -39,14 +38,9 @@ impl<T> Seen<T> {
 }
 
 fn press(key: LogicalKey, modifiers: ModifiersState, text: Option<&str>) -> Event {
-    Event::Key(KeyEvent::new(KeyEventInit {
-        key,
-        physical: PhysicalKey::Unidentified,
-        modifiers,
-        repeat: false,
-        phase: KeyPhase::Down,
-        text: text.map(Into::into),
-    }))
+    Event::key(key, KeyPhase::Down)
+        .modifiers(modifiers)
+        .text(text.map(Into::into))
 }
 
 pub(super) fn named(key: Key, modifiers: ModifiersState) -> Event {
@@ -86,7 +80,7 @@ pub(super) fn drive<T>(
         super::fit(&app);
         setup(&app);
         app.refresh();
-        let mut host = Host::new();
+        let mut host = Host::new(HostMode::Pixel);
         let tree = app.clone();
         host.mount(move || root(tree.clone()));
         for _ in 0..3 {
@@ -107,8 +101,13 @@ pub(super) fn drive<T>(
             .nodes
             .iter()
             .filter_map(|(_, node)| {
-                node.label()
-                    .map(|label| (node.role(), label.to_string(), node.is_disabled()))
+                node.label().map(|label| {
+                    (
+                        Role::from_accesskit(node.role()),
+                        label.to_string(),
+                        node.is_disabled(),
+                    )
+                })
             })
             .collect();
         let texts = host
@@ -120,7 +119,7 @@ pub(super) fn drive<T>(
                 let SceneCommand::GlyphRun(draw) = command else {
                     return None;
                 };
-                Some(draw.run.text.clone())
+                Some(draw.text.clone())
             })
             .collect();
         Seen {

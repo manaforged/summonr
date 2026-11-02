@@ -4,7 +4,7 @@ use super::galaxy::{Field, field};
 use super::stars::bright;
 use super::*;
 use sigil::geometry::{Point, Rect};
-use sigil::scene::{GlyphRun, SceneBuilder, SceneRectStyle};
+use sigil::scene::{DrawRect, GlyphRun, SceneBuilder};
 use sigil::style::TextStyle;
 
 pub(in crate::tui::sigil_view) const SCRIM: Rgba8 = rgb(10, 8, 20);
@@ -124,17 +124,14 @@ pub(super) fn paint_spots(scene: &mut SceneBuilder, area: Rect, spots: &[Spot]) 
             area.origin.y + f32::from(spot.y) * cell.h,
         );
         let rect = Rect::new(at, cell.w, cell.h);
-        scene.draw_rect(
-            rect,
-            SceneRectStyle::solid(shown(spot.cell.bg, palette().base)),
-        );
+        scene.draw_rect(DrawRect::new(rect, shown(spot.cell.bg, palette().base)));
         let style = TextStyle {
             font_weight: if spot.cell.bold { 700 } else { 400 },
             ..TextStyle::default()
         };
         scene.draw_glyph_run(GlyphRun::new(
             rect,
-            spot.cell.text.as_str(),
+            spot.cell.text(),
             shown(spot.cell.fg, palette().text),
             style,
             10_000,
@@ -270,14 +267,12 @@ fn spot(x: u16, y: u16, text: &'static str, fg: Rgba8, bg: Rgba8, bold: bool) ->
 }
 
 fn cell(text: &'static str, fg: Rgba8, bg: Rgba8, bold: bool) -> Cell {
-    Cell {
-        text: text.into(),
-        fg: ink(fg),
-        bg: ink(bg),
-        bold,
-        italic: false,
-        ..Cell::blank()
-    }
+    let mut cell = Cell::blank();
+    cell.set_text(text);
+    cell.fg = ink(fg);
+    cell.bg = ink(bg);
+    cell.bold = bold;
+    cell
 }
 
 pub(in crate::tui::sigil_view) fn hash(x: u16, y: u16) -> u32 {

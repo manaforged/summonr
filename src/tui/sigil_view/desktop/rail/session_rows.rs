@@ -1,9 +1,10 @@
+use sigil::prelude::Widget;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use sigil::prelude::{
     LayoutStyle, ListRowSlots, MenuItem, NodeBuilder, Signal, Tone, container, context_menu, dot,
-    list_row_with, signal,
+    list_row, signal,
 };
 
 use super::{App, UNTITLED, section};
@@ -125,7 +126,7 @@ fn live_row(app: &App, entry: &Live, title: String) -> NodeBuilder {
     let (id, active) = (entry.session.clone(), entry.active);
     let label = entry.status.label();
     let target = id.clone();
-    let row = list_row_with(
+    let row = list_row(
         active,
         title,
         ListRowSlots {
@@ -147,7 +148,7 @@ fn past_row(app: &App, info: &SessionInfo, gone: Signal<HashSet<String>>) -> Nod
     let open = app.clone();
     let id = info.id.clone();
     let target = id.clone();
-    let row = list_row_with(
+    let row = list_row(
         false,
         past_title(info),
         ListRowSlots {

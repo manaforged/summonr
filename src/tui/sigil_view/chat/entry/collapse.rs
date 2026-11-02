@@ -1,7 +1,7 @@
-use sigil::kernel::{Cx, IntoNode, NodeId};
 use sigil::prelude::{
     LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, container, markdown_inline,
 };
+use sigil::{Cx, NodeId, prelude::IntoNode};
 
 use super::super::App;
 use super::wrap;
@@ -107,9 +107,9 @@ fn prose(body: Signal<String>, text_style: TextStyle) -> NodeBuilder {
         })
 }
 
-fn caption(text: impl Into<sigil::kernel::TextContent>) -> NodeBuilder {
+fn caption(text: impl Into<sigil::prelude::TextContent>) -> NodeBuilder {
     wrap(
-        sigil::kernel::text(text)
+        sigil::prelude::text(text)
             .nowrap()
             .font_size(12.0)
             .font_italic(true)

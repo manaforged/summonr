@@ -34,7 +34,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                         container()
                             .layout(LayoutStyle::block().padding_x(8.0))
                             .child(
-                                sigil::kernel::text(format!("{}▌", "•".repeat(typed.min(48))))
+                                sigil::prelude::text(format!("{}▌", "•".repeat(typed.min(48))))
                                     .nowrap()
                                     .text_color(sigil::prelude::Token::OnSurface)
                                     .font_size(14.0),

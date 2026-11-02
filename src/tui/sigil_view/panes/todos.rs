@@ -27,7 +27,7 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
     for row in lines {
         let done = row.mark == Mark::Done;
         column = column.child(
-            sigil::kernel::text(row.shown())
+            sigil::prelude::text(row.shown())
                 .wrap()
                 .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
                 .font_size(12.0)

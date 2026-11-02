@@ -1,7 +1,5 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{
-    LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, container, list_row_with,
-};
+use sigil::prelude::{LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, container, list_row};
 
 use super::panes::ledger::{LedgerRow, Mark};
 use super::{App, Model, Pane, canvas};
@@ -97,7 +95,7 @@ fn panel(app: App, view: TodosView) -> NodeBuilder {
         )
         .rounded(sigil::prelude::Radius::Base)
         .child(
-            list_row_with(
+            list_row(
                 false,
                 format!("{} {}/{}", Builtin::Todo.verb(), view.done, view.total),
                 ListRowSlots {

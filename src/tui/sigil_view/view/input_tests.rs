@@ -1,3 +1,4 @@
+use sigil::prelude::HostMode;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -5,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sigil::Host;
 use sigil::clipboard::{Clipboard, Delivery};
 use sigil::events::Event;
-use sigil::kernel::NodeBuilder;
+use sigil::prelude::NodeBuilder;
 use sigil::prelude::{Widget, button};
 use sigil::terminal::{Screen, map_key};
 use tokio::sync::mpsc::unbounded_channel;
@@ -49,7 +50,7 @@ fn drive<T>(
         );
         app.resize(160, 40);
         setup(&app);
-        let mut host = Host::cells();
+        let mut host = Host::new(HostMode::Cell);
         let tree = app.clone();
         host.mount(move || view(tree));
         let mut screen = Screen::new(160, 40);

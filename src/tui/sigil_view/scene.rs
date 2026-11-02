@@ -7,10 +7,10 @@ pub(super) use super::app::App;
 
 use super::canvas::{Cell, blend, cell as metrics, ink, palette, rgb, shown};
 use super::model::Model;
-use sigil::layout::Position;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
+use sigil::prelude::Position;
 use sigil::prelude::Rgba8;
 use sigil::prelude::Widget;
 use sigil::prelude::container;

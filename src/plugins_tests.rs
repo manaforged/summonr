@@ -59,7 +59,7 @@ fn install_reports_the_lanes_skill_and_command() {
     assert_eq!(lead, body(&src.join("skills/lanes/SKILL.md")));
     assert!(lead.contains("| Lane agent | `climb` |"), "{lead}");
     assert!(lead.contains("| Start lane | `task`"), "{lead}");
-    assert!(lead.contains("| Steer lane | `send` |"), "{lead}");
+    assert!(lead.contains("| Steer lane | `send`"), "{lead}");
     assert!(lead.contains("| Tick | `summonr cron add"), "{lead}");
     let blob = std::fs::read_to_string(src.join("commands/lanes.md")).expect("command");
     for banned in ["/Users/"] {

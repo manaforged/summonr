@@ -1,7 +1,5 @@
 use sigil::Host;
-use sigil::events::{
-    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, Event,
-};
+use sigil::events::{Event, KeyEvent, KeyPhase, LogicalKey, ModifiersState, PhysicalKey};
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -11,14 +9,7 @@ use super::busy_info;
 use crate::tui::{Activity, Fact, Msg};
 
 fn press(key: &str) -> Event {
-    Event::Key(KeyEvent::new(KeyEventInit {
-        key: LogicalKey::character(key),
-        physical: PhysicalKey::Unidentified,
-        modifiers: ModifiersState::empty(),
-        repeat: false,
-        phase: KeyPhase::Down,
-        text: Some(key.into()),
-    }))
+    Event::key(LogicalKey::character(key), KeyPhase::Down).text(Some(key.into()))
 }
 
 fn pending_after_n(draft: &str) -> bool {
@@ -34,7 +25,7 @@ fn pending_after_n(draft: &str) -> bool {
             dialog: 1,
         })));
         app.replace(draft.to_owned());
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
@@ -59,7 +50,7 @@ fn after_key(draft: &str, key: &str, check: impl FnOnce(&App) -> bool) -> bool {
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(100, 30);
         app.replace(draft.to_owned());
-        let mut host = Host::cells();
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);

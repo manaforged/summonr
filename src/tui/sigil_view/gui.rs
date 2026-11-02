@@ -51,12 +51,16 @@ pub(crate) fn run(
             app.animate();
             if let Some(ui_rx) = inbox.borrow_mut().take() {
                 let receiver = app.clone();
-                on_message(ui_rx, move |msg| {
-                    untrack(|| {
-                        receiver.update(msg);
-                        receiver.refresh();
-                    });
-                });
+                on_message(
+                    ui_rx,
+                    move |msg| {
+                        untrack(|| {
+                            receiver.update(msg);
+                            receiver.refresh();
+                        });
+                    },
+                    || {},
+                );
             }
             watch_outputs(&app);
             root(app)

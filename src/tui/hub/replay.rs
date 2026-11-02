@@ -14,6 +14,7 @@ pub(super) struct ReplayState {
     workflow: Option<Roster>,
     mode: Option<crate::WorkKind>,
     queued: Option<(usize, usize)>,
+    pending: Vec<(bool, String)>,
     changed: Option<Vec<String>>,
     restored: Option<Vec<UserInput>>,
 }
@@ -43,6 +44,8 @@ impl ReplayState {
             self.mode = Some(*mode);
         } else if let Msg::Fact(Fact::Queued { steering, queued }) = msg {
             self.queued = Some((*steering, *queued));
+        } else if let Msg::Fact(Fact::Pending(rows)) = msg {
+            self.pending = rows.clone();
         } else if let Msg::Fact(Fact::Changed(paths)) = msg {
             self.changed = Some(paths.clone());
         } else if let Msg::Fact(Fact::Restored(inputs)) = msg
@@ -73,6 +76,7 @@ impl ReplayState {
         out.extend(self.mode.map(|mode| Msg::Intent(Intent::RunMode(mode))));
         let (steering, queued) = self.queued.unwrap_or_default();
         out.push(Msg::Fact(Fact::Queued { steering, queued }));
+        out.push(Msg::Fact(Fact::Pending(self.pending.clone())));
         out.extend(
             self.restored
                 .take()

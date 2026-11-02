@@ -42,7 +42,7 @@ impl App {
         if self.overlay_move(dir) || self.form_move(dir) {
         } else if self.pane_active().is_some() {
             self.pane_move(dir);
-        } else if dir < 0 && self.draft.peek().is_empty() && self.model.get().queued.1 > 0 {
+        } else if dir < 0 && self.draft.peek().is_empty() && !self.model.get().pending.is_empty() {
             self.dequeue();
         } else if self.suggesting() {
             self.shift(dir);

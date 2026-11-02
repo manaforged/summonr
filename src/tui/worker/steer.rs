@@ -17,6 +17,8 @@ pub(super) struct InputQueue {
     pub(super) followups: VecDeque<UserInput>,
     pub(super) steering: Arc<crate::runtime::Steering>,
     pub(super) carried: usize,
+    announced: Vec<(bool, String)>,
+    pub(super) recorded: Vec<String>,
 }
 
 impl InputQueue {
@@ -26,10 +28,17 @@ impl InputQueue {
             followups: VecDeque::new(),
             steering,
             carried: 0,
+            announced: Vec::new(),
+            recorded: Vec::new(),
         }
     }
 
-    pub(super) fn announce(&self, ui: &UnboundedSender<Msg>) {
+    pub(super) fn announce(&mut self, ui: &UnboundedSender<Msg>) {
+        let rows = self.pending_rows();
+        if rows != self.announced {
+            self.announced.clone_from(&rows);
+            drop(ui.send(Msg::Fact(Fact::Pending(rows))));
+        }
         let steering = self.steering.lock().map_or(0, |queue| queue.len());
         let held = self
             .deferred
@@ -40,6 +49,23 @@ impl InputQueue {
             steering,
             queued: self.followups.len() + held,
         })));
+    }
+
+    fn pending_rows(&self) -> Vec<(bool, String)> {
+        let steering = self.steering.lock().unwrap_or_else(PoisonError::into_inner);
+        let sent = steering
+            .iter()
+            .filter(|input| input.source.is_some())
+            .map(|input| (true, input.text.clone()));
+        let deferred = self.deferred.iter().filter_map(|command| match command {
+            Cmd::Submit(input) => Some((false, input.text.clone())),
+            _other => None,
+        });
+        let later = self
+            .followups
+            .iter()
+            .map(|input| (false, input.text.clone()));
+        sent.chain(deferred).chain(later).collect()
     }
 
     pub(super) fn take(&mut self, pick: impl Fn(&UserInput) -> bool) -> Vec<UserInput> {
@@ -59,6 +85,15 @@ impl InputQueue {
             !take
         });
         taken
+    }
+
+    fn take_sent(&self) -> Vec<UserInput> {
+        let mut steering = self.steering.lock().unwrap_or_else(PoisonError::into_inner);
+        let (sent, notes) = steering
+            .drain(..)
+            .partition::<Vec<_>, _>(|input| input.source.is_some());
+        steering.extend(notes);
+        sent
     }
 
     pub(super) fn take_steering(&self) -> Vec<UserInput> {
@@ -98,7 +133,11 @@ impl InputQueue {
                 self.followups.push_back(input);
                 drop(ui.send(Msg::Fact(Fact::System(QUEUED_LATER.to_string()))));
             }
-            Cmd::Queue(input) | Cmd::Submit(input) => self.followups.push_back(input),
+            Cmd::Queue(input) => self.followups.push_back(input),
+            Cmd::Submit(input) => {
+                self.recorded.push(input.text.clone());
+                self.followups.push_back(input);
+            }
             Cmd::SteerQueued => {
                 let now = self.take(steerable);
                 let note = if now.is_empty() {
@@ -110,7 +149,8 @@ impl InputQueue {
                 drop(ui.send(Msg::Fact(Fact::System(note.to_string()))));
             }
             Cmd::Dequeue => {
-                let pending = self.take(|_| true);
+                let mut pending = self.take_sent();
+                pending.extend(self.take(|_| true));
                 if !pending.is_empty() {
                     drop(ui.send(Msg::Fact(Fact::Restored(pending))));
                 }

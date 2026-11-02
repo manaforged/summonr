@@ -291,7 +291,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
             } else {
                 vec![
                     container().child(
-                        sigil::kernel::text(note)
+                        sigil::prelude::text(note)
                             .wrap()
                             .text_color(sigil::prelude::Token::Warn11),
                     ),

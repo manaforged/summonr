@@ -1,4 +1,4 @@
-use sigil::kernel::TextBuilder;
+use sigil::prelude::TextBuilder;
 use sigil::prelude::{
     AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Token,
     container,
@@ -30,7 +30,7 @@ pub(in crate::tui::sigil_view) fn loading_mark(ticks: Signal<u64>) -> TextBuilde
         let at = usize::try_from(ticks.get() % LOADING.len() as u64).unwrap_or(0);
         LOADING[at].to_owned()
     };
-    TextStyle::xs(Token::Accent11).on(sigil::kernel::text(body).nowrap())
+    TextStyle::xs(Token::Accent11).on(sigil::prelude::text(body).nowrap())
 }
 
 pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]) -> String {

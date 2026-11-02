@@ -43,7 +43,8 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn dequeue(&self) {
-        if self.model.get().queued.1 > 0 {
+        let (sent, queued) = self.model.get().queued;
+        if sent + queued > 0 {
             drop(self.cmd.send(Cmd::Dequeue));
         }
     }

@@ -10,10 +10,10 @@ use crate::tui::sigil_view::ui::{Dialog, Hints, Key, Size};
 use sigil::prelude::Widget;
 
 fn text(
-    body: impl Into<sigil::kernel::TextContent>,
+    body: impl Into<sigil::prelude::TextContent>,
     text_style: TextStyle,
-) -> sigil::kernel::TextBuilder {
-    text_style.on(sigil::kernel::text(body).nowrap())
+) -> sigil::prelude::TextBuilder {
+    text_style.on(sigil::prelude::text(body).nowrap())
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -76,7 +76,7 @@ const CHROME: [&str; 5] = ["✳", "Subagent", "·", "·", "tok"];
 const CHROME_GAPS: usize = 9;
 
 fn fixed(
-    body: impl Into<sigil::kernel::TextContent>,
+    body: impl Into<sigil::prelude::TextContent>,
     text_style: TextStyle,
     cells: usize,
     justify: JustifyContent,
@@ -97,7 +97,9 @@ type View = sigil::prelude::Signal<Census>;
 fn field(view: View, id: String, pick: impl Fn(&Agent) -> String + 'static) -> impl Fn() -> String {
     move || {
         view.with(|census| {
-            census.rows.iter()
+            census
+                .rows
+                .iter()
                 .find(|agent| agent.id == id)
                 .map(&pick)
                 .unwrap_or_default()
@@ -278,7 +280,12 @@ fn detail(app: &App) -> NodeBuilder {
     let title = agent.map(|agent| agent.title.clone()).unwrap_or_default();
     let last = agent.map(|agent| agent.last.clone()).unwrap_or_default();
     container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(2.0).min_size(0.0, 0.0))
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .gap(2.0)
+                .min_size(0.0, 0.0),
+        )
         .child(text("selected", TextStyle::xs(Token::Gray10)))
         .child(text(title, TextStyle::xs(Token::Gray12)))
         .child(text(format!("· {last}"), TextStyle::xs(Token::Gray11)))
@@ -314,7 +321,16 @@ fn list(app: App, width: usize) -> NodeBuilder {
             let headless = census.headless;
             let mut nodes = Vec::new();
             if !rows.is_empty() || !headless.is_empty() || census.total > 0 {
-                let count = move || view.with(|census| census.total.to_string());
+                let count = move || {
+                    view.with(|census| {
+                        if census.view.open() {
+                            census.total
+                        } else {
+                            census.rows.len() + census.headless.len() + census.rest
+                        }
+                        .to_string()
+                    })
+                };
                 let toggle = app.clone();
                 let hint = Hints::new()
                     .key(

@@ -16,7 +16,7 @@ fn an_idle_splash_frame_repaints_only_what_twinkles() {
         app.sky = 1;
         let clock = sigil::prelude::signal(0.0);
         app.sky_clock.set(Some(clock));
-        let mut host = sigil::Host::cells();
+        let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || crate::tui::sigil_view::view::root(tree));
         let mut screen = sigil::terminal::Screen::new(SIZE.0, SIZE.1);
@@ -126,7 +126,7 @@ fn the_splash_sky_shows_the_stars_of_its_clock() {
             super::super::space::moving(SIZE.0, SIZE.1, beat, app.sky)
                 .into_iter()
                 .filter(|spot| outside(spot.x, spot.y))
-                .map(|spot| (spot.x, spot.y, spot.cell.text.to_string()))
+                .map(|spot| (spot.x, spot.y, spot.cell.text().to_string()))
                 .collect::<Vec<_>>()
         };
         let still = stars(0.0);
@@ -148,7 +148,7 @@ fn the_splash_sky_shows_the_stars_of_its_clock() {
         for (x, y, text) in moved {
             assert_eq!(
                 grid.get(usize::from(x), usize::from(y))
-                    .map(|cell| cell.text.to_string()),
+                    .map(|cell| cell.text().to_string()),
                 Some(text),
                 "star at {x},{y} on beat {beat}"
             );

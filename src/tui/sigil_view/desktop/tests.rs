@@ -1,18 +1,16 @@
+use sigil::prelude::HostMode;
 use std::collections::BTreeMap;
 
 use sigil::Host;
 use sigil::app::FrameHooks;
-use sigil::events::{
-    KeyEvent, KeyEventInit, KeyPhase, LogicalKey, ModifiersState, PhysicalKey, Event,
-};
-use sigil::kernel::NodeBuilder;
+use sigil::events::{Event, KeyEvent, KeyPhase, LogicalKey, ModifiersState, PhysicalKey};
+use sigil::prelude::NodeBuilder;
 use sigil::scene::SceneCommand;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::{App, rail, root, thread};
 use crate::catalog::Model;
 use crate::recent::ModelId;
-use crate::tools::Event;
 use crate::tui::{Fact, Msg, Snapshot};
 
 mod harness;
@@ -43,14 +41,7 @@ fn in_window(test: &str) -> bool {
 }
 
 fn key(text: &str) -> Event {
-    Event::Key(KeyEvent::new(KeyEventInit {
-        key: LogicalKey::character(text),
-        physical: PhysicalKey::Unidentified,
-        modifiers: ModifiersState::empty(),
-        repeat: false,
-        phase: KeyPhase::Down,
-        text: Some(text.into()),
-    }))
+    Event::key(LogicalKey::character(text), KeyPhase::Down).text(Some(text.into()))
 }
 
 fn fit(app: &App) {
@@ -76,7 +67,7 @@ fn texts(
         fit(&app);
         setup(&app);
         app.refresh();
-        let mut host = Host::new();
+        let mut host = Host::new(HostMode::Pixel);
         host.mount(move || view(app.clone()));
         for _ in 0..3 {
             host.frame(VIEW, 1.0, FrameHooks::default());
@@ -89,7 +80,7 @@ fn texts(
                 let SceneCommand::GlyphRun(draw) = command else {
                     return None;
                 };
-                Some((draw.run.text.clone(), draw.run.rect.origin.y))
+                Some((draw.text.clone(), draw.rect.origin.y))
             })
             .collect()
     })
@@ -118,7 +109,7 @@ fn the_context_meter_draws_no_caption_text() {
                 context_window: Some(200_000),
                 ..Snapshot::default()
             })));
-            app.update(Msg::Fact(Fact::Event(Event::Usage {
+            app.update(Msg::Fact(Fact::Event(crate::tools::Event::Usage {
                 prompt_tokens: 1500,
                 completion_tokens: 20,
                 reasoning_tokens: 0,
@@ -239,7 +230,7 @@ fn the_window_composer_takes_typing_at_launch() {
             commands,
         );
         app.refresh();
-        let mut host = Host::new();
+        let mut host = Host::new(HostMode::Pixel);
         let tree = app.clone();
         host.mount(move || root(tree.clone()));
         host.frame(VIEW, 0.0, FrameHooks::default());

@@ -127,13 +127,13 @@ fn busy_row(app: &App, width: usize) -> NodeBuilder {
                 .padding_top(super::canvas::cell().h),
         )
         .child(
-            sigil::kernel::text(move || split(true))
+            sigil::prelude::text(move || split(true))
                 .nowrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Accent),
         )
         .child(
-            sigil::kernel::text(move || split(false))
+            sigil::prelude::text(move || split(false))
                 .nowrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),

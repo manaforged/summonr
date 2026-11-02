@@ -14,7 +14,7 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
     ) -> Result<()> {
         let (planned, calls) = self.screen(planned, calls, messages, events, emit).await?;
-        if self.steer_waiting() {
+        if self.interrupted() {
             return self
                 .run_serial(planned, calls, messages, events, emit, usage)
                 .await;
@@ -32,7 +32,7 @@ impl<P: Provider> Loop<P> {
         let is_task = |call: &ToolCall| Builtin::is(&call.function.name, Builtin::Task);
         let mut pending = planned.into_iter().zip(calls).peekable();
         while let Some((planned, call)) = pending.next() {
-            if !is_task(&call) || self.steer_waiting() {
+            if !is_task(&call) || self.interrupted() {
                 self.run_serial(vec![planned], vec![call], messages, events, emit, usage)
                     .await?;
                 continue;
@@ -171,11 +171,12 @@ impl<P: Provider> Loop<P> {
         let mut report = move |update| drop(sender.send(update));
         let running = hub.call(&alias, arguments, &policy, &mut report);
         let input = self.input_wait();
+        let interrupts = self.input_interrupts();
         tokio::pin!(running, input);
         let output = loop {
             tokio::select! {
                 biased;
-                result = &mut input => {
+                result = &mut input, if interrupts => {
                     result?;
                     break Err(Error::Tool("MCP call interrupted by an incoming message; the server may have completed changes".to_string()));
                 }
@@ -210,7 +211,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<(Result<ToolOutput>, Option<Usage>)> {
-        if self.steer_waiting() {
+        if self.interrupted() {
             return Ok((
                 Err(Error::Tool(
                     self.steered("not run: interrupted by an incoming message"),

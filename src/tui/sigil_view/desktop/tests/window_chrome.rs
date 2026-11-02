@@ -1,4 +1,4 @@
-use sigil::kernel::Role;
+use sigil::prelude::Role;
 
 use super::super::{Pane, rail};
 use super::harness::{changed, drive};

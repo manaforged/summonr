@@ -5,12 +5,9 @@ use sigil::prelude::Widget;
 use sigil::prelude::{LayoutStyle, NodeBuilder, container};
 
 fn dialog_body(children: impl Fn() -> Vec<NodeBuilder> + 'static) -> NodeBuilder {
-    let mut layout = LayoutStyle::flex_column()
+    let layout = LayoutStyle::flex_column()
         .fill_width()
         .gap(canvas::overlay_gap());
-    if canvas::is_window() {
-        layout = layout.grow(1.0).fill_height().min_size(0.0, 0.0);
-    }
     container().layout(layout).children_reactive(children)
 }
 

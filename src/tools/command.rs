@@ -93,7 +93,10 @@ impl ToolRegistry {
         let (background, explicit) = launch_mode(args)?;
         let approval = self.take_approval()?;
         let cwd = self.command_dir(args)?;
-        if let Some(output) = self.shortcut(args, command, &cwd, approval.is_some(), rewrite)? {
+        if let Some(output) = self
+            .shortcut(args, command, &cwd, approval.is_some(), rewrite)
+            .await?
+        {
             return Ok(output);
         }
         self.check_launch(locked, restricted, background)?;
@@ -116,7 +119,7 @@ impl ToolRegistry {
         Ok(output)
     }
 
-    fn shortcut(
+    async fn shortcut(
         &self,
         args: &serde_json::Value,
         command: &str,
@@ -139,7 +142,7 @@ impl ToolRegistry {
         }
         match self.read_natively(command)? {
             Some(output) => Ok(Some(output)),
-            None => self.search_natively(command),
+            None => self.search_natively(command).await,
         }
     }
 
@@ -236,7 +239,7 @@ impl ToolRegistry {
         Ok(Some(ToolOutput::ok(text)))
     }
 
-    fn search_natively(&self, command: &str) -> Result<Option<ToolOutput>> {
+    async fn search_natively(&self, command: &str) -> Result<Option<ToolOutput>> {
         let parts: Vec<&str> = command
             .split(';')
             .map(str::trim)
@@ -251,13 +254,21 @@ impl ToolRegistry {
         };
         let mut answers = Vec::with_capacity(calls.len());
         for (part, call) in parts.iter().zip(calls) {
-            let text = crate::tools::blocking(|| self.search_files(&call))?;
+            let text = self.search_cancellable(&call).await?;
             answers.push(format!("[`{part}` answered by search {call}]\n{text}"));
         }
         Ok(Some(ToolOutput::ok(answers.join("\n\n"))))
     }
 
     pub(crate) fn stop_jobs(&self) -> Result<Vec<String>> {
+        self.stop_matching(|_| true)
+    }
+
+    pub(crate) fn stop_detached(&self, started: u64) -> Result<Vec<String>> {
+        self.stop_matching(|record| record.detached && record.started >= started)
+    }
+
+    fn stop_matching(&self, stops: impl Fn(&crate::jobs::Record) -> bool) -> Result<Vec<String>> {
         let session = self
             .session
             .lock()
@@ -268,7 +279,7 @@ impl ToolRegistry {
         let mut notes = Vec::new();
         for record in crate::jobs::since(&self.workspace, 0, Some(&session))
             .into_iter()
-            .filter(|record| record.session.as_deref() == Some(&session))
+            .filter(|record| record.session.as_deref() == Some(&session) && stops(record))
         {
             if crate::jobs::status(&self.workspace, &record)?.state
                 == crate::jobs::JobState::Running

@@ -62,12 +62,7 @@ fn install_reports_the_lanes_skill_and_command() {
     assert!(lead.contains("| Steer lane | `send`"), "{lead}");
     assert!(lead.contains("| Tick | `summonr cron add"), "{lead}");
     let blob = std::fs::read_to_string(src.join("commands/lanes.md")).expect("command");
-    for banned in ["/Users/"] {
-        assert!(
-            !blob.to_lowercase().contains(&banned.to_lowercase()),
-            "{banned}"
-        );
-    }
+    assert!(!blob.to_lowercase().contains("/users/"), "/Users/");
 }
 
 fn body(path: &std::path::Path) -> String {

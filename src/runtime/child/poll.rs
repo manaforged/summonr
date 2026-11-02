@@ -300,7 +300,6 @@ impl<P: Provider> Loop<P> {
         match &**event {
             Event::ToolCall { name, .. } => {
                 spawned.tool = name.clone();
-                return;
             }
             Event::ToolResult {
                 success: false,

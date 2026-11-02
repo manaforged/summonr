@@ -1,6 +1,6 @@
 [package]
 name = "summonr"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -17,7 +17,7 @@ publish = false
 members = ["crates/auth", "crates/core", "crates/types"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -33,7 +33,7 @@ harness = false
 
 [workspace.dependencies]
 base64 = "0.22"
-leyline = { package = "leyline-http", git = "https://github.com/manaforged/leyline-http", rev = "66b0f519a789cb2b3b3c015be12f18f8c0bd5ae8", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
+leyline = { package = "leyline-http", version = "0.2.0", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
 rand = { version = "0.9", default-features = false, features = ["os_rng"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
@@ -70,7 +70,7 @@ leyline = { workspace = true }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "d6f7c249e80d27b578dc3574284f86370fa78d66", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", version = "0.2.0", default-features = false, features = ["terminal", "inspect"] }
 ignore = { workspace = true }
 grep-matcher = "0.1"
 grep-regex = "0.1"
@@ -84,7 +84,7 @@ jiff = "0.2.38"
 httparse = "1.10"
 
 [dev-dependencies]
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "d6f7c249e80d27b578dc3574284f86370fa78d66", default-features = false, features = ["kittest"] }
+sigil = { package = "sigil-ui", version = "0.2.0", default-features = false, features = ["kittest"] }
 summonr-core = { path = "crates/core", features = ["test-home"] }
 fastrand = "2.5"
 tokio = { version = "1", features = ["test-util"] }

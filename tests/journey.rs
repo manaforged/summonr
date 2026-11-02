@@ -1,4 +1,10 @@
 #![cfg(unix)]
+#![allow(
+    dead_code,
+    unused_imports,
+    clippy::disallowed_methods,
+    reason = "shares tests/support with other targets and polls a real terminal"
+)]
 
 mod support;
 #[path = "support/terminal.rs"]
@@ -9,8 +15,8 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use terminal::Terminal;
 use support::{Model, Step};
+use terminal::Terminal;
 
 const HELD: Duration = Duration::from_secs(120);
 const QUICK: Duration = Duration::from_secs(5);

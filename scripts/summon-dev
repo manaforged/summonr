@@ -19,8 +19,7 @@ sigil=$(CDPATH= cd -- "$root/../sigil" 2>/dev/null && pwd)
 watch="$root/src $root/Cargo.toml $root/Cargo.lock $root/build.rs $root/.git/HEAD"
 patch=
 if [ -n "$sigil" ] && [ -f "$sigil/crates/sigil/Cargo.toml" ]; then
-    url=$(sed -n 's/^sigil = .*git = "\([^"]*\)".*/\1/p' "$root/Cargo.toml" | head -n 1)
-    patch="patch.\"$url\".sigil-ui.git=\"file://$sigil\""
+    patch="patch.crates-io.sigil-ui.path=\"$sigil/crates/sigil\""
     head="$head $(git -C "$sigil" rev-parse HEAD 2>/dev/null)"
 fi
 

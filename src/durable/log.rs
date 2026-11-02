@@ -233,7 +233,7 @@ fn hold(path: &Path) -> io::Result<File> {
                 format!("{} is open in another summonr window", path.display()),
             ));
         }
-        std::thread::sleep(wait / 25);
+        std::thread::park_timeout(wait / 25);
     }
 }
 

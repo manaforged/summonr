@@ -1,5 +1,5 @@
 use sigil::Host;
-use sigil::events::{Event, KeyEvent, KeyPhase, LogicalKey, ModifiersState, PhysicalKey};
+use sigil::events::{Event, KeyPhase, LogicalKey};
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
 

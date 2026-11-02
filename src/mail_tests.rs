@@ -76,7 +76,7 @@ fn a_running_tool_stays_off_the_parent_inbox() {
     )
     .unwrap();
     child.note_tool("model", cwd, "shell", Some("parent"));
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::thread::park_timeout(std::time::Duration::from_millis(50));
     let mail = read_inbox(dir.path(), "parent").unwrap();
     assert!(mail.is_empty(), "{mail:?}");
     let record: Agent = serde_json::from_str(

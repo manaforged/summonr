@@ -266,7 +266,7 @@ fn a_covering_overlay_pauses_the_splash_clock() {
 }
 
 fn named(key: sigil::prelude::Key) -> sigil::events::Event {
-    use sigil::events::{KeyEvent, KeyPhase, LogicalKey, ModifiersState, PhysicalKey};
+    use sigil::events::{KeyPhase, LogicalKey};
     sigil::events::Event::key(LogicalKey::named(key), KeyPhase::Down)
 }
 

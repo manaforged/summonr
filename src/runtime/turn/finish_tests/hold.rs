@@ -126,9 +126,9 @@ fn todo(index: usize) -> Reply {
 }
 
 fn stall_noted(turn: &Turn) -> bool {
-    turn.events.iter().any(|event| {
-        matches!(event, Event::Note { text } if text.contains("no new tool call"))
-    })
+    turn.events
+        .iter()
+        .any(|event| matches!(event, Event::Note { text } if text.contains("no new tool call")))
 }
 
 #[tokio::test]

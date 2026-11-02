@@ -16,6 +16,7 @@ pub(super) use super::panes;
 pub(super) use super::speed::Speed;
 pub(super) use super::suggest;
 pub(super) use composer::busy_status;
+#[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use composer::pending_rows;
 pub(in crate::tui::sigil_view) use footer::Target;
 pub(super) use sigil::app::cell_width;

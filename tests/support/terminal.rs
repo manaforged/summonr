@@ -1,5 +1,7 @@
-#![allow(dead_code, reason = "two test crates use different parts of this driver")]
-
+#![allow(
+    dead_code,
+    reason = "two test crates use different parts of this driver"
+)]
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -106,7 +108,7 @@ impl Terminal {
                 return screen;
             }
             assert!(Instant::now() < deadline, "{what} never showed:\n{screen}");
-            let _ = self.wait_output(Duration::from_millis(100));
+            let _timed_out = self.wait_output(Duration::from_millis(100));
         }
     }
 }
@@ -158,7 +160,7 @@ pub(crate) fn hang_up(home: &Path, port: u16) -> Option<u32> {
     let logs = home.join("logs");
     let started = Instant::now() + Duration::from_secs(30);
     while Instant::now() < started && !logged(&logs) {
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::park_timeout(Duration::from_millis(100));
     }
     drop(pair.master);
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -170,7 +172,7 @@ pub(crate) fn hang_up(home: &Path, port: u16) -> Option<u32> {
             drop(child.kill());
             return None;
         }
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::park_timeout(Duration::from_millis(50));
     }
 }
 

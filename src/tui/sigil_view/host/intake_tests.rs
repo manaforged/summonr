@@ -70,7 +70,7 @@ fn bracketed_image_paths_attach_without_submitting_and_secret_pastes_stay_privat
         ))
         .expect("map enter");
         let mut events = vec![
-            sigil::events::Event::paste(&path.display().to_string()),
+            sigil::events::Event::paste(path.display().to_string()),
             enter,
         ];
         app.intake(&mut events);

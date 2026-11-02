@@ -1,7 +1,5 @@
 use sigil::Host;
-use sigil::events::{
-    Event, ModifiersState, MouseButton, MouseButtons, PointerEvent, PointerKind, PointerPhase,
-};
+use sigil::events::{Event, MouseButton, MouseButtons, PointerPhase};
 use sigil::geometry::Point;
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;

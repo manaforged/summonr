@@ -4,7 +4,6 @@ use std::rc::Rc;
 use sigil::Host;
 use sigil::clipboard::{Clipboard, Delivery};
 use sigil::events::Event as SigilEvent;
-use sigil::events::PointerPhase;
 use sigil::terminal::{Screen, cell_point};
 use tokio::sync::mpsc::unbounded_channel;
 

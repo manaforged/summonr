@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+### Changed
+
+- A message or mail during a long tool reaches the model after `tool_yield_secs` in a main session. A foreground command moves to a background job, and an MCP call or read-only tool stops. `tool_yield_secs` replaces `command_yield_secs`.
+- summonr now uses the Sigil and Leyline 0.2.0 releases from crates.io.
 
 ### Added
 

@@ -214,12 +214,13 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn agents_sheet_open(&self) -> sigil::reactive::Signal<bool> {
-        let model = self.model.clone();
+        let model = self.model;
         sigil::reactive::derived(move || {
             model.get().agents_view == crate::tui::sigil_view::model::AgentsView::Sheet
         })
     }
 
+    #[cfg(test)]
     pub(in crate::tui::sigil_view) fn open_agents_split(&self) {
         self.model_mut(|model| {
             model.agents_view = crate::tui::sigil_view::model::AgentsView::Split;

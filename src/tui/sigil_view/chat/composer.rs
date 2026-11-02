@@ -9,6 +9,7 @@ use crate::tui::Activity;
 
 mod widget;
 
+#[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use widget::pending_rows;
 pub(super) use widget::widget;
 

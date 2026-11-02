@@ -26,7 +26,6 @@ mod startup_tests;
 mod state;
 mod steer;
 mod turn;
-pub(in crate::tui) use steer::QUEUED_LATER;
 
 use reader::Reader;
 

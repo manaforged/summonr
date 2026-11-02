@@ -12,6 +12,7 @@ pub(crate) enum Step {
     Call(&'static str, Value),
     Text(&'static str),
     After(Duration, Box<Step>),
+    #[allow(dead_code, reason = "only journey tests script a failed reply")]
     Fail(u16, &'static str, &'static str),
 }
 

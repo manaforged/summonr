@@ -75,14 +75,15 @@ async fn steering_moves_a_command_to_a_job_and_runs_its_batch_in_a_main_session(
     .unwrap();
     report.unwrap();
     assert!(workspace.join("next").exists());
-    let sent = run.sent.lock().unwrap();
-    assert!(
-        sent[1]
-            .iter()
-            .any(|message| message.content.contains("continues as a background job"))
-    );
-    assert!(sent[1].iter().any(|message| message.content == "also this"));
-    drop(sent);
+    {
+        let sent = run.sent.lock().unwrap();
+        assert!(
+            sent[1]
+                .iter()
+                .any(|message| message.content.contains("continues as a background job"))
+        );
+        assert!(sent[1].iter().any(|message| message.content == "also this"));
+    }
     tokio::time::timeout(Duration::from_secs(10), async {
         while !workspace.join("finished").exists() {
             tokio::time::sleep(Duration::from_millis(5)).await;

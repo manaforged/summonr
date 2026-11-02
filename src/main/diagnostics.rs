@@ -283,9 +283,14 @@ pub(crate) fn park_stderr() -> Option<i32> {
 #[cfg(not(unix))]
 pub(crate) fn restore_stderr(_saved: Option<i32>) {}
 
+const HANGUP_EXIT: i32 = 129;
+
 fn hook(path: PathBuf, run: String) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        if info.to_string().contains("failed printing to stderr") {
+            std::process::exit(HANGUP_EXIT);
+        }
         let result = append(
             &path,
             &json!({

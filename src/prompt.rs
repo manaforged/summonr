@@ -207,7 +207,7 @@ fn dedup_sections(text: &str, seen: &mut HashSet<u64>) -> Option<String> {
     (!kept.is_empty()).then(|| kept.join("\n\n"))
 }
 
-const DEFAULT: &str = "You are an expert coding assistant running inside summonr, a terminal coding harness. You read files, run commands, edit code, and write files.
+const DEFAULT: &str = "You are an expert coding assistant running inside summonr, a terminal coding harness.
 
 <rules>
 - Use search to find text in files or files by name, anywhere on disk; read for files and directories; run_command for builds, tests, and git
@@ -216,7 +216,7 @@ const DEFAULT: &str = "You are an expert coding assistant running inside summonr
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
 - write is for new files and complete rewrites
 - Be concise in your responses
-- Finish the whole request before you reply. Stop only when it is done or when the next step needs a decision that only the user can make
+- Finish the whole request before you reply, unless only the user can decide the next step
 </rules>";
 
 #[cfg(test)]

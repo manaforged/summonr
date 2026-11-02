@@ -22,7 +22,7 @@ Typing `/` opens the command list above the composer. Each row shows the `/comma
 
 While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it runs), the seconds so far, the output rate, and the waiting count. Waiting messages appear as text above the composer, marked `next` or `after turn`.
 
-`enter` during a turn sends a message into it. A reply in progress stops, and the model starts again with your message. A running command and background jobs keep running, and the model reads the message when the command ends. The message joins the transcript when the model receives it, and `↑` on an empty composer pulls waiting messages back until then. `esc` is the interrupt: waiting messages return to the composer, and explicit background jobs keep running. `tab` queues a message for after the turn, and it also waits for the next turn when:
+`enter` during a turn sends a message into it. A reply in progress stops, and the model starts again with your message. A running command moves to a background job and keeps running, so the model reads the message at once, and background jobs keep running. An MCP call or a read-only tool stops, and the model can run it again. A foreground task and an open dialog wait. The message joins the transcript when the model receives it, and `↑` on an empty composer pulls waiting messages back until then. `esc` is the interrupt: waiting messages return to the composer, and explicit background jobs keep running. `tab` queues a message for after the turn, and it also waits for the next turn when:
 
 - an approval or a question is open,
 - earlier messages or commands still wait, or

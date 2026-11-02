@@ -253,7 +253,7 @@ additionalProperties = false
 [tool.schema.properties]
 command = { type = "string" }
 workdir = { type = "string" }
-timeout_secs = { type = "integer", minimum = 1, description = "Seconds to wait before the command continues as a background job. Cannot be combined with background." }
+timeout_secs = { type = "integer", minimum = 1, description = "Wait before it continues as a job. Not with background." }
 background = { type = "boolean", description = "Return a job id immediately. Omit timeout_secs." }
 job = { type = "string" }
 kill = { type = "boolean" }

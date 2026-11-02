@@ -140,6 +140,20 @@ impl<P: Provider> Loop<P> {
         self.watch_input(true)
     }
 
+    pub(super) fn input_cut(&self) -> impl std::future::Future<Output = Result<()>> + use<P> {
+        let input = self.input_wait();
+        let grace = if self.input_interrupts() {
+            0
+        } else {
+            crate::limits::limits().tool_yield_secs
+        };
+        async move {
+            input.await?;
+            tokio::time::sleep(crate::limits::seconds(grace)).await;
+            Ok(())
+        }
+    }
+
     pub(super) fn reply_input_wait(
         &self,
     ) -> impl std::future::Future<Output = Result<()>> + use<P> {

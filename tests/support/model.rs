@@ -12,6 +12,7 @@ pub(crate) enum Step {
     Call(&'static str, Value),
     Text(&'static str),
     After(Duration, Box<Step>),
+    Fail(u16, &'static str, &'static str),
 }
 
 pub(crate) struct Model {
@@ -59,9 +60,13 @@ impl Model {
     }
 
     pub(crate) fn tool_results(&self) -> Vec<String> {
+        let has_results = |messages: &Vec<Value>| messages.iter().any(|m| m["role"] == "tool");
         self.requests()
-            .last()
-            .and_then(|body| body.get("messages").and_then(Value::as_array).cloned())
+            .iter()
+            .rev()
+            .filter_map(|body| body.get("messages").and_then(Value::as_array))
+            .find(|messages| has_results(messages))
+            .cloned()
             .unwrap_or_default()
             .iter()
             .filter(|message| message["role"] == "tool")
@@ -116,6 +121,15 @@ fn serve(stream: TcpStream, script: &Mutex<Vec<Step>>, sink: &Mutex<Vec<Value>>)
             script.remove(0)
         }
     };
+    if let Step::Fail(code, retry_after, text) = step {
+        drop(write!(
+            stream,
+            "HTTP/1.1 {code} Error\r\ncontent-type: application/json\r\nretry-after: {retry_after}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{text}",
+            text.len()
+        ));
+        drop(stream.flush());
+        return;
+    }
     let events = frames(index, step);
     reply(&mut stream, "text/event-stream", &events);
 }
@@ -136,6 +150,7 @@ fn frames(index: usize, step: Step) -> String {
             "tool_calls",
         ),
         Step::Text(text) => (json!({"role": "assistant", "content": text}), "stop"),
+        Step::Fail(..) => return String::new(),
     };
     let chunks = [
         json!({"id": "r", "model": "replay", "choices": [{"index": 0, "delta": delta, "finish_reason": null}]}),

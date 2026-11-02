@@ -36,9 +36,9 @@ async fn steering_interrupts_the_reply_in_a_main_session() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn steering_lets_a_command_and_its_batch_finish_in_a_main_session() {
+async fn steering_moves_a_command_to_a_job_and_runs_its_batch_in_a_main_session() {
     let calls = [
-        ("active", "touch started; sleep 0.2; touch finished"),
+        ("active", "touch started; sleep 4; touch finished"),
         ("next", "touch next"),
     ]
     .into_iter()
@@ -74,11 +74,20 @@ async fn steering_lets_a_command_and_its_batch_finish_in_a_main_session() {
     .await
     .unwrap();
     report.unwrap();
-    assert!(workspace.join("finished").exists());
     assert!(workspace.join("next").exists());
+    let sent = run.sent.lock().unwrap();
     assert!(
-        run.sent.lock().unwrap()[1]
+        sent[1]
             .iter()
-            .any(|message| message.content == "also this")
+            .any(|message| message.content.contains("continues as a background job"))
     );
+    assert!(sent[1].iter().any(|message| message.content == "also this"));
+    drop(sent);
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !workspace.join("finished").exists() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
 }

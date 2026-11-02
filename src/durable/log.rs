@@ -1,6 +1,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -220,12 +221,20 @@ pub(crate) struct Log {
 }
 
 fn hold(path: &Path) -> io::Result<File> {
-    super::store::lock(path, false)?.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::WouldBlock,
-            format!("{} is open in another summonr window", path.display()),
-        )
-    })
+    let wait = crate::limits::limits().session_lock();
+    let deadline = Instant::now() + wait;
+    loop {
+        if let Some(file) = super::store::lock(path, false)? {
+            return Ok(file);
+        }
+        if Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                format!("{} is open in another summonr window", path.display()),
+            ));
+        }
+        std::thread::sleep(wait / 25);
+    }
 }
 
 impl Log {

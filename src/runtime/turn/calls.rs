@@ -97,12 +97,18 @@ impl<P: Provider> Loop<P> {
         let tools = &self.tools;
         let ran = calls
             .iter()
-            .map(|call| async move {
-                let started = Instant::now();
-                (
-                    tools.execute_outcome(call).await,
-                    super::elapsed_millis(started),
-                )
+            .map(|call| {
+                let cut = self.input_cut();
+                async move {
+                    let started = Instant::now();
+                    let output = tokio::select! {
+                        output = tools.execute_outcome(call) => output,
+                        result = cut => result.and_then(|()| Err(Error::Tool(
+                            "interrupted by an incoming message; nothing changed; re-run it if still needed".to_string(),
+                        ))),
+                    };
+                    (output, super::elapsed_millis(started))
+                }
             })
             .collect::<Vec<_>>();
         let ran = futures::future::join_all(ran).await;
@@ -170,15 +176,14 @@ impl<P: Provider> Loop<P> {
         let (sender, mut updates) = tokio::sync::mpsc::unbounded_channel();
         let mut report = move |update| drop(sender.send(update));
         let running = hub.call(&alias, arguments, &policy, &mut report);
-        let input = self.input_wait();
-        let interrupts = self.input_interrupts();
+        let input = self.input_cut();
         tokio::pin!(running, input);
         let output = loop {
             tokio::select! {
                 biased;
-                result = &mut input, if interrupts => {
+                result = &mut input => {
                     result?;
-                    break Err(Error::Tool("MCP call interrupted by an incoming message; the server may have completed changes".to_string()));
+                    break Err(Error::Tool("MCP call interrupted by an incoming message; the server may have completed changes; check them before you re-run it".to_string()));
                 }
                 Some(update) = updates.recv() => self.heard(&call.id, update, events, emit).await?,
                 output = &mut running => break output,

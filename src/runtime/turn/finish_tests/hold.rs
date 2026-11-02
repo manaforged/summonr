@@ -118,33 +118,50 @@ async fn a_user_correction_reaches_the_judge() {
     );
 }
 
+fn todo(index: usize) -> Reply {
+    call(
+        "todo",
+        serde_json::json!({"items": [{"text": format!("step {index}"), "status": "active"}]}),
+    )
+}
+
+fn stall_noted(turn: &Turn) -> bool {
+    turn.events.iter().any(|event| {
+        matches!(event, Event::Note { text } if text.contains("no new tool call"))
+    })
+}
+
 #[tokio::test]
-async fn tool_calls_between_replies_do_not_reset_the_continuation_cap() {
-    let cap = crate::limits::limits().turn_continues;
-    let todo = |index: usize| {
-        call(
-            "todo",
-            serde_json::json!({"items": [{"text": format!("step {index}"), "status": "active"}]}),
-        )
-    };
-    let mut script = vec![todo(0)];
-    for index in 1..=cap {
-        script.push(Reply::Text("working"));
+async fn new_calls_keep_a_turn_going_past_any_count() {
+    let steps = 40;
+    let mut script = Vec::new();
+    for index in 0..steps {
         script.push(todo(index));
+        script.push(Reply::Text("working"));
     }
-    script.push(Reply::Text("still working"));
+    script.push(Reply::Text("one more"));
+    script.push(Reply::Text("stopped"));
     let mut run = session(script);
     let turn = run.loop_.turn("do the steps").await.unwrap();
-    assert_eq!(turn.text, "still working");
-    assert_eq!(run.sent.lock().unwrap().len(), 2 * cap + 2);
-    assert!(
-        turn.events.iter().any(|event| matches!(
-            event,
-            Event::Note { text } if text.contains("turn_continues")
-        )),
-        "{:?}",
-        turn.events
-    );
+    assert_eq!(turn.text, "stopped");
+    assert_eq!(run.sent.lock().unwrap().len(), 2 * steps + 2);
+    assert!(stall_noted(&turn), "{:?}", turn.events);
+}
+
+#[tokio::test]
+async fn repeating_a_call_ends_the_turn_at_the_stall_limit() {
+    let mut run = session([
+        todo(0),
+        Reply::Text("first"),
+        todo(0),
+        Reply::Text("second"),
+        todo(0),
+        Reply::Text("stopped"),
+    ]);
+    let turn = run.loop_.turn("do the step").await.unwrap();
+    assert_eq!(turn.text, "stopped");
+    assert_eq!(run.sent.lock().unwrap().len(), 6);
+    assert!(stall_noted(&turn), "{:?}", turn.events);
 }
 
 #[tokio::test]

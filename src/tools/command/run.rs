@@ -88,11 +88,23 @@ impl ToolRegistry {
         command: &str,
         wait: Wait,
     ) -> Result<ToolOutput> {
-        let waited = tokio::time::timeout(
-            crate::limits::seconds(wait.seconds()),
-            wait_shell(&mut started.child),
-        )
-        .await;
+        let began = std::time::Instant::now();
+        let mut yielded = self.command_yield.subscribe();
+        let waited = tokio::select! {
+            biased;
+            () = async {
+                drop(yielded.wait_for(|yielded| *yielded).await);
+                tokio::time::sleep(crate::limits::seconds(crate::limits::limits().tool_yield_secs)).await;
+            }, if matches!(wait, Wait::Detach(_)) => None,
+            waited = tokio::time::timeout(
+                crate::limits::seconds(wait.seconds()),
+                wait_shell(&mut started.child),
+            ) => Some(waited),
+        };
+        let Some(waited) = waited else {
+            let elapsed = Wait::Detach(began.elapsed().as_secs());
+            return self.timed_out(started, command, elapsed).await;
+        };
         match waited {
             Ok(Ok(status)) => {
                 stop_command(&mut started.child, started.pid)
@@ -105,6 +117,11 @@ impl ToolRegistry {
             Ok(Err(error)) => Err(Error::Tool(format!("command failed: {error}"))),
             Err(_) => self.timed_out(started, command, wait).await,
         }
+    }
+
+    /// Sets whether a running foreground command moves to a background job now.
+    pub(crate) fn yield_command(&self, yielded: bool) {
+        self.command_yield.send_replace(yielded);
     }
 
     pub(super) fn can_detach(&self, read_only: bool) -> bool {

@@ -66,6 +66,12 @@ fn recent(history: &[Message], newest: u64, limit: usize) -> Vec<u64> {
     keys
 }
 
+pub(super) fn call_key(function: &ToolFunction) -> u64 {
+    let mut hasher = Fnv64::default();
+    (&function.name, &function.arguments).hash(&mut hasher);
+    hasher.finish()
+}
+
 fn key(function: &ToolFunction, text: &str) -> u64 {
     let mut hasher = Fnv64::default();
     (&function.name, &function.arguments, text).hash(&mut hasher);

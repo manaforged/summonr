@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::close::Answer;
 use super::*;
 use crate::tools::Builtin;
@@ -5,22 +7,25 @@ use crate::tools::Builtin;
 #[derive(Default)]
 struct Pace {
     stalls: usize,
-    continues: usize,
+    seen: HashSet<u64>,
     planned: bool,
     acted: bool,
 }
 
 impl Pace {
     fn note_calls(&mut self, message: &Message) {
-        self.stalls = 0;
+        let mut fresh = false;
+        for call in &message.tool_calls {
+            fresh |= self.seen.insert(super::repeat::call_key(&call.function));
+        }
+        if fresh {
+            self.stalls = 0;
+        }
         self.planned |= message
             .tool_calls
             .iter()
             .any(|call| Builtin::is(&call.function.name, Builtin::Todo));
-        if acts(message) {
-            self.acted = true;
-            self.continues = 0;
-        }
+        self.acted |= acts(message);
     }
 
     fn stalled(&self) -> bool {
@@ -126,14 +131,14 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Option<Message>> {
-        let capped = pace.continues >= crate::limits::limits().turn_continues;
+        let stalled = pace.stalled();
         let steered = self.steer_waiting();
         let tasks = if steered {
             None
         } else {
             self.open_tasks(pace)?
         };
-        let holds = !capped && (steered || tasks.is_some());
+        let holds = !stalled && (steered || tasks.is_some());
         if !holds && message.content.trim().is_empty() {
             self.settle(pre, events, emit).await?;
             return self.reject_empty(attempt, meter.millis, events, emit);
@@ -146,10 +151,10 @@ impl<P: Provider> Loop<P> {
             meta,
         };
         self.record_answer(answer, events, emit)?;
-        if capped && (steered || tasks.is_some() || self.judge_due(pace)) {
-            self.note_cap(pace, events, emit)?;
+        if stalled && (steered || tasks.is_some() || self.judge_due(pace)) {
+            self.note_stall(pace, events, emit)?;
         }
-        let note = if capped {
+        let note = if stalled {
             None
         } else if holds {
             tasks
@@ -164,7 +169,7 @@ impl<P: Provider> Loop<P> {
         if steered {
             let before = messages.len();
             self.take_mail(messages, events, emit)?;
-            pace.continues += usize::from(messages.len() == before);
+            pace.stalls += usize::from(messages.len() == before);
         }
         if let Some(note) = note {
             self.continue_turn(note, pace, messages, events, emit)?;
@@ -172,15 +177,15 @@ impl<P: Provider> Loop<P> {
         Ok(None)
     }
 
-    fn note_cap(
+    fn note_stall(
         &mut self,
         pace: &Pace,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         let text = format!(
-            "the turn ended after {} continuations (turn_continues); send a message to keep going",
-            pace.continues
+            "the turn ended: {} replies in a row made no new tool call; send a message to keep going",
+            pace.stalls
         );
         self.push_event(events, emit, Event::Note { text })
     }
@@ -194,7 +199,6 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         pace.stalls += 1;
-        pace.continues += 1;
         self.inject(note, messages)?;
         let text = "work is still open; the turn continues".to_string();
         self.push_event(events, emit, Event::Note { text })
@@ -216,7 +220,7 @@ impl<P: Provider> Loop<P> {
     }
 
     fn open_tasks(&self, pace: &Pace) -> Result<Option<String>> {
-        if pace.stalled() || self.session.stage() == Some(Stage::Plan) || !pace.planned {
+        if self.session.stage() == Some(Stage::Plan) || !pace.planned {
             return Ok(None);
         }
         let todos = match self.session.work_progress() {
@@ -235,7 +239,6 @@ impl<P: Provider> Loop<P> {
     fn judge_due(&self, pace: &Pace) -> bool {
         self.judge_turns
             && pace.acted
-            && !pace.stalled()
             && !self.is_goal()
             && self.session.stage() != Some(Stage::Plan)
     }

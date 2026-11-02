@@ -366,17 +366,29 @@ impl<P: Provider> Loop<P> {
             self.settle_ready(events, emit, &mut usage).await?;
         }
         if !waits || self.spawned.is_empty() {
+            let command =
+                crate::tools::Builtin::is(&call.function.name, crate::tools::Builtin::RunCommand);
+            let stops = command && (waits || self.input_interrupts());
+            self.tools.yield_command(false);
             let input = self.input_wait();
-            let stops =
-                crate::tools::Builtin::is(&call.function.name, crate::tools::Builtin::RunCommand)
-                    && (waits || self.input_interrupts());
-            let output = tokio::select! {
-                biased;
-                result = input, if stops => {
-                    result?;
-                    Err(Error::Tool(self.steered("interrupted by an incoming message; any completed changes remain")))
-                },
-                output = self.tools.execute_outcome(call) => output,
+            let run = self.tools.execute_outcome(call);
+            tokio::pin!(input, run);
+            let mut watching = command;
+            let output = loop {
+                tokio::select! {
+                    biased;
+                    result = &mut input, if watching => {
+                        watching = false;
+                        if stops {
+                            result?;
+                            break Err(Error::Tool(self.steered("interrupted by an incoming message; any completed changes remain")));
+                        }
+                        if result.is_ok() {
+                            self.tools.yield_command(true);
+                        }
+                    },
+                    output = &mut run => break output,
+                }
             };
             return Ok((output, usage));
         }

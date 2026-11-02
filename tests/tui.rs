@@ -1,122 +1,22 @@
 #![cfg(unix)]
 
 use std::io::{Read, Write};
-use std::path::Path;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
-use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+#[path = "support/terminal.rs"]
+mod terminal;
+
+use terminal::Terminal;
 
 const SIZES: [(u16, u16); 3] = [(100, 30), (120, 40), (223, 67)];
 const DRAFT: &str = "breath of fire pixel style breath of fire pixel style breath of fire pixel style breath of fire pixel style breath of fire pixel style breath of fire pixel style tail";
 
-type Writer = Arc<Mutex<Box<dyn Write + Send>>>;
-
-struct Terminal {
-    child: Box<dyn Child + Send + Sync>,
-    master: Box<dyn MasterPty + Send>,
-    writer: Writer,
-    screen: Arc<Mutex<vt100::Parser>>,
-    output: Receiver<()>,
+trait Settle {
+    fn settle(&self, what: &str, ready: impl Fn(&Splash) -> bool) -> Splash;
 }
 
-impl Drop for Terminal {
-    fn drop(&mut self) {
-        drop(self.child.kill());
-    }
-}
-
-impl Terminal {
-    fn open(home: &Path, cols: u16, rows: u16, port: u16) -> Self {
-        std::fs::write(
-            home.join("config.toml"),
-            format!("[endpoint.local]\nbase_url = \"http://127.0.0.1:{port}/v1\"\nmodel = \"m\"\napi_key = \"k\"\ncontext_window = 32768\n"),
-        )
-        .unwrap();
-        let pair = native_pty_system()
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .unwrap();
-        let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_summonr"));
-        command.args(["-e", "local"]);
-        command.cwd(home);
-        command.env_clear();
-        for (key, value) in [
-            ("PATH", "/usr/bin:/bin"),
-            ("LANG", "en_US.UTF-8"),
-            ("TERM", "xterm-256color"),
-            ("RUST_MIN_STACK", "16777216"),
-            ("SUMMONR_MODELS_URL", "http://127.0.0.1:9/registry.json"),
-        ] {
-            command.env(key, value);
-        }
-        for key in ["HOME", "SUMMONR_HOME"] {
-            command.env(key, home);
-        }
-        let child = pair.slave.spawn_command(command).unwrap();
-        drop(pair.slave);
-        let mut reader = pair.master.try_clone_reader().unwrap();
-        let writer: Writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
-        let screen = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
-        let (parser, replies) = (Arc::clone(&screen), Arc::clone(&writer));
-        let (painted, output) = channel();
-        std::thread::spawn(move || {
-            let mut chunk = [0_u8; 65536];
-            while let Ok(read) = reader.read(&mut chunk) {
-                let Some(bytes) = chunk.get(..read).filter(|bytes| !bytes.is_empty()) else {
-                    break;
-                };
-                let reply = answer(&mut parser.lock().unwrap(), bytes);
-                if !reply.is_empty() {
-                    drop(replies.lock().unwrap().write_all(&reply));
-                }
-                if painted.send(()).is_err() {
-                    break;
-                }
-            }
-        });
-        Self {
-            child,
-            master: pair.master,
-            writer,
-            screen,
-            output,
-        }
-    }
-
-    fn rows(&self) -> Vec<String> {
-        let parser = self.screen.lock().unwrap();
-        let (_, cols) = parser.screen().size();
-        parser.screen().rows(0, cols).collect()
-    }
-
-    fn resize(&self, cols: u16, rows: u16) {
-        self.screen
-            .lock()
-            .unwrap()
-            .screen_mut()
-            .set_size(rows, cols);
-        self.master
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .unwrap();
-    }
-
-    fn send(&self, bytes: &[u8]) {
-        let mut writer = self.writer.lock().unwrap();
-        writer.write_all(bytes).unwrap();
-        writer.flush().unwrap();
-    }
-
+impl Settle for Terminal {
     fn settle(&self, what: &str, ready: impl Fn(&Splash) -> bool) -> Splash {
         let steady = Duration::from_millis(300);
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -141,7 +41,7 @@ impl Terminal {
                 rows.join("\n")
             );
             last = place;
-            let wait = self.output.recv_timeout(steady.saturating_sub(held));
+            let wait = self.wait_output(steady.saturating_sub(held));
             assert_ne!(
                 wait,
                 Err(RecvTimeoutError::Disconnected),
@@ -150,22 +50,6 @@ impl Terminal {
             );
         }
     }
-}
-
-fn answer(parser: &mut vt100::Parser, bytes: &[u8]) -> Vec<u8> {
-    let mut reply = Vec::new();
-    let mut rest = bytes;
-    while let Some(at) = rest.windows(4).position(|window| window == b"\x1b[6n") {
-        parser.process(&rest[..at]);
-        let (row, col) = parser.screen().cursor_position();
-        reply.extend(format!("\x1b[{};{}R", row + 1, col + 1).into_bytes());
-        rest = &rest[at + 4..];
-    }
-    if rest.windows(3).any(|window| window == b"\x1b[c") {
-        reply.extend(b"\x1b[?62;22c");
-    }
-    parser.process(rest);
-    reply
 }
 
 #[derive(Debug)]

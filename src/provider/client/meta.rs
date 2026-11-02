@@ -143,9 +143,9 @@ impl Client {
             }
             (ProviderFailureKind::RateLimited, _) => format!(
                 "{name} is rate limiting this key; wait{} and retry, or pick another model with /model",
-                failure
-                    .retry_after
-                    .map_or_else(String::new, |seconds| format!(" {seconds}s"))
+                failure.retry_after.map_or_else(String::new, |seconds| {
+                    format!(" {}", summonr_core::text::duration(seconds))
+                })
             ),
             (ProviderFailureKind::Http, Some(model))
                 if failure.status == Some(404) || markers().missing_model(&lower) =>

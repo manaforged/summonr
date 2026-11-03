@@ -42,6 +42,30 @@ pub(crate) const FPS_DEFAULT: u32 = 25;
 pub(crate) const FPS_MIN: u32 = 1;
 pub(crate) const FPS_MAX: u32 = 240;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Spinner {
+    #[default]
+    Dots,
+    Symbols,
+}
+
+impl Spinner {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Dots => "dots",
+            Self::Symbols => "symbols",
+        }
+    }
+
+    pub(crate) fn toggle(self) -> Self {
+        match self {
+            Self::Dots => Self::Symbols,
+            Self::Symbols => Self::Dots,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prefs {
     pub(crate) theme: String,
@@ -49,6 +73,7 @@ pub struct Prefs {
     pub(crate) notify: Notify,
     pub splash: bool,
     pub(crate) animations: bool,
+    pub(crate) spinner: Spinner,
     pub(crate) fps: u32,
     pub(crate) reasoning: Visibility,
     pub(crate) receipts: Visibility,
@@ -67,6 +92,7 @@ impl Default for Prefs {
             notify: Notify::Turn,
             splash: true,
             animations: true,
+            spinner: Spinner::default(),
             fps: FPS_DEFAULT,
             reasoning: Visibility::Collapsed,
             receipts: Visibility::Off,
@@ -93,6 +119,7 @@ fn from_file(file: &config::File) -> Result<Prefs> {
         notify: file.notify.unwrap_or(base.notify),
         splash: file.splash.unwrap_or(base.splash),
         animations: file.animations.unwrap_or(base.animations),
+        spinner: file.spinner.unwrap_or(base.spinner),
         fps: file.fps.unwrap_or(base.fps),
         reasoning: file.reasoning.as_ref().map_or(base.reasoning, reasoning),
         receipts: file.receipts.as_deref().map_or(base.receipts, |text| {

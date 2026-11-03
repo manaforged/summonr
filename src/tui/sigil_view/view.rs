@@ -4,7 +4,6 @@ pub(super) use super::canvas;
 pub(super) use super::chat;
 pub(super) use super::pane::Pane;
 pub(super) use super::panes;
-pub(super) use super::theme::Palette;
 
 use super::app::{App, Overlay};
 use super::scene;
@@ -16,14 +15,11 @@ use sigil::prelude::ModifiersState;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
 use sigil::prelude::Position;
-use sigil::prelude::Rgba8;
 use sigil::prelude::Role;
 use sigil::prelude::Shortcut;
-use sigil::prelude::Theme;
 use sigil::prelude::Widget;
 use sigil::prelude::container;
 use sigil::prelude::text_edit;
-use sigil::style::ThemeValue;
 
 mod input;
 mod keys;
@@ -66,7 +62,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
                     .bg(sigil::prelude::Token::Surface)
                     .child(chat)
                     .child(dialog)
-                    .theme(surface::theme(screen.appearance.get())),
+                    .theme(super::theme::style(screen.appearance.get())),
             ]
         })
 }

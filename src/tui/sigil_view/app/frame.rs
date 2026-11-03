@@ -55,8 +55,10 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn animate(&self) {
         let app = self.clone();
-        let busy =
-            sigil::reactive::derived(move || app.model.with(|model| model.busy_since.is_some()));
+        let busy = sigil::reactive::derived(move || {
+            app.model
+                .with(|model| super::super::chat::strip::working(model))
+        });
         let app = self.clone();
         let splash = sigil::reactive::derived(move || {
             (app.splash.get() && app.model.with(|model| model.prefs.animations) && !app.covered())

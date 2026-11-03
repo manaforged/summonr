@@ -4,7 +4,6 @@ use sigil::prelude::Signal;
 use sigil::reactive::{derived, untrack};
 
 use super::super::{Entry, Model, canvas};
-use crate::tui::ToolState;
 use crate::tui::sigil_view::model::Entries;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,12 +31,6 @@ pub(in crate::tui::sigil_view) fn revision(entries: &Entries, index: usize) -> R
         }
     }
     Revision::Entry(entries.rev(index))
-}
-
-pub(in crate::tui::sigil_view) fn bits(state: &ToolState, expanded: bool) -> u8 {
-    u8::from(!matches!(state, ToolState::Running))
-        + u8::from(matches!(state, ToolState::Failed))
-        + u8::from(expanded) * 4
 }
 
 pub(in crate::tui::sigil_view) fn text_of(

@@ -13,7 +13,11 @@ fn scrolling_settings_reveals_rows_without_changing_selection() {
         return;
     }
     let seen = drive(
-        |app| app.toggle_options(),
+        |app| {
+            app.toggle_options();
+            app.settings_group
+                .set(Some(crate::tui::sigil_view::settings::Group::Input));
+        },
         vec![Event::scroll(
             Point::new(VIEW.0 / 2.0, VIEW.1 / 2.0),
             ScrollDelta::Pixels(Point::new(0.0, -10_000.0)),
@@ -37,6 +41,8 @@ fn the_selected_module_row_sends_its_typed_switch() {
     let seen = drive(
         |app| {
             app.toggle_options();
+            app.settings_group
+                .set(Some(crate::tui::sigil_view::settings::Group::Tools));
             let at = crate::tui::sigil_view::settings::setting_rows(app)
                 .iter()
                 .position(|row| row.label == "browser tools")

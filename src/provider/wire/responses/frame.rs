@@ -43,6 +43,8 @@ pub(super) struct Frame<'a> {
     pub(super) delta: Cow<'a, str>,
     #[serde(borrow, default)]
     pub(super) item_id: Option<Cow<'a, str>>,
+    #[serde(default)]
+    pub(super) summary_index: Option<usize>,
     #[serde(borrow, default)]
     pub(super) item: Option<Item<'a>>,
     #[serde(borrow, default)]

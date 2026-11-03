@@ -44,7 +44,6 @@ impl Worker {
             }
             Cmd::SetVerify(on) => self.set_verify(on),
             Cmd::ToggleApproval => self.toggle_approval(),
-            Cmd::SetEndpoint(name) => self.selection(Some(&name), None).await,
             Cmd::SetModel(model) => self.selection(None, Some(&model)).await,
             Cmd::SelectModel(endpoint, model) => {
                 self.selection(Some(&endpoint), Some(&model)).await

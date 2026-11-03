@@ -3,12 +3,12 @@ use std::collections::BTreeMap;
 
 use sigil::Host;
 use sigil::app::FrameHooks;
-use sigil::events::{Event, KeyEvent, KeyPhase, LogicalKey, ModifiersState, PhysicalKey};
+use sigil::events::{Event, KeyPhase, LogicalKey};
 use sigil::prelude::NodeBuilder;
 use sigil::scene::SceneCommand;
 use tokio::sync::mpsc::unbounded_channel;
 
-use super::{App, rail, root, thread};
+use super::{App, root, thread};
 use crate::catalog::Model;
 use crate::recent::ModelId;
 use crate::tui::{Fact, Msg, Snapshot};
@@ -133,36 +133,6 @@ fn the_context_meter_draws_no_caption_text() {
         "{}",
         shown(&runs)
     );
-}
-
-#[test]
-fn recent_leaves_out_sessions_without_a_message() {
-    let info = |id: &str, preview: &str| crate::session::SessionInfo {
-        id: id.to_owned(),
-        path: std::path::PathBuf::new(),
-        cwd: Some("/work".to_owned()),
-        model: None,
-        preview: preview.to_owned(),
-        name: None,
-        parent: None,
-        depth: 0,
-    };
-    let shown = rail::recent(
-        vec![info("empty", ""), info("used", "fix the tests")],
-        "/work",
-    );
-    let ids: Vec<&str> = shown.iter().map(|info| info.id.as_str()).collect();
-    assert_eq!(ids, ["used"]);
-    let twins = rail::recent(
-        vec![
-            info("older", "Reply ok."),
-            info("newer", "Reply ok."),
-            info("other", "fix the tests"),
-        ],
-        "/work",
-    );
-    let ids: Vec<&str> = twins.iter().map(|info| info.id.as_str()).collect();
-    assert_eq!(ids, ["other", "newer"]);
 }
 
 #[test]

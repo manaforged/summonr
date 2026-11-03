@@ -170,7 +170,6 @@ enum Cmd {
     SetEffort(Option<crate::provider::Effort>),
     SetVerify(bool),
     ToggleApproval,
-    SetEndpoint(String),
     SetModel(String),
     SelectModel(String, String),
     ListModels {

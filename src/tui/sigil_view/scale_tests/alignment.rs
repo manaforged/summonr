@@ -15,62 +15,31 @@ fn usage(tokens: u32) -> Event {
     }
 }
 
-fn columns(line: &str) -> Vec<usize> {
-    line.chars()
-        .enumerate()
-        .filter(|(_, ch)| *ch == '·')
-        .map(|(at, _)| at)
-        .collect()
-}
-
 #[test]
-fn subagent_strip_rows_share_their_columns() {
-    for (cols, rows) in [(84, 25), (100, 30), (140, 40)] {
+fn subagents_share_one_status_row_at_every_width() {
+    for (cols, rows) in [(40, 18), (84, 25), (100, 30), (140, 40)] {
         let lines = frame_with(busy_info(), cols, rows, State::Busy, |app| {
             task_call(app);
-            spawn(
-                app,
-                IDS[0],
+            for (id, assignment) in IDS.iter().zip([
                 "Fix total() in pricing.py so it rounds to cents.",
-                true,
-            );
-            spawn(app, IDS[1], "Add a --dry-run flag to cli.py.", true);
-            spawn(
-                app,
-                IDS[2],
-                "Document the CLI in README.md with an example for every flag.",
-                true,
-            );
-            act(
-                app,
-                IDS[0],
-                Event::ToolCall {
-                    id: "c".to_owned(),
-                    name: "read".to_owned(),
-                    arguments: r#"{"path":"pricing.py"}"#.to_owned(),
-                },
-            );
+                "Add a --dry-run flag to cli.py.",
+                "Document the CLI in README.md.",
+            ]) {
+                spawn(app, id, assignment, true);
+            }
             act(app, IDS[0], usage(1_400));
             act(app, IDS[2], usage(25_000));
         });
-        let strip: Vec<&String> = lines
-            .iter()
-            .filter(|line| line.contains('✳') && line.contains("tok"))
-            .collect();
         let shown = lines.join("\n");
-        assert_eq!(strip.len(), 3, "{cols}x{rows}: three strip rows:\n{shown}");
-        let separators: Vec<Vec<usize>> = strip.iter().map(|line| columns(line)).collect();
-        assert!(
-            separators.windows(2).all(|pair| pair[0] == pair[1]),
-            "{cols}x{rows}: separators at {separators:?}:\n{shown}"
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.contains("3 agents"))
+                .count(),
+            1,
+            "{shown}"
         );
-        let ends: Vec<usize> = strip
-            .iter()
-            .map(|line| line.trim_end().chars().count())
-            .collect();
-        assert!(
-            ends.windows(2).all(|pair| pair[0] == pair[1]),
-            "{cols}x{rows}: rows end at {ends:?}:\n{shown}"
-        );
+        assert!(!shown.contains("Subagents"), "{shown}");
+        assert!(!shown.contains("25K tok"), "{shown}");
     }
 }

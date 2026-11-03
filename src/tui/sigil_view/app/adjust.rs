@@ -1,6 +1,6 @@
 use sigil::widgets::CursorEdge;
 
-use super::settings::Setting;
+use super::settings::{Group, Setting};
 use super::*;
 
 const AUTO_COMMAND: &str = "/auto";
@@ -13,20 +13,49 @@ impl App {
         if self.picker.open.peek() {
             return;
         }
-        self.settings
-            .shift(delta, Setting::all().count(), CursorEdge::Clamp);
+        let count = self
+            .settings_group
+            .peek()
+            .map_or(Group::ALL.len(), |group| {
+                Setting::all()
+                    .filter(|setting| setting.group() == group)
+                    .count()
+            });
+        self.settings.shift(delta, count, CursorEdge::Clamp);
     }
 
     pub(in crate::tui::sigil_view) fn selected_setting(&self) -> Option<Setting> {
-        Setting::all().nth(self.settings.cursor.peek())
+        let group = self.settings_group.peek()?;
+        Setting::all()
+            .filter(|setting| setting.group() == group)
+            .nth(self.settings.cursor.peek())
     }
 
     pub(in crate::tui::sigil_view) fn adjust_setting(&self) {
         if self.picker.open.peek() {
             return;
         }
-        if let Some(setting) = self.selected_setting() {
+        if self.settings_group.peek().is_none() {
+            if let Some(group) = Group::ALL.get(self.settings.cursor.peek()) {
+                self.settings_group.set(Some(*group));
+                self.settings.select(0);
+            }
+        } else if let Some(setting) = self.selected_setting() {
             setting.activate(self);
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn close_settings(&self) {
+        if let Some(group) = self.settings_group.peek() {
+            self.settings_group.set(None);
+            self.settings.select(
+                Group::ALL
+                    .iter()
+                    .position(|item| *item == group)
+                    .unwrap_or(0),
+            );
+        } else {
+            self.settings_open.set(false);
         }
     }
 
@@ -53,7 +82,8 @@ impl App {
             Some(Overlay::Settings) | None => {
                 let open = !self.settings_open.peek();
                 if open {
-                    self.settings.cursor.set(0);
+                    self.settings.select(0);
+                    self.settings_group.set(None);
                 }
                 self.settings_open.set(open);
             }
@@ -147,7 +177,9 @@ impl App {
         let Some(action) = action else {
             return false;
         };
-        if action != Hotkey::Options && self.options_active() {
+        let status_key = self.overlay() == Some(Overlay::Status)
+            && matches!(action, Hotkey::Agents | Hotkey::Ledger);
+        if action != Hotkey::Options && self.options_active() && !status_key {
             return true;
         }
         self.run_key(super::super::view::KeyCommand::Hotkey(action))
@@ -171,23 +203,6 @@ impl App {
         self.save_hotkeys();
     }
 
-    pub(in crate::tui::sigil_view) fn toggle_theme(&self) {
-        let names = crate::prefs::THEMES;
-        self.model_mut(|model| {
-            let current = crate::prefs::theme(&model.prefs.theme);
-            let next = names
-                .iter()
-                .position(|name| *name == current)
-                .map_or(names[0], |index| names[(index + 1) % names.len()]);
-            model.prefs.theme = next.to_string();
-            model.entries.invalidate();
-        });
-        let prefs = self.model.peek().prefs.clone();
-        self.apply_theme();
-        self.persist(&prefs);
-        self.refresh();
-    }
-
     pub(in crate::tui::sigil_view) fn toggle_background(&self) {
         self.model_mut(|model| {
             model.prefs.background = model.prefs.background.toggle();
@@ -206,35 +221,6 @@ impl App {
         for problem in problems {
             self.push_entry(Entry::System(problem));
         }
-    }
-
-    pub(in crate::tui::sigil_view) fn toggle_agents(&self) {
-        self.model_mut(|model| model.agents_view = model.agents_view.toggle());
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn agents_sheet_open(&self) -> sigil::reactive::Signal<bool> {
-        let model = self.model;
-        sigil::reactive::derived(move || {
-            model.get().agents_view == crate::tui::sigil_view::model::AgentsView::Sheet
-        })
-    }
-
-    #[cfg(test)]
-    pub(in crate::tui::sigil_view) fn open_agents_split(&self) {
-        self.model_mut(|model| {
-            model.agents_view = crate::tui::sigil_view::model::AgentsView::Split;
-        });
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn close_agents_sheet(&self) {
-        self.model_mut(|model| {
-            if model.agents_view == crate::tui::sigil_view::model::AgentsView::Sheet {
-                model.agents_view = crate::tui::sigil_view::model::AgentsView::Strip;
-            }
-        });
-        self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn clear_agent(&self, id: &str) {

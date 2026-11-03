@@ -1,19 +1,16 @@
-use sigil::prelude::Paint;
 use sigil::prelude::{LayoutStyle, NodeBuilder, Tone, container, notice_band};
 
 use crate::tui::sigil_view::ui::{Action, ActionKind, Hints, Key, Prompt};
 
 use super::App;
-use super::busy_status;
 use sigil::prelude::Widget;
 
-pub(in crate::tui::sigil_view) use super::strip::{agents, rows as strip_rows};
+pub(in crate::tui::sigil_view) use super::strip::{bar as status_bar, rows as status_rows};
 
 #[derive(Clone, PartialEq)]
 pub(in crate::tui::sigil_view) enum Band {
     Approval { detail: String, persist: bool },
     Form { lines: Vec<String>, review: bool },
-    Busy { status: String, attached: usize },
     Attached(usize),
 }
 
@@ -31,10 +28,6 @@ pub(in crate::tui::sigil_view) fn band(app: &App) -> Option<Band> {
         });
     }
     let attached = app.attached.get();
-    let tick = app.ticks.get();
-    if let Some(status) = app.model.with(|model| busy_status(model, tick)) {
-        return Some(Band::Busy { status, attached });
-    }
     (attached > 0).then_some(Band::Attached(attached))
 }
 
@@ -61,32 +54,13 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
         Band::Form { lines, review } => {
             above(super::form::form_band(app.clone(), width, lines, review))
         }
-        Band::Busy { attached, .. } => {
-            let row = busy_row(app, width);
-            if attached == 0 {
-                row
-            } else {
-                container()
-                    .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
-                    .child(row)
-                    .child(band_nodes(app, width, Band::Attached(attached)))
-            }
-        }
         Band::Attached(attached) => above(notice_band(attached_note(app, attached), Tone::Info)),
     }
 }
 
 pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
-    let active = sigil::reactive::derived(move || {
-        band(&update).map(|band| match band {
-            Band::Busy { attached, .. } => Band::Busy {
-                status: String::new(),
-                attached,
-            },
-            other => other,
-        })
-    });
+    let active = sigil::reactive::derived(move || band(&update));
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -100,44 +74,6 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
                 .map(|band| vec![band_nodes(&app, width, band)])
                 .unwrap_or_default()
         })
-}
-
-fn busy_row(app: &App, width: usize) -> NodeBuilder {
-    let probe = app.clone();
-    let status = sigil::reactive::derived(move || {
-        let tick = probe.ticks.get();
-        probe
-            .model
-            .with(|model| busy_status(model, tick))
-            .map(|status| crate::display::ellipsize(&status, width))
-            .unwrap_or_default()
-    });
-    let split = move |head: bool| {
-        status.with(|status| {
-            let (spinner, rest) = status.split_at(status.find(' ').unwrap_or(status.len()));
-            if head { spinner } else { rest }.to_owned()
-        })
-    };
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .shrink(0.0)
-                .min_size(0.0, 0.0)
-                .padding_top(super::canvas::cell().h),
-        )
-        .child(
-            sigil::prelude::text(move || split(true))
-                .nowrap()
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Accent),
-        )
-        .child(
-            sigil::prelude::text(move || split(false))
-                .nowrap()
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
-        )
 }
 
 fn above(child: NodeBuilder) -> NodeBuilder {

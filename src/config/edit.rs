@@ -20,6 +20,11 @@ pub(crate) fn save_prefs(path: &Path, before: &Prefs, prefs: &Prefs) -> Result<(
                 before.animations != prefs.animations,
                 value(prefs.animations),
             ),
+            (
+                "spinner",
+                before.spinner != prefs.spinner,
+                value(prefs.spinner.name()),
+            ),
             ("fps", before.fps != prefs.fps, value(i64::from(prefs.fps))),
             (
                 "reasoning",

@@ -212,9 +212,7 @@ impl Dialog {
                 .child(bar),
             None => self.body.child(bar),
         };
-        let dismiss = DISMISS
-            .with(|slot| slot.borrow().clone())
-            .filter(|_| canvas::is_window());
+        let dismiss = DISMISS.with(|slot| slot.borrow().clone());
         let backdrop = dismiss.is_some();
         let shown = dismiss.map_or(open, |close| backdrop_signal(open, close));
         let mut shell = modal(shown)

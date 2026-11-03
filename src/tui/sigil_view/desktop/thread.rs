@@ -5,14 +5,13 @@ use sigil::prelude::{
     Shortcut, Token, Tone, button, container, icon_button, node, notice_band, spacer,
 };
 
-use super::{App, Pane, chat};
+use super::{App, chat};
 use crate::session;
 
 mod composer;
 mod mentions;
-mod title;
-pub(super) use title::title_bar;
 pub(in crate::tui::sigil_view) mod status;
+mod title;
 
 pub(super) const XS: f32 = 4.0;
 pub(super) const S: f32 = 8.0;
@@ -22,8 +21,6 @@ pub(super) const XL: f32 = 24.0;
 pub(super) const BODY: f32 = 13.0;
 pub(super) const META: f32 = 12.0;
 const COLUMN: f32 = 760.0;
-const TITLE_CELLS: usize = 48;
-const CRUMB: &str = "›";
 const EXPLAIN: &str = "Explain this repo";
 const ADD_PROVIDER: &str = "Add a provider";
 
@@ -34,16 +31,6 @@ pub(super) fn quiet(
         .nowrap()
         .font_size(META)
         .text_color(Token::OnSurfaceMuted)
-}
-
-pub(super) fn strong(
-    content: impl Into<sigil::prelude::TextContent>,
-) -> sigil::prelude::TextBuilder {
-    sigil::prelude::text(content)
-        .nowrap()
-        .font_size(BODY)
-        .font_weight(600)
-        .text_color(Token::OnSurface)
 }
 
 fn column(child: NodeBuilder) -> NodeBuilder {
@@ -130,7 +117,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                     let strip = app.clone();
                     move || {
                         let (cols, _rows) = strip.viewport.get();
-                        vec![chat::panels::agents(
+                        vec![chat::panels::status_bar(
                             strip.clone(),
                             chat::canvas::inner_cols(usize::from(cols)),
                         )]
@@ -262,17 +249,6 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
         }
         chat::panels::Band::Form { lines, review } => {
             chat::form::form_band(app, usize::MAX, lines, review)
-        }
-        chat::panels::Band::Busy { status, attached } => {
-            let row = notice_band(status, Tone::Neutral);
-            if attached == 0 {
-                row
-            } else {
-                container()
-                    .layout(LayoutStyle::flex_column().fill_width())
-                    .child(row)
-                    .child(notice_bar(app, chat::panels::Band::Attached(attached)))
-            }
         }
         chat::panels::Band::Attached(count) => {
             notice_band(chat::panels::attached_note(&app, count), Tone::Info)

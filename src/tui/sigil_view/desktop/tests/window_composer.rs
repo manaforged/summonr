@@ -3,7 +3,7 @@ use sigil::prelude::Key;
 use sigil::prelude::Role;
 
 use super::super::Pane;
-use super::harness::{changed, command, drive, graded, named, settings, unconfigured};
+use super::harness::{command, drive, graded, named, settings, unconfigured};
 use super::in_window;
 use crate::provider::Effort;
 use crate::tui::{Activity, Cmd, Fact, Msg, Snapshot};
@@ -119,32 +119,6 @@ fn an_unknown_command_leaves_an_empty_draft() {
         },
     );
     assert_eq!(seen.read, "");
-}
-
-#[test]
-fn the_title_bar_drops_the_model_button_and_shows_changes_only_when_dirty() {
-    let clean = drive(settings(graded()), Vec::new(), |_| ());
-    assert_eq!(
-        clean.named(Role::Button, "Model").len(),
-        1,
-        "{:?}",
-        clean.controls
-    );
-    assert!(
-        !clean.shows(|text| text.starts_with("Changes +")),
-        "{}",
-        clean.text()
-    );
-    let dirty = drive(
-        |app| app.update(Msg::Fact(Fact::Diff(changed("HEAD", &[("a.rs", 3, 1)])))),
-        Vec::new(),
-        |_| (),
-    );
-    assert!(
-        dirty.shows(|text| text == "Changes +3 −1"),
-        "{}",
-        dirty.text()
-    );
 }
 
 #[test]

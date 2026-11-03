@@ -5,8 +5,12 @@ use std::path::Path;
 use sigil::prelude::Rgba8;
 
 use super::canvas::rgb;
+use crate::durable::store::{self, Durability};
 use crate::prefs::{Background, Prefs};
 use summonr_core::error::{Error, Result};
+
+mod tokens;
+pub(super) use tokens::{gui, style};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Palette {
@@ -121,7 +125,11 @@ impl Palette {
         accent: rgb(129, 161, 193),
     };
 
-    fn set(&mut self, key: &str, value: Rgba8) -> bool {
+    pub(super) fn set(&mut self, key: &str, value: Rgba8) -> bool {
+        let key = ALIASES
+            .iter()
+            .find(|(alias, _)| *alias == key)
+            .map_or(key, |(_, key)| key);
         let Some((_, slot)) = SLOTS.iter().find(|(name, _)| *name == key) else {
             return false;
         };
@@ -130,13 +138,41 @@ impl Palette {
     }
 }
 
+impl Palette {
+    pub(super) fn colors(mut self) -> Vec<(&'static str, Rgba8)> {
+        SLOTS
+            .iter()
+            .map(|(name, slot)| (*name, *slot(&mut self)))
+            .collect()
+    }
+
+    pub(super) fn save(self, path: &Path) -> Result<()> {
+        let source = store::read_or_empty(path)?;
+        let mut document = source
+            .parse::<toml_edit::DocumentMut>()
+            .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
+        for (name, color) in self.colors() {
+            document[name] = toml_edit::value(color_hex(color));
+        }
+        store::write(path, document.to_string(), Durability::Synced)?;
+        Ok(())
+    }
+}
+
+pub(super) fn color_hex(color: Rgba8) -> String {
+    format!(
+        "#{:02x}{:02x}{:02x}{:02x}",
+        color.r, color.g, color.b, color.a
+    )
+}
+
 type Slot = fn(&mut Palette) -> &mut Rgba8;
 
-const SLOTS: [(&str, Slot); 22] = [
+const ALIASES: [(&str, &str); 2] = [("background", "base"), ("foreground", "text")];
+
+const SLOTS: [(&str, Slot); 20] = [
     ("base", |palette| &mut palette.base),
-    ("background", |palette| &mut palette.base),
     ("text", |palette| &mut palette.text),
-    ("foreground", |palette| &mut palette.text),
     ("gray", |palette| &mut palette.gray),
     ("dim", |palette| &mut palette.dim),
     ("thought", |palette| &mut palette.thought),
@@ -187,6 +223,19 @@ pub(super) fn set(palette: Palette) {
 
 #[must_use]
 pub(super) fn install(prefs: &Prefs, workspace: &Path, config: Option<&Path>) -> Vec<String> {
+    let (mut palette, problems) = load(prefs, workspace, config);
+    if prefs.background == Background::Terminal {
+        palette.base.a = 0;
+    }
+    set(palette);
+    problems
+}
+
+pub(super) fn load(
+    prefs: &Prefs,
+    workspace: &Path,
+    config: Option<&Path>,
+) -> (Palette, Vec<String>) {
     let mut palette = Palette::named(&prefs.theme);
     let mut problems = Vec::new();
     if let Some(dir) = config.and_then(Path::parent) {
@@ -197,11 +246,7 @@ pub(super) fn install(prefs: &Prefs, workspace: &Path, config: Option<&Path>) ->
         &workspace.join(".summonr/theme.toml"),
         &mut problems,
     );
-    if prefs.background == Background::Terminal {
-        palette.base.a = 0;
-    }
-    set(palette);
-    problems
+    (palette, problems)
 }
 
 fn overlay(palette: &mut Palette, path: &Path, problems: &mut Vec<String>) {
@@ -239,6 +284,9 @@ pub(super) fn hex(value: &str) -> Result<Rgba8> {
             "theme color `{value}` must be #rgb, #rrggbb, or #rrggbbaa"
         ))
     };
+    if !digits.is_ascii() {
+        return Err(invalid());
+    }
     let byte = |range: std::ops::Range<usize>| -> Result<u8> {
         u8::from_str_radix(&digits[range], 16).map_err(|_error| invalid())
     };

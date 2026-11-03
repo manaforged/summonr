@@ -31,7 +31,7 @@ pub(super) fn todo(arguments: &str) -> Event {
 }
 
 #[test]
-fn work_sections_and_busy_status_have_a_blank_row_between_them() {
+fn work_sections_and_busy_status_share_one_row() {
     for (cols, rows) in [(100, 30), (60, 18)] {
         for (tasks, agents) in [(true, false), (false, true), (true, true)] {
             let lines = frame_with(busy_info(), cols, rows, State::Busy, |app| {
@@ -51,27 +51,58 @@ fn work_sections_and_busy_status_have_a_blank_row_between_them() {
                 }
             });
             let shown = lines.join("\n");
-            let status = if agents { "task ·" } else { "thinking" };
-            for label in ["Subagents", "Tasks", status] {
-                if let Some(row) = find(&lines, label) {
-                    assert!(
-                        row > 0 && lines[row - 1].trim().is_empty(),
-                        "{cols}x{rows}: {label}\n{shown}"
-                    );
-                } else {
-                    assert!(
-                        label != status
-                            && !(tasks && label == "Tasks")
-                            && !(agents && label == "Subagents"),
-                        "{cols}x{rows}: missing {label}\n{shown}"
-                    );
-                }
+            let label = if agents { "1 agent" } else { "1/1" };
+            let row = find(&lines, label).expect("the status bar remains visible");
+            if tasks && agents {
+                assert!(lines[row].contains("Tasks 0/1"), "{shown}");
             }
-            assert!(
-                composer_top(&lines) > find(&lines, status).expect("busy status remains visible"),
-                "{shown}"
-            );
+            assert!(composer_top(&lines) > row, "{shown}");
+            assert!(!shown.contains("Subagents"), "{shown}");
         }
+    }
+}
+
+#[test]
+fn live_rate_in_the_status_bar_disappears_for_tools_and_idle() {
+    use crate::tui::Activity;
+    let stream = |app: &App| {
+        app.update(Msg::Fact(Fact::Event(Event::Delta {
+            text: "Streaming output with enough characters for a visible rate.".to_string(),
+        })));
+    };
+    let tool = |app: &App| {
+        app.update(Msg::Fact(Fact::Event(Event::ToolCall {
+            id: "rate-tool".to_string(),
+            name: "read".to_string(),
+            arguments: r#"{"path":"src/main.rs"}"#.to_string(),
+        })));
+    };
+    let thinking = |app: &App| {
+        app.update(Msg::Fact(Fact::Event(Event::ToolResult {
+            id: "rate-tool".to_string(),
+            success: true,
+            mutated: false,
+            output: "read complete".to_string(),
+            millis: None,
+            patch: None,
+        })));
+    };
+    let idle = |app: &App| app.update(Msg::Fact(Fact::Busy(None)));
+    let frames = super::screens(
+        100,
+        30,
+        |app| {
+            app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+            stream(app);
+        },
+        &[&tool, &thinking, &stream, &idle],
+    );
+    for (frame, expected) in frames.iter().zip([true, false, false, true, false]) {
+        assert_eq!(
+            frame.contains("tok/s"),
+            expected,
+            "stale or missing live rate: {frame}"
+        );
     }
 }
 
@@ -90,26 +121,27 @@ fn a_work_plan_stays_above_the_composer_without_opening_a_pane() {
         assert_eq!(app.layout.peek().secondary, None);
     });
     let shown = lines.join("\n");
-    let tasks = find(&lines, "Tasks 0/2").expect("the task strip is visible");
+    let tasks = find(&lines, "1/2").expect("the current task is visible");
     assert!(tasks < composer_top(&lines), "{shown}");
     assert!(lines[tasks].contains("Keep tasks inline"), "{shown}");
     assert!(!shown.contains("Ledger"), "{shown}");
 }
 
 #[test]
-fn the_task_shortcut_expands_and_scrolls_the_inline_list() {
+fn the_task_shortcut_opens_and_scrolls_the_status_popup() {
     let lines = frame_with(busy_info(), 160, 40, State::Busy, |app| {
         app.update(Msg::Fact(Fact::Event(todo(
             r#"{"items":[{"text":"First task","status":"done"},{"text":"Second task","status":"active"},{"text":"Third task"},{"text":"Fourth task"},{"text":"Fifth task"},{"text":"Sixth task"},{"text":"Seventh task"},{"text":"Last task"}]}"#,
         ))));
         assert!(app.route_hotkey('t'));
-        assert!(app.scroll_todos(2));
+        app.move_status(7);
+        assert_eq!(app.status_list.cursor.peek(), 7);
         assert_eq!(app.layout.peek().secondary, None);
     });
     let shown = lines.join("\n");
     let tasks = find(&lines, "Tasks 1/8").expect("the task strip is visible");
-    let last = find(&lines, "◦ Last task").expect("the last task is reachable by scrolling");
-    assert!(tasks < last && last < composer_top(&lines), "{shown}");
+    let last = find(&lines, "Last task").expect("the last task is reachable by scrolling");
+    assert!(tasks < last && shown.contains("Status"), "{shown}");
     assert!(!shown.contains("Ledger"), "{shown}");
 }
 
@@ -130,13 +162,13 @@ fn child_tasks_use_the_same_inline_strip() {
     let active = find(&lines, "Check child result").expect("the active child task is visible");
     let pending = find(&lines, "Report findings").expect("the pending child task is visible");
     assert!(
-        tasks < active && active < pending && pending < composer_top(&lines),
+        tasks < active && active < pending && shown.contains("Status"),
         "{shown}"
     );
 }
 
 #[test]
-fn the_task_shortcut_still_opens_the_ledger_without_active_tasks() {
+fn the_task_shortcut_opens_status_without_active_tasks() {
     for arguments in [
         r#"{"items":[]}"#,
         r#"{"items":[{"text":"All finished","status":"done"}]}"#,
@@ -145,12 +177,13 @@ fn the_task_shortcut_still_opens_the_ledger_without_active_tasks() {
             app.update(Msg::Fact(Fact::Event(todo(arguments))));
             assert_eq!(app.layout.peek().secondary, None);
             assert!(app.route_hotkey('t'));
+            assert_eq!(app.layout.peek().secondary, None);
             assert_eq!(
-                app.layout.peek().secondary,
-                Some(super::super::pane::Pane::Ledger)
+                app.model.peek().status_view,
+                super::super::model::StatusView::Tasks
             );
         });
-        assert!(lines.join("\n").contains("Ledger"), "{}", lines.join("\n"));
+        assert!(lines.join("\n").contains("Status"), "{}", lines.join("\n"));
     }
 }
 
@@ -263,10 +296,10 @@ fn task_progress_updates_the_mounted_counter_and_clears_finished_work() {
         |app| app.update(Msg::Fact(Fact::Event(tasks(0)))),
         &[&one, &five, &reset, &restart, &complete],
     );
-    for (frame, count) in frames.iter().zip(["Tasks 0/6", "Tasks 1/6", "Tasks 5/6"]) {
+    for (frame, count) in frames.iter().zip(["1/6", "2/6", "6/6"]) {
         assert!(frame.contains(count), "{frame}");
     }
     assert!(!frames[3].contains("Tasks"), "{}", frames[3]);
-    assert!(frames[4].contains("Tasks 0/6"), "{}", frames[4]);
-    assert!(!frames[5].contains("Tasks"), "{}", frames[5]);
+    assert!(frames[4].contains("1/6"), "{}", frames[4]);
+    assert!(frames[5].contains("6/6 · Complete"), "{}", frames[5]);
 }

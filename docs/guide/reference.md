@@ -204,6 +204,7 @@ Top-level keys in `~/.summonr/config.toml`:
 | `splash` | `true` (default), `false` | Show the startup banner. |
 | `models_catalog` | `true` (default), `false` | Fetch the models.dev catalog for `summonr endpoint list --check` and `/model`; `false` keeps every request on your own endpoints. |
 | `animations` | `true` (default), `false` | Animate the interface. |
+| `spinner` | `dots` (default), `symbols` | Working indicator style; also selectable in settings. |
 | `fps` | 1 to 240, default 25 | Interface frame rate. |
 | `diff_layout` | `split` (default), `unified` | Diff pane layout. |
 

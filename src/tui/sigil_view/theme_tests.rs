@@ -17,6 +17,9 @@ fn the_terminal_background_leaves_the_base_unpainted() {
 
 #[test]
 fn a_bad_theme_color_is_reported() {
+    for value in ["nope", "éa", "😀ab", "#gg1122"] {
+        assert!(hex(value).is_err(), "invalid color accepted: {value}");
+    }
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("theme.toml"), "accent = \"nope\"\n").unwrap();
     let config = dir.path().join("config.toml");
@@ -125,7 +128,71 @@ fn contrast(one: Rgba8, two: Rgba8) -> f64 {
 
 #[test]
 fn every_palette_keeps_text_hints_and_code_blocks_legible_on_base() {
-    for (name, palette) in Palette::ALL {
+    for (name, palette) in Palette::ALL
+        .into_iter()
+        .chain([("auto", Palette::SPACE), ("auto", Palette::DAWN)])
+    {
+        set_backdrop_light(palette == Palette::DAWN);
+        let theme = style(palette);
+        use sigil::prelude::Token;
+        for token in [Token::Surface, Token::Overlay] {
+            assert_eq!(theme.color(token), palette.base, "{name}: {token:?}");
+        }
+        assert_eq!(theme.color(Token::OnSurface), palette.text, "{name}");
+        assert_eq!(theme.color(Token::OnSurfaceMuted), palette.dim, "{name}");
+        assert_eq!(theme.color(Token::OverlayBorder), palette.dim, "{name}");
+        assert_eq!(theme.color(Token::SurfaceSubtle), palette.tool_bg, "{name}");
+        assert_eq!(theme.color(Token::Gray10), palette.gray, "{name}");
+        sigil::reactive::Owner::scope("themed-modal", || {
+            use crate::tui::sigil_view::{app::App, profile::info, view::root};
+            let workspace = tempfile::tempdir().expect("workspace");
+            let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
+            let mut context = info();
+            context.prefs.theme = name.to_string();
+            let app = App::new(context, workspace.path().to_owned(), commands);
+            app.resize(110, 40);
+            let mut host = sigil::Host::new(HostMode::Cell);
+            let tree = app.clone();
+            host.mount(move || root(tree));
+            let mut screen = sigil::terminal::Screen::new(110, 40);
+            let scenes: [(fn(&App), &str); 3] = [
+                (App::toggle_options, "Settings"),
+                (
+                    |app| {
+                        app.toggle_options();
+                        app.toggle_agents();
+                    },
+                    "Status",
+                ),
+                (
+                    |app| {
+                        app.close_status_sheet();
+                        app.open_theme();
+                    },
+                    "Theme editor",
+                ),
+            ];
+            for (open, title) in scenes {
+                open(&app);
+                screen.frame(&mut host, [], (110, 40)).expect("settle");
+                let grid = screen.frame(&mut host, [], (110, 40)).expect("modal frame");
+                let text = grid.text();
+                let (row, line) = text
+                    .lines()
+                    .enumerate()
+                    .find(|(_, line)| line.contains(title))
+                    .expect("modal title");
+                let at = line.find(title).expect("title position");
+                let col = sigil::app::cell_width(&line[..at]);
+                let cell = grid.get(col, row).expect("title cell");
+                assert_eq!(
+                    cell.bg,
+                    Ink::Exact(palette.base),
+                    "{name}: {title} background"
+                );
+                assert_eq!(cell.fg, Ink::Exact(palette.text), "{name}: {title} text");
+            }
+        });
         for (token, color, floor) in [
             ("text", palette.text, 4.5),
             ("gray", palette.gray, 4.5),

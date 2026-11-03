@@ -12,7 +12,6 @@ impl Model {
             self.rounds = 0;
         } else {
             self.live_tool = None;
-            self.agents.retain(|agent| !agent.done || !agent.background);
         }
     }
 

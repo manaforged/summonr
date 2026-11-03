@@ -113,7 +113,7 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
                 arguments: r#"{"command":"hyperfine ./summonr"}"#.to_owned(),
             },
         );
-        running = super::super::chat::panels::strip_rows(app).to_string();
+        running = super::super::chat::panels::status_rows(app).to_string();
         act(
             app,
             IDS[0],
@@ -123,10 +123,7 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
         );
     })
     .join("\n");
-    assert_eq!(
-        running, "3",
-        "one blank row, the Subagents header, and one child row"
-    );
+    assert_eq!(running, "1", "background activity uses one status row");
     assert!(
         done.contains("◆ Subagent completed in") && done.contains("“Benchmark startup and RSS”"),
         "{done}"
@@ -284,9 +281,9 @@ fn clicking_the_strip_header_expands_it() {
         let (row, line) = shown
             .lines()
             .enumerate()
-            .find(|(_, line)| line.contains("shows all"))
+            .find(|(_, line)| line.contains("1 agent"))
             .expect("collapsed header");
-        let at = line.find('▸').expect("expand button");
+        let at = line.find("1 agent").expect("agent details button");
         let col = sigil::app::cell_width(&line[..at]);
         screen
             .frame(
@@ -300,10 +297,10 @@ fn clicking_the_strip_header_expands_it() {
             .expect("frame")
             .text();
         assert!(
-            expanded.contains("closes"),
+            expanded.contains("Status") && expanded.contains("Agents"),
             "header click did not expand:\n{expanded}"
         );
-        assert!(app.model.get().agents_view.open());
+        assert!(app.model.get().status_view.open());
         let ctrl_x = sigil::terminal::map_key(&crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('x'),
             crossterm::event::KeyModifiers::CONTROL,
@@ -322,15 +319,15 @@ fn clicking_the_strip_header_expands_it() {
             .expect("frame")
             .text();
         assert!(
-            collapsed.contains("shows all"),
+            collapsed.contains("1 agent") && !collapsed.contains("Status"),
             "ctrl+x a did not collapse:\n{collapsed}"
         );
-        assert!(!app.model.get().agents_view.open());
+        assert!(!app.model.get().status_view.open());
     });
 }
 
 #[test]
-fn a_full_strip_counts_every_child_and_caps_the_rows() {
+fn the_status_bar_counts_every_child_in_one_row() {
     use super::super::view::root;
     use sigil::{Host, terminal::Screen};
 
@@ -355,14 +352,14 @@ fn a_full_strip_counts_every_child_and_caps_the_rows() {
             .frame(&mut host, [], (100, 40))
             .expect("frame")
             .text();
-        assert!(shown.contains("2 more"), "{shown}");
-        assert!(shown.contains("lane 0"), "{shown}");
+        assert!(shown.contains("8 agents"), "{shown}");
+        assert!(!shown.contains("lane 0"), "{shown}");
         assert!(!shown.contains("lane 7"), "{shown}");
     });
 }
 
 #[test]
-fn a_split_opens_the_selected_child_beside_the_list() {
+fn the_status_popup_expands_the_selected_child() {
     use super::super::view::root;
     use sigil::terminal::Screen;
 
@@ -371,18 +368,41 @@ fn a_split_opens_the_selected_child_beside_the_list() {
         let (commands, _sent) = tokio::sync::mpsc::unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(120, 40);
-        spawn(&app, "01a104ac000000000000000000000001", "lane 0", true);
-        app.open_agents_split();
+        let id = "01a104ac000000000000000000000001";
+        spawn(&app, id, "lane 0", true);
+        act(
+            &app,
+            id,
+            Event::Note {
+                text: "These words must wrap without losing the final sentinel".to_string(),
+            },
+        );
+        spawn(
+            &app,
+            IDS[1],
+            "Inspect a long task title that must remain on one row when the popup narrows",
+            true,
+        );
+        app.toggle_agents();
+        app.expand_status();
         let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
         let mut screen = Screen::new(120, 40);
-        let shown = screen
-            .frame(&mut host, [], (120, 40))
-            .expect("frame")
-            .text();
-        assert!(shown.contains("selected"), "{shown}");
-        assert!(shown.contains("lane 0"), "{shown}");
+        for size in [(120, 40), (60, 30), (100, 40)] {
+            app.resize(size.0, size.1);
+            let mut shown = String::new();
+            for _ in 0..3 {
+                shown = screen.frame(&mut host, [], size).expect("frame").text();
+            }
+            assert!(shown.contains("Status"), "{shown}");
+            assert!(!shown.contains("selected"), "{shown}");
+            assert!(shown.contains("lane 0"), "{shown}");
+            assert!(
+                shown.contains("sentinel"),
+                "detail clipped after resize: {shown}"
+            );
+        }
     });
 }
 
@@ -403,6 +423,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         spawn(&app, IDS[0], "Keep the parent working", true);
         spawn(&app, IDS[1], "Foreground child", false);
         app.toggle_agents();
+        app.expand_status();
         let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
@@ -437,7 +458,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         assert!(!model.agents[0].done);
         drop(model);
         app.toggle_agents();
-        assert_eq!(panels::strip_rows(&app), 0);
+        assert_eq!(panels::status_rows(&app), 1);
         act(
             &app,
             IDS[0],
@@ -459,13 +480,13 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
                 text: "late progress".to_owned(),
             },
         );
-        assert_eq!(panels::strip_rows(&app), 0);
+        assert_eq!(panels::status_rows(&app), 1);
         app.toggle_agents();
-        assert_eq!(panels::strip_rows(&app), 3);
+        assert_eq!(panels::status_rows(&app), 1);
         app.clear_agent(&crate::child::tag(IDS[1]));
-        assert_eq!(panels::strip_rows(&app), 3);
+        assert_eq!(panels::status_rows(&app), 1);
         spawn(&app, IDS[2], "New background child", true);
-        assert_eq!(panels::strip_rows(&app), 4);
+        assert_eq!(panels::status_rows(&app), 1);
         act(
             &app,
             IDS[0],

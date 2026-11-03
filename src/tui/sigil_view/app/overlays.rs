@@ -35,7 +35,7 @@ const ROW: Row = Row {
     },
 };
 
-static ROWS: [Row; 14] = [
+static ROWS: [Row; 15] = [
     Row {
         overlay: Overlay::Secret,
         open: |app| app.secret_dialog,
@@ -169,14 +169,15 @@ static ROWS: [Row; 14] = [
         shift: App::move_setting,
         viewport: Some(|app| app.settings.scroll),
         adjust: |app, delta| {
-            if app.selected_setting() == Some(super::settings::Setting::Endpoint) {
-                app.cycle_model(delta >= 0);
+            if delta < 0 {
+                app.close_settings();
             } else {
                 app.adjust_setting();
             }
             true
         },
         enter: App::adjust_setting,
+        close: Some(App::close_settings),
         ..ROW
     },
     Row {
@@ -194,10 +195,34 @@ static ROWS: [Row; 14] = [
         ..ROW
     },
     Row {
-        overlay: Overlay::Agents,
-        open: App::agents_sheet_open,
+        overlay: Overlay::Status,
+        open: App::status_sheet_open,
         node: Some(crate::tui::sigil_view::chat::strip::sheet),
-        close: Some(App::close_agents_sheet),
+        shift: App::move_status,
+        tab: Some(App::step_status),
+        adjust: |app, delta| {
+            app.step_status(delta);
+            true
+        },
+        enter: App::expand_status,
+        viewport: Some(|app| app.status_list.scroll),
+        close: Some(App::close_status_sheet),
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Theme,
+        open: |app| app.theme_editor.open,
+        keys: settings::theme::keys,
+        node: Some(settings::theme::layer),
+        shift: App::move_theme,
+        adjust: |app, delta| {
+            app.step_theme(delta);
+            true
+        },
+        viewport: Some(|app| app.theme_editor.list.scroll),
+        enter: App::edit_theme,
+        close: Some(App::cancel_theme),
+        dismiss: App::close_theme,
         ..ROW
     },
 ];

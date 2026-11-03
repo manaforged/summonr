@@ -54,25 +54,16 @@ impl Extend<Entry> for Entries {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub(in crate::tui::sigil_view) enum AgentsView {
+pub(in crate::tui::sigil_view) enum StatusView {
     #[default]
-    Collapsed,
-    Strip,
-    Split,
-    Sheet,
+    Closed,
+    Tasks,
+    Agents,
 }
 
-impl AgentsView {
+impl StatusView {
     pub(in crate::tui::sigil_view) fn open(self) -> bool {
-        !matches!(self, Self::Collapsed)
-    }
-
-    pub(in crate::tui::sigil_view) fn toggle(self) -> Self {
-        if self.open() {
-            Self::Collapsed
-        } else {
-            Self::Strip
-        }
+        self != Self::Closed
     }
 }
 
@@ -85,8 +76,6 @@ pub(super) struct Model {
     approval_at: Option<(usize, String)>,
     pub(super) ledger: Vec<LedgerRow>,
     pub(super) child_todos: Vec<(String, Vec<LedgerRow>)>,
-    pub(super) todos_expanded: bool,
-    pub(super) todos_offset: usize,
     pub(super) plan_current: Option<usize>,
     pub(super) plan_total: usize,
     pub(super) plan_objective: String,
@@ -112,8 +101,7 @@ pub(super) struct Model {
     pub(super) live_tool: Option<(String, String)>,
     pub(super) agents: Vec<Agent>,
     pub(super) agents_hidden: BTreeSet<String>,
-    pub(super) agents_view: AgentsView,
-    pub(super) agents_cursor: usize,
+    pub(super) status_view: StatusView,
     pub(super) prefs: Prefs,
     pub(super) snapshot: Snapshot,
     pub(super) pick: Option<crate::endpoint::Origin>,
@@ -176,8 +164,6 @@ impl Model {
             approval_at: None,
             ledger: Vec::new(),
             child_todos: Vec::new(),
-            todos_expanded: false,
-            todos_offset: 0,
             plan_current: None,
             plan_total: 0,
             plan_objective: String::new(),
@@ -203,8 +189,7 @@ impl Model {
             live_tool: None,
             agents: Vec::new(),
             agents_hidden: BTreeSet::new(),
-            agents_view: AgentsView::Collapsed,
-            agents_cursor: 0,
+            status_view: StatusView::Closed,
             prefs: info.prefs.clone(),
             snapshot: Snapshot {
                 model: info.model.clone(),
@@ -271,10 +256,6 @@ impl Model {
             | Msg::Fact(Fact::LoginDone { .. })
             | Msg::Fact(Fact::Restored(_))
             | Msg::Fact(Fact::Saved { .. }) => {}
-        }
-        if self.ledger.iter().all(|row| row.mark.settled()) {
-            self.todos_expanded = false;
-            self.todos_offset = 0;
         }
         true
     }
@@ -372,8 +353,7 @@ impl Model {
 
     fn reset(&mut self) {
         self.clear_transcript();
-        self.todos_expanded = false;
-        self.todos_offset = 0;
+        self.status_view = StatusView::Closed;
         self.recent.clear();
         self.usage.clear();
         self.unreported_tokens = 0;

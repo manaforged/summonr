@@ -91,7 +91,8 @@ pub(super) enum Overlay {
     Settings,
     Context,
     Cache,
-    Agents,
+    Status,
+    Theme,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,10 +131,14 @@ pub(super) struct App {
     pub(super) status: Signal<String>,
     pub(super) notice: Signal<Option<Notice>>,
     pub(super) settings_open: Signal<bool>,
+    pub(super) settings_group: Signal<Option<settings::Group>>,
     pub(super) context_open: Signal<bool>,
     pub(super) cache_open: Signal<bool>,
     pub(super) scroll: Signal<usize>,
     pub(super) settings: super::ui::List,
+    pub(super) theme_editor: super::settings::theme::Editor,
+    pub(super) status_list: super::ui::List,
+    pub(super) status_detail: Signal<Option<String>>,
     pub(super) modules: Signal<std::collections::BTreeMap<crate::modules::ModuleId, bool>>,
     pub(super) ticks: Signal<u64>,
     pub(super) splash_revealed: Signal<bool>,
@@ -242,10 +247,14 @@ impl App {
             status: signal(String::new()),
             notice: signal(None),
             settings_open: signal(false),
+            settings_group: signal(None),
             context_open: signal(false),
             cache_open: signal(false),
             scroll: signal(0),
             settings: super::ui::List::new(),
+            theme_editor: super::settings::theme::Editor::new(),
+            status_list: super::ui::List::new(),
+            status_detail: signal(None),
             modules: signal({
                 let switches = crate::modules::load(&workspace).ok();
                 crate::modules::ALL

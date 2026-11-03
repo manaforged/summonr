@@ -236,8 +236,8 @@ mod resolve;
 mod route;
 mod server;
 
+pub(crate) use auth::ready;
 pub use auth::{adopt_keys, auth_info, check_key, first_classify, login_endpoint, logout};
-pub(crate) use auth::{ready, step};
 pub use choice::{Origin, Requirement};
 pub use info::AuthInfo;
 use info::LoginGroup;

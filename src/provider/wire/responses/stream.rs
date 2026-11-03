@@ -17,6 +17,7 @@ pub(crate) struct Stream {
     phase: Option<String>,
     remarks: Vec<String>,
     last: Option<String>,
+    last_reasoning: Option<(String, Option<usize>)>,
     reasoning: bool,
 }
 
@@ -84,7 +85,22 @@ impl Stream {
                 return Err(blocked(&format!("refusal: {}", frame.delta)));
             }
             FrameKind::ReasoningDelta | FrameKind::SummaryDelta => {
-                let delta = frame.delta.to_string();
+                if frame.delta.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let item = frame.item_id.as_deref().unwrap_or_default();
+                let same_part = self
+                    .last_reasoning
+                    .as_ref()
+                    .is_some_and(|(last, index)| last == item && *index == frame.summary_index);
+                let mut delta = String::new();
+                if !same_part {
+                    if !self.reply.reasoning.is_empty() {
+                        delta.push_str("\n\n");
+                    }
+                    self.last_reasoning = Some((item.to_string(), frame.summary_index));
+                }
+                delta.push_str(&frame.delta);
                 self.reply.reasoning.push_str(&delta);
                 return Ok(vec![Delta::Thinking(delta)]);
             }

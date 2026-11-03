@@ -264,20 +264,3 @@ pub fn first_classify() -> Option<String> {
             .is_ok_and(|endpoint| crate::provider::wire::spec(endpoint.wire).classifies())
     })
 }
-
-pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
-    let (endpoints, _) = ready(Requirement::ModelAndKey);
-    if endpoints.is_empty() {
-        return None;
-    }
-    let index = endpoints
-        .iter()
-        .position(|endpoint| endpoint.name == current);
-    let target = match (index, forward) {
-        (Some(index), true) => (index + 1) % endpoints.len(),
-        (Some(index), false) => (index + endpoints.len() - 1) % endpoints.len(),
-        (None, true) => 0,
-        (None, false) => endpoints.len() - 1,
-    };
-    (endpoints[target].name != current).then(|| endpoints[target].name.clone())
-}

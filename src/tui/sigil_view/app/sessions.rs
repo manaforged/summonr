@@ -1,39 +1,6 @@
 use super::*;
 
-#[cfg(feature = "gui")]
-const RENAME: &str = "/name ";
-
 impl App {
-    #[cfg(feature = "gui")]
-    pub(in crate::tui::sigil_view) fn new_session(&self) {
-        self.open_session(crate::tui::hub::Open::New);
-    }
-
-    #[cfg(feature = "gui")]
-    pub(in crate::tui::sigil_view) fn new_worktree_session(&self) {
-        self.open_session(crate::tui::hub::Open::Worktree);
-    }
-
-    #[cfg(feature = "gui")]
-    pub(in crate::tui::sigil_view) fn rename_session(&self, id: &str) {
-        if id != self.model.peek().session {
-            self.open_session(crate::tui::hub::Open::Resume(id.to_string()));
-        }
-        self.replace(RENAME.to_string());
-        self.focus_composer();
-    }
-
-    #[cfg(feature = "gui")]
-    pub(in crate::tui::sigil_view) fn remove_session(&self, id: &str, again: &str) -> bool {
-        match self.forget(id, again) {
-            Ok(()) => true,
-            Err(note) => {
-                self.push_entry(Entry::System(note));
-                false
-            }
-        }
-    }
-
     fn forget(&self, id: &str, again: &str) -> Result<(), String> {
         if id == self.model.get().session {
             return Err("the open session cannot be deleted".to_string());

@@ -12,7 +12,6 @@ use super::composer;
 use super::entry;
 use super::footer;
 use super::panels;
-use super::todos;
 use super::{App, Model, canvas};
 use crate::prefs::Prefs;
 use sigil::prelude::Widget;
@@ -52,8 +51,7 @@ pub(in crate::tui::sigil_view) fn layer(
                 },
             )
         })))
-        .child(pin(canvas::gutter(panels::agents(app.clone(), width))))
-        .child(pin(todos::widget(app.clone(), cols)))
+        .child(pin(canvas::gutter(panels::status_bar(app.clone(), width))))
         .child(pin(canvas::gutter(panels::bands(app.clone(), width))))
         .child(pin(composer::widget(app.clone(), width, editor)))
         .child(container().layout(LayoutStyle::block().fill_width().grow(1.0)))
@@ -102,8 +100,7 @@ pub(in crate::tui::sigil_view) fn inline_layer(
                 .min_size(0.0, 0.0)
                 .gap(0.0),
         )
-        .child(canvas::gutter(panels::agents(app.clone(), width)))
-        .child(todos::widget(app.clone(), cols))
+        .child(canvas::gutter(panels::status_bar(app.clone(), width)))
         .child(canvas::gutter(panels::bands(app.clone(), width)))
         .child(composer::widget(app.clone(), width, editor))
         .child(canvas::gutter(footer::footer_bar(app, width)))

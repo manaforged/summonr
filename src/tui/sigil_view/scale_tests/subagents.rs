@@ -55,8 +55,8 @@ fn a_running_subagent_reads_as_its_task_not_its_status_dump() {
         "no repeated lead word: {shown}"
     );
     assert!(
-        shown.matches("Fix total() so it rounds to cents").count() >= 2,
-        "the poll and the strip both name the task: {shown}"
+        shown.matches("Fix total() so it rounds to cents").count() >= 1,
+        "the transcript names the task: {shown}"
     );
 }
 
@@ -98,8 +98,8 @@ fn subagents_read_as_one_line_each_that_flips_when_done() {
         "{shown}"
     );
     assert!(
-        shown.contains("Subagents 1"),
-        "the panel counts running subagents: {shown}"
+        shown.contains("2 agents"),
+        "the status bar counts all visible agents: {shown}"
     );
     assert!(
         !shown.contains("Task"),
@@ -360,8 +360,8 @@ fn a_narrow_subagent_row_keeps_its_activity_and_names_a_listing_as_a_directory()
         })
         .collect();
     assert!(
-        rows.len() >= 2,
-        "the transcript and the strip both show the subagent:\n{}",
+        !rows.is_empty(),
+        "the transcript shows the subagent:\n{}",
         shown.join("\n")
     );
     for row in rows {
@@ -391,7 +391,7 @@ fn a_long_subagent_activity_leaves_the_task_title_readable() {
             (trimmed.starts_with('✳') || trimmed.starts_with('◆')) && line.contains("· Read cli.py")
         })
         .collect();
-    assert!(rows.len() >= 2, "{}", shown.join("\n"));
+    assert!(!rows.is_empty(), "{}", shown.join("\n"));
     for row in rows {
         assert!(row.contains("Add --dry-run flag"), "{row}");
     }

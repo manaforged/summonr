@@ -1,8 +1,10 @@
 use super::*;
 use crate::tui::sigil_view::suggest;
 use sigil::prelude::Paint;
+use sigil::prelude::Rgba8;
 use sigil::prelude::Widget;
 use sigil::reactive::{derived, untrack};
+use sigil::style::ThemeValue;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let surface = app.clone();
@@ -39,7 +41,7 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
         a: (scene::GLASS * 255.0) as u8,
         ..scene::PLATE
     };
-    let mut clear = surface::theme(app.appearance.peek());
+    let mut clear = super::super::theme::style(app.appearance.peek());
     clear.register_token(
         "surface",
         ThemeValue::Color(Rgba8 {

@@ -33,15 +33,28 @@ holds `{ text, fg, bg }`. The second one is on the delete list in §3.
 
 `ImageSource` and `ImageSource::id` are Sigil's.
 
-## 1a. Child status rows
+## 1a. Status bar
 
-Owner: `src/tui/sigil_view/chat/strip.rs`, with display state in `model.rs`
-and actions in `app/adjust.rs`.
+Owner: `src/tui/sigil_view/chat/strip.rs`; `strip/details.rs` renders the
+shared Tasks/Agents popup with Sigil's measured virtual list.
 
 | Row | Job | Callers |
 | --- | --- | --- |
-| `App::clear_agent` | dismiss a background status row; keep execution, accounting, and transcript reports | `chat/strip.rs` |
-| `Model::agents_hidden` | child tags dismissed in the current view; late events do not reveal them | `App::clear_agent`, `chat/strip.rs` |
+| `strip::{bar, rows}` | render and measure one adaptive status row for session state, estimated live throughput, task progress, agents, and failures | `chat/panels.rs`, `host/run.rs`, desktop thread |
+| `strip::working` | detect parent or visible child work for the animation clock | `app/frame.rs`, status bar |
+| `strip::sheet`, `App::{status_sheet_open, close_status_sheet}` | render, open, and dismiss the shared details popup | `app/overlays.rs` |
+| `StatusView`, `App::show_status` | select the closed, Tasks, or Agents view without changing transcript layout | status bar and popup |
+| `App::{toggle_agents, toggle_todos}` | open or close the corresponding status popup view | configured hotkeys |
+| `App::{step_status, move_status, expand_status}` | switch views, select a row, and expand its details | overlay keyboard routing |
+| `App::clear_agent` | dismiss a background agent from the status bar and popup; keep execution, accounting, and transcript reports | `strip/details.rs` |
+| `Model::agents_hidden` | child tags dismissed in the current view; late events do not reveal them | `App::clear_agent`, status bar and popup |
+| `todos::tally` | count completed and total task rows from the existing ledger | status bar, ledger pane |
+
+Live throughput belongs to the main response, not an aggregate of child rates.
+It is hidden during tools, approvals, and idle periods. Task-only activity shows
+the current step; tasks with agents use a compact count. Completed results remain
+available until the transcript is cleared or reset. Approvals, forms, and attached
+images keep their existing controls.
 
 ## Composer
 
@@ -52,6 +65,25 @@ and actions in `app/adjust.rs`.
 | Splash placement | `scene/input.rs::prompt_area` | `view/splash.rs`; the composer holds its row under the card, grows down, and moves up only when it reaches the bottom of the screen |
 
 Typing, wrapping, newlines, and resizing do not dismiss the splash. A transcript entry or explicit navigation does.
+
+## Themes
+
+Owner: `theme.rs` loads the existing built-in palettes and `theme.toml`
+overrides; `theme/tokens.rs` maps that palette to Sigil tokens for both the
+terminal and desktop roots. Overlay surfaces use the palette's base RGB with an
+opaque alpha, including when the terminal background is transparent.
+
+| Job | Owner | Callers |
+| --- | --- | --- |
+| Selected palette to widget theme | `theme::style` | terminal root, splash composer, desktop root |
+| Enumerate, edit, and save palette colors | `Palette::{colors, set, save}`, `theme::{load, hex, color_hex}` | theme loader and editor; save uses the existing atomic store and preserves TOML comments |
+| Theme editor modal and draft state | `settings/theme.rs::{Editor, layer, keys}` | Options theme row, overlay routing |
+| Preview, commit, or cancel theme edits | `App::{open_theme, preview_color, edit_theme, move_theme, step_theme, reset_theme, cancel_theme, close_theme, save_theme}` | theme editor and overlay routing |
+
+Enter on the theme row opens the editor; left/right retains preset cycling.
+Edits preview live without changing saved preferences. Save writes colors to
+`.summonr/theme.toml`; Cancel restores the pre-editor palette. Invalid colors and
+save errors stay visible without closing the editor.
 
 ## Splash animation
 

@@ -183,6 +183,8 @@ fn the_last_settings_page_shows_its_rows() {
     let seen = drive(
         |app| {
             app.toggle_options();
+            app.settings_group
+                .set(Some(crate::tui::sigil_view::settings::Group::Appearance));
             let rows = crate::tui::sigil_view::settings::setting_rows(app);
             app.settings.cursor.set(rows.len() - 1);
         },

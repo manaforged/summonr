@@ -15,6 +15,7 @@ mod auth;
 mod hotkeys;
 mod models;
 mod options;
+pub(in crate::tui::sigil_view) mod theme;
 mod workflow;
 
 pub(super) use auth::{keys as auth_keys, layer as auth_layer};
@@ -24,11 +25,40 @@ pub(super) use options::{keys as settings_keys, layer as settings_layer};
 pub(super) use workflow::{keys as workflow_keys, layer as workflow_layer};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Group {
+    Models,
+    Work,
+    Appearance,
+    Input,
+    Tools,
+}
+
+impl Group {
+    pub(super) const ALL: [Self; 5] = [
+        Self::Models,
+        Self::Work,
+        Self::Appearance,
+        Self::Input,
+        Self::Tools,
+    ];
+
+    pub(super) const fn name(self) -> &'static str {
+        match self {
+            Self::Models => "Models & accounts",
+            Self::Work => "Work & checks",
+            Self::Appearance => "Appearance",
+            Self::Input => "Conversation & input",
+            Self::Tools => "Tools & integrations",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Setting {
     Mode,
     Verify,
     Workflow,
-    Endpoint,
+    Accounts,
     Model,
     Reasoning,
     Tools,
@@ -40,6 +70,7 @@ pub(super) enum Setting {
     Notify,
     Splash,
     Motion,
+    Spinner,
     Hotkeys,
 }
 
@@ -49,7 +80,7 @@ impl Setting {
             Self::Mode,
             Self::Verify,
             Self::Workflow,
-            Self::Endpoint,
+            Self::Accounts,
             Self::Model,
             Self::Reasoning,
             Self::Tools,
@@ -68,8 +99,33 @@ impl Setting {
             Self::DiffLayout,
             Self::Splash,
             Self::Motion,
+            Self::Spinner,
             Self::Hotkeys,
         ])
+    }
+
+    pub(super) const fn group(self) -> Group {
+        match self {
+            Self::Accounts | Self::Model => Group::Models,
+            Self::Mode | Self::Verify | Self::Workflow => Group::Work,
+            Self::Theme
+            | Self::Background
+            | Self::DiffLayout
+            | Self::Splash
+            | Self::Motion
+            | Self::Spinner => Group::Appearance,
+            Self::Notify | Self::Mail | Self::Hotkeys | Self::Reasoning | Self::Tools => {
+                Group::Input
+            }
+            Self::Module(_) => Group::Tools,
+        }
+    }
+
+    pub(super) const fn opens(self) -> bool {
+        matches!(
+            self,
+            Self::Accounts | Self::Model | Self::Workflow | Self::Theme | Self::Hotkeys
+        )
     }
 
     pub(super) fn activate(self, app: &App) {
@@ -77,32 +133,31 @@ impl Setting {
             Self::Mode => app.cycle_run_mode(),
             Self::Verify => app.toggle_verify(),
             Self::Workflow => app.open_workflow(),
-            Self::Endpoint => app.cycle_endpoint(),
+            Self::Accounts => app.begin_auth(None),
             Self::Model => app.begin_model_edit(),
             Self::Reasoning => app.set_visibility(|prefs| &mut prefs.reasoning, None),
             Self::Tools => app.toggle_tools(),
             Self::Mail => app.toggle_mail(),
             Self::Module(id) => app.toggle_module(id),
-            Self::Theme => app.toggle_theme(),
+            Self::Theme => app.open_theme(),
             Self::Background => app.toggle_background(),
             Self::Notify => app.flip(|prefs| prefs.notify = prefs.notify.toggle()),
             Self::DiffLayout => app.set_diff_layout(app.model.get().prefs.diff_layout.toggle()),
             Self::Splash => app.flip(|prefs| prefs.splash = !prefs.splash),
             Self::Motion => app.toggle_motion(),
+            Self::Spinner => app.flip(|prefs| prefs.spinner = prefs.spinner.toggle()),
             Self::Hotkeys => app.open_hotkeys(),
         }
     }
 }
 
 pub(super) struct Row {
-    pub(super) group: &'static str,
     pub(super) label: String,
     pub(super) value: String,
 }
 
-fn row(group: &'static str, label: impl Into<String>, value: impl Into<String>) -> Row {
+fn row(label: impl Into<String>, value: impl Into<String>) -> Row {
     Row {
-        group,
         label: label.into(),
         value: value.into(),
     }
@@ -134,18 +189,19 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
         "waits for the next turn"
     };
     let modules = app.modules.get();
+    let group = app.settings_group.get();
     Setting::all()
+        .filter(|setting| group.is_none_or(|group| setting.group() == group))
         .map(|setting| match setting {
-            Setting::Mode => row("session", "run mode", mode),
-            Setting::Verify => row("session", "verify", &verify),
-            Setting::Workflow => row("session", "workflow", workflow),
-            Setting::Endpoint => row("model", "endpoint", &endpoint),
-            Setting::Model => row("model", "model", &snapshot.model),
-            Setting::Reasoning => row("model", "reasoning", prefs.reasoning.name()),
-            Setting::Tools => row("harness", "tools", prefs.tools.name()),
-            Setting::Mail => row("harness", "incoming mail", mail),
+            Setting::Mode => row("run mode", mode),
+            Setting::Verify => row("verify", &verify),
+            Setting::Workflow => row("workflow", workflow),
+            Setting::Accounts => row("accounts", &endpoint),
+            Setting::Model => row("model", &snapshot.model),
+            Setting::Reasoning => row("reasoning display", prefs.reasoning.name()),
+            Setting::Tools => row("tool output", prefs.tools.name()),
+            Setting::Mail => row("incoming mail", mail),
             Setting::Module(id) => row(
-                "modules",
                 format!("{} tools", id.name()),
                 on_off(
                     modules
@@ -154,14 +210,14 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
                         .unwrap_or(crate::modules::ALL[id as usize].default),
                 ),
             ),
-            Setting::Theme => row("interface", "theme", &prefs.theme),
-            Setting::Background => row("interface", "background", prefs.background.name()),
-            Setting::Notify => row("interface", "notify", prefs.notify.label()),
-            Setting::DiffLayout => row("interface", "diff layout", prefs.diff_layout.name()),
-            Setting::Splash => row("interface", "splash", on_off(prefs.splash)),
-            Setting::Motion => row("interface", "motion", on_off(prefs.animations)),
+            Setting::Theme => row("theme", &prefs.theme),
+            Setting::Background => row("background", prefs.background.name()),
+            Setting::Notify => row("notify", prefs.notify.label()),
+            Setting::DiffLayout => row("diff layout", prefs.diff_layout.name()),
+            Setting::Splash => row("splash", on_off(prefs.splash)),
+            Setting::Motion => row("motion", on_off(prefs.animations)),
+            Setting::Spinner => row("spinner", prefs.spinner.name()),
             Setting::Hotkeys => row(
-                "interface",
                 "hotkeys",
                 format!("{} bindings", crate::prefs::Hotkey::ALL.len()),
             ),

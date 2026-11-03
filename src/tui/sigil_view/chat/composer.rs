@@ -1,41 +1,12 @@
-use std::time::Instant;
-
-use sigil::app::cell_width;
-
-use super::Speed;
-
 pub(super) use super::{App, Model, suggest};
 use crate::tui::Activity;
+use sigil::app::cell_width;
 
 mod widget;
 
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use widget::pending_rows;
 pub(super) use widget::widget;
-
-pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Option<String> {
-    model.busy_since.map(|(activity, since)| {
-        let doing = match &model.live_tool {
-            Some((name, arg)) => format!("{name} {arg}").trim_end().to_string(),
-            None => activity.label().to_string(),
-        };
-        let waiting = match model.pending.len() {
-            0 => " · tab queues".to_string(),
-            n => format!(" · {n} waiting · ↑ edits"),
-        };
-        let now = Instant::now();
-        let speed = model
-            .speed
-            .live(now)
-            .map(|rate| format!(" · {}", Speed::label(rate)))
-            .unwrap_or_default();
-        format!(
-            "{} {doing} · {}{speed}{waiting}",
-            sigil::widgets::spinner_frame(tick),
-            summonr_core::text::duration(since.elapsed().as_secs())
-        )
-    })
-}
 
 pub(in crate::tui::sigil_view) fn composer_hint(
     activity: Option<Activity>,

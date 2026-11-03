@@ -1,67 +1,7 @@
-use sigil::prelude::Role;
-
-use super::super::{Pane, rail};
+use super::super::Pane;
 use super::harness::{changed, drive};
 use super::in_window;
-use crate::tui::hub::{Live, Status};
 use crate::tui::{Cmd, Fact, Msg};
-
-#[test]
-fn the_rail_offers_its_panes_and_new_sessions_as_named_buttons() {
-    let seen = drive(|_| {}, Vec::new(), |_| ());
-    for pane in [
-        "Files",
-        "Changes",
-        "Worktrees",
-        "Jobs",
-        "Peers",
-        rail::LEDGER,
-    ] {
-        assert_eq!(
-            seen.named(Role::Button, pane).len(),
-            1,
-            "{pane}: {:?}",
-            seen.controls
-        );
-    }
-    assert_eq!(seen.named(Role::Button, rail::NEW_SESSION).len(), 1);
-    assert_eq!(seen.named(Role::Button, rail::NEW_WORKTREE).len(), 1);
-    assert!(
-        !seen.shows(|text| text == rail::NEW_SESSION || text == "Plan"),
-        "{}",
-        seen.text()
-    );
-}
-
-#[test]
-fn live_sessions_show_their_titles_and_tell_twins_apart() {
-    let live = |session: &str, title: &str| Live {
-        session: session.to_owned(),
-        title: title.to_owned(),
-        workspace: std::path::PathBuf::from("/tmp/proj"),
-        status: Status::Idle,
-        active: false,
-    };
-    let seen = drive(
-        |app| {
-            app.update(Msg::Fact(Fact::Live(vec![
-                live("aaaaaaaaaaaaaaaa", "fix tests"),
-                live("bbbbbbbbbbbbbbbb", "fix tests"),
-                live("cccccccccccccccc", ""),
-            ])));
-        },
-        Vec::new(),
-        |_| (),
-    );
-    let twins: Vec<&String> = seen
-        .texts
-        .iter()
-        .filter(|text| text.starts_with("fix tests"))
-        .collect();
-    assert_eq!(twins.len(), 2, "{}", seen.text());
-    assert_ne!(twins[0], twins[1]);
-    assert!(seen.shows(|text| text == rail::UNTITLED), "{}", seen.text());
-}
 
 #[test]
 fn the_window_slash_list_describes_built_in_commands() {
@@ -101,21 +41,6 @@ fn the_changes_pane_stays_open_and_can_scope_to_this_session() {
         .filter(|cmd| matches!(cmd, Cmd::SessionDiff(_)))
         .count();
     assert_eq!(asked, 2);
-}
-
-#[test]
-fn window_pane_empty_states_name_no_command_line_flags() {
-    if !in_window("window_chrome::window_pane_empty_states_name_no_command_line_flags") {
-        return;
-    }
-    for pane in [Pane::Worktrees, Pane::Jobs, Pane::Peers, Pane::Ledger] {
-        let seen = drive(|app| app.toggle_pane(pane), Vec::new(), |_| ());
-        assert!(
-            !seen.shows(|text| text.contains("--") || text.contains("run_command")),
-            "{pane:?}: {}",
-            seen.text()
-        );
-    }
 }
 
 #[test]

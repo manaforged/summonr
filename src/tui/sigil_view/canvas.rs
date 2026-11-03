@@ -48,7 +48,7 @@ pub(super) fn inner_cols(cols: usize) -> usize {
 static WINDOW: AtomicBool = AtomicBool::new(false);
 
 pub(in crate::tui::sigil_view) fn is_window() -> bool {
-    WINDOW.load(Ordering::Relaxed)
+    WINDOW.load(Ordering::Relaxed) || sigil::terminal::pixels()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

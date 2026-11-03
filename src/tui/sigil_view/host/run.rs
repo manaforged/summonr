@@ -61,6 +61,10 @@ pub(crate) fn run(
     let ran = {
         tokio::task::block_in_place(|| {
             sigil::run(config, move || {
+                let existing = mounted.borrow().clone();
+                if let Some(app) = existing {
+                    return layout(app);
+                }
                 let app = App::new(info.clone(), workspace.clone(), commands.clone());
                 if let Err(error) = calibrate(&mut std::io::stdout()) {
                     app.update(Msg::Fact(Fact::System(format!(
@@ -122,17 +126,12 @@ impl App {
     }
 
     fn inline_rows(&self) -> u16 {
-        let (cols, rows) = self.viewport.peek();
-        let model = self.model.get();
+        let (_cols, rows) = self.viewport.peek();
         if self.splash.peek() || self.select.peek() || self.overlay().is_some() {
             return rows.max(1);
         }
         let mut height = 6u16;
-        if model.busy_since.is_some() {
-            height += 1;
-        }
-        height += crate::tui::sigil_view::chat::panels::strip_rows(self).min(9) as u16;
-        height += crate::tui::sigil_view::chat::todos::height(self, cols);
+        height += crate::tui::sigil_view::chat::panels::status_rows(self) as u16;
         height.clamp(1, rows.max(1))
     }
 
@@ -346,4 +345,12 @@ pub(in crate::tui::sigil_view) fn stop<T>(
             }
         });
     });
+}
+
+fn layout(app: App) -> sigil::prelude::NodeBuilder {
+    #[cfg(feature = "gui")]
+    if sigil::terminal::pixels() {
+        return super::super::desktop::root(app);
+    }
+    root(app)
 }

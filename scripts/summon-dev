@@ -40,7 +40,7 @@ build() {
         CARGO_PROFILE_RELEASE_LTO=off \
         CARGO_PROFILE_RELEASE_CODEGEN_UNITS=256 \
         CARGO_PROFILE_RELEASE_INCREMENTAL=true \
-        cargo build --manifest-path "$root/Cargo.toml" --release --bin summonr "$@" >&2
+        cargo build --manifest-path "$root/Cargo.toml" --release --bin summonr --features gui "$@" >&2
 }
 
 hold() {

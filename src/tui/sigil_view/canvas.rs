@@ -96,14 +96,8 @@ pub(super) fn frame_body(viewport: (u16, u16)) -> f32 {
 pub(super) fn frame_rows(viewport: (u16, u16)) -> usize {
     (frame_body(viewport) / overlay_list_row()).floor() as usize
 }
-const WINDOW_FRAME_BORDER: i16 = 1;
-
-pub(in crate::tui::sigil_view) fn frame_border() -> i16 {
-    if is_window() {
-        WINDOW_FRAME_BORDER
-    } else {
-        cell().h as i16
-    }
+pub(in crate::tui::sigil_view) const fn frame_border() -> i16 {
+    1
 }
 
 pub(super) fn overlay_gap() -> f32 {

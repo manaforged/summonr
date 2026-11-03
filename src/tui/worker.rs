@@ -51,6 +51,7 @@ struct Worker {
     queue: steer::InputQueue,
     last_turn: Option<crate::Turn>,
     mail_error: Option<String>,
+    announced: Vec<String>,
     workflow: Workflow,
     dial: Option<crate::Effort>,
     levels: Vec<crate::Effort>,

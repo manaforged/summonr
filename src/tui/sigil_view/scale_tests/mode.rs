@@ -123,7 +123,8 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         screen
             .frame(&mut host, [shifted], (100, 30))
             .expect("previous model filter");
-        assert_eq!(app.picker.facet.peek(), Facet::Long);
+        let last = app.facet_counts().last().map(|(facet, _)| *facet);
+        assert_eq!(Some(app.picker.facet.peek()), last);
         let tab = sigil::terminal::map_key(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
             .expect("overlay Tab");
         screen

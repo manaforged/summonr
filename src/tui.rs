@@ -13,6 +13,7 @@ mod help;
 pub mod hub;
 mod matching;
 mod sigil_view;
+pub(crate) use channel::Activity;
 pub use channel::{Inbox, Ui, channel};
 pub(crate) use help::help_text;
 pub(crate) use matching::matching_commands;
@@ -135,27 +136,6 @@ pub(crate) enum Intent {
     Bye,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Activity {
-    Turn,
-    Login,
-    Compact,
-    Branch,
-    Shell,
-}
-
-impl Activity {
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Turn => "working",
-            Self::Login => "signing in",
-            Self::Compact => "compacting",
-            Self::Branch => "branching",
-            Self::Shell => "running",
-        }
-    }
-}
-
 enum Cmd {
     Command(String),
     Login(String),
@@ -233,6 +213,7 @@ pub(crate) struct Round {
     pub cached: u32,
     pub prefix_hash: String,
     pub cost: Option<f64>,
+    pub side: bool,
 }
 
 impl Round {

@@ -99,14 +99,16 @@ impl Model {
                 millis: _,
                 prefix_hash,
                 cost,
-            } => self.record_usage(
-                prompt_tokens,
-                completion_tokens,
-                reasoning_tokens,
-                cached_tokens,
+                side,
+            } => self.record_usage(crate::tui::Round {
+                prompt: prompt_tokens,
+                completion: completion_tokens,
+                reasoning: reasoning_tokens,
+                cached: cached_tokens,
                 prefix_hash,
                 cost,
-            ),
+                side,
+            }),
             Event::Approval { .. }
             | Event::Elicit { .. }
             | Event::Spawned { .. }
@@ -230,24 +232,10 @@ impl Model {
             .extend(self.child_todos.iter().flat_map(|(_, lines)| lines.clone()));
     }
 
-    pub(in crate::tui::sigil_view) fn record_usage(
-        &mut self,
-        prompt: u32,
-        completion: u32,
-        reasoning: u32,
-        cached: u32,
-        prefix_hash: String,
-        cost: Option<f64>,
-    ) {
+    pub(in crate::tui::sigil_view) fn record_usage(&mut self, round: Round) {
         self.rounds += 1;
-        self.speed.finish(completion.max(reasoning), Instant::now());
-        self.usage.push(Round {
-            prompt,
-            completion,
-            reasoning,
-            cached,
-            prefix_hash,
-            cost,
-        });
+        self.speed
+            .finish(round.completion.max(round.reasoning), Instant::now());
+        self.usage.push(round);
     }
 }

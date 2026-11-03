@@ -41,7 +41,7 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
         a: (scene::GLASS * 255.0) as u8,
         ..scene::PLATE
     };
-    let mut clear = super::super::theme::style(app.appearance.peek());
+    let mut clear = super::super::theme::style(super::super::theme::splash());
     clear.register_token(
         "surface",
         ThemeValue::Color(Rgba8 {

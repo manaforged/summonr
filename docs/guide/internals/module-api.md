@@ -234,7 +234,7 @@ not against the name.
 | `Work::save`, `Work::load`, `Work::read`, `hunk_header`, `head_count`, `resolves_blocked`, `index::named`, `WALL` | `Line::Work` with `Work::{at, restore}`, `diff::parse_hunks`, `native::pipe_stage`, `fetch::fetch_targets`, `filter::named`, `web::wall` | Work state was a second file beside the session log; hunk headers, `head` pipe counts, blocked-address lookups, and file-name matching each had two parsers; the anti-bot wall had a singleton beside its accessor |
 | `route.rs::retired`, the preset `replaces` lookup beside it, `sets.rs::BY_NAME` | `catalog::Catalog::{from_rows, get}` with `Row::{name, retired}` | three hand-built name indexes answered "which row is this name" |
 | `mail::now`, `catalog::now`, `durable/log.rs::now_millis` | `summonr_core::clock::{now, now_millis}` | four owners answered "what time is it" |
-| the 40 hand-written verb lines in `help.txt` | the command rows' `help` line, rendered by `help::verbs` and pinned by the golden test | a rename had to touch two files and could drift |
+| the 40 hand-written verb lines in the help template | the command rows' `help` line, rendered by `help::verbs` and pinned by the golden test | a rename had to touch two files and could drift |
 
 ### Checked and kept
 

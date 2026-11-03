@@ -56,7 +56,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                         .chrome(false)
                         .focus_ring(sigil::prelude::signal(false))
                         .content_padding(0.0, 0.0)
-                        .layout(LayoutStyle::flex_column().fill_width().height(72.0))
+                        .layout(LayoutStyle::flex_column().fill_width().height(48.0))
                         .font_size(BODY)
                         .text_color(Token::OnSurface),
                 )

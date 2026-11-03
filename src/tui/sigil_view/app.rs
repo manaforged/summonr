@@ -329,6 +329,7 @@ impl App {
         };
         app.cancel_secret_on_close();
         app.apply_theme();
+        app.follow_backdrop();
         drop(app.cmd.send(Cmd::Offers));
         app
     }

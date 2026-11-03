@@ -490,6 +490,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
                 millis: None,
                 prefix_hash: String::new(),
                 cost: Some(0.25),
+                side: false,
             },
         );
         act(

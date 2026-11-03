@@ -66,6 +66,12 @@ impl Hints {
     }
 
     #[must_use]
+    pub(in crate::tui) fn without(mut self, taken: &[Key]) -> Self {
+        self.keys.retain(|(key, _)| !taken.contains(key));
+        self
+    }
+
+    #[must_use]
     pub(in crate::tui) fn right(mut self, text: impl Into<String>) -> Self {
         self.right = text.into();
         self

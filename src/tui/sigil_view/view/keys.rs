@@ -146,7 +146,7 @@ impl App {
 
     fn save_key(&self) -> bool {
         if self.picker.open.peek() {
-            return true;
+            return false;
         }
         let save = self.view_edit.peek() && !self.hotkeys.recording.peek();
         if save {

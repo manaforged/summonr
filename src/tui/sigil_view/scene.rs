@@ -5,7 +5,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) use super::app::App;
 
-use super::canvas::{Cell, blend, cell as metrics, ink, palette, rgb, shown};
+use super::canvas::{Cell, blend, cell as metrics, ink, rgb, shown};
+use super::theme::splash as palette;
 use super::model::Model;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;

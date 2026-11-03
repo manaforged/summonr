@@ -18,8 +18,8 @@ pub(super) const S: f32 = 8.0;
 pub(super) const M: f32 = 12.0;
 pub(super) const L: f32 = 16.0;
 pub(super) const XL: f32 = 24.0;
-pub(super) const BODY: f32 = 13.0;
-pub(super) const META: f32 = 12.0;
+pub(super) const BODY: f32 = 14.0;
+pub(super) const META: f32 = 13.0;
 const COLUMN: f32 = 760.0;
 const EXPLAIN: &str = "Explain this repo";
 const ADD_PROVIDER: &str = "Add a provider";
@@ -73,24 +73,42 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .fill_width()
                 .fill_height()
                 .min_size(0.0, 0.0)
+                .padding_bottom(M)
                 .align_items(AlignItems::Stretch),
         )
         .bg(Token::Surface)
-        .child(reading(
+        .child(
             container()
                 .layout(
                     LayoutStyle::flex_column()
                         .fill_width()
-                        .fill_height()
                         .grow(1.0)
-                        .min_size(0.0, 0.0)
-                        .padding_top(L),
+                        .min_size(0.0, 0.0),
                 )
-                .child(node(move || {
-                    chat::transcript(transcript_app, (L, L), empty_home)
-                })),
-            true,
-        ))
+                .children_reactive(move || {
+                    if blank.get() {
+                        return Vec::new();
+                    }
+                    let app = transcript_app.clone();
+                    vec![sigil::reactive::untrack(|| {
+                        reading(
+                            container()
+                                .layout(
+                                    LayoutStyle::flex_column()
+                                        .fill_width()
+                                        .fill_height()
+                                        .grow(1.0)
+                                        .min_size(0.0, 0.0)
+                                        .padding_top(L),
+                                )
+                                .child(node(move || {
+                                    chat::transcript(app.clone(), (L, L), empty_home)
+                                })),
+                            true,
+                        )
+                    })]
+                }),
+        )
         .child(
             container()
                 .layout(LayoutStyle::block().fill_width().shrink(0.0))
@@ -160,6 +178,13 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                     }
                 }),
         )
+        .children_reactive(move || {
+            if blank.get() {
+                vec![container().layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))]
+            } else {
+                Vec::new()
+            }
+        })
 }
 
 fn workspace_name(app: &App) -> String {
@@ -235,7 +260,7 @@ fn home(app: &App, actions: NodeBuilder) -> NodeBuilder {
         .child(
             sigil::prelude::text(workspace_name(app))
                 .nowrap()
-                .font_size(20.0)
+                .font_size(26.0)
                 .font_weight(600)
                 .text_color(Token::OnSurface),
         )

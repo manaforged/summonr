@@ -26,7 +26,7 @@ pub(super) fn pane(
 ) -> Vec<NodeBuilder> {
     let color = match tier {
         Some(tier) => tone(tier),
-        None if choice.configured || choice.keyless() => Token::Success11,
+        None if choice.configured => Token::Success11,
         None => Token::Gray10,
     };
     let mut nodes = vec![

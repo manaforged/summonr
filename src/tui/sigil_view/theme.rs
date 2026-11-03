@@ -81,7 +81,7 @@ impl Palette {
 
     pub(super) const DAWN: Self = Self {
         base: rgb(222, 218, 208),
-        text: rgb(46, 52, 64),
+        text: rgb(0, 0, 0),
         gray: rgb(76, 82, 96),
         dim: rgb(84, 90, 102),
         thought: rgb(92, 98, 110),
@@ -205,16 +205,27 @@ pub(super) fn set_backdrop_light(light: bool) {
 
 fn backdrop_light() -> bool {
     LIGHT_BACKDROP.with(Cell::get).unwrap_or_else(|| {
-        matches!(
-            sigil::terminal::caps().and_then(|caps| caps.backdrop),
-            Some(sigil::terminal::Backdrop::Light)
-        )
+        let backdrop = sigil::terminal::backdrop()
+            .peek()
+            .or_else(|| sigil::terminal::caps().and_then(|caps| caps.backdrop));
+        backdrop == Some(sigil::terminal::Backdrop::Light)
     })
 }
 
 #[must_use]
 pub(super) fn palette() -> Palette {
     ACTIVE.with(Cell::get)
+}
+
+#[must_use]
+pub(super) fn splash() -> Palette {
+    let active = palette();
+    let [r, g, b] = [active.base.r, active.base.g, active.base.b].map(u32::from);
+    if r * 299 + g * 587 + b * 114 > 128_000 {
+        Palette::SPACE
+    } else {
+        active
+    }
 }
 
 pub(super) fn set(palette: Palette) {

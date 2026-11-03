@@ -47,6 +47,7 @@ impl Worker {
             queue: super::steer::InputQueue::new(steering),
             last_turn: None,
             mail_error: None,
+            announced: Vec::new(),
             last_diff: None,
             last_peers: None,
             workflow: info.workflow.unwrap_or_default(),
@@ -136,16 +137,13 @@ impl Worker {
         for event in self.loop_.child_events() {
             drop(self.ui.send(Msg::Fact(Fact::Event(event))));
         }
-        for note in self.loop_.reap_finished() {
+        let reaped = self.loop_.reap_finished().into_iter().map(|note| (note, "child"));
+        let jobs = self.loop_.finished_jobs().into_iter().map(|note| (note, "job"));
+        for (note, kind) in reaped.chain(jobs).collect::<Vec<_>>() {
             self.system(&note);
-            if let Err(error) = crate::mail::Mailbox::wake(&self.loop_.session_id(), &note) {
-                self.system(&format!("child exit was not delivered: {error}"));
-            }
-        }
-        for note in self.loop_.finished_jobs() {
-            self.system(&note);
-            if let Err(error) = crate::mail::Mailbox::wake(&self.loop_.session_id(), &note) {
-                self.system(&format!("job exit was not delivered: {error}"));
+            match crate::mail::Mailbox::wake(&self.loop_.session_id(), &note) {
+                Ok(()) => self.announced.push(note),
+                Err(error) => self.system(&format!("{kind} exit was not delivered: {error}")),
             }
         }
         self.loop_.mail_heartbeat(crate::mail::Presence::Idle);
@@ -177,8 +175,20 @@ impl Worker {
         if monitor && !self.mail_held {
             self.pending_mail = true;
         }
+        let shown: Vec<bool> = mail
+            .iter()
+            .map(|message| {
+                let at = (message.from == "monitor")
+                    .then(|| self.announced.iter().position(|note| *note == message.text))
+                    .flatten();
+                at.map(|at| self.announced.swap_remove(at)).is_some()
+            })
+            .collect();
         if !self.pending_mail {
-            for message in mail {
+            for (message, shown) in mail.into_iter().zip(shown) {
+                if shown {
+                    continue;
+                }
                 drop(self.ui.send(Msg::Fact(Fact::Mail {
                     from: message.sender().to_string(),
                     text: message.text.clone(),

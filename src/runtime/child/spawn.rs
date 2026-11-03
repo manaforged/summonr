@@ -242,24 +242,6 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub(super) fn task_settle(&mut self, mut done: Done) -> Result<Execution> {
-        if !done.settled {
-            self.task_record(&mut done)?;
-        }
-        let record = done.record;
-        let text = serde_json::to_string(&record)
-            .map_err(|error| Error::Config(format!("cannot encode child receipt: {error}")))?;
-        let success = matches!(record.state, ChildState::Completed(_));
-        let mutated = record.record_paths() > 0;
-        Ok(Execution {
-            output: ToolOutput::ok(text)
-                .with_success(success)
-                .with_mutated(mutated),
-            usage: done.usage,
-            millis: done.millis,
-        })
-    }
-
     pub(super) fn task_budget(&self, children: usize) -> Result<Budget> {
         let children = u64::try_from(children)
             .map_err(|error| Error::Config(format!("task batch size is invalid: {error}")))?;
@@ -285,32 +267,6 @@ impl<P: Provider> Loop<P> {
             max_tokens: tokens,
             max_secs: secs,
         })
-    }
-
-    pub(super) fn result(
-        &self,
-        text: &str,
-        rounds: usize,
-        usage: Usage,
-        diagnostic: Option<&str>,
-        access: Access,
-    ) -> ChildResult {
-        let paths = match access {
-            Access::Implement => Self::touched_at(self.session.path()),
-            Access::Research => Vec::new(),
-        };
-        let total = paths.len();
-        ChildResult {
-            text: text.to_string(),
-            changed_paths: paths,
-            changed_paths_total: total,
-            rounds,
-            usage,
-            billed_tokens: self.session.spent_tokens(),
-            elapsed_millis: self.session.elapsed_millis(),
-            diagnostic: diagnostic.map(str::to_string),
-            kept: None,
-        }
     }
 }
 

@@ -87,7 +87,7 @@ pub struct Prefs {
 impl Default for Prefs {
     fn default() -> Self {
         Self {
-            theme: "space".to_string(),
+            theme: AUTO_THEME.to_string(),
             background: Background::Theme,
             notify: Notify::Turn,
             splash: true,

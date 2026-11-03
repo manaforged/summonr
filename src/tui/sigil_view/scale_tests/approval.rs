@@ -95,14 +95,14 @@ fn the_approval_band_lists_its_answer_keys() {
         screen.contains("Needs approval") && screen.contains("rm -rf build"),
         "{screen}"
     );
-    assert!(screen.contains("y allow · Y always · n deny"), "{screen}");
     assert!(
-        screen.contains("Allow") && screen.contains("Always") && screen.contains("Deny"),
+        screen.contains("Allow (y)") && screen.contains("Always (Y)") && screen.contains("Deny (n)"),
         "{screen}"
     );
+    assert!(!screen.contains("y allow"), "{screen}");
     let screen = approval_screen(false);
-    assert!(screen.contains("y allow · n deny"), "{screen}");
-    assert!(!screen.contains("Y always"), "{screen}");
+    assert!(screen.contains("Allow (y)") && screen.contains("Deny (n)"), "{screen}");
+    assert!(!screen.contains("Always"), "{screen}");
 }
 
 #[test]

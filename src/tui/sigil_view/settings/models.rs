@@ -6,8 +6,8 @@ use super::{App, canvas};
 use crate::endpoint::State;
 use crate::recent::ModelId;
 use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, alt, browser_columns, browser_layout,
-    group, input_keys, notice, tab_strip,
+    Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, browser_columns, browser_layout, group,
+    input_keys, notice, tab_strip,
 };
 
 mod detail;
@@ -16,7 +16,7 @@ mod list;
 mod row;
 mod rows;
 
-const LIST_CHROME: u16 = 6;
+const LIST_CHROME: u16 = 7;
 const SPLIT_COLS: u16 = 140;
 
 use list::View;
@@ -33,20 +33,17 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
             app.refresh_models();
         }) as KeyAction,
     )];
-    bindings.extend(alt("p", |app, event| {
-        event.stop_propagation();
-        app.pin_model();
-    }));
-    bindings.extend(alt("d", |app, event| {
+    bindings.push((
+        sigil::prelude::Shortcut::ctrl(sigil::prelude::LogicalKey::character("s")),
+        |app, event| {
+            event.stop_propagation();
+            app.pin_model();
+        },
+    ));
+    bindings.push((sigil::prelude::Key::F2.into(), |app, event| {
         event.stop_propagation();
         if app.picker.target.peek().is_none() {
             app.default_model();
-        }
-    }));
-    bindings.extend(alt("o", |app, event| {
-        if app.picker.list.query.peek().is_empty() {
-            event.stop_propagation();
-            app.toggle_older_models();
         }
     }));
     bindings
@@ -80,7 +77,11 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .height(canvas::overlay_field()),
             ),
         )
-        .child(container().children_reactive(move || vec![facets::chips(&chips)]))
+        .child(
+            container()
+                .layout(LayoutStyle::flex_column().padding_bottom(canvas::overlay_list_row()))
+                .children_reactive(move || vec![facets::chips(&chips)]),
+        )
         .child(container().children_reactive(move || body(&paint)))
         .build(app.picker.open, (cols, rows), &hotkeys)
 }
@@ -97,34 +98,44 @@ fn hints(app: &App) -> Hints {
         .count();
     let mut hints = Hints::new()
         .key(Key::Enter, "use")
-        .key(Key::Alt('p'), "favorite");
+        .key(Key::Tab, "filter")
+        .key(Key::Fixed("ctrl+s"), "favorite");
     if app.picker.target.get().is_none() {
-        hints = hints.key(Key::Alt('d'), "default");
+        hints = hints.key(Key::Fixed("F2"), "default");
     }
-    hints
-        .key(Key::Alt('o'), "older")
-        .key(Key::Fixed("F5"), "refresh")
-        .right(match (app.picker.loading.get() && checking > 0, total) {
+    hints.key(Key::Fixed("F5"), "refresh").right(
+        match (app.picker.loading.get() && checking > 0, total) {
             (true, _) => format!("checking {checking}…"),
             (false, 0) => "0 / 0".to_string(),
             (false, total) => format!("{} / {total}", selected + 1),
-        })
+        },
+    )
 }
 
 fn body(paint: &App) -> Vec<NodeBuilder> {
     let view = Rc::new(View::read(paint));
     let (wide, span, visible) = browser_layout(paint.viewport.get(), SPLIT_COLS, (LIST_CHROME, 1));
-    let grid = Grid::new(span, wide);
+    let labels = names(&view.choices, &view.facts);
+    let longest = labels
+        .iter()
+        .map(|label| sigil::app::cell_width(label))
+        .max()
+        .unwrap_or(0);
+    let varied = view
+        .choices
+        .iter()
+        .filter_map(|choice| view.facts.get(choice).map(row::abilities))
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        > 1;
+    let grid = Grid::new(span, wide, longest, varied);
     let rows = view.rows();
     let fixing = rows
         .iter()
         .any(|row| matches!(row, ModelRow::Fix(at) if *at == view.selected));
     let selection = view.selection().cloned();
     let list = match selection {
-        Some(_) => {
-            let labels = names(&view.choices, &view.facts);
-            list::list(paint, Rc::clone(&view), grid, labels, (rows, visible))
-        }
+        Some(_) => list::list(paint, Rc::clone(&view), grid, labels, (rows, visible)),
         None => empty(paint),
     };
     let height = (visible + 1) as f32 * canvas::overlay_list_row();

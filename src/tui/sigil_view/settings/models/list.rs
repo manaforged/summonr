@@ -10,7 +10,7 @@ use crate::catalog::Model;
 use crate::endpoint::State;
 use crate::recent::ModelId;
 use crate::tui::sigil_view::app::{Facet, Mark};
-use crate::tui::sigil_view::ui::{alt_label, group, overlay_list, slotted};
+use crate::tui::sigil_view::ui::{group, overlay_list, slotted};
 use sigil::prelude::Widget;
 
 pub(super) struct View {
@@ -101,9 +101,9 @@ impl View {
         let toggle = app.clone();
         let noun = if count == 1 { "model" } else { "models" };
         group(if self.older {
-            format!("▾ hide {count} older {noun} · {}", alt_label('o'))
+            format!("▾ hide {count} older {noun}")
         } else {
-            format!("▸ show {count} older {noun} · {}", alt_label('o'))
+            format!("▸ {count} older {noun} · type to search them")
         })
         .pointer_down(move |event| {
             toggle.toggle_older_models();
@@ -127,6 +127,7 @@ pub(super) fn list(
     let source = app.clone();
     overlay_list(
         virtual_list(rows, move |_, row: &ModelRow| match row {
+            ModelRow::Gap => sigil::prelude::container(),
             ModelRow::Header(name) => row::section_heading(name),
             ModelRow::Provider(name, count) => {
                 row::provider_heading(name, view.groups.get(name).copied(), *count)

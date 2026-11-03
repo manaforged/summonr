@@ -264,7 +264,7 @@ fn secret_prompt_renders_as_a_modal() {
         let at = find(&lines, "Password")
             .unwrap_or_else(|| panic!("{label}: no prompt:\n{}", lines.join("\n")));
         assert!(
-            lines[at].contains('┃'),
+            lines[at].contains('│'),
             "{label}: prompt outside the dialog:\n{}",
             lines.join("\n")
         );

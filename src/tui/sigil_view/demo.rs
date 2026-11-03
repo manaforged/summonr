@@ -71,6 +71,7 @@ pub(super) fn entries() -> Vec<Entry> {
                 cached: 300,
                 prefix_hash: String::new(),
                 cost: None,
+                side: false,
             },
             Round {
                 prompt: 610,
@@ -79,6 +80,7 @@ pub(super) fn entries() -> Vec<Entry> {
                 cached: 480,
                 prefix_hash: String::new(),
                 cost: None,
+                side: false,
             },
         ]),
     ]

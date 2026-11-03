@@ -7,6 +7,7 @@ use crate::recent::ModelId;
 const CURRENT: &str = "current";
 
 pub(super) enum ModelRow {
+    Gap,
     Header(String),
     Provider(String, usize),
     Model(usize),
@@ -64,7 +65,18 @@ pub(super) fn list_rows(
             rows.extend(fixes);
         }
     }
-    rows
+    spaced(rows)
+}
+
+fn spaced(rows: Vec<ModelRow>) -> Vec<ModelRow> {
+    let mut out = Vec::with_capacity(rows.len() + 8);
+    for row in rows {
+        if matches!(row, ModelRow::Header(_) | ModelRow::Provider(..)) {
+            out.push(ModelRow::Gap);
+        }
+        out.push(row);
+    }
+    out
 }
 
 fn label<'a>(selection: &'a ModelId, facts: &'a BTreeMap<ModelId, Model>) -> &'a str {

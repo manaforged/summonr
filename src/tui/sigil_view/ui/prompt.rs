@@ -6,7 +6,7 @@ use sigil::prelude::{
 
 use crate::prefs::Hotkeys;
 
-use super::hints::Hints;
+use super::hints::{Hints, Key};
 use sigil::prelude::Widget;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,6 +19,7 @@ pub(in crate::tui) enum ActionKind {
 #[derive(Clone)]
 pub(in crate::tui) struct Action {
     label: &'static str,
+    key: Key,
     kind: ActionKind,
     run: Rc<dyn Fn()>,
 }
@@ -27,19 +28,22 @@ impl Action {
     #[must_use]
     pub(in crate::tui) fn new(
         label: &'static str,
+        key: Key,
         kind: ActionKind,
         run: impl Fn() + 'static,
     ) -> Self {
         Self {
             label,
+            key,
             kind,
             run: Rc::new(run),
         }
     }
 
-    fn node(self) -> impl sigil::prelude::IntoNode + 'static {
+    fn node(self, keys: &Hotkeys) -> impl sigil::prelude::IntoNode + 'static {
         let run = self.run;
-        let base = button(self.label);
+        let base = button(format!("{} ({})", self.label, self.key.label(keys)))
+            .accessible(self.label.to_owned());
         let styled = match self.kind {
             ActionKind::Primary => base.primary(),
             ActionKind::Plain => base,
@@ -87,7 +91,8 @@ impl Prompt {
         let mut band = container()
             .layout(LayoutStyle::flex_column().fill_width().gap(8.0))
             .child(notice_band(fit(&self.head), self.tone));
-        let hints = self.hints.text(keys);
+        let taken: Vec<Key> = self.actions.iter().map(|action| action.key).collect();
+        let hints = self.hints.without(&taken).text(keys);
         for line in self
             .lines
             .iter()
@@ -108,7 +113,7 @@ impl Prompt {
                     .gap(12.0)
                     .align_items(AlignItems::Center),
             ),
-            |row, action| row.child(action.node()),
+            |row, action| row.child(action.node(keys)),
         );
         band.child(actions)
     }

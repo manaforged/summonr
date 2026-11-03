@@ -15,13 +15,16 @@ bin="$target/release/summonr"
 
 built="$target/summon-dev.head"
 head=$(git -C "$root" rev-parse HEAD 2>/dev/null)
-sigil=$(CDPATH= cd -- "$root/../sigil" 2>/dev/null && pwd)
 watch="$root/src $root/Cargo.toml $root/Cargo.lock $root/build.rs $root/.git/HEAD"
 patch=
-if [ -n "$sigil" ] && [ -f "$sigil/crates/sigil/Cargo.toml" ]; then
-    patch="patch.crates-io.sigil-ui.path=\"$sigil/crates/sigil\""
-    head="$head $(git -C "$sigil" rev-parse HEAD 2>/dev/null)"
-fi
+for sibling in sigil-ui:sigil/crates/sigil leyline-http:leyline-http/crates/leyline; do
+    crate=${sibling%%:*}
+    repo=$(CDPATH= cd -- "$root/../${sibling#*:}" 2>/dev/null && pwd)
+    if [ -n "$repo" ] && [ -f "$repo/Cargo.toml" ]; then
+        patch="$patch --config patch.crates-io.$crate.path=\"$repo\""
+        head="$head $(git -C "$repo" rev-parse HEAD 2>/dev/null)"
+    fi
+done
 
 stale() {
     [ ! -x "$bin" ] && return 0
@@ -64,7 +67,7 @@ local_build() {
     cargo fetch --manifest-path "$root/Cargo.toml" >/dev/null 2>&1
     cp -p "$root/Cargo.lock" "$target/Cargo.lock.pin" || return 1
     trap 'cp -p "$target/Cargo.lock.pin" "$root/Cargo.lock"; release; exit 1' HUP INT TERM
-    build --config "$patch"
+    build $patch
     status=$?
     cp -p "$target/Cargo.lock.pin" "$root/Cargo.lock"
     trap - HUP INT TERM

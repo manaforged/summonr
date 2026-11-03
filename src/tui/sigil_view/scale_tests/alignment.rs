@@ -12,6 +12,7 @@ fn usage(tokens: u32) -> Event {
         millis: None,
         prefix_hash: String::new(),
         cost: None,
+        side: false,
     }
 }
 

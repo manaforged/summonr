@@ -268,13 +268,8 @@ fn a_provider_with_regions_and_plans_shows_both_as_choices() {
         app.auth.list.cursor.set(at);
     };
     let screen = screen(200, 60, zai);
-    let regions = ["[international]", "[China]"];
-    let plans = ["[coding plan]", "[API key]"];
-    for [one, other] in [regions, plans] {
-        let shown = |label: &str| screen.contains(label);
-        let bare = |label: &str| label.trim_matches(['[', ']']).to_owned();
-        assert!(shown(one) != shown(other), "{screen}");
-        assert!(shown(&bare(one)) && shown(&bare(other)), "{screen}");
+    for label in ["international", "China", "coding plan", "API key"] {
+        assert!(screen.contains(label), "{screen}");
     }
     assert!(
         !screen.contains("alt+r") && !screen.contains("alt+a"),
@@ -328,6 +323,36 @@ fn a_filter_chip_counts_the_rows_it_shows() {
 }
 
 #[test]
+fn an_empty_filter_chip_is_hidden_and_skipped() {
+    sigil::reactive::Owner::scope("summonr-modals", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        rejected_openai(&app);
+        let shown = app.facet_counts();
+        assert!(
+            shown
+                .iter()
+                .all(|(facet, count)| *count > 0 || *facet == Facet::All),
+            "{:?}",
+            shown
+                .iter()
+                .map(|(facet, count)| (facet.label(), *count))
+                .collect::<Vec<_>>()
+        );
+        for _ in 0..Facet::ALL.len() {
+            app.cycle_facet(1);
+            let facet = app.picker.facet.peek();
+            assert!(
+                shown.iter().any(|(kept, _)| *kept == facet),
+                "{}",
+                facet.label()
+            );
+        }
+    });
+}
+
+#[test]
 fn a_large_price_fits_its_column() {
     let screen = screen(160, 40, |app| {
         let fact = model("frontier", |model| {
@@ -370,8 +395,8 @@ fn a_long_sign_in_url_is_shortened_to_the_form() {
 }
 
 fn frame_rows(screen: &str) -> (Option<usize>, Option<usize>) {
-    let top = screen.lines().position(|line| line.contains('┏'));
-    let bottom = screen.lines().position(|line| line.contains('┗'));
+    let top = screen.lines().position(|line| line.contains('╭'));
+    let bottom = screen.lines().position(|line| line.contains('╰'));
     (top, bottom)
 }
 

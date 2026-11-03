@@ -14,9 +14,11 @@ fn the_current_model_heading_names_its_provider() {
         .iter()
         .filter_map(|row| match row {
             ModelRow::Header(title) => Some(title.as_str()),
-            ModelRow::Provider(..) | ModelRow::Model(_) | ModelRow::Fix(_) | ModelRow::Older(_) => {
-                None
-            }
+            ModelRow::Gap
+            | ModelRow::Provider(..)
+            | ModelRow::Model(_)
+            | ModelRow::Fix(_)
+            | ModelRow::Older(_) => None,
         })
         .collect();
     assert_eq!(headers, ["current · zai"]);

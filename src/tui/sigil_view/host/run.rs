@@ -11,6 +11,8 @@ use tokio::task::JoinHandle;
 use super::edit::{edit, edit_external, editor};
 use super::*;
 
+const PRODUCT: &str = "Summonr";
+
 pub(crate) fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,
@@ -38,6 +40,7 @@ pub(crate) fn run(
         exit: None,
         session: String::new(),
         busy: None,
+        title: String::new(),
         asking: false,
         activity: None,
         select: false,
@@ -200,12 +203,22 @@ impl App {
             .unwrap_or_default()
     }
 
-    pub(in crate::tui::sigil_view) fn title(&self, busy: bool) -> String {
-        let place = self.place();
-        format!(
-            "summon · {place} · {}",
-            if busy { "working" } else { "ready" }
-        )
+    pub(in crate::tui::sigil_view) fn title(&self) -> String {
+        let model = self.model.peek();
+        model
+            .live
+            .iter()
+            .find(|entry| entry.active)
+            .map(|entry| {
+                let line = entry.title.lines().next().unwrap_or_default();
+                line.chars()
+                    .filter(|ch| !ch.is_control())
+                    .collect::<String>()
+                    .trim()
+                    .to_string()
+            })
+            .filter(|title| !title.is_empty())
+            .unwrap_or_else(|| PRODUCT.to_string())
     }
 }
 
@@ -215,6 +228,7 @@ struct Pump {
     exit: Option<i32>,
     session: String,
     busy: Option<bool>,
+    title: String,
     asking: bool,
     activity: Option<Activity>,
     select: bool,
@@ -241,6 +255,11 @@ impl Pump {
         let busy = app.model.get().busy_since.is_some();
         let notify = app.model.get().prefs.notify;
         self.track_busy(&app, busy, notify);
+        let title = app.title();
+        if title != self.title {
+            drop(set_title(&title));
+            self.title = title;
+        }
         self.track_asking(&app, notify);
         self.track_activity(&app, busy);
         if !events.is_empty() {
@@ -264,10 +283,9 @@ impl Pump {
         if self.busy == Some(busy) {
             return;
         }
-        drop(set_title(&app.title(busy)));
         if self.busy == Some(true) && !busy && !focused() && notify.turns() {
             drop(bell(Some(&format!(
-                "summonr · {}: {}",
+                "{PRODUCT} · {}: {}",
                 app.place(),
                 app.ending()
             ))));

@@ -141,6 +141,7 @@ fn children_spawned_in_the_same_minute_keep_their_own_tokens() {
                 millis: None,
                 prefix_hash: String::new(),
                 cost: None,
+                side: false,
             },
         );
     }
@@ -248,6 +249,7 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
                 millis: None,
                 prefix_hash: String::new(),
                 cost: Some(0.25),
+                side: false,
             }),
         })));
         let line = Line::Child {

@@ -39,6 +39,8 @@ pub enum Event {
         prefix_hash: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cost: Option<f64>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        side: bool,
     },
     Spawned {
         assignment: String,

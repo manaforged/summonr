@@ -29,8 +29,6 @@ pub(super) fn chips(app: &App) -> NodeBuilder {
             let count = if on { listed } else { count };
             let text_style = if on {
                 TextStyle::sm(Token::Accent11).bold()
-            } else if count == 0 {
-                TextStyle::sm(Token::Gray8)
             } else {
                 TextStyle::sm(Token::Gray11)
             };
@@ -53,6 +51,4 @@ pub(super) fn chips(app: &App) -> NodeBuilder {
                 event.stop_propagation();
             }))
         })
-        .child(container().layout(LayoutStyle::flex_row().grow(1.0)))
-        .child(TextStyle::xs(Token::Gray9).on(sigil::prelude::text("tab next filter").nowrap()))
 }

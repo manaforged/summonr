@@ -118,6 +118,7 @@ fn the_context_meter_draws_no_caption_text() {
                 millis: None,
                 prefix_hash: String::new(),
                 cost: None,
+                side: false,
             })));
         },
         thread::status::meters,

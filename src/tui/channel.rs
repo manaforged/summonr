@@ -3,6 +3,27 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use super::{Fact, Intent, Msg};
 use crate::tools::Event;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Activity {
+    Turn,
+    Login,
+    Compact,
+    Branch,
+    Shell,
+}
+
+impl Activity {
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::Turn => "working",
+            Self::Login => "signing in",
+            Self::Compact => "compacting",
+            Self::Branch => "branching",
+            Self::Shell => "running",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Ui(pub(crate) UnboundedSender<Msg>);
 

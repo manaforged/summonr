@@ -84,18 +84,50 @@ pub(in crate::tui::sigil_view) fn gui(palette: Palette) -> Theme {
     } else {
         palette.base
     };
+    let backdrop = Rgba8 { a: 255, ..backdrop };
     let lift = |amount: f32| blend(backdrop, palette.text, amount);
+    theme.gray.steps = [
+        backdrop,
+        lift(0.025),
+        lift(0.05),
+        lift(0.08),
+        lift(0.11),
+        lift(0.15),
+        lift(0.2),
+        lift(0.3),
+        lift(0.45),
+        lift(0.52),
+        lift(0.62),
+        palette.text,
+    ];
+    for (scale, color) in [
+        (&mut theme.accent_scale, palette.accent),
+        (&mut theme.success, palette.green),
+        (&mut theme.warn, palette.yellow),
+        (&mut theme.error, palette.error),
+        (&mut theme.info, palette.cyan),
+    ] {
+        scale.steps = steps(backdrop, color, palette.text);
+        scale.on_solid = backdrop;
+    }
     for (name, color) in [
         ("surface", backdrop),
-        ("surface-hover", lift(0.08)),
-        ("surface-pressed", lift(0.12)),
-        ("surface-subtle", lift(0.045)),
-        ("surface-inset", lift(0.045)),
-        ("field", lift(0.035)),
-        ("table-header", lift(0.035)),
+        ("surface-hover", lift(0.06)),
+        ("surface-pressed", lift(0.1)),
+        ("surface-pressed-strong", lift(0.16)),
+        ("surface-subtle", lift(0.03)),
+        ("surface-inset", lift(0.03)),
+        ("field", lift(0.03)),
+        ("table-header", lift(0.03)),
+        ("overlay", backdrop),
+        ("overlay-border", lift(0.15)),
         ("border", lift(0.12)),
-        ("border-subtle", lift(0.08)),
+        ("border-subtle", lift(0.07)),
         ("border-strong", lift(0.22)),
+        ("on-surface-muted", lift(0.62)),
+        ("accent-hover", blend(backdrop, palette.accent, 0.85)),
+        ("on-accent", backdrop),
+        ("on-solid", backdrop),
     ] {
         theme.register_token(name, ThemeValue::Color(color));
     }

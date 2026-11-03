@@ -5,7 +5,8 @@ impl Model {
         let window = self.snapshot.context_window.unwrap_or(0);
         let used = self
             .usage
-            .last()
+            .iter()
+            .rfind(|round| !round.side)
             .map(|round| round.prompt.saturating_add(round.completion))
             .unwrap_or(0);
         let percent = if window == 0 {

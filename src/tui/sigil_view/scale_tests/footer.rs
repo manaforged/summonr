@@ -22,6 +22,7 @@ fn the_footer_shows_spend_beside_the_meters_and_no_rate() {
             millis: Some(2000),
             prefix_hash: String::new(),
             cost: Some(0.0412),
+            side: false,
         })));
     });
     let line = footer(&lines);
@@ -112,6 +113,7 @@ fn the_context_meter_shows_only_when_the_window_is_known() {
             millis: None,
             prefix_hash: String::new(),
             cost: None,
+            side: false,
         })));
     }));
     let ctx = small.split("cache").next().unwrap_or_default();
@@ -238,6 +240,7 @@ fn spent(app: &super::super::app::App) {
         millis: Some(2000),
         prefix_hash: String::new(),
         cost: Some(0.0412),
+        side: false,
     })));
 }
 

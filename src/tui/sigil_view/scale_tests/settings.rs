@@ -51,9 +51,9 @@ fn the_theme_row_previews_edits_and_saves_custom_colors() {
         let original = app.appearance.peek();
         super::super::settings::Setting::Theme.activate(app);
         assert!(app.theme_editor.open.peek());
-        app.step_theme(1);
+        app.step_theme(2);
         assert_ne!(app.appearance.peek(), original);
-        assert_eq!(app.model.peek().prefs.theme, "space");
+        assert_eq!(app.model.peek().prefs.theme, crate::prefs::AUTO_THEME);
         app.close_theme();
         assert_eq!(app.appearance.peek(), original);
         app.open_theme();
@@ -77,7 +77,7 @@ fn the_theme_row_previews_edits_and_saves_custom_colors() {
         );
         app.open_theme();
     });
-    assert_eq!(seen, ["nord", "dawn", "auto", "space"]);
+    assert_eq!(seen, ["space", "nord", "dawn", "auto"]);
     assert!(
         shown.join("\n").contains("Theme editor"),
         "{}",
@@ -330,17 +330,21 @@ fn the_notify_row_shows_the_choice_and_cycles_it() {
 }
 
 #[test]
-fn the_window_title_drops_control_characters_from_the_workspace() {
+fn the_window_title_is_the_session_title_without_control_characters() {
     use super::super::app::App;
+    use crate::tui::{Fact, Msg};
     sigil::reactive::Owner::scope("title-controls", || {
         let (commands, _sent) = tokio::sync::mpsc::unbounded_channel();
-        let app = App::new(
-            busy_info(),
-            std::path::PathBuf::from("/tmp/odd\u{7}\u{1b}]0;x"),
-            commands,
-        );
-        let title = app.title(false);
-        assert!(!title.chars().any(char::is_control), "{title:?}");
+        let app = App::new(busy_info(), std::path::PathBuf::from("/tmp/work"), commands);
+        assert_eq!(app.title(), "Summonr");
+        app.update(Msg::Fact(Fact::Live(vec![crate::tui::hub::Live {
+            session: "s1".to_owned(),
+            title: "Fix the\u{7}\u{1b}]0;x status bar\nsecond line".to_owned(),
+            workspace: std::path::PathBuf::from("/tmp/work"),
+            status: crate::tui::hub::Status::Idle,
+            active: true,
+        }])));
+        assert_eq!(app.title(), "Fix the]0;x status bar");
     });
 }
 

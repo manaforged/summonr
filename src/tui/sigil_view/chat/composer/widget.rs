@@ -131,9 +131,16 @@ fn pending_line(line: String) -> NodeBuilder {
 }
 
 fn rule() -> NodeBuilder {
+    if crate::tui::sigil_view::canvas::is_window() {
+        return gap();
+    }
     container()
         .layout(LayoutStyle::flex_row().grow(1.0).min_size(0.0, 0.0))
         .child(divider_horizontal())
+}
+
+fn gap() -> NodeBuilder {
+    container().layout(LayoutStyle::flex_row().grow(1.0).min_size(0.0, 0.0))
 }
 
 type ModeText = (String, u8);

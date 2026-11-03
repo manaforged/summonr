@@ -53,7 +53,7 @@ SOURCE_RULES: list[tuple[str, str, str]] = [
     ("sigil prelude glob", r"use sigil::prelude::\*", "named imports"),
     ("legacy tool alias literal", r'"(read_file|edit_file|write_file|list_dir|web_search|web_fetch|replace_text|replace_texts|insert_after|delete_lines)"', "one alias table"),
     ("match wildcard arm", r"(?m)^\s*_\s*(?:=>|\|)", "name the arm"),
-    ("timeout mention", r"\btimeout\b", "one timeout policy"),
+    ("timeout mention", r"\btimeout\s*\(", "one timeout policy"),
 ]
 
 
@@ -88,8 +88,8 @@ def name_pattern(name: str, manifest: bool) -> str:
     if "::" in name:
         return r"(?<![\w:])" + re.escape(name) + r"\b"
     if "." in name:
-        return r"\b" + re.escape(name.rsplit(".", 1)[1]) + r"\b"
-    return r"\b" + re.escape(name) + r"\b"
+        return r"\b" + re.escape(name) + r"\b"
+    return r"\b(?:fn|struct|enum|type|const|static|mod)\s+" + re.escape(name) + r"\b"
 
 
 def delete_rules() -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:

@@ -63,11 +63,16 @@ impl Facet {
 
 impl App {
     pub(in crate::tui::sigil_view) fn cycle_facet(&self, delta: isize) {
-        let at = Facet::ALL
+        let shown: Vec<Facet> = self
+            .facet_counts()
+            .into_iter()
+            .map(|(facet, _)| facet)
+            .collect();
+        let at = shown
             .iter()
             .position(|facet| *facet == self.picker.facet.peek())
             .unwrap_or(0);
-        self.pick_facet(Facet::ALL[crate::tui::sigil_view::ui::cycle(at, delta, Facet::ALL.len())]);
+        self.pick_facet(shown[crate::tui::sigil_view::ui::cycle(at, delta, shown.len())]);
     }
 
     pub(in crate::tui::sigil_view) fn pick_facet(&self, facet: Facet) {
@@ -83,6 +88,7 @@ impl App {
         let groups = self.picker.groups.get();
         let query = self.picker.list.query.get();
         let older = self.picker.older.get();
+        let active = self.picker.facet.get();
         Facet::ALL
             .into_iter()
             .map(|facet| {
@@ -93,6 +99,7 @@ impl App {
                         .len(),
                 )
             })
+            .filter(|(facet, count)| *count > 0 || *facet == active || *facet == Facet::All)
             .collect()
     }
 }

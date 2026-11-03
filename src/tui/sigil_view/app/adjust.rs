@@ -214,6 +214,20 @@ impl App {
         self.refresh();
     }
 
+    pub(in crate::tui::sigil_view) fn follow_backdrop(&self) {
+        let app = self.clone();
+        let seen = std::cell::Cell::new(None);
+        sigil::prelude::effect(move || {
+            let backdrop = sigil::terminal::backdrop().get();
+            let changed = seen.replace(Some(backdrop)).is_some_and(|before| before != backdrop);
+            if changed && app.model.peek().prefs.theme == crate::prefs::AUTO_THEME {
+                app.model_mut(|model| model.entries.invalidate());
+                app.apply_theme();
+                app.refresh();
+            }
+        });
+    }
+
     pub(in crate::tui::sigil_view) fn apply_theme(&self) {
         let prefs = self.model.peek().prefs.clone();
         let problems = theme::install(&prefs, &self.workspace, self.info.config.as_deref());

@@ -219,13 +219,14 @@ impl Body {
                 return Ok(Read::Closed);
             }
             match self.stream.next().await {
-                Some(chunk) => {
-                    self.buffer
-                        .extend_from_slice(&chunk.map_err(|error| match error.kind() {
-                            Kind::Timeout => std::io::Error::new(ErrorKind::TimedOut, error),
-                            _ => std::io::Error::other(error),
-                        })?)
-                }
+                Some(chunk) => self.buffer.extend_from_slice(&chunk.map_err(|error| {
+                    let kind = if error.kind() == Kind::Timeout {
+                        ErrorKind::TimedOut
+                    } else {
+                        ErrorKind::Other
+                    };
+                    std::io::Error::new(kind, error)
+                })?),
                 None => {
                     self.done = true;
                     let rest = std::mem::take(&mut self.buffer);

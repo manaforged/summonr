@@ -168,7 +168,10 @@ fn the_model_picker_hides_models_released_over_six_months_ago() {
     });
     assert!(screen.contains("fresh-model"), "{screen}");
     assert!(!screen.contains("stale-model"), "{screen}");
-    assert!(screen.contains("show 1 older model ·"), "{screen}");
+    assert!(
+        screen.contains("▸ 1 older model · type to search them"),
+        "{screen}"
+    );
 }
 
 #[test]
@@ -185,7 +188,7 @@ fn showing_older_models_lists_them_in_the_picker() {
         app.toggle_older_models();
     });
     assert!(screen.contains("stale-model"), "{screen}");
-    assert!(screen.contains("hide 1 older model ·"), "{screen}");
+    assert!(screen.contains("▾ hide 1 older model"), "{screen}");
 }
 
 #[test]
@@ -247,19 +250,9 @@ fn the_model_picker_uses_the_width_of_a_wide_terminal() {
     let screen = picker(140, |app| open(app, &[("fresh-model", days_ago(20))], 0));
     let top = screen
         .lines()
-        .find(|line| line.contains('┏'))
+        .find(|line| line.contains('╭'))
         .unwrap_or_else(|| panic!("{screen}"));
-    assert!(top.matches('━').count() >= 110, "{screen}");
-}
-
-#[test]
-fn alt_p_adds_the_selected_model_to_favorites() {
-    let screen = picker(140, |app| {
-        open(app, &[("fresh-model", days_ago(20))], 0);
-        app.overlay_move(1);
-        app.pin_model();
-    });
-    assert!(screen.contains("★ favorite fresh-model"), "{screen}");
+    assert!(top.matches('─').count() >= 110, "{screen}");
 }
 
 #[test]
@@ -272,8 +265,8 @@ fn the_model_picker_fills_a_tall_terminal() {
         .map(|(id, release)| (id.as_str(), *release))
         .collect();
     let screen = frame_with(busy_info(), 165, 85, State::Idle, |app| open(app, &rows, 0));
-    let top = screen.iter().position(|line| line.contains('┏'));
-    let bottom = screen.iter().rposition(|line| line.contains('┗'));
+    let top = screen.iter().position(|line| line.contains('╭'));
+    let bottom = screen.iter().rposition(|line| line.contains('╰'));
     let tall = top.zip(bottom).map(|(top, bottom)| bottom - top + 1);
     assert_eq!(tall, Some(83), "{}", screen.join("\n"));
     assert!(
@@ -345,16 +338,50 @@ fn moving_back_up_the_model_list_keeps_the_page_in_place() {
     assert_eq!(down, first_model(&shots[2]), "{}\n{}", shots[1], shots[2]);
 }
 
+fn after_ctrl(key: &str, setup: impl FnOnce(&App)) -> (String, App) {
+    sigil::reactive::Owner::scope("picker-keys", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(140, 30);
+        setup(&app);
+        app.refresh();
+        let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
+        let tree = app.clone();
+        host.mount(move || super::super::view::root(tree));
+        let mut screen = sigil::terminal::Screen::new(140, 30);
+        for _ in 0..2 {
+            screen.frame(&mut host, [], (140, 30)).expect("frame");
+        }
+        let press = sigil::events::Event::key(
+            sigil::events::LogicalKey::character(key),
+            sigil::events::KeyPhase::Down,
+        )
+        .modifiers(sigil::events::ModifiersState::CONTROL);
+        screen.frame(&mut host, [press], (140, 30)).expect("frame");
+        screen.frame(&mut host, [], (140, 30)).expect("frame");
+        (screen.text(), app)
+    })
+}
+
 #[test]
-fn alt_hints_name_the_option_key_on_macos() {
+fn ctrl_s_adds_the_selected_model_to_favorites() {
+    let (screen, _) = after_ctrl("s", |app| {
+        open(app, &[("fresh-model", days_ago(20))], 0);
+        app.overlay_move(1);
+    });
+    assert!(screen.contains("★ favorite fresh-model"), "{screen}");
+}
+
+#[test]
+fn the_model_hints_name_no_option_keys() {
     let screen = picker(140, |app| open(app, &[("fresh-model", None)], 0));
-    let favorite = if cfg!(target_os = "macos") {
-        "⌥P favorite"
-    } else {
-        "Alt+P favorite"
-    };
-    assert!(screen.contains(favorite), "{screen}");
-    assert!(!screen.contains("alt+p"), "{screen}");
+    assert!(screen.contains("ctrl+s favorite"), "{screen}");
+    assert!(screen.contains("F2 default"), "{screen}");
+    assert!(
+        !screen.contains('⌥') && !screen.contains("Alt+"),
+        "{screen}"
+    );
 }
 
 #[test]

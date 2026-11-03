@@ -1,7 +1,7 @@
 use super::log::{Line, Usage};
 use summonr_types::{Event, Usage as Tokens};
 
-fn usage_event(usage: &Usage, prefix_hash: String, cost: Option<f64>) -> Option<Event> {
+fn usage_event(usage: &Usage, prefix_hash: String, cost: Option<f64>, side: bool) -> Option<Event> {
     if usage.input == 0 && usage.output == 0 {
         return None;
     }
@@ -14,6 +14,7 @@ fn usage_event(usage: &Usage, prefix_hash: String, cost: Option<f64>) -> Option<
         millis: Some(usage.millis),
         prefix_hash,
         cost,
+        side,
     })
 }
 
@@ -54,7 +55,7 @@ impl Line {
                 ..
             } => {
                 let mut events = text_events(text, reasoning, assistant_events);
-                events.extend(usage_event(&usage, prefix_hash, cost));
+                events.extend(usage_event(&usage, prefix_hash, cost, false));
                 events.extend(tool_calls.into_iter().map(|call| Event::ToolCall {
                     id: call.id,
                     name: call.function.name,
@@ -90,7 +91,7 @@ impl Line {
                 prefix_hash,
                 cost,
                 ..
-            } => usage_event(&usage, prefix_hash, cost).into_iter().collect(),
+            } => usage_event(&usage, prefix_hash, cost, true).into_iter().collect(),
             Line::Receipt {
                 receipt: Some(receipt),
                 ..

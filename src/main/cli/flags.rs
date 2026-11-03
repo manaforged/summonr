@@ -19,7 +19,7 @@ pub(super) const FLAGS: Table<Args> = Table {
             "a name from `summonr endpoint list`",
             |args, name| some(&mut args.endpoint, name),
         )
-        .help("NAME", "endpoint: {endpoints}"),
+        .help("NAME", "endpoint from `summonr endpoint list`"),
         Flag::value(&["--model"], "a value", |args, model| {
             some(&mut args.model, model)
         })

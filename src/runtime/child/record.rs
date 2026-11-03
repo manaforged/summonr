@@ -63,6 +63,114 @@ fn aborted(spawned: Spawned, parent: &Path, reason: &str) -> Result<Done> {
 }
 
 impl<P: Provider> Loop<P> {
+    pub(super) fn task_settle(&mut self, mut done: Done) -> Result<Execution> {
+        if !done.settled {
+            self.task_record(&mut done)?;
+        }
+        let record = done.record;
+        let text = serde_json::to_string(&record)
+            .map_err(|error| Error::Config(format!("cannot encode child receipt: {error}")))?;
+        let success = matches!(record.state, ChildState::Completed(_));
+        let mutated = record.record_paths() > 0;
+        Ok(Execution {
+            output: ToolOutput::ok(text)
+                .with_success(success)
+                .with_mutated(mutated),
+            usage: done.usage,
+            millis: done.millis,
+        })
+    }
+
+    pub(super) fn result(
+        &self,
+        text: &str,
+        rounds: usize,
+        usage: Usage,
+        diagnostic: Option<&str>,
+        access: Access,
+    ) -> ChildResult {
+        let paths = match access {
+            Access::Implement => Self::touched_at(self.session.path()),
+            Access::Research => Vec::new(),
+        };
+        let total = paths.len();
+        ChildResult {
+            text: text.to_string(),
+            changed_paths: paths,
+            changed_paths_total: total,
+            rounds,
+            usage,
+            billed_tokens: self.session.spent_tokens(),
+            elapsed_millis: self.session.elapsed_millis(),
+            diagnostic: diagnostic.map(str::to_string),
+            kept: None,
+        }
+    }
+
+    pub(in crate::runtime) fn discard_events(&mut self, ids: &[String]) {
+        let ids: std::collections::HashSet<&String> = ids.iter().collect();
+        let mut kept = Vec::new();
+        while let Ok(event) = self.events.1.try_recv() {
+            if !matches!(&event, Event::Child { id, .. } if ids.contains(id)) {
+                kept.push(event);
+            }
+        }
+        for event in kept {
+            drop(self.events.0.send(event));
+        }
+    }
+
+    pub(in crate::runtime) fn drain(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) {
+        for event in self.child_events() {
+            emit(&event);
+            events.push(event);
+        }
+    }
+
+    pub(crate) fn child_events(&mut self) -> Vec<Event> {
+        let mut drained = Vec::new();
+        while let Ok(event) = self.events.1.try_recv() {
+            self.saw(&event);
+            drained.push(event);
+        }
+        drained
+    }
+
+    pub(super) fn saw(&mut self, event: &Event) {
+        let Event::Child { id, event } = event else {
+            return;
+        };
+        let Some(spawned) = self.spawned.get_mut(id) else {
+            return;
+        };
+        match &**event {
+            Event::ToolCall { name, .. } => {
+                spawned.tool = name.clone();
+            }
+            Event::ToolResult {
+                success: false,
+                output,
+                ..
+            } => {
+                spawned.tool.clear();
+                spawned.last = format!("failed: {}", ellipsize(output, LAST_CHARS));
+            }
+            Event::Assistant { text } | Event::Note { text } => {
+                spawned.tool.clear();
+                spawned.last = ellipsize(text, LAST_CHARS);
+            }
+            Event::Aborted { reason, .. } => {
+                spawned.tool.clear();
+                spawned.last = format!("aborted: {}", ellipsize(reason, LAST_CHARS));
+            }
+            _ => {}
+        }
+    }
+
     pub(in crate::runtime) fn forget_spawned(
         &mut self,
         scope: crate::child::ChildScope,

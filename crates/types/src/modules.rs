@@ -102,7 +102,7 @@ pub const ALL: [Module; 9] = [
         id: ModuleId::Memory,
         name: "memory",
         summary: "user and project memory files loaded into every trusted session",
-        default: true,
+        default: false,
     },
 ];
 

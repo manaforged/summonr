@@ -122,6 +122,7 @@ impl Worker {
                     "Forked to session {id}. This branch continues here."
                 ));
                 drop(self.ui.send(Msg::Fact(Fact::Session(id))));
+                self.send_settings();
             }
             Err(error) => self.fail(&error.to_string()),
         }

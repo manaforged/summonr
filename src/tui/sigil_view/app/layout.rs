@@ -2,22 +2,42 @@ use super::*;
 use crate::tui::sigil_view::ui::{Hints, Key};
 
 impl App {
-    pub(in crate::tui::sigil_view) fn set_layout(&self, layout: Layout) {
+    pub(super) fn edit_blocks(&self, secondary: Option<Pane>) -> bool {
+        let blocked = self.view_edit.peek()
+            && secondary != Some(Pane::View)
+            && self.view_text.peek() != self.view_saved.peek();
+        if blocked {
+            let keys = Hints::new()
+                .key(Key::Fixed("ctrl+s"), "save")
+                .key(Key::Esc, "leave")
+                .text(&self.model.peek().prefs.hotkeys);
+            self.push_entry(Entry::Error(format!(
+                "unsaved edits in the view pane: {keys}"
+            )));
+            self.refresh();
+        }
+        blocked
+    }
+
+    pub(in crate::tui::sigil_view) fn set_layout(&self, layout: Layout) -> bool {
+        if self.edit_blocks(layout.secondary) {
+            return false;
+        }
         if self.view_edit.peek() && layout.secondary != Some(Pane::View) {
-            if self.view_text.peek() != self.view_saved.peek() {
-                let keys = Hints::new()
-                    .key(Key::Fixed("ctrl+s"), "save")
-                    .key(Key::Esc, "leave")
-                    .text(&self.model.peek().prefs.hotkeys);
-                self.push_entry(Entry::Error(format!(
-                    "unsaved edits in the view pane: {keys}"
-                )));
-                self.refresh();
-                return;
-            }
             self.view_edit.set(false);
         }
+        let compared = match layout.secondary {
+            Some(Pane::Diff) => true,
+            Some(Pane::View) => self.view_from.peek() == Some(Pane::Diff),
+            Some(_) | None => false,
+        };
+        if !compared && self.diff_root.peek().is_some() {
+            self.compare(None);
+        }
         let opened = self.layout.peek().secondary != layout.secondary;
+        if opened && self.layout.peek().secondary == Some(Pane::View) {
+            self.view_from.set(None);
+        }
         if layout.secondary.is_none() {
             self.pane_focus.set(false);
         }
@@ -38,14 +58,19 @@ impl App {
         let prefs = self.model.peek().prefs.clone();
         self.persist(&prefs);
         self.refresh();
+        true
     }
 
     pub(in crate::tui::sigil_view) fn toggle_pane(&self, pane: Pane) {
+        let layout = self.layout.peek();
+        let open = layout.secondary == Some(pane);
+        if self.edit_blocks((!open).then_some(pane)) {
+            return;
+        }
         if pane == Pane::Diff {
             self.compare(None);
         }
-        let layout = self.layout.peek();
-        if layout.secondary == Some(pane) {
+        if open {
             self.last_pane.set(Some(pane));
             self.set_layout(Layout {
                 secondary: None,
@@ -87,11 +112,8 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn pane_active(&self) -> Option<Pane> {
-        if self.view_edit.peek()
-            || self.note_target.peek().is_some()
-            || self.layout.peek().split(self.viewport.peek().0).1 == 0
-        {
+    fn pane_focused(&self) -> Option<Pane> {
+        if self.layout.peek().split(self.viewport.peek().0).1 == 0 {
             return None;
         }
         self.pane_focus
@@ -100,16 +122,32 @@ impl App {
             .flatten()
     }
 
+    fn pane_editing(&self) -> bool {
+        self.view_edit.peek() || self.note_target.peek().is_some()
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_active(&self) -> Option<Pane> {
+        if self.pane_editing() {
+            return None;
+        }
+        self.pane_focused()
+    }
+
+    pub(in crate::tui::sigil_view) fn editor_focused(&self) -> bool {
+        self.pane_editing() && self.pane_focused().is_some()
+    }
+
     pub(in crate::tui::sigil_view) fn pane_back(&self) -> bool {
         let layout = self.layout.peek();
         if layout.secondary == Some(Pane::View) {
             let back = self.view_from.peek().unwrap_or(Pane::Files);
-            self.set_layout(Layout {
+            if self.set_layout(Layout {
                 secondary: Some(back),
                 ..layout
-            });
-            self.pane_focus.set(true);
-            self.refresh();
+            }) {
+                self.pane_focus.set(true);
+                self.refresh();
+            }
             return true;
         }
         if layout.secondary != Some(Pane::Diff) {
@@ -124,12 +162,13 @@ impl App {
         }
         if self.diff_root.peek().is_some() {
             self.compare(None);
-            self.set_layout(Layout {
+            if self.set_layout(Layout {
                 secondary: Some(Pane::Worktrees),
                 ..layout
-            });
-            self.pane_focus.set(true);
-            self.refresh();
+            }) {
+                self.pane_focus.set(true);
+                self.refresh();
+            }
             return true;
         }
         false
@@ -172,15 +211,21 @@ impl App {
                 self.refresh();
             }
             Some(name) => match Target::parse(name) {
-                Some(Target::Off) => self.set_layout(Layout {
-                    secondary: None,
-                    ..layout
-                }),
-                Some(Target::Pane(pane)) => self.set_layout(Layout {
-                    secondary: Some(pane),
-                    ..layout
-                }),
-                Some(Target::Layout(preset)) => self.set_layout(preset),
+                Some(Target::Off) => {
+                    self.set_layout(Layout {
+                        secondary: None,
+                        ..layout
+                    });
+                }
+                Some(Target::Pane(pane)) => {
+                    self.set_layout(Layout {
+                        secondary: Some(pane),
+                        ..layout
+                    });
+                }
+                Some(Target::Layout(preset)) => {
+                    self.set_layout(preset);
+                }
                 None => {
                     self.push_entry(Entry::Error(format!(
                         "no pane or layout `{name}`: files, ledger, diff, worktrees, jobs, mcp, peers, off, focus, run, review, or `chat | ledger 40%`"

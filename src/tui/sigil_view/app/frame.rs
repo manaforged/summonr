@@ -71,6 +71,8 @@ impl App {
         });
         self.poll();
         self.clear_notices();
+        super::files::expire(self.revert_armed);
+        super::files::expire(self.worktree_discard);
     }
 
     fn ticks_while(

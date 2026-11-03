@@ -49,7 +49,7 @@ impl<P: Provider> Loop<P> {
             .open_turn(&mut messages, usage, events, &mut emit)
             .await?;
         loop {
-            while self.budget().max_tokens.is_some() && self.child_budget_reserved() > 0 {
+            while self.budget().max_tokens.is_some() && self.child_budget_running() {
                 self.await_children(events, &mut emit, usage).await?;
             }
             *reached = reached.saturating_add(1);
@@ -361,7 +361,7 @@ impl<P: Provider> Loop<P> {
                     messages.extend(interrupted);
                     let stopped = self.steered("");
                     if !stopped.is_empty() {
-                        messages.push(Message::system(stopped));
+                        self.inject(stopped, messages)?;
                     }
                     self.emit_records(events, emit)?;
                     self.sync_usage(emit);
@@ -451,6 +451,10 @@ impl<P: Provider> Loop<P> {
         if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
+        if self.session.turn_open() {
+            return Err(Error::from(crate::durable::driver::DriverError::Busy));
+        }
+        self.tools.forget_approval();
         let read_only = self.session.depth() > 0 && self.tools.is_read_only();
         self.tools.set_read_only(read_only);
         self.summary_wait = 0;
@@ -510,7 +514,7 @@ impl<P: Provider> Loop<P> {
                 .objective()
                 .unwrap_or_else(|_no_work| text.to_string()),
         };
-        if self.is_goal() && self.session.goal_objective()?.is_none() {
+        if trigger == Trigger::User && self.is_goal() && !self.session.goal_active() {
             self.select_goal(&objective, commands)?;
         }
         self.session

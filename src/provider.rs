@@ -40,11 +40,12 @@ pub trait Provider: Send + Sync + 'static {
         self.complete(request)
     }
 
-    fn child(&self) -> Option<Self>
+    /// Creates a child provider with the selected endpoint or inherits this provider.
+    fn child(&self, _endpoint: Option<&crate::endpoint::Endpoint>) -> Result<Option<Self>>
     where
         Self: Sized,
     {
-        None
+        Ok(None)
     }
 
     fn keeps_reasoning(&self) -> bool {

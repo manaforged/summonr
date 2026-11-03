@@ -72,7 +72,10 @@ impl<P: Provider> Loop<P> {
         let checkpoints = self.checkpoints().ok_or_else(|| {
             Error::Config("/undo files has no checkpoints in this workspace".to_string())
         })?;
-        let turn = turn.unwrap_or_else(|| checkpoints.count());
+        let turn = match turn {
+            Some(turn) => turn,
+            None => checkpoints.count()?,
+        };
         Ok((turn, checkpoints.restore(turn)?))
     }
 
@@ -82,10 +85,11 @@ impl<P: Provider> Loop<P> {
             return Err(Error::Config("nothing to undo".to_string()));
         }
         let files = match self.checkpoints() {
-            Some(checkpoints) if checkpoints.count() > 0 => {
-                Some(checkpoints.restore(checkpoints.count())?)
-            }
-            Some(_) | None => None,
+            Some(checkpoints) => match checkpoints.count()? {
+                0 => None,
+                last => Some(checkpoints.restore(last)?),
+            },
+            None => None,
         };
         let session = if turns > 1 {
             Some(self.fork_at(Some(turns - 2))?)

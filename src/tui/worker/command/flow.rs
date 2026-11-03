@@ -36,6 +36,7 @@ impl Worker {
             &mut self.queue,
             &self.reader,
             &self.ui,
+            Waiting::Work,
             None,
             self.loop_.shell(command),
         )

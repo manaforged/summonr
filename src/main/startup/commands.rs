@@ -205,7 +205,7 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
             .map(|row| {
                 serde_json::json!({
                     "branch": row.tree.branch,
-                    "base": row.tree.base,
+                    "base": (!row.tree.base.is_empty()).then_some(&row.tree.base),
                     "path": row.tree.path,
                     "ahead": row.ahead,
                     "dirty": row.dirty,

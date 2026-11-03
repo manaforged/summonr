@@ -120,6 +120,7 @@ impl Stream {
                 None
             }
             EventKind::ContentBlockStart => {
+                self.close();
                 if let Some(block) = event.content_block {
                     self.block = opened(block, self.reply.text.len(), self.reply.reasoning.len())?;
                 }
@@ -136,6 +137,8 @@ impl Stream {
             }
             EventKind::MessageDelta => self.message_delta(event)?,
             EventKind::MessageStop => {
+                self.close();
+                self.surface_broken()?;
                 self.reply.finished = true;
                 None
             }
@@ -166,12 +169,15 @@ impl Stream {
         {
             self.reply.stop = stop;
         }
-        if let Some(error) = self.broken.take()
-            && self.reply.stop != StopReason::Length
-        {
-            return Err(error);
-        }
+        self.surface_broken()?;
         Ok(None)
+    }
+
+    fn surface_broken(&mut self) -> summonr_core::error::Result<()> {
+        match self.broken.take() {
+            Some(error) if self.reply.stop != StopReason::Length => Err(error),
+            Some(_) | None => Ok(()),
+        }
     }
 
     fn delta(&mut self, change: &Change<'_>) -> summonr_core::error::Result<Option<Delta>> {

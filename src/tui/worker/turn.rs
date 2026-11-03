@@ -59,6 +59,7 @@ impl Worker {
                             cancelled = true;
                             break None;
                         }
+                        Some(Cmd::CancelLogin) => self.queue.drop_auth(),
                         Some(Cmd::Quit) => {
                             drop(self.ui.send(Msg::Intent(Intent::Bye)));
                             quit = true;
@@ -137,13 +138,7 @@ impl Worker {
             }
             drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         } else if let Some(Err(error)) = result {
-            if let Err(abort) = self.abort(crate::tools::AbortCode::Error, "turn failed") {
-                self.fail(&format!(
-                    "{error}; and the turn could not be closed: {abort}"
-                ));
-            } else {
-                self.fail(&format!("{error} · F5 or /retry continues"));
-            }
+            self.fail(&format!("{error} · F5 or /retry continues"));
             drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         } else {
             self.carry_steering();
@@ -196,6 +191,7 @@ impl Worker {
         while let Ok(command) = self.cmd.try_recv() {
             match command {
                 Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input) => pending.push(input),
+                Cmd::CancelLogin => self.queue.drop_auth(),
                 command => self.queue.deferred.push_back(command),
             }
         }

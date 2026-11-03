@@ -4,6 +4,7 @@ mod store;
 mod token;
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use leyline::Session;
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,7 @@ use summonr_core::secret::Secret;
 use crate::{Error, Issued, Parts, Prompt, Result, Store};
 
 use store::{held, save, stored};
-use token::{exchanged, refresh};
+use token::{exchanged, refresh, settle};
 
 pub(crate) use store::{parse_stored, stale};
 #[cfg(test)]
@@ -56,6 +57,13 @@ pub struct Spec {
 }
 
 impl Spec {
+    pub(crate) fn exchange(&self) -> Option<&str> {
+        self.exchange_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+    }
+
     pub fn check(&self) -> Result<()> {
         if self.grant == Grant::DeviceCode && self.device_url.is_none() {
             return Err(Error::Config(
@@ -76,31 +84,54 @@ impl Spec {
     }
 }
 
-pub(crate) async fn token(parts: Parts<'_>, http: &Session, store: &dyn Store) -> Result<String> {
+pub(crate) async fn token(
+    parts: Parts<'_>,
+    http: &Session,
+    shared: &Arc<dyn Store>,
+) -> Result<String> {
+    let store = shared.as_ref();
+    if let Some(live) = held(&parts)? {
+        return Ok(live.access);
+    }
+    let _turn = parts.renewing.lock().await;
     if let Some(live) = held(&parts)? {
         return Ok(live.access);
     }
     if let Some(grant) = stored(&parts, store)?
         && grant.fresh()
     {
-        return exchanged(&parts, http, grant).await;
+        return exchanged(&parts, http, shared, grant, false).await;
     }
-    let claim = store.claim(parts.name)?;
-    let outcome = renew(&parts, http, store).await;
+    let claim = claim(&parts, shared).await?;
+    let outcome = renew(&parts, http, shared).await;
     drop(claim);
     outcome
 }
 
-async fn renew(parts: &Parts<'_>, http: &Session, store: &dyn Store) -> Result<String> {
+async fn claim(parts: &Parts<'_>, store: &Arc<dyn Store>) -> Result<Box<dyn Send>> {
+    let store = Arc::clone(store);
+    let name = parts.name.to_string();
+    tokio::task::spawn_blocking(move || store.claim(&name))
+        .await
+        .map_err(|error| {
+            Error::Config(format!(
+                "waiting for the {} login lock failed: {error}",
+                parts.name
+            ))
+        })?
+}
+
+async fn renew(parts: &Parts<'_>, http: &Session, shared: &Arc<dyn Store>) -> Result<String> {
+    let store = shared.as_ref();
     if let Some(grant) = stored(parts, store)? {
         if grant.fresh() {
-            return exchanged(parts, http, grant).await;
+            return exchanged(parts, http, shared, grant, true).await;
         }
         if grant.refresh.is_some() {
             return match refresh(parts.spec, http, &grant).await {
                 Ok(next) => {
-                    save(parts, store, next.clone())?;
-                    exchanged(parts, http, next).await
+                    save(parts, store, &next)?;
+                    exchanged(parts, http, shared, next, true).await
                 }
                 Err(error) if parts.spec.grant.interactive() => Err(Error::NeedsLogin {
                     name: parts.name.to_string(),
@@ -128,14 +159,14 @@ async fn renew(parts: &Parts<'_>, http: &Session, store: &dyn Store) -> Result<S
         client: None,
     };
     let minted = refresh(parts.spec, http, &seed).await?;
-    save(parts, store, minted.clone())?;
-    exchanged(parts, http, minted).await
+    save(parts, store, &minted)?;
+    exchanged(parts, http, shared, minted, true).await
 }
 
 pub(crate) async fn login(
     parts: Parts<'_>,
     http: &Session,
-    store: &dyn Store,
+    shared: &Arc<dyn Store>,
     prompt: &mut Prompt,
 ) -> Result<()> {
     parts.spec.check()?;
@@ -153,9 +184,9 @@ pub(crate) async fn login(
                 client: None,
             };
             let minted = refresh(parts.spec, http, &seed).await?;
-            save(&parts, store, minted)
+            settle(&parts, http, shared, minted).await
         }
-        Grant::DeviceCode => device::login(&parts, http, store, prompt).await,
-        Grant::AuthorizationCode => pkce::login(&parts, http, store, prompt).await,
+        Grant::DeviceCode => device::login(&parts, http, shared, prompt).await,
+        Grant::AuthorizationCode => pkce::login(&parts, http, shared, prompt).await,
     }
 }

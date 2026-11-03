@@ -78,6 +78,11 @@ impl SessionDriver {
         Ok(matches!(work.policy, WorkKind::Goal).then(|| work.objective.clone()))
     }
 
+    pub(crate) fn goal_active(&self) -> bool {
+        self.active()
+            .is_some_and(|work| matches!(work.policy, WorkKind::Goal))
+    }
+
     pub(crate) fn completion_checks(&self) -> Result<Vec<Check>, DriverError> {
         Ok(self
             .work

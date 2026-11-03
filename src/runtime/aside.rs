@@ -2,6 +2,17 @@ use super::turn::{Missed, Reply};
 use super::*;
 use crate::workflow::Role;
 
+struct ReadOnly<'a, P> {
+    owner: &'a mut Loop<P>,
+    read_only: bool,
+}
+
+impl<P> Drop for ReadOnly<'_, P> {
+    fn drop(&mut self) {
+        self.owner.tools.set_read_only(self.read_only);
+    }
+}
+
 impl<P: Provider> Loop<P> {
     pub(crate) async fn aside(
         &mut self,
@@ -12,9 +23,13 @@ impl<P: Provider> Loop<P> {
         let advertised = self.advertised_tools();
         let read_only = self.tools.is_read_only();
         self.tools.set_read_only(true);
-        let result = self.aside_rounds(role, system, user, &advertised).await;
-        self.tools.set_read_only(read_only);
-        result
+        let held = ReadOnly {
+            owner: self,
+            read_only,
+        };
+        held.owner
+            .aside_rounds(role, system, user, &advertised)
+            .await
     }
 
     pub(super) async fn side_call(

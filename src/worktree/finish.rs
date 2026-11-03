@@ -4,7 +4,11 @@ use super::{COMMIT_MAX, Tree, dirty};
 
 const SUBJECT_MAX: usize = 60;
 
-pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<String>> {
+pub fn finish(tree: &Tree, own: &str, objective: &str, paths: &[String]) -> Result<Vec<String>> {
+    if let Some(session) = tree.holder(own)? {
+        return Err(Error::Config(format!("session {session} still uses it")));
+    }
+    let base = tree.known_base()?;
     if dirty(&tree.path)? {
         let tracked = crate::diff::git_paths(&tree.path, &["ls-files", "-z"])?;
         let tracked: std::collections::HashSet<&str> = tracked.iter().map(String::as_str).collect();
@@ -49,7 +53,7 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             "diff",
             "--name-only",
             "-z",
-            &format!("{}...{}", tree.base, tree.branch),
+            &format!("{base}...{}", tree.branch),
         ],
     )?;
     let big: Vec<&str> = changed
@@ -67,11 +71,10 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
         )));
     }
     let head = crate::diff::git_env(&tree.primary, &[], &["rev-parse", "--abbrev-ref", "HEAD"])?;
-    if head != tree.base {
+    if !started_on(tree, &head, &base) {
         return Err(Error::Config(format!(
-            "{} is on {head}; the run started on {}",
+            "{} is on {head}; the run started on {base}",
             tree.primary.display(),
-            tree.base
         )));
     }
     crate::diff::git_env(
@@ -81,6 +84,14 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
     )?;
     tree.remove()?;
     Ok(changed)
+}
+
+fn started_on(tree: &Tree, head: &str, base: &str) -> bool {
+    let git = |args: &[&str]| crate::diff::git_env(&tree.primary, &[], args).is_ok();
+    if git(&["rev-parse", "--verify", "--quiet", &format!("refs/heads/{base}")]) {
+        return head == base;
+    }
+    head != "HEAD" && git(&["merge-base", "--is-ancestor", base, "HEAD"])
 }
 
 fn leftover(root: &std::path::Path) -> Result<Vec<String>> {

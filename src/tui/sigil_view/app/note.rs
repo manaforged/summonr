@@ -106,7 +106,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn file_revert(&self, path: &str) {
-        if !confirm(&self.revert_armed, path.to_string(), None) {
+        if !confirm(&self.revert_armed, path.to_string()) {
             self.refresh();
             return;
         }

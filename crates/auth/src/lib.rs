@@ -111,6 +111,7 @@ struct LoginState {
     spec: Spec,
     name: String,
     held: Mutex<Option<Issued>>,
+    renewing: tokio::sync::Mutex<()>,
 }
 
 #[derive(Clone)]
@@ -149,6 +150,7 @@ impl Auth {
                 spec: *spec,
                 name: name.to_string(),
                 held: Mutex::new(None),
+                renewing: tokio::sync::Mutex::new(()),
             })),
         };
         Self {
@@ -169,7 +171,7 @@ impl Auth {
     pub async fn token(&self, http: &Session) -> Result<String> {
         match self.held.as_ref() {
             Held::Key(key) => Ok(key.expose().to_string()),
-            Held::Login(login) => oauth::token(parts(login), http, self.store.as_ref()).await,
+            Held::Login(login) => oauth::token(parts(login), http, &self.store).await,
         }
     }
 
@@ -184,7 +186,7 @@ impl Auth {
                 "this endpoint takes a key, not a login".to_string(),
             ));
         };
-        oauth::login(parts(login), http, self.store.as_ref(), prompt).await
+        oauth::login(parts(login), http, &self.store, prompt).await
     }
 
     pub fn stamped(&self) -> Vec<(String, String)> {
@@ -210,7 +212,9 @@ impl Auth {
         if let Ok(mut slot) = login.held.lock() {
             slot.take();
         }
-        drop(oauth::stale(&parts(login), self.store.as_ref()));
+        if login.spec.exchange().is_none() {
+            drop(oauth::stale(&parts(login), self.store.as_ref()));
+        }
     }
 
     pub fn ready(&self) -> Result<bool> {
@@ -228,6 +232,7 @@ pub(crate) struct Parts<'a> {
     pub(crate) spec: &'a Spec,
     pub(crate) name: &'a str,
     pub(crate) held: &'a Mutex<Option<Issued>>,
+    pub(crate) renewing: &'a tokio::sync::Mutex<()>,
 }
 
 fn parts(login: &LoginState) -> Parts<'_> {
@@ -235,6 +240,7 @@ fn parts(login: &LoginState) -> Parts<'_> {
         spec: &login.spec,
         name: &login.name,
         held: &login.held,
+        renewing: &login.renewing,
     }
 }
 

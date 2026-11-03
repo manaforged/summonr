@@ -1,5 +1,5 @@
 use crate::tui::Fact;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
@@ -117,7 +117,7 @@ impl Reader {
             Cmd::Clipboard => self.send(Msg::Fact(Fact::Clipboard(
                 clipboard().map_err(|error| error.to_string()),
             ))),
-            Cmd::Diff(root) => self.diff(root.as_deref().unwrap_or(&self.workspace)),
+            Cmd::Diff(root) => self.diff(root),
             Cmd::SessionDiff(session) => self.session_diff(&session),
             Cmd::Patch(root, path) => self.patch(root, path),
             Cmd::Review {
@@ -129,7 +129,7 @@ impl Reader {
             Cmd::Trees => self.trees(),
             Cmd::Offers => self.offers(),
             Cmd::Save(file, text) => self.save(file, text),
-            Cmd::View(root, path) => self.show(root.as_deref(), path),
+            Cmd::View(root, path) => self.show(root, path),
             Cmd::Pin(selection, on) => {
                 if let Err(error) =
                     summonr_home().and_then(|home| crate::recent::pin(&home, &selection, on))
@@ -162,11 +162,12 @@ impl Reader {
         self.send(Msg::Fact(Fact::Saved { file, text, result }));
     }
 
-    fn show(&self, root: Option<&Path>, path: String) {
-        let root = root.unwrap_or(&self.workspace);
-        match view(root, &path) {
+    fn show(&self, root: Option<PathBuf>, path: String) {
+        let dir = root.as_deref().unwrap_or(&self.workspace);
+        match view(dir, &path) {
             Ok((text, added, image)) => self.send(Msg::Fact(Fact::View {
-                file: root.join(&path),
+                file: dir.join(&path),
+                root,
                 path,
                 text,
                 added,
@@ -208,10 +209,10 @@ impl Reader {
         self.send(Msg::Fact(Fact::Review { root, result }));
     }
 
-    pub(super) fn diff(&self, root: &Path) {
-        match diff::stats(root) {
-            Ok(diff) => self.send(Msg::Fact(Fact::Diff(diff))),
-            Err(error) => self.send(Msg::Fact(Fact::DiffFailed(error.to_string()))),
+    fn diff(&self, root: Option<PathBuf>) {
+        match diff::stats(root.as_deref().unwrap_or(&self.workspace)) {
+            Ok(diff) => self.send(Msg::Fact(Fact::Diff(diff, root))),
+            Err(error) => self.send(Msg::Fact(Fact::DiffFailed(error.to_string(), root))),
         }
     }
 
@@ -222,7 +223,7 @@ impl Reader {
                 session: Some(session.to_string()),
                 files: Vec::new(),
             });
-        self.send(Msg::Fact(Fact::Diff(diff)));
+        self.send(Msg::Fact(Fact::Diff(diff, None)));
     }
 
     pub(super) fn jobs(&self) {

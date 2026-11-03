@@ -388,10 +388,10 @@ impl Provider for Client {
         Box::pin(self.run(request, Some(partial)))
     }
 
-    fn child(&self) -> Option<Self> {
-        let mut child = self.clone();
+    fn child(&self, endpoint: Option<&crate::endpoint::Endpoint>) -> Result<Option<Self>> {
+        let mut child = endpoint.map_or_else(|| Ok(self.clone()), Self::connect)?;
         child.on_stream = None;
-        Some(child)
+        Ok(Some(child))
     }
 
     fn supports_children(&self) -> bool {

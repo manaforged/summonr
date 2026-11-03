@@ -332,8 +332,9 @@ impl App {
                         .filter(|(owner, _)| owner == name)
                     {
                         Some((owner, model)) => {
+                            let target = self.picker.target.peek();
                             self.cancel_model_edit();
-                            drop(self.cmd.send(Cmd::SelectModel(owner, model)));
+                            self.send_model(target, ModelId::new(owner, model));
                         }
                         None => self.refresh_models(),
                     }

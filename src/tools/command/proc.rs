@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+use crate::jobs::Owner;
 use crate::process::{Env, Io, Spec};
 use summonr_core::error::{Error, Result};
 
@@ -241,10 +242,17 @@ pub(super) fn stop_job(
     record: &crate::jobs::Record,
 ) -> Result<Vec<String>> {
     let exit = crate::jobs::exit_path(workspace, &record.id);
+    if exit.is_file() {
+        return Ok(Vec::new());
+    }
     let mut children = Vec::new();
-    if crate::jobs::alive_since(record.pid, record.started) {
-        children = crate::jobs::child_lines(record.pid, workspace);
-        kill_group(record.pid);
+    match crate::jobs::owner(record.pid, record.started) {
+        Owner::Job => {
+            children = crate::jobs::child_lines(record.pid, workspace);
+            kill_group(record.pid);
+        }
+        Owner::Other => return crate::jobs::write_unowned(&exit, record.pid).map(|()| children),
+        Owner::Gone => {}
     }
     if !exit.is_file() {
         crate::jobs::write_killed(&exit, &children)?;

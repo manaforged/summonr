@@ -1,5 +1,4 @@
 use super::*;
-use crate::tools::command::Approval;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn verdict(
@@ -89,8 +88,13 @@ impl<P: Provider> Loop<P> {
             if self.grant_blocked(&grant, &asked) {
                 break;
             }
-            if !self.ask_grant(grant, &mut asked, events, emit).await? {
-                break;
+            match self
+                .ask_grant(grant, call, &mut asked, events, emit)
+                .await?
+            {
+                Ok(true) => {}
+                Ok(false) => break,
+                Err(error) => return Ok(Err(error)),
             }
             if self.interrupted() {
                 return Ok(Err(Error::Tool(
@@ -111,41 +115,41 @@ impl<P: Provider> Loop<P> {
     async fn ask_grant(
         &mut self,
         grant: Grant,
+        call: &ToolCall,
         asked: &mut Vec<Grant>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<bool> {
+    ) -> Result<Result<bool>> {
         if self.steer_shared.is_none() {
-            return Ok(false);
+            return Ok(Ok(false));
         }
         let persist = matches!(grant, Grant::Write(_));
         let question = grant.prompt();
         asked.push(grant.clone());
         let standing = match self.approve(question, persist, events, emit).await? {
-            GrantAnswer::Deny => return Ok(false),
+            GrantAnswer::Deny => return Ok(Ok(false)),
             GrantAnswer::Allow => false,
             GrantAnswer::Always => true,
         };
-        self.apply_grant(&grant, standing, events, emit)?;
-        Ok(true)
+        Ok(self
+            .apply_grant(&grant, call, standing, events, emit)?
+            .map(|()| true))
     }
 
     pub(super) fn apply_grant(
         &mut self,
         grant: &Grant,
+        call: &ToolCall,
         standing: bool,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
+    ) -> Result<Result<()>> {
         let text = match grant {
             Grant::Write(path) | Grant::Guarded(path) => self.grant_write(path, standing)?,
-            Grant::Danger { .. } => {
-                self.tools.approve_once(Approval::Policy)?;
-                return Ok(());
-            }
+            Grant::Danger { .. } => return Ok(self.tools.approve_once(call)),
         };
         self.push_event(events, emit, Event::Note { text })?;
-        Ok(())
+        Ok(Ok(()))
     }
 
     fn grant_write(&mut self, path: &std::path::Path, standing: bool) -> Result<String> {

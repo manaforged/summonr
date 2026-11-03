@@ -142,7 +142,7 @@ const fn job_tone(state: JobState) -> Tone {
 const fn mcp_tone(state: McpState) -> Tone {
     match state {
         McpState::Live => Tone::Success,
-        McpState::Cached | McpState::Unlisted => Tone::Info,
+        McpState::Cached | McpState::Unlisted | McpState::Connecting => Tone::Info,
         McpState::Waiting | McpState::Stopped => Tone::Warn,
         McpState::Failed => Tone::Error,
     }

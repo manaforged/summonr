@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use super::catalog;
 use super::config;
 use super::conn::Conn;
 use super::link::Link;
@@ -22,11 +21,5 @@ pub async fn probe(workspace: &Path, name: &str) -> Result<Option<usize>> {
     let slot: Slot<Conn> = Arc::new(Mutex::new(None));
     let listed = Link::list(&server, workspace, &slot).await;
     *slot.lock().await = None;
-    match listed {
-        Ok(listing) => Ok(Some(offered(&server, &listing.tools).count())),
-        Err(error) => {
-            catalog::fail(&server.key, &error.to_string());
-            Err(error)
-        }
-    }
+    listed.map(|listing| Some(offered(&server, &listing.tools).count()))
 }

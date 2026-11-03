@@ -5,8 +5,7 @@ impl App {
         if id == self.model.get().session {
             return Err("the open session cannot be deleted".to_string());
         }
-        let window = Some(crate::limits::limits().repeat_window());
-        if confirm(&self.sessions.armed, id.to_string(), window) {
+        if confirm(&self.sessions.armed, id.to_string()) {
             drop(self.cmd.send(Cmd::DeleteSession(id.to_string())));
             return Ok(());
         }

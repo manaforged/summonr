@@ -21,11 +21,6 @@ pub(crate) use proc::{ProcessGroup, command_env, stop_groups};
 use proc::{background_result, stop_job};
 use run::Wait;
 
-#[derive(Clone, Copy)]
-pub(crate) enum Approval {
-    Policy,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Rewrite {
     Native,
@@ -36,6 +31,11 @@ pub(crate) fn kill_job(workspace: &Path, id: &str) -> Result<crate::jobs::Status
     let record = crate::jobs::load(workspace, id)?;
     stop_job(workspace, &record)?;
     crate::jobs::status(workspace, &record)
+}
+
+/// Stops background jobs owned by the given session.
+pub(crate) fn stop_jobs(workspace: &Path, session: &str) -> Result<Vec<String>> {
+    stop_matching(workspace, session, |_| true)
 }
 
 impl ToolRegistry {
@@ -91,10 +91,10 @@ impl ToolRegistry {
         let restricted = self.policy.restricts_writes();
         let command = object_string(args, "command")?;
         let (background, explicit) = launch_mode(args)?;
-        let approval = self.take_approval()?;
         let cwd = self.command_dir(args)?;
+        let approved = self.take_approval(command, &cwd)?;
         if let Some(output) = self
-            .shortcut(args, command, &cwd, approval.is_some(), rewrite)
+            .shortcut(args, command, &cwd, approved, rewrite)
             .await?
         {
             return Ok(output);
@@ -103,7 +103,10 @@ impl ToolRegistry {
         let wait = if background {
             Wait::Background
         } else {
-            Wait::chosen(explicit, self.can_detach(locked))
+            Wait::chosen(
+                explicit,
+                rewrite == Rewrite::Native && self.can_detach(locked),
+            )
         };
         let before = crate::diff::status_records(&self.workspace);
         let started = self.start_command(command, wait, cwd)?;
@@ -188,7 +191,7 @@ impl ToolRegistry {
         }
         if background && !self.background {
             return Err(Error::Denied(
-                "background commands are unavailable in child sessions".to_string(),
+                "the background jobs module is off".to_string(),
             ));
         }
         Ok(())
@@ -306,24 +309,7 @@ impl ToolRegistry {
         let Some(session) = session.clone() else {
             return Ok(Vec::new());
         };
-        let mut notes = Vec::new();
-        for record in crate::jobs::since(&self.workspace, 0, Some(&session))
-            .into_iter()
-            .filter(|record| record.session.as_deref() == Some(&session) && stops(record))
-        {
-            if crate::jobs::status(&self.workspace, &record)?.state
-                == crate::jobs::JobState::Running
-            {
-                let children = stop_job(&self.workspace, &record)?;
-                notes.push(format!(
-                    "killed job {} `{}`\n{}",
-                    record.id,
-                    crate::secret::shield::scrub_found(&record.command, &self.workspace),
-                    crate::jobs::block("child commands at kill", &children)
-                ));
-            }
-        }
-        Ok(notes)
+        stop_matching(&self.workspace, &session, stops)
     }
 
     fn check_command(&self, command: &str, cwd: &Path) -> Result<()> {
@@ -357,6 +343,29 @@ impl ToolRegistry {
         }
         Ok(path)
     }
+}
+
+fn stop_matching(
+    workspace: &Path,
+    session: &str,
+    stops: impl Fn(&crate::jobs::Record) -> bool,
+) -> Result<Vec<String>> {
+    let mut notes = Vec::new();
+    for record in crate::jobs::since(workspace, 0, Some(session))
+        .into_iter()
+        .filter(|record| record.session.as_deref() == Some(session) && stops(record))
+    {
+        if crate::jobs::status(workspace, &record)?.state == crate::jobs::JobState::Running {
+            let children = stop_job(workspace, &record)?;
+            notes.push(format!(
+                "killed job {} `{}`\n{}",
+                record.id,
+                crate::secret::shield::scrub_found(&record.command, workspace),
+                crate::jobs::block("child commands at kill", &children)
+            ));
+        }
+    }
+    Ok(notes)
 }
 
 fn launch_mode(args: &serde_json::Value) -> Result<(bool, Option<u64>)> {

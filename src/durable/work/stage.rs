@@ -80,7 +80,6 @@ impl Work {
             .ok_or_else(|| WorkError("Execute has no workspace base".to_string()))?;
         let paths = changed(base, &capture);
         self.touched.extend(paths.iter().cloned());
-        self.deferred = 0;
         self.jobs.clear();
         self.candidate = Some(Candidate {
             paths: paths.clone(),
@@ -194,7 +193,6 @@ impl Work {
         if self.stage() != Some(Stage::Execute) {
             return Err(WorkError("a deferral requires Execute".to_string()));
         }
-        self.deferred = self.deferred.saturating_add(1);
         self.pending.push(note);
         self.jobs = jobs;
         Ok(true)

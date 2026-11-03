@@ -20,7 +20,7 @@ pub(crate) struct Client {
     transport: Transport,
     max: usize,
     peer: Peer,
-    abandoned: Vec<Value>,
+    abandoned: Vec<(Value, Instant)>,
     inflight: Vec<Value>,
     roots: Value,
     broken: bool,
@@ -124,8 +124,24 @@ impl Client {
     pub(crate) async fn cancel_inflight(&mut self) {
         for id in std::mem::take(&mut self.inflight) {
             self.cancel(&id, "the user stopped the call").await;
-            self.abandoned.push(id);
+            self.abandon(id);
         }
+    }
+
+    fn abandon(&mut self, id: Value) {
+        self.expire_abandoned();
+        if !self.transport.piped() {
+            return;
+        }
+        let keep = self
+            .wait
+            .saturating_mul(crate::limits::limits().mcp_progress_stretch);
+        self.abandoned.push((id, Instant::now() + keep));
+    }
+
+    fn expire_abandoned(&mut self) {
+        let now = Instant::now();
+        self.abandoned.retain(|(_, expiry)| *expiry > now);
     }
 
     async fn cancel(&mut self, id: &Value, reason: &str) {
@@ -149,7 +165,11 @@ impl Client {
         params: Value,
         on_note: impl FnMut(super::Notice<'_>),
     ) -> Result<Value> {
-        self.attempt(method, params, on_note).await?
+        let label = self.peer.label(method);
+        match self.attempt(method, params, on_note).await? {
+            Ok(result) => Ok(result),
+            Err(error) => super::outcome(label, None, Some(error)),
+        }
     }
 
     pub(crate) async fn attempt(
@@ -157,14 +177,17 @@ impl Client {
         method: &str,
         params: Value,
         mut on_note: impl FnMut(super::Notice<'_>),
-    ) -> Result<Result<Value>> {
+    ) -> Result<std::result::Result<Value, Value>> {
         let (result, error) = self.exchange(method, params.clone(), &mut on_note).await?;
         let (result, error) = if self.peer.retries(error.as_ref()) {
             self.exchange(method, params, &mut on_note).await?
         } else {
             (result, error)
         };
-        Ok(super::outcome(self.peer.label(method), result, error))
+        Ok(match error {
+            Some(error) => Err(error),
+            None => Ok(result.unwrap_or(Value::Null)),
+        })
     }
 
     async fn exchange(
@@ -212,7 +235,7 @@ impl Client {
 
     async fn give_up(&mut self, id: &Value, method: &str) -> Error {
         self.inflight.retain(|pending| pending != id);
-        self.abandoned.push(id.clone());
+        self.abandon(id.clone());
         if method != "initialize" {
             self.cancel(id, "no reply in time").await;
         }
@@ -255,7 +278,7 @@ impl Client {
                         .as_mut()
                         .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
             }
-            Transport::Http(http) => !http.expired(),
+            Transport::Http(http) => !http.lost(),
         }
     }
 

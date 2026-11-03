@@ -4,21 +4,71 @@ use super::keys::builtin;
 use crate::provider::{Client, CompletionRequest, Effort, Message};
 
 fn body(name: &str, model: &str, effort: Option<Effort>) -> Value {
-    let mut endpoint = builtin(name).unwrap();
+    let mut endpoint = builtin(name).expect("the named preset exists");
     endpoint.model = model.to_string();
+    sent(endpoint, effort)
+}
+
+fn sent(mut endpoint: super::Endpoint, effort: Option<Effort>) -> Value {
     endpoint.api_key = Some(summonr_core::secret::Secret::new("k"));
-    let client = Client::connect(&endpoint).unwrap();
+    let client = Client::connect(&endpoint).expect("the endpoint fixture creates a client");
     let messages = [Message::user("hi".to_string())];
     let request = CompletionRequest::new(
         "s".to_string(),
-        model.to_string(),
+        endpoint.model.clone(),
         &messages,
         &[],
         Some(16_000),
         false,
         effort,
     );
-    client.request_body(&request, false).unwrap()
+    client
+        .request_body(&request, false)
+        .expect("the endpoint request serializes")
+}
+
+#[test]
+fn unknown_servers_omit_unverified_effort_for_unknown_and_known_models() {
+    for model in ["custom-model", "gpt-5.5"] {
+        for effort in [
+            None,
+            Some(Effort::Low),
+            Some(Effort::Medium),
+            Some(Effort::None),
+        ] {
+            let file: crate::config::File = toml::from_str(&format!(
+                "[endpoint.local]\nbase_url = 'http://127.0.0.1:8080/v1'\nmodel = '{model}'\n"
+            ))
+            .expect("the local endpoint fixture parses");
+            let endpoint =
+                super::resolve::selection(&file, "local").expect("the local endpoint resolves");
+            let body = sent(endpoint, effort);
+            assert!(body.get("reasoning_effort").is_none(), "{body}");
+            assert!(body.get("reasoning").is_none(), "{body}");
+            assert!(body.get("thinking").is_none(), "{body}");
+        }
+    }
+}
+
+#[test]
+fn a_custom_servers_explicit_effort_levels_override_unknown_support() {
+    let file: crate::config::File = toml::from_str(
+        "[endpoint.local]\nbase_url = 'http://127.0.0.1:8080/v1'\nmodel = 'custom-model'\nreasoning_levels = ['low', 'high']\n",
+    )
+    .expect("the explicit effort fixture parses");
+    let endpoint = super::resolve::selection(&file, "local").expect("the local endpoint resolves");
+    assert_eq!(sent(endpoint, Some(Effort::Low))["reasoning_effort"], "low");
+}
+
+#[test]
+fn explicit_empty_levels_disable_a_known_presets_effort_control() {
+    let file: crate::config::File =
+        toml::from_str("[endpoint.openai]\nmodel = 'gpt-5.5'\nreasoning_levels = []\n")
+            .expect("the disabled effort fixture parses");
+    let endpoint = super::resolve::selection(&file, "openai").expect("the known endpoint resolves");
+    let body = sent(endpoint, Some(Effort::High));
+    assert!(body.get("reasoning_effort").is_none(), "{body}");
+    assert!(body.get("reasoning").is_none(), "{body}");
 }
 
 #[test]

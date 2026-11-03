@@ -6,6 +6,7 @@ mod args;
 pub mod cli;
 mod install;
 pub(crate) mod launch;
+mod reap;
 pub(crate) mod report;
 pub(crate) mod runner;
 pub(crate) mod schedule;

@@ -8,7 +8,10 @@ impl Worker {
             Ok(diff) => diff,
             Err(error) => {
                 self.last_diff = None;
-                drop(self.ui.send(Msg::Fact(Fact::DiffFailed(error.to_string()))));
+                drop(
+                    self.ui
+                        .send(Msg::Fact(Fact::DiffFailed(error.to_string(), None))),
+                );
                 return;
             }
         };
@@ -30,7 +33,7 @@ impl Worker {
             }
         }
         self.last_diff = Some(diff.clone());
-        drop(self.ui.send(Msg::Fact(Fact::Diff(diff))));
+        drop(self.ui.send(Msg::Fact(Fact::Diff(diff, None))));
     }
 
     pub(super) fn tree_at(

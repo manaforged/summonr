@@ -19,6 +19,8 @@ pub(super) fn spawn(app: &App, id: &str, assignment: &str, background: bool) {
             background,
             workspace: String::new(),
             agent: String::new(),
+            name: String::new(),
+            model: "test-model".to_string(),
         }),
     })));
 }
@@ -143,6 +145,8 @@ fn a_child_in_its_own_checkout_shows_paths_from_that_checkout() {
                 background: false,
                 workspace: "/w/repo-children/abc".to_owned(),
                 agent: String::new(),
+                name: String::new(),
+                model: "test-model".to_string(),
             }),
         })));
         act(
@@ -169,6 +173,8 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
         parent: IDS[1].parse().unwrap(),
         assignment: "Fix the parser. Keep the tests.".to_owned(),
         model: "m".to_owned(),
+        name: String::new(),
+        agent: String::new(),
         workspace: "/w/repo-children/abc".into(),
         depth: 1,
         access: crate::child::Access::Implement,
@@ -285,13 +291,25 @@ fn clicking_the_strip_header_expands_it() {
             .expect("collapsed header");
         let at = line.find("1 agent").expect("agent details button");
         let col = sigil::app::cell_width(&line[..at]);
+        let point = sigil::terminal::cell_point(col as u16, row as u16);
         screen
             .frame(
                 &mut host,
-                sigil::events::Event::click(sigil::terminal::cell_point(col as u16, row as u16)),
+                [sigil::events::Event::pointer_down(point)],
                 (100, 30),
             )
-            .expect("click header");
+            .expect("press header");
+        app.ticks.set(app.ticks.peek() + 1);
+        screen
+            .frame(&mut host, [], (100, 30))
+            .expect("spinner tick while pressed");
+        screen
+            .frame(
+                &mut host,
+                [sigil::events::Event::pointer_up(point)],
+                (100, 30),
+            )
+            .expect("release header");
         let expanded = screen
             .frame(&mut host, [], (100, 30))
             .expect("frame")
@@ -398,6 +416,7 @@ fn the_status_popup_expands_the_selected_child() {
             assert!(shown.contains("Status"), "{shown}");
             assert!(!shown.contains("selected"), "{shown}");
             assert!(shown.contains("lane 0"), "{shown}");
+            assert!(shown.contains("test-model"), "model missing: {shown}");
             assert!(
                 shown.contains("sentinel"),
                 "detail clipped after resize: {shown}"

@@ -174,6 +174,19 @@ mod mail;
 mod mcp;
 mod turn;
 
+fn selected<'a, P>(
+    selections: &'a BTreeMap<workflow::Role, (P, String, Option<u32>)>,
+    provider: &'a P,
+    model: &'a str,
+    role: workflow::Role,
+) -> (&'a P, &'a str) {
+    selections
+        .get(&role)
+        .map_or((provider, model), |(provider, model, _)| {
+            (provider, model.as_str())
+        })
+}
+
 impl<P: Provider> Loop<P> {
     pub async fn shell(&self, command: &str) -> Result<(String, bool)> {
         let call = ToolCall {
@@ -191,10 +204,7 @@ impl<P: Provider> Loop<P> {
     }
 
     fn selection(&self, role: workflow::Role) -> (&P, &str) {
-        self.selections.get(&role).map_or(
-            (&self.provider, self.model.as_str()),
-            |(provider, model, _)| (provider, model.as_str()),
-        )
+        selected(&self.selections, &self.provider, &self.model, role)
     }
 
     pub(crate) fn effort_for(&self, role: workflow::Role) -> Option<Effort> {

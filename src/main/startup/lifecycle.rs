@@ -142,7 +142,7 @@ fn land(
         return 1;
     }
     let touched = Loop::<Client>::touched_at(session_path);
-    match finish_worktree(tree, &objective(args, session), &touched) {
+    match finish_worktree(tree, session, &objective(args, session), &touched) {
         Ok(files) => {
             eprintln!(
                 "merged {} into {}: {} file{}{}",

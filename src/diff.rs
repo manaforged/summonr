@@ -63,7 +63,11 @@ impl Diff {
 }
 
 fn named(root: &Path) -> Result<String> {
-    Ok(worktree::tree_at(root).map_or_else(|| "HEAD".to_string(), |tree| tree.base))
+    match worktree::tree_at(root) {
+        None => Ok("HEAD".to_string()),
+        Some(tree) if tree.base.is_empty() => tree.fork_point(),
+        Some(tree) => Ok(tree.base),
+    }
 }
 
 fn base(root: &Path) -> Result<Option<String>> {

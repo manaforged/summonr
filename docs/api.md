@@ -42,7 +42,9 @@ The earlier forms (`sessions`, `resume`, `export`, `profile`, `diff`, `endpoints
 
 For recurring check-ins in an existing session, use `summonr cron add NAME --every 5m --wake SESSION -p PROMPT`, then `summonr cron install` if the OS tick is not installed. `--wake` takes a live session name or exact id and delivers the prompt through its wake-up mailbox, without a model subprocess or new session. A missing target records a failed run. It cannot be combined with `--goal` or `--worktree`. `--mail SESSION` remains a completion notification for ordinary scheduled runs.
 
-The `task` tool accepts `workspace: "shared"` for path-owned editing lanes in the parent's checkout. Edits are visible immediately; the harness does not reconcile or roll them back. Assign disjoint paths. The default, `workspace: "isolated"`, keeps existing per-child checkouts and completion reconciliation. Research tasks remain read-only in either mode. Named children stay for mail after their first assignment; no crash-recovery guarantee is added by shared mode.
+The `task` tool accepts an optional `endpoint` name from the configured endpoints. It uses that endpoint's model and settings for the child only; the orchestrator keeps its own selection. Omit `endpoint` to inherit the parent selection. Child progress and completion use the same activity strip and modal as other native tasks.
+
+The `task` tool accepts `workspace: "shared"` for path-owned editing lanes in the parent's checkout. Edits are visible immediately; the harness does not reconcile or roll them back. Assign disjoint paths. The default, `workspace: "isolated"`, keeps existing per-child checkouts and completion reconciliation. Research tasks remain read-only in either mode. Implementation children inherit the parent's background-job capability. Polling an idle named child returns its full latest result or failure diagnostic; running progress stays abbreviated. Cancelling a child stops only that child's jobs. Naming a child starts it in the background and keeps it available for mail after its first assignment; no crash-recovery guarantee is added by shared mode.
 
 ## Quick paths
 
@@ -130,6 +132,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `receipt` | `receipt` |
 | `work` | `progress`. `checks_failed` agrees with the `verify` events. `rounds` counts checked rounds of the current goal or step, and `attempts` the failed checks in a row, so a first-check pass reports `rounds` 1 and `attempts` 0. `todos` is the model's display-only list, each with `text` and `status` (`pending`, `active`, or `done`). The other fields: `kind` (`single`, `steps`, or `goal`), `objective` (the goal or step text, left out when empty), `phase` (`plan`, `execute`, `verify`, `review`, `completed`, or `failed`), `current` and `total` (the step number and step count; `current` is null outside steps), `reason` (why the work stopped, or null), `ledger` (the lines of the Ledger pane), and `touched` (workspace files changed so far); empty lists are left out |
 | `child` | `id`, `event` (a nested event) |
+| `spawned` | `assignment`, `access`; optional `call`, `background`, `workspace`, `agent` (profile), `name` (worker name), and `model`; nested in a `child` event |
 
 A step that contains ``Run `CMD` `` is gated on `CMD` and on `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check.
 
@@ -182,10 +185,10 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`. Use one key, not both. The checks decide exit code 2. The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. If the check file changes during a run anyway, summonr restores it, a `note` event says so, and the run keeps the check it loaded at start.
 - A file that summonr's own stdout or stderr is redirected to, for example `--json > ci/events.jsonl` inside the repository, never counts as a change.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't widen it.
-- A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail`, `search` (web search and fetch), and `browser` are off by default.
+- A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail`, `search` (web search and fetch), `browser`, and `memory` are off by default.
 - The advertised tool list freezes after the first model round. A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, a table `{ command = "...", dialect = "claude" }`, or a list of either, run in order. Each hook reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. A hook with `dialect = "claude"`, and every plugin hook, follows the Claude Code rules instead (see the reference).
-- Memory files: `~/.summonr/memory/MEMORY.md` (user) and `~/.summonr/memory/<name>-<hash>/MEMORY.md` (project; the folder is named for the repository and a hash of its first commit, or of its path outside git) load into every trusted session unless `memory = false` under `[modules]`.
+- Memory files: `~/.summonr/memory/MEMORY.md` (user) and `~/.summonr/memory/<name>-<hash>/MEMORY.md` (project; the folder is named for the repository and a hash of its first commit, or of its path outside git) load into every trusted session with the `memory` module on. It is off by default; `memory = true` under `[modules]` turns it on.
 - A cron run sets `SUMMONR_CRON` to the job name. Inside it, `summonr cron add`, `edit`, and `remove` exit 1.
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
 - summonr has no sandbox, so an unattended `--goal` run can read and run anything your account can. Run CI and other unattended goals in a container. In a noninteractive run, irreversible commands are refused, and under `--strict` so are writes outside the writable roots. Auto mode asks before it grants an extra write root.

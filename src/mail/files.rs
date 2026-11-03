@@ -1,16 +1,22 @@
 use super::*;
 
+pub(super) enum Unread {
+    Missing,
+    Tail(Vec<u8>),
+    Whole(Vec<u8>),
+}
+
 impl Mailbox {
     pub(crate) fn pending(&self) -> Result<bool> {
-        pending(&inbox_path(&self.dir, &self.id), self.cursor)
+        pending(&inbox_path(&self.dir, &self.id), self.cursor, &self.mark)
     }
 
     pub(crate) fn changed(&self) -> impl std::future::Future<Output = Result<()>> + use<> {
         let path = inbox_path(&self.dir, &self.id);
-        let cursor = self.cursor;
+        let (cursor, mark) = (self.cursor, self.mark.clone());
         async move {
             loop {
-                if pending(&path, cursor)? {
+                if pending(&path, cursor, &mark)? {
                     return Ok(());
                 }
                 tokio::time::sleep(crate::limits::limits().mail_poll()).await;
@@ -19,21 +25,47 @@ impl Mailbox {
     }
 }
 
-fn pending(path: &Path, cursor: u64) -> Result<bool> {
+fn pending(path: &Path, cursor: u64, mark: &[u8]) -> Result<bool> {
+    Ok(match unread(path, cursor, mark)? {
+        Unread::Missing => false,
+        Unread::Tail(bytes) | Unread::Whole(bytes) => bytes.contains(&b'\n'),
+    })
+}
+
+pub(super) fn unread(path: &Path, cursor: u64, mark: &[u8]) -> Result<Unread> {
     use std::io::{Read as _, Seek as _, SeekFrom};
     let mut file = match std::fs::File::open(path) {
         Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Unread::Missing),
+        Err(error) => return Err(error.into()),
+    };
+    let mut bytes = Vec::new();
+    if file.metadata()?.len() >= cursor {
+        file.seek(SeekFrom::Start(cursor.saturating_sub(mark.len() as u64)))?;
+        file.read_to_end(&mut bytes)?;
+        if bytes.starts_with(mark) {
+            return Ok(Unread::Tail(bytes.split_off(mark.len())));
+        }
+        bytes.clear();
+    }
+    file.seek(SeekFrom::Start(0))?;
+    file.read_to_end(&mut bytes)?;
+    Ok(Unread::Whole(bytes))
+}
+
+pub(super) fn end(path: &Path) -> Result<(u64, Vec<u8>)> {
+    use std::io::{Read as _, Seek as _, SeekFrom};
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok((0, Vec::new())),
         Err(error) => return Err(error.into()),
     };
     let len = file.metadata()?.len();
-    if len == cursor {
-        return Ok(false);
-    }
-    file.seek(SeekFrom::Start(if len < cursor { 0 } else { cursor }))?;
-    let mut unread = Vec::new();
-    file.read_to_end(&mut unread)?;
-    Ok(unread.contains(&b'\n'))
+    let start = len.saturating_sub(MARK_BYTES as u64);
+    file.seek(SeekFrom::Start(start))?;
+    let mut mark = Vec::new();
+    file.take(len - start).read_to_end(&mut mark)?;
+    Ok((start + mark.len() as u64, mark))
 }
 
 fn board_path(dir: &Path, cwd: &Path) -> PathBuf {
@@ -47,6 +79,7 @@ pub(super) fn inbox_path(dir: &Path, id: &str) -> PathBuf {
 
 pub(crate) fn read_board(dir: &Path, cwd: &Path) -> Result<Vec<(String, String, String)>> {
     let path = board_path(dir, cwd);
+    let _lock = store::lock(&path, true)?;
     let text = store::read_or_empty(&path)?;
     let mut board: Vec<(String, String, String)> = Vec::new();
     for (index, line) in text.lines().enumerate() {
@@ -86,11 +119,12 @@ pub(crate) fn post_board(dir: &Path, cwd: &Path, from: &str, key: &str, value: &
     };
     let line = serde_json::to_string(&post)?;
     use std::io::Write as _;
-    std::fs::create_dir_all(dir.join("board"))?;
+    let path = board_path(dir, cwd);
+    let _lock = store::lock(&path, true)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(board_path(dir, cwd))?;
+        .open(&path)?;
     writeln!(file, "{line}")?;
     Ok(())
 }

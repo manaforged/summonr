@@ -3,6 +3,9 @@ use crate::provider::{ToolCall, ToolFunction, ToolKind};
 use crate::runtime::Loop;
 use crate::tools::{Abort, AbortCode};
 
+#[path = "control_tests.rs"]
+mod control;
+
 fn parent(replies: Vec<Reply>) -> (Loop<Scripted>, [tempfile::TempDir; 2]) {
     let workspace = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
@@ -339,6 +342,19 @@ async fn incoming_input_interrupts_a_child_and_leaves_main_session_jobs_alone() 
     let steering = std::sync::Arc::new(crate::runtime::Steering::default());
     run.child.steer_with(std::sync::Arc::clone(&steering));
     run.child.tools.set_read_only(false);
+    let job = run
+        .child
+        .tools
+        .execute_outcome(&start)
+        .await
+        .expect("implementation children inherit background jobs");
+    assert!(job.success, "{}", job.text);
+    let job_id = job
+        .text
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .expect("the child command returned its job id")
+        .to_string();
     let workspace = run.child.workspace().to_path_buf();
     let command = ToolCall {
         id: "stopped".to_string(),
@@ -381,6 +397,13 @@ async fn incoming_input_interrupts_a_child_and_leaves_main_session_jobs_alone() 
             .contains("interrupted by an incoming message")
     );
     assert!(!workspace.join("child-escaped").exists());
+    let record = crate::jobs::load(&workspace, &job_id).expect("the child job is recorded");
+    assert_eq!(
+        crate::jobs::status(&workspace, &record)
+            .expect("the child job has a status")
+            .state,
+        crate::jobs::JobState::Killed
+    );
 }
 
 #[tokio::test]
@@ -473,10 +496,7 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
         .unwrap();
     let id = parent.spawned.keys().next().cloned().unwrap();
     let started = std::time::Instant::now();
-    while !parent.spawned[&id]
-        .staying
-        .load(std::sync::atomic::Ordering::Relaxed)
-    {
+    while !parent.spawned[&id].state.borrow().terminal() {
         parent.drain(&mut Vec::new(), &mut |_| {});
         assert!(
             started.elapsed() < std::time::Duration::from_secs(5),

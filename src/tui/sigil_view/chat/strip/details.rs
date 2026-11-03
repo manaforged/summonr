@@ -6,10 +6,14 @@ use super::{App, StatusView, canvas, children, entry, peers, text};
 use crate::mail::Presence;
 use crate::tui::sigil_view::panes::ledger::Mark;
 
+const STATE_COLS: usize = 8;
+
 #[derive(Clone, PartialEq)]
 pub(super) struct Row {
     pub(super) id: String,
     title: String,
+    model: String,
+    summary: String,
     state: String,
     running: bool,
     failed: bool,
@@ -29,6 +33,8 @@ pub(super) fn rows(app: &App) -> Vec<Row> {
             .map(|(index, row)| Row {
                 id: index.to_string(),
                 title: row.text.clone(),
+                model: String::new(),
+                summary: String::new(),
                 state: match row.mark {
                     Mark::Done => "Done",
                     Mark::Active => "Working",
@@ -49,7 +55,26 @@ pub(super) fn rows(app: &App) -> Vec<Row> {
     children(&model)
         .map(|agent| Row {
             id: agent.id.clone(),
-            title: agent.title.clone(),
+            title: if !agent.name.is_empty() {
+                agent.name.clone()
+            } else if !agent.title.is_empty() {
+                agent.title.clone()
+            } else {
+                format!("Agent {}", agent.id)
+            },
+            model: agent.model.clone(),
+            summary: entry::workspace_relative(
+                if agent.last.is_empty() {
+                    &agent.assignment
+                } else {
+                    &agent.last
+                },
+                &agent.roots(&app.roots),
+            )
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_string(),
             state: if agent.failed {
                 "Failed"
             } else if agent.done {
@@ -69,17 +94,30 @@ pub(super) fn rows(app: &App) -> Vec<Row> {
             },
             detail: entry::workspace_relative(&agent.last, &agent.roots(&app.roots)),
             meta: format!(
-                "{} · {} · {} tok\n{}",
+                "{} · {} · {} tok\nModel: {}\nTask: {}\nWorkspace: {}\nChild: {}",
                 agent.access.name(),
                 agent.clock(),
                 crate::provider::compact(agent.tokens),
-                agent.assignment
+                if agent.model.is_empty() {
+                    "unknown"
+                } else {
+                    &agent.model
+                },
+                agent.assignment,
+                if agent.workspace.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    entry::workspace_relative(&agent.workspace, &app.roots)
+                },
+                agent.id
             ),
             clear: agent.background,
         })
         .chain(peers(&model).map(|peer| Row {
             id: peer.id.clone(),
             title: peer.label().to_string(),
+            model: peer.model.clone(),
+            summary: peer.tool.clone(),
             state: peer.status.to_string(),
             running: peer.status == Presence::Working,
             failed: peer.status == Presence::Unknown,
@@ -89,7 +127,13 @@ pub(super) fn rows(app: &App) -> Vec<Row> {
                 '○'
             },
             detail: peer.tool.clone(),
-            meta: peer.model.clone(),
+            meta: format!(
+                "Model: {}\nWorkspace: {}\nPID: {}\nID: {}",
+                peer.model,
+                entry::workspace_relative(&peer.cwd, &app.roots),
+                peer.pid,
+                peer.id,
+            ),
             clear: true,
         }))
         .collect()
@@ -145,6 +189,19 @@ pub(super) fn list(app: App) -> NodeBuilder {
                             },
                         )
                     };
+                    let column = width.saturating_sub(STATE_COLS + 11);
+                    let model = crate::display::ellipsize(&row.model, width / 3);
+                    let title = crate::display::ellipsize(
+                        &row.title,
+                        column.saturating_sub(sigil::app::cell_width(&model) + 3),
+                    );
+                    let title = if model.is_empty() {
+                        title.to_string()
+                    } else {
+                        format!("{title} · {model}")
+                    };
+                    let pad = column.saturating_sub(sigil::app::cell_width(&title));
+                    let title = format!("{title}{}", " ".repeat(pad));
                     let mut body = container()
                         .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
                         .child(
@@ -152,24 +209,23 @@ pub(super) fn list(app: App) -> NodeBuilder {
                                 .layout(LayoutStyle::flex_row().fill_width().gap(8.0))
                                 .child(marker)
                                 .child(
-                                    button(crate::display::ellipsize(
-                                        &row.title,
-                                        width
-                                            .saturating_sub(sigil::app::cell_width(&row.state) + 8),
-                                    ))
-                                    .ghost()
-                                    .size(ControlSize::Compact)
-                                    .accessible(format!("{}; {}", row.title, row.state))
-                                    .activate(move || {
-                                        open.status_list.select(index);
-                                        open.status_detail.update(|shown| {
-                                            *shown = if shown.as_ref() == Some(&id) {
-                                                None
-                                            } else {
-                                                Some(id.clone())
-                                            };
-                                        });
-                                    }),
+                                    button(title)
+                                        .ghost()
+                                        .size(ControlSize::Compact)
+                                        .accessible(format!(
+                                            "{}; {}; {}",
+                                            row.title, row.model, row.state
+                                        ))
+                                        .activate(move || {
+                                            open.status_list.select(index);
+                                            open.status_detail.update(|shown| {
+                                                *shown = if shown.as_ref() == Some(&id) {
+                                                    None
+                                                } else {
+                                                    Some(id.clone())
+                                                };
+                                            });
+                                        }),
                                 )
                                 .child(text(
                                     row.state.clone(),
@@ -190,6 +246,19 @@ pub(super) fn list(app: App) -> NodeBuilder {
                                     Token::Gray10,
                                 )),
                         );
+                    if !expanded && !row.summary.is_empty() {
+                        body = body.child(
+                            container()
+                                .layout(LayoutStyle::block().padding_left(24.0))
+                                .child(text(
+                                    crate::display::ellipsize(
+                                        &row.summary,
+                                        width.saturating_sub(4),
+                                    ),
+                                    Token::Gray10,
+                                )),
+                        );
+                    }
                     if expanded {
                         let mut detail = container()
                             .layout(LayoutStyle::flex_column().fill_width().padding_left(24.0))

@@ -87,9 +87,10 @@ impl App {
         let draft = self.draft.peek();
         if older
             && draft.is_empty()
-            && let Some(text) = self.cleared.peek()
+            && let Some((text, pastes)) = self.cleared.peek()
         {
             self.cleared.set(None);
+            *self.pasted_text.borrow_mut() = pastes;
             self.replace(text);
             return true;
         }

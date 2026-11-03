@@ -49,7 +49,7 @@ pub(crate) fn command(pid: u32) -> Option<String> {
 
 #[cfg(target_os = "macos")]
 #[expect(unsafe_code, reason = "std has no process info query")]
-pub(crate) fn started(pid: u32) -> Option<u64> {
+fn native_started(pid: u32) -> Option<u64> {
     let pid = libc::c_int::try_from(pid).ok()?;
     // SAFETY: proc_bsdinfo is plain integers and byte arrays; all-zero is a valid value.
     let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
@@ -69,7 +69,7 @@ pub(crate) fn started(pid: u32) -> Option<u64> {
 
 #[cfg(target_os = "linux")]
 #[expect(unsafe_code, reason = "std has no clock-tick query")]
-pub(crate) fn started(pid: u32) -> Option<u64> {
+fn native_started(pid: u32) -> Option<u64> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let ticks = stat
         .rsplit_once(')')?
@@ -142,9 +142,42 @@ pub(crate) fn started(pid: u32) -> Option<u64> {
     (ticks / 10_000_000).checked_sub(11_644_473_600)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
-pub(crate) fn started(_pid: u32) -> Option<u64> {
-    None
+#[cfg(unix)]
+pub(crate) fn started(pid: u32) -> Option<u64> {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    if let Some(started) = native_started(pid) {
+        return Some(started);
+    }
+    let elapsed = elapsed_secs(&ps("etime=", pid)?)?;
+    summonr_core::clock::now().checked_sub(elapsed)
+}
+
+#[cfg(unix)]
+fn elapsed_secs(text: &str) -> Option<u64> {
+    let (days, clock) = match text.split_once('-') {
+        Some((days, clock)) => (Some(digits(days)?), clock),
+        None => (None, text),
+    };
+    let parts = clock.split(':').map(digits).collect::<Option<Vec<u64>>>()?;
+    let (hours, minutes, seconds) = match (days, parts.as_slice()) {
+        (None, [minutes, seconds]) => (0, *minutes, *seconds),
+        (_, [hours, minutes, seconds]) => (*hours, *minutes, *seconds),
+        _ => return None,
+    };
+    if hours >= 24 || minutes >= 60 || seconds >= 60 {
+        return None;
+    }
+    days.unwrap_or(0)
+        .checked_mul(86_400)?
+        .checked_add(hours * 3_600 + minutes * 60 + seconds)
+}
+
+#[cfg(unix)]
+fn digits(text: &str) -> Option<u64> {
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
 }
 
 #[cfg(target_os = "macos")]

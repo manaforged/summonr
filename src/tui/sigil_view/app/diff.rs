@@ -188,6 +188,9 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn tree_show(&self, path: PathBuf, branch: String) {
+        if self.edit_blocks(Some(Pane::Diff)) {
+            return;
+        }
         self.compare(Some((path, branch)));
         self.diff_view.set(None);
         let layout = self.layout.peek();
@@ -211,7 +214,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn tree_discard_armed(&self, path: PathBuf) {
-        if confirm(&self.worktree_discard, path.clone(), None) {
+        if confirm(&self.worktree_discard, path.clone()) {
             self.tree_discard(path);
         } else {
             self.refresh();
@@ -220,6 +223,9 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn diff_command(&self, argument: Option<&str>) {
         self.splash.set(false);
+        if self.edit_blocks(Some(Pane::Diff)) {
+            return;
+        }
         self.compare(None);
         let layout = self.layout.peek();
         if layout.secondary != Some(Pane::Diff) {

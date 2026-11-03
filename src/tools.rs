@@ -57,7 +57,7 @@ pub(crate) struct ToolRegistry {
     spill_dir: std::sync::OnceLock<tempfile::TempDir>,
     launches: lsp::Launches,
     roots: Vec<paths::Root>,
-    approved_once: std::sync::Mutex<Option<command::Approval>>,
+    approved_once: std::sync::Mutex<Option<(String, PathBuf)>>,
     wrote: std::sync::Mutex<std::collections::BTreeSet<String>>,
     detached_jobs: std::sync::Mutex<std::collections::BTreeSet<String>>,
     seen_jobs: std::sync::Mutex<std::collections::BTreeSet<String>>,
@@ -150,7 +150,7 @@ impl ToolRegistry {
     pub(crate) fn child_at(&self, workspace: &Path, session: &str) -> Result<Self> {
         let mut child = Self::with_policy_and_search(workspace, self.policy.clone(), None)?;
         child.env.clone_from(&self.env);
-        child.background = false;
+        child.background = self.background;
         child.language = self.language;
         child.skills = self.skills;
         child.search.clone_from(&self.search);
@@ -159,7 +159,13 @@ impl ToolRegistry {
         Ok(child)
     }
 
-    pub(crate) fn approve_once(&self, approval: command::Approval) -> Result<()> {
+    pub(crate) fn approve_once(&self, call: &ToolCall) -> Result<()> {
+        let (name, op) = normalize(call);
+        let args = arguments_of(name, op, call)?;
+        let approval = (
+            object_string(&args, "command")?.to_string(),
+            self.command_dir(&args)?,
+        );
         *self
             .approved_once
             .lock()
@@ -168,12 +174,25 @@ impl ToolRegistry {
         Ok(())
     }
 
-    pub(crate) fn take_approval(&self) -> Result<Option<command::Approval>> {
-        Ok(self
+    pub(crate) fn take_approval(&self, command: &str, cwd: &Path) -> Result<bool> {
+        let mut held = self
             .approved_once
             .lock()
-            .map_err(|error| Error::Tool(format!("cannot consume command approval: {error}")))?
-            .take())
+            .map_err(|error| Error::Tool(format!("cannot consume command approval: {error}")))?;
+        let approved = held
+            .as_ref()
+            .is_some_and(|(text, dir)| text == command && dir == cwd);
+        if approved {
+            *held = None;
+        }
+        Ok(approved)
+    }
+
+    pub(crate) fn forget_approval(&self) {
+        *self
+            .approved_once
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 
     pub(crate) fn is_strict(&self) -> bool {

@@ -57,7 +57,9 @@ impl App {
             KeyCommand::Page(dir) => return self.page(dir),
             KeyCommand::Arrow(dir) => return self.arrow(dir),
             KeyCommand::Adjust(dir) => return self.overlay_adjust(dir),
-            KeyCommand::Toggle => return !self.options_active() && self.form_toggle(),
+            KeyCommand::Toggle => {
+                return !self.options_active() && !self.editor_focused() && self.form_toggle();
+            }
             KeyCommand::Recall(older) => return self.recall(older),
         }
         true
@@ -98,7 +100,7 @@ impl App {
         if self.overlay_enter() {
         } else if self.pane_active().is_some() {
             self.pane_enter();
-        } else if self.form_enter() {
+        } else if self.form_hidden() || self.form_enter() {
         } else if !self.accept() {
             self.submit();
         }
@@ -107,11 +109,17 @@ impl App {
 
     fn review(&self) -> bool {
         !self.options_active()
+            && !self.pane_focus.peek()
+            && !self.editor_focused()
             && self.form_stage() == Some(crate::tui::sigil_view::app::Stage::Review)
     }
 
     fn answering(&self) -> bool {
-        !self.options_active() && self.draft.peek().is_empty() && self.approval.peek().is_some()
+        !self.options_active()
+            && !self.pane_focus.peek()
+            && !self.editor_focused()
+            && (self.draft.peek().is_empty() || self.form_hidden())
+            && self.approval.peek().is_some()
     }
 
     fn answer(&self, reply: Reply, answer: GrantAnswer) -> bool {
@@ -201,6 +209,13 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
         .key_any(move |event| stray.type_elsewhere(event))
         .key_capture_any(move |event| {
             if super::input::leader_plain(&owner, event) {
+                event.stop_propagation();
+                return;
+            }
+            let composer = !owner.options_active()
+                && !owner.editor_focused()
+                && owner.pane_active().is_none();
+            if owner.form_hidden() && composer && event.key != Key::Tab.into() {
                 event.stop_propagation();
                 return;
             }

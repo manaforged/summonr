@@ -4,6 +4,11 @@ use summonr_core::error::{Error, Result};
 
 #[cfg(any(unix, test))]
 pub(crate) mod crontab;
+#[cfg(target_os = "linux")]
+mod systemd;
+
+#[cfg(target_os = "linux")]
+pub(crate) use systemd::{install, status, uninstall};
 
 #[cfg(any(target_os = "macos", test))]
 const LABEL: &str = "dev.summonr.cron";
@@ -11,12 +16,6 @@ const LABEL: &str = "dev.summonr.cron";
 const PLIST_DIR: &str = "Library/LaunchAgents";
 #[cfg(target_os = "macos")]
 const PLIST_FILE: &str = "dev.summonr.cron.plist";
-#[cfg(target_os = "linux")]
-const SYSTEMD_DIR: &str = ".config/systemd/user";
-#[cfg(target_os = "linux")]
-const SERVICE_FILE: &str = "summonr-cron.service";
-#[cfg(target_os = "linux")]
-const TIMER_FILE: &str = "summonr-cron.timer";
 #[cfg(windows)]
 const TASK_NAME: &str = "summonr-cron";
 #[cfg(windows)]
@@ -33,10 +32,6 @@ const PATH_VAR: &str = "PATH";
 const USER_HOME_VAR: &str = "HOME";
 #[cfg(any(target_os = "linux", windows, test))]
 const MINUTE_SECS: u64 = 60;
-#[cfg(target_os = "linux")]
-const LINGER_OFF: &str = "no";
-#[cfg(target_os = "linux")]
-const LINGER_NOTE: &str = "jobs run only while you are logged in; `loginctl enable-linger` keeps them running after logout";
 #[cfg(target_os = "macos")]
 const GUI_NOTE: &str = "jobs run while you are logged in";
 #[cfg(target_os = "macos")]
@@ -180,6 +175,53 @@ fn run(program: &str, args: &[&str], stdin: Option<&str>) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+struct Saved {
+    path: PathBuf,
+    before: Option<Vec<u8>>,
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+impl Saved {
+    fn take(path: &Path) -> Result<Self> {
+        let before = match std::fs::read(path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        Ok(Self {
+            path: path.to_path_buf(),
+            before,
+        })
+    }
+
+    fn restore(&self) -> Option<String> {
+        let restored = match &self.before {
+            Some(bytes) => crate::durable::store::write(
+                &self.path,
+                bytes,
+                crate::durable::store::Durability::Synced,
+            ),
+            None => match std::fs::remove_file(&self.path) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            },
+        };
+        restored
+            .err()
+            .map(|error| format!("cannot restore {}: {error}", self.path.display()))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn rolled_back(error: Error, saved: &[Saved], mut notes: Vec<String>) -> Error {
+    notes.extend(saved.iter().filter_map(Saved::restore));
+    if notes.is_empty() {
+        return error;
+    }
+    Error::Config(format!("{error}; {}", notes.join("; ")))
+}
+
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn domains(uid: u32) -> [String; 2] {
     [format!("gui/{uid}"), format!("user/{uid}")]
@@ -218,33 +260,52 @@ pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
         std::fs::create_dir_all(dir)?;
     }
     let env = OwnedEnv::current();
+    let saved = Saved::take(&file)?;
     crate::durable::store::write(
         &file,
         plist(exe, every_secs, &log, env.view()),
         crate::durable::store::Durability::Synced,
     )?;
     bootout();
-    let mut failures = Vec::new();
-    for (index, domain) in domains(uid()).into_iter().enumerate() {
-        match run(
-            "launchctl",
-            &["bootstrap", &domain, &file.display().to_string()],
-            None,
-        ) {
+    let mut notes = match bootstrap(&file) {
+        Ok(gui) => return Ok((file, gui.then_some(GUI_NOTE))),
+        Err(failures) => failures,
+    };
+    let restored = saved.restore();
+    let reload = saved.before.is_some() && restored.is_none();
+    notes.extend(restored);
+    if reload {
+        match bootstrap(&file) {
             Ok(_) => {
-                return Ok((file, (index == 0).then_some(GUI_NOTE)));
+                return Err(Error::Config(format!(
+                    "cannot load the new launch agent ({}); restored and reloaded the previous {}",
+                    notes.join("; "),
+                    file.display()
+                )));
             }
-            Err(Error::Config(text)) => failures.push(text),
-            Err(error) => return Err(error),
+            Err(again) => notes.push(format!(
+                "cannot reload the previous launch agent {}: {}",
+                file.display(),
+                again.join("; ")
+            )),
         }
     }
-    std::fs::remove_file(&file)?;
     crontab::install(exe, env.view())
         .map(|path| (path, Some(FULL_DISK_NOTE)))
-        .map_err(|error| match error {
-            Error::Config(text) => Error::Config(format!("{}; {text}", failures.join("; "))),
-            other => other,
-        })
+        .map_err(|error| Error::Config(format!("{}; {error}", notes.join("; "))))
+}
+
+#[cfg(target_os = "macos")]
+fn bootstrap(file: &Path) -> std::result::Result<bool, Vec<String>> {
+    let target = file.display().to_string();
+    let mut failures = Vec::new();
+    for (index, domain) in domains(uid()).into_iter().enumerate() {
+        match run("launchctl", &["bootstrap", &domain, &target], None) {
+            Ok(_) => return Ok(index == 0),
+            Err(error) => failures.push(error.to_string()),
+        }
+    }
+    Err(failures)
 }
 
 #[cfg(target_os = "macos")]
@@ -263,82 +324,6 @@ pub(crate) fn uninstall() -> Result<Option<PathBuf>> {
 pub(crate) fn status() -> Result<Option<PathBuf>> {
     let file = plist_path()?;
     Ok(file.exists().then_some(file).or_else(crontab::status))
-}
-
-#[cfg(target_os = "linux")]
-fn unit_paths() -> Result<(PathBuf, PathBuf)> {
-    let dir = os_home()?.join(SYSTEMD_DIR);
-    Ok((dir.join(SERVICE_FILE), dir.join(TIMER_FILE)))
-}
-
-#[cfg(target_os = "linux")]
-fn linger_note() -> Option<&'static str> {
-    let user = uid().to_string();
-    let linger = run(
-        "loginctl",
-        &["show-user", &user, "--property=Linger", "--value"],
-        None,
-    )
-    .ok()?;
-    (linger.trim() == LINGER_OFF).then_some(LINGER_NOTE)
-}
-
-#[cfg(target_os = "linux")]
-pub(crate) fn install(exe: &Path, every_secs: u64) -> Result<Installed> {
-    let env = OwnedEnv::current();
-    if run("systemctl", &["--user", "show-environment"], None).is_ok() {
-        let (service_path, timer_path) = unit_paths()?;
-        if let Some(dir) = timer_path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let (service, timer) = units(exe, every_secs, env.view());
-        crate::durable::store::write(
-            &service_path,
-            service,
-            crate::durable::store::Durability::Synced,
-        )?;
-        crate::durable::store::write(
-            &timer_path,
-            timer,
-            crate::durable::store::Durability::Synced,
-        )?;
-        run("systemctl", &["--user", "daemon-reload"], None)?;
-        run(
-            "systemctl",
-            &["--user", "enable", "--now", TIMER_FILE],
-            None,
-        )?;
-        return Ok((timer_path, linger_note()));
-    }
-    crontab::install(exe, env.view()).map(|path| (path, None))
-}
-
-#[cfg(target_os = "linux")]
-pub(crate) fn uninstall() -> Result<Option<PathBuf>> {
-    let (service_path, timer_path) = unit_paths()?;
-    if timer_path.exists() {
-        drop(run(
-            "systemctl",
-            &["--user", "disable", "--now", TIMER_FILE],
-            None,
-        ));
-        std::fs::remove_file(&timer_path)?;
-        if service_path.exists() {
-            std::fs::remove_file(&service_path)?;
-        }
-        drop(run("systemctl", &["--user", "daemon-reload"], None));
-        return Ok(Some(timer_path));
-    }
-    crontab::uninstall()
-}
-
-#[cfg(target_os = "linux")]
-pub(crate) fn status() -> Result<Option<PathBuf>> {
-    let (_, timer_path) = unit_paths()?;
-    Ok(timer_path
-        .exists()
-        .then_some(timer_path)
-        .or_else(crontab::status))
 }
 
 #[cfg(windows)]

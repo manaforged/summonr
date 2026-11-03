@@ -11,6 +11,7 @@ fn arrow_down_in_the_view_pane_scrolls_the_file() {
         |app| {
             app.view_open("notes.txt".to_owned());
             app.update(Msg::Fact(Fact::View {
+                root: None,
                 path: "notes.txt".to_owned(),
                 file: std::path::PathBuf::from("notes.txt"),
                 text: text.clone(),

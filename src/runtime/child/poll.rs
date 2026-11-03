@@ -1,22 +1,8 @@
-use std::future::Future;
-use std::task::{Context, Poll, Waker};
-
 use super::record::*;
 use super::*;
 use tokio::task::JoinError;
 
 const WAITING_CHARS: usize = 60;
-
-fn poll_ready(
-    handle: &mut tokio::task::JoinHandle<Done>,
-) -> Option<std::result::Result<Done, JoinError>> {
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    match std::pin::Pin::new(handle).poll(&mut context) {
-        Poll::Ready(joined) => Some(joined),
-        Poll::Pending => None,
-    }
-}
 
 enum Wake {
     Event(Event),
@@ -40,7 +26,7 @@ impl<P: Provider> Loop<P> {
                 .ok_or_else(|| Error::Tool(format!("unknown child `{id}`")))?;
             return Ok(Execution {
                 output: ToolOutput::ok(serde_json::to_string(&settled)?)
-                    .with_success(matches!(settled.state, ChildState::Completed(_))),
+                    .with_success(kill || matches!(settled.state, ChildState::Completed(_))),
                 usage: Usage::default(),
                 millis: 0,
             });
@@ -50,7 +36,9 @@ impl<P: Provider> Loop<P> {
                 return Err(Error::Tool(format!("unknown child `{id}`")));
             };
             let done = killed(spawned, &self.workspace, "killed by the parent").await?;
-            return self.task_settle(done);
+            let mut execution = self.task_settle(done)?;
+            execution.output = execution.output.with_success(true);
+            return Ok(execution);
         }
         let finished = self
             .spawned
@@ -60,6 +48,23 @@ impl<P: Provider> Loop<P> {
             let Some(spawned) = self.spawned.get(id) else {
                 return Err(Error::Tool(format!("unknown child `{id}`")));
             };
+            let state = spawned.state.borrow().clone();
+            if state.terminal() {
+                let success = matches!(state, ChildState::Completed(_));
+                let record = ChildRecord {
+                    state,
+                    ..spawned.record.clone()
+                };
+                return Ok(Execution {
+                    output: ToolOutput::ok(format!(
+                        "child {id}\nstate: idle\n{}",
+                        serde_json::to_string(&record)?
+                    ))
+                    .with_success(success),
+                    usage: Usage::default(),
+                    millis: 0,
+                });
+            }
             let tool = if spawned.tool.is_empty() {
                 "idle"
             } else {
@@ -131,7 +136,7 @@ impl<P: Provider> Loop<P> {
             if !self
                 .spawned
                 .values()
-                .any(|spawned| !spawned.staying.load(std::sync::atomic::Ordering::Relaxed))
+                .any(|spawned| !spawned.state.borrow().terminal())
             {
                 break;
             }
@@ -160,7 +165,7 @@ impl<P: Provider> Loop<P> {
         Ok(self
             .spawned
             .values()
-            .filter(|spawned| !spawned.staying.load(std::sync::atomic::Ordering::Relaxed))
+            .filter(|spawned| !spawned.state.borrow().terminal())
             .map(|spawned| {
                 format!(
                     "child {} `{}`",
@@ -243,9 +248,7 @@ impl<P: Provider> Loop<P> {
             let Some(spawned) = self.spawned.remove(id) else {
                 continue;
             };
-            if reason == "the parent turn ended"
-                && spawned.staying.load(std::sync::atomic::Ordering::Relaxed)
-            {
+            if reason == "the parent turn ended" && spawned.stay {
                 self.spawned.insert(id.clone(), spawned);
                 continue;
             }

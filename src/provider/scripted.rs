@@ -53,13 +53,16 @@ impl Scripted {
 }
 
 impl Provider for Scripted {
-    fn child(&self) -> Option<Self> {
-        Some(Self {
+    fn child(&self, endpoint: Option<&crate::endpoint::Endpoint>) -> Result<Option<Self>> {
+        if endpoint.is_some() {
+            return Ok(None);
+        }
+        Ok(Some(Self {
             replies: Arc::clone(&self.replies),
             sent: Arc::clone(&self.sent),
             prefixes: Arc::clone(&self.prefixes),
             hook: self.hook.clone(),
-        })
+        }))
     }
 
     fn complete<'a>(

@@ -7,6 +7,8 @@ impl App {
         self.workflow.list.cursor.set(0);
         self.workflow.naming.set(false);
         self.replace_workflow_draft(String::new());
+        self.workflow.drag_from.set(None);
+        self.workflow.drag_over.set(None);
         self.workflow.open.set(true);
         drop(self.cmd.send(Cmd::ListWorkflows));
     }
@@ -16,6 +18,8 @@ impl App {
             self.workflow.naming.set(false);
             self.replace_workflow_draft(String::new());
         } else {
+            self.workflow.drag_from.set(None);
+            self.workflow.drag_over.set(None);
             self.workflow.open.set(false);
         }
     }

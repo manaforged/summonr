@@ -68,7 +68,7 @@ pub(in crate::tui::sigil_view) struct Asked {
 }
 
 pub(super) use super::ui::shift;
-pub(super) use files::PaneRow;
+pub(super) use files::{PaneRow, armed};
 use files::{Confirm, confirm, file_url, read_git_branch, save};
 
 mod secret;
@@ -127,7 +127,7 @@ pub(super) struct App {
     pub(super) editor: TextEditState,
     pub(super) editor_focus: Signal<u64>,
     recalled: Signal<Option<(usize, String, usize)>>,
-    cleared: Signal<Option<String>>,
+    cleared: Signal<Option<(String, Vec<String>)>>,
     pub(super) status: Signal<String>,
     pub(super) notice: Signal<Option<Notice>>,
     pub(super) settings_open: Signal<bool>,

@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use super::body::{Empty, Extra, header, listing};
 use super::{App, Pane, PaneRow};
+use crate::tui::sigil_view::app::armed;
 use crate::tui::sigil_view::canvas;
 use sigil::prelude::context_menu;
 
@@ -171,11 +172,7 @@ fn file_actions(app: &App, changed: &PaneRow) -> NodeBuilder {
     if reverted > 0 {
         row = row.child(chip(format!("{reverted} reverted"), Tone::Warn));
     }
-    let label = if app
-        .revert_armed
-        .get()
-        .is_some_and(|(armed, _)| armed == target)
-    {
+    let label = if armed(&app.revert_armed, &target) {
         CONFIRM_REVERT
     } else {
         REVERT_FILE

@@ -109,6 +109,11 @@ impl InputQueue {
         steering.drain(..).collect()
     }
 
+    pub(super) fn drop_auth(&mut self) {
+        self.deferred
+            .retain(|command| !matches!(command, Cmd::Login(_) | Cmd::SetKey(..) | Cmd::Logout(_)));
+    }
+
     pub(super) fn defer(&mut self, command: Cmd, ui: &UnboundedSender<Msg>) {
         let note = match &command {
             Cmd::Command(line) => format!(

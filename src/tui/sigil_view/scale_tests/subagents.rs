@@ -17,6 +17,8 @@ fn a_running_subagent_reads_as_its_task_not_its_status_dump() {
                 background: true,
                 workspace: "/w/repo-children/abc".to_owned(),
                 agent: String::new(),
+                name: String::new(),
+                model: "test-model".to_string(),
             }),
         })));
         act(
@@ -131,6 +133,8 @@ fn subagents_spawned_by_separate_calls_each_get_their_own_line() {
                     background: true,
                     workspace: String::new(),
                     agent: String::new(),
+                    name: String::new(),
+                    model: "test-model".to_string(),
                 }),
             })));
             app.update(Msg::Fact(Fact::Event(Event::ToolResult {
@@ -192,6 +196,8 @@ fn parallel_spawn_calls_each_get_their_own_subagent_line() {
                     background: true,
                     workspace: String::new(),
                     agent: String::new(),
+                    name: String::new(),
+                    model: "test-model".to_string(),
                 }),
             })));
         }
@@ -280,6 +286,8 @@ fn spawn_on(app: &App, id: &str, call: &str, assignment: &str) {
             background: true,
             workspace: String::new(),
             agent: String::new(),
+            name: String::new(),
+            model: "test-model".to_string(),
         }),
     })));
 }

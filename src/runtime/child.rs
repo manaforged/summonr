@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde::Deserialize;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc::UnboundedSender, watch};
 use tokio::task::JoinHandle;
 
 use super::*;
@@ -37,6 +37,8 @@ struct Args {
     name: Option<String>,
     #[serde(default)]
     effort: Option<String>,
+    #[serde(default)]
+    endpoint: Option<String>,
     #[serde(skip)]
     call: String,
 }
@@ -62,18 +64,9 @@ pub(super) struct Spawned {
     started: Instant,
     last: String,
     reserved_tokens: u64,
-    staying: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    state: watch::Sender<ChildState>,
+    stay: bool,
     tool: String,
-}
-
-impl Spawned {
-    pub(super) fn abort(&self) {
-        self.handle.abort();
-    }
-
-    pub(super) fn background(&self) -> bool {
-        self.record.background
-    }
 }
 
 mod batch;
@@ -99,7 +92,7 @@ pub(super) struct Done {
 pub(super) fn definition() -> ToolDefinition {
     tool(
         "task",
-        "Delegate one assignment to a child on the same provider and model. The child keeps its transcript. Mail to its name is its next turn and stops its running command and background jobs. A child tool call does not start a parent turn. The parent turn ending does not stop it. kill true does. Same tools except task. background true returns an id; pass child to poll. A named child edits this checkout. An unnamed implement child gets an isolated checkout in a Git repository; completed edits are reconciled and conflicts keep that checkout. Pass workspace isolated or shared to force one. Do not start a summonr process. research is always read-only.",
+        "Delegate one assignment to a child. Omit endpoint to inherit the provider and model, or select a configured endpoint for this child only. The child keeps its transcript. Mail to its name is its next turn and stops its running command and background jobs. A child tool call does not start a parent turn. The parent turn ending does not stop it. kill true does. Same tools except task. background true returns an id; pass child to poll. A named child runs in the background, stays available for mail, and edits this checkout. An unnamed implement child gets an isolated checkout in a Git repository; completed edits are reconciled and conflicts keep that checkout. Pass workspace isolated or shared to force one. Do not start a summonr process. research is always read-only.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -111,7 +104,8 @@ pub(super) fn definition() -> ToolDefinition {
                 "kill": {"type": "boolean"},
                 "agent": {"type": "string", "description": "name of an agent from <agents>"},
                 "name": {"type": "string", "description": "session name. mail to this name is the next turn"},
-                "effort": {"type": "string", "description": "child effort: minimal, low, medium, high, xhigh, or max. Omit to inherit the parent."}
+                "effort": {"type": "string", "description": "child effort: minimal, low, medium, high, xhigh, or max. Omit to inherit the selected endpoint or parent."},
+                "endpoint": {"type": "string", "description": "configured endpoint name for this child only. Omit to inherit the parent selection."}
             },
             "additionalProperties": false
         }),
@@ -134,6 +128,12 @@ impl<P: Provider> Loop<P> {
             .values()
             .map(|spawned| spawned.reserved_tokens)
             .fold(0, u64::saturating_add)
+    }
+
+    pub(super) fn child_budget_running(&self) -> bool {
+        self.spawned
+            .values()
+            .any(|spawned| spawned.reserved_tokens > 0 && !spawned.state.borrow().terminal())
     }
 }
 

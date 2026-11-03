@@ -23,6 +23,9 @@ impl Browser {
         &self,
         live: &'a mut Option<Live>,
     ) -> Result<&'a mut charm::Session> {
+        if live.as_mut().is_some_and(|held| held.session.exited()) {
+            *live = None;
+        }
         if live.is_none() {
             *live = Some(self.open(self.settings.headed).await?);
         }
@@ -97,6 +100,25 @@ async fn arm(session: &mut charm::Session) -> Result<()> {
             .map_err(fail)?;
     }
     Ok(())
+}
+
+pub(super) async fn recover(live: &mut Option<Live>) {
+    let Some(held) = live.as_mut() else {
+        return;
+    };
+    if held.session.exited() {
+        *live = None;
+        return;
+    }
+    match held
+        .session
+        .browser_send("Browser.getVersion", serde_json::json!({}))
+        .await
+    {
+        Err(charm::Error::Closed | charm::Error::Ws(_) | charm::Error::Io(_)) => *live = None,
+        Err(charm::Error::Timeout(_)) => drop(close(live).await),
+        _answered => {}
+    }
 }
 
 pub(super) async fn close(live: &mut Option<Live>) -> Result<String> {

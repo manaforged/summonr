@@ -76,6 +76,7 @@ fn cutting_file_text_uses_the_file_selection_with_an_empty_composer() {
         |app| {
             app.view_open("notes.txt".to_owned());
             app.update(Msg::Fact(Fact::View {
+                root: None,
                 path: "notes.txt".to_owned(),
                 file: "notes.txt".into(),
                 text: "file text".to_owned(),

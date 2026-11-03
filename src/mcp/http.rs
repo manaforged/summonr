@@ -1,12 +1,24 @@
 use std::collections::VecDeque;
+use std::io::ErrorKind;
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use futures::StreamExt;
+use leyline::Kind;
 use leyline::http::StatusCode;
 use serde_json::{Value, json};
 
 use crate::rpc::{HttpTransport, Pending, Read};
 use summonr_core::error::{Error, Result};
+
+const NAMED: [(&str, &str); 3] = [
+    ("tools/call", "/params/name"),
+    ("prompts/get", "/params/name"),
+    ("resources/read", "/params/uri"),
+];
+
+const SENTINEL: (&str, &str) = ("=?base64?", "?=");
 
 pub(crate) struct Http {
     client: leyline::Session,
@@ -15,7 +27,7 @@ pub(crate) struct Http {
     session: Option<String>,
     version: Option<String>,
     auth: Option<crate::provider::Auth>,
-    expired: bool,
+    lost: bool,
     body: Option<Body>,
 }
 
@@ -51,7 +63,7 @@ impl Http {
             session: None,
             version: None,
             auth,
-            expired: false,
+            lost: false,
             body: None,
         })
     }
@@ -72,9 +84,16 @@ impl Http {
                 .await
                 .map(|(bytes, _)| bytes)
                 .unwrap_or_default();
-            self.expired = status == StatusCode::NOT_FOUND && self.session.is_some();
+            self.lost |= status == StatusCode::NOT_FOUND && self.session.is_some();
             let head: String = String::from_utf8_lossy(&body).chars().take(200).collect();
-            return Ok(Some(json!({"message": format!("HTTP {status}: {head}")})));
+            let sent: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+            let error = sent.get("error");
+            return Ok(Some(json!({
+                "code": error.and_then(|error| error.get("code")),
+                "message": format!("HTTP {status}: {head}"),
+                "data": error.and_then(|error| error.get("data")),
+                "status": status.as_u16(),
+            })));
         }
         if asks {
             self.body = Some(Body::new(response)?);
@@ -90,10 +109,13 @@ impl Http {
         if !matches!(read, Ok(Read::Line(_))) {
             self.body = None;
         }
+        self.lost |= read
+            .as_ref()
+            .is_err_and(|error| error.kind() != ErrorKind::TimedOut);
         read
     }
 
-    async fn post(&self, method: Option<&str>, body: &Value) -> Result<leyline::Response> {
+    async fn post(&mut self, method: Option<&str>, body: &Value) -> Result<leyline::Response> {
         let mut request = self
             .client
             .post(&self.url)
@@ -102,8 +124,8 @@ impl Http {
         if let Some(method) = method {
             request = request.header("Mcp-Method", method);
         }
-        if let Some(name) = body.pointer("/params/name").and_then(Value::as_str) {
-            request = request.header("Mcp-Name", name);
+        if let Some(name) = method.and_then(|method| named(method, body)) {
+            request = request.header("Mcp-Name", header_value(name));
         }
         if let Some(session) = &self.session {
             request = request.header("Mcp-Session-Id", session);
@@ -121,12 +143,32 @@ impl Http {
                 .map_err(|error| Error::Tool(error.to_string()))?;
             request = request.bearer_auth(&token);
         }
-        request
-            .json(body)
-            .stream()
-            .send()
-            .await
-            .map_err(|error| Error::Tool(format!("cannot reach the MCP server: {error}")))
+        let sent = request.json(body).stream().send().await;
+        self.lost |= sent
+            .as_ref()
+            .is_err_and(|error| error.kind() != Kind::Timeout || error.is_connect());
+        sent.map_err(|error| Error::Tool(format!("cannot reach the MCP server: {error}")))
+    }
+}
+
+fn named<'a>(method: &str, body: &'a Value) -> Option<&'a str> {
+    NAMED
+        .iter()
+        .find(|(named, _)| *named == method)
+        .and_then(|(_, field)| body.pointer(field))
+        .and_then(Value::as_str)
+}
+
+fn header_value(value: &str) -> String {
+    let plain = value
+        .bytes()
+        .all(|byte| byte == b' ' || byte == b'\t' || byte.is_ascii_graphic())
+        && value.trim() == value
+        && !(value.starts_with(SENTINEL.0) && value.ends_with(SENTINEL.1));
+    if plain {
+        value.to_string()
+    } else {
+        format!("{}{}{}", SENTINEL.0, BASE64.encode(value), SENTINEL.1)
     }
 }
 
@@ -139,8 +181,8 @@ impl HttpTransport for Http {
         Box::pin(self.read())
     }
 
-    fn expired(&self) -> bool {
-        self.expired
+    fn lost(&self) -> bool {
+        self.lost
     }
 
     fn agree(&mut self, version: &str) {
@@ -177,9 +219,13 @@ impl Body {
                 return Ok(Read::Closed);
             }
             match self.stream.next().await {
-                Some(chunk) => self
-                    .buffer
-                    .extend_from_slice(&chunk.map_err(std::io::Error::other)?),
+                Some(chunk) => {
+                    self.buffer
+                        .extend_from_slice(&chunk.map_err(|error| match error.kind() {
+                            Kind::Timeout => std::io::Error::new(ErrorKind::TimedOut, error),
+                            _ => std::io::Error::other(error),
+                        })?)
+                }
                 None => {
                     self.done = true;
                     let rest = std::mem::take(&mut self.buffer);

@@ -101,6 +101,7 @@ impl ToolRegistry {
                 wait_shell(&mut started.child),
             ) => Some(waited),
         };
+        self.yield_command(false);
         let Some(waited) = waited else {
             let elapsed = Wait::Detach(began.elapsed().as_secs());
             return self.timed_out(started, command, elapsed).await;

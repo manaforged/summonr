@@ -54,7 +54,7 @@ fn work_sections_and_busy_status_share_one_row() {
             let label = if agents { "1 agent" } else { "1/1" };
             let row = find(&lines, label).expect("the status bar remains visible");
             if tasks && agents {
-                assert!(lines[row].contains("Tasks 0/1"), "{shown}");
+                assert!(lines[row].contains("1/1 Map decode owners"), "{shown}");
             }
             assert!(composer_top(&lines) > row, "{shown}");
             assert!(!shown.contains("Subagents"), "{shown}");
@@ -139,7 +139,7 @@ fn the_task_shortcut_opens_and_scrolls_the_status_popup() {
         assert_eq!(app.layout.peek().secondary, None);
     });
     let shown = lines.join("\n");
-    let tasks = find(&lines, "Tasks 1/8").expect("the task strip is visible");
+    let tasks = find(&lines, "2/8 Second task").expect("the task strip is visible");
     let last = find(&lines, "Last task").expect("the last task is reachable by scrolling");
     assert!(tasks < last && shown.contains("Status"), "{shown}");
     assert!(!shown.contains("Ledger"), "{shown}");
@@ -158,8 +158,9 @@ fn child_tasks_use_the_same_inline_strip() {
         assert_eq!(app.layout.peek().secondary, None);
     });
     let shown = lines.join("\n");
-    let tasks = find(&lines, "Tasks 0/2").expect("the child task strip is visible");
-    let active = find(&lines, "Check child result").expect("the active child task is visible");
+    let tasks = find(&lines, "1/2 Check child result").expect("the child task strip is visible");
+    let active =
+        find(&lines, "00001111 · Check child result").expect("the active child task is visible");
     let pending = find(&lines, "Report findings").expect("the pending child task is visible");
     assert!(
         tasks < active && active < pending && shown.contains("Status"),
@@ -299,7 +300,7 @@ fn task_progress_updates_the_mounted_counter_and_clears_finished_work() {
     for (frame, count) in frames.iter().zip(["1/6", "2/6", "6/6"]) {
         assert!(frame.contains(count), "{frame}");
     }
-    assert!(!frames[3].contains("Tasks"), "{}", frames[3]);
+    assert!(!frames[3].contains("/6"), "{}", frames[3]);
     assert!(frames[4].contains("1/6"), "{}", frames[4]);
-    assert!(frames[5].contains("6/6 · Complete"), "{}", frames[5]);
+    assert!(frames[5].contains("6/6 tasks"), "{}", frames[5]);
 }

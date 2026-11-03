@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use leyline::Session;
@@ -5,35 +7,79 @@ use serde_json::Value;
 
 use crate::{Error, Issued, Parts, Result, Store};
 
-use super::store::{from_unix, keep, lifetime, save};
+use super::store::{expire, from_unix, keep, lifetime, save, stored};
 use super::{Spec, TokenStyle};
 
-pub(super) async fn exchanged(parts: &Parts<'_>, http: &Session, grant: Issued) -> Result<String> {
-    let chat = exchange(parts.spec, http, grant).await?;
+const REFUSED: [u16; 2] = [401, 403];
+
+enum Reply {
+    Issued(Issued),
+    Refused(String),
+}
+
+pub(super) async fn exchanged(
+    parts: &Parts<'_>,
+    http: &Session,
+    shared: &Arc<dyn Store>,
+    grant: Issued,
+    claimed: bool,
+) -> Result<String> {
+    let spent = grant.access.clone();
+    let chat = match exchange(parts.spec, http, grant).await? {
+        Reply::Issued(chat) => chat,
+        Reply::Refused(detail) => {
+            let _claim = if claimed {
+                None
+            } else {
+                Some(super::claim(parts, shared).await?)
+            };
+            return Err(revoked(parts, shared.as_ref(), &spent, detail));
+        }
+    };
     let access = chat.access.clone();
     keep(parts, chat)?;
     Ok(access)
 }
 
+fn revoked(parts: &Parts<'_>, store: &dyn Store, spent: &str, detail: String) -> Error {
+    let current = match stored(parts, store) {
+        Ok(current) => current,
+        Err(error) => return error,
+    };
+    if let Some(grant) = current.filter(|grant| grant.access == spent)
+        && let Err(error) = expire(parts, store, grant)
+    {
+        return error;
+    }
+    if parts.spec.grant.interactive() {
+        Error::NeedsLogin {
+            name: parts.name.to_string(),
+            detail: format!("{detail}; run `summonr login {}`", parts.name),
+        }
+    } else {
+        Error::Denied(detail)
+    }
+}
+
 pub(super) async fn settle(
     parts: &Parts<'_>,
     http: &Session,
-    store: &dyn Store,
+    shared: &Arc<dyn Store>,
     grant: Issued,
 ) -> Result<()> {
-    save(parts, store, grant.clone())?;
-    let chat = exchange(parts.spec, http, grant).await?;
-    keep(parts, chat)
+    let claim = super::claim(parts, shared).await?;
+    let saved = save(parts, shared.as_ref(), &grant);
+    drop(claim);
+    saved?;
+    match exchange(parts.spec, http, grant).await? {
+        Reply::Issued(chat) => keep(parts, chat),
+        Reply::Refused(detail) => Err(Error::Denied(detail)),
+    }
 }
 
-pub(super) async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Result<Issued> {
-    let Some(url) = spec
-        .exchange_url
-        .as_deref()
-        .map(str::trim)
-        .filter(|url| !url.is_empty())
-    else {
-        return Ok(grant);
+async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Result<Reply> {
+    let Some(url) = spec.exchange() else {
+        return Ok(Reply::Issued(grant));
     };
     let response = http
         .get(url)
@@ -50,17 +96,22 @@ pub(super) async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Resu
         .map_err(|error| Error::Transport(error.to_string()))?;
     let body = serde_json::from_str::<Value>(&text);
     if status >= 400 {
-        return Err(Error::Denied(match &body {
+        let detail = match &body {
             Ok(body) => format!("token exchange HTTP {status}: {}", told(body)),
             Err(_) => format!("token exchange HTTP {status}"),
-        }));
+        };
+        return if REFUSED.contains(&status) {
+            Ok(Reply::Refused(detail))
+        } else {
+            Err(Error::Denied(detail))
+        };
     }
     let body = body.map_err(|error| Error::Denied(error.to_string()))?;
     let mut chat = minted(&body)?;
     chat.refresh = grant.refresh;
     chat.identity = chat.identity.or(grant.identity);
     chat.client = grant.client;
-    Ok(chat)
+    Ok(Reply::Issued(chat))
 }
 
 pub(super) async fn post(

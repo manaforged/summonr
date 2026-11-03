@@ -72,6 +72,9 @@ impl App {
         if self.options_active() || self.view_edit.peek() {
             return false;
         }
+        if self.form_hidden() && !self.editor_focused() {
+            return true;
+        }
         if let Some(path) = image_path(&self.workspace, text) {
             match read_image(&path) {
                 Ok(Some((image, source))) => {

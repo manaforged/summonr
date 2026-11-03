@@ -24,28 +24,26 @@ pub(super) async fn did_open(conn: &mut Conn, path: &Path) -> Result<()> {
         .and_then(|extension| conn.languages.get(extension))
         .map_or_else(|| language::language_id(path), String::as_str)
         .to_string();
-    match conn.docs.get_mut(&uri) {
-        Some((held, _, stamp)) if *held == text => {
-            *stamp = fresh.unwrap_or(*stamp);
+    match conn.docs.get(&uri) {
+        Some((held, version, stamp)) if *held == text => {
+            let entry = (text, *version, fresh.unwrap_or(*stamp));
+            conn.docs.insert(uri, entry);
             Ok(())
         }
-        Some((held, version, stamp)) => {
-            *version += 1;
-            *held = text.clone();
-            *stamp = fresh.unwrap_or(*stamp);
-            let version = *version;
+        Some((_, version, stamp)) => {
+            let entry = (text.clone(), *version + 1, fresh.unwrap_or(*stamp));
             conn.notify(
                 "textDocument/didChange",
                 json!({
-                    "textDocument": { "uri": uri, "version": version },
+                    "textDocument": { "uri": uri, "version": entry.1 },
                     "contentChanges": [{ "text": text }]
                 }),
             )
-            .await
+            .await?;
+            conn.docs.insert(uri, entry);
+            Ok(())
         }
         None => {
-            conn.docs
-                .insert(uri.clone(), (text.clone(), 1, fresh.unwrap_or_default()));
             conn.notify(
                 "textDocument/didOpen",
                 json!({
@@ -57,7 +55,9 @@ pub(super) async fn did_open(conn: &mut Conn, path: &Path) -> Result<()> {
                     }
                 }),
             )
-            .await
+            .await?;
+            conn.docs.insert(uri, (text, 1, fresh.unwrap_or_default()));
+            Ok(())
         }
     }
 }

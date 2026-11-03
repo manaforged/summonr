@@ -64,13 +64,15 @@ pub(super) fn stored(parts: &Parts<'_>, store: &dyn Store) -> Result<Option<Issu
 }
 
 pub(crate) fn stale(parts: &Parts<'_>, store: &dyn Store) -> Result<()> {
-    let Some(mut grant) = stored(parts, store)? else {
-        return Ok(());
-    };
+    match stored(parts, store)? {
+        Some(grant) => expire(parts, store, grant),
+        None => Ok(()),
+    }
+}
+
+pub(super) fn expire(parts: &Parts<'_>, store: &dyn Store, mut grant: Issued) -> Result<()> {
     grant.expires = Some(Instant::now());
-    let raw = serde_json::to_string(&to_stored(&grant))
-        .map_err(|error| Error::Config(error.to_string()))?;
-    store.set(parts.name, &raw)
+    save(parts, store, &grant)
 }
 
 pub(super) fn held(parts: &Parts<'_>) -> Result<Option<Issued>> {
@@ -90,9 +92,8 @@ pub(super) fn keep(parts: &Parts<'_>, issued: Issued) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn save(parts: &Parts<'_>, store: &dyn Store, issued: Issued) -> Result<()> {
-    let raw = serde_json::to_string(&to_stored(&issued))
+pub(super) fn save(parts: &Parts<'_>, store: &dyn Store, issued: &Issued) -> Result<()> {
+    let raw = serde_json::to_string(&to_stored(issued))
         .map_err(|error| Error::Config(error.to_string()))?;
-    store.set(parts.name, &raw)?;
-    keep(parts, issued)
+    store.set(parts.name, &raw)
 }

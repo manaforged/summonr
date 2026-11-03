@@ -22,6 +22,7 @@ async fn input_typed_while_a_command_runs_reports_the_waiting_steer() {
         &mut queue,
         &reader,
         &ui,
+        Waiting::Work,
         None,
         tokio::time::sleep(Duration::from_millis(200)),
     )

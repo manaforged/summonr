@@ -52,8 +52,15 @@ struct Target {
     model: Mutex<String>,
     life: AtomicU64,
     meta: AtomicU64,
-    queue: Mutex<Option<Sender<Vec<OsString>>>>,
+    claim: AtomicBool,
+    queue: Mutex<Queue>,
     worker: Mutex<Option<JoinHandle<()>>>,
+}
+
+enum Queue {
+    Idle,
+    Open(Sender<Vec<OsString>>),
+    Released,
 }
 
 impl Reporter {
@@ -67,7 +74,11 @@ impl Reporter {
                 })
                 .map(Arc::new)
             })
-            .filter(|_| !CLAIMED.swap(true, Ordering::Relaxed));
+            .filter(|target| {
+                let won = !CLAIMED.swap(true, Ordering::AcqRel);
+                target.claim.store(won, Ordering::Relaxed);
+                won
+            });
         if let Some(target) = &target {
             target.report(State::Idle);
             target.metadata();
@@ -164,12 +175,10 @@ impl Target {
     fn release(&self) {
         let seq = next_seq(&self.life);
         self.run(release_args(&self.pane, seq));
-        drop(
-            self.queue
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take(),
-        );
+        drop(std::mem::replace(
+            &mut *self.queue.lock().unwrap_or_else(PoisonError::into_inner),
+            Queue::Released,
+        ));
         let worker = self
             .worker
             .lock()
@@ -178,15 +187,18 @@ impl Target {
         if let Some(worker) = worker {
             drop(worker.join());
         }
+        if self.claim.swap(false, Ordering::Relaxed) {
+            CLAIMED.store(false, Ordering::Release);
+        }
     }
 
     fn run(&self, args: Vec<OsString>) {
         let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
-        if queue.is_none() {
-            *queue = self.spawn();
+        if matches!(*queue, Queue::Idle) {
+            *queue = self.spawn().map_or(Queue::Idle, Queue::Open);
         }
-        if let Some(queue) = queue.as_ref() {
-            drop(queue.send(args));
+        if let Queue::Open(sender) = &*queue {
+            drop(sender.send(args));
         }
     }
 
@@ -240,7 +252,8 @@ fn target(
         model: Mutex::new(model_label(model)),
         life: AtomicU64::new(0),
         meta: AtomicU64::new(0),
-        queue: Mutex::new(None),
+        claim: AtomicBool::new(false),
+        queue: Mutex::new(Queue::Idle),
         worker: Mutex::new(None),
     })
 }

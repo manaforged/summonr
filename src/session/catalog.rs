@@ -265,6 +265,10 @@ pub(crate) fn list_in(home: &Path) -> Result<Vec<SessionInfo>> {
     Ok(sessions_in(home)?.into_iter().filter(resume_row).collect())
 }
 
+pub(crate) fn all() -> Result<Vec<SessionInfo>> {
+    sessions_in(&summonr_home()?)
+}
+
 pub(crate) fn sessions_in(home: &Path) -> Result<Vec<SessionInfo>> {
     let sessions = journals_in(home)?;
     let mut index = Index::load(home);

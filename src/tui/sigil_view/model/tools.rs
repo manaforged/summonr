@@ -16,13 +16,17 @@ impl Model {
         name: String,
         arguments: String,
     ) {
+        self.speed.start(Instant::now());
         if polls_child(&name, &arguments) {
-            self.live_tool = Some((name, String::new()));
+            self.doing = Some(Doing::Tool {
+                name,
+                arg: String::new(),
+            });
             return;
         }
         let arg = tool_arg(&arguments);
         if self.group(&id, &name, arg.clone()) {
-            self.live_tool = Some((name, arg));
+            self.doing = Some(Doing::Tool { name, arg });
             return;
         }
         self.tools.insert(id.clone(), self.entries.len());
@@ -35,7 +39,7 @@ impl Model {
                 String::new(),
             )],
         });
-        self.live_tool = Some((name, arg));
+        self.doing = Some(Doing::Tool { name, arg });
     }
 
     fn group(&mut self, id: &str, name: &str, arg: String) -> bool {
@@ -87,7 +91,7 @@ impl Model {
             call.output = output;
             call.patch = patch;
         }
-        self.live_tool = Some(("thinking".to_string(), String::new()));
+        self.doing = Some(Doing::Thinking);
     }
 
     pub(in crate::tui::sigil_view) fn finish_assistant(&mut self, text: String) {

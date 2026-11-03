@@ -201,6 +201,11 @@ impl App {
         }
         let target = self.picker.target.peek();
         self.cancel_model_edit();
+        self.send_model(target, picked);
+    }
+
+    pub(super) fn send_model(&self, target: Option<usize>, picked: ModelId) {
+        let current = self.model.peek().snapshot.endpoint.clone();
         let ModelId { endpoint, model } = picked;
         drop(
             self.cmd

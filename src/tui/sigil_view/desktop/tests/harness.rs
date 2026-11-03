@@ -1,6 +1,6 @@
 use sigil::Host;
 use sigil::app::FrameHooks;
-use sigil::events::{Event, KeyEvent, KeyPhase, LogicalKey, ModifiersState, PhysicalKey};
+use sigil::events::{Event, KeyPhase, LogicalKey, ModifiersState};
 use sigil::prelude::HostMode;
 use sigil::prelude::Key;
 use sigil::prelude::Role;

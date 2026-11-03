@@ -25,12 +25,12 @@ fn the_changes_pane_stays_open_and_can_scope_to_this_session() {
     let seen = drive(
         |app| {
             app.toggle_pane(Pane::Diff);
-            app.update(Msg::Fact(Fact::Diff(changed("HEAD", &[]))));
+            app.update(Msg::Fact(Fact::Diff(changed("HEAD", &[]), None)));
         },
         Vec::new(),
         |app| {
             app.toggle_session();
-            app.update(Msg::Fact(Fact::Diff(changed("HEAD", &[]))));
+            app.update(Msg::Fact(Fact::Diff(changed("HEAD", &[]), None)));
             app.layout.peek().secondary
         },
     );

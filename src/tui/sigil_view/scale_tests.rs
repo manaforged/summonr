@@ -37,6 +37,7 @@ mod secret;
 mod settings;
 mod strip;
 mod subagents;
+mod tabs;
 mod thinking;
 mod transcript;
 mod typeahead;
@@ -184,7 +185,7 @@ fn busy_row_takes_at_most_two_rows_at_every_size() {
         for state in [State::Busy, State::Tool] {
             let busy = frame(cols, rows, state);
             let label = format!("{cols}x{rows} {state:?}");
-            let status = find(&busy, "thinking")
+            let status = find(&busy, "(0s")
                 .unwrap_or_else(|| panic!("{label}: no busy row:\n{}", busy.join("\n")));
             let taken = below_transcript(&busy, &label).saturating_sub(idle);
             assert!(
@@ -375,7 +376,7 @@ fn headless_workers_appear_in_the_originating_conversation() {
         }).join("\n");
         println!("{width} columns:\n{shown}");
         assert!(
-            shown.contains("Subagents")
+            shown.contains("/3 agents")
                 && !shown.contains("Headless")
                 && !shown.contains("Attention"),
             "collapsed strip should keep the count and hide the rows: {shown}"
@@ -409,10 +410,7 @@ fn headless_workers_appear_in_the_originating_conversation() {
             .find(|line| line.contains("idle"))
             .expect("idle row");
         assert_eq!(working.find("working"), idle.find("idle"), "{open}");
-        assert!(
-            working.contains('●') && working.contains("read"),
-            "{working}"
-        );
-        assert!(idle.contains('○') && !idle.contains('●'), "{idle}");
+        assert!(!working.contains('○'), "{working}");
+        assert!(idle.contains('○'), "{idle}");
     }
 }

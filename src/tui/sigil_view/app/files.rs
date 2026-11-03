@@ -160,12 +160,39 @@ pub(in crate::tui::sigil_view) type Confirm<K> = Signal<Option<(K, std::time::In
 pub(in crate::tui::sigil_view) fn confirm<K: Clone + PartialEq + 'static>(
     slot: &Confirm<K>,
     key: K,
-    window: Option<std::time::Duration>,
 ) -> bool {
-    let now = std::time::Instant::now();
-    let repeat = slot.peek().is_some_and(|(armed, at)| {
-        armed == key && window.is_none_or(|window| now.duration_since(at) <= window)
+    let repeat = live(slot.peek(), &key);
+    slot.set(if repeat {
+        None
+    } else {
+        Some((key, std::time::Instant::now()))
     });
-    slot.set(if repeat { None } else { Some((key, now)) });
     repeat
+}
+
+pub(in crate::tui::sigil_view) fn armed<K: Clone + PartialEq + 'static>(
+    slot: &Confirm<K>,
+    key: &K,
+) -> bool {
+    live(slot.get(), key)
+}
+
+pub(super) fn expire<K: Clone + PartialEq + 'static>(slot: Confirm<K>) {
+    sigil::prelude::effect(move || {
+        if let Some((_, at)) = slot.get() {
+            let left = crate::limits::limits()
+                .repeat_window()
+                .saturating_sub(at.elapsed());
+            sigil::reactive::timeout(left, move || {
+                if slot.peek().is_some_and(|(_, armed)| armed == at) {
+                    slot.set(None);
+                }
+            });
+        }
+    });
+}
+
+fn live<K: PartialEq>(entry: Option<(K, std::time::Instant)>, key: &K) -> bool {
+    let window = crate::limits::limits().repeat_window();
+    entry.is_some_and(|(armed, at)| armed == *key && at.elapsed() <= window)
 }

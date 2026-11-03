@@ -14,6 +14,7 @@ mod presence;
 pub(crate) use presence::Presence;
 
 const BOARD_COMPACT_BYTES: usize = 256 * 1024;
+const MARK_BYTES: usize = 256;
 
 fn mail_enabled(value: Option<&OsStr>, fallback: bool) -> bool {
     value.map_or(fallback, |value| value != OsStr::new("off"))
@@ -90,6 +91,7 @@ pub(crate) struct Mailbox {
     kind: String,
     dir: PathBuf,
     cursor: u64,
+    mark: Vec<u8>,
     last_beat: u64,
     status: Presence,
     tool: String,
@@ -193,15 +195,16 @@ impl Mailbox {
         std::fs::create_dir_all(dir.join("inbox"))?;
         std::fs::create_dir_all(dir.join("board"))?;
         let id = clean_id(id);
+        let _roster = store::lock(&dir.join("agents"), true)?;
         let name = unique_name(&live(dir), &id, name, cwd);
-        let inbox = dir.join("inbox").join(format!("{id}.jsonl"));
-        let cursor = std::fs::metadata(&inbox).map_or(0, |meta| meta.len());
+        let (cursor, mark) = files::end(&inbox_path(dir, &id))?;
         let mut mailbox = Self {
             id,
             name,
             kind: kind.to_string(),
             dir: dir.to_path_buf(),
             cursor,
+            mark,
             last_beat: 0,
             status: Presence::Unknown,
             tool: String::new(),
@@ -308,7 +311,7 @@ impl Mailbox {
                 modified: meta.modified().ok(),
             },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                self.cursor = 0;
+                self.rewind();
                 self.stamp = None;
                 return Ok(Vec::new());
             }
@@ -320,7 +323,12 @@ impl Mailbox {
         let Some(bytes) = self.read_new(&path)? else {
             return Ok(Vec::new());
         };
-        let (mail, drained) = self.parse(&path, &bytes)?;
+        let before = self.cursor;
+        let parsed = self.parse(&path, &bytes);
+        let used =
+            usize::try_from(self.cursor - before).map_or(bytes.len(), |used| used.min(bytes.len()));
+        self.remember(&bytes[..used]);
+        let (mail, drained) = parsed?;
         if drained {
             self.stamp = Some(stamp);
         }
@@ -328,22 +336,28 @@ impl Mailbox {
     }
 
     fn read_new(&mut self, path: &Path) -> Result<Option<Vec<u8>>> {
-        use std::io::{Read as _, Seek as _, SeekFrom};
-        let mut file = match std::fs::File::open(path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                self.cursor = 0;
-                return Ok(None);
+        match files::unread(path, self.cursor, &self.mark)? {
+            files::Unread::Missing => {
+                self.rewind();
+                Ok(None)
             }
-            Err(error) => return Err(error.into()),
-        };
-        if file.metadata()?.len() < self.cursor {
-            self.cursor = 0;
+            files::Unread::Tail(bytes) => Ok(Some(bytes)),
+            files::Unread::Whole(bytes) => {
+                self.rewind();
+                Ok(Some(bytes))
+            }
         }
-        file.seek(SeekFrom::Start(self.cursor))?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
-        Ok(Some(bytes))
+    }
+
+    fn rewind(&mut self) {
+        self.cursor = 0;
+        self.mark.clear();
+    }
+
+    fn remember(&mut self, consumed: &[u8]) {
+        self.mark.extend_from_slice(consumed);
+        let excess = self.mark.len().saturating_sub(MARK_BYTES);
+        self.mark.drain(..excess);
     }
 
     fn parse(&mut self, path: &Path, bytes: &[u8]) -> Result<(Vec<Mail>, bool)> {

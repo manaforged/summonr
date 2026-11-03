@@ -3,7 +3,15 @@ use crate::provider::{Effort, Off, Reasoning};
 
 pub(super) fn from_preset(preset: Option<&Preset>) -> Reasoning {
     Reasoning {
-        spec: preset.map(|preset| preset.reasoning).unwrap_or_default(),
+        spec: preset.map(|preset| preset.reasoning).unwrap_or_else(|| {
+            let mut spec = crate::provider::Spec::new(
+                crate::provider::EffortField::ReasoningEffort,
+                &[],
+                Off::Omit,
+            );
+            spec.by_model = false;
+            spec
+        }),
         ..Reasoning::default()
     }
 }

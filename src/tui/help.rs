@@ -37,7 +37,7 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "  ctrl+d       quit when the draft is empty; otherwise delete the character after the caret".to_string(),
             format!("  {:<12} newline", keys.label(Hotkey::Newline)),
             format!("  {:<12} edit the draft in $EDITOR", keys.label(Hotkey::Editor)),
-            "  ctrl+z/y     undo or redo the draft".to_string(),
+            "  ctrl+_/y     undo or redo the draft".to_string(),
             format!("  {:<12} word left or right · {}/{} the same", format!("{}/{}", alt_label('←'), alt_label('→')), alt_label('b'), alt_label('f')),
             format!("  ctrl+w       delete the word before the caret · {} after", alt_label('d')),
             "  ctrl+u/k     delete to the line start or end".to_string(),

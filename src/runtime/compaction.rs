@@ -331,7 +331,13 @@ fn compact_boundary(
     reasoning_on_wire: bool,
     opener: Option<usize>,
 ) -> Option<usize> {
-    let floor = opener.map_or(1, |index| (index + 2).min(messages.len()));
+    let summary = messages
+        .iter()
+        .rposition(|message| message.role == Role::System)
+        .map_or(1, |index| index + 1);
+    let floor = opener
+        .map_or(1, |index| (index + 2).min(messages.len()))
+        .max(summary);
     let mut start = tail_start(messages, target_chars, reasoning_on_wire).max(floor);
     while start > floor && messages.get(start).is_some_and(|m| m.role == Role::Tool) {
         start -= 1;

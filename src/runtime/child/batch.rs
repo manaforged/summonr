@@ -200,6 +200,9 @@ fn batch_args(calls: &[ToolCall]) -> Result<Vec<Args>> {
     let mut args = Vec::with_capacity(calls.len());
     for call in calls {
         let mut value = task_args(call)?;
+        if value.name.is_some() && value.child.is_none() {
+            value.background = true;
+        }
         value.call.clone_from(&call.id);
         args.push(value);
     }

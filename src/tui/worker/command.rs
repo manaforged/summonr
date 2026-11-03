@@ -22,11 +22,18 @@ enum Completion<T> {
     Quit,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Waiting {
+    Work,
+    Login,
+}
+
 async fn wait_cancelable<T>(
     cmd: &mut UnboundedReceiver<Cmd>,
     queue: &mut InputQueue,
     reader: &Reader,
     ui: &UnboundedSender<Msg>,
+    waiting: Waiting,
     answers: Option<UnboundedSender<String>>,
     task: impl Future<Output = T>,
 ) -> Completion<T> {
@@ -36,6 +43,12 @@ async fn wait_cancelable<T>(
             result = &mut task => break Completion::Done(result),
             command = cmd.recv() => match command {
                 Some(Cmd::Cancel) => break Completion::Cancelled,
+                Some(Cmd::CancelLogin) => {
+                    queue.drop_auth();
+                    if waiting == Waiting::Login {
+                        break Completion::Cancelled;
+                    }
+                }
                 Some(Cmd::Quit) | None => break Completion::Quit,
                 Some(Cmd::Tick) => {}
                 Some(command @ (Cmd::ListModels { .. } | Cmd::ListPrompts(_) | Cmd::Clipboard)) => reader.run(command).await,

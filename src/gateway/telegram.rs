@@ -44,6 +44,47 @@ struct Reply<T> {
     ok: bool,
     result: Option<T>,
     error_code: Option<i64>,
+    #[serde(default)]
+    parameters: Option<Parameters>,
+}
+
+#[derive(Deserialize)]
+struct Parameters {
+    #[serde(default)]
+    retry_after: Option<u64>,
+}
+
+pub(crate) enum Poll {
+    Updates(Vec<Update>),
+    Retry { error: Error, after: Option<u64> },
+}
+
+struct Failure {
+    error: Error,
+    transient: bool,
+    after: Option<u64>,
+}
+
+impl Failure {
+    fn stop(error: Error) -> Self {
+        Self {
+            error,
+            transient: false,
+            after: None,
+        }
+    }
+
+    fn retry(error: Error, after: Option<u64>) -> Self {
+        Self {
+            error,
+            transient: true,
+            after,
+        }
+    }
+}
+
+fn transient(code: i64) -> bool {
+    code == i64::from(TOO_MANY) || code >= 500
 }
 
 #[derive(Deserialize)]
@@ -155,49 +196,73 @@ impl Bot {
         } else {
             request
         };
-        self.call(method, request).await
+        self.call(method, request)
+            .await
+            .map_err(|failure| failure.error)
     }
 
     async fn call<T: DeserializeOwned>(
         &self,
         method: Method,
         request: leyline::RequestBuilder,
-    ) -> Result<T> {
+    ) -> std::result::Result<T, Failure> {
         let name = method.name();
         let response = request
             .send()
             .await
-            .map_err(|error| self.failed(name, &error.to_string()))?;
+            .map_err(|error| Failure::retry(self.failed(name, &error.to_string()), None))?;
         let status = response.status().as_u16();
-        let text = response
-            .text()
-            .await
-            .map_err(|error| self.failed(name, &format!("HTTP {status}: {error}")))?;
-        let reply: Reply<T> = serde_json::from_str(&text)
-            .map_err(|error| self.failed(name, &format!("HTTP {status}: {error}")))?;
+        let text = response.text().await.map_err(|error| {
+            Failure::retry(self.failed(name, &format!("HTTP {status}: {error}")), None)
+        })?;
+        let reply: Reply<T> = serde_json::from_str(&text).map_err(|error| {
+            let error = self.failed(name, &format!("HTTP {status}: {error}"));
+            if transient(i64::from(status)) {
+                Failure::retry(error, None)
+            } else {
+                Failure::stop(error)
+            }
+        })?;
         if let (true, Some(result)) = (reply.ok, reply.result) {
             return Ok(result);
         }
-        match reply.error_code.unwrap_or_else(|| i64::from(status)) {
-            UNAUTHORIZED => Err(Error::Setup(REJECTED.to_string())),
-            NOT_FOUND if method == Method::GetMe => Err(Error::Config(MALFORMED.to_string())),
-            CONFLICT => Err(Error::Config(TAKEN.to_string())),
-            code => Err(Error::Tool(format!("telegram {name}: HTTP {code}"))),
-        }
+        let after = reply
+            .parameters
+            .and_then(|parameters| parameters.retry_after);
+        let failure = match reply.error_code.unwrap_or_else(|| i64::from(status)) {
+            UNAUTHORIZED => Failure::stop(Error::Setup(REJECTED.to_string())),
+            NOT_FOUND if method == Method::GetMe => {
+                Failure::stop(Error::Config(MALFORMED.to_string()))
+            }
+            CONFLICT => Failure::stop(Error::Config(TAKEN.to_string())),
+            code if transient(code) => {
+                Failure::retry(Error::Tool(format!("telegram {name}: HTTP {code}")), after)
+            }
+            code => Failure::stop(Error::Tool(format!("telegram {name}: HTTP {code}"))),
+        };
+        Err(failure)
     }
 
     pub(crate) async fn me(&self) -> Result<Me> {
         self.post(Method::GetMe, &json!({})).await
     }
 
-    pub(crate) async fn updates(&self, offset: i64) -> Result<Vec<Update>> {
+    pub(crate) async fn updates(&self, offset: i64) -> Result<Poll> {
         let wait = crate::limits::limits().gateway_poll_secs;
         let request = self.http.get(self.url(Method::GetUpdates)).query([
             ("offset", offset.to_string()),
             ("timeout", wait.to_string()),
             ("allowed_updates", UPDATE_KINDS.to_string()),
         ]);
-        self.call(Method::GetUpdates, request).await
+        match self.call(Method::GetUpdates, request).await {
+            Ok(updates) => Ok(Poll::Updates(updates)),
+            Err(Failure {
+                error,
+                transient: true,
+                after,
+            }) => Ok(Poll::Retry { error, after }),
+            Err(failure) => Err(failure.error),
+        }
     }
 
     pub(crate) async fn send(&self, chat: i64, text: &str) -> Result<()> {

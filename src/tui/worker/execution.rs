@@ -29,6 +29,7 @@ impl Cmd {
             | Cmd::SetModule(..)
             | Cmd::SetEffort(_) => ExecutionClass::AfterTurn,
             Cmd::Cancel
+            | Cmd::CancelLogin
             | Cmd::Quit
             | Cmd::Tick
             | Cmd::Open(_)

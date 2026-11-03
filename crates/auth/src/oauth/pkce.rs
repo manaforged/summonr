@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use leyline::Session;
@@ -18,7 +20,7 @@ const HEAD_CEILING: usize = 8192;
 pub(super) async fn login(
     parts: &Parts<'_>,
     http: &Session,
-    store: &dyn Store,
+    shared: &Arc<dyn Store>,
     prompt: &mut Prompt,
 ) -> Result<()> {
     let authorize =
@@ -26,7 +28,7 @@ pub(super) async fn login(
             Error::Config("an authorization_code login needs authorize_url".into())
         })?;
     let (listener, redirect) = listen(parts.spec.redirect_uri.as_deref()).await?;
-    let issued = stored(parts, store)?.and_then(|grant| grant.client);
+    let issued = stored(parts, shared.as_ref())?.and_then(|grant| grant.client);
     let client = issued.as_deref().unwrap_or(&parts.spec.client_id);
     let verifier = random(32)?;
     let state = random(16)?;
@@ -52,7 +54,7 @@ pub(super) async fn login(
     .await?;
     nonce_matches(grant.identity.as_deref(), &nonce)?;
     grant.client = Some(client).filter(|used| *used != parts.spec.client_id);
-    settle(parts, http, store, grant).await
+    settle(parts, http, shared, grant).await
 }
 
 fn same_client(kept: Option<&str>, sent: Option<&str>) -> Result<()> {

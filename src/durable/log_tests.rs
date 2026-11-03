@@ -202,6 +202,8 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
             .expect("parent id"),
         assignment: "Child terminal".to_owned(),
         model: "m".to_owned(),
+        name: "terminal-worker".to_owned(),
+        agent: String::new(),
         workspace: "/w".into(),
         depth: 1,
         access: Access::Research,
@@ -209,12 +211,19 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
         call: Some("t1".to_owned()),
         state: ChildState::Running,
     };
-    assert!(
+    let mut legacy = serde_json::to_value(&record).expect("child value");
+    let fields = legacy.as_object_mut().expect("child fields");
+    fields.remove("name");
+    fields.remove("agent");
+    let legacy: ChildRecord = serde_json::from_value(legacy).expect("legacy child");
+    assert!(legacy.name.is_empty());
+    assert!(legacy.agent.is_empty());
+    assert_eq!(
         Line::Child {
             record: record.clone()
         }
-        .events()
-        .is_empty()
+        .events(),
+        vec![record.spawned()]
     );
     let ChildState::Interrupted(mut result) = record.interrupt("parent cancelled").state else {
         panic!("interrupted result")
@@ -271,8 +280,9 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
         },
     ]) {
         let events = line.into_events(AssistantEvents::Skip);
-        assert_eq!(events.len(), 1, "{events:?}");
-        let Event::Child { id, event } = &events[0] else {
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert_eq!(events[0], record.spawned());
+        let Event::Child { id, event } = &events[1] else {
             panic!("child notification")
         };
         assert_eq!(id, &record.id.to_string());

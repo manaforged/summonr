@@ -51,6 +51,10 @@ pub enum Event {
         workspace: String,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         agent: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        name: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        model: String,
     },
     Unreported {
         tokens: u64,

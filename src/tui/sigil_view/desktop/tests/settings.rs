@@ -1,4 +1,4 @@
-use sigil::events::{Event, ModifiersState, ScrollDelta, ScrollEvent, ScrollPhase};
+use sigil::events::{Event, ModifiersState, ScrollDelta, ScrollPhase};
 use sigil::geometry::Point;
 use sigil::prelude::Key;
 

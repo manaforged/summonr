@@ -5,14 +5,13 @@ use serde_json::{Value, json};
 
 use super::catalog::Listing;
 use super::config::{Launch, Server};
-use super::handshake;
+use super::handshake::{self, STATELESS};
 use super::http::Http;
 use super::journal::Journal;
 use crate::process::Env;
 use crate::rpc::{self, Client, Framing, Notice, Peer};
 use summonr_core::error::{Error, Result};
 
-const STATELESS: &str = "2026-07-28";
 const LIST_PAGES: usize = 64;
 
 pub(super) struct Conn {
@@ -164,6 +163,7 @@ impl Conn {
                 "_meta".to_string(),
                 json!({
                     "io.modelcontextprotocol/protocolVersion": STATELESS,
+                    "io.modelcontextprotocol/clientCapabilities": {},
                     "io.modelcontextprotocol/clientInfo": {"name": "summonr", "version": env!("CARGO_PKG_VERSION")}
                 }),
             );

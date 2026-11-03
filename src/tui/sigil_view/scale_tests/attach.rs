@@ -132,9 +132,9 @@ fn an_attached_image_keeps_its_info_band_during_active_and_queued_turns() {
             .expect("image count cell");
         let caption = shown.lines().nth(row).expect("notice row").trim();
         if state != State::Idle {
-            assert!(shown.contains("thinking"), "{shown}");
+            assert!(shown.contains("esc to interrupt"), "{shown}");
             if queued > 0 {
-                assert!(shown.contains("1 waiting"), "{shown}");
+                assert!(shown.contains("1 queued"), "{shown}");
             }
         }
         (cell.fg, cell.bg, caption.to_owned())

@@ -1,18 +1,18 @@
-use std::time::Instant;
+use std::collections::HashSet;
 
-use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Token, Widget, button, container,
-};
+use sigil::prelude::{ControlSize, LayoutStyle, NodeBuilder, Token, Widget, button, container};
 
-use super::panes::ledger::Mark;
 use super::{Agent, App, Model, Speed, canvas, entry, todos};
 use crate::mail::Presence;
-use crate::tui::Activity;
+use crate::prefs::Hotkey;
 use crate::tui::sigil_view::model::StatusView;
 use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{Dialog, Hints, Key, Size};
 
+mod bar;
 mod details;
+
+pub(in crate::tui::sigil_view) use bar::{bar, rows};
 
 fn children(model: &Model) -> impl Iterator<Item = &Agent> {
     model
@@ -22,9 +22,11 @@ fn children(model: &Model) -> impl Iterator<Item = &Agent> {
 }
 
 fn peers(model: &Model) -> impl Iterator<Item = &crate::mail::Agent> {
-    model.peers.iter().filter(|peer| {
+    let children: HashSet<&str> = model.agents.iter().map(|agent| agent.id.as_str()).collect();
+    model.peers.iter().filter(move |peer| {
         peer.parent.as_deref() == Some(model.session.as_str())
             && !model.agents_hidden.contains(&peer.id)
+            && !children.contains(crate::child::tag(&peer.id).as_str())
     })
 }
 
@@ -47,217 +49,8 @@ pub(in crate::tui::sigil_view) fn working(model: &Model) -> bool {
     model.busy_since.is_some() || counts(model).1 > 0
 }
 
-#[derive(Clone, PartialEq)]
-struct Status {
-    busy: bool,
-    mark: &'static str,
-    state: String,
-    speed: String,
-    tasks: String,
-    agents: String,
-    warning: String,
-}
-
-fn status(app: &App) -> Option<Status> {
-    let model = app.model.get();
-    let (total, running, failed, unknown) = counts(&model);
-    let (done, tasks) = todos::tally(&model.ledger);
-    let current = todos::current(&model);
-    let waiting = app.approval.get().is_some() || app.form.get().is_some();
-    let blocked = model
-        .ledger
-        .iter()
-        .filter(|row| row.mark == Mark::Blocked)
-        .count();
-    if model.busy_since.is_none() && total == 0 && tasks == 0 && !waiting {
-        return None;
-    }
-    let busy = !waiting && working(&model);
-    let state = if waiting {
-        "Waiting for input".to_string()
-    } else if let Some((activity, _)) = model.busy_since {
-        current.map_or_else(
-            || activity.label().to_string(),
-            |row| match row.mark {
-                Mark::Active => row.text.clone(),
-                Mark::Blocked => "Blocked".to_string(),
-                Mark::Done | Mark::Pending | Mark::Plain => activity.label().to_string(),
-            },
-        )
-    } else if running > 0 {
-        "Agents working".to_string()
-    } else if current.is_some_and(|row| row.mark == Mark::Blocked) {
-        "Blocked".to_string()
-    } else if current.is_some() {
-        "Pending".to_string()
-    } else if failed > 0 {
-        "Agents failed".to_string()
-    } else if unknown > 0 {
-        "Agent status unknown".to_string()
-    } else if peers(&model).next().is_some() {
-        "Idle".to_string()
-    } else {
-        "Complete".to_string()
-    };
-    let speed = if !waiting
-        && model.live_tool.is_none()
-        && model
-            .busy_since
-            .is_some_and(|(activity, _)| activity == Activity::Turn)
-    {
-        model
-            .speed
-            .live(Instant::now())
-            .map(|rate| format!("~{}", Speed::label(rate)))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
-    let tasks = if tasks == 0 {
-        String::new()
-    } else if total > 0 || model.busy_since.is_some() {
-        format!("Tasks {done}/{tasks}")
-    } else {
-        current.map_or_else(
-            || format!("{done}/{tasks} · Complete"),
-            |row| format!("{}/{tasks} · {}", done + 1, row.text),
-        )
-    };
-    let mut warnings = Vec::new();
-    if failed > 0 {
-        warnings.push(format!("{failed} failed"));
-    }
-    if unknown > 0 {
-        warnings.push(format!("{unknown} unknown"));
-    }
-    if blocked > 0 {
-        warnings.push(format!("{blocked} blocked"));
-    }
-    let pending = match model.pending.len() {
-        0 => String::new(),
-        n => format!(" · {n} waiting"),
-    };
-    Some(Status {
-        busy,
-        mark: if waiting || failed + unknown + blocked > 0 {
-            "!"
-        } else if current.is_some() {
-            "○"
-        } else {
-            "✓"
-        },
-        state: format!("{state}{pending}"),
-        speed,
-        tasks,
-        agents: if total > 0 {
-            summonr_core::text::plural(total, "agent")
-        } else {
-            String::new()
-        },
-        warning: warnings.join(" · "),
-    })
-}
-
-pub(in crate::tui::sigil_view) fn rows(app: &App) -> usize {
-    usize::from(status(app).is_some())
-}
-
 fn text(body: impl Into<sigil::prelude::TextContent>, token: Token) -> sigil::prelude::TextBuilder {
     TextStyle::xs(token).on(sigil::prelude::text(body).nowrap())
-}
-
-pub(in crate::tui::sigil_view) fn bar(app: App, width: usize) -> NodeBuilder {
-    let paint = app.clone();
-    let view = sigil::reactive::derived(move || {
-        paint.ticks.with(|_| ());
-        status(&paint)
-    });
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .shrink(0.0)
-                .min_size(0.0, 0.0),
-        )
-        .children_reactive(move || {
-            let Some(status) = view.get() else {
-                return Vec::new();
-            };
-            let warning_width = super::cell_width(&status.warning);
-            let agent_width = super::cell_width(&status.agents);
-            let speed_width = if width >= 60 {
-                super::cell_width(&status.speed)
-            } else {
-                0
-            };
-            let task_width = super::cell_width(&status.tasks).min(width / 2);
-            let label_width =
-                width.saturating_sub(warning_width + agent_width + task_width + speed_width + 12);
-            let mut row = container().layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .height(canvas::cell().h)
-                    .min_size(0.0, 0.0)
-                    .gap(canvas::cell().w)
-                    .align_items(AlignItems::Center),
-            );
-            row = row.child(if status.busy {
-                match app.model.get().prefs.spinner {
-                    crate::prefs::Spinner::Dots => text(
-                        sigil::widgets::spinner_frame(app.ticks.get()),
-                        Token::Accent11,
-                    ),
-                    crate::prefs::Spinner::Symbols => entry::loading_mark(app.ticks),
-                }
-            } else {
-                text(
-                    status.mark,
-                    if status.warning.is_empty() {
-                        Token::Gray10
-                    } else {
-                        Token::Error11
-                    },
-                )
-            });
-            if label_width > 0 {
-                row = row.child(
-                    text(
-                        crate::display::ellipsize(&status.state, label_width),
-                        Token::Gray11,
-                    )
-                    .ellipsize()
-                    .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
-                );
-            }
-            if !status.speed.is_empty() && width >= 60 {
-                row = row.child(text(status.speed, Token::Gray10));
-            }
-            if !status.tasks.is_empty() {
-                let open = app.clone();
-                let label = crate::display::ellipsize(&status.tasks, task_width);
-                row = row.child(
-                    button(label)
-                        .ghost()
-                        .size(ControlSize::Compact)
-                        .accessible(format!("{}; open task details", status.tasks))
-                        .activate(move || open.show_status(StatusView::Tasks)),
-                );
-            }
-            if !status.agents.is_empty() {
-                let open = app.clone();
-                row = row.child(
-                    button(status.agents)
-                        .ghost()
-                        .size(ControlSize::Compact)
-                        .accessible("Open agent details")
-                        .activate(move || open.show_status(StatusView::Agents)),
-                );
-            }
-            if !status.warning.is_empty() {
-                row = row.child(text(status.warning, Token::Error11));
-            }
-            vec![row]
-        })
 }
 
 pub(in crate::tui::sigil_view) fn sheet(app: App) -> NodeBuilder {
@@ -282,7 +75,8 @@ pub(in crate::tui::sigil_view) fn sheet(app: App) -> NodeBuilder {
             .key(Key::Fixed("↑/↓"), "select")
             .key(Key::Fixed("tab"), "tasks/agents")
             .key(Key::Enter, "details")
-            .key(Key::Esc, "close"),
+            .key(Key::Esc, "close")
+            .key(Key::Hotkey(Hotkey::Agents), "toggle agents"),
     )
     .child(container().children_reactive(move || {
         let (current, task_count, agent_count) = tabs_view.get();

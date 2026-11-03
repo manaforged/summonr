@@ -1,9 +1,10 @@
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdout};
 use std::time::{Duration, Instant};
 
 use summonr_core::error::{Error, Result};
 
+use crate::process::{Io, Spec, spawn_blocking};
 use crate::tools::args::{object_bool, object_string};
 
 use super::{ToolOutput, ToolRegistry};
@@ -28,7 +29,9 @@ impl ToolRegistry {
             .and_then(|held| held.clone())
             .ok_or_else(|| Error::Tool("monitor needs a session".to_string()))?;
         let cwd = self.command_dir(args)?;
-        if let Some(output) = self.gate_command(command, &cwd, false)? {
+        if let Some(output) =
+            self.gate_command(command, &cwd, self.take_approval(command, &cwd)?)?
+        {
             return Ok(output);
         }
         self.check_launch(false, self.policy.restricts_writes(), true)?;
@@ -38,16 +41,17 @@ impl ToolRegistry {
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(DEFAULT_TIMEOUT_MS)
             .clamp(1_000, MAX_TIMEOUT_MS);
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .current_dir(&cwd)
-            .envs(self.env.iter().cloned())
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|error| Error::Tool(format!("monitor failed to start: {error}")))?;
+        let spec = Spec::new(
+            summonr_core::shell::program()?,
+            summonr_core::shell::arguments(command, &cwd),
+        )
+        .envs(self.env.iter().cloned());
+        let mut child = spawn_blocking(Spec {
+            cwd: Some(cwd),
+            stdin: Io::Null,
+            stderr: Io::Null,
+            ..spec
+        })?;
         let pid = child.id();
         let stdout = child
             .stdout
@@ -55,14 +59,16 @@ impl ToolRegistry {
             .ok_or_else(|| Error::Tool("monitor started without stdout".to_string()))?;
         let group = super::proc::ProcessGroup::new(pid);
         let label = description.to_string();
-        if !persistent {
-            drop(tokio::spawn(async move {
+        let timeout = if persistent {
+            None
+        } else {
+            Some(tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
                 super::proc::kill_group(pid);
-            }));
-        }
+            }))
+        };
         std::thread::spawn(move || {
-            watch(child, stdout, group, session, label);
+            watch(child, stdout, group, session, label, timeout);
         });
         Ok(ToolOutput::ok(format!(
             "monitor {pid}: {description}. A stdout line wakes this session. Silence does not."
@@ -71,11 +77,12 @@ impl ToolRegistry {
 }
 
 fn watch(
-    mut child: std::process::Child,
-    stdout: std::process::ChildStdout,
+    mut child: Child,
+    stdout: ChildStdout,
     mut group: super::proc::ProcessGroup,
     session: String,
     label: String,
+    timeout: Option<tokio::task::JoinHandle<()>>,
 ) {
     let lines = BufReader::new(stdout).lines();
     let mut batch = String::new();
@@ -98,11 +105,25 @@ fn watch(
     if !batch.is_empty() {
         flush(&session, &label, &batch);
     }
+    let outcome = child.wait();
+    if let Some(timeout) = timeout {
+        timeout.abort();
+    }
     group.disarm();
-    drop(child.wait());
+    match outcome {
+        Ok(status) if !status.success() => {
+            flush(&session, &label, &format!("monitor exited: {status}"));
+        }
+        Ok(_) => {}
+        Err(error) => flush(&session, &label, &format!("monitor wait failed: {error}")),
+    }
 }
 
 fn flush(session: &str, label: &str, batch: &str) {
     let text = format!("{label}: {batch}");
     drop(crate::mail::Mailbox::wake(session, &text));
 }
+
+#[cfg(test)]
+#[path = "monitor_tests.rs"]
+mod tests;

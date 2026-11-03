@@ -19,6 +19,7 @@ pub(super) const NO_RUNS: &str = "no runs yet";
 const NOT_INSTALLED: &str = "installed: no (run `summonr cron install`)";
 const NO_ENDPOINT: &str = "none set up; run `summonr login NAME`";
 const FIRST_SET_UP: &str = "first set up";
+const STALE: &str = "stale";
 
 pub(super) fn when(zoned: Option<Zoned>) -> String {
     zoned.map_or_else(
@@ -108,7 +109,7 @@ pub(super) fn table(jobs: &[Job], header: bool) -> String {
             next(job),
             job.runs
                 .last()
-                .map_or_else(|| "-".to_string(), |run| store::name(&run.outcome)),
+                .map_or_else(|| "-".to_string(), |run| outcome(job, run)),
             tilde(&job.dir),
         ]
     }));
@@ -133,11 +134,19 @@ fn align(row: &[String; 5], widths: &[usize; 5]) -> String {
     cells.join("  ").trim_end().to_string()
 }
 
-pub(super) fn run_line(run: &Run, tz: &TimeZone) -> String {
+fn outcome(job: &Job, run: &Run) -> String {
+    if super::reap::stale(job, run, super::now()) {
+        STALE.to_string()
+    } else {
+        store::name(&run.outcome)
+    }
+}
+
+pub(super) fn run_line(job: &Job, run: &Run, tz: &TimeZone) -> String {
     format!(
         "{}  {}  {}",
         when(runner::zoned(run.slot, tz)),
-        store::name(&run.outcome),
+        outcome(job, run),
         run.job.as_deref().unwrap_or("-")
     )
 }
@@ -217,7 +226,7 @@ fn runs(job: &Job, tz: &TimeZone) -> String {
         .runs
         .iter()
         .skip(skip)
-        .map(|run| format!("  {}", run_line(run, tz)))
+        .map(|run| format!("  {}", run_line(job, run, tz)))
         .collect();
     format!("runs:\n{}", lines.join("\n"))
 }
@@ -247,7 +256,7 @@ pub(super) fn json(job: &Job) -> serde_json::Value {
         "name": job.name,
         "schedule": job.schedule,
         "next": next,
-        "last": job.runs.last().map(|run| run.outcome),
+        "last": job.runs.last().map(|run| outcome(job, run)),
         "paused": job.paused,
         "dir": job.dir,
         "task": job.task,

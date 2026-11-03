@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use jiff::Zoned;
 
@@ -8,6 +9,7 @@ use super::runner;
 use super::schedule;
 use super::store::{self, Job};
 use super::view;
+use crate::durable::store::Wait;
 use summonr_core::error::{Error, Result};
 
 pub fn run(args: &[String], cwd: &Path) -> Result<i32> {
@@ -218,12 +220,22 @@ fn remove(name: &str) -> Result<i32> {
             .ok_or_else(|| store::unknown(name))?;
         Ok(jobs.remove(index))
     })?;
-    let stopped = runner::stop_running(&job);
+    let stopped = super::reap::stop_running(&job);
     store::forget_token(name)?;
     store::remove_payloads(&job.dir, name)?;
-    store::remove_run_lock(name)?;
-    if stopped {
-        println!("stopped the running run");
+    let wait = match stopped {
+        Ok(true) => {
+            println!("stopped the running run");
+            Wait::Within(|| Duration::from_secs(crate::limits::limits().gateway_stop_secs))
+        }
+        Ok(false) => Wait::Never,
+        Err(error) => {
+            eprintln!("warning: did not stop the running run: {error}");
+            Wait::Never
+        }
+    };
+    if let Err(error) = store::remove_run_lock(name, wait) {
+        eprintln!("warning: kept the run lock: {error}");
     }
     say(format!("removed {name}"))
 }
@@ -281,7 +293,7 @@ fn log(name: &str, show: Show) -> Result<i32> {
         return say(view::NO_RUNS.to_string());
     }
     for run in job.runs.iter().skip(skip) {
-        println!("{}", view::run_line(run, &tz));
+        println!("{}", view::run_line(&job, run, &tz));
     }
     if let Some(run) = job
         .runs

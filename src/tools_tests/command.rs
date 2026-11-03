@@ -1,5 +1,18 @@
 use super::*;
 
+fn run_call(arguments: serde_json::Value) -> ToolCall {
+    ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: arguments.to_string(),
+        },
+        continuation: None,
+    }
+}
+
 #[test]
 fn a_command_receives_its_own_session_instead_of_an_inherited_identity() {
     let (_dir, mut tools) = workspace(&[]);
@@ -157,16 +170,7 @@ fn the_full_output_note_counts_every_line_of_a_large_log() {
 fn a_read_only_registry_has_no_shell() {
     let (dir, mut tools) = workspace(&[("notes.txt", "one\ntwo\n")]);
     tools.contain_read_only();
-    let call = ToolCall {
-        id: "t1".to_string(),
-        kind: ToolKind::Function,
-        function: ToolFunction {
-            checked: Default::default(),
-            name: "run_command".to_string(),
-            arguments: serde_json::json!({"command": "echo x > made.txt"}).to_string(),
-        },
-        continuation: None,
-    };
+    let call = run_call(serde_json::json!({"command": "echo x > made.txt"}));
     let result = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -203,20 +207,10 @@ fn a_command_in_another_workdir_is_judged_from_that_directory() {
     std::fs::create_dir_all(workspace.join("keep")).unwrap();
     std::fs::create_dir_all(root.path().join("keep")).unwrap();
     let tools = ToolRegistry::with_policy_and_search(&workspace, Policy::builtin(), None).unwrap();
-    let call = ToolCall {
-        id: "t1".to_string(),
-        kind: ToolKind::Function,
-        function: ToolFunction {
-            checked: Default::default(),
-            name: "run_command".to_string(),
-            arguments: serde_json::json!({
-                "command": "rm -rf keep",
-                "workdir": root.path().display().to_string(),
-            })
-            .to_string(),
-        },
-        continuation: None,
-    };
+    let call = run_call(serde_json::json!({
+        "command": "rm -rf keep",
+        "workdir": root.path().display().to_string(),
+    }));
     let result = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
@@ -361,8 +355,6 @@ fn a_content_search_over_a_folder_holding_a_protected_path_is_refused() {
 
 #[test]
 fn approval_toggle_gates_execution_and_preserves_one_shot_command_approval() {
-    use super::super::command::Approval;
-
     let (dir, mut tools) = workspace(&[]);
     let command = per_shell(
         "git clean -fdn; printf approved > ran.txt",
@@ -372,7 +364,9 @@ fn approval_toggle_gates_execution_and_preserves_one_shot_command_approval() {
     let asked = outcome(&tools, command);
     assert!(asked.contains("needs the user's approval"), "{asked}");
     assert!(!dir.path().join("ran.txt").exists());
-    tools.approve_once(Approval::Policy).expect("approve once");
+    tools
+        .approve_once(&run_call(serde_json::json!({ "command": command })))
+        .expect("approve once");
     let approved = outcome(&tools, command);
     assert!(approved.starts_with("exit 0"), "{approved}");
     assert_eq!(

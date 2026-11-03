@@ -27,7 +27,7 @@ fn chrome_rows_start_at_the_gutter() {
         let lines = chat_side(&full, width);
         let screen = full.join("\n");
         let rows = [
-            ("busy", find(&lines, "thinking")),
+            ("busy", find(&lines, "(0s")),
             ("todos", find(&lines, "1/2")),
             ("composer", find(&lines, "● auto")),
             (

@@ -10,6 +10,7 @@ use summonr_core::error::{Error, Result};
 const CHECKPOINTS: &str = "checkpoints";
 const STORE: &str = "git";
 const EXCLUDE: &str = "info/exclude";
+const READY: &str = "summonr-ready";
 const KEY_BYTES: usize = 8;
 
 #[derive(Clone)]
@@ -50,15 +51,19 @@ impl Checkpoints {
     }
 
     pub(crate) fn capture(&self) -> Result<()> {
-        self.capture_to(self.count() + 1)
+        self.capture_to(self.count()? + 1)
     }
 
     pub(crate) fn capture_to(&self, turn: usize) -> Result<()> {
-        let mut trees = self.trees();
-        if trees.len() >= turn {
+        if self.trees()?.len() >= turn {
             return Ok(());
         }
         let tree = self.tree()?;
+        let _lock = store::lock(&self.log, true)?;
+        let mut trees = self.trees()?;
+        if trees.len() >= turn {
+            return Ok(());
+        }
         trees.resize(turn, tree);
         store::write(
             &self.log,
@@ -72,12 +77,12 @@ impl Checkpoints {
         self.store.is_some()
     }
 
-    pub(crate) fn count(&self) -> usize {
-        self.trees().len()
+    pub(crate) fn count(&self) -> Result<usize> {
+        Ok(self.trees()?.len())
     }
 
     pub(crate) fn restore(&self, turn: usize) -> Result<Vec<String>> {
-        let trees = self.trees();
+        let trees = self.trees()?;
         let target = turn
             .checked_sub(1)
             .and_then(|slot| trees.get(slot))
@@ -103,11 +108,7 @@ impl Checkpoints {
     }
 
     fn skipped(&self) -> Result<Vec<String>> {
-        let mut paths: Vec<String> = std::fs::read_to_string(&self.skip)
-            .unwrap_or_default()
-            .lines()
-            .map(str::to_string)
-            .collect();
+        let mut paths: Vec<String> = read_text(&self.skip)?.lines().map(str::to_string).collect();
         let known = paths.len();
         let mut seen: std::collections::HashSet<String> = paths.iter().cloned().collect();
         for path in crate::durable::tree::own_files(&self.root) {
@@ -127,8 +128,7 @@ impl Checkpoints {
 
     pub(crate) fn tree(&self) -> Result<String> {
         if let Some(store) = &self.store {
-            init(&self.root, store)
-                .ok_or_else(|| Error::Config("cannot create the checkpoint store".to_string()))?;
+            init(&self.root, store)?;
         }
         let skipped = self.skipped()?;
         let excluded: Vec<String> = skipped
@@ -150,12 +150,8 @@ impl Checkpoints {
         Ok(self.git(&["write-tree"])?.trim().to_string())
     }
 
-    pub(crate) fn trees(&self) -> Vec<String> {
-        std::fs::read_to_string(&self.log)
-            .unwrap_or_default()
-            .lines()
-            .map(str::to_string)
-            .collect()
+    pub(crate) fn trees(&self) -> Result<Vec<String>> {
+        Ok(read_text(&self.log)?.lines().map(str::to_string).collect())
     }
 
     pub(crate) fn git(&self, args: &[&str]) -> Result<String> {
@@ -196,17 +192,30 @@ fn private_dir(workspace: &Path) -> Option<PathBuf> {
     Some(home.join(CHECKPOINTS).join(key))
 }
 
-fn init(workspace: &Path, store: &Path) -> Option<()> {
-    if store.exists() {
-        return Some(());
+fn init(workspace: &Path, git_dir: &Path) -> Result<()> {
+    let ready = git_dir.join(READY);
+    if ready.exists() {
+        return Ok(());
     }
-    let path = OsString::from(store);
-    git_env(workspace, &[], &["init", "-q", "--bare", path.to_str()?]).ok()?;
+    let _lock = store::lock(git_dir, true)?;
+    if ready.exists() {
+        return Ok(());
+    }
+    let path = OsString::from(git_dir);
+    let path = path.to_str().ok_or_else(|| {
+        Error::Config(format!(
+            "cannot create the checkpoint store at {}: the path is not UTF-8",
+            git_dir.display()
+        ))
+    })?;
+    git_env(workspace, &[], &["init", "-q", "--bare", path])?;
     let exclude: String = summonr_core::walk::SKIP_DIRS
         .iter()
         .map(|dir| format!("{dir}/\n"))
         .collect();
-    std::fs::write(store.join(EXCLUDE), exclude).ok()
+    store::write(&git_dir.join(EXCLUDE), exclude, store::Durability::Renamed)?;
+    store::write(&ready, "", store::Durability::Renamed)?;
+    Ok(())
 }
 
 fn seed_from(workspace: &Path, layout: &crate::diff::Layout, index: &Path) {
@@ -234,6 +243,11 @@ fn seed(workspace: &Path, index: &Path) {
     if std::fs::copy(workspace.join(source.trim()), index).is_err() {
         drop(std::fs::remove_file(index));
     }
+}
+
+fn read_text(path: &Path) -> Result<String> {
+    store::read_or_empty(path)
+        .map_err(|error| Error::Config(format!("cannot read {}: {error}", path.display())))
 }
 
 #[cfg(test)]

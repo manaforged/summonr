@@ -74,6 +74,7 @@ pub(crate) fn tick(now: i64) -> Result<()> {
         return Ok(());
     };
     let starts = store::update(|jobs| {
+        super::reap::settle_stale(jobs, now);
         let mut starts = Vec::new();
         for job in jobs.iter_mut().filter(|job| !job.paused) {
             match pending(job, now) {
@@ -162,17 +163,31 @@ pub(crate) fn fire(name: &str, payload: Option<&[u8]>) -> Result<i64> {
         });
         Ok(job.dir.clone())
     })?;
-    let file = match payload {
-        Some(body) => {
-            crate::jobs::prepare(&dir)?;
-            let path = store::payload_path(&dir, name, now);
-            durable::write(&path, body, durable::Durability::Renamed)?;
-            Some(path)
+    let file = match payload.map(|body| save_payload(&dir, name, now, body)) {
+        Some(Ok(path)) => Some(path),
+        Some(Err(error)) => {
+            let reason = format!("cannot save the webhook body: {error}");
+            let recorded = store::with_job(name, |job| {
+                job.run_at(now, now).reason = Some(reason);
+                close(job, now, now, Outcome::Error);
+                Ok(())
+            });
+            if let Err(record) = recorded {
+                eprintln!("cron job `{name}`: cannot record the failed run: {record}");
+            }
+            return Err(error);
         }
         None => None,
     };
     launch(name, now, now, file.as_deref())?;
     Ok(now)
+}
+
+fn save_payload(dir: &Path, name: &str, now: i64, body: &[u8]) -> Result<PathBuf> {
+    crate::jobs::prepare(dir)?;
+    let path = store::payload_path(dir, name, now);
+    durable::write(&path, body, durable::Durability::Renamed)?;
+    Ok(path)
 }
 
 fn spawn(name: &str, slot: i64, payload: Option<&Path>) -> Result<()> {
@@ -199,16 +214,22 @@ pub(crate) fn exec(
     payload: Option<&Path>,
     notify: Option<super::store::Notify>,
 ) -> Result<i32> {
-    let mut job = store::get(name)?;
-    if let Some(notify) = notify {
-        job.notify = notify;
-    }
     let started = super::now();
-    let Some(_guard) = durable::lock(&store::run_lock(name)?, false)? else {
-        store::settle(name, slot, started, |run| run.outcome = Outcome::Overlap)?;
+    let lock = store::run_lock(name)?;
+    let (mut job, guard) = store::with_job(name, |job| {
+        let guard = durable::lock(&lock, false)?;
+        if guard.is_none() {
+            job.run_at(slot, started).outcome = Outcome::Overlap;
+        }
+        Ok((job.clone(), guard))
+    })?;
+    let Some(_guard) = guard else {
         eprintln!("cron job `{name}` is still running; this run was skipped");
         return Ok(1);
     };
+    if let Some(notify) = notify {
+        job.notify = notify;
+    }
     if let Some(session) = &job.wake {
         let Task::Prompt(text) = &job.task else {
             return Err(Error::Config("wake jobs require a prompt".to_string()));
@@ -293,18 +314,20 @@ fn conclude(
 }
 
 fn finish(name: &str, slot: i64, started: i64, outcome: Outcome) -> Result<bool> {
-    store::settle(name, slot, started, |run| run.outcome = outcome)?;
-    store::with_job(name, |job| {
-        job.fails = if outcome.failed() {
-            job.fails.saturating_add(1)
-        } else {
-            0
-        };
-        let one_shot = at_slot(job) == Some(slot);
-        let streak = job.fails >= crate::limits::limits().cron_fail_pause;
-        job.paused = job.paused || one_shot || streak;
-        Ok(streak)
-    })
+    store::with_job(name, |job| Ok(close(job, slot, started, outcome)))
+}
+
+pub(super) fn close(job: &mut Job, slot: i64, started: i64, outcome: Outcome) -> bool {
+    job.run_at(slot, started).outcome = outcome;
+    job.fails = if outcome.failed() {
+        job.fails.saturating_add(1)
+    } else {
+        0
+    };
+    let one_shot = at_slot(job) == Some(slot);
+    let streak = job.fails >= crate::limits::limits().cron_fail_pause;
+    job.paused = job.paused || one_shot || streak;
+    streak
 }
 
 fn argv(job: &Job, payload: Option<&Path>) -> Vec<String> {
@@ -336,27 +359,4 @@ fn argv(job: &Job, payload: Option<&Path>) -> Vec<String> {
         task: &task,
     }
     .argv()
-}
-
-pub(super) fn stop_running(job: &Job) -> bool {
-    let Some(id) = job
-        .runs
-        .iter()
-        .rev()
-        .find(|run| run.outcome == Outcome::Running)
-        .and_then(|run| run.job.as_deref())
-    else {
-        return false;
-    };
-    let Ok(record) = crate::jobs::load(&job.dir, id) else {
-        return false;
-    };
-    let running = crate::jobs::status(&job.dir, &record)
-        .is_ok_and(|status| status.state == crate::jobs::JobState::Running);
-    if !running {
-        return false;
-    }
-    let mut group = crate::tools::command::ProcessGroup::new(record.pid);
-    group.disarm();
-    group.terminate()
 }

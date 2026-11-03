@@ -8,7 +8,7 @@ pub(super) struct Run<P: Provider> {
     pub(super) assignment: String,
     pub(super) deadline: Option<Duration>,
     pub(super) started: Instant,
-    pub(super) staying: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub(super) state: watch::Sender<ChildState>,
     pub(super) stay: bool,
 }
 
@@ -42,27 +42,11 @@ impl<P: Provider> Run<P> {
             }));
         };
         let outcome = self.drive(emit).await;
-        if let Some(Ok(turn)) = &outcome {
-            drop(sender.send(Event::Child {
-                id: id.clone(),
-                event: Box::new(Event::Note {
-                    text: turn.text.clone(),
-                }),
-            }));
-        }
+        let usage = self.report(outcome, &sender, &id);
         if self.stay {
-            self.staying
-                .store(true, std::sync::atomic::Ordering::Relaxed);
             self.mail_loop(&sender, &id).await;
         }
         let access = self.record.access;
-        let (state, usage) = self.outcome_state(outcome, access);
-        self.record.state = state;
-        if !matches!(self.record.state, ChildState::Completed(_))
-            && let Some(event) = self.record.state.notification()
-        {
-            emit(&event);
-        }
         let usage = self.reported_usage(usage);
         let paths = match access {
             Access::Implement => Loop::<P>::touched_at(self.child.session.path()),
@@ -92,21 +76,46 @@ impl<P: Provider> Run<P> {
     async fn mail_loop(&mut self, sender: &UnboundedSender<Event>, id: &str) {
         loop {
             let prompt = next_mail(&mut self.child).await;
+            self.state.send_replace(ChildState::Running);
+            let prompt = self.child.steered(&prompt);
             let emit = |event: &Event| {
                 drop(sender.send(Event::Child {
                     id: id.to_string(),
                     event: Box::new(event.clone()),
                 }));
             };
-            if let Err(error) = self.child.turn_with(prompt.as_str(), emit).await {
-                drop(sender.send(Event::Child {
-                    id: id.to_string(),
-                    event: Box::new(Event::Note {
-                        text: error.to_string(),
-                    }),
-                }));
-            }
+            let outcome = self.child.turn_with(prompt.as_str(), emit).await;
+            self.report(Some(outcome), sender, id);
         }
+    }
+
+    fn report(
+        &mut self,
+        outcome: Option<Result<Turn>>,
+        sender: &UnboundedSender<Event>,
+        id: &str,
+    ) -> Usage {
+        let (state, usage) = self.outcome_state(outcome, self.record.access);
+        let event = match &state {
+            ChildState::Completed(result) => Some(Event::Note {
+                text: result.text.clone(),
+            }),
+            ChildState::Running
+            | ChildState::Aborted(_)
+            | ChildState::Failed(_)
+            | ChildState::Interrupted(_) => state.notification(),
+        };
+        self.record.state = state;
+        if self.stay {
+            self.state.send_replace(self.record.state.clone());
+        }
+        if let Some(event) = event {
+            drop(sender.send(Event::Child {
+                id: id.to_string(),
+                event: Box::new(event),
+            }));
+        }
+        usage
     }
 
     fn outcome_state(
@@ -135,22 +144,16 @@ impl<P: Provider> Run<P> {
                 };
                 (state, turn.usage)
             }
-            Some(Err(error)) => {
-                let diagnostic = match self.child.abort_note(&error.to_string()) {
-                    Ok(()) => error.to_string(),
-                    Err(abort) => format!("{error}; cannot close child turn: {abort}"),
-                };
-                (
-                    ChildState::Failed(self.child.result(
-                        "",
-                        0,
-                        Usage::default(),
-                        Some(&diagnostic),
-                        access,
-                    )),
+            Some(Err(error)) => (
+                ChildState::Failed(self.child.result(
+                    "",
+                    0,
                     Usage::default(),
-                )
-            }
+                    Some(&error.to_string()),
+                    access,
+                )),
+                Usage::default(),
+            ),
             None => (
                 ChildState::Aborted(self.deadline_result(access)),
                 Usage::default(),
@@ -196,7 +199,7 @@ pub(crate) async fn next_mail<P: Provider>(child: &mut Loop<P>) -> String {
         {
             let text = notes
                 .into_iter()
-                .map(|note| note.text)
+                .map(|note| crate::mail::envelope(&note))
                 .collect::<Vec<_>>()
                 .join("\n\n");
             if !text.trim().is_empty() {

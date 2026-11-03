@@ -13,6 +13,21 @@ impl Model {
 
     pub(in crate::tui::sigil_view) fn apply_child(&mut self, id: &str, event: Event) {
         let tag = crate::child::tag(id);
+        if matches!(
+            &event,
+            Event::ToolCall { .. }
+                | Event::Reasoning { .. }
+                | Event::Delta { .. }
+                | Event::Assistant { .. }
+        ) {
+            let agent = self.child_mut(tag.clone());
+            if agent.done {
+                agent.done = false;
+                agent.failed = false;
+                agent.started = Instant::now();
+                agent.secs = None;
+            }
+        }
         if let Event::Work { progress } = &event
             && !self
                 .agents
@@ -29,10 +44,14 @@ impl Model {
                 background,
                 workspace,
                 agent,
+                name,
+                model,
             } => self.child_spawn(Agent {
                 call: call.clone(),
                 background: *background,
                 title: Agent::title_of(assignment),
+                name: name.clone(),
+                model: model.clone(),
                 agent: agent.clone(),
                 assignment: assignment.clone(),
                 workspace: workspace.clone(),
@@ -95,7 +114,16 @@ impl Model {
     }
 
     fn child_spawn(&mut self, agent: Agent) {
-        self.agents.push(agent);
+        let current = self.child_mut(agent.id.clone());
+        current.call = agent.call;
+        current.background = agent.background;
+        current.title = agent.title;
+        current.name = agent.name;
+        current.model = agent.model;
+        current.agent = agent.agent;
+        current.assignment = agent.assignment;
+        current.workspace = agent.workspace;
+        current.access = agent.access;
     }
 
     fn child_usage(
@@ -154,6 +182,8 @@ fn child_line(event: &Event) -> Option<(String, bool, bool)> {
             output,
             ..
         } => (compact.text(output).to_string(), false, false),
+        Event::Reasoning { .. } => ("Thinking".to_string(), false, false),
+        Event::Delta { text } => (compact.text(text).to_string(), false, false),
         Event::Assistant { text } => (compact.text(text).to_string(), true, false),
         Event::Aborted { reason, .. } => (reason.clone(), true, true),
         Event::Note { text } => (text.clone(), false, false),

@@ -39,6 +39,9 @@ impl App {
                 selections,
             }) => self.workflow_loaded(name, names, selections),
             msg @ Msg::Fact(Fact::Patch { .. }) => self.patch_loaded(msg),
+            Msg::Fact(
+                Fact::Diff(_, root) | Fact::DiffFailed(_, root) | Fact::View { root, .. },
+            ) if root != self.root() => {}
             msg => self.apply_msg(msg),
         }
     }
@@ -69,7 +72,7 @@ impl App {
             Msg::Fact(Fact::Event(crate::Event::Elicit { form, dialog })) => {
                 self.form_open(form.clone(), *dialog);
             }
-            Msg::Fact(Fact::Diff(diff)) => {
+            Msg::Fact(Fact::Diff(diff, _)) => {
                 if self.diff_session.peek()
                     && self.root().is_none()
                     && diff.base != crate::diff::SESSION_BASE

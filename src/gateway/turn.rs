@@ -3,16 +3,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::oneshot;
-use tokio::task::JoinSet;
+use tokio::task::{Id, JoinError, JoinSet};
 
 use super::child::turn;
 use super::store;
-use super::telegram::{Bot, ChatKind, Update, User};
+use super::telegram::{Bot, ChatKind, Poll, Update, User};
 use super::{Action, addressed, route};
 use crate::config::tilde;
+use crate::limits::Reach;
 use summonr_core::error::Result;
 
 const IDLE: &str = "nothing is running";
+const STOPPING: &str = "stopping";
+const CRASHED: &str = "error: the turn crashed";
 const FRESH: &str = "new session";
 
 #[derive(Clone, Debug, Default)]
@@ -36,6 +39,7 @@ struct Bridge {
     chats: HashMap<i64, Running>,
     generations: HashMap<i64, u64>,
     tasks: JoinSet<Finished>,
+    owners: HashMap<Id, i64>,
 }
 
 pub(crate) async fn serve(bot: Bot, options: Options, username: Option<String>) -> Result<i32> {
@@ -46,32 +50,74 @@ pub(crate) async fn serve(bot: Bot, options: Options, username: Option<String>) 
         chats: HashMap::new(),
         generations: HashMap::new(),
         tasks: JoinSet::new(),
+        owners: HashMap::new(),
     };
     let mut interrupt = std::pin::pin!(crate::interrupted());
     let mut offset = store::load()?.offset;
+    let mut failures = 0_u32;
+    let mut retry_after = None;
     loop {
         tokio::select! {
             code = &mut interrupt => {
                 bridge.tasks.abort_all();
                 return Ok(code);
             }
-            Some(done) = bridge.tasks.join_next(), if !bridge.tasks.is_empty() => {
-                if let Ok(finished) = done {
-                    bridge.finish(finished)?;
-                }
+            Some(done) = bridge.tasks.join_next_with_id(), if !bridge.tasks.is_empty() => {
+                bridge.joined(done).await?;
             }
-            updates = bridge.bot.updates(offset) => {
-                for update in updates? {
-                    offset = offset.max(update.update_id.saturating_add(1));
-                    store::update(|state| state.offset = offset)?;
-                    bridge.handle(update).await?;
+            polled = poll(&bridge.bot, offset, failures, retry_after) => match polled? {
+                Poll::Updates(updates) => {
+                    failures = 0;
+                    bridge.drain(updates, &mut offset).await?;
+                }
+                Poll::Retry { error, after } => {
+                    eprintln!("{error}");
+                    failures = failures.saturating_add(1);
+                    retry_after = after;
                 }
             }
         }
     }
 }
 
+async fn poll(bot: &Bot, offset: i64, failures: u32, after: Option<u64>) -> Result<Poll> {
+    if let Some(retries) = failures.checked_sub(1) {
+        let limits = crate::limits::limits();
+        let backoff = limits.retry_policy(Reach::Remote).delay(retries);
+        tokio::time::sleep(limits.retry_wait(after, retries).max(backoff)).await;
+    }
+    bot.updates(offset).await
+}
+
 impl Bridge {
+    async fn drain(&mut self, updates: Vec<Update>, offset: &mut i64) -> Result<()> {
+        for update in updates {
+            let next = update.update_id.saturating_add(1);
+            self.handle(update).await?;
+            *offset = (*offset).max(next);
+            let saved = *offset;
+            store::update(|state| state.offset = saved)?;
+        }
+        Ok(())
+    }
+
+    async fn joined(&mut self, done: std::result::Result<(Id, Finished), JoinError>) -> Result<()> {
+        match done {
+            Ok((id, finished)) => {
+                self.owners.remove(&id);
+                self.finish(finished)
+            }
+            Err(error) => {
+                let Some(chat) = self.owners.remove(&error.id()) else {
+                    return Ok(());
+                };
+                eprintln!("the turn for Telegram chat {chat} failed: {error}");
+                say(&self.bot, chat, CRASHED).await;
+                self.finish((chat, self.generation(chat), None))
+            }
+        }
+    }
+
     fn accept(&self, update: Update) -> Option<(User, i64, String)> {
         let message = update.message?;
         if message.chat.kind != ChatKind::Private {
@@ -125,14 +171,15 @@ impl Bridge {
     }
 
     fn stop(&mut self, chat: i64) -> Option<String> {
-        let stopped = self.chats.get_mut(&chat).is_some_and(|running| {
-            running.queue.clear();
-            running
-                .stop
-                .take()
-                .is_some_and(|stop| stop.send(()).is_ok())
-        });
-        (!stopped).then(|| IDLE.to_string())
+        let Some(running) = self.chats.get_mut(&chat) else {
+            return Some(IDLE.to_string());
+        };
+        running.queue.clear();
+        let sent = running
+            .stop
+            .take()
+            .is_some_and(|stop| stop.send(()).is_ok());
+        (!sent).then(|| STOPPING.to_string())
     }
 
     fn run(&mut self, chat: i64, user: i64, text: String) -> Option<String> {
@@ -163,13 +210,14 @@ impl Bridge {
         let bot = Arc::clone(&self.bot);
         let options = Arc::clone(&self.options);
         let generation = self.generation(chat);
-        self.tasks.spawn(async move {
+        let task = self.tasks.spawn(async move {
             let (session, reply) = turn(&bot, &options, chat, &text, stopped)
                 .await
                 .unwrap_or_else(|error| (None, format!("error: {error}")));
             say(&bot, chat, &reply).await;
             (chat, generation, session)
         });
+        self.owners.insert(task.id(), chat);
         stop
     }
 
@@ -177,11 +225,9 @@ impl Bridge {
         if let Some(id) = session.filter(|_| generation == self.generation(chat)) {
             store::update(|state| state.set_session(chat, Some(id)))?;
         }
-        let state = store::load().ok();
+        let state = store::load()?;
         let queued = self.chats.get_mut(&chat).and_then(|running| {
-            running
-                .queue
-                .retain(|(user, _)| state.as_ref().is_some_and(|state| state.paired(*user)));
+            running.queue.retain(|(user, _)| state.paired(*user));
             running.queue.pop_front()
         });
         let Some((_, text)) = queued else {

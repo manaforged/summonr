@@ -114,11 +114,16 @@ impl Terminal {
 }
 
 fn command(home: &Path, port: u16) -> CommandBuilder {
-    std::fs::write(
-            home.join("config.toml"),
-            format!("[endpoint.local]\nbase_url = \"http://127.0.0.1:{port}/v1\"\nmodel = \"m\"\napi_key = \"k\"\ncontext_window = 32768\n"),
-        )
-        .unwrap();
+    let mut config = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(home.join("config.toml"))
+        .expect("terminal fixture configuration");
+    writeln!(
+        config,
+        "\n[endpoint.local]\nbase_url = \"http://127.0.0.1:{port}/v1\"\nmodel = \"m\"\napi_key = \"k\"\ncontext_window = 32768\n",
+    )
+    .expect("terminal endpoint configuration");
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_summonr"));
     command.args(["-e", "local"]);
     command.cwd(home);

@@ -102,8 +102,7 @@ fn two_children_land_different_files_without_a_touched_list() {
     let landed = super::reconcile_children(
         &primary,
         &[(left.clone(), Vec::new()), (right.clone(), Vec::new())],
-    )
-    .unwrap();
+    );
     assert_eq!(std::fs::read(primary.join("left.txt")).unwrap(), b"L");
     assert_eq!(std::fs::read(primary.join("right.txt")).unwrap(), b"R");
     assert!(!left.path.exists());
@@ -123,8 +122,7 @@ fn overlapping_edits_keep_the_later_delta() {
     let landed = super::reconcile_children(
         &primary,
         &[(left.clone(), Vec::new()), (right.clone(), Vec::new())],
-    )
-    .unwrap();
+    );
     assert_eq!(std::fs::read(primary.join("README")).unwrap(), b"left\n");
     assert!(!left.path.exists());
     assert!(right.path.exists());
@@ -139,7 +137,7 @@ fn a_child_commit_on_the_delta_still_lands() {
     std::fs::write(tree.path.join("extra.txt"), "x").unwrap();
     git(&tree.path, &["add", "extra.txt"]);
     git(&tree.path, &["commit", "-q", "-m", "child"]);
-    let landed = super::reconcile_children(&primary, &[(tree.clone(), Vec::new())]).unwrap();
+    let landed = super::reconcile_children(&primary, &[(tree.clone(), Vec::new())]);
     assert_eq!(std::fs::read(primary.join("extra.txt")).unwrap(), b"x");
     assert!(!tree.path.exists());
     assert!(landed[0].kept.is_none());
@@ -155,7 +153,7 @@ fn a_delta_that_leaves_the_parent_base_is_kept() {
     let tree = super::open_delta(&primary).unwrap();
     git(&tree.path, &["reset", "--hard", &first]);
     std::fs::write(tree.path.join("lost.txt"), "nope").unwrap();
-    let landed = super::reconcile_children(&primary, &[(tree.clone(), Vec::new())]).unwrap();
+    let landed = super::reconcile_children(&primary, &[(tree.clone(), Vec::new())]);
     assert!(!primary.join("lost.txt").exists());
     assert_eq!(std::fs::read(tree.path.join("lost.txt")).unwrap(), b"nope");
     let kept = landed[0].kept.as_deref().unwrap();
@@ -175,8 +173,7 @@ fn generated_files_from_two_children_do_not_block_their_edits() {
     let landed = super::reconcile_children(
         &primary,
         &[(left.clone(), Vec::new()), (right.clone(), Vec::new())],
-    )
-    .unwrap();
+    );
     assert!(
         landed.iter().all(|landing| landing.kept.is_none()),
         "{:?}",
@@ -199,7 +196,7 @@ fn a_child_edit_to_a_non_ascii_name_lands() {
     let child = super::open_delta(&primary).unwrap();
     std::fs::write(child.path.join("café.txt"), "changed").unwrap();
     std::fs::write(child.path.join("naïve.txt"), "new").unwrap();
-    let landed = super::reconcile_children(&primary, &[(child.clone(), Vec::new())]).unwrap();
+    let landed = super::reconcile_children(&primary, &[(child.clone(), Vec::new())]);
     assert_eq!(std::fs::read(primary.join("café.txt")).unwrap(), b"changed");
     assert_eq!(std::fs::read(primary.join("naïve.txt")).unwrap(), b"new");
     assert_eq!(
@@ -228,6 +225,7 @@ fn a_worktree_run_commits_its_edits_without_caches_under_a_whole_word_subject() 
         "fix calc.py so python3 run_tests.py passes on every supported interpreter version";
     let committed = super::finish(
         &tree,
+        "test",
         objective,
         &[
             "calc.py".to_string(),
@@ -269,7 +267,7 @@ fn a_worktree_run_whose_agent_already_committed_still_lands() {
         "bytecode",
     )
     .unwrap();
-    let landed = super::finish(&tree, "fix calc", &["calc.py".to_string()]);
+    let landed = super::finish(&tree, "test", "fix calc", &["calc.py".to_string()]);
     assert!(landed.is_ok(), "{landed:?}");
     assert!(on_main(&primary).contains("calc.py"));
 }
@@ -298,7 +296,7 @@ fn a_worktree_run_lands_a_deleted_non_ascii_file() {
     tracked(&primary, "café.rs");
     let tree = super::add(&primary).unwrap();
     std::fs::remove_file(tree.path.join("café.rs")).unwrap();
-    let committed = super::finish(&tree, "drop café", &["café.rs".to_string()]).unwrap();
+    let committed = super::finish(&tree, "test", "drop café", &["café.rs".to_string()]).unwrap();
     assert_eq!(committed, vec!["café.rs".to_string()]);
     assert!(!on_main(&primary).contains("café.rs"));
 }
@@ -309,7 +307,7 @@ fn a_glob_character_in_a_touched_path_stages_only_that_file() {
     let tree = super::add(&primary).unwrap();
     std::fs::write(tree.path.join("a[b].txt"), "touched\n").unwrap();
     std::fs::write(tree.path.join("ab.txt"), "not part of the run\n").unwrap();
-    let result = super::finish(&tree, "edit a[b]", &["a[b].txt".to_string()]);
+    let result = super::finish(&tree, "test", "edit a[b]", &["a[b].txt".to_string()]);
     assert!(result.is_err_and(|error| error.to_string().contains("ab.txt")));
     assert!(!on_main(&primary).contains("ab.txt"));
 }
@@ -321,7 +319,7 @@ fn a_rename_into_a_cache_path_is_not_thrown_away() {
     let tree = super::add(&primary).unwrap();
     std::fs::create_dir(tree.path.join("__pycache__")).unwrap();
     git(&tree.path, &["mv", "a.c", "__pycache__/a.c"]);
-    let result = super::finish(&tree, "move a.c", &[]);
+    let result = super::finish(&tree, "test", "move a.c", &[]);
     assert!(result.is_err_and(|error| error.to_string().contains("a.c")));
     assert!(tree.path.join("__pycache__/a.c").exists());
 }
@@ -350,7 +348,7 @@ fn a_large_file_changed_only_on_the_moved_base_does_not_block_the_run() {
     std::fs::write(primary.join("data.bin"), format!("{big}y")).unwrap();
     git(&primary, &["commit", "-q", "-am", "base moves"]);
     std::fs::write(tree.path.join("calc.py"), "x = 1\n").unwrap();
-    let error = super::finish(&tree, "add calc", &["calc.py".to_string()]).unwrap_err();
+    let error = super::finish(&tree, "test", "add calc", &["calc.py".to_string()]).unwrap_err();
     assert!(!error.to_string().contains("data.bin"), "{error}");
 }
 

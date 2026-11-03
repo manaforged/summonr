@@ -18,6 +18,7 @@ impl Worker {
             Cmd::Login(name) => return self.login(&name).await,
             Cmd::SetKey(name, key) => return self.set_key(&name, &key).await,
             Cmd::Cancel | Cmd::Open(_) | Cmd::SteerQueued | Cmd::Answer(..) => {}
+            Cmd::CancelLogin => self.queue.drop_auth(),
             Cmd::Replay => super::history::replay_transcript(
                 self.loop_.session_path(),
                 Some(self.loop_.session_id()),
@@ -64,9 +65,12 @@ impl Worker {
     }
 
     fn merge(&mut self, path: &std::path::Path) {
-        match self.tree_at(path).and_then(|tree| {
-            crate::worktree::finish(&tree, "merge from the worktrees pane", &[]).map(|_| tree)
-        }) {
+        let own = self.loop_.session_id();
+        let merged = self.tree_at(path).and_then(|tree| {
+            crate::worktree::finish(&tree, &own, "merge from the worktrees pane", &[])?;
+            Ok(tree)
+        });
+        match merged {
             Ok(tree) => self.system(&format!("merged {} into {}", tree.branch, tree.base)),
             Err(error) => self.system(&format!("merge failed: {error}")),
         }
@@ -74,9 +78,10 @@ impl Worker {
     }
 
     fn discard(&mut self, path: &std::path::Path) {
+        let own = self.loop_.session_id();
         match self
             .tree_at(path)
-            .and_then(|tree| crate::worktree::discard(&tree).map(|()| tree))
+            .and_then(|tree| crate::worktree::discard(&tree, &own).map(|()| tree))
         {
             Ok(tree) => self.system(&format!("removed worktree {}", tree.branch)),
             Err(error) => self.system(&format!("worktree kept: {error}")),

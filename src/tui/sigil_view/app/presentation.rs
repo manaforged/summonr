@@ -11,10 +11,11 @@ impl Model {
                 if activity != Activity::Turn {
                     return format!("{} · {}s", activity.label(), start.elapsed().as_secs());
                 }
-                let tool = self
-                    .live_tool
-                    .as_ref()
-                    .map_or_else(String::new, |(name, arg)| format!(" · {name} {arg}"));
+                let tool = match &self.doing {
+                    Some(super::model::Doing::Thinking) => " · thinking ".to_string(),
+                    Some(super::model::Doing::Tool { name, arg }) => format!(" · {name} {arg}"),
+                    None => String::new(),
+                };
                 format!("working · {}s{tool}", start.elapsed().as_secs())
             },
         );

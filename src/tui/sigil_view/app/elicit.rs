@@ -39,6 +39,11 @@ pub(in crate::tui::sigil_view) enum Reply {
 
 impl FormState {
     fn new(form: Form, dialog: u64, saved: (String, usize)) -> Self {
+        let stage = if form.fields.is_empty() {
+            Stage::Review
+        } else {
+            Stage::Filling
+        };
         let mut state = Self {
             form,
             index: 0,
@@ -46,7 +51,7 @@ impl FormState {
             error: None,
             cursor: 0,
             picked: BTreeSet::new(),
-            stage: Stage::Filling,
+            stage,
             dialog,
             saved,
         };
@@ -276,12 +281,20 @@ impl App {
         self.caret.set(caret);
     }
 
+    pub(in crate::tui::sigil_view) fn form_hidden(&self) -> bool {
+        self.form.peek().is_some() && self.approval.peek().is_some()
+    }
+
+    fn form_shown(&self) -> Option<FormState> {
+        self.form.peek().filter(|_| !self.form_hidden())
+    }
+
     pub(in crate::tui::sigil_view) fn form_stage(&self) -> Option<Stage> {
-        self.form.peek().map(|state| state.stage)
+        self.form_shown().map(|state| state.stage)
     }
 
     pub(in crate::tui::sigil_view) fn form_enter(&self) -> bool {
-        let Some(mut state) = self.form.peek() else {
+        let Some(mut state) = self.form_shown() else {
             return false;
         };
         if state.stage == Stage::Review {
@@ -324,8 +337,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn form_move(&self, dir: isize) -> bool {
         let Some(mut state) = self
-            .form
-            .peek()
+            .form_shown()
             .filter(|state| state.stage == Stage::Filling)
         else {
             return false;
@@ -340,8 +352,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn form_toggle(&self) -> bool {
         let Some(mut state) = self
-            .form
-            .peek()
+            .form_shown()
             .filter(|state| state.stage == Stage::Filling)
         else {
             return false;
@@ -368,6 +379,7 @@ impl App {
             },
             Reply::Decline => FormAnswer::declined(),
             Reply::Cancel => FormAnswer::cancelled(),
+            Reply::Edit if state.form.fields.is_empty() => return,
             Reply::Edit => {
                 state.index = 0;
                 state.error = None;

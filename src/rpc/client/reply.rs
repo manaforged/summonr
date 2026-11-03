@@ -77,7 +77,7 @@ impl Client {
                 result,
                 error,
             } if got == *id => return Ok(Some((result, error))),
-            Frame::Response { id: got, .. } => self.abandoned.retain(|old| *old != got),
+            Frame::Response { id: got, .. } => self.abandoned.retain(|(old, _)| *old != got),
             Frame::Notification { method, params } => {
                 let notice = notice(&method, &params);
                 if matches!(notice, Notice::Progress { token, .. } if token == id) {
@@ -100,10 +100,7 @@ impl Client {
     fn line(&mut self, read: Read, method: &str) -> Result<Option<String>> {
         match read {
             Read::Line(line) => Ok(Some(line)),
-            Read::Oversize if !self.abandoned.is_empty() => {
-                self.abandoned.remove(0);
-                Ok(None)
-            }
+            Read::Oversize if self.late_reply() => Ok(None),
             Read::Oversize => Err(crate::rpc::oversize(method, self.max)),
             Read::Closed if self.piped() => Err(Error::Tool(format!(
                 "the child exited during `{method}`{}",
@@ -111,6 +108,15 @@ impl Client {
             ))),
             Read::Closed => Err(Error::Tool(format!("`{method}` returned no response"))),
         }
+    }
+
+    fn late_reply(&mut self) -> bool {
+        self.expire_abandoned();
+        if self.abandoned.is_empty() {
+            return false;
+        }
+        self.abandoned.remove(0);
+        true
     }
 
     async fn answer(

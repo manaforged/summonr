@@ -47,7 +47,7 @@ pub(crate) fn live(dir: &Path) -> Vec<Agent> {
         let Ok(agent) = serde_json::from_str::<Agent>(&text) else {
             continue;
         };
-        if agent.last_seen < sweep {
+        if agent.last_seen < sweep || !crate::jobs::alive_since(agent.pid, agent.last_seen) {
             drop(std::fs::remove_file(entry.path()));
         } else if agent.last_seen >= cutoff {
             roster.push(agent);

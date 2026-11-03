@@ -38,7 +38,7 @@ impl App {
             return false;
         }
         if self.view_text.peek() != self.view_saved.peek()
-            && !confirm(&self.discard_armed, (), None)
+            && !confirm(&self.discard_armed, ())
         {
             let keys = Hints::new()
                 .key(Key::Fixed("ctrl+s"), "save")

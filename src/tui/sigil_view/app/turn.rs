@@ -18,7 +18,7 @@ impl App {
         if matches!(self.model.get().busy_since, Some((Activity::Branch, _))) {
             return;
         }
-        if self.view_edit.peek() {
+        if self.view_edit.peek() || self.form_hidden() {
             return;
         }
         let text = self.submit_text();
@@ -63,7 +63,7 @@ impl App {
         let argument = match argument(text, &self.workspace) {
             Ok(argument) => argument,
             Err(error) => {
-                self.cleared.set(Some(text.to_owned()));
+                self.cleared.set(Some((text.to_owned(), Vec::new())));
                 self.replace(String::new());
                 self.push_entry(Entry::Error(error));
                 self.splash.set(false);
@@ -185,11 +185,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn escape_idle(&self) -> bool {
-        if !confirm(
-            &self.escape_armed,
-            (),
-            Some(crate::limits::limits().repeat_window()),
-        ) {
+        if !confirm(&self.escape_armed, ()) {
             return false;
         }
         self.open_sessions(true);
@@ -247,11 +243,7 @@ impl App {
         if self.turn_running() {
             self.cancel_running();
         } else if self.draft.peek().is_empty() && self.attachments.borrow().is_empty() {
-            if confirm(
-                &self.quit_armed,
-                (),
-                Some(crate::limits::limits().repeat_window()),
-            ) {
+            if confirm(&self.quit_armed, ()) {
                 self.quit.set(true);
             } else {
                 self.push_entry(Entry::System("press ctrl+c again to quit".to_string()));
@@ -259,11 +251,11 @@ impl App {
             }
         } else {
             let draft = self.draft.peek();
+            let pastes = std::mem::take(&mut *self.pasted_text.borrow_mut());
             if !draft.trim().is_empty() {
-                self.cleared.set(Some(draft));
+                self.cleared.set(Some((draft, pastes)));
             }
             self.replace(String::new());
-            self.pasted_text.borrow_mut().clear();
             if !self.take_attachments().is_empty() {
                 self.push_entry(Entry::System(
                     "draft discarded · attached images removed".to_string(),

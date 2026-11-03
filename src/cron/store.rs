@@ -98,6 +98,8 @@ pub(crate) struct Job {
     #[serde(default)]
     pub fails: u32,
     pub created: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock_error: Option<String>,
     #[serde(default)]
     pub runs: Vec<Run>,
 }
@@ -133,7 +135,29 @@ impl Notify {
 
 impl Job {
     pub(crate) fn last_slot(&self) -> Option<i64> {
-        self.runs.iter().map(|run| run.slot).max()
+        self.runs
+            .iter()
+            .filter(|run| run.origin == Origin::Local)
+            .map(|run| run.slot)
+            .max()
+    }
+
+    pub(crate) fn run_at(&mut self, slot: i64, started: i64) -> &mut Run {
+        let index = match self.runs.iter().position(|run| run.slot == slot) {
+            Some(index) => index,
+            None => {
+                self.runs.push(Run {
+                    slot,
+                    started,
+                    job: None,
+                    reason: None,
+                    outcome: Outcome::Running,
+                    origin: Origin::Local,
+                });
+                self.runs.len() - 1
+            }
+        };
+        &mut self.runs[index]
     }
 }
 
@@ -152,8 +176,10 @@ pub(crate) fn run_lock(name: &str) -> Result<PathBuf> {
     Ok(dir()?.join(RUNS).join(name))
 }
 
-pub(crate) fn remove_run_lock(name: &str) -> Result<()> {
-    remove_quiet(&store::lock_path(&run_lock(name)?))
+pub(crate) fn remove_run_lock(name: &str, wait: Wait) -> Result<()> {
+    let lock = run_lock(name)?;
+    let _held = store::hold(&lock, wait)?;
+    remove_quiet(&store::lock_path(&lock))
 }
 
 pub(crate) fn payload_path(workspace: &Path, name: &str, slot: i64) -> PathBuf {
@@ -195,9 +221,27 @@ fn remove_quiet(path: &Path) -> Result<()> {
 fn trim(jobs: &mut [Job]) -> Result<()> {
     let kept = crate::limits::limits().cron_runs_kept;
     for job in jobs {
-        let extra = job.runs.len().saturating_sub(kept);
-        for run in job.runs.drain(..extra) {
-            remove_quiet(&payload_path(&job.dir, &job.name, run.slot))?;
+        let mut extra = job.runs.len().saturating_sub(kept);
+        let cursor = job
+            .runs
+            .iter()
+            .enumerate()
+            .filter(|(_, run)| run.origin == Origin::Local)
+            .max_by_key(|(_, run)| run.slot)
+            .map(|(index, _)| index);
+        let mut dropped = Vec::new();
+        let mut index = 0;
+        job.runs.retain(|run| {
+            let evict = extra > 0 && Some(index) != cursor;
+            index += 1;
+            if evict {
+                extra -= 1;
+                dropped.push(run.slot);
+            }
+            !evict
+        });
+        for slot in dropped {
+            remove_quiet(&payload_path(&job.dir, &job.name, slot))?;
         }
     }
     Ok(())
@@ -310,19 +354,7 @@ pub(crate) fn settle(
     change: impl FnOnce(&mut Run),
 ) -> Result<()> {
     with_job(name, |job| {
-        if !job.runs.iter().any(|run| run.slot == slot) {
-            job.runs.push(Run {
-                slot,
-                started,
-                job: None,
-                reason: None,
-                outcome: Outcome::Running,
-                origin: Origin::Local,
-            });
-        }
-        if let Some(run) = job.runs.iter_mut().find(|run| run.slot == slot) {
-            change(run);
-        }
+        change(job.run_at(slot, started));
         Ok(())
     })
 }

@@ -118,16 +118,34 @@ impl Browser {
                 extras::act(page, action, report, out_max).await
             }
         };
-        if let Some(held) = live.as_mut() {
-            held.session.keep_cookies().await.map_err(fail)?;
+        let kept = match live.as_mut() {
+            Some(held) => held.session.keep_cookies().await.map_err(fail),
+            None => Ok(()),
+        };
+        let out = out.and_then(|text| kept.map(|()| text));
+        if out.is_err() {
+            launch::recover(&mut live).await;
         }
         out
     }
 
     pub(crate) async fn render(&self, url: &Url, format: crate::web::Format) -> Result<String> {
         let mut live = self.live.lock().await;
+        let out = self.rendered(&mut live, url, format).await;
+        if out.is_err() {
+            launch::recover(&mut live).await;
+        }
+        out
+    }
+
+    async fn rendered(
+        &self,
+        live: &mut Option<Live>,
+        url: &Url,
+        format: crate::web::Format,
+    ) -> Result<String> {
         let out_max = self.settings.out_max;
-        let page = self.ready(&mut live).await?;
+        let page = self.ready(live).await?;
         page.goto(url.as_str()).await.map_err(fail)?;
         if let Some(blocked) = extras::guard(page).await? {
             return Err(Error::Tool(blocked));

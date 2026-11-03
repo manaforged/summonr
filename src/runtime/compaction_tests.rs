@@ -129,6 +129,17 @@ fn the_kept_tail_never_starts_before_the_turn_opener() {
         message(Role::Assistant),
     ];
     assert_eq!(compact_boundary(&messages, 40, false, Some(2)), Some(4));
+    let summarized = [
+        message(Role::System),
+        message(Role::User),
+        Message::system("previous progress"),
+        message(Role::Assistant),
+        message(Role::User),
+    ];
+    assert_eq!(
+        compact_boundary(&summarized, usize::MAX, false, Some(0)),
+        Some(3)
+    );
 }
 
 #[tokio::test]

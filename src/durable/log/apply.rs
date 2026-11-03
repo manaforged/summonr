@@ -83,9 +83,9 @@ impl State {
 
     fn apply_user(&mut self, text: String, images: Vec<Image>, start: bool) {
         if start {
+            self.answer_unanswered();
             self.turns += 1;
             self.opener = Some(self.history.len());
-            self.unanswered.clear();
             self.last_close_reason = None;
         }
         let mut message = Message::user(text);
@@ -105,6 +105,7 @@ impl State {
         for call in &mut tool_calls {
             call.function.check();
         }
+        self.answer_unanswered();
         self.unanswered = tool_calls.iter().map(|call| call.id.clone()).collect();
         self.history.push(Message {
             role: Role::Assistant,
@@ -113,6 +114,29 @@ impl State {
             continuation,
             ..Message::system(text)
         });
+    }
+
+    fn answer_unanswered(&mut self) {
+        let unanswered = std::mem::take(&mut self.unanswered);
+        let Some(first) = unanswered.first() else {
+            return;
+        };
+        let Some(asked) = self.history.iter().rposition(|message| {
+            message.role == Role::Assistant
+                && message.tool_calls.iter().any(|call| call.id == *first)
+        }) else {
+            return;
+        };
+        let answered = self.history[asked + 1..]
+            .iter()
+            .take_while(|message| message.role == Role::Tool)
+            .count();
+        let aborted = unanswered.into_iter().map(|call| Message {
+            failed: true,
+            ..Message::tool(call, "aborted".to_string())
+        });
+        let at = asked + 1 + answered;
+        self.history.splice(at..at, aborted);
     }
 
     fn apply_tool(&mut self, call: String, text: String, success: bool, millis: u64) {

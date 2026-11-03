@@ -197,6 +197,7 @@ impl<P: Provider> Loop<P> {
         let snapshot = self.settle(pre, events, &mut emit).await?;
         let receipt = crate::verify::aborted(snapshot);
         drop(self.kill_spawned(&abort.reason, usage).await?);
+        self.tools.forget_approval();
         self.tools.stop_jobs()?;
         self.session.abort(&abort, Some(&receipt))?;
         self.watch_jobs();

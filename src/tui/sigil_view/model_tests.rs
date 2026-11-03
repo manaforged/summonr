@@ -4,6 +4,9 @@ use crate::tui::{Fact, Intent};
 
 use super::{Entry, Model};
 
+#[path = "child_replay_tests.rs"]
+mod child_replay;
+
 fn model() -> Model {
     Model::new(&super::super::profile::info())
 }
@@ -123,6 +126,8 @@ fn children_spawned_in_the_same_minute_keep_their_own_tokens() {
                 background: false,
                 workspace: String::new(),
                 agent: String::new(),
+                name: String::new(),
+                model: "test-model".to_string(),
             },
         );
         model.apply_child(
@@ -193,6 +198,8 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
             .expect("parent id"),
         assignment: "Child terminal".to_owned(),
         model: "m".to_owned(),
+        name: "terminal-worker".to_owned(),
+        agent: String::new(),
         workspace: "/w".into(),
         depth: 1,
         access: Access::Research,
@@ -226,6 +233,8 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
                 background: true,
                 workspace: "/w".to_owned(),
                 agent: String::new(),
+                name: String::new(),
+                model: "test-model".to_string(),
             }),
         })));
         model.apply(Msg::Fact(Fact::Event(Event::Child {
@@ -252,6 +261,10 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
                 model.apply(Msg::Fact(Fact::Event(event)));
             }
         }
+        assert_eq!(model.agents.len(), 1);
+        assert_eq!(model.agents[0].name, "terminal-worker");
+        assert_eq!(model.agents[0].model, "m");
+        assert_eq!(model.agents[0].title, "Child terminal");
         assert!(model.agents[0].done);
         assert_eq!(model.agents[0].failed, failed);
         assert_eq!(model.agents[0].tokens, 7);
@@ -300,6 +313,8 @@ fn a_child_event_touches_only_its_tool_row() {
             background: false,
             workspace: String::new(),
             agent: String::new(),
+            name: String::new(),
+            model: "test-model".to_string(),
         },
     );
     assert_eq!(model.entries.stamp, stamp);

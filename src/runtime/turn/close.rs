@@ -60,8 +60,27 @@ impl<P: Provider> Loop<P> {
         Ok(None)
     }
 
+    pub(super) fn close_open(&mut self, reason: &str, emit: &mut impl FnMut(&Event)) {
+        if !self.session.turn_open() {
+            return;
+        }
+        let abort = Abort {
+            code: crate::tools::AbortCode::Error,
+            reason: reason.to_string(),
+        };
+        if let Err(closing) = self.abort_with(&abort, &mut *emit) {
+            emit(&Event::Note {
+                text: format!("{reason}: closing the turn reported an error: {closing}"),
+            });
+        }
+    }
+
     pub(super) fn executes_work(&self) -> bool {
-        self.session.stage() == Some(Stage::Execute) && (self.is_work() || self.is_goal())
+        self.mode != WorkKind::Single
+            && self.session.stage() == Some(Stage::Execute)
+            && self
+                .work_progress()
+                .is_ok_and(|progress| progress.kind == self.mode)
     }
 
     fn owned_jobs(&self) -> Vec<jobs::Record> {

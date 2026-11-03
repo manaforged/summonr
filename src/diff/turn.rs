@@ -114,7 +114,7 @@ impl Span {
 fn spans(root: &Path, session: &str) -> Result<(Checkpoints, Vec<Span>)> {
     let points = Checkpoints::open(root, session)
         .ok_or_else(|| Error::Config("this workspace has no checkpoints".to_string()))?;
-    let trees = points.trees();
+    let trees = points.trees()?;
     if trees.is_empty() {
         return Err(Error::Config(
             "the session has no recorded turns in this workspace".to_string(),

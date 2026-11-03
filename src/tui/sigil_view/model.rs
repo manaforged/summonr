@@ -20,7 +20,7 @@ mod entry;
 mod event;
 
 pub(in crate::tui::sigil_view) use entry::{Call, Entry, decode, entry_markdown, preview};
-pub(in crate::tui::sigil_view) use state::{Agent, Entries, View};
+pub(in crate::tui::sigil_view) use state::{Agent, Doing, Entries, View};
 mod state;
 mod tools;
 
@@ -98,7 +98,7 @@ pub(super) struct Model {
     pub(super) queued: (usize, usize),
     pub(super) pending: Vec<(bool, String)>,
     pub(super) busy_since: Option<(Activity, Instant)>,
-    pub(super) live_tool: Option<(String, String)>,
+    pub(super) doing: Option<Doing>,
     pub(super) agents: Vec<Agent>,
     pub(super) agents_hidden: BTreeSet<String>,
     pub(super) status_view: StatusView,
@@ -186,7 +186,7 @@ impl Model {
             queued: (0, 0),
             pending: Vec::new(),
             busy_since: None,
-            live_tool: None,
+            doing: None,
             agents: Vec::new(),
             agents_hidden: BTreeSet::new(),
             status_view: StatusView::Closed,
@@ -227,8 +227,8 @@ impl Model {
             | Msg::Fact(Fact::Settings(_))) => self.status(msg),
             msg @ (Msg::Fact(Fact::Peers(_))
             | Msg::Fact(Fact::Files(_))
-            | Msg::Fact(Fact::Diff(_))
-            | Msg::Fact(Fact::DiffFailed(_))
+            | Msg::Fact(Fact::Diff(..))
+            | Msg::Fact(Fact::DiffFailed(..))
             | Msg::Fact(Fact::Trees(_))
             | Msg::Fact(Fact::Offers(_))
             | Msg::Fact(Fact::Jobs(_))
@@ -280,7 +280,12 @@ impl Model {
     fn status(&mut self, msg: Msg) {
         match msg {
             Msg::Fact(Fact::Session(id)) => self.session = id,
-            Msg::Fact(Fact::Calling(name)) => self.live_tool = Some((name, "…".to_string())),
+            Msg::Fact(Fact::Calling(name)) => {
+                self.doing = Some(Doing::Tool {
+                    name,
+                    arg: "…".to_string(),
+                })
+            }
             Msg::Fact(Fact::Busy(busy)) => self.set_busy(busy),
             Msg::Fact(Fact::Queued { steering, queued }) => self.queued = (steering, queued),
             Msg::Fact(Fact::Pending(rows)) => self.pending = rows,
@@ -306,11 +311,11 @@ impl Model {
         match msg {
             Msg::Fact(Fact::Peers(peers)) => self.peers = peers,
             Msg::Fact(Fact::Files(files)) => self.files = files,
-            Msg::Fact(Fact::Diff(diff)) => {
+            Msg::Fact(Fact::Diff(diff, _)) => {
                 self.diff = diff;
                 self.diff_error = None;
             }
-            Msg::Fact(Fact::DiffFailed(error)) => {
+            Msg::Fact(Fact::DiffFailed(error, _)) => {
                 self.diff = crate::diff::Diff::default();
                 self.patch = None;
                 self.diff_error = Some(error);
@@ -327,6 +332,7 @@ impl Model {
                 text,
                 added,
                 image,
+                ..
             }) => {
                 self.view = Some(View {
                     path,
@@ -358,7 +364,7 @@ impl Model {
         self.usage.clear();
         self.unreported_tokens = 0;
         self.rounds = 0;
-        self.live_tool = None;
+        self.doing = None;
         self.agents_hidden.clear();
         self.speed = Speed::default();
         self.marks = None;

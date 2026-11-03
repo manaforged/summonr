@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, PoisonError, Weak};
 
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -24,19 +23,33 @@ pub(super) struct Link {
     workspace: PathBuf,
     conn: Slot<Conn>,
     fresh: std::sync::Mutex<Option<HashSet<String>>>,
-    started: AtomicBool,
-    detail: std::sync::Mutex<Option<String>>,
+    phase: std::sync::Mutex<Phase>,
     pub(super) tools: Vec<Tool>,
+}
+
+#[derive(Clone)]
+enum Phase {
+    Cached,
+    Connecting,
+    Live,
+    Stopped(Option<String>),
+    Failed(String),
 }
 
 impl Link {
     pub(super) async fn open(server: Server, workspace: PathBuf) -> Result<Arc<Self>> {
         let slot: Slot<Conn> = Arc::new(Mutex::new(None));
-        let listing = match catalog::load(&server.key) {
-            Some(listing) => listing,
-            None => Self::list(&server, &workspace, &slot).await?,
+        let (listing, phase) = match catalog::load(&server.key) {
+            Some(listing) => (listing, Phase::Cached),
+            None => {
+                let listing = Self::list(&server, &workspace, &slot).await?;
+                let phase = match slot.lock().await.as_ref() {
+                    Some(_) => Phase::Live,
+                    None => Phase::Cached,
+                };
+                (listing, phase)
+            }
         };
-        let started = AtomicBool::new(slot.lock().await.is_some());
         let tools = tool::offered(&server, &listing.tools)
             .map(|(_, tool)| tool)
             .collect();
@@ -45,8 +58,7 @@ impl Link {
             workspace,
             conn: slot,
             fresh: std::sync::Mutex::new(None),
-            started,
-            detail: std::sync::Mutex::new(None),
+            phase: std::sync::Mutex::new(phase),
             tools,
         }))
     }
@@ -57,17 +69,29 @@ impl Link {
         slot: &Slot<Conn>,
     ) -> Result<Listing> {
         let mut held = slot.lock().await;
-        let conn = held.insert(Conn::open(server, workspace).await?);
-        supervise::register(ServerKind::Mcp, &server.name, conn.pid(), server.idle, slot);
-        let listing = conn.listing().await?;
+        let listing = Self::first(server, workspace, slot, &mut held)
+            .await
+            .inspect_err(|error| catalog::fail(&server.key, &error.to_string()))?;
         catalog::save(&server.key, &listing);
-        conn.ready(server.wait);
+        if let Some(conn) = held.as_mut() {
+            conn.ready(server.wait);
+        }
         if server.idle.is_some() {
             *held = None;
         }
         Ok(listing)
     }
 
+    async fn first(
+        server: &Server,
+        workspace: &std::path::Path,
+        slot: &Slot<Conn>,
+        held: &mut Option<Conn>,
+    ) -> Result<Listing> {
+        let conn = held.insert(Conn::open(server, workspace).await?);
+        supervise::register(ServerKind::Mcp, &server.name, conn.pid(), server.idle, slot);
+        conn.listing().await
+    }
     pub(super) async fn call_tool(
         self: &Arc<Self>,
         tool: &Tool,
@@ -136,10 +160,15 @@ impl Link {
             return Ok(());
         }
         *slot = None;
-        let mut conn = Conn::open(&self.server, &self.workspace)
-            .await
-            .inspect_err(|error| self.note(error))?;
-        self.started.store(true, Ordering::Relaxed);
+        self.set(Phase::Connecting);
+        let connecting = Connecting(Some(self.as_ref()));
+        let opened = Conn::open(&self.server, &self.workspace).await;
+        connecting.settle();
+        let mut conn = opened.inspect_err(|error| {
+            catalog::fail(&self.server.key, &error.to_string());
+            self.set(Phase::Failed(error.to_string()));
+        })?;
+        self.set(Phase::Live);
         if let Ok(listing) = conn.listing().await {
             catalog::save(&self.server.key, &listing);
             self.remember(&listing.tools);
@@ -196,7 +225,8 @@ impl Link {
         if let Some(error) = failed
             && !conn.alive()
         {
-            self.note(error);
+            catalog::fail(&self.server.key, &error.to_string());
+            self.set(Phase::Stopped(Some(error.to_string())));
             *slot = None;
         } else if (changes.tools || changes.other)
             && let Ok(listing) = conn.listing().await
@@ -211,24 +241,26 @@ impl Link {
     }
 
     pub(super) fn state(&self) -> (McpState, Option<String>) {
-        let live = self.conn.try_lock().map_or(true, |slot| slot.is_some());
-        let state = if live {
-            McpState::Live
-        } else if self.started.load(Ordering::Relaxed) {
-            McpState::Stopped
-        } else {
-            McpState::Cached
-        };
-        (
-            state,
-            self.detail.lock().ok().and_then(|detail| detail.clone()),
-        )
+        let phase = self
+            .phase
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        match phase {
+            Phase::Cached => (McpState::Cached, None),
+            Phase::Connecting => (McpState::Connecting, None),
+            Phase::Live if self.conn.try_lock().is_ok_and(|slot| slot.is_none()) => {
+                (McpState::Stopped, None)
+            }
+            Phase::Live => (McpState::Live, None),
+            Phase::Stopped(error) => (McpState::Stopped, error),
+            Phase::Failed(error) => (McpState::Failed, Some(error)),
+        }
     }
 
-    fn note(&self, error: &Error) {
-        if let Ok(mut detail) = self.detail.lock() {
-            *detail = Some(error.to_string());
-        }
+    fn set(&self, next: Phase) {
+        let mut phase = self.phase.lock().unwrap_or_else(PoisonError::into_inner);
+        *phase = next;
     }
 
     fn remember(&self, items: &[Value]) {
@@ -293,6 +325,22 @@ impl Drop for Pending {
                 link.cancel_inflight().await;
             }
         }));
+    }
+}
+
+struct Connecting<'a>(Option<&'a Link>);
+
+impl Connecting<'_> {
+    fn settle(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for Connecting<'_> {
+    fn drop(&mut self) {
+        if let Some(link) = self.0.take() {
+            link.set(Phase::Stopped(None));
+        }
     }
 }
 

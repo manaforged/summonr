@@ -9,6 +9,7 @@ use summonr_core::error::{Error, Result};
 
 const ID_MAX: usize = 80;
 const KILLED: &str = "killed";
+const ENDED: &str = "ended";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Record {
@@ -82,11 +83,19 @@ pub(crate) fn write(path: &Path, record: &Record) -> Result<()> {
 }
 
 pub(crate) fn load(workspace: &Path, id: &str) -> Result<Record> {
+    find(workspace, id)?.ok_or_else(|| Error::Tool(format!("unknown job `{id}`: no record")))
+}
+
+pub(crate) fn find(workspace: &Path, id: &str) -> Result<Option<Record>> {
     let id = check_id(id)?;
     let path = dir(workspace).join(format!("{id}.json"));
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| Error::Tool(format!("unknown job `{id}`: {error}")))?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::Tool(format!("unknown job `{id}`: {error}"))),
+    };
     serde_json::from_str(&text)
+        .map(Some)
         .map_err(|error| Error::Tool(format!("job `{id}` is invalid: {error}")))
 }
 
@@ -184,6 +193,10 @@ fn report(workspace: &Path, record: &Record, list_children: bool) -> Result<Stat
             let killed: Vec<String> = lines.map(str::to_string).collect();
             children = tree::block("children at kill", &killed);
             JobState::Killed
+        } else if first == ENDED {
+            let notes: Vec<String> = lines.map(str::to_string).collect();
+            children = tree::block("note", &notes);
+            JobState::Dead
         } else {
             first
                 .parse::<i32>()
@@ -265,9 +278,23 @@ pub(crate) fn stamp(
 }
 
 pub(crate) fn write_killed(path: &Path, children: &[String]) -> Result<()> {
-    let mut text = format!("{KILLED}\n");
-    for child in children {
-        text.push_str(child);
+    write_end(path, KILLED, children)
+}
+
+pub(crate) fn write_unowned(path: &Path, pid: u32) -> Result<()> {
+    write_end(
+        path,
+        ENDED,
+        &[format!(
+            "pid {pid} was not signalled: it cannot be verified as this job (the pid may be reused); stop it by hand if it is yours"
+        )],
+    )
+}
+
+fn write_end(path: &Path, head: &str, lines: &[String]) -> Result<()> {
+    let mut text = format!("{head}\n");
+    for line in lines {
+        text.push_str(line);
         text.push('\n');
     }
     store::write(path, text, store::Durability::Renamed)?;
@@ -309,29 +336,9 @@ pub(crate) async fn wait(
     }
 }
 
-pub(crate) fn alive_since(pid: u32, started: u64) -> bool {
-    #[cfg(windows)]
-    {
-        crate::process::started(pid).is_some_and(|created| created <= started.saturating_add(5))
-    }
-    #[cfg(unix)]
-    {
-        alive(pid)
-            && crate::process::started(pid)
-                .is_none_or(|created| created <= started.saturating_add(5))
-    }
-}
-
-#[cfg(unix)]
-#[expect(unsafe_code, reason = "std has no signal-zero liveness probe")]
-pub(crate) fn alive(pid: u32) -> bool {
-    let Ok(pid) = libc::pid_t::try_from(pid) else {
-        return false;
-    };
-    // SAFETY: kill with signal 0 reads two integers, sends nothing, and touches no memory.
-    let sent = unsafe { libc::kill(pid, 0) } == 0;
-    sent || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
-}
+#[path = "jobs/owner.rs"]
+mod owner;
+pub(crate) use owner::{Owner, alive_since, owner};
 
 #[path = "jobs/place.rs"]
 mod place;

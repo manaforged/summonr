@@ -1,11 +1,43 @@
-use super::*;
+use std::future::Future;
+use std::task::{Context, Poll, Waker};
 
-pub(super) async fn killed(spawned: Spawned, parent: &Path, reason: &str) -> Result<Done> {
+use super::*;
+use tokio::task::JoinError;
+
+pub(super) fn poll_ready(
+    handle: &mut JoinHandle<Done>,
+) -> Option<std::result::Result<Done, JoinError>> {
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    match std::pin::Pin::new(handle).poll(&mut context) {
+        Poll::Ready(joined) => Some(joined),
+        Poll::Pending => None,
+    }
+}
+
+pub(super) async fn killed(mut spawned: Spawned, parent: &Path, reason: &str) -> Result<Done> {
     spawned.handle.abort();
+    if let Ok(done) = (&mut spawned.handle).await {
+        return Ok(done);
+    }
+    aborted(spawned, parent, reason)
+}
+
+fn forgotten(mut spawned: Spawned, parent: &Path, reason: &str) -> Result<Done> {
+    spawned.handle.abort();
+    match poll_ready(&mut spawned.handle) {
+        Some(Ok(done)) => Ok(done),
+        Some(Err(_)) | None => aborted(spawned, parent, reason),
+    }
+}
+
+fn aborted(spawned: Spawned, parent: &Path, reason: &str) -> Result<Done> {
     let mut record = spawned.record;
     let mut diagnostic = reason.to_string();
-    if let Ok(done) = spawned.handle.await {
-        return Ok(done);
+    let stopped = crate::tools::command::stop_jobs(&record.workspace, &record.id.to_string())?;
+    if !stopped.is_empty() {
+        diagnostic.push('\n');
+        diagnostic.push_str(&stopped.join("\n"));
     }
     if record.access == Access::Implement && record.workspace != parent && record.workspace.exists()
     {
@@ -28,6 +60,35 @@ pub(super) async fn killed(spawned: Spawned, parent: &Path, reason: &str) -> Res
         settled: false,
         millis: super::elapsed_millis(spawned.started),
     })
+}
+
+impl<P: Provider> Loop<P> {
+    pub(in crate::runtime) fn forget_spawned(
+        &mut self,
+        scope: crate::child::ChildScope,
+        reason: &str,
+    ) -> Result<()> {
+        let ids: Vec<String> = self
+            .spawned
+            .iter()
+            .filter(|(_, spawned)| {
+                scope == crate::child::ChildScope::All || !spawned.record.background
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        let mut settled = Ok(());
+        for id in &ids {
+            let Some(spawned) = self.spawned.remove(id) else {
+                continue;
+            };
+            let done = forgotten(spawned, &self.workspace, reason);
+            if let Err(error) = done.and_then(|done| self.task_settle(done)) {
+                settled = settled.and(Err(error));
+            }
+        }
+        self.discard_events(&ids);
+        settled
+    }
 }
 
 pub(super) fn accounting_at(path: &Path) -> Result<(u64, Usage)> {

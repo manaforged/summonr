@@ -6,7 +6,7 @@ use crate::tui::{Activity, Fact, Msg};
 fn row(lines: &[String]) -> String {
     lines
         .iter()
-        .find(|line| line.contains("tok"))
+        .find(|line| line.contains("Benchmark"))
         .cloned()
         .unwrap_or_default()
 }
@@ -63,12 +63,12 @@ fn status_labels_follow_active_work_instead_of_tools_or_stale_objectives() {
             &[&tool, &pending, &blocked, &done, &idle],
         );
         for (frame, expected) in frames.iter().zip([
-            "Verify the change",
-            "Verify the change",
-            "working",
-            "Blocked",
-            "working",
-            "Complete",
+            "Thinking…",
+            "Working…",
+            "0/1 tasks",
+            "1 blocked",
+            "1/1 tasks",
+            "✓",
         ]) {
             let lines: Vec<_> = frame.lines().collect();
             let at = lines
@@ -81,9 +81,6 @@ fn status_labels_follow_active_work_instead_of_tools_or_stale_objectives() {
             assert!(!status.contains("run_command"), "{frame}");
             assert!(!status.contains("git diff"), "{frame}");
             assert!(!status.contains("Polish the interface"), "{frame}");
-            if expected == "Blocked" {
-                assert!(status.contains("1 blocked"), "{frame}");
-            }
         }
     }
 }
@@ -97,7 +94,7 @@ fn status_fallbacks_and_long_labels_keep_waiting_visible() {
             ))));
         });
         let shown = lines.join("\n");
-        assert!(shown.contains("working"), "{shown}");
+        assert!(shown.contains("Thinking…"), "{shown}");
         assert!(!shown.contains("Polish the interface"), "{shown}");
         let waiting = |app: &super::super::app::App| {
             app.update(Msg::Fact(Fact::Event(Event::Approval {
@@ -124,7 +121,7 @@ fn status_fallbacks_and_long_labels_keep_waiting_visible() {
             &[&waiting],
         );
         assert!(frames[0].contains("Verify"), "{}", frames[0]);
-        assert!(frames[1].contains("Waiting for input"), "{}", frames[1]);
+        assert!(frames[1].contains("Waiting for you"), "{}", frames[1]);
         for frame in frames {
             for line in frame.lines() {
                 assert!(
@@ -142,12 +139,12 @@ fn a_long_subagent_title_leaves_its_share_to_the_rest_of_the_row() {
     let wide = row(&frame_with(busy_info(), 100, 40, State::Busy, |app| {
         running(app, &long)
     }));
-    assert!(title(&wide).chars().count() <= 40, "{wide}");
+    assert!(title(&wide).chars().count() <= 60, "{wide}");
+    assert!(wide.contains("· Run hyperfine"), "{wide}");
     let narrow = row(&frame_with(busy_info(), 54, 40, State::Busy, |app| {
         running(app, &long)
     }));
-    assert!(narrow.trim_end().ends_with("0s · 0 tok"), "{narrow}");
-    assert!(narrow.contains("· Run hyperfine ./su"), "{narrow}");
+    assert!(sigil::app::cell_width(narrow.trim_end()) <= 54, "{narrow}");
 }
 
 #[test]
@@ -163,5 +160,125 @@ fn a_subagent_row_redraws_when_it_finishes() {
             },
         );
     }));
-    assert!(after.trim_start().starts_with("●"), "{after}");
+    assert!(after.contains("completed"), "{after}");
+}
+
+fn bar_line(frame: &str, needle: &str) -> String {
+    frame
+        .lines()
+        .find(|line| line.contains(needle))
+        .unwrap_or_else(|| panic!("no bar line with {needle}:\n{frame}"))
+        .to_owned()
+}
+
+#[test]
+fn an_idle_bar_with_failed_agents_states_each_fact_once() {
+    let idle = |app: &super::super::app::App| {
+        for id in &IDS[..2] {
+            act(
+                app,
+                id,
+                Event::Aborted {
+                    reason: "budget reached".to_owned(),
+                    code: crate::tools::AbortCode::TimeBudget,
+                },
+            );
+        }
+        act(
+            app,
+            IDS[2],
+            Event::Assistant {
+                text: "done".to_owned(),
+            },
+        );
+        app.update(Msg::Fact(Fact::Busy(None)));
+    };
+    let frames = super::screens(
+        100,
+        30,
+        |app| {
+            app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+            app.update(Msg::Fact(Fact::Event(super::composer_todos::todo(
+                r#"{"items":[{"text":"Read","status":"done"},{"text":"Fix","status":"done"}]}"#,
+            ))));
+            task_call(app);
+            for id in IDS {
+                spawn(app, id, "Check a module.", true);
+            }
+        },
+        &[&idle],
+    );
+    let line = bar_line(&frames[1], "2/2 tasks");
+    assert!(line.trim_start().starts_with('!'), "{line}");
+    assert!(
+        line.contains("3 agents") && line.contains("2 failed"),
+        "{line}"
+    );
+    assert_eq!(line.matches("failed").count(), 1, "{line}");
+    assert!(
+        !line.contains("Agents failed") && !line.contains("(0s"),
+        "{line}"
+    );
+}
+
+#[test]
+fn the_rate_shows_while_thinking_and_writing_but_not_during_tools() {
+    let think = |app: &super::super::app::App| {
+        app.update(Msg::Fact(Fact::Event(Event::Reasoning {
+            text: "Considering the options with plenty of characters to measure.".to_owned(),
+        })));
+    };
+    let tool = |app: &super::super::app::App| {
+        app.update(Msg::Fact(Fact::Event(Event::ToolCall {
+            id: "rate-tool".to_owned(),
+            name: "read".to_owned(),
+            arguments: r#"{"path":"src/main.rs"}"#.to_owned(),
+        })));
+    };
+    let frames = super::screens(
+        100,
+        30,
+        |app| app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn)))),
+        &[&think, &tool],
+    );
+    let thinking = bar_line(&frames[1], "Thinking…");
+    assert!(thinking.contains("tok/s"), "{thinking}");
+    assert!(thinking.contains("esc to interrupt"), "{thinking}");
+    let working = bar_line(&frames[2], "Working…");
+    assert!(!working.contains("tok/s"), "{working}");
+}
+
+#[test]
+fn a_busy_bar_fits_and_keeps_its_clock_at_every_width() {
+    for cols in [40_u16, 54, 60, 80, 100, 140] {
+        let frames = super::screens(
+            cols,
+            30,
+            |app| {
+                app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+                app.update(Msg::Fact(Fact::Event(super::composer_todos::todo(
+                    r#"{"items":[{"text":"Fix the auth refresh race in the token store","status":"active"},{"text":"Ship"}]}"#,
+                ))));
+                task_call(app);
+                for id in IDS {
+                    spawn(app, id, "Check a module.", true);
+                }
+            },
+            &[],
+        );
+        let line = bar_line(&frames[0], "(0s");
+        assert!(
+            sigil::app::cell_width(line.trim_end()) <= usize::from(cols),
+            "{cols}: {line}"
+        );
+        assert!(
+            line.contains("…") || line.contains("Working"),
+            "{cols}: {line}"
+        );
+        assert!(!line.trim_end().ends_with('·'), "{cols}: {line}");
+        if cols >= 80 {
+            assert!(line.contains("1/2 Fix the auth"), "{cols}: {line}");
+            assert!(line.contains("3 agents"), "{cols}: {line}");
+        }
+    }
 }

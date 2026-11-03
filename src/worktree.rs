@@ -1,17 +1,20 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::durable::store;
 use summonr_core::error::{Error, Result};
 
+mod base;
 mod delta;
 mod finish;
 mod land;
+mod remove;
 
 pub use finish::finish;
 pub(crate) use land::{Landing, reconcile_children};
+pub(crate) use remove::discard;
 
 const COMMIT_MAX: u64 = 5 * 1024 * 1024;
+const UNKNOWN: &str = "?";
 
 pub(crate) fn worktree_id(branch: &str) -> Option<&str> {
     branch
@@ -28,10 +31,24 @@ pub struct Tree {
     pub snapshot: Option<String>,
 }
 
+/// Commits a worktree branch has past its recorded base; `None` when no base is recorded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(transparent)]
+pub struct Ahead(pub Option<u32>);
+
+impl std::fmt::Display for Ahead {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(count) => write!(f, "{count}"),
+            None => f.write_str(UNKNOWN),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Status {
     pub tree: Tree,
-    pub ahead: u32,
+    pub ahead: Ahead,
     pub dirty: bool,
     pub session: Option<String>,
 }
@@ -42,10 +59,13 @@ pub fn status(cwd: &Path) -> Result<Vec<Status>> {
         .into_iter()
         .map(|tree| {
             let range = format!("{}..{}", tree.base, tree.branch);
-            let ahead = crate::diff::git_env(&tree.primary, &[], &["rev-list", "--count", &range])
-                .ok()
-                .and_then(|count| count.parse().ok())
-                .unwrap_or(0);
+            let ahead = Ahead(if tree.base.is_empty() {
+                None
+            } else {
+                crate::diff::git_env(&tree.primary, &[], &["rev-list", "--count", &range])
+                    .ok()
+                    .and_then(|count| count.parse().ok())
+            });
             let dirty = dirty(&tree.path)?;
             let here = tree.path.display().to_string();
             let session = sessions
@@ -61,28 +81,6 @@ pub fn status(cwd: &Path) -> Result<Vec<Status>> {
             })
         })
         .collect()
-}
-
-pub(crate) fn discard(tree: &Tree) -> Result<()> {
-    if dirty(&tree.path)? {
-        return Err(Error::Config(format!(
-            "{} has uncommitted changes; merge or clean it first",
-            tree.branch
-        )));
-    }
-    let range = format!("{}..{}", tree.base, tree.branch);
-    let ahead: u32 = crate::diff::git_env(&tree.primary, &[], &["rev-list", "--count", &range])?
-        .parse()
-        .unwrap_or(0);
-    if ahead > 0 {
-        return Err(Error::Config(format!(
-            "{} has {ahead} commit{} {} lacks; merge it first",
-            tree.branch,
-            if ahead == 1 { "" } else { "s" },
-            tree.base
-        )));
-    }
-    tree.remove()
 }
 
 #[must_use]
@@ -128,39 +126,28 @@ fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    crate::diff::git_env(
+    let target = path
+        .to_str()
+        .ok_or_else(|| Error::Config(format!("worktree path is not utf-8: {}", path.display())))?;
+    let record = base::save(primary, &id, base)?;
+    let added = crate::diff::git_env(
         primary,
         &[],
-        &[
-            "worktree",
-            "add",
-            "-b",
-            &branch,
-            path.to_str().ok_or_else(|| {
-                Error::Config(format!("worktree path is not utf-8: {}", path.display()))
-            })?,
-            start,
-        ],
-    )?;
+        &["worktree", "add", "-b", &branch, target, start],
+    );
+    if let Err(error) = added {
+        drop(std::fs::remove_file(&record));
+        return Err(error);
+    }
     let path = dunce::canonicalize(&path).unwrap_or(path);
     let primary = dunce::canonicalize(primary).unwrap_or_else(|_| primary.to_path_buf());
-    let tree = Tree {
+    Ok(Tree {
         primary,
         path,
         branch,
         base: base.to_string(),
         snapshot: None,
-    };
-    let recorded = (|| {
-        let record = base_record(&tree.primary, &id)?;
-        store::write(&record, format!("{base}\n"), store::Durability::Synced)?;
-        Ok(())
-    })();
-    if let Err(error) = recorded {
-        drop(tree.remove_child());
-        return Err(error);
-    }
-    Ok(tree)
+    })
 }
 
 pub(crate) fn is_delta_of(workspace: &Path, candidate: &Path) -> bool {
@@ -183,27 +170,6 @@ pub(crate) fn is_delta_of(workspace: &Path, candidate: &Path) -> bool {
 }
 
 impl Tree {
-    pub(crate) fn remove(&self) -> Result<()> {
-        let path = self.path.to_str().ok_or_else(|| {
-            Error::Config(format!(
-                "worktree path is not utf-8: {}",
-                self.path.display()
-            ))
-        })?;
-        crate::diff::git_env(&self.primary, &[], &["worktree", "remove", "--force", path])?;
-        drop(crate::diff::git_env(
-            &self.primary,
-            &[],
-            &["branch", "-d", &self.branch],
-        ));
-        if let Some(id) = worktree_id(&self.branch)
-            && let Ok(record) = base_record(&self.primary, id)
-        {
-            drop(std::fs::remove_file(record));
-        }
-        Ok(())
-    }
-
     pub fn unchanged(&self) -> Result<bool> {
         Ok(self.changes()?.is_empty())
     }
@@ -246,19 +212,11 @@ pub fn sweep(cwd: &Path) -> Result<Vec<PathBuf>> {
 
 pub fn list(cwd: &Path) -> Result<Vec<Tree>> {
     let (primary, text) = listing(cwd)?;
-    let base = crate::diff::git_env(&primary, &[], &["rev-parse", "--abbrev-ref", "HEAD"])
-        .unwrap_or_default();
-    Ok(parse_list(&primary, &base, &text)
+    Ok(parse_list(&primary, &text)
         .into_iter()
         .filter(|tree| worktree_id(&tree.branch).is_some())
         .map(|mut tree| {
-            if let Some(id) = worktree_id(&tree.branch)
-                && let Ok(record) = base_record(&primary, id)
-                && let Ok(recorded) = std::fs::read_to_string(record)
-                && !recorded.trim().is_empty()
-            {
-                tree.base = recorded.trim().to_string();
-            }
+            tree.base = base::recorded(&primary, &tree.branch).unwrap_or_default();
             tree
         })
         .collect())
@@ -279,12 +237,6 @@ fn locate(primary: &Path, cwd: &Path) -> Result<Option<Tree>> {
     Ok(list(primary)?.into_iter().find(|tree| {
         crate::durable::driver::canonical(&tree.path) == cwd && worktree_id(&tree.branch).is_some()
     }))
-}
-
-fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {
-    Ok(common_dir(primary)?
-        .join("summon")
-        .join(format!("{id}.base")))
 }
 
 pub(crate) fn common_dir(primary: &Path) -> Result<PathBuf> {
@@ -339,7 +291,7 @@ pub(crate) fn dirty(path: &Path) -> Result<bool> {
     Ok(!crate::diff::git_env(path, &[], &["status", "--porcelain"])?.is_empty())
 }
 
-fn parse_list(primary: &Path, base: &str, text: &str) -> Vec<Tree> {
+fn parse_list(primary: &Path, text: &str) -> Vec<Tree> {
     let mut trees = Vec::new();
     let mut path = None;
     let mut branch = None;
@@ -350,7 +302,7 @@ fn parse_list(primary: &Path, base: &str, text: &str) -> Vec<Tree> {
                     primary: primary.to_path_buf(),
                     path,
                     branch,
-                    base: base.to_string(),
+                    base: String::new(),
                     snapshot: None,
                 });
             }

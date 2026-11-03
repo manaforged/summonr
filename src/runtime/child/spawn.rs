@@ -1,6 +1,7 @@
 use super::brief::{agent_brief, instruction, rebase_paths};
 use super::*;
 use crate::durable::driver::Parent;
+use crate::endpoint::{self, Requirement};
 
 impl<P: Provider> Loop<P> {
     pub(super) fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
@@ -13,7 +14,7 @@ impl<P: Provider> Loop<P> {
         let path = run.child.session.path().to_path_buf();
         let id = record.id.to_string();
         let name = run.child.name().unwrap_or_else(|| id.clone());
-        let staying = run.staying.clone();
+        let state = run.state.clone();
         run.stay = named;
         let handle = tokio::spawn(run.execute(self.events.0.clone()));
         self.spawned.insert(
@@ -25,7 +26,8 @@ impl<P: Provider> Loop<P> {
                 started: Instant::now(),
                 last: String::new(),
                 reserved_tokens: budget.max_tokens.unwrap_or_default(),
-                staying,
+                state,
+                stay: named,
                 tool: String::new(),
             },
         );
@@ -63,10 +65,22 @@ impl<P: Provider> Loop<P> {
         tree: Option<Tree>,
     ) -> Result<Run<P>> {
         let role = crate::workflow::Role::Implement;
-        let provider = self.selection(role).0.child().ok_or_else(|| {
-            Error::Denied("the active provider cannot create children".to_string())
-        })?;
-        let model = self.selection(role).1.to_string();
+        let endpoint = args
+            .endpoint
+            .as_deref()
+            .map(|name| endpoint::resolve(Some(name), None, Requirement::ModelAndKey))
+            .transpose()?;
+        let provider = self
+            .selection(role)
+            .0
+            .child(endpoint.as_ref())?
+            .ok_or_else(|| {
+                Error::Denied("the selected provider cannot create children".to_string())
+            })?;
+        let model = endpoint.as_ref().map_or_else(
+            || self.selection(role).1.to_string(),
+            |endpoint| endpoint.model.clone(),
+        );
         let home = log::home_of(self.session.path())
             .ok_or_else(|| Error::Config("the parent session has no durable home".to_string()))?;
         let workspace = tree
@@ -93,14 +107,18 @@ impl<P: Provider> Loop<P> {
         child.context_window = self.receiver_window(role);
         child.compact_tokens = self.compact_tokens;
         child.context_sample = self.context_sample;
-        child.effort = match args.effort.as_deref() {
-            Some(text) => Some(
+        child.effort = self.effort_for(role);
+        child.price = self.price_for(role);
+        if let Some(endpoint) = &endpoint {
+            child.apply_endpoint(endpoint);
+            child.context_sample = None;
+        }
+        if let Some(text) = args.effort.as_deref() {
+            child.effort = Some(
                 crate::provider::Effort::parse(text)
                     .ok_or_else(|| Error::Tool(format!("task effort {text:?} is not a level")))?,
-            ),
-            None => self.effort_for(role),
-        };
-        child.price = self.price_for(role);
+            );
+        }
         child = child.with_budget(budget.clone())?;
         if let Some(name) = args.name.as_deref() {
             child.set_name(name)?;
@@ -113,6 +131,8 @@ impl<P: Provider> Loop<P> {
             parent: self.session.id(),
             assignment: args.assignment.clone(),
             model: model.clone(),
+            name: child.name().unwrap_or_default(),
+            agent: args.agent.clone().unwrap_or_default(),
             workspace,
             depth: self.session.depth().saturating_add(1),
             access: args.access,
@@ -121,17 +141,7 @@ impl<P: Provider> Loop<P> {
             state: ChildState::Running,
         };
         self.session.start_child(record.clone())?;
-        drop(self.events.0.send(Event::Child {
-            id: record.id.to_string(),
-            event: Box::new(Event::Spawned {
-                assignment: record.assignment.clone(),
-                access: record.access,
-                call: args.call.clone(),
-                background: args.background,
-                workspace: record.workspace.to_string_lossy().into_owned(),
-                agent: args.agent.clone().unwrap_or_default(),
-            }),
-        }));
+        drop(self.events.0.send(record.spawned()));
         Ok(Run {
             child,
             record,
@@ -139,7 +149,7 @@ impl<P: Provider> Loop<P> {
             assignment: opener,
             deadline: budget.max_secs.map(crate::limits::seconds),
             started: Instant::now(),
-            staying: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            state: watch::Sender::new(ChildState::Running),
             stay: false,
         })
     }
@@ -224,19 +234,10 @@ impl<P: Provider> Loop<P> {
             .iter()
             .map(|(_, tree, paths)| (tree.clone(), paths.clone()))
             .collect::<Vec<_>>();
-        match worktree::reconcile_children(&self.workspace, &children) {
-            Ok(landings) => {
-                for ((index, _, _), landing) in picked.into_iter().zip(landings) {
-                    if let Ok(done) = done[index].1.as_mut() {
-                        done.record.record_landing(landing);
-                    }
-                }
-            }
-            Err(error) => {
-                let diagnostic = error.to_string();
-                for done in implemented(done) {
-                    done.record.fail_record(&diagnostic);
-                }
+        let landings = worktree::reconcile_children(&self.workspace, &children);
+        for ((index, _, _), landing) in picked.into_iter().zip(landings) {
+            if let Ok(done) = done[index].1.as_mut() {
+                done.record.record_landing(landing);
             }
         }
     }
@@ -414,12 +415,6 @@ impl ChildRecord {
         result.changed_paths_total = landing.paths.len();
         result.changed_paths = landing.paths;
     }
-}
-
-fn implemented(done: &mut [(Access, Result<Done>)]) -> impl Iterator<Item = &mut Done> {
-    done.iter_mut()
-        .filter(|(access, _)| *access == Access::Implement)
-        .filter_map(|(_, done)| done.as_mut().ok())
 }
 
 #[cfg(test)]

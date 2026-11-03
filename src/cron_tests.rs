@@ -53,6 +53,7 @@ fn job(schedule: &str, created: i64) -> Job {
         paused: false,
         fails: 0,
         created,
+        lock_error: None,
         runs: Vec::new(),
     }
 }

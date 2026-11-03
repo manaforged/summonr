@@ -122,3 +122,13 @@ fn plain_arrows_switch_between_the_models_providers_and_usage_tabs() {
     );
     assert_eq!(seen(vec![arrow(Key::ArrowLeft)]), Some(Overlay::Usage));
 }
+
+#[test]
+fn the_terminal_undo_key_undoes_the_draft() {
+    let undo = Event::key(LogicalKey::character("7"), KeyPhase::Down)
+        .modifiers(sigil::events::ModifiersState::CONTROL);
+    let draft = after("", vec![press("a"), press("b"), undo], |app| {
+        app.draft.peek()
+    });
+    assert_eq!(draft, "a");
+}

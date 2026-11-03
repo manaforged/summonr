@@ -51,19 +51,23 @@ impl<P: Provider> Loop<P> {
         let path = self.session.fork(turn)?;
         let child = resume_driver(&self.workspace, &path)?;
         let id = child.id().to_string();
-        self.adopt(child);
+        self.adopt(child)?;
         Ok(id)
     }
 
-    pub(crate) fn adopt(&mut self, session: SessionDriver) {
-        self.forget_children(crate::child::ChildScope::All);
+    pub(crate) fn adopt(&mut self, session: SessionDriver) -> Result<()> {
+        self.forget_spawned(crate::child::ChildScope::All, "the session changed")?;
         self.session = session;
         self.tools.set_session(&self.session.id().to_string());
         self.rewatch_jobs(None);
         self.mailbox = None;
         self.join_mail();
         self.schema = None;
+        self.tools.forget_reads();
+        self.tools.forget_approval();
+        self.outputs_cleared = false;
         self.herdr.retarget(&self.session.id().to_string());
+        Ok(())
     }
 
     #[must_use]
@@ -111,7 +115,8 @@ impl<P: Provider> Loop<P> {
         abort: &crate::tools::Abort,
         mut emit: impl FnMut(&Event),
     ) -> Result<()> {
-        self.forget_children(abort.code.child_scope());
+        let forgotten = self.forget_spawned(abort.code.child_scope(), &abort.reason);
+        self.tools.forget_approval();
         self.session.abort(abort, None)?;
         if abort.code.child_scope() == crate::child::ChildScope::All {
             self.tools.stop_jobs()?;
@@ -121,24 +126,11 @@ impl<P: Provider> Loop<P> {
         self.watch_jobs();
         self.emit_records(&mut Vec::new(), &mut emit)?;
         self.sync_usage(&mut emit);
-        Ok(())
+        forgotten
     }
 
     pub(crate) fn unreported_tokens(&self) -> u64 {
         self.session.usage().1
-    }
-
-    fn forget_children(&mut self, scope: crate::child::ChildScope) {
-        let mut ids = Vec::new();
-        self.spawned.retain(|id, spawned| {
-            let forget = scope == crate::child::ChildScope::All || !spawned.background();
-            if forget {
-                spawned.abort();
-                ids.push(id.clone());
-            }
-            !forget
-        });
-        self.discard_events(&ids);
     }
 
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {

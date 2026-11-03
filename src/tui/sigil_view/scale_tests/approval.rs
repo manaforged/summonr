@@ -12,7 +12,7 @@ fn press(key: &str) -> Event {
     Event::key(LogicalKey::character(key), KeyPhase::Down).text(Some(key.into()))
 }
 
-fn pending_after_n(draft: &str) -> bool {
+fn pending_after_n(draft: &str, setup: impl FnOnce(&App)) -> bool {
     sigil::reactive::Owner::scope("approval-keys", || {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _receiver) = unbounded_channel();
@@ -25,6 +25,7 @@ fn pending_after_n(draft: &str) -> bool {
             dialog: 1,
         })));
         app.replace(draft.to_owned());
+        setup(&app);
         let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
         host.mount(move || root(tree));
@@ -39,8 +40,16 @@ fn pending_after_n(draft: &str) -> bool {
 
 #[test]
 fn a_plain_key_answers_an_approval_only_from_an_empty_composer() {
-    assert!(!pending_after_n(""));
-    assert!(pending_after_n("dont"));
+    assert!(!pending_after_n("", |_| {}));
+    assert!(pending_after_n("dont", |_| {}));
+}
+
+#[test]
+fn a_focused_pane_keeps_its_letter_keys_from_the_approval() {
+    assert!(pending_after_n("", |app| {
+        app.toggle_pane(crate::tui::sigil_view::pane::Pane::Diff);
+        app.focus_pane(true);
+    }));
 }
 
 fn after_key(draft: &str, key: &str, check: impl FnOnce(&App) -> bool) -> bool {

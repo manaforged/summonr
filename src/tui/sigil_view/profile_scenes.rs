@@ -42,6 +42,8 @@ fn agents(app: &App, scenario: Scenario) {
                 background: true,
                 workspace: String::new(),
                 agent: String::new(),
+                name: id.to_owned(),
+                model: app.model.peek().snapshot.model.clone(),
             },
             Event::ToolCall {
                 id: format!("{id}-read"),

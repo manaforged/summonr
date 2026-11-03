@@ -155,8 +155,6 @@ pub(crate) struct Work {
     pub(crate) pending: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) brief: Option<String>,
-    #[serde(default)]
-    pub(crate) deferred: u16,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub(crate) touched: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -189,7 +187,6 @@ impl Work {
             candidate: None,
             pending: Vec::new(),
             brief: None,
-            deferred: 0,
             touched: BTreeSet::new(),
             jobs: Vec::new(),
             check: None,

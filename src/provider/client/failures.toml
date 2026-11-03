@@ -7,6 +7,7 @@ window_after = [
     "context limit of ",
     "maximum prompt length (",
     "max context length: ",
+    "does not fit the ",
 ]
 
 missing_model = [
@@ -45,6 +46,7 @@ context_overflow = [
     { all = ["too many tokens"] },
     { all = ["context"], any = ["length", "too long", "exceed"] },
     { all = ["input length", "exceed"] },
+    { all = ["prompt", "does not fit", "context"] },
 ]
 
 status = [

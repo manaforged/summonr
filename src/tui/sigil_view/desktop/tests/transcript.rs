@@ -20,6 +20,8 @@ fn child_task(app: &super::App) {
             background: false,
             workspace: String::new(),
             agent: String::new(),
+            name: String::new(),
+            model: "test-model".to_string(),
         }),
     })));
 }

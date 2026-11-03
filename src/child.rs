@@ -15,6 +15,10 @@ pub(crate) struct ChildRecord {
     pub(crate) parent: SessionId,
     pub(crate) assignment: String,
     pub(crate) model: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) agent: String,
     pub(crate) workspace: PathBuf,
     pub(crate) depth: u8,
     #[serde(default)]
@@ -65,6 +69,24 @@ impl ChildState {
 }
 
 impl ChildRecord {
+    /// Projects the child's identity for live display and journal replay.
+    pub(crate) fn spawned(&self) -> crate::tools::Event {
+        use crate::tools::Event;
+        Event::Child {
+            id: self.id.to_string(),
+            event: Box::new(Event::Spawned {
+                assignment: self.assignment.clone(),
+                access: self.access,
+                call: self.call.clone().unwrap_or_default(),
+                background: self.background,
+                workspace: self.workspace.to_string_lossy().into_owned(),
+                agent: self.agent.clone(),
+                name: self.name.clone(),
+                model: self.model.clone(),
+            }),
+        }
+    }
+
     pub(crate) fn interrupt(&self, reason: &str) -> Self {
         let mut record = self.clone();
         record.state = ChildState::Interrupted(ChildResult {
@@ -87,6 +109,8 @@ impl ChildRecord {
             && self.parent == other.parent
             && self.assignment == other.assignment
             && self.model == other.model
+            && self.name == other.name
+            && self.agent == other.agent
             && self.workspace == other.workspace
             && self.depth == other.depth
             && self.access == other.access

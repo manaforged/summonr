@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use leyline::Session;
@@ -16,7 +17,7 @@ const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 pub(super) async fn login(
     parts: &Parts<'_>,
     http: &Session,
-    store: &dyn Store,
+    shared: &Arc<dyn Store>,
     prompt: &mut Prompt,
 ) -> Result<()> {
     let device_url = parts
@@ -50,7 +51,7 @@ pub(super) async fn login(
         code,
         verifier: verifier.as_deref(),
     };
-    poll.until(store, wait, stop).await
+    poll.until(shared, wait, stop).await
 }
 
 async fn requested(
@@ -103,7 +104,12 @@ struct Poll<'a> {
 }
 
 impl Poll<'_> {
-    async fn until(&self, store: &dyn Store, mut wait: Duration, stop: Instant) -> Result<()> {
+    async fn until(
+        &self,
+        shared: &Arc<dyn Store>,
+        mut wait: Duration,
+        stop: Instant,
+    ) -> Result<()> {
         while Instant::now() < stop {
             tokio::time::sleep(wait).await;
             let (status, body) = post(
@@ -128,7 +134,7 @@ impl Poll<'_> {
                 return Err(Error::Denied(format!("the login failed: HTTP {status}")));
             }
             let grant = minted(&body)?;
-            return settle(self.parts, self.http, store, grant).await;
+            return settle(self.parts, self.http, shared, grant).await;
         }
         Err(Error::Denied("the login timed out".to_string()))
     }

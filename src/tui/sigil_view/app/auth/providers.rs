@@ -39,7 +39,7 @@ impl App {
         let waiting = matches!(step, Login::Checking)
             || matches!(step, Login::SignIn { ref note, .. } if note.is_empty());
         if waiting {
-            drop(self.cmd.send(Cmd::Cancel));
+            drop(self.cmd.send(Cmd::CancelLogin));
         }
         self.replace_auth_key(String::new());
         self.auth.selection.set(None);

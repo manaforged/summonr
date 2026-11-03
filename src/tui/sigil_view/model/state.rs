@@ -2,12 +2,20 @@ use super::*;
 
 const TITLE_CHARS: usize = 56;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::tui::sigil_view) enum Doing {
+    Thinking,
+    Tool { name: String, arg: String },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::tui::sigil_view) struct Agent {
     pub(in crate::tui::sigil_view) id: String,
     pub(in crate::tui::sigil_view) call: String,
     pub(in crate::tui::sigil_view) background: bool,
     pub(in crate::tui::sigil_view) title: String,
+    pub(in crate::tui::sigil_view) name: String,
+    pub(in crate::tui::sigil_view) model: String,
     pub(in crate::tui::sigil_view) agent: String,
     pub(in crate::tui::sigil_view) assignment: String,
     pub(in crate::tui::sigil_view) workspace: String,
@@ -28,6 +36,8 @@ impl Agent {
             call: String::new(),
             background: false,
             title: String::new(),
+            name: String::new(),
+            model: String::new(),
             agent: String::new(),
             assignment: String::new(),
             workspace: String::new(),
@@ -110,13 +120,6 @@ impl Entries {
         self.revs.truncate(self.inner.len());
     }
 
-    fn reask(&mut self) {
-        self.asked = self
-            .inner
-            .iter()
-            .any(|entry| matches!(entry, Entry::User(_)));
-    }
-
     pub(in crate::tui::sigil_view) fn rev(&self, index: usize) -> u64 {
         self.revs.get(index).copied().unwrap_or_default()
     }
@@ -158,15 +161,6 @@ impl Entries {
         self.inner.insert(index, entry);
         self.revs.truncate(index);
         self.sync();
-    }
-
-    pub(in crate::tui::sigil_view) fn remove(&mut self, index: usize) -> Entry {
-        self.sync();
-        let entry = self.inner.remove(index);
-        self.revs.truncate(index);
-        self.sync();
-        self.reask();
-        entry
     }
 
     pub(in crate::tui::sigil_view) fn clear(&mut self) {

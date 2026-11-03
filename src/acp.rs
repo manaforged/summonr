@@ -178,10 +178,7 @@ where
         match outcome {
             Some(Ok(turn)) if turn.aborted => Ok(json!({"stopReason": "max_turn_requests"})),
             Some(Ok(_turn)) => Ok(json!({"stopReason": "end_turn"})),
-            Some(Err(error)) => {
-                drop(agent.abort_note("turn failed"));
-                Err(failure(error))
-            }
+            Some(Err(error)) => Err(failure(error)),
             None => {
                 agent.abort_note("cancelled by client").map_err(failure)?;
                 Ok(json!({"stopReason": "cancelled"}))

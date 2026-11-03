@@ -1,10 +1,11 @@
-use sigil::prelude::{AlignItems, NodeBuilder, Token, container, effect, signal, tabs};
+use sigil::prelude::{
+    AlignItems, LayoutStyle, NodeBuilder, Token, container, effect, signal, tabs,
+};
 
 use crate::tui::sigil_view::app::App;
 use crate::tui::sigil_view::canvas;
 use crate::tui::sigil_view::text_style::TextStyle;
 
-use super::rows::row;
 use sigil::prelude::Widget;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,7 +45,13 @@ pub(in crate::tui::sigil_view) fn strip(app: &App, active: Tab) -> NodeBuilder {
     });
     let labels: Vec<String> = Tab::ALL.iter().map(|tab| tab.label().to_string()).collect();
     let line = container()
-        .layout(row(8.0).align_items(AlignItems::Center))
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .min_size(0.0, canvas::overlay_list_row())
+                .padding_x(8.0)
+                .align_items(AlignItems::Center),
+        )
         .child(tabs().labels(labels).active(picked).label("Settings tabs"));
     if canvas::is_window() {
         return line;

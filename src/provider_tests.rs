@@ -82,6 +82,35 @@ fn sglang_input_length_400_is_overflow() {
 }
 
 #[test]
+fn a_prompt_that_does_not_fit_is_overflow_with_the_server_cap() {
+    let text = "prompt of 16824 tokens does not fit the 16384-token context; start the engine with a larger --max-model-len (max_model_len)";
+    for body in [
+        text.to_string(),
+        serde_json::json!({"error": {"message": text, "type": "invalid_request_error", "code": null}}).to_string(),
+    ] {
+        let error = response_failure(400, &body, None);
+        assert_eq!(
+            error.provider_failure().expect("an HTTP rejection is a provider failure").kind,
+            ProviderFailureKind::ContextOverflow
+        );
+        assert_eq!(input_cap(&error.to_string()), Some(16_384));
+    }
+}
+
+#[test]
+fn an_unsupported_request_field_is_not_a_context_overflow() {
+    let error = response_failure(400, "unknown field reasoning_effort", None);
+    assert_eq!(
+        error
+            .provider_failure()
+            .expect("an HTTP rejection is a provider failure")
+            .kind,
+        ProviderFailureKind::Http
+    );
+    assert_eq!(input_cap(&error.to_string()), None);
+}
+
+#[test]
 fn a_local_url_does_not_inherit_the_catalog_window() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();

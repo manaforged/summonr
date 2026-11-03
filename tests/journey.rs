@@ -6,6 +6,8 @@
     reason = "shares tests/support with other targets and polls a real terminal"
 )]
 
+#[path = "journey/delegation.rs"]
+mod delegation;
 mod support;
 #[path = "support/terminal.rs"]
 mod terminal;
@@ -30,7 +32,10 @@ struct Journey {
 
 impl Journey {
     fn start(script: Vec<Step>) -> Self {
-        let home = tempfile::tempdir().unwrap();
+        Self::at(tempfile::tempdir().expect("journey home"), script)
+    }
+
+    fn at(home: tempfile::TempDir, script: Vec<Step>) -> Self {
         let model = Model::start(script);
         let terminal = Terminal::open(home.path(), 120, 40, model.port);
         terminal.wait("the splash", |screen| screen.contains("workdir"));

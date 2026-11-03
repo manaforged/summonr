@@ -16,7 +16,7 @@ pub(crate) type Pending<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub(crate) trait HttpTransport: Send + Sync {
     fn send<'a>(&'a mut self, value: &'a Value) -> Pending<'a, Result<Option<Value>>>;
     fn next(&mut self) -> Pending<'_, std::io::Result<Read>>;
-    fn expired(&self) -> bool;
+    fn lost(&self) -> bool;
     fn agree(&mut self, version: &str);
 }
 

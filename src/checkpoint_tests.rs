@@ -59,7 +59,7 @@ fn a_recorded_output_file_stays_out_of_every_checkpoint() -> Result<()> {
     let checkpoints = Checkpoints::open(workspace, "s1").unwrap();
     std::fs::write(&checkpoints.skip, "events.jsonl\n")?;
     checkpoints.capture()?;
-    let tree = checkpoints.trees().pop().unwrap();
+    let tree = checkpoints.trees()?.pop().unwrap();
     let listed = git_env(workspace, &[], &["ls-tree", "--name-only", &tree])?;
     assert!(listed.contains("a.txt"), "{listed}");
     assert!(!listed.contains("events.jsonl"), "{listed}");
@@ -79,7 +79,7 @@ fn a_file_staged_before_it_was_skipped_leaves_the_next_checkpoint() -> Result<()
     let later = Checkpoints::open(workspace, "s2").unwrap();
     later.capture()?;
     checkpoints.capture()?;
-    let tree = checkpoints.trees().pop().unwrap();
+    let tree = checkpoints.trees()?.pop().unwrap();
     let listed = git_env(workspace, &[], &["ls-tree", "--name-only", &tree])?;
     assert!(!listed.contains("diff.json"), "{listed}");
     Ok(())
@@ -138,7 +138,7 @@ fn a_workspace_outside_git_restores_a_turn() -> Result<()> {
         Checkpoints::open(workspace, "plain").expect("a plain folder supports checkpoints");
     assert!(checkpoints.deferred());
     checkpoints.capture_to(2)?;
-    assert_eq!(checkpoints.count(), 2);
+    assert_eq!(checkpoints.count()?, 2);
     std::fs::write(workspace.join("notes.txt"), "after\n")?;
     std::fs::create_dir(workspace.join("node_modules"))?;
     std::fs::write(workspace.join("node_modules/dep.js"), "x")?;

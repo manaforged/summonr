@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- The native `task` tool accepts `endpoint` to select a configured worker endpoint without changing the orchestrator's model.
+- Naming a task starts a persistent background worker that accepts follow-up messages through `send`.
+
+### Changed
+
+- The `memory` module is off by default; `memory = true` under `[modules]` turns it on.
+
+### Fixed
+
+- Agent activity rows show worker names, models, and latest activity; expanded details include the assignment, workspace, usage, and outcome. Journal replay restores child identity instead of leaving blank rows.
+- Separate Responses reasoning-summary parts keep paragraph breaks instead of joining their words together.
+- Status-bar task and agent buttons keep their activation state while the spinner and token-rate labels refresh.
+- A worker listed in both native child events and the live roster appears once in activity details.
+- Named workers report idle between assignments, reactivate their activity rows on the next assignment, and stop prior background jobs when a new message arrives.
+- Cancelling a worker reports successful control while preserving the aborted child outcome in its receipt.
+
+### Migration
+
+- Internal provider implementations change `Provider::child()` from `Option<Self>` to `Provider::child(Option<&Endpoint>)` returning `Result<Option<Self>>`; `None` inherits the provider, and `Some` selects the child's endpoint.
+
 ## 0.2.0
 
 ### Changed

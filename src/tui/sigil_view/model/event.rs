@@ -5,13 +5,13 @@ impl Model {
     pub(in crate::tui::sigil_view) fn set_busy(&mut self, activity: Option<Activity>) {
         self.busy_since = activity.map(|activity| (activity, Instant::now()));
         if activity == Some(Activity::Turn) {
-            self.live_tool = Some(("thinking".to_string(), String::new()));
+            self.doing = Some(Doing::Thinking);
             self.speed.start(Instant::now());
         }
         if activity.is_some() {
             self.rounds = 0;
         } else {
-            self.live_tool = None;
+            self.doing = None;
         }
     }
 
@@ -121,7 +121,7 @@ impl Model {
         match event {
             Event::Reasoning { text } => {
                 self.speed.delta(text.chars().count(), Instant::now());
-                self.live_tool = Some(("thinking".to_string(), String::new()));
+                self.doing = Some(Doing::Thinking);
                 match self.entries.last_mut() {
                     Some(Entry::Thinking(body)) => body.push_str(&text),
                     _ => self.entries.push(Entry::Thinking(text)),
@@ -129,7 +129,7 @@ impl Model {
             }
             Event::Delta { text } => {
                 self.speed.delta(text.chars().count(), Instant::now());
-                self.live_tool = None;
+                self.doing = None;
                 match self.entries.last_mut() {
                     Some(Entry::Assistant {
                         text: body,
@@ -174,8 +174,8 @@ impl Model {
                 message,
                 ..
             } => {
-                if let Some((_, detail)) = self.live_tool.as_mut() {
-                    *detail = crate::tools::progress_text(progress, total, message.as_deref());
+                if let Some(Doing::Tool { arg, .. }) = self.doing.as_mut() {
+                    *arg = crate::tools::progress_text(progress, total, message.as_deref());
                 }
             }
             _other => {}
@@ -203,17 +203,7 @@ impl Model {
             ))),
             Event::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Event::Steered { text } => self.entries.push(Entry::User(text)),
-            Event::Note { text } => {
-                if text.starts_with("stream failed; retrying once")
-                    && let Some(at) = self
-                        .entries
-                        .iter()
-                        .rposition(|entry| matches!(entry, Entry::Assistant { done: false, .. }))
-                {
-                    self.entries.remove(at);
-                }
-                self.entries.push(Entry::System(text));
-            }
+            Event::Note { text } => self.entries.push(Entry::System(text)),
             Event::Verify { command, passed } => self.trail(Entry::Verify { command, passed }),
             Event::Receipt { receipt } => self.trail(Entry::Receipt(receipt.text)),
             _other => {}

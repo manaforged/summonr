@@ -55,6 +55,7 @@ impl Plugin {
             return Err(Error::Config(lines.join("\n")));
         }
         let plugins = root()?;
+        let _lock = hold(&plugins, &plugin_name)?;
         let stage = plugins.join(format!(".{plugin_name}.installing"));
         stage_copy(&source.dir, &stage)?;
         let dest = place(&plugins, &stage, &plugin_name)?;
@@ -124,7 +125,13 @@ impl Plugin {
         if !skills::valid(plugin_name) {
             return Ok(false);
         }
-        let dir = root()?.join(plugin_name);
+        let plugins = root()?;
+        let _lock = hold(&plugins, plugin_name)?;
+        let dir = plugins.join(plugin_name);
+        let previous = backup(&plugins, plugin_name);
+        if previous.exists() {
+            std::fs::remove_dir_all(&previous)?;
+        }
         let removed = if dir.is_dir() {
             std::fs::remove_dir_all(&dir)?;
             true
@@ -174,6 +181,14 @@ impl Plugin {
     }
 }
 
+fn hold(root: &Path, plugin_name: &str) -> Result<std::fs::File> {
+    crate::config::hold(&root.join(format!(".{plugin_name}")))
+}
+
+fn backup(root: &Path, plugin_name: &str) -> PathBuf {
+    root.join(format!(".{plugin_name}.previous"))
+}
+
 fn stage_copy(src: &Path, stage: &Path) -> Result<()> {
     if stage.exists() {
         std::fs::remove_dir_all(stage)?;
@@ -211,7 +226,7 @@ fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
 
 fn place(root: &Path, stage: &Path, plugin_name: &str) -> Result<PathBuf> {
     let dest = root.join(plugin_name);
-    let backup = root.join(format!(".{plugin_name}.previous"));
+    let backup = backup(root, plugin_name);
     if backup.exists() {
         std::fs::remove_dir_all(&backup)?;
     }

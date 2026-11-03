@@ -164,14 +164,13 @@ impl<P: Provider> Loop<P> {
         };
         let started = Instant::now();
         let remaining = self.remaining_time();
-        let mut partial = std::mem::take(&mut self.session.partial);
-        let provider = self.selection(role).0;
+        let input = self.reply_input_wait();
+        let (provider, _) = super::selected(&self.selections, &self.provider, &self.model, role);
         let completion = if options.stream {
-            provider.stream(&request, &mut partial)
+            provider.stream(&request, &mut self.session.partial)
         } else {
             provider.complete(&request)
         };
-        let input = self.reply_input_wait();
         let waited = tokio::select! {
             biased;
             result = Self::wait(completion, remaining) => result,
@@ -182,11 +181,11 @@ impl<P: Provider> Loop<P> {
         let message = match waited {
             Ok(message) => message,
             Err(error) => {
-                let interrupted = (!partial.text.is_empty()).then(|| Message {
+                let text = &self.session.partial.text;
+                let interrupted = (!text.is_empty()).then(|| Message {
                     role: Role::Assistant,
-                    ..Message::system(partial.text.clone())
+                    ..Message::system(text.clone())
                 });
-                self.session.partial = partial;
                 if let Some(attempt) = attempt {
                     let millis = error.millis(started);
                     let (diagnostic, billable) = match &error {
@@ -202,6 +201,7 @@ impl<P: Provider> Loop<P> {
                 return Ok(Err(Missed { error, interrupted }));
             }
         };
+        self.session.partial = Default::default();
         let meter = Meter::measured(&message.usage, super::elapsed_millis(started));
         let meta = UsageMeta {
             continuation: message.continuation.clone(),
@@ -275,11 +275,27 @@ impl<P: Provider> Loop<P> {
         mut emit: impl FnMut(&Event),
     ) -> Result<Turn> {
         let _report = self.herdr.turn();
+        self.close_open("turn interrupted", &mut emit);
         let mut events = Vec::new();
         let mut input = self.expand_mcp(input, &mut events, &mut emit).await?;
         self.tools.fold_unseen_images(&mut input).await?;
         let messages = self.begin_turn(input, trigger)?;
-        self.measure_baseline(&mut events, &mut emit).await?;
+        let result = self.run_opened(messages, &mut events, &mut emit).await;
+        if result.is_err() {
+            self.close_open("turn failed", &mut emit);
+        }
+        result
+    }
+
+    async fn run_opened(
+        &mut self,
+        messages: Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Turn> {
+        let progress = self.work_progress()?;
+        self.push_event(events, emit, Event::Work { progress })?;
+        self.measure_baseline(events, emit).await?;
         let mut pre = self.checkpoint();
         let mut usage = Usage::default();
         let mut rounds = 0;
@@ -287,8 +303,8 @@ impl<P: Provider> Loop<P> {
         let turn = self.run_turn(
             messages,
             &mut pre,
-            &mut emit,
-            &mut events,
+            &mut *emit,
+            events,
             &mut usage,
             &mut rounds,
         );
@@ -303,7 +319,7 @@ impl<P: Provider> Loop<P> {
         {
             hub.cancel_inflight().await;
         }
-        self.sync_usage(&mut emit);
+        self.sync_usage(emit);
         if let Ok(Ok(turn)) = &result {
             let payload = serde_json::json!({
                 "event": "stop",
@@ -321,8 +337,8 @@ impl<P: Provider> Loop<P> {
             Err(()) => {
                 self.abort_turn(
                     Abort::time_limit(),
-                    &mut events,
-                    &mut emit,
+                    events,
+                    emit,
                     &mut usage,
                     rounds,
                     &mut pre,

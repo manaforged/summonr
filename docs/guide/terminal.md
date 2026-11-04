@@ -264,16 +264,16 @@ When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`, such
 
 ## Theme
 
-`theme` in `config.toml` selects a preset. The Theme row in `/settings` cycles them.
+`theme` in `config.toml` selects a preset. The Theme editor in `/settings` has System, Light, and Dark buttons. Arrow keys cycle individual presets.
 
 | `theme` | Look |
 | --- | --- |
-| `space` (default) | The default preset |
+| `space` | Dark |
 | `nord` | The Nord palette |
 | `dawn` | Low-glare light |
-| `auto` | `space` or `dawn`, from the terminal's background |
+| `auto` (default) | `space` or `dawn`, from the terminal's background |
 
-`background = "terminal"` leaves the background unpainted so the terminal's own background (and any transparency) shows through. `"theme"`, the default, paints the theme's `base` color. The Background row in `/settings` switches between them.
+`background = "terminal"`, the default, leaves the background unpainted so the terminal's own background (and any transparency) shows through. `"theme"` paints the theme's `base` color. The Background row in `/settings` switches between them.
 
 Every other color is a named token you can override in a theme file. Copy [`theme.example.toml`](../../theme.example.toml) to `~/.summonr/theme.toml`, or to `<workspace>/.summonr/theme.toml` for one project:
 

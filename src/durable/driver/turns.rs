@@ -110,8 +110,8 @@ impl SessionDriver {
             Purpose::Agent => return self.answer(round, text, reasoning, usage, &[], meta),
             Purpose::Summary => charge("compaction summary"),
             Purpose::Judge => charge("goal judge"),
-            Purpose::Review => charge("review"),
             Purpose::Scout => charge("scout"),
+            Purpose::Title => charge("title"),
         };
         self.append(line)
     }

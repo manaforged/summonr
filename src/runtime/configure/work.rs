@@ -96,6 +96,19 @@ impl<P: Provider> Loop<P> {
         }
     }
 
+    /// Names the session in a few words from its first request and reply.
+    pub(crate) async fn title(&mut self, request: &str, reply: &str) -> Result<String> {
+        let start: String = reply.chars().take(TITLE_REPLY_CHARS).collect();
+        let messages = [
+            Message::system(TITLE_SYSTEM.to_string()),
+            Message::user(format!("Request:\n{request}\n\nReply (start):\n{start}")),
+        ];
+        match self.side_call(workflow::Role::Title, &messages, None).await? {
+            Ok(reply) => Ok(title_text(&reply.message.content.unwrap_or_default())),
+            Err(missed) => Err(missed.error.error()),
+        }
+    }
+
     pub(crate) fn clear_history(&mut self) -> Result<()> {
         self.session.clear()?;
         self.tools.forget_reads();
@@ -168,4 +181,23 @@ impl<P: Provider> Loop<P> {
     pub fn goal_at(path: &Path, workspace: &Path, objective: &str) -> bool {
         work_at(path, workspace, crate::WorkKind::Goal, objective)
     }
+}
+
+const TITLE_SYSTEM: &str = "Name this coding session in 2 to 6 words, like a short task title. \
+Use sentence case. Reply with the title only: no quotes, no punctuation at the end, no markdown.";
+const TITLE_REPLY_CHARS: usize = 600;
+const TITLE_WORDS: usize = 6;
+const TITLE_CHARS: usize = 50;
+
+fn title_text(reply: &str) -> String {
+    let line = reply.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or_default();
+    let words: Vec<&str> = line
+        .split_whitespace()
+        .map(|word| word.trim_matches(|ch: char| matches!(ch, '"' | '\'' | '`' | '*' | '#')))
+        .filter(|word| !word.is_empty())
+        .take(TITLE_WORDS)
+        .collect();
+    let title = words.join(" ");
+    let title = title.trim_end_matches(['.', ':', ';', ',', '!']);
+    crate::display::ellipsize(title, crate::display::Span::Cells(TITLE_CHARS))
 }

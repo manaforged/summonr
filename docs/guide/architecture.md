@@ -76,7 +76,7 @@ summonr's modules sit in seven layers. A module imports only modules in its own 
 | settings | reading and merging configuration | `config`, `prefs`, `modules`, `workflow`, `limits`, `policy` |
 | platform | processes, secrets, credentials, session storage, RPC | `process`, `supervise`, `secret`, `askpass`, `credentials`, `durable`, `rpc` |
 | services | providers, endpoints, diffs, worktrees, MCP, plugins, skills, mail, web | the other domain modules |
-| orchestration | the tool runner, the turn loop, goals, scheduling, the gateway | `tools`, `runtime`, `goal`, `review`, `scout`, `cron`, `gateway`, `acp`, `update`, `splash` |
+| orchestration | the tool runner, the turn loop, goals, scheduling, the gateway | `tools`, `runtime`, `goal`, `scout`, `cron`, `gateway`, `acp`, `update`, `splash` |
 | surface | the terminal UI and the CLI entry point | `tui`, `main`, `lib` |
 
 The `debt` list in `layers.json` names the imports that break this order today. It only shrinks: remove an entry in the change that removes its import. The largest groups and their fixes:
@@ -104,7 +104,7 @@ summonr is moving from one crate to a flat workspace: every crate sits in `crate
 | `summonr-extensions` | MCP, plugins, skills, hooks, memory, prompts, mail | `mcp`, `plugins`, `skills`, `hooks`, `memory`, `prompt`, `mail` | planned |
 | `summonr-tools` | the tool runner and its tools | `tools`, `browser`, `web`, `jobs`, `command`, `child` | planned |
 | `summonr-session` | session state and history | `durable` (driver, log, work, tree), `session` | planned |
-| `summonr-runtime` | the turn loop and goals | `runtime`, `goal`, `review`, `scout` | planned |
+| `summonr-runtime` | the turn loop and goals | `runtime`, `goal`, `scout` | planned |
 | `summonr-gateway` | scheduling, chat gateways, ACP | `gateway`, `cron`, `acp` | planned |
 | `summonr-tui` | the terminal and desktop UI | `tui`, `splash`, `display`, `herdr`, `language`, `hashline` | planned |
 | `summonr` | the binary and CLI | `main`, `lib`, `update` | planned |

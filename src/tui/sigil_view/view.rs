@@ -38,6 +38,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
     keys::shell(&app)
         .pointer_down(move |_| outside.close_meters())
         .children_reactive(move || {
+            let appearance = screen.appearance.get();
             let chat = if screen.splash.get() {
                 splash::layer(screen.clone())
             } else {
@@ -62,7 +63,11 @@ pub(super) fn root(app: App) -> NodeBuilder {
                     .bg(sigil::prelude::Token::Surface)
                     .child(chat)
                     .child(dialog)
-                    .theme(super::theme::style(screen.appearance.get())),
+                    .theme(super::theme::style(if screen.splash.get() {
+                        super::theme::splash()
+                    } else {
+                        appearance
+                    })),
             ]
         })
 }

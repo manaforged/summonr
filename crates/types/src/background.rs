@@ -1,8 +1,8 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Background {
-    #[default]
     Theme,
+    #[default]
     Terminal,
 }
 

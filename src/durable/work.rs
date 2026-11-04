@@ -39,7 +39,6 @@ pub(crate) enum Stage {
     Plan,
     Execute,
     Verify,
-    Review,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -167,6 +166,8 @@ pub(crate) struct Work {
     pub(crate) todos: Vec<summonr_types::Todo>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) measurements: Vec<Measurement>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) protected: BTreeMap<String, Option<String>>,
 }
 
 impl Work {
@@ -193,6 +194,7 @@ impl Work {
             failed_checks: None,
             todos: Vec::new(),
             measurements: Vec::new(),
+            protected: BTreeMap::new(),
         }
     }
 
@@ -252,7 +254,6 @@ impl Work {
             Status::Active(Stage::Plan) => (WorkPhase::Plan, None),
             Status::Active(Stage::Execute) => (WorkPhase::Execute, None),
             Status::Active(Stage::Verify) => (WorkPhase::Verify, None),
-            Status::Active(Stage::Review) => (WorkPhase::Review, None),
             Status::Completed => (WorkPhase::Completed, None),
             Status::Abandoned(reason) | Status::Failed(reason) => {
                 (WorkPhase::Failed, Some(reason.clone()))

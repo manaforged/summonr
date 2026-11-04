@@ -88,9 +88,9 @@ impl Default for Prefs {
     fn default() -> Self {
         Self {
             theme: AUTO_THEME.to_string(),
-            background: Background::Theme,
+            background: Background::default(),
             notify: Notify::Turn,
-            splash: true,
+            splash: false,
             animations: true,
             spinner: Spinner::default(),
             fps: FPS_DEFAULT,

@@ -60,29 +60,6 @@ impl SessionDriver {
         }
     }
 
-    pub(crate) fn enter_review(&mut self) -> Result<(), DriverError> {
-        if self.turn.is_none() {
-            return Err(DriverError::NoTurn);
-        }
-        self.work.as_mut().ok_or(DriverError::NoWork)?.review()?;
-        self.checkpoint()
-    }
-
-    pub(crate) fn commit_review(
-        &mut self,
-        findings: &str,
-        receipt: Option<&crate::verify::Receipt>,
-    ) -> Result<(), DriverError> {
-        if self.turn.is_none() {
-            return Err(DriverError::NoTurn);
-        }
-        self.work
-            .as_mut()
-            .ok_or(DriverError::NoWork)?
-            .reject(findings)?;
-        self.close_with(receipt)
-    }
-
     pub(crate) fn commit_verdict(
         &mut self,
         verdict: Verdict,

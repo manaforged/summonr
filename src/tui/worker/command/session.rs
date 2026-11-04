@@ -41,6 +41,22 @@ impl Worker {
         true
     }
 
+    pub(in crate::tui::worker) async fn title_session(&mut self, request: &str, reply: &str) {
+        if self.titled || self.loop_.name().is_some() {
+            return;
+        }
+        self.titled = true;
+        let named = match self.loop_.title(request, reply).await {
+            Ok(title) if title.is_empty() => return,
+            Ok(title) => self.loop_.set_name(&title).map(|()| title),
+            Err(error) => Err(error),
+        };
+        match named {
+            Ok(title) => drop(self.ui.send(Msg::Fact(Fact::Named(title)))),
+            Err(error) => self.system(&format!("session title not generated: {error}")),
+        }
+    }
+
     pub(in crate::tui::worker) fn name(&mut self, name: Option<&str>) -> bool {
         match name {
             Some(name) => match self.loop_.set_name(name) {

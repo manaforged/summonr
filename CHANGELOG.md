@@ -9,6 +9,7 @@
 
 ### Changed
 
+- A goal with no `.summonr/check.toml` asks the model to write a contract of check commands to `.summonr/contract.toml` before it changes code. At least one command must fail on first run, then the judge reads the contract; once accepted, the commands decide completion, later edits to the file change nothing, and a change to a file listed under `protect` fails the check.
 - The `memory` module is off by default; `memory = true` under `[modules]` turns it on.
 
 ### Fixed
@@ -19,6 +20,10 @@
 - A worker listed in both native child events and the live roster appears once in activity details.
 - Named workers report idle between assignments, reactivate their activity rows on the next assignment, and stop prior background jobs when a new message arrives.
 - Cancelling a worker reports successful control while preserving the aborted child outcome in its receipt.
+
+### Removed
+
+- The `review` workflow role and the `review` work phase. A workflow table that still sets `review` fails to load with `unknown workflow role`; delete that line.
 
 ### Migration
 

@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 
 impl SessionDriver {
     pub(crate) fn defer(&mut self, note: &str, jobs: Vec<String>) -> Result<bool, DriverError> {
@@ -83,6 +84,27 @@ impl SessionDriver {
             .is_some_and(|work| matches!(work.policy, WorkKind::Goal))
     }
 
+    pub(crate) fn adopt_checks(
+        &mut self,
+        commands: &[String],
+        protected: BTreeMap<String, Option<String>>,
+    ) -> Result<bool, DriverError> {
+        let Some(work) = self.work.as_mut().filter(|work| !work.terminal()) else {
+            return Ok(false);
+        };
+        if !work.adopt_checks(commands, protected) {
+            return Ok(false);
+        }
+        self.checkpoint()?;
+        Ok(true)
+    }
+
+    pub(crate) fn protected(&self) -> BTreeMap<String, Option<String>> {
+        self.active()
+            .map(|work| work.protected.clone())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn completion_checks(&self) -> Result<Vec<Check>, DriverError> {
         Ok(self
             .work
@@ -107,8 +129,10 @@ impl SessionDriver {
         if work.plan.is_none() {
             work.select(text, commands)?;
         }
+        work.adopt_checks(commands, BTreeMap::new());
         let expected = crate::durable::work::checks(text, policy, commands)?;
-        if work.plan.as_deref() != Some(text) || work.checks != expected {
+        let kept = policy == WorkKind::Goal && commands.is_empty();
+        if work.plan.as_deref() != Some(text) || (!kept && work.checks != expected) {
             return Err(DriverError::State(
                 "the plan or completion checks changed while Work was active".to_string(),
             ));
@@ -145,7 +169,7 @@ impl SessionDriver {
                 self.execute()
             }
             Some(Stage::Execute) => self.checkpoint(),
-            Some(Stage::Verify | Stage::Review) => Err(DriverError::State(
+            Some(Stage::Verify) => Err(DriverError::State(
                 "Work is still in Verify after an interrupted turn".to_string(),
             )),
             None => Err(DriverError::NoWork),
@@ -204,7 +228,7 @@ impl SessionDriver {
             }
             Some(Stage::Plan) => self.execute(),
             Some(Stage::Execute) => Ok(()),
-            Some(Stage::Verify | Stage::Review) => Err(DriverError::State(
+            Some(Stage::Verify) => Err(DriverError::State(
                 "Work is still in Verify after an interrupted turn".to_string(),
             )),
             None => Err(DriverError::NoWork),

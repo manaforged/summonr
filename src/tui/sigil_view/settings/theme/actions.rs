@@ -129,6 +129,16 @@ impl App {
         self.settings_open.set(true);
     }
 
+    pub(super) fn select_theme(&self, name: &str) {
+        self.model_mut(|model| model.prefs.theme = crate::prefs::theme(name).to_string());
+        self.persist(&self.model.peek().prefs);
+        self.theme_editor.open.set(false);
+        self.theme_editor.editing.set(None);
+        self.settings_open.set(true);
+        self.apply_theme();
+        self.refresh();
+    }
+
     pub(in crate::tui::sigil_view) fn save_theme(&self) {
         let editor = self.theme_editor;
         if editor.editing.peek().is_some() {
@@ -139,14 +149,7 @@ impl App {
         }
         let path = self.workspace.join(".summonr/theme.toml");
         match editor.palette.peek().save(&path) {
-            Ok(()) => {
-                self.model_mut(|model| model.prefs.theme = editor.name.peek());
-                self.persist(&self.model.peek().prefs);
-                editor.open.set(false);
-                self.settings_open.set(true);
-                self.apply_theme();
-                self.refresh();
-            }
+            Ok(()) => self.select_theme(&editor.name.peek()),
             Err(error) => editor.error.set(format!("Could not save colors: {error}")),
         }
     }

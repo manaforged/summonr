@@ -26,6 +26,25 @@ impl Work {
         }
     }
 
+    pub(crate) fn adopt_checks(
+        &mut self,
+        commands: &[String],
+        protected: BTreeMap<String, Option<String>>,
+    ) -> bool {
+        if self.policy != WorkKind::Goal || !self.checks.is_empty() || commands.is_empty() {
+            return false;
+        }
+        self.checks = commands
+            .iter()
+            .map(|command| Check {
+                command: command.clone(),
+                observation: None,
+            })
+            .collect();
+        self.protected = protected;
+        true
+    }
+
     pub(crate) fn select(&mut self, markdown: &str, commands: &[String]) -> Result<(), WorkError> {
         let checks = checks(markdown, self.policy, commands)?;
         if self.policy == WorkKind::Steps {
@@ -89,16 +108,8 @@ impl Work {
         Ok(paths)
     }
 
-    pub(crate) fn review(&mut self) -> Result<(), WorkError> {
-        if self.stage() != Some(Stage::Verify) {
-            return Err(WorkError("Review requires Verify".to_string()));
-        }
-        self.status = Status::Active(Stage::Review);
-        Ok(())
-    }
-
     pub(crate) fn verdict(&mut self, passed: bool, decision: Decision) -> Result<(), WorkError> {
-        if !matches!(self.stage(), Some(Stage::Verify | Stage::Review)) {
+        if !matches!(self.stage(), Some(Stage::Verify)) {
             return Err(WorkError("a verdict requires Verify".to_string()));
         }
         if passed
@@ -198,14 +209,6 @@ impl Work {
         Ok(true)
     }
 
-    pub(crate) fn reject(&mut self, findings: &str) -> Result<(), WorkError> {
-        if self.stage() != Some(Stage::Review) {
-            return Err(WorkError("a rejection requires Review".to_string()));
-        }
-        self.record_check(false);
-        self.fail(format!("Address the review findings:\n{findings}"))
-    }
-
     fn fail(&mut self, continuation: String) -> Result<(), WorkError> {
         let active = match self.active.or_else(|| {
             self.steps
@@ -257,7 +260,7 @@ impl Work {
     }
 
     pub(crate) fn interrupt(&mut self) -> bool {
-        if !matches!(self.stage(), Some(Stage::Verify | Stage::Review)) {
+        if !matches!(self.stage(), Some(Stage::Verify)) {
             return false;
         }
         self.status = Status::Active(Stage::Execute);

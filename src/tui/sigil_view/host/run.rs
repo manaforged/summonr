@@ -78,6 +78,9 @@ pub(crate) fn run(
                     app.resize(cols, rows);
                 }
                 app.load();
+                if let Some(prompt) = &info.prompt {
+                    app.send_text(prompt);
+                }
                 app.refresh();
                 app.animate();
                 if let Some(ui_rx) = inbox.borrow_mut().take() {

@@ -38,7 +38,6 @@ mod process;
 mod prompt;
 mod provider;
 mod recent;
-mod review;
 mod rpc;
 mod runtime;
 mod scout;

@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Paint, Rgba8, Signal, Token, Tone, Widget,
-    button, container, signal, text_edit,
+    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Paint, Rgba8, Signal, Tone, Widget, button,
+    container, signal, text_edit,
 };
 
 use super::{App, canvas};
@@ -104,13 +104,23 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     ),
             ];
             nodes.push(
-                container().child(
-                    sigil::prelude::text(
-                        "Live preview · saves workspace colors to .summonr/theme.toml",
-                    )
-                    .wrap()
-                    .font_size(12.0)
-                    .text_color(Token::OnSurfaceMuted),
+                [
+                    ("System", crate::prefs::AUTO_THEME),
+                    ("Light", "dawn"),
+                    ("Dark", "space"),
+                ]
+                .into_iter()
+                .fold(
+                    container().layout(LayoutStyle::flex_row().fill_width().gap(8.0)),
+                    |row, (label, name)| {
+                        let select = paint.clone();
+                        row.child(
+                            button(label)
+                                .ghost()
+                                .size(ControlSize::Compact)
+                                .activate(move || select.select_theme(name)),
+                        )
+                    },
                 ),
             );
             if let Some((name, _)) = editor.editing.get() {

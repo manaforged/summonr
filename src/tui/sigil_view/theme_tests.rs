@@ -6,7 +6,12 @@ use sigil::terminal::Ink;
 #[test]
 fn the_terminal_background_leaves_the_base_unpainted() {
     let dir = tempfile::tempdir().unwrap();
-    let mut prefs = Prefs::default();
+    let mut prefs = Prefs {
+        background: Background::Theme,
+        ..Prefs::default()
+    };
+    assert_eq!(Background::default(), Background::Terminal);
+    assert!(!Prefs::default().splash);
     drop(install(&prefs, dir.path(), None));
     assert!(matches!(ink(palette().base), Ink::Exact(_)));
     prefs.background = Background::Terminal;
@@ -67,6 +72,7 @@ fn applying_custom_colors_repaints_a_mounted_view_without_changing_the_theme_nam
         let (commands, _receiver) = unbounded_channel();
         let mut context = info();
         context.config = Some(workspace.path().join("config.toml"));
+        context.prefs.background = Background::Theme;
         let app = App::new(context, workspace.path().to_owned(), commands);
         app.resize(80, 24);
         app.refresh();
@@ -149,6 +155,7 @@ fn every_palette_keeps_text_hints_and_code_blocks_legible_on_base() {
             let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
             let mut context = info();
             context.prefs.theme = name.to_string();
+            context.prefs.background = Background::Theme;
             let app = App::new(context, workspace.path().to_owned(), commands);
             app.resize(110, 40);
             let mut host = sigil::Host::new(HostMode::Cell);
@@ -174,23 +181,31 @@ fn every_palette_keeps_text_hints_and_code_blocks_legible_on_base() {
             ];
             for (open, title) in scenes {
                 open(&app);
-                screen.frame(&mut host, [], (110, 40)).expect("settle");
-                let grid = screen.frame(&mut host, [], (110, 40)).expect("modal frame");
-                let text = grid.text();
-                let (row, line) = text
-                    .lines()
-                    .enumerate()
-                    .find(|(_, line)| line.contains(title))
-                    .expect("modal title");
-                let at = line.find(title).expect("title position");
-                let col = sigil::app::cell_width(&line[..at]);
-                let cell = grid.get(col, row).expect("title cell");
-                assert_eq!(
-                    cell.bg,
-                    Ink::Exact(palette.base),
-                    "{name}: {title} background"
-                );
-                assert_eq!(cell.fg, Ink::Exact(palette.text), "{name}: {title} text");
+                for splash in [true, false] {
+                    app.splash.set(splash);
+                    let expected = if splash && palette == Palette::DAWN {
+                        Palette::SPACE
+                    } else {
+                        palette
+                    };
+                    screen.frame(&mut host, [], (110, 40)).expect("settle");
+                    let grid = screen.frame(&mut host, [], (110, 40)).expect("modal frame");
+                    let text = grid.text();
+                    let (row, line) = text
+                        .lines()
+                        .enumerate()
+                        .find(|(_, line)| line.contains(title))
+                        .expect("modal title");
+                    let at = line.find(title).expect("title position");
+                    let col = sigil::app::cell_width(&line[..at]);
+                    let cell = grid.get(col, row).expect("title cell");
+                    assert_eq!(
+                        cell.bg,
+                        Ink::Exact(expected.base),
+                        "{name}: {title} background, splash={splash}"
+                    );
+                    assert_eq!(cell.fg, Ink::Exact(expected.text), "{name}: {title} text");
+                }
             }
         });
         for (token, color, floor) in [

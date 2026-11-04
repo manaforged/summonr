@@ -30,17 +30,9 @@ fn open(provider: Scripted) -> Run {
     }
 }
 
-fn goal(run: &mut Run, review: impl IntoIterator<Item = Reply>) {
+fn goal(run: &mut Run) {
     run.loop_.select_goal("ship it", &[]).unwrap();
     run.loop_.set_mode(crate::WorkKind::Goal);
-    run.loop_.set_role_model(
-        workflow::Role::Review,
-        Scripted::new(review),
-        "r",
-        None,
-        None,
-        None,
-    );
 }
 
 fn stalled(check: &str) -> Run {
@@ -120,62 +112,10 @@ async fn a_plain_turn_sends_the_prompt_and_ends_with_progress_then_the_reply() {
 }
 
 #[tokio::test]
-async fn a_rejecting_review_fails_the_turn_and_shows_its_findings() {
-    let mut run = session([Reply::Text("done")]);
-    goal(
-        &mut run,
-        [Reply::Text(
-            r#"{"pass": false, "findings": "the tests were never run"}"#,
-        )],
-    );
-    let turn = run.loop_.turn("go").await.unwrap();
-    let review = turn
-        .checks
-        .iter()
-        .find(|check| check.command == crate::review::CHECK);
-    assert!(
-        review.is_some_and(|check| !check.passed),
-        "{:?}",
-        turn.checks
-    );
-    let closing = closing(&turn);
-    let at = closing
-        .iter()
-        .position(|event| matches!(event, Event::Verify { command, passed: false } if command == crate::review::CHECK))
-        .unwrap_or_else(|| panic!("{closing:?}"));
-    let Event::Note { text } = closing[at + 1] else {
-        panic!("{closing:?}");
-    };
-    assert_eq!(text, "review findings:\nthe tests were never run");
-}
-
-#[tokio::test]
-async fn an_unreachable_reviewer_fails_the_turn_and_says_why_once() {
-    let mut run = session([Reply::Text("done")]);
-    goal(&mut run, [Reply::Fail("reviewer offline")]);
-    let turn = run.loop_.turn("go").await.unwrap();
-    let review = turn
-        .checks
-        .iter()
-        .find(|check| check.command == crate::review::CHECK);
-    assert!(
-        review.is_some_and(|check| !check.passed),
-        "{:?}",
-        turn.checks
-    );
-    let note = closing(&turn).into_iter().find_map(|event| match event {
-        Event::Note { text } if text.contains("reviewer offline") => Some(text.clone()),
-        _ => None,
-    });
-    let note = note.unwrap_or_else(|| panic!("{:?}", turn.events));
-    assert_eq!(note.matches("review unavailable").count(), 1, "{note}");
-}
-
-#[tokio::test]
 async fn a_turn_that_leaves_a_job_running_is_deferred_not_verified() {
     let sleep = format!("sleep {}", crate::limits::limits().job_wait_secs + 4);
     let mut run = session([background(&sleep), Reply::Text("started it")]);
-    goal(&mut run, []);
+    goal(&mut run);
     let turn = run.loop_.turn("go").await.unwrap();
     assert!(turn.checks.is_empty(), "{:?}", turn.checks);
     let closing = closing(&turn);
@@ -367,17 +307,9 @@ async fn a_steer_sent_during_the_last_round_reaches_the_model_in_that_turn() {
 #[tokio::test]
 async fn todo_harness_note_never_shows_in_the_users_own_message() {
     let mut run = session([Reply::Text("done")]);
-    run.loop_.set_role_model(
-        workflow::Role::Review,
-        Scripted::new([Reply::Text(r#"{"pass": true}"#)]),
-        "r",
-        None,
-        None,
-        None,
-    );
     run.loop_.turn("ship the parser").await.unwrap();
     let sent = format!("{:?}", run.sent.lock().unwrap()[0]);
-    assert!(sent.contains("Harness: a reviewer"), "{sent}");
+    assert!(sent.contains("Harness state"), "{sent}");
     let exported = crate::session::export(run.loop_.session.path()).unwrap();
     assert!(exported.contains("ship the parser"), "{exported}");
     assert!(!exported.contains("Harness"), "{exported}");

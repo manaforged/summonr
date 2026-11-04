@@ -47,6 +47,9 @@ pub(crate) fn run(
             let app = App::new(info.clone(), workspace.clone(), commands.clone());
             app.fit_window();
             app.load();
+            if let Some(prompt) = &info.prompt {
+                app.send_text(prompt);
+            }
             app.refresh();
             app.animate();
             if let Some(ui_rx) = inbox.borrow_mut().take() {

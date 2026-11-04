@@ -194,6 +194,7 @@ fn worker() -> (
         workspace: workspace.path().display().to_string(),
         workflow: None,
         config: None,
+        prompt: None,
     };
     let (_commands, receiver) = tokio::sync::mpsc::unbounded_channel();
     let (ui, inbox) = tokio::sync::mpsc::unbounded_channel();

@@ -97,35 +97,13 @@ impl<P: Provider> Loop<P> {
             checks.push(measured);
         }
         let mut verdict = self.verdict(&mut checks, events, emit)?;
-        let mut rejected = None;
-        let mut reviewed = false;
-        if verdict.passed && self.role_model(workflow::Role::Review).is_some() {
-            rejected = self
-                .review_turn(reply, &paths, &mut checks, events, emit, usage)
-                .await?;
-            verdict.passed = rejected.is_none();
-            reviewed = true;
-        }
         let receipt = crate::verify::new(paths, checks.clone(), snapshot);
         let decision = self
-            .decide(
-                reply,
-                &receipt.text,
-                &mut verdict,
-                reviewed,
-                &mut checks,
-                events,
-                emit,
-                usage,
-            )
+            .decide(reply, &receipt.text, &mut verdict, &mut checks, events, emit, usage)
             .await?;
         let receipt = crate::verify::new(receipt.changes, checks.clone(), receipt.snapshot);
-        match rejected {
-            Some(findings) => self.session.commit_review(&findings, Some(&receipt)),
-            None => self
-                .session
-                .commit_verdict(verdict, decision, Some(&receipt)),
-        }?;
+        self.session
+            .commit_verdict(verdict, decision, Some(&receipt))?;
         Ok(checks)
     }
 
@@ -138,7 +116,6 @@ impl<P: Provider> Loop<P> {
         reply: &str,
         receipt: &str,
         verdict: &mut Verdict,
-        reviewed: bool,
         checks: &mut Vec<Outcome>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -150,59 +127,17 @@ impl<P: Provider> Loop<P> {
         let decision = self
             .goal_decision(reply, receipt, events, emit, usage)
             .await?;
-        if reviewed || !matches!(decision, Decision::Automatic) {
+        if !matches!(decision, Decision::Automatic) {
             *verdict = self.verdict(checks, events, emit)?;
         }
         Ok(decision)
-    }
-
-    async fn review_turn(
-        &mut self,
-        reply: &str,
-        paths: &[String],
-        checks: &mut Vec<Outcome>,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-        usage: &mut Usage,
-    ) -> Result<Option<String>> {
-        self.session.enter_review()?;
-        let objective = self.session.objective()?;
-        let evidence = verify::summary(paths, checks);
-        let reviewed = review::outcome(self, &objective, reply, &evidence, paths, usage).await;
-        self.sync_usage(emit);
-        let (review, heading) = match reviewed {
-            Ok(review) => (review, "review findings:\n"),
-            Err(why) => (
-                Outcome {
-                    command: review::CHECK.to_string(),
-                    passed: false,
-                    output: why,
-                },
-                "",
-            ),
-        };
-        self.push_event(
-            events,
-            emit,
-            Event::Verify {
-                command: review.command.clone(),
-                passed: review.passed,
-            },
-        )?;
-        let rejected = (!review.passed).then(|| review.output.clone());
-        if let Some(output) = &rejected {
-            let text = format!("{heading}{output}");
-            self.push_event(events, emit, Event::Note { text })?;
-        }
-        checks.push(review);
-        Ok(rejected)
     }
 
     async fn goal_decision(
         &mut self,
         reply: &str,
         evidence: &str,
-        events: &[Event],
+        events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Decision> {
@@ -211,6 +146,9 @@ impl<P: Provider> Loop<P> {
         };
         if self.metric.is_some() {
             return Ok(Decision::GoalComplete);
+        }
+        if let Some(decision) = self.adopt_contract(&objective, events, emit, usage).await? {
+            return Ok(decision);
         }
         let todos = self.session.work_progress()?.todos;
         let open = todos

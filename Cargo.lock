@@ -3680,6 +3680,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-latex-parser"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8df072fb6725cee69fb2edf4aae54ec16d1ac28672a32e1d7f8c604f6c1afa0"
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3941,6 +3947,7 @@ dependencies = [
  "pollster",
  "raw-window-handle",
  "rayon",
+ "rust-latex-parser",
  "rustix 1.1.4",
  "serde_json",
  "sigil-fonts",

@@ -280,6 +280,7 @@ pub struct Info {
     pub workspace: String,
     pub workflow: Option<crate::workflow::Workflow>,
     pub config: Option<std::path::PathBuf>,
+    pub prompt: Option<String>,
 }
 
 pub fn run(

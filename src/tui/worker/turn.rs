@@ -25,6 +25,10 @@ impl Worker {
     }
 
     async fn run_turn(&mut self, input: Input) -> bool {
+        let request = match &input {
+            Input::User(input) => Some(input.text.clone()),
+            Input::Mail => None,
+        };
         drop(self.ui.send(Msg::Fact(Fact::Busy(Some(Activity::Turn)))));
         let sender = self.ui.clone();
         let delivered = std::sync::Arc::new(tokio::sync::Notify::new());
@@ -120,8 +124,15 @@ impl Worker {
         if matches!(&result, Some(Ok(turn)) if !turn.aborted) {
             self.remember_model();
         }
+        let reply = match &result {
+            Some(Ok(turn)) if !turn.aborted => Some(turn.text.clone()),
+            _ => None,
+        };
         self.finish_turn(cancelled, result);
         self.send_settings();
+        if let (Some(request), Some(reply)) = (request, reply) {
+            self.title_session(&request, &reply).await;
+        }
         true
     }
 

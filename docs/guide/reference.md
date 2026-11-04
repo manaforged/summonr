@@ -96,7 +96,9 @@ summonr --steps PLAN.md
 retain_days = 90
 ```
 
-`--goal` keeps one objective until `.summonr/check.toml` is green and a judge says stop. The judge answers `done`, `continue`, `stalled`, or `impossible`; the last two end the goal with the reason. A goal has no turn cap; it runs until the judge stops it, a budget ends it, or you cancel it. `--max-tokens` and `--max-secs` bound every mode. A budget counts from the run that loads the session, so a resumed or forked session starts with its full budget. Every goal turn restates the objective to the model, so a compacted context cannot lose it. `--steps` hands the model one numbered item at a time. A step that contains ``Run `CMD` `` gets `CMD` as its own check, in addition to `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check. A turn that ends while a background command it started is still running is deferred, with no verdict and no repair strike, until the job exits or the model kills it. The harness remembers that job across turns; a later turn cannot complete while it runs. A `### Heading` under `## Steps` groups the items that follow it into a phase. Every turn carries the ledger to the model and to the transcript: phases as Roman numerals, `[x]` done, `[/]` this step, `[ ]` later, `[!]` blocked. Both edit this directory. `--worktree` isolates in a git worktree (`<repo>-worktrees/<id>`). Exit 0 then commits the files the run changed as `summonr: <objective>` (files over 5 MB and anything the run did not touch are left in place and named), fast-forwards your branch, and removes the tree; a tree that cannot fast-forward or still holds uncommitted files is kept and named, and the exit code is 1. `--here` is the default.
+`--goal` keeps one objective until its check is green. A judge says when to stop only when there is no check. The judge answers `done`, `continue`, `stalled`, or `impossible`; the last two end the goal with the reason. A goal has no turn cap; it runs until the judge stops it, a budget ends it, or you cancel it. `--max-tokens` and `--max-secs` bound every mode. A budget counts from the run that loads the session, so a resumed or forked session starts with its full budget. Every goal turn restates the objective to the model, so a compacted context cannot lose it. `--steps` hands the model one numbered item at a time. A step that contains ``Run `CMD` `` gets `CMD` as its own check, in addition to `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check. A turn that ends while a background command it started is still running is deferred, with no verdict and no repair strike, until the job exits or the model kills it. The harness remembers that job across turns; a later turn cannot complete while it runs. A `### Heading` under `## Steps` groups the items that follow it into a phase. Every turn carries the ledger to the model and to the transcript: phases as Roman numerals, `[x]` done, `[/]` this step, `[ ]` later, `[!]` blocked. Both edit this directory. `--worktree` isolates in a git worktree (`<repo>-worktrees/<id>`). Exit 0 then commits the files the run changed as `summonr: <objective>` (files over 5 MB and anything the run did not touch are left in place and named), fast-forwards your branch, and removes the tree; a tree that cannot fast-forward or still holds uncommitted files is kept and named, and the exit code is 1. `--here` is the default.
+
+A goal with no `.summonr/check.toml` asks the model to write a contract to `.summonr/contract.toml` (`checks = [...]`, `protect = [...]`) before it changes code. At least one command must fail when summonr first runs them; then the judge reads the contract. Once accepted, the commands move into the goal's Work record and decide completion like a configured check, and a change to a protected file fails that check. `--no-verify` skips `.summonr/check.toml` only.
 
 ```markdown
 ## Steps
@@ -110,7 +112,7 @@ retain_days = 90
 | Flag | Effect |
 | --- | --- |
 | `-e`, `--endpoint NAME` | Use endpoint NAME. A bare endpoint name as the first word does the same. |
-| `-p`, `--print` | Run one prompt and exit. A bare prompt after the options does the same. |
+| `-p`, `--print` | Run one prompt and exit. A bare prompt after the options opens the interface with that prompt as the first turn when stdin and stdout are a terminal, and runs once and exits otherwise. |
 | `-c`, `--continue` | Resume the last session in this directory. |
 | `--fork` | Copy the resumed session (`-c`, `--session`) and continue the copy. Not with `--goal` or `--steps`. |
 | `--trust` | Read workspace `SYSTEM.md`, `AGENTS.md`, and `CLAUDE.md`. On by default. |
@@ -125,7 +127,7 @@ retain_days = 90
 | `--json` | Print JSON: one event per line with `-p`, `--goal`, and `--steps`, and JSON output from `session diff`, `worktree list`, `mcp`, and `classify`. |
 | `--session ID` | Resume a session by id, short id, prefix, or name. |
 | `--name TEXT` | Name this session. |
-| `--goal TEXT` | Work toward TEXT until the configured check passes; without a check, the judge decides. |
+| `--goal TEXT` | Work toward TEXT until the configured check, or the contract the model writes, passes. |
 | `--steps PLAN.md` | Run each item under `## Steps` in PLAN.md and gate it on its check. |
 | `--max-tokens N` | Session token budget. A breach stops the run. |
 | `--max-secs N` | Session wall-clock budget in seconds. A breach stops the run. |
@@ -201,7 +203,7 @@ Top-level keys in `~/.summonr/config.toml`:
 
 | Key | Values | Effect |
 | --- | --- | --- |
-| `splash` | `true` (default), `false` | Show the startup banner. |
+| `splash` | `true`, `false` (default) | Show the decorative startup screen. |
 | `models_catalog` | `true` (default), `false` | Fetch the models.dev catalog for `summonr endpoint list --check` and `/model`; `false` keeps every request on your own endpoints. |
 | `animations` | `true` (default), `false` | Animate the interface. |
 | `spinner` | `dots` (default), `symbols` | Working indicator style; also selectable in settings. |
@@ -476,9 +478,9 @@ The `body` table of an endpoint is merged last, so it can still set any field by
 | --- | --- | --- | --- |
 | Auto | default, `/auto` | `/goal`, `/steps` | Follow the request this turn. |
 | Work | `/steps FILE`, `--steps` | steps end (auto), `/auto` | Run a plan's `## Steps` one at a time, each with its check. |
-| Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto`; the session returns to the mode it had before | Loop until the configured check passes; without a check, the judge decides. |
+| Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto`; the session returns to the mode it had before | Loop until the configured check, or the accepted contract, passes. |
 
-`/goal` with no check in `.summonr/check.toml` runs with no check: the judge decides when the goal is met. `/goal` says so and how to set one.
+`/goal` with no check in `.summonr/check.toml` asks the model for a contract in `.summonr/contract.toml`; until the judge accepts one, the judge decides when the goal is met. `/goal` says so and how to set a check.
 
 ### Confirmation
 
@@ -488,7 +490,7 @@ Everything runs without a prompt except irreversible destruction: wiping the sys
 
 ### Workflows
 
-A workflow runs each role on its own model. Roles are `scout`, `implement`, `review`, `judge`, and `summary`; a role the workflow does not name runs on the endpoint and model you started with.
+A workflow runs each role on its own model. Roles are `scout`, `implement`, `judge`, and `summary`; a role the workflow does not name runs on the endpoint and model you started with.
 
 ```toml
 # ~/.summonr/config.toml
@@ -496,8 +498,7 @@ workflow = "cheap-scout"      # optional default
 
 [workflows.cheap-scout]
 scout = "grok"
-review = "zai"
-judge = "grok"
+judge = "zai"
 ```
 
 `summonr -w cheap-scout`, `/workflow cheap-scout` in the interface, or the `workflow` key picks one; `summonr workflow list` lists them. In the interface every card action has a verb too:
@@ -596,7 +597,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `/exit` | quit summonr |
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort. A provider that does not answer is left out of the list until `F5` reaches it |
 | `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
-| `/workflow [NAME]` | choose models for scout, work, and review |
+| `/workflow [NAME]` | choose models for scout, work, and judge |
 | `/login [NAME]` | sign in to a provider or store its key. Rows sit under `ready`, `needs attention`, and `not set up`; at 96 columns or more a detail pane shows the row's key, sign-in, models, and actions |
 | `/auto` | return to auto mode |
 | `/goal TEXT` | work toward an objective across turns |
@@ -639,7 +640,7 @@ A shell session launched with `SUMMONR_PARENT_SESSION` is a subagent of that ses
 
 The card takes the keyboard (↑↓ role, enter picks a model, `d` returns it to the driving model, ←→ cycles saved workflows, `s` saves) and the mouse: click a role to pick its model, drag a role onto another to copy the model, click a saved name to apply it. The settings modal, model picker, and authentication card take clicks as well. The session log records the model behind every reply.
 
-With a `scout` role, a `--steps` or `--goal` job opens with a read-only brief of the files, conventions, and helpers the objective touches. With a `review` role, a turn whose checks passed is read by the reviewer before it completes; a rejection sends the findings back as the next instruction and counts as a failed check.
+With a `scout` role, a `--steps` or `--goal` job opens with a read-only brief of the files, conventions, and helpers the objective touches.
 ## Questions from the model
 
 In an interactive session the model can call `ask` to put one to four questions to you. The dialog above the composer shows one question at a time: `↑` and `↓` move between options, `space` toggles an option when several are allowed, and `enter` picks. Type in the composer to give your own answer instead, or a number to pick that option. One question sends at once; several end on a review where `y` sends, `e` edits, and `esc` cancels. A message you sent into the turn before the dialog opened never answers it; it reaches the model after the dialog closes. The same dialog shows MCP server forms. `-p`, `--steps`, `--goal`, `summonr acp`, and child sessions have no one to answer, so the model does not get `ask` there.
@@ -947,7 +948,7 @@ Search is the `search` tool, or `rg` through `run_command`. A 1k-token impact gr
 
 ## Theme
 
-`theme` in `config.toml` selects `space` (the default), `nord`, `dawn` (a low-glare light theme), or `auto`, which picks `space` or `dawn` from the terminal's background. The Theme row in `/settings` cycles them. `background = "terminal"` leaves the background unpainted so the terminal's own background (and any transparency) shows through; `"theme"`, the default, paints the theme's `base` color. The Background row in `/settings` switches between them. Every other color is a named token you can override in a theme file:
+`theme` in `config.toml` defaults to `auto`, which picks `space` or `dawn` from the terminal's background. You can also select `space`, `nord`, or `dawn` (a low-glare light theme). The Theme editor in `/settings` has System, Light, and Dark buttons; arrow keys cycle individual presets. `background = "terminal"`, the default, leaves the background unpainted so the terminal's own background (and any transparency) shows through; `"theme"` paints the theme's `base` color. The Background row in `/settings` switches between them. Every other color is a named token you can override in a theme file:
 
 ```toml
 accent = "#698cd2"

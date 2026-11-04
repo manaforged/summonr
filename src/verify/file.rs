@@ -10,14 +10,21 @@ struct CheckFile {
     check: Option<String>,
     checks: Option<Vec<String>>,
     metric: Option<Metric>,
+    #[serde(default)]
+    protect: Vec<String>,
 }
 
-fn check_file(workspace: &Path) -> Result<Option<CheckFile>> {
-    let path = check_path(workspace);
+#[derive(Debug)]
+pub(crate) struct Contract {
+    pub(crate) checks: Vec<String>,
+    pub(crate) protect: Vec<String>,
+}
+
+fn check_file(path: &Path) -> Result<Option<CheckFile>> {
     if !path.is_file() {
         return Ok(None);
     }
-    let text = std::fs::read_to_string(&path)?;
+    let text = std::fs::read_to_string(path)?;
     let file: CheckFile = toml::from_str(&text)
         .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
     if file.check.is_some() && file.checks.is_some() {
@@ -39,7 +46,7 @@ fn check_file(workspace: &Path) -> Result<Option<CheckFile>> {
 }
 
 pub(crate) fn metric(workspace: &Path) -> Result<Option<Metric>> {
-    Ok(check_file(workspace)?.and_then(|file| file.metric))
+    Ok(check_file(&check_path(workspace))?.and_then(|file| file.metric))
 }
 
 #[must_use]
@@ -47,18 +54,45 @@ pub(crate) fn check_path(workspace: &Path) -> std::path::PathBuf {
     workspace.join(".summonr/check.toml")
 }
 
+#[must_use]
+pub(crate) fn contract_path(workspace: &Path) -> std::path::PathBuf {
+    workspace.join(".summonr/contract.toml")
+}
+
 pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {
-    let Some(file) = check_file(workspace)? else {
+    let Some(file) = check_file(&check_path(workspace))? else {
         return Ok(None);
     };
     let metric = file.metric.is_some();
+    let commands = commands(file);
+    Ok((metric || !commands.is_empty()).then_some(commands))
+}
+
+pub(crate) fn contract(workspace: &Path) -> Result<Option<Contract>> {
+    let Some(mut file) = check_file(&contract_path(workspace))? else {
+        return Ok(None);
+    };
+    let protect = std::mem::take(&mut file.protect);
+    let checks = commands(file);
+    Ok((!checks.is_empty()).then_some(Contract { checks, protect }))
+}
+
+#[must_use]
+pub(crate) fn digest(workspace: &Path, path: &str) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    std::fs::read(workspace.join(path))
+        .ok()
+        .map(|bytes| format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn commands(file: CheckFile) -> Vec<String> {
     let mut commands = match (file.check, file.checks) {
         (Some(check), _) => vec![check],
         (None, Some(checks)) => checks,
         (None, None) => Vec::new(),
     };
     commands.retain(|command| !command.trim().is_empty());
-    Ok((metric || !commands.is_empty()).then_some(commands))
+    commands
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@ use crate::prompt::{Harness, harness_section};
 use crate::provider::StopReason;
 use crate::session::decorate;
 use crate::tools::{Abort, ToolOutput, needed_grant, readonly};
-use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, review, scout, verify};
+use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, scout, verify};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GrantAnswer {
@@ -106,6 +106,7 @@ pub(super) use ask::definition as ask_definition;
 mod calls;
 mod checks;
 mod close;
+mod contract;
 mod elicit;
 pub(crate) use elicit::Steering;
 mod finish;
@@ -379,8 +380,8 @@ fn purpose_of(role: workflow::Role) -> Purpose {
         workflow::Role::Implement => Purpose::Agent,
         workflow::Role::Summary => Purpose::Summary,
         workflow::Role::Judge => Purpose::Judge,
-        workflow::Role::Review => Purpose::Review,
         workflow::Role::Scout => Purpose::Scout,
+        workflow::Role::Title => Purpose::Title,
     }
 }
 

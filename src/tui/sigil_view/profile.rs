@@ -292,6 +292,7 @@ pub(super) fn info() -> Info {
         workspace: String::from("profile"),
         workflow: None,
         config: None,
+        prompt: None,
     }
 }
 

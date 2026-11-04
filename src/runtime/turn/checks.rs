@@ -102,6 +102,17 @@ impl<P: Provider> Loop<P> {
             )?;
         }
         let mut checks = Vec::new();
+        if let Some(outcome) = self.protected_drift() {
+            self.push_event(
+                events,
+                emit,
+                Event::Verify {
+                    command: outcome.command.clone(),
+                    passed: false,
+                },
+            )?;
+            return Ok(vec![outcome]);
+        }
         for check in declared {
             let command = check.command.clone();
             let outcome = match &check.observation {
@@ -338,12 +349,6 @@ impl<P: Provider> Loop<P> {
         }
         if !status.is_empty() {
             parts.push(format!("Harness progress:\n{}", status.join("\n")));
-        }
-        if self.role_model(workflow::Role::Review).is_some() {
-            parts.push(
-                "Harness: a reviewer reads the change after the completion check and can send it back."
-                    .to_string(),
-            );
         }
         parts.retain(|part| !part.is_empty());
         parts.join("\n\n")

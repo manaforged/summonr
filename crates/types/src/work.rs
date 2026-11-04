@@ -27,7 +27,6 @@ pub enum WorkPhase {
     Plan,
     Execute,
     Verify,
-    Review,
     Completed,
     Failed,
 }
@@ -38,7 +37,6 @@ impl Display for WorkPhase {
             Self::Plan => "planning",
             Self::Execute => "running",
             Self::Verify => "verifying",
-            Self::Review => "reviewing",
             Self::Completed => "completed",
             Self::Failed => "failed",
         })
@@ -78,7 +76,7 @@ impl WorkProgress {
             WorkPhase::Completed => Some(0),
             WorkPhase::Failed if self.checks_failed => Some(2),
             WorkPhase::Failed => Some(3),
-            WorkPhase::Plan | WorkPhase::Execute | WorkPhase::Verify | WorkPhase::Review => None,
+            WorkPhase::Plan | WorkPhase::Execute | WorkPhase::Verify => None,
         }
     }
 

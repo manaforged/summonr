@@ -5,6 +5,11 @@ impl App {
         self.send_draft(false);
     }
 
+    pub(in crate::tui::sigil_view) fn send_text(&self, text: &str) {
+        self.replace(text.to_string());
+        self.submit();
+    }
+
     pub(in crate::tui::sigil_view) fn queue_draft(&self) -> bool {
         let running = matches!(self.model.get().busy_since, Some((Activity::Turn, _)));
         if !running || self.draft.peek().trim().is_empty() {

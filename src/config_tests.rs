@@ -172,7 +172,7 @@ fn a_saved_workflow_loads_back_with_its_seats() {
                 },
             ),
             (
-                Role::Review,
+                Role::Judge,
                 ModelSelection {
                     endpoint: "anthropic".to_string(),
                     model: Some("claude-sonnet-5".to_string()),

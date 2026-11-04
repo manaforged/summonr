@@ -42,8 +42,8 @@ pub(crate) enum Purpose {
     Agent,
     Summary,
     Judge,
-    Review,
     Scout,
+    Title,
 }
 
 struct Round {

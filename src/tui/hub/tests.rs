@@ -153,6 +153,7 @@ fn info() -> crate::tui::Info {
         workspace: String::new(),
         workflow: None,
         config: None,
+        prompt: None,
     }
 }
 

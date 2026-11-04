@@ -52,6 +52,7 @@ struct Worker {
     last_turn: Option<crate::Turn>,
     mail_error: Option<String>,
     announced: Vec<String>,
+    titled: bool,
     workflow: Workflow,
     dial: Option<crate::Effort>,
     levels: Vec<crate::Effort>,

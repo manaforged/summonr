@@ -9,7 +9,7 @@ use summonr_core::error::Error;
 mod file;
 mod metric;
 pub use file::check_commands;
-pub(crate) use file::{check_path, metric};
+pub(crate) use file::{Contract, check_path, contract, contract_path, digest, metric};
 pub(crate) use metric::{Metric, Protected};
 
 #[must_use]
@@ -66,47 +66,6 @@ pub(crate) fn context(receipt: &Receipt) -> String {
     text
 }
 
-#[must_use]
-pub(crate) fn summary(changes: &[String], checks: &[Outcome]) -> String {
-    let failed = checks.iter().find(|check| !check.passed);
-    let mut text = String::from("Turn receipt\n- Changed: ");
-    if changes.is_empty() {
-        text.push_str("none");
-    } else {
-        text.push_str(
-            &changes
-                .iter()
-                .map(|change| code(change))
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-    }
-    if checks.is_empty() {
-        text.push_str("\n- Verification: not configured");
-    } else {
-        for check in checks {
-            text.push_str("\n- Verification: ");
-            text.push_str(&code(&check.command));
-            text.push(' ');
-            text.push_str(if check.passed { "passed" } else { "failed" });
-        }
-    }
-    if let Some(check) = failed
-        && !check.output.trim().is_empty()
-    {
-        text.push_str("\n\nCheck output\n");
-        for line in check.output.trim().lines() {
-            text.push_str("    ");
-            text.push_str(line);
-            text.push('\n');
-        }
-        while text.ends_with('\n') {
-            text.pop();
-        }
-    }
-    text
-}
-
 pub(crate) fn ran(events: &[Event], configured: &[String]) -> Vec<Outcome> {
     let mut calls = BTreeMap::new();
     for event in events {
@@ -152,10 +111,6 @@ fn command_of(arguments: &str) -> Option<String> {
 
 fn is_check(command: &str, configured: &[String]) -> bool {
     configured.iter().any(|check| check == command) || command.contains("loop verify")
-}
-
-fn code(text: &str) -> String {
-    format!("`{}`", text.replace('`', "\\`"))
 }
 
 #[cfg(test)]

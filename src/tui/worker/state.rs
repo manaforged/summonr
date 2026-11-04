@@ -48,6 +48,7 @@ impl Worker {
             last_turn: None,
             mail_error: None,
             announced: Vec::new(),
+            titled: false,
             last_diff: None,
             last_peers: None,
             workflow: info.workflow.unwrap_or_default(),

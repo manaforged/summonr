@@ -8,7 +8,7 @@ use crate::workflow::{self, ModelSelection, Role, Workflow};
 use tokio::sync::mpsc::UnboundedSender;
 
 const WORKFLOW_USAGE: &str = "/workflow [NAME | off | list | show | set ROLE ENDPOINT [MODEL] | \
-clear ROLE | save NAME | default NAME]; roles: scout implement review judge summary";
+clear ROLE | save NAME | default NAME]; roles: scout implement judge summary";
 
 impl Worker {
     pub(super) fn set_verify(&mut self, on: bool) {

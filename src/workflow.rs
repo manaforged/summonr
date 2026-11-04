@@ -11,18 +11,18 @@ pub(crate) const RESERVED: [&str; 7] = ["off", "list", "show", "set", "clear", "
 pub(crate) enum Role {
     Scout,
     Implement,
-    Review,
     Judge,
     Summary,
+    Title,
 }
 
 impl Role {
     pub(crate) const ALL: [Self; 5] = [
         Self::Scout,
         Self::Implement,
-        Self::Review,
         Self::Judge,
         Self::Summary,
+        Self::Title,
     ];
 
     #[must_use]
@@ -30,9 +30,9 @@ impl Role {
         match self {
             Self::Scout => "scout",
             Self::Implement => "implement",
-            Self::Review => "review",
             Self::Judge => "judge",
             Self::Summary => "summary",
+            Self::Title => "title",
         }
     }
 }

@@ -211,9 +211,6 @@ async fn dispatch(
     } else if let Some(objective) = args.goal.as_deref() {
         splash.line();
         modes::goal(loop_, args, objective, goal_checks).await
-    } else if args.print || !args.prompt.is_empty() {
-        splash.line();
-        modes::print(loop_, args).await
     } else if let Some(ui_rx) = ui.1 {
         let prefs = summonr::prefs::load()?;
         let splash = prefs.splash && !args.no_splash;
@@ -231,6 +228,7 @@ async fn dispatch(
             workspace: summonr::tilde(&workspace),
             workflow,
             config: summonr::prefs::path(),
+            prompt: (!args.prompt.is_empty()).then(|| args.prompt.join(" ")),
         };
         let ui_tx =
             ui.0.ok_or_else(|| summonr::Error::Config("tui sender missing".to_string()))?;
@@ -306,7 +304,6 @@ pub(super) fn use_tui(args: &Args) -> bool {
     !args.print
         && args.steps.is_none()
         && args.goal.is_none()
-        && args.prompt.is_empty()
         && !args.json
         && (args.gui || (std::io::stdout().is_terminal() && std::io::stdin().is_terminal()))
 }

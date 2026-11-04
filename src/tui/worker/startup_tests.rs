@@ -53,6 +53,7 @@ async fn startup_effort_reaches_the_composer_before_a_model_switch() {
         workspace: workspace.path().display().to_string(),
         workflow: None,
         config: None,
+        prompt: None,
     };
     let (commands, receiver) = unbounded_channel();
     let (ui, mut inbox) = unbounded_channel();
@@ -99,6 +100,7 @@ async fn a_model_switch_becomes_the_last_used_model() {
         workspace: workspace.path().display().to_string(),
         workflow: None,
         config: Some(home.path().join("config.toml")),
+        prompt: None,
     };
     let (commands, receiver) = unbounded_channel();
     let (ui, _inbox) = unbounded_channel();
@@ -139,6 +141,7 @@ async fn a_session_opened_with_an_unfinished_goal_says_how_to_go_on() {
         workspace: workspace.path().display().to_string(),
         workflow: None,
         config: None,
+        prompt: None,
     };
     let (commands, receiver) = unbounded_channel();
     let (ui, mut inbox) = unbounded_channel();

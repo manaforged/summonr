@@ -50,7 +50,10 @@ pub(crate) struct ToolRegistry {
     skills: bool,
     probed: std::sync::OnceLock<(bool, bool)>,
     lsp: std::sync::Mutex<
-        std::collections::BTreeMap<String, std::sync::Arc<tokio::sync::Mutex<Option<lsp::Conn>>>>,
+        std::collections::BTreeMap<
+            (String, Option<PathBuf>),
+            std::sync::Arc<tokio::sync::Mutex<Option<lsp::Conn>>>,
+        >,
     >,
     session: std::sync::Mutex<Option<String>>,
     read_ranges: std::sync::Mutex<dedup::Ranges>,

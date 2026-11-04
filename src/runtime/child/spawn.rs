@@ -1,20 +1,25 @@
 use super::brief::{agent_brief, instruction, rebase_paths};
 use super::*;
 use crate::durable::driver::Parent;
-use crate::endpoint::{self, Requirement};
 
 impl<P: Provider> Loop<P> {
     pub(super) fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
         let named = args.name.is_some();
         let choice = selected_workspace(named, args.workspace);
-        self.hold_children()?;
         let tree = child_tree(&self.workspace, args.access, choice)?;
+        if tree.is_some() {
+            self.hold_children()?;
+        }
         let mut run = self.task_start(args, budget, tree)?;
         let record = run.record.clone();
         let path = run.child.session.path().to_path_buf();
         let id = record.id.to_string();
         let name = run.child.name().unwrap_or_else(|| id.clone());
         let state = run.state.clone();
+        let effort = run
+            .child
+            .effort
+            .map_or("provider default", |level| level.as_str());
         run.stay = named;
         let handle = tokio::spawn(run.execute(self.events.0.clone()));
         self.spawned.insert(
@@ -33,8 +38,10 @@ impl<P: Provider> Loop<P> {
         );
         Ok(Execution {
             output: ToolOutput::ok(format!(
-                "started child {id}\nname: {}\naccess: {}\n{}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
+                "started child {id}\nname: {}\nmodel: {}\neffort: {}\naccess: {}\n{}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
                 name,
+                record.model,
+                effort,
                 record.access.name(),
                 running_place(&record.workspace),
                 ellipsize(&record.assignment, LAST_CHARS)
@@ -65,11 +72,7 @@ impl<P: Provider> Loop<P> {
         tree: Option<Tree>,
     ) -> Result<Run<P>> {
         let role = crate::workflow::Role::Implement;
-        let endpoint = args
-            .endpoint
-            .as_deref()
-            .map(|name| endpoint::resolve(Some(name), None, Requirement::ModelAndKey))
-            .transpose()?;
+        let endpoint = args.endpoint()?;
         let provider = self
             .selection(role)
             .0
@@ -104,6 +107,7 @@ impl<P: Provider> Loop<P> {
             None,
         )?;
         child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
+        child.mcp_wanted = args.access == Access::Implement && self.mcp.is_some();
         child.context_window = self.receiver_window(role);
         child.compact_tokens = self.compact_tokens;
         child.context_sample = self.context_sample;
@@ -268,6 +272,11 @@ impl<P: Provider> Loop<P> {
             max_secs: secs,
         })
     }
+}
+
+pub(super) fn isolated(args: &Args) -> bool {
+    args.access == Access::Implement
+        && selected_workspace(args.name.is_some(), args.workspace) == Workspace::Isolated
 }
 
 pub(super) fn selected_workspace(named: bool, choice: Option<Workspace>) -> Workspace {

@@ -2,6 +2,20 @@ use super::*;
 use crate::tui::sigil_view::chat::entry::tool_label;
 
 impl Model {
+    pub(in crate::tui::sigil_view) fn clear_agent(&mut self, id: &str) {
+        let child = self
+            .agents
+            .iter()
+            .any(|agent| agent.id == id && agent.background);
+        let peer = self
+            .peers
+            .iter()
+            .any(|peer| peer.id == id && peer.parent.as_deref() == Some(self.session.as_str()));
+        if child || peer {
+            self.agents_hidden.insert(id.to_owned());
+        }
+    }
+
     pub(in crate::tui::sigil_view) fn agents_of<'a>(
         &'a self,
         call: &'a str,
@@ -13,6 +27,10 @@ impl Model {
 
     pub(in crate::tui::sigil_view) fn apply_child(&mut self, id: &str, event: Event) {
         let tag = crate::child::tag(id);
+        if matches!(event, Event::Dismissed) {
+            self.clear_agent(&tag);
+            return;
+        }
         if matches!(
             &event,
             Event::ToolCall { .. }

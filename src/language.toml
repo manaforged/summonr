@@ -32,6 +32,19 @@ servers = [{ name = "gopls", args = [] }]
 commands = ["go test", "go build", "go vet"]
 options = {}
 
+[[module]]
+id = "lean"
+markers = ["lean-toolchain", "lakefile.lean", "lakefile.toml"]
+root_at_marker = true
+servers = [{ name = "lean", args = ["--server"] }]
+commands = ["lake build", "lake env lean"]
+options = {}
+
+[[extension]]
+name = "lean"
+language_id = "lean4"
+module = "lean"
+
 [[extension]]
 name = "rs"
 language_id = "rust"

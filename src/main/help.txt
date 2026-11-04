@@ -3,7 +3,7 @@ summonr: a terminal coding agent
 Usage: summonr [ENDPOINT] [OPTIONS] [PROMPT]
   summonr grok                start on an endpoint (same as -e grok)
   summonr kimi -p PROMPT      run one prompt and exit
-  summonr kimi PROMPT         a bare prompt also runs once and exits
+  summonr kimi PROMPT         in a terminal, a bare prompt opens the session with it
 {verbs}
 
 Options:

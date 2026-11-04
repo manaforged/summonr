@@ -3,8 +3,12 @@ use crate::provider::{ToolCall, ToolFunction, ToolKind};
 use crate::runtime::Loop;
 use crate::tools::{Abort, AbortCode};
 
+#[path = "clear_tests.rs"]
+mod clear;
 #[path = "control_tests.rs"]
 mod control;
+#[path = "model_tests.rs"]
+mod model;
 
 fn parent(replies: Vec<Reply>) -> (Loop<Scripted>, [tempfile::TempDir; 2]) {
     let workspace = tempfile::tempdir().unwrap();

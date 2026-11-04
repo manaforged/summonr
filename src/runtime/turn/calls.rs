@@ -176,15 +176,9 @@ impl<P: Provider> Loop<P> {
         let (sender, mut updates) = tokio::sync::mpsc::unbounded_channel();
         let mut report = move |update| drop(sender.send(update));
         let running = hub.call(&alias, arguments, &policy, &mut report);
-        let input = self.input_cut();
-        tokio::pin!(running, input);
+        tokio::pin!(running);
         let output = loop {
             tokio::select! {
-                biased;
-                result = &mut input => {
-                    result?;
-                    break Err(Error::Tool("MCP call interrupted by an incoming message; the server may have completed changes; check them before you re-run it".to_string()));
-                }
                 Some(update) = updates.recv() => self.heard(&call.id, update, events, emit).await?,
                 output = &mut running => break output,
             }
@@ -199,15 +193,9 @@ impl<P: Provider> Loop<P> {
         if self.session.depth() == 0 {
             return None;
         }
-        match Builtin::of(name) {
-            None => Some(format!(
-                "child sessions cannot call `{name}`; use the built-in tools"
-            )),
-            Some(Builtin::Edit | Builtin::Write) if self.tools.policy().is_read_only() => {
-                Some("this child is read-only; report what to change instead".to_string())
-            }
-            Some(_) => None,
-        }
+        let edits = matches!(Builtin::of(name), Some(Builtin::Edit | Builtin::Write));
+        (edits && self.tools.policy().is_read_only())
+            .then(|| "this child is read-only; report what to change instead".to_string())
     }
 
     async fn dispatch(
@@ -225,7 +213,7 @@ impl<P: Provider> Loop<P> {
             ));
         }
         let name = &call.function.name;
-        self.mail_note_tool(name);
+        self.mail_note_tool(name, &call.function.arguments);
         if Builtin::is(name, Builtin::Task) {
             return Ok(match self.task_execute(call, events, emit).await {
                 Ok(execution) => (Ok(execution.output), Some(execution.usage)),

@@ -286,8 +286,8 @@ pub(super) fn task_args(call: &ToolCall) -> Result<Args> {
         }
         return Ok(args);
     }
-    if args.kill {
-        return Err(Error::Tool("task kill requires child".to_string()));
+    if args.kill || args.clear {
+        return Err(Error::Tool("task kill and clear require child".to_string()));
     }
     let assignment = args.assignment.trim();
     if assignment.is_empty() {

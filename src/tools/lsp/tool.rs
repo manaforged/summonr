@@ -9,6 +9,7 @@ use crate::tools::workspace::write;
 enum Operation {
     Diagnostics,
     Definition,
+    Goal,
 }
 
 #[derive(serde::Deserialize)]
@@ -40,6 +41,7 @@ impl ToolRegistry {
             return match serde_json::from_value(Value::String(operation.to_string())) {
                 Ok(Operation::Diagnostics) => self.diagnostics(&args).await,
                 Ok(Operation::Definition) => self.definition(&args).await,
+                Ok(Operation::Goal) => self.goal(&args).await,
                 Err(_) => Err(Error::Tool(format!("unknown lsp operation `{operation}`"))),
             };
         }
@@ -64,6 +66,32 @@ impl ToolRegistry {
                 Scope::Request,
                 crate::limits::limits().lsp_request(),
                 move |conn| Box::pin(async move { conn.diagnostics(&request_path).await }),
+            )
+            .await?;
+        Ok(ToolOutput::ok(text))
+    }
+
+    async fn goal(&self, args: &LspArgs) -> Result<ToolOutput> {
+        let path = args.path("goal")?;
+        let file = self.resolve_existing(path)?;
+        let position = |value: Option<u64>, field: &str| -> Result<u32> {
+            let value = value
+                .filter(|n| *n > 0)
+                .ok_or_else(|| Error::Tool(format!("goal requires a valid 1-based {field}")))?;
+            u32::try_from(value)
+                .map_err(|error| Error::Tool(format!("invalid goal {field}: {error}")))
+        };
+        let line = position(args.line, "line")?;
+        let character = position(args.character, "character")?;
+        let request_path = file.clone();
+        let text = self
+            .with_lsp(
+                &file,
+                Scope::Request,
+                crate::limits::limits().lsp_request(),
+                move |conn| {
+                    Box::pin(async move { conn.goal(&request_path, line, character).await })
+                },
             )
             .await?;
         Ok(ToolOutput::ok(text))
@@ -133,7 +161,8 @@ impl ToolRegistry {
             .launches
             .launch(&self.workspace, dest, Scope::Edit)
             .ok()?;
-        let slot = self.lsp.lock().ok()?.get(&launch.key).cloned()?;
+        let key = (launch.key.clone(), launch.root.clone());
+        let slot = self.lsp.lock().ok()?.get(&key).cloned()?;
         if slot.lock().await.is_none() {
             return None;
         }
@@ -248,7 +277,7 @@ impl ToolRegistry {
         f: impl for<'a> FnOnce(&'a mut Conn) -> Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>,
     ) -> Result<T> {
         let launch = self.launches.launch(&self.workspace, path, scope)?;
-        let key = launch.key.clone();
+        let key = (launch.key.clone(), launch.root.clone());
         let slot = {
             let mut slots = self
                 .lsp
@@ -275,9 +304,13 @@ impl ToolRegistry {
                         crate::limits::limits().lsp_start_secs
                     ))
                 })??;
+                let name = launch.root.as_ref().map_or_else(
+                    || launch.key.clone(),
+                    |root| format!("{}:{}", launch.key, root.display()),
+                );
                 crate::supervise::register(
                     crate::supervise::ServerKind::Lsp,
-                    &launch.key,
+                    &name,
                     conn.pid(),
                     Some(crate::limits::limits().lsp_idle()),
                     &slot,

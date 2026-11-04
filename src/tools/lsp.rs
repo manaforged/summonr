@@ -30,6 +30,7 @@ pub(super) enum Origin {
 pub(super) struct Launch {
     origin: Origin,
     key: String,
+    root: Option<PathBuf>,
     argv: Vec<String>,
     env: Vec<(String, String)>,
     languages: std::collections::BTreeMap<String, String>,
@@ -43,13 +44,14 @@ impl Conn {
             .split_first()
             .ok_or_else(|| Error::Tool("language server has no command".to_string()))?;
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        let root = file_uri(workspace)?;
+        let directory = launch.root.as_deref().unwrap_or(workspace);
+        let root = file_uri(directory)?;
         let limits = crate::limits::limits();
         let client = Client::spawn(&Spawn {
             program,
             args: &args,
             env: &launch.env,
-            cwd: workspace,
+            cwd: directory,
             wait: limits.lsp_start(),
             base: match launch.origin {
                 Origin::Host => Env::Inherit,
@@ -142,6 +144,13 @@ impl Conn {
             return Ok("no definition".to_string());
         }
         Ok(locations.join("\n"))
+    }
+
+    pub(super) async fn goal(&mut self, path: &Path, line: u32, character: u32) -> Result<String> {
+        let result = self
+            .at(path, line, character, "$/lean/plainGoal", json!({}))
+            .await?;
+        goal(result)
     }
 
     pub(super) async fn references(

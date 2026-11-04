@@ -18,6 +18,10 @@ pub(crate) struct Agent {
     pub tool: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+    #[serde(default)]
+    pub since: u64,
 }
 
 impl Agent {

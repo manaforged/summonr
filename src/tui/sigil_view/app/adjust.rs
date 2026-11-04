@@ -219,7 +219,9 @@ impl App {
         let seen = std::cell::Cell::new(None);
         sigil::prelude::effect(move || {
             let backdrop = sigil::terminal::backdrop().get();
-            let changed = seen.replace(Some(backdrop)).is_some_and(|before| before != backdrop);
+            let changed = seen
+                .replace(Some(backdrop))
+                .is_some_and(|before| before != backdrop);
             if changed && app.model.peek().prefs.theme == crate::prefs::AUTO_THEME {
                 app.model_mut(|model| model.entries.invalidate());
                 app.apply_theme();
@@ -238,18 +240,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn clear_agent(&self, id: &str) {
-        self.model_mut(|model| {
-            let child = model
-                .agents
-                .iter()
-                .any(|agent| agent.id == id && agent.background);
-            let peer = model.peers.iter().any(|peer| {
-                peer.id == id && peer.parent.as_deref() == Some(model.session.as_str())
-            });
-            if child || peer {
-                model.agents_hidden.insert(id.to_owned());
-            }
-        });
+        self.model_mut(|model| model.clear_agent(id));
         self.refresh();
     }
 

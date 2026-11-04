@@ -1,5 +1,5 @@
 use super::record::*;
-use super::spawn::{child_tree, selected_workspace};
+use super::spawn::{child_tree, isolated, selected_workspace};
 use super::*;
 
 impl<P: Provider> Loop<P> {
@@ -60,7 +60,7 @@ impl<P: Provider> Loop<P> {
                 continue;
             }
             let result = match args.child.clone() {
-                Some(id) => self.task_poll(&id, args.kill, events, emit).await,
+                Some(_) => self.task_control(&args, events, emit).await,
                 None => self
                     .task_batch(vec![args], events, emit)
                     .await
@@ -96,6 +96,28 @@ impl<P: Provider> Loop<P> {
         }
     }
 
+    fn batch_start(
+        &mut self,
+        args: Vec<Args>,
+        budget: &Budget,
+    ) -> Result<Vec<(Access, Result<Run<P>>)>> {
+        if args.iter().any(isolated) {
+            self.hold_children()?;
+        }
+        Ok(args
+            .into_iter()
+            .map(|args| {
+                let access = args.access;
+                let choice = selected_workspace(args.name.is_some(), args.workspace);
+                let tree = child_tree(&self.workspace, access, choice);
+                (
+                    access,
+                    tree.and_then(|tree| self.task_start(args, budget, tree)),
+                )
+            })
+            .collect())
+    }
+
     pub(super) async fn task_batch(
         &mut self,
         args: Vec<Args>,
@@ -107,19 +129,10 @@ impl<P: Provider> Loop<P> {
             Ok(budget) => budget,
             Err(error) => return rejected(count, &error.to_string()),
         };
-        if let Err(error) = self.hold_children() {
-            return rejected(count, &error.to_string());
-        }
-        let mut runs = Vec::with_capacity(count);
-        for args in args {
-            let access = args.access;
-            let choice = selected_workspace(args.name.is_some(), args.workspace);
-            let started = match child_tree(&self.workspace, access, choice) {
-                Ok(tree) => self.task_start(args, &budget, tree),
-                Err(error) => Err(error),
-            };
-            runs.push((access, started));
-        }
+        let runs = match self.batch_start(args, &budget) {
+            Ok(runs) => runs,
+            Err(error) => return rejected(count, &error.to_string()),
+        };
         let sender = self.events.0.clone();
         let mut runs: FuturesUnordered<_> = runs
             .into_iter()

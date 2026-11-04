@@ -24,7 +24,16 @@ pub(super) struct Link {
     conn: Slot<Conn>,
     fresh: std::sync::Mutex<Option<HashSet<String>>>,
     phase: std::sync::Mutex<Phase>,
+    refresh: Option<tokio::task::JoinHandle<()>>,
     pub(super) tools: Vec<Tool>,
+}
+
+impl Drop for Link {
+    fn drop(&mut self) {
+        if let Some(refresh) = &self.refresh {
+            refresh.abort();
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -39,15 +48,21 @@ enum Phase {
 impl Link {
     pub(super) async fn open(server: Server, workspace: PathBuf) -> Result<Arc<Self>> {
         let slot: Slot<Conn> = Arc::new(Mutex::new(None));
-        let (listing, phase) = match catalog::load(&server.key) {
-            Some(listing) => (listing, Phase::Cached),
+        let (listing, phase, refresh) = match catalog::load(&server.key) {
+            Some(listing) => {
+                let (server, workspace, slot) = (server.clone(), workspace.clone(), slot.clone());
+                let refresh = tokio::spawn(async move {
+                    drop(Self::list(&server, &workspace, &slot).await);
+                });
+                (listing, Phase::Cached, Some(refresh))
+            }
             None => {
                 let listing = Self::list(&server, &workspace, &slot).await?;
                 let phase = match slot.lock().await.as_ref() {
                     Some(_) => Phase::Live,
                     None => Phase::Cached,
                 };
-                (listing, phase)
+                (listing, phase, None)
             }
         };
         let tools = tool::offered(&server, &listing.tools)
@@ -59,6 +74,7 @@ impl Link {
             conn: slot,
             fresh: std::sync::Mutex::new(None),
             phase: std::sync::Mutex::new(phase),
+            refresh,
             tools,
         }))
     }

@@ -134,7 +134,7 @@ A background child (`task` with `background`) runs as a Tokio task while the par
 
 ## Language modules
 
-`src/language.rs` contains the four compiled-in language modules: Rust, TypeScript/JavaScript, Python, and Go. A module owns project markers, source extensions, server candidates, and LSP initialization options. `src/tools/lsp.rs` uses the requested file to select a module and keeps one server connection for each active module. The advertised tool is `lsp`.
+`src/language.rs` contains the compiled-in language modules: Rust, TypeScript/JavaScript, Python, Go, and Lean. A module owns project markers, source extensions, server candidates, and LSP initialization options. `src/tools/lsp.rs` uses the requested file to select a module and keeps one server per module, or per marked project for Lean. The advertised tool is `lsp`.
 
 The Rust module disables rust-analyzer check-on-save, build scripts, proc macros, and `cargo --all-targets`. The model must use `run_command` for an explicit Cargo check or test. A workspace may choose a compiled-in module, but it cannot provide an executable command. Only the user config at `~/.summonr/config.toml` may set `[lsp] command`.
 

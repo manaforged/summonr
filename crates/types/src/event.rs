@@ -127,6 +127,8 @@ pub enum Event {
         id: String,
         event: Box<Event>,
     },
+    /// Hides a child card without changing its session or history.
+    Dismissed,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]

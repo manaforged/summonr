@@ -183,6 +183,8 @@ A `task` call can name a plugin agent with `agent`. Its instructions open the ch
 | `task` with `background: true` | Starts the child and returns its id at once |
 | `task` with `child: ID` | Reports state, elapsed time, and last action while it runs; the full result once it finishes |
 | `task` with `child: ID` and `kill: true` | Stops the child |
+| `task` with `child: ID` and `clear: true` | Dismisses its background status card without stopping it or deleting history |
+| `task` with `child: ID`, `kill: true`, and `clear: true` | Stops the child and dismisses its background status card |
 
 A turn does not end while a background child runs. summonr waits, then defers the turn the way it does for a background command, until the child finishes or the model kills it. **Clear** on a background status row dismisses that row for the current view without stopping the child; its completion report and session log stay available, and new children still appear.
 

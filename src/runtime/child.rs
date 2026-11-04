@@ -32,6 +32,8 @@ struct Args {
     #[serde(default)]
     kill: bool,
     #[serde(default)]
+    clear: bool,
+    #[serde(default)]
     agent: Option<String>,
     #[serde(default)]
     name: Option<String>,
@@ -39,8 +41,34 @@ struct Args {
     effort: Option<String>,
     #[serde(default)]
     endpoint: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
     #[serde(skip)]
     call: String,
+}
+
+impl Args {
+    fn endpoint(&self) -> Result<Option<crate::endpoint::Endpoint>> {
+        use crate::endpoint::{self, Requirement};
+        if self.model.is_some() && self.endpoint.is_none() {
+            return Err(Error::Tool(
+                "task model requires an explicit endpoint".to_string(),
+            ));
+        }
+        if self
+            .model
+            .as_deref()
+            .is_some_and(|model| model.trim().is_empty())
+        {
+            return Err(Error::Tool("task model must not be empty".to_string()));
+        }
+        self.endpoint
+            .as_deref()
+            .map(|name| {
+                endpoint::resolve(Some(name), self.model.as_deref(), Requirement::ModelAndKey)
+            })
+            .transpose()
+    }
 }
 
 #[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]
@@ -71,6 +99,7 @@ pub(super) struct Spawned {
 
 mod batch;
 mod brief;
+mod control;
 mod poll;
 mod record;
 mod run;
@@ -92,7 +121,7 @@ pub(super) struct Done {
 pub(super) fn definition() -> ToolDefinition {
     tool(
         "task",
-        "Delegate one assignment to a child. Omit endpoint to inherit the provider and model, or select a configured endpoint for this child only. The child keeps its transcript. Mail to its name is its next turn and stops its running command and background jobs. A child tool call does not start a parent turn. The parent turn ending does not stop it. kill true does. Same tools except task. background true returns an id; pass child to poll. A named child runs in the background, stays available for mail, and edits this checkout. An unnamed implement child gets an isolated checkout in a Git repository; completed edits are reconciled and conflicts keep that checkout. Pass workspace isolated or shared to force one. Do not start a summonr process. research is always read-only.",
+        "Delegate one assignment to a child. Omit endpoint and model to inherit the provider and model, or select a configured endpoint and optional model for this child only. model requires endpoint; never change global defaults to select a child. The child keeps its transcript. Mail to its name is its next turn and stops its running command and background jobs. A child tool call does not start a parent turn. The parent turn ending does not stop it. kill true does. clear true dismisses the child's UI card without stopping it or deleting its history; combine with kill true to stop and dismiss. Same tools, MCP included, except task and ask. background true returns an id; pass child to poll. A named child runs in the background, stays available for mail, and edits this checkout. An unnamed implement child gets an isolated checkout in a Git repository; completed edits are reconciled and conflicts keep that checkout. Pass workspace isolated or shared to force one. Do not start a summonr process. research is always read-only and gets no MCP tools.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -102,10 +131,12 @@ pub(super) fn definition() -> ToolDefinition {
                 "background": {"type": "boolean"},
                 "child": {"type": "string"},
                 "kill": {"type": "boolean"},
+                "clear": {"type": "boolean", "description": "dismiss this child's UI card without stopping it or deleting history; requires child. Combine with kill to stop and dismiss."},
                 "agent": {"type": "string", "description": "name of an agent from <agents>"},
                 "name": {"type": "string", "description": "session name. mail to this name is the next turn"},
                 "effort": {"type": "string", "description": "child effort: minimal, low, medium, high, xhigh, or max. Omit to inherit the selected endpoint or parent."},
-                "endpoint": {"type": "string", "description": "configured endpoint name for this child only. Omit to inherit the parent selection."}
+                "endpoint": {"type": "string", "description": "configured endpoint name for this child only. Omit to inherit the parent selection."},
+                "model": {"type": "string", "description": "model on the selected endpoint, for this child only. Requires endpoint. Omit to use that endpoint's model."}
             },
             "additionalProperties": false
         }),

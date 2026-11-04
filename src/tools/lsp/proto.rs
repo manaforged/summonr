@@ -1,5 +1,21 @@
 use super::*;
 
+#[derive(serde::Deserialize)]
+struct Goal {
+    rendered: String,
+    goals: Vec<String>,
+}
+
+pub(super) fn goal(value: Value) -> Result<String> {
+    let goal: Option<Goal> = serde_json::from_value(value)
+        .map_err(|error| Error::Tool(format!("lean server returned an invalid goal: {error}")))?;
+    match goal {
+        None => Ok("no tactic goal at this position".to_string()),
+        Some(goal) if goal.goals.is_empty() => Ok(goal.rendered),
+        Some(goal) => Ok(goal.goals.join("\n\n")),
+    }
+}
+
 pub(super) fn file_uri(path: &Path) -> Result<String> {
     Url::from_file_path(path)
         .map(String::from)

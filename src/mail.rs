@@ -15,6 +15,7 @@ pub(crate) use presence::Presence;
 
 const BOARD_COMPACT_BYTES: usize = 256 * 1024;
 const MARK_BYTES: usize = 256;
+const DETAIL_CHARS: usize = 200;
 
 fn mail_enabled(value: Option<&OsStr>, fallback: bool) -> bool {
     value.map_or(fallback, |value| value != OsStr::new("off"))
@@ -95,6 +96,9 @@ pub(crate) struct Mailbox {
     last_beat: u64,
     status: Presence,
     tool: String,
+    detail: String,
+    parent: Option<String>,
+    since: u64,
     stamp: Option<Stamp>,
 }
 
@@ -208,6 +212,9 @@ impl Mailbox {
             last_beat: 0,
             status: Presence::Unknown,
             tool: String::new(),
+            detail: String::new(),
+            parent: None,
+            since: now(),
             stamp: None,
         };
         mailbox.write_record(model, cwd, Presence::Joined);
@@ -231,8 +238,16 @@ impl Mailbox {
             status,
             last_seen: now(),
             tool: self.tool.clone(),
-            parent: std::env::var_os(crate::session::PARENT_ENV)
-                .map(|value| value.to_string_lossy().into_owned()),
+            parent: self.parent.clone().or_else(|| {
+                std::env::var_os(crate::session::PARENT_ENV)
+                    .map(|value| value.to_string_lossy().into_owned())
+            }),
+            detail: self.detail.clone(),
+            since: if status == self.status {
+                self.since
+            } else {
+                now()
+            },
         };
         let body = serde_json::to_string(&record).ok()?;
         Some((self.record_path(), body))
@@ -246,6 +261,9 @@ impl Mailbox {
             return;
         }
         self.last_seen_write(now());
+        if status != self.status {
+            self.since = now();
+        }
         self.status = status;
     }
 
@@ -260,11 +278,22 @@ impl Mailbox {
         self.write_record(model, cwd, status);
     }
 
-    pub(crate) fn note_tool(&mut self, model: &str, cwd: &Path, tool: &str, _parent: Option<&str>) {
-        if self.tool == tool {
+    pub(crate) fn note_tool(
+        &mut self,
+        model: &str,
+        cwd: &Path,
+        call: (&str, &str),
+        parent: Option<&str>,
+    ) {
+        let (tool, arguments) = call;
+        let detail = detail(arguments);
+        if self.tool == tool && self.detail == detail {
             return;
         }
+        self.parent = parent.map(str::to_string).or(self.parent.take());
         self.tool = tool.to_string();
+        self.detail = detail;
+        self.since = now();
         self.status = Presence::Working;
         self.write_record(model, cwd, Presence::Working);
     }
@@ -314,6 +343,16 @@ impl Mailbox {
     pub(crate) fn leave(&self) {
         drop(std::fs::remove_file(self.record_path()));
     }
+}
+
+fn detail(arguments: &str) -> String {
+    let value = serde_json::from_str::<serde_json::Value>(arguments).ok();
+    let text = value
+        .as_ref()
+        .and_then(|value| value.get("command").and_then(serde_json::Value::as_str))
+        .unwrap_or(arguments);
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    crate::display::ellipsize(&flat, DETAIL_CHARS)
 }
 
 pub(crate) fn dir() -> Result<PathBuf> {

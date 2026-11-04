@@ -3,7 +3,7 @@ use std::path::Path;
 use super::*;
 use summonr_core::error::{Error, Result};
 
-const USAGE: &str = "usage:\n  summonr mail                  who is on this machine\n  summonr mail agents           same roster\n  summonr mail send <name|id|all> <text>\n  summonr mail inbox <id> [--clear]\n  summonr mail board [get <key>|set <key> <text>]\n\nAny agent CLI can use these: mail is files under ~/.summonr/mail, no server.";
+const USAGE: &str = "usage:\n  summonr mail                  who is on this machine\n  summonr mail agents [--json]  same roster; --json prints each session's state, tool, detail, parent and since\n  summonr mail send <name|id|all> <text>\n  summonr mail inbox <id> [--clear]\n  summonr mail board [get <key>|set <key> <text>]\n\nAny agent CLI can use these: mail is files under ~/.summonr/mail, no server.";
 
 pub fn run(args: &[String], cwd: &Path) -> Result<i32> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -14,6 +14,9 @@ pub fn run(args: &[String], cwd: &Path) -> Result<i32> {
 fn answer(dir: &Path, cwd: &Path, words: &[&str]) -> Result<String> {
     match words {
         [] | ["agents"] => Ok(roster(&live(dir), "")),
+        ["agents", "--json"] => {
+            serde_json::to_string(&live(dir)).map_err(|error| Error::Config(error.to_string()))
+        }
         ["send", to, text @ ..] if !text.is_empty() => send(dir, to, &text.join(" ")),
         ["inbox", id] => read_inbox(dir, id).map(|mail| inbox_text(&mail)),
         ["inbox", id, "--clear"] => take_inbox(dir, id).map(|mail| inbox_text(&mail)),

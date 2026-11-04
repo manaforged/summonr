@@ -21,7 +21,7 @@ enum Source {
 #[derive(Default)]
 pub(in crate::tools) struct Launches {
     source: Mutex<Option<Source>>,
-    built: Mutex<BTreeMap<language::Language, Arc<Launch>>>,
+    built: Mutex<BTreeMap<(language::Language, Option<PathBuf>), Arc<Launch>>>,
 }
 
 impl Launches {
@@ -41,10 +41,10 @@ impl Launches {
                         path.display()
                     )));
                 }
-                self.built(module)
+                self.built(module, workspace, path)
             }
             Source::Tree(plugins) => match language::detect(workspace, path) {
-                Ok(module) => self.built(module),
+                Ok(module) => self.built(module, workspace, path),
                 Err(error) => plugins
                     .iter()
                     .filter(|server| server.handles(path))
@@ -65,12 +65,26 @@ impl Launches {
         Ok(found)
     }
 
-    fn built(&self, module: &'static language::Module) -> Result<Arc<Launch>> {
-        if let Some(launch) = lock(&self.built)?.get(&module.id) {
+    fn built(
+        &self,
+        module: &language::Module,
+        workspace: &Path,
+        path: &Path,
+    ) -> Result<Arc<Launch>> {
+        let root = module.root_at_marker.then(|| {
+            module
+                .project_dir(workspace, path)
+                .unwrap_or(workspace)
+                .to_path_buf()
+        });
+        let cache_key = (module.id, root.clone());
+        if let Some(launch) = lock(&self.built)?.get(&cache_key) {
             return Ok(launch.clone());
         }
-        let launch = Arc::new(built(module)?);
-        lock(&self.built)?.insert(module.id, launch.clone());
+        let mut launch = built(module)?;
+        launch.root = root;
+        let launch = Arc::new(launch);
+        lock(&self.built)?.insert(cache_key, launch.clone());
         Ok(launch)
     }
 }
@@ -147,6 +161,7 @@ pub(super) fn built(module: &language::Module) -> Result<Launch> {
             return Ok(Launch {
                 origin: Origin::Host,
                 key: module.id.to_string(),
+                root: None,
                 argv: command,
                 env: Vec::new(),
                 languages: BTreeMap::new(),
@@ -165,6 +180,7 @@ pub(super) fn custom(command: &[String]) -> Result<Launch> {
     Ok(Launch {
         origin: Origin::Host,
         key: "custom".to_string(),
+        root: None,
         argv: argv(command)?,
         env: Vec::new(),
         languages: BTreeMap::new(),
@@ -183,6 +199,7 @@ fn plugin(server: &Server) -> Result<Launch> {
     Ok(Launch {
         origin: Origin::Plugin,
         key: server.key.clone(),
+        root: None,
         argv: server.argv.clone(),
         env: server.env.clone().into_iter().collect(),
         languages: server.languages.clone(),

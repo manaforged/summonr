@@ -18,8 +18,8 @@ or leave the work, reply `done`.";
 const CONTRACT_SYSTEM: &str = "You judge whether check commands are a fair contract for a \
 coding objective. Reply with one line of JSON: {\"verdict\": \"done\"|\"continue\", \"reason\": \
 \"<one sentence>\"}. `done` when the commands run real code that fails while the objective is \
-unmet and passes only once it is met: a test that reproduces the defect, a property test, a model \
-checker or proof, a benchmark with a target, or a mutation run on the diff. `continue` when a \
+unmet and passes only once it is met: a test that reproduces the defect, a property test, a run of \
+user actions checked against a simple model, a benchmark with a target, or a mutation run on the diff. `continue` when a \
 command passes regardless of the change (`true`, `echo`, a grep for a string the agent writes, a \
 test that does not exercise the objective), when the commands check an easier outcome than the \
 objective asks, or when the test files the commands depend on are not listed as protected; name \
@@ -81,7 +81,7 @@ ask questions you can resolve yourself:\n\n{objective}\n"
     );
     if gates.is_empty() {
         text.push_str(
-            "\nNo check is set. Before changing anything, write the contract to `.summonr/contract.toml` as `checks = [\"CMD\", ...]` and `protect = [\"PATH\", ...]`: commands that fail now and pass only when the objective is met, commands that guard what must not regress, and the test files and fixtures those commands depend on. Then end the turn before you change the code: summonr runs the commands and needs at least one to fail. Pick the outcome that matters most to a user of this code, not the easiest one. Prefer evidence a tool computes: a test that reproduces the defect, a property test for an invariant, a model checker or proof for unsafe or arithmetic code, and a mutation run on the diff to show the tests catch the change. A judge then reads the contract; once it accepts, summonr freezes the commands and the protected files, runs the commands after each turn, and the goal ends when every command passes. Formatting, renames, comments, and docs alone are not an outcome.\n",
+            "\nNo check is set. Before changing anything, write the contract to `.summonr/contract.toml` as `checks = [\"CMD\", ...]` and `protect = [\"PATH\", ...]`: commands that fail now and pass only when the objective is met, commands that guard what must not regress, and the test files and fixtures those commands depend on. Then end the turn before you change the code: summonr runs the commands and needs at least one to fail. Pick the outcome that matters most to a user of this code, not the easiest one. Prefer evidence a tool computes: a test that reproduces the defect, a property test for an invariant, a run of user actions checked against a simple model, and a mutation run on the diff to show the tests catch the change. A judge then reads the contract; once it accepts, summonr freezes the commands and the protected files, runs the commands after each turn, and the goal ends when every command passes. Formatting, renames, comments, and docs alone are not an outcome.\n",
         );
     } else {
         let list = gates

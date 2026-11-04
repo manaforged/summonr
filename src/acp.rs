@@ -250,7 +250,8 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
         | Event::Spawned { .. }
         | Event::Session { .. }
         | Event::Step { .. }
-        | Event::Child { .. } => return,
+        | Event::Child { .. }
+        | Event::Dismissed => return,
     };
     drop(out.send(frame_line(&update(session, content))));
 }

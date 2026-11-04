@@ -15,6 +15,7 @@ pub(crate) enum Language {
     Typescript,
     Python,
     Go,
+    Lean,
 }
 
 impl fmt::Display for Language {
@@ -24,6 +25,7 @@ impl fmt::Display for Language {
             Self::Typescript => "typescript",
             Self::Python => "python",
             Self::Go => "go",
+            Self::Lean => "lean",
         })
     }
 }
@@ -32,6 +34,8 @@ impl fmt::Display for Language {
 pub(crate) struct Module {
     pub(crate) id: Language,
     pub(crate) markers: Vec<String>,
+    #[serde(default)]
+    pub(crate) root_at_marker: bool,
     pub(crate) servers: Vec<Server>,
     pub(crate) commands: Vec<String>,
     pub(crate) options: Value,
@@ -65,6 +69,10 @@ impl Module {
     pub(crate) fn handles(&self, path: &Path) -> bool {
         extension(path).and_then(|row| row.module) == Some(self.id)
     }
+
+    pub(crate) fn project_dir<'a>(&self, workspace: &Path, path: &'a Path) -> Option<&'a Path> {
+        project_dir(workspace, path, self)
+    }
 }
 
 fn extension(path: &Path) -> Option<&'static Extension> {
@@ -80,7 +88,7 @@ pub(crate) fn named(name: &str) -> Result<&'static Module> {
         .and_then(|id| TABLE.module.iter().find(|module| module.id == id))
         .ok_or_else(|| {
             Error::Config(format!(
-                "unknown language module `{name}`; use rust, typescript, python, or go"
+                "unknown language module `{name}`; use rust, typescript, python, go, or lean"
             ))
         })
 }
@@ -93,11 +101,11 @@ pub(crate) fn detect(workspace: &Path, path: &Path) -> Result<&'static Module> {
         .find(|module| Some(module.id) == id)
         .ok_or_else(|| {
             Error::Tool(format!(
-                "no language module for `{}`; supported modules are rust, typescript, python, and go",
+                "no language module for `{}`; supported modules are rust, typescript, python, go, and lean",
                 path.display()
             ))
         })?;
-    if marked(workspace, path, module) {
+    if module.project_dir(workspace, path).is_some() {
         return Ok(module);
     }
     Err(Error::Tool(format!(
@@ -117,7 +125,6 @@ pub(crate) fn present(workspace: &Path) -> Vec<&'static Module> {
     TABLE
         .module
         .iter()
-        // complexity: bounded by the four modules in language.toml
         .filter(|module| roots.iter().any(|root| has_marker(root, module)))
         .collect()
 }
@@ -146,20 +153,20 @@ fn has_marker(directory: &Path, module: &Module) -> bool {
         .any(|marker| directory.join(marker).is_file())
 }
 
-fn marked(workspace: &Path, path: &Path, module: &Module) -> bool {
+fn project_dir<'a>(workspace: &Path, path: &'a Path, module: &Module) -> Option<&'a Path> {
     let Some(start) = path.parent() else {
-        return false;
+        return None;
     };
     for directory in start.ancestors() {
         if !directory.starts_with(workspace) {
             break;
         }
         if has_marker(directory, module) {
-            return true;
+            return Some(directory);
         }
         if directory == workspace {
             break;
         }
     }
-    false
+    None
 }

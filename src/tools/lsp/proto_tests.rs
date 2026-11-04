@@ -1,6 +1,19 @@
 use serde_json::json;
 
-use super::has_error;
+use super::{goal, has_error};
+
+#[test]
+fn lean_goals_keep_each_proof_state() -> Result<(), Box<dyn std::error::Error>> {
+    let value = json!({"rendered": "ignored", "goals": ["x : Nat\n⊢ x = x", "⊢ True"]});
+    assert_eq!(goal(value)?, "x : Nat\n⊢ x = x\n\n⊢ True");
+    assert_eq!(
+        goal(json!({"rendered": "no goals", "goals": []}))?,
+        "no goals"
+    );
+    assert_eq!(goal(json!(null))?, "no tactic goal at this position");
+    assert!(goal(json!({"rendered": "broken", "goals": "not a list"})).is_err());
+    Ok(())
+}
 
 #[test]
 fn an_error_after_a_warning_still_counts_as_an_error() {

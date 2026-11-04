@@ -92,13 +92,13 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub(crate) fn mail_note_tool(&mut self, tool: &str) {
+    pub(crate) fn mail_note_tool(&mut self, tool: &str, arguments: &str) {
         let parent = self.session.parent().map(|id| id.to_string());
         if let Some(mailbox) = &mut self.mailbox {
             mailbox.note_tool(
                 &self.model.clone(),
                 &self.workspace.clone(),
-                tool,
+                (tool, arguments),
                 parent.as_deref(),
             );
         }

@@ -28,7 +28,7 @@ With no check file, `/goal` in the interface detects a check from the workspace 
 
 A Python project gets no detected check, and the judge decides. A goal with no check, such as "make the system better", asks the model to first write a contract to `.summonr/contract.toml` as `checks = [...]` and `protect = [...]`: commands that fail now and pass only when the outcome that matters most is met, commands that guard what must not regress, and the test files and fixtures those commands depend on. The model ends that turn before it changes the code.
 
-The model is pointed at evidence a tool computes: a test that reproduces the defect, a property test, a model checker or proof, or a mutation run on the diff.
+The model is pointed at evidence a tool computes: a test that reproduces the defect, a property test, a run of user actions checked against a simple model, or a mutation run on the diff.
 
 summonr runs the commands first. When every one already passes, the contract goes back to the model without a judge call, because it cannot show the change. Otherwise the judge reads it. When the judge accepts, summonr moves the commands and a SHA-256 of each protected file into the goal's Work record, deletes the file, and runs the commands after each turn; the goal ends when they all pass. A later edit to the contract file changes nothing, and a change to a protected file fails the check until it is restored. Deleting an unaccepted contract hands the decision back to the judge. Until a contract is accepted, the judge decides, and formatting, renames, comments, docs, or a bare test run count as unfinished.
 

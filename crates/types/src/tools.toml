@@ -215,7 +215,7 @@ verb = "Lsp"
 readonly = true
 advertise = "lsp_available"
 run = "language"
-description = "Language server. Prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics."
+description = "Language server. Prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics; op=goal returns a Lean tactic goal at line and character."
 
 [tool.schema]
 type = "object"
@@ -227,7 +227,7 @@ path = { type = "string" }
 line = { type = "integer", minimum = 1 }
 character = { type = "integer", minimum = 1 }
 references = { type = "boolean" }
-op = { type = "string", enum = ["diagnostics", "definition"] }
+op = { type = "string", enum = ["diagnostics", "definition", "goal"] }
 new_name = { type = "string" }
 
 [[tool]]

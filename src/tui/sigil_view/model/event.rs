@@ -112,6 +112,7 @@ impl Model {
             Event::Approval { .. }
             | Event::Elicit { .. }
             | Event::Spawned { .. }
+            | Event::Dismissed
             | Event::Session { .. }
             | Event::Step { .. } => {}
             Event::Unreported { tokens } => self.unreported_tokens = tokens,

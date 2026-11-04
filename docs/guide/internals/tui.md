@@ -46,8 +46,8 @@ shared Tasks/Agents popup with Sigil's measured virtual list.
 | `StatusView`, `App::show_status` | select the closed, Tasks, or Agents view without changing transcript layout | status bar and popup |
 | `App::{toggle_agents, toggle_todos}` | open or close the corresponding status popup view | configured hotkeys |
 | `App::{step_status, move_status, expand_status}` | switch views, select a row, and expand its details | overlay keyboard routing |
-| `App::clear_agent` | dismiss a background agent from the status bar and popup; keep execution, accounting, and transcript reports | `strip/details.rs` |
-| `Model::agents_hidden` | child tags dismissed in the current view; late events do not reveal them | `App::clear_agent`, status bar and popup |
+| `Model::clear_agent` | dismiss a background agent from the status bar and popup; keep execution, accounting, and transcript reports | `App::clear_agent` for the button; `Model::apply_child` for native `task` dismissal events |
+| `Model::agents_hidden` | child tags dismissed in the current view; late events do not reveal them | `Model::clear_agent`, status bar and popup |
 | `todos::tally` | count completed and total task rows from the existing ledger | status bar, ledger pane |
 
 Live throughput belongs to the main response, not an aggregate of child rates.

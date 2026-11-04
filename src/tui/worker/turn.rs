@@ -126,7 +126,7 @@ impl Worker {
         }
         let reply = match &result {
             Some(Ok(turn)) if !turn.aborted => Some(turn.text.clone()),
-            _ => None,
+            Some(Ok(_) | Err(_)) | None => None,
         };
         self.finish_turn(cancelled, result);
         self.send_settings();

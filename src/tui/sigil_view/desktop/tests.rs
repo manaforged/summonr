@@ -14,6 +14,7 @@ use crate::recent::ModelId;
 use crate::tui::{Fact, Msg, Snapshot};
 
 mod harness;
+mod proportions;
 mod settings;
 mod transcript;
 mod window_chrome;

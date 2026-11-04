@@ -8,6 +8,69 @@ use summonr_types::ToolCall;
 
 const ARG_WIDTH: usize = 100;
 
+/// Stream complete journal and mail-audit records without dropping provider fields.
+pub fn export_json(path: &Path, output: &mut impl std::io::Write) -> Result<()> {
+    let id = log::parse_path(path)
+        .ok_or_else(|| crate::Error::Config("session path has no id".to_string()))?
+        .to_string();
+    let mut records = audit_records(path, &id, "session", output)?;
+    let home = log::home_of(path)
+        .ok_or_else(|| crate::Error::Config("session path has no home".to_string()))?;
+    let mail = crate::mail::files::audit_path(&home.join("mail"), &id);
+    if mail.exists() {
+        records += audit_records(&mail, &id, "mail", output)?;
+    }
+    serde_json::to_writer(
+        &mut *output,
+        &serde_json::json!({
+            "schema": 1, "session": id, "source": "export", "sequence": 1,
+            "record": {"kind": "complete_prefix", "records": records},
+        }),
+    )?;
+    output.write_all(b"\n")?;
+    Ok(())
+}
+
+fn audit_records(
+    path: &Path,
+    session: &str,
+    source: &str,
+    output: &mut impl std::io::Write,
+) -> Result<u64> {
+    use std::io::BufRead as _;
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        schema: u8,
+        session: &'a str,
+        source: &'a str,
+        sequence: u64,
+        record: &'a serde_json::value::RawValue,
+    }
+    let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
+    let mut bytes = Vec::new();
+    let mut sequence = 0;
+    while reader.read_until(b'\n', &mut bytes)? != 0 {
+        if bytes.last() != Some(&b'\n') {
+            break;
+        }
+        sequence += 1;
+        let record = serde_json::from_slice(&bytes)?;
+        serde_json::to_writer(
+            &mut *output,
+            &Record {
+                schema: 1,
+                session,
+                source,
+                sequence,
+                record,
+            },
+        )?;
+        output.write_all(b"\n")?;
+        bytes.clear();
+    }
+    Ok(sequence)
+}
+
 pub fn export(path: &Path) -> Result<String> {
     let mut out = String::new();
     for line in log::records(path, 0) {

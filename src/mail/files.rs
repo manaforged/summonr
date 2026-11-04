@@ -1,5 +1,79 @@
 use super::*;
 
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum Stage {
+    SendAttempted,
+    Delivered,
+    Dequeued,
+    ClearAttempted,
+    Cleared,
+}
+
+pub(crate) fn audit_path(dir: &Path, id: &str) -> PathBuf {
+    dir.join("audit").join(format!("{}.jsonl", clean_id(id)))
+}
+
+fn audit(dir: &Path, session: &str, stage: Stage, mail: &Mail) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        at: u64,
+        kind: Stage,
+        actor: Option<String>,
+        mail: &'a Mail,
+    }
+    append_record(
+        &audit_path(dir, session),
+        &Record {
+            at: summonr_core::clock::now_millis(),
+            kind: stage,
+            actor: match stage {
+                Stage::ClearAttempted | Stage::Cleared => {
+                    std::env::var(crate::session::SESSION_ENV).ok()
+                }
+                Stage::SendAttempted | Stage::Delivered | Stage::Dequeued => {
+                    Some(session.to_string())
+                }
+            },
+            mail,
+        },
+    )
+}
+
+fn append_record(path: &Path, value: &impl serde::Serialize) -> Result<()> {
+    crate::tools::blocking(|| {
+        use std::io::Write as _;
+        let _lock = store::lock(path, true)?;
+        let mut bytes = serde_json::to_vec(value)?;
+        bytes.push(b'\n');
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.mode(0o600);
+        }
+        let mut file = options.open(path)?;
+        let before = file.metadata()?.len();
+        if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_data()) {
+            file.set_len(before)?;
+            return Err(error.into());
+        }
+        Ok(())
+    })
+}
+
+pub(super) fn append(dir: &Path, targets: &[String], mail: &Mail) -> Result<usize> {
+    for target in targets {
+        let mut mail = mail.clone();
+        mail.to.clone_from(target);
+        audit(dir, &mail.from, Stage::SendAttempted, &mail)?;
+        append_record(&inbox_path(dir, target), &mail)?;
+        audit(dir, &mail.from, Stage::Delivered, &mail)?;
+    }
+    Ok(targets.len())
+}
+
 pub(super) enum Unread {
     Missing,
     Tail(Vec<u8>),
@@ -75,7 +149,16 @@ impl Mailbox {
             let body = line.strip_suffix(b"\n").unwrap_or(line);
             let body = body.strip_suffix(b"\r").unwrap_or(body);
             match serde_json::from_slice::<Mail>(body) {
-                Ok(item) => mail.push(item),
+                Ok(item) => {
+                    if let Err(error) = audit(&self.dir, &self.id, Stage::Dequeued, &item) {
+                        return if mail.is_empty() {
+                            Err(error)
+                        } else {
+                            Ok((mail, false))
+                        };
+                    }
+                    mail.push(item);
+                }
                 Err(_) if !mail.is_empty() => return Ok((mail, false)),
                 Err(error) => {
                     self.cursor += width;
@@ -216,7 +299,7 @@ pub(crate) fn post_board(dir: &Path, cwd: &Path, from: &str, key: &str, value: &
 pub(crate) fn read_inbox(dir: &Path, id: &str) -> Result<Vec<Mail>> {
     let path = inbox_path(dir, id);
     let _lock = store::lock(&path, true)?;
-    Ok(parse_inbox(&store::read_or_empty(&path)?))
+    parse_inbox(&store::read_or_empty(&path)?)
 }
 
 pub(crate) fn take_inbox(dir: &Path, id: &str) -> Result<Vec<Mail>> {
@@ -227,13 +310,27 @@ pub(crate) fn take_inbox(dir: &Path, id: &str) -> Result<Vec<Mail>> {
     }
     let path = inbox_path(dir, id);
     let _lock = store::lock(&path, true)?;
-    let mail = parse_inbox(&store::read_or_empty(&path)?);
+    let mail = parse_inbox(&store::read_or_empty(&path)?)?;
+    for item in &mail {
+        audit(dir, id, Stage::ClearAttempted, item)?;
+    }
     store::write(&path, "", store::Durability::Synced)?;
+    for item in &mail {
+        audit(dir, id, Stage::Cleared, item)?;
+    }
     Ok(mail)
 }
 
-fn parse_inbox(text: &str) -> Vec<Mail> {
+fn parse_inbox(text: &str) -> Result<Vec<Mail>> {
     text.lines()
-        .filter_map(|line| serde_json::from_str::<Mail>(line).ok())
+        .enumerate()
+        .map(|(index, line)| {
+            serde_json::from_str::<Mail>(line).map_err(|error| {
+                Error::Config(format!(
+                    "invalid inbox record on line {}: {error}",
+                    index + 1
+                ))
+            })
+        })
         .collect()
 }

@@ -1,9 +1,9 @@
 use super::*;
 use crate::tui::sigil_view::view::editor;
-use sigil::prelude::Radius;
 use sigil::prelude::Widget;
+use sigil::prelude::{Dimension, FlexWrap, Radius};
 
-const PLACEHOLDER: &str = "Ask anything; @ attaches a file, / runs a command";
+const PLACEHOLDER: &str = "What would you like to build or change?";
 const EDITING: &str = "Editing the file: ctrl+s saves, esc leaves";
 const ATTACH: &str = "Attach a file";
 const EFFORT_OFF: &str = "effort off";
@@ -36,8 +36,8 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                 .layout(
                     LayoutStyle::flex_column()
                         .fill_width()
-                        .padding_x(M)
-                        .padding_y(S)
+                        .padding_x(L)
+                        .padding_y(M)
                         .gap(S),
                 )
                 .rounded(Radius::Lg)
@@ -54,9 +54,16 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                         .placeholder(if editing { EDITING } else { PLACEHOLDER })
                         .autofocus()
                         .chrome(false)
-                        .focus_ring(sigil::prelude::signal(false))
                         .content_padding(0.0, 0.0)
-                        .layout(LayoutStyle::flex_column().fill_width().height(48.0))
+                        .layout(
+                            LayoutStyle::flex_column()
+                                .fill_width()
+                                .height(Dimension::Auto)
+                                .min_size(0.0, 48.0)
+                                .max_size(Dimension::Auto, 192.0)
+                                .shrink(0.0),
+                        )
+                        .line_height_px(24.0)
                         .font_size(BODY)
                         .text_color(Token::OnSurface),
                 )
@@ -82,6 +89,7 @@ fn tools(app: &App, editing: bool) -> NodeBuilder {
             LayoutStyle::flex_row()
                 .fill_width()
                 .align_items(AlignItems::Center)
+                .flex_wrap(FlexWrap::Wrap)
                 .gap(XS),
         )
         .child(attach(app.clone()))
@@ -172,7 +180,7 @@ fn send(app: App, editing: bool) -> NodeBuilder {
         }
     })
     .primary()
-    .size(ControlSize::Compact)
+    .size(ControlSize::Default)
     .disabled(move || {
         !running(&gate) && (editing || (draft.get().trim().is_empty() && attached.get() == 0))
     })

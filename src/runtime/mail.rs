@@ -248,11 +248,12 @@ fn send(
     if text.is_empty() {
         return Err(Error::Tool("send requires text".to_string()));
     }
-    let sent = mailbox.send(to, text)?;
+    let reply_to = args.get("reply_to").and_then(serde_json::Value::as_str);
+    let (sent, id) = mailbox.send(to, text, reply_to)?;
     Ok(if to == "all" {
-        format!("sent to {sent} session(s)")
+        format!("sent message {id} to {sent} session(s)")
     } else {
-        format!("sent to {to}")
+        format!("sent message {id} to {to}")
     })
 }
 

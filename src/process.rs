@@ -92,7 +92,18 @@ impl Spec {
     }
 
     fn command(self) -> std::process::Command {
-        let mut command = std::process::Command::new(&self.program);
+        let absolute_path = std::env::var_os("PATH").is_none_or(|path| {
+            std::env::split_paths(&path).all(|directory| directory.is_absolute())
+        });
+        let resolved = (absolute_path
+            && std::path::Path::new(&self.program).components().count() == 1
+            && !self.env.iter().any(|(name, _)| name == "PATH"))
+        .then(|| self.program.to_str().and_then(crate::askpass::on_path))
+        .flatten();
+        let program = resolved
+            .as_deref()
+            .map_or(self.program.as_os_str(), std::path::Path::as_os_str);
+        let mut command = std::process::Command::new(program);
         command.args(&self.args);
         if let Some(cwd) = &self.cwd {
             command.current_dir(cwd);

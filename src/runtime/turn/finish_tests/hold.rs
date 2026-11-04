@@ -199,7 +199,9 @@ async fn a_mail_turn_keeps_the_objective() {
     let mut run = session([Reply::Text("fixed"), Reply::Text("read the mail")]);
     run.loop_.mailbox = Some(receiver);
     run.loop_.turn("fix the meter").await.unwrap();
-    sender.send("receiver", "the meter is fine now").unwrap();
+    sender
+        .send("receiver", "the meter is fine now", None)
+        .unwrap();
     run.loop_.mail_poll().unwrap();
     run.loop_.turn_mail_with(|_| {}).await.unwrap();
     assert_eq!(run.loop_.session.objective().unwrap(), "fix the meter");

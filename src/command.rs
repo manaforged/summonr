@@ -12,7 +12,6 @@ use Argument::{Bare, Text, Value};
 pub enum SlashCommand {
     Help,
     Settings,
-    Gui,
     Login,
     Model,
     Effort,

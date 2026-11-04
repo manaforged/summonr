@@ -118,7 +118,6 @@ impl App {
                 drop(self.cmd.send(Cmd::Export(argument.map(str::to_string))));
             }
             Some(crate::SlashCommand::View) => self.view_command(argument),
-            Some(crate::SlashCommand::Gui) => self.gui_command(),
             Some(crate::SlashCommand::Demo) => {
                 self.model_mut(|model| {
                     model.entries.extend(super::super::demo::entries());
@@ -130,16 +129,6 @@ impl App {
             _ => return false,
         }
         true
-    }
-
-    fn gui_command(&self) {
-        let want = !sigil::terminal::pixels();
-        if sigil::terminal::set_pixels(want) != want {
-            self.push_entry(Entry::Error(
-                "the window layout needs full-screen mode and a terminal that shows Kitty images and reports its cell size".to_string(),
-            ));
-            self.refresh();
-        }
     }
 
     pub(in crate::tui::sigil_view) fn open_sessions(&self, tree: bool) {

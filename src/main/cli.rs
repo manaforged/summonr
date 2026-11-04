@@ -96,7 +96,15 @@ pub(super) struct Args {
 }
 
 pub(super) fn parse() -> Result<Args> {
-    parse_from(std::env::args().skip(1))
+    use std::io::IsTerminal;
+
+    let desktop = cfg!(feature = "gui")
+        && std::env::args_os().len() == 1
+        && !std::io::stdin().is_terminal()
+        && !std::io::stdout().is_terminal();
+    let mut args = parse_from(std::env::args().skip(1))?;
+    args.gui |= desktop;
+    Ok(args)
 }
 
 enum Step {

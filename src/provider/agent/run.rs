@@ -5,6 +5,7 @@ use tokio::process::{ChildStdin, ChildStdout};
 use crate::process::{Cap, Child, Tail};
 use crate::rpc::{Framing, Lines, Read};
 
+use super::super::capture::{Sink, Stage};
 use super::super::reasoning::{EffortField, Off, Plan, Step};
 use super::super::{CompletionRequest, Effort, Message, Role};
 use super::frame::{Frame, Ready, ReplyKind};
@@ -41,6 +42,7 @@ const EFFORT: Plan<'static> = Plan {
 };
 
 struct Spec<'a> {
+    session: &'a str,
     model: &'a str,
     system: Option<&'a str>,
     effort: Option<Effort>,
@@ -68,6 +70,7 @@ pub(in crate::provider) struct Run {
     pub(super) spent: (u32, u32),
     ready: Value,
     shape: String,
+    capture: Option<Sink>,
 }
 
 impl Drop for Run {
@@ -89,6 +92,7 @@ impl Run {
             .filter(|message| message.role == Role::System)
             .map(|message| message.content.as_str());
         let spec = Spec {
+            session: &request.session,
             model: &request.model,
             system,
             effort: request.effort,
@@ -160,6 +164,7 @@ impl Run {
             spent: (0, 0),
             ready: Value::Null,
             shape: String::new(),
+            capture: Sink::open(crate::endpoint::Wire::AgentSdk, "agent", spec.session)?,
         };
         run.send(&json!({
             "type": "control_request",
@@ -217,7 +222,12 @@ impl Run {
 
     pub(super) async fn line(&mut self) -> Result<String> {
         match self.reader.next().await? {
-            Read::Line(line) => Ok(line),
+            Read::Line(line) => {
+                if let Some(sink) = &self.capture {
+                    sink.write(Stage::Response, line.as_bytes())?;
+                }
+                Ok(line)
+            }
             Read::Oversize => Err(Error::provider(
                 ProviderFailureKind::Malformed,
                 format!(
@@ -257,6 +267,9 @@ impl Run {
     }
 
     pub(super) async fn send(&mut self, value: &Value) -> Result<()> {
+        if let Some(sink) = &self.capture {
+            sink.write(Stage::Request, value.to_string().as_bytes())?;
+        }
         let mut line = serde_json::to_string(value)?;
         line.push('\n');
         let written = self.stdin.write_all(line.as_bytes()).await;

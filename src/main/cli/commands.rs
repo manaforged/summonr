@@ -189,7 +189,7 @@ pub(super) const SUBCOMMANDS: [Command; 16] = [
         name: "session export",
         most: Some(1),
         run: |args, _| verb(args, Verb::Export),
-        help: "session export [ID|NAME]    write a session as markdown (--digest for classify)",
+        help: "session export [ID|NAME]    markdown, --digest for classify, or --json for complete audit records",
     },
     Command {
         name: "session profile",

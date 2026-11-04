@@ -134,7 +134,7 @@ A goal with no `.summonr/check.toml` asks the model to write a contract to `.sum
 | `--add-dir DIR` | Add an extra writable root. Repeatable. |
 | `--strict` | Allow only the commands listed in `policy.toml`. |
 | `--worktree` | Isolate this session in a git worktree. |
-| `--gui` | Open the desktop window. Needs a build with `--features gui`. |
+| `--gui` | Open the standalone desktop application and choose a project folder. Needs a build with `--features gui`. |
 | `-h`, `--help` | Show the help. |
 | `-V`, `--version` | Show the version. |
 
@@ -152,7 +152,7 @@ git diff | summonr kimi -p
 | --- | --- |
 | `session resume [ID\|NAME]` | Resume a session; with no argument, the last one in this directory. |
 | `session list`, `session search TEXT` | List sessions, or search their text. |
-| `session export [ID\|NAME] [--digest]` | Print a session as Markdown; `--digest` prints the condensed form that `classify --review` reads. |
+| `session export [ID\|NAME] [--digest\|--json]` | Print Markdown, a condensed digest, or complete journal/mail audit envelopes as JSONL with a counted prefix trailer. |
 | `session profile [ID\|NAME]` | Time and tokens of one session. `--all` totals every session, and `--last N` only the newest N. |
 | `session diff [PATH]` | Changes against the base. Takes `--stat`, `--json`, and `--turn N\|last\|session`. |
 | `worktree list\|prune [--json]` | List summonr worktrees, or remove the ones that are gone. |
@@ -371,7 +371,7 @@ cache_ttl = "5m"
 | `SUMMONR_SYSTEM_PROMPT` | Replace the whole system prompt. `SYSTEM.md`, `AGENTS.md`, `CLAUDE.md`, and skills are not added. |
 | `SUMMONR_MODELS_URL` | URL of the model catalog. |
 | `SUMMONR_CRON` | Set by summonr to the job name in a cron run. `summonr cron add`, `edit`, and `remove` refuse while it is set. |
-| `SUMMONR_CAPTURE_DIR` | Write raw provider request and stream frames as JSON lines to this directory. |
+| `SUMMONR_CAPTURE_DIR` | Opt in to private raw provider captures under each session id: correlated exchange ids, timestamps, and base64 request/response bytes; capture failures are errors. |
 | `SUMMONR_VERSION` | Installer: release tag to install. Default `latest`. |
 | `SUMMONR_INSTALL_DIR` | Installer: install directory. |
 | `SUMMONR_LIBC` | `install.sh` on Linux: `musl` (default) or `gnu`. |
@@ -515,7 +515,7 @@ judge = "zai"
 
 ## Interface
 
-`summonr --gui` opens the session in a desktop window (a build with `--features gui`). The window is built on Sigil. The left rail starts with one row of buttons that switch the Files, Changes, Worktrees, Jobs, Peers, and Ledger panes, then lists this workspace's sessions: `+` starts a new session, the branch button starts one in its own git worktree (merge or discard it from the Worktrees pane), and a right-click on a session offers Rename and, on a past session, Delete. A live session is named by `/name`, otherwise by the first line of its first prompt. The rail's footer names the provider and opens the provider list; with none set up it reads Add a provider. Below 900 px the rail shows icons only. The main column holds the transcript and the composer card. The composer shows the `@` mentions in the draft as removable chips, and has an Attach button, the model, effort, and approval chips (pick a model, open the effort strip, or toggle approval), and Send, which waits for text or an image. With no provider set up, sending opens the provider list and keeps the draft. The title bar shows `Changes +N −M` while the workspace has changes, and `···` opens a menu with Hotkeys, Help, and Settings. The right side shows the open pane with real widgets: clickable file rows, +/− chips that open a file's hunks, an Edit/Save file view. Clicking outside a dialog closes it. The same `App` and layouts drive the terminal and the window. The window's keys differ: `tab` and `shift+tab` move focus instead of changing effort and approval, `cmd+k` opens the command list, `cmd+p` starts an `@` file mention, `cmd+,` opens Settings, `cmd+n` starts a new session, and `cmd+1` to `cmd+6` open the Files, Changes, Worktrees, Jobs, Peers, and Ledger panes. Letters typed while a button has focus go to the composer, and a pane takes the keyboard only after a click inside it. In the window the command list shows one line of help for each built-in command.
+`summonr --gui` opens the standalone desktop application (a build with `--features gui`). Start by choosing a project folder; no agent session or project tools start before selection. Startup errors stay in the window so you can retry. A GUI build launched without arguments and without terminal stdin or stdout opens the same application, including from a macOS app bundle. Running `summonr` in a terminal keeps the TUI, including inside terminal hosts. Choose a provider or the Claude Code binary backend through the existing Model and provider controls. The desktop and TUI reuse the same configuration, credentials, and session storage; `/gui` is no longer a slash command. The window is built on Sigil. The left rail starts with one row of buttons that switch the Files, Changes, Worktrees, Jobs, Peers, and Ledger panes, then lists this workspace's sessions: `+` starts a new session, the branch button starts one in its own git worktree (merge or discard it from the Worktrees pane), and a right-click on a session offers Rename and, on a past session, Delete. A live session is named by `/name`, otherwise by the first line of its first prompt. The rail's footer names the provider and opens the provider list; with none set up it reads Add a provider. Below 900 px the rail shows icons only. The main column holds the transcript and the composer card. The composer shows the `@` mentions in the draft as removable chips, and has an Attach button, the model, effort, and approval chips (pick a model, open the effort strip, or toggle approval), and Send, which waits for text or an image. With no provider set up, sending opens the provider list and keeps the draft. The title bar shows `Changes +N −M` while the workspace has changes, and `···` opens a menu with Hotkeys, Help, and Settings. The right side shows the open pane with real widgets: clickable file rows, +/− chips that open a file's hunks, an Edit/Save file view. Clicking outside a dialog closes it. The terminal and native window share `App` state and commands but use separate host layouts. The window's keys differ: `tab` and `shift+tab` move focus instead of changing effort and approval, `cmd+k` opens the command list, `cmd+p` starts an `@` file mention, `cmd+,` opens Settings, `cmd+n` starts a new session, and `cmd+1` to `cmd+6` open the Files, Changes, Worktrees, Jobs, Peers, and Ledger panes. Letters typed while a button has focus go to the composer, and a pane takes the keyboard only after a click inside it. In the window the command list shows one line of help for each built-in command.
 
 The screen is a set of panes on one session. `ctrl+x e` (or `/pane files`) opens the repository tree beside the chat; `ctrl+t` the plan ledger; `ctrl+x b` hides or restores the pane. In the tree: `ctrl+→` focuses it, `↑↓` move, `←→` collapse or expand, `PgUp/PgDn/Home/End` jump, Enter opens a directory or attaches `@path` to your prompt, and a right-click (or the mouse) opens a menu: attach, open in `$EDITOR`, insert path. `ctrl+←` or `esc` returns to the composer. With the composer focused, an empty draft, no open overlay, and no running turn, `esc` closes the open side pane. `/pane off` closes the pane. `/pane focus`, `run`, and `review` are presets, `/pane "chat | files 30%"` sets the split, and ctrl+shift+←/→ resizes it. The layout persists in `~/.summonr/config.toml` as `layout`. `ctrl+o` opens the settings modal, where every hotkey is editable; the choice is stored under `[hotkeys]` in the same file. `ctrl+x n` folds every thinking block, then every tool output (`tools = "hidden"`), then shows them all again; a click still opens one block.
 
@@ -606,7 +606,6 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `/view PATH` | read a file in a pane |
 | `/pane [NAME]` | files, ledger, diff, worktrees, jobs, peers, or a layout |
 | `/settings` | theme, tool output, reasoning, modules, incoming mail, `NAME tools` per MCP server, keys |
-| `/gui` | Switch between the window layout and the text layout |
 | `/permissions [write]` | extra write paths for --strict |
 | `/help` | list commands and keys |
 
@@ -728,12 +727,12 @@ The same mailbox is a CLI, so any agent CLI (Claude Code, Codex, a script) can t
 
 ```
 summonr mail                  # who is on this machine
-summonr mail send <name|id|all> <text>
+summonr mail send [--json] [--reply-to ID] <name|id|all> <text>
 summonr mail inbox <id> [--clear]
 summonr mail board [get <key>|set <key> <text>]
 ```
 
-A foreign agent takes part by picking an id: it reads `summonr mail inbox <id>`, and anyone can write to it with `summonr mail send <id> <text>`. Its messages arrive from `cli` unless it writes its own inbox name into replies. `inbox <id> --clear` prints the mail and empties that inbox. It refuses the inbox of a live summonr session, because that session keeps its own read position. A lock file next to each inbox makes a send, a read, and a clear wait for each other, so no message is lost between them.
+A foreign agent takes part by picking an id: it reads `summonr mail inbox <id>`, and anyone can write to it with `summonr mail send <id> <text>`. Its messages arrive from `cli` unless it writes its own inbox name into replies. `send --json` returns the message id and delivered inbox count. `--reply-to ID` records the original message id. `inbox <id> --clear` prints the mail and empties that inbox. Clear attempts and completions are separate audit events, not read receipts. Corrupt input or an audit failure before rewriting leaves the inbox unchanged. It refuses the inbox of a live summonr session, because that session keeps its own read position. A lock file next to each inbox makes a send, a read, and a clear wait for each other, so no message is lost between them.
 
 ## Memory
 
@@ -942,7 +941,7 @@ Remote TUI: `summonr acp`, or `ssh` and the terminal. There is no HTTP control p
 
 Browser: the `browser` module drives Chrome through Charm. A Playwright MCP server also works, as any MCP server does.
 
-`summonr session export` is Markdown of `~/.summonr/sessions/<id>/session.jsonl`. It does not import transcripts from other tools.
+`summonr session export` is Markdown of `~/.summonr/sessions/<id>/session.jsonl`. With `--json`, it streams complete raw journal records and that session's mail audit without dropping reasoning, continuations, timestamps, or unknown fields. The final counted trailer identifies a complete prefix, not a completed session. It does not import transcripts from other tools.
 
 Search is the `search` tool, or `rg` through `run_command`. A 1k-token impact graph is a named MCP server, not a second search tool.
 

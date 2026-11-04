@@ -19,6 +19,14 @@ pub(super) fn session_path(args: &Args) -> Result<PathBuf> {
 }
 
 pub(super) fn export_session_cmd(args: &Args) -> Result<()> {
+    if args.json {
+        if args.digest {
+            return Err(summonr::Error::Config(
+                "--json and --digest cannot be combined".to_string(),
+            ));
+        }
+        return summonr::export_json(&session_path(args)?, &mut std::io::stdout().lock());
+    }
     let text = summonr::export_session(&session_path(args)?)?;
     if args.digest {
         print!("{}", summonr::classify::digest::digest(&text));

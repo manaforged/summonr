@@ -6,13 +6,14 @@ use sigil::prelude::{
 };
 
 use super::super::App;
+use super::super::thread::BODY;
 use crate::prefs::Visibility;
 use crate::tui::sigil_view::chat::entry::label;
 use crate::tui::sigil_view::chat::entry::reply::{self, Part, parts};
 use crate::tui::sigil_view::text_style::TextStyle;
 
 const FENCE: &str = "```";
-const LINE: f32 = 22.0;
+const LINE: f32 = 24.0;
 
 pub(super) fn user(body: String) -> NodeBuilder {
     container()
@@ -33,7 +34,12 @@ pub(super) fn user(body: String) -> NodeBuilder {
                 )
                 .bg(Token::SurfaceHover)
                 .rounded(Radius::Lg)
-                .child(TextStyle::sm(Token::Gray12).on(sigil::prelude::text(body))),
+                .child(
+                    sigil::prelude::text(body)
+                        .font_size(BODY)
+                        .line_height_px(LINE)
+                        .text_color(Token::OnSurface),
+                ),
         )
 }
 
@@ -76,7 +82,7 @@ fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
 }
 
 pub(super) fn assistant(body: &str, app: &App) -> NodeBuilder {
-    let mut column = container().layout(
+    let mut column = container().font_size(BODY).layout(
         LayoutStyle::flex_column()
             .fill_width()
             .gap(10.0)

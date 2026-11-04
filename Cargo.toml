@@ -98,7 +98,7 @@ crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "5b1788
 
 [features]
 default = []
-gui = ["sigil/desktop"]
+gui = ["sigil/native-dialog"]
 
 [profile.release]
 lto = "fat"

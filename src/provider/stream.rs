@@ -4,6 +4,7 @@ use std::pin::Pin;
 use futures::StreamExt;
 use serde::Deserialize;
 
+use super::capture::{Sink, Stage};
 use super::wire::Accumulate;
 
 use super::{
@@ -24,9 +25,9 @@ impl Client {
         drop(body);
         let spec = super::wire::spec(self.wire);
         let url = spec.url(&self.base, &request.model);
-        let sink = super::capture::Sink::open(self.wire, "stream");
+        let sink = Sink::open(self.wire, "stream", &request.session)?;
         if let Some(sink) = &sink {
-            sink.write("request", &String::from_utf8_lossy(&bytes));
+            sink.write(Stage::Request, &bytes)?;
         }
         let mut bytes = self
             .send(
@@ -60,7 +61,7 @@ impl Client {
                 }
             };
             if let Some(sink) = &sink {
-                sink.write("chunk", &String::from_utf8_lossy(&chunk));
+                sink.write(Stage::Chunk, &chunk)?;
             }
             let parsed = frames.push(&chunk, spec.sentinel.as_deref()).map_err(cut)?;
             let produced = self.take(&mut state, &parsed, request).map_err(cut)?;

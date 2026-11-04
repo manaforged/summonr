@@ -283,24 +283,19 @@ pub struct Info {
     pub prompt: Option<String>,
 }
 
+#[cfg(feature = "gui")]
+pub use sigil_view::desktop;
+
+/// Run the terminal interface with the existing session hub.
 pub fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,
     info: Info,
     ui: Ui,
     inbox: Inbox,
-    gui: bool,
     factory: hub::Factory,
 ) -> Result<i32> {
     let (ui_tx, ui_rx) = (ui.0, inbox.0);
-    if gui {
-        #[cfg(feature = "gui")]
-        return sigil_view::run_gui(loop_, workspace, info, ui_tx, ui_rx, factory);
-        #[cfg(not(feature = "gui"))]
-        return Err(summonr_core::error::Error::Config(
-            "this build has no window; install with `cargo install --features gui`".to_string(),
-        ));
-    }
     sigil_view::run(loop_, workspace, info, ui_tx, ui_rx, factory)
 }
 

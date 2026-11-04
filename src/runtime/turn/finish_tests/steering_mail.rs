@@ -10,7 +10,7 @@ fn mailboxes(dir: &Path) -> (crate::mail::Mailbox, crate::mail::Mailbox) {
 fn mail_during_the_reply(sender: crate::mail::Mailbox, replies: Vec<Reply>) -> Scripted {
     Scripted::new(replies).on_complete(move |round| {
         if round == 0 {
-            sender.send("receiver", "stop the command").unwrap();
+            sender.send("receiver", "stop the command", None).unwrap();
         }
     })
 }

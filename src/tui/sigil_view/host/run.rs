@@ -66,7 +66,7 @@ pub(crate) fn run(
             sigil::run(config, move || {
                 let existing = mounted.borrow().clone();
                 if let Some(app) = existing {
-                    return layout(app);
+                    return root(app);
                 }
                 let app = App::new(info.clone(), workspace.clone(), commands.clone());
                 if let Err(error) = calibrate(&mut std::io::stdout()) {
@@ -366,12 +366,4 @@ pub(in crate::tui::sigil_view) fn stop<T>(
             }
         });
     });
-}
-
-fn layout(app: App) -> sigil::prelude::NodeBuilder {
-    #[cfg(feature = "gui")]
-    if sigil::terminal::pixels() {
-        return super::super::desktop::root(app);
-    }
-    root(app)
 }

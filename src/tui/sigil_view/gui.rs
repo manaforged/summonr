@@ -1,78 +1,179 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::Arc;
 
-use sigil::prelude::effect;
+use sigil::prelude::{LayoutStyle, NodeBuilder, Widget, container, effect, signal};
 use sigil::reactive::defer;
 use sigil::reactive::untrack;
 use sigil::tasks::on_message;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
+use tokio::task::JoinHandle;
 
 use super::app::App;
-use super::desktop::root;
+use super::desktop::{root, welcome};
 use super::host::{start_tick, stop};
 use super::model::Entry;
 use crate::provider::Client;
 use crate::runtime::Loop;
 use crate::tui::hub::{Factory, Started, start};
-use crate::tui::{Info, Intent, Msg};
+use crate::tui::{Cmd, Info, Intent, Msg, Ui};
+
 use summonr_core::error::{Error, Result};
 
 const TITLE: &str = env!("CARGO_PKG_NAME");
 const SIZE: (u32, u32) = (1280, 800);
 
-pub(crate) fn run(
+struct Prepared {
     loop_: Loop<Client>,
-    workspace: PathBuf,
     info: Info,
-    ui_tx: UnboundedSender<Msg>,
-    ui_rx: UnboundedReceiver<Msg>,
     factory: Factory,
+    ui: Ui,
+    inbox: crate::tui::Inbox,
+}
+
+type Prepare = dyn Fn(PathBuf, Ui) -> Result<(Loop<Client>, Info, Factory)> + Send + Sync;
+
+struct Running {
+    commands: UnboundedSender<Cmd>,
+    worker: JoinHandle<()>,
+    signals: JoinHandle<()>,
+}
+
+/// Launch the native application and prepare its agent after the user selects a project.
+pub fn run(
+    prepare: impl Fn(PathBuf, Ui) -> Result<(Loop<Client>, Info, Factory)> + Send + Sync + 'static,
 ) -> Result<i32> {
-    let farewell = ui_tx.clone();
-    let signals = tokio::spawn(async move {
-        crate::interrupted().await;
-        drop(farewell.send(Msg::Intent(Intent::Bye)));
-    });
-    let Started {
-        commands: cmd_tx,
-        inbox: ui_rx,
-        task: worker,
-    } = start(loop_, info.clone(), (ui_tx, ui_rx), factory);
-    start_tick(cmd_tx.clone());
-    let inbox = RefCell::new(Some(ui_rx));
-    let commands = cmd_tx.clone();
+    let prepare = Arc::new(prepare);
+    let running = Rc::new(RefCell::new(None::<Running>));
+    let worker = running.clone();
     let opened = tokio::task::block_in_place(|| {
         sigil::run(window(), move || {
-            super::canvas::window_cells();
-            let app = App::new(info.clone(), workspace.clone(), commands.clone());
-            app.fit_window();
-            app.load();
-            if let Some(prompt) = &info.prompt {
-                app.send_text(prompt);
-            }
-            app.refresh();
-            app.animate();
-            if let Some(ui_rx) = inbox.borrow_mut().take() {
-                let receiver = app.clone();
-                on_message(
-                    ui_rx,
-                    move |msg| {
-                        untrack(|| {
-                            receiver.update(msg);
-                            receiver.refresh();
-                        });
-                    },
-                    || {},
-                );
-            }
-            watch_outputs(&app);
-            root(app)
+            application(prepare.clone(), running.clone())
         })
     });
-    signals.abort();
-    stop(worker, &cmd_tx, crate::limits::limits().worker_stop());
+    if let Some(running) = worker.borrow_mut().take() {
+        running.signals.abort();
+        stop(
+            running.worker,
+            &running.commands,
+            crate::limits::limits().worker_stop(),
+        );
+    }
     opened.map_err(|error| Error::Tool(format!("the window failed: {error}")))?;
     Ok(0)
+}
+
+fn application(prepare: Arc<Prepare>, running: Rc<RefCell<Option<Running>>>) -> NodeBuilder {
+    super::canvas::window_cells();
+    let ready = signal(false);
+    let busy = signal(false);
+    let error = signal(None::<String>);
+    let prepared = Rc::new(RefCell::new(None));
+    let received = prepared.clone();
+    let (out, inbox) = unbounded_channel::<Result<Prepared>>();
+    on_message(
+        inbox,
+        move |result| {
+            busy.set(false);
+            match result {
+                Ok(agent) => {
+                    *received.borrow_mut() = Some(agent);
+                    ready.set(true);
+                }
+                Err(cause) => error.set(Some(cause.to_string())),
+            }
+        },
+        || {},
+    );
+    container()
+        .layout(LayoutStyle::flex_column().fill())
+        .children_reactive(move || {
+            let _ready = ready.get();
+            if let Some(prepared) = prepared.borrow_mut().take() {
+                return vec![untrack(|| {
+                    let (app, worker) = mount(prepared);
+                    *running.borrow_mut() = Some(worker);
+                    root(app)
+                })];
+            }
+            let (prepare, out) = (prepare.clone(), out.clone());
+            vec![welcome::view(error, busy, move |workspace| {
+                if busy.peek() {
+                    return;
+                }
+                busy.set(true);
+                error.set(None);
+                let (prepare, out) = (prepare.clone(), out.clone());
+                tokio::task::spawn_blocking(move || {
+                    drop(out.send(Prepared::new(&*prepare, workspace)));
+                });
+            })]
+        })
+}
+
+impl Prepared {
+    fn new(prepare: &Prepare, workspace: PathBuf) -> Result<Self> {
+        let (ui, inbox) = crate::tui::channel();
+        let (loop_, info, factory) = prepare(workspace, ui.clone())?;
+        Ok(Self {
+            loop_,
+            info,
+            factory,
+            ui,
+            inbox,
+        })
+    }
+}
+
+fn mount(prepared: Prepared) -> (App, Running) {
+    let Prepared {
+        loop_,
+        info,
+        factory,
+        ui,
+        inbox,
+    } = prepared;
+    let workspace = loop_.workspace().to_path_buf();
+    let farewell = ui.clone();
+    let signals = tokio::spawn(async move {
+        crate::interrupted().await;
+        drop(farewell.0.send(Msg::Intent(Intent::Bye)));
+    });
+    let Started {
+        commands,
+        inbox,
+        task: worker,
+    } = start(loop_, info.clone(), (ui.0, inbox.0), factory);
+    start_tick(commands.clone());
+    let app = App::new(info.clone(), workspace, commands.clone());
+    app.fit_window();
+    app.load();
+    if let Some(prompt) = &info.prompt {
+        app.send_text(prompt);
+    }
+    app.refresh();
+    app.animate();
+    let receiver = app.clone();
+    on_message(
+        inbox,
+        move |msg| {
+            untrack(|| {
+                receiver.update(msg);
+                receiver.refresh();
+            });
+        },
+        || {},
+    );
+    watch_outputs(&app);
+    (
+        app,
+        Running {
+            commands,
+            worker,
+            signals,
+        },
+    )
 }
 
 fn window() -> sigil::AppConfig {

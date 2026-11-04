@@ -1,6 +1,9 @@
 use crate::durable::log;
 use crate::session::SessionInfo;
 
+#[path = "audit_tests.rs"]
+mod audit;
+
 const ID: &str = "000000000000000018d2297ad34281e1";
 
 fn info(home: &std::path::Path) -> SessionInfo {
@@ -25,6 +28,17 @@ fn a_session_may_contain_only_words_its_journal_holds() {
     let info = info(home.path());
     assert!(info.may_contain("hello"));
     assert!(!info.may_contain("zebra"));
+    let body = r#"{"kind":"assistant","at":42,"text":"answer","reasoning":"provider summary","vendor_field":{"kept":true}}"#;
+    std::fs::write(&info.path, format!("{body}\n{{\"partial\":")).expect("audit fixture");
+    let mut output = Vec::new();
+    super::export_json(&info.path, &mut output).expect("structured audit export");
+    let exported = std::str::from_utf8(&output).expect("audit UTF-8");
+    assert_eq!(exported.lines().count(), 2);
+    let record: serde_json::Value =
+        serde_json::from_str(exported.lines().next().expect("record")).expect("audit JSON");
+    assert_eq!(record["record"]["reasoning"], "provider summary");
+    assert_eq!(record["record"]["vendor_field"]["kept"], true);
+    assert_eq!(record["record"]["at"], 42);
 }
 
 #[test]

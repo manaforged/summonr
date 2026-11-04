@@ -18,9 +18,9 @@ pub(super) const S: f32 = 8.0;
 pub(super) const M: f32 = 12.0;
 pub(super) const L: f32 = 16.0;
 pub(super) const XL: f32 = 24.0;
-pub(super) const BODY: f32 = 14.0;
+pub(super) const BODY: f32 = 16.0;
 pub(super) const META: f32 = 13.0;
-const COLUMN: f32 = 760.0;
+const COLUMN: f32 = 704.0;
 const EXPLAIN: &str = "Explain this repo";
 const ADD_PROVIDER: &str = "Add a provider";
 
@@ -77,6 +77,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .align_items(AlignItems::Stretch),
         )
         .bg(Token::Surface)
+        .child(header(&app))
         .child(
             container()
                 .layout(
@@ -129,16 +130,16 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                     LayoutStyle::flex_column()
                         .fill_width()
                         .shrink(0.0)
-                        .padding_x(XL + L),
+                        .padding_x(0.0),
                 )
                 .children_reactive({
                     let strip = app.clone();
                     move || {
                         let (cols, _rows) = strip.viewport.get();
-                        vec![chat::panels::status_bar(
+                        vec![column(chat::panels::status_bar(
                             strip.clone(),
                             chat::canvas::inner_cols(usize::from(cols)),
-                        )]
+                        ))]
                     }
                 }),
         )
@@ -178,13 +179,51 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                     }
                 }),
         )
-        .children_reactive(move || {
-            if blank.get() {
-                vec![container().layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))]
-            } else {
-                Vec::new()
-            }
-        })
+}
+
+fn header(app: &App) -> NodeBuilder {
+    let history = app.clone();
+    let settings = app.settings_open;
+    let files = app.clone();
+    let model = app.model;
+    let title = app.clone();
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .padding_x(XL)
+                .padding_y(M)
+                .gap(S)
+                .align_items(AlignItems::Center),
+        )
+        .border_bottom(1)
+        .border_color(Token::Border)
+        .child(
+            sigil::prelude::text(move || workspace_name(&title))
+                .font_size(BODY)
+                .font_weight(600),
+        )
+        .child(
+            sigil::prelude::text(move || model.get().snapshot.endpoint.clone())
+                .font_size(META)
+                .text_color(Token::OnSurfaceMuted),
+        )
+        .child(spacer())
+        .child(
+            button("Files")
+                .ghost()
+                .activate(move || files.toggle_pane(super::Pane::Files)),
+        )
+        .child(
+            button("Conversations")
+                .ghost()
+                .activate(move || history.open_sessions(false)),
+        )
+        .child(
+            button("Settings")
+                .ghost()
+                .activate(move || settings.set(true)),
+        )
 }
 
 fn workspace_name(app: &App) -> String {
@@ -210,7 +249,7 @@ fn starters(app: &App) -> NodeBuilder {
         LayoutStyle::flex_row()
             .gap(S)
             .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::Center),
+            .justify_content(JustifyContent::Start),
     );
     if app.model.get().snapshot.unconfigured {
         let providers = app.clone();
@@ -248,21 +287,13 @@ fn starters(app: &App) -> NodeBuilder {
     home(app, actions)
 }
 
-fn home(app: &App, actions: NodeBuilder) -> NodeBuilder {
+fn home(_app: &App, actions: NodeBuilder) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
-                .padding_y(XL)
-                .gap(L)
-                .align_items(AlignItems::Center),
-        )
-        .child(
-            sigil::prelude::text(workspace_name(app))
-                .nowrap()
-                .font_size(26.0)
-                .font_weight(600)
-                .text_color(Token::OnSurface),
+                .padding_y(S)
+                .align_items(AlignItems::Start),
         )
         .child(actions)
 }

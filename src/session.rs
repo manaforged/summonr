@@ -18,7 +18,7 @@ mod usage;
 pub(crate) use catalog::{all, remove, set_name};
 pub use catalog::{info, last_for, list, resolve_id, short};
 pub(crate) use catalog::{name_of as catalog_name, previous_for, prompts, roots};
-pub use export::export;
+pub use export::{export, export_json};
 pub use profile::{Scope as ProfileScope, profile};
 pub use prune::prune;
 pub(crate) use usage::Spend;

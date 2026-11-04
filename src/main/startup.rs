@@ -74,6 +74,9 @@ fn signal(code: i32) -> String {
 }
 
 async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
+    if args.gui && args.verb.is_none() {
+        return lifecycle::desktop(&args);
+    }
     summonr::check_config()?;
     let adopted = adopt(&args)?;
     match args.verb.as_ref() {

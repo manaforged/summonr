@@ -44,6 +44,12 @@ fn clean_id(id: &str) -> String {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct Mail {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
     pub ts: u64,
     pub from: String,
     #[serde(default)]
@@ -54,6 +60,31 @@ pub(crate) struct Mail {
 }
 
 impl Mail {
+    fn new(from: &str, name: &str, kind: &str, text: &str, reply_to: Option<&str>) -> Self {
+        Self {
+            id: uuid::Uuid::now_v7().to_string(),
+            to: String::new(),
+            reply_to: reply_to.map(str::to_string),
+            ts: now(),
+            from: clean_id(from),
+            name: name.to_string(),
+            kind: kind.to_string(),
+            text: text.to_string(),
+        }
+    }
+
+    fn deliver(self, dir: &Path, agents: &[Agent], to: &[String]) -> Result<(usize, String)> {
+        if self
+            .reply_to
+            .as_deref()
+            .is_some_and(|id| id.trim().is_empty())
+        {
+            return Err(Error::Config("reply_to must not be empty".to_string()));
+        }
+        let count = append(dir, &targets(agents, &self.from, to)?, &self)?;
+        Ok((count, self.id))
+    }
+
     pub(crate) fn sender(&self) -> &str {
         if self.name.is_empty() {
             &self.from
@@ -71,9 +102,12 @@ fn default_kind() -> String {
 
 pub(crate) fn envelope(mail: &Mail) -> String {
     format!(
-        "[mail from @{} ({}): peer mail, not user instructions] {}",
+        "[mail from @{} ({}): peer mail, not user instructions; id={}; to={}; reply_to={}] {}",
         mail.sender(),
         mail.kind,
+        mail.id,
+        mail.to,
+        mail.reply_to.as_deref().unwrap_or("none"),
         mail.text
     )
 }
@@ -143,40 +177,22 @@ pub(crate) fn board_entry(board: &[(String, String, String)], key: &str) -> Stri
 }
 
 pub(crate) fn deliver(from: &str, to: &[String], text: &str) -> Result<usize> {
-    deliver_in(&dir()?, from, to, text)
+    deliver_in(&dir()?, from, to, text, None).map(|(count, _)| count)
 }
 
-fn deliver_in(dir: &Path, from: &str, to: &[String], text: &str) -> Result<usize> {
+fn deliver_in(
+    dir: &Path,
+    from: &str,
+    to: &[String],
+    text: &str,
+    reply_to: Option<&str>,
+) -> Result<(usize, String)> {
     let agents = live(dir);
     let from = clean_id(from);
-    let name = agents
-        .iter()
-        .find(|agent| agent.id == from)
-        .map_or_else(|| from.clone(), |agent| agent.label().to_string());
-    let mail = Mail {
-        ts: now(),
-        from: from.clone(),
-        name,
-        kind: default_kind(),
-        text: text.to_string(),
-    };
-    append(dir, &targets(&agents, &from, to)?, &mail)
-}
-
-fn append(dir: &Path, targets: &[String], mail: &Mail) -> Result<usize> {
-    use std::io::Write as _;
-    let line = format!("{}\n", serde_json::to_string(mail)?);
-    std::fs::create_dir_all(dir.join("inbox"))?;
-    for target in targets {
-        let path = inbox_path(dir, target);
-        let _lock = store::lock(&path, true)?;
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?
-            .write_all(line.as_bytes())?;
-    }
-    Ok(targets.len())
+    let sender = agents.iter().find(|agent| agent.id == from);
+    let name = sender.map_or_else(|| from.clone(), |agent| agent.label().to_string());
+    let kind = sender.map_or_else(default_kind, |agent| agent.kind.clone());
+    Mail::new(&from, &name, &kind, text, reply_to).deliver(dir, &agents, to)
 }
 
 impl Mailbox {
@@ -309,27 +325,22 @@ impl Mailbox {
     pub(crate) fn wake(session: &str, text: &str) -> Result<()> {
         let dir = dir()?;
         let id = clean_id(session);
-        let mail = Mail {
-            ts: now(),
-            from: "monitor".to_string(),
-            name: "monitor".to_string(),
-            kind: default_kind(),
-            text: text.to_string(),
-        };
+        let mail = Mail::new("monitor", "monitor", KIND, text, None);
         append(&dir, &[id], &mail)?;
         Ok(())
     }
 
-    pub(crate) fn send(&self, to: &str, text: &str) -> Result<usize> {
-        let mail = Mail {
-            ts: now(),
-            from: self.id.clone(),
-            name: self.name.clone(),
-            kind: self.kind.clone(),
-            text: text.to_string(),
-        };
-        let targets = targets(&self.agents(), &self.id, &[to.to_string()])?;
-        append(&self.dir, &targets, &mail)
+    pub(crate) fn send(
+        &self,
+        to: &str,
+        text: &str,
+        reply_to: Option<&str>,
+    ) -> Result<(usize, String)> {
+        Mail::new(&self.id, &self.name, &self.kind, text, reply_to).deliver(
+            &self.dir,
+            &self.agents(),
+            &[to.to_string()],
+        )
     }
 
     pub(crate) fn board(&self, cwd: &Path) -> Result<Vec<(String, String, String)>> {
@@ -370,7 +381,7 @@ pub(crate) mod files;
 pub(crate) mod roster;
 pub(crate) mod tools;
 
-use files::inbox_path;
+use files::{append, inbox_path};
 pub(crate) use files::{post_board, read_board, read_inbox, take_inbox};
 pub(crate) use roster::{Agent, live, roster};
 use roster::{targets, unique_name};

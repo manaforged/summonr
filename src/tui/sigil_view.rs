@@ -30,5 +30,5 @@ mod usage;
 mod view;
 
 #[cfg(feature = "gui")]
-pub(super) use gui::run as run_gui;
+pub use gui::run as desktop;
 pub(super) use host::run::run;

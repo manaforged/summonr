@@ -13,7 +13,7 @@ fn an_unresolved_mail_name_fails_and_writes_no_inbox() {
     let dir = tempfile::tempdir().unwrap();
     let cwd = std::path::Path::new("/work/summonr");
     let _sender = Mailbox::open(dir.path(), "s1", Some("sender"), "summonr", "model", cwd).unwrap();
-    let error = deliver_in(dir.path(), "s1", &["missing".to_string()], "hello").unwrap_err();
+    let error = deliver_in(dir.path(), "s1", &["missing".to_string()], "hello", None).unwrap_err();
     assert!(error.to_string().contains("missing"), "{error}");
     assert!(!dir.path().join("inbox/missing.jsonl").exists());
 }
@@ -33,6 +33,9 @@ fn clear_refuses_the_inbox_of_a_live_session() {
     )
     .unwrap();
     let mail = Mail {
+        id: "fixture-message".to_string(),
+        to: "s1".to_string(),
+        reply_to: None,
         ts: now(),
         from: "peer".to_string(),
         name: String::new(),
@@ -97,10 +100,22 @@ fn mail_to_a_name_arrives_under_the_senders_name() {
         "s1",
         &["summonr-2".to_string()],
         "the schema landed",
+        None,
     )
     .unwrap();
     let mail = receiver.poll().unwrap();
     assert_eq!(mail.len(), 1);
+    assert!(!mail[0].id.is_empty());
+    assert_eq!(mail[0].from, "s1");
+    assert_eq!(mail[0].to, "s2");
+    let sent = std::fs::read_to_string(files::audit_path(dir.path(), "s1")).expect("sender audit");
+    let received =
+        std::fs::read_to_string(files::audit_path(dir.path(), "s2")).expect("receiver audit");
+    assert!(sent.contains("send_attempted"));
+    assert!(sent.contains("delivered"));
+    assert!(received.contains("dequeued"));
+    assert!(sent.contains(&mail[0].id));
+    assert!(received.contains(&mail[0].id));
     let shown = envelope(&mail[0]);
     assert!(
         shown.starts_with("[mail from @summonr-1 ") && shown.ends_with("the schema landed"),
@@ -115,7 +130,14 @@ fn a_held_inbox_lock_does_not_hide_delivered_mail() {
     let cwd = Path::new("/work/summonr");
     let _sender = Mailbox::open(dir.path(), "s1", None, "summonr", "model", cwd).unwrap();
     let mut receiver = Mailbox::open(dir.path(), "s2", None, "summonr", "model", cwd).unwrap();
-    deliver_in(dir.path(), "s1", &["summonr-2".to_string()], "hold on").unwrap();
+    deliver_in(
+        dir.path(),
+        "s1",
+        &["summonr-2".to_string()],
+        "hold on",
+        None,
+    )
+    .unwrap();
     let held = crate::durable::store::lock(&inbox_path(dir.path(), "s2"), true).unwrap();
     assert_eq!(receiver.poll().unwrap().len(), 1);
     drop(held);
@@ -146,7 +168,7 @@ fn mail_arrives_while_other_threads_start_processes() {
             let _sender = Mailbox::open(dir.path(), "s1", None, "summonr", "model", cwd).unwrap();
             let mut receiver =
                 Mailbox::open(dir.path(), "s2", None, "summonr", "model", cwd).unwrap();
-            deliver_in(dir.path(), "s1", &["summonr-2".to_string()], "ping").unwrap();
+            deliver_in(dir.path(), "s1", &["summonr-2".to_string()], "ping", None).unwrap();
             receiver.poll().unwrap().is_empty()
         })
         .count();
@@ -201,6 +223,9 @@ fn a_partial_inbox_line_is_not_pending_until_its_newline_arrives() {
     let cwd = Path::new("/work");
     let mut mailbox = Mailbox::open(dir.path(), "s1", None, "summonr", "model", cwd).unwrap();
     let mail = Mail {
+        id: "fixture-message".to_string(),
+        to: "s1".to_string(),
+        reply_to: None,
         ts: now(),
         from: "peer".to_string(),
         name: String::new(),

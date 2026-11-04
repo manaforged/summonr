@@ -27,6 +27,8 @@
 
 ### Migration
 
+- `SUMMONR_CAPTURE_DIR` now writes schema-1 audit envelopes under each session id, with one file per exchange; decode `record.body` from base64 instead of reading a flat text `body`. Capture failures now stop the affected call rather than silently omitting evidence.
+
 - Internal provider implementations change `Provider::child()` from `Option<Self>` to `Provider::child(Option<&Endpoint>)` returning `Result<Option<Self>>`; `None` inherits the provider, and `Some` selects the child's endpoint.
 
 ## 0.2.0

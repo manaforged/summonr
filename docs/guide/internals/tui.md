@@ -10,6 +10,16 @@ job. One job, one name.
 Scope: this page covers `src/tui`. The crate-wide surface stays on
 [`module-api.md`](module-api.md).
 
+## Application hosts
+
+| Row | Job | Callers |
+| --- | --- | --- |
+| `tui::desktop(prepare)` | launch the native Sigil application; select a project, prepare its runtime off the UI thread, and mount the existing desktop root | CLI desktop startup |
+| `tui::run` | run the terminal interface with the existing session hub | CLI terminal startup |
+| `desktop::welcome::view` | project selection through the native folder dialog, typed paths, and searchable history from the session catalog; recoverable startup errors and the website-derived S entrance | native application host |
+
+The desktop initializer receives the chosen project path and UI channel and returns the existing `Loop`, `Info`, and hub `Factory`. It must not run workspace tools before selection. The host owns startup cancellation and worker shutdown. Backend selection stays in the existing endpoint/model UI, including the Claude Code binary transport.
+
 ## 1. Canvas rows (today)
 
 Owner: `src/tui/sigil_view/canvas.rs`. These were spread over `chat.rs` and

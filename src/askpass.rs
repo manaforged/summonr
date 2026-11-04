@@ -181,7 +181,17 @@ pub fn env(path: &str) -> Vec<(String, String)> {
 }
 
 pub(crate) fn on_path(name: &str) -> Option<std::path::PathBuf> {
-    std::env::split_paths(&std::env::var_os("PATH")?).find_map(|dir| {
+    let mut dirs: Vec<_> = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect())
+        .unwrap_or_default();
+    #[cfg(unix)]
+    if Path::new(name).components().count() == 1 {
+        if let Some(home) = summonr_core::dirs::home_dir() {
+            dirs.extend([home.join(".local/bin"), home.join(".cargo/bin")]);
+        }
+        dirs.extend(["/usr/local/bin", "/opt/homebrew/bin"].map(std::path::PathBuf::from));
+    }
+    dirs.into_iter().find_map(|dir| {
         let path = dir.join(name);
         if path.is_file() {
             return Some(path);

@@ -55,23 +55,65 @@ fn install_reports_the_lanes_skill_and_command() {
     assert!(report.contains("skills 1"), "{report}");
     assert!(report.contains("commands lanes"), "{report}");
     assert!(!report.contains("agents"), "{report}");
-    let lead = body(&src.join("commands/lanes.md"));
-    assert_eq!(lead, body(&src.join("skills/lanes/SKILL.md")));
-    assert!(lead.contains("| Lane agent | `climb` |"), "{lead}");
-    assert!(lead.contains("| Start lane | `task`"), "{lead}");
-    assert!(lead.contains("| Steer lane | `send`"), "{lead}");
-    assert!(lead.contains("| Tick | `summonr cron add"), "{lead}");
-    let blob = std::fs::read_to_string(src.join("commands/lanes.md")).expect("command");
-    assert!(!blob.to_lowercase().contains("/users/"), "/Users/");
+    assert!(report.contains("bin"), "{report}");
+    let workspace = tempfile::tempdir().expect("test workspace");
+    let command = commands::find("/lanes:lanes", workspace.path()).expect("installed command");
+    let skill = command.plugin.dir.join("skills/lanes/SKILL.md");
+    let rendered = command.render("coordinate workers", workspace.path());
+    assert!(
+        rendered.contains(skill.to_str().expect("skill path")),
+        "{rendered}"
+    );
+    assert!(rendered.contains("coordinate workers"), "{rendered}");
+    let data = [
+        serde_json::json!({"schema": 1, "session": "fixture", "source": "session", "sequence": 1,
+                           "record": {"kind": "assistant", "reasoning": "provider summary", "text": "answer"}}),
+        serde_json::json!({"schema": 1, "session": "fixture", "source": "export", "sequence": 1,
+                           "record": {"kind": "complete_prefix", "records": 1}}),
+    ];
+    let export = workspace.path().join("session.jsonl");
+    std::fs::write(
+        &export,
+        data.iter()
+            .map(|record| format!("{record}\n"))
+            .collect::<String>(),
+    )
+    .expect("audit fixture");
+    let db = workspace.path().join("audit.sqlite");
+    let imported = lanes_cli(
+        &command.plugin,
+        &db,
+        &["import", "--file", export.to_str().expect("export path")],
+    );
+    assert_eq!(imported["complete_export"], true);
+    let saved = lanes_cli(
+        &command.plugin,
+        &db,
+        &["audit", "--session", "fixture", "--full"],
+    );
+    let records = saved["events"].as_array().expect("saved events");
+    assert_eq!(records.len(), 2);
+    assert!(
+        records
+            .iter()
+            .any(|record| record["record"]["record"]["reasoning"] == "provider summary")
+    );
 }
 
-fn body(path: &std::path::Path) -> String {
-    let text =
-        std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
-    text.split_once("---")
-        .and_then(|(_, rest)| rest.split_once("---"))
-        .map(|(_, rest)| rest.trim().to_string())
-        .unwrap_or_else(|| panic!("{} has no frontmatter", path.display()))
+fn lanes_cli(plugin: &Plugin, db: &std::path::Path, args: &[&str]) -> Value {
+    let output = std::process::Command::new("python3")
+        .arg(plugin.dir.join("bin/lanes"))
+        .arg("--db")
+        .arg(db)
+        .args(args)
+        .output()
+        .expect("run installed lanes executable");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8(output.stderr).expect("UTF-8 CLI error")
+    );
+    serde_json::from_slice(&output.stdout).expect("CLI JSON output")
 }
 
 fn procedure(path: &std::path::Path) -> String {

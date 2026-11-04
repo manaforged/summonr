@@ -13,6 +13,19 @@ use crate::{diagnostics, modes};
 mod selection;
 use selection::{ask_login, selection};
 
+#[cfg(feature = "gui")]
+#[path = "lifecycle/desktop.rs"]
+mod desktop;
+#[cfg(feature = "gui")]
+pub(super) use desktop::run as desktop;
+
+#[cfg(not(feature = "gui"))]
+pub(super) fn desktop(_args: &Args) -> Result<i32> {
+    Err(summonr::Error::Config(
+        "this build has no window; install with `cargo install --features gui`".to_string(),
+    ))
+}
+
 type Ui = (Option<summonr::tui::Ui>, Option<summonr::tui::Inbox>);
 
 pub(super) async fn launch(
@@ -95,6 +108,33 @@ fn assemble(
         .map(|name| apply_workflow(&mut loop_, &name, ui.0.as_ref(), args.json))
         .transpose()?;
     Ok((loop_, goal_checks, workflow))
+}
+
+fn info(
+    args: &Args,
+    endpoint: &Endpoint,
+    loop_: &Loop<Client>,
+    workspace: &std::path::Path,
+    workflow: Option<workflow::Workflow>,
+) -> Result<summonr::tui::Info> {
+    let prefs = summonr::prefs::load()?;
+    let splash = prefs.splash && !args.no_splash;
+    Ok(summonr::tui::Info {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        model: endpoint.model.clone(),
+        relay: splash::host_of(endpoint.base_url.as_deref()).map(str::to_string),
+        session: loop_.session_id().to_string(),
+        endpoint: endpoint.name.clone(),
+        pick: summonr::endpoint_chosen_by(args.endpoint.as_deref(), args.model.as_deref()),
+        prefs,
+        splash,
+        inline: args.inline,
+        strict: args.strict,
+        workspace: summonr::tilde(workspace),
+        workflow,
+        config: summonr::prefs::path(),
+        prompt: (!args.prompt.is_empty()).then(|| args.prompt.join(" ")),
+    })
 }
 
 const LISTED: usize = 3;
@@ -212,35 +252,16 @@ async fn dispatch(
         splash.line();
         modes::goal(loop_, args, objective, goal_checks).await
     } else if let Some(ui_rx) = ui.1 {
-        let prefs = summonr::prefs::load()?;
-        let splash = prefs.splash && !args.no_splash;
-        let info = summonr::tui::Info {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            model: model.to_string(),
-            relay: splash::host_of(endpoint.base_url.as_deref()).map(str::to_string),
-            session: loop_.session_id().to_string(),
-            endpoint: endpoint.name.clone(),
-            pick: summonr::endpoint_chosen_by(args.endpoint.as_deref(), args.model.as_deref()),
-            prefs,
-            splash,
-            inline: args.inline,
-            strict: args.strict,
-            workspace: summonr::tilde(&workspace),
-            workflow,
-            config: summonr::prefs::path(),
-            prompt: (!args.prompt.is_empty()).then(|| args.prompt.join(" ")),
-        };
+        let info = info(args, endpoint, &loop_, &workspace, workflow)?;
         let ui_tx =
             ui.0.ok_or_else(|| summonr::Error::Config("tui sender missing".to_string()))?;
-        if !args.gui {
-            let secrets = ui_tx.clone();
-            summonr::askpass::start(move |request| {
-                secrets.secret(request);
-            })?;
-        }
+        let secrets = ui_tx.clone();
+        summonr::askpass::start(move |request| {
+            secrets.secret(request);
+        })?;
         let opener = factory(args, endpoint, super::commands::workspace()?);
         let stderr = crate::diagnostics::park_stderr();
-        let result = summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui, opener);
+        let result = summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, opener);
         crate::diagnostics::restore_stderr(stderr);
         result
     } else {

@@ -7,11 +7,11 @@ use crate::tui::Cmd;
 
 pub(super) use super::app::App;
 pub(super) use super::chat;
-#[cfg(test)]
 pub(super) use super::pane::Pane;
 
 pub(super) mod entry;
 mod thread;
+pub(super) mod welcome;
 
 pub(super) fn root(app: App) -> NodeBuilder {
     drop(app.cmd.send(Cmd::Diff(None)));
@@ -25,7 +25,16 @@ fn window(app: App) -> NodeBuilder {
     let overlays = app.clone();
     container()
         .layout(LayoutStyle::flex_column().fill())
-        .child(thread::main_col(app))
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill()
+                        .grow(1.0)
+                        .min_size(0.0, 0.0),
+                )
+                .children_reactive(move || vec![content(app.clone())]),
+        )
         .children_reactive(move || {
             let _viewport = overlays.viewport.get();
             overlays
@@ -41,6 +50,22 @@ fn window(app: App) -> NodeBuilder {
                         .child(layer)
                 })
         })
+}
+
+fn content(app: App) -> NodeBuilder {
+    let layout = app.layout.get();
+    let (cols, _) = app.viewport.get();
+    let (_, side_cols) = layout.split(cols);
+    let row = container()
+        .layout(LayoutStyle::flex_row().fill().min_size(0.0, 0.0))
+        .child(sigil::reactive::untrack(|| thread::main_col(app.clone())));
+    match layout.secondary {
+        Some(pane) if side_cols > 0 => row.child(
+            container().layout(LayoutStyle::flex_column().fill_height().shrink(0.0))
+                .children_reactive(move || vec![super::panes::body(&app, pane, side_cols)]),
+        ),
+        Some(_) | None => row,
+    }
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 use super::*;
+use crate::provider::capture::{Sink, Stage};
 
 impl Client {
     pub async fn classify(
@@ -13,11 +14,13 @@ impl Client {
             ));
         }
         let body = wire::decisions::body(model, state, questions);
-        let sink = super::capture::Sink::open(self.wire, "classify");
+        let session =
+            std::env::var(crate::session::SESSION_ENV).unwrap_or_else(|_| "classify".to_string());
+        let sink = Sink::open(self.wire, "classify", &session)?;
         if let Some(sink) = &sink {
-            sink.write("request", &body.to_string());
+            sink.write(Stage::Request, body.to_string().as_bytes())?;
         }
-        let text = self
+        let bytes = self
             .send(
                 &self.base,
                 serde_json::to_vec(&body)?,
@@ -27,12 +30,14 @@ impl Client {
                 false,
             )
             .await?
-            .text()
+            .bytes()
             .await
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
         if let Some(sink) = &sink {
-            sink.write("response", &text);
+            sink.write(Stage::Response, &bytes)?;
         }
-        wire::decisions::decision(&text)
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|error| Error::provider(ProviderFailureKind::Malformed, error.to_string()))?;
+        wire::decisions::decision(text)
     }
 }

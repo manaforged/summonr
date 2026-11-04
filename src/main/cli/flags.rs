@@ -37,7 +37,7 @@ pub(super) const FLAGS: Table<Args> = Table {
         Flag::switch(&["-p", "--print"], Args::print).help("", "run one prompt and exit"),
         Flag::switch(&["--json"], |args| on(&mut args.json)).help(
             "",
-            "print JSON (with -p, session diff, worktree list, mcp, classify, cron list)",
+            "print JSON (with -p, session export, session diff, worktree list, mcp, classify, cron list)",
         ),
         Flag::switch(&["-c", "--continue"], |args| on(&mut args.resume))
             .help("", "resume the last session here"),
@@ -195,7 +195,7 @@ pub(super) const ALIASES: [(&str, &str); 11] = [
 
 pub(super) type Check = (fn(&Args) -> bool, &'static str);
 
-pub(super) const CONFLICTS: [Check; 3] = [
+pub(super) const CONFLICTS: [Check; 4] = [
     (
         |args| args.grep.is_some() && !matches!(args.verb, Some(Verb::Sessions)),
         "--grep works with `summonr sessions`; use `summonr session search TEXT`",
@@ -207,6 +207,18 @@ pub(super) const CONFLICTS: [Check; 3] = [
     (
         |args| args.goal.is_some() && args.steps.is_some(),
         "use --goal or --steps, not both",
+    ),
+    (
+        |args| {
+            args.gui
+                && (args.verb.is_some()
+                    || args.print
+                    || args.json
+                    || args.inline
+                    || args.goal.is_some()
+                    || args.steps.is_some())
+        },
+        "--gui opens the desktop application; omit terminal, print, goal, and subcommand options",
     ),
 ];
 

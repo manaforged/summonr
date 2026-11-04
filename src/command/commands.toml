@@ -65,7 +65,6 @@ commands = [
 title = "settings and permissions"
 commands = [
   { name = "/settings", takes = "bare", help = "theme, tool output, reasoning, modules, keys" },
-  { name = "/gui", takes = "bare", help = "switch between the window layout and the text layout" },
   { name = "/permissions", takes = "text", usage = "[write]", help = "extra write paths for --strict" },
   { name = "/help", takes = "bare", help = "list commands and keys" },
 ]

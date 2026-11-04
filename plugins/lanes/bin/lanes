@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+import argparse
+import enum
+import json
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import audit
+from store import Limits, Store
+from sync import sync
+
+
+class Command(enum.StrEnum):
+    IMPORT = "import"
+    AUDIT = "audit"
+
+
+def parser():
+    root = argparse.ArgumentParser(description="Import native Summonr audit records into SQLite on demand.")
+    root.add_argument("--db", type=Path, required=True)
+    root.add_argument("--max-bytes", type=int, default=Limits.audit_bytes)
+    root.add_argument("--record-bytes", type=int, default=Limits.record_bytes)
+    commands = root.add_subparsers(dest="command", required=True)
+    incoming = commands.add_parser(Command.IMPORT)
+    source = incoming.add_mutually_exclusive_group()
+    source.add_argument("--file", type=Path, help="JSONL export; omit both inputs to read stdin")
+    source.add_argument("--session", help="export this native session through the existing CLI")
+    incoming.add_argument("--captures", type=Path, help="SUMMONR_CAPTURE_DIR root; requires --session")
+    incoming.add_argument("--allow-partial", action="store_true", help="archive an incomplete provider capture explicitly")
+    query = commands.add_parser(Command.AUDIT)
+    query.add_argument("--session")
+    query.add_argument("--offset", type=int, default=0)
+    query.add_argument("--full", action="store_true")
+    return root
+
+
+def execute(args):
+    action = Command(args.command)
+    if action == Command.IMPORT and args.captures is not None and args.session is None:
+        raise ValueError("--captures requires --session")
+    limits = Limits(audit_bytes=args.max_bytes, record_bytes=args.record_bytes)
+    store = Store(args.db, create=action == Command.IMPORT, limits=limits)
+    try:
+        if action == Command.AUDIT:
+            return audit.query(store, args.session, args.offset, args.full)
+        if args.session is not None:
+            return sync(store, args.session, args.captures)
+        if args.file is not None:
+            with args.file.open("rb") as source:
+                return audit.import_records(store, source, args.allow_partial)
+        return audit.import_records(store, sys.stdin.buffer, args.allow_partial)
+    finally:
+        store.db.close()
+
+
+def main():
+    args = parser().parse_args()
+    try:
+        result = execute(args)
+    except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, subprocess.TimeoutExpired) as error:
+        print(json.dumps({"error": str(error)}), file=sys.stderr)
+        return 1
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

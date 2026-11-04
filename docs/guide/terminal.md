@@ -208,7 +208,7 @@ The mailbox is also a CLI, so any agent CLI (Claude Code, Codex, a script) can t
 
 ```
 summonr mail                  # who is on this machine
-summonr mail send <name|id|all> <text>
+summonr mail send [--json] [--reply-to ID] <name|id|all> <text>
 summonr mail inbox <id> [--clear]
 summonr mail board [get <key>|set <key> <text>]
 ```

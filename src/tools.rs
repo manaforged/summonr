@@ -62,6 +62,7 @@ pub(crate) struct ToolRegistry {
     roots: Vec<paths::Root>,
     approved_once: std::sync::Mutex<Option<(String, PathBuf)>>,
     wrote: std::sync::Mutex<std::collections::BTreeSet<String>>,
+    repos: std::sync::Mutex<std::collections::BTreeSet<PathBuf>>,
     detached_jobs: std::sync::Mutex<std::collections::BTreeSet<String>>,
     seen_jobs: std::sync::Mutex<std::collections::BTreeSet<String>>,
     command_yield: tokio::sync::watch::Sender<bool>,
@@ -114,6 +115,7 @@ impl ToolRegistry {
             launches: lsp::Launches::default(),
             approved_once: std::sync::Mutex::new(None),
             wrote: std::sync::Mutex::new(std::collections::BTreeSet::new()),
+            repos: std::sync::Mutex::default(),
             detached_jobs: std::sync::Mutex::default(),
             seen_jobs: std::sync::Mutex::default(),
             command_yield: tokio::sync::watch::Sender::new(false),
@@ -262,9 +264,23 @@ impl ToolRegistry {
         if path.is_empty() {
             return;
         }
+        let full = self.workspace.join(&path);
+        if let Some(layout) = full.ancestors().find(|dir| dir.is_dir()).and_then(crate::diff::layout)
+            && let Ok(mut repos) = self.repos.lock()
+        {
+            repos.insert(layout.top);
+        }
         if let Ok(mut wrote) = self.wrote.lock() {
             wrote.insert(path);
         }
+    }
+
+    /// The git repositories this session has written to.
+    pub(crate) fn repos(&self) -> Vec<PathBuf> {
+        self.repos
+            .lock()
+            .map(|repos| repos.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub(crate) fn wrote(&self) -> Vec<String> {

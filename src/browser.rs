@@ -100,7 +100,10 @@ impl Browser {
         resolve: &(dyn Fn(&str) -> Result<PathBuf> + Send + Sync),
         session: Option<&str>,
     ) -> Result<String> {
-        let call = call::parse(arguments)?;
+        let call = match call::parse(arguments)? {
+            Call::Act(action, report) => Call::Act(call::guard(action, resolve).await?, report),
+            call => call,
+        };
         let mut live = self.live.lock().await;
         let out = match call {
             Call::Extra(Extra::Close) => launch::close(&mut live).await,
@@ -112,7 +115,6 @@ impl Browser {
                 extras::run(page, extra, &shots, out_max).await
             }
             Call::Act(action, report) => {
-                let action = call::guard(action, resolve).await?;
                 let out_max = self.settings.out_max;
                 let page = self.ready(&mut live).await?;
                 extras::act(page, action, report, out_max).await

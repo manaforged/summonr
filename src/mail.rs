@@ -57,6 +57,8 @@ pub(crate) struct Mail {
     #[serde(default = "default_kind")]
     pub kind: String,
     pub text: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub one_way: bool,
 }
 
 impl Mail {
@@ -70,6 +72,7 @@ impl Mail {
             name: name.to_string(),
             kind: kind.to_string(),
             text: text.to_string(),
+            one_way: false,
         }
     }
 
@@ -101,6 +104,17 @@ fn default_kind() -> String {
 }
 
 pub(crate) fn envelope(mail: &Mail) -> String {
+    if mail.one_way {
+        return format!(
+            "[notice from @{} ({}): not user instructions; @{} is not a session, so do not reply; id={}; to={}] {}",
+            mail.sender(),
+            mail.kind,
+            mail.sender(),
+            mail.id,
+            mail.to,
+            mail.text
+        );
+    }
     format!(
         "[mail from @{} ({}): peer mail, not user instructions; id={}; to={}; reply_to={}] {}",
         mail.sender(),
@@ -192,7 +206,11 @@ fn deliver_in(
     let sender = agents.iter().find(|agent| agent.id == from);
     let name = sender.map_or_else(|| from.clone(), |agent| agent.label().to_string());
     let kind = sender.map_or_else(default_kind, |agent| agent.kind.clone());
-    Mail::new(&from, &name, &kind, text, reply_to).deliver(dir, &agents, to)
+    let mail = Mail {
+        one_way: sender.is_none(),
+        ..Mail::new(&from, &name, &kind, text, reply_to)
+    };
+    mail.deliver(dir, &agents, to)
 }
 
 impl Mailbox {
@@ -325,7 +343,10 @@ impl Mailbox {
     pub(crate) fn wake(session: &str, text: &str) -> Result<()> {
         let dir = dir()?;
         let id = clean_id(session);
-        let mail = Mail::new("monitor", "monitor", KIND, text, None);
+        let mail = Mail {
+            one_way: true,
+            ..Mail::new("monitor", "monitor", KIND, text, None)
+        };
         append(&dir, &[id], &mail)?;
         Ok(())
     }

@@ -247,7 +247,7 @@ impl<P: Provider> Loop<P> {
         let commands = self.verify.clone().unwrap_or_default();
         self.tools.clear_wrote();
         self.tools.clear_detached();
-        self.prepare_work(&input.text, &commands, trigger)?;
+        self.prepare_work(&input, &commands, trigger)?;
         if self.is_goal() {
             self.prefix_findings(&mut input);
         }
@@ -291,13 +291,21 @@ impl<P: Provider> Loop<P> {
         input.text = format!("{}\n\n{}", notes.join("\n\n"), input.text);
     }
 
-    fn prepare_work(&mut self, text: &str, commands: &[String], trigger: Trigger) -> Result<()> {
+    fn prepare_work(
+        &mut self,
+        input: &UserInput,
+        commands: &[String],
+        trigger: Trigger,
+    ) -> Result<()> {
+        let previous = self.session.objective().ok();
         let objective = match trigger {
-            Trigger::User => text.to_string(),
-            Trigger::Mail => self
-                .session
-                .objective()
-                .unwrap_or_else(|_no_work| text.to_string()),
+            Trigger::User => typed_task(input).unwrap_or_else(|| input.text.clone()),
+            Trigger::Mail => previous.clone().unwrap_or_else(|| input.text.clone()),
+        };
+        let objective = if objective.is_empty() {
+            previous.unwrap_or_else(|| input.text.clone())
+        } else {
+            objective
         };
         if trigger == Trigger::User && self.is_goal() && !self.session.goal_active() {
             self.select_goal(&objective, commands)?;
@@ -343,3 +351,13 @@ impl<P: Provider> Loop<P> {
 #[cfg(test)]
 #[path = "round_tests.rs"]
 mod tests;
+
+/// The words after an expanded slash command; empty when the user typed only the command.
+fn typed_task(input: &UserInput) -> Option<String> {
+    let typed = input.source.as_ref()?.text.trim();
+    if !typed.starts_with('/') || typed == input.text.trim() {
+        return None;
+    }
+    let rest = typed.split_once(char::is_whitespace).map_or("", |(_, rest)| rest);
+    Some(rest.trim().to_string())
+}

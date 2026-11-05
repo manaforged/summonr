@@ -93,13 +93,8 @@ pub(crate) fn notify(text: &str) -> Result<usize> {
     }
     let bot = telegram::Bot::new(&token)?;
     block(async {
-        let mut sent = 0;
-        for chat in chats {
-            if bot.send(chat, text).await.is_ok() {
-                sent += 1;
-            }
-        }
-        sent
+        let sends = chats.into_iter().map(|chat| bot.send(chat, text));
+        futures::future::join_all(sends).await.iter().filter(|sent| sent.is_ok()).count()
     })
 }
 

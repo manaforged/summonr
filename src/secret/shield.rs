@@ -243,6 +243,7 @@ fn assignment(line: &str) -> Option<String> {
         .any(|word| SECRET_WORDS.contains(&word));
     let url = value.contains("://") && value.contains('@');
     let opaque = value.len() >= LONG
+        && !key.contains(char::is_whitespace)
         && !value.contains(char::is_whitespace)
         && value.chars().any(|ch| ch.is_ascii_digit())
         && value.chars().any(|ch| ch.is_ascii_alphabetic());

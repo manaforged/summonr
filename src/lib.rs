@@ -52,6 +52,7 @@ mod worktree;
 
 pub fn stop_children() {
     tools::command::stop_groups();
+    tools::command::stop_child_jobs();
 }
 
 #[cfg(unix)]

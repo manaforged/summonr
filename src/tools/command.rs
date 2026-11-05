@@ -38,6 +38,42 @@ pub(crate) fn stop_jobs(workspace: &Path, session: &str) -> Result<Vec<String>> 
     stop_matching(workspace, session, |_| true)
 }
 
+static CHILDREN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Records a child session whose background jobs stop when this process exits.
+pub(crate) fn own_child(session: &str) {
+    CHILDREN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(session.to_string());
+}
+
+/// Stops the background jobs of every child session this process started: every group first, then the records.
+pub(crate) fn stop_child_jobs() {
+    let children = std::mem::take(
+        &mut *CHILDREN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+    let jobs: Vec<crate::jobs::Record> = crate::jobs::started_here()
+        .into_iter()
+        .filter(|record| {
+            record
+                .session
+                .as_ref()
+                .is_some_and(|owner| children.contains(owner))
+        })
+        .collect();
+    for record in &jobs {
+        if crate::jobs::owner(record.pid, record.started) == crate::jobs::Owner::Job {
+            proc::kill_group(record.pid);
+        }
+    }
+    for record in &jobs {
+        drop(stop_job(Path::new(&record.workspace), record));
+    }
+}
+
 impl ToolRegistry {
     pub(super) async fn run_command(&self, args: &serde_json::Value) -> Result<ToolOutput> {
         let named = |key| {
@@ -258,11 +294,15 @@ impl ToolRegistry {
         else {
             return Ok(None);
         };
-        let mut answers = Vec::with_capacity(calls.len());
-        for (part, call) in parts.iter().zip(calls) {
-            let text = self.search_cancellable(&call).await?;
-            answers.push(format!("[`{part}` answered by search {call}]\n{text}"));
-        }
+        let texts =
+            futures::future::try_join_all(calls.iter().map(|call| self.search_cancellable(call)))
+                .await?;
+        let answers: Vec<String> = parts
+            .iter()
+            .zip(&calls)
+            .zip(texts)
+            .map(|((part, call), text)| format!("[`{part}` answered by search {call}]\n{text}"))
+            .collect();
         Ok(Some(ToolOutput::ok(answers.join("\n\n"))))
     }
 

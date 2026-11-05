@@ -30,20 +30,26 @@ impl<P: Provider> Loop<P> {
                 .await;
         }
         let is_task = |call: &ToolCall| Builtin::is(&call.function.name, Builtin::Task);
+        let is_read = |call: &ToolCall| readonly(&call.function.name);
         let mut pending = planned.into_iter().zip(calls).peekable();
         while let Some((planned, call)) = pending.next() {
-            if !is_task(&call) || self.interrupted() {
+            let read = is_read(&call);
+            if !(read || is_task(&call)) || self.interrupted() {
                 self.run_serial(vec![planned], vec![call], messages, events, emit, usage)
                     .await?;
                 continue;
             }
-            let mut tasks = vec![(planned, call)];
-            while let Some(next) = pending.next_if(|(_, call)| is_task(call)) {
-                tasks.push(next);
+            let mut group = vec![(planned, call)];
+            while let Some(next) = pending.next_if(|(_, call)| if read { is_read(call) } else { is_task(call) }) {
+                group.push(next);
             }
-            let calls: Vec<ToolCall> = tasks.iter().map(|(_, call)| call.clone()).collect();
-            let outputs = self.run_tasks(&calls, events, emit).await;
-            let batch = tasks.into_iter().zip(outputs).collect();
+            let calls: Vec<ToolCall> = group.iter().map(|(_, call)| call.clone()).collect();
+            let outputs = if read {
+                self.run_readonly(&calls, events, emit).await?
+            } else {
+                self.run_tasks(&calls, events, emit).await
+            };
+            let batch = group.into_iter().zip(outputs).collect();
             self.finish_batch(batch, messages, events, emit, usage)
                 .await?;
         }
@@ -94,6 +100,9 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Vec<Ran>> {
+        for call in calls {
+            self.mail_note_tool(&call.function.name, &call.function.arguments);
+        }
         let tools = &self.tools;
         let ran = calls
             .iter()

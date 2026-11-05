@@ -244,6 +244,10 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
+    pub(super) fn estimated_prompt_tokens(&self, message_chars: usize, tool_bytes: usize) -> usize {
+        estimate(message_chars + tool_bytes, self.context_sample)
+    }
+
     pub async fn compact(&mut self) -> Result<bool> {
         self.compact_with(|_| {}).await
     }

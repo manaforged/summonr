@@ -51,14 +51,13 @@ async fn a_judge_that_says_continue_keeps_the_turn_going() {
         Reply::Text("first"),
         Reply::Text(MORE),
         Reply::Text("second"),
-        Reply::Text(DONE),
     ]);
     let turn = run.loop_.turn("write it").await.unwrap();
     assert_eq!(turn.text, "second");
     assert_eq!(replies_saying(&run, "first"), 1);
     assert_eq!(replies_saying(&run, "second"), 1);
     let sent = run.sent.lock().unwrap();
-    assert_eq!(sent.len(), 5, "{sent:?}");
+    assert_eq!(sent.len(), 4, "{sent:?}");
     assert!(sent[2][1].content.contains("first"), "{:?}", sent[2]);
     let note = &sent[3].last().unwrap().content;
     assert!(note.contains("the docs are missing"), "{note}");
@@ -70,6 +69,41 @@ async fn a_judge_that_says_done_ends_the_turn_and_records_the_reply_once() {
     let turn = run.loop_.turn("write it").await.unwrap();
     assert_eq!(turn.text, "finished");
     assert_eq!(replies_saying(&run, "finished"), 1);
+    assert_eq!(run.sent.lock().unwrap().len(), 3);
+}
+
+fn wrote_file(name: &str) -> Reply {
+    call(
+        "write",
+        serde_json::json!({"path": name, "content": "done\n"}),
+    )
+}
+
+#[tokio::test]
+async fn the_judge_pushes_a_turn_at_most_once() {
+    let mut run = judged([
+        wrote(),
+        Reply::Text("first"),
+        Reply::Text(MORE),
+        wrote_file("again.txt"),
+        Reply::Text("second"),
+        Reply::Text(MORE),
+        Reply::Text("third"),
+    ]);
+    let turn = run.loop_.turn("write it").await.unwrap();
+    assert_eq!(turn.text, "second");
+    assert_eq!(run.sent.lock().unwrap().len(), 5);
+}
+
+#[tokio::test]
+async fn blocked_tasks_end_the_turn_without_the_judge() {
+    let blocked = call(
+        "todo",
+        serde_json::json!({"items": [{"text": "deploy: Thomas must approve", "status": "blocked"}]}),
+    );
+    let mut run = judged([blocked, wrote(), Reply::Text("blocked on Thomas"), Reply::Text(MORE)]);
+    let turn = run.loop_.turn("write it").await.unwrap();
+    assert_eq!(turn.text, "blocked on Thomas");
     assert_eq!(run.sent.lock().unwrap().len(), 3);
 }
 
@@ -205,4 +239,38 @@ async fn a_mail_turn_keeps_the_objective() {
     run.loop_.mail_poll().unwrap();
     run.loop_.turn_mail_with(|_| {}).await.unwrap();
     assert_eq!(run.loop_.session.objective().unwrap(), "fix the meter");
+}
+
+#[tokio::test]
+async fn a_bare_skill_keeps_the_user_task_as_the_objective() {
+    let mut run = session([Reply::Text("noted"), Reply::Text("reviewed")]);
+    let dir = run._dirs[0].path().join(".claude/skills/probe-goal");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("SKILL.md"), "Review this task: $ARGUMENTS").unwrap();
+    run.loop_.turn("make the review flow simple").await.unwrap();
+    run.loop_.turn("/probe-goal").await.unwrap();
+    assert_eq!(run.loop_.session.objective().unwrap(), "make the review flow simple");
+    let sent = run.sent.lock().unwrap();
+    let prompt = &sent[1].last().unwrap().content;
+    assert!(prompt.contains("Review this task: make the review flow simple"), "{prompt}");
+}
+
+#[tokio::test]
+async fn the_next_turn_names_uncommitted_work_in_a_nested_repo() {
+    let mut run = session([
+        call("write", serde_json::json!({"path": "app/new.txt", "content": "new\n"})),
+        Reply::Text("wrote it"),
+        Reply::Text("next"),
+    ]);
+    let app = run._dirs[0].path().join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    for args in [&["init", "-q"][..], &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base"][..]] {
+        let status = std::process::Command::new("git").args(args).current_dir(&app).status().unwrap();
+        assert!(status.success());
+    }
+    run.loop_.turn("write the file").await.unwrap();
+    run.loop_.turn("what next").await.unwrap();
+    let sent = run.sent.lock().unwrap();
+    let prompt = &sent[2].last().unwrap().content;
+    assert!(prompt.contains("Uncommitted in") && prompt.contains("1 file"), "{prompt}");
 }

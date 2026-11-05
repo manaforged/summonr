@@ -10,21 +10,32 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import audit
+import loop
 from store import Limits, Store
 from sync import sync
 
 
 class Command(enum.StrEnum):
+    CLIMB = "climb"
+    SUBMIT = "submit"
+    STATUS = "status"
     IMPORT = "import"
     AUDIT = "audit"
 
 
 def parser():
-    root = argparse.ArgumentParser(description="Import native Summonr audit records into SQLite on demand.")
-    root.add_argument("--db", type=Path, required=True)
+    root = argparse.ArgumentParser(description="Climb one measured goal with one long-lived agent per runner, judge each submitted win, and audit every session in SQLite.")
+    root.add_argument("--db", type=Path, help=f"default: {loop.DB} under the current directory")
     root.add_argument("--max-bytes", type=int, default=Limits.audit_bytes)
     root.add_argument("--record-bytes", type=int, default=Limits.record_bytes)
     commands = root.add_subparsers(dest="command", required=True)
+    climb = commands.add_parser(Command.CLIMB, help="run every lane's runners until stopped; create .summonr/research/STOP to stop")
+    climb.add_argument("spec", type=Path)
+    climb.add_argument("--sessions", type=int, default=1000, help="agent sessions per runner")
+    given = commands.add_parser(Command.SUBMIT, help="from inside a runner's session: judge the runner's file and record the verdict")
+    given.add_argument("mechanism", help="one line: the mechanism you changed")
+    show = commands.add_parser(Command.STATUS)
+    show.add_argument("--recent", type=int, default=10)
     incoming = commands.add_parser(Command.IMPORT)
     source = incoming.add_mutually_exclusive_group()
     source.add_argument("--file", type=Path, help="JSONL export; omit both inputs to read stdin")
@@ -38,21 +49,31 @@ def parser():
     return root
 
 
+def dispatch(args, action, store):
+    if action == Command.STATUS:
+        return loop.status(store, args.recent)
+    if action == Command.AUDIT:
+        return audit.query(store, args.session, args.offset, args.full)
+    if args.captures is not None and args.session is None:
+        raise ValueError("--captures requires --session")
+    if args.session is not None:
+        return sync(store, args.session, args.captures)
+    if args.file is not None:
+        with args.file.open("rb") as source:
+            return audit.import_records(store, source, args.allow_partial)
+    return audit.import_records(store, sys.stdin.buffer, args.allow_partial)
+
+
 def execute(args):
     action = Command(args.command)
-    if action == Command.IMPORT and args.captures is not None and args.session is None:
-        raise ValueError("--captures requires --session")
+    if action == Command.CLIMB:
+        return loop.climb(args.spec, Path.cwd(), args.sessions, sync)
+    if action == Command.SUBMIT:
+        return loop.submit(args.mechanism)
     limits = Limits(audit_bytes=args.max_bytes, record_bytes=args.record_bytes)
-    store = Store(args.db, create=action == Command.IMPORT, limits=limits)
+    store = Store(args.db or Path.cwd() / loop.DB, create=action == Command.IMPORT, limits=limits)
     try:
-        if action == Command.AUDIT:
-            return audit.query(store, args.session, args.offset, args.full)
-        if args.session is not None:
-            return sync(store, args.session, args.captures)
-        if args.file is not None:
-            with args.file.open("rb") as source:
-                return audit.import_records(store, source, args.allow_partial)
-        return audit.import_records(store, sys.stdin.buffer, args.allow_partial)
+        return dispatch(args, action, store)
     finally:
         store.db.close()
 

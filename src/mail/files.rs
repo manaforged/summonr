@@ -177,26 +177,16 @@ impl Mailbox {
     pub(crate) fn pending(&self) -> Result<bool> {
         pending(&inbox_path(&self.dir, &self.id), self.cursor, &self.mark)
     }
-
-    pub(crate) fn changed(&self) -> impl std::future::Future<Output = Result<()>> + use<> {
-        let path = inbox_path(&self.dir, &self.id);
-        let (cursor, mark) = (self.cursor, self.mark.clone());
-        async move {
-            loop {
-                if pending(&path, cursor, &mark)? {
-                    return Ok(());
-                }
-                tokio::time::sleep(crate::limits::limits().mail_poll()).await;
-            }
-        }
-    }
 }
 
 fn pending(path: &Path, cursor: u64, mark: &[u8]) -> Result<bool> {
-    Ok(match unread(path, cursor, mark)? {
-        Unread::Missing => false,
-        Unread::Tail(bytes) | Unread::Whole(bytes) => bytes.contains(&b'\n'),
-    })
+    let bytes = match unread(path, cursor, mark)? {
+        Unread::Missing => return Ok(false),
+        Unread::Tail(bytes) | Unread::Whole(bytes) => bytes,
+    };
+    Ok(bytes
+        .split_inclusive(|byte| *byte == b'\n')
+        .any(|line| line.ends_with(b"\n")))
 }
 
 pub(super) fn unread(path: &Path, cursor: u64, mark: &[u8]) -> Result<Unread> {

@@ -31,32 +31,10 @@ impl Command {
     }
 
     pub(crate) fn render(&self, arguments: &str, workspace: &Path) -> String {
-        let template = super::expand(&self.template, &self.plugin.vars(workspace));
-        let words = crate::policy::shell_words(arguments);
-        let mut out = String::with_capacity(template.len() + arguments.len());
-        let mut rest = template.as_str();
-        while let Some(at) = rest.find(SIGIL) {
-            out.push_str(&rest[..at]);
-            let tail = &rest[at + SIGIL.len_utf8()..];
-            if let Some(after) = tail.strip_prefix(ARGUMENTS) {
-                out.push_str(arguments);
-                rest = after;
-                continue;
-            }
-            match tail.as_bytes().first() {
-                Some(&digit @ FIRST..=LAST) => {
-                    let index = usize::from(digit - FIRST);
-                    out.push_str(words.get(index).map_or("", String::as_str));
-                    rest = &tail[1..];
-                }
-                Some(_) | None => {
-                    out.push(SIGIL);
-                    rest = tail;
-                }
-            }
-        }
-        out.push_str(rest);
-        out
+        fill(
+            &super::expand(&self.template, &self.plugin.vars(workspace)),
+            arguments,
+        )
     }
 
     fn about(&self) -> String {
@@ -105,6 +83,35 @@ pub(crate) fn find(head: &str, workspace: &Path) -> Option<Command> {
         .flatten()
 }
 
+/// Substitutes `$ARGUMENTS` and `$1`..`$9` in a command or skill template.
+fn fill(template: &str, arguments: &str) -> String {
+    let words = crate::policy::shell_words(arguments);
+    let mut out = String::with_capacity(template.len() + arguments.len());
+    let mut rest = template;
+    while let Some(at) = rest.find(SIGIL) {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at + SIGIL.len_utf8()..];
+        if let Some(after) = tail.strip_prefix(ARGUMENTS) {
+            out.push_str(arguments);
+            rest = after;
+            continue;
+        }
+        match tail.as_bytes().first() {
+            Some(&digit @ FIRST..=LAST) => {
+                let index = usize::from(digit - FIRST);
+                out.push_str(words.get(index).map_or("", String::as_str));
+                rest = &tail[1..];
+            }
+            Some(_) | None => {
+                out.push(SIGIL);
+                rest = tail;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 pub(crate) fn named(line: &str, workspace: &Path) -> bool {
     line.split_whitespace()
         .next()
@@ -112,14 +119,23 @@ pub(crate) fn named(line: &str, workspace: &Path) -> bool {
         .is_some()
 }
 
-pub(crate) fn expand(input: &str, workspace: &Path) -> Result<Option<String>> {
+/// Expands a slash command or skill; with no arguments, `previous` is the task.
+pub(crate) fn expand(
+    input: &str,
+    workspace: &Path,
+    previous: Option<&str>,
+) -> Result<Option<String>> {
     let text = input.trim_start();
     let (head, rest) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
     if crate::parse_command(head).is_some() {
         return Ok(None);
     }
+    let task = match rest.trim() {
+        "" => previous.unwrap_or_default().trim(),
+        given => given,
+    };
     if let Some(command) = find(head, workspace) {
-        let text = command.render(rest.trim(), workspace);
+        let text = command.render(task, workspace);
         return Ok(Some(crate::secret::shield::scrub_found(&text, workspace)));
     }
     let Some(name) = head.strip_prefix('/').filter(|name| {
@@ -131,10 +147,12 @@ pub(crate) fn expand(input: &str, workspace: &Path) -> Result<Option<String>> {
     };
     let body = skills::load(workspace, name)?;
     let body = crate::secret::shield::scrub_found(&body, workspace);
-    Ok(Some(if rest.trim().is_empty() {
+    Ok(Some(if body.contains(&format!("{SIGIL}{ARGUMENTS}")) {
+        fill(&body, task)
+    } else if task.is_empty() {
         body
     } else {
-        format!("{body}\n\nSkill arguments:\n{}", rest.trim())
+        format!("{body}\n\nSkill arguments:\n{task}")
     }))
 }
 

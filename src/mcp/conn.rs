@@ -18,6 +18,7 @@ pub(super) struct Conn {
     client: Box<Client>,
     stateless: bool,
     offers: Value,
+    instructions: Option<String>,
     server: String,
     journal: Journal,
 }
@@ -73,6 +74,7 @@ impl Conn {
             client: Box::new(client),
             stateless: false,
             offers: json!({"tools": {}}),
+            instructions: None,
             server: server.name.clone(),
             journal: Journal::default(),
         };
@@ -80,10 +82,16 @@ impl Conn {
         let mut hear = |notice: Notice<'_>| drop(logged(journal, name, notice));
         let agreed = handshake::initialize(&mut conn.client, "summonr", &mut hear).await?;
         conn.stateless = agreed.is_none();
-        if let Some(offers) =
-            agreed.and_then(|mut result| result.get_mut("capabilities").map(Value::take))
-        {
-            conn.offers = offers;
+        if let Some(mut result) = agreed {
+            conn.instructions = result
+                .get("instructions")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_string);
+            if let Some(offers) = result.get_mut("capabilities").map(Value::take) {
+                conn.offers = offers;
+            }
         }
         Ok(conn)
     }
@@ -93,7 +101,10 @@ impl Conn {
     }
 
     pub(super) async fn listing(&mut self) -> Result<Listing> {
-        let mut listing = Listing::default();
+        let mut listing = Listing {
+            instructions: self.instructions.clone(),
+            ..Listing::default()
+        };
         if self.offers.get("tools").is_some() {
             listing.tools = self.pages("tools/list", "tools").await?;
         }

@@ -123,6 +123,7 @@ pub(super) fn build(
             skills: switches.enabled(summonr::modules::ModuleId::Skills),
             images,
             memory: switches.enabled(summonr::modules::ModuleId::Memory),
+            mcp: switches.enabled(summonr::modules::ModuleId::Mcp),
         },
     );
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));

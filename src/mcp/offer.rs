@@ -21,6 +21,31 @@ pub(crate) struct Offer {
     pub(crate) about: String,
 }
 
+/// Each configured server's MCP `instructions`, as one prompt section.
+#[must_use]
+pub(crate) fn instructions(workspace: &Path) -> Option<String> {
+    let found = config::servers(workspace).ok()?;
+    let limit = crate::limits::limits().mcp_instructions_bytes;
+    let sections: Vec<String> = found
+        .servers
+        .iter()
+        .filter_map(|server| {
+            let text = catalog::load(&server.key)?.instructions?;
+            let text = crate::display::ellipsize(&text, crate::display::Span::Bytes(limit));
+            Some(format!(
+                "<server name=\"{}\">\n{text}\n</server>",
+                server.name
+            ))
+        })
+        .collect();
+    (!sections.is_empty()).then(|| {
+        format!(
+            "<mcp_instructions>\n{}\n</mcp_instructions>",
+            sections.join("\n")
+        )
+    })
+}
+
 #[must_use]
 pub(crate) fn offers(workspace: &Path) -> Vec<Offer> {
     let Ok(found) = config::servers(workspace) else {

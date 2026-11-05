@@ -45,7 +45,7 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
         ),
         (
             Tool::Send,
-            "Send text to one agent by id, or to \"all\". It lands in their inbox; they reply to your id.",
+            "Send text to one agent by name or id, or to \"all\". It lands in their inbox and reaches them at their next step; they reply to your id.",
             serde_json::json!({"type": "object", "properties": {"to": {"type": "string"}, "text": {"type": "string"}, "reply_to": {"type": "string", "description": "message id this replies to; retained in the mail audit"}}, "required": ["to", "text"], "additionalProperties": false}),
         ),
         (Tool::Inbox, "Read mail that arrived since the last read. New messages arrive automatically between rounds; polling is unnecessary.", none),

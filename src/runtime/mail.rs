@@ -137,7 +137,14 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn input_wait(&self) -> impl std::future::Future<Output = Result<()>> + use<P> {
-        self.watch_input(true)
+        let steering = self.steer_shared.clone();
+        async move {
+            match steering {
+                Some(shared) => shared.changed().await,
+                None => std::future::pending().await,
+            }
+            Ok(())
+        }
     }
 
     pub(super) fn input_cut(&self) -> impl std::future::Future<Output = Result<()>> + use<P> {
@@ -151,44 +158,6 @@ impl<P: Provider> Loop<P> {
             input.await?;
             tokio::time::sleep(crate::limits::seconds(grace)).await;
             Ok(())
-        }
-    }
-
-    pub(super) fn reply_input_wait(
-        &self,
-    ) -> impl std::future::Future<Output = Result<()>> + use<P> {
-        self.watch_input(self.input_interrupts())
-    }
-
-    fn watch_input(
-        &self,
-        with_mail: bool,
-    ) -> impl std::future::Future<Output = Result<()>> + use<P> {
-        let steering = self.steer_shared.clone();
-        let mail = self
-            .mailbox
-            .as_ref()
-            .filter(|_mailbox| with_mail)
-            .map(crate::mail::Mailbox::changed);
-        let queued = with_mail && !self.inbox.is_empty();
-        async move {
-            if queued {
-                return Ok(());
-            }
-            tokio::select! {
-                () = async {
-                    match steering {
-                        Some(shared) => shared.changed().await,
-                        None => std::future::pending().await,
-                    }
-                } => Ok(()),
-                result = async {
-                    match mail {
-                        Some(changed) => changed.await,
-                        None => std::future::pending().await,
-                    }
-                } => result,
-            }
         }
     }
 

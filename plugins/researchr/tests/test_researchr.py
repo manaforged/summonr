@@ -9,7 +9,7 @@ from contextlib import closing
 from pathlib import Path
 
 
-CLI = Path(__file__).resolve().parents[1] / "bin/lanes"
+CLI = Path(__file__).resolve().parents[1] / "bin/researchr"
 
 
 def row(source, sequence, record, session="session-a", stream=""):
@@ -44,12 +44,12 @@ class Audit(unittest.TestCase):
         self.assertEqual(done.returncode == 0, ok, (args, done.stdout, done.stderr))
         return json.loads(done.stdout if done.returncode == 0 else done.stderr)
 
-    def test_import_creates_only_an_audit_store_without_dispatch_bookkeeping(self):
+    def test_import_creates_the_audit_and_run_tables(self):
         result = self.invoke("import", records=snapshot(self.records))
         self.assertTrue(result["complete_export"])
         with closing(sqlite3.connect(self.db)) as db, db:
             names = {name for name, in db.execute("select name from sqlite_master where type='table'")}
-            self.assertEqual(names, {"event", "audit_size"})
+            self.assertEqual(names, {"event", "audit_size", "attempt"})
             self.assertEqual(db.execute("select model,reasoning,usage from response").fetchone(),
                              ("worker-a", "provider summary", '{"input":11,"output":7}'))
             self.assertEqual(db.execute("select sender,recipient,reply_to,actor,stage from message").fetchone(),
@@ -57,7 +57,7 @@ class Audit(unittest.TestCase):
             body = json.loads(db.execute("select body from event where source='session'").fetchone()[0])
             self.assertEqual(body["record"]["vendor"], {"opaque": "preserved"})
         help_ = subprocess.run([sys.executable, str(CLI), "--db", str(self.db), "--help"], capture_output=True, text=True)
-        self.assertIn("{import,audit}", help_.stdout)
+        self.assertIn("{climb,submit,status,import,audit}", help_.stdout)
         self.assertNotIn("claim", help_.stdout)
 
     def test_exact_replay_is_deduplicated_and_changed_history_is_refused(self):
@@ -101,10 +101,11 @@ class Audit(unittest.TestCase):
         with closing(sqlite3.connect(self.db)) as db, db:
             self.assertEqual(db.execute("select count(*) from event").fetchone()[0], 3)
 
-    def test_legacy_coordination_is_history_not_an_active_owner(self):
+    def test_legacy_coordination_tables_are_kept_beside_the_run_tables(self):
         self.invoke("import", records=snapshot(self.records))
         with closing(sqlite3.connect(self.db)) as db, db:
             before = db.execute("select body,sha256 from event order by source").fetchall()
+            db.execute("drop table attempt")
             db.execute("create table run(note text)")
             db.execute("insert into run values('historical control record')")
             db.execute("drop view message")
@@ -112,9 +113,9 @@ class Audit(unittest.TestCase):
             db.execute("pragma user_version=1")
         self.invoke("audit")
         with closing(sqlite3.connect(self.db)) as db, db:
-            self.assertEqual(db.execute("pragma user_version").fetchone()[0], 3)
+            self.assertEqual(db.execute("pragma user_version").fetchone()[0], 6)
             self.assertEqual(db.execute("select actor from message").fetchone()[0], "session-a")
-            self.assertEqual(db.execute("select note from run").fetchone()[0], "historical control record")
+            self.assertEqual(db.execute("select note from legacy_run").fetchone()[0], "historical control record")
             self.assertEqual(db.execute("select body,sha256 from event order by source").fetchall(), before)
 
     def test_actor_missing_from_legacy_message_stays_unknown(self):

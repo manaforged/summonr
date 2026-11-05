@@ -38,7 +38,7 @@ fn a_skill_cannot_shadow_a_builtin_slash_command() {
             .all(|offer| offer.insert != "/help")
     );
     assert!(
-        crate::plugins::commands::expand("/help", workspace.path())
+        crate::plugins::commands::expand("/help", workspace.path(), None)
             .expect("slash expansion")
             .is_none()
     );
@@ -97,4 +97,19 @@ fn a_skill_with_a_binary_body_still_lists() {
         catalog.contains("probe-binary-skill: listed from its frontmatter"),
         "{catalog}"
     );
+}
+
+#[test]
+fn a_skill_with_no_arguments_runs_on_the_previous_task() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let dir = workspace.path().join(".claude/skills/probe-task");
+    std::fs::create_dir_all(&dir).expect("skill directory");
+    std::fs::write(dir.join("SKILL.md"), "Run on: $ARGUMENTS").expect("skill body");
+    let expand = |line: &str| {
+        crate::plugins::commands::expand(line, workspace.path(), Some("make it simple"))
+            .expect("slash expansion")
+            .expect("skill found")
+    };
+    assert_eq!(expand("/probe-task"), "Run on: make it simple");
+    assert_eq!(expand("/probe-task review the api"), "Run on: review the api");
 }

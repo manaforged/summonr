@@ -24,6 +24,9 @@ const DETACHED_PROCESS: u32 = 0x0000_0008;
 #[cfg(windows)]
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
+/// Names the running summonr binary for every process it starts.
+pub(crate) const BIN_ENV: &str = "SUMMONR_BIN";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Env {
     Clean,
@@ -112,6 +115,9 @@ impl Spec {
             command
                 .env_clear()
                 .envs(crate::tools::command::command_env());
+        }
+        if let Ok(own) = std::env::current_exe() {
+            command.env(BIN_ENV, own);
         }
         for key in &self.remove {
             command.env_remove(key);

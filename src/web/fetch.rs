@@ -54,14 +54,19 @@ impl Search {
             .unwrap_or("")
             .to_ascii_lowercase();
         validate(&response, &ctype)?;
-        let text = response
-            .text()
+        let limit = crate::limits::limits().web_body_bytes;
+        let (bytes, _) = response
+            .read_until(limit, |_, _| false)
             .await
             .map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))?;
-        if text.contains('\0') {
+        if bytes.contains(&0) {
             return Err(Error::Tool("web_fetch: binary body".to_string()));
         }
-        let body = page_body(&text, &ctype, format);
+        let text = String::from_utf8_lossy(&bytes);
+        let mut body = page_body(&text, &ctype, format);
+        if bytes.len() >= limit {
+            body.push_str(&format!("\n\n[truncated at {limit} bytes]"));
+        }
         if let Some(browser) = self.browser().filter(|_| super::wall().body(&body, &text)) {
             return Ok(header(&url, &browser.render(&url, format).await?));
         }
@@ -72,6 +77,7 @@ impl Search {
         session
             .get(url.as_str())
             .timeout(crate::limits::limits().web_fetch())
+            .stream()
             .header(
                 "accept",
                 "text/markdown, text/plain, text/html;q=0.9, */*;q=0.1",

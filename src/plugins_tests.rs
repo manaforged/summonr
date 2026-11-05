@@ -48,23 +48,25 @@ fn install_reports_the_hillclimb_skill_command_and_agent() {
 }
 
 #[test]
-fn install_reports_the_lanes_skill_and_command() {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/lanes");
-    let installed = super::manage::Plugin::install(&src).expect("install lanes");
+fn install_reports_the_researchr_mode() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/researchr");
+    let installed = super::manage::Plugin::install(&src).expect("install researchr");
     let report = installed.report();
     assert!(report.contains("skills 1"), "{report}");
-    assert!(report.contains("commands lanes"), "{report}");
-    assert!(!report.contains("agents"), "{report}");
+    assert!(report.contains("commands research"), "{report}");
     assert!(report.contains("bin"), "{report}");
     let workspace = tempfile::tempdir().expect("test workspace");
-    let command = commands::find("/lanes:lanes", workspace.path()).expect("installed command");
-    let skill = command.plugin.dir.join("skills/lanes/SKILL.md");
-    let rendered = command.render("coordinate workers", workspace.path());
-    assert!(
-        rendered.contains(skill.to_str().expect("skill path")),
-        "{rendered}"
-    );
-    assert!(rendered.contains("coordinate workers"), "{rendered}");
+    let command =
+        commands::find("/researchr:research", workspace.path()).expect("installed command");
+    assert!(command.plugin.hooks().of(HookEvent::PostTool).is_empty());
+    let spec = ".summonr/research/spec-node3.toml";
+    let expanded = commands::expand(&format!("/researchr:research {spec}"), workspace.path(), None)
+        .expect("expand the research command")
+        .expect("the research command expands");
+    assert!(expanded.contains(spec), "{expanded}");
+    let rendered = command.render("spec.toml", workspace.path());
+    assert!(rendered.contains("researchr climb"), "{rendered}");
+    assert!(rendered.contains("spec.toml"), "{rendered}");
     let data = [
         serde_json::json!({"schema": 1, "session": "fixture", "source": "session", "sequence": 1,
                            "record": {"kind": "assistant", "reasoning": "provider summary", "text": "answer"}}),
@@ -80,13 +82,13 @@ fn install_reports_the_lanes_skill_and_command() {
     )
     .expect("audit fixture");
     let db = workspace.path().join("audit.sqlite");
-    let imported = lanes_cli(
+    let imported = researchr_cli(
         &command.plugin,
         &db,
         &["import", "--file", export.to_str().expect("export path")],
     );
     assert_eq!(imported["complete_export"], true);
-    let saved = lanes_cli(
+    let saved = researchr_cli(
         &command.plugin,
         &db,
         &["audit", "--session", "fixture", "--full"],
@@ -100,14 +102,14 @@ fn install_reports_the_lanes_skill_and_command() {
     );
 }
 
-fn lanes_cli(plugin: &Plugin, db: &std::path::Path, args: &[&str]) -> Value {
+fn researchr_cli(plugin: &Plugin, db: &std::path::Path, args: &[&str]) -> Value {
     let output = std::process::Command::new("python3")
-        .arg(plugin.dir.join("bin/lanes"))
+        .arg(plugin.dir.join("bin/researchr"))
         .arg("--db")
         .arg(db)
         .args(args)
         .output()
-        .expect("run installed lanes executable");
+        .expect("run installed researchr executable");
     assert!(
         output.status.success(),
         "{}",

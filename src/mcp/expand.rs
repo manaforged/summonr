@@ -15,17 +15,24 @@ impl Hub {
         let mut text = input.text;
         let mut images = input.images;
         let before = images.len();
-        if let Some((link, name, rest)) = self.prompt_of(&original) {
-            let (body, found) = prompt(link, &name, &rest).await?;
+        let asked = async {
+            match self.prompt_of(&original) {
+                Some((link, name, rest)) => prompt(link, &name, &rest).await.map(Some),
+                None => Ok(None),
+            }
+        };
+        let words: Vec<_> = original
+            .split_whitespace()
+            .filter_map(|word| self.resource_of(word).map(|(link, uri)| (word, link, uri)))
+            .collect();
+        let reads = futures::future::try_join_all(words.iter().map(|(_, link, uri)| resource(link, uri)));
+        let (asked, read) = tokio::try_join!(asked, reads)?;
+        if let Some((body, found)) = asked {
             text = body;
             images.extend(found);
         }
         let mut attached = String::new();
-        for word in original.split_whitespace() {
-            let Some((link, uri)) = self.resource_of(word) else {
-                continue;
-            };
-            let (body, found) = resource(link, uri).await?;
+        for ((word, _, _), (body, found)) in words.iter().zip(read) {
             attached.push_str(&format!("\n--- {} ---\n{body}\n", &word[1..]));
             images.extend(found);
         }

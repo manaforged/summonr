@@ -41,6 +41,7 @@ fn clear_refuses_the_inbox_of_a_live_session() {
         name: String::new(),
         kind: default_kind(),
         text: "hello".to_string(),
+        one_way: false,
     };
     append(dir.path(), &["s1".to_string()], &mail).unwrap();
     let error = take_inbox(dir.path(), "s1").unwrap_err();
@@ -108,6 +109,15 @@ fn mail_to_a_name_arrives_under_the_senders_name() {
     assert!(!mail[0].id.is_empty());
     assert_eq!(mail[0].from, "s1");
     assert_eq!(mail[0].to, "s2");
+    deliver_in(
+        dir.path(),
+        "s1",
+        &["@summonr-2".to_string()],
+        "as the roster prints it",
+        None,
+    )
+    .unwrap();
+    assert_eq!(receiver.poll().unwrap().len(), 1);
     let sent = std::fs::read_to_string(files::audit_path(dir.path(), "s1")).expect("sender audit");
     let received =
         std::fs::read_to_string(files::audit_path(dir.path(), "s2")).expect("receiver audit");
@@ -120,6 +130,12 @@ fn mail_to_a_name_arrives_under_the_senders_name() {
     assert!(
         shown.starts_with("[mail from @summonr-1 ") && shown.ends_with("the schema landed"),
         "{shown}"
+    );
+    deliver_in(dir.path(), "cli", &["s2".to_string()], "from a shell", None).unwrap();
+    let notice = envelope(&receiver.poll().unwrap()[0]);
+    assert!(
+        notice.starts_with("[notice from @cli ") && notice.contains("do not reply"),
+        "{notice}"
     );
     drop(sender);
 }
@@ -231,6 +247,7 @@ fn a_partial_inbox_line_is_not_pending_until_its_newline_arrives() {
         name: String::new(),
         kind: default_kind(),
         text: "hello".to_string(),
+        one_way: false,
     };
     let line = serde_json::to_string(&mail).unwrap();
     let (head, tail) = line.split_at(line.len() / 2);

@@ -244,11 +244,15 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Vec<ChildRecord>> {
         let mut records = Vec::new();
         let ids: Vec<String> = self.spawned.keys().cloned().collect();
+        let ending = reason == "the parent turn ended";
+        for spawned in self.spawned.values().filter(|spawned| !(ending && spawned.stay)) {
+            spawned.handle.abort();
+        }
         for id in &ids {
             let Some(spawned) = self.spawned.remove(id) else {
                 continue;
             };
-            if reason == "the parent turn ended" && spawned.stay {
+            if ending && spawned.stay {
                 self.spawned.insert(id.clone(), spawned);
                 continue;
             }

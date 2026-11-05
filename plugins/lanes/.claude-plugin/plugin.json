@@ -1,6 +1,0 @@
-{
-  "name": "lanes",
-  "description": "Coordinate native workers and optionally import their session, message, and provider audit records into SQLite.",
-  "version": "0.1.0",
-  "author": { "name": "Manaforge" }
-}

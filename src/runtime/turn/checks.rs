@@ -20,12 +20,13 @@ impl<P: Provider> Loop<P> {
         for record in jobs::since(&self.workspace, self.turn_started, Some(&session)) {
             owned.insert(record.id.clone(), record);
         }
+        let deadline = Instant::now() + crate::limits::seconds(crate::limits::limits().job_wait_secs);
         for record in owned.into_values() {
             let label = format!("job {} `{}`", record.id, record.command);
             let status = jobs::wait(
                 &workspace,
                 &record.id,
-                crate::limits::limits().job_wait_secs,
+                deadline.saturating_duration_since(Instant::now()).as_secs(),
                 || {
                     self.push_event(
                         events,
@@ -283,6 +284,7 @@ impl<P: Provider> Loop<P> {
             }
             status.push(format!("Tasks: {done} done, {pending} pending. Update todo on status changes; done is not a passing check."));
         }
+        status.extend(self.uncommitted());
         let mut job_failure = false;
         let mut job_success = false;
         let mut completed = std::collections::HashSet::new();
@@ -300,10 +302,14 @@ impl<P: Provider> Loop<P> {
             }
             match report.state {
                 crate::jobs::JobState::Running => {
-                    status.push(format!("Running job {}: {}", job.id, job.command))
+                    status.push(format!("Running job {}: {}", job.id, job_label(&job.command)))
                 }
                 crate::jobs::JobState::Exited(0) if !job_success && !self.job_reported(&job.id) => {
-                    status.push(format!("Latest successful job {}: {}", job.id, job.command));
+                    status.push(format!(
+                        "Latest successful job {}: {}",
+                        job.id,
+                        job_label(&job.command)
+                    ));
                     job_success = true;
                 }
                 crate::jobs::JobState::Exited(0) => {}
@@ -319,7 +325,9 @@ impl<P: Provider> Loop<P> {
                     if seen.insert(job.id.clone()) {
                         status.push(format!(
                             "Unresolved job failure {} ({:?}): {}",
-                            job.id, report.state, job.command
+                            job.id,
+                            report.state,
+                            job_label(&job.command)
                         ));
                     }
                     job_failure = true;
@@ -354,6 +362,19 @@ impl<P: Provider> Loop<P> {
         parts.join("\n\n")
     }
 
+    fn uncommitted(&self) -> Vec<String> {
+        self.tools
+            .repos()
+            .into_iter()
+            .filter_map(|repo| {
+                let diff = crate::diff::stats(&repo).ok()?;
+                (!diff.files.is_empty()).then(|| {
+                    format!("Uncommitted in {}: {}", repo.display(), diff.summary())
+                })
+            })
+            .collect()
+    }
+
     pub(super) fn note_sent(&self, harness: &str) -> bool {
         self.session
             .history()
@@ -362,4 +383,10 @@ impl<P: Provider> Loop<P> {
             .find(|message| message.role == crate::provider::Role::User)
             .is_some_and(|message| message.content.ends_with(harness))
     }
+}
+
+/// The first line of a job command, shortened; the full command is in the job log.
+fn job_label(command: &str) -> String {
+    let first = command.lines().next().unwrap_or_default();
+    crate::display::ellipsize(first, crate::limits::limits().output_line_bytes)
 }

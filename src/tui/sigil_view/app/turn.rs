@@ -38,7 +38,13 @@ impl App {
             self.ask_provider();
             return;
         }
-        let Some(mut input) = self.attach(&text) else {
+        let draft = self.draft.peek();
+        let marked = if text == self.expand_pastes(&draft) {
+            self.mark_pastes(&draft)
+        } else {
+            text.clone()
+        };
+        let Some(mut input) = self.attach(&marked) else {
             return;
         };
         let pending = self.take_attachments();

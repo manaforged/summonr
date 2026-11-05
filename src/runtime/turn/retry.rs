@@ -11,7 +11,7 @@ pub(super) struct RetryState {
 
 impl<P: Provider> Loop<P> {
     pub(super) fn interrupted(&self) -> bool {
-        self.input_interrupts() && self.steer_waiting()
+        self.input_interrupts() && self.user_input_pending()
     }
 
     pub(super) fn steer_waiting(&self) -> bool {
@@ -20,12 +20,16 @@ impl<P: Provider> Loop<P> {
                 .mailbox
                 .as_ref()
                 .is_some_and(|mailbox| mailbox.pending().unwrap_or(true))
-            || self.steer_shared.as_ref().is_some_and(|shared| {
-                !shared
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .is_empty()
-            })
+            || self.user_input_pending()
+    }
+
+    fn user_input_pending(&self) -> bool {
+        self.steer_shared.as_ref().is_some_and(|shared| {
+            !shared
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_empty()
+        })
     }
 
     pub(super) fn take_mail(

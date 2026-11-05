@@ -11,6 +11,7 @@ pub(super) struct Pace {
     seen: HashSet<u64>,
     planned: bool,
     acted: bool,
+    judged: bool,
 }
 
 impl Pace {
@@ -190,14 +191,25 @@ impl<P: Provider> Loop<P> {
     fn judge_due(&self, pace: &Pace) -> bool {
         self.judge_turns
             && pace.acted
+            && !pace.judged
+            && !self.waits_on_user()
             && !self.is_goal()
             && self.session.stage() != Some(Stage::Plan)
+    }
+
+    fn waits_on_user(&self) -> bool {
+        self.session.work_progress().is_ok_and(|progress| {
+            progress
+                .todos
+                .iter()
+                .any(|todo| todo.status == crate::tools::TodoStatus::Blocked)
+        })
     }
 
     async fn judge_reply(
         &mut self,
         reply: &str,
-        pace: &Pace,
+        pace: &mut Pace,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
@@ -212,7 +224,10 @@ impl<P: Provider> Loop<P> {
         let decision = goal::judged(self, &objective, reply, &evidence, usage).await;
         self.sync_usage(emit);
         match decision {
-            Ok(Decision::GoalContinue(reason)) => Ok(Some(format!("{UNFINISHED}\n{reason}"))),
+            Ok(Decision::GoalContinue(reason)) => {
+                pace.judged = true;
+                Ok(Some(format!("{UNFINISHED}\n{reason}")))
+            }
             Ok(_) => Ok(None),
             Err(text) => {
                 self.push_event(events, emit, Event::Note { text })?;
@@ -233,4 +248,4 @@ const OPEN_WORK: &str = "[summon control: the reply had no tool call, but tasks 
 
 const UNFINISHED: &str = "[summon control: the reply had no tool call, but the judge found work you can still do without the user. Continue it now. If only the user can unblock what is left, say so in one line.]\nWhat is left:";
 
-const TURN_EVIDENCE: &str = "Interactive turn. Reply done when nothing is left that the agent can do without the user, including when the only remaining step needs the user's approval. Reply continue only when the agent stopped with work it can still do; name that work.";
+const TURN_EVIDENCE: &str = "Interactive turn. Reply done when nothing is left that the agent can do without the user, including when the only remaining step needs the user's approval. Reply continue only when the agent stopped with work it can still do; name that work. Findings, proposals, plans and rewritten prompts the agent offered are not work the user asked for: when only those remain, reply done.";

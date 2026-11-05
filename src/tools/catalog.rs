@@ -68,8 +68,15 @@ impl ToolRegistry {
             .iter()
             .filter(|spec| self.allows(spec.advertise))
             .filter_map(|spec| spec.definition.clone())
+            .filter(|definition| self.permits(&definition.function.name))
             .map(shaped_tool)
             .collect()
+    }
+
+    fn permits(&self, name: &str) -> bool {
+        self.only
+            .as_ref()
+            .is_none_or(|only| Builtin::live(name).is_some_and(|kind| only.contains(&kind)))
     }
 
     pub(super) fn enabled(&self, kind: Builtin) -> bool {

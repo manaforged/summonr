@@ -167,7 +167,7 @@ fn exported(home: &Path, id: &str) -> PathBuf {
 
 fn cli(db: &Path) -> Command {
     let mut command =
-        Command::new(Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/lanes/bin/lanes"));
+        Command::new(Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/researchr/bin/researchr"));
     command.arg("--db").arg(db);
     command
 }

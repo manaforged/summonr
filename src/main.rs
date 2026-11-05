@@ -33,6 +33,10 @@ fn main() {
         .enable_all()
         .build()
         .unwrap_or_else(|error| fail(&error));
+    drop(runtime.spawn(async {
+        summonr::interrupted().await;
+        summonr::stop_children();
+    }));
     let result = runtime.block_on(run(args));
     runtime.block_on(summonr::supervise::closed());
     match result {

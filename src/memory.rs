@@ -15,6 +15,7 @@ pub const OFF: &str = "memory is off: `memory = false` under [modules] in ~/.sum
 pub enum Scope {
     User,
     Project,
+    Repo,
 }
 
 impl Scope {
@@ -23,6 +24,7 @@ impl Scope {
         match self {
             Self::User => "user",
             Self::Project => "project",
+            Self::Repo => "repo",
         }
     }
 }
@@ -49,11 +51,38 @@ pub fn files(home: &Path, workspace: &Path) -> Vec<MemoryFile> {
     .collect()
 }
 
+/// Shared repo state (`~/.agents/memory/<repo>.md`) for the workspace and its direct git children.
+pub(crate) fn repo_files(user_home: &Path, workspace: &Path) -> Vec<MemoryFile> {
+    let root = user_home.join(".agents").join(DIR);
+    let mut children: Vec<PathBuf> = std::fs::read_dir(workspace)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.join(".git").exists())
+        .collect();
+    children.sort();
+    std::iter::once(workspace.to_path_buf())
+        .chain(children)
+        .filter_map(|dir| {
+            let path = root.join(format!("{}.md", dir.file_name()?.to_string_lossy()));
+            let bytes = std::fs::metadata(&path).ok()?.len();
+            Some(MemoryFile { scope: Scope::Repo, path, bytes })
+        })
+        .collect()
+}
+
+/// Renders memory files; repo state files share one `memory_bytes` budget.
 pub(crate) fn sections(files: &[MemoryFile], workspace: &Path) -> Vec<String> {
-    let cap = crate::limits::limits().memory_bytes;
+    let budget = crate::limits::limits().memory_bytes;
+    let repos = files.iter().filter(|file| file.scope == Scope::Repo).count();
     files
         .iter()
         .filter_map(|file| {
+            let cap = match file.scope {
+                Scope::Repo => budget / repos.max(1),
+                Scope::User | Scope::Project => budget,
+            };
             let raw = read_tail(&file.path, cap)?;
             let text = clean(&raw, workspace);
             let text = text.trim();

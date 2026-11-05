@@ -31,7 +31,7 @@ pub(crate) use defer::{Resolved, SEARCH_TOOL, effective};
 pub(crate) use expand::wanted;
 use link::{Gate, Link};
 pub use manage::{add, remove};
-pub(crate) use offer::{Offer, OfferKind, offers};
+pub(crate) use offer::{Offer, OfferKind, instructions, offers};
 use output::output;
 pub use probe::probe;
 pub use status::{Board, McpState, McpTransport, ServerStatus, status};
@@ -124,9 +124,7 @@ impl Hub {
     }
 
     pub(crate) async fn cancel_inflight(&self) {
-        for link in &self.links {
-            link.cancel_inflight().await;
-        }
+        futures::future::join_all(self.links.iter().map(|link| link.cancel_inflight())).await;
     }
 
     pub(crate) fn owns(&self, name: &str) -> bool {

@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import tempfile
@@ -6,7 +7,7 @@ from audit import import_records
 
 
 def sync(store, session, captures):
-    executable = shutil.which("summonr") or "summonr"
+    executable = os.environ.get("SUMMONR_BIN") or shutil.which("summonr") or "summonr"
     with tempfile.TemporaryFile(dir=store.path.parent) as output:
         with tempfile.TemporaryFile(dir=store.path.parent) as errors:
             done = subprocess.run([executable, "session", "export", session, "--json"],

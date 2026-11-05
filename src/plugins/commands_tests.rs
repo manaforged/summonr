@@ -46,7 +46,7 @@ fn a_project_command_file_expands_with_its_arguments() {
         "---\ndescription: check a crate\n---\nRun the tests for $1, then report: $ARGUMENTS",
     )
     .unwrap();
-    let expanded = expand("/ship-check summonr fast", workspace.path()).unwrap();
+    let expanded = expand("/ship-check summonr fast", workspace.path(), None).unwrap();
     assert_eq!(
         expanded.as_deref(),
         Some("Run the tests for summonr, then report: summonr fast")
@@ -71,11 +71,11 @@ fn a_workspace_secret_never_reaches_the_prompt_through_a_command_or_a_skill() {
     )
     .unwrap();
     assert_eq!(
-        expand("/deploy staging", root).unwrap().as_deref(),
+        expand("/deploy staging", root, None).unwrap().as_deref(),
         Some("Deploy with [secret] to staging")
     );
     assert_eq!(
-        expand("/release", root).unwrap().as_deref(),
+        expand("/release", root, None).unwrap().as_deref(),
         Some("Sign with [secret]")
     );
 }

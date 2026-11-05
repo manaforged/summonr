@@ -6,6 +6,7 @@
 
 - The native `task` tool accepts `endpoint` to select a configured worker endpoint without changing the orchestrator's model.
 - Naming a task starts a persistent background worker that accepts follow-up messages through `send`.
+- `plugins/researchr` is research mode: `/researchr:research SPEC` runs any number of native workers on one measured goal in delta lanes, records each worker's child id and model through a `post_tool` hook, stores findings in SQLite, and imports messages and provider-returned reasoning for audit. It replaces `plugins/lanes`.
 
 ### Changed
 

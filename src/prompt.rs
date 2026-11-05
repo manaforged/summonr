@@ -1,7 +1,11 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use summonr_core::dirs::summonr_home;
+use summonr_types::{Message, Role};
+
+const IMAGE_SECTION: (&str, &str) = ("<image_input>", "</image_input>");
 
 #[derive(Clone, Copy, Default)]
 pub struct Sources {
@@ -9,6 +13,7 @@ pub struct Sources {
     pub skills: bool,
     pub images: bool,
     pub memory: bool,
+    pub mcp: bool,
 }
 
 pub fn system_prompt(workspace: &Path, sources: Sources) -> String {
@@ -21,6 +26,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
         skills,
         images,
         memory,
+        mcp,
     } = sources;
     if let Ok(prompt) = std::env::var("SUMMONR_SYSTEM_PROMPT")
         && !prompt.trim().is_empty()
@@ -35,6 +41,10 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     if trust {
         push_file(&mut parts, &workspace.join("SYSTEM.md"));
         instructions(&mut parts, workspace);
+        if let Some(user_home) = summonr_core::dirs::home_dir() {
+            let state = crate::memory::repo_files(&user_home, workspace);
+            parts.extend(crate::memory::sections(&state, workspace));
+        }
         if let Some(home) = home.filter(|_| memory) {
             let files = crate::memory::files(home, workspace);
             parts.extend(crate::memory::sections(&files, workspace));
@@ -44,20 +54,51 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     if !(trust && memory) {
         parts.push(crate::memory::DISABLED.to_string());
     }
-    if !images {
-        parts.push(
-            "The model does not accept image input. Do not attach images; describe them or ask the user for text instead."
-                .to_string(),
-        );
-    }
     if skills && let Some(catalog) = crate::skills::catalog(workspace) {
         parts.push(format!("<skills>\n{catalog}\n</skills>"));
     }
     if skills && let Some(catalog) = crate::plugins::agents::catalog(workspace) {
         parts.push(format!("<agents>\n{catalog}\n</agents>"));
     }
+    if mcp && let Some(section) = crate::mcp::instructions(workspace) {
+        parts.push(section);
+    }
     parts.push(format!("<cwd>{}</cwd>", workspace.display()));
+    parts.push(image_section(images));
     parts.join("\n\n")
+}
+
+fn image_section(images: bool) -> String {
+    let text = if images {
+        "The model accepts image input."
+    } else {
+        "The model does not accept image input. Do not attach images; describe them or ask the user for text instead."
+    };
+    format!("{}\n{text}\n{}", IMAGE_SECTION.0, IMAGE_SECTION.1)
+}
+
+/// Refresh only Summonr's trailing image guidance for the selected receiver.
+pub(crate) fn model_messages(messages: &[Message], images: bool) -> Cow<'_, [Message]> {
+    let Some(system) = messages
+        .first()
+        .filter(|message| message.role == Role::System)
+    else {
+        return Cow::Borrowed(messages);
+    };
+    let Some((prefix, _)) = system
+        .content
+        .strip_suffix(IMAGE_SECTION.1)
+        .and_then(|body| body.rsplit_once(IMAGE_SECTION.0))
+    else {
+        return Cow::Borrowed(messages);
+    };
+    let section = image_section(images);
+    if system.content.ends_with(&section) {
+        return Cow::Borrowed(messages);
+    }
+    let mut updated = messages.to_vec();
+    updated[0].content = format!("{prefix}{section}");
+    Cow::Owned(updated)
 }
 
 pub(crate) struct Harness<'a> {

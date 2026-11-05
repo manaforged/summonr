@@ -34,12 +34,12 @@ impl Agent {
     }
 
     pub(crate) fn answers_to(&self, word: &str) -> bool {
+        let word = word.strip_prefix('@').unwrap_or(word);
         !word.is_empty() && (self.name == word || self.id == word)
     }
 }
 
 pub(crate) fn live(dir: &Path) -> Vec<Agent> {
-    let cutoff = now().saturating_sub(crate::limits::limits().mail_stale_secs);
     let sweep = now().saturating_sub(crate::limits::limits().mail_sweep_secs);
     let mut roster = Vec::new();
     for entry in summonr_core::walk::children(&dir.join("agents"))
@@ -53,7 +53,7 @@ pub(crate) fn live(dir: &Path) -> Vec<Agent> {
         };
         if agent.last_seen < sweep || !crate::jobs::alive_since(agent.pid, agent.last_seen) {
             drop(std::fs::remove_file(entry.path()));
-        } else if agent.last_seen >= cutoff {
+        } else {
             roster.push(agent);
         }
     }

@@ -73,13 +73,30 @@ pub(crate) fn prepare(workspace: &Path) -> Result<(String, PathBuf, PathBuf, Pat
     ))
 }
 
+static STARTED: std::sync::Mutex<Vec<Record>> = std::sync::Mutex::new(Vec::new());
+
 pub(crate) fn write(path: &Path, record: &Record) -> Result<()> {
     store::write(
         path,
         serde_json::to_string(record)?,
         store::Durability::Renamed,
     )?;
+    if record.background {
+        let mut started = STARTED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        started.retain(|known| known.id != record.id);
+        started.push(record.clone());
+    }
     Ok(())
+}
+
+/// Background jobs this process started, without reading the jobs folder.
+pub(crate) fn started_here() -> Vec<Record> {
+    STARTED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
 pub(crate) fn load(workspace: &Path, id: &str) -> Result<Record> {

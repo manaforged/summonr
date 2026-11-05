@@ -108,6 +108,7 @@ impl<P: Provider> Loop<P> {
         )?;
         child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
         child.mcp_wanted = args.access == Access::Implement && self.mcp.is_some();
+        child.mail_module = self.mail_module;
         child.context_window = self.receiver_window(role);
         child.compact_tokens = self.compact_tokens;
         child.context_sample = self.context_sample;
@@ -145,6 +146,7 @@ impl<P: Provider> Loop<P> {
             state: ChildState::Running,
         };
         self.session.start_child(record.clone())?;
+        crate::tools::command::own_child(&record.id.to_string());
         drop(self.events.0.send(record.spawned()));
         Ok(Run {
             child,

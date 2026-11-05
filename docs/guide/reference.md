@@ -364,6 +364,7 @@ cache_ttl = "5m"
 | `SUMMONR_SECRETS` | Credential store: `file` (the default) or `keychain`. Overrides `secrets` in `config.toml`. |
 | `SUMMONR_MAIL` | `off` hides this session from peer mail and turns off the mail tools. |
 | `SUMMONR_PLUGIN_ROOT`, `SUMMONR_PLUGIN_DATA` | Set by summonr for a plugin's hooks: the plugin directory and its data directory. |
+| `SUMMONR_BIN` | Set by summonr for every process it starts (commands, hooks, MCP servers): the path of the running summonr binary. |
 | `SUMMONR_BASE_URL` | Use this OpenAI-compatible base URL as the endpoint when no endpoint is named. |
 | `SUMMONR_API_KEY` | API key for `SUMMONR_BASE_URL`. |
 | `SUMMONR_MAX_TOKENS` | `max_tokens` sent with `SUMMONR_BASE_URL`. |

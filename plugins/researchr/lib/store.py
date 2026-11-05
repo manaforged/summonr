@@ -7,7 +7,11 @@ from pathlib import Path
 class Schema(enum.IntEnum):
     LEGACY = 1
     ACTOR = 2
-    CURRENT = 3
+    VIEWS = 3
+    RUN = 4
+    LEDGER = 5
+    CLIMB = 6
+    CURRENT = 6
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,13 @@ TABLES = (
     "insert into audit_size values(1,0)",
 )
 
+ATTEMPT = (
+    """create table attempt(id integer primary key, lane text not null, runner text not null,
+                           session text not null, kind text not null, gain real, low real, high real,
+                           mechanism text not null, file text, log text, at real not null)""",
+    "create index attempt_lane on attempt(lane,id)",
+)
+
 
 class Store:
     def __init__(self, path, create=False, limits=None):
@@ -64,7 +75,9 @@ class Store:
         self.db.execute("pragma synchronous=full")
         try:
             version = self.db.execute("pragma user_version").fetchone()[0]
-            if version == 0 and create:
+            if version == 0 and not create:
+                raise ValueError(f"{self.path} holds no run; run researchr climb with a spec")
+            if version == 0:
                 self.initialize()
             self.upgrade(Schema(self.db.execute("pragma user_version").fetchone()[0]))
         except BaseException:
@@ -89,7 +102,7 @@ class Store:
                 existing = self.db.execute("select name from sqlite_master where type='table'").fetchall()
                 if existing:
                     raise ValueError("database has unversioned tables; refusing to modify it")
-                for statement in TABLES:
+                for statement in TABLES + ATTEMPT:
                     self.db.execute(statement)
                 self.db.execute(MESSAGE)
                 self.db.execute(RESPONSE)
@@ -107,6 +120,9 @@ class Store:
             current = Schema(self.db.execute("pragma user_version").fetchone()[0])
             if current != Schema.CURRENT:
                 self.db.execute("select count(*) from event").fetchone()
+                self.keep_legacy(current)
+                for statement in ATTEMPT:
+                    self.db.execute(statement)
                 self.db.execute("drop view if exists message")
                 self.db.execute("drop view if exists response")
                 self.db.execute(MESSAGE)
@@ -116,3 +132,11 @@ class Store:
         except BaseException:
             self.db.rollback()
             raise
+
+    def keep_legacy(self, schema):
+        tables = {row[0] for row in self.db.execute("select name from sqlite_master where type='table'")}
+        for name in ("run", "worker", "finding", "dispatch", "truth"):
+            if name in tables:
+                kept = f"legacy_{name}" if f"legacy_{name}" not in tables else f"legacy{schema.value}_{name}"
+                self.db.execute(f"alter table {name} rename to {kept}")
+        self.db.execute("drop index if exists finding_worker")

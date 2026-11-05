@@ -66,8 +66,8 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
     let asset = format!("{name}.{ARCHIVE}");
     let base = format!("{}/download/v{latest}", source.releases);
     eprintln!("Downloading {asset} ({latest})");
-    let archive = fetch(&http, &format!("{base}/{asset}")).await?;
-    let listed = fetch(&http, &format!("{base}/{asset}.sha256")).await?;
+    let (archive_url, sum_url) = (format!("{base}/{asset}"), format!("{base}/{asset}.sha256"));
+    let (archive, listed) = tokio::try_join!(fetch(&http, &archive_url), fetch(&http, &sum_url))?;
     check(&archive, &listed, &asset)?;
     unpack(stage.path(), &asset, &archive)?;
     let fresh = stage.path().join(&name).join(BINARY);

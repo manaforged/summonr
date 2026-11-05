@@ -216,6 +216,13 @@ async fn an_agent_tool_list_denies_tools_outside_it_by_claude_or_summonr_name() 
     let mut tools =
         ToolRegistry::with_policy_and_search(dir.path(), Policy::builtin(), None).unwrap();
     tools.restrict_to(&["Read".to_string(), "Grep".to_string()]);
+    let offered: Vec<String> = tools
+        .definitions()
+        .into_iter()
+        .map(|definition| definition.function.name)
+        .collect();
+    assert!(offered.contains(&"read".to_string()), "{offered:?}");
+    assert!(!offered.contains(&"run_command".to_string()), "{offered:?}");
     let call = |name: &str, arguments: serde_json::Value| crate::provider::ToolCall {
         id: "t".to_string(),
         kind: crate::provider::ToolKind::Function,

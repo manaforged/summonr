@@ -137,6 +137,13 @@ impl<P: Provider> Loop<P> {
         request: CompletionRequest<'_>,
         options: CallOptions,
     ) -> Result<std::result::Result<Reply, Missed>> {
+        let images = self.selection(role).0.takes_images();
+        self.tools.set_model_images(images);
+        let messages = crate::prompt::model_messages(request.messages, images);
+        let request = CompletionRequest {
+            messages: &messages,
+            ..request
+        };
         if options.retry == RetryPolicy::None
             && let Some(reason) = self.round_abort()
         {
@@ -165,7 +172,7 @@ impl<P: Provider> Loop<P> {
         };
         let started = Instant::now();
         let remaining = self.remaining_time();
-        let input = self.reply_input_wait();
+        let input = self.input_wait();
         let (provider, _) = super::selected(&self.selections, &self.provider, &self.model, role);
         let completion = if options.stream {
             provider.stream(&request, &mut self.session.partial)
@@ -253,10 +260,6 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub(super) fn estimated_prompt_tokens(&self, message_chars: usize, tool_bytes: usize) -> usize {
-        super::compaction::estimate(message_chars + tool_bytes, self.context_sample)
-    }
-
     pub async fn turn(&mut self, prompt: &str) -> Result<Turn> {
         self.turn_with(prompt, |_| {}).await
     }
@@ -278,6 +281,8 @@ impl<P: Provider> Loop<P> {
         let _report = self.herdr.turn();
         self.close_open("turn interrupted", &mut emit);
         let mut events = Vec::new();
+        let images = self.selection(workflow::Role::Implement).0.takes_images();
+        self.tools.set_model_images(images);
         let mut input = self.expand_mcp(input, &mut events, &mut emit).await?;
         self.tools.fold_unseen_images(&mut input).await?;
         let messages = self.begin_turn(input, trigger)?;

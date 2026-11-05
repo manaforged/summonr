@@ -50,6 +50,18 @@ fn bracketed_paste_normalizes_folds_and_keeps_shift_enter_in_the_editor() {
             app.expand_pastes(&app.draft.peek())
                 .contains(&long.replace("\r\n", "\n"))
         );
+        let marked = app.mark_pastes(&app.draft.peek());
+        assert!(
+            marked.contains("<pasted_content note=\"The user pasted this"),
+            "{marked}"
+        );
+        assert!(
+            marked.contains(&format!(
+                "{}\n</pasted_content>",
+                long.replace("\r\n", "\n")
+            )),
+            "{marked}"
+        );
     });
 }
 

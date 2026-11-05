@@ -190,15 +190,18 @@ impl ToolRegistry {
                 "Preview only; no files changed.\n{out}"
             )));
         }
-        for change in changes {
-            let dest = match change.action {
+        let dests: Vec<_> = changes
+            .into_iter()
+            .map(|change| match change.action {
                 write::Action::Move { to, .. } => to,
                 write::Action::Write(_) | write::Action::Delete => change.dest,
-            };
-            if let Some(check) = self.check_after_edit(&dest).await {
-                out.push('\n');
-                out.push_str(&check.text);
-            }
+            })
+            .collect();
+        let checks =
+            futures::future::join_all(dests.iter().map(|dest| self.check_after_edit(dest))).await;
+        for check in checks.into_iter().flatten() {
+            out.push('\n');
+            out.push_str(&check.text);
         }
         Ok(ToolOutput::mutated(
             out,
@@ -228,11 +231,12 @@ impl ToolRegistry {
             return Err(Error::Tool("files is empty".to_string()));
         }
         let (planned, mut out) = super::blocking(|| self.stage_files(files))?;
-        for item in &planned {
-            if let Some(check) = self.check_after_edit(&item.dest).await {
-                out.push_str(&check.text);
-                out.push('\n');
-            }
+        let checks =
+            futures::future::join_all(planned.iter().map(|item| self.check_after_edit(&item.dest)))
+                .await;
+        for check in checks.into_iter().flatten() {
+            out.push_str(&check.text);
+            out.push('\n');
         }
         Ok(ToolOutput::mutated(
             out.trim_end().to_string(),

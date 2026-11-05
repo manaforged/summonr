@@ -171,3 +171,39 @@ fn a_subfolder_of_a_repository_shares_the_repository_memory_root() {
     };
     assert_eq!(root(&sub, Some(&layout)), top);
 }
+
+#[test]
+fn repo_state_loads_for_the_workspace_and_its_git_children() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let state = home.path().join(".agents/memory");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("app.md"), "Use app; never the stale sibling app-old.").unwrap();
+    std::fs::write(state.join("app-old.md"), "").unwrap();
+    std::fs::create_dir_all(work.path().join("app/.git")).unwrap();
+    std::fs::create_dir_all(work.path().join("notes")).unwrap();
+    let files = repo_files(home.path(), work.path());
+    let text = sections(&files, work.path()).join("\n");
+    assert!(text.contains("never the stale sibling app-old"), "{text}");
+    assert!(text.contains("scope=\"repo\""), "{text}");
+    assert_eq!(files.len(), 1, "{files:?}");
+}
+
+#[test]
+fn repo_state_files_share_one_budget() {
+    let budget = crate::limits::limits().memory_bytes;
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let state = home.path().join(".agents/memory");
+    std::fs::create_dir_all(&state).unwrap();
+    for name in ["one", "two", "three", "four"] {
+        std::fs::write(state.join(format!("{name}.md")), "- entry\n".repeat(budget)).unwrap();
+        std::fs::create_dir_all(work.path().join(name).join(".git")).unwrap();
+    }
+    let total: usize = sections(&repo_files(home.path(), work.path()), work.path())
+        .iter()
+        .map(String::len)
+        .sum();
+    assert!(total < budget + 4 * 512, "{total} > {budget}");
+}
+

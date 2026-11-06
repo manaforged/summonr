@@ -206,7 +206,9 @@ pub(super) fn escape(app: &App) {
     }
     if app.dismiss() {
     } else if app.model.get().busy_since.is_some() {
-        drop(app.cmd.send(Cmd::Cancel));
+        if !crate::canvas::is_window() {
+            drop(app.cmd.send(Cmd::Cancel));
+        }
     } else if app.splash.peek() {
         app.splash.set(false);
     } else {

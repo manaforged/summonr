@@ -11,6 +11,7 @@ use crate::runtime::Loop;
 use crate::workflow::Workflow;
 
 mod session;
+mod target;
 use session::Session;
 
 pub struct Started {
@@ -117,6 +118,9 @@ impl Hub {
         if matches!(command, Cmd::Quit) {
             return false;
         }
+        let Some(command) = self.targeted(pane, command) else {
+            return true;
+        };
         if matches!(command, Cmd::Tick) {
             let peers = peers();
             for session in self.sessions.values() {

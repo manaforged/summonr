@@ -105,7 +105,10 @@ impl App {
         } else if self.dismiss() || self.edit_stop() || self.note_stop() {
         } else if self.pane_focus.peek() {
             self.focus_pane(false);
-        } else if self.model.get().busy_since.is_some() && self.form_stage().is_none() {
+        } else if !crate::canvas::is_window()
+            && self.model.get().busy_since.is_some()
+            && self.form_stage().is_none()
+        {
             super::input::escape(self);
         } else if self.pane_back() || self.pane_dismiss() {
         } else if self.form_stage().is_some() {

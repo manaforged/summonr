@@ -54,10 +54,8 @@ fn command_k_opens_the_palette_and_command_p_a_file_mention() {
 }
 
 #[test]
-fn escape_closes_the_list_then_cancels_the_turn_and_keeps_the_pane() {
-    if !in_window(
-        "window_composer::escape_closes_the_list_then_cancels_the_turn_and_keeps_the_pane",
-    ) {
+fn escape_closes_each_layer_and_never_stops_the_agent() {
+    if !in_window("window_composer::escape_closes_each_layer_and_never_stops_the_agent") {
         return;
     }
     let listed = drive(
@@ -78,8 +76,8 @@ fn escape_closes_the_list_then_cancels_the_turn_and_keeps_the_pane() {
         vec![named(Key::Escape, ModifiersState::empty())],
         |app| app.layout.peek().secondary,
     );
-    assert!(paned.sent.iter().any(|cmd| matches!(cmd, Cmd::Cancel)));
-    assert_eq!(paned.read, Some(Pane::Files));
+    assert!(!paned.sent.iter().any(|cmd| matches!(cmd, Cmd::Cancel)));
+    assert_eq!(paned.read, None);
 }
 
 #[test]

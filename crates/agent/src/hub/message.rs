@@ -187,6 +187,11 @@ pub enum Cmd {
     Dequeue,
     SteerQueued,
     DeleteSession(String),
+    Stop(String),
+    Rename {
+        session: String,
+        name: String,
+    },
     Export(Option<String>),
     Cancel,
     CancelLogin,

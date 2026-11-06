@@ -68,7 +68,9 @@ impl Cmd {
             | Cmd::Trees
             | Cmd::View(..)
             | Cmd::Save(..)
-            | Cmd::DeleteSession(_) => ExecutionClass::Read,
+            | Cmd::DeleteSession(_)
+            | Cmd::Stop(_)
+            | Cmd::Rename { .. } => ExecutionClass::Read,
         }
     }
 }

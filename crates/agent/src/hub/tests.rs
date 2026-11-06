@@ -270,3 +270,88 @@ fn the_first_line_of_a_submitted_prompt_titles_the_session() {
     assert_eq!(super::run::title_from(&submit("   ")), None);
     assert_eq!(super::run::title_from(&crate::hub::Cmd::Tick), None);
 }
+
+fn live_ids(msg: &Msg) -> Option<Vec<String>> {
+    let Msg::Fact(Fact::Live(live)) = msg else {
+        return None;
+    };
+    Some(live.iter().map(|entry| entry.session.clone()).collect())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_refuses_an_agent_in_view_and_closes_one_out_of_view() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let first = session(home.path(), work.path());
+    let first_id = first.session_id();
+    let (made_home, made_work) = (home.path().to_path_buf(), work.path().to_path_buf());
+    let factory: super::Factory =
+        std::sync::Arc::new(move |_, _| Ok((session(&made_home, &made_work), None)));
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let started = super::start(first, info(), (tx, rx), factory);
+    let mut inbox = started.inbox;
+    let send = |command| started.commands.send(command).unwrap();
+    send(crate::hub::Cmd::DeleteSession(first_id.clone()));
+    until("the refusal", &mut inbox, |msg| {
+        matches!(msg, Msg::Fact(Fact::Failed(text)) if text.contains("close its pane"))
+            .then_some(())
+    })
+    .await;
+    send(crate::hub::Cmd::Open(super::Open::New));
+    let wanted = first_id.clone();
+    until("the second agent", &mut inbox, |msg| {
+        active(msg)
+            .filter(|(id, open)| *id != wanted && *open == 2)
+            .map(|_| ())
+    })
+    .await;
+    send(crate::hub::Cmd::DeleteSession(first_id.clone()));
+    let wanted = first_id.clone();
+    until("the first agent closed", &mut inbox, |msg| {
+        live_ids(msg)
+            .filter(|ids| ids.len() == 1 && !ids.contains(&wanted))
+            .map(|_| ())
+    })
+    .await;
+    send(crate::hub::Cmd::Quit);
+    started.task.await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn renaming_an_agent_out_of_view_keeps_the_view() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let first = session(home.path(), work.path());
+    let first_id = first.session_id();
+    let (made_home, made_work) = (home.path().to_path_buf(), work.path().to_path_buf());
+    let factory: super::Factory =
+        std::sync::Arc::new(move |_, _| Ok((session(&made_home, &made_work), None)));
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let started = super::start(first, info(), (tx, rx), factory);
+    let mut inbox = started.inbox;
+    let send = |command| started.commands.send(command).unwrap();
+    send(crate::hub::Cmd::Open(super::Open::New));
+    let wanted = first_id.clone();
+    until("the second agent", &mut inbox, |msg| {
+        active(msg)
+            .filter(|(id, open)| *id != wanted && *open == 2)
+            .map(|_| ())
+    })
+    .await;
+    send(crate::hub::Cmd::Rename {
+        session: first_id.clone(),
+        name: "older work".to_owned(),
+    });
+    let wanted = first_id.clone();
+    until("the new title out of view", &mut inbox, |msg| {
+        let Msg::Fact(Fact::Live(live)) = msg else {
+            return None;
+        };
+        live.iter()
+            .any(|entry| entry.session == wanted && entry.title == "older work" && !entry.active)
+            .then_some(())
+    })
+    .await;
+    send(crate::hub::Cmd::Quit);
+    started.task.await.unwrap();
+}

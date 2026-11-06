@@ -7,7 +7,7 @@ use sigil::widgets::MenuItem;
 use super::App;
 use super::style::DIALOG;
 use summonr_agent::hub::Cmd;
-use summonr_agent::hub::{Open, Status};
+use summonr_agent::hub::Status;
 use summonr_agent::session::SessionInfo;
 
 /// What a dialog opened from the agent menu acts on.
@@ -44,6 +44,7 @@ fn show(dialog: Dialog) {
 pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Vec<MenuItem> {
     let (id, title) = (info.id.clone(), super::sidebar::title(info));
     let current = app.model.peek().session == id;
+    let running = matches!(status, Some(Status::Working | Status::NeedsYou));
     let mut items = vec![MenuItem::new("Rename…").activate({
         let (id, title) = (id.clone(), title.clone());
         move || {
@@ -58,15 +59,15 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
             drop(summonr_auth::open::external(&folder));
         }));
     }
-    if current && status == Some(Status::Working) {
-        let stop = app.clone();
+    if running {
+        let (stop, target) = (app.clone(), id.clone());
         items.push(
             MenuItem::new("Stop")
                 .shortcut("⌘.")
-                .activate(move || stop.interrupt()),
+                .activate(move || drop(stop.cmd.send(Cmd::Stop(target.clone())))),
         );
     }
-    if !current {
+    if !current && !running {
         items.push(MenuItem::new("Delete…").activate(move || {
             show(Dialog::Delete {
                 id: id.clone(),
@@ -131,9 +132,9 @@ fn rename(app: &App, id: &str, text: &str) {
     if name.is_empty() {
         return;
     }
-    if app.model.peek().session != id {
-        app.open_session(Open::Resume(id.to_owned()));
-    }
-    drop(app.cmd.send(Cmd::Command(format!("/name {name}"))));
+    drop(app.cmd.send(Cmd::Rename {
+        session: id.to_owned(),
+        name: name.to_owned(),
+    }));
     drop(app.cmd.send(Cmd::ListSessions));
 }

@@ -77,6 +77,9 @@ impl App {
             KeyCommand::Terminal => {
                 self.window.open_terminal(self);
             }
+            KeyCommand::MarkUnread => {
+                self.window.mark_unread(self);
+            }
             KeyCommand::Split(action) => {
                 self.window.split(action);
             }

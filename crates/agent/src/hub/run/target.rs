@@ -6,6 +6,7 @@ impl Hub {
     pub(super) fn targeted(&mut self, pane: u64, command: Cmd) -> Option<Cmd> {
         match command {
             Cmd::Stop(id) => self.stop(&id),
+            Cmd::MarkUnread(id) => self.mark_unread(&id),
             Cmd::Rename { session, name } => self.rename(pane, &session, &name),
             Cmd::DeleteSession(id) => self.delete(pane, id),
             other => return Some(other),
@@ -35,6 +36,16 @@ impl Hub {
     fn stop(&self, id: &str) {
         if let Some(session) = self.find(id).and_then(|key| self.sessions.get(&key)) {
             drop(session.cmd.send(Cmd::Cancel));
+        }
+    }
+
+    fn mark_unread(&mut self, id: &str) {
+        let Some(session) = self.find(id).and_then(|key| self.sessions.get_mut(&key)) else {
+            return;
+        };
+        if session.status == Status::Idle {
+            session.status = Status::Review;
+            self.publish();
         }
     }
 

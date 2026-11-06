@@ -40,6 +40,15 @@ pub(super) fn mark(session: &str) -> Option<Status> {
         })
 }
 
+/// Marks an agent that is not running unread; a running one takes its status from the hub.
+pub(super) fn mark_unread(session: &str) {
+    if let Some(marks) = MARKS.with(Cell::get) {
+        marks.update(|marks| {
+            marks.insert(session.to_owned(), Mark::Review);
+        });
+    }
+}
+
 fn reopen(main: &App, saved: &Layout) {
     let terminals: Vec<Option<u64>> = saved
         .terminals
@@ -68,7 +77,7 @@ fn reopen(main: &App, saved: &Layout) {
 fn watch(main: &App, marks: Signal<Marks>, saved: Layout) {
     let (main, last) = (main.clone(), Rc::new(std::cell::RefCell::new(saved)));
     effect(move || {
-        let Some(layout) = snapshot(&main, &marks.peek()) else {
+        let Some(layout) = snapshot(&main, &marks.get()) else {
             return;
         };
         if *last.borrow() == layout {

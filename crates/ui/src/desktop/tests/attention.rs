@@ -161,3 +161,22 @@ fn the_menu_bar_runs_the_same_commands_as_the_keys() {
         "the menu item must open an agent"
     );
 }
+
+#[test]
+fn command_shift_u_marks_the_agent_in_view_unread() {
+    if !in_window("attention::command_shift_u_marks_the_agent_in_view_unread") {
+        return;
+    }
+    let shift_u = super::harness::press(
+        sigil::events::LogicalKey::character("u"),
+        sigil::events::ModifiersState::META.union(sigil::events::ModifiersState::SHIFT),
+        None,
+    );
+    let seen = drive(|_| (), vec![shift_u], |_| ());
+    assert!(
+        seen.sent
+            .iter()
+            .any(|cmd| matches!(cmd, summonr_agent::hub::Cmd::MarkUnread(_))),
+        "the key must mark the agent unread"
+    );
+}

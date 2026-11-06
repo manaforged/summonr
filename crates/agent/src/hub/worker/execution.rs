@@ -70,6 +70,7 @@ impl Cmd {
             | Cmd::Save(..)
             | Cmd::DeleteSession(_)
             | Cmd::Stop(_)
+            | Cmd::MarkUnread(_)
             | Cmd::Rename { .. } => ExecutionClass::Read,
         }
     }

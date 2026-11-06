@@ -75,6 +75,12 @@ impl Window {
         super::jump(app, to);
     }
 
+    pub(crate) fn mark_unread(&self, app: &App) {
+        let pane = super::split::current(app);
+        let id = pane.model.peek().session.clone();
+        super::agent_menu::mark_unread(&pane, &id);
+    }
+
     pub(crate) fn open_terminal(&self, app: &App) {
         app.open_terminal(NEW_TERMINAL, None);
     }

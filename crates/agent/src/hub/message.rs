@@ -192,6 +192,7 @@ pub enum Cmd {
     SteerQueued,
     DeleteSession(String),
     Stop(String),
+    MarkUnread(String),
     Rename {
         session: String,
         name: String,

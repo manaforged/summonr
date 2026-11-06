@@ -46,6 +46,12 @@ pub(super) fn ask_quit(running: usize) {
     show(Dialog::Quit { running });
 }
 
+/// Marks `id` unread, running or not.
+pub(super) fn mark_unread(app: &App, id: &str) {
+    drop(app.cmd.send(Cmd::MarkUnread(id.to_owned())));
+    super::restore::mark_unread(id);
+}
+
 /// The right-click menu of one agent row.
 pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Vec<MenuItem> {
     let (id, title) = (info.id.clone(), super::sidebar::title(info));
@@ -67,6 +73,14 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
         "Pin"
     };
     items.push(MenuItem::new(word).activate(move || super::shelf::flip_pin(&pin)));
+    if matches!(status, None | Some(Status::Idle)) {
+        let (mark, unread) = (app.clone(), id.clone());
+        items.push(
+            MenuItem::new("Mark unread")
+                .shortcut("⌘⇧U")
+                .activate(move || mark_unread(&mark, &unread)),
+        );
+    }
     if let Some(folder) = info.cwd.clone().map(PathBuf::from) {
         let reveal = if summonr_agent::worktree::repo_of(&folder).is_some() {
             "Reveal worktree"

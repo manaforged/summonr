@@ -36,6 +36,8 @@ impl Window {
 
     pub(crate) fn open_terminal(&self, _app: &App) {}
 
+    pub(crate) fn mark_unread(&self, _app: &App) {}
+
     pub(crate) fn split(&self, _action: Split) {}
 
     pub(crate) fn dialog_open(&self) -> bool {

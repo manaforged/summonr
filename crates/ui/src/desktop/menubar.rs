@@ -20,8 +20,9 @@ const VIEW: [(&str, KeyCommand); 4] = [
     ("Changes", KeyCommand::Pane(Pane::Diff)),
     ("Terminal", KeyCommand::Pane(Pane::Terminal)),
 ];
-const AGENT: [(&str, KeyCommand); 2] = [
+const AGENT: [(&str, KeyCommand); 3] = [
     ("Stop", KeyCommand::Interrupt),
+    ("Mark unread", KeyCommand::MarkUnread),
     ("Next that needs you", KeyCommand::Jump(Jump::Needing)),
 ];
 const SETTINGS_KEY: KeyCommand = KeyCommand::Hotkey(Hotkey::Options);

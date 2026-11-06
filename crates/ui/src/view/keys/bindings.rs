@@ -5,6 +5,7 @@ pub(crate) enum KeyCommand {
     Hotkey(Hotkey),
     Trigger(char),
     NewSession,
+    MarkUnread,
     Palette,
     Pane(Pane),
     Always,
@@ -238,7 +239,7 @@ const CMD: ModifiersState = ModifiersState::META;
 const CMD_SHIFT: ModifiersState = ModifiersState::META.union(ModifiersState::SHIFT);
 const CMD_ALT: ModifiersState = ModifiersState::META.union(ModifiersState::ALT);
 
-pub(crate) const WINDOW: [(&str, ModifiersState, KeyCommand); 13] = [
+pub(crate) const WINDOW: [(&str, ModifiersState, KeyCommand); 14] = [
     ("d", CMD, KeyCommand::Split(Split::Open)),
     ("t", CMD, KeyCommand::Terminal),
     ("w", CMD, KeyCommand::Split(Split::Close)),
@@ -248,6 +249,7 @@ pub(crate) const WINDOW: [(&str, ModifiersState, KeyCommand); 13] = [
     ("n", CMD, KeyCommand::NewSession),
     ("b", CMD, KeyCommand::Sidebar),
     ("d", CMD_SHIFT, KeyCommand::Pane(Pane::Diff)),
+    ("u", CMD_SHIFT, KeyCommand::MarkUnread),
     (".", CMD, KeyCommand::Interrupt),
     (
         "`",

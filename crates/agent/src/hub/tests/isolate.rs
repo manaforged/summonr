@@ -50,3 +50,40 @@ async fn a_new_agent_gets_a_worktree_only_while_another_runs_in_the_checkout() {
     started.commands.send(crate::hub::Cmd::Quit).unwrap();
     started.task.await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn marking_an_idle_agent_unread_shows_in_the_roster() {
+    let home = tempfile::tempdir().unwrap();
+    let work = home.path().to_path_buf();
+    let first = session(home.path(), &work);
+    let factory: crate::hub::Factory = std::sync::Arc::new(|_, _| {
+        Err(summonr_core::error::Error::Config(
+            "no second agent".to_owned(),
+        ))
+    });
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let started = crate::hub::start(first, info(), (tx, rx), factory);
+    let mut inbox = started.inbox;
+    let id = until("the first roster", &mut inbox, |msg| {
+        let Msg::Fact(Fact::Live(live)) = msg else {
+            return None;
+        };
+        live.first().map(|entry| entry.session.clone())
+    })
+    .await;
+    started
+        .commands
+        .send(crate::hub::Cmd::MarkUnread(id))
+        .unwrap();
+    until("the unread mark", &mut inbox, |msg| {
+        let Msg::Fact(Fact::Live(live)) = msg else {
+            return None;
+        };
+        live.iter()
+            .any(|entry| entry.status == Status::Review)
+            .then_some(())
+    })
+    .await;
+    started.commands.send(crate::hub::Cmd::Quit).unwrap();
+    started.task.await.unwrap();
+}

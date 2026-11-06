@@ -2,30 +2,48 @@
 mod cli;
 #[path = "main/diagnostics.rs"]
 mod diagnostics;
+#[cfg(all(feature = "gui", target_os = "macos"))]
+#[path = "main/login_env.rs"]
+mod login_env;
 #[path = "main/modes.rs"]
 mod modes;
 #[path = "main/startup.rs"]
 mod startup;
 
-fn main() {
+/// Runs the summonr command line and exits the process with its code.
+pub fn main() {
+    start(false);
+}
+
+/// Runs the Summonr desktop window and exits the process with its code.
+#[cfg(feature = "gui")]
+pub fn desktop() {
+    start(true);
+}
+
+fn start(window: bool) {
     guard_sigpipe();
     if std::env::args_os()
         .nth(1)
-        .is_some_and(|arg| arg == summonr::INDEX_ENTRY)
+        .is_some_and(|arg| arg == crate::INDEX_ENTRY)
     {
         let root = std::env::args_os().nth(2).unwrap_or_default();
-        std::process::exit(summonr::index_files(std::path::Path::new(&root)));
+        std::process::exit(crate::index_files(std::path::Path::new(&root)));
     }
     if std::env::args_os()
         .nth(1)
         .is_some_and(|arg| arg == "askpass")
     {
         let args: Vec<_> = std::env::args_os().skip(2).collect();
-        std::process::exit(summonr::askpass::client(&args));
+        std::process::exit(crate::askpass::client(&args));
+    }
+    #[cfg(all(feature = "gui", target_os = "macos"))]
+    if window {
+        login_env::adopt();
     }
     let profile = std::env::args().nth(1).as_deref() == Some("--profile-tui");
     let args = (!profile)
-        .then(cli::parse)
+        .then(|| cli::parse(window))
         .transpose()
         .unwrap_or_else(|error| fail_parse(&error));
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -34,14 +52,14 @@ fn main() {
         .build()
         .unwrap_or_else(|error| fail(&error));
     drop(runtime.spawn(async {
-        summonr::interrupted().await;
-        summonr::stop_children();
+        crate::interrupted().await;
+        crate::stop_children();
     }));
     let result = runtime.block_on(run(args));
-    runtime.block_on(summonr::supervise::closed());
+    runtime.block_on(crate::supervise::closed());
     match result {
         Ok(code) => {
-            summonr::stop_children();
+            crate::stop_children();
             std::process::exit(code);
         }
         Err(error) => fail(&error),
@@ -93,7 +111,7 @@ fn guard_sigpipe() {}
 async fn until_signal<T>(work: impl std::future::Future<Output = T>) -> Result<T, i32> {
     use futures::FutureExt;
 
-    let mut interrupt = std::pin::pin!(summonr::interrupted());
+    let mut interrupt = std::pin::pin!(crate::interrupted());
     tokio::select! {
         biased;
         code = &mut interrupt => Err(code),
@@ -101,20 +119,20 @@ async fn until_signal<T>(work: impl std::future::Future<Output = T>) -> Result<T
     }
 }
 
-async fn run(args: Option<cli::Args>) -> summonr::Result<i32> {
+async fn run(args: Option<cli::Args>) -> crate::Result<i32> {
     match args {
         Some(args) => startup::run(args).await,
-        None => until_signal(async { summonr::tui::profile(std::env::args().skip(2)) })
+        None => until_signal(async { crate::tui::profile(std::env::args().skip(2)) })
             .await
             .map_or_else(Ok, |done| done.map(|()| 0)),
     }
 }
 
-fn fail_parse(error: &summonr::Error) -> ! {
+fn fail_parse(error: &crate::Error) -> ! {
     if std::env::args().skip(1).any(|arg| arg == "--json") {
-        modes::print_json(&summonr::Event::Aborted {
+        modes::print_json(&crate::Event::Aborted {
             reason: error.to_string(),
-            code: summonr::AbortCode::Error,
+            code: crate::AbortCode::Error,
         });
     }
     fail(error)
@@ -124,6 +142,6 @@ fn fail(error: &dyn std::fmt::Display) -> ! {
     use std::io::Write;
     let name = option_env!("CARGO_BIN_NAME").unwrap_or("summonr");
     drop(writeln!(std::io::stderr(), "{name}: {error}"));
-    summonr::stop_children();
+    crate::stop_children();
     std::process::exit(1)
 }

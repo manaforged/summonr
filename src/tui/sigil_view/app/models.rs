@@ -204,7 +204,7 @@ impl App {
         self.send_model(target, picked);
     }
 
-    pub(super) fn send_model(&self, target: Option<usize>, picked: ModelId) {
+    pub(in crate::tui::sigil_view) fn send_model(&self, target: Option<usize>, picked: ModelId) {
         let current = self.model.peek().snapshot.endpoint.clone();
         let ModelId { endpoint, model } = picked;
         drop(

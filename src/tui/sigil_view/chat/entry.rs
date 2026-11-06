@@ -38,8 +38,6 @@ pub(in crate::tui::sigil_view) use steps::{Slot, slots, subagents};
 pub(in crate::tui::sigil_view) use tools::loading_mark;
 pub(in crate::tui::sigil_view) use tools::tool_label;
 pub(in crate::tui::sigil_view) use tools::workspace_relative;
-#[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use tree::label;
 mod tree;
 
 const COMPACT_ROWS: usize = 32;
@@ -114,7 +112,7 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> 
         Entry::Aborted(reason) | Entry::Error(reason) => {
             wrap(TextStyle::xs(sigil::prelude::Token::Error11).on(text(reason)))
         }
-        Entry::System(body) => wrap(TextStyle::xs(sigil::prelude::Token::Gray11).on(text(body))),
+        Entry::System(body) | Entry::Injected(body) => wrap(TextStyle::xs(sigil::prelude::Token::Gray11).on(text(body))),
         Entry::Chart(rounds) => wrap(
             chart(
                 rounds

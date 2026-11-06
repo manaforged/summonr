@@ -17,7 +17,6 @@ const ACCEPT: &str = "Accept";
 const REVERT: &str = "Revert";
 const NOTE: &str = "Note";
 const UNDO: &str = "Undo";
-const PENDING: &str = "pending";
 const REVERT_FILE: &str = "Revert file";
 const CONFIRM_REVERT: &str = "Confirm revert";
 const SCOPE_ALL: &str = "Last turn only";
@@ -114,12 +113,13 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
         }
         return undo_rows(&app, column, Some(&path), &BTreeSet::new());
     }
-    column = column.child(header(&app, "Changes".to_string(), model.diff.summary()));
-    drop(model);
     let window = canvas::is_window();
     if window {
-        column = column.child(scope(&app));
+        column = column.child(scope(&app, &model.diff));
+    } else {
+        column = column.child(header(&app, "Changes".to_string(), model.diff.summary()));
     }
+    drop(model);
     let listed: BTreeSet<String> = app.diff_rows().into_iter().map(|row| row.path).collect();
     let below = window.then_some(file_actions as Extra);
     column = listing(&app, Pane::Diff, column, &NO_CHANGES, (None, below));
@@ -163,9 +163,6 @@ fn file_actions(app: &App, changed: &PaneRow) -> NodeBuilder {
     let revert = app.clone();
     let target = path.to_string();
     let mut row = actions();
-    if accepted == 0 && reverted == 0 {
-        row = row.child(chip(PENDING, Tone::Neutral));
-    }
     if accepted > 0 {
         row = row.child(chip(format!("{accepted} accepted"), Tone::Success));
     }
@@ -228,7 +225,12 @@ fn undo_rows(
     column
 }
 
-fn scope(app: &App) -> NodeBuilder {
+/// The panel's first row: how many files changed, and which changes it shows.
+fn scope(app: &App, diff: &crate::diff::Diff) -> NodeBuilder {
+    let count = sigil::prelude::text(summonr_core::text::plural(diff.files.len(), "file"))
+        .nowrap()
+        .font_size(13.0)
+        .text_color(sigil::prelude::Token::OnSurfaceMuted);
     let toggle = app.clone();
     let label = if app.diff_recent.get() {
         SCOPE_RECENT
@@ -242,14 +244,18 @@ fn scope(app: &App) -> NodeBuilder {
         SESSION_OFF
     };
     actions()
+        .child(count)
+        .child(spacer())
         .child(
             button(label)
                 .ghost()
+                .size(sigil::prelude::ControlSize::Compact)
                 .activate(move || toggle.toggle_recent()),
         )
         .child(
             button(whole)
                 .ghost()
+                .size(sigil::prelude::ControlSize::Compact)
                 .activate(move || session.toggle_session()),
         )
 }

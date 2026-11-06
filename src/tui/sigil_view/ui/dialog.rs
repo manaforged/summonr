@@ -87,9 +87,11 @@ fn backdrop_signal(open: Signal<bool>, close: Dismiss) -> Signal<bool> {
     effect(move || {
         if !shown.get() && open.peek() {
             untrack(|| close());
-            if open.peek() {
-                shown.set(true);
-            }
+            defer(move || {
+                if open.peek() && !shown.peek() {
+                    shown.set(true);
+                }
+            });
         }
     });
     shown

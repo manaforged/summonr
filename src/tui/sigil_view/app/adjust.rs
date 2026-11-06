@@ -232,7 +232,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn apply_theme(&self) {
         let prefs = self.model.peek().prefs.clone();
-        let problems = theme::install(&prefs, &self.workspace, self.info.config.as_deref());
+        let problems = theme::install(&prefs, &self.workspace(), self.info.config.as_deref());
         self.appearance.set(theme::palette());
         for problem in problems {
             self.push_entry(Entry::System(problem));
@@ -253,6 +253,24 @@ impl App {
         self.persist(&prefs);
         drop(self.cmd.send(Cmd::SetMail(on)));
         self.refresh();
+    }
+
+    /// Asks for the Chrome-family browser the browser tools drive, and saves the choice.
+    pub(in crate::tui::sigil_view) fn choose_chrome(&self) {
+        #[cfg(feature = "gui")]
+        {
+            let mut dialog = sigil::app::dialog::FileDialog::new();
+            if cfg!(target_os = "macos") {
+                dialog = dialog.directory("/Applications").filter("Applications", &["app"]);
+            }
+            let picked = dialog.open_file();
+            let cmd = self.cmd.clone();
+            sigil::prelude::effect(move || {
+                if let sigil::tasks::Status::Ok(Some(path)) = picked.get() {
+                    drop(cmd.send(Cmd::SetChrome(path)));
+                }
+            });
+        }
     }
 
     pub(in crate::tui::sigil_view) fn toggle_module(&self, id: crate::modules::ModuleId) {

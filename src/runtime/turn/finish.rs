@@ -5,8 +5,8 @@ impl<P: Provider> Loop<P> {
         if self.session.stage() == Some(Stage::Execute)
             && self.work_progress()?.kind == crate::WorkKind::Single
         {
-            drop(self.session.enter_verify()?);
             let wrote = self.tools.wrote();
+            drop(self.session.enter_verify(&wrote)?);
             drop(self.session.limit_changes(&wrote)?);
             let receipt = self.turn_receipt(&wrote, snapshot, events);
             let verdict = self.session.captured_verdict(true);
@@ -84,8 +84,9 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Vec<Outcome>> {
-        drop(self.session.enter_verify()?);
-        let paths = self.session.limit_changes(&self.tools.wrote())?;
+        let wrote = self.tools.wrote();
+        drop(self.session.enter_verify(&wrote)?);
+        let paths = self.session.limit_changes(&wrote)?;
         checks.extend(self.run_verify(events, emit).await?);
         if checks.is_empty() {
             checks.extend(crate::verify::ran(
@@ -99,7 +100,15 @@ impl<P: Provider> Loop<P> {
         let mut verdict = self.verdict(&mut checks, events, emit)?;
         let receipt = crate::verify::new(paths, checks.clone(), snapshot);
         let decision = self
-            .decide(reply, &receipt.text, &mut verdict, &mut checks, events, emit, usage)
+            .decide(
+                reply,
+                &receipt.text,
+                &mut verdict,
+                &mut checks,
+                events,
+                emit,
+                usage,
+            )
             .await?;
         let receipt = crate::verify::new(receipt.changes, checks.clone(), receipt.snapshot);
         self.session

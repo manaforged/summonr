@@ -18,6 +18,20 @@ impl App {
         self.auth.list.scroll.set(0.0);
     }
 
+    /// Switches to a provider found on this machine, or lists its models when it has no default.
+    pub(in crate::tui::sigil_view) fn use_local(&self, found: &crate::endpoint::Local) {
+        if let Err(error) = crate::endpoint::select(&found.route) {
+            self.push_entry(Entry::System(format!("Could not use {}: {error}", found.name)));
+            return;
+        }
+        if found.model.is_empty() {
+            self.begin_model_edit();
+            self.replace_model_draft(found.endpoint.clone());
+            return;
+        }
+        drop(self.cmd.send(Cmd::SelectModel(found.endpoint.clone(), found.model.clone())));
+    }
+
     pub(in crate::tui::sigil_view) fn ask_provider(&self) {
         self.open_providers();
         self.auth

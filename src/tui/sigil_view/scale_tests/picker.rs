@@ -17,6 +17,8 @@ fn session(id: &str, parent: Option<&str>) -> crate::session::SessionInfo {
         name: None,
         parent: parent.map(str::to_string),
         depth: 0,
+        interactive: true,
+        modified: None,
     }
 }
 

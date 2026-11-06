@@ -34,7 +34,7 @@ pub(super) fn skipped(plugin: &Plugin) -> Vec<String> {
     lines
 }
 
-pub(super) fn describe(plugin: &Plugin) -> Vec<String> {
+pub(crate) fn describe(plugin: &Plugin) -> Vec<String> {
     let mut parts = Vec::new();
     let skills = skill_count(plugin);
     if skills > 0 {

@@ -113,7 +113,7 @@ pub(in crate::tui::sigil_view) fn approval_band(
     if persist {
         prompt = prompt.action(Action::new(
             "Always",
-        Key::Fixed("Y"),
+            Key::Fixed("Y"),
             ActionKind::Plain,
             answer(GrantAnswer::Always),
         ));
@@ -121,7 +121,7 @@ pub(in crate::tui::sigil_view) fn approval_band(
     prompt
         .action(Action::new(
             "Deny",
-        Key::Fixed("n"),
+            Key::Fixed("n"),
             ActionKind::Destructive,
             answer(GrantAnswer::Deny),
         ))

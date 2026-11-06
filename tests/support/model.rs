@@ -8,6 +8,8 @@ use serde_json::{Value, json};
 
 use super::pause;
 
+const TITLE_REQUEST: &str = "Name this coding session";
+
 pub(crate) enum Step {
     Call(&'static str, Value),
     Text(&'static str),
@@ -108,6 +110,13 @@ fn serve(stream: TcpStream, script: &Mutex<Vec<Step>>, sink: &Mutex<Vec<Value>>)
         );
     }
     let mut body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    if body["messages"][0]["content"]
+        .as_str()
+        .is_some_and(|system| system.starts_with(TITLE_REQUEST))
+    {
+        let events = frames(0, Step::Text("Session title"));
+        return reply(&mut stream, "text/event-stream", &events);
+    }
     body["kept"] = json!(kept_sizes(&body));
     let index = {
         let mut requests = sink.lock().unwrap();

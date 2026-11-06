@@ -22,6 +22,11 @@ mod hunks;
 mod jobs;
 mod language;
 pub mod limits;
+#[path = "main.rs"]
+mod entry;
+pub use entry::main;
+#[cfg(feature = "gui")]
+pub use entry::desktop;
 mod mcp;
 pub use mcp::{
     Board as McpBoard, Choice as McpChoice, Field as McpField, FieldKind as McpFieldKind,
@@ -114,7 +119,8 @@ pub use recent::default_effort;
 pub use runtime::{Budget, Job, Loop, NextAction, Turn};
 pub use session::{
     ProfileScope, export as export_session, export_json, info as session_info, last_for,
-    list as list_sessions, profile, prune as prune_sessions, resolve_id as resolve_session, short,
+    list as list_sessions, mark_interactive, profile, prune as prune_sessions,
+    resolve_id as resolve_session, short,
 };
 pub use summonr_core::dirs::summonr_home;
 pub use summonr_core::error::{Error, ProviderFailureKind, Result};

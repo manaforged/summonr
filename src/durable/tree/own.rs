@@ -10,8 +10,7 @@ pub(crate) fn own_files(root: &Path) -> Vec<String> {
     if own.is_empty() {
         return Vec::new();
     }
-    listing(root)
-        .unwrap_or_default()
+    listing(root, None, &[])
         .into_iter()
         .filter(|relative| {
             let path = root.join(relative);

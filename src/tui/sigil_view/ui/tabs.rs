@@ -40,7 +40,8 @@ pub(in crate::tui::sigil_view) fn strip(app: &App, active: Tab) -> NodeBuilder {
     effect(move || {
         let index = picked.get();
         if index != at {
-            show.show_tab(Tab::ALL[index]);
+            let show = show.clone();
+            sigil::reactive::defer(move || show.show_tab(Tab::ALL[index]));
         }
     });
     let labels: Vec<String> = Tab::ALL.iter().map(|tab| tab.label().to_string()).collect();

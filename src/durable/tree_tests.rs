@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use super::{changed, identity, mark, snapshot, walk};
+use super::{changed, identity, mark, snapshot};
 
 fn backdate(path: &std::path::Path, by: Duration) {
     std::fs::OpenOptions::new()
@@ -21,55 +21,30 @@ fn a_same_size_rewrite_is_seen_even_when_it_restores_the_old_mtime() {
     std::fs::write(&fresh, "aaaa").unwrap();
     backdate(&stale, Duration::from_secs(20));
     backdate(&fresh, Duration::from_secs(20));
-    let base = snapshot(root, &[], None).unwrap();
+    let touched = ["stale.txt".to_string(), "fresh.txt".to_string()];
+    let base = snapshot(root, &[], None, &touched).unwrap();
 
     std::fs::write(&stale, "bbbb").unwrap();
     backdate(&stale, Duration::from_secs(20));
     std::fs::write(&fresh, "bbbb").unwrap();
-    let capture = snapshot(root, &[], Some(&base)).unwrap();
+    let capture = snapshot(root, &[], Some(&base), &touched).unwrap();
 
     assert_eq!(
         changed(&base, &capture),
         vec!["fresh.txt".to_string(), "stale.txt".to_string()],
         "a content write moves the change time, so a restored mtime still gets a rehash"
     );
-    let again = snapshot(root, &[], Some(&capture)).unwrap();
+    let again = snapshot(root, &[], Some(&capture), &touched).unwrap();
     assert_eq!(
         changed(&capture, &again),
         Vec::<String>::new(),
         "untouched files reuse their marks"
     );
     assert_eq!(
-        changed(&base, &snapshot(root, &[], None).unwrap()),
+        changed(&base, &snapshot(root, &[], None, &touched).unwrap()),
         vec!["fresh.txt".to_string(), "stale.txt".to_string()],
         "without a previous snapshot every file is hashed"
     );
-}
-
-#[test]
-fn the_walk_stays_on_the_workspace_filesystem() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    std::fs::create_dir(root.join("mounted")).unwrap();
-    std::fs::write(root.join("mounted/inside.txt"), "x").unwrap();
-    std::fs::write(root.join("top.txt"), "x").unwrap();
-    let here = super::device_of(&std::fs::metadata(root).unwrap());
-    let mut same = Vec::new();
-    walk(root, root, here, &mut same).unwrap();
-    same.sort();
-    assert_eq!(
-        same,
-        ["mounted/inside.txt", "top.txt"].map(std::path::PathBuf::from)
-    );
-    let mut other = Vec::new();
-    walk(
-        root,
-        root,
-        here.map(|device| device.wrapping_add(1)),
-        &mut other,
-    )
-    .unwrap();
-    assert_eq!(other, ["top.txt"].map(std::path::PathBuf::from));
 }
 
 #[test]
@@ -95,10 +70,10 @@ fn bytecode_a_check_writes_does_not_change_the_snapshot() {
         .unwrap();
     assert!(git.success());
     std::fs::write(root.join("calc.py"), "def add(a, b):\n    return a + b\n").unwrap();
-    let before = snapshot(root, &[], None).unwrap();
+    let before = snapshot(root, &[], None, &[]).unwrap();
     std::fs::create_dir(root.join("__pycache__")).unwrap();
     std::fs::write(root.join("__pycache__/calc.cpython-312.pyc"), "bytecode").unwrap();
-    let after = snapshot(root, &[], Some(&before)).unwrap();
+    let after = snapshot(root, &[], Some(&before), &[]).unwrap();
     assert!(before == after, "a generated cache changed the snapshot");
 }
 
@@ -123,7 +98,7 @@ fn a_remembered_tree_reaches_a_new_process_through_the_cache() {
     let work = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
     std::fs::write(work.path().join("a.txt"), "one").unwrap();
-    let mut first = snapshot(work.path(), &[], None).unwrap();
+    let mut first = snapshot(work.path(), &[], None, &["a.txt".to_string()]).unwrap();
     super::cache::remember(cache.path(), work.path(), &mut first);
     let loaded = super::cache::remembered(cache.path(), work.path()).expect("cached");
     assert_eq!(loaded, first);
@@ -146,4 +121,21 @@ fn a_cached_tree_exactly_at_the_retention_age_is_kept() {
     });
     assert!(edge.is_file());
     assert!(!old.exists());
+}
+
+#[test]
+fn a_folder_outside_git_is_never_walked_and_covers_what_the_session_touched() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("bystander.db"), "untouched by the agent").unwrap();
+    std::fs::write(root.join("notes.txt"), "one").unwrap();
+    let base = snapshot(root, &[], None, &[]).unwrap();
+    assert!(base.files.is_empty(), "a base with nothing touched reads no files: {:?}", base.files.keys());
+    std::fs::write(root.join("notes.txt"), "two").unwrap();
+    let touched = ["notes.txt".to_string()];
+    let capture = snapshot(root, &[], Some(&base), &touched).unwrap();
+    assert_eq!(changed(&base, &capture), vec!["notes.txt".to_string()]);
+    std::fs::remove_file(root.join("notes.txt")).unwrap();
+    let later = snapshot(root, &[], Some(&capture), &[]).unwrap();
+    assert_eq!(changed(&capture, &later), vec!["notes.txt".to_string()], "a known file that goes away is a change");
 }

@@ -5,6 +5,7 @@ pub(in crate::tui::sigil_view) enum KeyCommand {
     Hotkey(Hotkey),
     Trigger(char),
     NewSession,
+    Palette,
     Pane(Pane),
     Always,
     Retry,
@@ -33,6 +34,44 @@ pub(in crate::tui::sigil_view) enum KeyCommand {
     Adjust(isize),
     Toggle,
     Recall(bool),
+    Pick(usize),
+    Sidebar,
+    Jump(Jump),
+    Split(Split),
+}
+
+impl KeyCommand {
+    /// Whether the key acts on the window rather than the focused pane.
+    pub(super) const fn windowed(self) -> bool {
+        matches!(
+            self,
+            Self::Palette | Self::Sidebar | Self::Jump(_) | Self::Split(_) | Self::Hotkey(Hotkey::Options)
+        )
+    }
+}
+
+/// What a split key does to the window's panes.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+pub(in crate::tui::sigil_view) enum Split {
+    /// Adds a pane with a new agent.
+    Open,
+    /// Closes the focused pane; its agent keeps running.
+    Close,
+    /// Moves focus to the next (true) or previous pane.
+    Focus(bool),
+}
+
+/// Which agent a window shortcut opens.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+pub(in crate::tui::sigil_view) enum Jump {
+    /// The nth agent in sidebar order, from 1.
+    Nth(usize),
+    /// The next (true) or previous agent in sidebar order.
+    Step(bool),
+    /// The next agent that needs the user.
+    Needing,
 }
 
 #[derive(Clone, Copy)]
@@ -126,6 +165,10 @@ pub(super) fn bindings() -> Vec<(Shortcut, When, KeyCommand)> {
             When::Always,
             Do::Answer(Reply::Decline, GrantAnswer::Deny),
         ),
+        (text("1"), When::Window, Do::Pick(1)),
+        (text("2"), When::Window, Do::Pick(2)),
+        (text("3"), When::Window, Do::Pick(3)),
+        (text("4"), When::Window, Do::Pick(4)),
         (Key::Escape.into(), When::Always, Do::Escape),
         (Key::Enter.into(), When::Always, Do::Enter),
         (text("e"), When::Always, Do::Edit),
@@ -145,25 +188,37 @@ pub(super) fn bindings() -> Vec<(Shortcut, When, KeyCommand)> {
         (Key::ArrowUp.into(), When::Always, Do::Recall(true)),
         (Key::ArrowDown.into(), When::Always, Do::Recall(false)),
     ];
-    rows.extend(WINDOW.iter().map(|&(key, command)| {
-        (
-            Shortcut::new(LogicalKey::character(key), ModifiersState::META),
-            When::Window,
-            command,
-        )
+    rows.extend(WINDOW.iter().map(|&(key, mods, command)| {
+        (Shortcut::new(LogicalKey::character(key), mods), When::Window, command)
+    }));
+    let ctrl_tab = |mods| Shortcut::new(Key::Tab, mods);
+    rows.push((ctrl_tab(ModifiersState::CONTROL), When::Window, Do::Jump(Jump::Step(true))));
+    rows.push((ctrl_tab(ctrl_shift), When::Window, Do::Jump(Jump::Step(false))));
+    let arrow = |key| Shortcut::new(key, CMD_ALT);
+    rows.push((arrow(Key::ArrowRight), When::Window, Do::Split(Split::Focus(true))));
+    rows.push((arrow(Key::ArrowLeft), When::Window, Do::Split(Split::Focus(false))));
+    rows.extend((1..=9).map(|n| {
+        (Shortcut::new(LogicalKey::character(DIGITS[n - 1]), ModifiersState::META), When::Window, Do::Jump(Jump::Nth(n)))
     }));
     rows
 }
 
-const WINDOW: [(&str, KeyCommand); 10] = [
-    ("k", KeyCommand::Trigger('/')),
-    ("p", KeyCommand::Trigger('@')),
-    (",", KeyCommand::Hotkey(Hotkey::Options)),
-    ("n", KeyCommand::NewSession),
-    ("1", KeyCommand::Pane(Pane::Files)),
-    ("2", KeyCommand::Pane(Pane::Diff)),
-    ("3", KeyCommand::Pane(Pane::Worktrees)),
-    ("4", KeyCommand::Pane(Pane::Jobs)),
-    ("5", KeyCommand::Pane(Pane::Peers)),
-    ("6", KeyCommand::Pane(Pane::Ledger)),
+const DIGITS: [&str; 9] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+const CMD: ModifiersState = ModifiersState::META;
+const CMD_SHIFT: ModifiersState = ModifiersState::META.union(ModifiersState::SHIFT);
+const CMD_ALT: ModifiersState = ModifiersState::META.union(ModifiersState::ALT);
+
+pub(in crate::tui::sigil_view) const WINDOW: [(&str, ModifiersState, KeyCommand); 12] = [
+    ("d", CMD, KeyCommand::Split(Split::Open)),
+    ("w", CMD, KeyCommand::Split(Split::Close)),
+    ("k", CMD, KeyCommand::Palette),
+    ("p", CMD, KeyCommand::Trigger('@')),
+    (",", CMD, KeyCommand::Hotkey(Hotkey::Options)),
+    ("n", CMD, KeyCommand::NewSession),
+    ("b", CMD, KeyCommand::Sidebar),
+    ("d", CMD_SHIFT, KeyCommand::Pane(Pane::Diff)),
+    (".", CMD, KeyCommand::Interrupt),
+    ("`", ModifiersState::CONTROL, KeyCommand::Pane(Pane::Terminal)),
+    ("a", CMD_ALT, KeyCommand::Jump(Jump::Needing)),
+    ("å", CMD_ALT, KeyCommand::Jump(Jump::Needing)),
 ];

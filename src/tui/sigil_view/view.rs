@@ -28,6 +28,12 @@ mod surface;
 
 pub(super) use keys::KeyCommand;
 #[cfg(feature = "gui")]
+pub(super) use keys::Jump;
+#[cfg(feature = "gui")]
+pub(super) use keys::Split;
+#[cfg(feature = "gui")]
+pub(super) use keys::WINDOW;
+#[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use keys::shell;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use surface::editor;

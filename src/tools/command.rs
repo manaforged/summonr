@@ -145,14 +145,17 @@ impl ToolRegistry {
             )
         };
         let before = crate::diff::status_records(&self.workspace);
+        let watch = (!background).then(|| crate::diff::Watch::start(&self.workspace)).flatten();
         let started = self.start_command(command, wait, cwd)?;
         if background {
             return Ok(background_result(started));
         }
         let output = self.wait_command(started, command, wait).await?;
-        for path in
-            crate::diff::changed_paths(&before, &crate::diff::status_records(&self.workspace))
-        {
+        let mut paths = crate::diff::changed_paths(&before, &crate::diff::status_records(&self.workspace));
+        if let Some(watch) = watch {
+            paths.extend(tokio::task::spawn_blocking(move || watch.finish()).await.unwrap_or_default());
+        }
+        for path in paths {
             self.note_wrote(&path);
         }
         Ok(output)

@@ -69,7 +69,7 @@ pub(super) fn rows(app: &App) -> Vec<Row> {
                 } else {
                     &agent.last
                 },
-                &agent.roots(&app.roots),
+                &agent.roots(&app.roots()),
             )
             .lines()
             .next()
@@ -92,7 +92,7 @@ pub(super) fn rows(app: &App) -> Vec<Row> {
             } else {
                 '○'
             },
-            detail: entry::workspace_relative(&agent.last, &agent.roots(&app.roots)),
+            detail: entry::workspace_relative(&agent.last, &agent.roots(&app.roots())),
             meta: format!(
                 "{} · {} · {} tok\nModel: {}\nTask: {}\nWorkspace: {}\nChild: {}",
                 agent.access.name(),
@@ -107,7 +107,7 @@ pub(super) fn rows(app: &App) -> Vec<Row> {
                 if agent.workspace.is_empty() {
                     "unknown".to_string()
                 } else {
-                    entry::workspace_relative(&agent.workspace, &app.roots)
+                    entry::workspace_relative(&agent.workspace, &app.roots())
                 },
                 agent.id
             ),
@@ -130,7 +130,7 @@ pub(super) fn rows(app: &App) -> Vec<Row> {
             meta: format!(
                 "Model: {}\nWorkspace: {}\nPID: {}\nID: {}",
                 peer.model,
-                entry::workspace_relative(&peer.cwd, &app.roots),
+                entry::workspace_relative(&peer.cwd, &app.roots()),
                 peer.pid,
                 peer.id,
             ),

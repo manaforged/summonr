@@ -19,12 +19,15 @@ impl Worker {
             Cmd::SetKey(name, key) => return self.set_key(&name, &key).await,
             Cmd::Cancel | Cmd::Open(_) | Cmd::SteerQueued | Cmd::Answer(..) => {}
             Cmd::CancelLogin => self.queue.drop_auth(),
-            Cmd::Replay => super::history::replay_transcript(
-                self.loop_.session_path(),
-                Some(self.loop_.session_id()),
-                Some(self.loop_.unreported_tokens()),
-                &self.ui,
-            ),
+            Cmd::Replay => {
+                super::history::replay_transcript(
+                    self.loop_.session_path(),
+                    Some(self.loop_.session_id()),
+                    Some(self.loop_.unreported_tokens()),
+                    &self.ui,
+                );
+                self.send_diff(false);
+            }
             Cmd::Dequeue => self.recover(),
             Cmd::Export(target) => self.export(target),
             Cmd::Logout(name) => self.logout(&name).await,
@@ -51,6 +54,7 @@ impl Worker {
             }
             Cmd::SetMail(on) => set_mail_reply(&mut self.auto_reply, &mut self.pending_mail, on),
             Cmd::SetModule(id, on) => self.set_module(id, on),
+            Cmd::SetChrome(path) => self.set_chrome(&path),
             Cmd::AssignModel(role, endpoint, model) => {
                 self.assign_model(role, &endpoint, Some(&model))
             }

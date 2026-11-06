@@ -103,7 +103,10 @@ impl<P: Provider> Loop<P> {
             Message::system(TITLE_SYSTEM.to_string()),
             Message::user(format!("Request:\n{request}\n\nReply (start):\n{start}")),
         ];
-        match self.side_call(workflow::Role::Title, &messages, None).await? {
+        match self
+            .side_call(workflow::Role::Title, &messages, None)
+            .await?
+        {
             Ok(reply) => Ok(title_text(&reply.message.content.unwrap_or_default())),
             Err(missed) => Err(missed.error.error()),
         }
@@ -190,7 +193,11 @@ const TITLE_WORDS: usize = 6;
 const TITLE_CHARS: usize = 50;
 
 fn title_text(reply: &str) -> String {
-    let line = reply.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or_default();
+    let line = reply
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default();
     let words: Vec<&str> = line
         .split_whitespace()
         .map(|word| word.trim_matches(|ch: char| matches!(ch, '"' | '\'' | '`' | '*' | '#')))

@@ -88,7 +88,12 @@ pub fn finish(tree: &Tree, own: &str, objective: &str, paths: &[String]) -> Resu
 
 fn started_on(tree: &Tree, head: &str, base: &str) -> bool {
     let git = |args: &[&str]| crate::diff::git_env(&tree.primary, &[], args).is_ok();
-    if git(&["rev-parse", "--verify", "--quiet", &format!("refs/heads/{base}")]) {
+    if git(&[
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        &format!("refs/heads/{base}"),
+    ]) {
         return head == base;
     }
     head != "HEAD" && git(&["merge-base", "--is-ancestor", base, "HEAD"])

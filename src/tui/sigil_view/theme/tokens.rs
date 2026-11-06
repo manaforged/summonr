@@ -80,7 +80,10 @@ pub(in crate::tui::sigil_view) fn gui(palette: Palette) -> Theme {
     let backdrop = if palette.base.a == 0 {
         sigil::terminal::caps()
             .and_then(|caps| caps.background)
-            .unwrap_or(Rgba8 { a: 255, ..palette.base })
+            .unwrap_or(Rgba8 {
+                a: 255,
+                ..palette.base
+            })
     } else {
         palette.base
     };
@@ -124,7 +127,8 @@ pub(in crate::tui::sigil_view) fn gui(palette: Palette) -> Theme {
         ("border", lift(0.12)),
         ("border-subtle", lift(0.07)),
         ("border-strong", lift(0.22)),
-        ("on-surface-muted", lift(0.62)),
+        ("on-surface-muted", lift(0.7)),
+        ("placeholder", lift(0.52)),
         ("accent-hover", blend(backdrop, palette.accent, 0.85)),
         ("on-accent", backdrop),
         ("on-solid", backdrop),
@@ -137,13 +141,13 @@ pub(in crate::tui::sigil_view) fn gui(palette: Palette) -> Theme {
 fn steps(base: Rgba8, color: Rgba8, text: Rgba8) -> [Rgba8; 12] {
     [
         base,
-        blend(base, color, 0.1),
-        blend(base, color, 0.2),
-        blend(base, color, 0.3),
-        blend(base, color, 0.45),
-        blend(base, color, 0.55),
-        blend(base, color, 0.65),
-        blend(base, color, 0.75),
+        blend(base, color, 0.04),
+        blend(base, color, 0.08),
+        blend(base, color, 0.12),
+        blend(base, color, 0.16),
+        blend(base, color, 0.22),
+        blend(base, color, 0.32),
+        blend(base, color, 0.5),
         color,
         blend(base, color, 0.9),
         color,

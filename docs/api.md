@@ -60,7 +60,7 @@ Run one prompt with machine-readable events:
 summonr anthropic -p --json "why does cargo test fail?"
 ```
 
-Work until the check passes, inside a budget, then branch on the exit code:
+Run a goal inside a budget, then branch on the exit code:
 
 ```sh
 mkdir -p .summonr
@@ -177,7 +177,7 @@ Markdown on stdout. It is not JSON.
 
 ### `summonr acp`
 
-JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods are `session/new` (needs `cwd`) and `session/prompt`. summonr sends `session/update` notifications and accepts a `session/cancel` notification. Source: `src/acp.rs`.
+JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods are `session/new` (needs `cwd`) and `session/prompt`. summonr sends `session/update` notifications and accepts a `session/cancel` notification. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `src/acp.rs`.
 
 ## Conventions
 

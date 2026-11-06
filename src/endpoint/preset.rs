@@ -69,6 +69,8 @@ pub(super) struct Preset {
     #[serde(default)]
     pub(super) opencode_ids: Vec<String>,
     #[serde(default)]
+    pub(super) found: Option<Found>,
+    #[serde(default)]
     pub(super) label: Option<String>,
     #[serde(default)]
     pub(super) start: Option<String>,
@@ -145,6 +147,35 @@ pub(super) fn listed() -> &'static Catalog<Preset> {
         Ok(rows) => rows,
         Err(error) => panic!("the built-in provider table is invalid: {error}"),
     })
+}
+
+/// How a local provider shows it is installed on this machine, and the name a user knows it by.
+#[derive(serde::Deserialize, Clone, Debug)]
+pub(super) struct Found {
+    pub(super) name: String,
+    #[serde(flatten)]
+    pub(super) probe: Probe,
+}
+
+/// What to look for: a program on PATH or a server on a local port.
+#[derive(serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum Probe {
+    Program(String),
+    Port(u16),
+}
+
+impl Probe {
+    pub(super) fn here(&self) -> bool {
+        match self {
+            Self::Program(name) => crate::askpass::on_path(name).is_some(),
+            Self::Port(port) => std::net::TcpStream::connect_timeout(
+                &std::net::SocketAddr::from(([127, 0, 0, 1], *port)),
+                crate::limits::limits().local_probe(),
+            )
+            .is_ok(),
+        }
+    }
 }
 
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {

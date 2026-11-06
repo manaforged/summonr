@@ -37,13 +37,13 @@ fn a_bad_theme_color_is_reported() {
 }
 
 #[test]
-fn three_themes_remain_and_retired_names_still_load() {
+fn named_themes_remain_and_retired_names_still_load() {
     assert_eq!(Palette::named("light"), Palette::DAWN);
     assert_eq!(Palette::named("gruvbox"), Palette::SPACE);
     assert_eq!(Palette::named("nord"), Palette::NORD);
     assert_eq!(
         Palette::ALL.map(|(name, _)| name),
-        ["space", "nord", "dawn"]
+        ["space", "nord", "dawn", "paper", "iron"]
     );
 }
 
@@ -183,7 +183,7 @@ fn every_palette_keeps_text_hints_and_code_blocks_legible_on_base() {
                 open(&app);
                 for splash in [true, false] {
                     app.splash.set(splash);
-                    let expected = if splash && palette == Palette::DAWN {
+                    let expected = if splash && [Palette::DAWN, Palette::PAPER].contains(&palette) {
                         Palette::SPACE
                     } else {
                         palette

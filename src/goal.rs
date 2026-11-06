@@ -61,7 +61,13 @@ pub(crate) async fn judged<P: Provider>(
     evidence: &str,
     usage: &mut crate::provider::Usage,
 ) -> std::result::Result<Decision, String> {
-    let verdict = ask(loop_, JUDGE_SYSTEM, judge_user(objective, reply, evidence), usage).await?;
+    let verdict = ask(
+        loop_,
+        JUDGE_SYSTEM,
+        judge_user(objective, reply, evidence),
+        usage,
+    )
+    .await?;
     Ok(match verdict.state {
         State::Done => Decision::GoalComplete,
         State::Continue => Decision::GoalContinue(verdict.reason),

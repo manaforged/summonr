@@ -68,6 +68,7 @@ impl Worker {
         }
         self.send_workflow();
         self.send_settings();
+        self.send_diff(false);
         self.reader.watch();
         while let Some(command) = self.next().await {
             if !self.dispatch(command).await {
@@ -138,8 +139,16 @@ impl Worker {
         for event in self.loop_.child_events() {
             drop(self.ui.send(Msg::Fact(Fact::Event(event))));
         }
-        let reaped = self.loop_.reap_finished().into_iter().map(|note| (note, "child"));
-        let jobs = self.loop_.finished_jobs().into_iter().map(|note| (note, "job"));
+        let reaped = self
+            .loop_
+            .reap_finished()
+            .into_iter()
+            .map(|note| (note, "child"));
+        let jobs = self
+            .loop_
+            .finished_jobs()
+            .into_iter()
+            .map(|note| (note, "job"));
         for (note, kind) in reaped.chain(jobs).collect::<Vec<_>>() {
             self.system(&note);
             match crate::mail::Mailbox::wake(&self.loop_.session_id(), &note) {

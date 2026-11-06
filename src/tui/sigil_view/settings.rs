@@ -13,7 +13,7 @@ fn dialog_body(children: impl Fn() -> Vec<NodeBuilder> + 'static) -> NodeBuilder
 
 mod auth;
 mod hotkeys;
-mod models;
+pub(in crate::tui::sigil_view) mod models;
 mod options;
 pub(in crate::tui::sigil_view) mod theme;
 mod workflow;
@@ -64,6 +64,7 @@ pub(super) enum Setting {
     Tools,
     DiffLayout,
     Mail,
+    Browser,
     Module(crate::modules::ModuleId),
     Theme,
     Background,
@@ -93,6 +94,7 @@ impl Setting {
                 .map(|module| Self::Module(module.id)),
         )
         .chain([
+            Self::Browser,
             Self::Theme,
             Self::Background,
             Self::Notify,
@@ -117,7 +119,7 @@ impl Setting {
             Self::Notify | Self::Mail | Self::Hotkeys | Self::Reasoning | Self::Tools => {
                 Group::Input
             }
-            Self::Module(_) => Group::Tools,
+            Self::Module(_) | Self::Browser => Group::Tools,
         }
     }
 
@@ -138,6 +140,7 @@ impl Setting {
             Self::Reasoning => app.set_visibility(|prefs| &mut prefs.reasoning, None),
             Self::Tools => app.toggle_tools(),
             Self::Mail => app.toggle_mail(),
+            Self::Browser => app.choose_chrome(),
             Self::Module(id) => app.toggle_module(id),
             Self::Theme => app.open_theme(),
             Self::Background => app.toggle_background(),
@@ -201,6 +204,13 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
             Setting::Reasoning => row("reasoning display", prefs.reasoning.name()),
             Setting::Tools => row("tool output", prefs.tools.name()),
             Setting::Mail => row("incoming mail", mail),
+            Setting::Browser => row(
+                "browser",
+                crate::browser::chrome().map_or_else(
+                    || "not found · choose".to_string(),
+                    |program| crate::browser::display_name(&program),
+                ),
+            ),
             Setting::Module(id) => row(
                 format!("{} tools", id.name()),
                 on_off(

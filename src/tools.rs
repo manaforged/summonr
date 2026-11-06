@@ -63,6 +63,7 @@ pub(crate) struct ToolRegistry {
     approved_once: std::sync::Mutex<Option<(String, PathBuf)>>,
     wrote: std::sync::Mutex<std::collections::BTreeSet<String>>,
     repos: std::sync::Mutex<std::collections::BTreeSet<PathBuf>>,
+    checkpoint: std::sync::Mutex<Option<(crate::checkpoint::Checkpoints, usize)>>,
     detached_jobs: std::sync::Mutex<std::collections::BTreeSet<String>>,
     seen_jobs: std::sync::Mutex<std::collections::BTreeSet<String>>,
     command_yield: tokio::sync::watch::Sender<bool>,
@@ -116,6 +117,7 @@ impl ToolRegistry {
             approved_once: std::sync::Mutex::new(None),
             wrote: std::sync::Mutex::new(std::collections::BTreeSet::new()),
             repos: std::sync::Mutex::default(),
+            checkpoint: std::sync::Mutex::default(),
             detached_jobs: std::sync::Mutex::default(),
             seen_jobs: std::sync::Mutex::default(),
             command_yield: tokio::sync::watch::Sender::new(false),
@@ -281,6 +283,20 @@ impl ToolRegistry {
             .lock()
             .map(|repos| repos.iter().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// Saves each file's current content to `turn`'s checkpoint before an edit tool rewrites it.
+    pub(crate) fn checkpoint_edits(&self, points: crate::checkpoint::Checkpoints, turn: usize) {
+        if let Ok(mut slot) = self.checkpoint.lock() {
+            *slot = Some((points, turn));
+        }
+    }
+
+    fn save_before(&self, paths: &[String]) {
+        let armed = self.checkpoint.lock().ok().and_then(|slot| slot.clone());
+        if let Some((points, turn)) = armed {
+            drop(points.capture_paths(turn, paths));
+        }
     }
 
     pub(crate) fn wrote(&self) -> Vec<String> {

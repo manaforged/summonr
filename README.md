@@ -1,14 +1,14 @@
 # summonr
 
-A terminal coding agent for any model that keeps working until your check command passes.
+A terminal coding agent for any model.
 
 - **Light on tokens and memory**: median input tokens per solved task under half, and median memory under a third, of every agent paired with it on the same model ([benchmarks](#benchmarks)).
 - **Any model, your plan or your key**: 28 providers built in, sign-in for ChatGPT and SuperGrok plans, and any OpenAI-compatible server.
-- **Works until it passes**: `--goal` runs until your check command exits 0 and a second model call agrees the goal is met, inside a time or token budget you set.
 - **Sessions that talk**: message any running session with `@name`, even one on another model or provider. [Try it](#coordinate-work-live).
 - **Parallel children that land their own edits**: each implement child works in its own checkout, and the parent applies each finished one.
 - **Browses like you do**: drives your installed Chrome, Edge, or Brave in a profile of its own that stays signed in, and searches the web with no API key. Turn on `browser` and `search` under `[modules]`.
 - **Works while you're away**: schedule a goal for 3 AM with `summonr cron`, fire one from a webhook, or text it from Telegram. It tells you whether the check passed.
+- **Goals**: `--goal` keeps working across turns until your check command exits 0 and a second model call agrees the goal is met, inside a time or token budget you set.
 - **Remembers**: tell it a preference once and every later session in that repository knows it. The notes are plain Markdown you can edit.
 
 [Quick start](docs/guide/quickstart.md) | [Docs](docs/guide/README.md) | [Reference](docs/guide/reference.md) | [Scripting API](docs/api.md) | [Benchmarks](#benchmarks)
@@ -50,7 +50,7 @@ To update, run `summonr update`. To uninstall, delete the binary: `~/.local/bin/
 You need Rust 1.98 or later, Git, CMake, and a C and C++ compiler. On Windows, use the MSVC Rust toolchain and Visual Studio C++ Build Tools.
 
 ```sh
-cargo install --git https://github.com/manaforged/summonr --locked
+cargo install --git https://github.com/manaforged/summonr --locked summonr
 ```
 
 Run the same command to update. To uninstall, run `cargo uninstall summonr`.
@@ -65,11 +65,11 @@ Commands run as your account with no sandbox; see [Safety and policy](docs/guide
 
 ## Desktop window
 
-`summonr --gui` opens the same session in a Sigil desktop window. The release binaries and the default build leave it out; build with the `gui` feature:
+The Summonr desktop app runs the same sessions in a native window. It is its own program, `summonr-desktop`, and the release binaries leave it out. Build it from source:
 
 ```sh
-cargo install --git https://github.com/manaforged/summonr --locked --features gui
-summonr --gui
+cargo install --git https://github.com/manaforged/summonr --locked summonr-desktop
+summonr-desktop
 ```
 
 ## Usage

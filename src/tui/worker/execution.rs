@@ -27,12 +27,15 @@ impl Cmd {
             | Cmd::SaveWorkflow(_)
             | Cmd::ListWorkflows
             | Cmd::SetModule(..)
+            | Cmd::SetChrome(_)
             | Cmd::SetEffort(_) => ExecutionClass::AfterTurn,
             Cmd::Cancel
             | Cmd::CancelLogin
             | Cmd::Quit
             | Cmd::Tick
             | Cmd::Open(_)
+            | Cmd::Attach(_)
+            | Cmd::Detach
             | Cmd::Mail
             | Cmd::Answer(..)
             | Cmd::LoginAnswer(_) => ExecutionClass::Control,

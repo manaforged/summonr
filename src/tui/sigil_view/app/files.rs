@@ -58,7 +58,12 @@ pub(in crate::tui::sigil_view) fn hex_digit(byte: u8) -> Option<u8> {
 }
 
 pub(in crate::tui::sigil_view) fn read_git_branch(workspace: &Path) -> Option<String> {
-    let head = std::fs::read_to_string(workspace.join(".git/HEAD")).ok()?;
+    let dot = workspace.join(".git");
+    let dir = match std::fs::read_to_string(&dot) {
+        Ok(link) => workspace.join(link.trim().strip_prefix("gitdir:")?.trim()),
+        Err(_) => dot,
+    };
+    let head = std::fs::read_to_string(dir.join("HEAD")).ok()?;
     let head = head.trim();
     head.strip_prefix("ref: refs/heads/")
         .map(str::to_string)

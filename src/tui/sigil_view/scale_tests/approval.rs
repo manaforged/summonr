@@ -96,12 +96,17 @@ fn the_approval_band_lists_its_answer_keys() {
         "{screen}"
     );
     assert!(
-        screen.contains("Allow (y)") && screen.contains("Always (Y)") && screen.contains("Deny (n)"),
+        screen.contains("Allow (y)")
+            && screen.contains("Always (Y)")
+            && screen.contains("Deny (n)"),
         "{screen}"
     );
     assert!(!screen.contains("y allow"), "{screen}");
     let screen = approval_screen(false);
-    assert!(screen.contains("Allow (y)") && screen.contains("Deny (n)"), "{screen}");
+    assert!(
+        screen.contains("Allow (y)") && screen.contains("Deny (n)"),
+        "{screen}"
+    );
     assert!(!screen.contains("Always"), "{screen}");
 }
 

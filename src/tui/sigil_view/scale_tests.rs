@@ -37,6 +37,7 @@ mod reflow;
 mod right_click;
 mod secret;
 mod settings;
+mod status;
 mod strip;
 mod subagents;
 mod tabs;

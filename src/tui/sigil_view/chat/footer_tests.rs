@@ -11,7 +11,7 @@ fn a_notice_takes_its_width_and_a_gap_from_the_workspace_path() {
         let mut details = info();
         details.workspace = "w".repeat(200);
         let app = App::new(details, workspace.path().to_owned(), commands);
-        assert!(app.git_branch.is_none());
+        assert!(app.git_branch().is_none());
         let notice = Notice {
             text: "Copied".to_owned(),
             kind: NoticeKind::Copied,

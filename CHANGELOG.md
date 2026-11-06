@@ -4,12 +4,14 @@
 
 ### Added
 
+- `summonr-desktop` is the Summonr desktop app, a separate program that runs the same agent in a native window. On macOS `scripts/package-macos.sh` packs it as `Summonr.app` in `Summonr.dmg`.
 - The native `task` tool accepts `endpoint` to select a configured worker endpoint without changing the orchestrator's model.
 - Naming a task starts a persistent background worker that accepts follow-up messages through `send`.
 - `plugins/researchr` is research mode: `/researchr:research SPEC` runs any number of native workers on one measured goal in delta lanes, records each worker's child id and model through a `post_tool` hook, stores findings in SQLite, and imports messages and provider-returned reasoning for audit. It replaces `plugins/lanes`.
 
 ### Changed
 
+- `summonr --gui` exits 1 and names `summonr-desktop`, and `summonr` never opens a window. Source installs name the package: `cargo install --git https://github.com/manaforged/summonr --locked summonr`.
 - A goal with no `.summonr/check.toml` asks the model to write a contract of check commands to `.summonr/contract.toml` before it changes code. At least one command must fail on first run, then the judge reads the contract; once accepted, the commands decide completion, later edits to the file change nothing, and a change to a file listed under `protect` fails the check.
 - The `memory` module is off by default; `memory = true` under `[modules]` turns it on.
 

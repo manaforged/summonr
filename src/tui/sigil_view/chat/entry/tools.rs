@@ -207,11 +207,11 @@ pub(super) fn tool_card(
     {
         return super::children::starting_card(app.ticks);
     }
-    let shown = workspace_relative(&call.arg, &app.roots);
+    let shown = workspace_relative(&call.arg, &app.roots());
     let (verb, arg) = (tool_label(name), shown.as_str());
     let output = preview::plain(&call.output)
         .lines()
-        .map(|line| workspace_relative(line, &app.roots))
+        .map(|line| workspace_relative(line, &app.roots()))
         .collect::<Vec<_>>()
         .join("\n");
     let detail = detail(name, call, &output);
@@ -261,7 +261,7 @@ fn group_row(
     index: usize,
 ) -> NodeBuilder {
     let output = preview::plain(&call.output);
-    let shown = workspace_relative(&call.arg, &app.roots);
+    let shown = workspace_relative(&call.arg, &app.roots());
     let (verb, arg) = (tool_label(name), shown.as_str());
     let detail = match call.state {
         ToolState::Failed => Some((

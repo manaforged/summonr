@@ -1,10 +1,10 @@
-use summonr::Result;
+use crate::Result;
 
 use super::commands::workspace;
 
 pub(super) async fn run(tool: &[String]) -> Result<i32> {
     let Some(name) = tool.first() else {
-        return Err(summonr::Error::Config(
+        return Err(crate::Error::Config(
             "summonr tool run NAME [JSON]: invoke a tool directly".to_string(),
         ));
     };
@@ -12,7 +12,7 @@ pub(super) async fn run(tool: &[String]) -> Result<i32> {
         Some(rest) if !rest.is_empty() => rest.join(" "),
         Some(_) | None => "{}".to_string(),
     };
-    let outcome = summonr::run_tool(&workspace()?, name, &arguments).await?;
+    let outcome = crate::run_tool(&workspace()?, name, &arguments).await?;
     println!("{}", outcome.text);
     Ok(if outcome.success { 0 } else { 1 })
 }

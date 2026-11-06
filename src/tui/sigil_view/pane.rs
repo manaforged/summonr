@@ -9,6 +9,7 @@ pub(super) enum Pane {
     Mcp,
     Peers,
     View,
+    Terminal,
 }
 
 impl Pane {
@@ -33,6 +34,7 @@ impl Pane {
             "mcp" | "servers" => Some(Self::Mcp),
             "peers" | "agents" | "live" => Some(Self::Peers),
             "view" | "file" => Some(Self::View),
+            "terminal" | "shell" => Some(Self::Terminal),
             _ => None,
         }
     }
@@ -48,6 +50,7 @@ impl Pane {
             Self::Mcp => "mcp",
             Self::Peers => "peers",
             Self::View => "view",
+            Self::Terminal => "terminal",
         }
     }
 }

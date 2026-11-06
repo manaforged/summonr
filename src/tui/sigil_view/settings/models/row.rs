@@ -169,7 +169,7 @@ pub(super) struct Shown {
     pub(super) state: Option<State>,
 }
 
-pub(in crate::tui::sigil_view::settings) fn price(fact: Option<&Model>) -> String {
+pub(in crate::tui::sigil_view) fn price(fact: Option<&Model>) -> String {
     match fact.map(|fact| (fact.cost, fact.price)) {
         Some((Cost::Free, _)) => "free".to_string(),
         Some((Cost::Plan, _)) => "plan".to_string(),
@@ -183,7 +183,7 @@ pub(in crate::tui::sigil_view::settings) fn price(fact: Option<&Model>) -> Strin
     }
 }
 
-pub(in crate::tui::sigil_view::settings) fn tone(state: State) -> Token {
+pub(in crate::tui::sigil_view) fn tone(state: State) -> Token {
     match state {
         State::Ready | State::NoKey => Token::Success11,
         State::Checking | State::Loading => Token::Gray10,

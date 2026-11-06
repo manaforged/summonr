@@ -9,18 +9,60 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use crate::endpoint::{self, Endpoint};
 use crate::provider::Client;
 use crate::rpc::{self, Ask, Frame, Read};
-use crate::runtime::Loop;
+use crate::runtime::{GrantAnswer, Loop, Steering};
 use crate::tools::Event;
+use crate::UserInput;
 use summonr_core::error::{Error, Result};
 
 type Input = rpc::Lines<Stdin>;
 type Reply = std::result::Result<Value, (i64, String)>;
 
+const PERMISSION: &str = "permission-";
+
+struct Choice {
+    id: &'static str,
+    name: &'static str,
+    kind: &'static str,
+    answer: GrantAnswer,
+}
+
+const CHOICES: [Choice; 3] = [
+    Choice {
+        id: "allow-once",
+        name: "Allow once",
+        kind: "allow_once",
+        answer: GrantAnswer::Allow,
+    },
+    Choice {
+        id: "allow-always",
+        name: "Always allow",
+        kind: "allow_always",
+        answer: GrantAnswer::Always,
+    },
+    Choice {
+        id: "reject-once",
+        name: "Reject",
+        kind: "reject_once",
+        answer: GrantAnswer::Deny,
+    },
+];
+
+struct Seat {
+    agent: Loop<Client>,
+    steering: Arc<Steering>,
+}
+
+struct Updates {
+    out: UnboundedSender<String>,
+    session: String,
+    open: Vec<String>,
+}
+
 struct Server<F> {
     endpoint: std::result::Result<Endpoint, String>,
     build: F,
     out: UnboundedSender<String>,
-    sessions: BTreeMap<String, Loop<Client>>,
+    sessions: BTreeMap<String, Seat>,
 }
 
 pub async fn serve<F>(name: Option<&str>, model: Option<&str>, build: F) -> Result<i32>
@@ -108,9 +150,17 @@ where
             eprintln!("summonr: {note}");
         }
         session.set_fallbacks(fallbacks);
+        let steering = Arc::new(Steering::approvals_only());
+        session.steer_with(Arc::clone(&steering));
         let id = session.session_id();
         drop(tag.set(id.clone()));
-        self.sessions.insert(id.clone(), session);
+        self.sessions.insert(
+            id.clone(),
+            Seat {
+                agent: session,
+                steering,
+            },
+        );
         Ok(json!({"sessionId": id}))
     }
 
@@ -143,13 +193,16 @@ where
             .collect::<Vec<_>>()
             .join("\n");
         let out = self.out.clone();
-        let Some(agent) = self.sessions.get_mut(&session) else {
+        let Some(Seat { agent, steering }) = self.sessions.get_mut(&session) else {
             return Err((-32602, format!("unknown session {session}")));
         };
         let outcome = {
-            let tag = session.clone();
-            let sink = out.clone();
-            let turn = agent.turn_with(text, move |event| emit(&sink, &tag, event));
+            let mut updates = Updates {
+                out: out.clone(),
+                session: session.clone(),
+                open: Vec::new(),
+            };
+            let turn = agent.turn_with(text, move |event| updates.emit(event));
             tokio::pin!(turn);
             loop {
                 tokio::select! {
@@ -169,7 +222,8 @@ where
                                 let busy = Err((-32000, "a prompt is already running".to_string()));
                                 drop(out.send(frame_line(&rpc::answer(&id, busy))));
                             }
-                            Ok(Frame::Notification { .. } | Frame::Response { .. }) | Err(_) => {}
+                            Ok(Frame::Response { id, result, .. }) => answer(steering, &id, result.as_ref()),
+                            Ok(Frame::Notification { .. }) | Err(_) => {}
                         }
                     }
                 }
@@ -185,6 +239,59 @@ where
             }
         }
     }
+}
+
+impl Updates {
+    fn emit(&mut self, event: &Event) {
+        match event {
+            Event::ToolCall { id, .. } => self.open.push(id.clone()),
+            Event::ToolResult { id, .. } => self.open.retain(|open| open != id),
+            Event::Approval {
+                detail: Some(detail),
+                persist,
+                dialog,
+            } => return self.ask(detail, *persist, *dialog),
+            _other => {}
+        }
+        emit(&self.out, &self.session, event);
+    }
+
+    fn ask(&self, detail: &str, persist: bool, dialog: u64) {
+        let options = CHOICES
+            .iter()
+            .filter(|choice| persist || choice.answer != GrantAnswer::Always)
+            .map(|choice| json!({"optionId": choice.id, "name": choice.name, "kind": choice.kind}))
+            .collect::<Vec<_>>();
+        let call = self.open.last().map_or("", String::as_str);
+        let params = json!({
+            "sessionId": self.session,
+            "toolCall": {"toolCallId": call, "title": detail},
+            "options": options,
+        });
+        let id = json!(format!("{PERMISSION}{dialog}"));
+        let request = rpc::request(&id, "session/request_permission", params);
+        drop(self.out.send(frame_line(&request)));
+    }
+}
+
+fn answer(steering: &Steering, id: &Value, result: Option<&Value>) {
+    let Some(dialog) = id
+        .as_str()
+        .and_then(|id| id.strip_prefix(PERMISSION))
+        .and_then(|dialog| dialog.parse::<u64>().ok())
+    else {
+        return;
+    };
+    let outcome = result.and_then(|result| result.get("outcome"));
+    let picked = outcome
+        .filter(|outcome| outcome.get("outcome").and_then(Value::as_str) == Some("selected"))
+        .and_then(|outcome| outcome.get("optionId"))
+        .and_then(Value::as_str);
+    let decision = CHOICES
+        .iter()
+        .find(|choice| Some(choice.id) == picked)
+        .map_or(GrantAnswer::Deny, |choice| choice.answer);
+    steering.answer(dialog, UserInput::from(decision.token()));
 }
 
 fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {

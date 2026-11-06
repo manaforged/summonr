@@ -30,7 +30,7 @@ pub(crate) fn begin(workspace: PathBuf, session: &Path, previous: Option<Snapsho
                 .as_deref()
                 .and_then(|cache| remembered(cache, &workspace))
         });
-        snapshot(&workspace, &excludes, previous.as_ref())
+        snapshot(&workspace, &excludes, previous.as_ref(), &[])
     })
 }
 

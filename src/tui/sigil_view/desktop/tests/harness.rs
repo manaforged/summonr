@@ -37,7 +37,7 @@ impl<T> Seen<T> {
     }
 }
 
-fn press(key: LogicalKey, modifiers: ModifiersState, text: Option<&str>) -> Event {
+pub(super) fn press(key: LogicalKey, modifiers: ModifiersState, text: Option<&str>) -> Event {
     Event::key(key, KeyPhase::Down)
         .modifiers(modifiers)
         .text(text.map(Into::into))
@@ -64,9 +64,38 @@ pub(super) fn command(letter: &str) -> Event {
     press(LogicalKey::character(letter), ModifiersState::META, None)
 }
 
+/// One user action in a window check.
+pub(super) enum Step {
+    Key(Event),
+    Click(&'static str),
+}
+
 pub(super) fn drive<T>(
     setup: impl FnOnce(&App),
     keys: Vec<Event>,
+    read: impl FnOnce(&App) -> T,
+) -> Seen<T> {
+    steps(setup, keys.into_iter().map(Step::Key).collect(), read)
+}
+
+fn click(host: &mut Host, label: &str) {
+    let bounds = host
+        .accessibility_tree()
+        .nodes
+        .iter()
+        .find_map(|(_, node)| (node.label().as_deref() == Some(label)).then(|| node.bounds()).flatten())
+        .unwrap_or_else(|| panic!("no control named {label}"));
+    let at = sigil::geometry::Point::new(
+        ((bounds.x0 + bounds.x1) / 2.0) as f32,
+        ((bounds.y0 + bounds.y1) / 2.0) as f32,
+    );
+    host.route(Event::pointer_down(at));
+    host.route(Event::pointer_up(at));
+}
+
+pub(super) fn steps<T>(
+    setup: impl FnOnce(&App),
+    steps: Vec<Step>,
     read: impl FnOnce(&App) -> T,
 ) -> Seen<T> {
     sigil::reactive::Owner::scope("summonr-window", || {
@@ -86,8 +115,11 @@ pub(super) fn drive<T>(
         for _ in 0..3 {
             host.frame(VIEW, 1.0, FrameHooks::default());
         }
-        for key in keys {
-            host.route(key);
+        for step in steps {
+            match step {
+                Step::Key(key) => host.route(key),
+                Step::Click(label) => click(&mut host, label),
+            }
             host.frame(VIEW, 1.0, FrameHooks::default());
         }
         let read = read(&app);

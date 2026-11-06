@@ -59,6 +59,16 @@ fn subject(model: &Model) -> Option<String> {
     })
 }
 
+fn writing(model: &Model) -> bool {
+    model.speed.live(Instant::now()).is_some()
+        && model
+            .entries
+            .iter()
+            .rev()
+            .take_while(|entry| !matches!(entry, Entry::User(_)))
+            .any(|entry| matches!(entry, Entry::Assistant { done: false, .. }))
+}
+
 fn verb(model: &Model, waiting: bool, running: usize) -> Option<String> {
     if waiting {
         return Some("Waiting for you".to_string());
@@ -68,7 +78,8 @@ fn verb(model: &Model, waiting: bool, running: usize) -> Option<String> {
             return Some(subject(model).unwrap_or_else(|| "Thinking…".to_string()));
         }
         (Some(Activity::Turn), Some(Doing::Tool { .. })) => "Working…",
-        (Some(Activity::Turn), None) => "Writing…",
+        (Some(Activity::Turn), None) if writing(model) => "Writing…",
+        (Some(Activity::Turn), None) => "Finishing…",
         (Some(Activity::Login), _) => "Signing in…",
         (Some(Activity::Compact), _) => "Compacting…",
         (Some(Activity::Branch), _) => "Branching…",
@@ -231,6 +242,20 @@ fn fit(mut status: Status, width: usize) -> Status {
         };
         status.parts.retain(|part| part.rank != last);
     }
+}
+
+/// The status words and the start of the timed step, for a window that draws its own row.
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) fn summary(app: &App) -> Option<(String, Option<Instant>)> {
+    status(app).map(|status| {
+        let words = status
+            .parts
+            .iter()
+            .map(|part| part.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" · ");
+        (words, status.clock.map(|(since, _)| since))
+    })
 }
 
 pub(in crate::tui::sigil_view) fn rows(app: &App) -> usize {

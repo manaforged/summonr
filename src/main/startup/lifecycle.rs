@@ -2,12 +2,12 @@ use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use summonr::{Client, Delta, Endpoint, Event, Loop, Result, finish_worktree, splash, workflow};
+use crate::{Client, Delta, Endpoint, Event, Loop, Result, finish_worktree, splash, workflow};
 
 use super::commands::workspace;
 use super::session::{apply_workflow, build, isolate, route_checks, workflow_name};
-use crate::cli::Args;
-use crate::{diagnostics, modes};
+use crate::entry::cli::Args;
+use crate::entry::{diagnostics, modes};
 
 #[path = "lifecycle/selection.rs"]
 mod selection;
@@ -21,12 +21,12 @@ pub(super) use desktop::run as desktop;
 
 #[cfg(not(feature = "gui"))]
 pub(super) fn desktop(_args: &Args) -> Result<i32> {
-    Err(summonr::Error::Config(
+    Err(crate::Error::Config(
         "this build has no window; install with `cargo install --features gui`".to_string(),
     ))
 }
 
-type Ui = (Option<summonr::tui::Ui>, Option<summonr::tui::Inbox>);
+type Ui = (Option<crate::tui::Ui>, Option<crate::tui::Inbox>);
 
 pub(super) async fn launch(
     args: &Args,
@@ -36,6 +36,9 @@ pub(super) async fn launch(
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
     let endpoint = selection(args, adopted).await?;
+    if use_tui(args) {
+        crate::mark_interactive();
+    }
     let ui = channels(use_tui(args));
     ask_login(&ui, &endpoint, args.endpoint.is_some());
     let (loop_, goal_checks, workflow) = assemble(args, &endpoint, &workspace, action, &ui)?;
@@ -45,7 +48,7 @@ pub(super) async fn launch(
         }
     }
     let session = loop_.session_id();
-    summonr::prune_sessions(Some(&session));
+    crate::prune_sessions(Some(&session));
     let session_path = loop_.session_path().to_path_buf();
     if let Some(log) = log {
         log.session(&session, loop_.session_path(), &workspace);
@@ -59,19 +62,23 @@ pub(super) async fn launch(
 
 type Assembled = (Loop<Client>, Vec<String>, Option<workflow::Workflow>);
 
-fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr::tui::hub::Factory {
+fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> crate::tui::hub::Factory {
     let (args, endpoint) = (args.clone(), endpoint.clone());
     Arc::new(move |open, ui| {
         let mut args = args.clone();
         args.resume = false;
         args.fork = false;
-        args.worktree = matches!(open, summonr::tui::hub::Open::Worktree);
+        args.worktree = matches!(open, crate::tui::hub::Open::Worktree(_));
         args.name = None;
-        args.session = match open {
-            summonr::tui::hub::Open::New | summonr::tui::hub::Open::Worktree => None,
-            summonr::tui::hub::Open::Resume(id) => Some(id),
+        let (folder, session) = match open {
+            crate::tui::hub::Open::New => (cwd.clone(), None),
+            crate::tui::hub::Open::Folder(folder) | crate::tui::hub::Open::Worktree(folder) => {
+                (folder, None)
+            }
+            crate::tui::hub::Open::Resume(id) => (cwd.clone(), Some(id)),
         };
-        let (workspace, _, action) = isolate(&args, &cwd)?;
+        args.session = session;
+        let (workspace, _, action) = isolate(&args, &folder)?;
         let (loop_, _, workflow) =
             assemble(&args, &endpoint, &workspace, action, &(Some(ui), None))?;
         Ok((loop_, workflow))
@@ -89,12 +96,12 @@ fn assemble(
     let checks = if args.no_verify {
         None
     } else {
-        summonr::check_commands(workspace)?
+        crate::check_commands(workspace)?
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
     let spare = endpoint.context_window.is_none().then(|| provider.clone());
     let mut loop_ = build(args, endpoint, provider, workspace, check, action)?;
-    let (fallbacks, skipped) = summonr::endpoint_fallbacks(endpoint, |fallback| {
+    let (fallbacks, skipped) = crate::endpoint_fallbacks(endpoint, |fallback| {
         self::provider(fallback, ui.0.as_ref(), args.json)
     });
     for note in skipped {
@@ -116,23 +123,23 @@ fn info(
     loop_: &Loop<Client>,
     workspace: &std::path::Path,
     workflow: Option<workflow::Workflow>,
-) -> Result<summonr::tui::Info> {
-    let prefs = summonr::prefs::load()?;
+) -> Result<crate::tui::Info> {
+    let prefs = crate::prefs::load()?;
     let splash = prefs.splash && !args.no_splash;
-    Ok(summonr::tui::Info {
+    Ok(crate::tui::Info {
         version: env!("CARGO_PKG_VERSION").to_string(),
         model: endpoint.model.clone(),
         relay: splash::host_of(endpoint.base_url.as_deref()).map(str::to_string),
         session: loop_.session_id().to_string(),
         endpoint: endpoint.name.clone(),
-        pick: summonr::endpoint_chosen_by(args.endpoint.as_deref(), args.model.as_deref()),
+        pick: crate::endpoint_chosen_by(args.endpoint.as_deref(), args.model.as_deref()),
         prefs,
         splash,
         inline: args.inline,
         strict: args.strict,
-        workspace: summonr::tilde(workspace),
+        workspace: crate::tilde(workspace),
         workflow,
-        config: summonr::prefs::path(),
+        config: crate::prefs::path(),
         prompt: (!args.prompt.is_empty()).then(|| args.prompt.join(" ")),
     })
 }
@@ -148,7 +155,7 @@ fn listed(changes: &[String]) -> String {
 }
 
 fn land(
-    tree: &summonr::Tree,
+    tree: &crate::Tree,
     code: i32,
     args: &Args,
     session: &str,
@@ -170,7 +177,7 @@ fn land(
         );
         return code;
     }
-    let live = summonr::live_jobs(&tree.path);
+    let live = crate::live_jobs(&tree.path);
     if !live.is_empty() {
         eprintln!(
             "worktree kept {} ({}): background job{} still running; {}",
@@ -196,7 +203,7 @@ fn land(
                     .collect::<String>()
             );
             if args.json {
-                modes::print_json(&summonr::Event::Merged {
+                modes::print_json(&crate::Event::Merged {
                     branch: tree.branch.clone(),
                     base: tree.base.clone(),
                     files,
@@ -254,15 +261,15 @@ async fn dispatch(
     } else if let Some(ui_rx) = ui.1 {
         let info = info(args, endpoint, &loop_, &workspace, workflow)?;
         let ui_tx =
-            ui.0.ok_or_else(|| summonr::Error::Config("tui sender missing".to_string()))?;
+            ui.0.ok_or_else(|| crate::Error::Config("tui sender missing".to_string()))?;
         let secrets = ui_tx.clone();
-        summonr::askpass::start(move |request| {
+        crate::askpass::start(move |request| {
             secrets.secret(request);
         })?;
         let opener = factory(args, endpoint, super::commands::workspace()?);
-        let stderr = crate::diagnostics::park_stderr();
-        let result = summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, opener);
-        crate::diagnostics::restore_stderr(stderr);
+        let stderr = crate::entry::diagnostics::park_stderr();
+        let result = crate::tui::run(loop_, workspace, info, ui_tx, ui_rx, opener);
+        crate::entry::diagnostics::restore_stderr(stderr);
         result
     } else {
         splash.line();
@@ -279,7 +286,7 @@ enum Stream {
 
 fn channels(tui: bool) -> Ui {
     if tui {
-        let (ui, inbox) = summonr::tui::channel();
+        let (ui, inbox) = crate::tui::channel();
         (Some(ui), Some(inbox))
     } else {
         (None, None)
@@ -288,7 +295,7 @@ fn channels(tui: bool) -> Ui {
 
 pub(super) fn provider(
     endpoint: &Endpoint,
-    ui: Option<&summonr::tui::Ui>,
+    ui: Option<&crate::tui::Ui>,
     json: bool,
 ) -> Result<Client> {
     if let Some(ui) = ui {

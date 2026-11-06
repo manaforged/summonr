@@ -74,7 +74,7 @@ fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
             let message = if *start || source.is_some() {
                 Msg::Intent(Intent::User(text))
             } else {
-                Msg::Fact(Fact::System(text))
+                Msg::Fact(Fact::Injected(text))
             };
             drop(ui.send(message));
             for image in images {

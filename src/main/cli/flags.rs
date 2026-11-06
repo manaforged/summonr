@@ -1,8 +1,8 @@
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use summonr::table::{Row, Table};
-use summonr::{Error, Result};
+use crate::table::{Row, Table};
+use crate::{Error, Result};
 
 use super::commands::SUBCOMMANDS;
 use super::help::exit_version;
@@ -244,9 +244,9 @@ fn count(raw: &str, option: &str) -> Result<u64> {
         .ok_or_else(|| Error::Config(format!("{option} requires a positive integer")))
 }
 
-fn effort(level: &str) -> Result<summonr::Effort> {
-    summonr::Effort::parse(level)
-        .ok_or_else(|| Error::Config(format!("--effort {}", summonr::Effort::rejects(level))))
+fn effort(level: &str) -> Result<crate::Effort> {
+    crate::Effort::parse(level)
+        .ok_or_else(|| Error::Config(format!("--effort {}", crate::Effort::rejects(level))))
 }
 
 impl Args {

@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "development-tools"]
 publish = false
 
 [workspace]
-members = ["crates/auth", "crates/core", "crates/types"]
+members = ["crates/auth", "crates/core", "crates/types", "desktop"]
 
 [workspace.package]
 version = "0.2.0"
@@ -25,7 +25,7 @@ authors = ["Manaforge Technologies LLC"]
 
 [[bin]]
 name = "summonr"
-path = "src/main.rs"
+path = "src/bin/summonr.rs"
 
 [[test]]
 name = "mcp"
@@ -98,12 +98,20 @@ crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "5b1788
 
 [features]
 default = []
-gui = ["sigil/native-dialog"]
+gui = ["sigil/native-dialog", "sigil/pty", "sigil/notify"]
 
 [profile.release]
 lto = "fat"
 codegen-units = 1
 strip = true
+
+[profile.profiling]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+debug = "line-tables-only"
+strip = "none"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

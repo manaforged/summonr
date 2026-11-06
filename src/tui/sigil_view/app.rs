@@ -32,9 +32,11 @@ use super::theme;
 pub(super) use crate::tui::{Activity, Cmd, Fact, Info, Intent, Msg};
 
 mod adjust;
+#[cfg(feature = "gui")]
+mod attention;
 mod attachments;
 mod auth;
-pub(super) use auth::{Login, Note, matching, section};
+pub(super) use auth::{Login, Note, matching, providers, section};
 mod commands;
 mod composer;
 mod diff;
@@ -51,6 +53,9 @@ mod models;
 mod note;
 mod overlays;
 mod panes;
+mod pick;
+#[cfg(feature = "gui")]
+pub(super) use pick::Pick;
 pub(super) mod presentation;
 mod rows;
 mod sessions;
@@ -68,8 +73,8 @@ pub(in crate::tui::sigil_view) struct Asked {
 }
 
 pub(super) use super::ui::shift;
-pub(super) use files::{PaneRow, armed};
 use files::{Confirm, confirm, file_url, read_git_branch, save};
+pub(super) use files::{PaneRow, armed};
 
 mod secret;
 mod state;
@@ -115,9 +120,13 @@ pub(super) struct App {
     pub(super) help: super::help::View,
     pub(super) cmd: UnboundedSender<Cmd>,
     pub(super) info: Info,
-    pub(super) workspace: PathBuf,
-    pub(super) roots: Vec<String>,
-    pub(super) git_branch: Option<String>,
+    pub(super) place: Signal<Place>,
+    #[cfg(feature = "gui")]
+    pub(super) owner: Option<sigil::reactive::Owner>,
+    #[cfg(feature = "gui")]
+    pub(super) window_focused: Option<Signal<bool>>,
+    #[cfg(feature = "gui")]
+    pub(super) shells: Rc<RefCell<std::collections::HashMap<PathBuf, sigil::app::Session>>>,
     pub(super) prefs_path: Option<PathBuf>,
     pub(super) max_scroll: Signal<f32>,
     pub(super) content_height: Signal<f32>,
@@ -144,12 +153,15 @@ pub(super) struct App {
     pub(super) splash_revealed: Signal<bool>,
     pub(super) splash_since: Rc<Cell<std::time::Instant>>,
     pub(super) splash: Signal<bool>,
-    pub(super) sky: u64,
+    pub(super) sky: Signal<u64>,
     pub(super) sky_clock: Signal<Option<Signal<f64>>>,
     pub(super) settle: Signal<bool>,
     pub(super) appearance: Signal<theme::Palette>,
     pub(super) viewport: Signal<(u16, u16)>,
     pub(super) layout: Signal<Layout>,
+    #[cfg(feature = "gui")]
+    pub(super) sidebar: Signal<bool>,
+    pub(super) local: Signal<Vec<crate::endpoint::Local>>,
     pub(super) pane_focus: Signal<bool>,
     pub(super) pane_lists: [super::ui::List; panes::PANES],
     pub(super) hunk_list: super::ui::List,
@@ -226,7 +238,6 @@ impl App {
     pub(super) fn new(info: Info, workspace: PathBuf, cmd: UnboundedSender<Cmd>) -> Self {
         let model = signal(Rc::new(Model::new(&info)));
         let picker = ModelPicker::new();
-        let git_branch = read_git_branch(&workspace);
         let draft = signal(String::new());
         let caret = signal(0);
         let app = Self {
@@ -271,12 +282,15 @@ impl App {
             splash_revealed: signal(!info.prefs.animations),
             splash_since: Rc::new(Cell::new(std::time::Instant::now())),
             splash: signal(info.splash),
-            sky: super::scene::fresh_sky(),
+            sky: signal(super::scene::sky_seed()),
             sky_clock: signal(None),
             settle: signal(false),
             appearance: signal(theme::palette()),
             viewport: signal((80, 24)),
             layout: signal(Layout::parse(&info.prefs.layout).unwrap_or_default()),
+            #[cfg(feature = "gui")]
+            sidebar: signal(true),
+            local: signal(Vec::new()),
             pane_focus: signal(false),
             pane_lists: std::array::from_fn(|_| super::ui::List::new()),
             hunk_list: super::ui::List::new(),
@@ -321,9 +335,13 @@ impl App {
             attachments: Rc::new(RefCell::new(Vec::new())),
             attached: signal(0),
             pasted_text: Rc::new(RefCell::new(Vec::new())),
-            git_branch,
-            roots: roots(&workspace),
-            workspace,
+            place: signal(Place::at(&workspace)),
+            #[cfg(feature = "gui")]
+            owner: sigil::reactive::Owner::current(),
+            #[cfg(feature = "gui")]
+            window_focused: sigil::app::WindowId::current().and_then(sigil::app::WindowId::focused),
+            #[cfg(feature = "gui")]
+            shells: Rc::default(),
             prefs_path: info.config.clone(),
             info,
         };
@@ -340,6 +358,49 @@ impl App {
 
     pub(super) fn push_entry(&self, entry: Entry) {
         self.model_mut(|model| model.entries.push(entry));
+    }
+}
+
+/// The folder the active chat works in, with its path spellings and git branch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Place {
+    pub(super) workspace: PathBuf,
+    pub(super) roots: Vec<String>,
+    pub(super) git_branch: Option<String>,
+}
+
+impl Place {
+    pub(super) fn at(workspace: &Path) -> Self {
+        Self {
+            workspace: workspace.to_path_buf(),
+            roots: roots(workspace),
+            git_branch: read_git_branch(workspace),
+        }
+    }
+}
+
+impl App {
+    /// The folder the active chat works in.
+    pub(super) fn workspace(&self) -> PathBuf {
+        self.place.with(|place| place.workspace.clone())
+    }
+
+    /// The spellings of the active folder used to shorten paths.
+    pub(super) fn roots(&self) -> Vec<String> {
+        self.place.with(|place| place.roots.clone())
+    }
+
+    /// The git branch of the active folder.
+    pub(super) fn git_branch(&self) -> Option<String> {
+        self.place.with(|place| place.git_branch.clone())
+    }
+
+    /// Follows the active chat into `workspace`.
+    pub(super) fn move_to(&self, workspace: &Path) {
+        if workspace.as_os_str().is_empty() || self.place.peek().workspace == workspace {
+            return;
+        }
+        self.place.set(Place::at(workspace));
     }
 }
 

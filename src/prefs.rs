@@ -9,7 +9,7 @@ pub(crate) use hotkeys::{EditorKey, Hotkeys};
 pub(crate) use summonr_types::{Background, DiffLayout, Notify};
 
 pub(crate) const AUTO_THEME: &str = "auto";
-pub(crate) const THEMES: [&str; 4] = ["space", "nord", "dawn", AUTO_THEME];
+pub(crate) const THEMES: [&str; 6] = ["space", "nord", "dawn", "paper", "iron", AUTO_THEME];
 const RETIRED_THEMES: [(&str, &str); 4] = [
     ("light", "dawn"),
     ("fantasy", "space"),

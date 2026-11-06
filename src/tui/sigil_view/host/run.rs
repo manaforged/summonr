@@ -195,7 +195,7 @@ impl App {
     }
 
     fn place(&self) -> String {
-        self.workspace
+        self.workspace()
             .file_name()
             .map(|name| {
                 name.to_string_lossy()

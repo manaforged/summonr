@@ -48,7 +48,7 @@ summonr openai
 
 summonr runs commands as your account with no sandbox. Read [Safety and policy](safety.md) before you run unattended work.
 
-## 4. Work until a check passes
+## 4. Run a goal
 
 Write the command that proves the work is done:
 

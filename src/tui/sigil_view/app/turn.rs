@@ -71,7 +71,7 @@ impl App {
     }
 
     fn dispatch_line(&self, text: &str) -> bool {
-        let argument = match argument(text, &self.workspace) {
+        let argument = match argument(text, &self.workspace()) {
             Ok(argument) => argument,
             Err(error) => {
                 self.cleared.set(Some((text.to_owned(), Vec::new())));
@@ -141,7 +141,7 @@ impl App {
         }
     }
 
-    fn steer_queued(&self) {
+    pub(in crate::tui::sigil_view) fn steer_queued(&self) {
         if matches!(self.model.get().busy_since, Some((Activity::Turn, _)))
             && self.model.get().queued.1 > 0
             && self.approval.peek().is_none()

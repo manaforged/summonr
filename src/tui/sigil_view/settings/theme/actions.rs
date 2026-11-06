@@ -9,7 +9,7 @@ impl App {
         let editor = self.theme_editor;
         let model = self.model.peek();
         let (palette, problems) =
-            theme::load(&model.prefs, &self.workspace, self.info.config.as_deref());
+            theme::load(&model.prefs, &self.workspace(), self.info.config.as_deref());
         editor.before.set(self.appearance.peek());
         editor.palette.set(palette);
         editor.name.set(model.prefs.theme.clone());
@@ -129,7 +129,7 @@ impl App {
         self.settings_open.set(true);
     }
 
-    pub(super) fn select_theme(&self, name: &str) {
+    pub(in crate::tui::sigil_view) fn select_theme(&self, name: &str) {
         self.model_mut(|model| model.prefs.theme = crate::prefs::theme(name).to_string());
         self.persist(&self.model.peek().prefs);
         self.theme_editor.open.set(false);
@@ -147,7 +147,7 @@ impl App {
                 return;
             }
         }
-        let path = self.workspace.join(".summonr/theme.toml");
+        let path = self.workspace().join(".summonr").join("theme.toml");
         match editor.palette.peek().save(&path) {
             Ok(()) => self.select_theme(&editor.name.peek()),
             Err(error) => editor.error.set(format!("Could not save colors: {error}")),

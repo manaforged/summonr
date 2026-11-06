@@ -236,7 +236,7 @@ impl Policy {
         }
         if (self.strict && self.allow.is_empty())
             || !segments.iter().all(|segment| {
-                !(self.strict && segment.contains(['`', '$', '<', '>'].as_ref()))
+                !(self.strict && segment.contains(['`', '$', '<', '>']))
                     && (self.allow.is_empty()
                         || !["$(", "`", "<(", ">("]
                             .iter()

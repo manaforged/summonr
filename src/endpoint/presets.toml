@@ -253,6 +253,7 @@ default_key = "claude-code"
 env_unset = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
 missing = "install Claude Code and run `claude auth login`"
 opencode_ids = ["anthropic"]
+found = { name = "Claude Code", program = "claude" }
 plan = true
 wire = "agent-sdk"
 
@@ -359,6 +360,7 @@ base_url = "http://127.0.0.1:11434/v1"
 model = ""
 default_key = "ollama"
 missing = ""
+found = { name = "Ollama", port = 11434 }
 
 [preset.reasoning]
 off = "none"

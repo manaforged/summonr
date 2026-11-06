@@ -13,6 +13,8 @@ mod bar;
 mod details;
 
 pub(in crate::tui::sigil_view) use bar::{bar, rows};
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use bar::summary;
 
 fn children(model: &Model) -> impl Iterator<Item = &Agent> {
     model

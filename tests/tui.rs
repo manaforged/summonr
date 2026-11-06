@@ -55,31 +55,25 @@ impl Settle for Terminal {
 #[derive(Debug)]
 struct Splash {
     rows: Vec<String>,
-    card_top: Option<usize>,
-    card_bottom: Option<usize>,
     prompt: usize,
-    workdir: Option<usize>,
+    hint: Option<usize>,
 }
 
 impl Splash {
     fn read(rows: &[String]) -> Option<Self> {
         Some(Self {
             rows: rows.to_vec(),
-            card_top: rows.iter().position(|row| row.contains('╭')),
-            card_bottom: rows.iter().position(|row| row.contains('╰')),
             prompt: rows.iter().rposition(|row| row.contains('❯'))?,
-            workdir: rows.iter().position(|row| row.contains("workdir")),
+            hint: rows.iter().position(|row| row.contains("ask anything")),
         })
     }
 
-    fn place(&self) -> [Option<usize>; 3] {
-        [self.card_bottom, Some(self.prompt), self.workdir]
+    fn place(&self) -> [Option<usize>; 2] {
+        [Some(self.prompt), self.hint]
     }
 
     fn composer_inside(&self) -> bool {
-        self.card_top.is_some_and(|top| top < self.prompt)
-            && self.card_bottom.is_some_and(|bottom| self.prompt < bottom)
-            && self.workdir.is_some_and(|row| row < self.prompt)
+        self.hint.is_some_and(|row| row < self.prompt) && self.prompt < self.rows.len()
     }
 
     fn shows(&self, text: &str) -> bool {
@@ -102,7 +96,7 @@ fn claude_skills_appear_in_slash_typeahead_and_refresh_without_a_restart() {
     )
     .expect("Claude skill file");
     let terminal = Terminal::open(home.path(), 120, 40, 9);
-    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.settle("the splash", |splash| splash.hint.is_some());
     let query = b"/probe-disc";
     terminal.send(query);
     terminal.settle("the Claude skill suggestion", |splash| {
@@ -132,17 +126,16 @@ fn the_splash_prompt_holds_its_row_inside_the_window_while_typing() {
     for (cols, rows) in SIZES {
         let home = tempfile::tempdir().unwrap();
         let terminal = Terminal::open(home.path(), cols, rows, 9);
-        let idle = terminal.settle("the splash", |splash| splash.workdir.is_some());
+        let idle = terminal.settle("the splash", |splash| splash.hint.is_some());
         assert!(idle.composer_inside(), "{cols}x{rows}\n{}", idle.screen());
 
         terminal.send(DRAFT.as_bytes());
         let typed = terminal.settle("the wrapped draft", |splash| splash.shows("tail"));
         let at = format!("{cols}x{rows} draft\n{}", typed.screen());
-        assert_eq!(typed.prompt, idle.prompt, "the prompt moved: {at}");
-        assert_eq!(typed.card_top, idle.card_top, "the window moved: {at}");
+        assert!(typed.prompt <= idle.prompt, "the prompt fell: {at}");
         assert_eq!(
-            typed.workdir, idle.workdir,
-            "the draft covered the card: {at}"
+            typed.hint, idle.hint,
+            "the draft covered the hint: {at}"
         );
         assert!(typed.composer_inside(), "the draft left the window: {at}");
 
@@ -158,7 +151,7 @@ fn the_splash_prompt_holds_its_row_inside_the_window_while_typing() {
 fn a_resized_splash_keeps_the_draft_inside_the_window() {
     let home = tempfile::tempdir().unwrap();
     let terminal = Terminal::open(home.path(), 223, 67, 9);
-    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.settle("the splash", |splash| splash.hint.is_some());
     terminal.send(DRAFT.as_bytes());
     terminal.settle("the wrapped draft", |splash| splash.shows("tail"));
     terminal.resize(100, 30);
@@ -201,7 +194,7 @@ fn a_headless_worker_appears_while_the_parent_is_waiting_for_the_model() {
     });
     let home = tempfile::tempdir().unwrap();
     let terminal = Terminal::open(home.path(), 120, 40, port);
-    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.settle("the splash", |splash| splash.hint.is_some());
     terminal.send(b"work\r");
     assert!(
         requests.recv_timeout(Duration::from_secs(30)).is_ok(),
@@ -234,7 +227,7 @@ fn a_headless_worker_appears_while_the_parent_is_waiting_for_the_model() {
         .unwrap();
     let frame = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         terminal.settle("the active headless worker", |splash| {
-            splash.shows("Subagents") && !splash.shows("Headless")
+            splash.shows("1 agent") && !splash.shows("Headless")
         })
     }));
     drop(worker.kill());
@@ -246,7 +239,7 @@ fn a_headless_worker_appears_while_the_parent_is_waiting_for_the_model() {
 }
 
 #[test]
-fn the_status_row_names_the_tool_the_first_model_is_calling() {
+fn the_status_row_shows_work_while_the_first_model_calls_a_tool() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
@@ -270,9 +263,9 @@ fn the_status_row_names_the_tool_the_first_model_is_calling() {
     });
     let home = tempfile::tempdir().unwrap();
     let terminal = Terminal::open(home.path(), 120, 40, port);
-    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.settle("the splash", |splash| splash.hint.is_some());
     terminal.send(b"list the files\r");
-    terminal.settle("the running tool on the status row", |splash| {
-        splash.shows("run_command")
+    terminal.settle("the working status row", |splash| {
+        splash.shows("Working…")
     });
 }

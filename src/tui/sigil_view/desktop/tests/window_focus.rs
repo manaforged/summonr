@@ -1,5 +1,5 @@
 use sigil::events::ModifiersState;
-use sigil::prelude::Key;
+use sigil::prelude::{Key, Role};
 
 use super::super::Pane;
 use super::harness::{command, drive, graded, named, settings, typed, unconfigured};
@@ -94,20 +94,18 @@ fn letters_typed_on_a_focused_button_go_to_the_composer() {
 }
 
 #[test]
-fn command_k_focuses_the_composer_and_escape_drops_its_slash() {
-    if !in_window("window_focus::command_k_focuses_the_composer_and_escape_drops_its_slash") {
+fn command_k_filters_the_palette_and_escape_closes_it() {
+    if !in_window("window_focus::command_k_filters_the_palette_and_escape_closes_it") {
         return;
     }
     let mut keys = vec![named(Key::Tab, ModifiersState::empty()), command("k")];
-    keys.extend(typed("mo"));
+    keys.extend(typed("model"));
     let filtered = drive(settings(graded()), keys, |app| app.draft.peek());
-    assert_eq!(filtered.read, "/mo");
-    let dropped = drive(
-        |_| {},
-        vec![command("k"), named(Key::Escape, ModifiersState::empty())],
-        |app| app.draft.peek(),
-    );
-    assert_eq!(dropped.read, "");
+    assert_eq!(filtered.read, "");
+    assert_eq!(filtered.named(Role::MenuItem, "Change model").len(), 1, "{:?}", filtered.controls);
+    assert!(filtered.named(Role::MenuItem, "Settings").is_empty(), "{:?}", filtered.controls);
+    let closed = drive(|_| {}, vec![command("k"), named(Key::Escape, ModifiersState::empty())], |_| ());
+    assert!(closed.named(Role::MenuItem, "New agent").is_empty(), "{:?}", closed.controls);
 }
 
 #[test]
@@ -140,20 +138,20 @@ fn escape_closes_a_pane_before_it_cancels_a_pending_question() {
 }
 
 #[test]
-fn command_one_opens_the_files_pane() {
-    if !in_window("window_focus::command_one_opens_the_files_pane") {
+fn command_shift_d_opens_the_changes_pane() {
+    if !in_window("window_focus::command_shift_d_opens_the_changes_pane") {
         return;
     }
     let seen = drive(
         |_| {},
-        vec![command("1")],
+        vec![super::harness::press(sigil::events::LogicalKey::character("d"), ModifiersState::META | ModifiersState::SHIFT, None)],
         |app| app.layout.peek().secondary,
     );
-    assert_eq!(seen.read, Some(Pane::Files));
+    assert_eq!(seen.read, Some(Pane::Diff));
 }
 
 #[test]
-fn the_rail_footer_names_the_provider_and_not_the_model() {
+fn the_sidebar_names_no_provider_and_the_model_once() {
     let seen = drive(
         settings(Snapshot {
             endpoint: "stub-provider".to_owned(),
@@ -163,45 +161,16 @@ fn the_rail_footer_names_the_provider_and_not_the_model() {
         |_| (),
     );
     assert!(
-        seen.shows(|text| text == "stub-provider"),
+        !seen.shows(|text| text == "stub-provider"),
         "{}",
         seen.text()
     );
     let models = seen
         .texts
         .iter()
-        .filter(|text| *text == "stub-model")
+        .filter(|text| text.starts_with("stub-model"))
         .count();
     assert_eq!(models, 1, "{}", seen.text());
-}
-
-#[test]
-fn the_last_settings_page_shows_its_rows() {
-    if !in_window("window_focus::the_last_settings_page_shows_its_rows") {
-        return;
-    }
-    let seen = drive(
-        |app| {
-            app.toggle_options();
-            app.settings_group
-                .set(Some(crate::tui::sigil_view::settings::Group::Appearance));
-            let rows = crate::tui::sigil_view::settings::setting_rows(app);
-            app.settings.cursor.set(rows.len() - 1);
-        },
-        Vec::new(),
-        |app| {
-            crate::tui::sigil_view::settings::setting_rows(app)
-                .last()
-                .map(|row| row.label.clone())
-                .unwrap_or_default()
-        },
-    );
-    let last = seen.read.clone();
-    assert!(
-        seen.shows(|text| text.contains(&last)),
-        "{last}: {}",
-        seen.text()
-    );
 }
 
 #[test]

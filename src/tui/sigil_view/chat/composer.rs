@@ -4,8 +4,6 @@ use sigil::app::cell_width;
 
 mod widget;
 
-#[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use widget::pending_rows;
 pub(super) use widget::widget;
 
 pub(in crate::tui::sigil_view) fn composer_hint(

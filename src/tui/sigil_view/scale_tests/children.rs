@@ -337,7 +337,7 @@ fn clicking_the_strip_header_expands_it() {
             .expect("frame")
             .text();
         assert!(
-            collapsed.contains("1 agent") && !collapsed.contains("Status"),
+            collapsed.contains("1 agent") && !collapsed.contains("Agents"),
             "ctrl+x a did not collapse:\n{collapsed}"
         );
         assert!(!app.model.get().status_view.open());

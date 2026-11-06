@@ -26,7 +26,7 @@ impl Model {
         self.cache_hit()
     }
 
-    pub(super) fn context_facts(&self) -> Vec<(String, String)> {
+    pub(in crate::tui::sigil_view) fn context_facts(&self) -> Vec<(String, String)> {
         let (used, window, ctx) = self.fill();
         let mut rows = vec![("used".to_string(), format!("{ctx}%"))];
         if window > 0 {
@@ -65,7 +65,7 @@ impl Model {
         rows
     }
 
-    pub(super) fn cache_facts(&self) -> Vec<(String, String)> {
+    pub(in crate::tui::sigil_view) fn cache_facts(&self) -> Vec<(String, String)> {
         let mut rows = vec![("hit".to_string(), format!("{}%", self.cache_hit()))];
         if let Some(last) = self.last_hit() {
             rows.push(("last".to_string(), format!("{last}%")));

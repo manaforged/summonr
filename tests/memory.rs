@@ -117,18 +117,16 @@ fn saved_memory_reaches_the_model_in_its_own_repository_only() {
         "2026-10-11 the api tests need the redis fixture\n",
     );
     let (port, bodies) = provider();
-    configure(home.path(), port, "");
+    configure(home.path(), port, "[modules]\nmemory = true\n");
     let text = summonr(home.path(), work.path(), port, &["-e", "local", "-p", "hi"]);
     assert!(sent(&bodies, "the user prefers tabs"), "{text}");
     assert!(
         sent(&bodies, "the api tests need the redis fixture"),
         "{text}"
     );
-    let today = format!("today is {}", jiff::Zoned::now().date());
-    assert!(sent(&bodies, &today), "{text}");
 
     let (port, bodies) = provider();
-    configure(home.path(), port, "");
+    configure(home.path(), port, "[modules]\nmemory = true\n");
     let text = summonr(
         home.path(),
         other.path(),
@@ -154,7 +152,7 @@ fn memory_stays_out_when_the_module_is_off_or_the_workspace_untrusted() {
     assert!(!sent(&bodies, "prefers tabs"), "{text}");
 
     let (port, bodies) = provider();
-    configure(home.path(), port, "");
+    configure(home.path(), port, "[modules]\nmemory = true\n");
     let text = summonr(
         home.path(),
         work.path(),

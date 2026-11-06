@@ -88,6 +88,18 @@ impl Picker {
         }
     }
 
+
+    /// Top-level chats in every project from the last catalog read, newest first.
+    #[cfg(feature = "gui")]
+    pub(super) fn all_chats(self) -> Vec<SessionInfo> {
+        self.choices
+            .get()
+            .into_iter()
+            .filter(|(info, _)| info.depth == 0 && info.interactive)
+            .map(|(info, _)| info)
+            .collect()
+    }
+
     pub(super) fn note(self, text: &str) {
         self.error.set(text.to_string());
     }

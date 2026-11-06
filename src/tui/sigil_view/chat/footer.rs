@@ -117,7 +117,7 @@ fn place_of(app: &App, view: &FooterView, width: usize) -> String {
             .as_ref()
             .map_or(0, |(note, _)| cell_width(note) + 2)
         + app
-            .git_branch
+            .git_branch()
             .as_deref()
             .map_or(0, |branch| cell_width(branch) + 4)
         + spend.as_deref().map_or(0, |cost| cell_width(cost) + 2)
@@ -146,7 +146,7 @@ fn footer_row(
                 .text_color(sigil::prelude::Token::Gray12),
         );
     }
-    if let Some(branch) = &app.git_branch {
+    if let Some(branch) = &app.git_branch() {
         row = row.child(
             container()
                 .layout(
@@ -222,14 +222,14 @@ fn footer_row(
             Target::Context,
             CONTEXT,
             context_pct,
-            sigil::prelude::Token::Accent,
+            sigil::prelude::Tone::Primary,
         ),
         (
             true,
             Target::Cache,
             CACHE,
             cache_pct,
-            sigil::prelude::Token::Info11,
+            sigil::prelude::Tone::Info,
         ),
     ];
     for (cache, target, caption, percent, fill) in meters {
@@ -250,7 +250,8 @@ fn footer_row(
     row
 }
 
-fn meter(caption: &str, percent: u64, fill: sigil::prelude::Token) -> NodeBuilder {
+#[expect(clippy::cast_precision_loss, reason = "a percentage fits in f32")]
+fn meter(caption: &str, percent: u64, tone: sigil::prelude::Tone) -> NodeBuilder {
     let bar = f32::from(BAR_CELLS) * sigil::Host::CELL;
     container()
         .layout(
@@ -266,16 +267,10 @@ fn meter(caption: &str, percent: u64, fill: sigil::prelude::Token) -> NodeBuilde
         )
         .child(
             container()
-                .layout(LayoutStyle::flex_row().width(bar).height(8.0))
-                .bg(sigil::prelude::Token::Gray1)
+                .layout(LayoutStyle::block().width(bar).shrink(0.0))
                 .child(
-                    container()
-                        .layout(
-                            LayoutStyle::block()
-                                .width(bar * percent.min(100) as f32 / 100.0)
-                                .height(8.0),
-                        )
-                        .bg(fill),
+                    sigil::prelude::progress(sigil::prelude::signal(percent as f32), 100.0)
+                        .tone(tone),
                 ),
         )
         .child(

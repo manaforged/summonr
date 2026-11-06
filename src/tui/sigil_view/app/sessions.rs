@@ -16,6 +16,9 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn open_session(&self, open: crate::tui::hub::Open) {
+        if open == crate::tui::hub::Open::New {
+            self.sky.set(super::super::scene::fresh_sky());
+        }
         drop(self.cmd.send(Cmd::Open(open)));
     }
 

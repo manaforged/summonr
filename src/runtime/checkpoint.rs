@@ -58,9 +58,10 @@ impl<P: Provider> Loop<P> {
             return Ok(());
         }
         let turn = self.session.turns();
-        let Some(points) = self.checkpoints().filter(|points| points.deferred()) else {
+        let Some(points) = self.checkpoints().filter(|points| points.deferred()).cloned() else {
             return Ok(());
         };
+        self.tools.checkpoint_edits(points.clone(), turn);
         if let Err(error) = points.capture_to(turn) {
             let text = format!("checkpoint skipped: {error}");
             self.push_event(events, emit, Event::Note { text })?;

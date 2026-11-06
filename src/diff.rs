@@ -9,6 +9,9 @@ mod git;
 pub(crate) mod ignored;
 mod layout;
 mod turn;
+mod watch;
+
+pub(crate) use watch::Watch;
 
 use git::{git, numstat_row};
 pub(crate) use git::{git_apply, git_env, git_output, git_paths, nul_paths};

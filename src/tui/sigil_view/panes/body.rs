@@ -82,7 +82,7 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
         Pane::Diff => diff::diff(app, column, cols_in(width)),
         Pane::View => view::view(app, column),
         Pane::Ledger => todos::ledger(&app, column),
-        Pane::Chat => column,
+        Pane::Chat | Pane::Terminal => column,
         Pane::Files | Pane::Worktrees | Pane::Jobs | Pane::Mcp | Pane::Peers => {
             listed(&app, pane, column)
         }
@@ -101,12 +101,12 @@ fn listed(app: &App, pane: Pane, column: NodeBuilder) -> NodeBuilder {
         Pane::Jobs => ("Jobs".to_string(), count(shown), &NO_JOBS, None),
         Pane::Mcp => ("Servers".to_string(), count(shown), &NO_MCP, None),
         Pane::Peers => ("Peers".to_string(), count(shown), &NO_PEERS, None),
-        Pane::Chat | Pane::Ledger | Pane::Files | Pane::Diff | Pane::View => (
-            app.workspace
+        Pane::Chat | Pane::Ledger | Pane::Files | Pane::Diff | Pane::View | Pane::Terminal => (
+            app.workspace()
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default(),
-            app.git_branch.clone().unwrap_or_default(),
+            app.git_branch().unwrap_or_default(),
             &NO_FILES,
             None,
         ),
@@ -181,7 +181,7 @@ pub(super) fn count(items: usize) -> String {
 }
 
 pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
-    container()
+    let row = container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
@@ -212,12 +212,15 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
                 .layout(LayoutStyle::block().shrink(0.0))
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
-        )
-        .child(
-            container()
-                .layout(LayoutStyle::block().shrink(0.0))
-                .child(close(app.clone())),
-        )
+        );
+    if canvas::is_window() {
+        return row;
+    }
+    row.child(
+        container()
+            .layout(LayoutStyle::block().shrink(0.0))
+            .child(close(app.clone())),
+    )
 }
 
 pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {

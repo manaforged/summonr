@@ -6,8 +6,8 @@ use unicode_segmentation::UnicodeSegmentation;
 pub(super) use super::app::App;
 
 use super::canvas::{Cell, blend, cell as metrics, ink, rgb, shown};
-use super::theme::splash as palette;
 use super::model::Model;
+use super::theme::splash as palette;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
@@ -30,6 +30,11 @@ mod input;
 mod space;
 mod stars;
 
+pub(in crate::tui::sigil_view) fn sky_seed() -> u64 {
+    static SEED: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *SEED.get_or_init(fresh_sky)
+}
+
 pub(in crate::tui::sigil_view) fn fresh_sky() -> u64 {
     let clock = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -46,7 +51,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         let (cols, rows) = stars.viewport.get();
         let _appearance = stars.appearance.get();
         let beats = sky_seconds(&stars) * beats_per_second;
-        moving(cols, rows, beats, stars.sky)
+        moving(cols, rows, beats, stars.sky.peek())
     });
     let size = sigil::reactive::derived(move || {
         let (cols, rows) = shape.viewport.get();
@@ -64,7 +69,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         .layout(fill(LayoutStyle::flex_column()))
         .child(
             sigil::widgets::canvas(move |scene, area| {
-                galaxy::paint_sky(scene, area, painter.viewport.peek(), painter.sky);
+                galaxy::paint_sky(scene, area, painter.viewport.peek(), painter.sky.peek());
             })
             .redraw_on(size)
             .layout(fill(LayoutStyle::block())),
@@ -93,7 +98,7 @@ pub(in crate::tui::sigil_view) fn next_change(app: &App, seconds: f64) -> std::t
     let per_beat = animation.as_secs_f64().max(0.001);
     let (cols, rows) = app.viewport.get();
     let sky =
-        space::sky_wait(cols, rows, seconds / per_beat, app.sky).map(|beats| beats * per_beat);
+        space::sky_wait(cols, rows, seconds / per_beat, app.sky.peek()).map(|beats| beats * per_beat);
     let shimmer = mark::shimmer_wait(logo::shimmer_clock(app)) as f64 / 1000.0;
     let wait = sky.map_or(shimmer, |sky| sky.min(shimmer));
     let ticks = (wait / per_beat).ceil().max(1.0);

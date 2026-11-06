@@ -45,7 +45,7 @@ pub(crate) fn peer_mail_waits_for_a_pending_mcp_call() {
             }
             let (sent, output) = session.cli(&["mail", "send", "all", "stop now"]);
             assert!(sent, "{output}");
-            assert!(output.contains("sent to 1 inbox(es)"), "{output}");
+            assert!(output.contains("to 1 inbox(es)"), "{output}");
         });
         let outcome = session.run(&model, &session.server("fixture1", "timeout_secs = 1"), &[]);
         sender.join().expect("peer sender");

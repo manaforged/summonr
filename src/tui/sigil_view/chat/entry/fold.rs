@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 
 use sigil::prelude::{
-    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Radius, Signal, Token,
+    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Token,
     container,
 };
 
@@ -40,6 +40,7 @@ fn flatten(entries: &[Entry], start: usize) -> Vec<Step<'_>> {
             | Entry::Mail { .. }
             | Entry::Aborted(_)
             | Entry::System(_)
+            | Entry::Injected(_)
             | Entry::Error(_)
             | Entry::Chart(_)
             | Entry::Image { .. } => {}
@@ -50,6 +51,10 @@ fn flatten(entries: &[Entry], start: usize) -> Vec<Step<'_>> {
 
 struct Totals {
     steps: usize,
+    ran: usize,
+    read: usize,
+    searched: usize,
+    other: usize,
     edited: HashSet<String>,
     adds: usize,
     dels: usize,
@@ -59,6 +64,10 @@ struct Totals {
 fn totals(steps: &[Step<'_>], roots: &[String]) -> Totals {
     let mut sum = Totals {
         steps: steps.len(),
+        ran: 0,
+        read: 0,
+        searched: 0,
+        other: 0,
         edited: HashSet::new(),
         adds: 0,
         dels: 0,
@@ -66,8 +75,24 @@ fn totals(steps: &[Step<'_>], roots: &[String]) -> Totals {
     };
     for step in steps {
         sum.running |= matches!(step.call.state, ToolState::Running);
-        if step.kind() != StepVerb::Edited {
-            continue;
+        match step.kind() {
+            StepVerb::Edited => {}
+            StepVerb::Ran => {
+                sum.ran += 1;
+                continue;
+            }
+            StepVerb::Explored => {
+                sum.read += 1;
+                continue;
+            }
+            StepVerb::Searched => {
+                sum.searched += 1;
+                continue;
+            }
+            _ => {
+                sum.other += 1;
+                continue;
+            }
         }
         let path = workspace_relative(&step.call.arg, roots);
         sum.edited.insert(path);
@@ -86,7 +111,8 @@ fn summary(
     open: Signal<Option<bool>>,
 ) -> NodeBuilder {
     let mut parts = Vec::new();
-    if let Some(secs) = worked {
+    let window = crate::tui::sigil_view::canvas::is_window();
+    if let Some(secs) = worked.filter(|_| !(window && sum.running)) {
         let lead = if sum.running {
             "Working for"
         } else {
@@ -94,39 +120,43 @@ fn summary(
         };
         parts.push(format!("{lead} {}", summonr_core::text::duration(secs)));
     }
-    parts.push(summonr_core::text::plural(sum.steps, "step"));
-    if !sum.edited.is_empty() {
-        parts.push(format!(
-            "{} edited",
-            summonr_core::text::plural(sum.edited.len(), "file")
-        ));
-    }
+    parts.push(plain(sum));
     let mut head = container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(10.0)
-                .padding_x(14.0)
-                .padding_y(10.0)
+                .gap(if window { 4.0 } else { 8.0 })
+                .padding_y(6.0)
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .bg(Token::Surface)
         .pointer_up(move |event: &mut PointerEvent| {
             if event.button == Some(MouseButton::Left) {
                 open.set(Some(!unfolded));
                 event.stop_propagation();
             }
-        })
-        .child(label(
+        });
+    if !window {
+        head = head.child(label(
             if unfolded { "▾" } else { "▸" },
             TextStyle::sm(Token::Gray10),
-        ))
-        .child(
-            label(parts.join(" · "), TextStyle::sm(Token::Gray11))
-                .ellipsize()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
-        );
+        ));
+    }
+    let grow = if window { 0.0 } else { 1.0 };
+    head = head.child(
+        label(parts.join(" · "), TextStyle::sm(Token::Gray11))
+            .ellipsize()
+            .layout(LayoutStyle::block().grow(grow).shrink(1.0).min_size(0.0, 0.0)),
+    );
+    #[cfg(feature = "gui")]
+    if window {
+        let mark = if unfolded {
+            sigil::icons::Icon::ChevronDown
+        } else {
+            sigil::icons::Icon::ChevronRight
+        };
+        return head.child(sigil::widgets::icon(mark).px(14.0));
+    }
     if sum.adds + sum.dels > 0 {
         head = head
             .child(label(
@@ -140,6 +170,37 @@ fn summary(
     }
     head
 }
+
+fn plain(sum: &Totals) -> String {
+    use summonr_core::text::plural;
+    let edited = sum.edited.len();
+    let mut said = Vec::new();
+    if edited > 0 {
+        said.push(format!("edited {}", plural(edited, "file")));
+    }
+    if sum.ran > 0 {
+        said.push(format!("ran {}", plural(sum.ran, "command")));
+    }
+    if sum.read > 0 {
+        said.push(format!("looked at {}", plural(sum.read, "file")));
+    }
+    if sum.searched > 0 {
+        said.push(format!("ran {}", plural(sum.searched, "search")));
+    }
+    if sum.other > 0 {
+        let noun = if said.is_empty() { "step" } else { "other step" };
+        said.push(plural(sum.other, noun));
+    }
+    if said.is_empty() {
+        said.push(plural(sum.steps, "step"));
+    }
+    let text = said.join(", ");
+    let mut chars = text.chars();
+    chars.next().map_or(text.clone(), |first| first.to_uppercase().chain(chars).collect())
+}
+
+/// The step note while the step waits for the user's OK.
+const WAITING: &str = "Needs you";
 
 fn step_row(step: &Step<'_>, app: &App, layout: crate::prefs::DiffLayout) -> NodeBuilder {
     let kind = step.kind();
@@ -156,14 +217,28 @@ fn step_row(step: &Step<'_>, app: &App, layout: crate::prefs::DiffLayout) -> Nod
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .pointer_up(flip(app, step.index, step.at))
-        .child(label(kind.icon(), tone))
-        .child(label(kind.verb(step.name), TextStyle::sm(Token::Gray11)));
-    for item in step.chips(&app.roots) {
+        .pointer_up(flip(app, step.index, step.at));
+    let window = crate::tui::sigil_view::canvas::is_window();
+    if !window {
+        line = line.child(label(kind.icon(), tone));
+    }
+    line = line.child(label(kind.verb(step.name), TextStyle::sm(Token::Gray11)));
+    for item in step.chips(&app.roots()) {
         line = line.child(chip(item));
     }
     line = line.child(container().layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)));
-    if let Some((text, text_style)) = step_meta(step) {
+    let meta = step_meta(step);
+    if window && matches!(step.call.state, ToolState::Running) {
+        let watch = app.clone();
+        line = line.child(container().children_reactive(move || {
+            let (text, style) = if watch.approval.get().is_some() {
+                (WAITING.to_string(), TextStyle::xs(Token::Warn11))
+            } else {
+                meta.clone().unwrap_or_else(|| (String::new(), TextStyle::xs(Token::Gray10)))
+            };
+            vec![label(text, style)]
+        }));
+    } else if let Some((text, text_style)) = meta {
         line = line.child(label(text, text_style));
     }
     let column = container()
@@ -196,25 +271,23 @@ pub(in crate::tui::sigil_view) fn card(
             model.entries.get(range.clone()).unwrap_or_default(),
             range.start,
         );
-        let sum = totals(&steps, &app.roots);
-        let unfolded = unfolded.unwrap_or(sum.running || worked.is_some());
+        let sum = totals(&steps, &app.roots());
+        let every = model.prefs.tools == crate::prefs::ToolOutput::Full;
+        let unfolded = unfolded.unwrap_or(sum.running || worked.is_some() || every);
         let mut card = container()
             .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
-            .border_w(1)
-            .border_color(Token::Border)
-            .rounded(Radius::Lg)
             .child(summary(&sum, worked, unfolded, open));
         if unfolded {
             let mut list = container()
                 .layout(
                     LayoutStyle::flex_column()
                         .fill_width()
-                        .padding_x(14.0)
+                        .padding_left(14.0)
                         .padding_y(6.0)
                         .min_size(0.0, 0.0),
                 )
-                .border_top(1)
-                .border_color(Token::Border);
+                .border_left(1)
+                .border_color(Token::BorderSubtle);
             for step in &steps {
                 list = list.child(step_row(step, app, model.prefs.diff_layout));
             }

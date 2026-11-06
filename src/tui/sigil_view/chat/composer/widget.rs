@@ -94,7 +94,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
         )
 }
 
-pub(in crate::tui::sigil_view) fn pending_rows(app: &App, width: usize) -> NodeBuilder {
+fn pending_rows(app: &App, width: usize) -> NodeBuilder {
     let update = app.clone();
     let pending = sigil::reactive::derived(move || update.model.get().pending.clone());
     container()

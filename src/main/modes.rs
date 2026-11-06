@@ -1,4 +1,4 @@
-use summonr::{
+use crate::{
     Client, Event, Job, Loop, NextAction, Result, StepState, Turn, UserInput, WorkKind,
     WorkProgress,
 };
@@ -15,11 +15,11 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
         args.prompt.join(" ")
     };
     if let Some(command) = slash(&prompt) {
-        return Err(summonr::Error::Config(format!(
+        return Err(crate::Error::Config(format!(
             "`{command}` is an interface command; -p takes a prompt"
         )));
     }
-    let input = summonr::attach(loop_.workspace(), &prompt)?;
+    let input = crate::attach(loop_.workspace(), &prompt)?;
     announce(&loop_, args.json);
     let turn = complete(&mut loop_, input, args.json).await?;
     if !args.json {
@@ -31,8 +31,8 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
 
 pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str) -> Result<i32> {
     let markdown = std::fs::read_to_string(plan_path)
-        .map_err(|error| summonr::Error::Config(format!("cannot read {plan_path}: {error}")))?;
-    let steps = summonr::steps::parse(&markdown)?;
+        .map_err(|error| crate::Error::Config(format!("cannot read {plan_path}: {error}")))?;
+    let steps = crate::steps::parse(&markdown)?;
     let checks = loop_.verify_commands().to_vec();
     loop_.select_steps(&markdown, &checks)?;
     let plan = plan_path.to_string();
@@ -125,7 +125,7 @@ async fn complete(loop_: &mut Loop<Client>, input: UserInput, json: bool) -> Res
 
 fn slash(prompt: &str) -> Option<&str> {
     let line = prompt.trim_start().lines().next()?;
-    summonr::parse_command(line)?;
+    crate::parse_command(line)?;
     line.split_whitespace().next()
 }
 
@@ -140,7 +140,7 @@ fn print_live(event: &Event) {
     match event {
         Event::ToolCall {
             name, arguments, ..
-        } => eprintln!("\n→ {}", summonr::mcp_call_label(name, arguments)),
+        } => eprintln!("\n→ {}", crate::mcp_call_label(name, arguments)),
         Event::ToolResult { success: false, .. } => eprintln!("  (failed)"),
         Event::Verify { passed: true, .. } => eprintln!("\n✓ verify passed"),
         Event::Verify { .. } => eprintln!("\n✗ verify failed"),
@@ -153,11 +153,11 @@ fn print_live(event: &Event) {
         Event::Receipt { .. } => {}
         Event::Aborted { reason, .. } => eprintln!("\n{reason}"),
         Event::Child { id, event } => {
-            let tag = summonr::child::tag(id);
+            let tag = crate::child::tag(id);
             match &**event {
                 Event::ToolCall {
                     name, arguments, ..
-                } => eprintln!("  [{tag}] → {}", summonr::mcp_call_label(name, arguments)),
+                } => eprintln!("  [{tag}] → {}", crate::mcp_call_label(name, arguments)),
                 Event::ToolResult { success: false, .. } => eprintln!("  [{tag}] (failed)"),
                 Event::Assistant { text } => {
                     eprintln!("  [{tag}] {}", text.lines().next().unwrap_or_default());

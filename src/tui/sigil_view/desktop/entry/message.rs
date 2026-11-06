@@ -1,19 +1,18 @@
-use sigil::prelude::Dimension;
 use sigil::prelude::Widget;
 use sigil::prelude::{
     AlignItems, JustifyContent, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Radius,
-    Token, button, container, markdown, signal,
+    container, markdown, signal,
 };
 
 use super::super::App;
-use super::super::thread::BODY;
+use super::super::style::{
+    BODY, DANGER, L, LINE, M, OUTLINE, RECESSED, S, TINT, Text, XS, text as styled,
+};
 use crate::prefs::Visibility;
-use crate::tui::sigil_view::chat::entry::label;
 use crate::tui::sigil_view::chat::entry::reply::{self, Part, parts};
-use crate::tui::sigil_view::text_style::TextStyle;
 
 const FENCE: &str = "```";
-const LINE: f32 = 24.0;
+const BUBBLE: f32 = 520.0;
 
 pub(super) fn user(body: String) -> NodeBuilder {
     container()
@@ -27,18 +26,15 @@ pub(super) fn user(body: String) -> NodeBuilder {
             container()
                 .layout(
                     LayoutStyle::block()
-                        .padding_x(14.0)
-                        .padding_y(10.0)
-                        .max_width(Dimension::Percent(0.72))
+                        .padding_x(L)
+                        .padding_y(S)
+                        .max_width(BUBBLE)
                         .min_size(0.0, 0.0),
                 )
-                .bg(Token::SurfaceHover)
+                .bg(TINT)
                 .rounded(Radius::Lg)
                 .child(
-                    sigil::prelude::text(body)
-                        .font_size(BODY)
-                        .line_height_px(LINE)
-                        .text_color(Token::OnSurface),
+                    styled(Text::Body, body).line_height_px(LINE),
                 ),
         )
 }
@@ -50,32 +46,25 @@ fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .padding_x(12.0)
-                .padding_y(4.0)
+                .padding_left(M)
+                .padding_right(XS)
+                .padding_top(XS)
                 .align_items(AlignItems::Center)
                 .justify_content(JustifyContent::SpaceBetween),
         )
-        .border_bottom(1)
-        .border_color(Token::Border)
-        .child(label(
-            if lang.is_empty() {
-                "text"
-            } else {
-                lang.as_str()
-            },
-            TextStyle::xs(Token::Gray10),
-        ))
+        .child(styled(Text::Meta, lang.clone()))
         .child(
-            button("Copy")
-                .ghost()
-                .activate(move || copy.copy.set(Some(copied.clone())))
+            sigil::prelude::icon_button(sigil::icons::Icon::Copy, move || {
+                copy.copy.set(Some(copied.clone()));
+            })
+                .size(sigil::prelude::ControlSize::Compact)
                 .accessible("Copy code"),
         );
     container()
         .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
-        .bg(Token::Field)
+        .bg(RECESSED)
         .border_w(1)
-        .border_color(Token::Border)
+        .border_color(OUTLINE)
         .rounded(Radius::Md)
         .child(head)
         .child(markdown(signal(format!("{FENCE}{lang}\n{body}\n{FENCE}"))))
@@ -85,7 +74,7 @@ pub(super) fn assistant(body: &str, app: &App) -> NodeBuilder {
     let mut column = container().font_size(BODY).layout(
         LayoutStyle::flex_column()
             .fill_width()
-            .gap(10.0)
+            .gap(M)
             .min_size(0.0, 0.0),
     );
     if body.trim().is_empty() {
@@ -131,16 +120,13 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
     let row = container()
         .layout(
             LayoutStyle::flex_row()
-                .gap(8.0)
+                .gap(S)
                 .align_items(AlignItems::Center),
         )
-        .child(label(
-            if open { "▾" } else { "▸" },
-            TextStyle::sm(Token::Gray10),
-        ))
-        .child(label(head, TextStyle::sm(Token::Gray10)));
+        .child(styled(Text::Hint, if open { "▾" } else { "▸" }))
+        .child(styled(Text::Hint, head));
     let mut column = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(XS))
         .pointer_up(move |event: &mut PointerEvent| {
             if event.button == Some(MouseButton::Left) {
                 toggle.set_visibility(|prefs| &mut prefs.reasoning, Some(next));
@@ -150,19 +136,10 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
         .child(row);
     if open {
         column = column.child(
-            TextStyle::sm(Token::Gray10)
-                .italic()
-                .on(sigil::prelude::text(body.to_string()))
-                .line_height_px(LINE),
+            styled(Text::Hint, body.to_string()).line_height_px(LINE),
         );
     }
     column
-}
-
-pub(super) fn quiet(body: String) -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
-        .child(TextStyle::xs(Token::Gray10).on(sigil::prelude::text(body)))
 }
 
 pub(super) fn error(reason: String) -> NodeBuilder {
@@ -170,12 +147,11 @@ pub(super) fn error(reason: String) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(8.0)
+                .gap(S)
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Start),
         )
-        .child(label("⚠", TextStyle::xs(Token::Error11)))
-        .child(TextStyle::xs(Token::Error11).on(sigil::prelude::text(reason)))
+        .child(styled(Text::Label, reason).text_color(DANGER))
 }
 
 #[cfg(test)]

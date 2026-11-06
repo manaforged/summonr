@@ -23,6 +23,7 @@ pub(in crate::tui::sigil_view) enum Entry {
     },
     Aborted(String),
     System(String),
+    Injected(String),
     Error(String),
     Chart(Vec<Round>),
     Image {
@@ -78,7 +79,7 @@ pub(in crate::tui::sigil_view) fn entry_markdown(entry: &Entry) -> String {
             format!("> **mail from {from}**\n> {}", text.replace('\n', "\n> "))
         }
         Entry::Aborted(reason) => format!("⚠ **aborted:** {reason}"),
-        Entry::System(text) => format!("> {text}"),
+        Entry::System(text) | Entry::Injected(text) => format!("> {text}"),
         Entry::Error(text) => format!("**Error:** {text}"),
         Entry::Chart(rounds) => super::app::presentation::stats(rounds),
         Entry::Image { .. } => "[attached image]".to_string(),

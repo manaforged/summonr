@@ -73,6 +73,49 @@ impl Checkpoints {
         Ok(())
     }
 
+    /// Adds the current content of `paths` to turn `turn`'s checkpoint before a tool rewrites
+    /// them. A folder outside Git has no full capture, so only files the agent's tools edit and
+    /// files an earlier capture holds are restorable.
+    pub(crate) fn capture_paths(&self, turn: usize, paths: &[String]) -> Result<()> {
+        if self.store.is_none() || turn == 0 {
+            return Ok(());
+        }
+        self.capture_to(turn)?;
+        let wanted: Vec<String> = paths
+            .iter()
+            .filter(|path| Path::new(path).is_relative() && self.root.join(path).is_file())
+            .map(|path| format!(":(literal){path}"))
+            .collect();
+        if wanted.is_empty() {
+            return Ok(());
+        }
+        let mut known = vec!["ls-files", "-z", "--"];
+        known.extend(wanted.iter().map(String::as_str));
+        let tracked: std::collections::HashSet<String> = self.paths(&known)?.into_iter().collect();
+        let fresh: Vec<&String> = wanted
+            .iter()
+            .filter(|spec| !tracked.contains(spec.trim_start_matches(":(literal)")))
+            .collect();
+        if fresh.is_empty() {
+            return Ok(());
+        }
+        let _lock = store::lock(&self.log, true)?;
+        let mut add = vec!["add", "-f", "--"];
+        add.extend(fresh.iter().map(|spec| spec.as_str()));
+        self.git(&add)?;
+        let tree = self.git(&["write-tree"])?.trim().to_string();
+        let mut trees = self.trees()?;
+        if let Some(slot) = trees.get_mut(turn - 1) {
+            *slot = tree;
+        }
+        store::write(
+            &self.log,
+            format!("{}\n", trees.join("\n")),
+            store::Durability::Renamed,
+        )?;
+        Ok(())
+    }
+
     pub(crate) fn deferred(&self) -> bool {
         self.store.is_some()
     }
@@ -135,8 +178,13 @@ impl Checkpoints {
             .iter()
             .map(|path| format!(":(exclude,literal){path}"))
             .collect();
-        let mut add = vec!["add", "-A", "--", "."];
-        add.extend(excluded.iter().map(String::as_str));
+        let add = if self.store.is_some() {
+            vec!["add", "-u"]
+        } else {
+            let mut all = vec!["add", "-A", "--", "."];
+            all.extend(excluded.iter().map(String::as_str));
+            all
+        };
         self.git(&add)?;
         if !skipped.is_empty() {
             let literal: Vec<String> = skipped

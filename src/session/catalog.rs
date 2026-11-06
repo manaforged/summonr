@@ -323,7 +323,7 @@ pub fn info(path: PathBuf) -> SessionInfo {
     Summary::peek(&path).0.into_info(id, path)
 }
 
-const INDEX_FILE: &str = "index.json";
+const INDEX_FILE: &str = "index.v2.json";
 
 struct Index(Sidecar<Summary>);
 

@@ -1,6 +1,6 @@
 # summonr for coding agents
 
-Point your coding agent at this file when it sets up summonr, runs it from a script or CI, or extends it. summonr is a terminal coding agent that works until your check command passes.
+Point your coding agent at this file when it sets up summonr, runs it from a script or CI, or extends it. summonr is a terminal coding agent for any model.
 
 ## Install
 
@@ -19,7 +19,7 @@ powershell -c "irm https://summonr.dev/install.ps1 | iex"
 The installer checks the archive against the release's SHA-256 and puts `summonr` in `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. `summonr update` moves it to the latest release. To build from source instead, you need Rust 1.98 or later, Git, CMake, and a C and C++ compiler:
 
 ```sh
-cargo install --git https://github.com/manaforged/summonr --locked
+cargo install --git https://github.com/manaforged/summonr --locked summonr
 ```
 
 ## Give it a key
@@ -43,7 +43,7 @@ One prompt, with one JSON event per line on stdout:
 summonr anthropic -p --json "why does cargo test fail?"
 ```
 
-Work until a check passes, inside a time budget:
+Run a goal with a check, inside a time budget:
 
 ```sh
 mkdir -p .summonr

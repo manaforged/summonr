@@ -181,6 +181,19 @@ impl Worker {
         }
     }
 
+    pub(super) fn set_chrome(&mut self, picked: &std::path::Path) {
+        let path = &crate::browser::executable(picked);
+        let saved = crate::config::path()
+            .and_then(|config| crate::config::save_browser_chrome(&config, Some(path)));
+        match saved {
+            Ok(()) => self.system(&format!(
+                "browser tools use {} from the next browser launch",
+                crate::browser::display_name(path)
+            )),
+            Err(error) => self.fail(&error.to_string()),
+        }
+    }
+
     pub(super) fn save_workflow(&mut self, name: &str) {
         self.workflow.name = name.trim().to_string();
         let saved = workflow::save(&self.workflow)
@@ -301,6 +314,7 @@ impl Worker {
         drop(
             self.ui.send(Msg::Fact(Fact::Settings(Snapshot {
                 model: self.loop_.model().to_string(),
+                workspace: self.loop_.workspace().to_path_buf(),
                 relay: self.relay.clone(),
                 work: self.loop_.is_work(),
                 goal: self.loop_.is_goal(),

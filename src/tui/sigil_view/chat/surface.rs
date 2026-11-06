@@ -137,7 +137,7 @@ fn row(
                             model.entries.get(range.start).is_some_and(entry::subagents)
                         }) =>
                     {
-                        vec![inset(group(&app, range), spacing)]
+                        vec![inset(super::super::desktop::entry::agents(&app, range), spacing)]
                     }
                     entry::Slot::Lead(range) => {
                         vec![inset(
@@ -223,7 +223,31 @@ fn single(app: &App, index: usize, spacing: (f32, f32)) -> Vec<NodeBuilder> {
         .unwrap_or_default()
 }
 
+/// The widest the window's reading column grows, gutters included.
+pub(in crate::tui::sigil_view) const READING: f32 = 704.0;
+
 fn inset(node: NodeBuilder, spacing: (f32, f32)) -> NodeBuilder {
+    if canvas::is_window() {
+        return container()
+            .layout(
+                LayoutStyle::flex_row()
+                    .fill_width()
+                    .min_size(0.0, 0.0)
+                    .padding_x(spacing.0)
+                    .padding_bottom(spacing.1)
+                    .justify_content(sigil::prelude::JustifyContent::Center),
+            )
+            .child(
+                container()
+                    .layout(
+                        LayoutStyle::flex_column()
+                            .fill_width()
+                            .min_size(0.0, 0.0)
+                            .max_width(READING - 2.0 * spacing.0),
+                    )
+                    .child(node),
+            );
+    }
     container()
         .layout(
             LayoutStyle::flex_column()

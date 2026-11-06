@@ -37,6 +37,7 @@ fn run(entry: &Entry) -> Option<Run> {
         | Entry::Mail { .. }
         | Entry::Aborted(_)
         | Entry::System(_)
+        | Entry::Injected(_)
         | Entry::Error(_)
         | Entry::Chart(_)
         | Entry::Image { .. } => return None,

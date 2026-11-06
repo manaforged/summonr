@@ -142,6 +142,7 @@ impl Model {
                     | Entry::Mail { .. }
                     | Entry::Aborted(_)
                     | Entry::System(_)
+                    | Entry::Injected(_)
                     | Entry::Error(_)
                     | Entry::Chart(_)
                     | Entry::Image { .. } => true,
@@ -212,6 +213,7 @@ impl Model {
             | Msg::Intent(Intent::Image(_))
             | Msg::Fact(Fact::Receipt(_))
             | Msg::Fact(Fact::System(_))
+            | Msg::Fact(Fact::Injected(_))
             | Msg::Fact(Fact::Approval(_))
             | Msg::Fact(Fact::Outcome(_))
             | Msg::Fact(Fact::Mail { .. })
@@ -266,6 +268,7 @@ impl Model {
             Msg::Intent(Intent::Image(image)) => self.entries.push(image_entry(image)),
             Msg::Fact(Fact::Receipt(text)) => self.receipt(&text),
             Msg::Fact(Fact::System(text)) => self.entries.push(Entry::System(text)),
+            Msg::Fact(Fact::Injected(text)) => self.entries.push(Entry::Injected(text)),
             Msg::Fact(Fact::Approval(text)) => self.approval_note(text),
             Msg::Fact(Fact::Outcome(text)) => self.trail(Entry::System(text)),
             Msg::Fact(Fact::Mail { from, text }) => self.entries.push(Entry::Mail { from, text }),
@@ -316,7 +319,6 @@ impl Model {
                 self.diff_error = None;
             }
             Msg::Fact(Fact::DiffFailed(error, _)) => {
-                self.diff = crate::diff::Diff::default();
                 self.patch = None;
                 self.diff_error = Some(error);
             }
@@ -361,6 +363,7 @@ impl Model {
         self.clear_transcript();
         self.status_view = StatusView::Closed;
         self.recent.clear();
+        self.diff = crate::diff::Diff::default();
         self.usage.clear();
         self.unreported_tokens = 0;
         self.rounds = 0;

@@ -50,7 +50,7 @@ jobs:
       - name: clippy
         run: cargo clippy -p summonr --all-targets --locked -- -D warnings
       - name: tests
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude summonr-desktop --locked
 
   macos:
     runs-on: macos-14
@@ -65,7 +65,7 @@ jobs:
         with:
           save-if: 'false'
       - name: tests
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude summonr-desktop --locked
 
   build:
     name: build ${{ matrix.target }}

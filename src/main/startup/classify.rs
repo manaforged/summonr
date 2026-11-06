@@ -1,33 +1,33 @@
-use summonr::{Result, resolve_endpoint, resolve_session};
+use crate::{Result, resolve_endpoint, resolve_session};
 
 use super::commands::{session_path, workspace};
-use crate::cli::Args;
+use crate::entry::cli::Args;
 
 async fn run_diff_review(
     args: &Args,
-    asked: &std::collections::BTreeMap<String, summonr::classify::Question>,
+    asked: &std::collections::BTreeMap<String, crate::classify::Question>,
     floor: f64,
 ) -> Result<i32> {
     let questions = if asked.is_empty() {
-        summonr::classify::sets::by_name("diff").unwrap_or_default()
+        crate::classify::sets::by_name("diff").unwrap_or_default()
     } else {
         asked.clone()
     };
     let patch = if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
-        summonr::diff::patch(&workspace()?, None)?
+        crate::diff::patch(&workspace()?, None)?
     } else {
         let mut piped = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut piped)?;
         piped
     };
-    let changes = summonr::classify::patch::split(&patch);
+    let changes = crate::classify::patch::split(&patch);
     if changes.is_empty() {
         println!("no changes to review");
         return Ok(0);
     }
     let endpoint = classify_endpoint(args)?;
-    let budget = summonr::classify::budget(&endpoint, &questions);
-    let decided = summonr::classify::patch::review(&endpoint, &changes, &questions, budget).await?;
+    let budget = crate::classify::budget(&endpoint, &questions);
+    let decided = crate::classify::patch::review(&endpoint, &changes, &questions, budget).await?;
     if args.json {
         let rows: Vec<_> = changes
             .iter()
@@ -40,7 +40,7 @@ async fn run_diff_review(
     } else {
         print!(
             "{}",
-            summonr::classify::patch::table(&changes, &decided, floor)
+            crate::classify::patch::table(&changes, &decided, floor)
         );
     }
     Ok(0)
@@ -48,35 +48,35 @@ async fn run_diff_review(
 
 async fn run_eval(
     args: &Args,
-    questions: &std::collections::BTreeMap<String, summonr::classify::Question>,
+    questions: &std::collections::BTreeMap<String, crate::classify::Question>,
     path: &str,
     floor: f64,
 ) -> Result<i32> {
     if questions.is_empty() {
-        return Err(summonr::Error::Config(
+        return Err(crate::Error::Config(
             "an evaluation needs questions: --set, --questions, or --noul".to_string(),
         ));
     }
     let text = std::fs::read_to_string(path)
-        .map_err(|error| summonr::Error::Config(format!("cannot read {path}: {error}")))?;
-    let examples = summonr::classify::eval::load(&text)?;
+        .map_err(|error| crate::Error::Config(format!("cannot read {path}: {error}")))?;
+    let examples = crate::classify::eval::load(&text)?;
     let endpoint = classify_endpoint(args)?;
-    let budget = summonr::classify::budget(&endpoint, questions);
-    let decided = summonr::classify::eval::run(&endpoint, &examples, questions, budget).await?;
-    let (tallies, misses) = summonr::classify::eval::score(&examples, &decided, floor)?;
+    let budget = crate::classify::budget(&endpoint, questions);
+    let decided = crate::classify::eval::run(&endpoint, &examples, questions, budget).await?;
+    let (tallies, misses) = crate::classify::eval::score(&examples, &decided, floor)?;
     print!(
         "{}",
-        summonr::classify::eval::report(&tallies, &misses, floor)
+        crate::classify::eval::report(&tallies, &misses, floor)
     );
     let clean = tallies.values().all(|tally| tally.gated_accuracy() >= 1.0);
     Ok(i32::from(!clean))
 }
 
-fn classify_endpoint(args: &Args) -> Result<summonr::Endpoint> {
+fn classify_endpoint(args: &Args) -> Result<crate::Endpoint> {
     let name = match args.endpoint.as_deref() {
         Some(name) => name.to_string(),
-        None => summonr::classify_endpoint().ok_or_else(|| {
-            summonr::Error::Config(
+        None => crate::classify_endpoint().ok_or_else(|| {
+            crate::Error::Config(
                 "no classify endpoint is set up; add an [endpoint.NAME] row with base_url and wire = \"decisions\" to ~/.summonr/config.toml, then `summonr login NAME`".to_string(),
             )
         })?,
@@ -84,11 +84,11 @@ fn classify_endpoint(args: &Args) -> Result<summonr::Endpoint> {
     resolve_endpoint(
         Some(&name),
         args.model.as_deref(),
-        summonr::Requirement::ModelAndKey,
+        crate::Requirement::ModelAndKey,
     )
 }
 
-type Questions = std::collections::BTreeMap<String, summonr::classify::Question>;
+type Questions = std::collections::BTreeMap<String, crate::classify::Question>;
 
 pub(super) async fn run_classify(args: &Args) -> Result<i32> {
     let questions = classify_questions(args)?;
@@ -101,12 +101,12 @@ pub(super) async fn run_classify(args: &Args) -> Result<i32> {
     }
     let state = classify_state(args)?;
     if state.trim().is_empty() {
-        return Err(summonr::Error::Config(
+        return Err(crate::Error::Config(
             "give it some state, as arguments, on stdin, or with --session".to_string(),
         ));
     }
     if questions.is_empty() {
-        return Err(summonr::Error::Config(
+        return Err(crate::Error::Config(
             "ask something: --review, --noul, or --questions".to_string(),
         ));
     }
@@ -118,7 +118,7 @@ fn classify_questions(args: &Args) -> Result<Questions> {
         Some(source) => {
             let text = match source.strip_prefix('@') {
                 Some(path) => std::fs::read_to_string(path).map_err(|error| {
-                    summonr::Error::Config(format!("cannot read {path}: {error}"))
+                    crate::Error::Config(format!("cannot read {path}: {error}"))
                 })?,
                 None => source.to_string(),
             };
@@ -127,13 +127,13 @@ fn classify_questions(args: &Args) -> Result<Questions> {
         None => std::collections::BTreeMap::new(),
     };
     if args.review {
-        questions.extend(summonr::classify::sets::by_name("review").unwrap_or_default());
+        questions.extend(crate::classify::sets::by_name("review").unwrap_or_default());
     }
     if let Some(name) = args.set.as_deref() {
-        let set = summonr::classify::sets::by_name(name).ok_or_else(|| {
-            summonr::Error::Config(format!(
+        let set = crate::classify::sets::by_name(name).ok_or_else(|| {
+            crate::Error::Config(format!(
                 "unknown question set `{name}`; try one of: {}",
-                summonr::classify::sets::NAMES.join(", ")
+                crate::classify::sets::NAMES.join(", ")
             ))
         })?;
         questions.extend(set);
@@ -141,7 +141,7 @@ fn classify_questions(args: &Args) -> Result<Questions> {
     for (index, text) in args.noul.iter().enumerate() {
         questions.insert(
             format!("noul{}", index + 1),
-            summonr::classify::Question::noul(text.clone()),
+            crate::classify::Question::noul(text.clone()),
         );
     }
     Ok(questions)
@@ -153,7 +153,7 @@ fn classify_state(args: &Args) -> Result<String> {
             Some(id) => resolve_session(id)?,
             None => session_path(args)?,
         };
-        return Ok(summonr::classify::digest::digest(&summonr::export_session(
+        return Ok(crate::classify::digest::digest(&crate::export_session(
             &path,
         )?));
     }
@@ -167,8 +167,8 @@ fn classify_state(args: &Args) -> Result<String> {
 
 async fn run_sweep(args: &Args, questions: &Questions, state: String) -> Result<i32> {
     let endpoint = classify_endpoint(args)?;
-    let budget = summonr::classify::budget(&endpoint, questions);
-    let (decision, windows) = summonr::classify::sweep::sweep(
+    let budget = crate::classify::budget(&endpoint, questions);
+    let (decision, windows) = crate::classify::sweep::sweep(
         &endpoint,
         &serde_json::Value::from(state),
         questions,

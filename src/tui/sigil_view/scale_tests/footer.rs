@@ -299,3 +299,91 @@ fn a_long_workspace_path_takes_the_room_the_footer_leaves() {
         assert!(line.trim_end().chars().count() >= 104, "{line}");
     }
 }
+
+fn meter_cells(grid: &sigil::terminal::Grid, caption: &str) -> Vec<sigil::terminal::Cell> {
+    let text = grid.text();
+    let row = text
+        .lines()
+        .collect::<Vec<_>>()
+        .iter()
+        .rposition(|line| line.contains("cache"))
+        .unwrap_or_else(|| panic!("no footer:\n{text}"));
+    let cells: Vec<sigil::terminal::Cell> = (0..grid.cols())
+        .filter_map(|col| grid.get(col, row))
+        .collect();
+    let glyphs: Vec<&str> = cells.iter().map(sigil::terminal::Cell::text).collect();
+    let start = (0..cells.len())
+        .rfind(|&col| glyphs[col..].concat().starts_with(&format!("{caption} ")))
+        .unwrap_or_else(|| panic!("no {caption} in the footer:\n{text}"))
+        + caption.len()
+        + 1;
+    let end = (start..cells.len())
+        .find(|&col| glyphs[col].starts_with(|ch: char| ch.is_ascii_digit()))
+        .unwrap_or(cells.len());
+    cells[start..end.saturating_sub(1)].to_vec()
+}
+
+fn meter_bar(cells: &[sigil::terminal::Cell], fill: sigil::terminal::Ink) -> String {
+    let base = super::super::canvas::palette().base;
+    let unseen = |ink: sigil::terminal::Ink| match ink {
+        sigil::terminal::Ink::Exact(rgb) => (rgb.r, rgb.g, rgb.b) == (base.r, base.g, base.b),
+        _ => true,
+    };
+    cells
+        .iter()
+        .map(|cell| match (cell.text(), cell.bg) {
+            (_, ink) if ink == fill => '█',
+            ("" | " ", ink) if unseen(ink) => ' ',
+            _ => '─',
+        })
+        .collect()
+}
+
+fn metered(percent: u32) -> sigil::terminal::Grid {
+    paint(busy_info(), 140, 30, State::Idle, |app| {
+        app.update(Msg::Fact(Fact::Settings(crate::tui::Snapshot {
+            model: "stub-model".to_owned(),
+            context_window: Some(200_000),
+            ..crate::tui::Snapshot::default()
+        })));
+        app.update(Msg::Fact(Fact::Event(Event::Usage {
+            prompt_tokens: 2000 * percent,
+            completion_tokens: 0,
+            reasoning_tokens: 0,
+            cached_tokens: 20 * percent * percent,
+            cache_write_tokens: 0,
+            millis: None,
+            prefix_hash: String::new(),
+            cost: None,
+            side: false,
+        })));
+    })
+}
+
+#[test]
+fn the_context_and_cache_meters_draw_a_whole_bar_for_each_percent() {
+    let full = metered(100);
+    for caption in ["ctx", "cache"] {
+        let fill = meter_cells(&full, caption)[0].bg;
+        for (percent, bar) in [
+            (0, "        "),
+            (1, "        "),
+            (50, "████    "),
+            (100, "████████"),
+        ] {
+            let grid = metered(percent);
+            let cells = meter_cells(&grid, caption);
+            let bar = bar.replace(' ', "─");
+            assert_eq!(
+                meter_bar(&cells, fill),
+                bar,
+                "{caption} at {percent}%: {:?}\n{}",
+                cells
+                    .iter()
+                    .map(|cell| (cell.text(), cell.bg))
+                    .collect::<Vec<_>>(),
+                grid.text()
+            );
+        }
+    }
+}

@@ -11,11 +11,22 @@ use tokio::sync::mpsc::unbounded_channel;
 use super::{App, root, thread};
 use crate::catalog::Model;
 use crate::recent::ModelId;
-use crate::tui::{Fact, Msg, Snapshot};
+use crate::tui::{Fact, Msg};
 
+mod alignment;
+mod asking;
+mod bench;
+mod attention;
+mod changes;
+mod controls;
 mod harness;
+mod place;
 mod proportions;
+mod side;
+mod queue;
+mod setup;
 mod settings;
+mod sidebar;
 mod transcript;
 mod window_chrome;
 mod window_composer;
@@ -99,42 +110,6 @@ fn row(runs: &[(String, f32)], text: &str) -> f32 {
         .find(|(run, _)| run == text)
         .map(|(_, y)| *y)
         .unwrap_or_else(|| panic!("no {text:?} in {}", shown(runs)))
-}
-
-#[test]
-fn the_context_meter_draws_no_caption_text() {
-    let runs = texts(
-        |app| {
-            app.update(Msg::Fact(Fact::Settings(Snapshot {
-                model: "stub-model".to_owned(),
-                context_window: Some(200_000),
-                ..Snapshot::default()
-            })));
-            app.update(Msg::Fact(Fact::Event(crate::tools::Event::Usage {
-                prompt_tokens: 1500,
-                completion_tokens: 20,
-                reasoning_tokens: 0,
-                cached_tokens: 0,
-                cache_write_tokens: 0,
-                millis: None,
-                prefix_hash: String::new(),
-                cost: None,
-                side: false,
-            })));
-        },
-        thread::status::meters,
-    );
-    assert!(
-        runs.iter().any(|(text, _)| text == "1%"),
-        "{}",
-        shown(&runs)
-    );
-    assert!(
-        runs.iter()
-            .all(|(text, _)| text != thread::status::CONTEXT_USED),
-        "{}",
-        shown(&runs)
-    );
 }
 
 #[test]

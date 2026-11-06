@@ -12,8 +12,8 @@ fn median(mut values: Vec<u64>) -> u64 {
 #[test]
 fn an_idle_splash_frame_repaints_only_what_twinkles() {
     sigil::reactive::Owner::scope("splash-idle", || {
-        let mut app = super::tests::splash_app(SIZE.0, SIZE.1);
-        app.sky = 1;
+        let app = super::tests::splash_app(SIZE.0, SIZE.1);
+        app.sky.set(1);
         let clock = sigil::prelude::signal(0.0);
         app.sky_clock.set(Some(clock));
         let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
@@ -123,7 +123,7 @@ fn the_splash_sky_shows_the_stars_of_its_clock() {
             "the composer window is not exposed sky"
         );
         let stars = |beat: f64| {
-            super::super::space::moving(SIZE.0, SIZE.1, beat, app.sky)
+            super::super::space::moving(SIZE.0, SIZE.1, beat, app.sky.peek())
                 .into_iter()
                 .filter(|spot| outside(spot.x, spot.y))
                 .map(|spot| (spot.x, spot.y, spot.cell.text().to_string()))

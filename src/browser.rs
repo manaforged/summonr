@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
@@ -188,4 +188,40 @@ fn shots_dir(session: Option<&str>) -> Result<PathBuf> {
 
 pub(crate) fn fail(error: charm::Error) -> Error {
     Error::Tool(format!("browser: {error}"))
+}
+
+/// The Chrome the browser tools launch: the configured one, else the first install found.
+pub(crate) fn chrome() -> Option<PathBuf> {
+    crate::config::file()
+        .ok()
+        .and_then(|file| file.browser.chrome.clone())
+        .or_else(charm::resolve)
+}
+
+/// The program inside a picked macOS app bundle, or the picked file itself.
+pub(crate) fn executable(picked: &Path) -> PathBuf {
+    if picked.extension().is_some_and(|ext| ext == "app") {
+        let programs = picked.join("Contents/MacOS");
+        let named = picked.file_stem().map(|stem| programs.join(stem));
+        if let Some(named) = named.filter(|path| path.is_file()) {
+            return named;
+        }
+        if let Some(first) = std::fs::read_dir(&programs)
+            .ok()
+            .and_then(|entries| entries.flatten().map(|entry| entry.path()).find(|path| path.is_file()))
+        {
+            return first;
+        }
+    }
+    picked.to_path_buf()
+}
+
+/// A short name for a browser program, such as `Google Chrome`.
+pub(crate) fn display_name(program: &Path) -> String {
+    program
+        .ancestors()
+        .find(|part| part.extension().is_some_and(|ext| ext == "app"))
+        .unwrap_or(program)
+        .file_stem()
+        .map_or_else(|| program.display().to_string(), |stem| stem.to_string_lossy().into_owned())
 }

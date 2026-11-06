@@ -1,6 +1,6 @@
 # Goals and checks
 
-This page shows you how to make summonr work until your check command passes, run a numbered plan, and read what a run changed.
+This page shows you how to run a goal against a check command, run a numbered plan, and read what a run changed.
 
 ## Set a check
 

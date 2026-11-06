@@ -63,8 +63,12 @@ impl Palette {
     #[must_use]
     pub(super) fn named(name: &str) -> Self {
         let wanted = match crate::prefs::theme(name) {
-            crate::prefs::AUTO_THEME if backdrop_light() => "dawn",
-            crate::prefs::AUTO_THEME => "space",
+            crate::prefs::AUTO_THEME => match (super::canvas::is_window(), backdrop_light()) {
+                (true, true) => "paper",
+                (true, false) => "iron",
+                (false, true) => "dawn",
+                (false, false) => "space",
+            },
             known => known,
         };
         Self::ALL
@@ -73,11 +77,61 @@ impl Palette {
             .map_or(Self::SPACE, |(_, palette)| *palette)
     }
 
-    pub(super) const ALL: [(&'static str, Self); 3] = [
+    pub(super) const ALL: [(&'static str, Self); 5] = [
         ("space", Self::SPACE),
         ("nord", Self::NORD),
         ("dawn", Self::DAWN),
+        ("paper", Self::PAPER),
+        ("iron", Self::IRON),
     ];
+
+    /// The summonr.dev light palette: warm paper, iron ink, spark-green accent.
+    pub(super) const PAPER: Self = Self {
+        base: rgb(251, 250, 247),
+        text: rgb(28, 29, 26),
+        gray: rgb(43, 44, 40),
+        dim: rgb(92, 90, 84),
+        thought: rgb(95, 93, 87),
+        green: rgb(61, 122, 64),
+        red: rgb(176, 58, 46),
+        cyan: rgb(40, 110, 128),
+        yellow: rgb(168, 122, 18),
+        error: rgb(176, 58, 46),
+        black: rgb(242, 239, 232),
+        user_bg: rgb(244, 242, 236),
+        tool_bg: rgb(244, 242, 236),
+        code_bg: rgb(220, 216, 208),
+        diff_add_bg: rgb(229, 239, 214),
+        diff_del_bg: rgb(246, 226, 221),
+        code_comment: rgb(95, 93, 87),
+        code_string: rgb(140, 98, 20),
+        code_keyword: rgb(110, 70, 140),
+        accent: rgb(79, 102, 38),
+    };
+
+    /// The summonr.dev dark palette: iron ground, bone text, spark accent.
+    pub(super) const IRON: Self = Self {
+        base: rgb(28, 29, 26),
+        text: rgb(236, 231, 220),
+        gray: rgb(220, 215, 204),
+        dim: rgb(169, 164, 154),
+        thought: rgb(162, 157, 147),
+        green: rgb(150, 196, 120),
+        red: rgb(224, 122, 106),
+        cyan: rgb(120, 190, 200),
+        yellow: rgb(217, 183, 90),
+        error: rgb(224, 122, 106),
+        black: rgb(23, 24, 21),
+        user_bg: rgb(35, 36, 31),
+        tool_bg: rgb(32, 33, 29),
+        code_bg: rgb(52, 53, 48),
+        diff_add_bg: rgb(39, 51, 28),
+        diff_del_bg: rgb(58, 36, 32),
+        code_comment: rgb(162, 157, 147),
+        code_string: rgb(217, 183, 90),
+        code_keyword: rgb(190, 160, 210),
+        accent: rgb(201, 218, 165),
+    };
 
     pub(super) const DAWN: Self = Self {
         base: rgb(222, 218, 208),

@@ -2,13 +2,13 @@ use super::*;
 
 #[derive(Clone, Debug)]
 pub struct CompletionRequest<'a> {
-    pub session: String,
-    pub model: String,
-    pub messages: &'a [Message],
-    pub tools: &'a [ToolDefinition],
-    pub max_output_tokens: Option<u32>,
-    pub emit_deltas: bool,
-    pub effort: Option<Effort>,
+    pub(crate) session: String,
+    pub(crate) model: String,
+    pub(crate) messages: &'a [Message],
+    pub(crate) tools: &'a [ToolDefinition],
+    pub(crate) max_output_tokens: Option<u32>,
+    pub(crate) emit_deltas: bool,
+    pub(crate) effort: Option<Effort>,
     #[cfg(test)]
     pub(crate) reasoning: Reasoning,
     pub(crate) traits: super::wire::traits::Traits,
@@ -79,7 +79,7 @@ pub(crate) fn dollars(amount: f64) -> String {
 
 impl<'a> CompletionRequest<'a> {
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         session: String,
         model: String,
         messages: &'a [Message],
@@ -104,21 +104,22 @@ impl<'a> CompletionRequest<'a> {
         }
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub fn with_model(mut self, model: String) -> Self {
+    pub(super) fn with_model(mut self, model: String) -> Self {
         self.traits = super::wire::traits::traits(&model);
         self.model = model;
         self
     }
 
     #[must_use]
-    pub fn with_tools_json(mut self, tools_json: &'a ToolsJson) -> Self {
+    pub(crate) fn with_tools_json(mut self, tools_json: &'a ToolsJson) -> Self {
         self.tools_json = Some(tools_json);
         self
     }
 
     #[must_use]
-    pub fn with_prefix_hash(mut self, prefix_hash: String) -> Self {
+    pub(crate) fn with_prefix_hash(mut self, prefix_hash: String) -> Self {
         self.prefix_hash = Some(prefix_hash);
         self
     }
@@ -158,14 +159,14 @@ impl<'a> CompletionRequest<'a> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ToolsJson {
+pub(crate) struct ToolsJson {
     declared: Vec<u8>,
     pub(crate) sorted: Vec<u8>,
 }
 
 impl ToolsJson {
     #[must_use]
-    pub fn encode(tools: &[ToolDefinition]) -> Self {
+    pub(crate) fn encode(tools: &[ToolDefinition]) -> Self {
         let declared = serde_json::to_vec(tools).unwrap_or_default();
         let sorted = serde_json::to_value(tools)
             .and_then(|value| serde_json::to_vec(&value))
@@ -174,12 +175,7 @@ impl ToolsJson {
     }
 
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.declared.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.declared.is_empty()
     }
 }

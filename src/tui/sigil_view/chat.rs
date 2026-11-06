@@ -14,12 +14,10 @@ pub(super) use super::model::{Agent, Call, Entry, Model};
 pub(super) use super::panes;
 pub(super) use super::speed::Speed;
 pub(super) use super::suggest;
-#[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use composer::pending_rows;
 pub(in crate::tui::sigil_view) use footer::Target;
 pub(super) use sigil::app::cell_width;
 #[cfg(feature = "gui")]
-pub(super) use surface::transcript;
+pub(super) use surface::{READING, transcript};
 pub(super) use surface::{inline_layer, layer};
 
 const ACTIVITY_SHARE: sigil::prelude::Dimension = sigil::prelude::Dimension::Percent(0.4);

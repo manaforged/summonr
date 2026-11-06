@@ -8,7 +8,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<FormAnswer> {
-        let Some(shared) = self.steer_shared.clone() else {
+        let Some(shared) = self.steer_shared.clone().filter(|shared| shared.forms()) else {
             return Ok(FormAnswer::declined());
         };
         let message = form.message.clone();
@@ -67,9 +67,21 @@ pub(crate) struct Steering {
     dialog: std::sync::atomic::AtomicU64,
     wake: tokio::sync::Notify,
     changed: tokio::sync::Notify,
+    no_forms: bool,
 }
 
 impl Steering {
+    pub(crate) fn approvals_only() -> Self {
+        Self {
+            no_forms: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) const fn forms(&self) -> bool {
+        !self.no_forms
+    }
+
     pub(crate) fn lock(
         &self,
     ) -> std::sync::LockResult<std::sync::MutexGuard<'_, VecDeque<UserInput>>> {

@@ -204,6 +204,20 @@ pub(crate) fn save_module(
     .map(drop)
 }
 
+pub(crate) fn save_browser_chrome(path: &Path, chrome: Option<&Path>) -> Result<()> {
+    update(path, |document| {
+        let Some(browser) = tables_at(document, "browser") else {
+            return Ok(false);
+        };
+        match chrome {
+            Some(chrome) => browser["chrome"] = value(chrome.display().to_string()),
+            None => drop(browser.remove("chrome")),
+        }
+        Ok(true)
+    })
+    .map(drop)
+}
+
 pub(crate) fn save_default_workflow(path: &Path, name: &str) -> Result<()> {
     update(path, |document| {
         document["workflow"] = value(name);

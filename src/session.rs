@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -7,6 +8,17 @@ use crate::durable::log::{self, Line};
 
 pub(crate) const PARENT_ENV: &str = "SUMMONR_PARENT_SESSION";
 pub(crate) const SESSION_ENV: &str = "SUMMONR_SESSION_ID";
+
+static INTERACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Marks the top-level sessions this process opens as started by a person in the terminal or window.
+pub fn mark_interactive() {
+    INTERACTIVE.store(true, Ordering::Relaxed);
+}
+
+pub(crate) fn interactive() -> bool {
+    INTERACTIVE.load(Ordering::Relaxed)
+}
 
 mod catalog;
 mod export;
@@ -34,6 +46,9 @@ pub struct SessionInfo {
     pub name: Option<String>,
     pub parent: Option<String>,
     pub depth: u8,
+    pub interactive: bool,
+    /// When the session journal last changed.
+    pub modified: Option<std::time::SystemTime>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -43,6 +58,8 @@ pub(crate) struct Summary {
     preview: String,
     parent: Option<String>,
     depth: u8,
+    #[serde(default)]
+    interactive: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     open_bytes: Option<u64>,
 }
@@ -57,14 +74,21 @@ impl Summary {
                     model,
                     parent,
                     depth,
+                    interactive,
                     ..
                 } => {
+                    summary.interactive = *interactive;
                     summary.cwd = Some(workspace.display().to_string());
                     summary.model = Some(model.clone());
                     summary.parent = parent.map(|id| id.to_string());
                     summary.depth = *depth;
                 }
-                Line::User { text, source, .. } if !text.is_empty() => {
+                Line::User {
+                    text,
+                    source,
+                    start,
+                    ..
+                } if !text.is_empty() && (*start || source.is_some()) => {
                     summary.preview = catalog::preview(text, source.as_deref());
                     return (summary, true);
                 }
@@ -98,6 +122,7 @@ impl Summary {
 
     pub(crate) fn into_info(self, id: String, path: PathBuf) -> SessionInfo {
         let name = catalog::name_of(&path);
+        let modified = std::fs::metadata(&path).and_then(|meta| meta.modified()).ok();
         SessionInfo {
             id,
             path,
@@ -107,6 +132,8 @@ impl Summary {
             name,
             parent: self.parent,
             depth: self.depth,
+            interactive: self.interactive,
+            modified,
         }
     }
 }

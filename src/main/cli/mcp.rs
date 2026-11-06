@@ -1,7 +1,7 @@
 use std::fmt;
 
-use summonr::table::{Row, Table};
-use summonr::{Error, McpLaunch, Result};
+use crate::table::{Row, Table};
+use crate::{Error, McpLaunch, Result};
 
 use super::flags::Input;
 

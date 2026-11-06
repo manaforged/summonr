@@ -238,11 +238,12 @@ impl SessionDriver {
         }
     }
 
-    fn snapshot(&mut self, previous: Option<&Snapshot>) -> Result<Snapshot, DriverError> {
+    fn snapshot(&mut self, previous: Option<&Snapshot>, scope: &[String]) -> Result<Snapshot, DriverError> {
         let snapshot = tree::snapshot(
             &self.workspace,
             &tree::base::excludes(self.log.path()),
             previous.or(self.last.as_ref()),
+            scope,
         )?;
         self.last = Some(snapshot.clone());
         Ok(snapshot)

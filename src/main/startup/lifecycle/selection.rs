@@ -1,7 +1,7 @@
-use summonr::{Client, Endpoint, Error, Requirement, Result};
+use crate::{Client, Endpoint, Error, Requirement, Result};
 
 use super::{Ui, use_tui};
-use crate::cli::Args;
+use crate::entry::cli::Args;
 
 pub(super) async fn selection(args: &Args, adopted: &[String]) -> Result<Endpoint> {
     let need = if use_tui(args) {
@@ -10,11 +10,11 @@ pub(super) async fn selection(args: &Args, adopted: &[String]) -> Result<Endpoin
         Requirement::ModelAndKey
     };
     let (name, model) = (args.endpoint.as_deref(), args.model.as_deref());
-    let endpoint = match summonr::resolve_endpoint(name, model, need) {
+    let endpoint = match crate::resolve_endpoint(name, model, need) {
         Ok(endpoint) => endpoint,
         Err(error) => return Err(served(name, model, error).await),
     };
-    if endpoint.source == Some(summonr::secret::Source::Config)
+    if endpoint.source == Some(crate::secret::Source::Config)
         && !args.json
         && !adopted.contains(&endpoint.name)
     {
@@ -30,7 +30,7 @@ async fn served(name: Option<&str>, model: Option<&str>, error: Error) -> Error 
     let Error::Config(text) = error else {
         return error;
     };
-    let Ok(bare) = summonr::resolve_endpoint(name, model, Requirement::Config) else {
+    let Ok(bare) = crate::resolve_endpoint(name, model, Requirement::Config) else {
         return Error::Config(text);
     };
     if !bare.model.is_empty() {
@@ -57,13 +57,13 @@ pub(super) fn ask_login(ui: &Ui, endpoint: &Endpoint, named: bool) {
                     "{} has no key yet. Paste its key, or pick another provider.",
                     selection.name
                 )
-            } else if !selection.keyless() && summonr::endpoint_set_up().is_empty() {
+            } else if !selection.keyless() && crate::endpoint_set_up().is_empty() {
                 "No provider is set up yet. Pick one and paste its key.".to_string()
             } else if !selection.keyless() {
                 "Pick a model to start.".to_string()
             } else {
                 match Client::discover(&selection).await {
-                    Err(error) if Client::state(&error) == summonr::EndpointState::KeyRejected => {
+                    Err(error) if Client::state(&error) == crate::EndpointState::KeyRejected => {
                         format!(
                             "{} rejected the request. Paste its key, or pick another provider.",
                             selection.name

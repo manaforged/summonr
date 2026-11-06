@@ -219,7 +219,7 @@ A foreign agent picks an id and reads `summonr mail inbox <id>`; anyone can writ
 
 ## Memory
 
-summonr remembers across sessions through two Markdown files that load into every trusted session:
+With `memory = true` under `[modules]`, summonr remembers across sessions through two Markdown files that load into every trusted session. The module is off by default.
 
 | Memory | File |
 | --- | --- |
@@ -291,7 +291,7 @@ The tokens are `base`/`background`, `text`/`foreground`, `gray`, `dim`, `thought
 
 ## Desktop window
 
-`summonr --gui` opens the session in a desktop window, in a build with `--features gui`. The window runs the same app and layouts as the terminal.
+The desktop app, `summonr-desktop`, opens the session in a native window. The window runs the same app and layouts as the terminal.
 
 The left rail starts with a row of buttons for the Files, Changes, Worktrees, Jobs, Peers, and Ledger panes, then lists this workspace's sessions. `+` starts a new session, and the branch button starts one in its own git worktree; merge or discard it from the Worktrees pane. Right-click a session for Rename and, on a past session, Delete.
 

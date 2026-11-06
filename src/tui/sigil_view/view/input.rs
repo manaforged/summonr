@@ -17,7 +17,7 @@ pub(super) fn composer_keys(mut node: NodeBuilder, app: &App) -> NodeBuilder {
                 ModifiersState::CONTROL
             };
             node = node.key_capture(Shortcut::new(key, modifiers), move |event| {
-                if app.boundary(end, extend) {
+                if app.target().boundary(end, extend) {
                     event.stop_propagation();
                 }
             });
@@ -32,6 +32,7 @@ pub(super) fn tab_shortcuts(node: NodeBuilder, app: &App) -> NodeBuilder {
     node.key_capture(
         Shortcut::new(Key::Tab, ModifiersState::empty()),
         move |event| {
+            let complete = complete.target();
             let composer =
                 !complete.form_hidden() && (complete.complete() || complete.queue_draft());
             if complete.overlay_tab(1) || composer {
@@ -45,6 +46,7 @@ pub(super) fn tab_shortcuts(node: NodeBuilder, app: &App) -> NodeBuilder {
     .key_capture(
         Shortcut::new(Key::Tab, ModifiersState::SHIFT),
         move |event| {
+            let mode = mode.target();
             if mode.overlay_tab(-1) {
                 event.stop_propagation();
             } else if !canvas::is_window() {
@@ -61,7 +63,7 @@ pub(super) fn leader_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
         node = node.key_capture(
             Shortcut::ctrl(LogicalKey::character(key.to_string())),
             move |event| {
-                if apply_ctrl(&route, key, event) {
+                if apply_ctrl(&route.target(), key, event) {
                     event.stop_propagation();
                 }
             },
@@ -69,7 +71,7 @@ pub(super) fn leader_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
     }
     let fallback = app.clone();
     node.key(Shortcut::ctrl(LogicalKey::character("x")), move |event| {
-        fallback.arm_leader();
+        fallback.target().arm_leader();
         event.stop_propagation();
     })
 }
@@ -80,7 +82,7 @@ pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
         node = node.key_capture(
             Shortcut::ctrl(LogicalKey::character(key.to_string())),
             move |event| {
-                if newline(&route, key) {
+                if newline(&route.target(), key) {
                     rewrite(event, Key::Enter);
                 }
             },

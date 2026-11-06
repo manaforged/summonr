@@ -124,6 +124,20 @@ impl Entries {
         self.revs.get(index).copied().unwrap_or_default()
     }
 
+    /// The note texts while the chat holds nothing but notes; `None` once anything else arrives.
+    #[cfg(feature = "gui")]
+    pub(in crate::tui::sigil_view) fn only_notes(&self) -> Option<Vec<String>> {
+        let mut notes = Vec::new();
+        for entry in &self.inner {
+            match entry {
+                Entry::System(text) => notes.push(text.clone()),
+                Entry::Injected(_) => {}
+                _ => return None,
+            }
+        }
+        Some(notes)
+    }
+
     pub(in crate::tui::sigil_view) fn asked(&self) -> bool {
         self.asked
             || self

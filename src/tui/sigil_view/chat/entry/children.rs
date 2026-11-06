@@ -125,11 +125,11 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
     });
     let mut card = container().layout(LayoutStyle::flex_column().fill_width().gap(0.0));
     for kid in kids {
-        card = card.child(subagent_line(kid, &kid.roots(&app.roots), app.ticks));
+        card = card.child(subagent_line(kid, &kid.roots(&app.roots()), app.ticks));
         if let Some((_, kept)) = kept.as_ref().filter(|(tag, _)| *tag == kid.id) {
             card = card.child(branch(
                 true,
-                label(kept_line(kept, &app.roots), TextStyle::xs(Token::Warn11)).ellipsize(),
+                label(kept_line(kept, &app.roots()), TextStyle::xs(Token::Warn11)).ellipsize(),
             ));
         }
     }
@@ -159,7 +159,7 @@ pub(super) fn receipt_card(
     let record: ChildRecord = serde_json::from_str(&call.output).ok()?;
     let (state, word) = receipt_state(&record.state);
     let mut roots = vec![record.workspace.to_string_lossy().into_owned()];
-    roots.extend(app.roots.iter().cloned());
+    roots.extend(app.roots().iter().cloned());
     let note = format!("{} · {word}", record.access.name());
     let card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))

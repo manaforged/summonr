@@ -1,23 +1,23 @@
 use super::*;
 use crate::tui::sigil_view::view::editor;
 use sigil::prelude::Widget;
-use sigil::prelude::{Dimension, FlexWrap, Radius};
+use sigil::prelude::{Dimension, Radius};
 
-const PLACEHOLDER: &str = "What would you like to build or change?";
-const EDITING: &str = "Editing the file: ctrl+s saves, esc leaves";
+const PLACEHOLDER: &str = "Message";
+const FIRST: &str = "What should this agent do?";
+const EDITING: &str = "Editing";
 const ATTACH: &str = "Attach a file";
-const EFFORT_OFF: &str = "effort off";
-const APPROVAL_AUTO: &str = "auto";
-const APPROVAL_ASK: &str = "ask on risky";
 
 pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
     let typing = app.clone();
+    let (menu, shown) = (sigil::prelude::signal(false), app.clone());
     let mut composer = container()
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
                 .padding_top(S)
                 .shrink(0.0)
+                .position(sigil::prelude::Position::Relative)
                 .align_items(AlignItems::Stretch),
         )
         .pointer_down(move |_| {
@@ -35,39 +35,34 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
             container()
                 .layout(
                     LayoutStyle::flex_column()
+                        .position(sigil::prelude::Position::Absolute)
+                        .inset_bottom(Dimension::Percent(1.0))
+                        .inset_right(0.0)
+                        .padding_bottom(XS)
+                        .align_items(AlignItems::End),
+                )
+                .children_reactive(move || super::model_menu::panel(&shown, menu)),
+        )
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
                         .fill_width()
-                        .padding_x(L)
-                        .padding_y(M)
-                        .gap(S),
+                        .padding(S),
                 )
                 .rounded(Radius::Lg)
-                .bg(Token::SurfaceSubtle)
+                .shadow(super::super::style::FLOATING)
+                .bg(super::super::style::RAISED)
                 .border_w(1)
-                .border_color(Token::Border)
-                .child(chat::pending_rows(
-                    &app,
-                    (COLUMN / chat::canvas::cell().w) as usize,
-                ))
+                .border_color(super::super::style::OUTLINE)
+                .child({
+                    let queued = app.clone();
+                    container()
+                        .layout(LayoutStyle::block().fill_width())
+                        .children_reactive(move || super::queue::panel(&queued).into_iter().collect::<Vec<NodeBuilder>>())
+                })
                 .child(mentions::chips(app.clone(), editing))
-                .child(
-                    editor(&app, editing)
-                        .placeholder(if editing { EDITING } else { PLACEHOLDER })
-                        .autofocus()
-                        .chrome(false)
-                        .content_padding(0.0, 0.0)
-                        .layout(
-                            LayoutStyle::flex_column()
-                                .fill_width()
-                                .height(Dimension::Auto)
-                                .min_size(0.0, 48.0)
-                                .max_size(Dimension::Auto, 192.0)
-                                .shrink(0.0),
-                        )
-                        .line_height_px(24.0)
-                        .font_size(BODY)
-                        .text_color(Token::OnSurface),
-                )
-                .child(tools(&app, editing)),
+                .child(row(&app, editing, menu)),
         );
     for modifiers in [ModifiersState::CONTROL, ModifiersState::META] {
         let paste = app.clone();
@@ -83,32 +78,88 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
     composer
 }
 
-fn tools(app: &App, editing: bool) -> NodeBuilder {
+fn row(app: &App, editing: bool, menu: sigil::prelude::Signal<bool>) -> NodeBuilder {
     container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .align_items(AlignItems::Center)
-                .flex_wrap(FlexWrap::Wrap)
-                .gap(XS),
+        .layout(LayoutStyle::flex_column().fill_width().gap(S))
+        .child(
+                    editor(app, editing)
+                        .placeholder({
+                            let model = app.model;
+                            move || {
+                                let shown = if editing {
+                                    EDITING
+                                } else if model.get().entries.asked() {
+                                    PLACEHOLDER
+                                } else {
+                                    FIRST
+                                };
+                                shown.to_string()
+                            }
+                        })
+                        .autofocus()
+                        .chrome(false)
+                        .focus_ring(sigil::prelude::signal(false))
+                        .content_padding((super::super::style::CONTROL - super::super::style::MARK) / 2.0 - super::super::style::CARET, 2.0)
+                        .layout(
+                            LayoutStyle::flex_column()
+                                .fill_width()
+                                .min_width(0.0)
+                                .height(Dimension::Auto)
+                                .min_size(0.0, LINE)
+                                .max_size(Dimension::Auto, 192.0)
+                                .shrink(0.0),
+                        )
+                        .line_height_px(LINE)
+                        .font_size(BODY)
+                        .text_color(Token::OnSurface),
         )
-        .child(attach(app.clone()))
-        .child(model_chip(app.clone()))
-        .child(effort_chip(app.clone()))
-        .child(approval_chip(app.clone()))
-        .child(spacer())
-        .child(send(app.clone(), editing))
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_row()
+                        .fill_width()
+                        .gap(XS)
+                        .padding_right((super::super::style::CONTROL - super::super::style::MARK) / 2.0)
+                        .align_items(AlignItems::Center),
+                )
+                .child(attach(app.clone()))
+                .child(super::place::chip(app))
+                .child(approval(app.clone()))
+                .child(spacer())
+                .child({
+                    let ring = app.clone();
+                    container().layout(LayoutStyle::flex_row().shrink(0.0).align_items(AlignItems::Center)).children_reactive(move || super::status::ring(&ring).into_iter().collect::<Vec<NodeBuilder>>())
+                })
+                .child(super::model_menu::chip(app, menu))
+                .child(send(app.clone(), editing)),
+        )
 }
 
-fn chip(label: impl Fn() -> String + 'static, name: &'static str) -> sigil::widgets::ButtonBuilder {
-    button(label)
-        .ghost()
-        .size(ControlSize::Compact)
-        .accessible(name)
+/// The chip that shows and toggles whether risky steps wait for the user's OK.
+fn approval(app: App) -> NodeBuilder {
+    let shown = app.clone();
+    container().layout(LayoutStyle::flex_row().shrink(0.0).align_items(AlignItems::Center)).children_reactive(move || {
+        let snapshot = shown.model.get().snapshot.clone();
+        let (label, locked) = if snapshot.strict {
+            ("Strict", true)
+        } else if snapshot.approval {
+            ("Ask first", false)
+        } else {
+            ("Auto-approve", false)
+        };
+        let toggle = shown.clone();
+        vec![NodeBuilder::from(
+            button(label)
+                .ghost()
+                .size(ControlSize::Compact)
+                .disabled(sigil::prelude::signal(locked))
+                .activate(move || drop(toggle.cmd.send(crate::tui::Cmd::ToggleApproval))),
+        )]
+    })
 }
 
 fn attach(app: App) -> NodeBuilder {
-    icon_button("@", move || {
+    icon_button(sigil::icons::Icon::Plus, move || {
         if app.view_edit.peek() {
             return;
         }
@@ -125,73 +176,31 @@ fn attach(app: App) -> NodeBuilder {
     .into()
 }
 
-fn model_chip(app: App) -> NodeBuilder {
-    let model = app.model;
-    let name = sigil::reactive::derived(move || model.get().snapshot.model.clone());
-    chip(move || name.get(), "Model")
-        .activate(move || app.begin_model_edit())
-        .into()
-}
-
-fn effort_chip(app: App) -> NodeBuilder {
-    let model = app.model;
-    let name = sigil::reactive::derived(move || {
-        model.get().snapshot.effort.map_or_else(
-            || EFFORT_OFF.to_string(),
-            |level| format!("effort {}", level.as_str()),
-        )
-    });
-    chip(move || name.get(), "Effort")
-        .activate(move || {
-            if app.effort.open.peek() {
-                app.effort.open.set(false);
-            } else {
-                let snapshot = app.model.peek().snapshot.clone();
-                app.effort.show(snapshot.effort, &snapshot.levels);
-            }
-        })
-        .into()
-}
-
-fn approval_chip(app: App) -> NodeBuilder {
-    let model = app.model;
-    let name = sigil::reactive::derived(move || {
-        if model.get().snapshot.approval {
-            APPROVAL_ASK.to_string()
-        } else {
-            APPROVAL_AUTO.to_string()
-        }
-    });
-    chip(move || name.get(), "Approval")
-        .activate(move || drop(app.cmd.send(crate::tui::Cmd::ToggleApproval)))
-        .into()
-}
-
 fn send(app: App, editing: bool) -> NodeBuilder {
-    let gate = app.clone();
-    let label = app.clone();
-    let draft = app.draft;
-    let attached = app.attached;
-    button(move || {
-        if running(&label) {
-            "Stop".to_string()
-        } else {
-            "Send".to_string()
-        }
-    })
-    .primary()
-    .size(ControlSize::Default)
-    .disabled(move || {
-        !running(&gate) && (editing || (draft.get().trim().is_empty() && attached.get() == 0))
-    })
-    .activate(move || {
+    let shown = app.clone();
+    container().children_reactive(move || -> Vec<NodeBuilder> {
+        let app = shown.clone();
         if running(&app) {
-            app.interrupt();
-        } else {
-            app.submit();
+            return vec![
+                icon_button(sigil::icons::Icon::Square, move || app.interrupt())
+                    .primary()
+                    .solid()
+                    .accessible("Stop")
+                    .rounded(Radius::Full)
+                    .into(),
+            ];
         }
+        let (draft, attached, submit) = (app.draft, app.attached, app.clone());
+        vec![
+            icon_button(sigil::icons::Icon::ArrowUp, move || submit.submit())
+                .primary()
+                .solid()
+                .accessible("Send")
+                .disabled(move || editing || (draft.get().trim().is_empty() && attached.get() == 0))
+                .rounded(Radius::Full)
+                .into(),
+        ]
     })
-    .into()
 }
 
 fn running(app: &App) -> bool {
@@ -206,7 +215,6 @@ mod tests {
     use sigil::app::FrameHooks;
 
     use sigil::Host;
-    use sigil::scene::SceneCommand;
     use tokio::sync::mpsc::unbounded_channel;
 
     use super::super::App;
@@ -243,14 +251,10 @@ mod tests {
             let tree = app.clone();
             host.mount(move || super::composer(tree, false));
             host.frame((1200.0, 800.0), 1.0, FrameHooks::default());
-            host.scene((1200.0, 800.0))
-                .expect("scene")
-                .commands
-                .into_iter()
-                .filter_map(|command| match command {
-                    SceneCommand::GlyphRun(draw) => Some(draw.text.clone()),
-                    _ => None,
-                })
+            host.accessibility_tree()
+                .nodes
+                .iter()
+                .filter_map(|(_, node)| node.label().map(str::to_string))
                 .collect()
         })
     }

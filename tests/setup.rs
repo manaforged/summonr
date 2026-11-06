@@ -110,7 +110,7 @@ fn the_session_list_names_its_columns_and_keeps_stdout_tabular() {
         "system": "",
         "workspace": home.path(),
     });
-    let user = serde_json::json!({"kind": "user", "text": "fix the tests"});
+    let user = serde_json::json!({"kind": "user", "text": "fix the tests", "start": true});
     std::fs::write(dir.join("session.jsonl"), format!("{session}\n{user}\n")).unwrap();
     let output = run(home.path(), &["sessions"]);
     assert!(output.status.success());
@@ -118,7 +118,7 @@ fn the_session_list_names_its_columns_and_keeps_stdout_tabular() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("ID\tNAME\tDIRECTORY\tFIRST PROMPT"),
-        "{stderr}"
+        "{stderr}{stdout}"
     );
     let row = stdout.lines().next().unwrap_or_default();
     assert!(row.ends_with("\tfix the tests"), "{stdout}");

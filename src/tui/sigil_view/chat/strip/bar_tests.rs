@@ -139,7 +139,16 @@ fn the_verb_follows_the_live_state() {
     });
     assert_eq!(verb(&model, false, 0).as_deref(), Some("Working…"));
     model.doing = None;
+    assert_eq!(verb(&model, false, 0).as_deref(), Some("Finishing…"));
+    model.entries.push(Entry::Assistant {
+        text: "Half".to_string(),
+        done: false,
+    });
+    model.speed.start(Instant::now());
+    model.speed.delta(4, Instant::now());
     assert_eq!(verb(&model, false, 0).as_deref(), Some("Writing…"));
+    model.speed.finish(1, Instant::now());
+    assert_eq!(verb(&model, false, 0).as_deref(), Some("Finishing…"));
     assert_eq!(verb(&model, true, 0).as_deref(), Some("Waiting for you"));
     model.busy_since = Some((Activity::Compact, Instant::now()));
     assert_eq!(verb(&model, false, 0).as_deref(), Some("Compacting…"));

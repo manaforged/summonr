@@ -124,6 +124,7 @@ fn journal(home: &Path, id: &str) {
             parent: None,
             depth: 0,
             revision: Some("fixture-build".to_string()),
+            interactive: false,
         },
         Durability::Synced,
     )

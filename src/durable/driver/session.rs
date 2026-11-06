@@ -34,6 +34,7 @@ impl SessionDriver {
             parent,
             depth,
             revision: Some(crate::revision().to_string()),
+            interactive: depth == 0 && crate::session::interactive(),
         })?;
         Ok(driver)
     }
@@ -154,6 +155,7 @@ impl SessionDriver {
                 parent,
                 depth,
                 revision: Some(crate::revision().to_string()),
+                interactive: false,
             },
             store::Durability::Renamed,
         )?;

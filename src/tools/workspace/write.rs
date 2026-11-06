@@ -50,6 +50,8 @@ impl From<bool> for View {
 
 impl ToolRegistry {
     pub(in crate::tools) fn apply_changes(&self, changes: &[Change]) -> Result<()> {
+        let before: Vec<String> = changes.iter().map(|change| change.display.clone()).collect();
+        self.save_before(&before);
         let staged = changes
             .iter()
             .map(|change| {

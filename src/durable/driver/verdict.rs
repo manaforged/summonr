@@ -1,7 +1,8 @@
 use super::*;
 
 impl SessionDriver {
-    pub(crate) fn enter_verify(&mut self) -> Result<Vec<String>, DriverError> {
+    /// Captures the workspace for Verify; `wrote` names the paths this turn's tools changed.
+    pub(crate) fn enter_verify(&mut self, wrote: &[String]) -> Result<Vec<String>, DriverError> {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
         }
@@ -10,7 +11,7 @@ impl SessionDriver {
         let base = match self.work.as_ref().and_then(|work| work.base.clone()) {
             Some(base) => base,
             None => {
-                let now = self.snapshot(None)?;
+                let now = self.snapshot(None, &[])?;
                 self.work.as_mut().ok_or(DriverError::NoWork)?.base = Some(now.clone());
                 now
             }
@@ -18,7 +19,7 @@ impl SessionDriver {
         let capture = if unchanged {
             base
         } else {
-            self.snapshot(Some(&base))?
+            self.snapshot(Some(&base), wrote)?
         };
         let paths = self
             .work
@@ -39,13 +40,13 @@ impl SessionDriver {
         Ok(wrote.to_vec())
     }
 
-    pub(crate) fn prepare_verdict(&mut self, passed: bool) -> Result<Verdict, DriverError> {
+    pub(crate) fn prepare_verdict(&mut self, passed: bool, wrote: &[String]) -> Result<Verdict, DriverError> {
         let candidate = self
             .work
             .as_ref()
             .and_then(|work| work.candidate.as_ref())
             .map(|candidate| candidate.snapshot.clone());
-        let now = self.snapshot(candidate.as_ref())?;
+        let now = self.snapshot(candidate.as_ref(), wrote)?;
         let stable = candidate.is_some_and(|candidate| candidate == now);
         Ok(Verdict {
             passed: passed && stable,

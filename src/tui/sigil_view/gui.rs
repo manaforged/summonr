@@ -1,10 +1,10 @@
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use sigil::prelude::{LayoutStyle, NodeBuilder, Widget, container, effect, signal};
-use sigil::reactive::defer;
+use sigil::prelude::{LayoutStyle, NodeBuilder, Signal, Widget, container, effect, signal};
+use sigil::reactive::{Owner, defer};
 use sigil::reactive::untrack;
 use sigil::tasks::on_message;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -44,13 +44,12 @@ struct Running {
 pub fn run(
     prepare: impl Fn(PathBuf, Ui) -> Result<(Loop<Client>, Info, Factory)> + Send + Sync + 'static,
 ) -> Result<i32> {
-    let prepare = Arc::new(prepare);
+    let prepare: Arc<Prepare> = Arc::new(prepare);
     let running = Rc::new(RefCell::new(None::<Running>));
     let worker = running.clone();
+    let session = Rc::new(OnceCell::new());
     let opened = tokio::task::block_in_place(|| {
-        sigil::run(window(), move || {
-            application(prepare.clone(), running.clone())
-        })
+        sigil::run(window(), move || application(&prepare, &running, &session))
     });
     if let Some(running) = worker.borrow_mut().take() {
         running.signals.abort();
@@ -64,52 +63,103 @@ pub fn run(
     Ok(0)
 }
 
-fn application(prepare: Arc<Prepare>, running: Rc<RefCell<Option<Running>>>) -> NodeBuilder {
+fn application(
+    prepare: &Arc<Prepare>,
+    running: &Rc<RefCell<Option<Running>>>,
+    session: &Rc<OnceCell<Session>>,
+) -> NodeBuilder {
     super::canvas::window_cells();
-    let ready = signal(false);
-    let busy = signal(false);
-    let error = signal(None::<String>);
-    let prepared = Rc::new(RefCell::new(None));
-    let received = prepared.clone();
-    let (out, inbox) = unbounded_channel::<Result<Prepared>>();
-    on_message(
-        inbox,
-        move |result| {
-            busy.set(false);
-            match result {
-                Ok(agent) => {
-                    *received.borrow_mut() = Some(agent);
-                    ready.set(true);
-                }
-                Err(cause) => error.set(Some(cause.to_string())),
-            }
-        },
-        || {},
-    );
+    let session = session
+        .get_or_init(|| {
+            let owner = Owner::new("summonr::desktop", None);
+            owner.with(|| Session::start(prepare, owner))
+        })
+        .clone();
+    let (prepare, running) = (prepare.clone(), running.clone());
     container()
         .layout(LayoutStyle::flex_column().fill())
         .children_reactive(move || {
-            let _ready = ready.get();
-            if let Some(prepared) = prepared.borrow_mut().take() {
-                return vec![untrack(|| {
-                    let (app, worker) = mount(prepared);
-                    *running.borrow_mut() = Some(worker);
-                    root(app)
-                })];
+            let _ready = session.ready.get();
+            if let Some(prepared) = session.prepared.borrow_mut().take() {
+                let (app, worker) = session.owner.with(|| untrack(|| mount(prepared)));
+                super::desktop::probe_local(&app);
+                *running.borrow_mut() = Some(worker);
+                *session.app.borrow_mut() = Some(app);
             }
-            let (prepare, out) = (prepare.clone(), out.clone());
-            vec![welcome::view(error, busy, move |workspace| {
-                if busy.peek() {
-                    return;
-                }
-                busy.set(true);
-                error.set(None);
-                let (prepare, out) = (prepare.clone(), out.clone());
-                tokio::task::spawn_blocking(move || {
-                    drop(out.send(Prepared::new(&*prepare, workspace)));
-                });
-            })]
+            if let Some(app) = session.app.borrow().clone() {
+                return vec![untrack(|| root(app))];
+            }
+            if session.launching.get() {
+                return Vec::new();
+            }
+            vec![session.welcome(&prepare)]
         })
+}
+
+#[derive(Clone)]
+struct Session {
+    owner: Owner,
+    ready: Signal<bool>,
+    busy: Signal<bool>,
+    error: Signal<Option<String>>,
+    launching: Signal<bool>,
+    prepared: Rc<RefCell<Option<Prepared>>>,
+    app: Rc<RefCell<Option<App>>>,
+    out: UnboundedSender<Result<Prepared>>,
+}
+
+impl Session {
+    fn start(prepare: &Arc<Prepare>, owner: Owner) -> Self {
+        let (out, inbox) = unbounded_channel::<Result<Prepared>>();
+        let session = Self {
+            owner,
+            ready: signal(false),
+            busy: signal(false),
+            error: signal(None),
+            launching: signal(false),
+            prepared: Rc::new(RefCell::new(None)),
+            app: Rc::new(RefCell::new(None)),
+            out,
+        };
+        let received = session.clone();
+        on_message(inbox, move |result| received.received(result), || {});
+        if let Some(folder) = welcome::last() {
+            session.launching.set(true);
+            session.open(prepare, folder);
+        }
+        session
+    }
+
+    fn received(&self, result: Result<Prepared>) {
+        self.busy.set(false);
+        match result {
+            Ok(agent) => {
+                *self.prepared.borrow_mut() = Some(agent);
+                self.ready.set(true);
+            }
+            Err(cause) => {
+                self.launching.set(false);
+                self.error.set(Some(cause.to_string()));
+            }
+        }
+    }
+
+    fn open(&self, prepare: &Arc<Prepare>, workspace: PathBuf) {
+        self.busy.set(true);
+        let (prepare, out) = (prepare.clone(), self.out.clone());
+        tokio::task::spawn_blocking(move || drop(out.send(Prepared::new(&*prepare, workspace))));
+    }
+
+    fn welcome(&self, prepare: &Arc<Prepare>) -> NodeBuilder {
+        let (session, prepare) = (self.clone(), prepare.clone());
+        welcome::view(self.error, self.busy, move |workspace| {
+            if session.busy.peek() {
+                return;
+            }
+            session.error.set(None);
+            session.open(&prepare, workspace);
+        })
+    }
 }
 
 impl Prepared {
@@ -179,6 +229,7 @@ fn mount(prepared: Prepared) -> (App, Running) {
 fn window() -> sigil::AppConfig {
     sigil::AppConfig::new(TITLE)
         .size(SIZE.0, SIZE.1)
+        .inset_title_bar(super::desktop::TITLE_BAR)
         .esc_exits(false)
 }
 

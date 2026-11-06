@@ -38,7 +38,12 @@ fn actions(app: App, review: bool, prompt: Prompt) -> Prompt {
         move || app.form_reply(kind)
     };
     prompt
-        .action(Action::new("Send", Key::Enter, ActionKind::Primary, reply(Reply::Send)))
+        .action(Action::new(
+            "Send",
+            Key::Enter,
+            ActionKind::Primary,
+            reply(Reply::Send),
+        ))
         .action(Action::new(
             "Decline",
             Key::Fixed("n"),

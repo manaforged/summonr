@@ -1,61 +1,46 @@
-use sigil::events::{Event, ModifiersState, ScrollDelta, ScrollPhase};
+use sigil::events::{Event, ScrollDelta, ScrollPhase};
 use sigil::geometry::Point;
-use sigil::prelude::Key;
 
-use super::harness::{drive, named};
+use super::super::settings::{Page, open};
+use super::harness::{Step, drive, steps};
 use super::{VIEW, in_window};
 use crate::modules::ModuleId;
 use crate::tui::Cmd;
 
-#[test]
-fn scrolling_settings_reveals_rows_without_changing_selection() {
-    if !in_window("settings::scrolling_settings_reveals_rows_without_changing_selection") {
-        return;
-    }
-    let seen = drive(
-        |app| {
-            app.toggle_options();
-            app.settings_group
-                .set(Some(crate::tui::sigil_view::settings::Group::Input));
-        },
-        vec![Event::scroll(
-            Point::new(VIEW.0 / 2.0, VIEW.1 / 2.0),
-            ScrollDelta::Pixels(Point::new(0.0, -10_000.0)),
-            ScrollPhase::Moved,
-        )],
-        |app| app.settings.cursor.peek(),
-    );
-    assert!(
-        seen.shows(|text| text == "hotkeys"),
-        "scroll must reveal hotkeys: {}",
-        seen.text()
-    );
-    assert_eq!(seen.read, 0, "scroll must keep the selected setting");
+fn down() -> Event {
+    Event::scroll(
+        Point::new(VIEW.0 * 0.6, VIEW.1 / 2.0),
+        ScrollDelta::Pixels(Point::new(0.0, -10_000.0)),
+        ScrollPhase::Moved,
+    )
 }
 
 #[test]
-fn the_selected_module_row_sends_its_typed_switch() {
-    if !in_window("settings::the_selected_module_row_sends_its_typed_switch") {
+fn scrolling_a_settings_page_reveals_its_last_rows() {
+    if !in_window("settings::scrolling_a_settings_page_reveals_its_last_rows") {
         return;
     }
-    let seen = drive(
-        |app| {
-            app.toggle_options();
-            app.settings_group
-                .set(Some(crate::tui::sigil_view::settings::Group::Tools));
-            let at = crate::tui::sigil_view::settings::setting_rows(app)
-                .iter()
-                .position(|row| row.label == "browser tools")
-                .expect("browser module row");
-            app.settings.select(at);
-        },
-        vec![named(Key::Enter, ModifiersState::empty())],
-        |_| (),
-    );
+    let seen = drive(|app| open(app, Page::Shortcuts), vec![down()], |_| ());
+    assert!(seen.shows(|text| text == "Custom keys"), "scroll must reveal Custom keys: {}", seen.text());
+}
+
+#[test]
+fn the_browser_switch_sends_its_typed_module() {
+    if !in_window("settings::the_browser_switch_sends_its_typed_module") {
+        return;
+    }
+    let seen = steps(|app| open(app, Page::Tools), vec![Step::Click("Browser control")], |_| ());
     assert!(
-        seen.sent
-            .iter()
-            .any(|cmd| matches!(cmd, Cmd::SetModule(ModuleId::Browser, true))),
-        "the browser row must turn on the browser module"
+        seen.sent.iter().any(|cmd| matches!(cmd, Cmd::SetModule(ModuleId::Browser, true))),
+        "the browser switch must turn on the browser module"
     );
+}
+
+#[test]
+fn the_last_settings_page_shows_its_last_row() {
+    if !in_window("settings::the_last_settings_page_shows_its_last_row") {
+        return;
+    }
+    let seen = drive(|app| open(app, Page::Tools), vec![down()], |_| ());
+    assert!(seen.shows(|text| text == "Browser app"), "{}", seen.text());
 }

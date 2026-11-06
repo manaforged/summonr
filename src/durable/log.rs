@@ -73,6 +73,8 @@ pub(crate) enum Line {
         depth: u8,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         revision: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        interactive: bool,
     },
     Tools {
         bytes: u64,

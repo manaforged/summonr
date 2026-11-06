@@ -216,7 +216,8 @@ fn a_checkpoint_writes_the_tree_sidecar_when_the_trees_changed() {
     let dir = tempfile::tempdir().unwrap();
     let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
     let mut work = Work::new("ship", WorkKind::Single);
-    work.base = Some(tree::snapshot(dir.path(), &[], None).unwrap());
+    std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+    work.base = Some(tree::snapshot(dir.path(), &[], None, &["a.txt".to_string()]).unwrap());
     driver.work = Some(work);
     driver.checkpoint().unwrap();
     let sidecar = log::work_path(driver.path()).with_extension("tree.json");

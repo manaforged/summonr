@@ -306,3 +306,12 @@ fn a_built_in_login_with_a_misspelled_grant_is_rejected() {
     };
     assert!(error.contains("devce_code"), "got {error}");
 }
+
+#[test]
+fn a_port_probe_sees_a_listening_server_and_not_a_closed_port() {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+    let open = listener.local_addr().expect("addr").port();
+    assert!(super::preset::Probe::Port(open).here());
+    drop(listener);
+    assert!(!super::preset::Probe::Port(open).here());
+}

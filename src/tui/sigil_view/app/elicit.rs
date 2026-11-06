@@ -76,6 +76,23 @@ impl FormState {
         }
     }
 
+    pub(in crate::tui::sigil_view) fn choice_titles(&self) -> Vec<String> {
+        let Some((options, many)) = self.options() else {
+            return Vec::new();
+        };
+        options
+            .iter()
+            .enumerate()
+            .map(|(index, option)| {
+                if many && self.picked.contains(&index) {
+                    format!("✓ {}", option.title)
+                } else {
+                    option.title.clone()
+                }
+            })
+            .collect()
+    }
+
     fn focus(&mut self) {
         let chosen: BTreeSet<String> = match self.current() {
             Some(Value::String(text)) => BTreeSet::from([text.clone()]),
@@ -366,6 +383,21 @@ impl App {
         }
         self.form.set(Some(state));
         true
+    }
+
+    pub(in crate::tui::sigil_view) fn form_pick(&self, index: usize) {
+        let Some(mut state) = self.form_shown() else {
+            return;
+        };
+        let many = state.options().is_some_and(|(_, many)| many);
+        state.cursor = index;
+        self.form.set(Some(state));
+        if many {
+            self.form_toggle();
+        } else {
+            self.replace(String::new());
+            self.form_enter();
+        }
     }
 
     pub(in crate::tui::sigil_view) fn form_reply(&self, reply: Reply) {

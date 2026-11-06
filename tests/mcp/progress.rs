@@ -39,10 +39,12 @@ pub(crate) fn task_progress_reaches_the_next_provider_turn() {
         .map(|event| {
             event["progress"]["todos"]
                 .as_array()
-                .expect("task list")
-                .iter()
-                .filter(|item| item["status"] == "done")
-                .count()
+                .map_or(0, |todos| {
+                    todos
+                        .iter()
+                        .filter(|item| item["status"] == "done")
+                        .count()
+                })
         })
         .collect();
     assert_eq!(done.first(), Some(&0), "{}", result.stdout);

@@ -137,9 +137,12 @@ fn a_workspace_outside_git_restores_a_turn() -> Result<()> {
     let checkpoints =
         Checkpoints::open(workspace, "plain").expect("a plain folder supports checkpoints");
     assert!(checkpoints.deferred());
+    std::fs::write(workspace.join("bystander.txt"), "left alone\n")?;
     checkpoints.capture_to(2)?;
     assert_eq!(checkpoints.count()?, 2);
+    checkpoints.capture_paths(1, &["notes.txt".to_string()])?;
     std::fs::write(workspace.join("notes.txt"), "after\n")?;
+    std::fs::write(workspace.join("bystander.txt"), "changed by hand\n")?;
     std::fs::create_dir(workspace.join("node_modules"))?;
     std::fs::write(workspace.join("node_modules/dep.js"), "x")?;
     let restored = checkpoints.restore(1);
@@ -149,6 +152,7 @@ fn a_workspace_outside_git_restores_a_turn() -> Result<()> {
     }
     assert_eq!(restored?, vec!["notes.txt".to_string()]);
     assert_eq!(text, "before\n");
+    assert_eq!(std::fs::read_to_string(workspace.join("bystander.txt"))?, "changed by hand\n", "a file no tool edited is not captured");
     assert!(!workspace.join(".git").exists());
     Ok(())
 }

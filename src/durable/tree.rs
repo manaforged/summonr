@@ -17,7 +17,7 @@ use summonr_core::text::Fnv64;
 #[derive(Clone, Copy, Debug, Deserialize, Hash, PartialEq, Eq, Serialize)]
 pub(crate) struct Entry(u64, u64, u64);
 
-const WALK_LIMIT: usize = 20_000;
+const HASH_LIMIT: u64 = 64 << 10;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Snapshot {
@@ -56,10 +56,13 @@ impl Hash for Snapshot {
     }
 }
 
+/// The workspace's files as of now. A Git workspace lists through Git; any other folder is never
+/// walked and covers only the files `previous` knew and the paths in `scope` the session touched.
 pub(crate) fn snapshot(
     root: &Path,
     exclude: &[PathBuf],
     previous: Option<&Snapshot>,
+    scope: &[String],
 ) -> io::Result<Snapshot> {
     let walk = || {
         let taken = SystemTime::now()
@@ -70,7 +73,7 @@ pub(crate) fn snapshot(
         let mut stamps = BTreeMap::new();
         let mut hashed = 0;
         let own = own_outputs();
-        for relative in listing(root)? {
+        for relative in listing(root, previous, scope) {
             let path = root.join(&relative);
             // complexity: bounded by the summonr state directories the driver excludes
             if exclude.iter().any(|exclude| path.starts_with(exclude)) {
@@ -174,12 +177,28 @@ fn mode(metadata: &Metadata) -> u32 {
     u32::from(metadata.permissions().readonly())
 }
 
+fn modified_nanos(metadata: &Metadata) -> u128 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .unwrap_or_default()
+        .as_nanos()
+}
+
 fn fingerprint(path: &Path, metadata: &Metadata) -> io::Result<u64> {
     let mut hasher = Fnv64::default();
     hasher.write_u8(u8::from(metadata.is_symlink()));
     hasher.write_u32(mode(metadata));
     if metadata.is_symlink() {
         hasher.write(read_link(path)?.as_os_str().as_encoded_bytes());
+        return Ok(hasher.finish());
+    }
+    if metadata.len() > HASH_LIMIT {
+        hasher.write_u64(metadata.len());
+        hasher.write_u128(modified_nanos(metadata));
+        hasher.write_i64(changed_at(metadata).0);
+        hasher.write_i64(changed_at(metadata).1);
         return Ok(hasher.finish());
     }
     let mut file = File::open(path)?;
@@ -222,7 +241,7 @@ pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
     paths
 }
 
-pub(crate) fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
+fn listing(root: &Path, previous: Option<&Snapshot>, scope: &[String]) -> Vec<PathBuf> {
     if crate::diff::inside_git(root)
         && let Ok(output) = crate::diff::git_output(
             root,
@@ -237,16 +256,15 @@ pub(crate) fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
             None,
         )
     {
-        return Ok(output
+        return output
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty())
             .map(git_path)
-            .collect());
+            .collect();
     }
-    let mut found = Vec::new();
-    let device = std::fs::metadata(root).ok().as_ref().and_then(device_of);
-    walk(root, root, device, &mut found)?;
-    Ok(found)
+    let known = previous.into_iter().flat_map(|previous| previous.files.keys());
+    let paths: std::collections::BTreeSet<&String> = known.chain(scope).collect();
+    paths.into_iter().map(PathBuf::from).collect()
 }
 
 #[cfg(unix)]
@@ -282,55 +300,6 @@ fn locked(_: &io::Error) -> bool {
 
 fn at(path: &Path, error: io::Error) -> io::Error {
     io::Error::new(error.kind(), format!("{}: {error}", path.display()))
-}
-
-fn walk(root: &Path, dir: &Path, device: Option<u64>, found: &mut Vec<PathBuf>) -> io::Result<()> {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) if dir != root => return Ok(()),
-        Err(error) => return Err(at(dir, error)),
-    };
-    for entry in entries.flatten() {
-        if found.len() >= WALK_LIMIT {
-            return Ok(());
-        }
-        let path = entry.path();
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
-        if kind.is_dir() {
-            if descend(&entry, device) {
-                walk(root, &path, device, found)?;
-            }
-        } else if (kind.is_file() || kind.is_symlink())
-            && let Ok(relative) = path.strip_prefix(root)
-        {
-            found.push(relative.to_path_buf());
-        }
-    }
-    Ok(())
-}
-
-fn descend(entry: &std::fs::DirEntry, device: Option<u64>) -> bool {
-    let name = entry.file_name();
-    !summonr_core::walk::SKIP_DIRS
-        .iter()
-        .any(|skip| name == *skip)
-        && device.is_none_or(|device| {
-            entry
-                .metadata()
-                .is_ok_and(|metadata| device_of(&metadata) == Some(device))
-        })
-}
-
-#[cfg(unix)]
-fn device_of(metadata: &Metadata) -> Option<u64> {
-    Some(std::os::unix::fs::MetadataExt::dev(metadata))
-}
-
-#[cfg(not(unix))]
-fn device_of(_: &Metadata) -> Option<u64> {
-    None
 }
 
 pub(crate) mod base;

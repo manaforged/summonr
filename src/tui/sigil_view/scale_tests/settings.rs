@@ -42,7 +42,7 @@ fn the_settings_dialog_names_itself_and_groups_advanced_controls() {
 fn the_theme_row_previews_edits_and_saves_custom_colors() {
     let mut seen = Vec::new();
     let shown = frame_with(busy_info(), 110, 40, State::Idle, |app| {
-        for _ in 0..4 {
+        for _ in 0..crate::prefs::THEMES.len() {
             app.open_theme();
             app.step_theme(1);
             app.save_theme();
@@ -68,16 +68,19 @@ fn the_theme_row_previews_edits_and_saves_custom_colors() {
         app.preview_color("#102030");
         app.save_theme();
         assert!(!app.theme_editor.open.peek(), "valid colors did not save");
-        let saved = std::fs::read_to_string(app.workspace.join(".summonr/theme.toml"))
+        let saved = std::fs::read_to_string(app.workspace().join(".summonr").join("theme.toml"))
             .expect("saved colors");
         assert!(saved.contains("#102030ff"), "{saved}");
         assert_eq!(
             app.appearance.peek().base,
-            super::super::theme::hex("#102030").expect("color")
+            sigil::prelude::Rgba8 {
+                a: 0,
+                ..super::super::theme::hex("#102030").expect("color")
+            }
         );
         app.open_theme();
     });
-    assert_eq!(seen, ["space", "nord", "dawn", "auto"]);
+    assert_eq!(seen, ["space", "nord", "dawn", "paper", "iron", "auto"]);
     assert!(
         shown.join("\n").contains("Theme editor"),
         "{}",
@@ -162,7 +165,10 @@ fn theme_keyboard_edits_survive_resize_without_touching_the_draft() {
             .expect("type color");
         assert_eq!(
             app.appearance.peek().base,
-            super::super::theme::hex("#102030").expect("color")
+            sigil::prelude::Rgba8 {
+                a: 0,
+                ..super::super::theme::hex("#102030").expect("color")
+            }
         );
         for size in [(60, 24), (100, 40)] {
             app.resize(size.0, size.1);
@@ -238,7 +244,10 @@ fn theme_keyboard_edits_survive_resize_without_touching_the_draft() {
         assert_eq!(std::fs::read(&file).expect("unchanged theme"), saved);
         assert_eq!(
             app.appearance.peek().base,
-            super::super::theme::hex("#102030").expect("restored color")
+            sigil::prelude::Rgba8 {
+                a: 0,
+                ..super::super::theme::hex("#102030").expect("restored color")
+            }
         );
         assert_eq!(app.draft.peek(), "keep this draft");
         assert!(app.model.peek().busy_since.is_some());
@@ -274,7 +283,6 @@ fn theme_save_preserves_comments_and_failed_writes_keep_the_editor_open() {
             std::fs::read_to_string(&file).expect("cancelled file"),
             original
         );
-        app.toggle_background();
         app.open_theme();
         app.save_theme();
         let saved = std::fs::read_to_string(&file).expect("saved file");

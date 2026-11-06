@@ -23,9 +23,33 @@ fn main() {\n\
 ```\n\
 \n\
 ```mermaid\n\
-graph TD\n\
-A[Prompt] --> B[Model]\n\
-B --> C[Reply]\n\
+flowchart LR\n\
+A[Something broke] --> B{Coffee first?}\n\
+B -->|Yes| C[Make coffee]\n\
+B -->|No| D[Read the error]\n\
+C --> D\n\
+D --> E([Fixed])\n\
+```\n\
+\n\
+```mermaid\n\
+stateDiagram-v2\n\
+[*] --> Queued\n\
+Queued --> Downloading\n\
+Downloading --> Done\n\
+Downloading --> Failed\n\
+Failed --> Queued: retry\n\
+Done --> [*]\n\
+```\n\
+\n\
+```mermaid\n\
+sequenceDiagram\n\
+You->>App: Draw me a diagram\n\
+App->>AI: Send request\n\
+loop until it renders\n\
+AI-->>App: Mermaid text\n\
+end\n\
+Note over App: Lay out and paint\n\
+App-->>You: Show the figure\n\
 ```\n\
 \n\
 ```chart\n\

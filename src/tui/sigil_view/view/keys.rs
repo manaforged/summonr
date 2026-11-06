@@ -8,6 +8,12 @@ mod bindings;
 mod nav;
 
 pub(in crate::tui::sigil_view) use bindings::KeyCommand;
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use bindings::Jump;
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use bindings::Split;
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use bindings::WINDOW;
 use bindings::bindings;
 use sigil::prelude::Widget;
 
@@ -31,6 +37,13 @@ impl App {
             },
             KeyCommand::Trigger(trigger) => self.open_trigger(trigger),
             KeyCommand::NewSession => self.open_session(crate::tui::hub::Open::New),
+            KeyCommand::Palette => {
+                #[cfg(feature = "gui")]
+                if super::super::desktop::palette::show() {
+                    return true;
+                }
+                self.open_trigger('/');
+            }
             KeyCommand::Pane(pane) => self.toggle_pane(pane),
             KeyCommand::Always => self.approval_answer(GrantAnswer::Always),
             KeyCommand::Retry => self.retry(),
@@ -47,6 +60,7 @@ impl App {
             KeyCommand::HunkReject => self.hunk_reject(),
             KeyCommand::Shortcuts => return self.shortcuts(),
             KeyCommand::Answer(reply, answer) => return self.answer(reply, answer),
+            KeyCommand::Pick(number) => return self.pick_number(number),
             KeyCommand::Escape => self.escape(),
             KeyCommand::Enter => return self.enter(),
             KeyCommand::Edit => return self.edit_key(),
@@ -61,17 +75,41 @@ impl App {
                 return !self.options_active() && !self.editor_focused() && self.form_toggle();
             }
             KeyCommand::Recall(older) => return self.recall(older),
+            KeyCommand::Sidebar => {
+                #[cfg(feature = "gui")]
+                self.sidebar.set(!self.sidebar.peek());
+            }
+            KeyCommand::Jump(to) => {
+                #[cfg(feature = "gui")]
+                super::super::desktop::jump(self, to);
+                #[cfg(not(feature = "gui"))]
+                let _ = to;
+            }
+            KeyCommand::Split(action) => {
+                #[cfg(feature = "gui")]
+                super::super::desktop::split::act(action);
+                #[cfg(not(feature = "gui"))]
+                let _ = action;
+            }
         }
         true
     }
 
     fn escape(&self) {
+        if sigil::widgets::close_top_escape() {
+            return;
+        }
         if self.hotkeys.armed.peek() {
             self.hotkeys.armed.set(false);
             return;
         }
         if self.options_menu.peek() {
             self.options_menu.set(false);
+            return;
+        }
+        #[cfg(feature = "gui")]
+        if self.window_answers() {
+            self.pick(crate::tui::sigil_view::app::Pick::Grant(GrantAnswer::Deny));
             return;
         }
         if self.options_active() {
@@ -89,13 +127,30 @@ impl App {
         }
     }
 
+    /// Whether the window has an approval open that Esc and Return answer.
+    #[cfg(feature = "gui")]
+    fn window_answers(&self) -> bool {
+        crate::tui::sigil_view::canvas::is_window()
+            && self.approval.peek().is_some()
+            && !self.options_active()
+    }
+
     fn enter(&self) -> bool {
+        #[cfg(feature = "gui")]
+        if crate::tui::sigil_view::desktop::dialog_open() {
+            return false;
+        }
         if self.note_target.peek().is_some() && !self.options_active() {
             self.note_commit(&self.note_text.peek());
             return true;
         }
         if self.view_edit.peek() && !self.options_active() {
             return false;
+        }
+        #[cfg(feature = "gui")]
+        if self.window_answers() && self.draft.peek().trim().is_empty() {
+            self.pick(crate::tui::sigil_view::app::Pick::Grant(GrantAnswer::Allow));
+            return true;
         }
         if self.overlay_enter() {
         } else if self.pane_active().is_some() {
@@ -192,6 +247,7 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
     for (shortcut, when, command) in bindings() {
         let app = app.clone();
         let handler = move |event: &mut KeyEvent| {
+            let app = if command.windowed() { app.clone() } else { app.target() };
             if when.holds(&app) && app.run_key(command) {
                 event.stop_propagation();
             }
@@ -206,15 +262,15 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
     let owner = app.clone();
     let stray = app.clone();
     let shell = shell
-        .key_any(move |event| stray.type_elsewhere(event))
+        .key_any(move |event| stray.target().type_elsewhere(event))
         .key_capture_any(move |event| {
+            let owner = owner.target();
             if super::input::leader_plain(&owner, event) {
                 event.stop_propagation();
                 return;
             }
-            let composer = !owner.options_active()
-                && !owner.editor_focused()
-                && owner.pane_active().is_none();
+            let composer =
+                !owner.options_active() && !owner.editor_focused() && owner.pane_active().is_none();
             if owner.form_hidden() && composer && event.key != Key::Tab.into() {
                 event.stop_propagation();
                 return;
@@ -229,12 +285,21 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
             }
         })
-        .on_scroll(move |event| scroll.wheel(event));
+        .on_scroll(move |event| scroll.target().wheel(event));
     let shell = super::input::tab_shortcuts(shell, app);
     super::input::hotkey_shortcuts(super::input::composer_keys(shell, app), app)
 }
 
 impl App {
+    /// The app that takes keys: the focused split pane in the window, else this one.
+    pub(in crate::tui::sigil_view) fn target(&self) -> App {
+        #[cfg(feature = "gui")]
+        if let Some(pane) = super::super::desktop::split::focused() {
+            return pane;
+        }
+        self.clone()
+    }
+
     fn type_elsewhere(&self, event: &mut KeyEvent) {
         let Some(text) = event.text.as_ref().map(ToString::to_string) else {
             return;

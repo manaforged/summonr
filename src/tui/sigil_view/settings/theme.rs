@@ -104,11 +104,14 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     ),
             ];
             nodes.push(
-                [
-                    ("System", crate::prefs::AUTO_THEME),
-                    ("Light", "dawn"),
-                    ("Dark", "space"),
-                ]
+                {
+                    let window = crate::tui::sigil_view::canvas::is_window();
+                    [
+                        ("System", crate::prefs::AUTO_THEME),
+                        ("Light", if window { "paper" } else { "dawn" }),
+                        ("Dark", if window { "iron" } else { "space" }),
+                    ]
+                }
                 .into_iter()
                 .fold(
                     container().layout(LayoutStyle::flex_row().fill_width().gap(8.0)),

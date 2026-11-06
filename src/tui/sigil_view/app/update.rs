@@ -56,6 +56,8 @@ impl App {
     }
 
     fn prepare(&self, msg: &Msg) {
+        #[cfg(feature = "gui")]
+        self.call_attention(msg);
         match msg {
             Msg::Fact(Fact::Event(crate::Event::Work { .. })) => self.load(),
             Msg::Fact(Fact::Event(crate::Event::Approval {
@@ -72,6 +74,7 @@ impl App {
             Msg::Fact(Fact::Event(crate::Event::Elicit { form, dialog })) => {
                 self.form_open(form.clone(), *dialog);
             }
+            Msg::Fact(Fact::Settings(snapshot)) => self.move_to(&snapshot.workspace),
             Msg::Fact(Fact::Diff(diff, _)) => {
                 if self.diff_session.peek()
                     && self.root().is_none()

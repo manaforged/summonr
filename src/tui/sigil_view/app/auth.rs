@@ -35,7 +35,7 @@ impl Login {
     }
 }
 
-fn providers(states: &std::collections::BTreeMap<String, State>) -> Vec<crate::endpoint::AuthInfo> {
+pub(in crate::tui::sigil_view) fn providers(states: &std::collections::BTreeMap<String, State>) -> Vec<crate::endpoint::AuthInfo> {
     let mut choices: Vec<_> = crate::endpoint::names()
         .unwrap_or_default()
         .into_iter()

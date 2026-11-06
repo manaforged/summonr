@@ -50,7 +50,7 @@ impl App {
         let input = if text.trim_start().starts_with('!') {
             Ok(text.into())
         } else {
-            crate::tools::attach(&self.workspace, text)
+            crate::tools::attach(&self.workspace(), text)
         };
         match input {
             Ok(input) => Some(input),
@@ -89,7 +89,7 @@ impl App {
         if self.form_hidden() && !self.editor_focused() {
             return true;
         }
-        if let Some(path) = image_path(&self.workspace, text) {
+        if let Some(path) = image_path(&self.workspace(), text) {
             match read_image(&path) {
                 Ok(Some((image, source))) => {
                     self.paste_image(image, source, format!("image · {}", path.display()));

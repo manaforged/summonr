@@ -31,14 +31,13 @@ fn tab_in_the_window_leaves_effort_and_approval_alone() {
 }
 
 #[test]
-fn command_k_opens_the_command_list_and_command_p_a_file_mention() {
-    if !in_window("window_composer::command_k_opens_the_command_list_and_command_p_a_file_mention")
-    {
+fn command_k_opens_the_palette_and_command_p_a_file_mention() {
+    if !in_window("window_composer::command_k_opens_the_palette_and_command_p_a_file_mention") {
         return;
     }
     let listed = drive(|_| {}, vec![command("k")], |app| app.draft.peek());
-    assert_eq!(listed.read, "/");
-    assert!(listed.shows(|text| text == "commands"), "{}", listed.text());
+    assert_eq!(listed.read, "");
+    assert_eq!(listed.named(sigil::prelude::Role::MenuItem, "New agent").len(), 1, "{:?}", listed.controls);
     let mention = drive(
         |app| app.replace("see".to_owned()),
         vec![command("p")],
@@ -93,15 +92,15 @@ fn sending_with_no_provider_opens_the_providers_and_sends_nothing() {
 }
 
 #[test]
-fn the_empty_window_with_no_provider_offers_only_add_a_provider() {
+fn the_empty_window_with_no_provider_offers_only_connect_a_model() {
     let seen = drive(settings(unconfigured()), Vec::new(), |_| ());
     assert!(
-        seen.shows(|text| text == "Add a provider"),
+        seen.shows(|text| text == "Connect a model"),
         "{}",
         seen.text()
     );
     assert!(
-        !seen.shows(|text| text == "Explain this repo"),
+        !seen.shows(|text| text == "Find and fix a bug"),
         "{}",
         seen.text()
     );
@@ -122,7 +121,7 @@ fn an_unknown_command_leaves_an_empty_draft() {
 }
 
 #[test]
-fn send_waits_for_text_and_the_approval_chip_names_the_mode() {
+fn send_waits_for_text() {
     let blank = drive(
         settings(Snapshot {
             approval: true,
@@ -132,11 +131,6 @@ fn send_waits_for_text_and_the_approval_chip_names_the_mode() {
         |_| (),
     );
     assert_eq!(blank.named(Role::Button, "Send"), vec![true]);
-    assert!(
-        blank.shows(|text| text == "ask on risky"),
-        "{}",
-        blank.text()
-    );
     let typed = drive(|app| app.replace("go".to_owned()), Vec::new(), |_| ());
     assert_eq!(typed.named(Role::Button, "Send"), vec![false]);
 }

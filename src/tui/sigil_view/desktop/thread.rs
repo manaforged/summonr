@@ -6,31 +6,32 @@ use sigil::prelude::{
 };
 
 use super::{App, chat};
-use crate::session;
 
+mod ask;
+mod busy;
+mod changes;
 mod composer;
+mod model_menu;
+mod place;
+
+/// The control that adds a repository.
+pub(super) const ADD_REPOSITORY: &str = place::ELSEWHERE;
+#[cfg(test)]
+pub(super) const fn place_branch() -> &'static str {
+    place::BRANCH
+}
+mod queue;
 mod mentions;
 pub(in crate::tui::sigil_view) mod status;
-mod title;
 
-pub(super) const XS: f32 = 4.0;
-pub(super) const S: f32 = 8.0;
-pub(super) const M: f32 = 12.0;
-pub(super) const L: f32 = 16.0;
-pub(super) const XL: f32 = 24.0;
-pub(super) const BODY: f32 = 16.0;
-pub(super) const META: f32 = 13.0;
-const COLUMN: f32 = 704.0;
-const EXPLAIN: &str = "Explain this repo";
-const ADD_PROVIDER: &str = "Add a provider";
+use super::style::{BODY, L, LINE, M, S, Text, XL, XS};
+const COLUMN: f32 = chat::READING;
+const CONNECT: &str = "Connect a model";
 
 pub(super) fn quiet(
     content: impl Into<sigil::prelude::TextContent>,
 ) -> sigil::prelude::TextBuilder {
-    sigil::prelude::text(content)
-        .nowrap()
-        .font_size(META)
-        .text_color(Token::OnSurfaceMuted)
+    super::style::text(Text::Meta, content).nowrap()
 }
 
 fn column(child: NodeBuilder) -> NodeBuilder {
@@ -62,9 +63,11 @@ fn reading(child: NodeBuilder, grow: bool) -> NodeBuilder {
 pub(super) fn main_col(app: App) -> NodeBuilder {
     let input = app.clone();
     let transcript_app = app.clone();
-    let blank = {
-        let model = app.model;
-        sigil::reactive::derived(move || model.get().entries.is_empty())
+    let empty = {
+        let watch = app.clone();
+        sigil::reactive::derived(move || {
+            watch.overlay().is_none() && watch.model.get().entries.only_notes().is_some()
+        })
     };
     container()
         .layout(
@@ -74,9 +77,11 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .fill_height()
                 .min_size(0.0, 0.0)
                 .padding_bottom(M)
+                .position(sigil::prelude::Position::Relative)
                 .align_items(AlignItems::Stretch),
         )
-        .bg(Token::Surface)
+        .bg(super::style::CANVAS)
+        .child(super::sky::behind(&app, empty))
         .child(header(&app))
         .child(
             container()
@@ -87,41 +92,25 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                         .min_size(0.0, 0.0),
                 )
                 .children_reactive(move || {
-                    if blank.get() {
-                        return Vec::new();
+                    if empty.get() {
+                        let app = transcript_app.clone();
+                        return vec![sigil::reactive::untrack(|| hero(&app))];
                     }
                     let app = transcript_app.clone();
                     vec![sigil::reactive::untrack(|| {
-                        reading(
-                            container()
-                                .layout(
-                                    LayoutStyle::flex_column()
-                                        .fill_width()
-                                        .fill_height()
-                                        .grow(1.0)
-                                        .min_size(0.0, 0.0)
-                                        .padding_top(L),
-                                )
-                                .child(node(move || {
-                                    chat::transcript(app.clone(), (L, L), empty_home)
-                                })),
-                            true,
-                        )
+                        container()
+                            .layout(
+                                LayoutStyle::flex_column()
+                                    .fill_width()
+                                    .fill_height()
+                                    .grow(1.0)
+                                    .min_size(0.0, 0.0)
+                                    .padding_top(L),
+                            )
+                            .child(node(move || {
+                                chat::transcript(app.clone(), (L, L), empty_home)
+                            }))
                     })]
-                }),
-        )
-        .child(
-            container()
-                .layout(LayoutStyle::block().fill_width().shrink(0.0))
-                .children_reactive({
-                    let home = app.clone();
-                    move || {
-                        if blank.get() {
-                            vec![column(starters(&home))]
-                        } else {
-                            Vec::new()
-                        }
-                    }
                 }),
         )
         .child(
@@ -133,13 +122,25 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                         .padding_x(0.0),
                 )
                 .children_reactive({
+                    let changed = app.clone();
+                    move || {
+                        if chat::panels::band(&changed).is_some() {
+                            return Vec::new();
+                        }
+                        changes::bar(&changed).map(column).into_iter().collect()
+                    }
+                }),
+        )
+        .child(
+            container()
+                .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
+                .children_reactive({
                     let strip = app.clone();
                     move || {
-                        let (cols, _rows) = strip.viewport.get();
-                        vec![column(chat::panels::status_bar(
-                            strip.clone(),
-                            chat::canvas::inner_cols(usize::from(cols)),
-                        ))]
+                        if strip.model.get().busy_since.is_none() || chat::panels::band(&strip).is_some() {
+                            return Vec::new();
+                        }
+                        vec![column(busy::row(&strip))]
                     }
                 }),
         )
@@ -162,6 +163,9 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
             container()
                 .layout(LayoutStyle::block().fill_width().shrink(0.0))
                 .children_reactive(move || {
+                    if empty.get() {
+                        return Vec::new();
+                    }
                     vec![column(composer::composer(
                         input.clone(),
                         input.view_edit.get(),
@@ -181,57 +185,69 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
         )
 }
 
+
+/// The strip over the chat: the toggle and agent name while the sidebar is hidden, then the diff stat and Terminal.
 fn header(app: &App) -> NodeBuilder {
-    let history = app.clone();
-    let settings = app.settings_open;
-    let files = app.clone();
-    let model = app.model;
-    let title = app.clone();
+    let (watch, items) = (app.clone(), app.clone());
+    let beside = sigil::prelude::derived(move || {
+        watch.sidebar.get() && sigil::app::viewport_size().get().width >= super::sidebar::ROOMY
+    });
     container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .padding_x(XL)
-                .padding_y(M)
-                .gap(S)
+                .height(super::TITLE_BAR)
+                .shrink(0.0)
+                .padding_left(S)
+                .padding_right(M)
+                .gap(XS)
                 .align_items(AlignItems::Center),
         )
-        .border_bottom(1)
-        .border_color(Token::Border)
-        .child(
-            sigil::prelude::text(move || workspace_name(&title))
-                .font_size(BODY)
-                .font_weight(600),
-        )
-        .child(
-            sigil::prelude::text(move || model.get().snapshot.endpoint.clone())
-                .font_size(META)
-                .text_color(Token::OnSurfaceMuted),
-        )
-        .child(spacer())
-        .child(
-            button("Files")
-                .ghost()
-                .activate(move || files.toggle_pane(super::Pane::Files)),
-        )
-        .child(
-            button("Conversations")
-                .ghost()
-                .activate(move || history.open_sessions(false)),
-        )
-        .child(
-            button("Settings")
-                .ghost()
-                .activate(move || settings.set(true)),
-        )
+        .children_reactive(move || header_items(&items, beside.get()))
 }
 
-fn workspace_name(app: &App) -> String {
-    let workspace =
-        title::active(app).map_or_else(|| app.workspace.clone(), |entry| entry.workspace);
-    crate::worktree::display_name(&workspace)
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| env!("CARGO_PKG_NAME").to_string())
+fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
+    let split = super::split::active();
+    let corner = !beside && super::split::is_first(app);
+    let mut items: Vec<NodeBuilder> = Vec::new();
+    if corner {
+        items.push(container().layout(LayoutStyle::block().width(super::CONTROLS - S).shrink(0.0)).into());
+        items.push(super::sidebar_toggle(app));
+    }
+    if split || !beside {
+        items.push(name(app));
+    }
+    items.push(super::drag_area());
+    items.extend(super::side::toggles(app));
+    if split {
+        let close = app.clone();
+        let button = sigil::prelude::icon_button(sigil::icons::Icon::X, move || super::split::close_app(&close))
+            .accessible(CLOSE_PANE);
+        items.push(super::tip(CLOSE_PANE, Some("⌘W"), button.into()));
+    }
+    items
+}
+
+const CLOSE_PANE: &str = "Close pane";
+
+/// The agent's title and repo, shown in the strip while the sidebar is hidden.
+fn name(app: &App) -> NodeBuilder {
+    let watch = app.clone();
+    container()
+        .layout(LayoutStyle::flex_row().gap(S).padding_left(XS).shrink(1.0).min_size(0.0, 0.0).align_items(AlignItems::Center))
+        .children_reactive(move || {
+            let model = watch.model.get();
+            let session = model.session.clone();
+            let live = model.live.iter().find(|live| live.session == session && !live.title.is_empty()).map(|live| live.title.clone());
+            let title = live.or_else(|| {
+                watch.sessions.all_chats().into_iter().find(|info| info.id == session).map(|info| super::sidebar::title(&info))
+            });
+            title
+                .into_iter()
+                .map(|title| super::style::text(Text::Label, title).ellipsize().into())
+                .chain([super::style::text(Text::Meta, super::sidebar::project_name(&watch)).nowrap().into()])
+                .collect::<Vec<NodeBuilder>>()
+        })
 }
 
 fn empty_home() -> NodeBuilder {
@@ -244,61 +260,66 @@ fn empty_home() -> NodeBuilder {
     )
 }
 
-fn starters(app: &App) -> NodeBuilder {
-    let mut actions = container().layout(
-        LayoutStyle::flex_row()
-            .gap(S)
-            .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::Start),
-    );
-    if app.model.get().snapshot.unconfigured {
-        let providers = app.clone();
-        actions = actions.child(
-            button(ADD_PROVIDER)
-                .primary()
-                .size(ControlSize::Compact)
-                .activate(move || providers.open_providers()),
-        );
-        return home(app, actions);
-    }
-    let explain = app.clone();
-    actions = actions.child(
-        button(EXPLAIN)
-            .size(ControlSize::Compact)
-            .activate(move || {
-                explain.edit(EXPLAIN);
-                explain.submit();
-            }),
-    );
-    let current = app.model.peek().session.clone();
-    if let Some(last) = session::previous_for(&app.workspace, &current)
-        .ok()
-        .flatten()
-    {
-        let resume = app.clone();
-        actions = actions.child(
-            button("Continue last session")
-                .size(ControlSize::Compact)
-                .activate(move || {
-                    resume.open_session(crate::tui::hub::Open::Resume(last.id.clone()))
-                }),
-        );
-    }
-    home(app, actions)
-}
-
-fn home(_app: &App, actions: NodeBuilder) -> NodeBuilder {
+fn hero(app: &App) -> NodeBuilder {
+    let draft = app.clone();
     container()
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
-                .padding_y(S)
-                .align_items(AlignItems::Start),
+                .grow(1.0)
+                .min_size(0.0, 0.0)
+                .padding_x(XL)
+                .padding_bottom(XL * 2.0)
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::Center),
         )
-        .child(actions)
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .max_width(COLUMN)
+                        .gap(L)
+                        .align_items(AlignItems::Stretch),
+                )
+                .child(container().layout(LayoutStyle::flex_column().fill_width()).children_reactive(
+                    move || vec![composer::composer(draft.clone(), draft.view_edit.get())],
+                ))
+                .child(starters(app)),
+        )
+}
+
+fn starters(app: &App) -> NodeBuilder {
+    let row = container().layout(
+        LayoutStyle::flex_row()
+            .gap(S)
+            .align_items(AlignItems::Center)
+            .flex_wrap(sigil::prelude::FlexWrap::Wrap),
+    );
+    if app.model.get().snapshot.unconfigured {
+        return setup(app, row);
+    }
+    row
+}
+
+fn setup(app: &App, row: NodeBuilder) -> NodeBuilder {
+    let local = app.local.get();
+    let row = local.iter().enumerate().fold(row, |row, (index, found)| {
+        let (choose, found) = (app.clone(), found.clone());
+        let base = button(format!("Use {}", found.name)).size(ControlSize::Compact);
+        let base = if index == 0 { base.primary() } else { base.neutral().soft() };
+        row.child(base.activate(move || choose.use_local(&found)))
+    });
+    let providers = app.clone();
+    let connect = button(CONNECT).size(ControlSize::Compact);
+    let connect = if local.is_empty() { connect.primary() } else { connect.neutral().soft() };
+    row.child(connect.activate(move || providers.open_providers()))
 }
 
 fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
+    if let Some(card) = ask::card(&app, &band) {
+        return card;
+    }
     match band {
         chat::panels::Band::Approval { detail, persist } => {
             chat::panels::approval_band(app, usize::MAX, detail, persist)

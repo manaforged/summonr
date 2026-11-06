@@ -250,6 +250,14 @@ impl App {
             .map(|row| row.overlay)
     }
 
+    /// The open overlay, skipping `skip` when a surface of its own shows it.
+    pub(in crate::tui::sigil_view) fn overlay_beyond(&self, skip: Overlay) -> Option<Overlay> {
+        ROWS.iter()
+            .filter(|row| row.overlay != skip)
+            .find(|row| (row.open)(self).get())
+            .map(|row| row.overlay)
+    }
+
     pub(in crate::tui::sigil_view) fn covered(&self) -> bool {
         self.overlay()
             .is_some_and(|overlay| overlay.row().node.is_some())

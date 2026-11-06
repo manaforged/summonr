@@ -225,6 +225,31 @@ fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
     }
 }
 
+/// A provider found on this machine: its route, its provider, the name a user knows, and its default model.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Local {
+    /// The preset name, saved as the provider's route.
+    pub(crate) route: String,
+    /// The provider the route belongs to.
+    pub(crate) endpoint: String,
+    /// The product name, such as "Claude Code".
+    pub(crate) name: String,
+    /// The preset's default model; empty when the user must pick one.
+    pub(crate) model: String,
+}
+
+/// Built-in providers whose program or local server is on this machine.
+#[must_use]
+pub(crate) fn found_locally() -> Vec<Local> {
+    preset::presets()
+        .filter_map(|row| {
+            let found = row.found.as_ref().filter(|found| found.probe.here())?;
+            let endpoint = if row.provider.is_empty() { row.name.clone() } else { row.provider.clone() };
+            Some(Local { route: row.name.clone(), endpoint, name: found.name.clone(), model: row.model.clone() })
+        })
+        .collect()
+}
+
 mod auth;
 mod choice;
 mod info;

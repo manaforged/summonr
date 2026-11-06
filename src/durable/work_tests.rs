@@ -26,7 +26,7 @@ fn todo_list_never_switches_off_the_completion_check() {
 #[test]
 fn todo_marked_done_cannot_finish_a_steps_plan() {
     let dir = tempfile::tempdir().unwrap();
-    let shot = snapshot(dir.path(), &[], None).unwrap();
+    let shot = snapshot(dir.path(), &[], None, &["a.txt".to_string()]).unwrap();
     let mut work = Work::new("plan", WorkKind::Steps);
     work.select(
         "## Steps\n1. first\n2. second\n",
@@ -48,7 +48,7 @@ fn todo_marked_done_cannot_finish_a_steps_plan() {
 #[test]
 fn todo_marked_done_never_overrides_the_goal_judge() {
     let dir = tempfile::tempdir().unwrap();
-    let shot = snapshot(dir.path(), &[], None).unwrap();
+    let shot = snapshot(dir.path(), &[], None, &["a.txt".to_string()]).unwrap();
     let mut work = Work::new("make the check pass", WorkKind::Goal);
     work.plan = Some("plan".to_string());
     work.execute(Some(shot.clone())).unwrap();
@@ -66,7 +66,7 @@ fn todo_marked_done_never_overrides_the_goal_judge() {
 fn work_trees_live_in_the_sidecar_and_an_old_inline_file_still_loads() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), "a").unwrap();
-    let tree = snapshot(dir.path(), &[], None).unwrap();
+    let tree = snapshot(dir.path(), &[], None, &["a.txt".to_string()]).unwrap();
     let mut work = Work::new("ship", WorkKind::Single);
     work.base = Some(tree.clone());
     work.candidate = Some(Candidate {
@@ -118,7 +118,8 @@ fn an_empty_tree_pair_writes_no_sidecar_and_clears_a_stale_one() {
     let mut work = Work::new("ship", WorkKind::Single);
     work.save_trees(&session).unwrap();
     assert!(!sidecar.exists(), "no file map means no sidecar write");
-    work.base = Some(snapshot(dir.path(), &[], None).unwrap());
+    std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+    work.base = Some(snapshot(dir.path(), &[], None, &["a.txt".to_string()]).unwrap());
     work.save_trees(&session).unwrap();
     assert!(sidecar.is_file());
     work.base = None;
@@ -133,7 +134,7 @@ fn an_empty_tree_pair_writes_no_sidecar_and_clears_a_stale_one() {
 fn numbered_steps_stop_after_three_failed_checks() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), "a").unwrap();
-    let shot = snapshot(dir.path(), &[], None).unwrap();
+    let shot = snapshot(dir.path(), &[], None, &["a.txt".to_string()]).unwrap();
     let mut work = Work::new("make the check pass", WorkKind::Steps);
     work.select("## Steps\n1. Repair the check\n", &[])
         .expect("select numbered steps");
@@ -155,14 +156,14 @@ fn check_file_and_cache_files_are_never_touched_paths() {
     write("calc.py", "a");
     let mut work = Work::new("ship", WorkKind::Single);
     work.plan = Some("plan".to_string());
-    work.execute(Some(snapshot(dir.path(), &[], None).unwrap()))
+    work.execute(Some(snapshot(dir.path(), &[], None, &[]).unwrap()))
         .unwrap();
     write(".summonr/check.toml", "check = \"bb\"\n");
     write("calc.py", "bb");
     std::fs::create_dir(dir.path().join("__pycache__")).unwrap();
     write("__pycache__/calc.cpython-312.pyc", "x");
     let paths = work
-        .verify(snapshot(dir.path(), &[], None).unwrap())
+        .verify(snapshot(dir.path(), &[], None, &[]).unwrap())
         .unwrap();
     assert_eq!(paths, vec!["calc.py".to_string()]);
     assert_eq!(work.touched.iter().collect::<Vec<_>>(), vec!["calc.py"]);

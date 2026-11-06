@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use summonr::{
+use crate::{
     Budget, Client, Endpoint, Loop, Result, add_worktree, in_git, last_for, list_sessions,
     list_worktrees, resolve_endpoint, resolve_session, system_prompt, workflow,
 };
 
 use super::lifecycle::provider;
-use crate::cli::Args;
+use crate::entry::cli::Args;
 
 pub(super) enum SessionAction {
     Create,
@@ -43,7 +43,7 @@ pub(super) fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<
 pub(super) fn apply_workflow(
     loop_: &mut Loop<Client>,
     name: &str,
-    ui: Option<&summonr::tui::Ui>,
+    ui: Option<&crate::tui::Ui>,
     json: bool,
 ) -> Result<workflow::Workflow> {
     let workflow = workflow::load(name)?;
@@ -51,7 +51,7 @@ pub(super) fn apply_workflow(
         let endpoint = resolve_endpoint(
             Some(&selection.endpoint),
             selection.model.as_deref(),
-            summonr::Requirement::ModelAndKey,
+            crate::Requirement::ModelAndKey,
         )?;
         let client = provider(&endpoint, ui, json)?;
         Ok((client, endpoint))
@@ -62,14 +62,14 @@ pub(super) fn apply_workflow(
 pub(super) fn isolate(
     args: &Args,
     cwd: &Path,
-) -> Result<(PathBuf, Option<summonr::Tree>, SessionAction)> {
+) -> Result<(PathBuf, Option<crate::Tree>, SessionAction)> {
     let (action, recorded) = load_session(args, cwd)?;
     match &action {
         SessionAction::Resume(path) | SessionAction::Fork(path) => {
             let workspace = recorded
                 .or_else(|| journal_workspace(path))
                 .unwrap_or_else(|| cwd.to_path_buf());
-            let tree = summonr::worktree_at(&workspace);
+            let tree = crate::worktree_at(&workspace);
             Ok((workspace, tree, action))
         }
         SessionAction::Create if args.worktree => {
@@ -90,7 +90,7 @@ pub(super) fn isolate(
 }
 
 fn journal_workspace(path: &Path) -> Option<PathBuf> {
-    summonr::session_info(path.to_path_buf())
+    crate::session_info(path.to_path_buf())
         .cwd
         .map(PathBuf::from)
 }
@@ -114,16 +114,16 @@ pub(super) fn build(
     check: Option<Vec<String>>,
     action: SessionAction,
 ) -> Result<Loop<Client>> {
-    let switches = summonr::modules::load(workspace)?;
-    let images = summonr::catalog::accepts_images(endpoint);
+    let switches = crate::modules::load(workspace)?;
+    let images = crate::catalog::accepts_images(endpoint);
     let prompt = system_prompt(
         workspace,
-        summonr::Sources {
+        crate::Sources {
             trust: args.trust,
-            skills: switches.enabled(summonr::modules::ModuleId::Skills),
+            skills: switches.enabled(crate::modules::ModuleId::Skills),
             images,
-            memory: switches.enabled(summonr::modules::ModuleId::Memory),
-            mcp: switches.enabled(summonr::modules::ModuleId::Mcp),
+            memory: switches.enabled(crate::modules::ModuleId::Memory),
+            mcp: switches.enabled(crate::modules::ModuleId::Mcp),
         },
     );
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));
@@ -131,7 +131,7 @@ pub(super) fn build(
     if resumed && args.goal.is_none() && args.steps.is_none() {
         eprintln!(
             "resuming session {} in {}",
-            summonr::short(&loop_.session_id()),
+            crate::short(&loop_.session_id()),
             loop_.workspace().display()
         );
     }
@@ -140,7 +140,7 @@ pub(super) fn build(
     }
     loop_.choose_effort(args.effort);
     loop_.apply_endpoint(endpoint);
-    loop_.set_images(images, summonr::vision_endpoint()?);
+    loop_.set_images(images, crate::vision_endpoint()?);
     loop_.set_modules(&switches)?;
     configure(loop_, args, check)
 }
@@ -216,7 +216,7 @@ impl Local<'_> {
 
 fn load_session(args: &Args, workspace: &Path) -> Result<Found> {
     if (args.steps.is_some() || args.goal.is_some()) && args.fork {
-        return Err(summonr::Error::Config(
+        return Err(crate::Error::Config(
             "cannot fork an active step or goal session".to_string(),
         ));
     }
@@ -242,7 +242,7 @@ fn load_session(args: &Args, workspace: &Path) -> Result<Found> {
 
 fn load_last(workspace: &Path, fork: bool) -> Result<Found> {
     let info = last_for(workspace)?
-        .ok_or_else(|| summonr::Error::Config("no prior session for this directory".to_string()))?;
+        .ok_or_else(|| crate::Error::Config("no prior session for this directory".to_string()))?;
     let recorded = info.cwd.map(PathBuf::from);
     if fork {
         return Ok((SessionAction::Fork(info.path), recorded));
@@ -271,7 +271,7 @@ fn local_sessions(roots: &[(PathBuf, String)]) -> Result<Vec<Local<'_>>> {
 fn load_job(args: &Args, workspace: &Path) -> Result<Option<Found>> {
     let markdown = match args.steps.as_deref() {
         Some(plan_path) => Some(std::fs::read_to_string(plan_path).map_err(|error| {
-            summonr::Error::Config(format!("cannot read {plan_path}: {error}"))
+            crate::Error::Config(format!("cannot read {plan_path}: {error}"))
         })?),
         None => None,
     };

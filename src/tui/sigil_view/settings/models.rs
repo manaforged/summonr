@@ -21,7 +21,7 @@ const SPLIT_COLS: u16 = 140;
 
 use list::View;
 use row::Grid;
-pub(in crate::tui::sigil_view::settings) use row::{price, tone};
+pub(in crate::tui::sigil_view) use row::{price, tone};
 use rows::{ModelRow, fix, names};
 use sigil::prelude::Widget;
 

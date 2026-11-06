@@ -307,6 +307,7 @@ async fn a_steer_sent_during_the_last_round_reaches_the_model_in_that_turn() {
 #[tokio::test]
 async fn todo_harness_note_never_shows_in_the_users_own_message() {
     let mut run = session([Reply::Text("done")]);
+    run.loop_.set_mode(crate::WorkKind::Steps);
     run.loop_.turn("ship the parser").await.unwrap();
     let sent = format!("{:?}", run.sent.lock().unwrap()[0]);
     assert!(sent.contains("Harness state"), "{sent}");

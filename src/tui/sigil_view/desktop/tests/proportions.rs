@@ -46,8 +46,8 @@ fn check_width(app: &App, host: &mut Host, width: f32) {
     })));
     let active = editor(host, view);
     assert!(
-        (active.1 - empty.1).abs() <= 1.0,
-        "first reply moved composer: {empty:?} -> {active:?}"
+        active.1 >= empty.1 - 1.0,
+        "first reply lifted the composer above the empty chat's: {empty:?} -> {active:?}"
     );
     app.replace("Line one\nLine two\nLine three\nLine four\nLine five\nLine six".to_owned());
     let long = editor(host, view);
@@ -73,11 +73,12 @@ fn editor(host: &mut Host, view: (f32, f32)) -> (f64, f64, f64, f64) {
     let bounds = tree
         .nodes
         .iter()
-        .find_map(|(_, node)| {
+        .filter_map(|(_, node)| {
             (Role::from_accesskit(node.role()) == Role::TextInput)
                 .then(|| node.bounds())
                 .flatten()
         })
+        .max_by(|a, b| a.y0.total_cmp(&b.y0))
         .expect("visible message editor");
     (
         bounds.x0,

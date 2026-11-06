@@ -38,7 +38,7 @@ impl Journey {
     fn at(home: tempfile::TempDir, script: Vec<Step>) -> Self {
         let model = Model::start(script);
         let terminal = Terminal::open(home.path(), 120, 40, model.port);
-        terminal.wait("the splash", |screen| screen.contains("workdir"));
+        terminal.wait("the splash", |screen| screen.contains("ask anything"));
         Self {
             home,
             model,

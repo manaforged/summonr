@@ -15,10 +15,21 @@ mod tests;
 
 pub(super) use run::{Started, start};
 
+/// A second window pane: its command stream into the hub and its message stream out.
+pub(super) struct View {
+    pub(super) commands: tokio::sync::mpsc::UnboundedReceiver<super::Cmd>,
+    pub(super) ui: tokio::sync::mpsc::UnboundedSender<super::Msg>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Open {
+    /// A new chat in the folder the window started in.
     New,
-    Worktree,
+    /// A new chat in this folder.
+    Folder(std::path::PathBuf),
+    /// A new chat on a new branch in a git worktree of this folder.
+    Worktree(std::path::PathBuf),
+    /// An earlier chat, in the folder it recorded.
     Resume(String),
 }
 

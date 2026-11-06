@@ -7,7 +7,7 @@ use super::{
 use crate::skills;
 use summonr_core::error::{Error, Result};
 
-mod report;
+pub(crate) mod report;
 
 use report::{describe, report, servers, settings_servers, skipped};
 

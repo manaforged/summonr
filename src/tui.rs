@@ -42,6 +42,7 @@ pub(crate) enum Fact {
     },
     Pending(Vec<(bool, String)>),
     System(String),
+    Injected(String),
     Outcome(String),
     Session(String),
     Cleared,
@@ -137,6 +138,12 @@ pub(crate) enum Intent {
 }
 
 enum Cmd {
+    /// Adds a window pane that shows its own agent.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code, reason = "only the window splits"))]
+    Attach(hub::View),
+    /// Closes the window pane that sends it; its agent keeps running.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code, reason = "only the window splits"))]
+    Detach,
     Command(String),
     Login(String),
     SetKey(String, String),
@@ -193,6 +200,8 @@ enum Cmd {
     ListWorkflows,
     SetMail(bool),
     SetModule(crate::modules::ModuleId, bool),
+    #[cfg_attr(not(feature = "gui"), allow(dead_code, reason = "only the window picks a browser"))]
+    SetChrome(std::path::PathBuf),
     Dequeue,
     SteerQueued,
     DeleteSession(String),
@@ -225,6 +234,8 @@ impl Round {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Snapshot {
     pub model: String,
+    /// The folder this session works in.
+    pub workspace: std::path::PathBuf,
     pub relay: Option<String>,
     pub work: bool,
     pub goal: bool,

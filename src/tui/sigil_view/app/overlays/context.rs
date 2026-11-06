@@ -90,10 +90,10 @@ impl App {
     }
 
     fn job_log(&self, id: &str) -> String {
-        crate::jobs::load(&self.workspace, id).map_or_else(
+        crate::jobs::load(&self.workspace(), id).map_or_else(
             |_| format!(".summonr/jobs/{id}.log"),
             |record| {
-                crate::jobs::log_path(&self.workspace, &record)
+                crate::jobs::log_path(&self.workspace(), &record)
                     .display()
                     .to_string()
             },
@@ -101,7 +101,7 @@ impl App {
     }
 
     fn open_path(&self, row: &PaneRow, _: &str) {
-        let root = self.root().unwrap_or_else(|| self.workspace.clone());
+        let root = self.root().unwrap_or_else(|| self.workspace());
         self.open_file.set(Some(root.join(&row.path)));
         self.refresh();
     }

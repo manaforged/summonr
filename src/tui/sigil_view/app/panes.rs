@@ -4,7 +4,7 @@ use super::overlays::context::{Act, CHANGE, DIR, FILE, JOB, MCP, PEER, TREE};
 use super::*;
 use crate::tui::sigil_view::ui::List;
 
-pub(super) const PANES: usize = 9;
+pub(super) const PANES: usize = 10;
 
 type Menu = fn(&PaneRow) -> &'static [(&'static str, Act)];
 
@@ -111,6 +111,7 @@ static PANE_SPECS: [PaneSpec; PANES] = [
         click: None,
         ..FILES
     },
+    listed(Pane::Terminal, |_| Vec::new(), |_| &[]),
 ];
 
 fn spec(pane: Pane) -> &'static PaneSpec {

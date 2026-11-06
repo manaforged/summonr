@@ -91,7 +91,9 @@ impl Line {
                 prefix_hash,
                 cost,
                 ..
-            } => usage_event(&usage, prefix_hash, cost, true).into_iter().collect(),
+            } => usage_event(&usage, prefix_hash, cost, true)
+                .into_iter()
+                .collect(),
             Line::Receipt {
                 receipt: Some(receipt),
                 ..

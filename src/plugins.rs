@@ -285,7 +285,7 @@ pub(crate) fn data_dir(name: &str) -> Result<PathBuf> {
     Ok(summonr_home()?.join("plugin-data").join(name))
 }
 
-pub(super) fn installed() -> Vec<Plugin> {
+pub(crate) fn installed() -> Vec<Plugin> {
     let Ok(root) = root() else {
         return Vec::new();
     };

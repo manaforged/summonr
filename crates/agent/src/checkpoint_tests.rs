@@ -1,0 +1,190 @@
+use super::*;
+
+#[test]
+fn a_new_session_index_starts_from_the_repository_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path();
+    let git = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(workspace)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(workspace.join("a.txt"), "a\n").unwrap();
+    git(&["add", "a.txt"]);
+    let checkpoints = Checkpoints::open(workspace, "s1").unwrap();
+    assert_eq!(
+        std::fs::read(&checkpoints.index).unwrap(),
+        std::fs::read(workspace.join(".git/index")).unwrap()
+    );
+}
+
+#[test]
+fn restoring_a_turn_removes_unicode_additions_and_preserves_the_user_index() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    git_env(workspace, &[], &["config", "core.quotepath", "true"])?;
+    git_env(workspace, &[], &["config", "core.autocrlf", "false"])?;
+    let original = workspace.join("original.txt");
+    std::fs::write(&original, "staged\n")?;
+    git_env(workspace, &[], &["add", "original.txt"])?;
+    let index = std::fs::read(workspace.join(".git/index"))?;
+    std::fs::write(&original, "before\n")?;
+    let checkpoints =
+        Checkpoints::open(workspace, "restore").expect("a Git workspace supports checkpoints");
+    checkpoints.capture()?;
+    let added = workspace.join("café.txt");
+    std::fs::write(&added, "added\n")?;
+    std::fs::write(&original, "after\n")?;
+
+    checkpoints.restore(1)?;
+
+    assert!(!added.exists(), "undo left the added Unicode file behind");
+    assert_eq!(std::fs::read_to_string(original)?, "before\n");
+    assert_eq!(std::fs::read(workspace.join(".git/index"))?, index);
+    Ok(())
+}
+
+#[test]
+fn a_recorded_output_file_stays_out_of_every_checkpoint() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    std::fs::write(workspace.join("a.txt"), "a\n")?;
+    std::fs::write(workspace.join("events.jsonl"), "{}\n")?;
+    let checkpoints = Checkpoints::open(workspace, "s1").unwrap();
+    std::fs::write(&checkpoints.skip, "events.jsonl\n")?;
+    checkpoints.capture()?;
+    let tree = checkpoints.trees()?.pop().unwrap();
+    let listed = git_env(workspace, &[], &["ls-tree", "--name-only", &tree])?;
+    assert!(listed.contains("a.txt"), "{listed}");
+    assert!(!listed.contains("events.jsonl"), "{listed}");
+    Ok(())
+}
+
+#[test]
+fn a_file_staged_before_it_was_skipped_leaves_the_next_checkpoint() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    std::fs::write(workspace.join("diff.json"), "{}\n")?;
+    let checkpoints = Checkpoints::open(workspace, "s1").unwrap();
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("diff.json"), "")?;
+    std::fs::write(&checkpoints.skip, "diff.json\n")?;
+    let later = Checkpoints::open(workspace, "s2").unwrap();
+    later.capture()?;
+    checkpoints.capture()?;
+    let tree = checkpoints.trees()?.pop().unwrap();
+    let listed = git_env(workspace, &[], &["ls-tree", "--name-only", &tree])?;
+    assert!(!listed.contains("diff.json"), "{listed}");
+    Ok(())
+}
+
+#[test]
+fn an_undo_reports_only_the_files_a_user_would_see() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    std::fs::write(workspace.join("calc.py"), "before\n")?;
+    let checkpoints =
+        Checkpoints::open(workspace, "undo").expect("a Git workspace supports checkpoints");
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("calc.py"), "after\n")?;
+    std::fs::create_dir(workspace.join("__pycache__"))?;
+    std::fs::write(workspace.join("__pycache__/calc.cpython-312.pyc"), "x")?;
+    assert_eq!(checkpoints.restore(1)?, vec!["calc.py".to_string()]);
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("calc.py"))?,
+        "before\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_session_span_leaves_out_changes_made_before_the_first_turn() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    git_env(workspace, &[], &["config", "core.autocrlf", "false"])?;
+    git_env(workspace, &[], &["config", "user.email", "t@t"])?;
+    git_env(workspace, &[], &["config", "user.name", "t"])?;
+    std::fs::write(workspace.join("a.txt"), "a\n")?;
+    git_env(workspace, &[], &["add", "a.txt"])?;
+    git_env(workspace, &[], &["commit", "-qm", "init"])?;
+    std::fs::write(workspace.join("before.txt"), "dirty before the session\n")?;
+    let checkpoints = Checkpoints::open(workspace, "scope").expect("a Git workspace");
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("first.txt"), "turn one\n")?;
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("second.txt"), "turn two\n")?;
+    let diff = crate::diff::turn_stats(workspace, "scope", crate::diff::TurnId::Session)?;
+    let paths: Vec<&str> = diff.files.iter().map(|stat| stat.path.as_str()).collect();
+    assert_eq!(paths, ["first.txt", "second.txt"]);
+    assert_eq!(diff.base, crate::diff::SESSION_BASE);
+    Ok(())
+}
+
+#[test]
+fn a_workspace_outside_git_restores_a_turn() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    std::fs::write(workspace.join("notes.txt"), "before\n")?;
+    let checkpoints =
+        Checkpoints::open(workspace, "plain").expect("a plain folder supports checkpoints");
+    assert!(checkpoints.deferred());
+    std::fs::write(workspace.join("bystander.txt"), "left alone\n")?;
+    checkpoints.capture_to(2)?;
+    assert_eq!(checkpoints.count()?, 2);
+    checkpoints.capture_paths(1, &["notes.txt".to_string()])?;
+    std::fs::write(workspace.join("notes.txt"), "after\n")?;
+    std::fs::write(workspace.join("bystander.txt"), "changed by hand\n")?;
+    std::fs::create_dir(workspace.join("node_modules"))?;
+    std::fs::write(workspace.join("node_modules/dep.js"), "x")?;
+    let restored = checkpoints.restore(1);
+    let text = std::fs::read_to_string(workspace.join("notes.txt"))?;
+    if let Some(store) = private_dir(workspace) {
+        drop(std::fs::remove_dir_all(store));
+    }
+    assert_eq!(restored?, vec!["notes.txt".to_string()]);
+    assert_eq!(text, "before\n");
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("bystander.txt"))?,
+        "changed by hand\n",
+        "a file no tool edited is not captured"
+    );
+    assert!(!workspace.join(".git").exists());
+    Ok(())
+}
+
+#[test]
+fn restoring_the_middle_turn_brings_back_its_files_and_a_deleted_file() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    std::fs::write(workspace.join("draft.txt"), "one\n")?;
+    std::fs::write(workspace.join("keep.txt"), "kept\n")?;
+    let checkpoints = Checkpoints::open(workspace, "three").expect("a Git workspace");
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("draft.txt"), "two\n")?;
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("draft.txt"), "three\n")?;
+    std::fs::remove_file(workspace.join("keep.txt"))?;
+    checkpoints.capture()?;
+    let mut restored = checkpoints.restore(2)?;
+    restored.sort();
+    assert_eq!(restored, ["draft.txt", "keep.txt"]);
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("draft.txt"))?,
+        "two\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("keep.txt"))?,
+        "kept\n"
+    );
+    Ok(())
+}

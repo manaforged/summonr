@@ -50,7 +50,7 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' }}
       - name: clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy -p summonr -p summonr-agent -p summonr-ui --all-targets --locked -- -D warnings
       - name: tests
         run: cargo test --workspace --exclude summonr-desktop --locked --no-fail-fast
 
@@ -75,7 +75,7 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' }}
       - name: clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy -p summonr -p summonr-agent -p summonr-ui --all-targets --locked -- -D warnings
       - name: tests
         run: cargo test --workspace --exclude summonr-desktop --locked --no-fail-fast -- --test-threads=2
 
@@ -92,7 +92,7 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' }}
       - name: clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy -p summonr -p summonr-agent -p summonr-ui --all-targets --locked -- -D warnings
       - name: tests
         run: cargo test --workspace --exclude summonr-desktop --locked --no-fail-fast
 

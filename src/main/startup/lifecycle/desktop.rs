@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
-use crate::{Error, Requirement, Result};
+use summonr_agent::{Error, Requirement, Result};
 
 use super::{Ui, ask_login, assemble, factory, info};
 use crate::entry::cli::Args;
 
 pub(in crate::entry::startup) fn run(args: &Args) -> Result<i32> {
     let args = args.clone();
-    crate::mark_interactive();
-    crate::tui::desktop(move |workspace: PathBuf, sender| {
+    summonr_agent::mark_interactive();
+    summonr_ui::desktop(move |workspace: PathBuf, sender| {
         let workspace = workspace.canonicalize().map_err(|error| {
             Error::Config(format!("Could not open the project folder: {error}"))
         })?;
@@ -17,9 +17,9 @@ pub(in crate::entry::startup) fn run(args: &Args) -> Result<i32> {
                 "Choose a project folder, not a file.".to_string(),
             ));
         }
-        crate::check_config()?;
+        summonr_agent::check_config()?;
         super::super::commands::adopt(&args)?;
-        let endpoint = crate::resolve_endpoint(
+        let endpoint = summonr_agent::resolve_endpoint(
             args.endpoint.as_deref(),
             args.model.as_deref(),
             Requirement::Model,

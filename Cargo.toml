@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "development-tools"]
 publish = false
 
 [workspace]
-members = ["crates/auth", "crates/core", "crates/types", "desktop"]
+members = ["crates/agent", "crates/auth", "crates/core", "crates/types", "crates/ui", "desktop"]
 
 [workspace.package]
 version = "0.2.0"
@@ -47,46 +47,25 @@ regex = "1"
 toml = "0.8"
 
 [dependencies]
+summonr-agent = { path = "crates/agent" }
 summonr-auth = { path = "crates/auth" }
 summonr-core = { path = "crates/core" }
-summonr-types = { path = "crates/types" }
-base64 = { workspace = true }
-bytes = "1"
+summonr-ui = { path = "crates/ui" }
 futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
-regex = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 sha2 = { workspace = true }
 tempfile = "3"
-zeroize = "1"
-toml = { workspace = true }
-toml_edit = "0.22"
-unicode-segmentation = "1.13.3"
-uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
-charm-cdp = { git = "https://github.com/manaforged/charm", rev = "3a9a351c5dfd8b76f509fa32adbe97978fd0aaa0" }
 leyline = { workspace = true }
-url = { workspace = true }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", version = "0.2.0", default-features = false, features = ["terminal", "inspect"] }
-ignore = { workspace = true }
-grep-matcher = "0.1"
-grep-regex = "0.1"
-grep-searcher = "0.1"
-unicode-normalization = "0.1"
-notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
-chacha20poly1305 = "0.10"
 libc = "0.2"
 dunce = { workspace = true }
 jiff = "0.2.38"
-httparse = "1.10"
 
 [dev-dependencies]
-sigil = { package = "sigil-ui", version = "0.2.0", default-features = false, features = ["kittest"] }
 summonr-core = { path = "crates/core", features = ["test-home"] }
-fastrand = "2.5"
+uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["test-util"] }
 
 [target.'cfg(unix)'.dev-dependencies]
@@ -98,7 +77,7 @@ crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "5b1788
 
 [features]
 default = []
-gui = ["sigil/native-dialog", "sigil/pty", "sigil/notify"]
+gui = ["summonr-ui/gui"]
 
 [profile.release]
 lto = "fat"
@@ -115,13 +94,6 @@ strip = "none"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-
-[target.'cfg(not(target_os = "macos"))'.dependencies]
-keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
-
-[target.'cfg(windows)'.dependencies]
-process-wrap = { version = "9.1", default-features = false, features = ["job-object", "tokio1"] }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 
 [lints]
 workspace = true

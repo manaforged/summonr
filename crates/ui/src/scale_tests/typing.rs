@@ -1,0 +1,134 @@
+use sigil::Host;
+use sigil::events::{Event, KeyPhase, LogicalKey};
+use sigil::terminal::Screen;
+use summonr_agent::hub::Intent;
+use tokio::sync::mpsc::unbounded_channel;
+
+use super::super::app::{App, Overlay};
+use super::super::view::root;
+use super::busy_info;
+
+fn press(key: &str) -> Event {
+    Event::key(LogicalKey::character(key), KeyPhase::Down).text(Some(key.into()))
+}
+
+fn arrow(key: sigil::prelude::Key) -> Event {
+    Event::key(LogicalKey::named(key), KeyPhase::Down)
+}
+
+fn typed(command: &str, read: impl FnOnce(&App) -> String) -> String {
+    after(command, vec![press("k"), press("i")], read)
+}
+
+fn after<T>(command: &str, keys: Vec<Event>, read: impl FnOnce(&App) -> T) -> T {
+    sigil::reactive::Owner::scope("dialog-typing", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(160, 40);
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(160, 40);
+        for _ in 0..2 {
+            screen.frame(&mut host, [], (160, 40)).expect("frame");
+        }
+        app.replace(command.to_owned());
+        app.submit();
+        for _ in 0..2 {
+            screen.frame(&mut host, [], (160, 40)).expect("frame");
+        }
+        screen.frame(&mut host, keys, (160, 40)).expect("frame");
+        read(&app)
+    })
+}
+
+#[test]
+fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
+    use crossterm::event::{KeyCode, KeyEvent as TerminalKey, KeyModifiers};
+    use summonr_agent::hub::Cmd;
+
+    for modifier in [KeyModifiers::SHIFT, KeyModifiers::ALT] {
+        sigil::reactive::Owner::scope("composer-line-break", || {
+            let workspace = tempfile::tempdir().expect("workspace");
+            let (commands, mut sent) = unbounded_channel();
+            let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+            assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
+            app.resize(160, 40);
+            app.update(summonr_agent::hub::Msg::Intent(Intent::User(
+                "Earlier message".to_owned(),
+            )));
+            app.replace("first".to_owned());
+            let mut host = Host::new(sigil::prelude::HostMode::Cell);
+            let tree = app.clone();
+            host.mount(move || root(tree));
+            let mut screen = Screen::new(160, 40);
+            for _ in 0..2 {
+                screen
+                    .frame(&mut host, [], (160, 40))
+                    .expect("focus the composer");
+            }
+            let events = [
+                sigil::terminal::map_key(&TerminalKey::new(KeyCode::Enter, modifier))
+                    .expect("map the line-break chord"),
+            ];
+            screen
+                .frame(&mut host, events, (160, 40))
+                .expect("insert the line break");
+            assert_eq!(app.draft.peek(), "first\n", "{modifier:?}");
+            assert_eq!(app.caret.peek(), 6);
+            assert!(
+                sent.try_recv().is_err(),
+                "{modifier:?}+Enter submitted the draft"
+            );
+            screen
+                .frame(&mut host, [press("second")], (160, 40))
+                .expect("type the second line");
+            assert_eq!(app.draft.peek(), "first\nsecond");
+            screen
+                .frame(
+                    &mut host,
+                    [sigil::events::Event::key_down(sigil::prelude::Key::Enter)],
+                    (160, 40),
+                )
+                .expect("submit with plain Enter");
+            let Cmd::Submit(input) = sent.try_recv().expect("submitted input") else {
+                panic!("plain Enter did not submit the draft");
+            };
+            assert_eq!(input.text, "first\nsecond");
+            assert!(app.draft.peek().is_empty());
+        });
+    }
+}
+
+#[test]
+fn typing_after_slash_model_searches_the_models() {
+    assert_eq!(typed("/model", |app| app.picker.list.query.peek()), "ki");
+}
+
+#[test]
+fn typing_after_slash_login_searches_the_providers() {
+    assert_eq!(typed("/login", |app| app.auth.list.query.peek()), "ki");
+}
+
+#[test]
+fn plain_arrows_switch_between_the_models_providers_and_usage_tabs() {
+    use sigil::prelude::Key;
+    let seen = |keys| after("/model", keys, |app: &App| app.overlay());
+    assert_eq!(seen(vec![arrow(Key::ArrowRight)]), Some(Overlay::Auth));
+    assert_eq!(
+        seen(vec![arrow(Key::ArrowRight), arrow(Key::ArrowRight)]),
+        Some(Overlay::Usage)
+    );
+    assert_eq!(seen(vec![arrow(Key::ArrowLeft)]), Some(Overlay::Usage));
+}
+
+#[test]
+fn the_terminal_undo_key_undoes_the_draft() {
+    let undo = Event::key(LogicalKey::character("7"), KeyPhase::Down)
+        .modifiers(sigil::events::ModifiersState::CONTROL);
+    let draft = after("", vec![press("a"), press("b"), undo], |app| {
+        app.draft.peek()
+    });
+    assert_eq!(draft, "a");
+}

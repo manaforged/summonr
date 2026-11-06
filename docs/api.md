@@ -115,7 +115,7 @@ An unknown option is exit code 1 with `unknown option`. `summonr mcp add` exits 
 
 ### `--json` on a session (`-p`, `--goal`, `--steps`)
 
-summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The first line is `{"type":"session","id":"<session id>"}`. A run that fails before its session starts, for example on a broken config file or a missing key, prints one line instead: an `aborted` event with code `error`. The shapes come from `Event` in `src/tools.rs`.
+summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The first line is `{"type":"session","id":"<session id>"}`. A run that fails before its session starts, for example on a broken config file or a missing key, prints one line instead: an `aborted` event with code `error`. The shapes come from `Event` in `crates/agent/src/tools.rs`.
 
 | `type` | Fields |
 | --- | --- |
@@ -177,7 +177,7 @@ Markdown on stdout. It is not JSON.
 
 ### `summonr acp`
 
-JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods are `session/new` (needs `cwd`) and `session/prompt`. summonr sends `session/update` notifications and accepts a `session/cancel` notification. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `src/acp.rs`.
+JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods are `session/new` (needs `cwd`) and `session/prompt`. summonr sends `session/update` notifications and accepts a `session/cancel` notification. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `crates/agent/src/acp.rs`.
 
 ## Conventions
 

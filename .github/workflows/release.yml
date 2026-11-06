@@ -48,7 +48,7 @@ jobs:
         with:
           save-if: 'false'
       - name: clippy
-        run: cargo clippy -p summonr --all-targets --locked -- -D warnings
+        run: cargo clippy -p summonr -p summonr-agent -p summonr-ui --all-targets --locked -- -D warnings
       - name: tests
         run: cargo test --workspace --exclude summonr-desktop --locked
 

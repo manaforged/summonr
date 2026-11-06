@@ -1,0 +1,301 @@
+use std::collections::BTreeMap;
+
+use crate::config::{self, Endpoint as FileEndpoint, File};
+use crate::credentials::{flow, logged_in};
+use crate::provider::{Effort, Price, Reasoning};
+use crate::secret::{self, Source};
+use summonr_core::error::{Error, Result};
+use summonr_core::secret::Secret;
+
+pub(crate) const ENV_ENDPOINT: &str = "env";
+const PLAN_PATH_MARKER: &str = "/coding/";
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Endpoint {
+    pub name: String,
+    pub model: String,
+    pub base_url: Option<String>,
+    pub models_url: Option<String>,
+    pub api_key: Option<Secret>,
+    pub source: Option<Source>,
+    pub oauth: Option<crate::config::OAuth>,
+    pub body: Option<serde_json::Value>,
+    pub context_window: Option<u32>,
+    pub idle_timeout_secs: Option<u64>,
+    pub effort: Option<Effort>,
+    pub price: Option<Price>,
+    pub env: BTreeMap<String, Secret>,
+    pub headers: BTreeMap<String, Secret>,
+    pub wire: Wire,
+    pub fallback: Vec<String>,
+    pub compact_tokens: Option<u32>,
+    pub images: Option<bool>,
+    pub keep_reasoning: bool,
+    pub session_headers: BTreeMap<String, SessionValue>,
+    pub prompt_cache_key: bool,
+    pub assistant_after_tool: bool,
+    pub cache_ttl: CacheTtl,
+    pub cache_marks: bool,
+    pub(crate) reasoning: Reasoning,
+}
+
+pub(crate) use summonr_types::endpoint::{CacheTtl, Wire};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionValue {
+    SessionId,
+    RequestId,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LoginFlow {
+    #[default]
+    Key,
+    Device,
+    Browser,
+}
+
+impl Endpoint {
+    #[must_use]
+    pub fn effort_for(&self, explicit: Option<Effort>) -> Option<Effort> {
+        explicit
+            .or(self.effort)
+            .or_else(|| crate::recent::default_effort(&self.name, &self.model))
+    }
+
+    #[must_use]
+    pub fn keyless(&self) -> bool {
+        match preset(&self.name) {
+            Some(row) => row.keyless(),
+            None => {
+                let url = self.base_url.as_deref();
+                self.oauth.is_none()
+                    && url
+                        .and_then(hosted)
+                        .is_none_or(|row| row.env_keys.is_empty())
+                    && (self.name == ENV_ENDPOINT || url.is_some_and(local))
+            }
+        }
+    }
+}
+
+pub(crate) fn local(url: &str) -> bool {
+    match url::Url::parse(url).ok().as_ref().and_then(url::Url::host) {
+        Some(url::Host::Ipv4(ip)) => {
+            let [first, second, ..] = ip.octets();
+            ip.is_loopback() || ip.is_private() || (first == 100 && second & 0xc0 == 64)
+        }
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback() || ip.segments()[0] & 0xfe00 == 0xfc00,
+        Some(url::Host::Domain(host)) => {
+            host == "localhost" || host == "host.docker.internal" || host.ends_with(".local")
+        }
+        None => false,
+    }
+}
+
+pub(crate) fn host_port(url: &str) -> Option<String> {
+    let url = url::Url::parse(url.trim().trim_end_matches('/')).ok()?;
+    Some(format!(
+        "{}:{}",
+        url.host_str()?,
+        url.port_or_known_default()?
+    ))
+}
+
+pub(crate) fn providers_at(url: &str) -> Vec<&'static str> {
+    let Some(wanted) = host_port(url) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<&str> = preset::presets()
+        .filter(|preset| host_port(&preset.base_url).as_deref() == Some(wanted.as_str()))
+        .flat_map(|preset| preset.opencode_ids.iter().map(String::as_str))
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum State {
+    Ready,
+    SignIn,
+    NoKey,
+    NeedsKey,
+    NeedsModel,
+    KeyRejected,
+    RateLimited,
+    Offline,
+    Error,
+    Checking,
+    Loading,
+}
+
+impl State {
+    #[must_use]
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::SignIn => "sign in",
+            Self::NoKey => "no key needed",
+            Self::NeedsKey => "needs key",
+            Self::NeedsModel => "needs model",
+            Self::KeyRejected => "key rejected",
+            Self::RateLimited => "rate limited",
+            Self::Offline => "offline",
+            Self::Error => "error",
+            Self::Checking => "checking",
+            Self::Loading => "loading",
+        }
+    }
+
+    #[must_use]
+    pub const fn failed(self) -> bool {
+        matches!(
+            self,
+            Self::KeyRejected | Self::RateLimited | Self::Offline | Self::Error
+        )
+    }
+
+    #[must_use]
+    pub const fn setup(self) -> bool {
+        matches!(self, Self::SignIn | Self::NeedsKey)
+    }
+
+    #[must_use]
+    pub const fn blocked(self) -> bool {
+        matches!(
+            self,
+            Self::SignIn
+                | Self::NeedsKey
+                | Self::NeedsModel
+                | Self::KeyRejected
+                | Self::Offline
+                | Self::Error
+        )
+    }
+}
+
+impl std::fmt::Display for State {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.word())
+    }
+}
+
+impl LoginFlow {
+    #[must_use]
+    pub fn signs_in(self) -> bool {
+        !matches!(self, Self::Key)
+    }
+}
+
+#[must_use]
+pub fn is_named(token: &str) -> bool {
+    builtin(token).is_some()
+        || names()
+            .ok()
+            .is_some_and(|names| names.iter().any(|name| name == token))
+}
+
+pub fn names() -> Result<Vec<String>> {
+    let file = config::file()?;
+    Ok(route::provider_names(&file))
+}
+
+fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
+    if crate::provider::wire::spec(endpoint.wire).classifies() {
+        return LoginGroup::Decide;
+    }
+    if let Some(preset) = preset(name) {
+        if endpoint.keyless() {
+            return LoginGroup::Local;
+        }
+        if preset.plan {
+            return LoginGroup::Plan;
+        }
+        return LoginGroup::Key;
+    }
+    let url = endpoint.base_url.as_deref().unwrap_or("");
+    if url.contains(PLAN_PATH_MARKER) || hosted(url).is_some_and(|preset| preset.plan) {
+        LoginGroup::Plan
+    } else if endpoint.keyless() {
+        LoginGroup::Local
+    } else {
+        LoginGroup::Key
+    }
+}
+
+/// A provider found on this machine: its route, its provider, the name a user knows, and its default model.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Local {
+    /// The preset name, saved as the provider's route.
+    pub route: String,
+    /// The provider the route belongs to.
+    pub endpoint: String,
+    /// The product name, such as "Claude Code".
+    pub name: String,
+    /// The preset's default model; empty when the user must pick one.
+    pub model: String,
+}
+
+/// Built-in providers whose program or local server is on this machine.
+#[must_use]
+pub fn found_locally() -> Vec<Local> {
+    preset::presets()
+        .filter_map(|row| {
+            let found = row.found.as_ref().filter(|found| found.probe.here())?;
+            let endpoint = if row.provider.is_empty() {
+                row.name.clone()
+            } else {
+                row.provider.clone()
+            };
+            Some(Local {
+                route: row.name.clone(),
+                endpoint,
+                name: found.name.clone(),
+                model: row.model.clone(),
+            })
+        })
+        .collect()
+}
+
+mod auth;
+mod choice;
+mod info;
+mod keys;
+mod preset;
+mod reasoning;
+mod record;
+mod resolve;
+mod route;
+mod server;
+
+pub(crate) use auth::ready;
+pub use auth::{adopt_keys, auth_info, check_key, first_classify, login_endpoint, logout};
+pub use choice::{Origin, Requirement};
+pub use info::AuthInfo;
+use info::LoginGroup;
+use keys::*;
+pub use preset::label;
+use preset::preset;
+pub(crate) use preset::wire as deserialize_wire;
+pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
+use record::Record;
+pub use resolve::default_model_selection;
+use resolve::hosted;
+pub(crate) use resolve::{Keys, is_set_up};
+pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
+pub use route::{Region, Route, Toggle, remembered, select, toggle};
+pub use server::{add_server, remove_server, set_default};
+
+#[cfg(test)]
+#[path = "endpoint_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "endpoint/contract_tests.rs"]
+mod contract_tests;
+
+#[cfg(test)]
+#[path = "endpoint/effort_tests.rs"]
+mod effort_tests;

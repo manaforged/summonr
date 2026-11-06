@@ -16,7 +16,7 @@ bin="$target/release/summonr"
 
 built="$target/summon-dev.head"
 head=$(git -C "$root" rev-parse HEAD 2>/dev/null)
-watch="$root/src $root/Cargo.toml $root/Cargo.lock $root/build.rs $root/.git/HEAD"
+watch="$root/src $root/crates $root/Cargo.toml $root/Cargo.lock $root/build.rs $root/.git/HEAD"
 patch=
 for sibling in sigil-ui:sigil/crates/sigil leyline-http:leyline-http/crates/leyline; do
     crate=${sibling%%:*}

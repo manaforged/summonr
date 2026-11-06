@@ -1,6 +1,9 @@
 fn interactive() -> String {
     let mut lines = vec![String::new()];
-    for spec in crate::command_specs().iter().filter(|spec| spec.shown()) {
+    for spec in summonr_agent::command_specs()
+        .iter()
+        .filter(|spec| spec.shown())
+    {
         let last = lines.last_mut().expect("one line");
         if last.len() + spec.name.len() + 3 > 70 {
             lines.push(String::new());
@@ -53,7 +56,7 @@ pub(super) fn text() -> String {
         .replace("{options}", &super::FLAGS.help_lines())
         .replace("{commands}", &interactive())
         .replace("{verbs}", &verbs())
-        .replace("{sets}", &crate::classify::sets::NAMES.join(", "))
+        .replace("{sets}", &summonr_agent::classify::sets::NAMES.join(", "))
 }
 
 pub(super) fn exit_help(verb: Option<&str>) -> ! {
@@ -81,7 +84,7 @@ pub(super) fn exit_version() -> ! {
         "{} {} ({})",
         option_env!("CARGO_BIN_NAME").unwrap_or("summonr"),
         env!("CARGO_PKG_VERSION"),
-        crate::revision()
+        summonr_agent::revision()
     );
     std::process::exit(0)
 }

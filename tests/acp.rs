@@ -101,10 +101,12 @@ impl Editor {
     }
 
     fn prompt(&mut self, session: &str, text: &str) {
-        self.send(&json!({"jsonrpc": "2.0", "id": 3, "method": "session/prompt", "params": {
-            "sessionId": session,
-            "prompt": [{"type": "text", "text": text}],
-        }}));
+        self.send(
+            &json!({"jsonrpc": "2.0", "id": 3, "method": "session/prompt", "params": {
+                "sessionId": session,
+                "prompt": [{"type": "text", "text": text}],
+            }}),
+        );
     }
 }
 
@@ -150,7 +152,11 @@ fn an_editor_allows_an_asked_command_and_it_runs() {
     pick(&mut editor, "allow_once");
     let reply = editor.until("session/prompt reply", |frame| frame["id"] == 3);
     assert_eq!(reply["result"]["stopReason"], "end_turn", "{reply}");
-    assert!(ran(&model), "command did not run: {:?}", model.tool_results());
+    assert!(
+        ran(&model),
+        "command did not run: {:?}",
+        model.tool_results()
+    );
 }
 
 #[test]
@@ -163,5 +169,9 @@ fn an_editor_rejects_an_asked_command_and_it_does_not_run() {
     pick(&mut editor, "reject_once");
     let reply = editor.until("session/prompt reply", |frame| frame["id"] == 3);
     assert_eq!(reply["result"]["stopReason"], "end_turn", "{reply}");
-    assert!(!ran(&model), "rejected command ran: {:?}", model.tool_results());
+    assert!(
+        !ran(&model),
+        "rejected command ran: {:?}",
+        model.tool_results()
+    );
 }

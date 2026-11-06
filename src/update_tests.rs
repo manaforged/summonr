@@ -76,7 +76,7 @@ fn beside(exe: &Path) -> Vec<String> {
 #[tokio::test]
 #[ignore = "live: reaches github.com"]
 async fn github_serves_a_release_the_updater_can_download() {
-    let http = crate::credentials::http(crate::limits::limits().update()).unwrap();
+    let http = summonr_agent::credentials::http(summonr_agent::limits::limits().update()).unwrap();
     let latest = super::latest(&http, "https://github.com/cli/cli/releases")
         .await
         .unwrap();
@@ -298,7 +298,7 @@ mod unix {
         std::fs::create_dir(&stale).unwrap();
         std::fs::create_dir(&live).unwrap();
         let long_ago = std::time::SystemTime::now()
-            - crate::limits::limits().update()
+            - summonr_agent::limits::limits().update()
             - std::time::Duration::from_secs(60);
         std::fs::File::open(&stale)
             .unwrap()

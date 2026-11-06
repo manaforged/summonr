@@ -13,7 +13,7 @@ mod session;
 #[path = "startup/tool.rs"]
 mod tool;
 
-use crate::Result;
+use summonr_agent::Result;
 
 use super::cli::{Args, Verb};
 use super::diagnostics;
@@ -41,15 +41,15 @@ pub(super) async fn run(args: Args) -> Result<i32> {
         Ok(Ok(code)) => (Ok(code), None),
         Ok(Err(error)) => {
             let reason = error.to_string();
-            (Err(error), Some((reason, crate::AbortCode::Error)))
+            (Err(error), Some((reason, summonr_agent::AbortCode::Error)))
         }
         Err(code) => (
             Ok(code),
-            Some((signal(code), crate::AbortCode::Interrupted)),
+            Some((signal(code), summonr_agent::AbortCode::Interrupted)),
         ),
     };
     if events && let Some((reason, code)) = &abort {
-        super::modes::print_json(&crate::Event::Aborted {
+        super::modes::print_json(&summonr_agent::Event::Aborted {
             reason: reason.clone(),
             code: *code,
         });
@@ -77,7 +77,7 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if args.gui && args.verb.is_none() {
         return lifecycle::desktop(&args);
     }
-    crate::check_config()?;
+    summonr_agent::check_config()?;
     let adopted = adopt(&args)?;
     match args.verb.as_ref() {
         Some(verb) => run_verb(&args, log, verb).await,
@@ -97,10 +97,10 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
         Verb::Doctor if args.logs => diagnostics::print_logs(path),
         Verb::Doctor if args.report => diagnostics::report(path),
         Verb::Doctor => diagnostics::doctor(path),
-        Verb::Mail(words) => in_cwd(&|cwd| crate::mail::cli::run(words, cwd)),
-        Verb::Cron(words) => in_cwd(&|cwd| crate::cron::cli::run(words, cwd)),
+        Verb::Mail(words) => in_cwd(&|cwd| summonr_agent::mail::cli::run(words, cwd)),
+        Verb::Cron(words) => in_cwd(&|cwd| summonr_agent::cron::cli::run(words, cwd)),
         Verb::Gateway(words) => {
-            in_cwd(&|cwd| crate::gateway::cli::run(words, cwd, &login::read_secret))
+            in_cwd(&|cwd| summonr_agent::gateway::cli::run(words, cwd, &login::read_secret))
         }
         Verb::Tool(tool) => tool::run(tool).await,
         Verb::Acp => acp(args).await,
@@ -118,7 +118,7 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
         Verb::Workflows => done(print_workflows()),
         Verb::Modules => done(
             workspace()
-                .and_then(|root| crate::modules::load(&root))
+                .and_then(|root| summonr_agent::modules::load(&root))
                 .map(|switches| println!("{}", switches.table())),
         ),
         Verb::Uninstall => uninstall(args),
@@ -130,12 +130,12 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
 }
 
 async fn acp(args: &Args) -> Result<i32> {
-    crate::acp::serve(
+    summonr_agent::acp::serve(
         args.endpoint.as_deref(),
         args.model.as_deref(),
         |endpoint, client, cwd| {
             build(args, endpoint, client, cwd, None, SessionAction::Create)
-                .map(crate::Loop::with_interactive)
+                .map(summonr_agent::Loop::with_interactive)
         },
     )
     .await
@@ -144,7 +144,7 @@ async fn acp(args: &Args) -> Result<i32> {
 async fn login(args: &Args) -> Result<()> {
     if let Some(name) = args.endpoint.as_deref() {
         if args.url.is_some() || (args.model.is_some() && own(name)) {
-            let text = crate::add_endpoint(
+            let text = summonr_agent::add_endpoint(
                 name,
                 args.url.as_deref(),
                 args.model.as_deref(),
@@ -156,9 +156,9 @@ async fn login(args: &Args) -> Result<()> {
         }
         if args.model.is_some()
             && !args.default
-            && crate::auth_info(name).is_ok_and(|info| !info.own)
+            && summonr_agent::auth_info(name).is_ok_and(|info| !info.own)
         {
-            return Err(crate::Error::Config(format!(
+            return Err(summonr_agent::Error::Config(format!(
                 "`{name}` is built in; `summonr login {name} --default --model M` saves its model, or `summonr {name} --model M` uses one for a run"
             )));
         }
@@ -166,30 +166,33 @@ async fn login(args: &Args) -> Result<()> {
     let Some(name) = args.endpoint.as_deref().filter(|_| args.default) else {
         return run_login(args).await;
     };
-    if !crate::endpoint_set_up().iter().any(|ready| ready == name) {
+    if !summonr_agent::endpoint_set_up()
+        .iter()
+        .any(|ready| ready == name)
+    {
         run_login(args).await?;
     }
     println!(
         "{}",
-        crate::set_default_endpoint(name, args.model.as_deref())?
+        summonr_agent::set_default_endpoint(name, args.model.as_deref())?
     );
     Ok(())
 }
 
 fn own(name: &str) -> bool {
-    crate::auth_info(name).is_ok_and(|info| info.own)
+    summonr_agent::auth_info(name).is_ok_and(|info| info.own)
 }
 
 fn logout(args: &Args) -> Result<i32> {
     let Some(name) = args.endpoint.as_deref() else {
-        return Err(crate::Error::Config(
+        return Err(summonr_agent::Error::Config(
             "name an endpoint: `summonr logout NAME` or `summonr endpoint remove NAME`".to_string(),
         ));
     };
     let text = if args.remove {
-        crate::remove_endpoint(name)?
+        summonr_agent::remove_endpoint(name)?
     } else {
-        crate::logout(name)?
+        summonr_agent::logout(name)?
     };
     println!("{text}");
     Ok(0)
@@ -199,12 +202,12 @@ fn profile(args: &Args) -> Result<()> {
     if args.all {
         print!(
             "{}",
-            crate::profile(crate::ProfileScope::Recent(args.last))?
+            summonr_agent::profile(summonr_agent::ProfileScope::Recent(args.last))?
         );
     } else {
         print!(
             "{}",
-            crate::profile(crate::ProfileScope::Session(&session_path(args)?))?
+            summonr_agent::profile(summonr_agent::ProfileScope::Session(&session_path(args)?))?
         );
     }
     Ok(())
@@ -212,15 +215,15 @@ fn profile(args: &Args) -> Result<()> {
 
 async fn add(args: &Args) -> Result<i32> {
     if args.add_list {
-        println!("{}", crate::Plugin::list()?);
+        println!("{}", summonr_agent::Plugin::list()?);
         return Ok(0);
     }
     let Some(path) = args.prompt.first() else {
-        return Err(crate::Error::Config(
+        return Err(summonr_agent::Error::Config(
             "summonr plugin install PATH  (or plugin list)".to_string(),
         ));
     };
-    let installed = crate::Plugin::install(std::path::Path::new(path))?;
+    let installed = summonr_agent::Plugin::install(std::path::Path::new(path))?;
     println!("{}", installed.report());
     for line in installed.check_servers(&workspace()?).await? {
         println!("{line}");
@@ -231,12 +234,12 @@ async fn add(args: &Args) -> Result<i32> {
 
 fn uninstall(args: &Args) -> Result<i32> {
     let Some(name) = args.prompt.first() else {
-        return Err(crate::Error::Config(
+        return Err(summonr_agent::Error::Config(
             "summonr plugin remove NAME".to_string(),
         ));
     };
-    if !crate::Plugin::remove(name)? {
-        return Err(crate::Error::Config(format!(
+    if !summonr_agent::Plugin::remove(name)? {
+        return Err(summonr_agent::Error::Config(format!(
             "no plugin named {name} is installed"
         )));
     }

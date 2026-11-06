@@ -147,7 +147,10 @@ pub(crate) fn an_unchanged_tool_list_is_not_rewritten() {
         Step::Text("ok"),
     ]);
     session.run(&model, &config, &[]);
-    assert!(session.starts("fixture1") >= 2, "the call reached the server");
+    assert!(
+        session.starts("fixture1") >= 2,
+        "the call reached the server"
+    );
     let after = std::fs::metadata(&cache).unwrap().modified().unwrap();
     assert_eq!(before, after, "the cache was rewritten with the same list");
 }

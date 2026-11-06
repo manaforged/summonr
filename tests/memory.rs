@@ -73,9 +73,9 @@ fn repository() -> tempfile::TempDir {
 }
 
 fn project_memory(home: &Path, work: &Path) -> PathBuf {
-    summonr::memory::files(home, work)
+    summonr_agent::memory::files(home, work)
         .into_iter()
-        .find(|file| file.scope == summonr::memory::Scope::Project)
+        .find(|file| file.scope == summonr_agent::memory::Scope::Project)
         .unwrap()
         .path
 }

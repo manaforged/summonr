@@ -37,14 +37,9 @@ pub(crate) fn task_progress_reaches_the_next_provider_turn() {
     let done: Vec<usize> = progress
         .iter()
         .map(|event| {
-            event["progress"]["todos"]
-                .as_array()
-                .map_or(0, |todos| {
-                    todos
-                        .iter()
-                        .filter(|item| item["status"] == "done")
-                        .count()
-                })
+            event["progress"]["todos"].as_array().map_or(0, |todos| {
+                todos.iter().filter(|item| item["status"] == "done").count()
+            })
         })
         .collect();
     assert_eq!(done.first(), Some(&0), "{}", result.stdout);

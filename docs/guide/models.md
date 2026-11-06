@@ -198,7 +198,7 @@ A locked keychain is reported, never worked around with a file. The file and key
 
 ## Providers and routes
 
-The provider list comes from one data table in the source, `src/endpoint/presets.toml`, where each `[[preset]]` row is one route. A row summonr cannot honor fails startup by name.
+The provider list comes from one data table in the source, `crates/agent/src/endpoint/presets.toml`, where each `[[preset]]` row is one route. A row summonr cannot honor fails startup by name.
 
 ### Choosing a route
 

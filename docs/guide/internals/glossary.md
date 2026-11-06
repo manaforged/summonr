@@ -4,7 +4,7 @@
   Curated. A project may disable a module, never enable a new one. RSS and
   prefix budget live here.
 - **Module**: A named, switchable capability compiled into the binary
-  (`src/modules.rs`). Not a user package.
+  (`crates/agent/src/modules.rs`). Not a user package.
 - **Language module**: A curated, compiled-in description of a language family's
   project markers, source files, language server choices, and initialization
   policy.

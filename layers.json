@@ -1,5 +1,5 @@
 {
-  "root": "src/",
+  "root": "crates/agent/src/",
   "tiers": [
     {
       "name": "core",
@@ -79,16 +79,7 @@
         "cron",
         "gateway",
         "acp",
-        "update",
         "splash"
-      ]
-    },
-    {
-      "name": "surface",
-      "modules": [
-        "tui",
-        "main",
-        "lib"
       ]
     }
   ],
@@ -190,10 +181,6 @@
       "tools"
     ],
     [
-      "mcp",
-      "tui"
-    ],
-    [
       "modules",
       "config"
     ],
@@ -248,10 +235,6 @@
     [
       "session",
       "tools"
-    ],
-    [
-      "session",
-      "tui"
     ],
     [
       "skills",

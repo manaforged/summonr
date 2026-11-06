@@ -1,0 +1,144 @@
+use super::{App, LIMIT, MAX_WIDTH, canvas, mention, usage};
+use crate::ui::{Hints, Key, group, pick};
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::MouseButton;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::Paint;
+use sigil::prelude::Widget;
+use sigil::prelude::container;
+
+#[derive(Clone, PartialEq)]
+struct SuggestRow {
+    index: usize,
+    name: String,
+    description: String,
+    selected: bool,
+}
+
+#[derive(Clone, PartialEq)]
+struct Popup {
+    title: String,
+    rows: Vec<SuggestRow>,
+    keys: Hints,
+    count: String,
+}
+
+fn popup(app: &App, width: usize) -> Option<Popup> {
+    let draft = app.draft.get();
+    let caret = app.caret.get();
+    let rows = app.viewport.get().1;
+    let model = app.model.get();
+    if app.view_edit.get() || !app.commands.open(&draft, caret, &model) || width < 12 {
+        return None;
+    }
+    let matches = app.commands.rows(&draft, caret, &model);
+    let cursor = app.commands.cursor(matches.len());
+    let limit = matches
+        .len()
+        .min(LIMIT)
+        .min(usize::from(rows / 2).saturating_sub(2));
+    if limit == 0 {
+        return None;
+    }
+    let start = cursor.saturating_add(1).saturating_sub(limit);
+    let shown = &matches[start..matches.len().min(start + limit)];
+    let head = app.commands.head(&draft);
+    let mention = mention(&draft, caret);
+    let title = match (mention, head) {
+        (Some(_), _) => "mentions".to_string(),
+        (None, Some(head)) => format!("{head} {}", usage(head)),
+        (None, None) => "commands".to_string(),
+    };
+    let rows = shown
+        .iter()
+        .enumerate()
+        .map(|(offset, (name, description))| {
+            let index = start + offset;
+            let label = match head {
+                Some(head) => name.trim_start_matches(head).trim_start().to_string(),
+                None => format!("{name} {}", usage(name)).trim_end().to_string(),
+            };
+            SuggestRow {
+                index,
+                name: label,
+                description: if mention.is_some() || (head.is_none() && built_in(name)) {
+                    description.clone()
+                } else {
+                    String::new()
+                },
+                selected: index == cursor,
+            }
+        })
+        .collect();
+    let enter = if head.is_some() || mention.is_some() {
+        "complete"
+    } else {
+        "run"
+    };
+    let keys = Hints::new()
+        .key(Key::UpDown, "move")
+        .key(Key::Tab, "complete")
+        .key(Key::Enter, enter)
+        .key(Key::Esc, "close");
+    let count = format!("{} / {}", cursor + 1, matches.len());
+    Some(Popup {
+        title,
+        rows,
+        keys,
+        count,
+    })
+}
+
+fn built_in(name: &str) -> bool {
+    canvas::is_window()
+        && summonr_agent::command_specs()
+            .iter()
+            .any(|spec| spec.name == name)
+}
+
+pub(crate) fn height(app: &App, width: usize) -> u16 {
+    popup(app, width).map_or(0, |popup| popup.rows.len() as u16 + 4)
+}
+
+pub(crate) fn widget(app: App, width: usize) -> NodeBuilder {
+    let update = app.clone();
+    let popup = sigil::reactive::derived(move || popup(&update, width));
+    container()
+        .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
+        .children_reactive(move || {
+            let Some(popup) = popup.get() else {
+                return Vec::new();
+            };
+            let popup_width = MAX_WIDTH.min(width.saturating_sub(4).max(1));
+            let hotkeys = app.model.peek().prefs.hotkeys.clone();
+            let mut body = container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .width(popup_width as f32 * canvas::cell().w)
+                        .gap(0.0),
+                )
+                .child(group(popup.title));
+            for row in popup.rows {
+                let click = app.clone();
+                body = body.child(
+                    pick(row.selected, row.name, row.description.as_str()).pointer_down(
+                        move |event| {
+                            if event.button == Some(MouseButton::Left) {
+                                click.commands.list.select(row.index);
+                                click.accept();
+                                event.stop_propagation();
+                            }
+                        },
+                    ),
+                );
+            }
+            vec![
+                container()
+                    .layout(LayoutStyle::flex_column().padding_x(8.0).gap(0.0))
+                    .border_w(canvas::frame_border())
+                    .border_color(sigil::prelude::Token::Gray6)
+                    .bg(canvas::palette().tool_bg)
+                    .child(body.child(popup.keys.right(popup.count).bar(&hotkeys))),
+            ]
+        })
+}

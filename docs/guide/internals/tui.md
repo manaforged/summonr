@@ -7,7 +7,7 @@ Rule: a helper another TUI module calls is a row on this page in the same
 change, or it stays private to its file. A job not on this page is not a shared
 job. One job, one name.
 
-Scope: this page covers `src/tui`. The crate-wide surface stays on
+Scope: this page covers `crates/ui`. The crate-wide surface stays on
 [`module-api.md`](module-api.md).
 
 ## Application hosts
@@ -22,7 +22,7 @@ The desktop initializer receives the chosen project path and UI channel and retu
 
 ## 1. Canvas rows (today)
 
-Owner: `src/tui/sigil_view/canvas.rs`. These were spread over `chat.rs` and
+Owner: `crates/ui/src/canvas.rs`. These were spread over `chat.rs` and
 `settings.rs` until 2026-09-18 and are the primitives the redesign unwinds.
 
 | Row | Job | Callers |
@@ -45,7 +45,7 @@ holds `{ text, fg, bg }`. The second one is on the delete list in §3.
 
 ## 1a. Status bar
 
-Owner: `src/tui/sigil_view/chat/strip.rs`; `strip/details.rs` renders the
+Owner: `crates/ui/src/chat/strip.rs`; `strip/details.rs` renders the
 shared Tasks/Agents popup with Sigil's measured virtual list.
 
 | Row | Job | Callers |
@@ -161,7 +161,7 @@ and is updated by the worker, not optimistically by the key handler.
 
 ## 1b. Overlay helpers (2026-09-19)
 
-Owner: `src/tui/sigil_view/overlay.rs`. The one visual language for every
+Owner: `crates/ui/src/overlay.rs`. The one visual language for every
 overlay list: accent selection band, `❯` cursor gutter, right-aligned
 status, hint bar, themed field. Chat roles (`user_bg`, `tool_bg`) never
 appear outside the transcript.

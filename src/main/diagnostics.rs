@@ -47,7 +47,7 @@ struct RunInfo {
 impl Log {
     pub(super) fn start() -> Option<Self> {
         let run = format!("{}-{}", millis(), std::process::id());
-        let home = match crate::summonr_home() {
+        let home = match summonr_agent::summonr_home() {
             Ok(home) => home,
             Err(error) => {
                 eprintln!("summonr: cannot create the diagnostic log: {error}");
@@ -72,7 +72,7 @@ impl Log {
             }
         }
         let path = dir.join(format!("{run}.jsonl"));
-        let held = crate::lock_file(&path, false)
+        let held = summonr_agent::lock_file(&path, false)
             .and_then(|held| held.ok_or_else(|| io::Error::from(ErrorKind::WouldBlock)));
         let lock = match held {
             Ok(lock) => lock,
@@ -90,7 +90,7 @@ impl Log {
                 "pid": std::process::id(),
                 "binary": binary(),
                 "version": env!("CARGO_PKG_VERSION"),
-                "revision": crate::revision(),
+                "revision": summonr_agent::revision(),
                 "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
                 "cwd": std::env::current_dir()
                     .ok()
@@ -153,8 +153,8 @@ impl Log {
     }
 }
 
-pub(super) fn print_logs(exclude: Option<&Path>) -> crate::Result<i32> {
-    let dir = crate::summonr_home()?.join("logs");
+pub(super) fn print_logs(exclude: Option<&Path>) -> summonr_agent::Result<i32> {
+    let dir = summonr_agent::summonr_home()?.join("logs");
     println!("{}", dir.display());
     let runs = runs(&dir, exclude)?;
     if runs.is_empty() {
@@ -166,8 +166,8 @@ pub(super) fn print_logs(exclude: Option<&Path>) -> crate::Result<i32> {
     Ok(0)
 }
 
-pub(super) fn doctor(exclude: Option<&Path>) -> crate::Result<i32> {
-    let home = crate::summonr_home()?;
+pub(super) fn doctor(exclude: Option<&Path>) -> summonr_agent::Result<i32> {
+    let home = summonr_agent::summonr_home()?;
     let dir = home.join("logs");
     let runs = runs(&dir, exclude)?;
     let incomplete = runs
@@ -175,7 +175,7 @@ pub(super) fn doctor(exclude: Option<&Path>) -> crate::Result<i32> {
         .filter(|run| matches!(run.status, RunStatus::Incomplete | RunStatus::Panic))
         .count();
     println!("version\t{}", env!("CARGO_PKG_VERSION"));
-    println!("revision\t{}", crate::revision());
+    println!("revision\t{}", summonr_agent::revision());
     println!("profile\t{}", profile());
     println!("binary\t{}", binary());
     println!("home\t{}", home.display());
@@ -184,8 +184,8 @@ pub(super) fn doctor(exclude: Option<&Path>) -> crate::Result<i32> {
     Ok(i32::from(incomplete > 0))
 }
 
-pub(super) fn report(exclude: Option<&Path>) -> crate::Result<i32> {
-    let dir = crate::summonr_home()?.join("logs");
+pub(super) fn report(exclude: Option<&Path>) -> summonr_agent::Result<i32> {
+    let dir = summonr_agent::summonr_home()?.join("logs");
     let runs = runs(&dir, exclude)?;
     let Some(run) = runs.iter().rev().find(|run| {
         matches!(
@@ -201,7 +201,7 @@ pub(super) fn report(exclude: Option<&Path>) -> crate::Result<i32> {
     println!(
         "summonr {} ({})",
         env!("CARGO_PKG_VERSION"),
-        crate::revision()
+        summonr_agent::revision()
     );
     println!(
         "{} {} {}",

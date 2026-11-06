@@ -210,7 +210,7 @@ def write_baseline(hits: list[tuple[str, str, int]]) -> None:
 
 
 def command_drift() -> list[str]:
-    table = tomllib.loads((ROOT / "src/command/commands.toml").read_text())
+    table = tomllib.loads((ROOT / "crates/agent/src/command/commands.toml").read_text())
     code = {
         row["name"]
         for group in table["group"]

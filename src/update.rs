@@ -5,7 +5,7 @@ use std::path::Path;
 use leyline::Session;
 use sha2::{Digest, Sha256};
 
-use crate::process::{self, Spec};
+use summonr_agent::process::{self, Spec};
 use summonr_core::error::{Error, Result};
 
 const RELEASES: &str = "https://github.com/manaforged/summonr/releases";
@@ -51,7 +51,7 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
     }
     let dir = exe.parent().unwrap_or_else(|| Path::new("."));
     sweep(dir);
-    let http = crate::credentials::http(crate::limits::limits().update())?;
+    let http = summonr_agent::credentials::http(summonr_agent::limits::limits().update())?;
     let latest = latest(&http, source.releases).await?;
     match newer(&latest, source.current) {
         Ordering::Equal => return Ok(Outcome::Current(latest)),
@@ -87,7 +87,7 @@ fn sweep(dir: &Path) {
                 .and_then(|meta| meta.modified())
                 .ok()
                 .and_then(|modified| modified.elapsed().ok())
-                .is_some_and(|age| age > crate::limits::limits().update());
+                .is_some_and(|age| age > summonr_agent::limits::limits().update());
         if stale {
             drop(std::fs::remove_dir_all(entry.path()));
         }

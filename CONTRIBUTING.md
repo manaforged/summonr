@@ -30,12 +30,12 @@ The tests need no network and no keys. The census must print `api-census deny: c
 
 ## Model catalog snapshot
 
-`src/catalog/models-dev.json` is the models.dev data summonr uses before it has a cache of its own. Regenerate it before a release:
+`crates/agent/src/catalog/models-dev.json` is the models.dev data summonr uses before it has a cache of its own. Regenerate it before a release:
 
 ```sh
 home=$(mktemp -d)
 SUMMONR_HOME=$home cargo run --locked -- endpoints
-cp "$home/models-dev.json" src/catalog/models-dev.json
+cp "$home/models-dev.json" crates/agent/src/catalog/models-dev.json
 ```
 
 ## Shared API
@@ -46,10 +46,10 @@ cp "$home/models-dev.json" src/catalog/models-dev.json
 
 | Change | Files |
 | --- | --- |
-| Slash command | `src/command/commands.toml` (the spec row), `src/command.rs` (the `SlashCommand` variant), the handler in `src/tui/worker/command/flow.rs` |
-| Model-facing tool | the owning file among `src/tools/{workspace,command,search,todo,lsp}.rs`, `src/tools.rs`, `src/tools/catalog.rs`, `src/runtime/turn/calls.rs`, and a row in `module-api.md` |
-| Endpoint preset | one `Preset` in `src/endpoint/preset/head.rs` or `tail.rs` |
-| Provider wire | the `Wire` enum in `src/endpoint.rs`, `src/provider/wire.rs`, `src/provider/wire/NAME.rs`, `src/provider/client.rs`, `src/provider/stream.rs` |
+| Slash command | `crates/agent/src/command/commands.toml` (the spec row), `crates/agent/src/command.rs` (the `SlashCommand` variant), the handler in `crates/ui/src/worker/command/flow.rs` |
+| Model-facing tool | the owning file among `crates/agent/src/tools/{workspace,command,search,todo,lsp}.rs`, `crates/agent/src/tools.rs`, `crates/agent/src/tools/catalog.rs`, `crates/agent/src/runtime/turn/calls.rs`, and a row in `module-api.md` |
+| Endpoint preset | one `Preset` in `crates/agent/src/endpoint/preset/head.rs` or `tail.rs` |
+| Provider wire | the `Wire` enum in `crates/agent/src/endpoint.rs`, `crates/agent/src/provider/wire.rs`, `crates/agent/src/provider/wire/NAME.rs`, `crates/agent/src/provider/client.rs`, `crates/agent/src/provider/stream.rs` |
 
 Update `docs/guide/reference.md` when you change a flag, a command, or a config key.
 

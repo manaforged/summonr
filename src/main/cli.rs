@@ -1,4 +1,4 @@
-use crate::{Error, Result, is_endpoint};
+use summonr_agent::{Error, Result, is_endpoint};
 
 use commands::COMMANDS;
 use flags::{ALIASES, CONFLICTS, FLAGS, Input};
@@ -46,7 +46,7 @@ pub(super) enum Verb {
 pub(super) struct Args {
     pub(super) verb: Option<Verb>,
     pub(super) print: bool,
-    pub(super) effort: Option<crate::Effort>,
+    pub(super) effort: Option<summonr_agent::Effort>,
     pub(super) json: bool,
     pub(super) live: bool,
     pub(super) grep: Option<String>,
@@ -98,7 +98,7 @@ pub(super) struct Args {
 pub(super) fn parse(window: bool) -> Result<Args> {
     let mut args = parse_from(std::env::args().skip(1))?;
     if args.gui && !window {
-        return Err(crate::Error::Config(
+        return Err(summonr_agent::Error::Config(
             "the window is the Summonr desktop app, `summonr-desktop`".to_string(),
         ));
     }
@@ -276,8 +276,8 @@ fn unlisted(login: bool) -> &'static str {
 }
 
 fn unknown(name: &str, tail: &str) -> Error {
-    let names = crate::endpoint_names().unwrap_or_default();
-    let hint = crate::closest_endpoint(name, &names, crate::EndpointNear::Typo)
+    let names = summonr_agent::endpoint_names().unwrap_or_default();
+    let hint = summonr_agent::closest_endpoint(name, &names, summonr_agent::EndpointNear::Typo)
         .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
     Error::Config(format!(
         "unknown endpoint `{name}`: {hint}`summonr endpoint list` lists them{tail}"

@@ -32,4 +32,4 @@ jobs:
         with:
           save-if: false
       - name: presets against models.dev and each provider host
-        run: cargo test --lib --locked contract -- --ignored
+        run: cargo test -p summonr-agent --lib --locked contract -- --ignored

@@ -3,7 +3,7 @@ use std::io::IsTerminal;
 use std::os::unix::ffi::OsStrExt;
 use std::time::Duration;
 
-use crate::process::{Deadline, Spec, output_within};
+use summonr_agent::process::{Deadline, Spec, output_within};
 
 const MARKER: &str = "__SUMMONR_LOGIN_ENV__";
 const SKIP: [&str; 4] = ["PWD", "OLDPWD", "SHLVL", "_"];
@@ -36,7 +36,10 @@ fn read() -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
 
 fn parse(stdout: &[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
     let marker = MARKER.as_bytes();
-    let start = stdout.windows(marker.len()).position(|part| part == marker)? + marker.len();
+    let start = stdout
+        .windows(marker.len())
+        .position(|part| part == marker)?
+        + marker.len();
     let rest = &stdout[start..];
     let end = rest.windows(marker.len()).position(|part| part == marker)?;
     Some(

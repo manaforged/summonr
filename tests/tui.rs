@@ -133,10 +133,7 @@ fn the_splash_prompt_holds_its_row_inside_the_window_while_typing() {
         let typed = terminal.settle("the wrapped draft", |splash| splash.shows("tail"));
         let at = format!("{cols}x{rows} draft\n{}", typed.screen());
         assert!(typed.prompt <= idle.prompt, "the prompt fell: {at}");
-        assert_eq!(
-            typed.hint, idle.hint,
-            "the draft covered the hint: {at}"
-        );
+        assert_eq!(typed.hint, idle.hint, "the draft covered the hint: {at}");
         assert!(typed.composer_inside(), "the draft left the window: {at}");
 
         terminal.send(&[0x7f; DRAFT.len()]);
@@ -265,7 +262,5 @@ fn the_status_row_shows_work_while_the_first_model_calls_a_tool() {
     let terminal = Terminal::open(home.path(), 120, 40, port);
     terminal.settle("the splash", |splash| splash.hint.is_some());
     terminal.send(b"list the files\r");
-    terminal.settle("the working status row", |splash| {
-        splash.shows("Working…")
-    });
+    terminal.settle("the working status row", |splash| splash.shows("Working…"));
 }

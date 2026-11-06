@@ -5506,11 +5506,34 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 name = "summonr"
 version = "0.2.0"
 dependencies = [
+ "crossterm",
+ "dunce",
+ "futures",
+ "jiff",
+ "leyline-http",
+ "libc",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "summonr-agent",
+ "summonr-auth",
+ "summonr-core",
+ "summonr-ui",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "vt100",
+]
+
+[[package]]
+name = "summonr-agent"
+version = "0.2.0"
+dependencies = [
  "base64 0.22.1",
  "bytes",
  "chacha20poly1305",
  "charm-cdp",
- "crossterm",
  "dunce",
  "fastrand",
  "futures",
@@ -5525,13 +5548,11 @@ dependencies = [
  "leyline-http",
  "libc",
  "notify",
- "portable-pty",
  "process-wrap",
  "regex",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "sigil-ui",
  "summonr-auth",
  "summonr-core",
  "summonr-types",
@@ -5542,9 +5563,9 @@ dependencies = [
  "toml_edit 0.22.27",
  "unicode-normalization",
  "unicode-segmentation",
+ "unicode-width",
  "url",
  "uuid",
- "vt100",
  "windows-sys 0.61.2",
  "zeroize",
 ]
@@ -5598,6 +5619,26 @@ dependencies = [
  "summonr-core",
  "toml 0.8.23",
  "url",
+]
+
+[[package]]
+name = "summonr-ui"
+version = "0.2.0"
+dependencies = [
+ "crossterm",
+ "image",
+ "libc",
+ "regex",
+ "serde_json",
+ "sigil-ui",
+ "summonr-agent",
+ "summonr-auth",
+ "summonr-core",
+ "tempfile",
+ "tokio",
+ "toml 0.8.23",
+ "toml_edit 0.22.27",
+ "unicode-segmentation",
 ]
 
 [[package]]

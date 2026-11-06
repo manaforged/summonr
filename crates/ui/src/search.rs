@@ -1,0 +1,280 @@
+use sigil::prelude::Paint;
+use sigil::widgets::CursorEdge;
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::Arc;
+
+use regex::{Regex, RegexBuilder, escape};
+
+use super::app::App;
+use super::canvas;
+use super::model::{Entry, Model, entry_markdown};
+use super::ui::{Dialog, Hints, Key, List, Size, filter_field, pick};
+use sigil::prelude::{NodeBuilder, Signal};
+use sigil::prelude::{container, signal};
+use summonr_agent::session::Prompt;
+
+const SNIPPET_CELLS: usize = 180;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Conversation,
+    Prompts,
+    Branch,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct Picker {
+    pub(super) open: Signal<bool>,
+    pub(super) list: List,
+    pub(super) target: Signal<Option<usize>>,
+    mode: Signal<Mode>,
+    saved: Signal<Result<Arc<Vec<Prompt>>, String>>,
+    warning: Signal<String>,
+}
+
+impl Picker {
+    pub(super) fn new() -> Self {
+        Self {
+            open: signal(false),
+            list: List::new(),
+            target: signal(None),
+            mode: signal(Mode::Conversation),
+            saved: signal(Ok(Arc::new(Vec::new()))),
+            warning: signal(String::new()),
+        }
+    }
+
+    pub(super) fn start(self, query: &str) {
+        self.show(Mode::Conversation, query);
+    }
+
+    pub(super) fn history(self, query: &str) {
+        self.saved.set(Err("Loading saved prompts…".to_string()));
+        self.show(Mode::Prompts, query);
+    }
+
+    pub(super) fn branch(self, query: &str) {
+        self.saved.set(Err("Loading completed turns…".to_string()));
+        self.show(Mode::Branch, query);
+    }
+
+    fn show(self, mode: Mode, query: &str) {
+        self.mode.set(mode);
+        self.list.type_query(query.to_string());
+        self.list.select(0);
+        self.warning.set(String::new());
+        self.open.set(true);
+    }
+
+    pub(super) fn update(self, result: Result<(Vec<Prompt>, usize), String>) {
+        self.warning.set(String::new());
+        self.saved.set(result.map(|(prompts, skipped)| {
+            if skipped > 0 {
+                self.warning
+                    .set(format!("{skipped} skipped · see transcript"));
+            }
+            Arc::new(prompts)
+        }));
+    }
+
+    pub(super) fn is_history(self) -> bool {
+        self.mode.get() != Mode::Conversation
+    }
+
+    pub(super) fn is_branch(self) -> bool {
+        self.mode.get() == Mode::Branch
+    }
+
+    pub(super) fn prompt(self, index: usize) -> Option<Prompt> {
+        self.saved.peek().ok()?.get(index).cloned()
+    }
+
+    fn title(self) -> &'static str {
+        match self.mode.get() {
+            Mode::Conversation => "Search conversation",
+            Mode::Prompts => "Search saved prompts",
+            Mode::Branch => "Branch after a turn",
+        }
+    }
+
+    fn hints(self, model: &Model) -> Hints {
+        let total = self.rows(model).map_or(0, |rows| rows.len());
+        let action = match self.mode.get() {
+            Mode::Conversation => "jump",
+            Mode::Prompts => "insert",
+            Mode::Branch => "branch",
+        };
+        Hints::new()
+            .key(Key::UpDown, "select")
+            .key(Key::Enter, action)
+            .key(Key::Esc, "close")
+            .count(self.list.cursor.get(), total)
+    }
+
+    fn detail(self, index: usize) -> String {
+        let Some(prompt) = self.prompt(index).filter(|_| self.is_history()) else {
+            return String::new();
+        };
+        let session = &prompt.session;
+        if self.is_branch() {
+            return format!("After turn {} · files unchanged", prompt.turn + 1);
+        }
+        let name = session
+            .name
+            .as_deref()
+            .unwrap_or_else(|| summonr_agent::session::short(&session.id));
+        let project = session
+            .cwd
+            .as_deref()
+            .and_then(|cwd| Path::new(cwd).file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("unknown project");
+        format!("{name} · {project} · turn {}", prompt.turn + 1)
+    }
+
+    pub(super) fn pattern(self) -> Result<Regex, String> {
+        let query = self.list.query.get();
+        RegexBuilder::new(&escape(query.trim()))
+            .case_insensitive(true)
+            .build()
+            .map_err(|error| format!("Cannot search: {error}"))
+    }
+
+    pub(super) fn rows(self, model: &Model) -> Result<Vec<(usize, String)>, String> {
+        let pattern = self.pattern()?;
+        if self.is_history() {
+            return self.history_rows(model, &pattern);
+        }
+        let hidden = model.prefs.reasoning == summonr_agent::prefs::Visibility::Off;
+        Ok(model
+            .entries
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, entry)| !(hidden && matches!(entry, Entry::Thinking(_))))
+            .filter_map(|(index, entry)| {
+                let text = match entry {
+                    Entry::User(text) | Entry::Thinking(text) | Entry::Assistant { text, .. } => {
+                        text.clone()
+                    }
+                    _ => entry_markdown(entry),
+                };
+                snippet(&pattern, &text).map(|preview| (index, preview))
+            })
+            .collect())
+    }
+
+    fn history_rows(self, model: &Model, pattern: &Regex) -> Result<Vec<(usize, String)>, String> {
+        let saved = self.saved.get()?;
+        let mut seen = HashSet::new();
+        Ok(saved
+            .iter()
+            .enumerate()
+            .filter_map(|(index, prompt)| {
+                let preview = self.history_preview(model, pattern, prompt)?;
+                (self.is_branch() || seen.insert(prompt.text.as_str())).then_some((index, preview))
+            })
+            .collect())
+    }
+
+    fn history_preview(self, model: &Model, pattern: &Regex, prompt: &Prompt) -> Option<String> {
+        if self.is_branch() && (!prompt.closed || prompt.session.id != model.session) {
+            return None;
+        }
+        if prompt.text.is_empty() && !self.is_branch() {
+            return None;
+        }
+        let context = format!(
+            "{} {} {}",
+            prompt.session.name.as_deref().unwrap_or(""),
+            prompt.session.id,
+            prompt.session.cwd.as_deref().unwrap_or("")
+        );
+        let preview = snippet(pattern, &prompt.text)
+            .or_else(|| pattern.is_match(&context).then(|| one_line(&prompt.text)))?;
+        Some(if prompt.text.is_empty() {
+            format!(
+                "{} attached",
+                summonr_core::text::plural(prompt.images, "image")
+            )
+        } else {
+            preview
+        })
+    }
+
+    pub(super) fn shift(self, model: &Model, delta: isize) {
+        let len = self.rows(model).map_or(0, |rows| rows.len());
+        self.list.shift(delta, len, CursorEdge::Clamp);
+    }
+}
+
+fn snippet(pattern: &Regex, text: &str) -> Option<String> {
+    let found = pattern.find(text)?;
+    let start = text[..found.start()]
+        .char_indices()
+        .rev()
+        .nth(24)
+        .map_or(0, |(byte, _)| byte);
+    let preview = one_line(&text[start..]);
+    Some(format!("{}{}", if start > 0 { "…" } else { "" }, preview))
+}
+
+fn one_line(text: &str) -> String {
+    let flat: String = text
+        .chars()
+        .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
+        .collect();
+    crate::cells::ellipsize(&flat, SNIPPET_CELLS)
+}
+
+pub(super) fn layer(app: App) -> NodeBuilder {
+    let picker = app.search;
+    let viewport = app.viewport.peek();
+    let view = app.viewport;
+    let keys = app.model.peek().prefs.hotkeys.clone();
+    let live = app.clone();
+    let source = app.clone();
+    Dialog::new(Size::Normal, picker.title(), Hints::new())
+        .live_hints(move || picker.hints(&live.model.get()))
+        .child(filter_field(&app, picker.list.query, picker.list.caret))
+        .child(container().children_reactive(move || {
+            let warning = picker.warning.get();
+            if warning.is_empty() {
+                Vec::new()
+            } else {
+                vec![
+                    container().child(
+                        sigil::prelude::text(warning)
+                            .nowrap()
+                            .font_size(12.0)
+                            .text_color(sigil::prelude::Token::Error11),
+                    ),
+                ]
+            }
+        }))
+        .collection(
+            picker.list,
+            move || picker.rows(&source.model.get()),
+            || "no matches · edit the search".to_string(),
+            move |_| {
+                let height = if picker.is_history() {
+                    canvas::overlay_list_row() * 2.0
+                } else {
+                    canvas::overlay_list_row()
+                };
+                let shown = canvas::overlay_shown(32, view.get());
+                let shown = if picker.is_history() {
+                    (shown / 2).max(1)
+                } else {
+                    shown
+                };
+                Some((height, shown))
+            },
+            move |(entry, preview), selected| {
+                pick(selected, preview.clone(), picker.detail(*entry))
+            },
+            move || app.jump(),
+        )
+        .build(picker.open, viewport, &keys)
+}

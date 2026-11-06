@@ -167,7 +167,7 @@ fn approval(app: App) -> NodeBuilder {
             } else if snapshot.approval {
                 ("Ask first", false)
             } else {
-                ("Auto-approve", false)
+                ("Allow all", false)
             };
             let toggle = shown.clone();
             vec![NodeBuilder::from(

@@ -1,6 +1,9 @@
+use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Radius, Widget, button, container,
+    AlignItems, Dimension, JustifyContent, LayoutStyle, NodeBuilder, Paint, Position, Radius,
+    Widget, button, container, icon_button, signal,
 };
+use sigil::widgets::MenuItem;
 
 use super::super::style::{FLOATING, L, M, OUTLINE, RAISED, S, TINT, Text, text};
 use crate::app::{App, Pick};
@@ -77,6 +80,7 @@ pub(super) fn card(app: &App, band: &Band) -> Option<NodeBuilder> {
 }
 
 const ESC: &str = "esc";
+const MORE: &str = "More";
 const RETURN: &str = "⏎";
 
 /// The answer buttons: decisions end-aligned with the main action last, options in reading order.
@@ -96,11 +100,16 @@ fn choices(app: &App, picks: &[(String, Pick)]) -> NodeBuilder {
             })
             .align_items(AlignItems::Center),
     );
-    let mut ordered: Vec<(usize, &(String, Pick))> = picks.iter().enumerate().collect();
+    let wider: Vec<&(String, Pick)> = picks.iter().filter(|(_, pick)| is_wider(*pick)).collect();
+    let mut ordered: Vec<(usize, &(String, Pick))> = picks
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, pick))| !is_wider(*pick))
+        .collect();
     if decision {
         ordered.reverse();
     }
-    ordered
+    let row = ordered
         .into_iter()
         .fold(row, |row, (index, (label, pick))| {
             let answer = app.clone();
@@ -113,7 +122,62 @@ fn choices(app: &App, picks: &[(String, Pick)]) -> NodeBuilder {
                 _ if index == 0 => base.primary(),
                 Pick::Grant(_) | Pick::Option(_) | Pick::Reply(_) => base.neutral().soft(),
             })
-        })
+        });
+    if wider.is_empty() {
+        row
+    } else {
+        row.child(wider_menu(app, &wider))
+    }
+}
+
+const fn is_wider(pick: Pick) -> bool {
+    matches!(pick, Pick::Grant(GrantAnswer::Always))
+}
+
+/// The arrow beside the main action, with the grants that reach past this step.
+fn wider_menu(app: &App, wider: &[&(String, Pick)]) -> NodeBuilder {
+    let open = signal(false);
+    let (items, answer) = (
+        wider
+            .iter()
+            .map(|(label, pick)| (label.clone(), *pick))
+            .collect::<Vec<_>>(),
+        app.clone(),
+    );
+    let arrow = icon_button(Icon::ChevronDown, move || open.set(!open.peek())).accessible(MORE);
+    container()
+        .layout(
+            LayoutStyle::block()
+                .position(Position::Relative)
+                .shrink(0.0),
+        )
+        .child(arrow)
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::block()
+                        .position(Position::Absolute)
+                        .inset_bottom(Dimension::Percent(1.0))
+                        .inset_right(0.0)
+                        .width(super::super::style::MENU),
+                )
+                .children_reactive(move || {
+                    if !open.get() {
+                        return Vec::new();
+                    }
+                    let menu = items.iter().fold(
+                        sigil::widgets::menu(open).label(MORE),
+                        |menu, (label, pick)| {
+                            let (answer, pick) = (answer.clone(), *pick);
+                            menu.item(
+                                MenuItem::new(label.clone()).activate(move || answer.pick(pick)),
+                            )
+                        },
+                    );
+                    vec![NodeBuilder::from(menu)]
+                }),
+        )
+        .into()
 }
 
 /// Splits a step's detail into what runs and why it needs the user's OK.

@@ -1,6 +1,6 @@
 use sigil::prelude::Role;
 
-use super::harness::{drive, typed};
+use super::harness::{Step, drive, steps, typed};
 use super::in_window;
 use summonr_agent::hub::{Cmd, Fact, Msg};
 use summonr_agent::mcp::{Choice, Field, FieldKind, Form};
@@ -30,7 +30,8 @@ fn a_write_request_offers_three_answers_and_two_saves_it() {
         return;
     }
     let before = drive(asked(true), Vec::new(), |_| ());
-    for label in ["Allow for this chat", "Always allow", "Don't allow"] {
+    assert!(before.named(Role::Button, "Always allow").is_empty());
+    for label in ["Allow for this agent", "More", "Don't allow"] {
         assert_eq!(
             before.named(Role::Button, label).len(),
             1,
@@ -103,4 +104,17 @@ fn a_question_with_choices_answers_with_the_numbered_choice() {
     assert_eq!(sent.len(), 1, "{sent:?}");
     assert_eq!(sent[0].0, 9);
     assert!(sent[0].1.contains("\"colour\":\"green\""), "{}", sent[0].1);
+}
+
+#[test]
+fn the_wider_grant_waits_in_the_menu_on_the_main_action() {
+    if !in_window("asking::the_wider_grant_waits_in_the_menu_on_the_main_action") {
+        return;
+    }
+    let seen = steps(
+        asked(true),
+        vec![Step::Click("More"), Step::Click("Always allow")],
+        |_| (),
+    );
+    assert_eq!(answers(&seen.sent), vec![(7, "always".to_owned())]);
 }

@@ -49,11 +49,7 @@ fn the_approval_chip_names_the_mode_and_toggles_it() {
     if !in_window("controls::the_approval_chip_names_the_mode_and_toggles_it") {
         return;
     }
-    let auto = steps(
-        settings(graded()),
-        vec![Step::Click("Auto-approve")],
-        |_| (),
-    );
+    let auto = steps(settings(graded()), vec![Step::Click("Allow all")], |_| ());
     assert!(
         auto.sent
             .iter()

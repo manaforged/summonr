@@ -17,7 +17,7 @@ impl App {
         if let Some(asked) = self.approval.get() {
             let grants: &[(&str, GrantAnswer)] = if asked.persist {
                 &[
-                    ("Allow for this chat", GrantAnswer::Allow),
+                    ("Allow for this agent", GrantAnswer::Allow),
                     ("Always allow", GrantAnswer::Always),
                     ("Don't allow", GrantAnswer::Deny),
                 ]

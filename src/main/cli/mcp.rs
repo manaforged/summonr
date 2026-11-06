@@ -96,11 +96,11 @@ type AddFlag = Row<AddFlags>;
 const ADD: Table<AddFlags> = Table {
     rows: &[
         AddFlag::value(&["--env"], "KEY=VALUE", |flags, raw| {
-            flags.env.push(pair(&raw)?);
+            flags.env.push(summonr_agent::mcp::pair(&raw)?);
             Ok(())
         }),
         AddFlag::value(&["--header"], "KEY=VALUE", |flags, raw| {
-            flags.headers.push(pair(&raw)?);
+            flags.headers.push(summonr_agent::mcp::pair(&raw)?);
             Ok(())
         }),
         AddFlag::value(&["--url"], "a URL", |flags, url| {
@@ -152,13 +152,6 @@ impl AddFlags {
         };
         Err(usage(&format!("{advice}; {ADD_USAGE}")))
     }
-}
-
-fn pair(raw: &str) -> Result<(String, String)> {
-    raw.split_once('=')
-        .filter(|(key, _)| !key.is_empty())
-        .map(|(key, value)| (key.to_string(), value.to_string()))
-        .ok_or_else(|| Error::Config(format!("expected KEY=VALUE, got `{raw}`")))
 }
 
 fn usage(text: &str) -> Error {

@@ -149,6 +149,17 @@ impl Plugin {
         Ok(removed || cleared)
     }
 
+    /// Turns an installed plugin on or off for agents that start later.
+    pub fn set_on(plugin_name: &str, on: bool) -> Result<()> {
+        let path = crate::config::path()?;
+        if on {
+            crate::config::drop_plugin_off(&path, plugin_name)?;
+        } else {
+            crate::config::add_plugin_off(&path, plugin_name)?;
+        }
+        Ok(())
+    }
+
     /// List installed plugins, one line each.
     pub fn list() -> Result<String> {
         let config = crate::config::file()?;

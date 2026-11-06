@@ -12,6 +12,15 @@ pub(in crate::desktop) const PAGE: f32 = 720.0;
 const CONTROL: f32 = 240.0;
 
 /// A titled group of rows in one rounded card, rows split by hairlines.
+/// The line under a page whose switches reach new agents only.
+pub(in crate::desktop) fn kept_note() -> NodeBuilder {
+    crate::desktop::style::text(
+        crate::desktop::style::Text::Meta,
+        "Agents already working keep their tools",
+    )
+    .into()
+}
+
 pub(in crate::desktop) fn section(title: Option<&str>, rows: Vec<NodeBuilder>) -> NodeBuilder {
     let mut body = container()
         .layout(

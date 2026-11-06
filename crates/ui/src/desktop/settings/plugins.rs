@@ -2,15 +2,15 @@ use std::path::Path;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Signal, Tone, Widget, button, chip,
-    container, effect, empty_state, icon, notice_band, signal,
+    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Signal, Tone, Widget, button, container,
+    effect, empty_state, icon, notice_band, signal, toggle,
 };
 use sigil::reactive::{defer, untrack};
 
 use super::super::App;
 use super::super::style::{ICON, L, M, Text, XS, text};
 use super::mcp::{actions, item};
-use super::parts::section;
+use super::parts::{kept_note, section};
 use summonr_agent::plugins::manage::Plugin;
 
 const DESCRIPTION: usize = 96;
@@ -39,6 +39,7 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
     };
     let workspace = app.workspace();
     vec![
+        kept_note(),
         container()
             .layout(
                 LayoutStyle::flex_column()
@@ -65,7 +66,7 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
             )
             .children_reactive(move || {
                 let _ = page.version.get();
-                vec![skills(&workspace)]
+                vec![skills(&workspace, page)]
             }),
     ]
 }
@@ -130,23 +131,36 @@ fn plugin_row(page: Page, plugin: &Installed, armed: bool) -> NodeBuilder {
 
 fn status(page: Page, plugin: &Installed) -> NodeBuilder {
     let name = plugin.name.clone();
-    let row = actions();
-    let row = if plugin.on {
-        row
-    } else {
-        row.child(chip("Off", Tone::Neutral))
-    };
-    row.child(
-        button("Remove")
-            .ghost()
-            .tone(Tone::Error)
-            .size(ControlSize::Compact)
-            .accessible(format!("Remove {}", plugin.name))
-            .activate(move || {
-                let name = name.clone();
-                defer(move || page.armed.set(Some(name)));
-            }),
-    )
+    let flip = plugin.name.clone();
+    actions()
+        .child(
+            toggle(signal(plugin.on))
+                .accessible(format!("Use {}", plugin.name))
+                .change(move |on| {
+                    let name = flip.clone();
+                    defer(move || set_on(page, &name, on));
+                }),
+        )
+        .child(
+            button("Remove")
+                .ghost()
+                .tone(Tone::Error)
+                .size(ControlSize::Compact)
+                .accessible(format!("Remove {}", plugin.name))
+                .activate(move || {
+                    let name = name.clone();
+                    defer(move || page.armed.set(Some(name)));
+                }),
+        )
+        .into()
+}
+
+fn set_on(page: Page, name: &str, on: bool) {
+    match Plugin::set_on(name, on) {
+        Ok(()) => page.error.set(None),
+        Err(error) => page.error.set(Some(first_line(&error.to_string()))),
+    }
+    page.version.update(|version| *version += 1);
 }
 
 fn confirm(page: Page, name: &str) -> NodeBuilder {
@@ -207,7 +221,7 @@ fn install(page: Page, path: &Path) {
     page.version.update(|version| *version += 1);
 }
 
-fn skills(workspace: &Path) -> NodeBuilder {
+fn skills(workspace: &Path, page: Page) -> NodeBuilder {
     let found = summonr_agent::skills::list(workspace);
     if found.is_empty() {
         return section(Some("Skills"), vec![empty_state("No skills yet", "")]);
@@ -225,11 +239,27 @@ fn skills(workspace: &Path) -> NodeBuilder {
             item(
                 icon(Icon::ScrollText).px(ICON).into(),
                 words,
-                container().into(),
+                open_skill(workspace, name, page),
             )
         })
         .collect();
     section(Some("Skills"), rows)
+}
+
+fn open_skill(workspace: &Path, name: &str, page: Page) -> NodeBuilder {
+    let Some(file) = summonr_agent::skills::file(workspace, name) else {
+        return container().into();
+    };
+    button("Open")
+        .ghost()
+        .size(ControlSize::Compact)
+        .accessible(format!("Open {name}"))
+        .activate(move || {
+            if let Err(error) = summonr_auth::open::external(&file) {
+                page.error.set(Some(first_line(&error.to_string())));
+            }
+        })
+        .into()
 }
 
 fn first_line(text: &str) -> String {

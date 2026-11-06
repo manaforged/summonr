@@ -25,6 +25,16 @@ mod status;
 mod tool;
 
 pub use config::Launch as McpLaunch;
+
+/// Parses one `KEY=VALUE` environment variable or header.
+pub fn pair(raw: &str) -> summonr_core::error::Result<(String, String)> {
+    raw.split_once('=')
+        .filter(|(key, _)| !key.is_empty())
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .ok_or_else(|| {
+            summonr_core::error::Error::Config(format!("expected KEY=VALUE, got `{raw}`"))
+        })
+}
 pub(crate) use config::scan;
 pub use defer::call_label;
 pub(crate) use defer::{Resolved, SEARCH_TOOL, effective};

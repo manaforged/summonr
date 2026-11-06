@@ -19,6 +19,20 @@ pub fn list(workspace: &Path) -> Vec<(String, String)> {
     rows
 }
 
+/// The file that defines skill `name`, by the same search order as `list`.
+#[must_use]
+pub fn file(workspace: &Path, name: &str) -> Option<PathBuf> {
+    roots(workspace).into_iter().find_map(|root| {
+        summonr_core::walk::children(&root).find_map(|entry| {
+            let path = entry.path();
+            let dir = std::fs::metadata(&path).is_ok_and(|meta| meta.is_dir());
+            skill_file(path, dir)
+                .filter(|(found, file)| found == name && file.is_file())
+                .map(|(_, file)| file)
+        })
+    })
+}
+
 #[must_use]
 pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     let rows = list(workspace);

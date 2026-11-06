@@ -54,3 +54,33 @@ fn the_last_settings_page_shows_its_last_row() {
     let seen = drive(|app| open(app, Page::Tools), vec![down()], |_| ());
     assert!(seen.shows(|text| text == "Browser app"), "{}", seen.text());
 }
+
+#[test]
+fn the_mcp_form_asks_for_environment_or_headers() {
+    if !in_window("settings::the_mcp_form_asks_for_environment_or_headers") {
+        return;
+    }
+    let seen = steps(
+        |app| open(app, Page::Mcp),
+        vec![Step::Click("Add server")],
+        |_| (),
+    );
+    assert!(
+        seen.shows(|text| text == "Environment or headers"),
+        "{}",
+        seen.text()
+    );
+}
+
+#[test]
+fn the_tools_page_says_what_a_switch_reaches() {
+    if !in_window("settings::the_tools_page_says_what_a_switch_reaches") {
+        return;
+    }
+    let seen = drive(|app| open(app, Page::Tools), Vec::new(), |_| ());
+    assert!(
+        seen.shows(|text| text == "Agents already working keep their tools"),
+        "{}",
+        seen.text()
+    );
+}

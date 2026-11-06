@@ -12,8 +12,10 @@ use super::super::App;
 use super::super::style::{ICON, L, M, S, Text, XS, text};
 use super::parts::section;
 use summonr_agent::hub::Cmd;
-use summonr_agent::mcp::{McpLaunch, McpState, McpTransport, ServerStatus};
+use summonr_agent::mcp::{McpState, McpTransport, ServerStatus};
 use summonr_agent::supervise::ServerKind;
+
+mod launch;
 
 const POLL: Duration = Duration::from_secs(2);
 
@@ -47,6 +49,7 @@ struct Page {
     error: Signal<Option<String>>,
     name: Signal<String>,
     target: Signal<String>,
+    extra: Signal<String>,
 }
 
 pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
@@ -70,6 +73,7 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
         error: signal(None),
         name: signal(String::new()),
         target: signal(String::new()),
+        extra: signal(String::new()),
     };
     let app = app.clone();
     vec![
@@ -224,6 +228,10 @@ fn form(app: &App, page: Page) -> NodeBuilder {
                 .placeholder("npx -y server-name")
                 .submit(move |_| create(&submit, page)),
         ))
+        .child(field(
+            "Environment or headers",
+            text_field(page.extra).placeholder("API_KEY=value, OTHER=value"),
+        ))
         .child(
             container()
                 .layout(
@@ -258,7 +266,8 @@ fn form(app: &App, page: Page) -> NodeBuilder {
 fn create(app: &App, page: Page) {
     let name = page.name.peek().trim().to_owned();
     let target = page.target.peek().trim().to_owned();
-    let added = launch(&target).and_then(|launch| {
+    let extra = page.extra.peek();
+    let added = launch::launch(&target, &extra).and_then(|launch| {
         summonr_agent::mcp::add(&name, &launch).map_err(|error| error.to_string())
     });
     match added {
@@ -273,6 +282,7 @@ fn create(app: &App, page: Page) {
 fn close(page: Page) {
     page.name.set(String::new());
     page.target.set(String::new());
+    page.extra.set(String::new());
     page.error.set(None);
     defer(move || page.adding.set(false));
 }
@@ -287,25 +297,6 @@ fn remove(app: &App, page: Page, name: &str) {
             .set(Some(first_line(&error.to_string()).to_owned())),
     }
     refresh(app);
-}
-
-fn launch(target: &str) -> Result<McpLaunch, String> {
-    if target.starts_with("http://") || target.starts_with("https://") {
-        return Ok(McpLaunch::Http {
-            url: target.to_owned(),
-            headers: Vec::new(),
-            auth: None,
-        });
-    }
-    let words = summonr_agent::policy::shell_words(target);
-    let (command, args) = words
-        .split_first()
-        .ok_or_else(|| "Enter a command or URL".to_owned())?;
-    Ok(McpLaunch::Stdio {
-        command: command.clone(),
-        args: args.to_vec(),
-        env: Vec::new(),
-    })
 }
 
 fn refresh(app: &App) {

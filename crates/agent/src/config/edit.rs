@@ -301,6 +301,27 @@ pub(crate) fn save_write_root(path: &Path, dir: &str) -> Result<()> {
     .map(drop)
 }
 
+pub(crate) fn add_plugin_off(path: &Path, name: &str) -> Result<bool> {
+    update(path, |document| {
+        let not_a_list = || Error::Config("`plugins.off` in config.toml is not a list".to_owned());
+        let plugins = document
+            .entry("plugins")
+            .or_insert_with(toml_edit::table)
+            .as_table_mut()
+            .ok_or_else(not_a_list)?;
+        let off = plugins
+            .entry("off")
+            .or_insert_with(|| toml_edit::value(toml_edit::Array::new()))
+            .as_array_mut()
+            .ok_or_else(not_a_list)?;
+        if off.iter().any(|value| value.as_str() == Some(name)) {
+            return Ok(false);
+        }
+        off.push(name);
+        Ok(true)
+    })
+}
+
 pub(crate) fn drop_plugin_off(path: &Path, name: &str) -> Result<bool> {
     update(path, |document| {
         let Some(array) = document

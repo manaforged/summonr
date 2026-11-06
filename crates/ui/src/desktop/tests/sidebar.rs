@@ -66,3 +66,53 @@ fn search_finds_an_agent_by_title_in_the_palette() {
         seen.controls
     );
 }
+
+#[test]
+fn a_live_agent_shows_its_new_title_before_the_list_refreshes() {
+    if !in_window("sidebar::a_live_agent_shows_its_new_title_before_the_list_refreshes") {
+        return;
+    }
+    let seen = drive(
+        |app| {
+            two_chats(app);
+            app.update(Msg::Fact(Fact::Live(vec![summonr_agent::hub::Live {
+                session: "01a1000000000000000000000000bbbb".to_owned(),
+                title: "Parser fix".to_owned(),
+                workspace: "/work".into(),
+                status: summonr_agent::hub::Status::Idle,
+                active: false,
+            }])));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert!(seen.shows(|text| text == "Parser fix"), "{}", seen.text());
+    assert!(
+        !seen.shows(|text| text == "Fix the parser bug"),
+        "{}",
+        seen.text()
+    );
+}
+
+#[test]
+fn a_repository_lists_before_its_agent_has_a_message() {
+    if !in_window("sidebar::a_repository_lists_before_its_agent_has_a_message") {
+        return;
+    }
+    let seen = drive(
+        |app| {
+            app.window.sidebar.set(true);
+            app.update(Msg::Fact(Fact::Sessions(Ok(Vec::new()))));
+            app.update(Msg::Fact(Fact::Live(vec![summonr_agent::hub::Live {
+                session: "01a1000000000000000000000000cccc".to_owned(),
+                title: String::new(),
+                workspace: "/added-repo".into(),
+                status: summonr_agent::hub::Status::Idle,
+                active: false,
+            }])));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert!(seen.shows(|text| text == "added-repo"), "{}", seen.text());
+}

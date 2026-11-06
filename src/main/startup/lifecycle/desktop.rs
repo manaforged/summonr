@@ -1,6 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use summonr_agent::{Error, Requirement, Result};
+use summonr_agent::hub::{Factory, Info};
+use summonr_agent::runtime::Loop;
+use summonr_agent::{Client, Error, Requirement, Result};
 
 use super::{Ui, ask_login, assemble, factory, info};
 use crate::entry::cli::Args;
@@ -19,22 +21,48 @@ pub(in crate::entry::startup) fn run(args: &Args) -> Result<i32> {
         }
         summonr_agent::check_config()?;
         super::super::commands::adopt(&args)?;
-        let endpoint = summonr_agent::resolve_endpoint(
-            args.endpoint.as_deref(),
-            args.model.as_deref(),
-            Requirement::Model,
-        )?;
         let ui: Ui = (Some(sender), None);
-        let (root, _, action) = super::super::session::isolate(&args, &workspace)?;
-        std::env::set_current_dir(&root).map_err(|error| {
-            Error::Config(format!("Could not enter the project folder: {error}"))
-        })?;
-        let (loop_, _, workflow) = assemble(&args, &endpoint, &root, action, &ui)?;
-        let mut info = info(&args, &endpoint, &loop_, &root, workflow)?;
-        info.splash = false;
-        info.inline = false;
-        ask_login(&ui, &endpoint, args.endpoint.is_some());
-        let factory = factory(&args, &endpoint, workspace);
-        Ok((loop_, info, factory))
+        let Some(last) = last_chat(&args, &workspace) else {
+            return open(&args, &workspace, &ui);
+        };
+        let mut reopened = args.clone();
+        reopened.session = Some(last);
+        open(&reopened, &workspace, &ui).or_else(|_| open(&args, &workspace, &ui))
     })
+}
+
+/// The newest chat in this folder, unless the command line chose what to open.
+fn last_chat(args: &Args, workspace: &Path) -> Option<String> {
+    if args.session.is_some() || args.resume || args.fork || !args.prompt.is_empty() {
+        return None;
+    }
+    summonr_agent::session::all()
+        .ok()?
+        .into_iter()
+        .filter(|chat| chat.interactive && chat.depth == 0)
+        .filter(|chat| {
+            chat.cwd
+                .as_deref()
+                .is_some_and(|cwd| Path::new(cwd) == workspace)
+        })
+        .map(|chat| chat.id)
+        .max()
+}
+
+fn open(args: &Args, workspace: &Path, ui: &Ui) -> Result<(Loop<Client>, Info, Factory)> {
+    let endpoint = summonr_agent::resolve_endpoint(
+        args.endpoint.as_deref(),
+        args.model.as_deref(),
+        Requirement::Model,
+    )?;
+    let (root, _, action) = super::super::session::isolate(args, workspace)?;
+    std::env::set_current_dir(&root)
+        .map_err(|error| Error::Config(format!("Could not enter the project folder: {error}")))?;
+    let (loop_, _, workflow) = assemble(args, &endpoint, &root, action, ui)?;
+    let mut info = info(args, &endpoint, &loop_, &root, workflow)?;
+    info.splash = false;
+    info.inline = false;
+    ask_login(ui, &endpoint, args.endpoint.is_some());
+    let factory = factory(args, &endpoint, workspace.to_path_buf());
+    Ok((loop_, info, factory))
 }

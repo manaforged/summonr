@@ -170,9 +170,13 @@ fn chats(
     let closed = shut.get();
     let terms = app.window.terminals.list.get();
     let mut groups = projects(&app.workspace(), app.sessions.all_chats());
-    for term in &terms {
-        if !groups.iter().any(|(folder, _)| *folder == term.folder) {
-            groups.push((term.folder.clone(), Vec::new()));
+    let open_folders = terms
+        .iter()
+        .map(|term| &term.folder)
+        .chain(live.iter().map(|entry| &entry.workspace));
+    for folder in open_folders {
+        if !groups.iter().any(|(seen, _)| seen == folder) {
+            groups.push((folder.clone(), Vec::new()));
         }
     }
     let mut nodes = Vec::new();
@@ -187,8 +191,9 @@ fn chats(
             continue;
         }
         nodes.extend(super::terminal::rows(app, &terms, &folder));
-        for info in agents {
+        for mut info in agents {
             let selected = info.id == session;
+            live_title(&mut info, &live);
             nodes.push(agent_row(app, &info, selected, state(&live, &info.id)));
         }
     }
@@ -222,9 +227,6 @@ fn projects(
         }
     }
     groups.retain(|(folder, chats)| !chats.is_empty() || folder == here);
-    if groups.iter().all(|(_, chats)| chats.is_empty()) {
-        return Vec::new();
-    }
     groups.sort_by_cached_key(|(folder, _)| folder_name(folder).to_lowercase());
     for (_, agents) in &mut groups {
         agents.sort_by(|a, b| b.id.cmp(&a.id));
@@ -281,6 +283,15 @@ pub(super) fn folder_name(folder: &std::path::Path) -> String {
     summonr_agent::worktree::display_name(folder)
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| folder.display().to_string())
+}
+
+fn live_title(info: &mut SessionInfo, live: &[Live]) {
+    if let Some(entry) = live
+        .iter()
+        .find(|entry| entry.session == info.id && !entry.title.is_empty())
+    {
+        info.name = Some(entry.title.clone());
+    }
 }
 
 fn state(live: &[Live], session: &str) -> Option<Status> {

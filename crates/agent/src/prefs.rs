@@ -4,8 +4,10 @@ use crate::config;
 use summonr_core::error::Result;
 
 mod hotkeys;
+mod layout;
 pub use hotkeys::Hotkey;
 pub use hotkeys::{EditorKey, Hotkeys};
+pub use layout::{Layout, Mark, Slot};
 pub use summonr_types::{Background, DiffLayout, Notify};
 
 pub const AUTO_THEME: &str = "auto";

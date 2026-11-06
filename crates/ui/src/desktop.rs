@@ -17,6 +17,7 @@ pub(super) mod entry;
 pub(crate) mod host;
 pub(crate) mod launch;
 pub(super) mod palette;
+mod restore;
 mod settings;
 mod side;
 mod sidebar;
@@ -113,6 +114,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
     agent_menu::install();
     settings::install(&app);
     split::install(&app);
+    restore::install(&app);
     announce(&app);
     let paint = app.clone();
     shell(&app).children_reactive(move || {

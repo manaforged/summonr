@@ -184,7 +184,7 @@ fn chats(
         let open = !closed.contains(&folder);
         let states: Vec<Status> = agents
             .iter()
-            .filter_map(|info| state(&live, &info.id))
+            .filter_map(|info| shown_state(&live, &info.id))
             .collect();
         nodes.push(section(&folder, open, &states, shut));
         if !open {
@@ -194,7 +194,12 @@ fn chats(
         for mut info in agents {
             let selected = info.id == session;
             live_title(&mut info, &live);
-            nodes.push(agent_row(app, &info, selected, state(&live, &info.id)));
+            nodes.push(agent_row(
+                app,
+                &info,
+                selected,
+                shown_state(&live, &info.id),
+            ));
         }
     }
     nodes
@@ -292,6 +297,10 @@ fn live_title(info: &mut SessionInfo, live: &[Live]) {
     {
         info.name = Some(entry.title.clone());
     }
+}
+
+fn shown_state(live: &[Live], session: &str) -> Option<Status> {
+    state(live, session).or_else(|| super::restore::mark(session))
 }
 
 fn state(live: &[Live], session: &str) -> Option<Status> {

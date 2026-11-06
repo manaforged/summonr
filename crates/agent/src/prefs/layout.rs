@@ -1,0 +1,57 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+
+use crate::durable::store;
+use summonr_core::dirs::summonr_home;
+use summonr_core::error::Result;
+
+const FILE: &str = "desktop.json";
+
+/// What a restart restores: panes, terminals and the marks on agents out of view.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Layout {
+    pub panes: Vec<Slot>,
+    pub focus: usize,
+    pub terminals: Vec<PathBuf>,
+    pub marks: BTreeMap<String, Mark>,
+}
+
+/// One pane: its agent, and the index of the terminal it shows.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Slot {
+    pub session: String,
+    pub terminal: Option<usize>,
+}
+
+/// The status an agent keeps across a restart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mark {
+    Review,
+    Failed,
+}
+
+fn doc() -> Result<store::Doc<store::Json<Layout>>> {
+    Ok(store::Doc::new(
+        summonr_home()?.join(FILE),
+        store::Durability::Synced,
+        store::Invalid::Warn,
+        store::Wait::Never,
+    ))
+}
+
+impl Layout {
+    /// The saved layout, or an empty one when none can be read.
+    pub fn load() -> Self {
+        doc().and_then(|doc| doc.load()).unwrap_or_default()
+    }
+
+    /// Saves this layout.
+    pub fn save(&self) -> Result<()> {
+        doc()?.replace(self)
+    }
+}

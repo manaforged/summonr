@@ -58,6 +58,14 @@ impl Terminals {
         }
     }
 
+    /// Starts a new shell for a saved terminal; `None` when its folder is gone or it cannot start.
+    pub(super) fn reopen(self, folder: &Path) -> Option<u64> {
+        if !folder.is_dir() {
+            return None;
+        }
+        self.start(folder, NEW_TERMINAL).ok().map(|term| term.id)
+    }
+
     fn start(self, folder: &Path, name: &'static str) -> Result<Rc<Term>, String> {
         let owner = self
             .owner

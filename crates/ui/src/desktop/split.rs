@@ -169,6 +169,32 @@ fn hide_terminal() -> bool {
 }
 
 fn open() {
+    add(Open::Folder);
+}
+
+/// Opens a pane on the saved agent `session`.
+pub(super) fn reopen(session: &str) -> Option<App> {
+    let session = session.to_owned();
+    add(move |_| Open::Resume(session))
+}
+
+/// Focuses pane `at`, or the last pane when it no longer exists.
+pub(super) fn focus_at(at: usize) {
+    if let Some(last) = with(|split| split.panes.len().saturating_sub(1)) {
+        focus(at.min(last));
+    }
+}
+
+/// Every pane's app and the focused index; tracked.
+pub(super) fn tracked() -> (Vec<App>, usize) {
+    let Some((focus, count)) = with(|split| (split.focus, split.count)) else {
+        return (Vec::new(), 0);
+    };
+    let (at, _) = (focus.get(), count.get());
+    (apps(), at)
+}
+
+fn add(open: impl FnOnce(std::path::PathBuf) -> Open) -> Option<App> {
     let Some((main, workspace, root)) = with(|split| {
         (split.panes.len() < PANES).then(|| {
             let base = &split.panes[split.focus.peek().min(split.panes.len() - 1)].app;
@@ -176,11 +202,12 @@ fn open() {
         })
     })
     .flatten() else {
-        return;
+        return None;
     };
     let owner = Owner::new("split-pane", root);
     let app = owner.with(|| attach(&main));
-    app.open_session(Open::Folder(workspace));
+    app.open_session(open(workspace));
+    let opened = app.clone();
     let at = with(|split| {
         split.panes.push(Pane {
             app,
@@ -192,6 +219,7 @@ fn open() {
         recount();
         focus(at);
     }
+    Some(opened)
 }
 
 fn attach(main: &App) -> App {

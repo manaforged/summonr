@@ -58,7 +58,7 @@ pub(super) fn ask_login(ui: &Ui, endpoint: &Endpoint, named: bool) {
                     selection.name
                 )
             } else if !selection.keyless() && summonr_agent::endpoint_set_up().is_empty() {
-                "No provider is set up yet. Pick one and paste its key.".to_string()
+                "No provider is set up yet. Pick one to start.".to_string()
             } else if !selection.keyless() {
                 "Pick a model to start.".to_string()
             } else {

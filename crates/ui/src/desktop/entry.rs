@@ -42,7 +42,14 @@ fn form(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> Nod
         Entry::Assistant { text, .. } => message::assistant(&text, app),
         Entry::Thinking(text) => message::thinking(&text, prefs.reasoning, live, app),
         Entry::System(_) | Entry::Injected(_) => sigil::prelude::container(),
-        Entry::Aborted(reason) | Entry::Error(reason) => message::error(reason),
+        Entry::Aborted(reason) => message::error(message::first_part(&reason), None),
+        Entry::Error(reason) => {
+            let last = app.model.with(|model| model.entries.len() == index + 1);
+            match reason.strip_suffix(summonr_agent::hub::RETRY_HINT) {
+                Some(line) => message::error(message::first_line(line), last.then_some(app)),
+                None => message::error(message::first_line(&reason), None),
+            }
+        }
         entry @ (Entry::Tool { .. }
         | Entry::Receipt(_)
         | Entry::Verify { .. }

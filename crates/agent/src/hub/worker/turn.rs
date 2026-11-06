@@ -153,7 +153,7 @@ impl Worker {
             }
             drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         } else if let Some(Err(error)) = result {
-            self.fail(&format!("{error} · F5 or /retry continues"));
+            self.fail(&format!("{error}{}", crate::hub::RETRY_HINT));
             drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         } else {
             self.carry_steering();

@@ -52,3 +52,26 @@ fn a_first_run_offers_the_claude_code_it_found_in_one_click() {
         seen.text()
     );
 }
+
+#[test]
+fn an_offer_found_after_the_window_opens_still_shows() {
+    if !in_window("setup::an_offer_found_after_the_window_opens_still_shows") {
+        return;
+    }
+    let seen = steps(
+        settings(Snapshot {
+            unconfigured: true,
+            ..graded()
+        }),
+        vec![
+            Step::Wait(Box::new(|app| app.window.local.set(vec![claude()]))),
+            Step::Click("Use Claude Code"),
+        ],
+        |_| (),
+    );
+    assert!(
+        seen.sent
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::SelectModel(endpoint, _) if endpoint == "anthropic"))
+    );
+}

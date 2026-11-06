@@ -1,6 +1,6 @@
 use super::harness::{Step, drive, steps};
 use super::in_window;
-use summonr_agent::hub::{Fact, Msg};
+use summonr_agent::hub::{Cmd, Fact, Msg};
 use summonr_agent::tools::Event;
 
 const CHILD: &str = "01a104ac000000000000000000001111";
@@ -173,5 +173,37 @@ fn all_steps_in_the_palette_unfolds_finished_replies_and_folds_them_again() {
         !back.shows(|text| text.contains("cargo test --workspace")),
         "{}",
         back.text()
+    );
+}
+
+#[test]
+fn a_failed_turn_shows_one_line_and_a_retry_button() {
+    if !in_window("transcript::a_failed_turn_shows_one_line_and_a_retry_button") {
+        return;
+    }
+    let failure = format!(
+        "provider error: rate limited\nraw body{}",
+        summonr_agent::hub::RETRY_HINT
+    );
+    let seen = steps(
+        move |app| app.update(Msg::Fact(Fact::Failed(failure.clone()))),
+        vec![Step::Click("Retry")],
+        |_| (),
+    );
+    assert!(
+        seen.shows(|text| text == "provider error: rate limited"),
+        "{}",
+        seen.text()
+    );
+    assert!(
+        !seen.shows(|text| text.contains("raw body")),
+        "{}",
+        seen.text()
+    );
+    assert!(!seen.shows(|text| text.contains("F5")), "{}", seen.text());
+    assert!(
+        seen.sent
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::Command(text) if text == "/retry"))
     );
 }

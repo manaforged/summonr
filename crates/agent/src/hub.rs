@@ -16,7 +16,7 @@ mod worker;
 pub use channel::{Activity, client};
 pub use channel::{Inbox, Ui, channel};
 pub use message::Info;
-pub use message::{Cmd, Fact, Intent, Msg, Round, Snapshot};
+pub use message::{Cmd, Fact, Intent, Msg, RETRY_HINT, Round, Snapshot};
 use worker::worker;
 #[cfg(test)]
 mod tests;

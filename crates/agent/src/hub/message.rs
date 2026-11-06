@@ -1,3 +1,6 @@
+/// What a retryable turn failure ends with; a window offers Retry in its place.
+pub const RETRY_HINT: &str = " · F5 or /retry continues";
+
 use std::path::PathBuf;
 
 use crate::prefs::Prefs;

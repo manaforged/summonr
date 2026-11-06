@@ -338,7 +338,10 @@ fn hero(app: &App) -> NodeBuilder {
                             vec![composer::composer(draft.clone(), draft.view_edit.get())]
                         }),
                 )
-                .child(starters(app)),
+                .child({
+                    let offers = app.clone();
+                    container().children_reactive(move || vec![starters(&offers)])
+                }),
         )
 }
 

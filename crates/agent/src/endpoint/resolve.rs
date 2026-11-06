@@ -70,7 +70,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Requirement) -> Re
         endpoint.model = named_model(&endpoint.name, &model);
     } else if need.model() && endpoint.model.is_empty() {
         return Err(Error::Config(format!(
-            "endpoint `{}` needs --model (or model in config.toml)",
+            "endpoint `{}` has no model; set model for it in config.toml or pass --model",
             endpoint.name
         )));
     } else {

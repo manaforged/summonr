@@ -138,16 +138,39 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
     column
 }
 
-pub(super) fn error(reason: String) -> NodeBuilder {
-    container()
+/// A failure's one line, with a Retry button when `retry` gives the app to retry in.
+pub(super) fn error(reason: String, retry: Option<&App>) -> NodeBuilder {
+    let row = container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
                 .gap(S)
                 .min_size(0.0, 0.0)
-                .align_items(AlignItems::Start),
+                .align_items(AlignItems::Center),
         )
-        .child(styled(Text::Label, reason).text_color(DANGER))
+        .child(styled(Text::Label, reason).text_color(DANGER));
+    match retry {
+        Some(app) => {
+            let app = app.clone();
+            row.child(
+                sigil::prelude::button("Retry")
+                    .ghost()
+                    .size(sigil::prelude::ControlSize::Compact)
+                    .activate(move || app.retry()),
+            )
+        }
+        None => row,
+    }
+}
+
+/// The first line of a failure.
+pub(super) fn first_line(reason: &str) -> String {
+    reason.lines().next().unwrap_or_default().to_owned()
+}
+
+/// The part of a status line before its key hints.
+pub(super) fn first_part(reason: &str) -> String {
+    reason.split(" · ").next().unwrap_or_default().to_owned()
 }
 
 #[cfg(test)]

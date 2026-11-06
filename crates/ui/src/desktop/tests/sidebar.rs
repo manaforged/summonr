@@ -201,3 +201,33 @@ fn unpinning_puts_the_agent_back_and_no_pins_hide_the_heading() {
     assert!(!seen.shows(|text| text == "Pinned"), "{}", seen.text());
     assert!(seen.shows(|text| text == "Keep me"), "{}", seen.text());
 }
+
+#[test]
+fn a_change_in_the_running_agents_refreshes_the_list() {
+    if !in_window("sidebar::a_change_in_the_running_agents_refreshes_the_list") {
+        return;
+    }
+    let list_requests = |sent: &[summonr_agent::hub::Cmd]| {
+        sent.iter()
+            .filter(|cmd| matches!(cmd, summonr_agent::hub::Cmd::ListSessions))
+            .count()
+    };
+    let idle = drive(|app| app.window.sidebar.set(true), Vec::new(), |_| ());
+    let seen = drive(
+        |app| app.window.sidebar.set(true),
+        Vec::new(),
+        |app| {
+            app.update(Msg::Fact(Fact::Live(vec![summonr_agent::hub::Live {
+                session: "01a1000000000000000000000000dddd".to_owned(),
+                title: "New work".to_owned(),
+                workspace: "/work".into(),
+                status: summonr_agent::hub::Status::Working,
+                active: true,
+            }])));
+        },
+    );
+    assert!(
+        list_requests(&seen.sent) > list_requests(&idle.sent),
+        "a new running agent must ask for the list again"
+    );
+}

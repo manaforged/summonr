@@ -40,7 +40,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
             }
         }
     });
-    refresh_on_switch(&app, session);
+    refresh_on_switch(&app, session, live);
     let list = app.clone();
     let shut = sigil::prelude::signal(Vec::<std::path::PathBuf>::new());
     container()
@@ -103,10 +103,11 @@ pub(super) fn view(app: App) -> NodeBuilder {
         )
 }
 
-fn refresh_on_switch(app: &App, session: Signal<String>) {
+fn refresh_on_switch(app: &App, session: Signal<String>, live: Signal<Vec<Live>>) {
     let watch = app.clone();
     effect(move || {
         session.with(|_| ());
+        live.with(|_| ());
         drop(watch.cmd.send(Cmd::ListSessions));
     });
 }

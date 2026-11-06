@@ -382,3 +382,60 @@ fn a_sweep_reports_the_worktrees_it_pruned() {
     let names: Vec<_> = pruned.iter().filter_map(|path| path.file_name()).collect();
     assert_eq!(names, ["gone"]);
 }
+
+#[test]
+fn merge_all_lands_uncommitted_work() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("new.txt"), "work").unwrap();
+    super::merge_all(&tree, "test", "add the new file").unwrap();
+    assert_eq!(std::fs::read(primary.join("new.txt")).unwrap(), b"work");
+    assert!(!tree.path.exists());
+}
+
+#[test]
+fn merge_all_merges_when_the_base_moved() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("mine.txt"), "mine").unwrap();
+    std::fs::write(primary.join("theirs.txt"), "theirs").unwrap();
+    git(&primary, &["add", "theirs.txt"]);
+    git(&primary, &["commit", "-q", "-m", "moved on"]);
+    super::merge_all(&tree, "test", "add my file").unwrap();
+    assert_eq!(std::fs::read(primary.join("mine.txt")).unwrap(), b"mine");
+    assert_eq!(
+        std::fs::read(primary.join("theirs.txt")).unwrap(),
+        b"theirs"
+    );
+    assert!(!tree.path.exists());
+}
+
+#[test]
+fn merge_all_keeps_a_worktree_that_conflicts() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("same.txt"), "mine").unwrap();
+    std::fs::write(primary.join("same.txt"), "theirs").unwrap();
+    git(&primary, &["add", "same.txt"]);
+    git(&primary, &["commit", "-q", "-m", "moved on"]);
+    let error = super::merge_all(&tree, "test", "edit")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("does not merge cleanly"), "{error}");
+    assert_eq!(std::fs::read(primary.join("same.txt")).unwrap(), b"theirs");
+    assert!(tree.path.join("same.txt").exists());
+    assert!(!primary.join(".git/MERGE_HEAD").exists());
+}
+
+#[test]
+fn throw_away_removes_uncommitted_and_unmerged_work() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("kept.txt"), "kept").unwrap();
+    git(&tree.path, &["add", "kept.txt"]);
+    git(&tree.path, &["commit", "-q", "-m", "unmerged"]);
+    std::fs::write(tree.path.join("dirty.txt"), "dirty").unwrap();
+    super::throw_away(&tree, "test").unwrap();
+    assert!(!tree.path.exists());
+    assert!(!primary.join("kept.txt").exists());
+}

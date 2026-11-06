@@ -146,6 +146,9 @@ impl App {
         if let Some(command) = (spec(pane).load)(self) {
             drop(self.cmd.send(command));
         }
+        if pane == Pane::Diff && crate::canvas::is_window() {
+            drop(self.cmd.send(Cmd::Trees));
+        }
     }
 
     pub(crate) fn picked(&self, pane: Pane) -> Option<PaneRow> {

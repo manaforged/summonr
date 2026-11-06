@@ -69,6 +69,7 @@ pub enum Fact {
     Diff(crate::diff::Diff, Option<PathBuf>),
     DiffFailed(String, Option<PathBuf>),
     Trees(Vec<crate::worktree::Status>),
+    Moved(PathBuf),
     Changed(Vec<String>),
     Edited(Vec<String>),
     View {

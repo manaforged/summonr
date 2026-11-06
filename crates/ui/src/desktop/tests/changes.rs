@@ -98,3 +98,103 @@ fn a_new_chat_drops_the_previous_chats_changes() {
         seen.text()
     );
 }
+
+fn in_worktree(app: &super::super::App) {
+    edited(app, &["src/a.rs"]);
+    app.update(Msg::Fact(Fact::Trees(vec![
+        summonr_agent::worktree::Status {
+            tree: summonr_agent::worktree::Tree {
+                primary: "/repo".into(),
+                path: app.workspace(),
+                branch: "summonr/agent".to_owned(),
+                base: "main".to_owned(),
+                snapshot: None,
+            },
+            ahead: summonr_agent::worktree::Ahead(Some(1)),
+            dirty: true,
+            session: None,
+        },
+    ])));
+    app.toggle_pane(super::super::Pane::Diff);
+}
+
+#[test]
+fn changes_merges_and_discards_this_agents_worktree() {
+    if !in_window("changes::changes_merges_and_discards_this_agents_worktree") {
+        return;
+    }
+    let seen = steps(in_worktree, vec![Step::Click("Merge")], |app| {
+        app.workspace()
+    });
+    assert!(
+        seen.shows(|text| text == "summonr/agent → main"),
+        "{}",
+        seen.text()
+    );
+    assert!(
+        seen.sent
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::Merge(path) if *path == seen.read)),
+    );
+    let armed = steps(
+        in_worktree,
+        vec![Step::Click("Discard"), Step::Click("Confirm discard")],
+        |app| app.workspace(),
+    );
+    assert!(
+        armed
+            .sent
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::Discard(path) if *path == armed.read)),
+    );
+}
+
+#[test]
+fn a_running_agent_cannot_be_merged_or_discarded() {
+    if !in_window("changes::a_running_agent_cannot_be_merged_or_discarded") {
+        return;
+    }
+    let seen = drive(
+        |app| {
+            in_worktree(app);
+            app.update(Msg::Fact(Fact::Busy(Some(
+                summonr_agent::hub::Activity::Turn,
+            ))));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert!(
+        seen.named(Role::Button, "Merge").is_empty(),
+        "{:?}",
+        seen.controls
+    );
+    assert!(
+        seen.named(Role::Button, "Discard").is_empty(),
+        "{:?}",
+        seen.controls
+    );
+}
+
+#[test]
+fn a_failed_diff_shows_its_error_in_changes() {
+    if !in_window("changes::a_failed_diff_shows_its_error_in_changes") {
+        return;
+    }
+    let seen = drive(
+        |app| {
+            app.update(Msg::Fact(Fact::DiffFailed(
+                "not a git repository".to_owned(),
+                None,
+            )));
+            app.toggle_pane(super::super::Pane::Diff);
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert!(
+        seen.shows(|text| text.contains("not a git repository")),
+        "{}",
+        seen.text()
+    );
+}

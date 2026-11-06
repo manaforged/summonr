@@ -4,6 +4,9 @@ impl App {
     pub(crate) fn update(&self, msg: Msg) {
         match msg {
             Msg::Fact(Fact::Secret(request)) => self.secret_open(request),
+            Msg::Fact(Fact::Moved(folder)) => {
+                self.open_session(summonr_agent::hub::Open::Folder(folder));
+            }
             Msg::Fact(Fact::Clipboard(read)) => self.pasted(read),
             Msg::Fact(Fact::LoginStep {
                 text,

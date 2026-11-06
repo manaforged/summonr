@@ -72,12 +72,15 @@ impl Worker {
     fn merge(&mut self, path: &std::path::Path) {
         let own = self.loop_.session_id();
         let merged = self.tree_at(path).and_then(|tree| {
-            crate::worktree::finish(&tree, &own, "merge from the worktrees pane", &[])?;
+            crate::worktree::merge_all(&tree, &own, "merge the agent's work")?;
             Ok(tree)
         });
         match merged {
-            Ok(tree) => self.system(&format!("merged {} into {}", tree.branch, tree.base)),
-            Err(error) => self.system(&format!("merge failed: {error}")),
+            Ok(tree) => {
+                self.system(&format!("merged {} into {}", tree.branch, tree.base));
+                self.left(&tree);
+            }
+            Err(error) => self.failed(&format!("Could not merge: {error}")),
         }
         self.reader.trees();
     }
@@ -86,12 +89,26 @@ impl Worker {
         let own = self.loop_.session_id();
         match self
             .tree_at(path)
-            .and_then(|tree| crate::worktree::discard(&tree, &own).map(|()| tree))
+            .and_then(|tree| crate::worktree::throw_away(&tree, &own).map(|()| tree))
         {
-            Ok(tree) => self.system(&format!("removed worktree {}", tree.branch)),
-            Err(error) => self.system(&format!("worktree kept: {error}")),
+            Ok(tree) => {
+                self.system(&format!("removed worktree {}", tree.branch));
+                self.left(&tree);
+            }
+            Err(error) => self.failed(&format!("Could not discard: {error}")),
         }
         self.reader.trees();
+    }
+
+    fn failed(&self, text: &str) {
+        drop(self.ui.send(Msg::Fact(Fact::Failed(text.to_owned()))));
+    }
+
+    /// Tells the view to move on when this agent's own worktree is gone.
+    fn left(&self, tree: &crate::worktree::Tree) {
+        if self.loop_.workspace() == tree.path {
+            drop(self.ui.send(Msg::Fact(Fact::Moved(tree.primary.clone()))));
+        }
     }
 
     fn toggle_approval(&mut self) {

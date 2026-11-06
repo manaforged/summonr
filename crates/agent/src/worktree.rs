@@ -10,8 +10,9 @@ mod land;
 mod remove;
 
 pub use finish::finish;
+pub(crate) use finish::merge_all;
 pub(crate) use land::{Landing, reconcile_children};
-pub(crate) use remove::discard;
+pub(crate) use remove::throw_away;
 
 const COMMIT_MAX: u64 = 5 * 1024 * 1024;
 const UNKNOWN: &str = "?";

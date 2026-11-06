@@ -35,7 +35,10 @@ pub(super) fn bar(app: &App) -> Option<NodeBuilder> {
             button("Undo")
                 .ghost()
                 .size(ControlSize::Compact)
-                .activate(move || drop(sender.cmd.send(Cmd::Command(UNDO.to_string())))),
+                .activate(move || {
+                    drop(sender.cmd.send(Cmd::Command(UNDO.to_string())));
+                    drop(sender.cmd.send(Cmd::Diff(sender.root())));
+                }),
         );
     }
     Some(

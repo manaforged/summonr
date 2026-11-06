@@ -31,10 +31,14 @@ pub(in crate::entry::startup) fn run(args: &Args) -> Result<i32> {
     })
 }
 
-/// The newest chat in this folder, unless the command line chose what to open.
+/// The agent the window last showed, else the newest chat in this folder, unless the command line chose.
 fn last_chat(args: &Args, workspace: &Path) -> Option<String> {
     if args.session.is_some() || args.resume || args.fork || !args.prompt.is_empty() {
         return None;
+    }
+    let saved = summonr_agent::prefs::Layout::load();
+    if let Some(slot) = saved.panes.first().filter(|slot| !slot.session.is_empty()) {
+        return Some(slot.session.clone());
     }
     summonr_agent::session::all()
         .ok()?

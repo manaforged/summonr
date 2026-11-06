@@ -245,6 +245,7 @@ impl Model {
             | Msg::Intent(Intent::OpenHelp)
             | Msg::Fact(Fact::Secret(_))
             | Msg::Fact(Fact::Clipboard(_))
+            | Msg::Fact(Fact::Moved(_))
             | Msg::Fact(Fact::Named(_))
             | Msg::Fact(Fact::Models { .. })
             | Msg::Fact(Fact::ModelNote(_))

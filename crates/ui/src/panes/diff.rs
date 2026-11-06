@@ -32,6 +32,18 @@ use sigil::prelude::Widget;
 
 pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder {
     let model = app.model.get();
+    if let Some(row) = super::tree_actions::review(&app) {
+        column = column.child(row);
+    }
+    if let Some(error) = model.diff_error.clone().filter(|_| canvas::is_window()) {
+        return column.child(
+            sigil::prelude::text(error)
+                .wrap()
+                .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Error11),
+        );
+    }
     if let Some(path) = app.diff_view.get() {
         let back = app.clone();
         column = column

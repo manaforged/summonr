@@ -3,27 +3,26 @@ use std::path::Path;
 use crate::durable::{driver, store};
 use summonr_core::error::{Error, Result};
 
-use super::{Tree, base, dirty, worktree_id};
+use super::{Tree, base, worktree_id};
 
-pub(crate) fn discard(tree: &Tree, own: &str) -> Result<()> {
+/// Removes the worktree and its branch, with any work on them.
+pub(crate) fn throw_away(tree: &Tree, own: &str) -> Result<()> {
     if let Some(session) = tree.holder(own)? {
         return Err(Error::Config(format!(
-            "{} is in use by live session {session}; end that session first",
-            tree.branch
+            "agent {} still uses this worktree; stop it first",
+            crate::session::short(&session)
         )));
     }
-    if dirty(&tree.path)? {
-        return Err(Error::Config(format!(
-            "{} has uncommitted changes; merge or clean it first",
-            tree.branch
-        )));
-    }
-    tree.remove()
+    tree.delete()
 }
 
 impl Tree {
     pub(crate) fn remove(&self) -> Result<()> {
         self.check_merged()?;
+        self.delete()
+    }
+
+    fn delete(&self) -> Result<()> {
         let head = crate::diff::git_env(&self.primary, &[], &["rev-parse", &self.branch])?;
         let path = self.path.to_str().ok_or_else(|| {
             Error::Config(format!(

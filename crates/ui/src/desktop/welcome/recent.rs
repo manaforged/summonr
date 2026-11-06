@@ -25,7 +25,7 @@ pub(super) fn list(busy: Signal<bool>, error: Signal<Option<String>>, open: Open
         inbox,
         move |result: summonr_agent::Result<Vec<SessionInfo>>| match result {
             Ok(found) => rows.set(found),
-            Err(cause) => error.set(Some(format!("Could not load recent folders: {cause}"))),
+            Err(cause) => error.set(Some(format!("Could not load recent repositories: {cause}"))),
         },
         || {},
     );

@@ -23,7 +23,7 @@ fn messages_typed_during_a_run_wait_above_the_composer() {
     }
     let seen = drive(waiting, Vec::new(), |_| ());
     for wanted in [
-        "2 messages waiting",
+        "2 messages queued",
         "Next",
         "use the new parser",
         "After this turn",

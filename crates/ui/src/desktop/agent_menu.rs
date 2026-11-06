@@ -55,7 +55,12 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
         }
     })];
     if let Some(folder) = info.cwd.clone().map(PathBuf::from) {
-        items.push(MenuItem::new("Show in Finder").activate(move || {
+        let reveal = if summonr_agent::worktree::repo_of(&folder).is_some() {
+            "Reveal worktree"
+        } else {
+            "Reveal repository"
+        };
+        items.push(MenuItem::new(reveal).activate(move || {
             drop(summonr_auth::open::external(&folder));
         }));
     }

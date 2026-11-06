@@ -36,7 +36,7 @@ fn an_approval_and_a_finished_turn_call_the_user_back() {
     assert_eq!(
         approval,
         Some((
-            "Summonr needs your OK".to_owned(),
+            "Needs you".to_owned(),
             "git push --force origin main".to_owned()
         ))
     );

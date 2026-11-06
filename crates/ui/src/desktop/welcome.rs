@@ -18,9 +18,9 @@ pub(crate) use recent::last;
 
 const WIDTH: f32 = 480.0;
 const BADGE: f32 = 56.0;
-const CHOOSE: &str = "Open folder…";
+const CHOOSE: &str = "Open repository…";
 const OPENING: &str = "Opening…";
-const TITLE: &str = "Choose a project folder";
+const TITLE: &str = "Choose a repository";
 type Open = Rc<dyn Fn(PathBuf)>;
 
 pub(crate) fn view(

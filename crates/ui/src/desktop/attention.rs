@@ -4,7 +4,7 @@ use summonr_agent::prefs::Notify;
 use super::App;
 use crate::app::{Notice, NoticeKind};
 
-const ASKS: &str = "Summonr needs your OK";
+const ASKS: &str = "Needs you";
 const QUESTION: &str = "Summonr has a question";
 const FINISHED: &str = "Summonr finished";
 const NEEDS_YOU: &str = "Needs you";

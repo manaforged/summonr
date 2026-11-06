@@ -85,7 +85,7 @@ pub(super) fn panel(app: &App) -> Option<NodeBuilder> {
 
 fn heading(count: usize) -> String {
     match count {
-        1 => "1 message waiting".to_string(),
-        count => format!("{count} messages waiting"),
+        1 => "1 message queued".to_string(),
+        count => format!("{count} messages queued"),
     }
 }

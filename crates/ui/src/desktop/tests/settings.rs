@@ -84,3 +84,12 @@ fn the_tools_page_says_what_a_switch_reaches() {
         seen.text()
     );
 }
+
+#[test]
+fn the_shortcuts_page_lists_new_terminal() {
+    if !in_window("settings::the_shortcuts_page_lists_new_terminal") {
+        return;
+    }
+    let seen = drive(|app| open(app, Page::Shortcuts), Vec::new(), |_| ());
+    assert!(seen.shows(|text| text == "New terminal"), "{}", seen.text());
+}

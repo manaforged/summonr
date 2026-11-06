@@ -15,6 +15,7 @@ use summonr_agent::session::SessionInfo;
 enum Dialog {
     Rename { id: String, name: Signal<String> },
     Delete { id: String, title: String },
+    Quit { running: usize },
 }
 
 thread_local! {
@@ -38,6 +39,11 @@ fn show(dialog: Dialog) {
         current.set(Some(dialog));
         open.set(true);
     }
+}
+
+/// Asks whether to quit while `running` agents still work.
+pub(super) fn ask_quit(running: usize) {
+    show(Dialog::Quit { running });
 }
 
 /// The right-click menu of one agent row.
@@ -136,6 +142,20 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
                         close();
                     }),
             )
+        }
+        Dialog::Quit { running } => {
+            let agents = if running == 1 { "agent" } else { "agents" };
+            modal(open)
+                .title(format!("Quit and stop {running} running {agents}?"))
+                .actions(
+                    button("Keep running")
+                        .ghost()
+                        .shortcut("esc")
+                        .activate(close),
+                    button("Quit")
+                        .tone(sigil::prelude::Tone::Error)
+                        .activate(super::quit::leave),
+                )
         }
     };
     Some(container().child(body.width(DIALOG)))

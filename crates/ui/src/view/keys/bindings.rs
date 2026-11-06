@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeyCommand {
     Hotkey(Hotkey),
     Trigger(char),
@@ -57,7 +57,7 @@ impl KeyCommand {
 }
 
 /// What a split key does to the window's panes.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) enum Split {
     /// Adds a pane with a new agent.
@@ -69,7 +69,7 @@ pub(crate) enum Split {
 }
 
 /// Which agent a window shortcut opens.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) enum Jump {
     /// The nth agent in sidebar order, from 1.

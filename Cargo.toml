@@ -78,6 +78,7 @@ crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "5b1788
 [features]
 default = []
 gui = ["summonr-ui/gui"]
+menu = ["gui", "summonr-ui/menu"]
 
 [profile.release]
 lto = "fat"

@@ -111,3 +111,53 @@ fn the_sidebar_toggle_counts_the_agents_that_need_you() {
     );
     assert!(seen.shows(|text| text == "2"), "{}", seen.text());
 }
+
+fn one_working(app: &super::super::App) {
+    app.update(Msg::Fact(Fact::Live(vec![summonr_agent::hub::Live {
+        session: "a".to_owned(),
+        title: "a".to_owned(),
+        workspace: "/work".into(),
+        status: Status::Working,
+        active: true,
+    }])));
+}
+
+#[test]
+fn closing_asks_first_while_an_agent_runs() {
+    if !in_window("attention::closing_asks_first_while_an_agent_runs") {
+        return;
+    }
+    let seen = drive(one_working, Vec::new(), |_| super::super::quit::on_close());
+    assert_eq!(seen.read, sigil::app::CloseAction::Keep);
+    assert!(seen.shows(|text| text == "Keep running"), "{}", seen.text());
+}
+
+#[test]
+fn closing_goes_straight_through_when_nothing_runs() {
+    if !in_window("attention::closing_goes_straight_through_when_nothing_runs") {
+        return;
+    }
+    let seen = drive(|_| (), Vec::new(), |_| super::super::quit::on_close());
+    assert_eq!(seen.read, sigil::app::CloseAction::Close);
+}
+
+#[cfg(feature = "menu")]
+#[test]
+fn the_menu_bar_runs_the_same_commands_as_the_keys() {
+    if !in_window("attention::the_menu_bar_runs_the_same_commands_as_the_keys") {
+        return;
+    }
+    let seen = drive(
+        |_| (),
+        Vec::new(),
+        |_| {
+            sigil::app::menu::simulate("New agent");
+        },
+    );
+    assert!(
+        seen.sent
+            .iter()
+            .any(|cmd| matches!(cmd, summonr_agent::hub::Cmd::Open(_))),
+        "the menu item must open an agent"
+    );
+}

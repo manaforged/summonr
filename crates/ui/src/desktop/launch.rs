@@ -231,6 +231,7 @@ fn window() -> sigil::AppConfig {
         .size(SIZE.0, SIZE.1)
         .inset_title_bar(crate::desktop::TITLE_BAR)
         .esc_exits(false)
+        .on_close(crate::desktop::quit::on_close)
 }
 
 fn watch_outputs(app: &App) {

@@ -16,7 +16,9 @@ mod brand;
 pub(super) mod entry;
 pub(crate) mod host;
 pub(crate) mod launch;
+mod menubar;
 pub(super) mod palette;
+pub(super) mod quit;
 mod restore;
 mod settings;
 mod shelf;
@@ -109,8 +111,11 @@ pub(super) fn root(app: App) -> NodeBuilder {
     agent_menu::install();
     settings::install(&app);
     split::install(&app);
-    restore::install(&app);
     shelf::install();
+    restore::install(&app);
+    quit::install(&app);
+    #[cfg(feature = "menu")]
+    menubar::install(&app);
     attention::announce(&app);
     let paint = app.clone();
     shell(&app).children_reactive(move || {

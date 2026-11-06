@@ -198,3 +198,17 @@ fn a_failed_diff_shows_its_error_in_changes() {
         seen.text()
     );
 }
+
+#[test]
+fn the_files_card_lists_each_file_with_its_lines() {
+    if !in_window("changes::the_files_card_lists_each_file_with_its_lines") {
+        return;
+    }
+    let seen = drive(|app| edited(app, &[]), Vec::new(), |_| ());
+    let rows = seen
+        .controls
+        .iter()
+        .filter(|(role, name, _)| *role == Role::Button && name.contains(" −"))
+        .count();
+    assert!(rows >= 2, "{:?}", seen.controls);
+}

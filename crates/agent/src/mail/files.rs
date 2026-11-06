@@ -112,7 +112,12 @@ impl Mailbox {
         self.remember(&bytes[..used]);
         let (mail, drained) = parsed?;
         if drained {
-            self.stamp = Some(stamp);
+            if used > 0 && drop_consumed(&path, self.cursor) {
+                self.rewind();
+                self.stamp = None;
+            } else {
+                self.stamp = Some(stamp);
+            }
         }
         Ok(mail)
     }
@@ -315,6 +320,20 @@ pub(crate) fn take_inbox(dir: &Path, id: &str) -> Result<Vec<Mail>> {
     Ok(mail)
 }
 
+/// Removes the bytes a session already read, keeps whatever arrived since, and reports whether it wrote.
+fn drop_consumed(path: &Path, from: u64) -> bool {
+    let Ok(Some(_lock)) = store::lock(path, false) else {
+        return false;
+    };
+    let (Ok(bytes), Ok(from)) = (store::read_or_empty(path), usize::try_from(from)) else {
+        return false;
+    };
+    let Some(tail) = bytes.get(from..) else {
+        return false;
+    };
+    store::write(path, tail, store::Durability::Synced).is_ok()
+}
+
 fn parse_inbox(text: &str) -> Result<Vec<Mail>> {
     text.lines()
         .enumerate()
@@ -327,39 +346,4 @@ fn parse_inbox(text: &str) -> Result<Vec<Mail>> {
             })
         })
         .collect()
-}
-
-/// Removes lock files of inboxes that hold no mail and belong to no live agent, once older than the sweep window.
-pub(crate) fn sweep_inboxes(dir: &Path, now: std::time::SystemTime) -> usize {
-    let window = std::time::Duration::from_secs(crate::limits::limits().mail_sweep_secs);
-    let live: std::collections::HashSet<String> = super::live(dir)
-        .into_iter()
-        .map(|agent| clean_id(&agent.id))
-        .collect();
-    summonr_core::walk::children(&dir.join("inbox"))
-        .filter(|entry| stale_lock(&entry.path(), &live, window, now))
-        .filter(|entry| std::fs::remove_file(entry.path()).is_ok())
-        .count()
-}
-
-fn stale_lock(
-    path: &Path,
-    live: &std::collections::HashSet<String>,
-    window: std::time::Duration,
-    now: std::time::SystemTime,
-) -> bool {
-    let Some(inbox) = path
-        .file_name()
-        .and_then(|name| name.to_str()?.strip_suffix(".lock"))
-    else {
-        return false;
-    };
-    let Some(id) = inbox.strip_suffix(".jsonl") else {
-        return false;
-    };
-    let old = std::fs::metadata(path)
-        .and_then(|meta| meta.modified())
-        .is_ok_and(|at| now.duration_since(at).is_ok_and(|age| age > window));
-    let empty = std::fs::metadata(path.with_file_name(inbox)).map_or(true, |meta| meta.len() == 0);
-    old && empty && !live.contains(id)
 }

@@ -17,6 +17,8 @@
 
 ### Fixed
 
+- Reading an inbox removes the delivered mail from the inbox file, so a live session's inbox no longer grows for the life of the session. The sweep also removes the inbox of a session that is gone once it is older than the sweep window. The audit keeps every message.
+
 - Agent activity rows show worker names, models, and latest activity; expanded details include the assignment, workspace, usage, and outcome. Journal replay restores child identity instead of leaving blank rows.
 - Separate Responses reasoning-summary parts keep paragraph breaks instead of joining their words together.
 - Status-bar task and agent buttons keep their activation state while the spinner and token-rate labels refresh.

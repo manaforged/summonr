@@ -262,3 +262,51 @@ fn a_partial_inbox_line_is_not_pending_until_its_newline_arrives() {
     assert_eq!(mailbox.poll().unwrap(), vec![mail]);
     assert!(!mailbox.pending().unwrap());
 }
+
+#[test]
+fn a_read_inbox_keeps_only_what_arrived_after_the_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = Path::new("/work/summonr");
+    let _sender = Mailbox::open(dir.path(), "s1", None, "summonr", "model", cwd).unwrap();
+    let mut receiver = Mailbox::open(dir.path(), "s2", None, "summonr", "model", cwd).unwrap();
+    deliver_in(dir.path(), "s1", &["summonr-2".to_string()], "first", None).unwrap();
+    assert_eq!(receiver.poll().unwrap().len(), 1);
+    assert!(
+        read_inbox(dir.path(), "s2").unwrap().is_empty(),
+        "a delivered message stays in the file after it was read"
+    );
+    deliver_in(dir.path(), "s1", &["summonr-2".to_string()], "second", None).unwrap();
+    let mail = receiver.poll().unwrap();
+    assert_eq!(mail.len(), 1);
+    assert_eq!(mail[0].text, "second");
+}
+
+#[test]
+fn the_sweep_removes_the_inbox_of_a_session_that_is_gone() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = Path::new("/work/summonr");
+    let _sender = Mailbox::open(dir.path(), "s1", None, "summonr", "model", cwd).unwrap();
+    let receiver = Mailbox::open(dir.path(), "s2", None, "summonr", "model", cwd).unwrap();
+    deliver_in(
+        dir.path(),
+        "s1",
+        &["summonr-2".to_string()],
+        "nobody read me",
+        None,
+    )
+    .unwrap();
+    let path = inbox_path(dir.path(), "s2");
+    drop(receiver);
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(400_000);
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(old))
+        .unwrap();
+    crate::mail::sweep_inboxes(dir.path(), std::time::SystemTime::now());
+    assert!(
+        !path.exists(),
+        "the inbox of a gone session survived the sweep"
+    );
+}

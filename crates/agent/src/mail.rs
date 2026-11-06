@@ -334,12 +334,14 @@ impl Drop for Mailbox {
 pub mod cli;
 pub(crate) mod files;
 pub(crate) mod roster;
+mod sweep;
 pub(crate) mod tools;
 
 use files::{append, inbox_path};
-pub(crate) use files::{post_board, read_board, read_inbox, sweep_inboxes, take_inbox};
+pub(crate) use files::{post_board, read_board, read_inbox, take_inbox};
 pub use roster::{Agent, live, roster};
 use roster::{targets, unique_name};
+pub(crate) use sweep::sweep_inboxes;
 pub(crate) use tools::{Tool, definitions, is_mail_tool};
 
 #[cfg(test)]

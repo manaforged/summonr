@@ -66,8 +66,16 @@ pub(super) fn isolate(
     let (action, recorded) = load_session(args, cwd)?;
     match &action {
         SessionAction::Resume(path) | SessionAction::Fork(path) => {
+            let recorded = recorded.or_else(|| journal_workspace(path));
             let workspace = recorded
-                .or_else(|| journal_workspace(path))
+                .as_deref()
+                .filter(|folder| folder.is_dir())
+                .map(Path::to_path_buf)
+                .or_else(|| {
+                    recorded
+                        .as_deref()
+                        .and_then(summonr_agent::worktree::checkout_of)
+                })
                 .unwrap_or_else(|| cwd.to_path_buf());
             let tree = summonr_agent::worktree_at(&workspace);
             Ok((workspace, tree, action))

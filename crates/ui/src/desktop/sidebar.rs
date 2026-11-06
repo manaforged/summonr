@@ -172,11 +172,11 @@ fn chats(
     let mut groups = projects(&app.workspace(), app.sessions.all_chats());
     let open_folders = terms
         .iter()
-        .map(|term| &term.folder)
-        .chain(live.iter().map(|entry| &entry.workspace));
+        .map(|term| term.folder.clone())
+        .chain(live.iter().map(|entry| repo_folder(&entry.workspace)));
     for folder in open_folders {
-        if !groups.iter().any(|(seen, _)| seen == folder) {
-            groups.push((folder.clone(), Vec::new()));
+        if !groups.iter().any(|(seen, _)| *seen == folder) {
+            groups.push((folder, Vec::new()));
         }
     }
     let mut nodes = Vec::new();
@@ -211,8 +211,14 @@ pub(super) fn folders(app: &App) -> Vec<std::path::PathBuf> {
     projects(&here, app.sessions.all_chats())
         .into_iter()
         .map(|(folder, _)| folder)
-        .filter(|folder| *folder != here)
+        .filter(|folder| *folder != repo_folder(&here))
         .collect()
+}
+
+/// The folder an agent lists under: its repository's checkout when it works in a worktree.
+fn repo_folder(folder: impl AsRef<std::path::Path>) -> std::path::PathBuf {
+    let folder = folder.as_ref();
+    summonr_agent::worktree::checkout_of(folder).unwrap_or_else(|| folder.to_path_buf())
 }
 
 fn projects(
@@ -220,18 +226,19 @@ fn projects(
     rows: Vec<SessionInfo>,
 ) -> Vec<(std::path::PathBuf, Vec<SessionInfo>)> {
     let mut groups: Vec<(std::path::PathBuf, Vec<SessionInfo>)> =
-        vec![(here.to_path_buf(), Vec::new())];
+        vec![(repo_folder(here), Vec::new())];
     for info in rows {
         let folder = info
             .cwd
             .as_deref()
-            .map_or_else(|| here.to_path_buf(), std::path::PathBuf::from);
+            .map_or_else(|| here.to_path_buf(), repo_folder);
         match groups.iter_mut().find(|(seen, _)| *seen == folder) {
             Some((_, chats)) => chats.push(info),
             None => groups.push((folder, vec![info])),
         }
     }
-    groups.retain(|(folder, chats)| !chats.is_empty() || folder == here);
+    let here = repo_folder(here);
+    groups.retain(|(folder, chats)| !chats.is_empty() || *folder == here);
     groups.sort_by_cached_key(|(folder, _)| folder_name(folder).to_lowercase());
     for (_, agents) in &mut groups {
         agents.sort_by(|a, b| b.id.cmp(&a.id));

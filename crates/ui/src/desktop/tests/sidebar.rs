@@ -116,3 +116,38 @@ fn a_repository_lists_before_its_agent_has_a_message() {
     );
     assert!(seen.shows(|text| text == "added-repo"), "{}", seen.text());
 }
+
+#[test]
+fn a_worktree_agent_lists_under_its_repository() {
+    if !in_window("sidebar::a_worktree_agent_lists_under_its_repository") {
+        return;
+    }
+    let seen = drive(
+        |app| {
+            app.window.sidebar.set(true);
+            let mut row = chat(
+                "01a1000000000000000000000000dddd",
+                "Fix it",
+                Duration::from_secs(5),
+            );
+            row.0.cwd = Some("/work/alpha-worktrees/18e58fff3cdfe408".to_owned());
+            app.update(Msg::Fact(Fact::Sessions(Ok(vec![
+                row,
+                chat(
+                    "01a1000000000000000000000000eeee",
+                    "Other",
+                    Duration::from_secs(9),
+                ),
+            ]))));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert!(seen.shows(|text| text == "alpha"), "{}", seen.text());
+    assert!(
+        !seen.shows(|text| text.contains("· worktree")),
+        "{}",
+        seen.text()
+    );
+    assert!(seen.shows(|text| text == "Fix it"), "{}", seen.text());
+}

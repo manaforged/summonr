@@ -262,6 +262,13 @@ pub fn repo_of(path: &Path) -> Option<String> {
         })
 }
 
+/// The repository checkout a summonr worktree at `path` belongs to; `None` for any other folder.
+#[must_use]
+pub fn checkout_of(path: &Path) -> Option<PathBuf> {
+    let repo = repo_of(path)?;
+    Some(path.parent()?.parent()?.join(repo))
+}
+
 const WORKTREES: &str = "worktrees";
 
 fn worktree_dir(primary: &Path, id: &str) -> Result<PathBuf> {

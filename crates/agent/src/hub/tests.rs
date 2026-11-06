@@ -355,3 +355,5 @@ async fn renaming_an_agent_out_of_view_keeps_the_view() {
     send(crate::hub::Cmd::Quit);
     started.task.await.unwrap();
 }
+
+mod isolate;

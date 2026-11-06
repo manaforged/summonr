@@ -78,16 +78,19 @@ fn panel(app: &App, open: Signal<bool>, picked: Signal<Option<Picked<PathBuf>>>)
             MenuItem::new(name).activate(move || target.open_session(Open::Folder(folder.clone()))),
         );
     }
-    let menu = menu
-        .separator()
-        .item(
+    let menu = menu.separator();
+    let menu = if app.git_branch().is_some() {
+        menu.item(
             MenuItem::new(BRANCH)
                 .activate(move || branch.open_session(Open::Worktree(here.clone()))),
         )
-        .item(
-            MenuItem::new(ELSEWHERE)
-                .activate(move || picked.set(Some(super::super::welcome::folder()))),
-        );
+    } else {
+        menu
+    };
+    let menu = menu.item(
+        MenuItem::new(ELSEWHERE)
+            .activate(move || picked.set(Some(super::super::welcome::folder()))),
+    );
     container()
         .layout(
             LayoutStyle::block()

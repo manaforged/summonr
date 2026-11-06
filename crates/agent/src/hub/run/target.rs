@@ -1,4 +1,4 @@
-use super::{Hub, Status};
+use super::{Hub, Open, Status};
 use crate::hub::{Cmd, Fact, Msg};
 
 impl Hub {
@@ -11,6 +11,25 @@ impl Hub {
             other => return Some(other),
         }
         None
+    }
+
+    /// Opens a folder at its repository's checkout, or in a worktree while an agent runs there.
+    pub(super) fn isolated(&self, open: Open) -> Open {
+        let Open::Folder(folder) = open else {
+            return open;
+        };
+        let checkout = crate::worktree::checkout_of(&folder)
+            .filter(|checkout| checkout.is_dir())
+            .unwrap_or(folder);
+        let running = self.sessions.values().any(|session| {
+            session.workspace == checkout
+                && matches!(session.status, Status::Working | Status::NeedsYou)
+        });
+        if running && crate::worktree::in_git(&checkout) {
+            Open::Worktree(checkout)
+        } else {
+            Open::Folder(checkout)
+        }
     }
 
     fn stop(&self, id: &str) {

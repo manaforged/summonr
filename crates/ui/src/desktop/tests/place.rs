@@ -96,8 +96,11 @@ fn agents_group_by_repository_in_name_order_and_new_agent_is_the_only_start() {
     {
         return;
     }
+    let place = std::rc::Rc::new(std::cell::RefCell::new(PathBuf::new()));
+    let here = place.clone();
     let seen = steps(
-        |app| {
+        move |app| {
+            *here.borrow_mut() = app.workspace();
             app.window.sidebar.set(true);
             app.update(Msg::Fact(Fact::Sessions(Ok(vec![
                 chat(
@@ -133,7 +136,10 @@ fn agents_group_by_repository_in_name_order_and_new_agent_is_the_only_start() {
         "{:?}",
         seen.controls
     );
-    assert_eq!(opened(&seen.sent), vec![Open::New]);
+    assert_eq!(
+        opened(&seen.sent),
+        vec![Open::Folder(place.borrow().clone())]
+    );
 }
 
 #[test]
@@ -185,4 +191,22 @@ fn the_sidebar_shows_projects_without_being_opened() {
         "{}",
         seen.text()
     );
+}
+
+#[test]
+fn the_folder_menu_offers_a_branch_only_in_a_repository() {
+    if !in_window("place::the_folder_menu_offers_a_branch_only_in_a_repository") {
+        return;
+    }
+    let root = tempfile::tempdir().expect("root");
+    let seen = steps(
+        settings(Snapshot {
+            workspace: root.path().to_path_buf(),
+            ..graded()
+        }),
+        vec![Step::Click("Repository")],
+        |_| (),
+    );
+    let branch = super::super::thread::place_branch();
+    assert!(!seen.shows(|text| text == branch), "{}", seen.text());
 }

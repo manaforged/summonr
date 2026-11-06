@@ -16,11 +16,22 @@ impl App {
     }
 
     pub(crate) fn open_session(&self, open: summonr_agent::hub::Open) {
-        if open == summonr_agent::hub::Open::New {
+        let open = if open == summonr_agent::hub::Open::New {
             self.sky.set(super::super::scene::fresh_sky());
-        }
+            self.new_agent_place()
+        } else {
+            open
+        };
         self.window.close_terminal();
         drop(self.cmd.send(Cmd::Open(open)));
+    }
+
+    fn new_agent_place(&self) -> summonr_agent::hub::Open {
+        if crate::canvas::is_window() {
+            summonr_agent::hub::Open::Folder(self.workspace())
+        } else {
+            summonr_agent::hub::Open::New
+        }
     }
 
     pub(crate) fn restore(&self, inputs: Vec<UserInput>) {

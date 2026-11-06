@@ -181,6 +181,7 @@ impl Hub {
         }
         let (tx, rx) = unbounded_channel();
         let factory = self.factory.clone();
+        let open = self.isolated(open);
         let made = tokio::task::block_in_place(|| factory(open, Ui(tx.clone())));
         match made {
             Ok((loop_, workflow)) => {

@@ -38,6 +38,7 @@ pub(in crate::tui::sigil_view) enum KeyCommand {
     Sidebar,
     Jump(Jump),
     Split(Split),
+    Terminal,
 }
 
 impl KeyCommand {
@@ -45,7 +46,7 @@ impl KeyCommand {
     pub(super) const fn windowed(self) -> bool {
         matches!(
             self,
-            Self::Palette | Self::Sidebar | Self::Jump(_) | Self::Split(_) | Self::Hotkey(Hotkey::Options)
+            Self::Palette | Self::Sidebar | Self::Jump(_) | Self::Split(_) | Self::Terminal | Self::Hotkey(Hotkey::Options)
         )
     }
 }
@@ -208,8 +209,9 @@ const CMD: ModifiersState = ModifiersState::META;
 const CMD_SHIFT: ModifiersState = ModifiersState::META.union(ModifiersState::SHIFT);
 const CMD_ALT: ModifiersState = ModifiersState::META.union(ModifiersState::ALT);
 
-pub(in crate::tui::sigil_view) const WINDOW: [(&str, ModifiersState, KeyCommand); 12] = [
+pub(in crate::tui::sigil_view) const WINDOW: [(&str, ModifiersState, KeyCommand); 13] = [
     ("d", CMD, KeyCommand::Split(Split::Open)),
+    ("t", CMD, KeyCommand::Terminal),
     ("w", CMD, KeyCommand::Split(Split::Close)),
     ("k", CMD, KeyCommand::Palette),
     ("p", CMD, KeyCommand::Trigger('@')),

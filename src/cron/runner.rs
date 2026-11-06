@@ -234,7 +234,7 @@ pub(crate) fn exec(
         let Task::Prompt(text) = &job.task else {
             return Err(Error::Config("wake jobs require a prompt".to_string()));
         };
-        let delivered = crate::mail::deliver("monitor", std::slice::from_ref(session), text);
+        let delivered = crate::mail::deliver(crate::mail::MONITOR, std::slice::from_ref(session), text);
         let text = match &delivered {
             Ok(count) => format!("delivered wake-up to {count} session"),
             Err(error) => error.to_string(),

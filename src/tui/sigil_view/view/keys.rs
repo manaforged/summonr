@@ -85,6 +85,10 @@ impl App {
                 #[cfg(not(feature = "gui"))]
                 let _ = to;
             }
+            KeyCommand::Terminal => {
+                #[cfg(feature = "gui")]
+                self.open_terminal(super::super::desktop::terminal::NEW_TERMINAL, None);
+            }
             KeyCommand::Split(action) => {
                 #[cfg(feature = "gui")]
                 super::super::desktop::split::act(action);
@@ -310,6 +314,8 @@ impl App {
             && self.pane_active().is_none()
             && !self.view_edit.peek()
             && !self.hotkeys.recording.peek();
+        #[cfg(feature = "gui")]
+        let free = free && self.showing.peek().is_none();
         if super::canvas::is_window() && printable && plain && free {
             event.stop_propagation();
             self.type_into_composer(&text);

@@ -26,7 +26,7 @@ impl Worker {
                     Some(self.loop_.unreported_tokens()),
                     &self.ui,
                 );
-                self.send_diff(false);
+                self.send_diff(false).await;
             }
             Cmd::Dequeue => self.recover(),
             Cmd::Export(target) => self.export(target),
@@ -37,6 +37,7 @@ impl Worker {
             }
             Cmd::Send(to, text) => turn::mail(&self.ui, &self.loop_.session_id(), &to, &text),
             Cmd::Tick => self.tick(),
+            Cmd::Peers(peers) => self.peers(&peers),
             Cmd::LoginAnswer(_) => {
                 self.system("the sign-in already ended; the pasted code was not sent")
             }

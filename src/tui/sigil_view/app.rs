@@ -122,11 +122,11 @@ pub(super) struct App {
     pub(super) info: Info,
     pub(super) place: Signal<Place>,
     #[cfg(feature = "gui")]
-    pub(super) owner: Option<sigil::reactive::Owner>,
-    #[cfg(feature = "gui")]
     pub(super) window_focused: Option<Signal<bool>>,
     #[cfg(feature = "gui")]
-    pub(super) shells: Rc<RefCell<std::collections::HashMap<PathBuf, sigil::app::Session>>>,
+    pub(super) terminals: super::desktop::terminal::Terminals,
+    #[cfg(feature = "gui")]
+    pub(super) showing: Signal<Option<u64>>,
     pub(super) prefs_path: Option<PathBuf>,
     pub(super) max_scroll: Signal<f32>,
     pub(super) content_height: Signal<f32>,
@@ -337,11 +337,11 @@ impl App {
             pasted_text: Rc::new(RefCell::new(Vec::new())),
             place: signal(Place::at(&workspace)),
             #[cfg(feature = "gui")]
-            owner: sigil::reactive::Owner::current(),
-            #[cfg(feature = "gui")]
             window_focused: sigil::app::WindowId::current().and_then(sigil::app::WindowId::focused),
             #[cfg(feature = "gui")]
-            shells: Rc::default(),
+            terminals: super::desktop::terminal::Terminals::new(),
+            #[cfg(feature = "gui")]
+            showing: signal(None),
             prefs_path: info.config.clone(),
             info,
         };

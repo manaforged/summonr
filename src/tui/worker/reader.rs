@@ -1,5 +1,6 @@
 use crate::tui::Fact;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
@@ -15,8 +16,10 @@ use crate::worktree;
 use summonr_core::dirs::summonr_home;
 
 mod files;
+mod load;
 mod models;
 
+use load::Load;
 use files::{add, clipboard, files, relative, unignored, view, watch};
 
 #[derive(Clone)]
@@ -24,6 +27,8 @@ pub(super) struct Reader {
     workspace: PathBuf,
     board: crate::mcp::Board,
     ui: UnboundedSender<Msg>,
+    diff_load: Arc<Load>,
+    files_load: Arc<Load>,
 }
 
 impl Reader {
@@ -36,6 +41,8 @@ impl Reader {
             workspace,
             board,
             ui,
+            diff_load: Arc::default(),
+            files_load: Arc::default(),
         }
     }
 
@@ -57,9 +64,26 @@ impl Reader {
             }));
             return;
         }
+        let slot = match command {
+            Cmd::Diff(_) => Some(Arc::clone(&self.diff_load)),
+            Cmd::ListFiles => Some(Arc::clone(&self.files_load)),
+            _ => None,
+        };
+        let first = match &slot {
+            Some(slot) => slot.claim(command),
+            None => Some(command),
+        };
+        let Some(command) = first else {
+            return;
+        };
         let save = matches!(command, Cmd::Save(..));
         let reader = self.clone();
-        let task = tokio::task::spawn_blocking(move || reader.serve(command));
+        let task = tokio::task::spawn_blocking(move || {
+            reader.serve(command);
+            while let Some(next) = slot.as_deref().and_then(Load::next) {
+                reader.serve(next);
+            }
+        });
         if save && let Err(error) = task.await {
             self.send(Msg::Fact(Fact::System(format!(
                 "save task failed: {error}"
@@ -227,14 +251,8 @@ impl Reader {
     }
 
     pub(super) fn jobs(&self) {
-        let jobs = crate::jobs::since(&self.workspace, 0, None)
-            .into_iter()
-            .filter_map(|record| {
-                crate::jobs::status(&self.workspace, &record)
-                    .ok()
-                    .map(|status| (record, status))
-            })
-            .collect();
+        let records = crate::jobs::since(&self.workspace, 0, None);
+        let jobs = crate::jobs::statuses(&self.workspace, records);
         self.send(Msg::Fact(Fact::Jobs(jobs)));
     }
 
@@ -243,7 +261,6 @@ impl Reader {
             Ok(servers) => self.send(Msg::Fact(Fact::Mcp(servers))),
             Err(error) => self.send(Msg::Fact(Fact::System(format!("mcp status: {error}")))),
         }
-        self.offers();
     }
 
     fn offers(&self) {

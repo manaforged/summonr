@@ -26,9 +26,9 @@ async fn native_seven_agent_models_do_not_change_parent_or_saved_defaults() {
     let results = parent
         .tasks_execute(&requests(&endpoint), &mut events, &mut |_| {})
         .await;
-    parent.drain(&mut events, &mut |_| {});
+    parent.drain(&mut |event| events.push(event.clone()));
     let records = parent
-        .kill_spawned("offline probe finished", &mut Usage::default())
+        .kill_spawned(crate::runtime::child::Kill::Because("offline probe finished"), &mut Usage::default())
         .await
         .expect("stop every offline child");
     let after = std::fs::read(&config).expect("read defaults after native launch");

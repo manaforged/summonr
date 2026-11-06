@@ -29,7 +29,10 @@ pub(super) fn view(app: App) -> NodeBuilder {
     });
     let session = sigil::reactive::derived({
         let app = app.clone();
-        move || super::split::current(&app).model.with(|model| model.session.clone())
+        move || {
+            let pane = super::split::current(&app);
+            if pane.showing.get().is_some() { String::new() } else { pane.model.with(|model| model.session.clone()) }
+        }
     });
     refresh_on_switch(&app, session);
     let list = app.clone();
@@ -49,6 +52,10 @@ pub(super) fn view(app: App) -> NodeBuilder {
                     .child(action(NEW, Icon::Plus, "⌘N", {
                         let open = app.clone();
                         move || super::split::show(&open, Open::New)
+                    }))
+                    .child(action(super::terminal::NEW_TERMINAL_ACTION, Icon::Terminal, "⌘T", {
+                        let open = app.clone();
+                        move || open.open_terminal(super::terminal::NEW_TERMINAL, None)
                     }))
                     .child(action(SEARCH, Icon::Search, "⌘K", || {
                         super::palette::show();
@@ -133,14 +140,22 @@ fn chats(app: &App, shut: Signal<Vec<std::path::PathBuf>>, live: Signal<Vec<Live
     let live = live.get();
     let session = session.get();
     let closed = shut.get();
+    let terms = app.terminals.list.get();
+    let mut groups = projects(&app.workspace(), app.sessions.all_chats());
+    for term in &terms {
+        if !groups.iter().any(|(folder, _)| *folder == term.folder) {
+            groups.push((term.folder.clone(), Vec::new()));
+        }
+    }
     let mut nodes = Vec::new();
-    for (folder, agents) in projects(&app.workspace(), app.sessions.all_chats()) {
+    for (folder, agents) in groups {
         let open = !closed.contains(&folder);
         let states: Vec<Status> = agents.iter().filter_map(|info| state(&live, &info.id)).collect();
         nodes.push(section(&folder, open, &states, shut));
         if !open {
             continue;
         }
+        nodes.extend(super::terminal::rows(app, &terms, &folder));
         for info in agents {
             let selected = info.id == session;
             nodes.push(agent_row(app, &info, selected, state(&live, &info.id)));

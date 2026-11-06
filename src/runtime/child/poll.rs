@@ -9,6 +9,11 @@ enum Wake {
     Joined(String, Box<std::result::Result<Done, JoinError>>),
 }
 
+pub(in crate::runtime) enum Kill<'a> {
+    TurnEnded,
+    Because(&'a str),
+}
+
 impl<P: Provider> Loop<P> {
     pub(super) async fn task_poll(
         &mut self,
@@ -17,7 +22,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Execution> {
-        self.drain(events, emit);
+        self.drain(emit);
         if !self.spawned.contains_key(id) {
             let settled = id
                 .parse::<SessionId>()
@@ -131,7 +136,7 @@ impl<P: Provider> Loop<P> {
         let deadline = tokio::time::Instant::now() + crate::limits::limits().job_wait();
         let mut announced = false;
         loop {
-            self.drain(events, emit);
+            self.drain(emit);
             self.settle_ready(events, emit, usage).await?;
             if !self
                 .spawned
@@ -154,7 +159,6 @@ impl<P: Provider> Loop<P> {
                 Ok(Wake::Event(event)) => {
                     self.saw(&event);
                     emit(&event);
-                    events.push(event);
                 }
                 Ok(Wake::Joined(id, joined)) => {
                     self.announce_finished(&id, *joined, events, emit, usage)?;
@@ -239,12 +243,16 @@ impl<P: Provider> Loop<P> {
 
     pub(in crate::runtime) async fn kill_spawned(
         &mut self,
-        reason: &str,
+        kill: Kill<'_>,
         usage: &mut Usage,
     ) -> Result<Vec<ChildRecord>> {
         let mut records = Vec::new();
         let ids: Vec<String> = self.spawned.keys().cloned().collect();
-        let ending = reason == "the parent turn ended";
+        let ending = matches!(kill, Kill::TurnEnded);
+        let reason = match kill {
+            Kill::TurnEnded => "the parent turn ended",
+            Kill::Because(reason) => reason,
+        };
         for spawned in self.spawned.values().filter(|spawned| !(ending && spawned.stay)) {
             spawned.handle.abort();
         }

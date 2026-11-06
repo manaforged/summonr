@@ -68,6 +68,8 @@ pub(super) fn command(letter: &str) -> Event {
 pub(super) enum Step {
     Key(Event),
     Click(&'static str),
+    Wait(Box<dyn FnOnce(&App)>),
+    Drag((f32, f32), (f32, f32)),
 }
 
 pub(super) fn drive<T>(
@@ -91,6 +93,15 @@ fn click(host: &mut Host, label: &str) {
     );
     host.route(Event::pointer_down(at));
     host.route(Event::pointer_up(at));
+}
+
+fn drag(host: &mut Host, from: (f32, f32), to: (f32, f32)) {
+    let point = |(x, y): (f32, f32)| sigil::geometry::Point::new(x, y);
+    host.route(Event::pointer_down(point(from)));
+    host.frame(VIEW, 1.0, FrameHooks::default());
+    host.route(Event::pointer_move(point(to)));
+    host.frame(VIEW, 1.0, FrameHooks::default());
+    host.route(Event::pointer_up(point(to)));
 }
 
 pub(super) fn steps<T>(
@@ -119,6 +130,8 @@ pub(super) fn steps<T>(
             match step {
                 Step::Key(key) => host.route(key),
                 Step::Click(label) => click(&mut host, label),
+                Step::Wait(until) => until(&app),
+                Step::Drag(from, to) => drag(&mut host, from, to),
             }
             host.frame(VIEW, 1.0, FrameHooks::default());
         }

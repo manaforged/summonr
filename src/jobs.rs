@@ -179,15 +179,29 @@ fn prune(workspace: &Path, record: &Record) -> bool {
     true
 }
 
+type Table = std::cell::OnceCell<Vec<(u32, u32, String)>>;
+
 pub(crate) fn finished(workspace: &Path, record: &Record) -> bool {
     exit_path(workspace, &record.id).is_file() || !alive_since(record.pid, record.started)
 }
 
 pub(crate) fn status(workspace: &Path, record: &Record) -> Result<Status> {
-    report(workspace, record, true)
+    report(workspace, record, Some(&std::cell::OnceCell::new()))
 }
 
-fn report(workspace: &Path, record: &Record, list_children: bool) -> Result<Status> {
+/// Returns every record's status, reading the process table at most once.
+pub(crate) fn statuses(workspace: &Path, records: Vec<Record>) -> Vec<(Record, Status)> {
+    let table = std::cell::OnceCell::new();
+    records
+        .into_iter()
+        .filter_map(|record| {
+            let status = report(workspace, &record, Some(&table)).ok()?;
+            Some((record, status))
+        })
+        .collect()
+}
+
+fn report(workspace: &Path, record: &Record, table: Option<&Table>) -> Result<Status> {
     let log = log_path(workspace, record);
     let exit = exit_path(workspace, &record.id);
     let meta = std::fs::metadata(&log).ok();
@@ -198,8 +212,9 @@ fn report(workspace: &Path, record: &Record, list_children: bool) -> Result<Stat
         .map_or(0, |quiet| quiet.as_secs());
     let mut children = String::new();
     let state = if !exit.is_file() && alive_since(record.pid, record.started) {
-        if list_children {
-            children = tree::block("children", &tree::child_lines(record.pid, workspace));
+        if let Some(table) = table {
+            let table = table.get_or_init(crate::process::table);
+            children = tree::block("children", &tree::lines_in(table, record.pid, workspace));
         }
         JobState::Running
     } else if exit.is_file() {
@@ -340,7 +355,7 @@ pub(crate) async fn wait(
     let mut announced = false;
     loop {
         let elapsed = started.elapsed().as_secs();
-        let current = report(workspace, &load(workspace, id)?, elapsed >= limit_secs)?;
+        let current = report(workspace, &load(workspace, id)?, (elapsed >= limit_secs).then_some(&std::cell::OnceCell::new()))?;
         if current.state != JobState::Running || elapsed >= limit_secs {
             return Ok(current);
         }

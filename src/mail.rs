@@ -21,6 +21,8 @@ fn mail_enabled(value: Option<&OsStr>, fallback: bool) -> bool {
     value.map_or(fallback, |value| value != OsStr::new("off"))
 }
 
+pub(crate) const MONITOR: &str = "monitor";
+
 pub(crate) fn listed() -> bool {
     mail_enabled(std::env::var_os("SUMMONR_MAIL").as_deref(), true)
 }
@@ -86,6 +88,10 @@ impl Mail {
         }
         let count = append(dir, &targets(agents, &self.from, to)?, &self)?;
         Ok((count, self.id))
+    }
+
+    pub(crate) fn from_monitor(&self) -> bool {
+        self.from == MONITOR
     }
 
     pub(crate) fn sender(&self) -> &str {
@@ -306,7 +312,7 @@ impl Mailbox {
     }
 
     pub(crate) fn heartbeat(&mut self, model: &str, cwd: &Path, status: Presence) {
-        if now() < self.last_beat + crate::limits::limits().beat_secs && status == self.status {
+        if now() < self.last_beat + crate::limits::limits().presence_secs && status == self.status {
             return;
         }
         self.write_record(model, cwd, status);
@@ -345,7 +351,7 @@ impl Mailbox {
         let id = clean_id(session);
         let mail = Mail {
             one_way: true,
-            ..Mail::new("monitor", "monitor", KIND, text, None)
+            ..Mail::new(MONITOR, MONITOR, KIND, text, None)
         };
         append(&dir, &[id], &mail)?;
         Ok(())
@@ -403,7 +409,7 @@ pub(crate) mod roster;
 pub(crate) mod tools;
 
 use files::{append, inbox_path};
-pub(crate) use files::{post_board, read_board, read_inbox, take_inbox};
+pub(crate) use files::{post_board, read_board, read_inbox, sweep_inboxes, take_inbox};
 pub(crate) use roster::{Agent, live, roster};
 use roster::{targets, unique_name};
 pub(crate) use tools::{Tool, definitions, is_mail_tool};

@@ -19,6 +19,8 @@ impl App {
         if open == crate::tui::hub::Open::New {
             self.sky.set(super::super::scene::fresh_sky());
         }
+        #[cfg(feature = "gui")]
+        self.showing.set(None);
         drop(self.cmd.send(Cmd::Open(open)));
     }
 

@@ -2,6 +2,7 @@ use serde_json::{Value, json};
 
 use super::config::Server;
 
+#[derive(Clone)]
 pub(super) struct Tool {
     pub(super) alias: String,
     pub(super) name: String,

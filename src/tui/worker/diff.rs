@@ -1,10 +1,13 @@
 use super::{Msg, Worker};
 use crate::tools::Event;
 use crate::tui::Fact;
+use summonr_core::error::Error;
 
 impl Worker {
-    pub(super) fn send_diff(&mut self, announce: bool) {
-        let diff = match crate::diff::stats(self.loop_.workspace()) {
+    pub(super) async fn send_diff(&mut self, announce: bool) {
+        let workspace = self.loop_.workspace().to_path_buf();
+        let stats = tokio::task::spawn_blocking(move || crate::diff::stats(&workspace)).await;
+        let diff = match stats.map_err(|error| Error::Tool(error.to_string())).and_then(|diff| diff) {
             Ok(diff) => diff,
             Err(error) => {
                 self.last_diff = None;

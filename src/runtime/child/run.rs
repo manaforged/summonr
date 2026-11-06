@@ -49,7 +49,7 @@ impl<P: Provider> Run<P> {
         let access = self.record.access;
         let usage = self.reported_usage(usage);
         let paths = match access {
-            Access::Implement => Loop::<P>::touched_at(self.child.session.path()),
+            Access::Implement => self.child.session.touched(),
             Access::Research => Vec::new(),
         };
         Done {
@@ -192,6 +192,8 @@ impl<P: Provider> Run<P> {
 }
 
 pub(crate) async fn next_mail<P: Provider>(child: &mut Loop<P>) -> String {
+    let limits = crate::limits::limits();
+    let mut wait = limits.mail_poll();
     loop {
         child.mail_heartbeat(crate::mail::Presence::Idle);
         if let Some(mailbox) = child.mailbox.as_mut()
@@ -206,6 +208,7 @@ pub(crate) async fn next_mail<P: Provider>(child: &mut Loop<P>) -> String {
                 return text;
             }
         }
-        tokio::time::sleep(crate::limits::limits().mail_poll()).await;
+        tokio::time::sleep(wait).await;
+        wait = (wait * 2).min(limits.beat());
     }
 }

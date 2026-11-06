@@ -38,7 +38,7 @@ impl<P: Provider> Loop<P> {
         );
         Ok(Execution {
             output: ToolOutput::ok(format!(
-                "started child {id}\nname: {}\nmodel: {}\neffort: {}\naccess: {}\n{}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
+                "started child {id}\nname: {}\nmodel: {}\neffort: {}\naccess: {}\n{}\nassignment: {}\nstate: running\nyou are told when it finishes; stop with kill true",
                 name,
                 record.model,
                 effort,
@@ -107,7 +107,12 @@ impl<P: Provider> Loop<P> {
             None,
         )?;
         child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
-        child.mcp_wanted = args.access == Access::Implement && self.mcp.is_some();
+        if args.access == Access::Implement {
+            child.mcp = self
+                .mcp
+                .as_ref()
+                .map(|hub| Arc::new(hub.for_child(&workspace)));
+        }
         child.mail_module = self.mail_module;
         child.context_window = self.receiver_window(role);
         child.compact_tokens = self.compact_tokens;

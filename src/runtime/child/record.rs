@@ -90,7 +90,7 @@ impl<P: Provider> Loop<P> {
         access: Access,
     ) -> ChildResult {
         let paths = match access {
-            Access::Implement => Self::touched_at(self.session.path()),
+            Access::Implement => self.session.touched(),
             Access::Research => Vec::new(),
         };
         let total = paths.len();
@@ -120,14 +120,9 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub(in crate::runtime) fn drain(
-        &mut self,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) {
+    pub(in crate::runtime) fn drain(&mut self, emit: &mut impl FnMut(&Event)) {
         for event in self.child_events() {
             emit(&event);
-            events.push(event);
         }
     }
 

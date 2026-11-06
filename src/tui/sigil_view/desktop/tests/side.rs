@@ -40,7 +40,7 @@ fn the_terminal_tab_runs_commands_in_the_chats_folder() {
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {
                 runtime.pump();
-                let screen = app.shells.borrow().values().next().map(|shell| shell.lines.get()).unwrap_or_default();
+                let screen = app.terminals.list.peek().first().map(|term| term.session.lines.get()).unwrap_or_default();
                 if screen.iter().any(|line| line.trim() == folder) || Instant::now() > deadline {
                     return (folder, screen);
                 }

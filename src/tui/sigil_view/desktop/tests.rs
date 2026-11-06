@@ -23,6 +23,7 @@ mod harness;
 mod place;
 mod proportions;
 mod side;
+mod terminals;
 mod queue;
 mod setup;
 mod settings;

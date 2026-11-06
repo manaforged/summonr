@@ -212,6 +212,7 @@ enum Cmd {
     Replay,
     Quit,
     Tick,
+    Peers(std::sync::Arc<[crate::mail::Agent]>),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

@@ -6,7 +6,7 @@ async fn idle(parent: &mut Loop<Scripted>, id: &str, expected: &str) -> Vec<Even
     tokio::time::timeout(Duration::from_secs(5), async {
         let mut events = Vec::new();
         loop {
-            parent.drain(&mut events, &mut |_| {});
+            parent.drain(&mut |event| events.push(event.clone()));
             let child = &parent.spawned[id];
             if child.state.borrow().terminal() && child.last.contains(expected) {
                 return events;

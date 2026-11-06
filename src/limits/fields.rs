@@ -72,6 +72,7 @@ table! {
     session_lock_ms: u64 => session_lock(millis),
     strip_rows: usize,
     mail_sweep_secs: u64,
+    presence_secs: u64,
     mail_per_round: usize,
     verify_timeout_secs: u64,
     probe_secs: u64 => probe(secs),

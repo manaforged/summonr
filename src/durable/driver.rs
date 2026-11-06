@@ -169,6 +169,13 @@ impl SessionDriver {
         })
     }
 
+    pub(crate) fn touched(&self) -> Vec<String> {
+        self.work
+            .as_ref()
+            .map(|work| work.touched.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn workflow(&self) -> Option<&str> {
         self.state.workflow.as_deref()
     }

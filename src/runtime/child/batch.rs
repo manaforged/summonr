@@ -163,7 +163,6 @@ impl<P: Provider> Loop<P> {
                 Some(event) = self.events.1.recv() => {
                     self.saw(&event);
                     emit(&event);
-                    events.push(event);
                 }
             }
         }
@@ -172,7 +171,7 @@ impl<P: Provider> Loop<P> {
             .into_iter()
             .map(|(_, access, done)| (access, done))
             .collect();
-        self.drain(events, emit);
+        self.drain(emit);
         self.task_reconcile(&mut done);
         let mut results = Vec::with_capacity(done.len());
         for (_, done) in done {

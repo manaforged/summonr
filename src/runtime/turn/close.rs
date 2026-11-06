@@ -173,7 +173,7 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<()> {
-        let killed = self.kill_spawned("the parent turn ended", usage).await?;
+        let killed = self.kill_spawned(crate::runtime::child::Kill::TurnEnded, usage).await?;
         if killed.is_empty() {
             return Ok(());
         }

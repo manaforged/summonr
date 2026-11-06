@@ -27,7 +27,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Execution> {
-        self.drain(events, emit);
+        self.drain(emit);
         let child = id
             .parse::<SessionId>()
             .ok()

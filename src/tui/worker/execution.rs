@@ -33,6 +33,7 @@ impl Cmd {
             | Cmd::CancelLogin
             | Cmd::Quit
             | Cmd::Tick
+            | Cmd::Peers(_)
             | Cmd::Open(_)
             | Cmd::Attach(_)
             | Cmd::Detach

@@ -64,6 +64,19 @@ pub struct Hub {
 }
 
 impl Hub {
+    /// Returns a hub for a child in `workspace` that offers these tools and starts each server on first call.
+    pub(crate) fn for_child(&self, workspace: &std::path::Path) -> Self {
+        Self {
+            links: self
+                .links
+                .iter()
+                .map(|link| link.for_child(workspace.to_path_buf()))
+                .collect(),
+            failures: self.failures.clone(),
+            notes: Vec::new(),
+        }
+    }
+
     pub(crate) async fn connect(workspace: PathBuf) -> Self {
         let (found, failed) = match config::servers(&workspace) {
             Ok(found) => (found, None),

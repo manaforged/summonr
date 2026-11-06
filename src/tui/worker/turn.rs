@@ -2,7 +2,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::execution::ExecutionClass;
 use super::settings::set_run_mode;
-use super::state::set_mail_reply;
+use super::state::{publish_peers, set_mail_reply};
 use super::{Cmd, Msg, Worker};
 use crate::provider::UserInput;
 use crate::tools::Event;
@@ -98,9 +98,9 @@ impl Worker {
                         Some(Cmd::Answer(dialog, text)) => {
                             self.queue.steering.answer(dialog, UserInput::from(text));
                         }
-                        Some(Cmd::Tick) => {
-                            live_peers(&session_id, &mut self.last_peers, &self.ui);
-                            self.queue.announce(&self.ui);
+                        Some(Cmd::Tick) => self.queue.announce(&self.ui),
+                        Some(Cmd::Peers(peers)) => {
+                            publish_peers(&peers, &session_id, &mut self.last_peers, &self.ui);
                         }
                         Some(Cmd::Mail | Cmd::LoginAnswer(_) | Cmd::Open(_)) => {}
                         Some(command) => self.reader.run(command).await,
@@ -128,7 +128,7 @@ impl Worker {
             Some(Ok(turn)) if !turn.aborted => Some(turn.text.clone()),
             Some(Ok(_) | Err(_)) | None => None,
         };
-        self.finish_turn(cancelled, result);
+        self.finish_turn(cancelled, result).await;
         self.send_settings();
         if let (Some(request), Some(reply)) = (request, reply) {
             self.title_session(&request, &reply).await;
@@ -136,7 +136,7 @@ impl Worker {
         true
     }
 
-    fn finish_turn<T>(&mut self, cancelled: bool, result: Option<summonr_core::error::Result<T>>) {
+    async fn finish_turn<T: Send>(&mut self, cancelled: bool, result: Option<summonr_core::error::Result<T>>) {
         if cancelled || matches!(&result, Some(Err(_))) {
             self.recover();
         }
@@ -153,7 +153,7 @@ impl Worker {
             drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
         } else {
             self.carry_steering();
-            self.send_diff(true);
+            self.send_diff(true).await;
             drop(self.ui.send(Msg::Fact(Fact::Busy(None))));
             if self.loop_.is_work()
                 && self
@@ -216,20 +216,6 @@ impl Worker {
             drop(self.ui.send(Msg::Fact(Fact::Restored(pending))));
         }
         self.queue.announce(&self.ui);
-    }
-}
-
-fn live_peers(
-    session_id: &str,
-    peers: &mut Option<Vec<crate::mail::Agent>>,
-    ui: &UnboundedSender<Msg>,
-) {
-    if !crate::mail::listed() {
-        return;
-    }
-    match crate::mail::dir() {
-        Ok(dir) => super::state::publish_peers(crate::mail::live(&dir), session_id, peers, ui),
-        Err(error) => drop(ui.send(Msg::Fact(Fact::System(error.to_string())))),
     }
 }
 

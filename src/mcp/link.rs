@@ -79,6 +79,18 @@ impl Link {
         }))
     }
 
+    pub(super) fn for_child(&self, workspace: PathBuf) -> Arc<Self> {
+        Arc::new(Self {
+            server: self.server.clone(),
+            workspace,
+            conn: Arc::new(Mutex::new(None)),
+            fresh: std::sync::Mutex::new(None),
+            phase: std::sync::Mutex::new(Phase::Cached),
+            refresh: None,
+            tools: self.tools.clone(),
+        })
+    }
+
     pub(super) async fn list(
         server: &Server,
         workspace: &std::path::Path,

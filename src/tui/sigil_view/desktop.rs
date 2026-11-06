@@ -20,7 +20,7 @@ mod settings;
 mod sidebar;
 mod side;
 mod style;
-mod terminal;
+pub(in crate::tui::sigil_view) mod terminal;
 mod thread;
 pub(super) mod welcome;
 

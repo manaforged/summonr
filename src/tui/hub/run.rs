@@ -127,8 +127,10 @@ impl Hub {
             return false;
         }
         if matches!(command, Cmd::Tick) {
+            let peers = peers();
             for session in self.sessions.values() {
                 drop(session.cmd.send(Cmd::Tick));
+                drop(session.cmd.send(Cmd::Peers(peers.clone())));
             }
             return true;
         }
@@ -379,4 +381,14 @@ pub(super) fn title_from(command: &Cmd) -> Option<String> {
         .map(str::trim)
         .find(|line| !line.is_empty())
         .map(str::to_string)
+}
+
+fn peers() -> std::sync::Arc<[crate::mail::Agent]> {
+    if !crate::mail::listed() {
+        return std::sync::Arc::new([]);
+    }
+    crate::mail::dir().map_or_else(
+        |_| std::sync::Arc::new([]) as std::sync::Arc<[_]>,
+        |dir| crate::mail::live(&dir).into(),
+    )
 }

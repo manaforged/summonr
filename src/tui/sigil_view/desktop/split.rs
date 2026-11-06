@@ -63,7 +63,7 @@ pub(super) fn current(main: &App) -> App {
     with(|split| split.panes.get(at).map(|pane| pane.app.clone())).flatten().unwrap_or_else(|| main.clone())
 }
 
-#[cfg(test)]
+/// Every pane's app.
 pub(super) fn apps() -> Vec<App> {
     with(|split| split.panes.iter().map(|pane| pane.app.clone()).collect()).unwrap_or_default()
 }
@@ -87,7 +87,11 @@ pub(super) fn is_first(app: &App) -> bool {
 pub(in crate::tui::sigil_view) fn act(action: Act) {
     match action {
         Act::Open => open(),
-        Act::Close => close_focused(),
+        Act::Close => {
+            if !hide_terminal() {
+                close_focused();
+            }
+        }
         Act::Focus(next) => step(next),
     }
 }
@@ -97,9 +101,30 @@ pub(super) fn show(main: &App, open: Open) {
     if let Open::Resume(id) = &open
         && let Some(at) = with(|split| split.panes.iter().position(|pane| pane.app.model.peek().session == *id)).flatten()
     {
+        if let Some(app) = with(|split| split.panes.get(at).map(|pane| pane.app.clone())).flatten() {
+            app.showing.set(None);
+        }
         return focus(at);
     }
     focused().unwrap_or_else(|| main.clone()).open_session(open);
+}
+
+/// Focuses the pane that shows terminal `id`; false when none does.
+pub(super) fn focus_terminal(id: u64) -> bool {
+    let at = with(|split| split.panes.iter().position(|pane| pane.app.showing.peek() == Some(id))).flatten();
+    at.inspect(|at| focus(*at)).is_some()
+}
+
+/// Puts the focused pane back on its agent; false when it shows no terminal.
+fn hide_terminal() -> bool {
+    let pane = with(|split| split.panes.get(split.focus.peek()).map(|pane| pane.app.clone())).flatten();
+    pane.is_some_and(|app| {
+        let shows = app.showing.peek().is_some();
+        if shows {
+            app.showing.set(None);
+        }
+        shows
+    })
 }
 
 fn open() {
@@ -129,7 +154,8 @@ fn attach(main: &App) -> App {
     let (commands, command_rx) = unbounded_channel();
     let (ui, inbox) = unbounded_channel();
     drop(main.cmd.send(Cmd::Attach(View { commands: command_rx, ui })));
-    let app = App::new(main.info.clone(), main.workspace(), commands);
+    let mut app = App::new(main.info.clone(), main.workspace(), commands);
+    app.terminals = main.terminals;
     let size = main.viewport;
     let fit = app.clone();
     effect(move || {
@@ -186,6 +212,7 @@ pub(super) fn close(at: usize) {
         if !id.is_empty() {
             main.open_session(Open::Resume(id));
         }
+        main.showing.set(second.showing.peek());
         1
     } else {
         at
@@ -235,7 +262,7 @@ pub(super) fn view() -> NodeBuilder {
 
 fn grid(apps: &[App], n: usize) -> Vec<NodeBuilder> {
     if n <= 1 {
-        return apps.first().map(|app| super::thread::main_col(app.clone())).into_iter().collect();
+        return apps.first().map(|app| super::terminal::pane(app.clone())).into_iter().collect();
     }
     let columns = COLUMNS;
     apps.chunks(columns)
@@ -260,7 +287,7 @@ fn cell(app: &App, at: usize) -> NodeBuilder {
                 focus.set(at);
             }
         })
-        .child(super::thread::main_col(app.clone()))
+        .child(super::terminal::pane(app.clone()))
         .children_reactive(move || if focus.get() == at { ring() } else { Vec::new() })
 }
 

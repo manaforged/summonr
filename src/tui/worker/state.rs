@@ -68,7 +68,7 @@ impl Worker {
         }
         self.send_workflow();
         self.send_settings();
-        self.send_diff(false);
+        self.send_diff(false).await;
         self.reader.watch();
         while let Some(command) = self.next().await {
             if !self.dispatch(command).await {
@@ -126,9 +126,9 @@ impl Worker {
         }
     }
 
-    fn peers(&mut self) {
+    pub(super) fn peers(&mut self, peers: &[crate::mail::Agent]) {
         publish_peers(
-            self.loop_.peers(),
+            peers,
             &self.loop_.session_id(),
             &mut self.last_peers,
             &self.ui,
@@ -157,8 +157,44 @@ impl Worker {
             }
         }
         self.loop_.mail_heartbeat(crate::mail::Presence::Idle);
-        self.peers();
-        let mail = match self.loop_.mail_poll() {
+        let mail = self.polled_mail();
+        if mail.is_empty() {
+            return;
+        }
+        self.queue_mail();
+        let monitor = mail.iter().any(crate::mail::Mail::from_monitor);
+        if monitor && !self.mail_held {
+            self.pending_mail = true;
+        }
+        let shown: Vec<bool> = mail
+            .iter()
+            .map(|message| {
+                let at = message
+                    .from_monitor()
+                    .then(|| self.announced.iter().position(|note| *note == message.text))
+                    .flatten();
+                at.map(|at| self.announced.swap_remove(at)).is_some()
+            })
+            .collect();
+        if !self.pending_mail {
+            self.show_mail(mail, &shown);
+        }
+    }
+
+    fn show_mail(&self, mail: Vec<crate::mail::Mail>, shown: &[bool]) {
+        for (message, shown) in mail.into_iter().zip(shown) {
+            if *shown {
+                continue;
+            }
+            drop(self.ui.send(Msg::Fact(Fact::Mail {
+                from: message.sender().to_string(),
+                text: message.text.clone(),
+            })));
+        }
+    }
+
+    fn polled_mail(&mut self) -> Vec<crate::mail::Mail> {
+        match self.loop_.mail_poll() {
             Ok(mail) => {
                 if self.mail_error.take().is_some() {
                     drop(
@@ -175,34 +211,6 @@ impl Worker {
                     self.mail_error = Some(text);
                 }
                 Vec::new()
-            }
-        };
-        if mail.is_empty() {
-            return;
-        }
-        self.queue_mail();
-        let monitor = mail.iter().any(|message| message.from == "monitor");
-        if monitor && !self.mail_held {
-            self.pending_mail = true;
-        }
-        let shown: Vec<bool> = mail
-            .iter()
-            .map(|message| {
-                let at = (message.from == "monitor")
-                    .then(|| self.announced.iter().position(|note| *note == message.text))
-                    .flatten();
-                at.map(|at| self.announced.swap_remove(at)).is_some()
-            })
-            .collect();
-        if !self.pending_mail {
-            for (message, shown) in mail.into_iter().zip(shown) {
-                if shown {
-                    continue;
-                }
-                drop(self.ui.send(Msg::Fact(Fact::Mail {
-                    from: message.sender().to_string(),
-                    text: message.text.clone(),
-                })));
             }
         }
     }
@@ -243,18 +251,15 @@ pub(super) fn set_mail_reply(auto_reply: &mut bool, pending_mail: &mut bool, on:
 }
 
 pub(super) fn publish_peers(
-    peers: Vec<crate::mail::Agent>,
+    peers: &[crate::mail::Agent],
     session: &str,
     previous: &mut Option<Vec<crate::mail::Agent>>,
     ui: &UnboundedSender<Msg>,
 ) {
-    let peers: Vec<_> = peers
-        .into_iter()
-        .filter(|agent| agent.id != session)
-        .collect();
+    let peers: Vec<_> = peers.iter().filter(|agent| agent.id != session).collect();
     let last = previous.as_deref().unwrap_or(&[]);
     let same = last.len() == peers.len()
-        && last.iter().zip(&peers).all(|(a, b)| {
+        && last.iter().zip(peers.iter().copied()).all(|(a, b)| {
             a.id == b.id
                 && a.parent == b.parent
                 && a.name == b.name
@@ -266,6 +271,7 @@ pub(super) fn publish_peers(
                 && a.tool == b.tool
         });
     if !same {
+        let peers: Vec<_> = peers.into_iter().cloned().collect();
         *previous = Some(peers.clone());
         drop(ui.send(Msg::Fact(Fact::Peers(peers))));
     }

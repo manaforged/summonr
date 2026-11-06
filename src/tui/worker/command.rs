@@ -50,7 +50,7 @@ async fn wait_cancelable<T>(
                     }
                 }
                 Some(Cmd::Quit) | None => break Completion::Quit,
-                Some(Cmd::Tick) => {}
+                Some(Cmd::Tick | Cmd::Peers(_)) => {}
                 Some(command @ (Cmd::ListModels { .. } | Cmd::ListPrompts(_) | Cmd::Clipboard)) => reader.run(command).await,
                 Some(Cmd::LoginAnswer(code)) => {
                     if let Some(answers) = &answers {

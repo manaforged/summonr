@@ -37,10 +37,11 @@ fn audit(dir: &Path, session: &str, stage: Stage, mail: &Mail) -> Result<()> {
             },
             mail,
         },
+        matches!(stage, Stage::ClearAttempted | Stage::Cleared),
     )
 }
 
-fn append_record(path: &Path, value: &impl serde::Serialize) -> Result<()> {
+fn append_record(path: &Path, value: &impl serde::Serialize, durable: bool) -> Result<()> {
     crate::tools::blocking(|| {
         use std::io::Write as _;
         let _lock = store::lock(path, true)?;
@@ -55,7 +56,9 @@ fn append_record(path: &Path, value: &impl serde::Serialize) -> Result<()> {
         }
         let mut file = options.open(path)?;
         let before = file.metadata()?.len();
-        if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_data()) {
+        if let Err(error) = file.write_all(&bytes).and_then(|()| {
+            if durable { file.sync_data() } else { Ok(()) }
+        }) {
             file.set_len(before)?;
             return Err(error.into());
         }
@@ -68,7 +71,7 @@ pub(super) fn append(dir: &Path, targets: &[String], mail: &Mail) -> Result<usiz
         let mut mail = mail.clone();
         mail.to.clone_from(target);
         audit(dir, &mail.from, Stage::SendAttempted, &mail)?;
-        append_record(&inbox_path(dir, target), &mail)?;
+        append_record(&inbox_path(dir, target), &mail, true)?;
         audit(dir, &mail.from, Stage::Delivered, &mail)?;
     }
     Ok(targets.len())
@@ -323,4 +326,34 @@ fn parse_inbox(text: &str) -> Result<Vec<Mail>> {
             })
         })
         .collect()
+}
+
+/// Removes lock files of inboxes that hold no mail and belong to no live agent, once older than the sweep window.
+pub(crate) fn sweep_inboxes(dir: &Path, now: std::time::SystemTime) -> usize {
+    let window = std::time::Duration::from_secs(crate::limits::limits().mail_sweep_secs);
+    let live: std::collections::HashSet<String> =
+        super::live(dir).into_iter().map(|agent| clean_id(&agent.id)).collect();
+    summonr_core::walk::children(&dir.join("inbox"))
+        .filter(|entry| stale_lock(&entry.path(), &live, window, now))
+        .filter(|entry| std::fs::remove_file(entry.path()).is_ok())
+        .count()
+}
+
+fn stale_lock(
+    path: &Path,
+    live: &std::collections::HashSet<String>,
+    window: std::time::Duration,
+    now: std::time::SystemTime,
+) -> bool {
+    let Some(inbox) = path.file_name().and_then(|name| name.to_str()?.strip_suffix(".lock")) else {
+        return false;
+    };
+    let Some(id) = inbox.strip_suffix(".jsonl") else {
+        return false;
+    };
+    let old = std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .is_ok_and(|at| now.duration_since(at).is_ok_and(|age| age > window));
+    let empty = std::fs::metadata(path.with_file_name(inbox)).map_or(true, |meta| meta.len() == 0);
+    old && empty && !live.contains(id)
 }

@@ -501,14 +501,14 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
     let id = parent.spawned.keys().next().cloned().unwrap();
     let started = std::time::Instant::now();
     while !parent.spawned[&id].state.borrow().terminal() {
-        parent.drain(&mut Vec::new(), &mut |_| {});
+        parent.drain(&mut |_| {});
         assert!(
             started.elapsed() < std::time::Duration::from_secs(5),
             "named child did not record its first turn"
         );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    parent.drain(&mut Vec::new(), &mut |_| {});
+    parent.drain(&mut |_| {});
     assert!(
         parent.spawned[&id].last.contains("landed"),
         "parent missing the first text: {}",
@@ -547,7 +547,7 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
             .iter()
             .any(|message| message.content.contains("port the win"))
     }) {
-        parent.drain(&mut Vec::new(), &mut |_| {});
+        parent.drain(&mut |_| {});
         assert!(
             started.elapsed() < std::time::Duration::from_secs(5),
             "the second mail did not become a turn"
@@ -558,7 +558,7 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
     assert_eq!(parent.spawned[&id].record.id.to_string(), id);
     parent
         .kill_spawned(
-            "the parent turn ended",
+            crate::runtime::child::Kill::TurnEnded,
             &mut crate::provider::Usage::default(),
         )
         .await

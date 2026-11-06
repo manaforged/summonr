@@ -334,7 +334,7 @@ impl<P: Provider> Loop<P> {
         self.mail_heartbeat(crate::mail::Presence::Working);
         self.settle_probe().await;
         self.take_mail(messages, events, emit)?;
-        self.drain(events, emit);
+        self.drain(emit);
         if self
             .auto_compact(messages, tool_bytes, usage, events, emit)
             .await?

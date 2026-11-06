@@ -41,6 +41,15 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
         })
         .detail(detail)
     });
+    let menu = app.terminals.list.get().iter().fold(menu, |menu, term| {
+        let (app, id) = (app.clone(), term.id);
+        let detail = format!("Terminal · {}", super::sidebar::folder_name(&term.folder));
+        menu.item(term.label(), move || {
+            open.set(false);
+            super::terminal::reveal(&app, id);
+        })
+        .detail(detail)
+    });
     let menu = ACTIONS.iter().fold(menu, |menu, (label, key, action)| {
         let (app, action) = (app.clone(), *action);
         menu.item(*label, move || {
@@ -56,6 +65,8 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
 #[derive(Clone, Copy)]
 enum Action {
     NewAgent,
+    NewTerminal,
+    ClaudeCode,
     Model,
     Changes,
     Files,
@@ -66,8 +77,10 @@ enum Action {
     ClosePane,
 }
 
-const ACTIONS: [(&str, &str, Action); 9] = [
+const ACTIONS: [(&str, &str, Action); 11] = [
     ("New agent", "⌘N", Action::NewAgent),
+    ("New terminal", "⌘T", Action::NewTerminal),
+    ("Claude Code", "", Action::ClaudeCode),
     ("Split", "⌘D", Action::Split),
     ("Close pane", "⌘W", Action::ClosePane),
     ("Next agent needing you", "⌘⌥A", Action::Needing),
@@ -83,6 +96,8 @@ fn run(app: &App, action: Action) {
     let pane = app.target();
     match action {
         Action::NewAgent => super::split::show(app, Open::New),
+        Action::NewTerminal => app.open_terminal(super::terminal::NEW_TERMINAL, None),
+        Action::ClaudeCode => app.open_terminal(super::terminal::CLAUDE, Some(super::terminal::CLAUDE_COMMAND)),
         Action::Split => super::split::act(Split::Open),
         Action::ClosePane => super::split::act(Split::Close),
         Action::Model => pane.begin_model_edit(),

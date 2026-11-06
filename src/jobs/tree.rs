@@ -7,13 +7,17 @@ pub(crate) struct Descendant {
 }
 
 pub(crate) fn descendants(root: u32) -> Vec<Descendant> {
+    descendants_in(&crate::process::table(), root)
+}
+
+fn descendants_in(table: &[(u32, u32, String)], root: u32) -> Vec<Descendant> {
     let mut children: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     let mut commands: BTreeMap<u32, String> = BTreeMap::new();
-    for (pid, parent, command) in crate::process::table() {
+    for (pid, parent, command) in table {
         if pid != parent {
-            children.entry(parent).or_default().push(pid);
+            children.entry(*parent).or_default().push(*pid);
         }
-        commands.insert(pid, command);
+        commands.insert(*pid, command.clone());
     }
     let mut found = Vec::new();
     let mut pending: Vec<u32> = children.get(&root).cloned().unwrap_or_default();
@@ -30,8 +34,16 @@ pub(crate) fn descendants(root: u32) -> Vec<Descendant> {
 }
 
 pub(crate) fn child_lines(root: u32, workspace: &std::path::Path) -> Vec<String> {
+    lines_in(&crate::process::table(), root, workspace)
+}
+
+pub(super) fn lines_in(
+    table: &[(u32, u32, String)],
+    root: u32,
+    workspace: &std::path::Path,
+) -> Vec<String> {
     let limits = crate::limits::limits();
-    let found = descendants(root);
+    let found = descendants_in(table, root);
     let mut lines: Vec<String> = found
         .iter()
         .take(limits.job_child_rows)

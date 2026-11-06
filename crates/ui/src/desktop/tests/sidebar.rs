@@ -151,3 +151,53 @@ fn a_worktree_agent_lists_under_its_repository() {
     );
     assert!(seen.shows(|text| text == "Fix it"), "{}", seen.text());
 }
+
+fn three_chats(app: &super::super::App) {
+    app.window.sidebar.set(true);
+    app.update(Msg::Fact(Fact::Sessions(Ok(vec![
+        chat(
+            "01a1000000000000000000000000aaaa",
+            "Keep me",
+            Duration::from_secs(5),
+        ),
+        chat(
+            "01a1000000000000000000000000bbbb",
+            "Put me away",
+            Duration::from_secs(6),
+        ),
+        chat(
+            "01a1000000000000000000000000cccc",
+            "Other",
+            Duration::from_secs(7),
+        ),
+    ]))));
+}
+
+#[test]
+fn a_pinned_agent_moves_to_pinned_and_an_archived_one_leaves_the_list() {
+    if !in_window("sidebar::a_pinned_agent_moves_to_pinned_and_an_archived_one_leaves_the_list") {
+        return;
+    }
+    let seen = drive(three_chats, Vec::new(), |_| {
+        super::super::shelf::flip_pin("01a1000000000000000000000000aaaa");
+        super::super::shelf::archive("01a1000000000000000000000000bbbb");
+    });
+    let once = |wanted: &str| seen.texts.iter().filter(|text| *text == wanted).count();
+    assert_eq!(once("Pinned"), 1, "{}", seen.text());
+    assert_eq!(once("Keep me"), 1, "{}", seen.text());
+    assert_eq!(once("Put me away"), 0, "{}", seen.text());
+    assert_eq!(once("Other"), 1, "{}", seen.text());
+}
+
+#[test]
+fn unpinning_puts_the_agent_back_and_no_pins_hide_the_heading() {
+    if !in_window("sidebar::unpinning_puts_the_agent_back_and_no_pins_hide_the_heading") {
+        return;
+    }
+    let seen = drive(three_chats, Vec::new(), |_| {
+        super::super::shelf::flip_pin("01a1000000000000000000000000aaaa");
+        super::super::shelf::flip_pin("01a1000000000000000000000000aaaa");
+    });
+    assert!(!seen.shows(|text| text == "Pinned"), "{}", seen.text());
+    assert!(seen.shows(|text| text == "Keep me"), "{}", seen.text());
+}

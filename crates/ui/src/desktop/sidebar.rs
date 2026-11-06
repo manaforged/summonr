@@ -74,6 +74,18 @@ pub(super) fn view(app: App) -> NodeBuilder {
                                 super::palette::show();
                             })),
                     )
+                    .child(
+                        container()
+                            .layout(
+                                LayoutStyle::flex_column()
+                                    .fill_width()
+                                    .padding_right(SCROLLBAR),
+                            )
+                            .children_reactive({
+                                let app = app.clone();
+                                move || row::pinned(&app, live, session)
+                            }),
+                    )
                     .child(repositories(&app))
                     .child(
                         scroll(
@@ -84,7 +96,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
                         .bg(RECESSED)
                         .grow(1.0),
                     )
-                    .child(footer(&app)),
+                    .child(row::footer(&app)),
             )
             .bg(RECESSED)
             .width(WIDTH),
@@ -169,7 +181,7 @@ fn chats(
     let session = session.get();
     let closed = shut.get();
     let terms = app.window.terminals.list.get();
-    let mut groups = projects(&app.workspace(), app.sessions.all_chats());
+    let mut groups = projects(&app.workspace(), row::listed(app));
     let open_folders = terms
         .iter()
         .map(|term| term.folder.clone())
@@ -297,7 +309,7 @@ pub(super) fn folder_name(folder: &std::path::Path) -> String {
         .unwrap_or_else(|| folder.display().to_string())
 }
 
-fn live_title(info: &mut SessionInfo, live: &[Live]) {
+pub(super) fn live_title(info: &mut SessionInfo, live: &[Live]) {
     if let Some(entry) = live
         .iter()
         .find(|entry| entry.session == info.id && !entry.title.is_empty())
@@ -306,7 +318,7 @@ fn live_title(info: &mut SessionInfo, live: &[Live]) {
     }
 }
 
-fn shown_state(live: &[Live], session: &str) -> Option<Status> {
+pub(super) fn shown_state(live: &[Live], session: &str) -> Option<Status> {
     state(live, session).or_else(|| super::restore::mark(session))
 }
 
@@ -342,34 +354,18 @@ pub(super) fn project_name(app: &App) -> String {
     folder_name(&app.workspace())
 }
 
-fn footer(app: &App) -> NodeBuilder {
-    let settings = app.settings_open;
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .padding_right(SCROLLBAR),
-        )
-        .child(list_row(
-            false,
-            "Settings",
-            ListRowSlots {
-                leading: Some(Box::new(icon(Icon::Settings).px(ICON))),
-                status: Some("⌘,".into()),
-                activate: Some(Rc::new(move || settings.set(true))),
-                ..ListRowSlots::default()
-            },
-        ))
-}
-
 /// Opens the agent `to` names, in sidebar order.
 pub(super) fn jump(app: &App, to: crate::view::keys::bindings::Jump) {
     use crate::view::keys::bindings::Jump;
     let model = app.model.peek();
     let session = super::split::current(app).model.peek().session.clone();
-    let order: Vec<String> = projects(&app.workspace(), app.sessions.all_chats())
+    let order: Vec<String> = super::shelf::pinned()
         .into_iter()
-        .flat_map(|(_, agents)| agents.into_iter().map(|info| info.id))
+        .chain(
+            projects(&app.workspace(), row::listed(app))
+                .into_iter()
+                .flat_map(|(_, agents)| agents.into_iter().map(|info| info.id)),
+        )
         .collect();
     let at = order.iter().position(|id| *id == session);
     let target = match to {

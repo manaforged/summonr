@@ -52,6 +52,7 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
             let (app, id) = (app.clone(), info.id.clone());
             menu.item(super::sidebar::title(&info), move || {
                 open.set(false);
+                super::shelf::unarchive(&id);
                 super::split::show(&app, Open::Resume(id.clone()));
             })
             .detail(detail)

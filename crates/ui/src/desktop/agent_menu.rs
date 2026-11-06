@@ -54,6 +54,13 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
             })
         }
     })];
+    let pin = id.clone();
+    let word = if super::shelf::is_pinned(&id) {
+        "Unpin"
+    } else {
+        "Pin"
+    };
+    items.push(MenuItem::new(word).activate(move || super::shelf::flip_pin(&pin)));
     if let Some(folder) = info.cwd.clone().map(PathBuf::from) {
         let reveal = if summonr_agent::worktree::repo_of(&folder).is_some() {
             "Reveal worktree"
@@ -73,6 +80,8 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
         );
     }
     if !current && !running {
+        let shelve = id.clone();
+        items.push(MenuItem::new("Archive").activate(move || super::shelf::archive(&shelve)));
         items.push(MenuItem::new("Delete…").activate(move || {
             show(Dialog::Delete {
                 id: id.clone(),

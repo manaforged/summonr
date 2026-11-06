@@ -17,6 +17,8 @@ pub struct Layout {
     pub focus: usize,
     pub terminals: Vec<PathBuf>,
     pub marks: BTreeMap<String, Mark>,
+    pub pinned: Vec<String>,
+    pub archived: Vec<String>,
 }
 
 /// One pane: its agent, and the index of the terminal it shows.

@@ -19,6 +19,7 @@ pub(crate) mod launch;
 pub(super) mod palette;
 mod restore;
 mod settings;
+mod shelf;
 mod side;
 mod sidebar;
 mod sky;
@@ -109,6 +110,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
     settings::install(&app);
     split::install(&app);
     restore::install(&app);
+    shelf::install();
     attention::announce(&app);
     let paint = app.clone();
     shell(&app).children_reactive(move || {

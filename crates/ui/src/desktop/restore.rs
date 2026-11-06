@@ -22,6 +22,7 @@ pub(super) fn install(main: &App) {
         return;
     }
     let saved = Layout::load();
+    super::shelf::load(&saved);
     let marks = signal(saved.marks.clone());
     MARKS.with(|slot| slot.set(Some(marks)));
     reopen(main, &saved);
@@ -109,7 +110,16 @@ fn snapshot(main: &App, marks: &Marks) -> Option<Layout> {
         focus,
         terminals: terms.iter().map(|term| term.folder.clone()).collect(),
         marks: next_marks(marks, &live, &chats),
+        pinned: kept(super::shelf::pinned(), &chats),
+        archived: kept(super::shelf::archived(), &chats),
     })
+}
+
+fn kept(mut list: Vec<String>, chats: &[String]) -> Vec<String> {
+    if !chats.is_empty() {
+        list.retain(|id| chats.contains(id));
+    }
+    list
 }
 
 fn position(terms: &[Rc<Term>], shown: Option<u64>) -> Option<usize> {

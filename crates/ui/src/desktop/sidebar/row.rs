@@ -80,7 +80,7 @@ pub(super) fn agent_row(
 }
 
 /// How long ago `when` was, in the short form agent lists use: now, 5m, 3h, 2d, 6w.
-fn ago(when: std::time::SystemTime) -> String {
+pub(in crate::desktop) fn ago(when: std::time::SystemTime) -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(when)
         .map_or(0, |elapsed| elapsed.as_secs());

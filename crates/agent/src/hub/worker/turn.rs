@@ -14,6 +14,9 @@ enum Input {
     Mail,
 }
 
+/// What an agent's transcript says when the app quit during its turn.
+pub(super) const QUIT_NOTE: &str = "Stopped at quit";
+
 impl Worker {
     pub(super) async fn turn(&mut self, input: UserInput) -> bool {
         self.mail_held = false;
@@ -112,7 +115,7 @@ impl Worker {
             (cancelled, result, quit)
         };
         if quit {
-            if let Err(error) = self.abort(crate::tools::AbortCode::Interrupted, "shutdown") {
+            if let Err(error) = self.abort(crate::tools::AbortCode::Interrupted, QUIT_NOTE) {
                 self.fail(&error.to_string());
             }
             return false;

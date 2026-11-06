@@ -13,7 +13,7 @@ use summonr_agent::hub::Cmd;
 use summonr_agent::hub::{Live, Open, Status};
 use summonr_agent::session::SessionInfo;
 
-mod row;
+pub(super) mod row;
 use row::agent_row;
 
 pub(super) const WIDTH: f32 = 248.0;

@@ -231,3 +231,18 @@ fn a_change_in_the_running_agents_refreshes_the_list() {
         "a new running agent must ask for the list again"
     );
 }
+
+#[test]
+fn search_rows_show_the_repository_and_the_time() {
+    if !in_window("sidebar::search_rows_show_the_repository_and_the_time") {
+        return;
+    }
+    let seen = drive(three_chats, Vec::new(), |_| {
+        super::super::palette::show();
+    });
+    assert!(
+        seen.shows(|text| text.ends_with(" · now")),
+        "{}",
+        seen.text()
+    );
+}

@@ -8,7 +8,7 @@ impl Worker {
             Cmd::Branch { session, turn } => return self.branch(&session, turn),
             Cmd::Command(line) => return self.command_line(line).await,
             Cmd::Quit => {
-                if let Err(error) = self.loop_.abort_note("shutdown") {
+                if let Err(error) = self.loop_.abort_note(super::turn::QUIT_NOTE) {
                     self.fail(&error.to_string());
                 }
                 return false;

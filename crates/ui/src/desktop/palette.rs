@@ -44,7 +44,8 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
             let needs = live
                 .iter()
                 .any(|entry| entry.session == info.id && entry.status == Status::NeedsYou);
-            let detail = [needs.then(|| "Needs you".to_string()), repo]
+            let time = info.modified.map(super::sidebar::row::ago);
+            let detail = [needs.then(|| "Needs you".to_string()), repo, time]
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>()

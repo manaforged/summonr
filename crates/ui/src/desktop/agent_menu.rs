@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::path::PathBuf;
 
 use sigil::prelude::{NodeBuilder, Signal, Widget, button, container, modal, signal, text_field};
-use sigil::widgets::MenuItem;
+use sigil::widgets::{MenuItem, ModalBuilder};
 
 use super::App;
 use super::style::DIALOG;
@@ -105,58 +105,10 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
         return None;
     }
     let dialog = current.get()?;
-    let close = move || open.set(false);
     let body = match dialog {
-        Dialog::Rename { id, name } => {
-            let run = {
-                let (app, id) = (app.clone(), id.clone());
-                move |text: &str| rename(&app, &id, text)
-            };
-            let save = {
-                let run = run.clone();
-                move || {
-                    run(&name.peek());
-                    close();
-                }
-            };
-            modal(open)
-                .title("Rename agent")
-                .child(text_field(name).autofocus().submit(move |text| {
-                    run(text);
-                    close();
-                }))
-                .actions(
-                    button("Cancel").ghost().shortcut("esc").activate(close),
-                    button("Rename").primary().shortcut("⏎").activate(save),
-                )
-        }
-        Dialog::Delete { id, title } => {
-            let sender = app.clone();
-            modal(open).title(format!("Delete “{title}”?")).actions(
-                button("Cancel").ghost().shortcut("esc").activate(close),
-                button("Delete")
-                    .tone(sigil::prelude::Tone::Error)
-                    .activate(move || {
-                        drop(sender.cmd.send(Cmd::DeleteSession(id.clone())));
-                        drop(sender.cmd.send(Cmd::ListSessions));
-                        close();
-                    }),
-            )
-        }
-        Dialog::Quit { running } => {
-            let agents = if running == 1 { "agent" } else { "agents" };
-            modal(open)
-                .title(format!("Quit and stop {running} running {agents}?"))
-                .actions(
-                    button("Keep running")
-                        .ghost()
-                        .shortcut("esc")
-                        .activate(close),
-                    button("Quit")
-                        .tone(sigil::prelude::Tone::Error)
-                        .activate(super::quit::leave),
-                )
-        }
+        Dialog::Rename { id, name } => rename_dialog(app, open, &id, name),
+        Dialog::Delete { id, title } => delete_dialog(app, open, id, &title),
+        Dialog::Quit { running } => quit_dialog(open, running),
     };
     Some(container().child(body.width(DIALOG)))
 }
@@ -171,4 +123,59 @@ fn rename(app: &App, id: &str, text: &str) {
         name: name.to_owned(),
     }));
     drop(app.cmd.send(Cmd::ListSessions));
+}
+
+fn rename_dialog(app: &App, open: Signal<bool>, id: &str, name: Signal<String>) -> ModalBuilder {
+    let close = move || open.set(false);
+    let run = {
+        let (app, id) = (app.clone(), id.to_owned());
+        move |text: &str| rename(&app, &id, text)
+    };
+    let save = {
+        let run = run.clone();
+        move || {
+            run(&name.peek());
+            close();
+        }
+    };
+    modal(open)
+        .title("Rename agent")
+        .child(text_field(name).autofocus().submit(move |text| {
+            run(text);
+            close();
+        }))
+        .actions(
+            button("Cancel").ghost().shortcut("esc").activate(close),
+            button("Rename").primary().shortcut("⏎").activate(save),
+        )
+}
+
+fn delete_dialog(app: &App, open: Signal<bool>, id: String, title: &str) -> ModalBuilder {
+    let close = move || open.set(false);
+    let sender = app.clone();
+    modal(open).title(format!("Delete “{title}”?")).actions(
+        button("Cancel").ghost().shortcut("esc").activate(close),
+        button("Delete")
+            .tone(sigil::prelude::Tone::Error)
+            .activate(move || {
+                drop(sender.cmd.send(Cmd::DeleteSession(id.clone())));
+                drop(sender.cmd.send(Cmd::ListSessions));
+                close();
+            }),
+    )
+}
+
+fn quit_dialog(open: Signal<bool>, running: usize) -> ModalBuilder {
+    let agents = if running == 1 { "agent" } else { "agents" };
+    modal(open)
+        .title(format!("Quit and stop {running} running {agents}?"))
+        .actions(
+            button("Keep running")
+                .ghost()
+                .shortcut("esc")
+                .activate(move || open.set(false)),
+            button("Quit")
+                .tone(sigil::prelude::Tone::Error)
+                .activate(super::quit::leave),
+        )
 }

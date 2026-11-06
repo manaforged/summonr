@@ -1,6 +1,6 @@
 use sigil::prelude::Position;
 use sigil::prelude::Widget;
-use sigil::prelude::{LayoutStyle, NodeBuilder, container};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, container};
 
 use crate::view::keys::shell;
 use summonr_agent::hub::Cmd;
@@ -40,7 +40,33 @@ fn sidebar_toggle(app: &App) -> NodeBuilder {
         side.window.sidebar.set(!side.window.sidebar.peek());
     })
     .accessible(SIDEBAR);
-    tip(SIDEBAR, Some("⌘B"), toggle.into())
+    let watch = app.clone();
+    let count = container()
+        .layout(LayoutStyle::flex_row().shrink(0.0))
+        .children_reactive(move || {
+            let needing = watch
+                .model
+                .get()
+                .live
+                .iter()
+                .filter(|entry| entry.status == Status::NeedsYou)
+                .count();
+            if needing == 0 {
+                return Vec::new();
+            }
+            vec![NodeBuilder::from(
+                style::text(style::Text::Meta, needing.to_string()).text_color(style::NEEDS_DOT),
+            )]
+        });
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .shrink(0.0)
+                .align_items(sigil::prelude::AlignItems::Center),
+        )
+        .child(tip(SIDEBAR, Some("⌘B"), toggle.into()))
+        .child(count)
+        .into()
 }
 
 /// Wraps `node` in a hover tooltip naming it and its shortcut.
@@ -49,38 +75,6 @@ fn tip(label: &str, key: Option<&str>, node: NodeBuilder) -> NodeBuilder {
 }
 
 const SIDEBAR: &str = "Sidebar";
-
-/// Sends a desktop notification when an agent out of view starts to need the user or finishes.
-fn announce(app: &App) {
-    let watch = app.clone();
-    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::<(String, Status)>::new()));
-    sigil::prelude::effect(move || {
-        let model = watch.model.get();
-        let mut before = seen.borrow_mut();
-        for entry in &model.live {
-            let was = before
-                .iter()
-                .find(|(id, _)| *id == entry.session)
-                .map(|(_, status)| *status);
-            let word = match entry.status {
-                Status::NeedsYou => NEEDS_YOU,
-                Status::Review => FINISHED,
-                Status::Working | Status::Failed | Status::Idle => continue,
-            };
-            if was.is_some_and(|was| was != entry.status) && !split::shows(&entry.session) {
-                drop(sigil::app::notify::Notification::new(entry.title.clone(), word).send());
-            }
-        }
-        *before = model
-            .live
-            .iter()
-            .map(|entry| (entry.session.clone(), entry.status))
-            .collect();
-    });
-}
-
-const NEEDS_YOU: &str = "Needs you";
-const FINISHED: &str = "Finished";
 
 /// Whether an agent dialog holds the keyboard.
 pub(crate) fn dialog_open() -> bool {
@@ -115,7 +109,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
     settings::install(&app);
     split::install(&app);
     restore::install(&app);
-    announce(&app);
+    attention::announce(&app);
     let paint = app.clone();
     shell(&app).children_reactive(move || {
         vec![window(paint.clone()).theme(crate::desktop::style::gui(paint.appearance.get()))]

@@ -336,8 +336,8 @@ fn the_notify_row_shows_the_choice_and_cycles_it() {
             seen.push(app.model.peek().prefs.notify.name());
         }
     });
-    assert_eq!(label, "when a turn ends");
-    assert_eq!(seen, ["all", "off", "turn"]);
+    assert_eq!(label, "turn end and approvals");
+    assert_eq!(seen, ["off", "turn", "all"]);
 }
 
 #[test]

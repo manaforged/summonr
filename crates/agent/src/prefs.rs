@@ -91,7 +91,7 @@ impl Default for Prefs {
         Self {
             theme: AUTO_THEME.to_string(),
             background: Background::default(),
-            notify: Notify::Turn,
+            notify: Notify::All,
             splash: false,
             animations: true,
             spinner: Spinner::default(),

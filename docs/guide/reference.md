@@ -530,7 +530,7 @@ While a turn runs, a row above the composer shows a spinner, what the model is d
 
 The output rate is tokens per second. While text streams it is an estimate: characters received in the last three seconds, divided by the characters per token measured on the previous round (4 until then), over that span. When the provider reports the round's usage, the rate becomes exact: output tokens over the time between the first and last streamed chunk, or over the whole round when nothing streamed, as in a round that only called tools.
 
-When a turn ends while the terminal is not focused, summonr rings the bell and sends a desktop notification (OSC 9) naming the workspace. `notify` in `config.toml`, or the Notify row in `/settings`, sets `off`, `turn` (the default), or `all`, which also notifies when an approval is waiting.
+When a turn ends or an approval is waiting while the terminal is not focused, summonr rings the bell and sends a desktop notification (OSC 9) naming the workspace. `notify` in `config.toml`, or the Notify row in `/settings`, sets `off`, `turn`, or `all` (the default), which also notifies when an approval is waiting.
 
 The footer shows the workspace and branch on the left and, on the right, the session's spend when the model has a price or the provider reports a cost, then the context and cache meters.
 

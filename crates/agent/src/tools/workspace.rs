@@ -262,7 +262,11 @@ impl ToolRegistry {
     }
 
     pub(super) fn skill(&self, args: &Value) -> Result<String> {
-        crate::skills::load(&self.workspace, object_string(args, "name")?)
+        crate::skills::load(
+            &self.workspace,
+            self.skill_set.as_ref(),
+            object_string(args, "name")?,
+        )
     }
 }
 

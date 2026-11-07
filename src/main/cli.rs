@@ -70,6 +70,7 @@ pub(super) struct Args {
     pub(super) endpoint: Option<String>,
     pub(super) model: Option<String>,
     pub(super) workflow: Option<String>,
+    pub(super) skills: Option<String>,
     pub(super) steps: Option<String>,
     pub(super) goal: Option<String>,
     pub(super) prompt: Vec<String>,

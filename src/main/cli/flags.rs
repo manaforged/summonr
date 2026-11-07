@@ -34,6 +34,8 @@ pub(super) const FLAGS: Table<Args> = Table {
             some(&mut args.workflow, name)
         })
         .help("NAME", "pick each role's endpoint from [workflows.NAME]"),
+        Flag::value(&["--skills"], "a name", |args, name| some(&mut args.skills, name))
+            .help("NAME", "offer only the skills in [skills.sets.NAME], or none"),
         Flag::switch(&["-p", "--print"], Args::print).help("", "run one prompt and exit"),
         Flag::switch(&["--json"], |args| on(&mut args.json)).help(
             "",

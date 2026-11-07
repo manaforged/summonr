@@ -13,14 +13,14 @@ fn skill_catalog_and_loading_use_the_same_root_precedence() {
         )
         .expect("skill body");
     }
-    let catalog = super::catalog(workspace.path()).expect("skill catalog");
+    let catalog = super::catalog(workspace.path(), None).expect("skill catalog");
     assert!(
         catalog.contains("probe-precedence: Z preferred source"),
         "{catalog}"
     );
     assert!(!catalog.contains("A lower-priority source"), "{catalog}");
     assert!(
-        super::load(workspace.path(), "probe-precedence")
+        super::load(workspace.path(), None, "probe-precedence")
             .expect("skill body")
             .contains("Z preferred source")
     );
@@ -62,7 +62,7 @@ fn claude_code_skills_join_the_catalog_and_load() {
         "---\nname: probe-project-skill\ndescription: from the project's Claude folder\n---\nproject body\n",
     )
     .unwrap();
-    let catalog = super::catalog(workspace.path()).unwrap_or_default();
+    let catalog = super::catalog(workspace.path(), None).unwrap_or_default();
     assert!(
         catalog.contains("probe-user-skill: from the user's Claude folder"),
         "{catalog}"
@@ -72,12 +72,12 @@ fn claude_code_skills_join_the_catalog_and_load() {
         "{catalog}"
     );
     assert!(
-        super::load(workspace.path(), "probe-user-skill")
+        super::load(workspace.path(), None, "probe-user-skill")
             .unwrap()
             .contains("user body")
     );
     assert!(
-        super::load(workspace.path(), "probe-project-skill")
+        super::load(workspace.path(), None, "probe-project-skill")
             .unwrap()
             .contains("project body")
     );
@@ -92,7 +92,7 @@ fn a_skill_with_a_binary_body_still_lists() {
         b"---\nname: probe-binary-skill\ndescription: listed from its frontmatter\n---\n".to_vec();
     body.extend([0xff, 0xfe, 0x00, 0xc3, 0x28]);
     std::fs::write(skill.join("SKILL.md"), body).unwrap();
-    let catalog = super::catalog(workspace.path()).unwrap_or_default();
+    let catalog = super::catalog(workspace.path(), None).unwrap_or_default();
     assert!(
         catalog.contains("probe-binary-skill: listed from its frontmatter"),
         "{catalog}"
@@ -128,10 +128,10 @@ fn skill(root: &std::path::Path, path: &str, about: &str) {
 fn a_skill_in_a_folder_lists_under_it_and_loads_by_its_own_name() {
     let workspace = tempfile::tempdir().expect("workspace");
     skill(workspace.path(), "probe-review/probe-rust", "Rust review");
-    let catalog = super::catalog(workspace.path()).expect("skill catalog");
+    let catalog = super::catalog(workspace.path(), None).expect("skill catalog");
     assert!(catalog.contains("probe-rust [probe-review]: Rust review"), "{catalog}");
     assert!(
-        super::load(workspace.path(), "probe-rust")
+        super::load(workspace.path(), None, "probe-rust")
             .expect("skill body")
             .contains("Rust review")
     );
@@ -149,7 +149,7 @@ fn two_skills_with_one_name_in_two_folders_both_list_by_folder() {
         .collect();
     assert_eq!(names, ["probe-ops:probe-deploy", "probe-web:probe-deploy"]);
     assert!(
-        super::load(workspace.path(), "probe-web:probe-deploy")
+        super::load(workspace.path(), None, "probe-web:probe-deploy")
             .expect("skill body")
             .contains("Web deploy")
     );
@@ -166,4 +166,40 @@ fn a_claude_code_skill_folder_is_read_one_level_deep() {
             .iter()
             .all(|(name, _)| !name.contains("probe-inner"))
     );
+}
+
+fn sets(text: &str) -> std::collections::BTreeMap<String, super::Set> {
+    toml::from_str(text).expect("skill sets")
+}
+
+#[test]
+fn a_skill_set_shows_its_folders_and_refuses_a_left_out_skill() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    skill(workspace.path(), "probe-review/probe-rust", "Rust review");
+    skill(workspace.path(), "probe-review/probe-panel", "Panel review");
+    skill(workspace.path(), "probe-other", "Other");
+    let named = sets(
+        "[lean]\ninclude = [\"probe-review\"]\nexclude = [\"probe-review/probe-panel\"]\n",
+    );
+    let lean = super::Set::from_sets(&named, "lean").expect("lean set");
+    let catalog = super::catalog(workspace.path(), Some(&lean)).expect("skill catalog");
+    assert!(catalog.contains("probe-rust"), "{catalog}");
+    assert!(!catalog.contains("probe-panel"), "{catalog}");
+    assert!(!catalog.contains("probe-other"), "{catalog}");
+    let refused = super::load(workspace.path(), Some(&lean), "probe-panel")
+        .expect_err("left out of the set")
+        .to_string();
+    assert!(refused.contains("not in skill set `lean`"), "{refused}");
+}
+
+#[test]
+fn the_none_set_hides_every_skill_and_an_unknown_set_names_the_table() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    skill(workspace.path(), "probe-other", "Other");
+    let none = super::Set::from_sets(&sets(""), "none").expect("built-in none set");
+    assert_eq!(super::catalog(workspace.path(), Some(&none)), None);
+    let missing = super::Set::from_sets(&sets(""), "lean")
+        .expect_err("no such set")
+        .to_string();
+    assert!(missing.contains("[skills.sets.lean]"), "{missing}");
 }

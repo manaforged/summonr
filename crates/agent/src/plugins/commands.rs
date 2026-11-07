@@ -145,7 +145,7 @@ pub(crate) fn expand(
     }) else {
         return Ok(None);
     };
-    let body = skills::load(workspace, name)?;
+    let body = skills::load(workspace, None, name)?;
     let body = crate::secret::shield::scrub_found(&body, workspace);
     Ok(Some(if body.contains(&format!("{SIGIL}{ARGUMENTS}")) {
         fill(&body, task)

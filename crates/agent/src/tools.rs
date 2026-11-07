@@ -49,6 +49,7 @@ pub(crate) struct ToolRegistry {
     background: bool,
     language: bool,
     skills: bool,
+    skill_set: Option<crate::skills::Set>,
     probed: std::sync::OnceLock<(bool, bool)>,
     lsp: std::sync::Mutex<
         std::collections::BTreeMap<
@@ -109,6 +110,7 @@ impl ToolRegistry {
             background: true,
             language: true,
             skills: true,
+            skill_set: None,
             probed: std::sync::OnceLock::new(),
             lsp: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             session: std::sync::Mutex::new(None),

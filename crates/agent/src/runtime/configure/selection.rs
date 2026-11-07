@@ -32,6 +32,15 @@ impl<P: Provider> Loop<P> {
         self.session.set_topic(topic.to_string()).map_err(Error::from)
     }
 
+    /// Limits this session to skill set `set` and records the choice in its journal.
+    pub fn choose_skills(&mut self, set: crate::skills::Set) -> Result<()> {
+        self.session
+            .set_skills(set.name().to_owned())
+            .map_err(Error::from)?;
+        self.tools.set_skill_set(Some(set));
+        Ok(())
+    }
+
     pub fn apply_endpoint(&mut self, endpoint: &crate::endpoint::Endpoint) {
         self.session.set_agent(endpoint.agent());
         self.set_context_window(endpoint.context_window);

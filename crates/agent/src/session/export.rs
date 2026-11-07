@@ -103,6 +103,7 @@ pub fn export(path: &Path) -> Result<String> {
             Line::Clear => out.push_str("---\n\n"),
             Line::Agent { .. }
             | Line::Topic { .. }
+            | Line::Skills { .. }
             | Line::Tools { .. }
             | Line::Work { .. }
             | Line::Budget { .. }

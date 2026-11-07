@@ -124,6 +124,7 @@ A goal with no `.summonr/check.toml` asks the model to write a contract to `.sum
 | `--model NAME` | Use model NAME on the endpoint instead of its default. |
 | `--effort LEVEL` | Set the reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. See Reasoning effort. |
 | `-w`, `--workflow NAME` | Seat each step from `[workflows.NAME]`. |
+| `--skills NAME` | Offer the model only the skills in `[skills.sets.NAME]`, and record the set in the session; `none` offers no skills. |
 | `--json` | Print JSON: one event per line with `-p`, `--goal`, and `--steps`, and JSON output from `session diff`, `worktree list`, `mcp`, and `classify`. |
 | `--session ID` | Resume a session by id, short id, prefix, or name. |
 | `--name TEXT` | Name this session. |
@@ -495,6 +496,14 @@ Everything runs without a prompt except irreversible destruction: wiping the sys
 `sudo` asks for your password in a dialog. The password goes to `sudo` through `SUDO_ASKPASS`; the model never sees it, and command output is scrubbed of it.
 
 ### Workflows
+
+A skill set limits which skills the model is offered. `include` and `exclude` list skill paths, each a folder and directory name such as `review/rust`; a folder name covers every skill under it. `--skills NAME` picks a set, and the session journal records it. The built-in `none` set offers no skills. A skill you run yourself as `/NAME` runs in any set.
+
+```toml
+[skills.sets.lean-review]
+include = ["review", "code"]
+exclude = ["review/panel"]
+```
 
 A workflow runs each role on its own model. Roles are `scout`, `implement`, `judge`, and `summary`; a role the workflow does not name runs on the endpoint and model you started with.
 

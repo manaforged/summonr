@@ -8,9 +8,11 @@ use summonr_types::{Message, Role};
 const IMAGE_SECTION: (&str, &str) = ("<image_input>", "</image_input>");
 
 #[derive(Clone, Copy, Default)]
-pub struct Sources {
+pub struct Sources<'a> {
     pub trust: bool,
     pub skills: bool,
+    /// The skill set the catalog shows; `None` shows every skill.
+    pub set: Option<&'a crate::skills::Set>,
     pub images: bool,
     pub memory: bool,
     pub mcp: bool,
@@ -24,6 +26,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     let Sources {
         trust,
         skills,
+        set,
         images,
         memory,
         mcp,
@@ -54,7 +57,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     if !(trust && memory) {
         parts.push(crate::memory::DISABLED.to_string());
     }
-    if skills && let Some(catalog) = crate::skills::catalog(workspace) {
+    if skills && let Some(catalog) = crate::skills::catalog(workspace, set) {
         parts.push(format!("<skills>\n{catalog}\n</skills>"));
     }
     if skills && let Some(catalog) = crate::plugins::agents::catalog(workspace) {

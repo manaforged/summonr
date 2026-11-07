@@ -375,3 +375,12 @@ fn a_thread_that_joins_a_topic_lists_under_it_and_a_new_one_starts_its_own() {
     fresh.start_input(&UserInput::from("first")).unwrap();
     assert_eq!(crate::session::info(fresh.path().to_path_buf()).topic, None);
 }
+
+#[test]
+fn a_chosen_skill_set_is_recorded_in_the_journal() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver.set_skills("lean".to_string()).unwrap();
+    let journal = std::fs::read_to_string(driver.path()).unwrap();
+    assert!(journal.contains(r#""kind":"skills","set":"lean""#), "{journal}");
+}

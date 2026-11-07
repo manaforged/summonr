@@ -40,6 +40,12 @@ impl ToolRegistry {
         Ok(())
     }
 
+    /// Limits the skill catalog and the skill tool to `set`; `None` allows every skill.
+    pub(crate) fn set_skill_set(&mut self, set: Option<crate::skills::Set>) {
+        self.skill_set = set;
+        self.probed = std::sync::OnceLock::new();
+    }
+
     pub(in crate::tools) fn set_browser(&mut self, on: bool) -> Result<()> {
         self.browser = if on {
             Some(match self.browser.take() {
@@ -87,7 +93,8 @@ impl ToolRegistry {
         *self.probed.get_or_init(|| {
             (
                 self.language && super::lsp::available(&self.workspace),
-                self.skills && crate::skills::catalog(&self.workspace).is_some(),
+                self.skills
+                    && crate::skills::catalog(&self.workspace, self.skill_set.as_ref()).is_some(),
             )
         })
     }

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
@@ -12,11 +13,76 @@ const DEPTH: usize = 4;
 /// The one level other tools' skill roots hold, read as those tools read them.
 const FLAT: usize = 1;
 
+/// Sets every config has, each with no skills: `none` turns skills off for a session.
+const BUILT_IN: [&str; 1] = ["none"];
+
+/// A named choice of skills: folder paths to include, then paths to leave out.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+pub struct Set {
+    #[serde(skip)]
+    name: String,
+    #[serde(default)]
+    include: Vec<String>,
+    #[serde(default)]
+    exclude: Vec<String>,
+}
+
+impl Set {
+    /// The set `name` from `[skills.sets.NAME]` in config.toml, or a built-in set.
+    pub fn named(name: &str) -> Result<Self> {
+        Self::from_sets(&crate::config::file()?.skills.sets, name)
+    }
+
+    pub(crate) fn from_sets(sets: &BTreeMap<String, Self>, name: &str) -> Result<Self> {
+        let set = match sets.get(name) {
+            Some(set) => set.clone(),
+            None if BUILT_IN.contains(&name) => Self::default(),
+            None => {
+                return Err(Error::Config(format!(
+                    "no skill set `{name}`; add [skills.sets.{name}] to config.toml"
+                )));
+            }
+        };
+        Ok(Self {
+            name: name.to_owned(),
+            ..set
+        })
+    }
+
+    /// The name the set was chosen by.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn admits(&self, skill: &Found) -> bool {
+        let path = skill.path();
+        let matches = |globs: &[String]| {
+            globs
+                .iter()
+                .any(|glob| crate::policy::path_matches(&path, glob))
+        };
+        matches(&self.include) && !matches(&self.exclude)
+    }
+}
+
 /// One skill found on disk: its name as callers use it, its folder path, and its file.
 struct Found {
     name: String,
     folder: String,
     file: PathBuf,
+}
+
+impl Found {
+    /// The skill's folder path and directory name, such as `review/rust`.
+    fn path(&self) -> String {
+        let leaf = self.name.rsplit(':').next().unwrap_or(&self.name);
+        if self.folder.is_empty() {
+            leaf.to_owned()
+        } else {
+            format!("{}/{leaf}", self.folder)
+        }
+    }
 }
 
 #[must_use]
@@ -40,8 +106,11 @@ pub fn file(workspace: &Path, name: &str) -> Option<PathBuf> {
 }
 
 #[must_use]
-pub(crate) fn catalog(workspace: &Path) -> Option<String> {
-    let skills = found(workspace);
+pub(crate) fn catalog(workspace: &Path, set: Option<&Set>) -> Option<String> {
+    let skills: Vec<Found> = found(workspace)
+        .into_iter()
+        .filter(|skill| set.is_none_or(|set| set.admits(skill)))
+        .collect();
     if skills.is_empty() {
         return None;
     }
@@ -63,7 +132,7 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     Some(out)
 }
 
-pub(crate) fn load(workspace: &Path, name: &str) -> Result<String> {
+pub(crate) fn load(workspace: &Path, set: Option<&Set>, name: &str) -> Result<String> {
     let name = name.trim();
     if !reference(name) {
         return Err(Error::Tool(
@@ -71,9 +140,18 @@ pub(crate) fn load(workspace: &Path, name: &str) -> Result<String> {
                 .to_string(),
         ));
     }
-    found(workspace)
+    let named: Vec<Found> = found(workspace)
         .into_iter()
         .filter(|skill| skill.name == name)
+        .collect();
+    if let Some(set) = set.filter(|set| !named.is_empty() && !named.iter().any(|skill| set.admits(skill))) {
+        return Err(Error::Tool(format!(
+            "skill `{name}` is not in skill set `{}`",
+            set.name()
+        )));
+    }
+    named
+        .into_iter()
         .find_map(|skill| {
             std::fs::read_to_string(&skill.file)
                 .ok()

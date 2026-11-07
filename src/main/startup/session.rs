@@ -124,11 +124,17 @@ pub(super) fn build(
 ) -> Result<Loop<Client>> {
     let switches = summonr_agent::modules::load(workspace)?;
     let images = summonr_agent::catalog::accepts_images(endpoint);
+    let set = args
+        .skills
+        .as_deref()
+        .map(summonr_agent::skills::Set::named)
+        .transpose()?;
     let prompt = system_prompt(
         workspace,
         summonr_agent::Sources {
             trust: args.trust,
             skills: switches.enabled(summonr_agent::modules::ModuleId::Skills),
+            set: set.as_ref(),
             images,
             memory: switches.enabled(summonr_agent::modules::ModuleId::Memory),
             mcp: switches.enabled(summonr_agent::modules::ModuleId::Mcp),
@@ -145,6 +151,9 @@ pub(super) fn build(
     }
     if let Some(name) = &args.name {
         loop_.set_name(name)?;
+    }
+    if let Some(set) = set {
+        loop_.choose_skills(set)?;
     }
     loop_.choose_effort(args.effort);
     loop_.apply_endpoint(endpoint);

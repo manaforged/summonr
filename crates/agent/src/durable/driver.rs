@@ -205,6 +205,10 @@ impl SessionDriver {
         self.append(Line::Topic { id })
     }
 
+    pub(crate) fn set_skills(&mut self, set: String) -> Result<(), DriverError> {
+        self.append(Line::Skills { set })
+    }
+
     pub(crate) fn turns(&self) -> usize {
         self.state.turns
     }

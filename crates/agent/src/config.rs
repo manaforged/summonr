@@ -62,8 +62,17 @@ pub(crate) struct File {
     #[serde(default)]
     pub plugins: summonr_types::plugins::Switches,
     pub limits: Option<crate::limits::Overrides>,
+    #[serde(default)]
+    pub skills: Skills,
     #[serde(flatten)]
     pub other: BTreeMap<String, toml::Value>,
+}
+
+/// The `[skills]` table: named sets of skills a session can choose.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct Skills {
+    #[serde(default)]
+    pub sets: BTreeMap<String, crate::skills::Set>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -245,7 +245,8 @@ pub(super) fn matches_deny(command: &str, pattern: &str) -> bool {
     command == pattern || command.starts_with(&format!("{pattern} ")) || command.contains(&pattern)
 }
 
-pub(super) fn path_matches(path: &str, glob: &str) -> bool {
+/// Whether `path` is `glob`, or sits under it when `glob` names a folder (`dir`, `dir/`, `dir/**`), or ends with `*.ext`.
+pub(crate) fn path_matches(path: &str, glob: &str) -> bool {
     let glob = glob.replace('\\', "/");
     if let Some(prefix) = glob.strip_suffix("/**") {
         return path == prefix || path.starts_with(&format!("{prefix}/"));

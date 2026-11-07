@@ -82,6 +82,9 @@ pub enum Line {
     Topic {
         id: String,
     },
+    Skills {
+        set: String,
+    },
     Tools {
         bytes: u64,
     },

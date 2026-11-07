@@ -341,7 +341,7 @@ pub(crate) use blocks::{grant_from_error, reads_only, write_denied};
 use paths::*;
 use shell::*;
 
-pub(crate) use paths::{expand_path, split_segments};
+pub(crate) use paths::{expand_path, path_matches, split_segments};
 #[cfg(all(test, unix))]
 pub(crate) use shell::running_as_root;
 use summonr_core::shell::unquoted;

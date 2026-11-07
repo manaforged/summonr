@@ -2,6 +2,8 @@
 mod classify;
 #[path = "startup/commands.rs"]
 mod commands;
+#[path = "startup/diff.rs"]
+mod diff;
 #[path = "startup/endpoints.rs"]
 mod endpoints;
 #[path = "startup/lifecycle.rs"]
@@ -19,9 +21,10 @@ use super::cli::{Args, Verb};
 use super::diagnostics;
 use classify::run_classify;
 use commands::{
-    adopt, export_session_cmd, grep_sessions, manage_worktrees, mcp, print_diff, print_sessions,
+    adopt, export_session_cmd, grep_sessions, manage_worktrees, mcp, print_sessions,
     print_workflows, session_path, workspace,
 };
+use diff::print_diff;
 use lifecycle::launch;
 use login::run_login;
 use session::{SessionAction, build};

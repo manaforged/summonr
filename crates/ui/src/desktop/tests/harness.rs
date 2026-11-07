@@ -240,5 +240,6 @@ pub(super) fn changed(base: &str, files: &[(&str, usize, usize)]) -> summonr_age
                 new: false,
             })
             .collect(),
+        strays: Vec::new(),
     }
 }

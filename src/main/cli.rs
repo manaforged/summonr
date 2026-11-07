@@ -78,6 +78,7 @@ pub(super) struct Args {
     pub(super) gui: bool,
     pub(super) stat: bool,
     pub(super) turn: Option<String>,
+    pub(super) child: Option<String>,
     pub(super) prune_worktrees: bool,
     pub(super) key: bool,
     pub(super) url: Option<String>,

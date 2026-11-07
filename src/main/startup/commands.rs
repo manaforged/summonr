@@ -241,56 +241,6 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn print_diff(args: &Args) -> Result<()> {
-    let cwd = workspace()?;
-    let path = args.prompt.first().map(String::as_str);
-    let turn = args
-        .turn
-        .as_deref()
-        .map(|turn| session_turn(&cwd, turn))
-        .transpose()?;
-    if turn.is_none() && !args.json && !args.stat {
-        print!("{}", summonr_agent::diff::patch(&cwd, path)?);
-        return Ok(());
-    }
-    let mut diff = match &turn {
-        Some((session, turn)) => summonr_agent::diff::turn_stats(&cwd, session, *turn)?,
-        None => summonr_agent::diff::stats(&cwd)?,
-    };
-    diff.files
-        .retain(|stat| path.is_none_or(|path| stat.path == path));
-    let Some((session, turn)) = turn.filter(|_| !args.json && !args.stat) else {
-        return print_stats(&diff, args.json);
-    };
-    eprintln!("{}", diff.summary());
-    print!(
-        "{}",
-        summonr_agent::diff::turn_patch(&cwd, &session, turn, path)?
-    );
-    Ok(())
-}
-
-fn session_turn(cwd: &Path, turn: &str) -> Result<(String, summonr_agent::diff::TurnId)> {
-    let turn = turn.parse()?;
-    let session = summonr_agent::last_for(cwd)?
-        .map(|info| info.id)
-        .ok_or_else(|| summonr_agent::Error::Config(format!("no session for {}", cwd.display())))?;
-    Ok((session, turn))
-}
-
-fn print_stats(diff: &summonr_agent::diff::Diff, json: bool) -> Result<()> {
-    if json {
-        println!("{}", serde_json::to_string(diff)?);
-        return Ok(());
-    }
-    for stat in &diff.files {
-        let new = if stat.new { "  new" } else { "" };
-        println!("+{} −{} {}{new}", stat.added, stat.removed, stat.path);
-    }
-    println!("{}", diff.summary());
-    Ok(())
-}
-
 pub(super) fn adopt(args: &Args) -> Result<Vec<String>> {
     let moved = summonr_agent::adopt_keys()?;
     if !moved.is_empty() && !args.json {

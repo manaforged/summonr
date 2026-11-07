@@ -5,6 +5,7 @@ use serde::Serialize;
 use crate::worktree;
 use summonr_core::error::{Error, Result};
 
+mod child;
 mod git;
 pub(crate) mod ignored;
 mod layout;
@@ -17,6 +18,7 @@ use git::{git, numstat_row};
 pub(crate) use git::{git_apply, git_env, git_output, git_paths, nul_paths};
 pub(crate) use layout::{Layout, STATE_DIR, inside_git, layout, state_dir};
 pub(crate) use turn::edited;
+pub use child::{Delta, children, delta};
 pub use turn::{SESSION_BASE, TurnId, turn_patch, turn_stats, turns};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
@@ -33,6 +35,8 @@ pub struct Diff {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
     pub files: Vec<Stat>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub strays: Vec<Stat>,
 }
 
 impl Diff {
@@ -235,6 +239,7 @@ fn changes(root: &Path, base: Option<String>, lines: bool) -> Result<Diff> {
         base: base.unwrap_or_else(|| "empty tree".to_string()),
         session: None,
         files,
+        strays: Vec::new(),
     })
 }
 

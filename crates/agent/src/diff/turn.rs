@@ -64,14 +64,14 @@ fn leading_number(text: &str) -> std::result::Result<(u32, &str), ()> {
     Ok((value, text[end..].trim_start()))
 }
 
-struct Span {
-    base: String,
-    from: String,
-    to: String,
+pub(super) struct Span {
+    pub(super) base: String,
+    pub(super) from: String,
+    pub(super) to: String,
 }
 
 impl Span {
-    fn stats(&self, points: &Checkpoints, session: &str) -> Result<Diff> {
+    pub(super) fn stats(&self, points: &Checkpoints, session: &str) -> Result<Diff> {
         let numstat = points.git(&[
             "diff",
             "--numstat",
@@ -107,6 +107,7 @@ impl Span {
             base: self.base.clone(),
             session: Some(session.to_string()),
             files,
+            strays: Vec::new(),
         })
     }
 }
@@ -176,27 +177,37 @@ pub fn turn_stats(root: &Path, session: &str, id: TurnId) -> Result<Diff> {
 
 pub fn turn_patch(root: &Path, session: &str, id: TurnId, path: Option<&str>) -> Result<String> {
     let (points, span, diff) = pick(root, session, id)?;
-    let shown: Vec<String> = diff
-        .files
-        .iter()
-        .filter(|stat| path.is_none_or(|path| path == stat.path))
-        .map(|stat| format!(":(literal){}", stat.path))
-        .collect();
-    if shown.is_empty() {
-        return Ok(String::new());
+    span.patch(&points, &diff.files, path)
+}
+
+impl Span {
+    pub(super) fn patch(
+        &self,
+        points: &Checkpoints,
+        files: &[Stat],
+        path: Option<&str>,
+    ) -> Result<String> {
+        let shown: Vec<String> = files
+            .iter()
+            .filter(|stat| path.is_none_or(|path| path == stat.path))
+            .map(|stat| format!(":(literal){}", stat.path))
+            .collect();
+        if shown.is_empty() {
+            return Ok(String::new());
+        }
+        let mut args = vec![
+            "diff",
+            "--no-color",
+            "--no-renames",
+            self.from.as_str(),
+            self.to.as_str(),
+            "--",
+        ];
+        args.extend(shown.iter().map(String::as_str));
+        let mut text = points.git(&args)?;
+        text.push('\n');
+        Ok(text)
     }
-    let mut args = vec![
-        "diff",
-        "--no-color",
-        "--no-renames",
-        span.from.as_str(),
-        span.to.as_str(),
-        "--",
-    ];
-    args.extend(shown.iter().map(String::as_str));
-    let mut text = points.git(&args)?;
-    text.push('\n');
-    Ok(text)
 }
 
 pub(crate) fn edited<'a>(calls: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {

@@ -180,6 +180,7 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
         access: summonr_agent::child::Access::Implement,
         background: false,
         call: Some("t9".to_owned()),
+        base: String::new(),
         state: ChildState::Completed(ChildResult {
             text: "Parser fixed; 4 tests pass.".to_owned(),
             changed_paths: vec!["/w/repo-children/abc/src/parse.rs".to_owned()],
@@ -190,6 +191,7 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
             elapsed_millis: 0,
             diagnostic: None,
             kept: None,
+            head: String::new(),
         }),
     };
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {

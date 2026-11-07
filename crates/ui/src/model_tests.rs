@@ -207,6 +207,7 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
         access: Access::Research,
         background: false,
         call: Some("t1".to_owned()),
+        base: String::new(),
         state: ChildState::Running,
     };
     let interrupted = record.interrupt("cancelled by parent");

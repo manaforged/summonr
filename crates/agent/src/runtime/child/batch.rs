@@ -180,6 +180,14 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn task_record(&mut self, done: &mut Done) -> Result<()> {
+        let live = done.record.workspace == self.workspace
+            || matches!(&done.record.state, ChildState::Completed(result) if result.kept.is_none());
+        if live
+            && !done.record.base.is_empty()
+            && let Some(result) = done.record.state.result_mut()
+        {
+            result.head = lead_tree(&self.workspace, &done.record.id.to_string());
+        }
         self.session.finish_child(done.record.clone())?;
         self.session.charge(
             Meter::measured(&done.usage, 0),

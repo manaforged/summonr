@@ -104,6 +104,7 @@ impl<P: Provider> Loop<P> {
             elapsed_millis: self.session.elapsed_millis(),
             diagnostic: diagnostic.map(str::to_string),
             kept: None,
+            head: String::new(),
         }
     }
 
@@ -219,6 +220,7 @@ pub(super) fn empty(diagnostic: Option<&str>) -> ChildResult {
         elapsed_millis: 0,
         diagnostic: diagnostic.map(str::to_string),
         kept: None,
+        head: String::new(),
     }
 }
 

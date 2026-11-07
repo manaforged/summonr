@@ -169,6 +169,19 @@ impl<P: Provider> Loop<P> {
     }
 }
 
+pub(super) fn start_tree(access: Access, workspace: &Path, child: &str) -> String {
+    match access {
+        Access::Implement => lead_tree(workspace, child),
+        Access::Research => String::new(),
+    }
+}
+
+pub(super) fn lead_tree(workspace: &Path, child: &str) -> String {
+    crate::checkpoint::Checkpoints::open(workspace, child)
+        .and_then(|points| points.tree().ok())
+        .unwrap_or_default()
+}
+
 pub(super) fn current_image() -> String {
     std::env::current_exe()
         .map_or_else(|_| "unknown".to_string(), |path| path.display().to_string())

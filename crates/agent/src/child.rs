@@ -27,6 +27,8 @@ pub struct ChildRecord {
     pub background: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub base: String,
     pub state: ChildState,
 }
 
@@ -99,6 +101,7 @@ impl ChildRecord {
             elapsed_millis: 0,
             diagnostic: Some(reason.to_string()),
             kept: None,
+            head: String::new(),
         });
         record
     }
@@ -115,6 +118,7 @@ impl ChildRecord {
             && self.depth == other.depth
             && self.access == other.access
             && self.background == other.background
+            && self.base == other.base
     }
 }
 
@@ -131,6 +135,8 @@ pub struct ChildResult {
     pub diagnostic: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kept: Option<crate::tools::Kept>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub head: String,
 }
 
 #[must_use]

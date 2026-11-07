@@ -7,6 +7,8 @@ use crate::tools::{Abort, AbortCode};
 mod clear;
 #[path = "control_tests.rs"]
 mod control;
+#[path = "delta_tests.rs"]
+mod delta;
 #[path = "model_tests.rs"]
 mod model;
 

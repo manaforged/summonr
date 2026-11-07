@@ -274,6 +274,7 @@ impl Reader {
                 base: diff::SESSION_BASE.to_string(),
                 session: Some(session.to_string()),
                 files: Vec::new(),
+                strays: Vec::new(),
             });
         self.send(Msg::Fact(Fact::Diff(diff, None)));
     }

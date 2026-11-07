@@ -214,6 +214,7 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
         access: Access::Research,
         background: false,
         call: Some("t1".to_owned()),
+        base: String::new(),
         state: ChildState::Running,
     };
     let mut legacy = serde_json::to_value(&record).expect("child value");

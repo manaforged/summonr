@@ -148,6 +148,7 @@ impl<P: Provider> Loop<P> {
             access: args.access,
             background: args.background,
             call: Some(args.call.clone()),
+            base: start_tree(args.access, &self.workspace, &child.session_id()),
             state: ChildState::Running,
         };
         self.session.start_child(record.clone())?;

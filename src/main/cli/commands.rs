@@ -208,7 +208,7 @@ pub(super) const SUBCOMMANDS: [Command; 16] = [
         name: "session diff",
         most: Some(1),
         run: |args, _| verb(args, Verb::Diff),
-        help: "session diff [PATH]         changes against the base (--stat, --json, --turn N|last)",
+        help: "session diff [PATH]         changes against the base (--stat, --json, --turn N|last, --child ID)",
     },
     Command {
         name: "endpoint list",

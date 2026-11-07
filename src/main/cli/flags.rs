@@ -108,6 +108,10 @@ pub(super) const FLAGS: Table<Args> = Table {
             some(&mut args.turn, turn)
         })
         .scope("session diff", |args| matches!(args.verb, Some(Verb::Diff))),
+        Flag::value(&["--child"], "a child id", |args, child| {
+            some(&mut args.child, child)
+        })
+        .scope("session diff", |args| matches!(args.verb, Some(Verb::Diff))),
         Flag::switch(&["--all"], |args| on(&mut args.all)).scope("session profile", |args| {
             matches!(args.verb, Some(Verb::Profile))
         }),

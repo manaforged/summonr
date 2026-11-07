@@ -5,7 +5,7 @@ Sessions:
   session search TEXT         search past sessions
   session export [ID|NAME]    markdown, --digest for classify, or --json for complete audit records
   session profile [ID|NAME]   time and tokens of a session (--all [--last N])
-  session diff [PATH]         changes against the base (--stat, --json, --turn N|last)
+  session diff [PATH]         changes against the base (--stat, --json, --turn N|last, --child ID)
   worktree list|prune         list summonr worktrees, or drop gone ones (--json)
 
 Providers:

@@ -20,6 +20,7 @@ fn worker() -> ChildRecord {
         access: Access::Research,
         background: true,
         call: Some("task-call".to_string()),
+        base: String::new(),
         state: ChildState::Running,
     }
 }

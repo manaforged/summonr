@@ -295,7 +295,10 @@ fn row(app: &App, term: &Rc<Term>) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_width())
         .children_reactive(move || {
-            let selected = super::split::current(&app).window.showing.get() == Some(term.id);
+            let selected = super::split::tracked()
+                .0
+                .iter()
+                .any(|pane| pane.window.showing.get() == Some(term.id));
             let rang = term.session.bell.get() != term.seen.get();
             let done = term.session.exited.get().is_some();
             let (open, id, menu) = (app.clone(), term.id, app.clone());

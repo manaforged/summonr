@@ -14,8 +14,19 @@ use summonr_agent::prefs::Visibility;
 const FENCE: &str = "```";
 const BUBBLE: f32 = 520.0;
 
-pub(super) fn user(body: String) -> NodeBuilder {
-    container()
+pub(super) fn copyable(app: &App, node: NodeBuilder, body: String) -> NodeBuilder {
+    let app = app.clone();
+    sigil::widgets::context_menu(node, move || {
+        let (app, body) = (app.clone(), body.clone());
+        vec![sigil::widgets::MenuItem::new("Copy").activate(move || {
+            app.copy.set(Some(body.clone()));
+        })]
+    })
+}
+
+pub(super) fn user(app: &App, body: String) -> NodeBuilder {
+    let text = body.clone();
+    let bubble = container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
@@ -34,7 +45,8 @@ pub(super) fn user(body: String) -> NodeBuilder {
                 .bg(TINT)
                 .rounded(Radius::Lg)
                 .child(styled(Text::Body, body).line_height_px(LINE)),
-        )
+        );
+    copyable(app, bubble, text)
 }
 
 fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {

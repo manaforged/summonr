@@ -111,6 +111,33 @@ fn another_agents_chat_keeps_its_icon_and_says_it_is_working() {
 }
 
 #[test]
+fn right_clicking_a_chat_opens_it_in_a_split() {
+    if !in_window("sidebar::right_clicking_a_chat_opens_it_in_a_split") {
+        return;
+    }
+    let seen = steps(
+        two_chats,
+        vec![
+            Step::RightClick("Fix the parser bug"),
+            Step::Click("Open in split"),
+        ],
+        |_| super::super::split::multiple(),
+    );
+    assert!(seen.read, "{}", seen.text());
+}
+
+#[test]
+fn right_clicking_a_repository_offers_its_actions() {
+    if !in_window("sidebar::right_clicking_a_repository_offers_its_actions") {
+        return;
+    }
+    let seen = steps(two_chats, vec![Step::RightClick("work")], |_| ());
+    for label in ["New agent here", "New agent in split", "Reveal repository"] {
+        assert!(seen.shows(|text| text == label), "{label}: {}", seen.text());
+    }
+}
+
+#[test]
 fn search_finds_an_agent_by_title_in_the_palette() {
     if !in_window("sidebar::search_finds_an_agent_by_title_in_the_palette") {
         return;

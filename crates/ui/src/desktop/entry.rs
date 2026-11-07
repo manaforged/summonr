@@ -38,8 +38,10 @@ fn hidden(entry: &Entry) -> bool {
 
 fn form(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> NodeBuilder {
     match entry {
-        Entry::User(body) => message::user(body),
-        Entry::Assistant { text, .. } => message::assistant(&text, app),
+        Entry::User(body) => message::user(app, body),
+        Entry::Assistant { text, .. } => {
+            message::copyable(app, message::assistant(&text, app), text.clone())
+        }
         Entry::Thinking(text) => message::thinking(&text, prefs.reasoning, live, app),
         Entry::System(_) | Entry::Injected(_) => sigil::prelude::container(),
         Entry::Aborted(reason) => message::error(message::first_part(&reason), None),

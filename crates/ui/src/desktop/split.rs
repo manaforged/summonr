@@ -89,6 +89,45 @@ pub(super) fn shows(id: &str) -> bool {
     .unwrap_or(false)
 }
 
+/// The chats showing in any pane; tracked.
+pub(super) fn shown_chats() -> Vec<String> {
+    tracked()
+        .0
+        .iter()
+        .filter(|app| app.window.showing.get().is_none())
+        .map(|app| app.model.with(|model| model.session.clone()))
+        .collect()
+}
+
+/// Opens a new pane on the chat `session`; false when the window has no room.
+pub(super) fn beside(session: &str) -> bool {
+    reopen(session).is_some()
+}
+
+/// Opens a new pane with a new chat in `folder`; false when the window has no room.
+pub(super) fn beside_in(folder: std::path::PathBuf) -> bool {
+    add(move |_| Open::Folder(folder)).is_some()
+}
+
+/// Closes the pane that shows the chat `session`.
+pub(super) fn close_chat(session: &str) {
+    let at = with(|split| {
+        split
+            .panes
+            .iter()
+            .position(|pane| pane.app.model.peek().session == session)
+    })
+    .flatten();
+    if let Some(at) = at {
+        close(at);
+    }
+}
+
+/// Whether more than one pane is open.
+pub(super) fn multiple() -> bool {
+    with(|split| split.panes.len() > 1).unwrap_or(false)
+}
+
 /// Whether more than one pane is open; tracked.
 pub(super) fn active() -> bool {
     with(|split| split.count).is_some_and(|count| count.get() > 1)

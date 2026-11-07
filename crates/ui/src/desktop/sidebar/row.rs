@@ -27,7 +27,7 @@ pub(super) fn listed(app: &App) -> Vec<SessionInfo> {
 pub(super) fn pinned(
     app: &App,
     live: Signal<Vec<Live>>,
-    session: Signal<String>,
+    shown: Signal<Vec<String>>,
 ) -> Vec<NodeBuilder> {
     let chats = app.sessions.all_chats();
     let rows: Vec<SessionInfo> = super::super::shelf::pinned()
@@ -37,7 +37,7 @@ pub(super) fn pinned(
     if rows.is_empty() {
         return Vec::new();
     }
-    let (live, session) = (live.get(), session.get());
+    let (live, shown) = (live.get(), shown.get());
     let heading = text(Text::Heading, PINNED)
         .layout(LayoutStyle::block().padding_top(M).padding_left(S))
         .into();
@@ -45,7 +45,7 @@ pub(super) fn pinned(
         .chain(rows.into_iter().map(|mut info| {
             super::live_title(&mut info, &live);
             let state = super::shown_state(&live, &info.id);
-            agent_row(app, &info, info.id == session, state)
+            agent_row(app, &info, shown.contains(&info.id), state)
         }))
         .collect()
 }

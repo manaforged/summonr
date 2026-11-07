@@ -68,6 +68,7 @@ pub(super) fn command(letter: &str) -> Event {
 pub(super) enum Step {
     Key(Event),
     Click(&'static str),
+    RightClick(&'static str),
     Wait(Box<dyn FnOnce(&App)>),
     Drag((f32, f32), (f32, f32)),
 }
@@ -97,6 +98,31 @@ fn click(host: &mut Host, label: &str) {
     );
     host.route(Event::pointer_down(at));
     host.route(Event::pointer_up(at));
+}
+
+fn right_click(host: &mut Host, label: &str) {
+    use sigil::events::{MouseButton, MouseButtons, PointerPhase};
+    let bounds = host
+        .accessibility_tree()
+        .nodes
+        .iter()
+        .find_map(|(_, node)| {
+            (node.label().as_deref() == Some(label))
+                .then(|| node.bounds())
+                .flatten()
+        })
+        .unwrap_or_else(|| panic!("no control named {label}"));
+    let at = sigil::geometry::Point::new(
+        ((bounds.x0 + bounds.x1) / 2.0) as f32,
+        ((bounds.y0 + bounds.y1) / 2.0) as f32,
+    );
+    let press = |phase, buttons| {
+        Event::pointer(phase, at)
+            .button(Some(MouseButton::Right))
+            .buttons(buttons)
+    };
+    host.route(press(PointerPhase::Down, MouseButtons::RIGHT));
+    host.route(press(PointerPhase::Up, MouseButtons::EMPTY));
 }
 
 fn drag(host: &mut Host, from: (f32, f32), to: (f32, f32)) {
@@ -134,6 +160,7 @@ pub(super) fn steps<T>(
             match step {
                 Step::Key(key) => host.route(key),
                 Step::Click(label) => click(&mut host, label),
+                Step::RightClick(label) => right_click(&mut host, label),
                 Step::Wait(until) => until(&app),
                 Step::Drag(from, to) => drag(&mut host, from, to),
             }

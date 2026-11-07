@@ -66,6 +66,7 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
             })
         }
     })];
+    items.extend(split_item(&id));
     let pin = id.clone();
     let word = if super::shelf::is_pinned(&id) {
         "Unpin"
@@ -110,6 +111,38 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
         }));
     }
     items
+}
+
+fn split_item(id: &str) -> Option<MenuItem> {
+    let id = id.to_owned();
+    if !super::split::shows(&id) {
+        return Some(MenuItem::new("Open in split").activate(move || {
+            super::split::beside(&id);
+        }));
+    }
+    super::split::multiple()
+        .then(|| MenuItem::new("Close split").activate(move || super::split::close_chat(&id)))
+}
+
+/// The right-click menu of one repository row.
+pub(super) fn folder_items(app: &App, folder: &std::path::Path) -> Vec<MenuItem> {
+    let (here, beside, reveal) = (
+        folder.to_path_buf(),
+        folder.to_path_buf(),
+        folder.to_path_buf(),
+    );
+    let open = app.clone();
+    vec![
+        MenuItem::new("New agent here").activate(move || {
+            super::split::show(&open, summonr_agent::hub::Open::Folder(here.clone()));
+        }),
+        MenuItem::new("New agent in split").activate(move || {
+            super::split::beside_in(beside.clone());
+        }),
+        MenuItem::new("Reveal repository").activate(move || {
+            drop(summonr_auth::open::external(&reveal));
+        }),
+    ]
 }
 
 /// The rename or delete dialog, when one is open.

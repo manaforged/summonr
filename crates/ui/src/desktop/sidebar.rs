@@ -41,6 +41,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
         }
     });
     refresh_on_switch(&app, session, live);
+    let shown = sigil::reactive::derived(super::split::shown_chats);
     let list = app.clone();
     let shut = sigil::prelude::signal(Vec::<std::path::PathBuf>::new());
     container()
@@ -83,7 +84,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
                             )
                             .children_reactive({
                                 let app = app.clone();
-                                move || row::pinned(&app, live, session)
+                                move || row::pinned(&app, live, shown)
                             }),
                     )
                     .child(repositories(&app))
@@ -91,7 +92,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
                         scroll(
                             container()
                                 .layout(LayoutStyle::flex_column().fill_width())
-                                .children_reactive(move || chats(&list, shut, live, session)),
+                                .children_reactive(move || chats(&list, shut, live, shown)),
                         )
                         .bg(RECESSED)
                         .grow(1.0),
@@ -176,10 +177,10 @@ fn chats(
     app: &App,
     shut: Signal<Vec<std::path::PathBuf>>,
     live: Signal<Vec<Live>>,
-    session: Signal<String>,
+    shown: Signal<Vec<String>>,
 ) -> Vec<NodeBuilder> {
     let live = live.get();
-    let session = session.get();
+    let shown = shown.get();
     let closed = shut.get();
     let terms = app.window.terminals.list.get();
     let mut groups = projects(&app.workspace(), row::listed(app));
@@ -199,13 +200,13 @@ fn chats(
             .iter()
             .filter_map(|info| shown_state(&live, &info.id))
             .collect();
-        nodes.push(section(&folder, open, &states, shut));
+        nodes.push(section(app, &folder, open, &states, shut));
         if !open {
             continue;
         }
         nodes.extend(super::terminal::rows(app, &terms, &folder));
         for mut info in agents {
-            let selected = info.id == session;
+            let selected = shown.contains(&info.id);
             live_title(&mut info, &live);
             nodes.push(agent_row(
                 app,
@@ -261,6 +262,7 @@ fn projects(
 
 /// A repository row that folds its agents; folded, it shows their strongest status and count.
 fn section(
+    app: &App,
     folder: &std::path::Path,
     open: bool,
     states: &[Status],
@@ -299,9 +301,12 @@ fn section(
         },
     )
     .expanded(sigil::prelude::signal(open));
+    let (menu, folder) = (app.clone(), folder.to_path_buf());
     container()
         .layout(LayoutStyle::flex_row().fill_width().padding_top(S))
-        .child(row)
+        .child(sigil::widgets::context_menu(row, move || {
+            super::agent_menu::folder_items(&menu, &folder)
+        }))
 }
 
 pub(super) fn folder_name(folder: &std::path::Path) -> String {

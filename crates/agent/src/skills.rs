@@ -7,47 +7,57 @@ use summonr_core::error::{Error, Result};
 const SKILL: &str = "SKILL.md";
 use summonr_core::text::{FENCE, Frontmatter};
 
+/// How many levels deep discovery looks under Summonr's own skill roots.
+const DEPTH: usize = 4;
+/// The one level other tools' skill roots hold, read as those tools read them.
+const FLAT: usize = 1;
+
+/// One skill found on disk: its name as callers use it, its folder path, and its file.
+struct Found {
+    name: String,
+    folder: String,
+    file: PathBuf,
+}
+
 #[must_use]
 pub fn list(workspace: &Path) -> Vec<(String, String)> {
-    let mut rows = Vec::new();
-    for root in roots(workspace) {
-        collect(root, &mut rows);
-    }
-    rows.retain(|(name, _)| valid(name));
-    rows.sort_by(|left, right| left.0.cmp(&right.0));
-    rows.dedup_by(|left, right| left.0 == right.0);
-    rows
+    found(workspace)
+        .into_iter()
+        .map(|skill| {
+            let about = about(&skill.file);
+            (skill.name, about)
+        })
+        .collect()
 }
 
 /// The file that defines skill `name`, by the same search order as `list`.
 #[must_use]
 pub fn file(workspace: &Path, name: &str) -> Option<PathBuf> {
-    roots(workspace).into_iter().find_map(|root| {
-        summonr_core::walk::children(&root).find_map(|entry| {
-            let path = entry.path();
-            let dir = std::fs::metadata(&path).is_ok_and(|meta| meta.is_dir());
-            skill_file(path, dir)
-                .filter(|(found, file)| found == name && file.is_file())
-                .map(|(_, file)| file)
-        })
-    })
+    found(workspace)
+        .into_iter()
+        .find(|skill| skill.name == name)
+        .map(|skill| skill.file)
 }
 
 #[must_use]
 pub(crate) fn catalog(workspace: &Path) -> Option<String> {
-    let rows = list(workspace);
-    if rows.is_empty() {
+    let skills = found(workspace);
+    if skills.is_empty() {
         return None;
     }
     let mut out = String::from(
         "Skills (load with the skill tool, then follow the file). Catalog only; bodies stay on disk:",
     );
-    for (name, summary) in rows {
+    for skill in skills {
         out.push_str("\n- ");
-        out.push_str(&name);
-        if !summary.is_empty() {
+        out.push_str(&skill.name);
+        if !skill.folder.is_empty() && !skill.name.contains(':') {
+            out.push_str(&format!(" [{}]", skill.folder));
+        }
+        let about = about(&skill.file);
+        if !about.is_empty() {
             out.push_str(": ");
-            out.push_str(&summary);
+            out.push_str(&about);
         }
     }
     Some(out)
@@ -55,22 +65,85 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
 
 pub(crate) fn load(workspace: &Path, name: &str) -> Result<String> {
     let name = name.trim();
-    if !valid(name) {
+    if !reference(name) {
         return Err(Error::Tool(
-            "skill names are letters, digits, `-`, and `_` only".to_string(),
+            "skill names are letters, digits, `-`, and `_` only, after an optional `folder:`"
+                .to_string(),
         ));
     }
-    let candidates = roots(workspace)
+    found(workspace)
         .into_iter()
-        .flat_map(|root| [root.join(name).join(SKILL), root.join(format!("{name}.md"))]);
-    for path in candidates {
-        if let Ok(text) = std::fs::read_to_string(&path)
-            && !text.trim().is_empty()
+        .filter(|skill| skill.name == name)
+        .find_map(|skill| {
+            std::fs::read_to_string(&skill.file)
+                .ok()
+                .filter(|text| !text.trim().is_empty())
+        })
+        .ok_or_else(|| Error::Tool(format!("skill `{name}` is not installed")))
+}
+
+/// Every skill under the roots, first root first, named by its directory or `folder:name` on a clash.
+fn found(workspace: &Path) -> Vec<Found> {
+    let mut all = Vec::new();
+    for (root, depth) in roots(workspace) {
+        walk(&root, "", depth, &mut all);
+    }
+    let mut kept: Vec<Found> = Vec::new();
+    for skill in all {
+        if valid(&skill.name)
+            && !kept
+                .iter()
+                .any(|seen| seen.name == skill.name && seen.folder == skill.folder)
         {
-            return Ok(text);
+            kept.push(skill);
         }
     }
-    Err(Error::Tool(format!("skill `{name}` is not installed")))
+    let names: Vec<String> = kept.iter().map(|skill| skill.name.clone()).collect();
+    for skill in &mut kept {
+        let shared = names.iter().filter(|name| **name == skill.name).count() > 1;
+        if shared && !skill.folder.is_empty() {
+            skill.name = format!("{}:{}", skill.folder, skill.name);
+        }
+    }
+    kept.sort_by(|left, right| left.name.cmp(&right.name));
+    kept
+}
+
+fn walk(dir: &Path, folder: &str, depth: usize, out: &mut Vec<Found>) {
+    for entry in summonr_core::walk::children(dir) {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()).map(str::to_owned) else {
+            continue;
+        };
+        if std::fs::metadata(&path).is_ok_and(|meta| meta.is_dir()) {
+            let file = path.join(SKILL);
+            if file.is_file() {
+                out.push(Found { name, folder: folder.to_owned(), file });
+            } else if depth > 1 && valid(&name) {
+                let inner = if folder.is_empty() { name } else { format!("{folder}/{name}") };
+                walk(&path, &inner, depth - 1, out);
+            }
+        } else if folder.is_empty() && path.extension().is_some_and(|ext| ext == "md") {
+            let stem = path.file_stem().and_then(|stem| stem.to_str()).unwrap_or_default();
+            out.push(Found { name: stem.to_owned(), folder: String::new(), file: path });
+        }
+    }
+}
+
+fn about(file: &Path) -> String {
+    std::fs::File::open(file)
+        .ok()
+        .and_then(|handle| head(std::io::BufReader::new(handle)))
+        .map(|text| summary(&text))
+        .unwrap_or_default()
+}
+
+/// Whether `name` is a skill name, optionally after a `folder/path:` prefix.
+fn reference(name: &str) -> bool {
+    match name.rsplit_once(':') {
+        Some((folder, leaf)) => valid(leaf) && folder.split('/').all(valid),
+        None => valid(name),
+    }
 }
 
 pub(crate) fn valid(name: &str) -> bool {
@@ -93,40 +166,6 @@ pub(crate) fn markdown_entries<T>(
             build(stem, Frontmatter::parse(&text))
         })
         .collect()
-}
-
-fn collect(root: PathBuf, rows: &mut Vec<(String, String)>) {
-    for entry in summonr_core::walk::children(&root) {
-        let path = entry.path();
-        let dir = std::fs::metadata(&path).is_ok_and(|meta| meta.is_dir());
-        let Some((name, file)) = skill_file(path, dir) else {
-            continue;
-        };
-        let Ok(handle) = std::fs::File::open(&file) else {
-            if !dir {
-                rows.push((name, String::new()));
-            }
-            continue;
-        };
-        rows.push((
-            name,
-            head(std::io::BufReader::new(handle))
-                .map(|text| summary(&text))
-                .unwrap_or_default(),
-        ));
-    }
-}
-
-fn skill_file(path: PathBuf, dir: bool) -> Option<(String, PathBuf)> {
-    if dir {
-        let name = path.file_name()?.to_str()?.to_string();
-        return Some((name, path.join(SKILL)));
-    }
-    if path.extension().is_some_and(|ext| ext == "md") {
-        let name = path.file_stem()?.to_str()?.to_string();
-        return Some((name, path));
-    }
-    None
 }
 
 fn head(mut reader: impl BufRead) -> Option<String> {
@@ -173,19 +212,20 @@ fn heading(line: &str) -> String {
         .collect()
 }
 
-fn roots(workspace: &Path) -> Vec<PathBuf> {
-    let mut roots: Vec<PathBuf> = summonr_home()
+/// Each skill root in search order, with how many levels deep it holds skills.
+fn roots(workspace: &Path) -> Vec<(PathBuf, usize)> {
+    let mut roots: Vec<(PathBuf, usize)> = summonr_home()
         .ok()
-        .map(|home| home.join("skills"))
+        .map(|home| (home.join("skills"), DEPTH))
         .into_iter()
         .collect();
     if let Some(home) = summonr_core::dirs::user_home() {
-        roots.push(home.join(".claude/skills"));
-        roots.push(home.join(".agents/skills"));
+        roots.push((home.join(".claude/skills"), FLAT));
+        roots.push((home.join(".agents/skills"), FLAT));
     }
-    roots.push(workspace.join(".summonr/skills"));
-    roots.push(workspace.join(".claude/skills"));
-    roots.extend(plugin_dirs());
+    roots.push((workspace.join(".summonr").join("skills"), DEPTH));
+    roots.push((workspace.join(".claude/skills"), FLAT));
+    roots.extend(plugin_dirs().into_iter().map(|dir| (dir, FLAT)));
     roots
 }
 

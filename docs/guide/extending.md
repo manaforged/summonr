@@ -19,6 +19,8 @@ After the first model round, the advertised tool list and the skill catalog stay
 
 Write a `SKILL.md` under `~/.summonr/skills/<name>/` or `.summonr/skills/<name>/`. Claude Code skills work as they are: summonr also reads `~/.claude/skills/`, `.claude/skills/` in the workspace, and `~/.agents/skills/`. The model loads it with the `skill` tool. The body arrives as a later tool result.
 
+In Summonr's own two skill roots, skills can sit in folders up to four levels deep, such as `review/rust/SKILL.md`. A skill keeps its own directory name, and two skills with one name in different folders list as `FOLDER:NAME`. The Claude Code and `~/.agents/skills/` roots are read one level deep, as Claude Code reads them.
+
 ## Add an MCP server
 
 1. Run `summonr mcp add NAME -- COMMAND [ARGS...]` for a local server, or `summonr mcp add NAME --url URL` for a remote one. This writes a `[mcp.NAME]` table to `~/.summonr/config.toml`; you can also write it yourself. `mcp add` connects once, caches the tool list, and prints `NAME: N tools`. When the server does not start or answer, `mcp add` exits 1 and names the config file; the table stays, and `summonr mcp list` shows `failed: <error>`.

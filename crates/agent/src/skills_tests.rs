@@ -116,3 +116,54 @@ fn a_skill_with_no_arguments_runs_on_the_previous_task() {
         "Run on: review the api"
     );
 }
+
+fn skill(root: &std::path::Path, path: &str, about: &str) {
+    let dir = root.join(".summonr").join("skills").join(path);
+    std::fs::create_dir_all(&dir).expect("skill directory");
+    std::fs::write(dir.join("SKILL.md"), format!("---\ndescription: {about}\n---\n{about}\n"))
+        .expect("skill body");
+}
+
+#[test]
+fn a_skill_in_a_folder_lists_under_it_and_loads_by_its_own_name() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    skill(workspace.path(), "probe-review/probe-rust", "Rust review");
+    let catalog = super::catalog(workspace.path()).expect("skill catalog");
+    assert!(catalog.contains("probe-rust [probe-review]: Rust review"), "{catalog}");
+    assert!(
+        super::load(workspace.path(), "probe-rust")
+            .expect("skill body")
+            .contains("Rust review")
+    );
+}
+
+#[test]
+fn two_skills_with_one_name_in_two_folders_both_list_by_folder() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    skill(workspace.path(), "probe-ops/probe-deploy", "Ops deploy");
+    skill(workspace.path(), "probe-web/probe-deploy", "Web deploy");
+    let names: Vec<String> = super::list(workspace.path())
+        .into_iter()
+        .map(|(name, _)| name)
+        .filter(|name| name.contains("probe-deploy"))
+        .collect();
+    assert_eq!(names, ["probe-ops:probe-deploy", "probe-web:probe-deploy"]);
+    assert!(
+        super::load(workspace.path(), "probe-web:probe-deploy")
+            .expect("skill body")
+            .contains("Web deploy")
+    );
+}
+
+#[test]
+fn a_claude_code_skill_folder_is_read_one_level_deep() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let dir = workspace.path().join(".claude/skills/probe-group/probe-inner");
+    std::fs::create_dir_all(&dir).expect("skill directory");
+    std::fs::write(dir.join("SKILL.md"), "inner").expect("skill body");
+    assert!(
+        super::list(workspace.path())
+            .iter()
+            .all(|(name, _)| !name.contains("probe-inner"))
+    );
+}

@@ -18,6 +18,12 @@
 - Custom panels are files checked by `summonr panel check NAME` and show as tabs in the desktop's right panel.
 - `--skills NAME` and `[skills] default` choose a named set of skills per session; resumed sessions and children keep the set, and usage splits spend by set.
 - A second running agent in the same checkout gets its own worktree.
+- The desktop runs a workspace's setup, run and archive scripts from summonr or Conductor settings, and gives each worktree its own port block.
+- Open PR and Merge work through `gh`, and each `gh` call times out after `gh_secs`.
+- Existing git worktrees, Conductor workspaces included, list as topics in the sidebar and open in place.
+- New agent and a second topic in a repository each start their own `summonr/<id>` worktree.
+- Named run actions read `run_mode`, files to copy and environment tables from Conductor settings; actions marked for the cloud show as "Cloud only" and never run locally.
+- `summonr session children` lists a lead session's children.
 
 ### Changed
 

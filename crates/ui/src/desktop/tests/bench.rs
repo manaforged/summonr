@@ -116,6 +116,9 @@ enum Step {
     Scroll,
     Settings,
     Switch(usize),
+    Hover(usize),
+    Drag(usize),
+    DragBig,
 }
 
 const HISTORY: usize = 100;
@@ -138,6 +141,11 @@ fn wheel(n: usize) -> sigil::events::Event {
     )
 }
 
+fn over_text(n: usize) -> sigil::geometry::Point {
+    let along = (n % 40) as f32 * 6.0;
+    sigil::geometry::Point::new(VIEW.0 * 0.45 + along, VIEW.1 * 0.25 + along)
+}
+
 fn navigate(step: Step) -> f64 {
     let mut runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
     runtime.install_current();
@@ -150,7 +158,20 @@ fn navigate(step: Step) -> f64 {
             commands,
         );
         super::fit(&app);
-        talk(&app, HISTORY);
+        match step {
+            Step::Hover(depth) | Step::Drag(depth) => talk(&app, depth),
+            Step::DragBig => {
+                let para = "The parser handles **nested** lists and `code` spans, and it keeps every word in order across this long paragraph of an answer. ".repeat(6);
+                let text = vec![para; 60].join("\n\n");
+                for n in 0..6 {
+                    app.update(Msg::Intent(Intent::User(format!("Step {n}"))));
+                    app.update(Msg::Fact(Fact::Event(Event::Assistant {
+                        text: text.clone(),
+                    })));
+                }
+            }
+            Step::Scroll | Step::Settings | Step::Switch(_) => talk(&app, HISTORY),
+        }
         app.refresh();
         let mut host = Host::new(HostMode::Pixel);
         let tree = app.clone();
@@ -170,10 +191,18 @@ fn navigate(step: Step) -> f64 {
             },
             || {},
         );
+        let (scene_us, a11y_us) = (std::cell::Cell::new(0.0), std::cell::Cell::new(0.0));
         let mut act = |n: usize| {
             match step {
                 Step::Scroll => host.route(wheel(n)),
                 Step::Settings => app.settings_open.set(n % 2 == 0),
+                Step::Hover(_) => host.route(sigil::events::Event::pointer_move(over_text(n))),
+                Step::Drag(_) | Step::DragBig if n == 0 => {
+                    host.route(sigil::events::Event::pointer_down(over_text(n)))
+                }
+                Step::Drag(_) | Step::DragBig => {
+                    host.route(sigil::events::Event::pointer_move(over_text(n)))
+                }
                 Step::Switch(messages) => {
                     let want = landed.get() + 1;
                     let mut lines = vec![Msg::Intent(Intent::Reset)];
@@ -187,11 +216,27 @@ fn navigate(step: Step) -> f64 {
                 }
             }
             host.frame(VIEW, 1.0, FrameHooks::default());
+            if matches!(step, Step::Hover(_) | Step::Drag(_) | Step::DragBig) {
+                let mark = Instant::now();
+                drop(host.scene(VIEW));
+                scene_us.set(scene_us.get() + mark.elapsed().as_secs_f64() * 1e6);
+                let mark = Instant::now();
+                drop(host.accessibility_tree());
+                a11y_us.set(a11y_us.get() + mark.elapsed().as_secs_f64() * 1e6);
+            }
         };
         (0..MOVES_WARM).for_each(&mut act);
         let wall = Instant::now();
+        scene_us.set(0.0);
+        a11y_us.set(0.0);
         (MOVES_WARM..MOVES_WARM + MOVES).for_each(&mut act);
-        wall.elapsed().as_secs_f64() * 1e6 / MOVES as f64
+        println!(
+            "SPLIT scene {:.1} a11y {:.1}",
+            scene_us.get() / MOVES as f64,
+            a11y_us.get() / MOVES as f64
+        );
+        let spent = wall.elapsed().as_secs_f64() * 1e6 / MOVES as f64;
+        spent
     })
 }
 
@@ -216,6 +261,23 @@ fn bench_navigate_frames() {
             sigil::profile::dump(path).expect("trace");
             sigil::profile::disable();
         }
+        println!("RAW {cell} {side} us_frame {wall:.1}");
+    }
+}
+
+#[test]
+#[ignore = "bench: run alone with --ignored --exact"]
+fn bench_drag_frames() {
+    crate::desktop::host::window_cells();
+    let side = std::env::var("SUMMONR_BENCH_SIDE").unwrap_or_else(|_| "base".to_owned());
+    for (cell, step) in [
+        ("hover", Step::Hover(HISTORY)),
+        ("drag", Step::Drag(HISTORY)),
+        ("hover-long", Step::Hover(LONG_HISTORY)),
+        ("drag-long", Step::Drag(LONG_HISTORY)),
+        ("drag-big", Step::DragBig),
+    ] {
+        let wall = navigate(step);
         println!("RAW {cell} {side} us_frame {wall:.1}");
     }
 }

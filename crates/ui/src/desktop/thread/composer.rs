@@ -132,20 +132,6 @@ fn row(app: &App, editing: bool, menu: sigil::prelude::Signal<bool>) -> NodeBuil
                 .child(super::place::chip(app))
                 .child(approval(app.clone()))
                 .child(spacer())
-                .child({
-                    let ring = app.clone();
-                    container()
-                        .layout(
-                            LayoutStyle::flex_row()
-                                .shrink(0.0)
-                                .align_items(AlignItems::Center),
-                        )
-                        .children_reactive(move || {
-                            super::status::ring(&ring)
-                                .into_iter()
-                                .collect::<Vec<NodeBuilder>>()
-                        })
-                })
                 .child(super::model_menu::chip(app, menu))
                 .child(send(app.clone(), editing)),
         )

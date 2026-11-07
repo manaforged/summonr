@@ -35,12 +35,18 @@ fn the_composer_shows_how_full_the_context_is() {
         "{:?}",
         seen.controls
     );
+    assert!(
+        seen.controls
+            .iter()
+            .any(|(_, label, _)| label == "Cache hit 0%"),
+        "{:?}",
+        seen.controls
+    );
     let fresh = drive(|_| (), Vec::new(), |_| ());
     assert!(
-        !fresh
-            .controls
-            .iter()
-            .any(|(_, label, _)| label.starts_with("Context used"))
+        !fresh.controls.iter().any(
+            |(_, label, _)| label.starts_with("Context used") || label.starts_with("Cache hit")
+        )
     );
 }
 

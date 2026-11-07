@@ -4,13 +4,29 @@ use sigil::prelude::{Dimension, MouseButton, Position, Radius};
 
 use crate::chat::Target;
 
-pub(crate) const CONTEXT_USED: &str = "Context used";
+const CONTEXT_USED: &str = "Context used";
+const CACHE_HIT: &str = "Cache hit";
+const BAR: f32 = 64.0;
 const CARD: f32 = 240.0;
 const HIGH: u64 = 80;
 
-/// Spend and the latest notice under the composer.
+/// Spend, the latest notice, and the context and cache meters under the composer.
 pub(crate) fn meters(app: App) -> NodeBuilder {
-    let spend = app.model.get().spend();
+    let (spend, gauges) = {
+        let model = app.model.get();
+        let started = !model.usage.is_empty() || model.entries.asked();
+        let context = started.then(|| model.context_percent()).flatten();
+        let cache = started.then(|| model.cache_percent());
+        let context_card = app.context_open.get().then(|| model.context_facts());
+        let cache_card = app.cache_open.get().then(|| model.cache_facts());
+        (
+            model.spend(),
+            [
+                context.map(|percent| (Target::Context, percent, context_card)),
+                cache.map(|percent| (Target::Cache, percent, cache_card)),
+            ],
+        )
+    };
     let mut facts = container().layout(
         LayoutStyle::flex_row()
             .gap(L)
@@ -28,6 +44,8 @@ pub(crate) fn meters(app: App) -> NodeBuilder {
                 .fill_width()
                 .height(XL + XS)
                 .gap(L)
+                .padding_top(S)
+                .padding_right(L)
                 .align_items(AlignItems::Center),
         )
         .child(facts)
@@ -39,82 +57,62 @@ pub(crate) fn meters(app: App) -> NodeBuilder {
         };
         row = row.child(quiet(note.text).text_color(tone));
     }
+    for (target, percent, card) in gauges.into_iter().flatten() {
+        row = row.child(gauge(&app, target, percent, card));
+    }
     row
 }
 
-/// The context ring in the composer: how full the context window is, with its facts on click.
+/// One meter: a bar and its percent, with its facts on click.
 #[expect(clippy::cast_precision_loss, reason = "a percentage fits in f32")]
-pub(crate) fn ring(app: &App) -> Option<NodeBuilder> {
-    let (percent, card) = {
-        let model = app.model.get();
-        let started = !model.usage.is_empty() || model.entries.asked();
-        let percent = started.then(|| model.context_percent()).flatten()?;
-        let card = app.context_open.get().then(|| model.context_facts());
-        (percent, card)
+fn gauge(
+    app: &App,
+    target: Target,
+    percent: u64,
+    card: Option<Vec<(String, String)>>,
+) -> NodeBuilder {
+    let high = target == Target::Context && percent >= HIGH;
+    let (name, tone) = match target {
+        Target::Context if high => (CONTEXT_USED, sigil::prelude::Tone::Warn),
+        Target::Context => (CONTEXT_USED, sigil::prelude::Tone::Primary),
+        Target::Cache => (CACHE_HIT, sigil::prelude::Tone::Info),
     };
-    let fill = if percent >= HIGH {
-        Token::Warn9
+    let number = quiet(format!("{percent}%"));
+    let number = if high {
+        number.text_color(Token::Warn11)
     } else {
-        Token::Accent9
+        number
     };
-    let share = percent.min(100) as f32 / 100.0;
     let toggle = app.clone();
     let mut node = container()
         .layout(
             LayoutStyle::flex_row()
-                .width(RING + 2.0 * XS)
-                .height(super::super::style::LINE + XS)
-                .justify_content(sigil::prelude::JustifyContent::Center)
+                .gap(S)
                 .align_items(AlignItems::Center)
                 .position(Position::Relative)
                 .shrink(0.0),
         )
         .hittable(true)
-        .label(format!("{CONTEXT_USED} {percent}%"))
-        .child(arc(1.0, Token::BorderSubtle))
+        .label(format!("{name} {percent}%"))
         .child(
             container()
-                .layout(
-                    LayoutStyle::block()
-                        .position(Position::Absolute)
-                        .inset_left(XS)
-                        .inset_top((super::super::style::LINE + XS - RING) / 2.0),
-                )
-                .child(arc(share, fill)),
+                .layout(LayoutStyle::block().width(BAR).shrink(0.0))
+                .child(
+                    sigil::prelude::progress(sigil::prelude::signal(percent as f32), 100.0)
+                        .tone(tone),
+                ),
         )
+        .child(number)
         .pointer_down(move |event| {
             if event.button == Some(MouseButton::Left) {
-                toggle.toggle_meter(Target::Context);
+                toggle.toggle_meter(target.clone());
                 event.stop_propagation();
             }
         });
     if let Some(rows) = card {
         node = node.child(facts_card(rows, true));
     }
-    Some(node)
-}
-
-const RING: f32 = 16.0;
-const RING_PX: u32 = 16;
-const RING_WIDTH: f32 = 2.5;
-const RING_STEPS: usize = 48;
-
-fn arc(share: f32, color: Token) -> NodeBuilder {
-    let radius = (RING - RING_WIDTH) / 2.0;
-    let centre = RING / 2.0;
-    let steps = ((RING_STEPS as f32 * share).ceil() as usize).max(1);
-    let sweep = std::f32::consts::TAU * share;
-    let point = |step: usize| {
-        let angle = -std::f32::consts::FRAC_PI_2 + sweep * step as f32 / steps as f32;
-        (centre + radius * angle.cos(), centre + radius * angle.sin())
-    };
-    let (x, y) = point(0);
-    let mut pen = sigil::widgets::path(RING_PX, RING_PX).move_to(x, y);
-    for step in 1..=steps {
-        let (x, y) = point(step);
-        pen = pen.line_to(x, y);
-    }
-    pen.stroke(color, RING_WIDTH).fit().into()
+    sigil::widgets::tooltip(name).child(node).into()
 }
 
 fn facts_card(rows: Vec<(String, String)>, right: bool) -> NodeBuilder {

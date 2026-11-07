@@ -102,6 +102,10 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
         Verb::Gateway(words) => {
             in_cwd(&|cwd| summonr_agent::gateway::cli::run(words, cwd, &login::read_secret))
         }
+        Verb::Panel(words) => {
+            let cwd = std::env::current_dir()?;
+            summonr_agent::panel::cli::run(words, &cwd, args.trust).await
+        }
         Verb::Tool(tool) => tool::run(tool).await,
         Verb::Acp => acp(args).await,
         Verb::Login => done(login(args).await),

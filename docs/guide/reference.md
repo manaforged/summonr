@@ -299,6 +299,11 @@ cache_ttl = "5m"
 | `agent_line_max_bytes` | `268435456` | Largest line read from Claude Code; a longer line fails the turn instead of growing memory without bound. |
 | `mcp_stderr_tail_bytes` | `2048` | MCP stderr kept for diagnostics. |
 | `hook_output_max_bytes` | `65536` | Most bytes of a hook's stdout and stderr that summonr keeps. |
+| `panels_max` | `32` | Most custom panels listed from one directory, and shown |
+| `panel_output_bytes` | `1048576` | Most bytes a panel's file or command output may hold |
+| `panel_timeout_secs` | `30` | Seconds before a panel's command is stopped |
+| `panel_every_min_secs` | `1` | Least wait between runs of an open panel |
+| `panel_poll_secs` | `2` | Seconds between looks for added or removed panel files |
 | `gateway_stderr_tail_lines` | `20` | Last stderr lines of a gateway run kept for its failure report. |
 | `mcp_stderr_settle_secs` | `1` | Most time spent draining MCP stderr after stdout closes. |
 | `mcp_defer_bytes` | `8192` | Tool schemas above this size go behind one `mcp` tool. |

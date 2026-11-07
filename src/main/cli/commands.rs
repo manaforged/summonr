@@ -39,6 +39,7 @@ pub(super) const SECTIONS: [(&str, &[&str]); 4] = [
             "workflow list",
             "module list",
             "mcp",
+            "panel",
             "plugin install",
             "plugin list",
             "plugin remove",
@@ -52,7 +53,7 @@ pub(super) const SECTIONS: [(&str, &[&str]); 4] = [
     ),
 ];
 
-pub(super) const COMMANDS: [Command; 18] = [
+pub(super) const COMMANDS: [Command; 19] = [
     Command {
         name: "session",
         most: None,
@@ -124,6 +125,12 @@ pub(super) const COMMANDS: [Command; 18] = [
         most: None,
         run: |args, input| verb(args, Verb::Cron(input.by_ref().collect())),
         help: "cron add NAME ...           run a prompt or goal on a schedule; cron --help",
+    },
+    Command {
+        name: "panel",
+        most: None,
+        run: |args, input| verb(args, Verb::Panel(input.by_ref().collect())),
+        help: "panel list|check NAME       list custom panels, or run one and validate its output",
     },
     Command {
         name: "gateway",

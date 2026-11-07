@@ -32,6 +32,7 @@ pub use mcp::{
 pub mod browser;
 pub mod memory;
 pub mod modules;
+pub mod panel;
 pub mod plugins;
 pub mod policy;
 pub mod process;

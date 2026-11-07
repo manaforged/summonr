@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use sigil::prelude::Space;
 use sigil::prelude::{ControlSize, LayoutStyle, NodeBuilder, Token, Widget, button, container};
 
 use super::{Agent, App, Model, Speed, canvas, entry, todos};
@@ -80,7 +81,7 @@ pub(crate) fn sheet(app: App) -> NodeBuilder {
     )
     .child(container().children_reactive(move || {
         let (current, task_count, agent_count) = tabs_view.get();
-        let mut tabs = container().layout(LayoutStyle::flex_row().fill_width().gap(8.0));
+        let mut tabs = container().layout(LayoutStyle::flex_row().fill_width().gap(Space::Sm));
         for (tab, label) in [
             (
                 StatusView::Tasks,

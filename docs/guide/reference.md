@@ -125,7 +125,7 @@ A goal with no `.summonr/check.toml` asks the model to write a contract to `.sum
 | `--effort LEVEL` | Set the reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. See Reasoning effort. |
 | `-w`, `--workflow NAME` | Seat each step from `[workflows.NAME]`. |
 | `--skills NAME` | Offer the model only the skills in `[skills.sets.NAME]`, or under skill folders such as `acme,personal/review`, and record the choice in the session; `none` offers no skills. |
-| `--json` | Print JSON: one event per line with `-p`, `--goal`, and `--steps`, and JSON output from `session diff`, `worktree list`, `mcp`, and `classify`. |
+| `--json` | Print JSON: one event per line with `-p`, `--goal`, and `--steps`, and JSON output from `session diff`, `session children`, `worktree list`, `mcp`, and `classify`. |
 | `--session ID` | Resume a session by id, short id, prefix, or name. |
 | `--name TEXT` | Name this session. |
 | `--goal TEXT` | Work toward TEXT until the configured check, or the contract the model writes, passes. |
@@ -156,6 +156,7 @@ git diff | summonr kimi -p
 | `session export [ID\|NAME] [--digest\|--json]` | Print Markdown, a condensed digest, or complete journal/mail audit envelopes as JSONL with a counted prefix trailer. |
 | `session profile [ID\|NAME]` | Time and tokens of one session. `--all` totals every session, and `--last N` only the newest N. |
 | `session diff [PATH]` | Changes against the base. Takes `--stat`, `--json`, and `--turn N\|last\|session`. |
+| `session children [ID\|NAME]` | The children a lead session started, read from its journal. `--json` prints them as an array of child records. |
 | `worktree list\|prune [--json]` | List summonr worktrees, or remove the ones that are gone. |
 | `endpoint list` | List the endpoints that are set up, with each model, host, key source, and cached model count, without contacting a provider. `--all` adds the rest with how to set each up, and `--check` asks each endpoint for its models. |
 | `login NAME` | Sign in to NAME or store its key. Takes `--key`, `--model NAME`, and `--default`. |
@@ -363,6 +364,8 @@ cache_ttl = "5m"
 | `gateway_head_secs` | `2` | Time a webhook client has to send its headers. |
 | `gateway_read_secs` | `10` | Time a webhook request has to finish; a slower one answers `408`. |
 | `gateway_stop_secs` | `5` | After `/stop` in a chat, wait this long before the remaining commands are killed. |
+| `port_base` | `41000` | First port of the per-workspace port blocks. |
+| `port_block` | `10` | Ports in each workspace's block. |
 
 ### Environment variables
 
@@ -539,6 +542,12 @@ judge = "zai"
 ```
 
 In the window, Settings → Workflows lists the saved workflows, marks the default, makes another the default, sets each role's endpoint and model, and removes one. New workflow, pinned to the sidebar by default and in the `cmd+k` list, opens that page with a form for a new one; right-click the sidebar's top rows to pin or unpin actions.
+
+## Workspaces
+
+A workspace can name three shell commands: `setup`, `run`, and `archive`. summonr reads them from `scripts.toml` in the primary checkout's `.summonr` folder, else from `[scripts]` in `.conductor/settings.local.toml` over `.conductor/settings.toml`, else from `scripts` in `conductor.json`. Each workspace path holds a block of `port_block` ports from `port_base`, recorded in `ports.json` in the summonr home. A script sees `SUMMONR_PORT` (the first port of the block), `SUMMONR_WORKSPACE_NAME`, `SUMMONR_WORKSPACE_PATH`, `SUMMONR_ROOT_PATH`, and `SUMMONR_DEFAULT_BRANCH`, each also set as `CONDUCTOR_*`. `--worktree` runs `setup` in the new worktree; a failed setup exits 1 and names the script and its exit code.
+
+In the window, `cmd+n` starts a new topic. The first topic in a repository works in its checkout. While another topic is open in that repository, each new one gets its own branch (`summonr/<id>`) and git worktree, and `setup` runs in a Setup terminal tab once the worktree exists. Run setup and Run in the `cmd+k` list open a terminal tab named Setup or Run. Open PR (`cmd+shift+p`) moves work off the default branch to `summonr/<slug>`, commits, pushes, and opens or finds the pull request; it needs a GitHub remote and a signed-in `gh`. Merge merges the open pull request; a merged pull request runs `archive` and removes a clean worktree.
 
 ## Interface
 

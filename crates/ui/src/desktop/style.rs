@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    Elevation, LayoutStyle, NodeBuilder, Paint, Radius, Rgba8, TextBuilder, TextContent, Token,
-    Widget, container,
+    Elevation, LayoutStyle, NodeBuilder, Paint, Radius, Rgba8, Space, TextBuilder, TextContent,
+    Token, Widget, container,
 };
 
 use summonr_agent::hub::Status;
@@ -9,20 +9,20 @@ use summonr_agent::prefs::Tint;
 use crate::canvas::rgb;
 
 /// Spacing step: 4 points.
-pub(super) const XS: f32 = 4.0;
+pub(super) const XS: Space = Space::Xs;
 /// Spacing step: 8 points.
-pub(super) const S: f32 = 8.0;
+pub(super) const S: Space = Space::Sm;
 /// Spacing step: 12 points.
-pub(super) const M: f32 = 12.0;
+pub(super) const M: Space = Space::Md;
 /// Spacing step: 16 points.
-pub(super) const L: f32 = 16.0;
+pub(super) const L: Space = Space::Lg;
 /// Spacing step: 24 points.
-pub(super) const XL: f32 = 24.0;
+pub(super) const XL: Space = Space::Xl;
 
 /// Inset of every mark from the reading column's edge: text, icons, bubbles, send.
-pub(super) const GUTTER: f32 = L;
+pub(super) const GUTTER: f32 = 16.0;
 /// The track a scroll view keeps at its right edge.
-pub(super) const SCROLLBAR: f32 = S;
+pub(super) const SCROLLBAR: Space = S;
 /// The space the editor keeps before its first glyph.
 pub(super) const CARET: f32 = 1.0;
 
@@ -180,7 +180,7 @@ impl Text {
 pub(super) fn text(role: Text, content: impl Into<TextContent>) -> TextBuilder {
     let (size, weight, color) = role.spec();
     sigil::prelude::text(content)
-        .font_size(size)
+        .font_size(size, "the desktop's text role")
         .font_weight(weight)
         .text_color(color)
 }

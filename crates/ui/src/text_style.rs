@@ -43,7 +43,9 @@ impl TextStyle {
     }
 
     pub(crate) fn on<P: Paint>(self, node: P) -> P {
-        let node = node.font_size(self.size).text_color(self.color);
+        let node = node
+            .font_size(self.size, "the text style's own size")
+            .text_color(self.color);
         let node = if self.mono {
             node.font_family(FontFamily::Mono)
         } else {

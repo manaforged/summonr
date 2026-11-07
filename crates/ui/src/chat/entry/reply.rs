@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Token, container, markdown, text,
 };
@@ -73,7 +74,7 @@ pub(super) fn body(source: Signal<String>, app: &App) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
-                .gap(8.0)
+                .gap(Space::Sm)
                 .min_size(0.0, 0.0),
         )
         .children_keyed(move || {
@@ -127,7 +128,7 @@ fn stat_node(rows: &[Stat], summary: Option<&str>) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
-                .gap(0.0)
+                .gap(Space::None)
                 .min_size(0.0, 0.0),
         )
         .bg(Token::Field)
@@ -145,8 +146,8 @@ fn stat_node(rows: &[Stat], summary: Option<&str>) -> NodeBuilder {
                 .layout(
                     LayoutStyle::block()
                         .fill_width()
-                        .padding_x(8.0)
-                        .padding_bottom(6.0)
+                        .padding_x(Space::Sm)
+                        .padding_bottom(Space::raw(6.0, "between the small and medium steps"))
                         .min_size(0.0, 0.0),
                 ),
         );
@@ -159,10 +160,10 @@ fn stat_head(row: &Stat) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .padding_x(8.0)
+                .padding_x(Space::Sm)
                 .min_size(0.0, 22.0)
                 .align_items(AlignItems::Center)
-                .gap(8.0),
+                .gap(Space::Sm),
         )
         .child(
             TextStyle::xs(Token::Gray12)

@@ -25,6 +25,7 @@ pub(super) mod quit;
 mod restore;
 mod settings;
 mod shelf;
+mod ship;
 mod side;
 mod sidebar;
 mod sky;

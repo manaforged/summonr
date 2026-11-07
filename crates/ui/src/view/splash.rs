@@ -2,6 +2,7 @@ use super::*;
 use crate::suggest;
 use sigil::prelude::Paint;
 use sigil::prelude::Rgba8;
+use sigil::prelude::Space;
 use sigil::prelude::Widget;
 use sigil::reactive::{derived, untrack};
 use sigil::style::ThemeValue;
@@ -76,8 +77,8 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
                 .layout(
                     LayoutStyle::flex_column()
                         .shrink(0.0)
-                        .padding_x(cell.w * 2.0)
-                        .padding_bottom(cell.h * 2.0)
+                        .padding_x(Space::raw(cell.w * 2.0, "two terminal cells"))
+                        .padding_bottom(Space::raw(cell.h * 2.0, "two terminal rows"))
                         .overflow(sigil::prelude::Overflow::Hidden),
                 )
                 .bg(tint)
@@ -104,7 +105,7 @@ fn blank(width: u16, rows: u16) -> NodeBuilder {
             LayoutStyle::flex_column()
                 .position(Position::Absolute)
                 .inset(0.0)
-                .gap(0.0),
+                .gap(Space::None),
         ),
         |column, _| {
             column.child(

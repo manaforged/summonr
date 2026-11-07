@@ -6,6 +6,10 @@ pub enum Action {
     NewTerminal,
     NewWorkflow,
     ClaudeCode,
+    RunSetup,
+    Run,
+    OpenPr,
+    Merge,
     Split,
     ClosePane,
     Needing,
@@ -27,12 +31,16 @@ pub enum Action {
     Shortcuts,
 }
 
-const NAMES: [(Action, &str); 24] = [
+const NAMES: [(Action, &str); 28] = [
     (Action::NewAgent, "new_agent"),
     (Action::NewBranch, "new_branch"),
     (Action::NewTerminal, "new_terminal"),
     (Action::NewWorkflow, "new_workflow"),
     (Action::ClaudeCode, "claude_code"),
+    (Action::RunSetup, "run_setup"),
+    (Action::Run, "run"),
+    (Action::OpenPr, "open_pr"),
+    (Action::Merge, "merge"),
     (Action::Split, "split"),
     (Action::ClosePane, "close_pane"),
     (Action::Needing, "needing"),

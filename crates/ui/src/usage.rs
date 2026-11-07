@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{
     LayoutStyle, NodeBuilder, Signal, container, request_focus, scroll, segmented, signal, spacer,
 };
@@ -90,7 +91,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let page = container()
         .focusable(true)
         .on_added(|_, id| request_focus(id))
-        .layout(LayoutStyle::flex_column().fill_width().gap(16.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::Lg))
         .children_reactive(move || page(&paint, width - INSET * 2.0));
     let hints = Hints::new()
         .key(Key::UpDown, "range")
@@ -147,7 +148,7 @@ fn controls(usage: Panel, local: bool, metric: Metric) -> NodeBuilder {
         "all workspaces"
     };
     container()
-        .layout(LayoutStyle::flex_row().fill_width().gap(16.0))
+        .layout(LayoutStyle::flex_row().fill_width().gap(Space::Lg))
         .child(colored(scope, palette().dim))
         .child(spacer())
         .child(

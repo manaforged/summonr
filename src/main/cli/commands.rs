@@ -20,6 +20,7 @@ pub(super) const SECTIONS: [(&str, &[&str]); 4] = [
             "session export",
             "session profile",
             "session diff",
+            "session children",
             "worktree list",
         ],
     ),
@@ -173,7 +174,7 @@ pub(super) const COMMANDS: [Command; 19] = [
     },
 ];
 
-pub(super) const SUBCOMMANDS: [Command; 16] = [
+pub(super) const SUBCOMMANDS: [Command; 17] = [
     Command {
         name: "session list",
         most: Some(0),
@@ -209,6 +210,12 @@ pub(super) const SUBCOMMANDS: [Command; 16] = [
         most: Some(1),
         run: |args, _| verb(args, Verb::Diff),
         help: "session diff [PATH]         changes against the base (--stat, --json, --turn N|last, --child ID)",
+    },
+    Command {
+        name: "session children",
+        most: Some(1),
+        run: |args, _| verb(args, Verb::Children),
+        help: "session children [ID|NAME]  the children a lead session started (--json)",
     },
     Command {
         name: "endpoint list",

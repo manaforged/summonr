@@ -4,6 +4,7 @@ use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
+use sigil::prelude::Space;
 use sigil::prelude::Widget;
 use sigil::prelude::container;
 
@@ -115,7 +116,7 @@ pub(crate) fn widget(app: App, width: usize) -> NodeBuilder {
                 .layout(
                     LayoutStyle::flex_column()
                         .width(popup_width as f32 * canvas::cell().w)
-                        .gap(0.0),
+                        .gap(Space::None),
                 )
                 .child(group(popup.title));
             for row in popup.rows {
@@ -134,7 +135,11 @@ pub(crate) fn widget(app: App, width: usize) -> NodeBuilder {
             }
             vec![
                 container()
-                    .layout(LayoutStyle::flex_column().padding_x(8.0).gap(0.0))
+                    .layout(
+                        LayoutStyle::flex_column()
+                            .padding_x(Space::Sm)
+                            .gap(Space::None),
+                    )
                     .border_w(canvas::frame_border())
                     .border_color(sigil::prelude::Token::Gray6)
                     .bg(canvas::palette().tool_bg)

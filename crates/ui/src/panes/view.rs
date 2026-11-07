@@ -1,6 +1,7 @@
 use sigil::prelude::Dimension;
 use sigil::prelude::ObjectFit;
 use sigil::prelude::Overflow;
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, LayoutStyle, NodeBuilder, Paint, button, container, image, node, text_edit,
 };
@@ -23,7 +24,7 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(8.0)
+                .gap(Space::Sm)
                 .align_items(AlignItems::Center),
         )
         .child(
@@ -37,7 +38,7 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 .child(
                     sigil::prelude::text(view.path.clone())
                         .nowrap()
-                        .font_size(14.0)
+                        .font_size(14.0, "14 px text that keeps its own line height and weight")
                         .font_weight(500)
                         .text_color(sigil::prelude::Token::Gray12),
                 ),
@@ -66,7 +67,10 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                         .min_size(0.0, 0.0),
                 )
                 .font_family(sigil::prelude::FontFamily::Mono)
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .bg(sigil::prelude::Token::Gray1)
         }));
     }
@@ -77,7 +81,11 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
             .any(|(start, count)| number >= *start && number < start + count)
     };
     let mut body = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(1.0))
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .gap(Space::raw(1.0, "a one pixel row separation")),
+        )
         .rounded(sigil::prelude::Radius::Md)
         .bg(sigil::prelude::Token::Gray1);
     let scroll = app.pane_list(Pane::View).cursor.get();
@@ -86,9 +94,9 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
         let mut row = container().layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .padding_x(8.0)
-                .padding_y(1.0)
-                .gap(10.0),
+                .padding_x(Space::Sm)
+                .padding_y(Space::raw(1.0, "one pixel above and below a row"))
+                .gap(Space::raw(10.0, "between the small and medium steps")),
         );
         if added(number) {
             row = row.bg(sigil::prelude::Token::Success3);
@@ -97,7 +105,10 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
             row.child(
                 sigil::prelude::text(number.to_string())
                     .nowrap()
-                    .font_size(12.0)
+                    .font_size(
+                        12.0,
+                        "12 px chrome text that keeps its own line height and weight",
+                    )
                     .text_color(sigil::prelude::Token::Gray11),
             )
             .child(
@@ -105,7 +116,10 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                     .nowrap()
                     .ellipsize()
                     .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))
-                    .font_size(12.0)
+                    .font_size(
+                        12.0,
+                        "12 px chrome text that keeps its own line height and weight",
+                    )
                     .font_family(sigil::prelude::FontFamily::Mono)
                     .text_color(sigil::prelude::Token::Gray12),
             ),

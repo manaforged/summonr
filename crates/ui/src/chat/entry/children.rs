@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Signal, Token, container};
 
 use super::super::{Agent, App, Call};
@@ -45,7 +46,7 @@ fn subagent_line(kid: &Agent, roots: &[String], ticks: Signal<u64>) -> NodeBuild
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(8.0)
+                .gap(Space::Sm)
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
@@ -79,7 +80,7 @@ pub(super) fn starting_card(ticks: Signal<u64>) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(8.0)
+                .gap(Space::Sm)
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
@@ -123,7 +124,7 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
         let tag = summonr_agent::child::tag(&record.id.to_string());
         kept_of(record).map(|kept| (tag, kept))
     });
-    let mut card = container().layout(LayoutStyle::flex_column().fill_width().gap(0.0));
+    let mut card = container().layout(LayoutStyle::flex_column().fill_width().gap(Space::None));
     for kid in kids {
         card = card.child(subagent_line(kid, &kid.roots(&app.roots()), app.ticks));
         if let Some((_, kept)) = kept.as_ref().filter(|(tag, _)| *tag == kid.id) {
@@ -162,7 +163,7 @@ pub(super) fn receipt_card(
     roots.extend(app.roots().iter().cloned());
     let note = format!("{} · {word}", record.access.name());
     let card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
         .child(header(
             &state,
             call_line(

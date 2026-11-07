@@ -1,4 +1,4 @@
-use sigil::prelude::{AlignItems, NodeBuilder, hint_bar};
+use sigil::prelude::{AlignItems, NodeBuilder, Space, hint_bar};
 
 use crate::canvas;
 use summonr_agent::prefs::{Hotkey, Hotkeys};
@@ -103,9 +103,12 @@ impl Hints {
     #[must_use]
     pub(crate) fn bar(&self, keys: &Hotkeys) -> NodeBuilder {
         hint_bar(self.text(keys), self.right.clone()).layout(
-            row(16.0)
+            row(Space::Lg)
                 .align_items(AlignItems::Center)
-                .gap(canvas::cell().w * 2.0),
+                .gap(Space::raw(
+                    canvas::cell().w * 2.0,
+                    "two terminal cells between hints",
+                )),
         )
     }
 }

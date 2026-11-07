@@ -247,7 +247,10 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                     container().child(
                         sigil::prelude::text(warning)
                             .nowrap()
-                            .font_size(12.0)
+                            .font_size(
+                                12.0,
+                                "12 px chrome text that keeps its own line height and weight",
+                            )
                             .text_color(sigil::prelude::Token::Error11),
                     ),
                 ]

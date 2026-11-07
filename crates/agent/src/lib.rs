@@ -11,6 +11,7 @@ pub mod credentials;
 pub mod diff;
 pub mod display;
 pub mod durable;
+pub mod forge;
 
 pub mod classify;
 pub mod endpoint;
@@ -42,6 +43,7 @@ pub mod recent;
 mod rpc;
 pub mod runtime;
 mod scout;
+pub mod scripts;
 pub mod secret;
 pub mod session;
 pub mod skills;

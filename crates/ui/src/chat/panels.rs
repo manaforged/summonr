@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{LayoutStyle, NodeBuilder, Tone, container, notice_band};
 
 use crate::ui::{Action, ActionKind, Hints, Key, Prompt};
@@ -87,7 +88,11 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
 
 fn above(child: NodeBuilder) -> NodeBuilder {
     container()
-        .layout(LayoutStyle::flex_column().fill_width().padding_top(8.0))
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .padding_top(Space::Sm),
+        )
         .child(child)
 }
 

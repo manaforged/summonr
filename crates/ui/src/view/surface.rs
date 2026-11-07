@@ -2,6 +2,7 @@ use super::*;
 use crate::ui::input_keys;
 use sigil::prelude::Dimension;
 use sigil::prelude::Paint;
+use sigil::prelude::Space;
 use sigil::prelude::Widget;
 use sigil::reactive::untrack;
 use sigil::widgets::TextEditBuilder;
@@ -16,7 +17,12 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     };
     let surface = chat_surface(app.clone(), chat_cols);
     let row = container()
-        .layout(LayoutStyle::flex_row().fill_width().fill_height().gap(0.0))
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .fill_height()
+                .gap(Space::None),
+        )
         .bg(canvas::palette().base)
         .child(surface);
     match layout.secondary {

@@ -7,6 +7,7 @@ use super::settings::Page;
 use super::{App, Pane};
 use summonr_agent::hub::{Open, Status};
 use summonr_agent::prefs::Action;
+use summonr_agent::scripts::Script;
 
 use super::style::DIALOG;
 
@@ -176,7 +177,7 @@ pub(super) fn unpin(app: &App, action: Action) {
 
 type Row = (Action, &'static str, &'static str, Icon);
 
-const ROWS: [Row; 24] = [
+const ROWS: [Row; 28] = [
     (Action::NewAgent, "New agent", "⌘N", Icon::Plus),
     (
         Action::NewBranch,
@@ -192,6 +193,15 @@ const ROWS: [Row; 24] = [
     ),
     (Action::NewWorkflow, "New workflow", "", Icon::Layers),
     (Action::ClaudeCode, "Claude Code terminal", "", Icon::Code),
+    (
+        Action::RunSetup,
+        super::terminal::RUN_SETUP,
+        "",
+        Icon::Terminal,
+    ),
+    (Action::Run, super::terminal::RUN, "", Icon::Play),
+    (Action::OpenPr, "Open PR", "⌘⇧P", Icon::GitPullRequest),
+    (Action::Merge, "Merge", "", Icon::GitBranch),
     (Action::Split, "Split", "⌘D", Icon::PanelLeft),
     (Action::ClosePane, "Close pane", "⌘W", Icon::CircleX),
     (Action::Needing, "Next agent needing you", "⌘⌥A", Icon::Bell),
@@ -265,6 +275,10 @@ pub(super) fn run(app: &App, action: Action) {
             super::terminal::CLAUDE,
             Some(super::terminal::CLAUDE_COMMAND),
         ),
+        Action::RunSetup => super::terminal::run_script(&pane, Script::Setup, true),
+        Action::Run => super::terminal::run_script(&pane, Script::Run, true),
+        Action::OpenPr => super::ship::open(&pane),
+        Action::Merge => super::ship::merge(&pane),
         Action::Split => super::split::act(Split::Open),
         Action::ClosePane => super::split::act(Split::Close),
         Action::Needing => super::jump(app, crate::view::keys::bindings::Jump::Needing),

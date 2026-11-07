@@ -17,22 +17,20 @@ impl Hub {
         None
     }
 
-    /// Opens a folder at its repository's checkout, or in a worktree while an agent runs there.
+    /// Opens a new topic in its repository's checkout, or on its own worktree when another topic is in that repository.
     pub(super) fn isolated(&self, open: Open) -> Open {
         let Open::Folder(folder) = open else {
             return open;
         };
-        let checkout = crate::worktree::checkout_of(&folder)
-            .filter(|checkout| checkout.is_dir())
-            .unwrap_or(folder);
-        let running = self.sessions.values().any(|session| {
-            session.workspace == checkout
-                && matches!(session.status, Status::Working | Status::NeedsYou)
-        });
-        if running && crate::worktree::in_git(&checkout) {
-            Open::Worktree(checkout)
+        let repo = checkout(&folder);
+        let taken = self
+            .sessions
+            .values()
+            .any(|session| session.title.is_some() && checkout(&session.workspace) == repo);
+        if taken && crate::worktree::in_git(&repo) {
+            Open::Worktree(repo)
         } else {
-            Open::Folder(checkout)
+            Open::Folder(repo)
         }
     }
 
@@ -180,6 +178,12 @@ impl Hub {
             drop(pane.ui.send(Msg::Fact(Fact::Failed(text))));
         }
     }
+}
+
+fn checkout(folder: &std::path::Path) -> std::path::PathBuf {
+    crate::worktree::checkout_of(folder)
+        .filter(|checkout| checkout.is_dir())
+        .unwrap_or_else(|| folder.to_path_buf())
 }
 
 /// The friend a reopened chat recorded.

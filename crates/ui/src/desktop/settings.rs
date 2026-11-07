@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Signal, Widget, container, icon,
+    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Signal, Space, Widget, container, icon,
     scroll, signal,
 };
 use sigil::widgets::{ListRowSlots, list_row};
@@ -223,7 +223,7 @@ fn nav(app: &App, current: Signal<Page>) -> NodeBuilder {
                 .fill_height()
                 .shrink(0.0)
                 .padding_x(S)
-                .padding_top(super::TITLE_BAR)
+                .padding_top(Space::raw(super::TITLE_BAR, "clears the title bar"))
                 .gap(L),
         )
         .bg(RECESSED)

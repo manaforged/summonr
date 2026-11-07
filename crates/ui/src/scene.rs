@@ -13,6 +13,7 @@ use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
 use sigil::prelude::Position;
 use sigil::prelude::Rgba8;
+use sigil::prelude::Space;
 use sigil::prelude::Widget;
 use sigil::prelude::container;
 
@@ -250,7 +251,7 @@ fn fill(style: LayoutStyle) -> LayoutStyle {
         .inset(0.0)
         .fill_width()
         .fill_height()
-        .gap(0.0)
+        .gap(Space::None)
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::TextBuilder;
 use sigil::prelude::{
     AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Token,
@@ -90,7 +91,7 @@ pub(super) fn call_line(verb: &str, arg: &str, detail: Detail, strong: bool) -> 
         .layout(
             LayoutStyle::flex_row()
                 .grow(1.0)
-                .gap(8.0)
+                .gap(Space::Sm)
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
@@ -114,7 +115,7 @@ pub(super) fn header(state: &ToolState, words: NodeBuilder) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(8.0)
+                .gap(Space::Sm)
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
@@ -213,7 +214,7 @@ pub(super) fn tool_card(
         .join("\n");
     let detail = detail(name, call, &output);
     let card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
         .pointer_up(flip(app, index, at))
         .child(header(&call.state, call_line(verb, arg, detail, true)));
     match (!hidden)
@@ -271,7 +272,7 @@ fn group_row(
         branch(at == 0, call_line(verb, arg, detail, false)).pointer_up(flip(app, index, at));
     let expanded = call.expanded || tools == ToolOutput::Full;
     let column = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
         .child(line);
     match expanded
         .then(|| call_output(name, call, &output, true, layout, app))
@@ -292,7 +293,7 @@ pub(super) fn group_card(
 ) -> NodeBuilder {
     let (title, counts) = group_title(name, calls);
     let mut card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
         .child(header(
             &group_state(calls),
             call_line(

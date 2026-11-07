@@ -1,5 +1,4 @@
 use super::{App, Model, composer_hint, suggest};
-use crate::canvas::GUTTER;
 use sigil::prelude::AlignItems;
 use sigil::prelude::IntoNode;
 use sigil::prelude::LayoutStyle;
@@ -7,6 +6,7 @@ use sigil::prelude::NodeBuilder;
 use sigil::prelude::Overflow;
 use sigil::prelude::Paint;
 use sigil::prelude::Position;
+use sigil::prelude::Space;
 use sigil::prelude::Tone;
 use sigil::prelude::container;
 use sigil::prelude::divider_horizontal;
@@ -43,12 +43,15 @@ pub(in crate::chat) fn widget<E: IntoNode + 'static>(
                         .fill_width()
                         .min_size(0.0, 0.0)
                         .align_items(AlignItems::Start)
-                        .gap(8.0),
+                        .gap(Space::Sm),
                 )
                 .child(
                     sigil::prelude::text("❯")
                         .nowrap()
-                        .font_size(12.0)
+                        .font_size(
+                            12.0,
+                            "12 px chrome text that keeps its own line height and weight",
+                        )
                         .text_color(sigil::prelude::Token::Gray12),
                 )
                 .child(
@@ -71,9 +74,9 @@ pub(in crate::chat) fn widget<E: IntoNode + 'static>(
                 .fill_width()
                 .shrink(0.0)
                 .min_size(0.0, 0.0)
-                .padding_top(8.0)
-                .padding_x(GUTTER - 8.0)
-                .gap(0.0),
+                .padding_top(Space::Sm)
+                .padding_x(Space::Sm)
+                .gap(Space::None),
         )
         .child(suggest::widget(app.clone(), width))
         .child(crate::effort::strip(app.clone()))
@@ -83,8 +86,8 @@ pub(in crate::chat) fn widget<E: IntoNode + 'static>(
                     LayoutStyle::flex_column()
                         .fill_width()
                         .min_size(0.0, 0.0)
-                        .padding_x(8.0)
-                        .gap(0.0),
+                        .padding_x(Space::Sm)
+                        .gap(Space::None),
                 )
                 .bg(sigil::prelude::Token::Surface)
                 .child(header_row(app.clone()))
@@ -125,7 +128,10 @@ fn pending_line(line: String) -> NodeBuilder {
     container().child(
         sigil::prelude::text(line)
             .nowrap()
-            .font_size(12.0)
+            .font_size(
+                12.0,
+                "12 px chrome text that keeps its own line height and weight",
+            )
             .text_color(sigil::prelude::Token::Gray11),
     )
 }
@@ -198,7 +204,7 @@ fn header_row(app: App) -> NodeBuilder {
                 .fill_width()
                 .shrink(0.0)
                 .align_items(AlignItems::Center)
-                .gap(8.0),
+                .gap(Space::Sm),
         )
         .children_reactive(move || {
             let (mode, model) = labels.get();
@@ -241,7 +247,7 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
                 .fill_width()
                 .shrink(0.0)
                 .align_items(AlignItems::Center)
-                .gap(0.0),
+                .gap(Space::None),
         )
         .children_reactive(move || {
             let text = hint.get();
@@ -255,7 +261,10 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
                 node(
                     sigil::prelude::text(text)
                         .nowrap()
-                        .font_size(12.0)
+                        .font_size(
+                            12.0,
+                            "12 px chrome text that keeps its own line height and weight",
+                        )
                         .text_color(sigil::prelude::Token::Gray11),
                 ),
                 node(rule()),
@@ -272,7 +281,10 @@ fn mode_label(mode: ModeText) -> NodeBuilder {
     ][usize::from(class).min(2)];
     let title = sigil::prelude::text(text)
         .nowrap()
-        .font_size(12.0)
+        .font_size(
+            12.0,
+            "12 px chrome text that keeps its own line height and weight",
+        )
         .text_color(tone);
     container()
         .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0))
@@ -286,7 +298,10 @@ fn model_label(model: String) -> NodeBuilder {
             sigil::prelude::text(model)
                 .nowrap()
                 .ellipsize()
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Gray12),
         )
 }

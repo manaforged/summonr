@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{
     LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, container, markdown_inline,
 };
@@ -42,7 +43,7 @@ pub(super) fn collapsible(
         Visibility::Off => caption(format!("▸ {kind} · hidden")).pointer_down(press),
         Visibility::Collapsed => folded(body, kind, reasoning).pointer_down(press),
         Visibility::Expanded => container()
-            .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+            .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
             .child(
                 caption(if live {
                     "✻ thinking…".to_string()
@@ -91,7 +92,7 @@ impl IntoNode for Line {
 
 fn prose(body: Signal<String>, text_style: TextStyle) -> NodeBuilder {
     container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
         .children_keyed(move || {
             body.with(|body| {
                 body.split('\n')
@@ -111,7 +112,10 @@ fn caption(text: impl Into<sigil::prelude::TextContent>) -> NodeBuilder {
     wrap(
         sigil::prelude::text(text)
             .nowrap()
-            .font_size(12.0)
+            .font_size(
+                12.0,
+                "12 px chrome text that keeps its own line height and weight",
+            )
             .font_italic(true)
             .text_color(sigil::prelude::Token::Gray11),
     )

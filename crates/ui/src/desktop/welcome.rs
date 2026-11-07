@@ -3,13 +3,13 @@ use std::rc::Rc;
 
 use sigil::app::dialog::{FileDialog, Picked};
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Position, Radius, Signal, Tone,
+    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Position, Radius, Signal, Space, Tone,
     Widget, button, column, container, derived, effect, notice_band, signal,
 };
 
 use super::style::{CANVAS, L, M, OUTLINE, RAISED, S, Text, XL};
 
-pub(super) const GAP: f32 = M;
+pub(super) const GAP: Space = M;
 use crate::theme::Palette;
 
 mod recent;

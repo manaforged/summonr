@@ -97,6 +97,7 @@ fn the_sidebar_toggle_counts_the_agents_that_need_you() {
         workspace: "/work".into(),
         status,
         active: false,
+        parent: None,
     };
     let seen = drive(
         move |app| {
@@ -119,6 +120,7 @@ fn one_working(app: &super::super::App) {
         workspace: "/work".into(),
         status: Status::Working,
         active: true,
+        parent: None,
     }])));
 }
 

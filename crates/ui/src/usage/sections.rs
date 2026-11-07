@@ -1,4 +1,5 @@
 use sigil::prelude::Paint;
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, FlexWrap, LayoutStyle, NodeBuilder, Rgba8, Tone, container, heatmap, panel,
     progress, signal, sparkline,
@@ -57,7 +58,7 @@ fn row(children: Vec<NodeBuilder>) -> NodeBuilder {
     children.into_iter().fold(
         container().layout(
             LayoutStyle::flex_row()
-                .gap(8.0)
+                .gap(Space::Sm)
                 .align_items(AlignItems::Center),
         ),
         NodeBuilder::child,
@@ -72,7 +73,7 @@ fn wrapped(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
 
 fn column(children: Vec<NodeBuilder>) -> NodeBuilder {
     children.into_iter().fold(
-        container().layout(LayoutStyle::flex_column().gap(2.0)),
+        container().layout(LayoutStyle::flex_column().gap(Space::Xxs)),
         NodeBuilder::child,
     )
 }
@@ -88,7 +89,7 @@ pub(super) fn amount(value: f64, metric: Metric) -> String {
 fn card(title: &str, value: String, visual: Option<NodeBuilder>, note: String) -> NodeBuilder {
     let palette = palette();
     let body = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::Xs))
         .child(strong(value))
         .child(visual.unwrap_or_else(|| colored(" ", palette.dim)))
         .child(wrapped(note, palette.dim));
@@ -99,7 +100,13 @@ fn card(title: &str, value: String, visual: Option<NodeBuilder>, note: String) -
                 .shrink(1.0)
                 .min_size(0.0, 0.0),
         )
-        .child(panel().title(title).padding(16.0).grow(1.0).child(body))
+        .child(
+            panel()
+                .title(title)
+                .padding(Space::Lg)
+                .grow(1.0)
+                .child(body),
+        )
 }
 
 fn peaks(columns: &[f64], points: usize) -> Vec<f32> {
@@ -127,7 +134,7 @@ pub(super) fn cards(report: &Report) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(12.0)
+                .gap(Space::Md)
                 .align_items(AlignItems::Stretch),
         )
         .child(card(
@@ -297,7 +304,7 @@ pub(super) fn bottom(report: &Report, metric: Metric, width: f32) -> NodeBuilder
             LayoutStyle::flex_row()
                 .flex_wrap(FlexWrap::Wrap)
                 .fill_width()
-                .gap(24.0)
+                .gap(Space::Xl)
                 .align_items(AlignItems::Start),
         )
         .child(
@@ -305,14 +312,14 @@ pub(super) fn bottom(report: &Report, metric: Metric, width: f32) -> NodeBuilder
                 .layout(
                     LayoutStyle::flex_column()
                         .shrink(0.0)
-                        .gap(4.0)
-                        .padding_right(8.0),
+                        .gap(Space::Xs)
+                        .padding_right(Space::Sm),
                 )
                 .child(models(report, metric, width)),
         )
         .child(
             container()
-                .layout(LayoutStyle::flex_column().shrink(0.0).gap(16.0))
+                .layout(LayoutStyle::flex_column().shrink(0.0).gap(Space::Lg))
                 .child(places(report, metric))
                 .child(hours(report)),
         )

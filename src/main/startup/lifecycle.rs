@@ -7,7 +7,7 @@ use summonr_agent::{
 };
 
 use super::commands::workspace;
-use super::session::{apply_workflow, build, isolate, route_checks, workflow_name};
+use super::session::{apply_workflow, build, isolate, route_checks, set_up, workflow_name};
 use crate::entry::cli::Args;
 use crate::entry::{diagnostics, modes};
 
@@ -40,6 +40,7 @@ pub(super) async fn launch(
 ) -> Result<i32> {
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
+    set_up(&cwd, tree.as_ref(), &action, args.json)?;
     let endpoint = selection(args, adopted).await?;
     if use_tui(args) {
         summonr_agent::mark_interactive();

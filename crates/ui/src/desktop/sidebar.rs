@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Tone, Widget, container,
+    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Space, Tone, Widget, container,
     effect, list_row, scroll, sidebar,
 };
 use sigil::widgets::icon;
@@ -112,8 +112,11 @@ fn brand(app: &App) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .height(BAR - 2.0 * S)
-                .padding_left(super::CONTROLS - S)
+                .height(BAR - 16.0)
+                .padding_left(Space::raw(
+                    super::CONTROLS - 8.0,
+                    "lines the brand up after the window controls",
+                ))
                 .padding_right(S)
                 .gap(S)
                 .shrink(0.0)

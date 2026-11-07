@@ -316,6 +316,7 @@ impl Hub {
         let id = loop_.session_id();
         let title = loop_.name();
         let workspace = loop_.workspace().to_path_buf();
+        let parent = loop_.parent();
         let mut info = self.info.clone();
         info.session.clone_from(&id);
         info.workflow = workflow;
@@ -328,6 +329,7 @@ impl Hub {
                 id,
                 title,
                 workspace,
+                parent,
                 status: Status::Idle,
                 replay: ReplayState::default(),
                 stale: false,
@@ -349,6 +351,7 @@ impl Hub {
                     workspace: session.workspace.clone(),
                     status: session.status,
                     active: pane.key == Some(*key),
+                    parent: session.parent.clone(),
                 })
                 .collect();
             drop(pane.ui.send(Msg::Fact(Fact::Live(live))));

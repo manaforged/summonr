@@ -4,6 +4,7 @@ use super::space::Plate;
 use super::*;
 use sigil::animation::Easing;
 use sigil::prelude::Paint;
+use sigil::prelude::Space;
 use sigil::prelude::Widget;
 
 const COMPOSER_ROWS: u16 = 7;
@@ -322,7 +323,7 @@ pub(crate) fn placed(
                 .inset_top(f32::from(y) * metrics().h)
                 .width(f32::from(width) * metrics().w)
                 .height(metrics().h)
-                .gap(0.0),
+                .gap(Space::None),
         )
         .children_keyed(move || {
             row.with(|row| row.as_ref().map_or_else(Vec::new, |Line(row)| runs(&row.2)))

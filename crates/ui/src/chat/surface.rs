@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use sigil::prelude::IntoNode;
+use sigil::prelude::Space;
 use sigil::prelude::{
     LayoutStyle, NodeBuilder, Signal, container, effect, empty_state, fragment, node, signal,
     virtual_list,
@@ -25,8 +26,11 @@ pub(crate) fn layer(app: App, cols: u16, editor: impl IntoNode + 'static) -> Nod
                 .fill_width()
                 .fill_height()
                 .min_size(0.0, 0.0)
-                .padding_y(canvas::edge(app.viewport.peek().1))
-                .gap(0.0),
+                .padding_y(Space::raw(
+                    canvas::edge(app.viewport.peek().1),
+                    "one terminal cell on a roomy screen",
+                ))
+                .gap(Space::None),
         )
         .child(fit(app.clone()).child(node(move || {
             let hint_app = transcript_app.clone();
@@ -90,7 +94,7 @@ pub(crate) fn inline_layer(app: App, cols: u16, editor: impl IntoNode + 'static)
             LayoutStyle::flex_column()
                 .fill_width()
                 .min_size(0.0, 0.0)
-                .gap(0.0),
+                .gap(Space::None),
         )
         .child(canvas::gutter(panels::status_bar(app.clone(), width)))
         .child(canvas::gutter(panels::bands(app.clone(), width)))
@@ -178,7 +182,11 @@ fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
         LayoutStyle::flex_column()
             .fill_width()
             .min_size(0.0, 0.0)
-            .gap(if stacked { 0.0 } else { canvas::cell().h }),
+            .gap(if stacked {
+                Space::None
+            } else {
+                Space::raw(canvas::cell().h, "one terminal cell between entries")
+            }),
     );
     for (at, item, live) in rows {
         if let Some(item) = item {
@@ -205,8 +213,8 @@ pub(crate) fn inset(node: NodeBuilder, spacing: (f32, f32)) -> NodeBuilder {
                 LayoutStyle::flex_row()
                     .fill_width()
                     .min_size(0.0, 0.0)
-                    .padding_x(spacing.0)
-                    .padding_bottom(spacing.1)
+                    .padding_x(Space::raw(spacing.0, "the caller's gutter"))
+                    .padding_bottom(Space::raw(spacing.1, "the caller's entry spacing"))
                     .justify_content(sigil::prelude::JustifyContent::Center),
             )
             .child(
@@ -225,8 +233,8 @@ pub(crate) fn inset(node: NodeBuilder, spacing: (f32, f32)) -> NodeBuilder {
             LayoutStyle::flex_column()
                 .fill_width()
                 .min_size(0.0, 0.0)
-                .padding_x(spacing.0)
-                .padding_bottom(spacing.1),
+                .padding_x(Space::raw(spacing.0, "the caller's gutter"))
+                .padding_bottom(Space::raw(spacing.1, "the caller's entry spacing")),
         )
         .child(node)
 }

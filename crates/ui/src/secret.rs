@@ -1,4 +1,5 @@
 use sigil::prelude::Paint;
+use sigil::prelude::Space;
 use sigil::prelude::{LayoutStyle, NodeBuilder, container};
 
 use super::app::App;
@@ -32,12 +33,15 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                     vec![
                         group(ellipsize(&prompt, canvas::DIALOG_CELLS as usize - 8)),
                         container()
-                            .layout(LayoutStyle::block().padding_x(8.0))
+                            .layout(LayoutStyle::block().padding_x(Space::Sm))
                             .child(
                                 sigil::prelude::text(format!("{}▌", "•".repeat(typed.min(48))))
                                     .nowrap()
                                     .text_color(sigil::prelude::Token::OnSurface)
-                                    .font_size(14.0),
+                                    .font_size(
+                                        14.0,
+                                        "14 px text that keeps its own line height and weight",
+                                    ),
                             ),
                     ]
                 }),

@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, LayoutStyle, NodeBuilder, Paint, Tone, button, container, notice_band,
 };
@@ -89,7 +90,7 @@ impl Prompt {
     pub(crate) fn build(self, width: usize, keys: &Hotkeys) -> NodeBuilder {
         let fit = |text: &str| crate::cells::ellipsize(text, width.saturating_sub(4));
         let mut band = container()
-            .layout(LayoutStyle::flex_column().fill_width().gap(8.0))
+            .layout(LayoutStyle::flex_column().fill_width().gap(Space::Sm))
             .child(notice_band(fit(&self.head), self.tone));
         let taken: Vec<Key> = self.actions.iter().map(|action| action.key).collect();
         let hints = self.hints.without(&taken).text(keys);
@@ -110,7 +111,7 @@ impl Prompt {
         let actions = self.actions.into_iter().fold(
             container().layout(
                 LayoutStyle::flex_row()
-                    .gap(12.0)
+                    .gap(Space::Md)
                     .align_items(AlignItems::Center),
             ),
             |row, action| row.child(action.node(keys)),

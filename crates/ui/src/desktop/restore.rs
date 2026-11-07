@@ -166,6 +166,7 @@ mod tests {
             workspace: "/work".into(),
             status,
             active: false,
+            parent: None,
         }
     }
 

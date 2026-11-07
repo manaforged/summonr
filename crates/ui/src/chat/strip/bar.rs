@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, ControlSize, LayoutStyle, NodeBuilder, Token, Widget, button, container,
 };
@@ -287,7 +288,10 @@ pub(crate) fn bar(app: App, width: usize) -> NodeBuilder {
                         .fill_width()
                         .height(canvas::cell().h)
                         .min_size(0.0, 0.0)
-                        .gap(canvas::cell().w)
+                        .gap(Space::raw(
+                            canvas::cell().w,
+                            "one terminal cell between status parts",
+                        ))
                         .align_items(AlignItems::Center),
                 )
                 .child(icon(&app, &status));

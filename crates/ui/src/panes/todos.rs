@@ -30,7 +30,10 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
             sigil::prelude::text(row.shown())
                 .wrap()
                 .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(if done {
                     sigil::prelude::Token::Gray11
                 } else {

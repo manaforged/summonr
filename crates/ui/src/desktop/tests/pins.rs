@@ -1,14 +1,15 @@
-use super::harness::{Step, drive, steps};
+use super::harness::{Step, drive, steps, typed};
 use super::in_window;
 use super::sidebar::two_chats;
 use summonr_agent::prefs::Action;
 
-fn pin_from_the_palette(label: &'static str) -> Vec<Step> {
-    vec![
-        Step::Click("Search"),
-        Step::Click("Pin to sidebar…"),
-        Step::Click(label),
-    ]
+fn pin_from_the_palette(query: &str, label: &'static str) -> Vec<Step> {
+    let mut actions = vec![Step::Click("Search")];
+    actions.extend(typed("pin").into_iter().map(Step::Key));
+    actions.push(Step::Click("Pin to sidebar…"));
+    actions.extend(typed(query).into_iter().map(Step::Key));
+    actions.push(Step::Click(label));
+    actions
 }
 
 #[test]
@@ -17,7 +18,7 @@ fn an_action_pinned_from_the_palette_stays_in_the_sidebar_after_a_reload() {
     {
         return;
     }
-    let pinned = steps(two_chats, pin_from_the_palette("Keyboard shortcuts"), |app| {
+    let pinned = steps(two_chats, pin_from_the_palette("keyboard", "Keyboard shortcuts"), |app| {
         app.model.peek().prefs.clone()
     });
     assert!(
@@ -56,7 +57,10 @@ fn unpinning_a_default_row_takes_it_out_of_the_sidebar() {
     );
     assert!(!seen.shows(|text| text == "New terminal"), "{}", seen.text());
     assert!(seen.shows(|text| text == "Search"), "{}", seen.text());
-    assert_eq!(seen.read, vec![Action::NewAgent, Action::Search]);
+    assert_eq!(
+        seen.read,
+        vec![Action::NewAgent, Action::NewWorkflow, Action::Search]
+    );
 }
 
 #[test]
@@ -64,12 +68,12 @@ fn a_pinned_row_opens_its_pane() {
     if !in_window("pins::a_pinned_row_opens_its_pane") {
         return;
     }
-    let pinned = steps(two_chats, pin_from_the_palette("Jobs"), |app| {
+    let pinned = steps(two_chats, pin_from_the_palette("job", "Jobs"), |app| {
         app.target().layout.peek().secondary
     });
     assert_eq!(pinned.read, None, "{}", pinned.text());
     assert!(!pinned.shows(|text| text == "Peers"), "{}", pinned.text());
-    let mut actions = pin_from_the_palette("Jobs");
+    let mut actions = pin_from_the_palette("job", "Jobs");
     actions.push(Step::Click("Jobs"));
     let seen = steps(two_chats, actions, |app| app.target().layout.peek().secondary);
     assert_eq!(seen.read, Some(super::super::Pane::Jobs), "{}", seen.text());

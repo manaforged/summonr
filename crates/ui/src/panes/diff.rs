@@ -1,5 +1,6 @@
 use sigil::prelude::Dimension;
 use sigil::prelude::Paint;
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, Tone, button, chip, container,
     list_row, node, spacer, text_edit,
@@ -40,7 +41,10 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             sigil::prelude::text(error)
                 .wrap()
                 .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Error11),
         );
     }
@@ -59,7 +63,10 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             return column.child(
                 sigil::prelude::text("loading…")
                     .nowrap()
-                    .font_size(12.0)
+                    .font_size(
+                        12.0,
+                        "12 px chrome text that keeps its own line height and weight",
+                    )
                     .text_color(sigil::prelude::Token::Gray11),
             );
         };
@@ -70,7 +77,10 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                     sigil::prelude::text(error.clone())
                         .wrap()
                         .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
-                        .font_size(12.0)
+                        .font_size(
+                            12.0,
+                            "12 px chrome text that keeps its own line height and weight",
+                        )
                         .text_color(sigil::prelude::Token::Error11),
                 );
             }
@@ -80,7 +90,10 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             column = column.child(
                 sigil::prelude::text("no changes left in this file")
                     .nowrap()
-                    .font_size(12.0)
+                    .font_size(
+                        12.0,
+                        "12 px chrome text that keeps its own line height and weight",
+                    )
                     .text_color(sigil::prelude::Token::Gray11),
             );
             return undo_rows(&app, column, Some(&path), &BTreeSet::new());
@@ -107,7 +120,10 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             sigil::prelude::text(notes)
                 .wrap()
                 .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Gray11),
         );
         drop(model);
@@ -139,7 +155,7 @@ fn actions() -> NodeBuilder {
     container().layout(
         LayoutStyle::flex_row()
             .fill_width()
-            .gap(6.0)
+            .gap(Space::raw(6.0, "between the small and medium steps"))
             .align_items(AlignItems::Center),
     )
 }
@@ -221,7 +237,10 @@ fn undo_rows(
                                 .shrink(1.0)
                                 .min_size(0.0, 14.0),
                         )
-                        .font_size(12.0)
+                        .font_size(
+                            12.0,
+                            "12 px chrome text that keeps its own line height and weight",
+                        )
                         .text_color(sigil::prelude::Token::Gray11),
                 )
                 .child(
@@ -238,7 +257,7 @@ fn undo_rows(
 fn scope(app: &App, diff: &summonr_agent::diff::Diff) -> NodeBuilder {
     let count = sigil::prelude::text(summonr_core::text::plural(diff.files.len(), "file"))
         .nowrap()
-        .font_size(13.0)
+        .font_size(13.0, "13 px between caption and body for dense code rows")
         .text_color(sigil::prelude::Token::OnSurfaceMuted);
     let toggle = app.clone();
     let label = if app.diff_recent.get() {
@@ -288,15 +307,15 @@ fn hunk_view(
         .is_some_and(|(target, id)| target == path && id == hunk.id);
     let (menu, items) = (app.clone(), app.clone());
     let mut card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::Xs))
         .child(context_menu(
             list_row(focused, hunk.header.clone(), ListRowSlots::default())
                 .layout(
                     LayoutStyle::flex_row()
                         .fill_width()
                         .height(24.0)
-                        .padding_x(8.0)
-                        .gap(6.0)
+                        .padding_x(Space::Sm)
+                        .gap(Space::raw(6.0, "between the small and medium steps"))
                         .align_items(AlignItems::Center),
                 )
                 .child(chip(verdict, tone))
@@ -328,7 +347,10 @@ fn hunk_view(
                         .min_size(0.0, 20.0),
                 )
                 .font_family(sigil::prelude::FontFamily::Mono)
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .bg(sigil::prelude::Token::Gray1)
                 .rounded(sigil::prelude::Radius::Md)
         }));
@@ -342,20 +364,26 @@ fn hunk_view(
             ))
             .wrap()
             .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
-            .font_size(12.0)
+            .font_size(
+                12.0,
+                "12 px chrome text that keeps its own line height and weight",
+            )
             .text_color(sigil::prelude::Token::Gray11),
         );
     } else if let Some(comment) = note.and_then(|note| note.comment) {
         card = card.child(
             sigil::prelude::text(format!("note: {comment}"))
                 .wrap()
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Info11)
                 .layout(
                     LayoutStyle::block()
                         .fill_width()
                         .min_size(0.0, 14.0)
-                        .padding_x(8.0),
+                        .padding_x(Space::Sm),
                 ),
         );
     }

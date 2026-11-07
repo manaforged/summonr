@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Rgba8, container, panel,
 };
@@ -23,7 +24,7 @@ pub(super) fn trend(report: &Report, metric: Metric) -> NodeBuilder {
                 .layout(
                     LayoutStyle::flex_row()
                         .fill_width()
-                        .gap(8.0)
+                        .gap(Space::Sm)
                         .align_items(AlignItems::Center),
                 )
                 .child(strong(format!(
@@ -36,13 +37,13 @@ pub(super) fn trend(report: &Report, metric: Metric) -> NodeBuilder {
                     palette().dim,
                 )),
             container().layout(LayoutStyle::block().fill_width()).child(
-                panel().padding(16.0).child(column(
+                panel().padding(Space::Lg).child(column(
                     vec![plot(report, peak, divisor, &colors), label_row(&labels)],
-                    8.0,
+                    Space::Sm,
                 )),
             ),
         ],
-        8.0,
+        Space::Sm,
     )
 }
 
@@ -52,7 +53,7 @@ fn plot(report: &Report, peak: f64, divisor: f64, colors: &[Rgba8]) -> NodeBuild
             .grow(1.0)
             .fill_height()
             .min_size(0.0, 0.0)
-            .gap(2.0)
+            .gap(Space::Xxs)
             .align_items(AlignItems::End),
     );
     for index in 0..report.columns.len() {
@@ -68,7 +69,7 @@ fn plot(report: &Report, peak: f64, divisor: f64, colors: &[Rgba8]) -> NodeBuild
             LayoutStyle::flex_row()
                 .fill_width()
                 .height(PLOT)
-                .gap(8.0)
+                .gap(Space::Sm)
                 .align_items(AlignItems::Stretch),
         )
         .child(axis(peak, divisor))
@@ -123,7 +124,7 @@ fn label_row(labels: &[String]) -> NodeBuilder {
             LayoutStyle::flex_row()
                 .grow(1.0)
                 .min_size(0.0, 0.0)
-                .gap(2.0)
+                .gap(Space::Xxs)
                 .align_items(AlignItems::Start),
         ),
         |row, label| {
@@ -138,7 +139,7 @@ fn label_row(labels: &[String]) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(8.0)
+                .gap(Space::Sm)
                 .align_items(AlignItems::Start),
         )
         .child(container().layout(LayoutStyle::block().width(AXIS).shrink(0.0)))
@@ -168,7 +169,7 @@ fn grow(value: f32) -> NodeBuilder {
     )
 }
 
-fn column(children: Vec<NodeBuilder>, gap: f32) -> NodeBuilder {
+fn column(children: Vec<NodeBuilder>, gap: Space) -> NodeBuilder {
     children.into_iter().fold(
         container().layout(LayoutStyle::flex_column().fill_width().gap(gap)),
         NodeBuilder::child,

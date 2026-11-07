@@ -46,6 +46,8 @@
         "hunks",
         "checkpoint",
         "worktree",
+        "forge",
+        "scripts",
         "verify",
         "steps",
         "memory",

@@ -175,6 +175,7 @@ const fn window_label(command: KeyCommand) -> Option<(Group, &'static str)> {
         KeyCommand::Jump(Jump::Needing) => (Group::Agents, "Next that needs you"),
         KeyCommand::Interrupt => (Group::Agents, "Stop agent"),
         KeyCommand::MarkUnread => (Group::Agents, "Mark unread"),
+        KeyCommand::OpenPr => (Group::Agents, "Open PR"),
         KeyCommand::Terminal => (Group::Window, "New terminal"),
         KeyCommand::Split(Split::Open) => (Group::Window, "Split pane"),
         KeyCommand::Split(Split::Below) => (Group::Window, "Split pane down"),

@@ -231,6 +231,7 @@ fn live(
         workspace: std::path::PathBuf::from("/work"),
         status,
         active,
+        parent: None,
     }
 }
 

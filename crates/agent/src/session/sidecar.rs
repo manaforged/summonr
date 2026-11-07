@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -15,12 +15,11 @@ pub(crate) struct Sidecar<T> {
 
 impl<T: Serialize + DeserializeOwned> Sidecar<T> {
     pub(crate) fn load(home: &Path, file: &str) -> Self {
-        let doc = Doc::new(
-            log::sessions_dir(home).join(file),
-            Durability::Renamed,
-            Invalid::Fail,
-            Wait::Forever,
-        );
+        Self::at(log::sessions_dir(home).join(file))
+    }
+
+    pub(crate) fn at(path: PathBuf) -> Self {
+        let doc = Doc::new(path, Durability::Renamed, Invalid::Fail, Wait::Forever);
         let entries = doc.load().unwrap_or_default();
         Self {
             doc,
@@ -31,6 +30,10 @@ impl<T: Serialize + DeserializeOwned> Sidecar<T> {
 
     pub(crate) fn get(&self, id: &str) -> Option<&T> {
         self.entries.get(id)
+    }
+
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (&str, &T)> {
+        self.entries.iter().map(|(id, value)| (id.as_str(), value))
     }
 
     pub(crate) fn put(&mut self, id: &str, value: T) {

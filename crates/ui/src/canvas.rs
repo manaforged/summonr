@@ -5,6 +5,7 @@ use sigil::events::ScrollDelta;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Rgba8;
+use sigil::prelude::Space;
 use sigil::prelude::Tone;
 use sigil::prelude::Widget;
 use sigil::prelude::container;
@@ -36,7 +37,7 @@ pub(super) fn gutter(child: NodeBuilder) -> NodeBuilder {
                 .fill_width()
                 .shrink(0.0)
                 .min_size(0.0, 0.0)
-                .padding_x(GUTTER),
+                .padding_x(Space::Lg),
         )
         .child(child)
 }
@@ -100,11 +101,19 @@ pub(crate) const fn frame_border() -> i16 {
     1
 }
 
-pub(super) fn overlay_gap() -> f32 {
+pub(super) fn overlay_gap() -> Space {
     if WINDOW.load(Ordering::Relaxed) {
-        2.0
+        Space::Xxs
     } else {
-        0.0
+        Space::None
+    }
+}
+
+pub(super) fn overlay_pad() -> Space {
+    if WINDOW.load(Ordering::Relaxed) {
+        Space::Sm
+    } else {
+        Space::None
     }
 }
 

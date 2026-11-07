@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 
 use sigil::prelude::{
-    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Token,
+    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Space, Token,
     container,
 };
 
@@ -132,8 +132,11 @@ fn summary(
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(if window { 4.0 } else { 8.0 })
-                .padding_y(6.0)
+                .gap(if window { Space::Xs } else { Space::Sm })
+                .padding_y(Space::raw(
+                    6.0,
+                    "a folded summary row sits tighter than a step",
+                ))
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
@@ -229,8 +232,11 @@ fn step_row(step: &Step<'_>, app: &App, layout: summonr_agent::prefs::DiffLayout
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .gap(10.0)
-                .padding_y(5.0)
+                .gap(Space::raw(
+                    10.0,
+                    "the step icon sits closer than a scale step",
+                ))
+                .padding_y(Space::raw(5.0, "step rows pack tighter than a scale step"))
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
@@ -260,7 +266,7 @@ fn step_row(step: &Step<'_>, app: &App, layout: summonr_agent::prefs::DiffLayout
         line = line.child(label(text, text_style));
     }
     let column = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
         .child(line);
     if !step.call.expanded {
         return column;
@@ -300,8 +306,11 @@ pub(crate) fn card(
                 .layout(
                     LayoutStyle::flex_column()
                         .fill_width()
-                        .padding_left(14.0)
-                        .padding_y(6.0)
+                        .padding_left(Space::raw(
+                            14.0,
+                            "indents the steps under the summary glyph",
+                        ))
+                        .padding_y(Space::raw(6.0, "matches the folded summary row"))
                         .min_size(0.0, 0.0),
                 )
                 .border_left(1)

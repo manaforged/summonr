@@ -23,6 +23,7 @@ impl App {
             open
         };
         self.window.close_terminal();
+        self.window.expect_worktree(&open);
         drop(self.cmd.send(Cmd::Open(open)));
     }
 

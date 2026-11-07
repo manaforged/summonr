@@ -70,6 +70,7 @@ impl Worker {
             Cmd::ListWorkflows => self.send_workflow(),
             Cmd::Merge(path) => self.merge(&path),
             Cmd::Discard(path) => self.discard(&path),
+            Cmd::Forge(ask) => self.reader.forge(ask, self.loop_.session_id()),
             command => self.reader.run(command).await,
         }
         true

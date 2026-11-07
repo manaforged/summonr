@@ -21,8 +21,8 @@ use super::cli::{Args, Verb};
 use super::diagnostics;
 use classify::run_classify;
 use commands::{
-    adopt, export_session_cmd, grep_sessions, manage_worktrees, mcp, print_sessions,
-    print_workflows, session_path, workspace,
+    adopt, export_session_cmd, grep_sessions, manage_worktrees, mcp, print_children,
+    print_sessions, print_workflows, session_path, workspace,
 };
 use diff::print_diff;
 use lifecycle::launch;
@@ -133,6 +133,7 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
         Verb::Install => add(args).await,
         Verb::Worktrees => done(manage_worktrees(args)),
         Verb::Diff => done(print_diff(args)),
+        Verb::Children => done(print_children(args)),
     }
 }
 

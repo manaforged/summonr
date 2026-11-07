@@ -1,4 +1,4 @@
-use super::harness::{Step, drive, steps};
+use super::harness::{Step, drive, steps, typed};
 use super::in_window;
 use summonr_agent::hub::{Cmd, Fact, Msg};
 use summonr_agent::tools::Event;
@@ -151,7 +151,7 @@ fn all_steps_in_the_palette_unfolds_finished_replies_and_folds_them_again() {
     );
     let every = steps(
         ran_tests,
-        vec![Step::Click("Search"), Step::Click("All steps")],
+        all_steps(1),
         |_| (),
     );
     assert!(
@@ -161,12 +161,7 @@ fn all_steps_in_the_palette_unfolds_finished_replies_and_folds_them_again() {
     );
     let back = steps(
         ran_tests,
-        vec![
-            Step::Click("Search"),
-            Step::Click("All steps"),
-            Step::Click("Search"),
-            Step::Click("All steps"),
-        ],
+        all_steps(2),
         |_| (),
     );
     assert!(
@@ -174,6 +169,16 @@ fn all_steps_in_the_palette_unfolds_finished_replies_and_folds_them_again() {
         "{}",
         back.text()
     );
+}
+
+fn all_steps(times: usize) -> Vec<Step> {
+    let mut actions = Vec::new();
+    for _ in 0..times {
+        actions.push(Step::Click("Search"));
+        actions.extend(typed("all st").into_iter().map(Step::Key));
+        actions.push(Step::Click("All steps"));
+    }
+    actions
 }
 
 #[test]

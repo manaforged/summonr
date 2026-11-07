@@ -1,6 +1,6 @@
 use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Widget, container};
 
-use super::super::style::{GUTTER, M, MARK, S, Text, text};
+use super::super::style::{L, M, MARK, S, Text, text};
 use crate::app::App;
 
 const LIFT: f32 = 5.0;
@@ -12,8 +12,8 @@ pub(super) fn row(app: &App) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .padding_left(GUTTER)
-                .padding_right(GUTTER)
+                .padding_left(L)
+                .padding_right(L)
                 .padding_bottom(S)
                 .gap(M)
                 .min_size(0.0, 0.0)

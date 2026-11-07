@@ -1,5 +1,5 @@
 use sigil::prelude::Widget;
-use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, Radius, Token, container};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, Radius, Space, Token, container};
 
 use crate::ToolState;
 use crate::chat::entry::tools::workspace_relative;
@@ -112,8 +112,8 @@ pub(super) fn chip(body: String) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
-                .padding_x(8.0)
-                .padding_y(1.0)
+                .padding_x(Space::Sm)
+                .padding_y(Space::raw(1.0, "a chip keeps the line height of its text"))
                 .shrink(1.0)
                 .min_size(0.0, 0.0),
         )

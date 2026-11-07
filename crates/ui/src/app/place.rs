@@ -42,6 +42,7 @@ impl App {
             return;
         }
         self.place.set(Place::at(workspace));
+        self.window.arrived(self);
     }
 }
 

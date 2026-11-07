@@ -1,6 +1,7 @@
 use sigil::prelude::Widget;
 use sigil::prelude::{
     AlignItems, JustifyContent, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Radius,
+    Space,
     container, markdown, signal,
 };
 
@@ -81,8 +82,11 @@ fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
 }
 
 pub(super) fn assistant(body: &str, app: &App) -> NodeBuilder {
-    let gap = f32::from(app.model.get().prefs.spacing);
-    let mut column = container().font_size(BODY).layout(
+    let gap = Space::raw(
+        f32::from(app.model.get().prefs.spacing),
+        "the user's paragraph spacing",
+    );
+    let mut column = container().font_size(BODY, "body text for replies").layout(
         LayoutStyle::flex_column()
             .fill_width()
             .gap(gap)

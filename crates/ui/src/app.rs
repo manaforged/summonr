@@ -44,6 +44,7 @@ pub(super) use elicit::{FormState, Reply, Stage};
 pub(super) use facet::Facet;
 pub(super) use models::Mark;
 mod files;
+pub(crate) mod forge;
 mod frame;
 mod history;
 mod layout;
@@ -198,6 +199,7 @@ pub(super) struct App {
     pub(super) commands: Picker,
     pub(super) sessions: super::sessions::Picker,
     pub(super) panels: panels::Panels,
+    pub(super) forge: forge::Forge,
     pub(super) usage: super::usage::Panel,
     pub(super) effort: super::effort::Strip,
     pub(super) picker: ModelPicker,
@@ -326,6 +328,7 @@ impl App {
             commands: Picker::new(draft, model, picker.facts),
             sessions: super::sessions::Picker::new(),
             panels: panels::Panels::new(),
+            forge: forge::Forge::new(),
             usage: super::usage::Panel::new(),
             effort: super::effort::Strip::new(),
             picker,

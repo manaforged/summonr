@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use sigil::prelude::Space;
 use sigil::prelude::{
     IntoNode, LayoutStyle, NodeBuilder, Paint, Signal, container, effect, modal, signal,
     virtual_list,
@@ -58,8 +59,8 @@ mod tests {
 fn body_layout() -> LayoutStyle {
     LayoutStyle::flex_column()
         .fill_width()
-        .padding_x(8.0)
-        .padding_y(canvas::overlay_gap() * 4.0)
+        .padding_x(Space::Sm)
+        .padding_y(canvas::overlay_pad())
         .gap(canvas::overlay_gap())
 }
 

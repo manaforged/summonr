@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::TextBuilder;
 use sigil::prelude::Token;
 
@@ -26,7 +27,7 @@ pub(super) fn branch(first: bool, child: impl sigil::prelude::IntoNode + 'static
 }
 
 pub(super) fn tree(body: &str) -> NodeBuilder {
-    let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(0.0));
+    let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(Space::None));
     for (at, line) in body.lines().enumerate() {
         let tone = if line.starts_with("… +") {
             TextStyle::xs(Token::Gray10)

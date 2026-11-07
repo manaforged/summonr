@@ -52,6 +52,7 @@ pub(crate) struct Window {
     pub(crate) local: Signal<Vec<summonr_agent::endpoint::Local>>,
     pub(crate) friends: Signal<Vec<super::friends::Seen>>,
     pub(crate) owner: Option<sigil::reactive::Owner>,
+    setup: Signal<bool>,
 }
 
 impl Window {
@@ -64,6 +65,7 @@ impl Window {
             local: signal(Vec::new()),
             friends: signal(Vec::new()),
             owner: sigil::reactive::Owner::current(),
+            setup: signal(false),
         }
     }
 
@@ -109,8 +111,27 @@ impl Window {
         super::agent_menu::mark_unread(&pane, &id);
     }
 
+    /// Opens or finds the pull request for the focused pane's topic.
+    pub(crate) fn open_pr(&self, app: &App) {
+        super::ship::open(&super::split::current(app));
+    }
+
     pub(crate) fn open_terminal(&self, app: &App) {
         app.open_terminal(NEW_TERMINAL, None);
+    }
+
+    /// Notes whether the chat this pane opens next starts in a new worktree.
+    pub(crate) fn expect_worktree(&self, open: &summonr_agent::hub::Open) {
+        self.setup
+            .set(matches!(open, summonr_agent::hub::Open::Worktree(_)));
+    }
+
+    /// Runs the setup script in a terminal once the pane arrives in the worktree it asked for.
+    pub(crate) fn arrived(&self, app: &App) {
+        if self.setup.peek() {
+            self.setup.set(false);
+            super::terminal::run_script(app, summonr_agent::scripts::Script::Setup, false);
+        }
     }
 
     pub(crate) fn split(&self, action: Split) {

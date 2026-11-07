@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Token, Tone, container,
-    list_row, notice_band, section_label, text_edit,
+    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Space, Token, Tone,
+    container, list_row, notice_band, section_label, text_edit,
 };
 use sigil::widgets::{RowRender, TextEditBuilder, VirtualListBuilder};
 
@@ -10,7 +10,7 @@ use crate::canvas;
 use crate::text_style::TextStyle;
 use sigil::prelude::Widget;
 
-pub(super) fn row(padding: f32) -> LayoutStyle {
+pub(super) fn row(padding: Space) -> LayoutStyle {
     LayoutStyle::flex_row()
         .fill_width()
         .height(canvas::overlay_list_row())
@@ -56,12 +56,12 @@ pub(crate) fn slotted(
 }
 
 pub(crate) fn group(title: impl Into<String>) -> NodeBuilder {
-    section_label(title.into()).layout(row(8.0))
+    section_label(title.into()).layout(row(Space::Sm))
 }
 
 pub(crate) fn heading(parts: Vec<(String, TextStyle)>) -> NodeBuilder {
     parts.into_iter().fold(
-        container().layout(row(8.0).align_items(AlignItems::Center)),
+        container().layout(row(Space::Sm).align_items(AlignItems::Center)),
         |line, (text, text_style)| line.child(text_style.on(sigil::prelude::text(text).nowrap())),
     )
 }
@@ -73,7 +73,7 @@ pub(crate) fn notice(text: impl Into<String>, tone: Tone) -> NodeBuilder {
         canvas::palette().dim
     };
     notice_band(text.into(), tone)
-        .layout(row(8.0))
+        .layout(row(Space::Sm))
         .bg(canvas::blend(canvas::palette().base, color, 0.14))
 }
 
@@ -133,7 +133,7 @@ pub(crate) fn browser_columns(
     list: impl IntoIterator<Item = NodeBuilder>,
     layout: LayoutStyle,
     detail: Vec<NodeBuilder>,
-    gap: f32,
+    gap: Space,
 ) -> Vec<NodeBuilder> {
     let list = list
         .into_iter()

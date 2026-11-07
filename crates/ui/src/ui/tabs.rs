@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, LayoutStyle, NodeBuilder, Token, container, effect, signal, tabs,
 };
@@ -50,7 +51,7 @@ pub(crate) fn strip(app: &App, active: Tab) -> NodeBuilder {
             LayoutStyle::flex_row()
                 .fill_width()
                 .min_size(0.0, canvas::overlay_list_row())
-                .padding_x(8.0)
+                .padding_x(Space::Sm)
                 .align_items(AlignItems::Center),
         )
         .child(tabs().labels(labels).active(picked).label("Settings tabs"));

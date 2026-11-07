@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use sigil::prelude::{
-    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Tone, Widget, container, derived, effect,
-    list_row, signal, tabs,
+    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Space, Tone, Widget, container, derived,
+    effect, list_row, signal, tabs,
 };
 use sigil::reactive::untrack;
 use summonr_agent::endpoint::Friend;
@@ -142,7 +142,11 @@ fn stack(agents: &[Friend]) -> NodeBuilder {
     );
     for (at, agent) in agents.iter().take(STACK).enumerate() {
         let glyph = super::friends::glyph(*agent);
-        let shift = if at == 0 { 0.0 } else { -OVERLAP };
+        let shift = if at == 0 {
+            Space::None
+        } else {
+            Space::raw(-OVERLAP, "the glyphs overlap")
+        };
         row = row.child(
             container()
                 .layout(LayoutStyle::block().margin_left(shift).shrink(0.0))
@@ -201,6 +205,7 @@ pub(super) fn strip(app: &App) -> NodeBuilder {
         )
         .child(tabs().labels(labels).active(picked).label(THREADS))
         .child(new_thread(app))
+        .child(super::ship::view(app))
 }
 
 fn new_thread(app: &App) -> NodeBuilder {

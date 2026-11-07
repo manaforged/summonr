@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, ControlSize, LayoutStyle, NodeBuilder, Paint, Rgba8, Signal, Tone, Widget, button,
     container, signal, text_edit,
@@ -81,7 +82,7 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
             let reset = paint.clone();
             let mut nodes = vec![
                 container()
-                    .layout(LayoutStyle::flex_row().fill_width().gap(8.0))
+                    .layout(LayoutStyle::flex_row().fill_width().gap(Space::Sm))
                     .child(
                         button("Save")
                             .primary()
@@ -112,7 +113,7 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
                 }
                 .into_iter()
                 .fold(
-                    container().layout(LayoutStyle::flex_row().fill_width().gap(8.0)),
+                    container().layout(LayoutStyle::flex_row().fill_width().gap(Space::Sm)),
                     |row, (label, name)| {
                         let select = paint.clone();
                         row.child(
@@ -132,7 +133,10 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
                         .child(
                             sigil::prelude::text(format!("{name} · #rgb, #rrggbb, or #rrggbbaa"))
                                 .nowrap()
-                                .font_size(12.0),
+                                .font_size(
+                                    12.0,
+                                    "12 px chrome text that keeps its own line height and weight",
+                                ),
                         )
                         .child(
                             input_keys(&paint, text_edit(editor.input))

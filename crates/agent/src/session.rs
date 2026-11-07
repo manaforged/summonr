@@ -24,7 +24,7 @@ mod catalog;
 mod export;
 mod profile;
 mod prune;
-mod sidecar;
+pub(crate) mod sidecar;
 mod usage;
 
 pub use catalog::{all, remove, set_name};

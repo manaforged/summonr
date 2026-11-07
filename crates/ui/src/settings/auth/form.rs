@@ -58,7 +58,7 @@ pub(super) fn line(text: impl Into<String>) -> NodeBuilder {
         sigil::prelude::text(text.into())
             .nowrap()
             .text_color(sigil::prelude::Token::OnSurface)
-            .font_size(14.0),
+            .font_size(14.0, "14 px text that keeps its own line height and weight"),
     )
 }
 

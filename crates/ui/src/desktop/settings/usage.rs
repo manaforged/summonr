@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Widget, container,
-    effect, segmented, signal,
+    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Space, Widget,
+    container, effect, segmented, signal,
 };
 use sigil::reactive::untrack;
 use summonr_agent::provider::{compact, dollars};
@@ -149,7 +149,7 @@ fn chart(report: &Report) -> NodeBuilder {
         LayoutStyle::flex_row()
             .fill_width()
             .height(CHART)
-            .gap(XS / 2.0)
+            .gap(Space::Xxs)
             .align_items(AlignItems::End),
     );
     for value in &report.columns {
@@ -188,7 +188,7 @@ fn bar(value: f64, peak: f64) -> NodeBuilder {
         0.0
     };
     let height = if value > 0.0 {
-        (share * CHART).max(XS / 2.0)
+        (share * CHART).max(2.0)
     } else {
         0.0
     };

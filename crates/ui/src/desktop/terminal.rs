@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::rc::Rc;
 
 use sigil::app::Session;
@@ -9,6 +10,7 @@ use sigil::prelude::{
 };
 use sigil::reactive::{Owner, untrack};
 use sigil::widgets::{MenuItem, icon};
+use summonr_agent::scripts::{Script, Scripts, Workspace};
 
 use super::App;
 use super::style::{DIVIDER, ICON, S, Text, text};
@@ -63,15 +65,24 @@ impl Terminals {
         if !folder.is_dir() {
             return None;
         }
-        self.start(folder, NEW_TERMINAL).ok().map(|term| term.id)
+        self.start(folder, NEW_TERMINAL, None)
+            .ok()
+            .map(|term| term.id)
     }
 
-    fn start(self, folder: &Path, name: &'static str) -> Result<Rc<Term>, String> {
+    fn start(
+        self,
+        folder: &Path,
+        name: &'static str,
+        command: Option<&Command>,
+    ) -> Result<Rc<Term>, String> {
         let owner = self
             .owner
             .ok_or_else(|| "the window has no owner".to_owned())?;
         let (session, seen) = owner.with(|| {
-            let session = Session::shell_in(folder).map_err(|error| error.to_string())?;
+            let session = command
+                .map_or_else(|| Session::shell_in(folder), Session::command)
+                .map_err(|error| error.to_string())?;
             Ok::<_, String>((session, signal(0)))
         })?;
         let id = self.next.peek();
@@ -101,7 +112,7 @@ impl App {
     /// Opens a shell in the focused pane's folder and shows it there, running `command` when given.
     pub(crate) fn open_terminal(&self, name: &'static str, command: Option<&str>) {
         let pane = super::split::current(self);
-        match self.window.terminals.start(&pane.workspace(), name) {
+        match self.window.terminals.start(&pane.workspace(), name, None) {
             Ok(term) => {
                 if let Some(command) = command {
                     drop(term.session.write(format!("{command}\r").as_bytes()));
@@ -123,6 +134,55 @@ pub(super) const NEW_TERMINAL_ACTION: &str = "New terminal";
 pub(super) const CLAUDE: &str = "Claude Code";
 /// The command that starts Claude Code.
 pub(super) const CLAUDE_COMMAND: &str = "claude";
+/// The palette action that runs the repository's setup script.
+pub(super) const RUN_SETUP: &str = "Run setup";
+/// The palette action that runs the repository's run script.
+pub(super) const RUN: &str = "Run";
+
+const SCRIPTS: [(Script, &str); 3] = [
+    (Script::Setup, "Setup"),
+    (Script::Run, "Run"),
+    (Script::Archive, "Archive"),
+];
+
+/// Runs the repository's `script` in a new terminal for `pane`'s folder, showing it there when `show`.
+pub(super) fn run_script(pane: &App, script: Script, show: bool) {
+    let folder = pane.workspace();
+    let name = SCRIPTS
+        .iter()
+        .find(|(each, _)| *each == script)
+        .map_or(NEW_TERMINAL, |(_, name)| name);
+    let started = script_command(&folder, script).and_then(|command| {
+        command
+            .map(|command| pane.window.terminals.start(&folder, name, Some(&command)))
+            .transpose()
+    });
+    match started {
+        Ok(Some(term)) => {
+            if show {
+                pane.window.showing.set(Some(term.id));
+            }
+        }
+        Ok(None) => {
+            if show {
+                pane.push_entry(crate::model::Entry::Error(format!(
+                    "This repository has no {} script.",
+                    script.name()
+                )));
+            }
+        }
+        Err(error) => pane.push_entry(crate::model::Entry::Error(format!(
+            "Could not run the {} script: {error}",
+            script.name()
+        ))),
+    }
+}
+
+fn script_command(folder: &Path, script: Script) -> Result<Option<Command>, String> {
+    let workspace = Workspace::at(folder).map_err(|error| error.to_string())?;
+    let scripts = Scripts::load(&workspace.root).map_err(|error| error.to_string())?;
+    Ok(scripts.get(script).map(|text| workspace.command(text)))
+}
 
 /// Shows terminal `id`, focusing the pane that already shows it.
 pub(super) fn reveal(app: &App, id: u64) {
@@ -278,7 +338,10 @@ fn side_terminal(app: &App, folder: &Path) -> Result<Rc<Term>, String> {
                 && term.session.exited.peek().is_none()
         })
         .cloned();
-    free.map_or_else(|| app.window.terminals.start(folder, NEW_TERMINAL), Ok)
+    free.map_or_else(
+        || app.window.terminals.start(folder, NEW_TERMINAL, None),
+        Ok,
+    )
 }
 
 /// The sidebar rows of the terminals in `folder`.

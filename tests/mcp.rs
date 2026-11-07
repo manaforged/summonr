@@ -24,6 +24,9 @@ mod progress;
 #[path = "mcp/protocol.rs"]
 mod protocol;
 #[cfg(unix)]
+#[path = "mcp/scripts.rs"]
+mod scripts;
+#[cfg(unix)]
 #[path = "mcp/search_index.rs"]
 mod search_index;
 #[cfg(unix)]
@@ -141,6 +144,10 @@ fn main() {
         output::a_json_run_starts_with_its_session_id,
         diff::turn_last_shows_the_latest_turn_of_a_resumed_session_without_generated_files,
         diff::a_turn_diff_names_its_session,
+        #[cfg(unix)]
+        scripts::each_new_worktree_runs_setup_on_its_own_port_block,
+        #[cfg(unix)]
+        scripts::a_failed_setup_stops_the_run_naming_the_script_and_its_code,
         session::a_plain_worktree_turn_lands_its_changes_without_running_a_check,
         session::a_failed_worktree_run_without_changes_says_so,
         session::a_goal_run_reports_the_judge_usage_once,

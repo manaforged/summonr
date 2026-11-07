@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 
+use summonr_agent::child::ChildState;
 use summonr_agent::{Result, last_for, list_sessions, resolve_session, sweep_worktrees, workflow};
 
 use crate::entry::cli::{Args, McpCommand};
@@ -55,6 +56,33 @@ pub(super) fn print_sessions() -> Result<()> {
             info.name.as_deref().unwrap_or("-"),
             info.cwd.as_deref().unwrap_or("-"),
             info.preview
+        );
+    }
+    Ok(())
+}
+
+pub(super) fn print_children(args: &Args) -> Result<()> {
+    let children = summonr_agent::diff::children(&session_path(args)?)?;
+    if args.json {
+        println!("{}", serde_json::to_string(&children)?);
+        return Ok(());
+    }
+    for child in &children {
+        let state = match child.state {
+            ChildState::Running => "running",
+            ChildState::Completed(_) => "completed",
+            ChildState::Aborted(_) => "aborted",
+            ChildState::Failed(_) => "failed",
+            ChildState::Interrupted(_) => "interrupted",
+        };
+        let name = [&child.name, &child.agent]
+            .into_iter()
+            .find(|name| !name.is_empty())
+            .map_or("-", String::as_str);
+        println!(
+            "{}\t{state}\t{name}\t{}",
+            summonr_agent::short(&child.id.to_string()),
+            child.assignment.lines().next().unwrap_or_default()
         );
     }
     Ok(())

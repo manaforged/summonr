@@ -29,6 +29,8 @@ impl Cmd {
             | Cmd::SetModule(..)
             | Cmd::SetChrome(_)
             | Cmd::SetEffort(_) => ExecutionClass::AfterTurn,
+            Cmd::Forge(crate::forge::Ask::Status) => ExecutionClass::Read,
+            Cmd::Forge(_) => ExecutionClass::AfterTurn,
             Cmd::Cancel
             | Cmd::CancelLogin
             | Cmd::Quit

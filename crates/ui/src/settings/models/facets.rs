@@ -1,11 +1,11 @@
-use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, Token, container};
+use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, Space, Token, container};
 
 use super::super::canvas;
 use crate::app::App;
 use crate::text_style::TextStyle;
 use sigil::prelude::Widget;
 
-const CHIP_GAP_WINDOW: f32 = 14.0;
+const CHIP_GAP_WINDOW: Space = Space::raw(14.0, "chip spacing between the medium and large steps");
 
 pub(super) fn chips(app: &App) -> NodeBuilder {
     let active = app.picker.facet.get();
@@ -14,11 +14,11 @@ pub(super) fn chips(app: &App) -> NodeBuilder {
         LayoutStyle::flex_row()
             .fill_width()
             .height(canvas::overlay_list_row())
-            .padding_x(8.0)
+            .padding_x(Space::Sm)
             .gap(if canvas::is_window() {
                 CHIP_GAP_WINDOW
             } else {
-                canvas::cell().w
+                Space::raw(canvas::cell().w, "one terminal cell between chips")
             })
             .align_items(AlignItems::Center),
     );

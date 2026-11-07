@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, Signal, Token, container, signal,
 };
@@ -82,8 +83,8 @@ fn card(
             LayoutStyle::flex_row()
                 .fill_width()
                 .align_items(AlignItems::Center)
-                .padding_x(8.0)
-                .gap(8.0),
+                .padding_x(Space::Sm)
+                .gap(Space::Sm),
         )
         .child(label("effort", Token::Gray10, false));
     if levels.is_empty() {
@@ -135,7 +136,7 @@ fn card(
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
-                .padding_x(8.0)
+                .padding_x(Space::Sm)
                 .padding_bottom(canvas::overlay_gap()),
         )
         .child(

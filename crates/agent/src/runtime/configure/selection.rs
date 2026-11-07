@@ -185,6 +185,12 @@ impl<P: Provider> Loop<P> {
         self.session.id().to_string()
     }
 
+    /// The session that started this one, as its journal records it.
+    #[must_use]
+    pub fn parent(&self) -> Option<String> {
+        self.session.parent().map(|id| id.to_string())
+    }
+
     pub fn work_progress(&self) -> Result<crate::WorkProgress> {
         self.session.work_progress().map_err(Error::from)
     }

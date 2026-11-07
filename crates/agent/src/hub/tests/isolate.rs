@@ -1,53 +1,62 @@
 use super::*;
 
+fn shown(msg: &Msg, count: usize) -> Option<crate::hub::Live> {
+    let Msg::Fact(Fact::Live(live)) = msg else {
+        return None;
+    };
+    (live.len() == count)
+        .then(|| live.iter().find(|entry| entry.active).cloned())
+        .flatten()
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn a_new_agent_gets_a_worktree_only_while_another_runs_in_the_checkout() {
+async fn a_second_topic_in_a_repo_gets_its_own_branch_and_leaves_the_first_alone() {
     let home = tempfile::tempdir().unwrap();
     let (_root, primary) = crate::worktree::tests::repo();
     let primary = primary.canonicalize().unwrap();
     let first = session(home.path(), &primary);
-    let opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let (seen, made_home, made_work) = (opened.clone(), home.path().to_path_buf(), primary.clone());
+    let made_home = home.path().to_path_buf();
     let factory: crate::hub::Factory = std::sync::Arc::new(move |open, _| {
-        seen.lock().unwrap().push(open);
-        Ok((session(&made_home, &made_work), None))
+        let folder = match open {
+            crate::hub::Open::Worktree(folder) => crate::worktree::add(&folder)?.path,
+            crate::hub::Open::Folder(folder) => folder,
+            other => panic!("a topic opens a folder, not {other:?}"),
+        };
+        Ok((session(&made_home, &folder), None))
     });
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    let started = crate::hub::start(first, info(), (tx.clone(), rx), factory);
+    let started = crate::hub::start(first, info(), (tx, rx), factory);
     let mut inbox = started.inbox;
-    let open = crate::hub::Open::Folder(primary.clone());
-    started
-        .commands
-        .send(crate::hub::Cmd::Open(open.clone()))
-        .unwrap();
-    until("the idle open", &mut inbox, |msg| {
-        active(msg).filter(|(_, open)| *open == 2).map(|_| ())
+    let send = |command| started.commands.send(command).unwrap();
+    let new_topic = || crate::hub::Cmd::Open(crate::hub::Open::Folder(primary.clone()));
+    send(new_topic());
+    let one = until("the first topic", &mut inbox, |msg| shown(msg, 2)).await;
+    assert_eq!(one.workspace, primary);
+    send(crate::hub::Cmd::Command("/name first topic".to_owned()));
+    until("the first topic named", &mut inbox, |msg| {
+        shown(msg, 2).filter(|entry| entry.title == "first topic")
     })
     .await;
-    tx.send(Msg::Fact(Fact::Busy(Some(Activity::Turn))))
-        .unwrap();
-    until("the first agent working", &mut inbox, |msg| {
-        let Msg::Fact(Fact::Live(live)) = msg else {
-            return None;
-        };
-        live.iter()
-            .any(|entry| entry.status == Status::Working)
-            .then_some(())
-    })
-    .await;
-    started.commands.send(crate::hub::Cmd::Open(open)).unwrap();
-    until("the running open", &mut inbox, |msg| {
-        active(msg).filter(|(_, open)| *open == 3).map(|_| ())
-    })
-    .await;
+    std::fs::write(primary.join("README"), "first topic's work").unwrap();
+    send(new_topic());
+    let two = until("the second topic", &mut inbox, |msg| shown(msg, 3)).await;
+    assert_ne!(two.workspace, primary);
     assert_eq!(
-        *opened.lock().unwrap(),
-        vec![
-            crate::hub::Open::Folder(primary.clone()),
-            crate::hub::Open::Worktree(primary.clone()),
-        ]
+        crate::worktree::checkout_of(&two.workspace),
+        Some(primary.clone())
     );
-    started.commands.send(crate::hub::Cmd::Quit).unwrap();
+    let branch =
+        crate::diff::git_env(&two.workspace, &[], &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap();
+    assert!(branch.starts_with("summonr/"), "{branch}");
+    assert_eq!(
+        std::fs::read_to_string(two.workspace.join("README")).unwrap(),
+        "hi"
+    );
+    assert_eq!(
+        std::fs::read_to_string(primary.join("README")).unwrap(),
+        "first topic's work"
+    );
+    send(crate::hub::Cmd::Quit);
     started.task.await.unwrap();
 }
 

@@ -80,6 +80,9 @@ impl App {
             KeyCommand::MarkUnread => {
                 self.window.mark_unread(self);
             }
+            KeyCommand::OpenPr => {
+                self.window.open_pr(self);
+            }
             KeyCommand::Split(action) => {
                 self.window.split(action);
             }

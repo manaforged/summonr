@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use sigil::prelude::Space;
 use sigil::prelude::{
     AlignItems, ControlSize, LayoutStyle, NodeBuilder, Token, Tone, button, container, spacer, text,
 };
@@ -33,13 +34,13 @@ pub(super) fn review(app: &App) -> Option<NodeBuilder> {
             LayoutStyle::flex_row()
                 .fill_width()
                 .shrink(0.0)
-                .gap(4.0)
+                .gap(Space::Xs)
                 .align_items(AlignItems::Center),
         )
         .child(
             text(label)
                 .nowrap()
-                .font_size(13.0)
+                .font_size(13.0, "13 px between caption and body for dense code rows")
                 .text_color(Token::OnSurfaceMuted),
         )
         .child(spacer());
@@ -64,7 +65,7 @@ pub(super) fn review(app: &App) -> Option<NodeBuilder> {
 }
 
 pub(super) fn buttons(app: &App, path: &Path) -> NodeBuilder {
-    let row = container().layout(LayoutStyle::flex_row().shrink(0.0).gap(4.0));
+    let row = container().layout(LayoutStyle::flex_row().shrink(0.0).gap(Space::Xs));
     if !canvas::is_window() {
         return row;
     }

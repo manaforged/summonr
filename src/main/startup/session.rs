@@ -132,6 +132,50 @@ pub(super) fn isolate(
     }
 }
 
+pub(super) fn set_up(
+    cwd: &Path,
+    tree: Option<&summonr_agent::Tree>,
+    action: &SessionAction,
+    json: bool,
+) -> Result<()> {
+    if let (Some(tree), SessionAction::Create) = (tree, action)
+        && !same_folder(cwd, &tree.path)
+    {
+        return setup(tree, json);
+    }
+    Ok(())
+}
+
+fn same_folder(one: &Path, other: &Path) -> bool {
+    let real = |path: &Path| dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    real(one) == real(other)
+}
+
+fn setup(tree: &summonr_agent::Tree, json: bool) -> Result<()> {
+    use summonr_agent::scripts::{Script, Scripts, Workspace};
+
+    let scripts = Scripts::load(&tree.primary)?;
+    let Some(script) = scripts.get(Script::Setup) else {
+        return Ok(());
+    };
+    let mut command = Workspace::at(&tree.path)?.command(script);
+    if json {
+        command.stdout(std::io::stderr());
+    }
+    let status = command.status()?;
+    if status.success() {
+        return Ok(());
+    }
+    let ended = status.code().map_or_else(
+        || "was stopped by a signal".to_string(),
+        |code| format!("exited with code {code}"),
+    );
+    Err(summonr_agent::Error::Setup(format!(
+        "setup script `{script}` {ended} in {}",
+        tree.path.display()
+    )))
+}
+
 fn journal_workspace(path: &Path) -> Option<PathBuf> {
     summonr_agent::session_info(path.to_path_buf())
         .cwd

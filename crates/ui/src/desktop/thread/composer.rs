@@ -1,7 +1,7 @@
 use super::*;
 use crate::view::surface::editor;
 use sigil::prelude::Widget;
-use sigil::prelude::{Dimension, Radius};
+use sigil::prelude::{Dimension, Radius, Space};
 
 const PLACEHOLDER: &str = "Message";
 const FIRST: &str = "What should this agent do?";
@@ -114,7 +114,7 @@ fn row(app: &App, editing: bool, menu: sigil::prelude::Signal<bool>) -> NodeBuil
                         .shrink(0.0),
                 )
                 .line_height_px(LINE)
-                .font_size(BODY)
+                .font_size(BODY, "body text, so the draft reads like the transcript")
                 .text_color(Token::OnSurface),
         )
         .child(
@@ -123,9 +123,10 @@ fn row(app: &App, editing: bool, menu: sigil::prelude::Signal<bool>) -> NodeBuil
                     LayoutStyle::flex_row()
                         .fill_width()
                         .gap(XS)
-                        .padding_right(
+                        .padding_right(Space::raw(
                             (super::super::style::CONTROL - super::super::style::MARK) / 2.0,
-                        )
+                            "centers the send mark in its control",
+                        ))
                         .align_items(AlignItems::Center),
                 )
                 .child(attach(app.clone()))

@@ -354,6 +354,7 @@ fn the_window_title_is_the_session_title_without_control_characters() {
             workspace: std::path::PathBuf::from("/tmp/work"),
             status: summonr_agent::hub::Status::Idle,
             active: true,
+            parent: None,
         }])));
         assert_eq!(app.title(), "Fix the]0;x status bar");
     });

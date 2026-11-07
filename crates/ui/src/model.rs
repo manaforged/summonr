@@ -254,6 +254,7 @@ impl Model {
             | Msg::Fact(Fact::Usage(_))
             | Msg::Fact(Fact::Panels(_))
             | Msg::Fact(Fact::Panel { .. })
+            | Msg::Fact(Fact::Forge(_))
             | Msg::Fact(Fact::Prompts { .. })
             | Msg::Fact(Fact::Workflow { .. })
             | Msg::Intent(Intent::Resume(_))

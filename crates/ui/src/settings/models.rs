@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use sigil::prelude::Space;
 use sigil::prelude::{LayoutStyle, NodeBuilder, Tone, container, text_field};
 
 use super::{App, canvas};
@@ -79,7 +80,10 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
         )
         .child(
             container()
-                .layout(LayoutStyle::flex_column().padding_bottom(canvas::overlay_list_row()))
+                .layout(LayoutStyle::flex_column().padding_bottom(Space::raw(
+                    canvas::overlay_list_row(),
+                    "one list row below the list",
+                )))
                 .children_reactive(move || vec![facets::chips(&chips)]),
         )
         .child(container().children_reactive(move || body(&paint)))
@@ -161,7 +165,10 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
         [grid.header(), list],
         frame.width(grid.cells() * canvas::cell().w),
         side(paint, selection.as_ref(), fixing, (width, visible)),
-        canvas::cell().w * 3.0,
+        Space::raw(
+            canvas::cell().w * 3.0,
+            "three terminal cells between list and detail",
+        ),
     )
 }
 

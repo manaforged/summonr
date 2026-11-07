@@ -2,6 +2,8 @@ use super::*;
 use sigil::prelude::Widget;
 use sigil::prelude::{Dimension, MouseButton, Position, Radius};
 
+use super::super::style::CONTROL;
+
 use crate::chat::Target;
 
 const CONTEXT_USED: &str = "Context used";
@@ -65,7 +67,7 @@ pub(crate) fn meters(app: App) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .height(XL + XS)
+                .height(CONTROL)
                 .gap(L)
                 .padding_top(S)
                 .padding_right(L)

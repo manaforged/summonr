@@ -16,6 +16,7 @@ use crate::worktree;
 use summonr_core::dirs::summonr_home;
 
 mod files;
+mod forge;
 mod load;
 mod models;
 
@@ -179,6 +180,7 @@ impl Reader {
                 self.trust,
             )))),
             Cmd::RunPanel(name) => self.send(self.run_panel(name)),
+            Cmd::Forge(ask) => self.ship(&ask, ""),
             Cmd::Offers => self.offers(),
             Cmd::Save(file, text) => self.save(file, text),
             Cmd::View(root, path) => self.show(root, path),

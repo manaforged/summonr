@@ -5,6 +5,7 @@ use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
 use sigil::prelude::Position;
+use sigil::prelude::Space;
 use sigil::prelude::container;
 use sigil::prelude::spacer;
 
@@ -136,13 +137,16 @@ fn footer_row(
         LayoutStyle::flex_row()
             .fill_width()
             .align_items(AlignItems::Center)
-            .gap(12.0),
+            .gap(Space::Md),
     );
     if place.with(|place| !place.is_empty()) {
         row = row.child(
             sigil::prelude::text(place)
                 .nowrap()
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Gray12),
         );
     }
@@ -153,18 +157,24 @@ fn footer_row(
                     LayoutStyle::flex_row()
                         .align_items(AlignItems::Center)
                         .shrink(0.0)
-                        .gap(8.0),
+                        .gap(Space::Sm),
                 )
                 .child(
                     sigil::prelude::text("⎇")
                         .nowrap()
-                        .font_size(12.0)
+                        .font_size(
+                            12.0,
+                            "12 px chrome text that keeps its own line height and weight",
+                        )
                         .text_color(sigil::prelude::Token::Gray11),
                 )
                 .child(
                     sigil::prelude::text(branch.clone())
                         .nowrap()
-                        .font_size(12.0)
+                        .font_size(
+                            12.0,
+                            "12 px chrome text that keeps its own line height and weight",
+                        )
                         .text_color(sigil::prelude::Token::Warn11),
                 ),
         );
@@ -185,7 +195,10 @@ fn footer_row(
                 })
             })
             .nowrap()
-            .font_size(12.0)
+            .font_size(
+                12.0,
+                "12 px chrome text that keeps its own line height and weight",
+            )
             .text_color(tone),
         );
     }
@@ -200,7 +213,10 @@ fn footer_row(
                 })
             })
             .nowrap()
-            .font_size(12.0)
+            .font_size(
+                12.0,
+                "12 px chrome text that keeps its own line height and weight",
+            )
             .text_color(if waiting {
                 sigil::prelude::Token::Warn11
             } else {
@@ -212,7 +228,10 @@ fn footer_row(
         row = row.child(
             sigil::prelude::text(move || view.with(|view| view.1.clone().unwrap_or_default()))
                 .nowrap()
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Gray12),
         );
     }
@@ -257,12 +276,15 @@ fn meter(caption: &str, percent: u64, tone: sigil::prelude::Tone) -> NodeBuilder
         .layout(
             LayoutStyle::flex_row()
                 .align_items(AlignItems::Center)
-                .gap(8.0),
+                .gap(Space::Sm),
         )
         .child(
             sigil::prelude::text(caption)
                 .nowrap()
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Gray11),
         )
         .child(
@@ -276,7 +298,10 @@ fn meter(caption: &str, percent: u64, tone: sigil::prelude::Tone) -> NodeBuilder
         .child(
             sigil::prelude::text(format!("{percent}%"))
                 .nowrap()
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Gray12),
         )
 }
@@ -333,7 +358,10 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
             "─".repeat(card_width.saturating_sub(cell_width(title) + 2))
         ))
         .nowrap()
-        .font_size(12.0)
+        .font_size(
+            12.0,
+            "12 px chrome text that keeps its own line height and weight",
+        )
         .font_family(sigil::prelude::FontFamily::Mono)
         .text_color(sigil::prelude::Token::Gray11),
     );
@@ -344,12 +372,15 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
                     LayoutStyle::flex_row()
                         .fill_width()
                         .align_items(AlignItems::Center)
-                        .gap(0.0),
+                        .gap(Space::None),
                 )
                 .child(
                     sigil::prelude::text(format!("│ {key}"))
                         .nowrap()
-                        .font_size(12.0)
+                        .font_size(
+                            12.0,
+                            "12 px chrome text that keeps its own line height and weight",
+                        )
                         .font_family(sigil::prelude::FontFamily::Mono)
                         .text_color(sigil::prelude::Token::Gray11),
                 )
@@ -357,7 +388,10 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
                 .child(
                     sigil::prelude::text(format!("{value} │"))
                         .nowrap()
-                        .font_size(12.0)
+                        .font_size(
+                            12.0,
+                            "12 px chrome text that keeps its own line height and weight",
+                        )
                         .font_family(sigil::prelude::FontFamily::Mono)
                         .text_color(sigil::prelude::Token::Gray12),
                 ),
@@ -366,7 +400,10 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
     card.child(
         sigil::prelude::text(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))))
             .nowrap()
-            .font_size(12.0)
+            .font_size(
+                12.0,
+                "12 px chrome text that keeps its own line height and weight",
+            )
             .font_family(sigil::prelude::FontFamily::Mono)
             .text_color(sigil::prelude::Token::Gray11),
     )

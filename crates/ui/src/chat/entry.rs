@@ -7,6 +7,7 @@ use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::ObjectFit;
 use sigil::prelude::Paint;
+use sigil::prelude::Space;
 use sigil::prelude::chart;
 use sigil::prelude::container;
 use sigil::prelude::diff;
@@ -73,7 +74,7 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> 
             .layout(
                 LayoutStyle::flex_row()
                     .fill_width()
-                    .padding_x(16.0)
+                    .padding_x(Space::Lg)
                     .min_size(0.0, 0.0),
             )
             .bg(sigil::prelude::Token::Gray5)
@@ -134,7 +135,7 @@ fn assistant(body: sigil::prelude::Signal<String>, app: &App) -> NodeBuilder {
                 LayoutStyle::flex_row()
                     .fill_width()
                     .align_items(AlignItems::Start)
-                    .gap(8.0),
+                    .gap(Space::Sm),
             )
             .child(
                 container()
@@ -175,7 +176,7 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
     let kind =
         summonr_agent::tools::image_type(&bytes).and_then(|media| media.strip_prefix("image/"));
     let picture = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
         .pointer_up(move |event| {
             if event.button != Some(MouseButton::Left) {
                 return;
@@ -315,7 +316,7 @@ pub(crate) fn patch_view(
 }
 
 fn prose(body: &str, text_style: TextStyle) -> NodeBuilder {
-    let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(0.0));
+    let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(Space::None));
     for para in body.split('\n') {
         column = column.child(text_style.on(markdown_inline(para)));
     }

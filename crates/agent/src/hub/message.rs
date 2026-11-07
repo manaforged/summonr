@@ -103,6 +103,8 @@ pub enum Fact {
         result: std::result::Result<crate::hunks::Marks, String>,
     },
     Live(Vec<super::Live>),
+    /// The current branch's pull request after a forge ask, or why there is none.
+    Forge(Result<Option<crate::forge::Pull>, crate::forge::Error>),
     Named(String),
     Approval(String),
     Replayed,
@@ -192,6 +194,8 @@ pub enum Cmd {
     Trees,
     ListPanels,
     RunPanel(String),
+    /// Asks the workspace's GitHub repository through `gh`.
+    Forge(crate::forge::Ask),
     View(Option<std::path::PathBuf>, String),
     Save(PathBuf, String),
     Merge(std::path::PathBuf),

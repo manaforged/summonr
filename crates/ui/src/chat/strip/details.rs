@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{
     ControlSize, LayoutStyle, NodeBuilder, Token, Widget, button, container, virtual_list,
 };
@@ -206,7 +207,7 @@ pub(super) fn list(app: App) -> NodeBuilder {
                         .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
                         .child(
                             container()
-                                .layout(LayoutStyle::flex_row().fill_width().gap(8.0))
+                                .layout(LayoutStyle::flex_row().fill_width().gap(Space::Sm))
                                 .child(marker)
                                 .child(
                                     button(title)
@@ -249,7 +250,7 @@ pub(super) fn list(app: App) -> NodeBuilder {
                     if !expanded && !row.summary.is_empty() {
                         body = body.child(
                             container()
-                                .layout(LayoutStyle::block().padding_left(24.0))
+                                .layout(LayoutStyle::block().padding_left(Space::Xl))
                                 .child(text(
                                     crate::cells::ellipsize(&row.summary, width.saturating_sub(4)),
                                     Token::Gray10,
@@ -258,7 +259,11 @@ pub(super) fn list(app: App) -> NodeBuilder {
                     }
                     if expanded {
                         let mut detail = container()
-                            .layout(LayoutStyle::flex_column().fill_width().padding_left(24.0))
+                            .layout(
+                                LayoutStyle::flex_column()
+                                    .fill_width()
+                                    .padding_left(Space::Xl),
+                            )
                             .child(text(row.meta.clone(), Token::Gray10).wrap())
                             .child(text(row.detail.clone(), Token::Gray12).wrap());
                         if row.clear {

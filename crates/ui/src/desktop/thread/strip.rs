@@ -32,7 +32,7 @@ fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
     if corner {
         items.push(
             container()
-                .layout(LayoutStyle::block().width(super::super::CONTROLS - S).shrink(0.0))
+                .layout(LayoutStyle::block().width(super::super::CONTROLS - 8.0).shrink(0.0))
                 .into(),
         );
         items.push(super::super::sidebar_toggle(app));

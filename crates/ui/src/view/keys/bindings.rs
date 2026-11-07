@@ -6,6 +6,7 @@ pub(crate) enum KeyCommand {
     Trigger(char),
     NewSession,
     MarkUnread,
+    OpenPr,
     Palette,
     Pane(Pane),
     Always,
@@ -268,7 +269,7 @@ const ARROWS: [(Key, Dir); 4] = [
     (Key::ArrowDown, Dir::Down),
 ];
 
-pub(crate) const WINDOW: [(&str, ModifiersState, KeyCommand); 16] = [
+pub(crate) const WINDOW: [(&str, ModifiersState, KeyCommand); 17] = [
     ("d", CMD, KeyCommand::Split(Split::Open)),
     ("d", CMD_ALT, KeyCommand::Split(Split::Below)),
     ("∂", CMD_ALT, KeyCommand::Split(Split::Below)),
@@ -281,6 +282,7 @@ pub(crate) const WINDOW: [(&str, ModifiersState, KeyCommand); 16] = [
     ("b", CMD, KeyCommand::Sidebar),
     ("d", CMD_SHIFT, KeyCommand::Pane(Pane::Diff)),
     ("u", CMD_SHIFT, KeyCommand::MarkUnread),
+    ("p", CMD_SHIFT, KeyCommand::OpenPr),
     (".", CMD, KeyCommand::Interrupt),
     (
         "`",

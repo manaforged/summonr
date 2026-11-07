@@ -162,6 +162,8 @@ table! {
     gateway_poll_secs: u64,
     gateway_pair_secs: u64,
     gateway_port: u16,
+    port_base: u16,
+    port_block: u16,
     gateway_body_bytes: usize,
     gateway_fire_secs: u64,
     gateway_head_secs: u64,

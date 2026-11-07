@@ -1,4 +1,5 @@
 use sigil::prelude::Paint;
+use sigil::prelude::Space;
 use sigil::prelude::{LayoutStyle, NodeBuilder, button, container, text_edit, virtual_list};
 
 use super::{App, canvas};
@@ -129,19 +130,25 @@ fn saved(app: &App) -> NodeBuilder {
             LayoutStyle::flex_row()
                 .fill_width()
                 .gap(canvas::overlay_gap())
-                .padding_x(8.0),
+                .padding_x(Space::Sm),
         )
         .child(
             sigil::prelude::text("saved:")
                 .nowrap()
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Gray11),
         );
     if names.is_empty() {
         row = row.child(
             sigil::prelude::text("none")
                 .nowrap()
-                .font_size(12.0)
+                .font_size(
+                    12.0,
+                    "12 px chrome text that keeps its own line height and weight",
+                )
                 .text_color(sigil::prelude::Token::Gray11),
         );
         return row;

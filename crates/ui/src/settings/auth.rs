@@ -1,3 +1,4 @@
+use sigil::prelude::Space;
 use sigil::prelude::{LayoutStyle, NodeBuilder, signal, virtual_list};
 
 use super::{App, canvas};
@@ -185,7 +186,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         [list],
         LayoutStyle::flex_column().width(LIST_CELLS * canvas::cell().w),
         step_pane(app, width, visible),
-        16.0,
+        Space::Lg,
     )
 }
 

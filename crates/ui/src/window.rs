@@ -46,6 +46,12 @@ impl Window {
 
     pub(crate) fn mark_unread(&self, _app: &App) {}
 
+    pub(crate) fn open_pr(&self, _app: &App) {}
+
+    pub(crate) fn expect_worktree(&self, _open: &summonr_agent::hub::Open) {}
+
+    pub(crate) fn arrived(&self, _app: &App) {}
+
     pub(crate) fn split(&self, _action: Split) {}
 
     pub(crate) fn dialog_open(&self) -> bool {

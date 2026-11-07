@@ -364,4 +364,40 @@ async fn renaming_an_agent_out_of_view_keeps_the_view() {
     started.task.await.unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_child_session_names_its_lead_in_the_roster() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let lead = session(home.path(), work.path()).session_id();
+    let client = crate::provider::Client::new("k", "http://127.0.0.1:9/v1").unwrap();
+    let parent = crate::durable::driver::Parent::Task(lead.parse().unwrap());
+    let driver = crate::durable::driver::SessionDriver::open(
+        home.path(),
+        work.path(),
+        "m",
+        "system",
+        Some(parent),
+    )
+    .unwrap();
+    let child = crate::runtime::Loop::open(client, "m", work.path(), "system", driver).unwrap();
+    let factory: super::Factory = std::sync::Arc::new(|_, _| {
+        Err(summonr_core::error::Error::Config(
+            "no second agent".to_owned(),
+        ))
+    });
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let started = super::start(child, info(), (tx, rx), factory);
+    let mut inbox = started.inbox;
+    let named = until("the roster", &mut inbox, |msg| {
+        let Msg::Fact(Fact::Live(live)) = msg else {
+            return None;
+        };
+        live.first().map(|entry| entry.parent.clone())
+    })
+    .await;
+    assert_eq!(named, Some(lead));
+    started.commands.send(crate::hub::Cmd::Quit).unwrap();
+    started.task.await.unwrap();
+}
+
 mod isolate;

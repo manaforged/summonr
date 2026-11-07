@@ -2,7 +2,7 @@ use sigil::prelude::Paint;
 use sigil::prelude::Widget;
 use sigil::prelude::{
     AlignItems, ControlSize, JustifyContent, LayoutStyle, LogicalKey, ModifiersState, NodeBuilder,
-    Shortcut, Token, Tone, button, container, icon_button, node, notice_band, spacer,
+    Shortcut, Space, Token, Tone, button, container, icon_button, node, notice_band, spacer,
 };
 
 use super::{App, chat};
@@ -109,7 +109,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                                     .padding_top(L),
                             )
                             .child(node(move || {
-                                chat::surface::transcript(app.clone(), (L, L), empty_home)
+                                chat::surface::transcript(app.clone(), (GUTTER, GUTTER), empty_home)
                             }))
                     })]
                 }),
@@ -190,7 +190,7 @@ fn hero(app: &App) -> NodeBuilder {
                 .grow(1.0)
                 .min_size(0.0, 0.0)
                 .padding_x(XL)
-                .padding_bottom(XL * 2.0)
+                .padding_bottom(Space::Xxxl)
                 .align_items(AlignItems::Center)
                 .justify_content(JustifyContent::Center),
         )
@@ -278,7 +278,7 @@ fn held(app: App) -> NodeBuilder {
             LayoutStyle::flex_row()
                 .fill_width()
                 .gap(S)
-                .padding_left(GUTTER)
+                .padding_left(L)
                 .padding_bottom(S)
                 .align_items(AlignItems::Center),
         )

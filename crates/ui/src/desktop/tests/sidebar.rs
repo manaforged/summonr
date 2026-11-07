@@ -97,6 +97,7 @@ fn another_agents_chat_keeps_its_icon_and_says_it_is_working() {
                 workspace: "/work".into(),
                 status: summonr_agent::hub::Status::Working,
                 active: false,
+                parent: None,
             }])));
         },
         Vec::new(),
@@ -170,6 +171,7 @@ fn a_live_agent_shows_its_new_title_before_the_list_refreshes() {
                 workspace: "/work".into(),
                 status: summonr_agent::hub::Status::Idle,
                 active: false,
+                parent: None,
             }])));
         },
         Vec::new(),
@@ -198,6 +200,7 @@ fn a_repository_lists_before_its_agent_has_a_message() {
                 workspace: "/added-repo".into(),
                 status: summonr_agent::hub::Status::Idle,
                 active: false,
+                parent: None,
             }])));
         },
         Vec::new(),
@@ -312,6 +315,7 @@ fn a_change_in_the_running_agents_refreshes_the_list() {
                 workspace: "/work".into(),
                 status: summonr_agent::hub::Status::Working,
                 active: true,
+                parent: None,
             }])));
         },
     );

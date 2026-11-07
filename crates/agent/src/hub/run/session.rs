@@ -12,6 +12,7 @@ pub(super) struct Session {
     pub(super) id: String,
     pub(super) title: Option<String>,
     pub(super) workspace: PathBuf,
+    pub(super) parent: Option<String>,
     pub(super) status: Status,
     pub(super) replay: ReplayState,
     pub(super) stale: bool,

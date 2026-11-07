@@ -41,6 +41,7 @@ pub(super) enum Verb {
     Logout,
     Worktrees,
     Diff,
+    Children,
 }
 
 #[derive(Clone, Debug, Default)]

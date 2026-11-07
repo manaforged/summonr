@@ -67,7 +67,13 @@ pub enum Tint {
 
 impl Tint {
     /// Every tint, in the order Settings lists them.
-    pub const ALL: [Self; 5] = [Self::Auto, Self::Wisp, Self::Flame, Self::Foxfire, Self::Arcane];
+    pub const ALL: [Self; 5] = [
+        Self::Auto,
+        Self::Wisp,
+        Self::Flame,
+        Self::Foxfire,
+        Self::Arcane,
+    ];
 
     /// The tint's name in the config file.
     pub fn name(self) -> &'static str {
@@ -77,6 +83,42 @@ impl Tint {
             Self::Flame => "flame",
             Self::Foxfire => "foxfire",
             Self::Arcane => "arcane",
+        }
+    }
+}
+
+/// Something Will reacts to that the user can turn off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Reaction {
+    Stop,
+    Send,
+    Fail,
+    Finish,
+    Ask,
+    Type,
+}
+
+impl Reaction {
+    /// Every reaction, in the order Settings lists them.
+    pub const ALL: [Self; 6] = [
+        Self::Type,
+        Self::Send,
+        Self::Stop,
+        Self::Finish,
+        Self::Fail,
+        Self::Ask,
+    ];
+
+    /// The reaction's name in the config file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Stop => "stop",
+            Self::Send => "send",
+            Self::Fail => "fail",
+            Self::Finish => "finish",
+            Self::Ask => "ask",
+            Self::Type => "type",
         }
     }
 }
@@ -114,6 +156,7 @@ pub struct Prefs {
     pub will: bool,
     pub will_tint: Tint,
     pub will_spot: [i32; 2],
+    pub will_quiet: Vec<Reaction>,
     pub animations: bool,
     pub spinner: Spinner,
     pub fps: u32,
@@ -138,6 +181,7 @@ impl Default for Prefs {
             will: false,
             will_tint: Tint::Auto,
             will_spot: [24, 120],
+            will_quiet: Vec::new(),
             animations: true,
             spinner: Spinner::default(),
             fps: FPS_DEFAULT,
@@ -170,6 +214,7 @@ fn from_file(file: &config::File) -> Result<Prefs> {
         will: file.will.unwrap_or(base.will),
         will_tint: file.will_tint.unwrap_or(base.will_tint),
         will_spot: file.will_spot.unwrap_or(base.will_spot),
+        will_quiet: file.will_quiet.clone().unwrap_or(base.will_quiet),
         animations: file.animations.unwrap_or(base.animations),
         spinner: file.spinner.unwrap_or(base.spinner),
         fps: file.fps.unwrap_or(base.fps),
@@ -181,11 +226,14 @@ fn from_file(file: &config::File) -> Result<Prefs> {
         diff_layout: file.diff_layout.unwrap_or(base.diff_layout),
         layout: file.layout.clone().unwrap_or(base.layout),
         mail: file.mail.unwrap_or(base.mail),
-        spacing: file
-            .spacing
-            .map_or(base.spacing, |gap| gap.clamp(*SPACING.start(), *SPACING.end())),
+        spacing: file.spacing.map_or(base.spacing, |gap| {
+            gap.clamp(*SPACING.start(), *SPACING.end())
+        }),
         sidebar: file.sidebar.as_ref().map_or(base.sidebar, |names| {
-            names.iter().filter_map(|name| Action::parse(name)).collect()
+            names
+                .iter()
+                .filter_map(|name| Action::parse(name))
+                .collect()
         }),
     })
 }

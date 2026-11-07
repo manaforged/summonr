@@ -29,6 +29,13 @@ pub(crate) fn save_prefs(path: &Path, before: &Prefs, prefs: &Prefs) -> Result<(
                 )),
             ),
             (
+                "will_quiet",
+                before.will_quiet != prefs.will_quiet,
+                toml_edit::Item::Value(toml_edit::Value::Array(
+                    prefs.will_quiet.iter().map(|each| each.name()).collect(),
+                )),
+            ),
+            (
                 "animations",
                 before.animations != prefs.animations,
                 value(prefs.animations),

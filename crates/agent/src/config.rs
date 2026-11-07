@@ -30,6 +30,7 @@ pub(crate) struct File {
     pub will: Option<bool>,
     pub will_tint: Option<crate::prefs::Tint>,
     pub will_spot: Option<[i32; 2]>,
+    pub will_quiet: Option<Vec<crate::prefs::Reaction>>,
     pub animations: Option<bool>,
     pub spinner: Option<crate::prefs::Spinner>,
     pub fps: Option<u32>,

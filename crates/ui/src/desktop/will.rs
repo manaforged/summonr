@@ -1,108 +1,68 @@
-use std::cell::Cell;
+mod mood;
+mod shape;
+
+use std::cell::{Cell, RefCell};
 use std::f32::consts::TAU;
 use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use sigil::geometry::Rect;
 use sigil::prelude::{
-    LayoutStyle, NodeBuilder, Position, Role, Signal, Theme, Widget, container, interval, signal,
+    LayoutStyle, MouseButton, NodeBuilder, Position, Role, Signal, Theme, Widget, container,
+    interval, signal,
 };
 use sigil::reactive::{derived, untrack};
-use sigil::scene::SceneBuilder;
-use sigil::widgets::PathNode;
+use sigil::widgets::MenuItem;
 
+pub(super) use mood::Mood;
+
+use self::mood::{Mind, Pose};
+use self::shape::Frame;
 use super::App;
+use super::settings::Page;
 use super::style::{WILL, will_colors};
 
-const PERIOD: Duration = Duration::from_millis(50);
-const BASE: (f32, f32) = (8.0, 15.0);
+/// How often a moving Will redraws.
+const PERIOD: Duration = Duration::from_millis(33);
+/// How often a still Will checks whether a reaction has run out.
+const SETTLE: Duration = Duration::from_millis(250);
 /// The closest Will comes to the column's edges, in points.
 const EDGE: f32 = 8.0;
 /// How far the pointer moves before a press becomes a drag, in points.
 const SLOP: f32 = 3.0;
+/// Spring stiffness and damping for pose changes: a short ease with a little overshoot.
+const SPRING: (f32, f32) = (180.0, 14.0);
+/// How long a blink keeps the eyes shut, and the shortest and longest gaps between blinks.
+const BLINK: (Duration, f32, f32) = (Duration::from_millis(110), 2.4, 6.0);
+/// How long one keystroke lifts Will, and by how much on the 16 grid.
+const TICK: (Duration, f32) = (Duration::from_millis(70), -0.7);
+const SETTINGS: &str = "Will settings…";
+const HIDE: &str = "Hide Will";
 
 static CLOCK: OnceLock<Instant> = OnceLock::new();
 
-#[derive(Clone, Copy)]
-enum Seg {
-    Move(f32, f32),
-    Line(f32, f32),
-    Curve([f32; 6]),
-    Close,
+/// Where a drawn Will takes his mood from.
+#[derive(Clone)]
+enum Source {
+    Live(Mind),
+    Fixed(Signal<Mood>),
 }
 
-/// How Will holds himself in one state.
-struct Pose {
-    flicker: f32,
-    sway: f32,
-    stretch: f32,
-    scale: (f32, f32),
-    eyes: &'static [Seg],
+impl Source {
+    fn mood(&self, app: &App) -> Mood {
+        match self {
+            Self::Live(mind) => mind.mood(app),
+            Self::Fixed(mood) => mood.get(),
+        }
+    }
+
+    fn typed_at(&self) -> Option<Instant> {
+        match self {
+            Self::Live(mind) => *mind.typed_at.borrow(),
+            Self::Fixed(_) => None,
+        }
+    }
 }
-
-const IDLE: Pose = Pose {
-    flicker: 2.6,
-    sway: 2.0,
-    stretch: 0.02,
-    scale: (1.0, 1.0),
-    eyes: &OPEN,
-};
-
-const WORKING: Pose = Pose {
-    flicker: 1.1,
-    sway: 2.1,
-    stretch: 0.025,
-    scale: (1.03, 1.08),
-    eyes: &FOCUS,
-};
-
-const FLAME: [Seg; 9] = [
-    Seg::Move(7.3, 1.8),
-    Seg::Curve([7.8, 3.6, 9.6, 4.2, 11.0, 5.2]),
-    Seg::Curve([12.2, 6.1, 13.0, 7.4, 13.0, 9.0]),
-    Seg::Curve([13.0, 11.76, 10.76, 14.0, 8.0, 14.0]),
-    Seg::Curve([5.24, 14.0, 3.0, 11.76, 3.0, 9.0]),
-    Seg::Curve([3.0, 7.6, 3.5, 6.6, 4.2, 5.8]),
-    Seg::Curve([4.6, 6.6, 5.2, 6.8, 5.8, 6.7]),
-    Seg::Curve([5.5, 5.0, 6.1, 3.2, 7.3, 1.8]),
-    Seg::Close,
-];
-
-const CORE: [Seg; 6] = [
-    Seg::Move(11.1, 10.0),
-    Seg::Curve([11.1, 11.712, 9.712, 13.1, 8.0, 13.1]),
-    Seg::Curve([6.288, 13.1, 4.9, 11.712, 4.9, 10.0]),
-    Seg::Curve([4.9, 8.288, 6.288, 6.9, 8.0, 6.9]),
-    Seg::Curve([9.712, 6.9, 11.1, 8.288, 11.1, 10.0]),
-    Seg::Close,
-];
-
-const OPEN: [Seg; 10] = [
-    Seg::Move(6.0, 9.0),
-    Seg::Line(7.2, 9.0),
-    Seg::Line(7.2, 11.2),
-    Seg::Line(6.0, 11.2),
-    Seg::Close,
-    Seg::Move(8.8, 9.0),
-    Seg::Line(10.0, 9.0),
-    Seg::Line(10.0, 11.2),
-    Seg::Line(8.8, 11.2),
-    Seg::Close,
-];
-
-const FOCUS: [Seg; 10] = [
-    Seg::Move(5.85, 10.7),
-    Seg::Line(7.35, 10.7),
-    Seg::Line(7.35, 11.4),
-    Seg::Line(5.85, 11.4),
-    Seg::Close,
-    Seg::Move(8.65, 10.7),
-    Seg::Line(10.15, 10.7),
-    Seg::Line(10.15, 11.4),
-    Seg::Line(8.65, 11.4),
-    Seg::Close,
-];
 
 /// Will over the main column while the Will setting is on; the user drags him anywhere.
 pub(super) fn layer(app: &App) -> NodeBuilder {
@@ -118,6 +78,7 @@ pub(super) fn layer(app: &App) -> NodeBuilder {
         })
     };
     let shown = derived(move || model.with(|model| model.prefs.will));
+    let mind = Mind::watch(app);
     let app = app.clone();
     container()
         .layout(
@@ -130,16 +91,22 @@ pub(super) fn layer(app: &App) -> NodeBuilder {
         .animate_translate_y(spot(1))
         .children_reactive(move || {
             if shown.get() {
-                vec![untrack(|| grip(&app, live, room))]
+                vec![untrack(|| grip(&app, &mind, live, room))]
             } else {
                 Vec::new()
             }
         })
 }
 
-/// Will drawn `size` points square, still, for Settings.
+/// Will drawn `size` points square, still and idle, for Settings.
 pub(super) fn still(app: &App, size: f32) -> NodeBuilder {
-    art(app, size, false)
+    art(app, size, false, Source::Fixed(signal(Mood::Idle)))
+}
+
+/// Will drawn `size` points square in `mood`, moving while Motion is on.
+pub(super) fn preview(app: &App, size: f32, mood: Signal<Mood>) -> NodeBuilder {
+    let moving = untrack(|| app.model.with(|model| model.prefs.animations));
+    art(app, size, moving, Source::Fixed(mood))
 }
 
 /// The largest right and bottom offsets that keep Will inside the main column.
@@ -162,18 +129,25 @@ fn fit(offset: f32, most: f32) -> f32 {
 
 fn grip(
     app: &App,
+    mind: &Mind,
     live: Signal<Option<(f32, f32)>>,
     room: impl Fn() -> (f32, f32) + Copy + 'static,
 ) -> NodeBuilder {
     let moving = untrack(|| app.model.with(|model| model.prefs.animations));
     let held = Rc::new(Cell::new(None::<(f32, f32, f32, f32)>));
     let (press, drag, model, save) = (Rc::clone(&held), Rc::clone(&held), app.model, app.clone());
-    container()
+    let (enter, leave) = (mind.hover, mind.hover);
+    let body = container()
         .role(Role::Image)
         .label("Will")
         .layout(LayoutStyle::block().width(WILL).height(WILL))
-        .child(art(app, WILL, moving))
+        .child(art(app, WILL, moving, Source::Live(mind.clone())))
+        .pointer_enter(move |_| enter.set(true))
+        .pointer_leave(move |_| leave.set(false))
         .pointer_down(move |event| {
+            if event.button != Some(MouseButton::Left) {
+                return;
+            }
             let [right, bottom] = untrack(|| model.with(|model| model.prefs.will_spot));
             let (most_right, most_bottom) = untrack(room);
             let at = event.window_position;
@@ -210,30 +184,40 @@ fn grip(
             }
             live.set(None);
             event.stop_propagation();
-        })
+        });
+    let menu = app.clone();
+    container()
+        .layout(LayoutStyle::block().width(WILL).height(WILL).shrink(0.0))
+        .child(sigil::widgets::context_menu(body, move || {
+            let (open, hide) = (menu.clone(), menu.clone());
+            vec![
+                MenuItem::new(SETTINGS).activate(move || super::settings::open(&open, Page::Will)),
+                MenuItem::new(HIDE).activate(move || hide.flip(|prefs| prefs.will = false)),
+            ]
+        }))
 }
 
-fn art(app: &App, size: f32, moving: bool) -> NodeBuilder {
+fn art(app: &App, size: f32, moving: bool, source: Source) -> NodeBuilder {
     let (model, appearance) = (app.model, app.appearance);
-    let look = derived(move || {
-        let light = u64::from(appearance.get().light());
-        model.with(|model| {
-            light << 9 | u64::from(model.busy_since.is_some()) << 8 | model.prefs.will_tint as u64
-        })
-    });
     let frame = signal(0_u64);
-    if moving {
-        interval(PERIOD, move || frame.update(|at| *at = at.wrapping_add(1)));
-    }
-    let start = *CLOCK.get_or_init(Instant::now);
-    let theme = Theme::dark();
+    let period = if moving { PERIOD } else { SETTLE };
+    interval(period, move || frame.update(|at| *at = at.wrapping_add(1)));
+    let (watch, seen) = (app.clone(), source.clone());
+    let look = derived(move || {
+        let _ = frame.get();
+        let light = u64::from(appearance.get().light());
+        let tint = model.with(|model| model.prefs.will_tint) as u64;
+        light << 16 | tint << 8 | seen.mood(&watch) as u64
+    });
+    let body = RefCell::new(Body::new());
+    let (theme, app) = (Theme::dark(), app.clone());
     let paint = sigil::widgets::canvas(move |scene, area| {
-        let (working, tint) =
-            untrack(|| model.with(|model| (model.busy_since.is_some(), model.prefs.will_tint)));
-        let pose = if working { &WORKING } else { &IDLE };
-        let seconds = if moving { start.elapsed().as_secs_f32() } else { 0.0 };
+        let (mood, tint) =
+            untrack(|| (source.mood(&app), model.with(|model| model.prefs.will_tint)));
+        let pose = mood.pose();
+        let drawn = body.borrow_mut().step(&pose, moving, source.typed_at());
         let colors = will_colors(tint, appearance.peek().light());
-        draw(scene, area, pose, seconds, colors, &theme);
+        shape::draw(scene, area, &drawn, colors, &theme);
     })
     .redraw_on(if moving { frame } else { look })
     .layout(LayoutStyle::block().width(size).height(size));
@@ -242,49 +226,96 @@ fn art(app: &App, size: f32, moving: bool) -> NodeBuilder {
         .child(paint)
 }
 
-fn draw(
-    scene: &mut SceneBuilder,
-    area: Rect,
-    pose: &Pose,
-    seconds: f32,
-    [edge, core, eyes]: [sigil::prelude::Rgba8; 3],
-    theme: &Theme,
-) {
-    let wave = (seconds * TAU / pose.flicker).sin();
-    let (sin, cos) = (wave * pose.sway).to_radians().sin_cos();
-    let (sx, sy) = (
-        pose.scale.0,
-        pose.scale.1 * (1.0 + pose.stretch * (wave + 1.0) / 2.0),
-    );
-    let place = move |x: f32, y: f32| {
-        let (dx, dy) = ((x - BASE.0) * sx, (y - BASE.1) * sy);
-        (BASE.0 + dx * cos - dy * sin, BASE.1 + dx * sin + dy * cos)
-    };
-    for (segs, color) in [(&FLAME[..], edge), (&CORE[..], core), (pose.eyes, eyes)] {
-        outline(segs, &place, color).draw(scene, area, theme);
+/// Will's moving body: each pose value springs toward its target, and the flame flickers.
+struct Body {
+    at: [f32; 7],
+    speed: [f32; 7],
+    phase: f32,
+    last: Option<Instant>,
+    blink: Instant,
+}
+
+impl Body {
+    fn new() -> Self {
+        Self {
+            at: target(&Mood::Idle.pose()),
+            speed: [0.0; 7],
+            phase: 0.0,
+            last: None,
+            blink: Instant::now() + Duration::from_secs_f32(BLINK.1),
+        }
+    }
+
+    fn step(&mut self, pose: &Pose, moving: bool, typed_at: Option<Instant>) -> Frame {
+        let goal = target(pose);
+        let now = Instant::now();
+        let mut blink = 1.0;
+        let mut tick = 0.0;
+        if moving {
+            let dt = self
+                .last
+                .map_or(0.0, |last| now.duration_since(last).as_secs_f32().min(0.1));
+            self.spring(&goal, dt);
+            self.phase = (self.phase + dt * TAU / pose.flicker) % TAU;
+            if now >= self.blink + BLINK.0 {
+                self.blink = now + Duration::from_secs_f32(gap(now));
+            }
+            if now >= self.blink {
+                blink = 0.1;
+            }
+            if typed_at.is_some_and(|at| now.duration_since(at) < TICK.0) {
+                tick = TICK.1;
+            }
+        } else {
+            self.at = goal;
+            self.speed = [0.0; 7];
+            self.phase = 0.0;
+        }
+        self.last = Some(now);
+        let wave = self.phase.sin();
+        let [sx, sy, tilt, lift, fade, lx, ly] = self.at;
+        Frame {
+            scale: (sx, sy * (1.0 + pose.stretch * (wave + 1.0) / 2.0)),
+            tilt: tilt + wave * pose.sway,
+            lift: lift + tick,
+            fade,
+            eyes: pose.eyes,
+            look: (lx, ly),
+            blink,
+        }
+    }
+
+    fn spring(&mut self, goal: &[f32; 7], dt: f32) {
+        const STEP: f32 = 1.0 / 120.0;
+        let (stiff, damp) = SPRING;
+        let mut left = dt;
+        while left > 0.0 {
+            let h = left.min(STEP);
+            for at in 0..7 {
+                let pull = stiff * (goal[at] - self.at[at]) - damp * self.speed[at];
+                self.speed[at] += pull * h;
+                self.at[at] += self.speed[at] * h;
+            }
+            left -= h;
+        }
     }
 }
 
-fn outline(
-    segs: &[Seg],
-    place: &impl Fn(f32, f32) -> (f32, f32),
-    color: sigil::prelude::Rgba8,
-) -> PathNode {
-    segs.iter()
-        .fold(sigil::widgets::path(16, 16), |node, seg| match *seg {
-            Seg::Move(x, y) => {
-                let (x, y) = place(x, y);
-                node.move_to(x, y)
-            }
-            Seg::Line(x, y) => {
-                let (x, y) = place(x, y);
-                node.line_to(x, y)
-            }
-            Seg::Curve([ax, ay, bx, by, x, y]) => {
-                let ((ax, ay), (bx, by), (x, y)) = (place(ax, ay), place(bx, by), place(x, y));
-                node.cubic_to(ax, ay, bx, by, x, y)
-            }
-            Seg::Close => node.close(),
-        })
-        .fill(color)
+const fn target(pose: &Pose) -> [f32; 7] {
+    [
+        pose.scale.0,
+        pose.scale.1,
+        pose.tilt,
+        pose.lift,
+        pose.fade,
+        pose.look.0,
+        pose.look.1,
+    ]
+}
+
+/// A gap before the next blink, spread between the shortest and longest from the clock.
+fn gap(now: Instant) -> f32 {
+    let start = *CLOCK.get_or_init(Instant::now);
+    let spread = (now.duration_since(start).subsec_micros() % 1000) as f32 / 1000.0;
+    BLINK.1 + (BLINK.2 - BLINK.1) * spread
 }

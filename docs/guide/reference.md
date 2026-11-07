@@ -214,6 +214,7 @@ Top-level keys in `~/.summonr/config.toml`:
 | `will` | `true`, `false` (default) | Show Will, a small flame that floats over the desktop agent and works while it works; **Show Will** under Settings → Will. |
 | `will_tint` | `auto` (default: `flame` on a light theme, `wisp` on a dark one), `wisp`, `flame`, `foxfire`, `arcane` | Will's colour. |
 | `will_spot` | `[right, bottom]` in points, default `[24, 120]` | Where Will sits, from the agent column's right and bottom edges; dragging him sets it. |
+| `will_quiet` | list of `type`, `send`, `stop`, `finish`, `fail`, `ask`; default `[]` | Reactions Will does not show: listening while you type, a hop when you send, a flinch when you stop the agent, a smile when a turn finishes, a droop when it fails, and looking up when the agent needs you. |
 | `sidebar` | A list of action names such as `new_agent`, `jobs`, `usage`; default `["new_agent", "new_terminal", "search"]` | Rows at the top of the desktop sidebar. **Pin to sidebar…** in the ⌘K palette adds one; right-click a row and pick **Unpin** to remove it. |
 
 Keys on an `[endpoint.NAME]` row:

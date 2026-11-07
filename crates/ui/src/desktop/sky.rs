@@ -50,7 +50,8 @@ fn fill() -> LayoutStyle {
         .position(Position::Absolute)
         .inset_top(0.0)
         .inset_left(0.0)
-        .fill()
+        .inset_right(0.0)
+        .inset_bottom(0.0)
 }
 
 fn wash(paper: Rgba8, seed: u64) -> Wash {

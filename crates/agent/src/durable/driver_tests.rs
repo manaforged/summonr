@@ -346,3 +346,14 @@ fn work_resumes_from_the_session_log_alone() {
         Some("ship the parser")
     );
 }
+
+#[test]
+fn a_chat_records_the_agent_of_its_first_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    driver.set_agent(Some("claude".to_string()));
+    driver.prepare_turn_work("first", &[]).unwrap();
+    driver.start_input(&UserInput::from("first")).unwrap();
+    let path = driver.path().to_path_buf();
+    assert_eq!(crate::session::info(path).agent.as_deref(), Some("claude"));
+}

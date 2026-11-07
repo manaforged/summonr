@@ -76,6 +76,9 @@ pub enum Line {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         interactive: bool,
     },
+    Agent {
+        route: String,
+    },
     Tools {
         bytes: u64,
     },

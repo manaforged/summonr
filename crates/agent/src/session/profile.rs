@@ -93,7 +93,8 @@ impl Scan {
             }
             Line::Summary { text, tail } => self.summary(text, tail),
             Line::Clear => self.history = History::default(),
-            Line::Budget { .. }
+            Line::Agent { .. }
+            | Line::Budget { .. }
             | Line::Work { .. }
             | Line::Workflow { .. }
             | Line::Child { .. }

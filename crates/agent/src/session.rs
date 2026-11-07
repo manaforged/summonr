@@ -47,6 +47,8 @@ pub struct SessionInfo {
     pub parent: Option<String>,
     pub depth: u8,
     pub interactive: bool,
+    /// The route of the foreign agent that ran this chat's first message.
+    pub agent: Option<String>,
     /// When the session journal last changed.
     pub modified: Option<std::time::SystemTime>,
 }
@@ -60,6 +62,8 @@ pub(crate) struct Summary {
     depth: u8,
     #[serde(default)]
     interactive: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     open_bytes: Option<u64>,
 }
@@ -83,6 +87,7 @@ impl Summary {
                     summary.parent = parent.map(|id| id.to_string());
                     summary.depth = *depth;
                 }
+                Line::Agent { route } => summary.agent = Some(route.clone()),
                 Line::User {
                     text,
                     source,
@@ -135,6 +140,7 @@ impl Summary {
             parent: self.parent,
             depth: self.depth,
             interactive: self.interactive,
+            agent: self.agent,
             modified,
         }
     }

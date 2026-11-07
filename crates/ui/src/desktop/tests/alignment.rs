@@ -65,6 +65,7 @@ fn agent(id: &str, cwd: &str, preview: &str, age: Duration) -> (SessionInfo, boo
             parent: None,
             depth: 0,
             interactive: true,
+            agent: None,
             modified: SystemTime::now().checked_sub(age),
         },
         true,

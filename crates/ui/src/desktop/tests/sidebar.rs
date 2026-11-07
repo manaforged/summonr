@@ -17,6 +17,7 @@ fn chat(id: &str, preview: &str, age: Duration) -> (SessionInfo, bool) {
             parent: None,
             depth: 0,
             interactive: true,
+            agent: None,
             modified: SystemTime::now().checked_sub(age),
         },
         true,
@@ -47,6 +48,34 @@ fn each_chat_shows_when_it_was_last_active() {
     let seen = drive(two_chats, Vec::new(), |_| ());
     assert!(seen.shows(|text| text == "now"), "{}", seen.text());
     assert!(seen.shows(|text| text == "3h"), "{}", seen.text());
+}
+
+#[test]
+fn a_chat_run_by_another_agent_shows_only_its_mark() {
+    if !in_window("sidebar::a_chat_run_by_another_agent_shows_only_its_mark") {
+        return;
+    }
+    let seen = drive(
+        |app| {
+            app.window.sidebar.set(true);
+            let mut friend = chat(
+                "01a1000000000000000000000000cccc",
+                "Ask Claude",
+                Duration::from_secs(60),
+            );
+            friend.0.agent = Some("claude".to_owned());
+            let own = chat(
+                "01a1000000000000000000000000dddd",
+                "Ask Summonr",
+                Duration::from_secs(60),
+            );
+            app.update(Msg::Fact(Fact::Sessions(Ok(vec![friend, own]))));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    let marks = seen.texts.iter().filter(|text| *text == "C").count();
+    assert_eq!(marks, 1, "{}", seen.text());
 }
 
 #[test]

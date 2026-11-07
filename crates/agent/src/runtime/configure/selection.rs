@@ -28,6 +28,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn apply_endpoint(&mut self, endpoint: &crate::endpoint::Endpoint) {
+        self.session.set_agent(endpoint.agent());
         self.set_context_window(endpoint.context_window);
         self.set_compact_tokens(endpoint.compact_tokens);
         self.set_effort(endpoint.effort_for(self.chosen_effort));

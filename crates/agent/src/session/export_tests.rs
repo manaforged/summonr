@@ -20,6 +20,7 @@ fn info(home: &std::path::Path) -> SessionInfo {
         parent: None,
         depth: 0,
         interactive: true,
+        agent: None,
         modified: None,
     }
 }

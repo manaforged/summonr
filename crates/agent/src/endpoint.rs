@@ -225,6 +225,14 @@ fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
     }
 }
 
+impl Endpoint {
+    /// The route when another agent's program runs this endpoint's turns.
+    #[must_use]
+    pub fn agent(&self) -> Option<String> {
+        (self.wire == Wire::AgentSdk).then(|| self.name.clone())
+    }
+}
+
 /// A provider found on this machine: its route, its provider, the name a user knows, and its default model.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Local {
@@ -259,6 +267,8 @@ pub fn found_locally() -> Vec<Local> {
         .collect()
 }
 
+mod friend;
+pub use friend::{Friend, friends};
 mod auth;
 mod choice;
 mod info;

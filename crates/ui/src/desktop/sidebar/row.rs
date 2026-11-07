@@ -9,6 +9,7 @@ use sigil::widgets::icon;
 use super::super::App;
 use super::super::style::{ICON, M, S, SCROLLBAR, Text, mark, text};
 use super::title;
+use summonr_agent::endpoint::Friend;
 use summonr_agent::hub::{Live, Open, Status};
 use summonr_agent::session::SessionInfo;
 
@@ -65,7 +66,7 @@ pub(super) fn agent_row(
         selected,
         title(info),
         ListRowSlots {
-            leading: Some(Box::new(mark(status))),
+            leading: Some(Box::new(leading(info, status))),
             status: meta.map(Into::into),
             badge: needs.then(|| (NEEDS_YOU.into(), Tone::Warn)),
             activate: Some(Rc::new(move || {
@@ -77,6 +78,16 @@ pub(super) fn agent_row(
     sigil::widgets::context_menu(row, move || {
         super::super::agent_menu::items(&menu.0, &menu.1, state)
     })
+}
+
+fn leading(info: &SessionInfo, status: Status) -> NodeBuilder {
+    let friend = info.agent.as_deref().and_then(Friend::of);
+    match friend.filter(|_| status == Status::Idle) {
+        Some(friend) => sigil::widgets::tooltip(friend.name)
+            .child(mark(status).child(text(Text::Meta, friend.mark)))
+            .into(),
+        None => mark(status),
+    }
 }
 
 /// How long ago `when` was, in the short form agent lists use: now, 5m, 3h, 2d, 6w.

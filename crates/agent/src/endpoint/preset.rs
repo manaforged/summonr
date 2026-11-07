@@ -155,6 +155,17 @@ pub(super) struct Found {
     pub(super) name: String,
     #[serde(flatten)]
     pub(super) probe: Probe,
+    #[serde(default)]
+    pub(super) agent: Option<AgentRow>,
+}
+
+/// What makes a found program a coding agent of its own.
+#[derive(serde::Deserialize, Clone, Debug)]
+pub(super) struct AgentRow {
+    pub(super) mark: String,
+    pub(super) login: String,
+    pub(super) install: String,
+    pub(super) install_windows: String,
 }
 
 /// What to look for: a program on PATH or a server on a local port.

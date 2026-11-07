@@ -27,6 +27,11 @@ impl SessionDriver {
                 start: false,
             })?;
         }
+        if self.state.turns == 0
+            && let Some(route) = self.agent.clone()
+        {
+            self.append(Line::Agent { route })?;
+        }
         self.append(Line::User {
             text: input.text.clone(),
             source: input.source.as_ref().map(|source| source.text.clone()),

@@ -18,6 +18,7 @@ fn session(id: &str, parent: Option<&str>) -> summonr_agent::session::SessionInf
         parent: parent.map(str::to_string),
         depth: 0,
         interactive: true,
+        agent: None,
         modified: None,
     }
 }

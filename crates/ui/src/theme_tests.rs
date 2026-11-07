@@ -183,11 +183,6 @@ fn every_palette_keeps_text_hints_and_code_blocks_legible_on_base() {
                 open(&app);
                 for splash in [true, false] {
                     app.splash.set(splash);
-                    let expected = if splash && [Palette::DAWN, Palette::PAPER].contains(&palette) {
-                        Palette::SPACE
-                    } else {
-                        palette
-                    };
                     screen.frame(&mut host, [], (110, 40)).expect("settle");
                     let grid = screen.frame(&mut host, [], (110, 40)).expect("modal frame");
                     let text = grid.text();
@@ -201,10 +196,10 @@ fn every_palette_keeps_text_hints_and_code_blocks_legible_on_base() {
                     let cell = grid.get(col, row).expect("title cell");
                     assert_eq!(
                         cell.bg,
-                        Ink::Exact(expected.base),
+                        Ink::Exact(palette.base),
                         "{name}: {title} background, splash={splash}"
                     );
-                    assert_eq!(cell.fg, Ink::Exact(expected.text), "{name}: {title} text");
+                    assert_eq!(cell.fg, Ink::Exact(palette.text), "{name}: {title} text");
                 }
             }
         });

@@ -138,24 +138,24 @@ impl Palette {
     pub(super) const DAWN: Self = Self {
         base: rgb(222, 218, 208),
         text: rgb(0, 0, 0),
-        gray: rgb(76, 82, 96),
-        dim: rgb(84, 90, 102),
-        thought: rgb(92, 98, 110),
-        green: rgb(52, 112, 72),
-        red: rgb(160, 64, 56),
-        cyan: rgb(30, 104, 120),
-        yellow: rgb(128, 100, 30),
-        error: rgb(160, 64, 56),
+        gray: rgb(62, 68, 82),
+        dim: rgb(70, 76, 88),
+        thought: rgb(72, 78, 90),
+        green: rgb(38, 94, 56),
+        red: rgb(140, 50, 42),
+        cyan: rgb(20, 86, 100),
+        yellow: rgb(100, 76, 16),
+        error: rgb(140, 50, 42),
         black: rgb(204, 199, 187),
         user_bg: rgb(208, 203, 191),
         tool_bg: rgb(215, 210, 199),
         code_bg: rgb(192, 186, 172),
         diff_add_bg: rgb(196, 214, 196),
         diff_del_bg: rgb(226, 200, 195),
-        code_comment: rgb(84, 90, 102),
-        code_string: rgb(128, 100, 30),
-        code_keyword: rgb(116, 72, 148),
-        accent: rgb(56, 92, 160),
+        code_comment: rgb(70, 76, 88),
+        code_string: rgb(100, 76, 16),
+        code_keyword: rgb(104, 62, 136),
+        accent: rgb(40, 68, 128),
     };
 
     pub(super) const NORD: Self = Self {
@@ -195,6 +195,13 @@ impl Palette {
 }
 
 impl Palette {
+    /// Whether the base reads as paper rather than night.
+    #[must_use]
+    pub(crate) fn light(self) -> bool {
+        let [r, g, b] = [self.base.r, self.base.g, self.base.b].map(u32::from);
+        r * 299 + g * 587 + b * 114 > 128_000
+    }
+
     pub(super) fn colors(mut self) -> Vec<(&'static str, Rgba8)> {
         SLOTS
             .iter()

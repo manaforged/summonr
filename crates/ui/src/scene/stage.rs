@@ -61,8 +61,7 @@ const NIGHT: Stage = Stage {
 pub(crate) fn stage() -> Stage {
     let active = palette();
     let base = active.base;
-    let [r, g, b] = [base.r, base.g, base.b].map(u32::from);
-    if r * 299 + g * 587 + b * 114 <= 128_000 {
+    if !active.light() {
         return Stage {
             label: active.dim,
             value: active.gray,

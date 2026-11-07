@@ -71,6 +71,9 @@ pub(crate) fn style(palette: Palette) -> Theme {
     ] {
         theme.register_token(name, ThemeValue::Color(color));
     }
+    if palette.light() {
+        theme.accent_scale.steps = steps(palette.base, palette.accent, palette.text);
+    }
     theme
 }
 

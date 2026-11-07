@@ -386,8 +386,18 @@ pub(super) fn close(at: usize) {
 }
 
 fn focus(at: usize) {
-    if let Some(focus) = with(|split| split.focus) {
-        focus.set(at);
+    let Some((focus, hidden)) = with(|split| {
+        let hidden = split.zoom.is_some_and(|zoomed| zoomed != at);
+        if hidden {
+            split.zoom = None;
+        }
+        (split.focus, hidden)
+    }) else {
+        return;
+    };
+    focus.set(at);
+    if hidden {
+        changed();
     }
 }
 

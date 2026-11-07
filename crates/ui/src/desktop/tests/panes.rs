@@ -160,3 +160,20 @@ fn the_menu_bar_opens_the_window_sidebar_and_settings_from_a_split_pane() {
     );
     assert_eq!(seen.read, (1, false, true));
 }
+
+#[test]
+fn focusing_a_hidden_pane_ends_the_zoom() {
+    if !in_window("panes::focusing_a_hidden_pane_ends_the_zoom") {
+        return;
+    }
+    let seen = steps(
+        |_| {},
+        vec![
+            cmd("d", CMD),
+            Step::Key(named(Key::Enter, CMD_SHIFT)),
+            Step::Wait(Box::new(|_| split::focus_at(0))),
+        ],
+        |_| split::tracked().1,
+    );
+    assert_eq!((strips(&seen), seen.read), (2, 0), "{:?}", seen.controls);
+}

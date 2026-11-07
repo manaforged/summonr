@@ -1,19 +1,20 @@
-use super::preset::{Found, presets};
+use super::preset::{preset, presets};
 
 /// A coding agent Summonr runs through that agent's own program.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Friend {
     /// The preset that runs turns through it.
     pub route: &'static str,
     /// The product name, such as "Claude Code".
     pub name: &'static str,
+    /// The model the route starts on.
+    pub model: &'static str,
     /// The short mark its chats show.
     pub mark: &'static str,
     /// The command that signs in through the agent's own flow.
     pub login: &'static str,
     /// The vendor's install command for this platform.
     pub install: &'static str,
-    found: &'static Found,
 }
 
 impl Friend {
@@ -26,7 +27,9 @@ impl Friend {
     /// Whether its program is on this machine.
     #[must_use]
     pub fn installed(&self) -> bool {
-        self.found.probe.here()
+        preset(self.route)
+            .and_then(|row| row.found.as_ref())
+            .is_some_and(|found| found.probe.here())
     }
 
     /// Whether its program reports a sign-in that this route can use.
@@ -47,6 +50,7 @@ pub fn friends() -> impl Iterator<Item = Friend> {
         Some(Friend {
             route: &row.name,
             name: &found.name,
+            model: &row.model,
             mark: &agent.mark,
             login: &agent.login,
             install: if cfg!(windows) {
@@ -54,7 +58,6 @@ pub fn friends() -> impl Iterator<Item = Friend> {
             } else {
                 &agent.install
             },
-            found,
         })
     })
 }

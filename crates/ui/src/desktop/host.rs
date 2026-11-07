@@ -50,6 +50,7 @@ pub(crate) struct Window {
     pub(crate) showing: Signal<Option<u64>>,
     pub(crate) sidebar: Signal<bool>,
     pub(crate) local: Signal<Vec<summonr_agent::endpoint::Local>>,
+    pub(crate) friends: Signal<Vec<super::friends::Seen>>,
 }
 
 impl Window {
@@ -60,6 +61,7 @@ impl Window {
             showing: signal(None),
             sidebar: signal(true),
             local: signal(Vec::new()),
+            friends: signal(Vec::new()),
         }
     }
 

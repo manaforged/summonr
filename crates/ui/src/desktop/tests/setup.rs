@@ -1,7 +1,8 @@
+use super::super::friends::{Seen, State};
 use super::harness::{Step, graded, settings, steps};
 use super::in_window;
-use summonr_agent::endpoint::Local;
-use summonr_agent::hub::{Cmd, Snapshot};
+use summonr_agent::endpoint::{Friend, Local};
+use summonr_agent::hub::{Cmd, Open, Snapshot};
 
 fn claude() -> Local {
     Local {
@@ -50,6 +51,82 @@ fn a_first_run_offers_the_claude_code_it_found_in_one_click() {
         seen.shows(|text| text == "Connect a model"),
         "{}",
         seen.text()
+    );
+}
+
+fn seen(state: State) -> Seen {
+    Seen {
+        friend: Friend::of("claude").expect("the Claude Code preset"),
+        state,
+    }
+}
+
+fn claude_friend(app: &super::super::App, state: State) {
+    app.window.sidebar.set(true);
+    app.window.friends.set(vec![seen(state)]);
+}
+
+#[test]
+fn a_signed_in_friend_opens_a_chat_on_its_route() {
+    if !in_window("setup::a_signed_in_friend_opens_a_chat_on_its_route") {
+        return;
+    }
+    let seen_run = steps(
+        |app| {
+            claude_friend(app, State::SignedIn);
+            super::super::friends::start(app, seen(State::SignedIn));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert!(
+        seen_run
+            .sent
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::Open(Open::Agent(route)) if route == "claude")),
+    );
+    assert!(
+        seen_run.shows(|text| text == "New Claude Code"),
+        "{}",
+        seen_run.text()
+    );
+}
+
+#[test]
+fn a_signed_out_friend_opens_its_own_sign_in_in_a_terminal() {
+    if !in_window("setup::a_signed_out_friend_opens_its_own_sign_in_in_a_terminal") {
+        return;
+    }
+    let runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
+    runtime.install_current();
+    let shown = steps(
+        |app| claude_friend(app, State::SignedOut),
+        Vec::new(),
+        |app| {
+            super::super::friends::start(app, seen(State::SignedOut));
+            app.window
+                .terminals
+                .list
+                .peek()
+                .iter()
+                .map(|term| term.label())
+                .collect::<Vec<_>>()
+        },
+    );
+    assert_eq!(shown.read, vec!["Claude Code".to_owned()]);
+    assert!(!shown.sent.iter().any(|cmd| matches!(cmd, Cmd::Open(_))),);
+}
+
+#[test]
+fn a_missing_friend_has_no_sidebar_row() {
+    if !in_window("setup::a_missing_friend_has_no_sidebar_row") {
+        return;
+    }
+    let shown = steps(|app| claude_friend(app, State::Missing), Vec::new(), |_| ());
+    assert!(
+        !shown.shows(|text| text == "New Claude Code"),
+        "{}",
+        shown.text()
     );
 }
 

@@ -83,9 +83,7 @@ pub(super) fn agent_row(
 fn leading(info: &SessionInfo, status: Status) -> NodeBuilder {
     let friend = info.agent.as_deref().and_then(Friend::of);
     match friend.filter(|_| status == Status::Idle) {
-        Some(friend) => sigil::widgets::tooltip(friend.name)
-            .child(mark(status).child(text(Text::Meta, friend.mark)))
-            .into(),
+        Some(friend) => super::super::friends::glyph(friend),
         None => mark(status),
     }
 }

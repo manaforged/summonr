@@ -14,6 +14,7 @@ mod agent_menu;
 mod attention;
 mod brand;
 pub(super) mod entry;
+mod friends;
 pub(crate) mod host;
 pub(crate) mod launch;
 #[cfg(feature = "menu")]
@@ -126,6 +127,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
 
 /// Looks for providers installed on this machine and offers them while none is set up.
 pub(super) fn probe_local(app: &App) {
+    friends::refresh(app);
     let local = app.window.local;
     let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
     sigil::tasks::on_message(inbox, move |found| local.set(found), || {});

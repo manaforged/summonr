@@ -61,6 +61,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
                                 let open = app.clone();
                                 move || super::split::show(&open, Open::New)
                             }))
+                            .child(super::friends::rows(&app))
                             .child(action(
                                 super::terminal::NEW_TERMINAL_ACTION,
                                 Icon::Terminal,

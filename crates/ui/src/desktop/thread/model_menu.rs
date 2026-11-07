@@ -2,7 +2,6 @@ use sigil::prelude::{ControlSize, NodeBuilder, Signal, Widget, button};
 use sigil::widgets::{MenuItem, menu};
 
 use super::App;
-use summonr_agent::provider::Effort;
 use summonr_agent::recent::ModelId;
 
 const ROWS_MAX: usize = 8;

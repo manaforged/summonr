@@ -219,10 +219,12 @@ impl Hub {
         };
         let (tx, rx) = unbounded_channel();
         let factory = self.factory.clone();
+        let friend = target::friend_of(&open);
         let open = self.isolated(open);
         let (loop_, workflow) = tokio::task::block_in_place(|| factory(open, Ui(tx.clone())))?;
         drop(ui.send(Msg::Fact(Fact::Busy(None))));
         let key = self.spawn(loop_, (tx, rx), workflow, true);
+        self.summon(key, friend);
         self.show(pane, key);
         self.publish();
         Ok(())

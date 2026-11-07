@@ -1,4 +1,5 @@
 use super::{Hub, Open, Status};
+use crate::endpoint::Friend;
 use crate::hub::{Cmd, Fact, Msg};
 
 const GAVE_UP: &str = "The other window did not let go of this chat.";
@@ -53,6 +54,16 @@ impl Hub {
                 });
             }
             Err(error) => self.tell(pane, error.to_string()),
+        }
+    }
+
+    /// Hands a new session to `friend`, keeping the window's default for the next chat.
+    pub(super) fn summon(&self, key: u64, friend: Option<Friend>) {
+        if let (Some(friend), Some(session)) = (friend, self.sessions.get(&key)) {
+            drop(session.cmd.send(Cmd::SelectModel(
+                friend.route.to_owned(),
+                friend.model.to_owned(),
+            )));
         }
     }
 
@@ -168,5 +179,17 @@ impl Hub {
         if let Some(pane) = self.panes.get(&pane) {
             drop(pane.ui.send(Msg::Fact(Fact::Failed(text))));
         }
+    }
+}
+
+/// The friend that runs what `open` starts: the one asked for, or the one a chat recorded.
+pub(super) fn friend_of(open: &Open) -> Option<Friend> {
+    match open {
+        Open::Agent(route) => Friend::of(route),
+        Open::Resume(id) => {
+            let path = crate::session::resolve_id(id).ok()?;
+            Friend::of(&crate::session::info(path).agent?)
+        }
+        Open::New | Open::Folder(_) | Open::Worktree(_) => None,
     }
 }

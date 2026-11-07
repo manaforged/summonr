@@ -2,7 +2,6 @@ use std::cell::Cell;
 
 use sigil::icons::Icon;
 use sigil::prelude::{NodeBuilder, Signal, Widget, command_menu, container, modal, signal};
-use sigil::widgets::CommandMenuBuilder;
 
 use super::settings::Page;
 use super::{App, Pane};
@@ -61,14 +60,10 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
     } else {
         everything(app, shown)
     };
-    let menu = menu
-        .placeholder("Search")
-        .cancel(move || shown.close())
-        .width(DIALOG);
     Some(container().child(modal(shown.open).child(menu).width(DIALOG + GUTTER)))
 }
 
-fn everything(app: &App, shown: Shown) -> CommandMenuBuilder {
+fn everything(app: &App, shown: Shown) -> NodeBuilder {
     let open = shown.open;
     let live = app.model.get().live.clone();
     let menu = app
@@ -123,15 +118,20 @@ fn everything(app: &App, shown: Shown) -> CommandMenuBuilder {
     let all_pinned = app
         .model
         .with(|model| ROWS.iter().all(|row| model.prefs.sidebar.contains(&row.0)));
-    if all_pinned {
-        return menu;
-    }
-    menu.item(PIN, move || shown.pinning.set(true))
+    let menu = if all_pinned {
+        menu
+    } else {
+        menu.item(PIN, move || shown.pinning.set(true))
+    };
+    menu.placeholder("Search")
+        .cancel(move || shown.close())
+        .width(DIALOG)
+        .into()
 }
 
 const PIN: &str = "Pin to sidebar…";
 
-fn pin_list(app: &App, shown: Shown) -> CommandMenuBuilder {
+fn pin_list(app: &App, shown: Shown) -> NodeBuilder {
     let pinned = app.model.with(|model| model.prefs.sidebar.clone());
     ROWS.iter()
         .filter(|row| !pinned.contains(&row.0))
@@ -142,6 +142,10 @@ fn pin_list(app: &App, shown: Shown) -> CommandMenuBuilder {
                 pin(&app, action);
             })
         })
+        .placeholder("Search")
+        .cancel(move || shown.close())
+        .width(DIALOG)
+        .into()
 }
 
 /// Adds `action` to the end of the sidebar's rows and saves the list.

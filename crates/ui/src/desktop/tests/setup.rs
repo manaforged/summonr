@@ -118,6 +118,32 @@ fn a_signed_out_friend_opens_its_own_sign_in_in_a_terminal() {
 }
 
 #[test]
+fn settings_signs_in_to_a_friend_through_its_own_terminal() {
+    if !in_window("setup::settings_signs_in_to_a_friend_through_its_own_terminal") {
+        return;
+    }
+    let runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
+    runtime.install_current();
+    let shown = steps(
+        |app| {
+            claude_friend(app, State::SignedOut);
+            app.settings_open.set(true);
+        },
+        vec![Step::Click("Accounts"), Step::Click("Sign in, Claude Code")],
+        |app| {
+            app.window
+                .terminals
+                .list
+                .peek()
+                .iter()
+                .map(|term| term.label())
+                .collect::<Vec<_>>()
+        },
+    );
+    assert_eq!(shown.read, vec!["Claude Code".to_owned()]);
+}
+
+#[test]
 fn a_missing_friend_has_no_sidebar_row() {
     if !in_window("setup::a_missing_friend_has_no_sidebar_row") {
         return;

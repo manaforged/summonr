@@ -7,11 +7,13 @@ use sigil::prelude::{
 };
 
 use super::super::App;
+use super::super::friends::{self, Seen, State};
 use super::super::style::{ICON, S, XL};
 use super::parts::{row, section};
-use summonr_agent::endpoint::{AuthInfo, State};
+use summonr_agent::endpoint::{AuthInfo, Friend, State as Health};
 
 const SEARCH_FROM: usize = 8;
+const AGENTS: &str = "Agents";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Group {
@@ -31,10 +33,10 @@ impl Group {
         }
     }
 
-    fn of(choice: &AuthInfo, state: Option<State>) -> Self {
+    fn of(choice: &AuthInfo, state: Option<Health>) -> Self {
         if choice.keyless() {
             Self::Local
-        } else if choice.configured || state == Some(State::Ready) {
+        } else if choice.configured || state == Some(Health::Ready) {
             Self::Connected
         } else {
             Self::Available
@@ -51,9 +53,10 @@ enum Action {
 
 pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
     load(app);
+    friends::refresh(app);
     let query = signal(String::new());
     let list = app.clone();
-    let mut nodes = Vec::new();
+    let mut nodes = vec![agents(app)];
     if app.auth.choices.peek().len() >= SEARCH_FROM {
         nodes.push(search(query));
     }
@@ -68,6 +71,59 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
             .children_reactive(move || groups(&list, &query.get())),
     );
     nodes
+}
+
+fn agents(app: &App) -> NodeBuilder {
+    let app = app.clone();
+    container()
+        .layout(LayoutStyle::flex_column().fill_width())
+        .children_reactive(move || {
+            let rows: Vec<NodeBuilder> = app
+                .window
+                .friends
+                .get()
+                .iter()
+                .map(|seen| agent(&app, *seen))
+                .collect();
+            if rows.is_empty() {
+                return Vec::new();
+            }
+            vec![section(Some(AGENTS), rows)]
+        })
+}
+
+fn agent(app: &App, seen: Seen) -> NodeBuilder {
+    let friend = seen.friend;
+    let (label, tone) = match seen.state {
+        State::SignedIn => ("Signed in", Tone::Success),
+        State::SignedOut => ("Not signed in", Tone::Neutral),
+        State::Missing => ("Not installed", Tone::Neutral),
+    };
+    let controls = container()
+        .layout(
+            LayoutStyle::flex_row()
+                .gap(S)
+                .align_items(AlignItems::Center),
+        )
+        .child(chip(label, tone).dot());
+    let (act, word): (fn(&App, Friend), &str) = match seen.state {
+        State::SignedIn => {
+            return row(friend.name, Some(&about_agent(friend)), controls);
+        }
+        State::SignedOut => (friends::sign_in, "Sign in"),
+        State::Missing => (friends::install, "Install"),
+    };
+    let app = app.clone();
+    let controls = controls.child(
+        button(word)
+            .accessible(format!("{word}, {}", friend.name))
+            .activate(move || act(&app, friend)),
+    );
+    row(friend.name, Some(&about_agent(friend)), controls)
+}
+
+fn about_agent(friend: Friend) -> String {
+    format!("Runs chats through your own {}", friend.name)
 }
 
 fn load(app: &App) {
@@ -134,7 +190,7 @@ fn empty(app: &App) -> NodeBuilder {
         )
 }
 
-fn entry(app: &App, choice: &AuthInfo, states: &BTreeMap<String, State>) -> NodeBuilder {
+fn entry(app: &App, choice: &AuthInfo, states: &BTreeMap<String, Health>) -> NodeBuilder {
     let state = states.get(&choice.name).copied();
     let (label, tone) = status(choice, state);
     let controls = container()
@@ -171,6 +227,12 @@ fn display(choice: &AuthInfo) -> String {
 }
 
 fn run(app: &App, name: &str, act: Action) {
+    if act == Action::Setup
+        && let Some(friend) = Friend::of(name)
+    {
+        friends::sign_in(app, friend);
+        return;
+    }
     if act == Action::Models {
         app.begin_model_edit();
         app.replace_model_draft(name.to_owned());
@@ -192,20 +254,20 @@ fn run(app: &App, name: &str, act: Action) {
     }
 }
 
-fn status(choice: &AuthInfo, state: Option<State>) -> (&'static str, Tone) {
+fn status(choice: &AuthInfo, state: Option<Health>) -> (&'static str, Tone) {
     match state {
-        Some(State::KeyRejected) => return ("Key rejected", Tone::Error),
-        Some(State::Offline) => return ("Offline", Tone::Error),
-        Some(State::RateLimited) => return ("Rate limited", Tone::Warn),
-        Some(State::Error) => return ("Not working", Tone::Error),
+        Some(Health::KeyRejected) => return ("Key rejected", Tone::Error),
+        Some(Health::Offline) => return ("Offline", Tone::Error),
+        Some(Health::RateLimited) => return ("Rate limited", Tone::Warn),
+        Some(Health::Error) => return ("Not working", Tone::Error),
         Some(
-            State::Ready
-            | State::SignIn
-            | State::NoKey
-            | State::NeedsKey
-            | State::NeedsModel
-            | State::Checking
-            | State::Loading,
+            Health::Ready
+            | Health::SignIn
+            | Health::NoKey
+            | Health::NeedsKey
+            | Health::NeedsModel
+            | Health::Checking
+            | Health::Loading,
         )
         | None => {}
     }
@@ -223,11 +285,11 @@ fn status(choice: &AuthInfo, state: Option<State>) -> (&'static str, Tone) {
     }
 }
 
-fn action(choice: &AuthInfo, state: Option<State>) -> Option<(&'static str, Action)> {
+fn action(choice: &AuthInfo, state: Option<Health>) -> Option<(&'static str, Action)> {
     if choice.keyless() {
         return Some(("Models…", Action::Models));
     }
-    let broken = state.is_some_and(State::failed);
+    let broken = state.is_some_and(Health::failed);
     if choice.stored() && !broken {
         return Some(("Sign out", Action::SignOut));
     }

@@ -41,12 +41,13 @@ pub(super) fn refresh(app: &App) {
     let list = app.window.friends;
     let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
     sigil::tasks::on_message(inbox, move |seen| list.set(seen), || {});
-    drop(tokio::spawn(async move {
+    drop(sigil::tasks::spawn(async move {
         let mut seen = Vec::new();
         for friend in friends() {
             seen.push(check(friend).await);
         }
         drop(out.send(seen));
+        Ok::<(), std::convert::Infallible>(())
     }));
 }
 
@@ -55,8 +56,9 @@ pub(super) fn launch(app: &App, friend: Friend) {
     let app = app.clone();
     let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
     sigil::tasks::on_message(inbox, move |seen| start(&app, seen), || {});
-    drop(tokio::spawn(async move {
+    drop(sigil::tasks::spawn(async move {
         drop(out.send(check(friend).await));
+        Ok::<(), std::convert::Infallible>(())
     }));
 }
 

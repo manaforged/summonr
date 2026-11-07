@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use super::*;
 
 const TITLE_CHARS: usize = 56;
@@ -178,4 +180,33 @@ pub(crate) struct View {
     pub(crate) text: String,
     pub(crate) added: Vec<(usize, usize)>,
     pub(crate) image: Option<ImageSource>,
+}
+
+impl Deref for Entries {
+    type Target = [Entry];
+
+    fn deref(&self) -> &[Entry] {
+        &self.inner
+    }
+}
+
+impl DerefMut for Entries {
+    fn deref_mut(&mut self) -> &mut [Entry] {
+        &mut self.inner
+    }
+}
+
+impl<'a> IntoIterator for &'a Entries {
+    type Item = &'a Entry;
+    type IntoIter = std::slice::Iter<'a, Entry>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter()
+    }
+}
+
+impl Extend<Entry> for Entries {
+    fn extend<I: IntoIterator<Item = Entry>>(&mut self, iter: I) {
+        self.inner.extend(iter);
+    }
 }

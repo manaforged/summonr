@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
 use summonr_core::dirs::summonr_home;
 use summonr_core::error::{Error, Result};
 
 const SKILL: &str = "SKILL.md";
-use summonr_core::text::{FENCE, Frontmatter};
+use summonr_core::text::Frontmatter;
+
+mod about;
+use about::about;
 
 /// How many levels deep discovery looks under Summonr's own skill roots.
 const DEPTH: usize = 4;
@@ -292,14 +294,6 @@ fn walk(dir: &Path, folder: &str, depth: usize, out: &mut Vec<Found>) {
     }
 }
 
-fn about(file: &Path) -> String {
-    std::fs::File::open(file)
-        .ok()
-        .and_then(|handle| head(std::io::BufReader::new(handle)))
-        .map(|text| summary(&text))
-        .unwrap_or_default()
-}
-
 /// Whether `name` is a skill name, optionally after a `folder/path:` prefix.
 fn reference(name: &str) -> bool {
     match name.rsplit_once(':') {
@@ -327,50 +321,6 @@ pub(crate) fn markdown_entries<T>(
             let text = std::fs::read_to_string(&path).ok()?;
             build(stem, Frontmatter::parse(&text))
         })
-        .collect()
-}
-
-fn head(mut reader: impl BufRead) -> Option<String> {
-    let mut text = String::new();
-    let mut line = Vec::new();
-    let mut fenced = false;
-    loop {
-        line.clear();
-        if reader.read_until(b'\n', &mut line).ok()? == 0 {
-            return Some(text);
-        }
-        let piece = std::str::from_utf8(&line).ok()?;
-        text.push_str(piece);
-        let trimmed = piece.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if fenced || trimmed != FENCE {
-            if !fenced || piece.trim_end() == FENCE {
-                return Some(text);
-            }
-            continue;
-        }
-        fenced = true;
-    }
-}
-
-fn summary(text: &str) -> String {
-    let first = text.lines().map(str::trim).find(|line| !line.is_empty());
-    match first {
-        None => String::new(),
-        Some(line) if line != FENCE => heading(line),
-        Some(_) => Frontmatter::parse(text)
-            .get("description")
-            .map_or_else(|| heading(FENCE), summonr_core::text::squash),
-    }
-}
-
-fn heading(line: &str) -> String {
-    line.trim_start_matches('#')
-        .trim()
-        .chars()
-        .take(80)
         .collect()
 }
 

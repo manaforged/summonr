@@ -1,5 +1,4 @@
 use std::collections::{BTreeSet, HashMap};
-use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -24,35 +23,6 @@ pub(crate) use entry::{Call, Entry, decode, entry_markdown, preview};
 pub(crate) use state::{Agent, Doing, Entries, View};
 mod state;
 mod tools;
-
-impl Deref for Entries {
-    type Target = [Entry];
-
-    fn deref(&self) -> &[Entry] {
-        &self.inner
-    }
-}
-
-impl DerefMut for Entries {
-    fn deref_mut(&mut self) -> &mut [Entry] {
-        &mut self.inner
-    }
-}
-
-impl<'a> IntoIterator for &'a Entries {
-    type Item = &'a Entry;
-    type IntoIter = std::slice::Iter<'a, Entry>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.inner.iter()
-    }
-}
-
-impl Extend<Entry> for Entries {
-    fn extend<I: IntoIterator<Item = Entry>>(&mut self, iter: I) {
-        self.inner.extend(iter);
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(crate) enum StatusView {

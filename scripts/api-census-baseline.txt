@@ -66,6 +66,20 @@ delete ToolRegistry::skill_ready	0	the `probed` once-cell in `ToolRegistry`, whi
 delete summonr room serve	0	`summonr mail`, `mail/tools.rs::definitions`
 delete room/serve.rs::tools	0	`summonr mail`, `mail/tools.rs::definitions`
 delete room::host::codex	0	`summonr mail`, `mail/tools.rs::definitions`
+delete Work::save	0	`Line::Work` with `Work::{at, restore}`, `diff::parse_hunks`, `native::pipe_stage`, `fetch::fetch_targets`, `filter::named`, `web::wall`
+delete Work::load	0	`Line::Work` with `Work::{at, restore}`, `diff::parse_hunks`, `native::pipe_stage`, `fetch::fetch_targets`, `filter::named`, `web::wall`
+delete Work::read	0	`Line::Work` with `Work::{at, restore}`, `diff::parse_hunks`, `native::pipe_stage`, `fetch::fetch_targets`, `filter::named`, `web::wall`
+delete hunk_header	0	`Line::Work` with `Work::{at, restore}`, `diff::parse_hunks`, `native::pipe_stage`, `fetch::fetch_targets`, `filter::named`, `web::wall`
+delete head_count	0	`Line::Work` with `Work::{at, restore}`, `diff::parse_hunks`, `native::pipe_stage`, `fetch::fetch_targets`, `filter::named`, `web::wall`
+delete resolves_blocked	0	`Line::Work` with `Work::{at, restore}`, `diff::parse_hunks`, `native::pipe_stage`, `fetch::fetch_targets`, `filter::named`, `web::wall`
+delete index::named	0	`Line::Work` with `Work::{at, restore}`, `diff::parse_hunks`, `native::pipe_stage`, `fetch::fetch_targets`, `filter::named`, `web::wall`
+delete WALL	0	`Line::Work` with `Work::{at, restore}`, `diff::parse_hunks`, `native::pipe_stage`, `fetch::fetch_targets`, `filter::named`, `web::wall`
+delete route.rs::retired	0	`catalog::Catalog::{from_rows, get}` with `Row::{name, retired}`
+delete replaces	0	`catalog::Catalog::{from_rows, get}` with `Row::{name, retired}`
+delete sets.rs::BY_NAME	0	`catalog::Catalog::{from_rows, get}` with `Row::{name, retired}`
+delete mail::now	0	`summonr_core::clock::{now, now_millis}`
+delete catalog::now	0	`summonr_core::clock::{now, now_millis}`
+delete durable/log.rs::now_millis	0	`summonr_core::clock::{now, now_millis}`
 session dialect Msg	1	one session event
 session dialect Cmd	1	one session event
 session dialect Entry	1	one session event
@@ -76,9 +90,8 @@ wrap-shaped helper	5	check the job, then name it
 surface painter	0	rows::paint
 sigil prelude glob	0	named imports
 legacy tool alias literal	0	one alias table
-match wildcard arm	107	name the arm
+match wildcard arm	106	name the arm
 timeout mention	15	one timeout policy
-delete unicode-width	0	nothing
 delete winapi-util	0	nothing
 delete smol_str	0	nothing
 delete reqwest	0	nothing

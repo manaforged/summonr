@@ -1,16 +1,16 @@
 use sigil::prelude::AlignItems;
-use sigil::prelude::Dimension;
 use sigil::prelude::LayoutStyle;
-use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
-use sigil::prelude::Position;
 use sigil::prelude::Space;
 use sigil::prelude::container;
 use sigil::prelude::spacer;
 
-use super::{App, canvas, cell_width};
+use super::{App, cell_width};
 use sigil::prelude::Widget;
+
+mod meter;
+use meter::{meter, meter_button};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Target {
@@ -267,146 +267,6 @@ fn footer_row(
         ));
     }
     row
-}
-
-#[expect(clippy::cast_precision_loss, reason = "a percentage fits in f32")]
-fn meter(caption: &str, percent: u64, tone: sigil::prelude::Tone) -> NodeBuilder {
-    let bar = f32::from(BAR_CELLS) * sigil::Host::CELL;
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .align_items(AlignItems::Center)
-                .gap(Space::Sm),
-        )
-        .child(
-            sigil::prelude::text(caption)
-                .nowrap()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray11),
-        )
-        .child(
-            container()
-                .layout(LayoutStyle::block().width(bar).shrink(0.0))
-                .child(
-                    sigil::prelude::progress(sigil::prelude::signal(percent as f32), 100.0)
-                        .tone(tone),
-                ),
-        )
-        .child(
-            sigil::prelude::text(format!("{percent}%"))
-                .nowrap()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray12),
-        )
-}
-
-fn meter_button(
-    app: App,
-    target: Target,
-    child: NodeBuilder,
-    card: Option<Vec<(String, String)>>,
-    width: usize,
-) -> NodeBuilder {
-    let mut button = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .align_items(AlignItems::Center)
-                .shrink(0.0)
-                .min_size(0.0, 0.0)
-                .position(Position::Relative),
-        )
-        .child(child);
-    if let Some(rows) = card {
-        button = button.child(
-            container()
-                .layout(
-                    LayoutStyle::block()
-                        .position(Position::Absolute)
-                        .inset_bottom(Dimension::Percent(1.0))
-                        .inset_right(0.0),
-                )
-                .pointer_down(|event| event.stop_propagation())
-                .child(meter_card(rows, width, target.clone())),
-        );
-    }
-    button.pointer_down(move |event| {
-        if event.button == Some(MouseButton::Left) {
-            app.toggle_meter(target.clone());
-            event.stop_propagation();
-        }
-    })
-}
-
-fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> NodeBuilder {
-    let title = match target {
-        Target::Context => " ctx ",
-        Target::Cache => " cache ",
-    };
-    let card_width = width.min(30);
-    let mut card = container()
-        .layout(LayoutStyle::flex_column().width(card_width as f32 * canvas::cell().w))
-        .bg(sigil::prelude::Token::Gray1);
-    card = card.child(
-        sigil::prelude::text(format!(
-            "╭{title}{}╮",
-            "─".repeat(card_width.saturating_sub(cell_width(title) + 2))
-        ))
-        .nowrap()
-        .font_size(
-            12.0,
-            "12 px chrome text that keeps its own line height and weight",
-        )
-        .font_family(sigil::prelude::FontFamily::Mono)
-        .text_color(sigil::prelude::Token::Gray11),
-    );
-    for (key, value) in rows {
-        card = card.child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .align_items(AlignItems::Center)
-                        .gap(Space::None),
-                )
-                .child(
-                    sigil::prelude::text(format!("│ {key}"))
-                        .nowrap()
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .font_family(sigil::prelude::FontFamily::Mono)
-                        .text_color(sigil::prelude::Token::Gray11),
-                )
-                .child(spacer())
-                .child(
-                    sigil::prelude::text(format!("{value} │"))
-                        .nowrap()
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .font_family(sigil::prelude::FontFamily::Mono)
-                        .text_color(sigil::prelude::Token::Gray12),
-                ),
-        );
-    }
-    card.child(
-        sigil::prelude::text(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))))
-            .nowrap()
-            .font_size(
-                12.0,
-                "12 px chrome text that keeps its own line height and weight",
-            )
-            .font_family(sigil::prelude::FontFamily::Mono)
-            .text_color(sigil::prelude::Token::Gray11),
-    )
 }
 
 #[cfg(test)]

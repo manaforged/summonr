@@ -78,7 +78,7 @@ fn panel(name: &str, title: &str, every_secs: Option<u64>) -> summonr_agent::pan
     summonr_agent::panel::Panel {
         name: name.to_string(),
         title: title.to_string(),
-        kind: summonr_agent::panel::Kind::Data,
+        kind: summonr_agent::panel::Fill::Data,
         command: vec!["true".to_string()],
         every_secs,
         root: None,
@@ -236,7 +236,7 @@ fn a_terminal_panel_opens_its_program_in_a_terminal() {
         |app| {
             app.toggle_pane(Pane::Diff);
             app.update(Msg::Fact(Fact::Panels(vec![summonr_agent::panel::Panel {
-                kind: summonr_agent::panel::Kind::Terminal,
+                kind: summonr_agent::panel::Fill::Terminal,
                 ..panel("review", "Review", None)
             }])));
         },

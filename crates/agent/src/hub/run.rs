@@ -3,12 +3,10 @@ use std::collections::BTreeMap;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 
-use super::replay::ReplayState;
 use super::{Factory, Live, Open, Status, seen};
-use crate::hub::{Cmd, Fact, Info, Intent, Msg, Ui, worker};
+use crate::hub::{Cmd, Fact, Info, Intent, Msg, Ui};
 use crate::provider::Client;
 use crate::runtime::Loop;
-use crate::workflow::Workflow;
 
 mod session;
 mod target;
@@ -203,7 +201,7 @@ impl Hub {
         }
         let held = match &open {
             Open::Resume(id) => Some(id.clone()),
-            _ => None,
+            Open::New | Open::Folder(_) | Open::Worktree(_) | Open::Thread { .. } => None,
         };
         match (self.place(pane, open), held) {
             (Ok(()), _) => {}
@@ -304,42 +302,6 @@ impl Hub {
             .map(|(key, _)| *key)
     }
 
-    fn spawn(
-        &mut self,
-        loop_: Loop<Client>,
-        ui: (UnboundedSender<Msg>, UnboundedReceiver<Msg>),
-        workflow: Option<Workflow>,
-        replace: bool,
-    ) -> u64 {
-        let key = self.next;
-        self.next += 1;
-        let id = loop_.session_id();
-        let title = loop_.name();
-        let workspace = loop_.workspace().to_path_buf();
-        let parent = loop_.parent();
-        let mut info = self.info.clone();
-        info.session.clone_from(&id);
-        info.workflow = workflow;
-        let (cmd, cmd_rx) = unbounded_channel();
-        let task = tokio::spawn(worker(loop_, cmd_rx, ui.0, info, replace));
-        drop(tokio::spawn(forward(key, ui.1, self.merged.clone())));
-        self.sessions.insert(
-            key,
-            Session {
-                id,
-                title,
-                workspace,
-                parent,
-                status: Status::Idle,
-                replay: ReplayState::default(),
-                stale: false,
-                cmd,
-                task,
-            },
-        );
-        key
-    }
-
     fn publish(&self) {
         for pane in self.panes.values() {
             let live = self
@@ -379,14 +341,6 @@ async fn follow(
         }
     }
     drop(attached.send((pane, None)));
-}
-
-async fn forward(key: u64, mut rx: UnboundedReceiver<Msg>, merged: UnboundedSender<(u64, Msg)>) {
-    while let Some(msg) = rx.recv().await {
-        if merged.send((key, msg)).is_err() {
-            break;
-        }
-    }
 }
 
 pub(super) fn title_from(command: &Cmd) -> Option<String> {

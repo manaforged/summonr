@@ -137,6 +137,24 @@ const FAIL: Flash = flash(Mood::Drooping, 60, 3000, Some(Reaction::Fail));
 const FINISH: Flash = flash(Mood::Pleased, 60, 2500, Some(Reaction::Finish));
 const TYPE: Flash = flash(Mood::Listening, 40, 1200, Some(Reaction::Type));
 
+const fn ending(entry: &Entry) -> Flash {
+    match entry {
+        Entry::Aborted(_) => STOP,
+        Entry::Error(_) => FAIL,
+        Entry::User(_)
+        | Entry::Thinking(_)
+        | Entry::Receipt(_)
+        | Entry::Assistant { .. }
+        | Entry::Tool { .. }
+        | Entry::Verify { .. }
+        | Entry::Mail { .. }
+        | Entry::System(_)
+        | Entry::Injected(_)
+        | Entry::Chart(_)
+        | Entry::Image { .. } => FINISH,
+    }
+}
+
 const HOVER_RANK: u8 = 90;
 const ASK_RANK: u8 = 50;
 const WORK_RANK: u8 = 30;
@@ -170,15 +188,7 @@ impl Mind {
         let seen = RefCell::new(None::<Seen>);
         effect(move || {
             let (session, busy, empty, ended) = model.with(|model| {
-                let ended = model
-                    .entries
-                    .len()
-                    .checked_sub(1)
-                    .map(|at| match &model.entries[at] {
-                        Entry::Aborted(_) => STOP,
-                        Entry::Error(_) => FAIL,
-                        _ => FINISH,
-                    });
+                let ended = model.entries.last().map(ending);
                 (
                     model.session.clone(),
                     model.busy_since.is_some(),

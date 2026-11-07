@@ -221,7 +221,7 @@ fn env(table: BTreeMap<String, Value>) -> super::Env {
             ("local", Value::Table(vars)) => env.local = vars,
             ("cloud", Value::Table(vars)) => env.cloud = vars,
             (_, Value::Text(text)) => drop(env.shared.insert(name, text)),
-            _ => {}
+            (_, Value::Table(_) | Value::Other(_)) => {}
         }
     }
     env

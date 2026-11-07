@@ -70,7 +70,7 @@ fn reactions(app: &App) -> NodeBuilder {
     let rows = Reaction::ALL
         .iter()
         .map(|&each| {
-            let (title, about) = words(each);
+            let (title, about) = reaction_label(each);
             let flip = app.clone();
             switch(title, Some(about), !quiet.contains(&each), move |_| {
                 flip.flip(|prefs| {
@@ -86,7 +86,7 @@ fn reactions(app: &App) -> NodeBuilder {
     section(Some("Reactions"), rows)
 }
 
-const fn words(reaction: Reaction) -> (&'static str, &'static str) {
+const fn reaction_label(reaction: Reaction) -> (&'static str, &'static str) {
     match reaction {
         Reaction::Type => ("Listen", "Lean in while you type"),
         Reaction::Send => ("Hop", "Jump when you send a message"),

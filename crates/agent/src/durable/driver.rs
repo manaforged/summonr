@@ -369,7 +369,15 @@ impl From<DriverError> for summonr_core::error::Error {
     fn from(error: DriverError) -> Self {
         match &error {
             DriverError::Io(cause) if cause.kind() == std::io::ErrorKind::WouldBlock => Self::Held,
-            _ => Self::Config(error.to_string()),
+            DriverError::Io(_)
+            | DriverError::Work(_)
+            | DriverError::Empty
+            | DriverError::Busy
+            | DriverError::NoTurn
+            | DriverError::NoProvider
+            | DriverError::NoTool
+            | DriverError::NoWork
+            | DriverError::State(_) => Self::Config(error.to_string()),
         }
     }
 }

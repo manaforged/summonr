@@ -11,7 +11,7 @@ pub mod cli;
 /// How a panel fills its tab.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Kind {
+pub enum Fill {
     /// The command prints one JSON document, which the app draws.
     #[default]
     Data,
@@ -24,7 +24,7 @@ pub enum Kind {
 struct File {
     title: Option<String>,
     #[serde(default)]
-    kind: Kind,
+    kind: Fill,
     command: Vec<String>,
     every_secs: Option<u64>,
 }
@@ -37,7 +37,7 @@ pub struct Panel {
     /// The tab's label.
     pub title: String,
     /// How the panel fills its tab.
-    pub kind: Kind,
+    pub kind: Fill,
     /// The program and its arguments.
     pub command: Vec<String>,
     /// How often the open panel runs again, if at all.
@@ -232,7 +232,7 @@ fn read_file(path: &Path) -> Option<Panel> {
         Err(problem) => Panel {
             title: name.clone(),
             name,
-            kind: Kind::Data,
+            kind: Fill::Data,
             command: Vec::new(),
             every_secs: None,
             root: None,
@@ -314,10 +314,13 @@ pub async fn run(panel: &Panel, workspace: &Path) -> Result<Content, String> {
         drop(stderr.settle().await);
         Ok::<_, String>(status)
     };
-    let finished = tokio::time::timeout(limits.panel_timeout(), work).await;
+    let mut finished = None;
+    crate::supervise::within(limits.panel_timeout(), async {
+        finished = Some(work.await)
+    })
+    .await;
     drop(group);
-    let status =
-        finished.map_err(|_elapsed| format!("ran past {}s", limits.panel_timeout_secs))??;
+    let status = finished.ok_or_else(|| format!("ran past {}s", limits.panel_timeout_secs))??;
     if !status.success() {
         let reason = stderr.text();
         return Err(match reason.trim() {

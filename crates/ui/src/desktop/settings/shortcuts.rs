@@ -168,25 +168,45 @@ const fn modifier_names() -> [&'static str; 4] {
     }
 }
 
-const fn window_label(command: KeyCommand) -> Option<(Group, &'static str)> {
-    Some(match command {
-        KeyCommand::NewSession => (Group::Agents, "New agent"),
-        KeyCommand::Palette => (Group::Agents, "Search agents"),
-        KeyCommand::Jump(Jump::Needing) => (Group::Agents, "Next that needs you"),
-        KeyCommand::Interrupt => (Group::Agents, "Stop agent"),
-        KeyCommand::MarkUnread => (Group::Agents, "Mark unread"),
-        KeyCommand::OpenPr => (Group::Agents, "Open PR"),
-        KeyCommand::Terminal => (Group::Window, "New terminal"),
-        KeyCommand::Split(Split::Open) => (Group::Window, "Split pane"),
-        KeyCommand::Split(Split::Below) => (Group::Window, "Split pane down"),
-        KeyCommand::Split(Split::Close) => (Group::Window, "Close pane"),
-        KeyCommand::Sidebar => (Group::Window, "Show sidebar"),
-        KeyCommand::Pane(Pane::Diff) => (Group::Window, "Show changes"),
-        KeyCommand::Pane(Pane::Terminal) => (Group::Window, "Show terminal"),
-        KeyCommand::Hotkey(Hotkey::Options) => (Group::Window, "Open settings"),
-        KeyCommand::Trigger('@') => (Group::Composer, "Mention a file"),
-        _ => return None,
-    })
+const WINDOW_LABELS: [(KeyCommand, Group, &str); 15] = [
+    (KeyCommand::NewSession, Group::Agents, "New agent"),
+    (KeyCommand::Palette, Group::Agents, "Search agents"),
+    (
+        KeyCommand::Jump(Jump::Needing),
+        Group::Agents,
+        "Next that needs you",
+    ),
+    (KeyCommand::Interrupt, Group::Agents, "Stop agent"),
+    (KeyCommand::MarkUnread, Group::Agents, "Mark unread"),
+    (KeyCommand::OpenPr, Group::Agents, "Open PR"),
+    (KeyCommand::Terminal, Group::Window, "New terminal"),
+    (KeyCommand::Split(Split::Open), Group::Window, "Split pane"),
+    (
+        KeyCommand::Split(Split::Below),
+        Group::Window,
+        "Split pane down",
+    ),
+    (KeyCommand::Split(Split::Close), Group::Window, "Close pane"),
+    (KeyCommand::Sidebar, Group::Window, "Show sidebar"),
+    (KeyCommand::Pane(Pane::Diff), Group::Window, "Show changes"),
+    (
+        KeyCommand::Pane(Pane::Terminal),
+        Group::Window,
+        "Show terminal",
+    ),
+    (
+        KeyCommand::Hotkey(Hotkey::Options),
+        Group::Window,
+        "Open settings",
+    ),
+    (KeyCommand::Trigger('@'), Group::Composer, "Mention a file"),
+];
+
+fn window_label(command: KeyCommand) -> Option<(Group, &'static str)> {
+    WINDOW_LABELS
+        .iter()
+        .find(|row| row.0 == command)
+        .map(|&(_, group, label)| (group, label))
 }
 
 const fn hotkey_label(action: Hotkey) -> (Group, &'static str) {

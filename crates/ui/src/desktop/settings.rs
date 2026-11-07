@@ -92,7 +92,16 @@ impl Page {
     fn leading(self, app: &App) -> NodeBuilder {
         match self {
             Self::Will => super::will::still(app, ICON),
-            _ => icon(self.icon()).px(ICON).into(),
+            Self::General
+            | Self::Models
+            | Self::Workflows
+            | Self::Accounts
+            | Self::Mcp
+            | Self::Plugins
+            | Self::Appearance
+            | Self::Shortcuts
+            | Self::Tools
+            | Self::Usage => icon(self.icon()).px(ICON).into(),
         }
     }
 

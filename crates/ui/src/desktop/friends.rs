@@ -102,23 +102,27 @@ pub(super) fn glyph(friend: Friend) -> NodeBuilder {
     sigil::widgets::tooltip(friend.name).child(icon).into()
 }
 
-const fn quadrants(glyph: char) -> [bool; 4] {
-    match glyph {
-        '▘' => [true, false, false, false],
-        '▝' => [false, true, false, false],
-        '▖' => [false, false, true, false],
-        '▗' => [false, false, false, true],
-        '▀' => [true, true, false, false],
-        '▄' => [false, false, true, true],
-        '▌' => [true, false, true, false],
-        '▐' => [false, true, false, true],
-        '▛' => [true, true, true, false],
-        '▜' => [true, true, false, true],
-        '▙' => [true, false, true, true],
-        '▟' => [false, true, true, true],
-        '█' => [true; 4],
-        _ => [false; 4],
-    }
+const QUADRANTS: [(char, [bool; 4]); 13] = [
+    ('▘', [true, false, false, false]),
+    ('▝', [false, true, false, false]),
+    ('▖', [false, false, true, false]),
+    ('▗', [false, false, false, true]),
+    ('▀', [true, true, false, false]),
+    ('▄', [false, false, true, true]),
+    ('▌', [true, false, true, false]),
+    ('▐', [false, true, false, true]),
+    ('▛', [true, true, true, false]),
+    ('▜', [true, true, false, true]),
+    ('▙', [true, false, true, true]),
+    ('▟', [false, true, true, true]),
+    ('█', [true; 4]),
+];
+
+fn quadrants(glyph: char) -> [bool; 4] {
+    QUADRANTS
+        .iter()
+        .find(|(each, _)| *each == glyph)
+        .map_or([false; 4], |&(_, on)| on)
 }
 
 fn draw(friend: Friend, scene: &mut SceneBuilder, area: Rect) {

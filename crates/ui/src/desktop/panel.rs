@@ -4,7 +4,7 @@ use sigil::prelude::{
 };
 use sigil::reactive::on_cleanup;
 use summonr_agent::hub::Cmd;
-use summonr_agent::panel::{Content, Kind, Mood, Panel, Plot, Series, Stat};
+use summonr_agent::panel::{Content, Fill, Mood, Panel, Plot, Series, Stat};
 
 use super::style::{DANGER, L, M, S, Text, XS, text};
 use super::{App, Pane};
@@ -47,7 +47,7 @@ pub(super) fn tabs(app: &App, pane: Pane) -> NodeBuilder {
 }
 
 fn show(app: &App, panel: &Panel) {
-    if panel.kind == Kind::Terminal && panel.problem.is_none() {
+    if panel.kind == Fill::Terminal && panel.problem.is_none() {
         let line = summonr_agent::panel::shell_line(panel, &app.workspace());
         app.open_terminal(super::terminal::NEW_TERMINAL, Some(&line));
         return;

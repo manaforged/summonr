@@ -2,7 +2,7 @@ use std::path::Path;
 
 use summonr_core::error::{Error, Result};
 
-use super::{Content, Kind, Panel};
+use super::{Content, Fill, Panel};
 
 const USAGE: &str = r#"summonr panel list|check NAME
 
@@ -42,7 +42,7 @@ pub async fn run(words: &[String], cwd: &Path, trust: bool) -> Result<i32> {
             println!("{USAGE}");
             Ok(0)
         }
-        _ => Err(Error::Config(
+        [..] => Err(Error::Config(
             "usage: summonr panel list|check NAME; panel --help has the file format".to_string(),
         )),
     }
@@ -53,7 +53,7 @@ async fn check(name: &str, cwd: &Path, trust: bool) -> Result<i32> {
         .into_iter()
         .find(|panel| panel.name == name)
         .ok_or_else(|| Error::Config(format!("no panel named `{name}`")))?;
-    if panel.kind == Kind::Terminal {
+    if panel.kind == Fill::Terminal {
         return checked_terminal(&panel);
     }
     let content = super::run(&panel, cwd)

@@ -11,9 +11,9 @@ use super::{Msg, Worker};
 use crate::hub::{Fact, Intent};
 
 impl Worker {
-    pub(super) fn replay(&self) {
+    pub(super) fn replay(&self, replace: bool) {
         let tokens = Some(self.loop_.unreported_tokens());
-        replay_transcript(self.loop_.session_path(), None, tokens, &self.ui);
+        replay_transcript(self.loop_.session_path(), None, tokens, &self.ui, replace);
         if let Some((objective, _)) = self.loop_.active_goal().ok().flatten() {
             drop(self.ui.send(Msg::Fact(Fact::System(format!(
                 "unfinished goal: {objective} · /goal with the same text continues it · /goal clear ends it"
@@ -27,8 +27,9 @@ pub(super) fn replay_transcript(
     session: Option<String>,
     tokens: Option<u64>,
     ui: &UnboundedSender<Msg>,
+    replace: bool,
 ) {
-    journal(path, ui);
+    drop(ui.send(Msg::Fact(Fact::Transcript(journal(path, replace)))));
     if let Some(tokens) = tokens {
         drop(ui.send(Msg::Fact(Fact::Event(Event::Unreported { tokens }))));
     }
@@ -38,30 +39,37 @@ pub(super) fn replay_transcript(
     }
 }
 
-fn journal(path: &Path, ui: &UnboundedSender<Msg>) {
-    let lines = match log::records(path, 0).collect::<std::io::Result<Vec<Line>>>() {
-        Ok(lines) => lines,
-        Err(error) => {
-            drop(ui.send(Msg::Fact(Fact::System(format!(
-                "cannot load conversation: {error}"
-            )))));
-            return;
+fn journal(path: &Path, replace: bool) -> Vec<Msg> {
+    let lines = log::records(path, 0).collect::<std::io::Result<Vec<Line>>>();
+    let mut out = Vec::new();
+    if replace {
+        out.push(Msg::Intent(Intent::Reset));
+    }
+    match lines {
+        Ok(lines) => {
+            for line in lines {
+                restore_line(line, &mut out);
+            }
         }
-    };
-    for line in lines {
-        restore_line(line, ui);
+        Err(error) => {
+            out.push(Msg::Fact(Fact::System(format!(
+                "cannot load conversation: {error}"
+            ))));
+            return out;
+        }
     }
     if let Some(work) = Work::at(path) {
-        drop(ui.send(Msg::Fact(Fact::Event(Event::Work {
+        out.push(Msg::Fact(Fact::Event(Event::Work {
             progress: crate::WorkProgress {
                 reason: None,
                 ..work.progress()
             },
-        }))));
+        })));
     }
+    out
 }
 
-fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
+fn restore_line(line: Line, out: &mut Vec<Msg>) {
     match &line {
         Line::User {
             text,
@@ -76,9 +84,9 @@ fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
             } else {
                 Msg::Fact(Fact::Injected(text))
             };
-            drop(ui.send(message));
+            out.push(message);
             for image in images {
-                drop(ui.send(Msg::Intent(Intent::Image(image.clone()))));
+                out.push(Msg::Intent(Intent::Image(image.clone())));
             }
             return;
         }
@@ -86,17 +94,17 @@ fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
             text,
             receipt: None,
         } => {
-            drop(ui.send(Msg::Fact(Fact::Receipt(text.clone()))));
+            out.push(Msg::Fact(Fact::Receipt(text.clone())));
         }
-        Line::Clear => drop(ui.send(Msg::Fact(Fact::Cleared))),
+        Line::Clear => out.push(Msg::Fact(Fact::Cleared)),
         _ => {}
     }
     for event in line.events() {
-        drop(ui.send(Msg::Fact(Fact::Event(event))));
+        out.push(Msg::Fact(Fact::Event(event)));
     }
     if matches!(line, Line::Interrupted { .. }) {
-        drop(ui.send(Msg::Fact(Fact::System(
+        out.push(Msg::Fact(Fact::System(
             "Partial answer · interrupted".to_string(),
-        ))));
+        )));
     }
 }

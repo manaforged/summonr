@@ -256,6 +256,7 @@ impl Model {
             | Msg::Fact(Fact::Workflow { .. })
             | Msg::Intent(Intent::Resume(_))
             | Msg::Fact(Fact::Replayed)
+            | Msg::Fact(Fact::Transcript(_))
             | Msg::Fact(Fact::LoginStep { .. })
             | Msg::Fact(Fact::LoginDone { .. })
             | Msg::Fact(Fact::Restored(_))

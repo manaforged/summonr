@@ -25,6 +25,7 @@ impl Worker {
                     Some(self.loop_.session_id()),
                     Some(self.loop_.unreported_tokens()),
                     &self.ui,
+                    true,
                 );
                 self.send_diff(false).await;
             }

@@ -81,8 +81,7 @@ impl Worker {
                 self.last_turn = None;
                 match session {
                     Some(id) => {
-                        drop(self.ui.send(Msg::Intent(Intent::Reset)));
-                        self.replay();
+                        self.replay(true);
                         drop(self.ui.send(Msg::Fact(Fact::Session(id))));
                     }
                     None => drop(self.ui.send(Msg::Fact(Fact::Cleared))),
@@ -154,8 +153,7 @@ impl Worker {
         match self.loop_.fork_at(Some(turn)) {
             Ok(id) => {
                 self.last_turn = None;
-                drop(self.ui.send(Msg::Intent(Intent::Reset)));
-                self.replay();
+                self.replay(true);
                 drop(self.ui.send(Msg::Fact(Fact::Session(id))));
                 self.send_settings();
                 self.system(&format!(

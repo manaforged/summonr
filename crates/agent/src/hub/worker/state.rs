@@ -57,8 +57,8 @@ impl Worker {
         }
     }
 
-    pub(super) async fn run(mut self) {
-        self.replay();
+    pub(super) async fn run(mut self, replace: bool) {
+        self.replay(replace);
         drop(
             self.ui
                 .send(Msg::Fact(Fact::Session(self.loop_.session_id()))),

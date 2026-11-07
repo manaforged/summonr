@@ -97,6 +97,7 @@ impl Worker {
                             Some(session_id.clone()),
                             None,
                             &self.ui,
+                            true,
                         ),
                         Some(Cmd::Answer(dialog, text)) => {
                             self.queue.steering.answer(dialog, UserInput::from(text));

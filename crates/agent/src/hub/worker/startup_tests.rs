@@ -18,8 +18,12 @@ fn task_progress_replays_the_current_numbered_plan() {
         )
         .expect("select plan");
     let (ui, mut inbox) = unbounded_channel();
-    history::replay_transcript(driver.path(), Some("fixture".to_string()), None, &ui);
+    history::replay_transcript(driver.path(), Some("fixture".to_string()), None, &ui, false);
     let progress = std::iter::from_fn(|| inbox.try_recv().ok())
+        .flat_map(|message| match message {
+            Msg::Fact(Fact::Transcript(lines)) => lines,
+            message => vec![message],
+        })
         .find_map(|message| match message {
             Msg::Fact(Fact::Event(crate::Event::Work { progress })) => Some(progress),
             _ => None,
@@ -61,7 +65,7 @@ async fn startup_effort_reaches_the_composer_before_a_model_switch() {
         .send(Cmd::SetEffort(Some(Effort::High)))
         .expect("set effort");
     commands.send(Cmd::Quit).expect("quit");
-    worker(loop_, receiver, ui, info).await;
+    worker(loop_, receiver, ui, info, false).await;
     let settings: Vec<_> = std::iter::from_fn(|| inbox.try_recv().ok())
         .filter_map(|msg| match msg {
             Msg::Fact(Fact::Settings(snapshot)) => Some(snapshot),
@@ -108,7 +112,7 @@ async fn a_model_switch_becomes_the_last_used_model() {
         .send(Cmd::SetModel("gpt-5.5".to_string()))
         .expect("set model");
     commands.send(Cmd::Quit).expect("quit");
-    worker(loop_, receiver, ui, info).await;
+    worker(loop_, receiver, ui, info, false).await;
     assert_eq!(
         crate::recent::load(home.path()).first(),
         Some(&crate::recent::ModelId::new("openai", "gpt-5.5"))
@@ -146,7 +150,7 @@ async fn a_session_opened_with_an_unfinished_goal_says_how_to_go_on() {
     let (commands, receiver) = unbounded_channel();
     let (ui, mut inbox) = unbounded_channel();
     commands.send(Cmd::Quit).expect("quit");
-    worker(loop_, receiver, ui, info).await;
+    worker(loop_, receiver, ui, info, false).await;
     let notes: Vec<String> = std::iter::from_fn(|| inbox.try_recv().ok())
         .filter_map(|msg| match msg {
             Msg::Fact(Fact::System(text)) => Some(text),

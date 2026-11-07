@@ -101,6 +101,8 @@ pub enum Fact {
     Named(String),
     Approval(String),
     Replayed,
+    /// A saved conversation in one message, so a view never draws part of it.
+    Transcript(Vec<Msg>),
     LoginStep {
         text: String,
         url: String,

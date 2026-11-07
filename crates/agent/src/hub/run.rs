@@ -61,7 +61,7 @@ pub fn start(
         factory,
         info,
     };
-    let key = hub.spawn(loop_, ui, workflow);
+    let key = hub.spawn(loop_, ui, workflow, false);
     hub.show(MAIN, key);
     hub.publish();
     let task = tokio::spawn(hub.run(command_rx, merged_rx, attached_rx));
@@ -153,16 +153,20 @@ impl Hub {
         let Some(session) = self.sessions.get_mut(&key) else {
             return;
         };
-        let changed = session.observe(&msg, viewer.is_some());
+        let changed = match &msg {
+            Msg::Fact(Fact::Transcript(lines)) => lines.iter().fold(false, |changed, line| {
+                session.observe(line, viewer.is_some()) | changed
+            }),
+            msg => session.observe(msg, viewer.is_some()),
+        };
         let finished = matches!(msg, Msg::Fact(Fact::Busy(None)));
         match &viewer {
             None => session.stale |= session.replay.working(),
             Some(ui) if matches!(msg, Msg::Fact(Fact::Replayed)) => session.replay.resend(ui),
             Some(ui) => drop(ui.send(msg)),
         }
-        if let Some(ui) = viewer.filter(|_| finished && session.stale) {
+        if viewer.is_some() && finished && session.stale {
             session.stale = false;
-            drop(ui.send(Msg::Intent(Intent::Reset)));
             drop(session.cmd.send(Cmd::Replay));
         }
         if changed {
@@ -185,9 +189,8 @@ impl Hub {
         let made = tokio::task::block_in_place(|| factory(open, Ui(tx.clone())));
         match made {
             Ok((loop_, workflow)) => {
-                drop(ui.send(Msg::Intent(Intent::Reset)));
                 drop(ui.send(Msg::Fact(Fact::Busy(None))));
-                let key = self.spawn(loop_, (tx, rx), workflow);
+                let key = self.spawn(loop_, (tx, rx), workflow, true);
                 self.show(pane, key);
                 self.publish();
             }
@@ -196,15 +199,11 @@ impl Hub {
     }
 
     fn activate(&mut self, pane: u64, key: u64) {
-        let Some(ui) = self
+        let shown = self
             .panes
             .get(&pane)
-            .filter(|shown| shown.key != Some(key))
-            .map(|shown| shown.ui.clone())
-        else {
-            return;
-        };
-        if !self.sessions.contains_key(&key) {
+            .is_some_and(|shown| shown.key != Some(key));
+        if !shown || !self.sessions.contains_key(&key) {
             return;
         }
         self.show(pane, key);
@@ -212,7 +211,6 @@ impl Hub {
             return;
         };
         session.status = seen(session.status);
-        drop(ui.send(Msg::Intent(Intent::Reset)));
         drop(session.cmd.send(Cmd::Replay));
         self.publish();
     }
@@ -279,6 +277,7 @@ impl Hub {
         loop_: Loop<Client>,
         ui: (UnboundedSender<Msg>, UnboundedReceiver<Msg>),
         workflow: Option<Workflow>,
+        replace: bool,
     ) -> u64 {
         let key = self.next;
         self.next += 1;
@@ -289,7 +288,7 @@ impl Hub {
         info.session.clone_from(&id);
         info.workflow = workflow;
         let (cmd, cmd_rx) = unbounded_channel();
-        let task = tokio::spawn(worker(loop_, cmd_rx, ui.0, info));
+        let task = tokio::spawn(worker(loop_, cmd_rx, ui.0, info, replace));
         drop(tokio::spawn(forward(key, ui.1, self.merged.clone())));
         self.sessions.insert(
             key,

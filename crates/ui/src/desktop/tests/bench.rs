@@ -176,10 +176,9 @@ fn navigate(step: Step) -> f64 {
                 Step::Settings => app.settings_open.set(n % 2 == 0),
                 Step::Switch(messages) => {
                     let want = landed.get() + 1;
-                    drop(hub.send(Msg::Intent(Intent::Reset)));
-                    history(messages)
-                        .into_iter()
-                        .for_each(|msg| drop(hub.send(msg)));
+                    let mut lines = vec![Msg::Intent(Intent::Reset)];
+                    lines.extend(history(messages));
+                    drop(hub.send(Msg::Fact(Fact::Transcript(lines))));
                     drop(hub.send(Msg::Fact(Fact::Replayed)));
                     while landed.get() < want {
                         runtime.pump();

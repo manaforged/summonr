@@ -34,8 +34,9 @@ pub(super) async fn worker(
     cmd: UnboundedReceiver<Cmd>,
     ui: UnboundedSender<Msg>,
     info: Info,
+    replace: bool,
 ) {
-    Worker::new(loop_, cmd, ui, info).run().await;
+    Worker::new(loop_, cmd, ui, info).run(replace).await;
 }
 
 struct Worker {

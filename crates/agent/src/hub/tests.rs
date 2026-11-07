@@ -215,13 +215,20 @@ async fn a_new_session_takes_the_view_and_the_first_comes_back_in_place() {
         .commands
         .send(crate::hub::Cmd::Open(super::Open::Resume(first_id.clone())))
         .unwrap();
-    until("the reset", &mut inbox, |msg| {
-        matches!(msg, Msg::Intent(Intent::Reset)).then_some(())
-    })
-    .await;
     let wanted = first_id.clone();
     until("the first session as active", &mut inbox, |msg| {
+        assert!(!matches!(msg, Msg::Intent(Intent::Reset)));
         active(msg).filter(|seen| *seen == (wanted.clone(), 2))
+    })
+    .await;
+    until("the first session's transcript", &mut inbox, |msg| {
+        assert!(!matches!(msg, Msg::Intent(Intent::Reset)));
+        matches!(
+            msg,
+            Msg::Fact(Fact::Transcript(lines))
+                if matches!(lines.first(), Some(Msg::Intent(Intent::Reset)))
+        )
+        .then_some(())
     })
     .await;
     until("the first session's id", &mut inbox, |msg| {

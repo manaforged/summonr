@@ -281,3 +281,65 @@ fn bench_drag_frames() {
         println!("RAW {cell} {side} us_frame {wall:.1}");
     }
 }
+
+#[test]
+#[ignore = "bench: run alone with --ignored --exact"]
+fn bench_paint_frames() {
+    use sigil::renderer::capture::{ImageRenderer, ImageTarget, render_to_image};
+    crate::desktop::host::window_cells();
+    let viewport = (1728.0, 1117.0);
+    let mut runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
+    runtime.install_current();
+    sigil::reactive::Owner::scope("summonr-bench", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(
+            crate::profile::info(),
+            workspace.path().to_owned(),
+            commands,
+        );
+        super::fit(&app);
+        talk(&app, HISTORY);
+        app.refresh();
+        let mut host = Host::new(HostMode::Pixel);
+        let tree = app.clone();
+        host.mount(move || root(tree.clone()));
+        host.frame(viewport, 2.0, FrameHooks::default());
+        host.route(sigil::events::Event::pointer_down(
+            sigil::geometry::Point::new(700.0, 300.0),
+        ));
+        host.frame(viewport, 2.0, FrameHooks::default());
+        host.route(sigil::events::Event::pointer_move(
+            sigil::geometry::Point::new(900.0, 700.0),
+        ));
+        host.frame(viewport, 2.0, FrameHooks::default());
+        let full = host.scene(viewport).expect("scene");
+        let blank = sigil::scene::CommandScene::default();
+        let mut renderer = sigil::renderer::WgpuRenderer::new();
+        let target = ImageTarget {
+            size: sigil::geometry::PhysicalSize::new(3456, 2234),
+            viewport,
+            clear: sigil::style::Color::WHITE,
+        };
+        let mut time = |scene: &sigil::scene::CommandScene| {
+            for _ in 0..5 {
+                drop(render_to_image(
+                    ImageRenderer::Gpu(&mut renderer),
+                    scene,
+                    target,
+                ));
+            }
+            let start = Instant::now();
+            for _ in 0..20 {
+                render_to_image(ImageRenderer::Gpu(&mut renderer), scene, target).expect("paint");
+            }
+            start.elapsed().as_secs_f64() * 1e3 / 20.0
+        };
+        let (blank_ms, full_ms) = (time(&blank), time(&full));
+        println!(
+            "RAW paint commands {} blank_ms {blank_ms:.2} full_ms {full_ms:.2} paint_ms {:.2}",
+            full.commands.len(),
+            full_ms - blank_ms
+        );
+    });
+}

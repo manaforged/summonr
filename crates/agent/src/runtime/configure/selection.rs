@@ -28,8 +28,8 @@ impl<P: Provider> Loop<P> {
     }
 
     /// Puts this session in the topic that `topic` started.
-    pub fn join_topic(&mut self, topic: &str) {
-        self.session.set_topic(Some(topic.to_string()));
+    pub fn join_topic(&mut self, topic: &str) -> Result<()> {
+        self.session.set_topic(topic.to_string()).map_err(Error::from)
     }
 
     pub fn apply_endpoint(&mut self, endpoint: &crate::endpoint::Endpoint) {

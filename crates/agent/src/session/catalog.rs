@@ -287,7 +287,7 @@ pub(crate) fn sessions_in(home: &Path) -> Result<Vec<SessionInfo>> {
 }
 
 fn resume_row(info: &SessionInfo) -> bool {
-    info.depth == 0 && (info.name.is_some() || !info.preview.is_empty())
+    info.depth == 0 && (info.name.is_some() || info.topic.is_some() || !info.preview.is_empty())
 }
 
 pub(crate) fn ids_in(home: &Path) -> Result<Vec<(String, PathBuf)>> {

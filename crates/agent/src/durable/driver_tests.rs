@@ -362,7 +362,9 @@ fn a_chat_records_the_agent_of_its_first_message() {
 fn a_thread_that_joins_a_topic_lists_under_it_and_a_new_one_starts_its_own() {
     let dir = tempfile::tempdir().unwrap();
     let mut joined = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
-    joined.set_topic(Some("01a1000000000000000000000000aaaa".to_string()));
+    joined
+        .set_topic("01a1000000000000000000000000aaaa".to_string())
+        .unwrap();
     joined.prepare_turn_work("second", &[]).unwrap();
     joined.start_input(&UserInput::from("second")).unwrap();
     let info = crate::session::info(joined.path().to_path_buf());

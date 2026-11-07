@@ -87,7 +87,7 @@ fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr_agent::hub
         let (mut loop_, _, workflow) =
             assemble(&args, &endpoint, &workspace, action, &(Some(ui), None))?;
         if let Some(topic) = &topic {
-            loop_.join_topic(topic);
+            loop_.join_topic(topic)?;
         }
         Ok((loop_, workflow))
     })

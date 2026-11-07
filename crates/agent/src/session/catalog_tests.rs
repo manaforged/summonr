@@ -204,3 +204,15 @@ fn sessions_started_in_one_millisecond_are_named_when_their_short_id_is_ambiguou
         "{removed}"
     );
 }
+
+#[test]
+fn a_thread_that_joins_a_topic_is_listed_under_it_before_its_first_message() {
+    use crate::durable::driver::SessionDriver;
+    let home = tempfile::tempdir().unwrap();
+    let mut joined = SessionDriver::open(home.path(), home.path(), "glm", "", None).unwrap();
+    joined.set_topic(NEWER.to_string()).unwrap();
+    SessionDriver::open(home.path(), home.path(), "glm", "", None).unwrap();
+    let listed = list_in(home.path()).unwrap();
+    let topics: Vec<Option<&str>> = listed.iter().map(|info| info.topic.as_deref()).collect();
+    assert_eq!(topics, vec![Some(NEWER)]);
+}

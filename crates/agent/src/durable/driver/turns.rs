@@ -321,9 +321,6 @@ impl SessionDriver {
         if let Some(route) = self.agent.clone() {
             self.append(Line::Agent { route })?;
         }
-        if let Some(id) = self.topic.clone() {
-            self.append(Line::Topic { id })?;
-        }
         Ok(())
     }
 }

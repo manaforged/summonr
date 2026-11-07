@@ -16,6 +16,7 @@ mod brand;
 pub(super) mod entry;
 pub(crate) mod host;
 pub(crate) mod launch;
+#[cfg(feature = "menu")]
 mod menubar;
 pub(super) mod palette;
 pub(super) mod quit;

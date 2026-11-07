@@ -5,27 +5,33 @@ use sigil::reactive::{Owner, effect, untrack};
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::App;
-use super::style::PANES;
 use crate::view::keys::bindings::Split as Act;
 use summonr_agent::hub::Cmd;
 use summonr_agent::hub::{Open, View};
+use summonr_agent::prefs::{Axis, Shape};
 
-/// One pane: its agent's view and the owner that holds the pane's effects.
+/// A pane's place on screen: x, y, width and height.
+type Bounds = (f32, f32, f32, f32);
+
+/// One pane: its agent's view, the owner that holds the pane's effects, and where it is drawn.
 struct Pane {
     app: App,
     owner: Option<Owner>,
+    bounds: Signal<Bounds>,
 }
 
-/// Panes per row; a third and fourth pane start a second row.
-const COLUMNS: usize = 2;
-
+mod arrange;
 mod layout;
+use arrange::{along, refuse, room};
+pub(super) use arrange::{arrange, shape};
 pub(super) use layout::view;
 
 struct Split {
     panes: Vec<Pane>,
+    shape: Shape,
+    zoom: Option<usize>,
     focus: Signal<usize>,
-    count: Signal<usize>,
+    revision: Signal<u64>,
     root: Option<Owner>,
 }
 
@@ -39,9 +45,12 @@ pub(super) fn install(main: &App) {
         panes: vec![Pane {
             app: main.clone(),
             owner: None,
+            bounds: signal((0.0, 0.0, 0.0, 0.0)),
         }],
+        shape: Shape::default(),
+        zoom: None,
         focus: signal(0),
-        count: signal(1),
+        revision: signal(0),
         root: Owner::current(),
     };
     SPLIT.with(|slot| *slot.borrow_mut() = Some(split));
@@ -64,10 +73,10 @@ pub(crate) fn focused() -> Option<App> {
 
 /// The focused pane's app, or `main` when the window is not split; tracked.
 pub(super) fn current(main: &App) -> App {
-    let Some((focus, count)) = with(|split| (split.focus, split.count)) else {
+    let Some((focus, revision)) = with(|split| (split.focus, split.revision)) else {
         return main.clone();
     };
-    let (at, _) = (focus.get(), count.get());
+    let (at, _) = (focus.get(), revision.get());
     with(|split| split.panes.get(at).map(|pane| pane.app.clone()))
         .flatten()
         .unwrap_or_else(|| main.clone())
@@ -106,7 +115,7 @@ pub(super) fn beside(session: &str) -> bool {
 
 /// Opens a new pane with a new chat in `folder`; false when the window has no room.
 pub(super) fn beside_in(folder: std::path::PathBuf) -> bool {
-    add(move |_| Open::Folder(folder)).is_some()
+    add(Axis::Right, move |_| Open::Folder(folder)).is_some()
 }
 
 /// Closes the pane that shows the chat `session`.
@@ -130,7 +139,10 @@ pub(super) fn multiple() -> bool {
 
 /// Whether more than one pane is open; tracked.
 pub(super) fn active() -> bool {
-    with(|split| split.count).is_some_and(|count| count.get() > 1)
+    with(|split| split.revision).is_some_and(|revision| {
+        revision.with(|_| ());
+        multiple()
+    })
 }
 
 /// Whether `app` is the window's first pane.
@@ -153,7 +165,10 @@ pub(crate) fn act(action: Act) {
                 close_focused();
             }
         }
-        Act::Focus(next) => step(next),
+        Act::Below => drop(add(Axis::Down, Open::Folder)),
+        Act::Focus(dir) => arrange::go(dir),
+        Act::Swap(dir) => arrange::swap(dir),
+        Act::Zoom => arrange::zoom(),
     }
 }
 
@@ -208,13 +223,13 @@ fn hide_terminal() -> bool {
 }
 
 fn open() {
-    add(Open::Folder);
+    drop(add(Axis::Right, Open::Folder));
 }
 
 /// Opens a pane on the saved agent `session`.
 pub(super) fn reopen(session: &str) -> Option<App> {
     let session = session.to_owned();
-    add(move |_| Open::Resume(session))
+    add(Axis::Right, move |_| Open::Resume(session))
 }
 
 /// Focuses pane `at`, or the last pane when it no longer exists.
@@ -226,38 +241,47 @@ pub(super) fn focus_at(at: usize) {
 
 /// Every pane's app and the focused index; tracked.
 pub(super) fn tracked() -> (Vec<App>, usize) {
-    let Some((focus, count)) = with(|split| (split.focus, split.count)) else {
+    let Some((focus, revision)) = with(|split| (split.focus, split.revision)) else {
         return (Vec::new(), 0);
     };
-    let (at, _) = (focus.get(), count.get());
+    let (at, _) = (focus.get(), revision.get());
     (apps(), at)
 }
 
-fn add(open: impl FnOnce(std::path::PathBuf) -> Open) -> Option<App> {
-    let Some((main, workspace, root)) = with(|split| {
-        (split.panes.len() < PANES).then(|| {
-            let base = &split.panes[split.focus.peek().min(split.panes.len() - 1)].app;
-            (split.panes[0].app.clone(), base.workspace(), split.root)
-        })
-    })
-    .flatten() else {
+fn add(axis: Axis, open: impl FnOnce(std::path::PathBuf) -> Open) -> Option<App> {
+    let (main, workspace, root, at, extent) = with(|split| {
+        let at = split.focus.peek().min(split.panes.len() - 1);
+        let pane = &split.panes[at];
+        let extent = along(pane.bounds.peek(), axis);
+        (
+            split.panes[0].app.clone(),
+            pane.app.workspace(),
+            split.root,
+            at,
+            extent,
+        )
+    })?;
+    if !room(extent, axis) {
+        refuse(&main, axis);
         return None;
-    };
+    }
     let owner = Owner::new("split-pane", root);
-    let app = owner.with(|| attach(&main));
+    let (app, bounds) = owner.with(|| (attach(&main), signal((0.0, 0.0, 0.0, 0.0))));
     app.open_session(open(workspace));
     let opened = app.clone();
-    let at = with(|split| {
+    let new = with(|split| {
         split.panes.push(Pane {
             app,
             owner: Some(owner),
+            bounds,
         });
-        split.panes.len() - 1
-    });
-    if let Some(at) = at {
-        recount();
-        focus(at);
-    }
+        let new = split.panes.len() - 1;
+        split.shape.split(at, axis, new, extent);
+        split.zoom = None;
+        new
+    })?;
+    changed();
+    focus(new);
     Some(opened)
 }
 
@@ -335,33 +359,28 @@ pub(super) fn close(at: usize) {
             main.open_session(Open::Resume(id));
         }
         main.window.showing.set(second.window.showing.peek());
+        with(|split| split.shape.swap(0, 1));
         1
     } else {
         at
     };
-    let Some(pane) =
-        with(|split| (gone < split.panes.len()).then(|| split.panes.remove(gone))).flatten()
-    else {
+    let Some(pane) = with(|split| {
+        (gone < split.panes.len()).then(|| {
+            split.shape.remove(gone);
+            split.zoom = None;
+            split.panes.remove(gone)
+        })
+    })
+    .flatten() else {
         return;
     };
     drop(pane.app.cmd.send(Cmd::Detach));
-    if let Some(owner) = pane.owner {
-        owner.dispose();
-    }
-    recount();
+    changed();
     let last = with(|split| split.panes.len() - 1).unwrap_or(0);
     focus(at.min(last));
-}
-
-fn step(next: bool) {
-    let Some((at, count)) = with(|split| (split.focus.peek(), split.panes.len())) else {
-        return;
-    };
-    focus(if next {
-        (at + 1) % count
-    } else {
-        (at + count - 1) % count
-    });
+    if let Some(owner) = pane.owner {
+        sigil::reactive::defer(move || owner.dispose());
+    }
 }
 
 fn focus(at: usize) {
@@ -370,8 +389,8 @@ fn focus(at: usize) {
     }
 }
 
-fn recount() {
-    if let Some((count, len)) = with(|split| (split.count, split.panes.len())) {
-        count.set(len);
+fn changed() {
+    if let Some(revision) = with(|split| split.revision) {
+        revision.update(|value| *value = value.wrapping_add(1));
     }
 }

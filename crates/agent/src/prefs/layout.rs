@@ -14,6 +14,7 @@ const FILE: &str = "desktop.json";
 #[serde(default)]
 pub struct Layout {
     pub panes: Vec<Slot>,
+    pub shape: Option<super::Shape>,
     pub focus: usize,
     pub terminals: Vec<PathBuf>,
     pub marks: BTreeMap<String, Mark>,

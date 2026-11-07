@@ -48,12 +48,16 @@ const CTRL: ModifiersState = ModifiersState::CONTROL;
 const CMD_ALT: ModifiersState = ModifiersState::META.union(ModifiersState::ALT);
 const CTRL_SHIFT: ModifiersState = ModifiersState::CONTROL.union(ModifiersState::SHIFT);
 
-const STEPS: [(Group, &str, ModifiersState, &str); 5] = [
+const CMD_SHIFT: ModifiersState = ModifiersState::META.union(ModifiersState::SHIFT);
+const CMD_ALT_SHIFT: ModifiersState = CMD_ALT.union(ModifiersState::SHIFT);
+
+const STEPS: [(Group, &str, ModifiersState, &str); 6] = [
     (Group::Agents, "Next agent", CTRL, "Tab"),
     (Group::Agents, "Previous agent", CTRL_SHIFT, "Tab"),
     (Group::Agents, "Go to agent 1–9", CMD, "1–9"),
-    (Group::Window, "Next pane", CMD_ALT, "→"),
-    (Group::Window, "Previous pane", CMD_ALT, "←"),
+    (Group::Window, "Focus pane", CMD_ALT, "←↑↓→"),
+    (Group::Window, "Swap pane", CMD_ALT_SHIFT, "←↑↓→"),
+    (Group::Window, "Zoom pane", CMD_SHIFT, "Return"),
 ];
 
 pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
@@ -173,6 +177,7 @@ const fn window_label(command: KeyCommand) -> Option<(Group, &'static str)> {
         KeyCommand::MarkUnread => (Group::Agents, "Mark unread"),
         KeyCommand::Terminal => (Group::Window, "New terminal"),
         KeyCommand::Split(Split::Open) => (Group::Window, "Split pane"),
+        KeyCommand::Split(Split::Below) => (Group::Window, "Split pane down"),
         KeyCommand::Split(Split::Close) => (Group::Window, "Close pane"),
         KeyCommand::Sidebar => (Group::Window, "Show sidebar"),
         KeyCommand::Pane(Pane::Diff) => (Group::Window, "Show changes"),

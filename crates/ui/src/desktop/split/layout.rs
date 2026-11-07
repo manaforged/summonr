@@ -1,13 +1,20 @@
-use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, Position, Widget, container, signal};
+use sigil::prelude::{
+    LayoutStyle, NodeBuilder, Paint, Position, Signal, Widget, container, effect, signal,
+};
 use sigil::reactive::untrack;
+use sigil::widgets::Orientation;
+use summonr_agent::prefs::{Axis, Part, Shape};
 
 use super::super::App;
-use super::super::style::{DIVIDER, FOCUS_RING, RING};
-use super::{COLUMNS, with};
+use super::super::style::{DIVIDER, FOCUS_RING, PANE_HEIGHT, PANE_WIDTH, RING};
+use super::{Bounds, with};
 
-/// The panes in a grid: one, two side by side, or two rows of two.
+/// What a pane is drawn from: its agent's view and where it reports its bounds.
+type Drawn = (App, Signal<Bounds>);
+
+/// The panes as their split tree, or the zoomed pane alone.
 pub(crate) fn view() -> NodeBuilder {
-    let count = with(|split| split.count).unwrap_or_else(|| signal(1));
+    let revision = with(|split| split.revision).unwrap_or_else(|| signal(0));
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -16,43 +23,69 @@ pub(crate) fn view() -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
-            let n = count.get();
-            let apps: Vec<App> =
-                with(|split| split.panes.iter().map(|pane| pane.app.clone()).collect())
-                    .unwrap_or_default();
-            untrack(|| pane_rows(&apps, n))
+            revision.get();
+            let Some((panes, shape)) = with(|split| {
+                let panes: Vec<Drawn> = split
+                    .panes
+                    .iter()
+                    .map(|pane| (pane.app.clone(), pane.bounds))
+                    .collect();
+                (
+                    panes,
+                    split.zoom.map_or_else(|| split.shape.clone(), Shape::Pane),
+                )
+            }) else {
+                return Vec::new();
+            };
+            let framed = matches!(shape, Shape::Split { .. });
+            untrack(|| vec![node(&panes, &shape, Vec::new(), framed)])
         })
 }
 
-fn pane_rows(apps: &[App], n: usize) -> Vec<NodeBuilder> {
-    if n <= 1 {
-        return apps
-            .first()
-            .map(|app| super::super::terminal::pane(app.clone()))
-            .into_iter()
-            .collect();
+fn node(panes: &[Drawn], shape: &Shape, path: Vec<usize>, framed: bool) -> NodeBuilder {
+    match shape {
+        Shape::Pane(at) => panes
+            .get(*at)
+            .map_or_else(container, |(app, bounds)| cell(app, *at, *bounds, framed)),
+        Shape::Split { axis, parts } => split(panes, *axis, parts, path),
     }
-    let columns = COLUMNS;
-    apps.chunks(columns)
-        .enumerate()
-        .map(|(row, chunk)| {
-            chunk.iter().enumerate().fold(
-                container().layout(
-                    LayoutStyle::flex_row()
-                        .grow(1.0)
-                        .flex_basis(0.0)
-                        .fill_width()
-                        .min_size(0.0, 0.0),
-                ),
-                |line, (column, app)| line.child(cell(app, row * columns + column)),
-            )
-        })
-        .collect()
 }
 
-fn cell(app: &App, at: usize) -> NodeBuilder {
+fn split(panes: &[Drawn], axis: Axis, parts: &[Part], path: Vec<usize>) -> NodeBuilder {
+    let sizes = signal(Vec::new());
+    let at = path.clone();
+    effect(move || {
+        let next = sizes.get();
+        with(|split| split.shape.set_sizes(&at, &next));
+    });
+    let (orientation, least) = match axis {
+        Axis::Right => (Orientation::Horizontal, PANE_WIDTH),
+        Axis::Down => (Orientation::Vertical, PANE_HEIGHT),
+    };
+    let last = parts.len().saturating_sub(1);
+    let mut row = sigil::widgets::splitter(orientation);
+    for (i, part) in parts.iter().enumerate() {
+        let mut inner = path.clone();
+        inner.push(i);
+        let pane = row.pane(node(panes, &part.shape, inner, true)).min(least);
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a pane size is a small pixel count"
+        )]
+        let size = part.size as f32;
+        row = if i == last || part.size == 0 {
+            pane.grow(1.0)
+        } else {
+            pane.initial(size)
+        }
+        .commit();
+    }
+    row.sizes_bind(sizes).grow(1.0).into()
+}
+
+fn cell(app: &App, at: usize, bounds: Signal<Bounds>, framed: bool) -> NodeBuilder {
     let focus = with(|split| split.focus).unwrap_or_else(|| signal(0));
-    container()
+    let cell = container()
         .layout(
             LayoutStyle::flex_column()
                 .grow(1.0)
@@ -61,7 +94,11 @@ fn cell(app: &App, at: usize) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .position(Position::Relative),
         )
-        .border_w(1)
+        .bounds_reactive(bounds);
+    if !framed {
+        return cell.child(super::super::terminal::pane(app.clone()));
+    }
+    cell.border_w(1)
         .border_color(DIVIDER)
         .pointer_down(move |_| {
             if focus.peek() != at {

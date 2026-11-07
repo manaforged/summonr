@@ -5,9 +5,11 @@ use summonr_core::error::Result;
 
 mod hotkeys;
 mod layout;
+mod shape;
 pub use hotkeys::Hotkey;
 pub use hotkeys::{EditorKey, Hotkeys};
 pub use layout::{Layout, Mark, Slot};
+pub use shape::{Axis, Part, Shape};
 pub use summonr_types::{Background, DiffLayout, Notify};
 
 pub const AUTO_THEME: &str = "auto";

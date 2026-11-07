@@ -8,10 +8,11 @@ use summonr_agent::prefs::Hotkey;
 const SETTINGS: &str = "Settings…";
 const QUIT: &str = "Quit Summonr";
 
-const FILE: [(&str, KeyCommand); 4] = [
+const FILE: [(&str, KeyCommand); 5] = [
     ("New agent", KeyCommand::NewSession),
     ("New terminal", KeyCommand::Terminal),
     ("Split pane", KeyCommand::Split(Split::Open)),
+    ("Split pane down", KeyCommand::Split(Split::Below)),
     ("Close pane", KeyCommand::Split(Split::Close)),
 ];
 const VIEW: [(&str, KeyCommand); 4] = [

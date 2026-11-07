@@ -71,6 +71,7 @@ fn reopen(main: &App, saved: &Layout) {
             pane.window.showing.set(Some(id));
         }
     }
+    super::split::arrange(saved.shape.clone());
     super::split::focus_at(saved.focus);
 }
 
@@ -116,6 +117,7 @@ fn snapshot(main: &App, marks: &Marks) -> Option<Layout> {
         .collect();
     Some(Layout {
         panes,
+        shape: Some(super::split::shape()),
         focus,
         terminals: terms.iter().map(|term| term.folder.clone()).collect(),
         marks: next_marks(marks, &live, &chats),

@@ -43,8 +43,10 @@ pub(super) const DOT: f32 = 8.0;
 pub(super) const MENU: f32 = 288.0;
 /// Every modal, including the palette.
 pub(super) const DIALOG: f32 = 520.0;
-/// The most agents shown side by side.
-pub(super) const PANES: usize = 4;
+/// The narrowest a pane may get, so a transcript keeps a readable line.
+pub(super) const PANE_WIDTH: f32 = 360.0;
+/// The shortest a pane may get.
+pub(super) const PANE_HEIGHT: f32 = 240.0;
 /// The width of the focused pane's edge.
 pub(super) const RING: f32 = 2.0;
 

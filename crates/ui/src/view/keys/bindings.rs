@@ -61,12 +61,28 @@ impl KeyCommand {
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) enum Split {
-    /// Adds a pane with a new agent.
+    /// Adds a pane right of the focused one, with a new agent.
     Open,
+    /// Adds a pane below the focused one, with a new agent.
+    Below,
     /// Closes the focused pane; its agent keeps running.
     Close,
-    /// Moves focus to the next (true) or previous pane.
-    Focus(bool),
+    /// Moves focus to the nearest pane in a direction.
+    Focus(Dir),
+    /// Swaps the focused pane with the nearest pane in a direction.
+    Swap(Dir),
+    /// Shows only the focused pane, or every pane again.
+    Zoom,
+}
+
+/// A direction on screen.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+pub(crate) enum Dir {
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
 /// Which agent a window shortcut opens.
@@ -213,16 +229,22 @@ pub(super) fn bindings() -> Vec<(Shortcut, When, KeyCommand)> {
         When::Window,
         Do::Jump(Jump::Step(false)),
     ));
-    let arrow = |key| Shortcut::new(key, CMD_ALT);
+    for (key, dir) in ARROWS {
+        rows.push((
+            Shortcut::new(key, CMD_ALT),
+            When::Window,
+            Do::Split(Split::Focus(dir)),
+        ));
+        rows.push((
+            Shortcut::new(key, CMD_ALT_SHIFT),
+            When::Window,
+            Do::Split(Split::Swap(dir)),
+        ));
+    }
     rows.push((
-        arrow(Key::ArrowRight),
+        Shortcut::new(Key::Enter, CMD_SHIFT),
         When::Window,
-        Do::Split(Split::Focus(true)),
-    ));
-    rows.push((
-        arrow(Key::ArrowLeft),
-        When::Window,
-        Do::Split(Split::Focus(false)),
+        Do::Split(Split::Zoom),
     ));
     rows.extend((1..=9).map(|n| {
         (
@@ -238,9 +260,18 @@ const DIGITS: [&str; 9] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const CMD: ModifiersState = ModifiersState::META;
 const CMD_SHIFT: ModifiersState = ModifiersState::META.union(ModifiersState::SHIFT);
 const CMD_ALT: ModifiersState = ModifiersState::META.union(ModifiersState::ALT);
+const CMD_ALT_SHIFT: ModifiersState = CMD_ALT.union(ModifiersState::SHIFT);
+const ARROWS: [(Key, Dir); 4] = [
+    (Key::ArrowLeft, Dir::Left),
+    (Key::ArrowRight, Dir::Right),
+    (Key::ArrowUp, Dir::Up),
+    (Key::ArrowDown, Dir::Down),
+];
 
-pub(crate) const WINDOW: [(&str, ModifiersState, KeyCommand); 14] = [
+pub(crate) const WINDOW: [(&str, ModifiersState, KeyCommand); 16] = [
     ("d", CMD, KeyCommand::Split(Split::Open)),
+    ("d", CMD_ALT, KeyCommand::Split(Split::Below)),
+    ("∂", CMD_ALT, KeyCommand::Split(Split::Below)),
     ("t", CMD, KeyCommand::Terminal),
     ("w", CMD, KeyCommand::Split(Split::Close)),
     ("k", CMD, KeyCommand::Palette),

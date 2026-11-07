@@ -232,7 +232,7 @@ fn hold(path: &Path) -> io::Result<File> {
         if Instant::now() >= deadline {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
-                format!("{} is open in another summonr window", path.display()),
+                "This chat is open in another Summonr window.",
             ));
         }
         std::thread::park_timeout(wait / 25);

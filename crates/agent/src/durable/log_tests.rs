@@ -174,8 +174,13 @@ fn a_session_journal_opens_in_one_host_at_a_time() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("session.jsonl");
     let held = Log::create(&path).unwrap();
-    let second = Log::open(&path).err().map(|error| error.kind());
-    assert_eq!(second, Some(io::ErrorKind::WouldBlock));
+    let second = Log::open(&path).err().expect("the journal is held");
+    assert_eq!(second.kind(), io::ErrorKind::WouldBlock);
+    let shown = summonr_core::error::Error::from(super::super::driver::DriverError::Io(second));
+    assert_eq!(
+        shown.to_string(),
+        "This chat is open in another Summonr window."
+    );
     drop(held);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     let reopened = std::iter::repeat_with(|| Log::open(&path))

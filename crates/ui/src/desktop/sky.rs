@@ -1,4 +1,4 @@
-use sigil::prelude::{LayoutStyle, NodeBuilder, Position, Signal, Widget, container};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Position, Signal, Widget, container, signal};
 use sigil::scene::Wash;
 use sigil::style::Rgba8;
 
@@ -16,33 +16,34 @@ const NIGHT: [Rgba8; 4] = [
 
 /// The watercolour sky: a pigment band on paper by day, a starred galaxy by night.
 pub(super) fn layer(appearance: Signal<Palette>, seed: u64) -> NodeBuilder {
+    paint(appearance, signal(seed), signal(true))
+}
+
+/// The sky behind the main column, painted while `shown` is true.
+pub(super) fn behind(app: &App, shown: Signal<bool>) -> NodeBuilder {
+    paint(app.appearance, app.sky, shown)
+}
+
+fn paint(appearance: Signal<Palette>, seed: Signal<u64>, shown: Signal<bool>) -> NodeBuilder {
     let version = sigil::reactive::derived(move || {
         let base = appearance.get().base;
-        u64::from(u32::from_be_bytes([base.r, base.g, base.b, base.a]))
+        let paper = u64::from(u32::from_be_bytes([base.r, base.g, base.b, base.a]));
+        (paper << 1 | u64::from(shown.get())) ^ seed.get().rotate_left(33)
     });
     container().layout(fill()).child(
         sigil::widgets::canvas(move |scene, area| {
+            if !shown.peek() {
+                return;
+            }
             let paper = Rgba8 {
                 a: 255,
                 ..appearance.peek().base
             };
-            scene.draw_wash(area, wash(paper, seed));
+            scene.draw_wash(area, wash(paper, seed.peek()));
         })
         .redraw_on(version)
         .layout(LayoutStyle::block().fill()),
     )
-}
-
-/// An empty layer behind the main column that holds the sky while `shown` is true.
-pub(super) fn behind(app: &App, shown: Signal<bool>) -> NodeBuilder {
-    let (appearance, seed) = (app.appearance, app.sky);
-    container().layout(fill()).children_reactive(move || {
-        if shown.get() {
-            vec![layer(appearance, seed.get())]
-        } else {
-            Vec::new()
-        }
-    })
 }
 
 fn fill() -> LayoutStyle {

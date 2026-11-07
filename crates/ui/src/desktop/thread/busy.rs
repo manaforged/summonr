@@ -5,9 +5,9 @@ use crate::app::App;
 
 const LIFT: f32 = 5.0;
 
-/// The working row above the composer: a spinner and how long the agent has run.
+/// The working row above the composer: a spinner, what the agent is doing, and how long it has run.
 pub(super) fn row(app: &App) -> NodeBuilder {
-    let clock = app.clone();
+    let (clock, words) = (app.clone(), app.clone());
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -31,7 +31,18 @@ pub(super) fn row(app: &App) -> NodeBuilder {
                     sigil::widgets::spinner().layout(LayoutStyle::block().width(MARK).height(MARK)),
                 ),
         )
-        .child(container().layout(LayoutStyle::block().grow(1.0)))
+        .child(
+            container()
+                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
+                .child(
+                    text(Text::Meta, move || {
+                        crate::desktop::host::summary(&words)
+                            .map(|(words, _)| words)
+                            .unwrap_or_default()
+                    })
+                    .ellipsize(),
+                ),
+        )
         .child(
             text(Text::Meta, move || {
                 clock.ticks.with(|_| ());

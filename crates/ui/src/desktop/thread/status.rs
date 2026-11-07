@@ -10,9 +10,9 @@ const BAR: f32 = 64.0;
 const CARD: f32 = 240.0;
 const HIGH: u64 = 80;
 
-/// Spend, the latest notice, and the context and cache meters under the composer.
+/// Spend, tokens, live speed, the latest notice, and the context and cache meters under the composer.
 pub(crate) fn meters(app: App) -> NodeBuilder {
-    let (spend, gauges) = {
+    let (spend, tokens, gauges) = {
         let model = app.model.get();
         let started = !model.usage.is_empty() || model.entries.asked();
         let context = started.then(|| model.context_percent()).flatten();
@@ -21,6 +21,7 @@ pub(crate) fn meters(app: App) -> NodeBuilder {
         let cache_card = app.cache_open.get().then(|| model.cache_facts());
         (
             model.spend(),
+            model.tokens(|round| round.prompt) + model.tokens(|round| round.completion),
             [
                 context.map(|percent| (Target::Context, percent, context_card)),
                 cache.map(|percent| (Target::Cache, percent, cache_card)),
@@ -38,6 +39,26 @@ pub(crate) fn meters(app: App) -> NodeBuilder {
     if let Some(spend) = spend {
         facts = facts.child(quiet(summonr_agent::provider::dollars(spend)));
     }
+    if tokens > 0 {
+        facts = facts.child(quiet(format!(
+            "{} tokens",
+            summonr_agent::provider::compact(tokens)
+        )));
+    }
+    let speed = app.clone();
+    facts = facts.child(
+        super::super::style::text(Text::Meta, move || {
+            speed.ticks.with(|_| ());
+            speed.model.with(|model| {
+                model
+                    .speed
+                    .live(std::time::Instant::now())
+                    .map(crate::speed::Speed::label)
+                    .unwrap_or_default()
+            })
+        })
+        .nowrap(),
+    );
     let mut row = container()
         .layout(
             LayoutStyle::flex_row()

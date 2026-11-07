@@ -51,6 +51,29 @@ fn the_composer_shows_how_full_the_context_is() {
 }
 
 #[test]
+fn the_strip_counts_tokens_and_the_busy_row_names_the_work() {
+    if !in_window("controls::the_strip_counts_tokens_and_the_busy_row_names_the_work") {
+        return;
+    }
+    let seen = drive(
+        |app| {
+            used(app);
+            app.update(Msg::Fact(Fact::Busy(Some(
+                summonr_agent::hub::Activity::Turn,
+            ))));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert!(seen.shows(|text| text == "1.5k tokens"), "{}", seen.text());
+    assert!(
+        seen.shows(|text| text.contains("Thinking…")),
+        "{}",
+        seen.text()
+    );
+}
+
+#[test]
 fn the_approval_chip_names_the_mode_and_toggles_it() {
     if !in_window("controls::the_approval_chip_names_the_mode_and_toggles_it") {
         return;

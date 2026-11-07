@@ -197,6 +197,7 @@ pub(crate) struct State {
     pub(crate) tokens: Option<u64>,
     pub(crate) millis: Option<u64>,
     pub(crate) workflow: Option<String>,
+    pub(crate) skills: Option<String>,
     pub(crate) children: std::collections::BTreeMap<SessionId, crate::child::ChildRecord>,
     pub(crate) history: Vec<Message>,
     pub(crate) spent: u64,

@@ -21,13 +21,13 @@ impl State {
             }
             Line::Agent { .. }
             | Line::Topic { .. }
-            | Line::Skills { .. }
             | Line::Tools { .. } | Line::Receipt { .. } => {}
             Line::Budget { tokens, millis } => {
                 self.tokens = tokens;
                 self.millis = millis;
             }
             Line::Workflow { name } => self.workflow = name,
+            Line::Skills { set } => self.skills = Some(set),
             Line::Child { record } => {
                 self.children.insert(record.id, record);
             }

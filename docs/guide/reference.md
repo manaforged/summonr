@@ -497,7 +497,7 @@ Everything runs without a prompt except irreversible destruction: wiping the sys
 
 ### Workflows
 
-A skill set limits which skills the model is offered. `include` and `exclude` list skill paths, each a folder and directory name such as `review/rust`; a folder name covers every skill under it. `--skills NAME` picks a set, and the session journal records it. The built-in `none` set offers no skills. A skill you run yourself as `/NAME` runs in any set.
+A skill set limits which skills the model is offered. `include` and `exclude` list skill paths, each a folder and directory name such as `review/rust`; a folder name covers every skill under it. `--skills NAME` picks a set, and the session journal records it. A resumed session keeps its recorded set unless `--skills` names another, and every child agent runs with its lead's set. The built-in `none` set offers no skills. A skill you run yourself as `/NAME` runs in any set.
 
 ```toml
 [skills.sets.lean-review]
@@ -514,6 +514,7 @@ workflow = "cheap-scout"      # optional default
 [workflows.cheap-scout]
 scout = "grok"
 judge = "zai"
+skills = "lean-review"        # optional: the skill set a new session starts with
 ```
 
 `summonr -w cheap-scout`, `/workflow cheap-scout` in the interface, or the `workflow` key picks one; `summonr workflow list` lists them. In the interface every card action has a verb too:

@@ -206,7 +206,14 @@ impl SessionDriver {
     }
 
     pub(crate) fn set_skills(&mut self, set: String) -> Result<(), DriverError> {
+        if self.state.skills.as_deref() == Some(set.as_str()) {
+            return Ok(());
+        }
         self.append(Line::Skills { set })
+    }
+
+    pub(crate) fn skills(&self) -> Option<&str> {
+        self.state.skills.as_deref()
     }
 
     pub(crate) fn turns(&self) -> usize {

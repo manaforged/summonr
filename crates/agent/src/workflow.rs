@@ -73,9 +73,16 @@ impl fmt::Display for ModelSelection {
 pub struct Workflow {
     pub name: String,
     pub(crate) selections: BTreeMap<Role, ModelSelection>,
+    pub(crate) skills: Option<String>,
 }
 
 impl Workflow {
+    /// The skill set this workflow runs with, from `skills = "SET"` in its table.
+    #[must_use]
+    pub fn skills(&self) -> Option<&str> {
+        self.skills.as_deref()
+    }
+
     #[must_use]
     pub(crate) fn selection(&self, role: Role) -> Option<&ModelSelection> {
         self.selections.get(&role)
@@ -107,12 +114,12 @@ pub fn load(name: &str) -> Result<Workflow> {
 }
 
 pub(crate) fn from_file(file: &File, name: &str) -> Result<Workflow> {
-    let rows = file
+    let table = file
         .workflows
         .get(name)
         .ok_or_else(|| Error::Config(format!("no workflow `{name}` in config.toml")))?;
     let mut selections = BTreeMap::new();
-    for (role, row) in rows {
+    for (role, row) in &table.roles {
         let selection = match row {
             ModelSelectionRow::Name(endpoint) => ModelSelection {
                 endpoint: endpoint.clone(),
@@ -133,6 +140,7 @@ pub(crate) fn from_file(file: &File, name: &str) -> Result<Workflow> {
     Ok(Workflow {
         name: name.to_string(),
         selections,
+        skills: table.skills.clone(),
     })
 }
 

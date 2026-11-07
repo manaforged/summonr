@@ -384,3 +384,19 @@ fn a_chosen_skill_set_is_recorded_in_the_journal() {
     let journal = std::fs::read_to_string(driver.path()).unwrap();
     assert!(journal.contains(r#""kind":"skills","set":"lean""#), "{journal}");
 }
+
+#[test]
+fn a_resumed_journal_keeps_its_skill_set_and_records_it_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let id = {
+        let mut driver =
+            SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+        driver.set_skills("lean".to_string()).unwrap();
+        driver.id()
+    };
+    let mut resumed = SessionDriver::resume(dir.path(), id, dir.path()).unwrap();
+    assert_eq!(resumed.skills(), Some("lean"));
+    resumed.set_skills("lean".to_string()).unwrap();
+    let journal = std::fs::read_to_string(resumed.path()).unwrap();
+    assert_eq!(journal.matches(r#""kind":"skills""#).count(), 1, "{journal}");
+}

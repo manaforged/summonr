@@ -564,3 +564,25 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
         .unwrap();
     assert_eq!(parent.spawned[&id].record.id.to_string(), id);
 }
+
+#[tokio::test]
+async fn a_child_runs_with_the_skill_set_of_its_lead() {
+    let (mut parent, dirs) = parent(vec![Reply::Text("done")]);
+    let skill = dirs[0].path().join(".summonr").join("skills").join("demo");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(skill.join("SKILL.md"), "# Demo\n").unwrap();
+    let budget = parent.task_budget(1).unwrap();
+    let mut open = parent
+        .task_start_in(args("look around", "research", false), &budget, None)
+        .unwrap();
+    assert!(tool_names(&mut open.child).contains(&"skill".to_string()));
+    parent
+        .choose_skills(crate::skills::Set::from_sets(&std::collections::BTreeMap::new(), "none").unwrap())
+        .unwrap();
+    let budget = parent.task_budget(1).unwrap();
+    let mut run = parent
+        .task_start_in(args("look around", "research", false), &budget, None)
+        .unwrap();
+    assert!(!tool_names(&mut run.child).contains(&"skill".to_string()));
+    assert_eq!(run.child.skills().as_deref(), Some("none"));
+}

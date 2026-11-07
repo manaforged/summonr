@@ -46,6 +46,11 @@ impl ToolRegistry {
         self.probed = std::sync::OnceLock::new();
     }
 
+    /// The skill set this registry limits skills to.
+    pub(crate) fn skill_set(&self) -> Option<&crate::skills::Set> {
+        self.skill_set.as_ref()
+    }
+
     pub(in crate::tools) fn set_browser(&mut self, on: bool) -> Result<()> {
         self.browser = if on {
             Some(match self.browser.take() {

@@ -41,6 +41,17 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
+    /// The skill set this session's journal records, if one was chosen.
+    #[must_use]
+    pub fn skills(&self) -> Option<String> {
+        self.session.skills().map(str::to_string)
+    }
+
+    /// Replaces the system prompt sent with each later request.
+    pub fn set_system_prompt(&mut self, prompt: impl Into<String>) {
+        self.system_prompt = prompt.into();
+    }
+
     pub fn apply_endpoint(&mut self, endpoint: &crate::endpoint::Endpoint) {
         self.session.set_agent(endpoint.agent());
         self.set_context_window(endpoint.context_window);

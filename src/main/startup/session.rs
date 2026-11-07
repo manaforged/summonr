@@ -40,6 +40,19 @@ pub(super) fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<
     workflow::default_name()
 }
 
+/// The skill set a session starts with: `--skills`, else a new session's workflow set.
+fn chosen_set(args: &Args, resumed: bool) -> Result<Option<summonr_agent::skills::Set>> {
+    let name = match &args.skills {
+        Some(name) => Some(name.clone()),
+        None if resumed => None,
+        None => match args.workflow.clone().or(workflow::default_name()?) {
+            Some(flow) => workflow::load(&flow)?.skills().map(str::to_owned),
+            None => None,
+        },
+    };
+    name.as_deref().map(summonr_agent::skills::Set::named).transpose()
+}
+
 pub(super) fn apply_workflow(
     loop_: &mut Loop<Client>,
     name: &str,
@@ -124,24 +137,22 @@ pub(super) fn build(
 ) -> Result<Loop<Client>> {
     let switches = summonr_agent::modules::load(workspace)?;
     let images = summonr_agent::catalog::accepts_images(endpoint);
-    let set = args
-        .skills
-        .as_deref()
-        .map(summonr_agent::skills::Set::named)
-        .transpose()?;
-    let prompt = system_prompt(
-        workspace,
-        summonr_agent::Sources {
-            trust: args.trust,
-            skills: switches.enabled(summonr_agent::modules::ModuleId::Skills),
-            set: set.as_ref(),
-            images,
-            memory: switches.enabled(summonr_agent::modules::ModuleId::Memory),
-            mcp: switches.enabled(summonr_agent::modules::ModuleId::Mcp),
-        },
-    );
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));
-    let mut loop_ = action.open(provider, endpoint.model.clone(), workspace, prompt)?;
+    let set = chosen_set(args, resumed)?;
+    let prompt = |set: Option<&summonr_agent::skills::Set>| {
+        system_prompt(
+            workspace,
+            summonr_agent::Sources {
+                trust: args.trust,
+                skills: switches.enabled(summonr_agent::modules::ModuleId::Skills),
+                set,
+                images,
+                memory: switches.enabled(summonr_agent::modules::ModuleId::Memory),
+                mcp: switches.enabled(summonr_agent::modules::ModuleId::Mcp),
+            },
+        )
+    };
+    let mut loop_ = action.open(provider, endpoint.model.clone(), workspace, prompt(set.as_ref()))?;
     if resumed && args.goal.is_none() && args.steps.is_none() {
         eprintln!(
             "resuming session {} in {}",
@@ -152,6 +163,15 @@ pub(super) fn build(
     if let Some(name) = &args.name {
         loop_.set_name(name)?;
     }
+    let recorded = if set.is_none() && resumed { loop_.skills() } else { None };
+    let set = match recorded {
+        Some(name) => {
+            let set = summonr_agent::skills::Set::named(&name)?;
+            loop_.set_system_prompt(prompt(Some(&set)));
+            Some(set)
+        }
+        None => set,
+    };
     if let Some(set) = set {
         loop_.choose_skills(set)?;
     }

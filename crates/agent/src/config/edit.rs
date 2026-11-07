@@ -92,6 +92,9 @@ pub(crate) fn remove_key(path: &Path, name: &str) -> Result<bool> {
 pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
     update(path, |document| {
         let mut table = toml_edit::Table::new();
+        if let Some(set) = &workflow.skills {
+            table["skills"] = value(set);
+        }
         for (role, selection) in &workflow.selections {
             table[role.name()] = match &selection.model {
                 None => value(&selection.endpoint),

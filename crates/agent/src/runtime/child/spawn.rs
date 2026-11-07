@@ -107,6 +107,9 @@ impl<P: Provider> Loop<P> {
             None,
         )?;
         child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
+        if let Some(set) = self.tools.skill_set().cloned() {
+            child.choose_skills(set)?;
+        }
         if args.access == Access::Implement {
             child.mcp = self
                 .mcp

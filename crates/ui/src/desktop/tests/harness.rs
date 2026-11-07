@@ -68,6 +68,8 @@ pub(super) fn command(letter: &str) -> Event {
 pub(super) enum Step {
     Key(Event),
     Click(&'static str),
+    /// Clicks the rightmost control with this label, such as the last pane's.
+    ClickRightmost(&'static str),
     RightClick(&'static str),
     Wait(Box<dyn FnOnce(&App)>),
     Drag((f32, f32), (f32, f32)),
@@ -111,10 +113,23 @@ fn click(host: &mut Host, label: &str) {
                 .flatten()
         })
         .unwrap_or_else(|| panic!("no control named {label}"));
-    let at = sigil::geometry::Point::new(
-        ((bounds.x0 + bounds.x1) / 2.0) as f32,
-        ((bounds.y0 + bounds.y1) / 2.0) as f32,
-    );
+    press_at(host, (bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0);
+}
+
+fn click_rightmost(host: &mut Host, label: &str) {
+    let bounds = host
+        .accessibility_tree()
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.label().as_deref() == Some(label))
+        .filter_map(|(_, node)| node.bounds())
+        .max_by(|a, b| a.x0.total_cmp(&b.x0))
+        .unwrap_or_else(|| panic!("no control named {label}"));
+    press_at(host, (bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0);
+}
+
+fn press_at(host: &mut Host, x: f64, y: f64) {
+    let at = sigil::geometry::Point::new(x as f32, y as f32);
     host.route(Event::pointer_down(at));
     host.route(Event::pointer_up(at));
 }
@@ -179,6 +194,7 @@ pub(super) fn steps<T>(
             match step {
                 Step::Key(key) => host.route(key),
                 Step::Click(label) => click(&mut host, label),
+                Step::ClickRightmost(label) => click_rightmost(&mut host, label),
                 Step::RightClick(label) => right_click(&mut host, label),
                 Step::Wait(until) => until(&app),
                 Step::Drag(from, to) => drag(&mut host, from, to),

@@ -295,7 +295,7 @@ fn attach(main: &App) -> App {
         ui,
     })));
     let mut app = App::new(main.info.clone(), main.workspace(), commands);
-    app.window.terminals = main.window.terminals;
+    app.window.share(&main.window);
     let size = main.viewport;
     let fit = app.clone();
     effect(move || {

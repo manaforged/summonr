@@ -177,3 +177,24 @@ fn focusing_a_hidden_pane_ends_the_zoom() {
     );
     assert_eq!((strips(&seen), seen.read), (2, 0), "{:?}", seen.controls);
 }
+
+#[test]
+fn a_split_pane_offers_the_outside_agents_the_window_found() {
+    if !in_window("panes::a_split_pane_offers_the_outside_agents_the_window_found") {
+        return;
+    }
+    let seen = steps(
+        |app| {
+            let friend = summonr_agent::endpoint::Friend::of("claude").expect("claude preset");
+            app.window.friends.set(vec![crate::desktop::friends::Seen {
+                friend,
+                state: crate::desktop::friends::State::SignedIn,
+            }]);
+        },
+        vec![cmd("d", CMD), Step::ClickRightmost("Model")],
+        |_| (),
+    );
+    let friend = summonr_agent::endpoint::Friend::of("claude").expect("claude preset");
+    let model = friend.models().into_iter().next().expect("a Claude Code model");
+    assert!(seen.shows(|text| text == model), "{model}: {}", seen.text());
+}

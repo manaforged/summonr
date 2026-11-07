@@ -67,6 +67,14 @@ impl Window {
         }
     }
 
+    /// Shares `window`'s window-wide state with this pane: terminals, the sidebar, and what the machine offers.
+    pub(crate) fn share(&mut self, window: &Self) {
+        self.terminals = window.terminals;
+        self.sidebar = window.sidebar;
+        self.local = window.local;
+        self.friends = window.friends;
+    }
+
     /// Runs the friend's own sign-in for `route`; false when `route` has no friend.
     pub(crate) fn sign_in(&self, app: &App, route: &str) -> bool {
         let friend = summonr_agent::endpoint::Friend::of(route);

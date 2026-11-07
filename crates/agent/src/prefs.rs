@@ -56,7 +56,9 @@ pub const FPS_MAX: u32 = 240;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Tint {
+    /// Flame on a light theme, Wisp on a dark one.
     #[default]
+    Auto,
     Wisp,
     Flame,
     Foxfire,
@@ -65,11 +67,12 @@ pub enum Tint {
 
 impl Tint {
     /// Every tint, in the order Settings lists them.
-    pub const ALL: [Self; 4] = [Self::Wisp, Self::Flame, Self::Foxfire, Self::Arcane];
+    pub const ALL: [Self; 5] = [Self::Auto, Self::Wisp, Self::Flame, Self::Foxfire, Self::Arcane];
 
     /// The tint's name in the config file.
     pub fn name(self) -> &'static str {
         match self {
+            Self::Auto => "auto",
             Self::Wisp => "wisp",
             Self::Flame => "flame",
             Self::Foxfire => "foxfire",
@@ -133,7 +136,7 @@ impl Default for Prefs {
             notify: Notify::All,
             splash: false,
             will: false,
-            will_tint: Tint::Wisp,
+            will_tint: Tint::Auto,
             will_spot: [24, 120],
             animations: true,
             spinner: Spinner::default(),

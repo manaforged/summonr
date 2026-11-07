@@ -62,6 +62,7 @@ fn options(app: &App) -> NodeBuilder {
 
 const fn label(tint: Tint) -> &'static str {
     match tint {
+        Tint::Auto => "Auto",
         Tint::Wisp => "Wisp",
         Tint::Flame => "Flame",
         Tint::Foxfire => "Foxfire",

@@ -98,6 +98,8 @@ pub(super) const WILL: f32 = 48.0;
 /// Will's edge, core and eyes for `tint` on a light or dark theme.
 pub(super) const fn will_colors(tint: Tint, light: bool) -> [Rgba8; 3] {
     match (tint, light) {
+        (Tint::Auto, true) => will_colors(Tint::Flame, true),
+        (Tint::Auto, false) => will_colors(Tint::Wisp, false),
         (Tint::Wisp, false) => [rgb(0x3b, 0x7b, 0xff), rgb(0xef, 0xfb, 0xff), rgb(0x05, 0x05, 0x0a)],
         (Tint::Wisp, true) => [rgb(0x1d, 0x5b, 0xe6), rgb(0xf3, 0xfb, 0xff), rgb(0x1c, 0x1d, 0x1a)],
         (Tint::Flame, false) => [rgb(0xf0, 0x65, 0x2b), rgb(0xff, 0xf3, 0xd6), rgb(0x1a, 0x0f, 0x08)],

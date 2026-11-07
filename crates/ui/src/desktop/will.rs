@@ -17,8 +17,10 @@ use super::style::{WILL, will_colors};
 
 const PERIOD: Duration = Duration::from_millis(50);
 const BASE: (f32, f32) = (8.0, 15.0);
-/// The closest Will comes to the column's right and bottom edges, in points.
+/// The closest Will comes to the column's edges, in points.
 const EDGE: f32 = 8.0;
+/// How far the pointer moves before a press becomes a drag, in points.
+const SLOP: f32 = 3.0;
 
 static CLOCK: OnceLock<Instant> = OnceLock::new();
 
@@ -106,11 +108,13 @@ const FOCUS: [Seg; 10] = [
 pub(super) fn layer(app: &App) -> NodeBuilder {
     let model = app.model;
     let live = signal(None::<(f32, f32)>);
+    let room = room(app);
     let spot = move |axis: usize| {
         derived(move || {
             let saved = model.with(|model| model.prefs.will_spot[axis]) as f32;
             let held = live.get().map(|at: (f32, f32)| [at.0, at.1][axis]);
-            -held.unwrap_or(saved)
+            let most = room();
+            -fit(held.unwrap_or(saved), [most.0, most.1][axis])
         })
     };
     let shown = derived(move || model.with(|model| model.prefs.will));
@@ -126,7 +130,7 @@ pub(super) fn layer(app: &App) -> NodeBuilder {
         .animate_translate_y(spot(1))
         .children_reactive(move || {
             if shown.get() {
-                vec![untrack(|| grip(&app, live))]
+                vec![untrack(|| grip(&app, live, room))]
             } else {
                 Vec::new()
             }
@@ -138,7 +142,29 @@ pub(super) fn still(app: &App, size: f32) -> NodeBuilder {
     art(app, size, false)
 }
 
-fn grip(app: &App, live: Signal<Option<(f32, f32)>>) -> NodeBuilder {
+/// The largest right and bottom offsets that keep Will inside the main column.
+fn room(app: &App) -> impl Fn() -> (f32, f32) + Copy + 'static {
+    let sidebar = app.window.sidebar;
+    move || {
+        let view = sigil::app::viewport_size().get();
+        let side = if sidebar.get() && view.width >= super::sidebar::ROOMY {
+            super::sidebar::WIDTH
+        } else {
+            0.0
+        };
+        (view.width - side - WILL - EDGE, view.height - WILL - EDGE)
+    }
+}
+
+fn fit(offset: f32, most: f32) -> f32 {
+    offset.min(most).max(EDGE)
+}
+
+fn grip(
+    app: &App,
+    live: Signal<Option<(f32, f32)>>,
+    room: impl Fn() -> (f32, f32) + Copy + 'static,
+) -> NodeBuilder {
     let moving = untrack(|| app.model.with(|model| model.prefs.animations));
     let held = Rc::new(Cell::new(None::<(f32, f32, f32, f32)>));
     let (press, drag, model, save) = (Rc::clone(&held), Rc::clone(&held), app.model, app.clone());
@@ -149,8 +175,14 @@ fn grip(app: &App, live: Signal<Option<(f32, f32)>>) -> NodeBuilder {
         .child(art(app, WILL, moving))
         .pointer_down(move |event| {
             let [right, bottom] = untrack(|| model.with(|model| model.prefs.will_spot));
+            let (most_right, most_bottom) = untrack(room);
             let at = event.window_position;
-            press.set(Some((at.x, at.y, right as f32, bottom as f32)));
+            press.set(Some((
+                at.x,
+                at.y,
+                fit(right as f32, most_right),
+                fit(bottom as f32, most_bottom),
+            )));
             event.capture_pointer();
             event.stop_propagation();
         })
@@ -159,9 +191,13 @@ fn grip(app: &App, live: Signal<Option<(f32, f32)>>) -> NodeBuilder {
                 return;
             };
             let at = event.window_position;
+            if live.peek().is_none() && (at.x - x).hypot(at.y - y) < SLOP {
+                return;
+            }
+            let (most_right, most_bottom) = untrack(room);
             live.set(Some((
-                (right - (at.x - x)).max(EDGE),
-                (bottom - (at.y - y)).max(EDGE),
+                fit(right - (at.x - x), most_right),
+                fit(bottom - (at.y - y), most_bottom),
             )));
             event.stop_propagation();
         })
@@ -178,9 +214,12 @@ fn grip(app: &App, live: Signal<Option<(f32, f32)>>) -> NodeBuilder {
 }
 
 fn art(app: &App, size: f32, moving: bool) -> NodeBuilder {
-    let model = app.model;
+    let (model, appearance) = (app.model, app.appearance);
     let look = derived(move || {
-        model.with(|model| u64::from(model.busy_since.is_some()) << 8 | model.prefs.will_tint as u64)
+        let light = u64::from(appearance.get().light());
+        model.with(|model| {
+            light << 9 | u64::from(model.busy_since.is_some()) << 8 | model.prefs.will_tint as u64
+        })
     });
     let frame = signal(0_u64);
     if moving {
@@ -193,7 +232,7 @@ fn art(app: &App, size: f32, moving: bool) -> NodeBuilder {
             untrack(|| model.with(|model| (model.busy_since.is_some(), model.prefs.will_tint)));
         let pose = if working { &WORKING } else { &IDLE };
         let seconds = if moving { start.elapsed().as_secs_f32() } else { 0.0 };
-        let colors = will_colors(tint, crate::theme::palette().light());
+        let colors = will_colors(tint, appearance.peek().light());
         draw(scene, area, pose, seconds, colors, &theme);
     })
     .redraw_on(if moving { frame } else { look })

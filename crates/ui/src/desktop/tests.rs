@@ -28,6 +28,7 @@ mod setup;
 mod side;
 mod sidebar;
 mod terminals;
+mod topics;
 mod transcript;
 mod window_chrome;
 mod window_composer;

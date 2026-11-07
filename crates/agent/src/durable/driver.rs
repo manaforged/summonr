@@ -72,6 +72,7 @@ pub(crate) enum Parent {
 pub(crate) struct SessionDriver {
     pub(crate) partial: Partial,
     agent: Option<String>,
+    topic: Option<String>,
     log: Log,
     state: State,
     work: Option<Work>,
@@ -199,6 +200,10 @@ impl SessionDriver {
 
     pub(crate) fn set_agent(&mut self, route: Option<String>) {
         self.agent = route;
+    }
+
+    pub(crate) fn set_topic(&mut self, topic: Option<String>) {
+        self.topic = topic;
     }
 
     pub(crate) fn turns(&self) -> usize {

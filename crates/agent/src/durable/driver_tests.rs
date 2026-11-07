@@ -357,3 +357,19 @@ fn a_chat_records_the_agent_of_its_first_message() {
     let path = driver.path().to_path_buf();
     assert_eq!(crate::session::info(path).agent.as_deref(), Some("claude"));
 }
+
+#[test]
+fn a_thread_that_joins_a_topic_lists_under_it_and_a_new_one_starts_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut joined = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    joined.set_topic(Some("01a1000000000000000000000000aaaa".to_string()));
+    joined.prepare_turn_work("second", &[]).unwrap();
+    joined.start_input(&UserInput::from("second")).unwrap();
+    let info = crate::session::info(joined.path().to_path_buf());
+    assert_eq!(info.topic.as_deref(), Some("01a1000000000000000000000000aaaa"));
+
+    let mut fresh = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
+    fresh.prepare_turn_work("first", &[]).unwrap();
+    fresh.start_input(&UserInput::from("first")).unwrap();
+    assert_eq!(crate::session::info(fresh.path().to_path_buf()).topic, None);
+}

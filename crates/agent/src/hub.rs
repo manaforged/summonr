@@ -39,6 +39,8 @@ pub enum Open {
     Worktree(std::path::PathBuf),
     /// An earlier chat, in the folder it recorded.
     Resume(String),
+    /// A new thread in the topic that session `topic` started, in that topic's folder.
+    Thread { topic: String, folder: std::path::PathBuf },
 }
 
 pub type Factory = Arc<dyn Fn(Open, Ui) -> Result<(Loop<Client>, Option<Workflow>)> + Send + Sync>;

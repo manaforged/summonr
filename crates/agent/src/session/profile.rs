@@ -94,6 +94,7 @@ impl Scan {
             Line::Summary { text, tail } => self.summary(text, tail),
             Line::Clear => self.history = History::default(),
             Line::Agent { .. }
+            | Line::Topic { .. }
             | Line::Budget { .. }
             | Line::Work { .. }
             | Line::Workflow { .. }

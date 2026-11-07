@@ -75,16 +75,20 @@ fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr_agent::hub
         args.fork = false;
         args.worktree = matches!(open, summonr_agent::hub::Open::Worktree(_));
         args.name = None;
-        let (folder, session) = match open {
-            summonr_agent::hub::Open::New => (cwd.clone(), None),
+        let (folder, session, topic) = match open {
+            summonr_agent::hub::Open::New => (cwd.clone(), None, None),
             summonr_agent::hub::Open::Folder(folder)
-            | summonr_agent::hub::Open::Worktree(folder) => (folder, None),
-            summonr_agent::hub::Open::Resume(id) => (cwd.clone(), Some(id)),
+            | summonr_agent::hub::Open::Worktree(folder) => (folder, None, None),
+            summonr_agent::hub::Open::Resume(id) => (cwd.clone(), Some(id), None),
+            summonr_agent::hub::Open::Thread { topic, folder } => (folder, None, Some(topic)),
         };
         args.session = session;
         let (workspace, _, action) = isolate(&args, &folder)?;
-        let (loop_, _, workflow) =
+        let (mut loop_, _, workflow) =
             assemble(&args, &endpoint, &workspace, action, &(Some(ui), None))?;
+        if let Some(topic) = &topic {
+            loop_.join_topic(topic);
+        }
         Ok((loop_, workflow))
     })
 }

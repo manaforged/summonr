@@ -49,6 +49,8 @@ pub struct SessionInfo {
     pub interactive: bool,
     /// The route of the foreign agent that ran this chat's first message.
     pub agent: Option<String>,
+    /// The thread that started this one's topic, when it joined another thread's topic.
+    pub topic: Option<String>,
     /// When the session journal last changed.
     pub modified: Option<std::time::SystemTime>,
 }
@@ -64,6 +66,8 @@ pub(crate) struct Summary {
     interactive: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    topic: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     open_bytes: Option<u64>,
 }
@@ -88,6 +92,7 @@ impl Summary {
                     summary.depth = *depth;
                 }
                 Line::Agent { route } => summary.agent = Some(route.clone()),
+                Line::Topic { id } => summary.topic = Some(id.clone()),
                 Line::User {
                     text,
                     source,
@@ -141,6 +146,7 @@ impl Summary {
             depth: self.depth,
             interactive: self.interactive,
             agent: self.agent,
+            topic: self.topic,
             modified,
         }
     }

@@ -14,6 +14,7 @@ impl SessionDriver {
         let mut driver = Self {
             partial: Partial::default(),
             agent: None,
+            topic: None,
             log: Log::create(&path)?,
             state: State::default(),
             work: None,
@@ -76,6 +77,7 @@ impl SessionDriver {
         };
         let mut driver = Self {
             agent: None,
+            topic: None,
             partial: Partial::default(),
             log: Log::open(&path)?,
             work,

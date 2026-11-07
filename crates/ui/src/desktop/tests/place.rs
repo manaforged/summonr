@@ -85,6 +85,7 @@ fn chat(id: &str, cwd: &str, preview: &str) -> (SessionInfo, bool) {
             depth: 0,
             interactive: true,
             agent: None,
+            topic: None,
             modified: None,
         },
         false,

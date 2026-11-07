@@ -14,7 +14,6 @@ use summonr_agent::hub::{Live, Open, Status};
 use summonr_agent::session::SessionInfo;
 
 pub(super) mod row;
-use row::agent_row;
 
 pub(super) const WIDTH: f32 = 248.0;
 pub(super) const BAR: f32 = 40.0;
@@ -205,15 +204,9 @@ fn chats(
             continue;
         }
         nodes.extend(super::terminal::rows(app, &terms, &folder));
-        for mut info in agents {
-            let selected = shown.contains(&info.id);
-            live_title(&mut info, &live);
-            nodes.push(agent_row(
-                app,
-                &info,
-                selected,
-                shown_state(&live, &info.id),
-            ));
+        for topic in super::topic::group(agents) {
+            let selected = topic.threads.iter().any(|info| shown.contains(&info.id));
+            nodes.extend(super::topic::row(app, &topic, selected, &live));
         }
     }
     nodes

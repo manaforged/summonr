@@ -27,10 +27,8 @@ impl SessionDriver {
                 start: false,
             })?;
         }
-        if self.state.turns == 0
-            && let Some(route) = self.agent.clone()
-        {
-            self.append(Line::Agent { route })?;
+        if self.state.turns == 0 {
+            self.open_lines()?;
         }
         self.append(Line::User {
             text: input.text.clone(),
@@ -315,5 +313,17 @@ impl SessionDriver {
             millis: 0,
             patch: None,
         })
+    }
+}
+
+impl SessionDriver {
+    fn open_lines(&mut self) -> Result<(), DriverError> {
+        if let Some(route) = self.agent.clone() {
+            self.append(Line::Agent { route })?;
+        }
+        if let Some(id) = self.topic.clone() {
+            self.append(Line::Topic { id })?;
+        }
+        Ok(())
     }
 }

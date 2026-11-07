@@ -27,6 +27,11 @@ impl<P: Provider> Loop<P> {
         self.fallbacks = fallbacks.into_iter().collect();
     }
 
+    /// Puts this session in the topic that `topic` started.
+    pub fn join_topic(&mut self, topic: &str) {
+        self.session.set_topic(Some(topic.to_string()));
+    }
+
     pub fn apply_endpoint(&mut self, endpoint: &crate::endpoint::Endpoint) {
         self.session.set_agent(endpoint.agent());
         self.set_context_window(endpoint.context_window);

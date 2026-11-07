@@ -32,6 +32,7 @@ pub(crate) mod split;
 pub(crate) mod style;
 pub(crate) mod terminal;
 mod thread;
+mod topic;
 pub(super) mod welcome;
 
 /// The height of the bar the window controls sit in.

@@ -18,6 +18,7 @@ fn chat(id: &str, preview: &str, age: Duration) -> (SessionInfo, bool) {
             depth: 0,
             interactive: true,
             agent: None,
+            topic: None,
             modified: SystemTime::now().checked_sub(age),
         },
         true,

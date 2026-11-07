@@ -19,6 +19,7 @@ fn session(id: &str, parent: Option<&str>) -> summonr_agent::session::SessionInf
         depth: 0,
         interactive: true,
         agent: None,
+        topic: None,
         modified: None,
     }
 }

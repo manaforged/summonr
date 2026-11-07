@@ -79,6 +79,9 @@ pub enum Line {
     Agent {
         route: String,
     },
+    Topic {
+        id: String,
+    },
     Tools {
         bytes: u64,
     },

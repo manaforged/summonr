@@ -1,9 +1,11 @@
 use sigil::prelude::{
-    Elevation, LayoutStyle, NodeBuilder, Paint, Radius, TextBuilder, TextContent, Token, Widget,
-    container,
+    Elevation, LayoutStyle, NodeBuilder, Paint, Radius, Rgba8, TextBuilder, TextContent, Token,
+    Widget, container,
 };
 
 use summonr_agent::hub::Status;
+
+use crate::canvas::rgb;
 
 /// Spacing step: 4 points.
 pub(super) const XS: f32 = 4.0;
@@ -89,6 +91,18 @@ pub(super) const UNREAD_DOT: Token = Token::Info9;
 pub(super) const CHART_BAR: Token = Token::Accent9;
 /// The edge of the focused pane.
 pub(super) const FOCUS_RING: Token = Token::Accent9;
+/// Will's edge, core and eyes on dark themes.
+pub(super) const WILL_DARK: [Rgba8; 3] = [
+    rgb(0x3b, 0x7b, 0xff),
+    rgb(0xef, 0xfb, 0xff),
+    rgb(0x05, 0x05, 0x0a),
+];
+/// Will's edge, core and eyes on light themes.
+pub(super) const WILL_LIGHT: [Rgba8; 3] = [
+    rgb(0x1d, 0x5b, 0xe6),
+    rgb(0xf3, 0xfb, 0xff),
+    rgb(0x1c, 0x1d, 0x1a),
+];
 
 /// An agent's status mark in an `ICON` slot, so it lines up with icons: spinner, a dot, or empty.
 pub(super) fn mark(status: Status) -> NodeBuilder {

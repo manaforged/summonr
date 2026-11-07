@@ -15,6 +15,7 @@ pub(crate) fn save_prefs(path: &Path, before: &Prefs, prefs: &Prefs) -> Result<(
                 value(prefs.notify.name()),
             ),
             ("splash", before.splash != prefs.splash, value(prefs.splash)),
+            ("will", before.will != prefs.will, value(prefs.will)),
             (
                 "animations",
                 before.animations != prefs.animations,

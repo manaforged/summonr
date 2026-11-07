@@ -34,6 +34,7 @@ pub(crate) mod terminal;
 mod thread;
 mod topic;
 pub(super) mod welcome;
+mod will;
 
 /// The height of the bar the window controls sit in.
 pub(super) const TITLE_BAR: f32 = sidebar::BAR;

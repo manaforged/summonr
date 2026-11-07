@@ -8,6 +8,14 @@ const LIFT: f32 = 5.0;
 /// The working row above the composer: a spinner, what the agent is doing, and how long it has run.
 pub(super) fn row(app: &App) -> NodeBuilder {
     let (clock, words, count) = (app.clone(), app.clone(), app.clone());
+    let (will, moving) = sigil::reactive::untrack(|| {
+        app.model.with(|model| (model.prefs.will, model.prefs.animations))
+    });
+    let mark = if will {
+        crate::desktop::will::mark(moving)
+    } else {
+        sigil::widgets::spinner().layout(LayoutStyle::block().width(MARK).height(MARK))
+    };
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -27,9 +35,7 @@ pub(super) fn row(app: &App) -> NodeBuilder {
                         .height(MARK + LIFT)
                         .shrink(0.0),
                 )
-                .child(
-                    sigil::widgets::spinner().layout(LayoutStyle::block().width(MARK).height(MARK)),
-                ),
+                .child(mark),
         )
         .child(
             container()

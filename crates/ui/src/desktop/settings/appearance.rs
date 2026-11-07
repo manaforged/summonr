@@ -96,7 +96,8 @@ fn label_for(name: &str) -> String {
 
 fn display(app: &App) -> NodeBuilder {
     let prefs = app.model.get().prefs.clone();
-    let (motion, splash, diff, gap) = (app.clone(), app.clone(), app.clone(), app.clone());
+    let (motion, splash, will, diff, gap) =
+        (app.clone(), app.clone(), app.clone(), app.clone(), app.clone());
     let at = usize::from(prefs.diff_layout == DiffLayout::Unified);
     section(
         Some("Display"),
@@ -115,6 +116,14 @@ fn display(app: &App) -> NodeBuilder {
                 prefs.splash,
                 move |_| {
                     splash.flip(|prefs| prefs.splash = !prefs.splash);
+                },
+            ),
+            switch(
+                "Will",
+                Some("Show Will in place of the working spinner"),
+                prefs.will,
+                move |_| {
+                    will.flip(|prefs| prefs.will = !prefs.will);
                 },
             ),
             slider(

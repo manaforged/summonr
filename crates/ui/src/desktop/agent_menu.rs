@@ -52,10 +52,27 @@ pub(super) fn mark_unread(app: &App, id: &str) {
     super::restore::mark_unread(id);
 }
 
+/// Whether this window shows thread `id` in any pane.
+fn shown(app: &App, id: &str) -> bool {
+    app.model.peek().session == id || super::split::shows(id)
+}
+
+fn reveal(info: &SessionInfo) -> Option<MenuItem> {
+    let folder = PathBuf::from(info.cwd.clone()?);
+    let label = if summonr_agent::worktree::repo_of(&folder).is_some() {
+        "Reveal worktree"
+    } else {
+        "Reveal repository"
+    };
+    Some(MenuItem::new(label).activate(move || {
+        drop(summonr_auth::open::external(&folder));
+    }))
+}
+
 /// The right-click menu of one agent row.
 pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Vec<MenuItem> {
     let (id, title) = (info.id.clone(), super::sidebar::title(info));
-    let current = app.model.peek().session == id;
+    let shown = shown(app, &id);
     let running = matches!(status, Some(Status::Working | Status::NeedsYou));
     let mut items = vec![MenuItem::new("Rename…").activate({
         let (id, title) = (id.clone(), title.clone());
@@ -82,16 +99,7 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
                 .activate(move || mark_unread(&mark, &unread)),
         );
     }
-    if let Some(folder) = info.cwd.clone().map(PathBuf::from) {
-        let reveal = if summonr_agent::worktree::repo_of(&folder).is_some() {
-            "Reveal worktree"
-        } else {
-            "Reveal repository"
-        };
-        items.push(MenuItem::new(reveal).activate(move || {
-            drop(summonr_auth::open::external(&folder));
-        }));
-    }
+    items.extend(reveal(info));
     if running {
         let (stop, target) = (app.clone(), id.clone());
         items.push(
@@ -100,7 +108,7 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
                 .activate(move || drop(stop.cmd.send(Cmd::Stop(target.clone())))),
         );
     }
-    if !current && !running {
+    if !shown && !running {
         let shelve = id.clone();
         items.push(MenuItem::new("Archive").activate(move || super::shelf::archive(&shelve)));
         items.push(MenuItem::new("Delete…").activate(move || {

@@ -335,3 +335,29 @@ fn search_rows_show_the_repository_and_the_time() {
         seen.text()
     );
 }
+
+#[test]
+fn a_chat_open_in_another_pane_offers_no_archive_or_delete() {
+    if !in_window("sidebar::a_chat_open_in_another_pane_offers_no_archive_or_delete") {
+        return;
+    }
+    let seen = steps(
+        two_chats,
+        vec![
+            Step::RightClick("Fix the parser bug"),
+            Step::Click("Open in split"),
+            Step::Wait(Box::new(|_| {
+                let pane = super::super::split::apps().pop().expect("the split pane");
+                pane.update(Msg::Fact(Fact::Session(
+                    "01a1000000000000000000000000bbbb".to_owned(),
+                )));
+            })),
+            Step::RightClick("Fix the parser bug"),
+        ],
+        |_| (),
+    );
+    assert!(seen.shows(|text| text == "Rename…"), "{}", seen.text());
+    for label in ["Archive", "Delete…"] {
+        assert!(!seen.shows(|text| text == label), "{label}: {}", seen.text());
+    }
+}

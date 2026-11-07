@@ -93,3 +93,34 @@ fn the_shortcuts_page_lists_new_terminal() {
     let seen = drive(|app| open(app, Page::Shortcuts), Vec::new(), |_| ());
     assert!(seen.shows(|text| text == "New terminal"), "{}", seen.text());
 }
+
+#[test]
+fn the_plugins_page_groups_skills_by_folder_and_picks_the_set_for_new_agents() {
+    if !in_window(
+        "settings::the_plugins_page_groups_skills_by_folder_and_picks_the_set_for_new_agents",
+    ) {
+        return;
+    }
+    let home = summonr_core::dirs::summonr_home().unwrap();
+    let skill = home.join("skills").join("review").join("rust");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(skill.join("SKILL.md"), "# Rust review\n").unwrap();
+    let config = home.join("config.toml");
+    std::fs::write(&config, "[skills.sets.lean]\ninclude = [\"review\"]\n").unwrap();
+    let seen = steps(
+        |app| open(app, Page::Plugins),
+        vec![Step::Click("lean")],
+        |_| (),
+    );
+    for shown in [
+        "Skills · review",
+        "rust",
+        "Skill set for new agents",
+        "All skills",
+        "none",
+    ] {
+        assert!(seen.shows(|text| text == shown), "{shown}: {}", seen.text());
+    }
+    let written = std::fs::read_to_string(&config).unwrap();
+    assert!(written.contains("default = \"lean\""), "{written}");
+}

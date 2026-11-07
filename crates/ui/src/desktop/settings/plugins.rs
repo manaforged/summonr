@@ -3,7 +3,7 @@ use std::path::Path;
 use sigil::icons::Icon;
 use sigil::prelude::{
     AlignItems, ControlSize, LayoutStyle, NodeBuilder, Signal, Tone, Widget, button, container,
-    effect, empty_state, icon, notice_band, signal, toggle,
+    effect, empty_state, icon, notice_band, segmented, signal, toggle,
 };
 use sigil::reactive::{defer, untrack};
 
@@ -14,6 +14,8 @@ use super::parts::{kept_note, section};
 use summonr_agent::plugins::manage::Plugin;
 
 const DESCRIPTION: usize = 96;
+/// The picker's first choice: no set, so new agents see every skill.
+const EVERY_SKILL: &str = "All skills";
 
 #[derive(Clone, PartialEq)]
 struct Installed {
@@ -66,7 +68,9 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
             )
             .children_reactive(move || {
                 let _ = page.version.get();
-                vec![skills(&workspace, page)]
+                std::iter::once(sets(page))
+                    .chain(skills(&workspace, page))
+                    .collect::<Vec<_>>()
             }),
     ]
 }
@@ -221,29 +225,78 @@ fn install(page: Page, path: &Path) {
     page.version.update(|version| *version += 1);
 }
 
-fn skills(workspace: &Path, page: Page) -> NodeBuilder {
-    let found = summonr_agent::skills::list(workspace);
-    if found.is_empty() {
-        return section(Some("Skills"), vec![empty_state("No skills yet", "")]);
-    }
-    let rows = found
-        .iter()
-        .map(|(name, about)| {
-            let words = container()
-                .layout(LayoutStyle::flex_column().gap(XS))
-                .child(text(Text::Body, name.clone()))
-                .child(text(
-                    Text::Meta,
-                    crate::cells::ellipsize(about, DESCRIPTION),
-                ));
-            item(
-                icon(Icon::ScrollText).px(ICON).into(),
-                words,
-                open_skill(workspace, name, page),
-            )
-        })
+/// The set new agents start with, written to `[skills] default` when picked.
+fn sets(page: Page) -> NodeBuilder {
+    let names = match summonr_agent::skills::set_names() {
+        Ok(names) => names,
+        Err(error) => return notice_band(first_line(&error.to_string()), Tone::Error).into(),
+    };
+    let current = summonr_agent::skills::default_set().ok().flatten();
+    let at = current
+        .and_then(|current| names.iter().position(|name| *name == current))
+        .map_or(0, |index| index + 1);
+    let labels = std::iter::once(EVERY_SKILL.to_owned())
+        .chain(names.iter().cloned())
         .collect();
-    section(Some("Skills"), rows)
+    let active = signal(at);
+    effect(move || {
+        let chosen = active
+            .get()
+            .checked_sub(1)
+            .and_then(|index| names.get(index))
+            .cloned();
+        let saved = untrack(|| summonr_agent::skills::default_set().ok().flatten());
+        if chosen != saved
+            && let Err(error) = summonr_agent::skills::choose_default(chosen.as_deref())
+        {
+            page.error.set(Some(first_line(&error.to_string())));
+        }
+    });
+    section(
+        Some("Skill set for new agents"),
+        vec![segmented(active, labels).label("Skill set").into()],
+    )
+}
+
+/// One section per skill folder, skills at a root first.
+fn skills(workspace: &Path, page: Page) -> Vec<NodeBuilder> {
+    let folders = summonr_agent::skills::by_folder(workspace);
+    if folders.is_empty() {
+        return vec![section(
+            Some("Skills"),
+            vec![empty_state("No skills yet", "")],
+        )];
+    }
+    folders
+        .iter()
+        .map(|(folder, found)| {
+            let title = if folder.is_empty() {
+                "Skills".to_owned()
+            } else {
+                format!("Skills · {folder}")
+            };
+            let rows = found
+                .iter()
+                .map(|(name, about)| skill(workspace, name, about, page))
+                .collect();
+            section(Some(&title), rows)
+        })
+        .collect()
+}
+
+fn skill(workspace: &Path, name: &str, about: &str, page: Page) -> NodeBuilder {
+    let words = container()
+        .layout(LayoutStyle::flex_column().gap(XS))
+        .child(text(Text::Body, name.to_owned()))
+        .child(text(
+            Text::Meta,
+            crate::cells::ellipsize(about, DESCRIPTION),
+        ));
+    item(
+        icon(Icon::ScrollText).px(ICON).into(),
+        words,
+        open_skill(workspace, name, page),
+    )
 }
 
 fn open_skill(workspace: &Path, name: &str, page: Page) -> NodeBuilder {

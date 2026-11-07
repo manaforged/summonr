@@ -301,3 +301,14 @@ fn a_workflow_names_its_skill_set_and_keeps_it_when_saved() {
     let again = crate::workflow::from_file(&parse(&path).unwrap(), "lean").unwrap();
     assert_eq!(again, workflow);
 }
+
+#[test]
+fn the_default_skill_set_saves_next_to_the_sets_and_clears() {
+    let (_dir, path) = written("[skills.sets.lean]\ninclude = [\"review\"]\n");
+    super::save_default_skills(&path, Some("lean")).unwrap();
+    let file = parse(&path).unwrap();
+    assert_eq!(file.skills.default.as_deref(), Some("lean"));
+    assert!(file.skills.sets.contains_key("lean"));
+    super::save_default_skills(&path, None).unwrap();
+    assert_eq!(parse(&path).unwrap().skills.default, None);
+}

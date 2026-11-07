@@ -464,3 +464,39 @@ fn journal_of(root: &Path, id: &str) -> String {
     }
     String::new()
 }
+
+#[test]
+fn a_new_session_starts_with_the_default_skill_set() {
+    let home = tempfile::tempdir().unwrap();
+    let port = streaming(&[
+        r#"{"choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#,
+    ]);
+    let mut first = launch(home.path(), port, &["--version"], &[]);
+    drop(first.wait());
+    let config = home.path().join("config.toml");
+    let base = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, base + "\n[skills]\ndefault = \"none\"\n").unwrap();
+    let child = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["-e", "local", "-p", "--json", "hi"])
+        .current_dir(home.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .env(
+            "SUMMONR_MODELS_URL",
+            format!("http://127.0.0.1:{port}/registry.json"),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (code, events, stderr) = finish(child);
+    assert_eq!(code, Some(0), "{stderr}");
+    let id = events[0]["id"].as_str().expect("a session id");
+    let journal = journal_of(home.path(), id);
+    assert!(
+        journal.contains(r#""kind":"skills","set":"none""#),
+        "{journal}"
+    );
+}

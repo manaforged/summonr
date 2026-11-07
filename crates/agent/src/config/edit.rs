@@ -229,6 +229,20 @@ pub(crate) fn save_default_workflow(path: &Path, name: &str) -> Result<()> {
     .map(drop)
 }
 
+pub(crate) fn save_default_skills(path: &Path, name: Option<&str>) -> Result<()> {
+    update(path, |document| {
+        let Some(skills) = tables_at(document, "skills") else {
+            return Ok(false);
+        };
+        match name {
+            Some(name) => skills["default"] = value(name),
+            None => drop(skills.remove("default")),
+        }
+        Ok(true)
+    })
+    .map(drop)
+}
+
 pub(crate) fn save_default_model(path: &Path, selection: Option<(&str, &str)>) -> Result<()> {
     update(path, |document| {
         match selection {

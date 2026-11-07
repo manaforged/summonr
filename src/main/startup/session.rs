@@ -40,7 +40,7 @@ pub(super) fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<
     workflow::default_name()
 }
 
-/// The skill set a session starts with: `--skills`, else a new session's workflow set.
+/// The skill set a session starts with: `--skills`, else a new session's workflow set, else `[skills] default`.
 fn chosen_set(args: &Args, resumed: bool) -> Result<Option<summonr_agent::skills::Set>> {
     let name = match &args.skills {
         Some(name) => Some(name.clone()),
@@ -48,9 +48,31 @@ fn chosen_set(args: &Args, resumed: bool) -> Result<Option<summonr_agent::skills
         None => match args.workflow.clone().or(workflow::default_name()?) {
             Some(flow) => workflow::load(&flow)?.skills().map(str::to_owned),
             None => None,
-        },
+        }
+        .map_or_else(summonr_agent::skills::default_set, |set| Ok(Some(set)))?,
     };
-    name.as_deref().map(summonr_agent::skills::Set::named).transpose()
+    name.as_deref()
+        .map(summonr_agent::skills::Set::named)
+        .transpose()
+}
+
+/// Puts the session on `set`, or on the set a resumed journal records, rebuilding the prompt for it.
+fn apply_set(
+    loop_: &mut Loop<Client>,
+    set: Option<summonr_agent::skills::Set>,
+    resumed: bool,
+    prompt: impl Fn(Option<&summonr_agent::skills::Set>) -> String,
+) -> Result<()> {
+    let set = match (set, loop_.skills()) {
+        (Some(set), _) => set,
+        (None, Some(name)) if resumed => {
+            let set = summonr_agent::skills::Set::named(&name)?;
+            loop_.set_system_prompt(prompt(Some(&set)));
+            set
+        }
+        (None, _) => return Ok(()),
+    };
+    loop_.choose_skills(set)
 }
 
 pub(super) fn apply_workflow(
@@ -152,7 +174,12 @@ pub(super) fn build(
             },
         )
     };
-    let mut loop_ = action.open(provider, endpoint.model.clone(), workspace, prompt(set.as_ref()))?;
+    let mut loop_ = action.open(
+        provider,
+        endpoint.model.clone(),
+        workspace,
+        prompt(set.as_ref()),
+    )?;
     if resumed && args.goal.is_none() && args.steps.is_none() {
         eprintln!(
             "resuming session {} in {}",
@@ -163,18 +190,7 @@ pub(super) fn build(
     if let Some(name) = &args.name {
         loop_.set_name(name)?;
     }
-    let recorded = if set.is_none() && resumed { loop_.skills() } else { None };
-    let set = match recorded {
-        Some(name) => {
-            let set = summonr_agent::skills::Set::named(&name)?;
-            loop_.set_system_prompt(prompt(Some(&set)));
-            Some(set)
-        }
-        None => set,
-    };
-    if let Some(set) = set {
-        loop_.choose_skills(set)?;
-    }
+    apply_set(&mut loop_, set, resumed, prompt)?;
     loop_.choose_effort(args.effort);
     loop_.apply_endpoint(endpoint);
     loop_.set_images(images, summonr_agent::vision_endpoint()?);

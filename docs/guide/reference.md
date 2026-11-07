@@ -498,9 +498,12 @@ Everything runs without a prompt except irreversible destruction: wiping the sys
 
 ### Workflows
 
-A skill set limits which skills the model is offered. `include` and `exclude` list skill paths, each a folder and directory name such as `review/rust`; a folder name covers every skill under it. `--skills NAME` picks a set, and the session journal records it. A resumed session keeps its recorded set unless `--skills` names another, and every child agent runs with its lead's set. The built-in `none` set offers no skills. A skill you run yourself as `/NAME` runs in any set.
+A skill set limits which skills the model is offered. `include` and `exclude` list skill paths, each a folder and directory name such as `review/rust`; a folder name covers every skill under it. `--skills NAME` picks a set, and the session journal records it. A resumed session keeps its recorded set unless `--skills` names another, and every child agent runs with its lead's set. A new session with no `--skills` takes its workflow's `skills`, then `default` under `[skills]`; Settings → Plugins & skills in the window picks that default and lists skills by folder. The built-in `none` set offers no skills. A skill you run yourself as `/NAME` runs in any set.
 
 ```toml
+[skills]
+default = "lean-review"       # optional: the set new sessions start with
+
 [skills.sets.lean-review]
 include = ["review", "code"]
 exclude = ["review/panel"]

@@ -85,6 +85,45 @@ impl Found {
     }
 }
 
+/// Every set a session can choose: the built-in sets, then the `[skills.sets]` names.
+pub fn set_names() -> Result<Vec<String>> {
+    let sets = &crate::config::file()?.skills.sets;
+    let mut names: Vec<String> = BUILT_IN
+        .iter()
+        .map(|name| (*name).to_owned())
+        .filter(|name| !sets.contains_key(name))
+        .collect();
+    names.extend(sets.keys().cloned());
+    Ok(names)
+}
+
+/// The set a new session starts with when nothing else names one, from `[skills] default`.
+pub fn default_set() -> Result<Option<String>> {
+    Ok(crate::config::file()?.skills.default.clone())
+}
+
+/// Makes `name` the set new sessions start with; `None` gives them every skill.
+pub fn choose_default(name: Option<&str>) -> Result<()> {
+    if let Some(name) = name {
+        Set::named(name)?;
+    }
+    crate::config::save_default_skills(&crate::config::path()?, name)
+}
+
+/// Every skill's name and summary, grouped by its folder path; `""` holds skills at a root.
+#[must_use]
+pub fn by_folder(workspace: &Path) -> BTreeMap<String, Vec<(String, String)>> {
+    let mut folders: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    for skill in found(workspace) {
+        let about = about(&skill.file);
+        folders
+            .entry(skill.folder)
+            .or_default()
+            .push((skill.name, about));
+    }
+    folders
+}
+
 #[must_use]
 pub fn list(workspace: &Path) -> Vec<(String, String)> {
     found(workspace)
@@ -144,7 +183,9 @@ pub(crate) fn load(workspace: &Path, set: Option<&Set>, name: &str) -> Result<St
         .into_iter()
         .filter(|skill| skill.name == name)
         .collect();
-    if let Some(set) = set.filter(|set| !named.is_empty() && !named.iter().any(|skill| set.admits(skill))) {
+    if let Some(set) =
+        set.filter(|set| !named.is_empty() && !named.iter().any(|skill| set.admits(skill)))
+    {
         return Err(Error::Tool(format!(
             "skill `{name}` is not in skill set `{}`",
             set.name()
@@ -190,20 +231,39 @@ fn found(workspace: &Path) -> Vec<Found> {
 fn walk(dir: &Path, folder: &str, depth: usize, out: &mut Vec<Found>) {
     for entry in summonr_core::walk::children(dir) {
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()).map(str::to_owned) else {
+        let Some(name) = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+        else {
             continue;
         };
         if std::fs::metadata(&path).is_ok_and(|meta| meta.is_dir()) {
             let file = path.join(SKILL);
             if file.is_file() {
-                out.push(Found { name, folder: folder.to_owned(), file });
+                out.push(Found {
+                    name,
+                    folder: folder.to_owned(),
+                    file,
+                });
             } else if depth > 1 && valid(&name) {
-                let inner = if folder.is_empty() { name } else { format!("{folder}/{name}") };
+                let inner = if folder.is_empty() {
+                    name
+                } else {
+                    format!("{folder}/{name}")
+                };
                 walk(&path, &inner, depth - 1, out);
             }
         } else if folder.is_empty() && path.extension().is_some_and(|ext| ext == "md") {
-            let stem = path.file_stem().and_then(|stem| stem.to_str()).unwrap_or_default();
-            out.push(Found { name: stem.to_owned(), folder: String::new(), file: path });
+            let stem = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or_default();
+            out.push(Found {
+                name: stem.to_owned(),
+                folder: String::new(),
+                file: path,
+            });
         }
     }
 }

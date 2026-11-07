@@ -73,6 +73,7 @@ pub(crate) struct File {
 pub(crate) struct Skills {
     #[serde(default)]
     pub sets: BTreeMap<String, crate::skills::Set>,
+    pub default: Option<String>,
 }
 
 /// One `[workflows.NAME]` table: the skill set it runs with, and a model per role.
@@ -293,7 +294,7 @@ pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
 
 pub(crate) use edit::{
     Section, add_plugin_off, drop_plugin_off, remove_key, remove_named, save_browser_chrome,
-    save_default_model, save_default_workflow, save_module, save_named, save_prefs, save_provider,
+    save_default_model, save_default_skills, save_default_workflow, save_module, save_named, save_prefs, save_provider,
     save_workflow, save_write_root, write_root_entry,
 };
 

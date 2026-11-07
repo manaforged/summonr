@@ -24,6 +24,7 @@ Setup:
   mcp get NAME [--json]       show one MCP server and its tools
   mcp add NAME -- CMD [ARGS]  add a stdio server (--env K=V), or --url URL (--header K=V)
   mcp remove NAME             remove an MCP server from ~/.summonr/config.toml
+  panel list|check NAME       list custom panels, or run one and validate its output
   plugin install PATH         install a directory of extras
   plugin list                 list installed plugins
   plugin remove NAME          remove an installed plugin

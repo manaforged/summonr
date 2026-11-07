@@ -17,7 +17,6 @@ const OVERLAP: f32 = 5.0;
 const NEEDS_YOU: &str = "Needs you";
 const NEW_THREAD: &str = "New thread";
 const THREADS: &str = "Threads";
-const SUMMONR: &str = "Summonr";
 
 /// The threads that joined the thread `id` started, newest first.
 pub(super) struct Topic {
@@ -59,12 +58,12 @@ impl Topic {
             .or_else(|| self.threads.last())
     }
 
-    /// Each agent once, in the order its first thread started; `None` is Summonr.
-    fn agents(&self) -> Vec<Option<Friend>> {
-        let mut seen: Vec<Option<Friend>> = Vec::new();
+    /// Each outside agent once, in the order its first thread started.
+    fn agents(&self) -> Vec<Friend> {
+        let mut seen: Vec<Friend> = Vec::new();
         for info in self.threads.iter().rev() {
             let agent = info.agent.as_deref().and_then(Friend::of);
-            if !seen.iter().any(|known| same(*known, agent)) {
+            if let Some(agent) = agent.filter(|agent| !seen.iter().any(|known| known.name == agent.name)) {
                 seen.push(agent);
             }
         }
@@ -78,10 +77,6 @@ impl Topic {
             .filter_map(|info| super::sidebar::shown_state(live, &info.id))
             .max_by_key(|status| rank(*status))
     }
-}
-
-fn same(a: Option<Friend>, b: Option<Friend>) -> bool {
-    a.map(|friend| friend.name) == b.map(|friend| friend.name)
 }
 
 const fn rank(status: Status) -> u8 {
@@ -137,15 +132,16 @@ const fn word(status: Status) -> Option<(&'static str, Tone)> {
     }
 }
 
-/// Up to three agent marks, overlapping, then `+N`.
-fn stack(agents: &[Option<Friend>]) -> NodeBuilder {
+/// Up to three outside agents' marks, overlapping, then `+N`; an empty slot for Summonr alone.
+fn stack(agents: &[Friend]) -> NodeBuilder {
     let mut row = container().layout(
         LayoutStyle::flex_row()
+            .min_size(ICON, ICON)
             .shrink(0.0)
             .align_items(AlignItems::Center),
     );
     for (at, agent) in agents.iter().take(STACK).enumerate() {
-        let glyph = agent.map_or_else(summonr, super::friends::glyph);
+        let glyph = super::friends::glyph(*agent);
         let shift = if at == 0 { 0.0 } else { -OVERLAP };
         row = row.child(
             container()
@@ -157,15 +153,6 @@ fn stack(agents: &[Option<Friend>]) -> NodeBuilder {
         row = row.child(text(Text::Meta, format!("+{}", agents.len() - STACK)).nowrap());
     }
     row
-}
-
-fn summonr() -> NodeBuilder {
-    let badge = container()
-        .layout(LayoutStyle::block().width(ICON).height(ICON).shrink(0.0))
-        .role(sigil::prelude::Role::Image)
-        .label(SUMMONR)
-        .child(super::brand::badge(ICON));
-    sigil::widgets::tooltip(SUMMONR).child(badge).into()
 }
 
 /// The pane's thread tabs, shown once its topic has two threads, and a New thread button.

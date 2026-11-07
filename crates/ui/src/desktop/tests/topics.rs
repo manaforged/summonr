@@ -54,7 +54,7 @@ fn threads_in_one_topic_share_a_sidebar_row_and_show_as_tabs() {
     assert!(rows.contains(&"Fix the parser bug"), "{rows:?}");
     assert!(!rows.contains(&"Export button"), "{rows:?}");
     assert_eq!(seen.named(Role::Image, "Claude Code").len(), 1, "{:?}", seen.controls);
-    assert_eq!(seen.named(Role::Image, "Summonr").len(), 2, "{:?}", seen.controls);
+    assert!(seen.named(Role::Image, "Summonr").is_empty(), "{:?}", seen.controls);
     assert_eq!(seen.named(Role::Tab, "Add CSV export").len(), 1, "{:?}", seen.controls);
     assert_eq!(seen.named(Role::Tab, "Export button").len(), 1, "{:?}", seen.controls);
     assert!(seen.named(Role::Tab, "Fix the parser bug").is_empty());

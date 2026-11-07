@@ -40,19 +40,19 @@ pub(super) fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<
     workflow::default_name()
 }
 
-/// The skill set a session starts with: `--skills`, else a new session's workflow set, else `[skills] default`.
-fn chosen_set(args: &Args, resumed: bool) -> Result<Option<summonr_agent::skills::Set>> {
+/// The skill set a session starts with: `--skills`, else `[skills] default` for a new session.
+fn chosen_set(
+    args: &Args,
+    workspace: &Path,
+    resumed: bool,
+) -> Result<Option<summonr_agent::skills::Set>> {
     let name = match &args.skills {
         Some(name) => Some(name.clone()),
         None if resumed => None,
-        None => match args.workflow.clone().or(workflow::default_name()?) {
-            Some(flow) => workflow::load(&flow)?.skills().map(str::to_owned),
-            None => None,
-        }
-        .map_or_else(summonr_agent::skills::default_set, |set| Ok(Some(set)))?,
+        None => summonr_agent::skills::default_set()?,
     };
     name.as_deref()
-        .map(summonr_agent::skills::Set::named)
+        .map(|name| summonr_agent::skills::Set::named(name, workspace))
         .transpose()
 }
 
@@ -66,7 +66,7 @@ fn apply_set(
     let set = match (set, loop_.skills()) {
         (Some(set), _) => set,
         (None, Some(name)) if resumed => {
-            let set = summonr_agent::skills::Set::named(&name)?;
+            let set = summonr_agent::skills::Set::named(&name, loop_.workspace())?;
             loop_.set_system_prompt(prompt(Some(&set)));
             set
         }
@@ -160,7 +160,7 @@ pub(super) fn build(
     let switches = summonr_agent::modules::load(workspace)?;
     let images = summonr_agent::catalog::accepts_images(endpoint);
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));
-    let set = chosen_set(args, resumed)?;
+    let set = chosen_set(args, workspace, resumed)?;
     let prompt = |set: Option<&summonr_agent::skills::Set>| {
         system_prompt(
             workspace,

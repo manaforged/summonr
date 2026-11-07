@@ -45,7 +45,6 @@ pub(crate) fn argv(options: &Options, session: Option<&str>, text: &str) -> Vec<
         max_secs: None,
         max_tokens: None,
         worktree: false,
-        skills: None,
         task: &Task::Prompt(text.to_string()),
     }
     .argv()

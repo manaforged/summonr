@@ -210,3 +210,22 @@ fn the_none_set_hides_every_skill_and_an_unknown_set_names_the_table() {
         .to_string();
     assert!(missing.contains("[skills.sets.lean]"), "{missing}");
 }
+
+#[test]
+fn a_folder_path_picks_its_skills_with_no_set_in_config() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    skill(workspace.path(), "probe-acme/probe-deploy", "Deploy");
+    skill(workspace.path(), "probe-mine/probe-notes", "Notes");
+    let acme = super::Set::resolve(&sets(""), "probe-acme", workspace.path()).expect("folder");
+    let catalog = super::catalog(workspace.path(), Some(&acme)).expect("acme catalog");
+    assert!(catalog.contains("probe-deploy"), "{catalog}");
+    assert!(!catalog.contains("probe-notes"), "{catalog}");
+    let both = super::Set::resolve(&sets(""), "probe-acme,probe-mine", workspace.path())
+        .expect("two folders");
+    let catalog = super::catalog(workspace.path(), Some(&both)).expect("both catalog");
+    assert!(catalog.contains("probe-notes"), "{catalog}");
+    let missing = super::Set::resolve(&sets(""), "probe-nowhere", workspace.path())
+        .expect_err("no such folder")
+        .to_string();
+    assert!(missing.contains("skill folder"), "{missing}");
+}

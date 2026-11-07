@@ -357,7 +357,6 @@ fn argv(job: &Job, payload: Option<&Path>) -> Vec<String> {
         ),
         max_tokens: job.max_tokens,
         worktree: job.worktree,
-        skills: None,
         task: &task,
     }
     .argv()

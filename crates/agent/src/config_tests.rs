@@ -162,7 +162,6 @@ fn a_saved_workflow_loads_back_with_its_seats() {
     use crate::workflow::{ModelSelection, Role, Workflow};
     let (_dir, path) = written("# mine\n");
     let workflow = Workflow {
-        skills: None,
         name: "fast".to_string(),
         selections: [
             (
@@ -272,7 +271,6 @@ fn a_workflow_saves_next_to_an_inline_workflows_table() {
     use crate::workflow::{ModelSelection, Role, Workflow};
     let (_dir, path) = written("workflows = { old = { scout = \"zai\" } }\n");
     let workflow = Workflow {
-        skills: None,
         name: "new".to_string(),
         selections: [(
             Role::Judge,
@@ -290,17 +288,6 @@ fn a_workflow_saves_next_to_an_inline_workflows_table() {
     assert_eq!(old.selections[&Role::Scout].endpoint, "zai");
 }
 
-#[test]
-fn a_workflow_names_its_skill_set_and_keeps_it_when_saved() {
-    let (_dir, path) = written("[workflows.lean]\nskills = \"lean-review\"\nscout = \"zai\"\n");
-    let file = parse(&path).unwrap();
-    let workflow = crate::workflow::from_file(&file, "lean").unwrap();
-    assert_eq!(workflow.skills(), Some("lean-review"));
-    assert_eq!(workflow.selections.len(), 1);
-    super::save_workflow(&path, &workflow).unwrap();
-    let again = crate::workflow::from_file(&parse(&path).unwrap(), "lean").unwrap();
-    assert_eq!(again, workflow);
-}
 
 #[test]
 fn the_default_skill_set_saves_next_to_the_sets_and_clears() {

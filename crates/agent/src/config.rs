@@ -46,7 +46,7 @@ pub(crate) struct File {
     pub write_roots: Vec<String>,
     pub workflow: Option<String>,
     #[serde(default)]
-    pub workflows: BTreeMap<String, WorkflowRow>,
+    pub workflows: BTreeMap<String, BTreeMap<String, ModelSelectionRow>>,
     #[serde(default)]
     #[serde(deserialize_with = "summonr_types::modules::switch_map")]
     pub modules: BTreeMap<summonr_types::modules::ModuleId, bool>,
@@ -74,14 +74,6 @@ pub(crate) struct Skills {
     #[serde(default)]
     pub sets: BTreeMap<String, crate::skills::Set>,
     pub default: Option<String>,
-}
-
-/// One `[workflows.NAME]` table: the skill set it runs with, and a model per role.
-#[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct WorkflowRow {
-    pub skills: Option<String>,
-    #[serde(flatten)]
-    pub roles: BTreeMap<String, ModelSelectionRow>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -294,8 +286,8 @@ pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
 
 pub(crate) use edit::{
     Section, add_plugin_off, drop_plugin_off, remove_key, remove_named, save_browser_chrome,
-    save_default_model, save_default_skills, save_default_workflow, save_module, save_named, save_prefs, save_provider,
-    save_workflow, save_write_root, write_root_entry,
+    save_default_model, save_default_skills, save_default_workflow, save_module, save_named,
+    save_prefs, save_provider, save_workflow, save_write_root, write_root_entry,
 };
 
 #[cfg(test)]

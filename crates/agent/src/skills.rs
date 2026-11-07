@@ -28,9 +28,33 @@ pub struct Set {
 }
 
 impl Set {
-    /// The set `name` from `[skills.sets.NAME]` in config.toml, or a built-in set.
-    pub fn named(name: &str) -> Result<Self> {
-        Self::from_sets(&crate::config::file()?.skills.sets, name)
+    /// The set `name` from `[skills.sets.NAME]` in config.toml, a built-in set, or skill folder paths such as `acme,personal/review`.
+    pub fn named(name: &str, workspace: &Path) -> Result<Self> {
+        Self::resolve(&crate::config::file()?.skills.sets, name, workspace)
+    }
+
+    pub(crate) fn resolve(
+        sets: &BTreeMap<String, Self>,
+        name: &str,
+        workspace: &Path,
+    ) -> Result<Self> {
+        if sets.contains_key(name) || BUILT_IN.contains(&name) {
+            return Self::from_sets(sets, name);
+        }
+        let folders = Self {
+            name: name.to_owned(),
+            include: name
+                .split(',')
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            exclude: Vec::new(),
+        };
+        if found(workspace).iter().any(|skill| folders.admits(skill)) {
+            return Ok(folders);
+        }
+        Self::from_sets(sets, name)
     }
 
     pub(crate) fn from_sets(sets: &BTreeMap<String, Self>, name: &str) -> Result<Self> {
@@ -39,7 +63,7 @@ impl Set {
             None if BUILT_IN.contains(&name) => Self::default(),
             None => {
                 return Err(Error::Config(format!(
-                    "no skill set `{name}`; add [skills.sets.{name}] to config.toml"
+                    "no skill set or skill folder `{name}`; add [skills.sets.{name}] to config.toml"
                 )));
             }
         };
@@ -105,7 +129,7 @@ pub fn default_set() -> Result<Option<String>> {
 /// Makes `name` the set new sessions start with; `None` gives them every skill.
 pub fn choose_default(name: Option<&str>) -> Result<()> {
     if let Some(name) = name {
-        Set::named(name)?;
+        Set::from_sets(&crate::config::file()?.skills.sets, name)?;
     }
     crate::config::save_default_skills(&crate::config::path()?, name)
 }

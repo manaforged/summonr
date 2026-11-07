@@ -20,6 +20,7 @@ fn spent(model: &str, workspace: &str, local: bool, cost: f64) -> Spend {
         turns: 3,
         millis: 30_000,
         sessions: 1,
+        skills: None,
     }
 }
 
@@ -41,7 +42,16 @@ fn the_usage_page_totals_spend_by_model_and_repository() {
         |_| (),
     );
     assert!(seen.sent.iter().any(|cmd| matches!(cmd, Cmd::ListUsage)));
-    for shown in ["$1.50", "84.0k", "6", "75%", "claude-opus-5-5", "glm-5", "alpha", "beta"] {
+    for shown in [
+        "$1.50",
+        "84.0k",
+        "6",
+        "75%",
+        "claude-opus-5-5",
+        "glm-5",
+        "alpha",
+        "beta",
+    ] {
         assert!(seen.shows(|text| text == shown), "{shown}: {}", seen.text());
     }
     let here = steps(
@@ -62,6 +72,42 @@ fn the_usage_command_opens_the_usage_page_in_the_window() {
     command.push(Step::Key(named(Key::Enter, ModifiersState::empty())));
     let seen = steps(|_| {}, command, |app| app.settings_open.peek());
     assert!(seen.read, "{}", seen.text());
-    assert!(seen.shows(|text| text == "Reading sessions…"), "{}", seen.text());
+    assert!(
+        seen.shows(|text| text == "Reading sessions…"),
+        "{}",
+        seen.text()
+    );
     assert!(seen.sent.iter().any(|cmd| matches!(cmd, Cmd::ListUsage)));
+}
+
+#[test]
+fn the_usage_page_splits_spend_by_skill_set() {
+    if !in_window("usage::the_usage_page_splits_spend_by_skill_set") {
+        return;
+    }
+    let seen = steps(
+        |app| open(app, Page::Usage),
+        vec![Step::Wait(Box::new(|app| {
+            let mut lean = spent("glm-5", "/work/alpha", true, 0.25);
+            lean.skills = Some("lean".to_owned());
+            app.update(Msg::Fact(Fact::Usage(Ok(vec![
+                spent("glm-5", "/work/alpha", true, 1.25),
+                lean,
+            ]))));
+        }))],
+        |_| (),
+    );
+    for shown in ["Skill sets", "lean", "All skills"] {
+        assert!(seen.shows(|text| text == shown), "{shown}: {}", seen.text());
+    }
+    let plain = steps(
+        |app| open(app, Page::Usage),
+        vec![Step::Wait(Box::new(arrive))],
+        |_| (),
+    );
+    assert!(
+        !plain.shows(|text| text == "Skill sets"),
+        "{}",
+        plain.text()
+    );
 }

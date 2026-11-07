@@ -92,14 +92,18 @@ pub struct Spend {
     pub turns: u64,
     pub millis: u64,
     pub sessions: u64,
+    pub skills: Option<String>,
 }
+
+/// One spend row's grouping: model, hour, workspace, and skill set.
+type Key = (String, u64, String, Option<String>);
 
 pub fn spend(
     home: &Path,
     roots: &[String],
     prices: &BTreeMap<String, Price>,
 ) -> Result<Vec<Spend>> {
-    let mut totals: BTreeMap<(String, u64, String), Spend> = BTreeMap::new();
+    let mut totals: BTreeMap<Key, Spend> = BTreeMap::new();
     let sessions = sessions_in(home)?;
     let mut journals = Journals::load(home);
     for info in &sessions {
@@ -124,7 +128,7 @@ pub fn spend(
             } else {
                 charge.1 / 1000
             };
-            let key = (model, at - at % HOUR, workspace.clone());
+            let key = (model, at - at % HOUR, workspace.clone(), entry.set.clone());
             latest = Some(key.clone());
             add(&mut totals, key, local, charge, prices);
         }
@@ -137,8 +141,8 @@ pub fn spend(
 }
 
 fn add(
-    totals: &mut BTreeMap<(String, u64, String), Spend>,
-    key: (String, u64, String),
+    totals: &mut BTreeMap<Key, Spend>,
+    key: Key,
     local: bool,
     charge: &Charge,
     prices: &BTreeMap<String, Price>,
@@ -146,12 +150,13 @@ fn add(
     let price = prices.get(&key.0);
     let row = totals
         .entry(key)
-        .or_insert_with_key(|(model, hour, workspace)| Spend {
+        .or_insert_with_key(|(model, hour, workspace, set)| Spend {
             cost: price.map(|_| 0.0),
             model: model.clone(),
             hour: *hour,
             local,
             workspace: workspace.clone(),
+            skills: set.clone(),
             ..Spend::default()
         });
     let usage = charge.usage();

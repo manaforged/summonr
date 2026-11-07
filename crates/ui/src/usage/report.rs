@@ -35,8 +35,12 @@ pub(crate) struct Report {
     pub(crate) span: u64,
     pub(crate) first: &'static str,
     pub(crate) places: Vec<(String, f64)>,
+    pub(crate) sets: Vec<(String, Total)>,
     pub(crate) hours: [f64; 24],
 }
+
+/// The row name for spend in sessions that chose no skill set.
+pub(crate) const EVERY_SKILL: &str = "All skills";
 
 impl Report {
     pub(crate) fn build(rows: &[&Spend], range: usize, metric: Metric, now: u64) -> Self {
@@ -47,6 +51,7 @@ impl Report {
         let mut total = Total::default();
         let mut models: BTreeMap<&str, Total> = BTreeMap::new();
         let mut places: BTreeMap<String, f64> = BTreeMap::new();
+        let mut sets: BTreeMap<&str, Total> = BTreeMap::new();
         let mut hours = [0.0; 24];
         let mut columns = vec![0.0; count];
         let mut by_model: BTreeMap<&str, Vec<f64>> = BTreeMap::new();
@@ -54,6 +59,9 @@ impl Report {
             let value = Total::of(row).value(cost);
             total.add(row);
             models.entry(&row.model).or_default().add(row);
+            sets.entry(row.skills.as_deref().unwrap_or(EVERY_SKILL))
+                .or_default()
+                .add(row);
             *places.entry(place(&row.workspace)).or_default() += value;
             hours[((row.hour % DAY) / HOUR) as usize] += value;
             let at = (row.hour.saturating_sub(start) / span) as usize;
@@ -79,6 +87,16 @@ impl Report {
         let mut places: Vec<(String, f64)> = places.into_iter().collect();
         places.sort_by(|a, b| b.1.total_cmp(&a.1));
         places.truncate(PLACES);
+        let sets = if sets.keys().all(|name| *name == EVERY_SKILL) {
+            Vec::new()
+        } else {
+            let mut sets: Vec<(String, Total)> = sets
+                .into_iter()
+                .map(|(name, total)| (name.to_owned(), total))
+                .collect();
+            sets.sort_by(|a, b| b.1.value(cost).total_cmp(&a.1.value(cost)));
+            sets
+        };
         Self {
             total,
             models,
@@ -87,6 +105,7 @@ impl Report {
             span,
             first,
             places,
+            sets,
             hours,
         }
     }

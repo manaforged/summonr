@@ -79,3 +79,20 @@ fn an_undated_turn_is_billed_to_the_journals_modified_hour() {
     assert_eq!(rows.len(), 1);
     assert_ne!(rows[0].hour, 0);
 }
+
+#[test]
+fn spend_under_a_skill_set_is_reported_with_that_set() {
+    let home = tempfile::tempdir().unwrap();
+    let chosen = r#"{"kind":"skills","set":"lean"}"#.to_owned() + "\n";
+    std::fs::write(
+        journal(home.path()),
+        head("m") + &turn("m", &usage(70), AT) + &chosen + &turn("m", &usage(30), AT),
+    )
+    .unwrap();
+    let rows = spend(home.path(), &[], &BTreeMap::new()).unwrap();
+    let sets: Vec<(Option<&str>, u64)> = rows
+        .iter()
+        .map(|row| (row.skills.as_deref(), row.input))
+        .collect();
+    assert_eq!(sets, [(Some("lean"), 100)]);
+}

@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Widget,
-    container, effect, segmented, signal,
+    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Widget, container,
+    effect, segmented, signal,
 };
 use sigil::reactive::untrack;
 use summonr_agent::provider::{compact, dollars};
@@ -49,7 +49,10 @@ fn controls(range: Signal<usize>, local: Signal<bool>, metric: Signal<usize>) ->
         }
     });
     let labels = |options: &[&str]| options.iter().map(|option| (*option).to_owned()).collect();
-    let metrics = METRICS.iter().map(|metric| title(*metric).to_owned()).collect();
+    let metrics = METRICS
+        .iter()
+        .map(|metric| title(*metric).to_owned())
+        .collect();
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -91,12 +94,21 @@ fn report(
         .iter()
         .map(|(name, value)| row(name, None, amount(*value, metric)))
         .collect();
-    vec![
+    let mut sections = vec![
         totals(&report.total),
         section(Some(per(metric)), vec![chart(&report)]),
         section(Some("Models"), models),
         section(Some("Repositories"), places),
-    ]
+    ];
+    if !report.sets.is_empty() {
+        let sets = report
+            .sets
+            .iter()
+            .map(|(name, total)| row(name, None, line(total)))
+            .collect();
+        sections.push(section(Some("Skill sets"), sets));
+    }
+    sections
 }
 
 fn totals(total: &Total) -> NodeBuilder {
@@ -170,8 +182,16 @@ fn chart(report: &Report) -> NodeBuilder {
     reason = "a share of a chart's height fits an f32"
 )]
 fn bar(value: f64, peak: f64) -> NodeBuilder {
-    let share = if peak > 0.0 { (value / peak) as f32 } else { 0.0 };
-    let height = if value > 0.0 { (share * CHART).max(XS / 2.0) } else { 0.0 };
+    let share = if peak > 0.0 {
+        (value / peak) as f32
+    } else {
+        0.0
+    };
+    let height = if value > 0.0 {
+        (share * CHART).max(XS / 2.0)
+    } else {
+        0.0
+    };
     container()
         .layout(
             LayoutStyle::block()

@@ -58,6 +58,8 @@ pub(super) struct Entry {
     pub(super) charges: Vec<Charge>,
     #[serde(default)]
     resume: Option<Resume>,
+    #[serde(default)]
+    pub(super) set: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -140,6 +142,10 @@ impl Entry {
         let (model, usage, cost) = match record.line {
             log::Line::Session { model, .. } => {
                 resume.model = Some(model);
+                return;
+            }
+            log::Line::Skills { set } => {
+                self.set = Some(set);
                 return;
             }
             log::Line::Assistant {

@@ -29,6 +29,7 @@ mod side;
 mod sidebar;
 mod terminals;
 mod panes;
+mod pins;
 mod topics;
 mod transcript;
 mod usage;

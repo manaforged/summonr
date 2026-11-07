@@ -25,7 +25,7 @@ fn chat(id: &str, preview: &str, age: Duration) -> (SessionInfo, bool) {
     )
 }
 
-fn two_chats(app: &super::super::App) {
+pub(super) fn two_chats(app: &super::super::App) {
     app.window.sidebar.set(true);
     app.update(Msg::Fact(Fact::Sessions(Ok(vec![
         chat(

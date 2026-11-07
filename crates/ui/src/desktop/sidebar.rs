@@ -21,8 +21,7 @@ pub(super) const BAR: f32 = 40.0;
 pub(super) const ROOMY: f32 = 760.0;
 const TITLE_CHARS: usize = 60;
 const NEW: &str = "New agent";
-const SEARCH: &str = "Search";
-/// New agent, Search, every repository with its agents, and Settings.
+/// The pinned actions, every repository with its agents, and Settings.
 pub(super) fn view(app: App) -> NodeBuilder {
     let live = sigil::reactive::derived({
         let app = app.clone();
@@ -41,6 +40,10 @@ pub(super) fn view(app: App) -> NodeBuilder {
     });
     refresh_on_switch(&app, session, live);
     let shown = sigil::reactive::derived(super::split::shown_chats);
+    let actions = sigil::reactive::derived({
+        let app = app.clone();
+        move || app.model.with(|model| model.prefs.sidebar.clone())
+    });
     let list = app.clone();
     let shut = sigil::prelude::signal(Vec::<std::path::PathBuf>::new());
     container()
@@ -57,22 +60,10 @@ pub(super) fn view(app: App) -> NodeBuilder {
                                     .fill_width()
                                     .padding_right(SCROLLBAR),
                             )
-                            .child(action(NEW, Icon::Plus, "⌘N", {
-                                let open = app.clone();
-                                move || super::split::show(&open, Open::New)
-                            }))
-                            .child(action(
-                                super::terminal::NEW_TERMINAL_ACTION,
-                                Icon::Terminal,
-                                "⌘T",
-                                {
-                                    let open = app.clone();
-                                    move || open.open_terminal(super::terminal::NEW_TERMINAL, None)
-                                },
-                            ))
-                            .child(action(SEARCH, Icon::Search, "⌘K", || {
-                                super::palette::show();
-                            })),
+                            .children_reactive({
+                                let app = app.clone();
+                                move || row::actions(&app, actions)
+                            }),
                     )
                     .child(
                         container()
@@ -153,24 +144,6 @@ fn repositories(app: &App) -> NodeBuilder {
 }
 
 const REPOSITORIES: &str = "Repositories";
-
-fn action(
-    label: &'static str,
-    mark: Icon,
-    key: &'static str,
-    run: impl Fn() + 'static,
-) -> NodeBuilder {
-    list_row(
-        false,
-        label,
-        ListRowSlots {
-            leading: Some(Box::new(icon(mark).px(ICON))),
-            status: Some(key.into()),
-            activate: Some(Rc::new(run)),
-            ..ListRowSlots::default()
-        },
-    )
-}
 
 fn chats(
     app: &App,

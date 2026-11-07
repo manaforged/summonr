@@ -39,6 +39,7 @@ pub(crate) struct File {
     pub layout: Option<String>,
     #[serde(default)]
     pub hotkeys: BTreeMap<String, String>,
+    pub sidebar: Option<Vec<String>>,
     pub secrets: Option<String>,
     #[serde(default)]
     pub lsp: Lsp,

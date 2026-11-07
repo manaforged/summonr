@@ -4,17 +4,47 @@ use sigil::icons::Icon;
 use sigil::prelude::{
     LayoutStyle, ListRowSlots, NodeBuilder, Signal, Tone, Widget, container, list_row,
 };
-use sigil::widgets::icon;
+use sigil::widgets::{MenuItem, icon};
 
 use super::super::App;
 use super::super::style::{ICON, M, S, SCROLLBAR, Text, mark, text};
 use super::title;
 use summonr_agent::endpoint::Friend;
 use summonr_agent::hub::{Live, Open, Status};
+use summonr_agent::prefs::Action;
 use summonr_agent::session::SessionInfo;
 
 const NEEDS_YOU: &str = "Needs you";
 const PINNED: &str = "Pinned";
+const UNPIN: &str = "Unpin";
+
+/// The action rows a person pinned, in their order; right-click one to unpin it.
+pub(super) fn actions(app: &App, pinned: Signal<Vec<Action>>) -> Vec<NodeBuilder> {
+    pinned
+        .get()
+        .into_iter()
+        .map(|action| action_row(app, action))
+        .collect()
+}
+
+fn action_row(app: &App, action: Action) -> NodeBuilder {
+    let (label, key, mark) = super::super::palette::row(action);
+    let (run, menu) = (app.clone(), app.clone());
+    let row = list_row(
+        false,
+        label,
+        ListRowSlots {
+            leading: Some(Box::new(icon(mark).px(ICON))),
+            status: (!key.is_empty()).then(|| key.into()),
+            activate: Some(Rc::new(move || super::super::palette::run(&run, action))),
+            ..ListRowSlots::default()
+        },
+    );
+    sigil::widgets::context_menu(row, move || {
+        let menu = menu.clone();
+        vec![MenuItem::new(UNPIN).activate(move || super::super::palette::unpin(&menu, action))]
+    })
+}
 
 /// The agents the repository lists show: not archived and not pinned.
 pub(super) fn listed(app: &App) -> Vec<SessionInfo> {

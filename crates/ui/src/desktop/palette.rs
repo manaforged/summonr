@@ -1,36 +1,75 @@
 use std::cell::Cell;
 
+use sigil::icons::Icon;
 use sigil::prelude::{NodeBuilder, Signal, Widget, command_menu, container, modal, signal};
+use sigil::widgets::CommandMenuBuilder;
 
+use super::settings::Page;
 use super::{App, Pane};
 use summonr_agent::hub::{Open, Status};
+use summonr_agent::prefs::Action;
 
 use super::style::DIALOG;
 
 const GUTTER: f32 = 48.0;
 
+/// Whether the palette shows, and whether it lists the actions to pin instead of everything.
+#[derive(Clone, Copy)]
+struct Shown {
+    open: Signal<bool>,
+    pinning: Signal<bool>,
+}
+
+impl Shown {
+    fn close(self) {
+        self.open.set(false);
+        self.pinning.set(false);
+    }
+}
+
 thread_local! {
-    static OPEN: Cell<Option<Signal<bool>>> = const { Cell::new(None) };
+    static OPEN: Cell<Option<Shown>> = const { Cell::new(None) };
 }
 
 /// Creates the palette's open flag for this window.
 pub(super) fn install() {
-    OPEN.with(|open| open.set(Some(signal(false))));
+    let shown = Shown {
+        open: signal(false),
+        pinning: signal(false),
+    };
+    OPEN.with(|open| open.set(Some(shown)));
 }
 
 /// Shows the ⌘K palette; false when this window has none.
 pub(crate) fn show() -> bool {
     OPEN.with(Cell::get)
-        .inspect(|open| open.set(true))
+        .inspect(|shown| {
+            shown.pinning.set(false);
+            shown.open.set(true);
+        })
         .is_some()
 }
 
 /// The palette: every agent, searchable by title and repo, then actions with their shortcuts.
 pub(super) fn view(app: &App) -> Option<NodeBuilder> {
-    let open = OPEN.with(Cell::get)?;
-    if !open.get() {
+    let shown = OPEN.with(Cell::get)?;
+    if !shown.open.get() {
         return None;
     }
+    let menu = if shown.pinning.get() {
+        pin_list(app, shown)
+    } else {
+        everything(app, shown)
+    };
+    let menu = menu
+        .placeholder("Search")
+        .cancel(move || shown.close())
+        .width(DIALOG);
+    Some(container().child(modal(shown.open).child(menu).width(DIALOG + GUTTER)))
+}
+
+fn everything(app: &App, shown: Shown) -> CommandMenuBuilder {
+    let open = shown.open;
     let live = app.model.get().live.clone();
     let menu = app
         .sessions
@@ -73,57 +112,129 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
             })
             .detail(detail)
         });
-    let menu = ACTIONS.iter().fold(menu, |menu, (label, key, action)| {
-        let (app, action) = (app.clone(), *action);
-        menu.item(*label, move || {
+    let menu = ROWS.iter().fold(menu, |menu, &(action, label, key, _)| {
+        let app = app.clone();
+        menu.item(label, move || {
             open.set(false);
             run(&app, action);
         })
-        .detail(*key)
+        .detail(key)
     });
-    let menu = menu
-        .placeholder("Search")
-        .cancel(move || open.set(false))
-        .width(DIALOG);
-    Some(container().child(modal(open).child(menu).width(DIALOG + GUTTER)))
+    let all_pinned = app
+        .model
+        .with(|model| ROWS.iter().all(|row| model.prefs.sidebar.contains(&row.0)));
+    if all_pinned {
+        return menu;
+    }
+    menu.item(PIN, move || shown.pinning.set(true))
 }
 
-#[derive(Clone, Copy)]
-enum Action {
-    NewAgent,
-    NewTerminal,
-    ClaudeCode,
-    Model,
-    Changes,
-    Files,
-    Settings,
-    Usage,
-    Steps,
-    Needing,
-    Split,
-    ClosePane,
+const PIN: &str = "Pin to sidebar…";
+
+fn pin_list(app: &App, shown: Shown) -> CommandMenuBuilder {
+    let pinned = app.model.with(|model| model.prefs.sidebar.clone());
+    ROWS.iter()
+        .filter(|row| !pinned.contains(&row.0))
+        .fold(command_menu(), |menu, &(action, label, _, _)| {
+            let app = app.clone();
+            menu.item(label, move || {
+                shown.close();
+                pin(&app, action);
+            })
+        })
 }
 
-const ACTIONS: [(&str, &str, Action); 12] = [
-    ("New agent", "⌘N", Action::NewAgent),
-    ("New terminal", "⌘T", Action::NewTerminal),
-    ("Claude Code terminal", "", Action::ClaudeCode),
-    ("Split", "⌘D", Action::Split),
-    ("Close pane", "⌘W", Action::ClosePane),
-    ("Next agent needing you", "⌘⌥A", Action::Needing),
-    ("Change model", "", Action::Model),
-    ("Changes", "⌘⇧D", Action::Changes),
-    ("Files", "", Action::Files),
-    ("All steps", "", Action::Steps),
-    ("Settings", "⌘,", Action::Settings),
-    ("Usage", "", Action::Usage),
+/// Adds `action` to the end of the sidebar's rows and saves the list.
+pub(super) fn pin(app: &App, action: Action) {
+    app.flip(|prefs| {
+        if !prefs.sidebar.contains(&action) {
+            prefs.sidebar.push(action);
+        }
+    });
+}
+
+/// Takes `action` off the sidebar and saves the list.
+pub(super) fn unpin(app: &App, action: Action) {
+    app.flip(|prefs| prefs.sidebar.retain(|pinned| *pinned != action));
+}
+
+type Row = (Action, &'static str, &'static str, Icon);
+
+const ROWS: [Row; 22] = [
+    (Action::NewAgent, "New agent", "⌘N", Icon::Plus),
+    (Action::NewBranch, "New agent on branch", "", Icon::GitBranch),
+    (
+        Action::NewTerminal,
+        super::terminal::NEW_TERMINAL_ACTION,
+        "⌘T",
+        Icon::Terminal,
+    ),
+    (Action::ClaudeCode, "Claude Code terminal", "", Icon::Code),
+    (Action::Split, "Split", "⌘D", Icon::PanelLeft),
+    (Action::ClosePane, "Close pane", "⌘W", Icon::CircleX),
+    (Action::Needing, "Next agent needing you", "⌘⌥A", Icon::Bell),
+    (Action::Search, "Search", "⌘K", Icon::Search),
+    (Action::Model, "Change model", "", Icon::Cpu),
+    (Action::Changes, "Changes", "⌘⇧D", Icon::FileDiff),
+    (Action::Files, "Files", "", Icon::FileText),
+    (Action::Worktrees, "Branches", "", Icon::ListTree),
+    (Action::Jobs, "Jobs", "", Icon::Activity),
+    (Action::Peers, "Peers", "", Icon::Users),
+    (Action::Ledger, "Tasks", "", Icon::List),
+    (Action::Steps, "All steps", "", Icon::ScrollText),
+    (Action::Settings, "Settings", "⌘,", Icon::Settings),
+    page(Action::Models, Page::Models),
+    page(Action::Usage, Page::Usage),
+    page(Action::Mcp, Page::Mcp),
+    page(Action::Plugins, Page::Plugins),
+    page(Action::Shortcuts, Page::Shortcuts),
 ];
 
-fn run(app: &App, action: Action) {
+const fn page(action: Action, at: Page) -> Row {
+    (action, at.name(), "", at.icon())
+}
+
+const PANES: [(Action, Pane); 6] = [
+    (Action::Changes, Pane::Diff),
+    (Action::Files, Pane::Files),
+    (Action::Worktrees, Pane::Worktrees),
+    (Action::Jobs, Pane::Jobs),
+    (Action::Peers, Pane::Peers),
+    (Action::Ledger, Pane::Ledger),
+];
+
+const PAGES: [(Action, Page); 5] = [
+    (Action::Models, Page::Models),
+    (Action::Usage, Page::Usage),
+    (Action::Mcp, Page::Mcp),
+    (Action::Plugins, Page::Plugins),
+    (Action::Shortcuts, Page::Shortcuts),
+];
+
+/// The label, shortcut and icon the palette and the sidebar show for `action`.
+pub(super) fn row(action: Action) -> (&'static str, &'static str, Icon) {
+    ROWS.iter()
+        .find(|row| row.0 == action)
+        .map_or(("", "", Icon::Circle), |row| (row.1, row.2, row.3))
+}
+
+fn lookup<T: Copy>(table: &[(Action, T)], action: Action) -> Option<T> {
+    table.iter().find(|row| row.0 == action).map(|row| row.1)
+}
+
+/// Runs `action` in the focused pane.
+pub(super) fn run(app: &App, action: Action) {
     use crate::view::keys::bindings::Split;
     let pane = app.target();
+    if let Some(page) = lookup(&PAGES, action) {
+        return super::settings::open(app, page);
+    }
+    if let Some(side) = lookup(&PANES, action) {
+        return pane.toggle_pane(side);
+    }
     match action {
         Action::NewAgent => super::split::show(app, Open::New),
+        Action::NewBranch => super::split::show(app, Open::Worktree(pane.workspace())),
         Action::NewTerminal => app.open_terminal(super::terminal::NEW_TERMINAL, None),
         Action::ClaudeCode => app.open_terminal(
             super::terminal::CLAUDE,
@@ -131,20 +242,31 @@ fn run(app: &App, action: Action) {
         ),
         Action::Split => super::split::act(Split::Open),
         Action::ClosePane => super::split::act(Split::Close),
-        Action::Model => pane.begin_model_edit(),
-        Action::Changes => pane.toggle_pane(Pane::Diff),
-        Action::Files => pane.toggle_pane(Pane::Files),
-        Action::Settings => app.settings_open.set(true),
-        Action::Usage => super::settings::open(app, super::settings::Page::Usage),
         Action::Needing => super::jump(app, crate::view::keys::bindings::Jump::Needing),
-        Action::Steps => {
-            use summonr_agent::prefs::ToolOutput;
-            let full = pane.model.peek().prefs.tools == ToolOutput::Full;
-            pane.set_tools(if full {
-                ToolOutput::Compact
-            } else {
-                ToolOutput::Full
-            });
-        }
+        Action::Search => drop(show()),
+        Action::Model => pane.begin_model_edit(),
+        Action::Steps => all_steps(&pane),
+        Action::Settings => app.settings_open.set(true),
+        Action::Changes
+        | Action::Files
+        | Action::Worktrees
+        | Action::Jobs
+        | Action::Peers
+        | Action::Ledger
+        | Action::Models
+        | Action::Usage
+        | Action::Mcp
+        | Action::Plugins
+        | Action::Shortcuts => {}
     }
+}
+
+fn all_steps(pane: &App) {
+    use summonr_agent::prefs::ToolOutput;
+    let full = pane.model.peek().prefs.tools == ToolOutput::Full;
+    pane.set_tools(if full {
+        ToolOutput::Compact
+    } else {
+        ToolOutput::Full
+    });
 }

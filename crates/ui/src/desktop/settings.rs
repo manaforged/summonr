@@ -48,7 +48,8 @@ impl Page {
         Self::Tools,
     ];
 
-    const fn name(self) -> &'static str {
+    /// The page's name in the Settings list.
+    pub(super) const fn name(self) -> &'static str {
         match self {
             Self::General => "General",
             Self::Models => "Models",
@@ -62,7 +63,8 @@ impl Page {
         }
     }
 
-    const fn icon(self) -> Icon {
+    /// The page's icon in the Settings list.
+    pub(super) const fn icon(self) -> Icon {
         match self {
             Self::General => Icon::SlidersHorizontal,
             Self::Models => Icon::Cpu,

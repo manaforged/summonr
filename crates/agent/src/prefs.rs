@@ -3,9 +3,11 @@ use std::path::Path;
 use crate::config;
 use summonr_core::error::Result;
 
+mod action;
 mod hotkeys;
 mod layout;
 mod shape;
+pub use action::Action;
 pub use hotkeys::Hotkey;
 pub use hotkeys::{EditorKey, Hotkeys};
 pub use layout::{Layout, Mark, Slot};
@@ -86,6 +88,7 @@ pub struct Prefs {
     pub mail: bool,
     pub layout: String,
     pub hotkeys: Hotkeys,
+    pub sidebar: Vec<Action>,
 }
 
 impl Default for Prefs {
@@ -105,12 +108,13 @@ impl Default for Prefs {
             mail: true,
             hotkeys: Hotkeys::default(),
             layout: "chat".to_string(),
+            sidebar: Action::PINNED.to_vec(),
         }
     }
 }
 
-#[cfg(test)]
-pub(crate) fn load_from(path: &Path) -> Result<Prefs> {
+/// The prefs the config file at `path` holds.
+pub fn load_from(path: &Path) -> Result<Prefs> {
     from_file(&config::parse(path)?)
 }
 
@@ -133,6 +137,9 @@ fn from_file(file: &config::File) -> Result<Prefs> {
         diff_layout: file.diff_layout.unwrap_or(base.diff_layout),
         layout: file.layout.clone().unwrap_or(base.layout),
         mail: file.mail.unwrap_or(base.mail),
+        sidebar: file.sidebar.as_ref().map_or(base.sidebar, |names| {
+            names.iter().filter_map(|name| Action::parse(name)).collect()
+        }),
     })
 }
 

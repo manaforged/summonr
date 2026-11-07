@@ -53,6 +53,7 @@ pub(crate) fn save_prefs(path: &Path, before: &Prefs, prefs: &Prefs) -> Result<(
                 value(&prefs.layout),
             ),
             ("hotkeys", before.hotkeys != prefs.hotkeys, hotkeys(prefs)),
+            ("sidebar", before.sidebar != prefs.sidebar, sidebar(prefs)),
         ];
         let mut wrote = false;
         for (key, differs, item) in changed {
@@ -79,6 +80,11 @@ fn hotkeys(prefs: &Prefs) -> toml_edit::Item {
         hotkeys.insert(action.name(), binding.into());
     }
     toml_edit::Item::Value(toml_edit::Value::InlineTable(hotkeys))
+}
+
+fn sidebar(prefs: &Prefs) -> toml_edit::Item {
+    let names = prefs.sidebar.iter().map(|action| action.name());
+    toml_edit::Item::Value(toml_edit::Value::Array(names.collect()))
 }
 
 pub(crate) fn remove_key(path: &Path, name: &str) -> Result<bool> {

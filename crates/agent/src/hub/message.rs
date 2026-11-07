@@ -72,6 +72,11 @@ pub enum Fact {
     Diff(crate::diff::Diff, Option<PathBuf>),
     DiffFailed(String, Option<PathBuf>),
     Trees(Vec<crate::worktree::Status>),
+    Panels(Vec<crate::panel::Panel>),
+    Panel {
+        name: String,
+        result: Result<crate::panel::Content, String>,
+    },
     Moved(PathBuf),
     Changed(Vec<String>),
     Edited(Vec<String>),
@@ -185,6 +190,8 @@ pub enum Cmd {
         op: crate::hunks::Op,
     },
     Trees,
+    ListPanels,
+    RunPanel(String),
     View(Option<std::path::PathBuf>, String),
     Save(PathBuf, String),
     Merge(std::path::PathBuf),
@@ -293,4 +300,5 @@ pub struct Info {
     pub workflow: Option<crate::workflow::Workflow>,
     pub config: Option<std::path::PathBuf>,
     pub prompt: Option<String>,
+    pub trust: bool,
 }

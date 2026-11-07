@@ -29,6 +29,8 @@ pub(super) struct Reader {
     ui: UnboundedSender<Msg>,
     diff_load: Arc<Load>,
     files_load: Arc<Load>,
+    panel_load: Arc<Load>,
+    trust: bool,
 }
 
 impl Reader {
@@ -36,6 +38,7 @@ impl Reader {
         workspace: PathBuf,
         board: crate::mcp::Board,
         ui: UnboundedSender<Msg>,
+        trust: bool,
     ) -> Self {
         Self {
             workspace,
@@ -43,12 +46,17 @@ impl Reader {
             ui,
             diff_load: Arc::default(),
             files_load: Arc::default(),
+            panel_load: Arc::default(),
+            trust,
         }
     }
 
     fn load_slot(&self, command: &Cmd) -> Option<Arc<Load>> {
         if matches!(command, Cmd::Diff(_)) {
             return Some(Arc::clone(&self.diff_load));
+        }
+        if matches!(command, Cmd::RunPanel(_)) {
+            return Some(Arc::clone(&self.panel_load));
         }
         matches!(command, Cmd::ListFiles).then(|| Arc::clone(&self.files_load))
     }
@@ -92,6 +100,18 @@ impl Reader {
                 "save task failed: {error}"
             ))));
         }
+    }
+
+    fn run_panel(&self, name: String) -> Msg {
+        let panel = crate::panel::list(&self.workspace, self.trust)
+            .into_iter()
+            .find(|panel| panel.name == name);
+        let result = match panel {
+            Some(panel) => tokio::runtime::Handle::current()
+                .block_on(crate::panel::run(&panel, &self.workspace)),
+            None => Err(format!("no panel named `{name}`")),
+        };
+        Msg::Fact(Fact::Panel { name, result })
     }
 
     pub(super) fn serve(&self, command: Cmd) {
@@ -154,6 +174,11 @@ impl Reader {
                 op,
             } => self.review(root, path, hunk, op),
             Cmd::Trees => self.trees(),
+            Cmd::ListPanels => self.send(Msg::Fact(Fact::Panels(crate::panel::list(
+                &self.workspace,
+                self.trust,
+            )))),
+            Cmd::RunPanel(name) => self.send(self.run_panel(name)),
             Cmd::Offers => self.offers(),
             Cmd::Save(file, text) => self.save(file, text),
             Cmd::View(root, path) => self.show(root, path),

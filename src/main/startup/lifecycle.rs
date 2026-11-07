@@ -131,6 +131,7 @@ fn info(
     let prefs = summonr_agent::prefs::load()?;
     let splash = prefs.splash && !args.no_splash;
     Ok(summonr_agent::hub::Info {
+        trust: args.trust,
         version: env!("CARGO_PKG_VERSION").to_string(),
         model: endpoint.model.clone(),
         relay: splash::host_of(endpoint.base_url.as_deref()).map(str::to_string),

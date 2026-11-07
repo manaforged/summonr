@@ -195,6 +195,7 @@ fn worker() -> (
         workflow: None,
         config: None,
         prompt: None,
+        trust: true,
     };
     let (_commands, receiver) = tokio::sync::mpsc::unbounded_channel();
     let (ui, inbox) = tokio::sync::mpsc::unbounded_channel();

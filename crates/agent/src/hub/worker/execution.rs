@@ -67,6 +67,8 @@ impl Cmd {
             | Cmd::Patch(..)
             | Cmd::Review { .. }
             | Cmd::Trees
+            | Cmd::ListPanels
+            | Cmd::RunPanel(_)
             | Cmd::View(..)
             | Cmd::Save(..)
             | Cmd::DeleteSession(_)

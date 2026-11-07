@@ -50,6 +50,7 @@ mod layout;
 mod models;
 mod note;
 pub(crate) mod overlays;
+pub(crate) mod panels;
 mod panes;
 mod pick;
 mod place;
@@ -196,6 +197,7 @@ pub(super) struct App {
     pub(super) editor_requested: Signal<bool>,
     pub(super) commands: Picker,
     pub(super) sessions: super::sessions::Picker,
+    pub(super) panels: panels::Panels,
     pub(super) usage: super::usage::Panel,
     pub(super) effort: super::effort::Strip,
     pub(super) picker: ModelPicker,
@@ -323,6 +325,7 @@ impl App {
             editor_requested: signal(false),
             commands: Picker::new(draft, model, picker.facts),
             sessions: super::sessions::Picker::new(),
+            panels: panels::Panels::new(),
             usage: super::usage::Panel::new(),
             effort: super::effort::Strip::new(),
             picker,

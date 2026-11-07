@@ -279,6 +279,7 @@ pub(super) fn info() -> Info {
         workflow: None,
         config: None,
         prompt: None,
+        trust: true,
     }
 }
 

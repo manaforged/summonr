@@ -8,9 +8,9 @@ use super::in_window;
 use crate::desktop::App;
 use crate::pane::Pane;
 
-type Pump = &'static RefCell<sigil::tasks::AsyncRuntime>;
+pub(super) type Pump = &'static RefCell<sigil::tasks::AsyncRuntime>;
 
-fn pumped() -> Pump {
+pub(super) fn pumped() -> Pump {
     let runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
     runtime.install_current();
     Box::leak(Box::new(RefCell::new(runtime)))

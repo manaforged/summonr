@@ -252,6 +252,8 @@ impl Model {
             | Msg::Fact(Fact::Defaulted(_))
             | Msg::Fact(Fact::Sessions(_))
             | Msg::Fact(Fact::Usage(_))
+            | Msg::Fact(Fact::Panels(_))
+            | Msg::Fact(Fact::Panel { .. })
             | Msg::Fact(Fact::Prompts { .. })
             | Msg::Fact(Fact::Workflow { .. })
             | Msg::Intent(Intent::Resume(_))

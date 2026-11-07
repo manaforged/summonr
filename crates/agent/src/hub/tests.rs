@@ -154,6 +154,7 @@ fn info() -> crate::hub::Info {
         workflow: None,
         config: None,
         prompt: None,
+        trust: true,
     }
 }
 

@@ -20,6 +20,7 @@ pub(crate) mod launch;
 #[cfg(feature = "menu")]
 mod menubar;
 pub(super) mod palette;
+mod panel;
 pub(super) mod quit;
 mod restore;
 mod settings;
@@ -113,6 +114,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
     agent_menu::install();
     settings::install(&app);
     split::install(&app);
+    panel::install(&app);
     shelf::install();
     restore::install(&app);
     quit::install(&app);

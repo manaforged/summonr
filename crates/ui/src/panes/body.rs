@@ -82,7 +82,7 @@ pub(crate) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
         Pane::Diff => diff::diff(app, column, cols_in(width)),
         Pane::View => view::view(app, column),
         Pane::Ledger => todos::ledger(&app, column),
-        Pane::Chat | Pane::Terminal => column,
+        Pane::Chat | Pane::Terminal | Pane::Custom => column,
         Pane::Files | Pane::Worktrees | Pane::Jobs | Pane::Mcp | Pane::Peers => {
             listed(&app, pane, column)
         }
@@ -101,7 +101,13 @@ fn listed(app: &App, pane: Pane, column: NodeBuilder) -> NodeBuilder {
         Pane::Jobs => ("Jobs".to_string(), count(shown), &NO_JOBS, None),
         Pane::Mcp => ("Servers".to_string(), count(shown), &NO_MCP, None),
         Pane::Peers => ("Peers".to_string(), count(shown), &NO_PEERS, None),
-        Pane::Chat | Pane::Ledger | Pane::Files | Pane::Diff | Pane::View | Pane::Terminal => (
+        Pane::Chat
+        | Pane::Ledger
+        | Pane::Files
+        | Pane::Diff
+        | Pane::View
+        | Pane::Terminal
+        | Pane::Custom => (
             app.workspace()
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())

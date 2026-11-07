@@ -10,6 +10,7 @@ pub(super) enum Pane {
     Peers,
     View,
     Terminal,
+    Custom,
 }
 
 impl Pane {
@@ -51,6 +52,7 @@ impl Pane {
             Self::Peers => "peers",
             Self::View => "view",
             Self::Terminal => "terminal",
+            Self::Custom => "panel",
         }
     }
 }

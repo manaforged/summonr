@@ -59,6 +59,7 @@ async fn a_release_request_stops_the_session_and_frees_its_journal() {
         workflow: None,
         config: None,
         prompt: None,
+        trust: true,
     };
     let (commands, receiver) = unbounded_channel();
     let (ui, mut inbox) = unbounded_channel();
@@ -95,6 +96,7 @@ async fn startup_effort_reaches_the_composer_before_a_model_switch() {
         workflow: None,
         config: None,
         prompt: None,
+        trust: true,
     };
     let (commands, receiver) = unbounded_channel();
     let (ui, mut inbox) = unbounded_channel();
@@ -142,6 +144,7 @@ async fn a_model_switch_becomes_the_last_used_model() {
         workflow: None,
         config: Some(home.path().join("config.toml")),
         prompt: None,
+        trust: true,
     };
     let (commands, receiver) = unbounded_channel();
     let (ui, _inbox) = unbounded_channel();
@@ -183,6 +186,7 @@ async fn a_session_opened_with_an_unfinished_goal_says_how_to_go_on() {
         workflow: None,
         config: None,
         prompt: None,
+        trust: true,
     };
     let (commands, receiver) = unbounded_channel();
     let (ui, mut inbox) = unbounded_channel();

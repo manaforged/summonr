@@ -62,6 +62,9 @@ impl App {
     }
 
     fn apply_msg(&self, msg: Msg) {
+        let Some(msg) = self.panels.take(msg) else {
+            return;
+        };
         self.prepare(&msg);
         let mut alive = true;
         self.model_mut(|model| alive = model.apply(msg));

@@ -20,6 +20,7 @@ impl Worker {
             loop_.workspace().to_path_buf(),
             loop_.mcp_board(),
             ui.clone(),
+            info.trust,
         );
         let levels = match crate::endpoint::resolve(
             Some(&info.endpoint),

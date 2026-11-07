@@ -45,6 +45,7 @@ pub(super) fn column(app: &App, pane: Pane, cols: u16) -> NodeBuilder {
     let width = f32::from(cols) * crate::canvas::cell().w;
     let body = match pane {
         Pane::Terminal => super::terminal::view(app, width),
+        Pane::Custom => super::panel::view(app),
         Pane::Chat
         | Pane::Ledger
         | Pane::Files
@@ -86,6 +87,7 @@ fn tabs(app: &App, pane: Pane) -> NodeBuilder {
             ),
             |row, (tab, label)| row.child(tab_button(app, *tab, label, *tab == pane)),
         )
+        .child(super::panel::tabs(app, pane))
         .border_bottom(1)
         .border_color(DIVIDER)
         .child(super::drag_area())

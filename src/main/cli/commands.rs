@@ -49,11 +49,11 @@ pub(super) const SECTIONS: [(&str, &[&str]); 4] = [
     ),
     (
         "Integrations",
-        &["acp", "mail", "tool", "classify", "cron", "gateway"],
+        &["acp", "mail", "tool", "classify", "cron", "ab", "gateway"],
     ),
 ];
 
-pub(super) const COMMANDS: [Command; 19] = [
+pub(super) const COMMANDS: [Command; 20] = [
     Command {
         name: "session",
         most: None,
@@ -125,6 +125,12 @@ pub(super) const COMMANDS: [Command; 19] = [
         most: None,
         run: |args, input| verb(args, Verb::Cron(input.by_ref().collect())),
         help: "cron add NAME ...           run a prompt or goal on a schedule; cron --help",
+    },
+    Command {
+        name: "ab",
+        most: None,
+        run: |args, input| verb(args, Verb::Ab(input.by_ref().collect())),
+        help: "ab --goal G --sets A,B      run a goal under each skill set and compare; ab --help",
     },
     Command {
         name: "panel",

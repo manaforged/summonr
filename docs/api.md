@@ -27,6 +27,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr endpoint add NAME --url URL [--model M]`, `summonr endpoint remove NAME` | Add or update your own OpenAI-compatible server, or remove it |
 | `summonr module list` | List compiled modules and their state |
 | `summonr workflow list` | List configured workflows |
+| `summonr ab --goal GOAL --sets A,B [--runs N] [--json]` | Run one goal under each skill set and compare pass rate, tokens, cost, and time; exit 0 when every run finished |
 | `summonr mcp list\|get NAME [--json]`, `summonr mcp add NAME -- CMD\|--url URL`, `summonr mcp remove NAME` | List MCP servers with state, tools, and schema size; add or remove a `[mcp.NAME]` table |
 | `summonr plugin install PATH`, `summonr plugin list`, `summonr plugin remove NAME` | Install a plugin directory, list plugins, or remove one |
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
@@ -155,6 +156,18 @@ Step mode also prints `{"type":"step","index":N,"total":N,"state":"...","check":
 With `--json`, a run that fails with exit code 1 or ends on a signal prints a last `aborted` event: code `error` with the message, or code `interrupted`.
 
 When a goal or steps run stops short, the exit check's `verify` events and a final `work` event follow the `aborted` event. Read the exit code for the result.
+
+### `summonr ab --json`
+
+One JSON object on stdout after the last run:
+
+| Field | Holds |
+| --- | --- |
+| `sets` | One row per set, in `--sets` order: `name`, `runs`, `passed`, `pass_rate`, `pass_all` (every run passed, pass^k), and the medians `tokens`, `cost` (null when no run reported a cost), and `secs`; `skills` maps each loaded skill to the number of runs that loaded it |
+| `pairs` | Each set against `none`, or against the first set when `none` is not an arm: `set`, `against`, `pass` and `tokens`, each `diff`, `low`, `high` (the paired difference by round and its bootstrap 95% interval), and `lift`: `better`, `worse`, or `no_measured_lift` from the pass interval |
+| `runs` | Each run in the order it ran: `set`, `round`, `code` (the run's exit code), `passed`, `tokens`, `cost`, `secs`, `skills`, and `session` |
+
+A run that exits 1 stops `summonr ab` with exit 1 and names that run's stderr file.
 
 ### `summonr cron list --json`
 

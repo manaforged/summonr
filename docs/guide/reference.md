@@ -181,6 +181,7 @@ git diff | summonr kimi -p
 | `classify --patch` | Rank the files of the working patch by risk. |
 | `classify --review --session ID` | Review a session. |
 | `classify --set NAME --eval FILE` | Score a question set against labeled cases in FILE. `--json` prints answers and probabilities, and `--gate N` sets the confidence floor for every `classify` form. |
+| `ab --goal GOAL --sets A,B` | Run GOAL under each skill set and compare. Takes `--runs N` (3), `-e`/`--endpoint`, `--model`, `--max-secs`, `--max-tokens`, and `--json`. See Workflows. |
 | `cron add NAME SCHEDULE TASK` | Add a job. SCHEDULE is `--cron EXPR`, `--every 30m`, `--at TIME`, or `--manual`; TASK is `-p PROMPT` or `--goal GOAL`. Takes `--dir`, `-e`/`--endpoint`, `--model`, `--tz`, `--max-secs`, `--max-tokens`, `--worktree`, `--chat`, `--notify never\|failure\|always`, `--mail SESSION`, and `--wake SESSION`. See Cron. |
 | `cron edit NAME [FLAGS]` | Change a job with the same flags as `add`. |
 | `cron list [--json]` | List jobs. |
@@ -504,6 +505,8 @@ A skill set limits which skills the model is offered. `include` and `exclude` li
 include = ["review", "code"]
 exclude = ["review/panel"]
 ```
+
+`summonr ab --goal "make cargo test pass" --sets lean-review,none --runs 6` measures a set. It runs the goal 6 times under each set, in A B B A order. Each run starts from `HEAD` in its own git worktree, stops on the workspace check, and its worktree is deleted after; nothing is merged, so commit the check first. The report gives each set's pass rate, pass^k (every run passed), median tokens, cost, and time, and the skills it loaded. Each set is compared with `none`, or with the first set when `none` is not an arm, by round, with a bootstrap 95% interval; a pass interval that does not clear zero reads `no measured lift`. The events of every run stay in the `ab` folder of the summonr home, which `SUMMONR_HOME` moves.
 
 A workflow runs each role on its own model. Roles are `scout`, `implement`, `judge`, and `summary`; a role the workflow does not name runs on the endpoint and model you started with.
 

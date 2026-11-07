@@ -32,7 +32,7 @@ use session::{SessionAction, build};
 pub(super) async fn run(args: Args) -> Result<i32> {
     let log = if matches!(
         args.verb,
-        Some(Verb::Mail(_) | Verb::Cron(_) | Verb::Gateway(_))
+        Some(Verb::Mail(_) | Verb::Ab(_) | Verb::Cron(_) | Verb::Gateway(_))
     ) {
         None
     } else {
@@ -101,6 +101,7 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
         Verb::Doctor if args.report => diagnostics::report(path),
         Verb::Doctor => diagnostics::doctor(path),
         Verb::Mail(words) => in_cwd(&|cwd| summonr_agent::mail::cli::run(words, cwd)),
+        Verb::Ab(words) => in_cwd(&|cwd| summonr_agent::ab::run(words, cwd)),
         Verb::Cron(words) => in_cwd(&|cwd| summonr_agent::cron::cli::run(words, cwd)),
         Verb::Gateway(words) => {
             in_cwd(&|cwd| summonr_agent::gateway::cli::run(words, cwd, &login::read_secret))

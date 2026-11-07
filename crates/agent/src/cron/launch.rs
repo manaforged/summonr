@@ -7,6 +7,7 @@ pub(crate) struct Launch<'a> {
     pub max_secs: Option<u64>,
     pub max_tokens: Option<u64>,
     pub worktree: bool,
+    pub skills: Option<&'a str>,
     pub task: &'a Task,
 }
 
@@ -29,6 +30,9 @@ impl Launch<'_> {
         flags(&mut args, budget);
         if self.worktree {
             args.push("--worktree".to_string());
+        }
+        if let Some(set) = self.skills {
+            args.extend(["--skills".to_string(), set.to_string()]);
         }
         let (task, text) = match self.task {
             Task::Prompt(prompt) => (["-p", "--"].as_slice(), prompt),

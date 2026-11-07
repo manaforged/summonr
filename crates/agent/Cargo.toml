@@ -43,10 +43,10 @@ libc = "0.2"
 dunce = { workspace = true }
 jiff = "0.2.38"
 httparse = "1.10"
+fastrand = "2.5"
 
 [dev-dependencies]
 summonr-core = { path = "../core", features = ["test-home"] }
-fastrand = "2.5"
 tokio = { version = "1", features = ["test-util"] }
 
 [target.'cfg(unix)'.dependencies]

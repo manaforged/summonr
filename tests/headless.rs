@@ -341,3 +341,126 @@ fn a_json_steps_run_starts_each_step_with_its_check_and_exits_zero() {
         "{stderr}"
     );
 }
+
+fn git(dir: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?}: {output:?}");
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
+fn ab_runs_each_set_in_its_own_worktree_and_reports_pass_rates() {
+    let home = tempfile::tempdir().unwrap();
+    let port = streaming(&[
+        r#"{"choices":[{"index":0,"delta":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}"#,
+    ]);
+    let work = home.path().join("work");
+    let state = work.join(".summonr");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(
+        state.join(format!("{}.toml", "check")),
+        "check = \"true\"\n",
+    )
+    .unwrap();
+    git(&work, &["init", "-q", "-b", "main"]);
+    git(&work, &["add", "-A"]);
+    git(&work, &["commit", "-q", "-m", "base"]);
+    let head = git(&work, &["rev-parse", "HEAD"]);
+    std::fs::write(
+        home.path().join("config.toml"),
+        format!(
+            "[endpoint.local]\nbase_url = \"http://127.0.0.1:{port}/v1\"\nmodel = \"m\"\napi_key = \"k\"\ncontext_window = 32768\n\n[skills.sets.lean]\ninclude = [\"review\"]\n"
+        ),
+    )
+    .unwrap();
+    let child = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args([
+            "ab",
+            "-e",
+            "local",
+            "--goal",
+            "say done",
+            "--sets",
+            "lean,none",
+        ])
+        .args(["--runs", "2", "--json"])
+        .current_dir(&work)
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .env(
+            "SUMMONR_MODELS_URL",
+            format!("http://127.0.0.1:{port}/registry.json"),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (code, events, stderr) = finish(child);
+    assert_eq!(code, Some(0), "{stderr}");
+    let report = events.last().expect("a report");
+    let arms: Vec<(&str, u64, u64)> = report["sets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arm| {
+            (
+                arm["name"].as_str().unwrap(),
+                arm["runs"].as_u64().unwrap(),
+                arm["passed"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(arms, [("lean", 2, 2), ("none", 2, 2)], "{report}");
+    let order: Vec<&str> = report["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|run| run["set"].as_str().unwrap())
+        .collect();
+    assert_eq!(order, ["lean", "none", "none", "lean"], "{report}");
+    assert_eq!(report["pairs"][0]["set"], "lean", "{report}");
+    assert_eq!(report["pairs"][0]["against"], "none", "{report}");
+    assert_eq!(report["pairs"][0]["lift"], "no_measured_lift", "{report}");
+    let trees = git(&work, &["worktree", "list", "--porcelain"]);
+    assert_eq!(trees.matches("worktree ").count(), 1, "{trees}");
+    assert_eq!(
+        git(&work, &["branch", "--format=%(refname:short)"]).trim(),
+        "main"
+    );
+    assert_eq!(git(&work, &["rev-parse", "HEAD"]), head);
+    let mut recorded = Vec::new();
+    for run in report["runs"].as_array().unwrap() {
+        let id = run["session"].as_str().expect("each run names its session");
+        let journal = journal_of(home.path(), id);
+        recorded.push(journal.contains(&format!(
+            r#""kind":"skills","set":"{}""#,
+            run["set"].as_str().unwrap()
+        )));
+    }
+    assert_eq!(recorded, [true; 4], "{report}");
+}
+
+fn journal_of(root: &Path, id: &str) -> String {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "jsonl") {
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                if text.contains(id) && text.contains(r#""kind":"session""#) {
+                    return text;
+                }
+            }
+        }
+    }
+    String::new()
+}

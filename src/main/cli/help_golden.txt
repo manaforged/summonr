@@ -38,4 +38,5 @@ Integrations:
   tool run NAME [JSON]        run one tool and print the result
   classify --set NAME [STATE] answer typed questions about text (below)
   cron add NAME ...           run a prompt or goal on a schedule; cron --help
+  ab --goal G --sets A,B      run a goal under each skill set and compare; ab --help
   gateway telegram|webhook    start work from a Telegram chat or a web request; gateway --help

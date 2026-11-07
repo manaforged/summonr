@@ -32,6 +32,7 @@ pub(super) enum Verb {
     Update,
     Acp,
     Mail(Vec<String>),
+    Ab(Vec<String>),
     Cron(Vec<String>),
     Panel(Vec<String>),
     Gateway(Vec<String>),

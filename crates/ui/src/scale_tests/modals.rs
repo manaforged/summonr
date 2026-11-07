@@ -47,6 +47,7 @@ fn screen(cols: u16, rows: u16, setup: impl FnOnce(&App)) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "gui"))]
 fn claude_code_auth_in_the_model_picker_logs_in_and_selects_the_requested_model() {
     let commands = sent(
         |app| {

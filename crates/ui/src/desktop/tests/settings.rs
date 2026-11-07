@@ -124,3 +124,21 @@ fn the_plugins_page_groups_skills_by_folder_and_picks_the_set_for_new_agents() {
     let written = std::fs::read_to_string(&config).unwrap();
     assert!(written.contains("default = \"lean\""), "{written}");
 }
+
+#[test]
+fn dragging_the_spacing_slider_to_its_end_saves_the_widest_gap() {
+    if !in_window("settings::dragging_the_spacing_slider_to_its_end_saves_the_widest_gap") {
+        return;
+    }
+    let seen = steps(
+        |app| open(app, Page::Appearance),
+        vec![Step::DragControl("Paragraph spacing", (600.0, 0.0))],
+        |app| app.model.peek().prefs.spacing,
+    );
+    assert_eq!(
+        seen.read,
+        *summonr_agent::prefs::SPACING.end(),
+        "{}",
+        seen.text()
+    );
+}

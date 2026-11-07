@@ -30,6 +30,7 @@ pub(crate) struct File {
     pub animations: Option<bool>,
     pub spinner: Option<crate::prefs::Spinner>,
     pub fps: Option<u32>,
+    pub spacing: Option<u8>,
     pub reasoning: Option<ReasoningSetting>,
     pub tools: Option<summonr_types::prefs::ToolOutput>,
     pub diff_layout: Option<summonr_types::DiffLayout>,

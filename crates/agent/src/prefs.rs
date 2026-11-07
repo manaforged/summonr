@@ -45,6 +45,10 @@ pub(crate) fn known_theme(name: &str) -> bool {
 pub use summonr_types::prefs::{ToolOutput, Visibility};
 
 pub const FPS_DEFAULT: u32 = 25;
+/// The gap between transcript paragraphs, in pixels, that the Spacing setting picks from.
+pub const SPACING: std::ops::RangeInclusive<u8> = 8..=24;
+/// The paragraph gap before a person changes it.
+pub const SPACING_DEFAULT: u8 = 16;
 pub const FPS_MIN: u32 = 1;
 pub const FPS_MAX: u32 = 240;
 
@@ -89,6 +93,7 @@ pub struct Prefs {
     pub layout: String,
     pub hotkeys: Hotkeys,
     pub sidebar: Vec<Action>,
+    pub spacing: u8,
 }
 
 impl Default for Prefs {
@@ -109,6 +114,7 @@ impl Default for Prefs {
             hotkeys: Hotkeys::default(),
             layout: "chat".to_string(),
             sidebar: Action::PINNED.to_vec(),
+            spacing: SPACING_DEFAULT,
         }
     }
 }
@@ -137,6 +143,9 @@ fn from_file(file: &config::File) -> Result<Prefs> {
         diff_layout: file.diff_layout.unwrap_or(base.diff_layout),
         layout: file.layout.clone().unwrap_or(base.layout),
         mail: file.mail.unwrap_or(base.mail),
+        spacing: file
+            .spacing
+            .map_or(base.spacing, |gap| gap.clamp(*SPACING.start(), *SPACING.end())),
         sidebar: file.sidebar.as_ref().map_or(base.sidebar, |names| {
             names.iter().filter_map(|name| Action::parse(name)).collect()
         }),

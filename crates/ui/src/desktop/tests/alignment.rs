@@ -296,3 +296,28 @@ fn the_reading_column_starts_and_ends_every_mark_at_the_gutter() {
     ];
     same("column end", &ends, Some(frame.x1 - GUTTER));
 }
+
+fn paragraph_gap(spacing: u8) -> f32 {
+    let marks = marks(move |app| {
+        app.model_mut(|model| model.prefs.spacing = spacing);
+        app.update(Msg::Intent(Intent::User("Hi".to_owned())));
+        app.update(Msg::Fact(Fact::Event(Event::Assistant {
+            text: "First paragraph.\n\nSecond paragraph.".to_owned(),
+        })));
+    });
+    let first = text(&marks, "First paragraph.", false);
+    let second = text(&marks, "Second paragraph.", false);
+    second.y0 - first.y1
+}
+
+#[test]
+fn the_spacing_setting_widens_the_gap_between_reply_paragraphs() {
+    if !in_window("alignment::the_spacing_setting_widens_the_gap_between_reply_paragraphs") {
+        return;
+    }
+    let (tight, roomy) = (paragraph_gap(8), paragraph_gap(24));
+    assert!(
+        (roomy - tight - 16.0).abs() < TOLERANCE,
+        "tight {tight} roomy {roomy}"
+    );
+}

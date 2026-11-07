@@ -81,10 +81,11 @@ fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
 }
 
 pub(super) fn assistant(body: &str, app: &App) -> NodeBuilder {
+    let gap = f32::from(app.model.get().prefs.spacing);
     let mut column = container().font_size(BODY).layout(
         LayoutStyle::flex_column()
             .fill_width()
-            .gap(M)
+            .gap(gap)
             .min_size(0.0, 0.0),
     );
     if body.trim().is_empty() {
@@ -96,7 +97,7 @@ pub(super) fn assistant(body: &str, app: &App) -> NodeBuilder {
             Part::Prose(text) => container()
                 .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
                 .line_height_px(LINE)
-                .child(markdown(signal(text))),
+                .child(markdown(signal(text)).layout(LayoutStyle::default().gap(gap))),
             Part::Code { lang, body, closed } => {
                 if !closed && let Some(card) = crate::desktop::entry::diff_card(app, &body) {
                     card

@@ -171,3 +171,31 @@ fn watch(active: Signal<usize>, first: usize, pick: impl Fn(usize) + 'static) {
         }
     });
 }
+
+/// A row with a slider over `range`; `pick` runs with each new whole value.
+pub(in crate::desktop) fn slider(
+    label: &str,
+    about: Option<&str>,
+    range: std::ops::RangeInclusive<u8>,
+    at: u8,
+    pick: impl Fn(u8) + 'static,
+) -> NodeBuilder {
+    let value = signal(f32::from(at));
+    let pick = std::rc::Rc::new(pick);
+    let bounds = f32::from(*range.start())..=f32::from(*range.end());
+    let control = sigil::widgets::slider(value, bounds)
+        .step(1.0)
+        .length(CONTROL)
+        .label(label)
+        .change(move |now| {
+            let pick = pick.clone();
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "the slider stays inside a u8 range"
+            )]
+            let whole = now.round() as u8;
+            defer(move || pick(whole));
+        });
+    row(label, about, control.into())
+}

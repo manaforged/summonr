@@ -27,6 +27,11 @@ pub(crate) fn save_prefs(path: &Path, before: &Prefs, prefs: &Prefs) -> Result<(
             ),
             ("fps", before.fps != prefs.fps, value(i64::from(prefs.fps))),
             (
+                "spacing",
+                before.spacing != prefs.spacing,
+                value(i64::from(prefs.spacing)),
+            ),
+            (
                 "reasoning",
                 before.reasoning != prefs.reasoning,
                 value(prefs.reasoning.name()),

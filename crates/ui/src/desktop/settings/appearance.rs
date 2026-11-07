@@ -4,9 +4,9 @@ use sigil::prelude::{
 
 use super::super::App;
 use super::super::style::{M, S, Text, XS, text};
-use super::parts::{choice, section, switch};
+use super::parts::{choice, section, slider, switch};
 use crate::theme::Palette;
-use summonr_agent::prefs::{AUTO_THEME, DiffLayout, THEMES};
+use summonr_agent::prefs::{AUTO_THEME, DiffLayout, SPACING, THEMES};
 
 pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
     vec![themes(app), display(app)]
@@ -96,7 +96,7 @@ fn label_for(name: &str) -> String {
 
 fn display(app: &App) -> NodeBuilder {
     let prefs = app.model.get().prefs.clone();
-    let (motion, splash, diff) = (app.clone(), app.clone(), app.clone());
+    let (motion, splash, diff, gap) = (app.clone(), app.clone(), app.clone(), app.clone());
     let at = usize::from(prefs.diff_layout == DiffLayout::Unified);
     section(
         Some("Display"),
@@ -116,6 +116,13 @@ fn display(app: &App) -> NodeBuilder {
                 move |_| {
                     splash.flip(|prefs| prefs.splash = !prefs.splash);
                 },
+            ),
+            slider(
+                "Paragraph spacing",
+                Some("Space between paragraphs and blocks in a reply"),
+                SPACING,
+                prefs.spacing,
+                move |px| gap.flip(|prefs| prefs.spacing = px),
             ),
             choice(
                 "Changes view",

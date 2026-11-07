@@ -210,6 +210,7 @@ Top-level keys in `~/.summonr/config.toml`:
 | `spinner` | `dots` (default), `symbols` | Working indicator style; also selectable in settings. |
 | `fps` | 1 to 240, default 25 | Interface frame rate. |
 | `diff_layout` | `split` (default), `unified` | Diff pane layout. |
+| `spacing` | 8 to 24, default 16 | Pixels between paragraphs and blocks in a desktop reply; **Paragraph spacing** under Settings → Appearance. |
 | `sidebar` | A list of action names such as `new_agent`, `jobs`, `usage`; default `["new_agent", "new_terminal", "search"]` | Rows at the top of the desktop sidebar. **Pin to sidebar…** in the ⌘K palette adds one; right-click a row and pick **Unpin** to remove it. |
 
 Keys on an `[endpoint.NAME]` row:

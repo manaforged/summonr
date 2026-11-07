@@ -2,23 +2,34 @@
 
 ## Unreleased
 
+## 0.2.0
+
 ### Added
 
+- A `[metric]` table in the workspace check file makes `--goal` climb a number: summonr measures a baseline first, then measures each turn after the checks, keeps it only when it beats the best by more than `noise`, and otherwise reverts it to the start of the turn. A turn that changes a file listed in `protect` is reverted unmeasured. The goal ends at `target` or at a budget, and the ledger shows every attempt.
 - `summonr-desktop` is the Summonr desktop app, a separate program that runs the same agent in a native window. On macOS `scripts/package-macos.sh` packs it as `Summonr.app` in `Summonr.dmg`.
 - The native `task` tool accepts `endpoint` to select a configured worker endpoint without changing the orchestrator's model.
 - Naming a task starts a persistent background worker that accepts follow-up messages through `send`.
 - `plugins/researchr` is research mode: `/researchr:research SPEC` runs any number of native workers on one measured goal in delta lanes, records each worker's child id and model through a `post_tool` hook, stores findings in SQLite, and imports messages and provider-returned reasoning for audit. It replaces `plugins/lanes`.
+- The desktop app groups threads into topics with tabs, splits panes as a tree, keeps terminals beside agents, and restores panes, terminals and marks after a restart.
+- The desktop has a menu bar, a `⌘K` palette whose actions can be pinned to the sidebar, right-click split and copy, and a usage page in Settings.
+- The desktop starts a Claude Code chat or terminal in one click and signs in to Claude Code from Settings.
+- A finished turn folds its thoughts and steps into one row; Settings has a paragraph spacing slider.
+- Custom panels are files checked by `summonr panel check NAME` and show as tabs in the desktop's right panel.
+- `--skills NAME` and `[skills] default` choose a named set of skills per session; resumed sessions and children keep the set, and usage splits spend by set.
+- A second running agent in the same checkout gets its own worktree.
 
 ### Changed
 
+- A message or mail during a long tool reaches the model after `tool_yield_secs` in a main session. A foreground command moves to a background job, and an MCP call or read-only tool stops. `tool_yield_secs` replaces `command_yield_secs`.
+- summonr now uses the Sigil and Leyline 0.2.0 releases from crates.io.
 - `summonr --gui` exits 1 and names `summonr-desktop`, and `summonr` never opens a window. Source installs name the package: `cargo install --git https://github.com/manaforged/summonr --locked summonr`.
-- A goal with no `.summonr/check.toml` asks the model to write a contract of check commands to `.summonr/contract.toml` before it changes code. At least one command must fail on first run, then the judge reads the contract; once accepted, the commands decide completion, later edits to the file change nothing, and a change to a file listed under `protect` fails the check.
+- A goal with no workspace check file asks the model to write a contract of check commands to `contract.toml` beside it before it changes code. At least one command must fail on first run, then the judge reads the contract; once accepted, the commands decide completion, later edits to the file change nothing, and a change to a file listed under `protect` fails the check.
 - The `memory` module is off by default; `memory = true` under `[modules]` turns it on.
 
 ### Fixed
 
 - Reading an inbox removes the delivered mail from the inbox file, so a live session's inbox no longer grows for the life of the session. The sweep also removes the inbox of a session that is gone once it is older than the sweep window. The audit keeps every message.
-
 - Agent activity rows show worker names, models, and latest activity; expanded details include the assignment, workspace, usage, and outcome. Journal replay restores child identity instead of leaving blank rows.
 - Separate Responses reasoning-summary parts keep paragraph breaks instead of joining their words together.
 - Status-bar task and agent buttons keep their activation state while the spinner and token-rate labels refresh.
@@ -33,19 +44,7 @@
 ### Migration
 
 - `SUMMONR_CAPTURE_DIR` now writes schema-1 audit envelopes under each session id, with one file per exchange; decode `record.body` from base64 instead of reading a flat text `body`. Capture failures now stop the affected call rather than silently omitting evidence.
-
 - Internal provider implementations change `Provider::child()` from `Option<Self>` to `Provider::child(Option<&Endpoint>)` returning `Result<Option<Self>>`; `None` inherits the provider, and `Some` selects the child's endpoint.
-
-## 0.2.0
-
-### Changed
-
-- A message or mail during a long tool reaches the model after `tool_yield_secs` in a main session. A foreground command moves to a background job, and an MCP call or read-only tool stops. `tool_yield_secs` replaces `command_yield_secs`.
-- summonr now uses the Sigil and Leyline 0.2.0 releases from crates.io.
-
-### Added
-
-- A `[metric]` table in `.summonr/check.toml` makes `--goal` climb a number: summonr measures a baseline first, then measures each turn after the checks, keeps it only when it beats the best by more than `noise`, and otherwise reverts it to the start of the turn. A turn that changes a file listed in `protect` is reverted unmeasured. The goal ends at `target` or at a budget, and the ledger shows every attempt.
 
 ## 0.1.1
 

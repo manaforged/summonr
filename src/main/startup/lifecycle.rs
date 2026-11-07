@@ -76,9 +76,7 @@ fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr_agent::hub
         args.worktree = matches!(open, summonr_agent::hub::Open::Worktree(_));
         args.name = None;
         let (folder, session) = match open {
-            summonr_agent::hub::Open::New | summonr_agent::hub::Open::Agent(_) => {
-                (cwd.clone(), None)
-            }
+            summonr_agent::hub::Open::New => (cwd.clone(), None),
             summonr_agent::hub::Open::Folder(folder)
             | summonr_agent::hub::Open::Worktree(folder) => (folder, None),
             summonr_agent::hub::Open::Resume(id) => (cwd.clone(), Some(id)),

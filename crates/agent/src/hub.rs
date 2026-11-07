@@ -37,8 +37,6 @@ pub enum Open {
     Folder(std::path::PathBuf),
     /// A new chat on a new branch in a git worktree of this folder.
     Worktree(std::path::PathBuf),
-    /// A new chat run by the friend on this route.
-    Agent(String),
     /// An earlier chat, in the folder it recorded.
     Resume(String),
 }

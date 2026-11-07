@@ -162,7 +162,8 @@ pub(super) struct Found {
 /// What makes a found program a coding agent of its own.
 #[derive(serde::Deserialize, Clone, Debug)]
 pub(super) struct AgentRow {
-    pub(super) mark: String,
+    pub(super) mark: Vec<String>,
+    pub(super) color: [u8; 3],
     pub(super) login: String,
     pub(super) install: String,
     pub(super) install_windows: String,

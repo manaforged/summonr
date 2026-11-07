@@ -81,13 +81,6 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
         })
         .detail(*key)
     });
-    let menu = app.window.friends.get().iter().fold(menu, |menu, seen| {
-        let (app, seen) = (app.clone(), *seen);
-        menu.item(format!("New {}", seen.friend.name), move || {
-            open.set(false);
-            super::friends::launch(&app, seen.friend);
-        })
-    });
     let menu = menu
         .placeholder("Search")
         .cancel(move || open.set(false))

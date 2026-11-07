@@ -57,7 +57,7 @@ impl Hub {
         }
     }
 
-    /// Hands a new session to `friend`, keeping the window's default for the next chat.
+    /// Hands a reopened session back to `friend`.
     pub(super) fn summon(&self, key: u64, friend: Option<Friend>) {
         if let (Some(friend), Some(session)) = (friend, self.sessions.get(&key)) {
             drop(session.cmd.send(Cmd::SelectModel(
@@ -182,14 +182,11 @@ impl Hub {
     }
 }
 
-/// The friend that runs what `open` starts: the one asked for, or the one a chat recorded.
+/// The friend a reopened chat recorded.
 pub(super) fn friend_of(open: &Open) -> Option<Friend> {
-    match open {
-        Open::Agent(route) => Friend::of(route),
-        Open::Resume(id) => {
-            let path = crate::session::resolve_id(id).ok()?;
-            Friend::of(&crate::session::info(path).agent?)
-        }
-        Open::New | Open::Folder(_) | Open::Worktree(_) => None,
-    }
+    let Open::Resume(id) = open else {
+        return None;
+    };
+    let path = crate::session::resolve_id(id).ok()?;
+    Friend::of(&crate::session::info(path).agent?)
 }

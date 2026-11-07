@@ -30,6 +30,10 @@ impl Window {
         false
     }
 
+    pub(crate) fn sign_in(&self, _app: &crate::app::App, _route: &str) -> bool {
+        false
+    }
+
     pub(crate) fn toggle_sidebar(&self) {}
 
     pub(crate) fn jump(&self, _app: &App, _to: Jump) {}

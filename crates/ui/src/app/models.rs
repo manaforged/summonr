@@ -225,6 +225,10 @@ impl App {
         let Some(state) = groups.get(&picked.endpoint).copied() else {
             return false;
         };
+        if state.setup() && self.window.sign_in(self, &picked.endpoint) {
+            self.cancel_model_edit();
+            return true;
+        }
         if state.setup() || state == State::KeyRejected {
             self.begin_auth(Some(&picked.endpoint));
             self.auth

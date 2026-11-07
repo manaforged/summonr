@@ -1,11 +1,11 @@
-use std::rc::Rc;
-
-use sigil::prelude::{LayoutStyle, ListRowSlots, NodeBuilder, Widget, container, list_row};
+use sigil::geometry::{Point, Rect};
+use sigil::prelude::{LayoutStyle, NodeBuilder, Role, Widget};
+use sigil::scene::{DrawRect, SceneBuilder};
 use summonr_agent::endpoint::{Friend, friends};
-use summonr_agent::hub::Open;
+use summonr_agent::recent::ModelId;
 
 use super::App;
-use super::style::{Text, mark, text};
+use super::style::mark;
 use summonr_agent::hub::Status;
 
 /// What this machine says about a friend.
@@ -51,23 +51,31 @@ pub(super) fn refresh(app: &App) {
     }));
 }
 
-/// Opens a chat on `friend`, after asking it whether it is signed in now.
+/// Moves this chat to `friend`, after asking it whether it is signed in now.
 pub(super) fn launch(app: &App, friend: Friend) {
+    let owner = app.window.owner;
     let app = app.clone();
-    let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
-    sigil::tasks::on_message(inbox, move |seen| start(&app, seen), || {});
-    drop(sigil::tasks::spawn(async move {
-        drop(out.send(check(friend).await));
-        Ok::<(), std::convert::Infallible>(())
-    }));
+    let ask = move || {
+        let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
+        sigil::tasks::on_message(inbox, move |seen| start(&app, seen), || {});
+        drop(sigil::tasks::spawn(async move {
+            drop(out.send(check(friend).await));
+            Ok::<(), std::convert::Infallible>(())
+        }));
+    };
+    match owner {
+        Some(owner) => owner.with(ask),
+        None => ask(),
+    }
 }
 
-/// Acts on what `seen` says: a chat when signed in, otherwise the step that gets there.
+/// Acts on what `seen` says: the model when signed in, otherwise the step that gets there.
 pub(super) fn start(app: &App, seen: Seen) {
     match seen.state {
-        State::SignedIn => {
-            super::split::show(app, Open::Agent(seen.friend.route.to_owned()));
-        }
+        State::SignedIn => app.send_model(
+            None,
+            ModelId::new(seen.friend.route.to_owned(), seen.friend.model.to_owned()),
+        ),
         State::SignedOut => sign_in(app, seen.friend),
         State::Missing => app.settings_open.set(true),
     }
@@ -85,38 +93,56 @@ pub(super) fn install(app: &App, friend: Friend) {
     app.open_terminal(friend.name, Some(friend.install));
 }
 
-/// The sidebar row of each installed friend.
-pub(super) fn rows(app: &App) -> NodeBuilder {
-    let app = app.clone();
-    container()
-        .layout(LayoutStyle::block().fill_width())
-        .children_reactive(move || {
-            app.window
-                .friends
-                .get()
-                .iter()
-                .filter(|seen| seen.state != State::Missing)
-                .map(|seen| row(&app, seen.friend))
-                .collect::<Vec<_>>()
-        })
-}
-
-fn row(app: &App, friend: Friend) -> NodeBuilder {
-    let app = app.clone();
-    list_row(
-        false,
-        format!("New {}", friend.name),
-        ListRowSlots {
-            leading: Some(Box::new(glyph(friend))),
-            activate: Some(Rc::new(move || launch(&app, friend))),
-            ..ListRowSlots::default()
-        },
-    )
-}
-
-/// The friend's mark in the status slot of a row.
+/// The friend's icon in the status slot of a row.
 pub(super) fn glyph(friend: Friend) -> NodeBuilder {
-    sigil::widgets::tooltip(friend.name)
-        .child(mark(Status::Idle).child(text(Text::Meta, friend.mark)))
-        .into()
+    let icon = mark(Status::Idle)
+        .role(Role::Image)
+        .label(friend.name)
+        .child(
+            sigil::widgets::canvas(move |scene, area| draw(friend, scene, area))
+                .layout(LayoutStyle::block().fill()),
+        );
+    sigil::widgets::tooltip(friend.name).child(icon).into()
+}
+
+const fn quadrants(glyph: char) -> [bool; 4] {
+    match glyph {
+        '▘' => [true, false, false, false],
+        '▝' => [false, true, false, false],
+        '▖' => [false, false, true, false],
+        '▗' => [false, false, false, true],
+        '▀' => [true, true, false, false],
+        '▄' => [false, false, true, true],
+        '▌' => [true, false, true, false],
+        '▐' => [false, true, false, true],
+        '▛' => [true, true, true, false],
+        '▜' => [true, true, false, true],
+        '▙' => [true, false, true, true],
+        '▟' => [false, true, true, true],
+        '█' => [true; 4],
+        _ => [false; 4],
+    }
+}
+
+fn draw(friend: Friend, scene: &mut SceneBuilder, area: Rect) {
+    let columns = friend.mark.iter().map(|row| row.chars().count()).max();
+    let columns = columns.unwrap_or(1).max(1) as f32;
+    let wide = area.width / (columns * 2.0);
+    let tall = wide * 2.0;
+    let height = friend.mark.len() as f32 * tall * 2.0;
+    let top = area.origin.y + (area.height - height) / 2.0;
+    let [red, green, blue] = friend.color;
+    let color = crate::canvas::rgb(red, green, blue);
+    for (y, row) in friend.mark.iter().enumerate() {
+        for (x, glyph) in row.chars().enumerate() {
+            for (at, on) in quadrants(glyph).into_iter().enumerate() {
+                if on {
+                    let left = (x * 2 + at % 2) as f32 * wide;
+                    let down = (y * 2 + at / 2) as f32 * tall;
+                    let origin = Point::new(area.origin.x + left, top + down);
+                    scene.draw_rect(DrawRect::new(Rect::new(origin, wide, tall), color));
+                }
+            }
+        }
+    }
 }

@@ -51,6 +51,7 @@ pub(crate) struct Window {
     pub(crate) sidebar: Signal<bool>,
     pub(crate) local: Signal<Vec<summonr_agent::endpoint::Local>>,
     pub(crate) friends: Signal<Vec<super::friends::Seen>>,
+    pub(crate) owner: Option<sigil::reactive::Owner>,
 }
 
 impl Window {
@@ -62,7 +63,15 @@ impl Window {
             sidebar: signal(true),
             local: signal(Vec::new()),
             friends: signal(Vec::new()),
+            owner: sigil::reactive::Owner::current(),
         }
+    }
+
+    /// Runs the friend's own sign-in for `route`; false when `route` has no friend.
+    pub(crate) fn sign_in(&self, app: &App, route: &str) -> bool {
+        let friend = summonr_agent::endpoint::Friend::of(route);
+        friend.inspect(|friend| super::friends::sign_in(app, *friend));
+        friend.is_some()
     }
 
     pub(crate) fn palette(&self) -> bool {

@@ -1,7 +1,9 @@
 use sigil::prelude::{ControlSize, NodeBuilder, Signal, Widget, button};
 use sigil::widgets::{MenuItem, menu};
 
+use super::super::friends::{Seen, State};
 use super::App;
+use summonr_agent::endpoint::Friend;
 use summonr_agent::recent::ModelId;
 
 const ROWS_MAX: usize = 8;
@@ -12,9 +14,10 @@ pub(super) fn chip(app: &App, open: Signal<bool>) -> NodeBuilder {
     let model = app.model;
     button(move || {
         let snapshot = &model.get().snapshot;
+        let name = title(&snapshot.endpoint, &snapshot.model);
         match snapshot.effort.filter(|_| !snapshot.levels.is_empty()) {
-            Some(effort) => format!("{} · {}", snapshot.model, effort.label()),
-            None => snapshot.model.clone(),
+            Some(effort) => format!("{name} · {}", effort.label()),
+            None => name,
         }
     })
     .ghost()
@@ -36,14 +39,10 @@ pub(super) fn panel(app: &App, open: Signal<bool>) -> Option<NodeBuilder> {
         .map(|home| summonr_agent::recent::pinned(&home))
         .unwrap_or_default();
     let mut menu = menu(open).label("Model").width(super::super::style::MENU);
-    for (endpoint, rows) in groups(&current, &pinned) {
+    let friends = app.window.friends.get();
+    for (endpoint, rows) in groups(&current, &pinned, &friends) {
         for row in rows {
-            let pick = app.clone();
-            menu = menu.item(
-                MenuItem::new(row.model.clone())
-                    .shortcut(account(&endpoint))
-                    .activate(move || pick.send_model(None, row.clone())),
-            );
+            menu = menu.item(item(app, &endpoint, row));
         }
     }
     menu = menu.separator();
@@ -70,17 +69,42 @@ pub(super) fn panel(app: &App, open: Signal<bool>) -> Option<NodeBuilder> {
     )
 }
 
+fn item(app: &App, endpoint: &str, row: ModelId) -> MenuItem {
+    let pick = app.clone();
+    let name = title(endpoint, &row.model);
+    let Some(friend) = Friend::of(endpoint) else {
+        return MenuItem::new(name)
+            .shortcut(account(endpoint))
+            .activate(move || pick.send_model(None, row.clone()));
+    };
+    MenuItem::new(name).activate(move || super::super::friends::launch(&pick, friend))
+}
+
+fn title(endpoint: &str, model: &str) -> String {
+    Friend::of(endpoint)
+        .filter(|friend| friend.model == model)
+        .map_or_else(|| model.to_owned(), |friend| friend.name.to_owned())
+}
+
 fn home() -> Option<std::path::PathBuf> {
     summonr_core::dirs::summonr_home().ok()
 }
 
-fn groups(current: &ModelId, pinned: &[ModelId]) -> Vec<(String, Vec<ModelId>)> {
+fn groups(current: &ModelId, pinned: &[ModelId], friends: &[Seen]) -> Vec<(String, Vec<ModelId>)> {
     let recent = home()
         .map(|home| summonr_agent::recent::load(&home))
         .unwrap_or_default();
     let mut seen: Vec<ModelId> = Vec::new();
     for row in std::iter::once(current.clone())
         .chain(pinned.iter().cloned())
+        .chain(
+            friends
+                .iter()
+                .filter(|seen| seen.state != State::Missing)
+                .map(|seen| {
+                    ModelId::new(seen.friend.route.to_owned(), seen.friend.model.to_owned())
+                }),
+        )
         .chain(recent)
     {
         if !row.model.is_empty() && !seen.contains(&row) && seen.len() < ROWS_MAX {

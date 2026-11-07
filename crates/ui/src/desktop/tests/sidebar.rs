@@ -74,8 +74,40 @@ fn a_chat_run_by_another_agent_shows_only_its_mark() {
         Vec::new(),
         |_| (),
     );
-    let marks = seen.texts.iter().filter(|text| *text == "C").count();
-    assert_eq!(marks, 1, "{}", seen.text());
+    let marks = seen.named(sigil::prelude::Role::Image, "Claude Code");
+    assert_eq!(marks.len(), 1, "{:?}", seen.controls);
+}
+
+#[test]
+fn another_agents_chat_keeps_its_icon_and_says_it_is_working() {
+    if !in_window("sidebar::another_agents_chat_keeps_its_icon_and_says_it_is_working") {
+        return;
+    }
+    let id = "01a1000000000000000000000000cccc";
+    let seen = drive(
+        |app| {
+            app.window.sidebar.set(true);
+            let mut friend = chat(id, "Ask Claude", Duration::from_secs(60));
+            friend.0.agent = Some("claude".to_owned());
+            app.update(Msg::Fact(Fact::Sessions(Ok(vec![friend]))));
+            app.update(Msg::Fact(Fact::Live(vec![summonr_agent::hub::Live {
+                session: id.to_owned(),
+                title: "Ask Claude".to_owned(),
+                workspace: "/work".into(),
+                status: summonr_agent::hub::Status::Working,
+                active: false,
+            }])));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert_eq!(
+        seen.named(sigil::prelude::Role::Image, "Claude Code").len(),
+        1,
+        "{:?}",
+        seen.controls
+    );
+    assert!(seen.shows(|text| text == "working"), "{}", seen.text());
 }
 
 #[test]

@@ -2,7 +2,7 @@ use super::super::friends::{Seen, State};
 use super::harness::{Step, graded, settings, steps};
 use super::in_window;
 use summonr_agent::endpoint::{Friend, Local};
-use summonr_agent::hub::{Cmd, Open, Snapshot};
+use summonr_agent::hub::{Cmd, Snapshot};
 
 fn claude() -> Local {
     Local {
@@ -67,11 +67,11 @@ fn claude_friend(app: &super::super::App, state: State) {
 }
 
 #[test]
-fn a_signed_in_friend_opens_a_chat_on_its_route() {
-    if !in_window("setup::a_signed_in_friend_opens_a_chat_on_its_route") {
+fn picking_a_signed_in_friend_moves_the_chat_to_its_route() {
+    if !in_window("setup::picking_a_signed_in_friend_moves_the_chat_to_its_route") {
         return;
     }
-    let seen_run = steps(
+    let moved = steps(
         |app| {
             claude_friend(app, State::SignedIn);
             super::super::friends::start(app, seen(State::SignedIn));
@@ -79,16 +79,39 @@ fn a_signed_in_friend_opens_a_chat_on_its_route() {
         Vec::new(),
         |_| (),
     );
-    assert!(
-        seen_run
-            .sent
-            .iter()
-            .any(|cmd| matches!(cmd, Cmd::Open(Open::Agent(route)) if route == "claude")),
+    let picked: Vec<_> = moved
+        .sent
+        .iter()
+        .filter_map(|cmd| match cmd {
+            Cmd::SelectModel(endpoint, model) => Some((endpoint.clone(), model.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(picked, vec![("claude".to_owned(), "default".to_owned())]);
+}
+
+#[test]
+fn the_model_list_offers_an_installed_friend_and_no_sidebar_row() {
+    if !in_window("setup::the_model_list_offers_an_installed_friend_and_no_sidebar_row") {
+        return;
+    }
+    let shown = steps(
+        |app| claude_friend(app, State::SignedOut),
+        vec![Step::Click("Model")],
+        |_| (),
+    );
+    assert_eq!(
+        shown
+            .named(sigil::prelude::Role::MenuItem, "Claude Code")
+            .len(),
+        1,
+        "{:?}",
+        shown.controls
     );
     assert!(
-        seen_run.shows(|text| text == "New Claude Code"),
+        !shown.shows(|text| text == "New Claude Code"),
         "{}",
-        seen_run.text()
+        shown.text()
     );
 }
 
@@ -144,15 +167,49 @@ fn settings_signs_in_to_a_friend_through_its_own_terminal() {
 }
 
 #[test]
-fn a_missing_friend_has_no_sidebar_row() {
-    if !in_window("setup::a_missing_friend_has_no_sidebar_row") {
+fn clicking_a_friend_in_the_model_menu_acts_after_the_menu_closes() {
+    if !in_window("setup::clicking_a_friend_in_the_model_menu_acts_after_the_menu_closes") {
         return;
     }
-    let shown = steps(|app| claude_friend(app, State::Missing), Vec::new(), |_| ());
+    let runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
+    runtime.install_current();
+    let runtime = std::cell::RefCell::new(runtime);
+    let shown = steps(
+        |app| claude_friend(app, State::SignedOut),
+        vec![Step::Click("Model"), Step::Click("Claude Code")],
+        |app| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            let acted = || app.settings_open.peek() || !app.window.terminals.list.peek().is_empty();
+            while !acted() && std::time::Instant::now() < deadline {
+                runtime.borrow_mut().pump();
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            acted()
+        },
+    );
+    let moved = shown
+        .sent
+        .iter()
+        .any(|cmd| matches!(cmd, Cmd::SelectModel(endpoint, _) if endpoint == "claude"));
+    assert!(shown.read || moved, "{}", shown.text());
+}
+
+#[test]
+fn a_missing_friend_is_not_in_the_model_list() {
+    if !in_window("setup::a_missing_friend_is_not_in_the_model_list") {
+        return;
+    }
+    let shown = steps(
+        |app| claude_friend(app, State::Missing),
+        vec![Step::Click("Model")],
+        |_| (),
+    );
     assert!(
-        !shown.shows(|text| text == "New Claude Code"),
-        "{}",
-        shown.text()
+        shown
+            .named(sigil::prelude::Role::MenuItem, "Claude Code")
+            .is_empty(),
+        "{:?}",
+        shown.controls
     );
 }
 

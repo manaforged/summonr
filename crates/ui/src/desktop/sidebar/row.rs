@@ -61,13 +61,17 @@ pub(super) fn agent_row(
     let menu = (app.clone(), info.clone());
     let status = state.unwrap_or(Status::Idle);
     let needs = status == Status::NeedsYou;
+    let friend = info.agent.as_deref().and_then(Friend::of);
+    let word = friend.and_then(|_| friend_word(status));
     let meta = if needs { None } else { info.modified.map(ago) };
+    let meta = word.map(|(word, _)| word.to_owned()).or(meta);
     let row = list_row(
         selected,
         title(info),
         ListRowSlots {
-            leading: Some(Box::new(leading(info, status))),
+            leading: Some(Box::new(leading(friend, status))),
             status: meta.map(Into::into),
+            status_tone: word.map(|(_, tone)| tone),
             badge: needs.then(|| (NEEDS_YOU.into(), Tone::Warn)),
             activate: Some(Rc::new(move || {
                 super::super::split::show(&open, Open::Resume(id.clone()))
@@ -80,11 +84,16 @@ pub(super) fn agent_row(
     })
 }
 
-fn leading(info: &SessionInfo, status: Status) -> NodeBuilder {
-    let friend = info.agent.as_deref().and_then(Friend::of);
-    match friend.filter(|_| status == Status::Idle) {
-        Some(friend) => super::super::friends::glyph(friend),
-        None => mark(status),
+fn leading(friend: Option<Friend>, status: Status) -> NodeBuilder {
+    friend.map_or_else(|| mark(status), super::super::friends::glyph)
+}
+
+const fn friend_word(status: Status) -> Option<(&'static str, Tone)> {
+    match status {
+        Status::Working => Some(("working", Tone::Neutral)),
+        Status::Review => Some(("new", Tone::Info)),
+        Status::Failed => Some(("failed", Tone::Error)),
+        Status::NeedsYou | Status::Idle => None,
     }
 }
 

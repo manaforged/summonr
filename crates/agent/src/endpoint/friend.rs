@@ -9,8 +9,10 @@ pub struct Friend {
     pub name: &'static str,
     /// The model the route starts on.
     pub model: &'static str,
-    /// The short mark its chats show.
-    pub mark: &'static str,
+    /// The icon its chats show, as rows of block characters.
+    pub mark: &'static [String],
+    /// The icon's color as red, green and blue.
+    pub color: [u8; 3],
     /// The command that signs in through the agent's own flow.
     pub login: &'static str,
     /// The vendor's install command for this platform.
@@ -52,6 +54,7 @@ pub fn friends() -> impl Iterator<Item = Friend> {
             name: &found.name,
             model: &row.model,
             mark: &agent.mark,
+            color: agent.color,
             login: &agent.login,
             install: if cfg!(windows) {
                 &agent.install_windows

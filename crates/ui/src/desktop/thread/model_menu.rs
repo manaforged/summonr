@@ -6,7 +6,7 @@ use super::App;
 use summonr_agent::endpoint::Friend;
 use summonr_agent::recent::ModelId;
 
-const ROWS_MAX: usize = 8;
+const ROWS_MAX: usize = 10;
 const CURRENT: &str = "✓";
 
 /// The model chip, with its effort when the model has levels; it opens the menu above the composer.
@@ -77,13 +77,19 @@ fn item(app: &App, endpoint: &str, row: ModelId) -> MenuItem {
             .shortcut(account(endpoint))
             .activate(move || pick.send_model(None, row.clone()));
     };
-    MenuItem::new(name).activate(move || super::super::friends::launch(&pick, friend))
+    MenuItem::new(name)
+        .shortcut(friend.provider)
+        .activate(move || super::super::friends::launch(&pick, friend, row.model.clone()))
 }
 
 fn title(endpoint: &str, model: &str) -> String {
     Friend::of(endpoint)
         .filter(|friend| friend.model == model)
         .map_or_else(|| model.to_owned(), |friend| friend.name.to_owned())
+}
+
+fn placeholder(row: &ModelId) -> bool {
+    Friend::of(&row.endpoint).is_some_and(|friend| friend.model == row.model)
 }
 
 fn home() -> Option<std::path::PathBuf> {
@@ -101,13 +107,21 @@ fn groups(current: &ModelId, pinned: &[ModelId], friends: &[Seen]) -> Vec<(Strin
             friends
                 .iter()
                 .filter(|seen| seen.state != State::Missing)
-                .map(|seen| {
-                    ModelId::new(seen.friend.route.to_owned(), seen.friend.model.to_owned())
+                .flat_map(|seen| {
+                    let route = seen.friend.route;
+                    seen.friend
+                        .models()
+                        .into_iter()
+                        .map(|model| ModelId::new(route.to_owned(), model))
                 }),
         )
         .chain(recent)
     {
-        if !row.model.is_empty() && !seen.contains(&row) && seen.len() < ROWS_MAX {
+        if !row.model.is_empty()
+            && !placeholder(&row)
+            && !seen.contains(&row)
+            && seen.len() < ROWS_MAX
+        {
             seen.push(row);
         }
     }

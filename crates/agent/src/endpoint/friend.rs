@@ -9,6 +9,8 @@ pub struct Friend {
     pub name: &'static str,
     /// The model the route starts on.
     pub model: &'static str,
+    /// Who makes its models, such as "anthropic".
+    pub provider: &'static str,
     /// The icon its chats show, as rows of block characters.
     pub mark: &'static [String],
     /// The icon's color as red, green and blue.
@@ -24,6 +26,22 @@ impl Friend {
     #[must_use]
     pub fn of(route: &str) -> Option<Self> {
         friends().find(|friend| friend.route == route)
+    }
+
+    /// The models it can run: those it announced, else the provider's current ones.
+    #[must_use]
+    pub fn models(&self) -> Vec<String> {
+        if let Some(listing) = crate::catalog::listing(self.route) {
+            return listing.models.into_iter().map(|model| model.id).collect();
+        }
+        let offered = crate::catalog::offered(self.route, crate::catalog::Cost::Plan);
+        let rows: Vec<_> = offered.iter().map(|model| (self.route, model)).collect();
+        crate::catalog::current(&rows)
+            .into_iter()
+            .zip(&offered)
+            .filter(|(current, _)| *current)
+            .map(|(_, model)| model.id.clone())
+            .collect()
     }
 
     /// Whether its program is on this machine.
@@ -53,6 +71,7 @@ pub fn friends() -> impl Iterator<Item = Friend> {
             route: &row.name,
             name: &found.name,
             model: &row.model,
+            provider: &row.provider,
             mark: &agent.mark,
             color: agent.color,
             login: &agent.login,

@@ -51,13 +51,13 @@ pub(super) fn refresh(app: &App) {
     }));
 }
 
-/// Moves this chat to `friend`, after asking it whether it is signed in now.
-pub(super) fn launch(app: &App, friend: Friend) {
+/// Moves this chat to `model` on `friend`, after asking it whether it is signed in now.
+pub(super) fn launch(app: &App, friend: Friend, model: String) {
     let owner = app.window.owner;
     let app = app.clone();
     let ask = move || {
         let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
-        sigil::tasks::on_message(inbox, move |seen| start(&app, seen), || {});
+        sigil::tasks::on_message(inbox, move |seen| start(&app, seen, model.clone()), || {});
         drop(sigil::tasks::spawn(async move {
             drop(out.send(check(friend).await));
             Ok::<(), std::convert::Infallible>(())
@@ -70,12 +70,9 @@ pub(super) fn launch(app: &App, friend: Friend) {
 }
 
 /// Acts on what `seen` says: the model when signed in, otherwise the step that gets there.
-pub(super) fn start(app: &App, seen: Seen) {
+pub(super) fn start(app: &App, seen: Seen, model: String) {
     match seen.state {
-        State::SignedIn => app.send_model(
-            None,
-            ModelId::new(seen.friend.route.to_owned(), seen.friend.model.to_owned()),
-        ),
+        State::SignedIn => app.send_model(None, ModelId::new(seen.friend.route.to_owned(), model)),
         State::SignedOut => sign_in(app, seen.friend),
         State::Missing => app.settings_open.set(true),
     }

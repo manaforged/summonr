@@ -61,6 +61,40 @@ fn seen(state: State) -> Seen {
     }
 }
 
+fn claude_model() -> &'static str {
+    let models = Friend::of("claude")
+        .expect("the Claude Code preset")
+        .models();
+    let first = models.first().expect("Claude models").clone();
+    assert!(first.starts_with("claude-"), "{first}");
+    Box::leak(first.into_boxed_str())
+}
+
+#[test]
+fn claude_code_is_listed_as_its_models_from_anthropic() {
+    if !in_window("setup::claude_code_is_listed_as_its_models_from_anthropic") {
+        return;
+    }
+    let shown = steps(
+        |app| claude_friend(app, State::SignedIn),
+        vec![Step::Click("Model")],
+        |_| (),
+    );
+    assert!(
+        shown.shows(|text| text == claude_model()),
+        "{}",
+        shown.text()
+    );
+    assert!(shown.shows(|text| text == "anthropic"), "{}", shown.text());
+    assert!(
+        shown
+            .named(sigil::prelude::Role::MenuItem, "Claude Code")
+            .is_empty(),
+        "{:?}",
+        shown.controls
+    );
+}
+
 fn claude_friend(app: &super::super::App, state: State) {
     app.window.sidebar.set(true);
     app.window.friends.set(vec![seen(state)]);
@@ -74,7 +108,7 @@ fn picking_a_signed_in_friend_moves_the_chat_to_its_route() {
     let moved = steps(
         |app| {
             claude_friend(app, State::SignedIn);
-            super::super::friends::start(app, seen(State::SignedIn));
+            super::super::friends::start(app, seen(State::SignedIn), claude_model().to_owned());
         },
         Vec::new(),
         |_| (),
@@ -87,7 +121,10 @@ fn picking_a_signed_in_friend_moves_the_chat_to_its_route() {
             _ => None,
         })
         .collect();
-    assert_eq!(picked, vec![("claude".to_owned(), "default".to_owned())]);
+    assert_eq!(
+        picked,
+        vec![("claude".to_owned(), claude_model().to_owned())]
+    );
 }
 
 #[test]
@@ -102,7 +139,7 @@ fn the_model_list_offers_an_installed_friend_and_no_sidebar_row() {
     );
     assert_eq!(
         shown
-            .named(sigil::prelude::Role::MenuItem, "Claude Code")
+            .named(sigil::prelude::Role::MenuItem, claude_model())
             .len(),
         1,
         "{:?}",
@@ -126,7 +163,7 @@ fn a_signed_out_friend_opens_its_own_sign_in_in_a_terminal() {
         |app| claude_friend(app, State::SignedOut),
         Vec::new(),
         |app| {
-            super::super::friends::start(app, seen(State::SignedOut));
+            super::super::friends::start(app, seen(State::SignedOut), claude_model().to_owned());
             app.window
                 .terminals
                 .list
@@ -176,7 +213,7 @@ fn clicking_a_friend_in_the_model_menu_acts_after_the_menu_closes() {
     let runtime = std::cell::RefCell::new(runtime);
     let shown = steps(
         |app| claude_friend(app, State::SignedOut),
-        vec![Step::Click("Model"), Step::Click("Claude Code")],
+        vec![Step::Click("Model"), Step::Click(claude_model())],
         |app| {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
             let acted = || app.settings_open.peek() || !app.window.terminals.list.peek().is_empty();
@@ -206,7 +243,7 @@ fn a_missing_friend_is_not_in_the_model_list() {
     );
     assert!(
         shown
-            .named(sigil::prelude::Role::MenuItem, "Claude Code")
+            .named(sigil::prelude::Role::MenuItem, claude_model())
             .is_empty(),
         "{:?}",
         shown.controls

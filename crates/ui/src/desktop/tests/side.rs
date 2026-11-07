@@ -81,6 +81,7 @@ fn panel(name: &str, title: &str, every_secs: Option<u64>) -> summonr_agent::pan
         kind: summonr_agent::panel::Kind::Data,
         command: vec!["true".to_string()],
         every_secs,
+        root: None,
         problem: None,
     }
 }
@@ -223,4 +224,25 @@ fn a_repeating_panel_runs_again_and_stops_when_it_is_hidden() {
         run(vec![Step::Click("Build times"), Step::Click("Files")]),
         1
     );
+}
+
+#[test]
+fn a_terminal_panel_opens_its_program_in_a_terminal() {
+    if !in_window("side::a_terminal_panel_opens_its_program_in_a_terminal") {
+        return;
+    }
+    let _runtime = super::terminals::pumped();
+    let seen = steps(
+        |app| {
+            app.toggle_pane(Pane::Diff);
+            app.update(Msg::Fact(Fact::Panels(vec![summonr_agent::panel::Panel {
+                kind: summonr_agent::panel::Kind::Terminal,
+                ..panel("review", "Review", None)
+            }])));
+        },
+        vec![Step::Click("Review")],
+        |app| app.shown_terminal().is_some(),
+    );
+    assert!(seen.read, "{}", seen.text());
+    assert_eq!(panel_runs(&seen.sent, "review"), 0);
 }

@@ -42,6 +42,8 @@ pub struct Panel {
     pub command: Vec<String>,
     /// How often the open panel runs again, if at all.
     pub every_secs: Option<u64>,
+    /// The plugin directory that a relative program sits under.
+    pub root: Option<PathBuf>,
     /// Why the file could not be read.
     pub problem: Option<String>,
 }
@@ -183,11 +185,14 @@ impl Content {
 #[must_use]
 pub fn list(workspace: &Path, trust: bool) -> Vec<Panel> {
     let mut found = BTreeMap::new();
+    for plugin in crate::plugins::enabled() {
+        read_dir(&plugin.dir.join("panels"), Some(&plugin.dir), &mut found);
+    }
     if let Ok(home) = summonr_core::dirs::summonr_home() {
-        read_dir(&home.join("panels"), &mut found);
+        read_dir(&home.join("panels"), None, &mut found);
     }
     if trust {
-        read_dir(&workspace.join(".summonr").join("panels"), &mut found);
+        read_dir(&workspace.join(".summonr").join("panels"), None, &mut found);
     }
     found
         .into_values()
@@ -195,7 +200,7 @@ pub fn list(workspace: &Path, trust: bool) -> Vec<Panel> {
         .collect()
 }
 
-fn read_dir(dir: &Path, found: &mut BTreeMap<String, Panel>) {
+fn read_dir(dir: &Path, root: Option<&Path>, found: &mut BTreeMap<String, Panel>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -206,7 +211,8 @@ fn read_dir(dir: &Path, found: &mut BTreeMap<String, Panel>) {
             .is_some_and(|extension| extension == "toml")
             && let Some(panel) = read_file(&path)
         {
-            found.insert(panel.name.clone(), panel);
+            let root = root.map(Path::to_path_buf);
+            found.insert(panel.name.clone(), Panel { root, ..panel });
         }
     }
 }
@@ -220,6 +226,7 @@ fn read_file(path: &Path) -> Option<Panel> {
             kind: file.kind,
             command: file.command,
             every_secs: file.every_secs,
+            root: None,
             problem: None,
         },
         Err(problem) => Panel {
@@ -228,6 +235,7 @@ fn read_file(path: &Path) -> Option<Panel> {
             kind: Kind::Data,
             command: Vec::new(),
             every_secs: None,
+            root: None,
             problem: Some(problem),
         },
     })
@@ -247,13 +255,32 @@ fn parse_file(path: &Path) -> Result<File, String> {
     Ok(file)
 }
 
-fn program(word: &str, workspace: &Path) -> PathBuf {
+fn program(word: &str, base: &Path) -> PathBuf {
     let path = Path::new(word);
     if path.is_relative() && path.components().count() > 1 {
-        workspace.join(path)
+        base.join(path)
     } else {
         path.to_path_buf()
     }
+}
+
+/// The shell line that starts a terminal panel's program.
+#[must_use]
+pub fn shell_line(panel: &Panel, workspace: &Path) -> String {
+    let base = panel.root.as_deref().unwrap_or(workspace);
+    panel
+        .command
+        .iter()
+        .enumerate()
+        .map(|(index, word)| {
+            if index == 0 {
+                summonr_core::shell::quote(&program(word, base).to_string_lossy())
+            } else {
+                summonr_core::shell::quote(word)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Runs a data panel's command in the workspace and reads what it printed.
@@ -268,7 +295,10 @@ pub async fn run(panel: &Panel, workspace: &Path) -> Result<Content, String> {
     let spec = Spec {
         cwd: Some(workspace.to_path_buf()),
         base: Env::Clean,
-        ..Spec::new(program(word, workspace), args)
+        ..Spec::new(
+            program(word, panel.root.as_deref().unwrap_or(workspace)),
+            args,
+        )
     };
     let process = crate::process::start(spec).map_err(|error| format!("did not start: {error}"))?;
     let limits = crate::limits::limits();

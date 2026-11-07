@@ -51,6 +51,12 @@ Set `pre_tool`, `post_tool`, `compact`, or `stop` under `[hooks]` in `~/.summonr
 
 Put the binary on `PATH` or under `~/.summonr/bin/<name>/`. The model runs it with `run_command`. Policy and the danger prompt still apply. summonr doesn't put a workspace `.summonr/bin` on `PATH` until you approve it, the same way as `.mcp.json`.
 
+## Add a panel
+
+A panel is a tab in the desktop app's right panel, drawn with the app's own widgets. Write `panels/NAME.toml` under `.summonr` in the workspace, or under `~/.summonr` for every workspace. A plugin can ship the same files in its `panels` directory. `summonr panel --help` has the file format and every view: chart, stat, table and text.
+
+The command runs only while its tab is open, in the workspace, with the same environment as a hook. With `--no-trust`, workspace panels are ignored. A project's panel runs a command from that repository when you open its tab, so treat the tab like running a script from the repository.
+
 ## Install a plugin
 
 A plugin is a directory in the Claude Code plugin layout. `summonr plugin install PATH` copies it to `~/.summonr/plugins/<name>/`; the name comes from `.claude-plugin/plugin.json`, or from the directory name. Copying does not run anything inside summonr. After the copy, install connects to each MCP server the plugin adds. Restart summonr to load the plugin.

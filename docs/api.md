@@ -21,6 +21,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr session profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS (shared pages excluded, so lower than RSS) and the peak resident set on Linux |
 | `summonr session diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
 | `summonr worktree list [--json]`, `summonr worktree prune [--json]` | List session worktrees, or drop records of missing directories and print the removed paths |
+| `summonr panel list`, `summonr panel check NAME` | List custom panels, or run one and report what the app cannot draw; exit 1 on a mistake |
 | `summonr endpoint list [--all] [--check]` | List the endpoints that are set up and their key source, offline; `--all` adds the rest, `--check` asks each for its models |
 | `summonr login [NAME] [--key]`, `summonr logout NAME` | List, store, or forget keys and subscription sign-ins |
 | `summonr endpoint add NAME --url URL [--model M]`, `summonr endpoint remove NAME` | Add or update your own OpenAI-compatible server, or remove it |

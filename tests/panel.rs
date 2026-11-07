@@ -112,3 +112,59 @@ fn a_broken_panel_file_is_listed_and_check_names_the_problem() {
     assert_ne!(code, 0, "{text}");
     assert!(text.contains("titel"), "{text}");
 }
+
+#[test]
+fn help_teaches_the_file_and_every_view() {
+    let home = tempfile::tempdir().expect("home");
+    let (code, text) = panel(home.path(), &[], &["--help"]);
+    assert_eq!(code, 0, "{text}");
+    for wanted in [
+        "every_secs",
+        "\"chart\"",
+        "\"stat\"",
+        "\"table\"",
+        "\"text\"",
+        "panel check",
+    ] {
+        assert!(text.contains(wanted), "{wanted}: {text}");
+    }
+}
+
+#[test]
+fn a_plugin_panel_runs_a_program_from_the_plugin() {
+    let home = tempfile::tempdir().expect("home");
+    let source = home.path().join("source");
+    let panels = source.join("panels");
+    let bin = source.join("bin");
+    std::fs::create_dir_all(&panels).expect("panels");
+    std::fs::create_dir_all(&bin).expect("bin");
+    let script = bin.join("show");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nprintf '{\"view\":\"text\",\"text\":\"hi\"}'\n",
+    )
+    .expect("script");
+    let mode = std::os::unix::fs::PermissionsExt::from_mode(0o755);
+    std::fs::set_permissions(&script, mode).expect("mode");
+    std::fs::write(
+        panels.join("from-plugin.toml"),
+        "command = [\"bin/show\"]\n",
+    )
+    .expect("file");
+    let state = home.path().join("state");
+    let installed = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["plugin", "install"])
+        .arg(&source)
+        .current_dir(home.path())
+        .env_clear()
+        .env("HOME", home.path())
+        .env("SUMMONR_HOME", &state)
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .stdin(Stdio::null())
+        .output()
+        .expect("install");
+    assert!(installed.status.success(), "{installed:?}");
+    let (code, text) = panel(home.path(), &[], &["check", "from-plugin"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("draws text"), "{text}");
+}

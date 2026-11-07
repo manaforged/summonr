@@ -4,7 +4,7 @@ use sigil::prelude::{
 };
 use sigil::reactive::on_cleanup;
 use summonr_agent::hub::Cmd;
-use summonr_agent::panel::{Content, Mood, Plot, Series, Stat};
+use summonr_agent::panel::{Content, Kind, Mood, Panel, Plot, Series, Stat};
 
 use super::style::{DANGER, L, M, S, Text, XS, text};
 use super::{App, Pane};
@@ -37,16 +37,22 @@ pub(super) fn tabs(app: &App, pane: Pane) -> NodeBuilder {
                     let current =
                         pane == Pane::Custom && shown.as_deref() == Some(panel.name.as_str());
                     let open = app.clone();
-                    let tab = button(panel.title)
+                    let tab = button(panel.title.clone())
                         .size(ControlSize::Compact)
-                        .activate(move || show(&open, &panel.name));
+                        .activate(move || show(&open, &panel));
                     NodeBuilder::from(if current { tab.soft() } else { tab.ghost() })
                 })
                 .collect::<Vec<_>>()
         })
 }
 
-fn show(app: &App, name: &str) {
+fn show(app: &App, panel: &Panel) {
+    if panel.kind == Kind::Terminal && panel.problem.is_none() {
+        let line = summonr_agent::panel::shell_line(panel, &app.workspace());
+        app.open_terminal(super::terminal::NEW_TERMINAL, Some(&line));
+        return;
+    }
+    let name = panel.name.as_str();
     if app.panels.shown.peek().as_deref() != Some(name) {
         app.panels.content.set(None);
         app.panels.shown.set(Some(name.to_string()));

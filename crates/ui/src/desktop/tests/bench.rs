@@ -288,7 +288,7 @@ fn bench_paint_frames() {
     use sigil::renderer::capture::{ImageRenderer, ImageTarget, render_to_image};
     crate::desktop::host::window_cells();
     let viewport = (1728.0, 1117.0);
-    let mut runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
+    let runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
     runtime.install_current();
     sigil::reactive::Owner::scope("summonr-bench", || {
         let workspace = tempfile::tempdir().expect("workspace");

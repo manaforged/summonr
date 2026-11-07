@@ -439,3 +439,41 @@ fn throw_away_removes_uncommitted_and_unmerged_work() {
     assert!(!tree.path.exists());
     assert!(!primary.join("kept.txt").exists());
 }
+
+#[test]
+fn the_primary_checkout_on_a_summonr_branch_is_not_a_worktree() {
+    let (_root, primary) = repo();
+    let primary = primary.canonicalize().unwrap();
+    git(&primary, &["checkout", "-q", "-b", "summonr/primary"]);
+    let tree = super::add(&primary).unwrap();
+    assert_ne!(tree.path, primary);
+    let listed: Vec<_> = super::list(&primary)
+        .unwrap()
+        .into_iter()
+        .map(|tree| tree.path)
+        .collect();
+    assert_eq!(listed, vec![tree.path.clone()]);
+    drop(tree.remove());
+}
+
+#[test]
+fn a_conductor_workspace_is_a_linked_worktree_on_its_branch() {
+    let (root, primary) = repo();
+    let folder = root.path().join("conductor/workspaces/repo/tokyo");
+    std::fs::create_dir_all(folder.parent().unwrap()).unwrap();
+    let target = folder.to_str().unwrap();
+    git(
+        &primary,
+        &["worktree", "add", "-q", "-b", "tokyo-lights", target],
+    );
+    let folder = folder.canonicalize().unwrap();
+    for from in [&primary, &folder] {
+        let found: Vec<_> = super::linked(from)
+            .unwrap()
+            .into_iter()
+            .map(|tree| (tree.path, tree.branch))
+            .collect();
+        assert_eq!(found, vec![(folder.clone(), "tokyo-lights".to_owned())]);
+    }
+    assert!(super::list(&primary).unwrap().is_empty());
+}

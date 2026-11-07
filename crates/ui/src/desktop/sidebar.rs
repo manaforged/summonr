@@ -12,6 +12,7 @@ use super::style::{ICON, M, RECESSED, S, SCROLLBAR, Text, XS, text};
 use summonr_agent::hub::Cmd;
 use summonr_agent::hub::{Live, Open, Status};
 use summonr_agent::session::SessionInfo;
+use summonr_agent::worktree::Tree;
 
 pub(super) mod row;
 
@@ -162,11 +163,12 @@ fn chats(
     let shown = shown.get();
     let closed = shut.get();
     let terms = app.window.terminals.list.get();
-    let mut groups = projects(&app.workspace(), row::listed(app));
+    let trees = app.worktrees();
+    let mut groups = projects(&trees, &app.workspace(), row::listed(app));
     let open_folders = terms
         .iter()
         .map(|term| term.folder.clone())
-        .chain(live.iter().map(|entry| repo_folder(&entry.workspace)));
+        .chain(live.iter().map(|entry| repo_folder(&trees, &entry.workspace)));
     for folder in open_folders {
         if !groups.iter().any(|(seen, _)| *seen == folder) {
             groups.push((folder, Vec::new()));
@@ -188,43 +190,66 @@ fn chats(
             let selected = topic.threads.iter().any(|info| shown.contains(&info.id));
             nodes.extend(super::topic::row(app, &topic, selected, &live));
         }
+        nodes.extend(adopted(app, &trees, &folder));
     }
     nodes
+}
+
+/// A row for each worktree of `folder` that no agent has worked in yet.
+fn adopted(app: &App, trees: &[Tree], folder: &std::path::Path) -> Vec<NodeBuilder> {
+    let chats = app.sessions.all_chats();
+    let worked = |tree: &Tree| {
+        chats
+            .iter()
+            .any(|info| info.cwd.as_deref().map(std::path::Path::new) == Some(tree.path.as_path()))
+    };
+    trees
+        .iter()
+        .filter(|tree| tree.primary == folder && !worked(tree))
+        .map(|tree| super::topic::worktree_row(app, tree))
+        .collect()
 }
 
 /// Every repository an agent ran in, by name, without `here`.
 pub(super) fn folders(app: &App) -> Vec<std::path::PathBuf> {
     let here = app.workspace();
-    projects(&here, app.sessions.all_chats())
+    let trees = app.worktrees();
+    projects(&trees, &here, app.sessions.all_chats())
         .into_iter()
         .map(|(folder, _)| folder)
-        .filter(|folder| *folder != repo_folder(&here))
+        .filter(|folder| *folder != repo_folder(&trees, &here))
         .collect()
 }
 
 /// The folder an agent lists under: its repository's checkout when it works in a worktree.
-fn repo_folder(folder: impl AsRef<std::path::Path>) -> std::path::PathBuf {
+fn repo_folder(trees: &[Tree], folder: impl AsRef<std::path::Path>) -> std::path::PathBuf {
     let folder = folder.as_ref();
-    summonr_agent::worktree::checkout_of(folder).unwrap_or_else(|| folder.to_path_buf())
+    trees
+        .iter()
+        .find(|tree| tree.path == folder || tree.primary == folder)
+        .map(|tree| tree.primary.clone())
+        .or_else(|| summonr_agent::worktree::checkout_of(folder))
+        .unwrap_or_else(|| folder.to_path_buf())
 }
 
 fn projects(
+    trees: &[Tree],
     here: &std::path::Path,
     rows: Vec<SessionInfo>,
 ) -> Vec<(std::path::PathBuf, Vec<SessionInfo>)> {
     let mut groups: Vec<(std::path::PathBuf, Vec<SessionInfo>)> =
-        vec![(repo_folder(here), Vec::new())];
+        vec![(repo_folder(trees, here), Vec::new())];
     for info in rows {
         let folder = info
             .cwd
             .as_deref()
-            .map_or_else(|| here.to_path_buf(), repo_folder);
+            .map_or_else(|| here.to_path_buf(), |cwd| repo_folder(trees, cwd));
         match groups.iter_mut().find(|(seen, _)| *seen == folder) {
             Some((_, chats)) => chats.push(info),
             None => groups.push((folder, vec![info])),
         }
     }
-    let here = repo_folder(here);
+    let here = repo_folder(trees, here);
     groups.retain(|(folder, chats)| !chats.is_empty() || *folder == here);
     groups.sort_by_cached_key(|(folder, _)| folder_name(folder).to_lowercase());
     for (_, agents) in &mut groups {
@@ -341,7 +366,7 @@ pub(super) fn jump(app: &App, to: crate::view::keys::bindings::Jump) {
     let order: Vec<String> = super::shelf::pinned()
         .into_iter()
         .chain(
-            projects(&app.workspace(), row::listed(app))
+            projects(&app.worktrees(), &app.workspace(), row::listed(app))
                 .into_iter()
                 .flat_map(|(_, agents)| agents.into_iter().map(|info| info.id)),
         )

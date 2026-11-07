@@ -212,14 +212,22 @@ pub fn sweep(cwd: &Path) -> Result<Vec<PathBuf>> {
 }
 
 pub fn list(cwd: &Path) -> Result<Vec<Tree>> {
-    let (primary, text) = listing(cwd)?;
-    Ok(parse_list(&primary, &text)
+    Ok(linked(cwd)?
         .into_iter()
         .filter(|tree| worktree_id(&tree.branch).is_some())
         .map(|mut tree| {
-            tree.base = base::recorded(&primary, &tree.branch).unwrap_or_default();
+            tree.base = base::recorded(&tree.primary, &tree.branch).unwrap_or_default();
             tree
         })
+        .collect())
+}
+
+/// Every worktree of the repository at `cwd` on any branch, without its primary checkout.
+pub fn linked(cwd: &Path) -> Result<Vec<Tree>> {
+    let (primary, text) = listing(cwd)?;
+    Ok(parse_list(&primary, &text)
+        .into_iter()
+        .filter(|tree| tree.path != primary)
         .collect())
 }
 

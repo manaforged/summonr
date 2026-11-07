@@ -78,6 +78,8 @@ table! {
     verify_timeout_secs: u64,
     probe_secs: u64 => probe(secs),
     auth_secs: u64 => auth(secs),
+    gh_secs: u64 => gh(secs),
+    gh_poll_ms: u64 => gh_poll(millis),
     update_secs: u64 => update(secs),
     model_probe_secs: u64 => model_probe(secs),
     web_search_secs: u64 => web_search(secs),

@@ -37,7 +37,7 @@ impl App {
 
     fn new_agent_place(&self) -> summonr_agent::hub::Open {
         if crate::canvas::is_window() {
-            summonr_agent::hub::Open::Folder(self.workspace())
+            summonr_agent::hub::Open::Worktree(self.workspace())
         } else {
             summonr_agent::hub::Open::New
         }

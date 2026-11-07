@@ -112,3 +112,29 @@ pub(crate) fn a_failed_setup_stops_the_run_naming_the_script_and_its_code() {
         "the model was asked after setup failed"
     );
 }
+
+pub(crate) fn a_gitignored_env_file_reaches_a_new_worktree_before_setup_reads_it() {
+    let budget = slow(2).to_string();
+    let session = Session::new();
+    let work = session.work.path();
+    std::fs::write(work.join(".gitignore"), ".env.local\n").expect("write the ignore file");
+    conductor_setup(&session, "cat .env.local > seen.txt");
+    commit_all(work);
+    std::fs::write(work.join(".env.local"), "SECRET=from-root\n").expect("write the ignored file");
+    let model = Model::start(vec![]);
+    let flags = [
+        "--worktree",
+        "--goal",
+        "finish",
+        "--max-secs",
+        &budget,
+        "--json",
+    ];
+    let result = session.run(&model, "", &flags);
+    assert_eq!(result.code, Some(3), "{}", read(&session.file("stderr")));
+    let (ok, text) = session.cli(&["worktrees", "--json"]);
+    assert!(ok, "{text}");
+    let rows: Vec<Value> = serde_json::from_str(&text).expect("worktree JSON");
+    let path = Path::new(rows[0]["path"].as_str().expect("a worktree path"));
+    assert_eq!(read(&path.join("seen.txt")), "SECRET=from-root\n");
+}

@@ -155,10 +155,12 @@ fn setup(tree: &summonr_agent::Tree, json: bool) -> Result<()> {
     use summonr_agent::scripts::{Script, Scripts, Workspace};
 
     let scripts = Scripts::load(&tree.primary)?;
+    let workspace = Workspace::at(&tree.path)?;
+    scripts.copy_files(&workspace)?;
     let Some(script) = scripts.get(Script::Setup) else {
         return Ok(());
     };
-    let mut command = Workspace::at(&tree.path)?.command(script);
+    let mut command = scripts.command(&workspace, script);
     if json {
         command.stdout(std::io::stderr());
     }

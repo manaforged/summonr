@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::{Script, Scripts};
+use super::{Place, RunMode, Script, Scripts};
 
 fn write(root: &Path, file: impl AsRef<Path>, text: &str) {
     let path = root.join(file);
@@ -59,7 +59,7 @@ fn conductor_local_settings_override_shared_ones_key_by_key() {
     );
     assert_eq!(
         seen(root.path()),
-        [some("local"), None, some("shared archive")]
+        [some("local"), some("pnpm dev"), some("shared archive")]
     );
 }
 
@@ -81,4 +81,48 @@ fn a_broken_scripts_file_names_its_path() {
     write(root.path(), ".conductor/settings.toml", "[scripts\n");
     let error = Scripts::load(root.path()).unwrap_err().to_string();
     assert!(error.contains("settings.toml"), "{error}");
+}
+
+#[test]
+fn local_actions_layer_over_shared_ones_by_id_and_variables_by_place() {
+    let root = tempfile::tempdir().unwrap();
+    write(
+        root.path(),
+        ".conductor/settings.toml",
+        "[scripts]\nrun_mode = \"nonconcurrent\"\n\n[scripts.run.web]\ncommand = \"pnpm dev\"\n\n[scripts.run.api]\ncommand = \"pnpm api\"\ndefault = true\navailable_in = \"local\"\n\n[scripts.run.docs]\ncommand = \"pnpm docs\"\navailable_in = [\"cloud\"]\n\n[environment_variables]\nA = \"shared\"\nB = \"shared\"\n\n[environment_variables.local]\nB = \"local\"\n\n[environment_variables.cloud]\nB = \"cloud\"\n",
+    );
+    write(
+        root.path(),
+        ".conductor/settings.local.toml",
+        "[scripts.run.web]\nhide = true\n\n[environment_variables]\nC = \"mine\"\n",
+    );
+    let scripts = Scripts::load(root.path()).unwrap();
+    let rows: Vec<(String, bool, bool)> = scripts
+        .actions()
+        .map(|action| {
+            (
+                action.label(),
+                action.runs_in(Place::Local),
+                action.runs_in(Place::Cloud),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("Run api".to_string(), true, false),
+            ("Run docs".to_string(), false, true),
+        ]
+    );
+    assert_eq!(scripts.run_mode(), RunMode::Nonconcurrent);
+    let local = scripts.env(Place::Local);
+    assert_eq!(
+        local.into_iter().collect::<Vec<_>>(),
+        [
+            ("A".to_string(), "shared".to_string()),
+            ("B".to_string(), "local".to_string()),
+            ("C".to_string(), "mine".to_string()),
+        ]
+    );
+    assert_eq!(scripts.env(Place::Cloud)["B"], "cloud");
 }

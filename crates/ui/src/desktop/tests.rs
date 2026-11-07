@@ -38,6 +38,7 @@ mod usage;
 mod window_chrome;
 mod window_composer;
 mod window_focus;
+mod worktrees;
 
 const VIEW: (f32, f32) = (1200.0, 800.0);
 const WINDOW_RUN: &str = "SUMMONR_TEST_WINDOW";

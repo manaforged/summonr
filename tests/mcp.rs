@@ -148,6 +148,8 @@ fn main() {
         scripts::each_new_worktree_runs_setup_on_its_own_port_block,
         #[cfg(unix)]
         scripts::a_failed_setup_stops_the_run_naming_the_script_and_its_code,
+        #[cfg(unix)]
+        scripts::a_gitignored_env_file_reaches_a_new_worktree_before_setup_reads_it,
         session::a_plain_worktree_turn_lands_its_changes_without_running_a_check,
         session::a_failed_worktree_run_without_changes_says_so,
         session::a_goal_run_reports_the_judge_usage_once,

@@ -1,10 +1,8 @@
 use std::ffi::{OsStr, OsString};
-#[cfg(any(target_os = "macos", all(test, unix)))]
 use std::io::Read;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::{Output, Stdio};
-#[cfg(any(target_os = "macos", all(test, unix)))]
 use std::time::{Duration, Instant};
 
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
@@ -233,7 +231,6 @@ pub(crate) fn spawn_blocking(spec: Spec) -> Result<std::process::Child> {
         .map_err(|error| failed(&program, &error))
 }
 
-#[cfg(any(target_os = "macos", all(test, unix)))]
 #[derive(Debug, Clone, Copy)]
 pub struct Deadline {
     pub after: Duration,
@@ -244,7 +241,6 @@ pub fn output(spec: Spec, input: Option<&[u8]>) -> Result<Output> {
     Ok(fed(spec, input)?.wait_with_output()?)
 }
 
-#[cfg(any(target_os = "macos", all(test, unix)))]
 pub fn output_within(
     spec: Spec,
     input: Option<&[u8]>,
@@ -284,7 +280,6 @@ fn fed(mut spec: Spec, input: Option<&[u8]>) -> Result<std::process::Child> {
     Ok(child)
 }
 
-#[cfg(any(target_os = "macos", all(test, unix)))]
 fn drain(
     pipe: Option<impl Read + Send + 'static>,
     closed: std::sync::mpsc::Sender<()>,

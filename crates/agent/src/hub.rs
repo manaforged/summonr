@@ -33,9 +33,9 @@ pub struct View {
 pub enum Open {
     /// A new chat in the folder the window started in.
     New,
-    /// A new topic in this folder's repository, on its own worktree when another topic is there.
+    /// A new chat in this folder's own checkout.
     Folder(std::path::PathBuf),
-    /// A new chat on a new branch in a git worktree of this folder.
+    /// A new topic on a new `summonr/<id>` branch in a git worktree of this folder's repository.
     Worktree(std::path::PathBuf),
     /// An earlier chat, in the folder it recorded.
     Resume(String),

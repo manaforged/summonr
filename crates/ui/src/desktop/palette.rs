@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::rc::Rc;
 
 use sigil::icons::Icon;
 use sigil::prelude::{NodeBuilder, Signal, Widget, command_menu, container, modal, signal};
@@ -10,6 +11,7 @@ use summonr_agent::prefs::Action;
 use summonr_agent::scripts::Script;
 
 use super::style::DIALOG;
+use super::terminal::RunRow;
 
 const GUTTER: f32 = 48.0;
 
@@ -101,29 +103,12 @@ fn everything(app: &App, shown: Shown) -> NodeBuilder {
             })
             .detail(detail)
         });
-    let menu = app
-        .window
-        .terminals
-        .list
-        .get()
-        .iter()
-        .fold(menu, |menu, term| {
-            let (app, id) = (app.clone(), term.id);
-            let detail = format!("Terminal · {}", super::sidebar::folder_name(&term.folder));
-            menu.item(term.label(), move || {
-                open.set(false);
-                super::terminal::reveal(&app, id);
-            })
-            .detail(detail)
+    let menu = terminals(app, open)
+        .into_iter()
+        .chain(actions(app, open))
+        .fold(menu, |menu, (label, detail, act)| {
+            menu.item(label, move || act()).detail(detail)
         });
-    let menu = ROWS.iter().fold(menu, |menu, &(action, label, key, _)| {
-        let app = app.clone();
-        menu.item(label, move || {
-            open.set(false);
-            run(&app, action);
-        })
-        .detail(key)
-    });
     let menu = if all_pinned(app) {
         menu
     } else {
@@ -134,6 +119,54 @@ fn everything(app: &App, shown: Shown) -> NodeBuilder {
         .width(DIALOG)
         .into()
 }
+
+type Item = (String, String, Rc<dyn Fn()>);
+
+fn terminals(app: &App, open: Signal<bool>) -> Vec<Item> {
+    let list = app.window.terminals.list.get();
+    list.iter()
+        .map(|term| {
+            let (app, id) = (app.clone(), term.id);
+            let detail = format!("Terminal · {}", super::sidebar::folder_name(&term.folder));
+            let act: Rc<dyn Fn()> = Rc::new(move || {
+                open.set(false);
+                super::terminal::reveal(&app, id);
+            });
+            (term.label(), detail, act)
+        })
+        .collect()
+}
+
+fn actions(app: &App, open: Signal<bool>) -> Vec<Item> {
+    let runs = super::terminal::run_rows(&app.target().workspace());
+    let mut items: Vec<Item> = Vec::new();
+    for &(action, label, key, _) in &ROWS {
+        if action == Action::Run && !runs.is_empty() {
+            items.extend(runs.iter().map(|row| run_row(app, open, row)));
+            continue;
+        }
+        let app = app.clone();
+        let act = Rc::new(move || {
+            open.set(false);
+            run(&app, action);
+        });
+        items.push((label.to_owned(), key.to_owned(), act));
+    }
+    items
+}
+
+fn run_row(app: &App, open: Signal<bool>, row: &RunRow) -> Item {
+    let (app, id) = (app.clone(), row.id.clone());
+    let act = Rc::new(move || {
+        open.set(false);
+        super::terminal::run_action(&app.target(), id.as_deref());
+    });
+    let detail = if row.cloud_only { CLOUD_ONLY } else { "" };
+    (row.label.clone(), detail.to_owned(), act)
+}
+
+/// The detail a run action that does not run on this machine shows.
+pub(super) const CLOUD_ONLY: &str = "Cloud only";
 
 /// The item that lists the actions a person can pin.
 pub(super) const PIN: &str = "Pin to sidebar…";
@@ -177,14 +210,8 @@ pub(super) fn unpin(app: &App, action: Action) {
 
 type Row = (Action, &'static str, &'static str, Icon);
 
-const ROWS: [Row; 28] = [
+const ROWS: [Row; 27] = [
     (Action::NewAgent, "New agent", "⌘N", Icon::Plus),
-    (
-        Action::NewBranch,
-        "New agent on branch",
-        "",
-        Icon::GitBranch,
-    ),
     (
         Action::NewTerminal,
         super::terminal::NEW_TERMINAL_ACTION,
@@ -268,7 +295,6 @@ pub(super) fn run(app: &App, action: Action) {
     }
     match action {
         Action::NewAgent => super::split::show(app, Open::New),
-        Action::NewBranch => super::split::show(app, Open::Worktree(pane.workspace())),
         Action::NewTerminal => app.open_terminal(super::terminal::NEW_TERMINAL, None),
         Action::NewWorkflow => super::settings::workflows::create(app),
         Action::ClaudeCode => app.open_terminal(

@@ -9,8 +9,12 @@ fn shown(msg: &Msg, count: usize) -> Option<crate::hub::Live> {
         .flatten()
 }
 
+fn branch(folder: &std::path::Path) -> String {
+    crate::diff::git_env(folder, &[], &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap()
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn a_second_topic_in_a_repo_gets_its_own_branch_and_leaves_the_first_alone() {
+async fn two_new_topics_plus_the_checkout_are_three_folders_on_three_branches() {
     let home = tempfile::tempdir().unwrap();
     let (_root, primary) = crate::worktree::tests::repo();
     let primary = primary.canonicalize().unwrap();
@@ -28,33 +32,59 @@ async fn a_second_topic_in_a_repo_gets_its_own_branch_and_leaves_the_first_alone
     let started = crate::hub::start(first, info(), (tx, rx), factory);
     let mut inbox = started.inbox;
     let send = |command| started.commands.send(command).unwrap();
-    let new_topic = || crate::hub::Cmd::Open(crate::hub::Open::Folder(primary.clone()));
-    send(new_topic());
-    let one = until("the first topic", &mut inbox, |msg| shown(msg, 2)).await;
-    assert_eq!(one.workspace, primary);
+    let new_topic = |folder: &std::path::Path| {
+        crate::hub::Cmd::Open(crate::hub::Open::Worktree(folder.to_path_buf()))
+    };
+    std::fs::write(primary.join("README"), "the checkout's work").unwrap();
+    send(new_topic(&primary));
+    let one = until("the first new topic", &mut inbox, |msg| shown(msg, 2)).await;
     send(crate::hub::Cmd::Command("/name first topic".to_owned()));
     until("the first topic named", &mut inbox, |msg| {
         shown(msg, 2).filter(|entry| entry.title == "first topic")
     })
     .await;
-    std::fs::write(primary.join("README"), "first topic's work").unwrap();
-    send(new_topic());
-    let two = until("the second topic", &mut inbox, |msg| shown(msg, 3)).await;
-    assert_ne!(two.workspace, primary);
+    send(new_topic(&one.workspace));
+    let two = until("the second new topic", &mut inbox, |msg| shown(msg, 3)).await;
+    let folders = [
+        primary.clone(),
+        one.workspace.clone(),
+        two.workspace.clone(),
+    ];
+    let branches = folders.each_ref().map(|folder| branch(folder));
     assert_eq!(
-        crate::worktree::checkout_of(&two.workspace),
-        Some(primary.clone())
+        folders
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        3,
+        "{folders:?}"
     );
-    let branch =
-        crate::diff::git_env(&two.workspace, &[], &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap();
-    assert!(branch.starts_with("summonr/"), "{branch}");
     assert_eq!(
-        std::fs::read_to_string(two.workspace.join("README")).unwrap(),
-        "hi"
+        branches
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        3,
+        "{branches:?}"
     );
+    assert!(
+        branches[1..]
+            .iter()
+            .all(|name| name.starts_with("summonr/")),
+        "{branches:?}"
+    );
+    for topic in &folders[1..] {
+        assert_eq!(crate::worktree::checkout_of(topic), Some(primary.clone()));
+        assert_eq!(std::fs::read_to_string(topic.join("README")).unwrap(), "hi");
+    }
+    send(crate::hub::Cmd::Open(crate::hub::Open::Folder(
+        primary.clone(),
+    )));
+    let opened = until("the opened folder", &mut inbox, |msg| shown(msg, 4)).await;
+    assert_eq!(opened.workspace, primary);
     assert_eq!(
         std::fs::read_to_string(primary.join("README")).unwrap(),
-        "first topic's work"
+        "the checkout's work"
     );
     send(crate::hub::Cmd::Quit);
     started.task.await.unwrap();

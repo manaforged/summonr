@@ -14,13 +14,14 @@ fn pin_from_the_palette(query: &str, label: &'static str) -> Vec<Step> {
 
 #[test]
 fn an_action_pinned_from_the_palette_stays_in_the_sidebar_after_a_reload() {
-    if !in_window("pins::an_action_pinned_from_the_palette_stays_in_the_sidebar_after_a_reload")
-    {
+    if !in_window("pins::an_action_pinned_from_the_palette_stays_in_the_sidebar_after_a_reload") {
         return;
     }
-    let pinned = steps(two_chats, pin_from_the_palette("keyboard", "Keyboard shortcuts"), |app| {
-        app.model.peek().prefs.clone()
-    });
+    let pinned = steps(
+        two_chats,
+        pin_from_the_palette("keyboard", "Keyboard shortcuts"),
+        |app| app.model.peek().prefs.clone(),
+    );
     assert!(
         pinned.shows(|text| text == "Keyboard shortcuts"),
         "{}",
@@ -55,7 +56,11 @@ fn unpinning_a_default_row_takes_it_out_of_the_sidebar() {
         vec![Step::RightClick("New terminal"), Step::Click("Unpin")],
         |app| app.model.peek().prefs.sidebar.clone(),
     );
-    assert!(!seen.shows(|text| text == "New terminal"), "{}", seen.text());
+    assert!(
+        !seen.shows(|text| text == "New terminal"),
+        "{}",
+        seen.text()
+    );
     assert!(seen.shows(|text| text == "Search"), "{}", seen.text());
     assert_eq!(
         seen.read,
@@ -75,6 +80,21 @@ fn a_pinned_row_opens_its_pane() {
     assert!(!pinned.shows(|text| text == "Peers"), "{}", pinned.text());
     let mut actions = pin_from_the_palette("job", "Jobs");
     actions.push(Step::Click("Jobs"));
-    let seen = steps(two_chats, actions, |app| app.target().layout.peek().secondary);
+    let seen = steps(two_chats, actions, |app| {
+        app.target().layout.peek().secondary
+    });
     assert_eq!(seen.read, Some(super::super::Pane::Jobs), "{}", seen.text());
+}
+
+#[test]
+fn a_saved_pin_this_build_no_longer_has_is_dropped_on_load() {
+    let dir = tempfile::tempdir().expect("config folder");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "sidebar = [\"new_agent\", \"new_branch\", \"search\"]\n",
+    )
+    .expect("config file");
+    let loaded = summonr_agent::prefs::load_from(&path).expect("load");
+    assert_eq!(loaded.sidebar, [Action::NewAgent, Action::Search]);
 }

@@ -10,7 +10,7 @@ use sigil::prelude::{
 };
 use sigil::reactive::{Owner, untrack};
 use sigil::widgets::{MenuItem, icon};
-use summonr_agent::scripts::{Script, Scripts, Workspace};
+use summonr_agent::scripts::{Place, RunMode, Script, Scripts, Workspace};
 
 use super::App;
 use super::style::{DIVIDER, ICON, S, Text, text};
@@ -25,7 +25,8 @@ pub(crate) struct Term {
     pub(super) id: u64,
     pub(super) folder: PathBuf,
     pub(super) session: Rc<Session>,
-    name: &'static str,
+    name: String,
+    run: Option<PathBuf>,
     seen: Signal<u64>,
 }
 
@@ -35,7 +36,7 @@ impl Term {
         let title = self.session.title.get();
         let title = title.trim();
         if title.is_empty() {
-            self.name.to_owned()
+            self.name.clone()
         } else {
             title.chars().take(TITLE_CHARS).collect()
         }
@@ -65,7 +66,7 @@ impl Terminals {
         if !folder.is_dir() {
             return None;
         }
-        self.start(folder, NEW_TERMINAL, None)
+        self.start(folder, NEW_TERMINAL, None, None)
             .ok()
             .map(|term| term.id)
     }
@@ -73,8 +74,9 @@ impl Terminals {
     fn start(
         self,
         folder: &Path,
-        name: &'static str,
+        name: &str,
         command: Option<&Command>,
+        run: Option<PathBuf>,
     ) -> Result<Rc<Term>, String> {
         let owner = self
             .owner
@@ -91,7 +93,8 @@ impl Terminals {
             id,
             folder: folder.to_path_buf(),
             session: Rc::new(session),
-            name,
+            name: name.to_owned(),
+            run,
             seen,
         });
         self.list.update(|list| list.push(Rc::clone(&term)));
@@ -112,7 +115,11 @@ impl App {
     /// Opens a shell in the focused pane's folder and shows it there, running `command` when given.
     pub(crate) fn open_terminal(&self, name: &'static str, command: Option<&str>) {
         let pane = super::split::current(self);
-        match self.window.terminals.start(&pane.workspace(), name, None) {
+        match self
+            .window
+            .terminals
+            .start(&pane.workspace(), name, None, None)
+        {
             Ok(term) => {
                 if let Some(command) = command {
                     drop(term.session.write(format!("{command}\r").as_bytes()));
@@ -136,17 +143,16 @@ pub(super) const CLAUDE: &str = "Claude Code";
 pub(super) const CLAUDE_COMMAND: &str = "claude";
 /// The palette action that runs the repository's setup script.
 pub(super) const RUN_SETUP: &str = "Run setup";
-/// The palette action that runs the repository's run script.
+/// The palette action that runs the repository's default run action.
 pub(super) const RUN: &str = "Run";
 
-const SCRIPTS: [(Script, &str); 3] = [
-    (Script::Setup, "Setup"),
-    (Script::Run, "Run"),
-    (Script::Archive, "Archive"),
-];
+const SCRIPTS: [(Script, &str); 2] = [(Script::Setup, "Setup"), (Script::Archive, "Archive")];
 
 /// Runs the repository's `script` in a new terminal for `pane`'s folder, showing it there when `show`.
 pub(super) fn run_script(pane: &App, script: Script, show: bool) {
+    if script == Script::Run {
+        return run_action(pane, None);
+    }
     let folder = pane.workspace();
     let name = SCRIPTS
         .iter()
@@ -154,7 +160,11 @@ pub(super) fn run_script(pane: &App, script: Script, show: bool) {
         .map_or(NEW_TERMINAL, |(_, name)| name);
     let started = script_command(&folder, script).and_then(|command| {
         command
-            .map(|command| pane.window.terminals.start(&folder, name, Some(&command)))
+            .map(|command| {
+                pane.window
+                    .terminals
+                    .start(&folder, name, Some(&command), None)
+            })
             .transpose()
     });
     match started {
@@ -165,23 +175,104 @@ pub(super) fn run_script(pane: &App, script: Script, show: bool) {
         }
         Ok(None) => {
             if show {
-                pane.push_entry(crate::model::Entry::Error(format!(
-                    "This repository has no {} script.",
-                    script.name()
-                )));
+                say(
+                    pane,
+                    format!("This repository has no {} script.", script.name()),
+                );
             }
         }
-        Err(error) => pane.push_entry(crate::model::Entry::Error(format!(
-            "Could not run the {} script: {error}",
-            script.name()
-        ))),
+        Err(error) => say(
+            pane,
+            format!("Could not run the {} script: {error}", script.name()),
+        ),
     }
 }
 
 fn script_command(folder: &Path, script: Script) -> Result<Option<Command>, String> {
     let workspace = Workspace::at(folder).map_err(|error| error.to_string())?;
     let scripts = Scripts::load(&workspace.root).map_err(|error| error.to_string())?;
-    Ok(scripts.get(script).map(|text| workspace.command(text)))
+    if script == Script::Setup {
+        scripts
+            .copy_files(&workspace)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(scripts
+        .get(script)
+        .map(|text| scripts.command(&workspace, text)))
+}
+
+/// A run action as the palette lists it.
+pub(super) struct RunRow {
+    /// `Run` or `Run <id>`.
+    pub(super) label: String,
+    /// The action's id; `None` for a plain `run` string.
+    pub(super) id: Option<String>,
+    /// Whether the action runs only in the cloud.
+    pub(super) cloud_only: bool,
+}
+
+/// The run actions the palette lists for `folder`, the default first.
+pub(super) fn run_rows(folder: &Path) -> Vec<RunRow> {
+    Scripts::at(folder).map_or_else(
+        |_| Vec::new(),
+        |scripts| {
+            scripts
+                .actions()
+                .map(|action| RunRow {
+                    label: action.label(),
+                    id: (!action.id.is_empty()).then(|| action.id.clone()),
+                    cloud_only: !action.runs_in(Place::Local),
+                })
+                .collect()
+        },
+    )
+}
+
+/// Starts run action `id` (the default when `None`) in a terminal for `pane`'s folder and shows it.
+pub(super) fn run_action(pane: &App, id: Option<&str>) {
+    match start_action(pane, id) {
+        Ok(term) => pane.window.showing.set(Some(term.id)),
+        Err(error) => say(pane, error),
+    }
+}
+
+fn start_action(pane: &App, id: Option<&str>) -> Result<Rc<Term>, String> {
+    let folder = pane.workspace();
+    let workspace = Workspace::at(&folder).map_err(|error| error.to_string())?;
+    let scripts = Scripts::load(&workspace.root).map_err(|error| error.to_string())?;
+    let mut actions = scripts.actions();
+    let action = match id {
+        Some(id) => actions.find(|action| action.id == id),
+        None => actions.next(),
+    }
+    .ok_or_else(|| "This repository has no run script.".to_owned())?;
+    let label = action.label();
+    let command = scripts
+        .start(&workspace, action)
+        .ok_or_else(|| format!("{label} is cloud only; it does not run here."))?;
+    if scripts.run_mode() == RunMode::Nonconcurrent {
+        stop_runs(pane, &workspace.root);
+    }
+    pane.window
+        .terminals
+        .start(&folder, &label, Some(&command), Some(workspace.root))
+        .map_err(|error| format!("Could not start {label}: {error}"))
+}
+
+fn stop_runs(app: &App, root: &Path) {
+    let running: Vec<u64> = app.window.terminals.list.with(|list| {
+        list.iter()
+            .filter(|term| term.run.as_deref() == Some(root))
+            .map(|term| term.id)
+            .collect()
+    });
+    for id in running {
+        close(app, id);
+    }
+}
+
+fn say(pane: &App, text: String) {
+    pane.push_entry(crate::model::Entry::Error(text));
 }
 
 /// Shows terminal `id`, focusing the pane that already shows it.
@@ -339,7 +430,7 @@ fn side_terminal(app: &App, folder: &Path) -> Result<Rc<Term>, String> {
         })
         .cloned();
     free.map_or_else(
-        || app.window.terminals.start(folder, NEW_TERMINAL, None),
+        || app.window.terminals.start(folder, NEW_TERMINAL, None, None),
         Ok,
     )
 }

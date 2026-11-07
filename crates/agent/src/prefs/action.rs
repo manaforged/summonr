@@ -2,7 +2,6 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     NewAgent,
-    NewBranch,
     NewTerminal,
     NewWorkflow,
     ClaudeCode,
@@ -31,9 +30,8 @@ pub enum Action {
     Shortcuts,
 }
 
-const NAMES: [(Action, &str); 28] = [
+const NAMES: [(Action, &str); 27] = [
     (Action::NewAgent, "new_agent"),
-    (Action::NewBranch, "new_branch"),
     (Action::NewTerminal, "new_terminal"),
     (Action::NewWorkflow, "new_workflow"),
     (Action::ClaudeCode, "claude_code"),

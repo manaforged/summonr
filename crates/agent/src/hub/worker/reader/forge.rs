@@ -52,8 +52,8 @@ fn archive(tree: &Tree) -> Result<(), String> {
         return Ok(());
     };
     let workspace = Workspace::at(&tree.path).map_err(|error| kept(error.to_string()))?;
-    let status = workspace
-        .command(script)
+    let status = scripts
+        .command(&workspace, script)
         .stdin(std::process::Stdio::null())
         .status()
         .map_err(|error| kept(format!("archive script did not start: {error}")))?;

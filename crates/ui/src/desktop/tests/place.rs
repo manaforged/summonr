@@ -140,7 +140,7 @@ fn agents_group_by_repository_in_name_order_and_new_agent_is_the_only_start() {
     );
     assert_eq!(
         opened(&seen.sent),
-        vec![Open::Folder(place.borrow().clone())]
+        vec![Open::Worktree(place.borrow().clone())]
     );
 }
 

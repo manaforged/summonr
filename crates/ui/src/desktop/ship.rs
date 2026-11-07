@@ -66,7 +66,9 @@ pub(super) fn merge(app: &App) {
 
 fn items(app: &App, changed: bool, held: Signal<bool>) -> Vec<NodeBuilder> {
     match app.forge.state.get() {
-        Some(Err(Error::SignedOut)) => vec![text(Text::Meta, Error::SignedOut.to_string()).nowrap().into()],
+        Some(Err(error @ (Error::SignedOut | Error::TimedOut { .. }))) => {
+            vec![text(Text::Meta, error.to_string()).nowrap().into()]
+        }
         Some(Ok(None)) if changed => vec![open_button(app, held)],
         Some(Ok(Some(pull))) if pull.state == State::Open => pull_items(app, &pull, held),
         Some(Ok(_) | Err(_)) | None => Vec::new(),

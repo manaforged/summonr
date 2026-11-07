@@ -12,6 +12,7 @@ const URL: &str = "https://github.com/owner/repo.git";
 const GH: &str = r#"#!/bin/sh
 dir="$SUMMONR_TEST_FAKE_GH"
 printf '%s\n' "$*" >> "$dir/argv.log"
+if [ -f "$dir/stall" ] && [ "$1 $2" = "pr list" ]; then exec sleep 30; fi
 case "$1 $2" in
   "auth status") cat "$dir/auth.json" ;;
   "repo view") printf '{"defaultBranchRef":{"name":"main"}}' ;;
@@ -135,4 +136,42 @@ async fn open_pr_while_gh_is_signed_out_changes_nothing() {
     assert_eq!(read(&primary, &["status", "--porcelain"]), dirty);
     assert_eq!(read(&bare, &["for-each-ref", "--format=%(refname:short)", "refs/heads"]), "main");
     assert_eq!(calls(&fake), ["auth status --json hosts"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_gh_call_past_its_limit_is_a_timeout_not_a_hang() {
+    let Some(fake) = with_fake_gh("a_gh_call_past_its_limit_is_a_timeout_not_a_hang") else {
+        return;
+    };
+    let (_root, primary, _bare) = github_repo(&fake, SIGNED_IN);
+    std::fs::write(fake.join("stall"), "").unwrap();
+    let asked = std::time::Instant::now();
+
+    let reply = press(&primary, Ask::Status).await;
+
+    let secs = crate::limits::limits().gh_secs;
+    let error = reply.unwrap_err();
+    assert_eq!(error, Error::TimedOut { command: "pr list".to_owned(), secs });
+    assert_eq!(error.to_string(), format!("gh pr list did not answer in {secs}s"));
+    assert!(asked.elapsed() < std::time::Duration::from_secs(secs + 5), "{:?}", asked.elapsed());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn open_pr_picks_the_next_free_branch_name_when_the_slug_is_taken() {
+    let Some(fake) = with_fake_gh("open_pr_picks_the_next_free_branch_name_when_the_slug_is_taken") else {
+        return;
+    };
+    let (_root, primary, bare) = github_repo(&fake, SIGNED_IN);
+    let main = read(&primary, &["rev-parse", "main"]);
+    git(&primary, &["branch", "summonr/fix-the-parser"]);
+    git(&primary, &["push", "-q", "origin", "main:refs/heads/summonr/fix-the-parser-2"]);
+    std::fs::write(primary.join("parser.rs"), "fn parse() {}\n").unwrap();
+
+    let pull = press(&primary, Ask::Open("Fix the parser!".to_owned())).await;
+
+    assert_eq!(pull.unwrap().map(|pull| pull.number), Some(7));
+    assert_eq!(read(&primary, &["rev-parse", "--abbrev-ref", "HEAD"]), "summonr/fix-the-parser-3");
+    assert_eq!(read(&bare, &["show", "summonr/fix-the-parser-3:parser.rs"]), "fn parse() {}");
+    assert_eq!(read(&primary, &["rev-parse", "summonr/fix-the-parser"]), main);
+    assert_eq!(read(&bare, &["rev-parse", "summonr/fix-the-parser-2"]), main);
 }

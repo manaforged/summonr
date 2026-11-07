@@ -17,20 +17,16 @@ impl Hub {
         None
     }
 
-    /// Opens a new topic in its repository's checkout, or on its own worktree when another topic is in that repository.
+    /// Keeps a folder in its own checkout, and branches a worktree topic from its repository's checkout.
     pub(super) fn isolated(&self, open: Open) -> Open {
-        let Open::Folder(folder) = open else {
+        let Open::Worktree(folder) = open else {
             return open;
         };
         let repo = checkout(&folder);
-        let taken = self
-            .sessions
-            .values()
-            .any(|session| session.title.is_some() && checkout(&session.workspace) == repo);
-        if taken && crate::worktree::in_git(&repo) {
+        if crate::worktree::in_git(&repo) {
             Open::Worktree(repo)
         } else {
-            Open::Folder(repo)
+            Open::Folder(folder)
         }
     }
 

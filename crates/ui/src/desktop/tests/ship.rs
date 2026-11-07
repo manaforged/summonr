@@ -94,6 +94,28 @@ fn signed_out_gh_shows_github_not_signed_in_and_nothing_else() {
 }
 
 #[test]
+fn a_gh_timeout_shows_in_the_header_and_offers_nothing_else() {
+    if !in_window("ship::a_gh_timeout_shows_in_the_header_and_offers_nothing_else") {
+        return;
+    }
+    let timed_out = Error::TimedOut {
+        command: "pr list".to_owned(),
+        secs: 30,
+    };
+    let seen = steps(
+        |app| {
+            topic(app);
+            app.update(Msg::Fact(Fact::Forge(Err(timed_out))));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert!(seen.shows(|text| text == "gh pr list did not answer in 30s"), "{}", seen.text());
+    assert!(seen.named(Role::Button, "Open PR").is_empty(), "{:?}", seen.controls);
+    assert!(seen.named(Role::Button, "Merge").is_empty(), "{:?}", seen.controls);
+}
+
+#[test]
 fn a_failed_check_goes_to_the_agent_with_its_name_and_link() {
     if !in_window("ship::a_failed_check_goes_to_the_agent_with_its_name_and_link") {
         return;

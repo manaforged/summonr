@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -87,6 +87,8 @@ pub enum Error {
     NoRemote,
     /// A git or `gh` command failed; holds its message.
     Failed(String),
+    /// A `gh` command ran past the `gh_secs` limit; holds the command and the limit.
+    TimedOut { command: String, secs: u64 },
 }
 
 impl std::fmt::Display for Error {
@@ -95,6 +97,7 @@ impl std::fmt::Display for Error {
             Self::SignedOut => f.write_str("GitHub not signed in"),
             Self::NoRemote => f.write_str("No GitHub remote"),
             Self::Failed(text) => f.write_str(text),
+            Self::TimedOut { command, secs } => write!(f, "gh {command} did not answer in {secs}s"),
         }
     }
 }
@@ -155,7 +158,7 @@ pub fn answer(dir: &Path, ask: &Ask) -> Result<Option<Pull>, Error> {
 }
 
 fn open(dir: &Path, remote: &str, title: &str) -> Result<Pull, Error> {
-    let branch = own_branch(dir, title)?;
+    let branch = own_branch(dir, remote, title)?;
     if !git(dir, &["status", "--porcelain"])?.is_empty() {
         git(dir, &["add", "-A"])?;
         git(dir, &["commit", "-m", title])?;
@@ -184,14 +187,45 @@ fn merge(dir: &Path) -> Result<Pull, Error> {
     })
 }
 
-fn own_branch(dir: &Path, title: &str) -> Result<String, Error> {
+fn own_branch(dir: &Path, remote: &str, title: &str) -> Result<String, Error> {
     let branch = current(dir)?;
     if branch != "HEAD" && branch != default_branch(dir)? {
         return Ok(branch);
     }
-    let name = format!("{BRANCH_PREFIX}{}", slug(title));
+    let name = free(
+        &format!("{BRANCH_PREFIX}{}", slug(title)),
+        &taken(dir, remote)?,
+    );
     git(dir, &["switch", "-c", &name])?;
     Ok(name)
+}
+
+fn taken(dir: &Path, remote: &str) -> Result<BTreeSet<String>, Error> {
+    let tracked = format!("refs/remotes/{remote}/");
+    let refs = git(
+        dir,
+        &[
+            "for-each-ref",
+            "--format=%(refname)",
+            &format!("refs/heads/{BRANCH_PREFIX}"),
+            &format!("{tracked}{BRANCH_PREFIX}"),
+        ],
+    )?;
+    Ok(refs
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("refs/heads/")
+                .or_else(|| line.strip_prefix(tracked.as_str()))
+        })
+        .map(str::to_owned)
+        .collect())
+}
+
+fn free(base: &str, taken: &BTreeSet<String>) -> String {
+    std::iter::once(base.to_owned())
+        .chain((2_u32..).map(|n| format!("{base}-{n}")))
+        .find(|name| !taken.contains(name))
+        .unwrap_or_else(|| base.to_owned())
 }
 
 fn default_branch(dir: &Path) -> Result<String, Error> {
@@ -229,9 +263,10 @@ fn find(dir: &Path, branch: &str) -> Result<Option<Pull>, Error> {
 }
 
 fn signed_in(dir: &Path) -> Result<(), Error> {
-    let auth: Auth = gh(dir, &["auth", "status", "--json", "hosts"])
-        .and_then(|text| json(&text))
-        .map_err(|_error| Error::SignedOut)?;
+    let auth: Auth = match gh(dir, &["auth", "status", "--json", "hosts"]).and_then(|text| json(&text)) {
+        Err(error @ Error::TimedOut { .. }) => return Err(error),
+        read => read.map_err(|_error| Error::SignedOut)?,
+    };
     let active = auth.hosts.get(HOST).is_some_and(|accounts| {
         accounts
             .iter()
@@ -288,16 +323,27 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, Error> {
 fn gh(dir: &Path, args: &[&str]) -> Result<String, Error> {
     let mut spec = Spec::new(GH, args.iter().map(OsStr::new)).envs(QUIET);
     spec.cwd = Some(dir.to_path_buf());
-    let output = process::output(spec, None).map_err(|_error| Error::SignedOut)?;
+    let limits = crate::limits::limits();
+    let deadline = process::Deadline {
+        after: limits.gh(),
+        poll: limits.gh_poll(),
+    };
+    let finished = process::output_within(spec, None, deadline).map_err(|_error| Error::SignedOut)?;
+    let Some(output) = finished else {
+        return Err(Error::TimedOut {
+            command: named(args),
+            secs: limits.gh_secs,
+        });
+    };
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(Error::Failed(format!(
-        "gh {} failed: {}",
-        args.iter().take(2).copied().collect::<Vec<_>>().join(" "),
-        stderr.trim()
-    )))
+    Err(Error::Failed(format!("gh {} failed: {}", named(args), stderr.trim())))
+}
+
+fn named(args: &[&str]) -> String {
+    args.iter().take(2).copied().collect::<Vec<_>>().join(" ")
 }
 
 fn json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, Error> {

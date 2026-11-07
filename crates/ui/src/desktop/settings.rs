@@ -19,6 +19,7 @@ pub(super) mod parts;
 mod plugins;
 mod shortcuts;
 mod tools;
+mod usage;
 
 /// One page of the Settings window.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -31,13 +32,15 @@ pub(super) enum Page {
     Appearance,
     Shortcuts,
     Tools,
+    Usage,
 }
 
 impl Page {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::General,
         Self::Models,
         Self::Accounts,
+        Self::Usage,
         Self::Mcp,
         Self::Plugins,
         Self::Appearance,
@@ -55,6 +58,7 @@ impl Page {
             Self::Appearance => "Appearance",
             Self::Shortcuts => "Keyboard shortcuts",
             Self::Tools => "Tools",
+            Self::Usage => "Usage",
         }
     }
 
@@ -68,6 +72,7 @@ impl Page {
             Self::Appearance => Icon::Sun,
             Self::Shortcuts => Icon::Command,
             Self::Tools => Icon::Zap,
+            Self::Usage => Icon::ChartColumn,
         }
     }
 
@@ -81,25 +86,29 @@ impl Page {
             Self::Appearance => appearance::view(app),
             Self::Shortcuts => shortcuts::view(app),
             Self::Tools => tools::view(app),
+            Self::Usage => usage::view(app),
         }
     }
 }
 
+/// The window's Settings state: whether it shows, and the open group of its pages.
+type Shown = (Signal<bool>, Signal<Option<crate::settings::Group>>);
+
 thread_local! {
     static PAGE: Cell<Option<Signal<Page>>> = const { Cell::new(None) };
-    static OPEN: Cell<Option<Signal<bool>>> = const { Cell::new(None) };
+    static OPEN: Cell<Option<Shown>> = const { Cell::new(None) };
 }
 
 /// Creates the Settings page state for this window.
 pub(super) fn install(app: &App) {
     page();
-    OPEN.with(|slot| slot.set(Some(app.settings_open)));
+    OPEN.with(|slot| slot.set(Some((app.settings_open, app.settings_group))));
 }
 
 /// Whether the Settings window shows.
 pub(super) fn is_open() -> bool {
     OPEN.with(Cell::get)
-        .and_then(|open| open.try_peek())
+        .and_then(|(open, _)| open.try_peek())
         .unwrap_or(false)
 }
 
@@ -114,11 +123,15 @@ fn page() -> Signal<Page> {
     })
 }
 
-/// Shows `page` the next time Settings opens, or now when it is open.
+/// Shows `page` in the window's Settings, from any pane.
 pub(super) fn open(app: &App, at: Page) {
+    let (open, group) = OPEN
+        .with(Cell::get)
+        .filter(|(open, _)| open.try_peek().is_some())
+        .unwrap_or((app.settings_open, app.settings_group));
     page().set(at);
-    app.settings_group.set(None);
-    app.settings_open.set(true);
+    group.set(None);
+    open.set(true);
 }
 
 /// The Settings window: page list on the left, the page on the right.

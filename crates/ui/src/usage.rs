@@ -8,7 +8,7 @@ use super::ui::{Dialog, Hints, Key, Size, Tab, tab_strip};
 use summonr_agent::session::Spend;
 use summonr_core::clock::now;
 
-mod report;
+pub(super) mod report;
 mod sections;
 mod trend;
 
@@ -17,18 +17,19 @@ use sections::{bottom, cards, colored};
 use sigil::prelude::Widget;
 use trend::trend;
 
-const RANGES: [&str; 4] = ["24h", "7d", "30d", "all"];
+/// The time ranges a usage report covers, by index.
+pub(super) const RANGES: [&str; 4] = ["24h", "7d", "30d", "All"];
 const CHROME_ROWS: u16 = 8;
 const INSET: f32 = 24.0;
 
 #[derive(Clone, Copy)]
 pub(super) struct Panel {
     pub(super) open: Signal<bool>,
-    range: Signal<usize>,
-    metric: Signal<usize>,
-    local: Signal<bool>,
-    rows: Signal<Vec<Spend>>,
-    status: Signal<String>,
+    pub(super) range: Signal<usize>,
+    pub(super) metric: Signal<usize>,
+    pub(super) local: Signal<bool>,
+    pub(super) rows: Signal<Vec<Spend>>,
+    pub(super) status: Signal<String>,
 }
 
 impl Panel {
@@ -45,7 +46,12 @@ impl Panel {
 
     pub(super) fn start(self) {
         self.open.set(true);
-        self.status.set("reading sessions…".to_string());
+        self.reading();
+    }
+
+    /// Marks the rows as being read again.
+    pub(super) fn reading(self) {
+        self.status.set("Reading sessions…".to_string());
     }
 
     pub(super) fn update(self, result: Result<Vec<Spend>, String>) {

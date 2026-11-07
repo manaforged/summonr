@@ -34,6 +34,12 @@ impl App {
         drop(self.cmd.send(Cmd::ListUsage));
     }
 
+    /// Reads the usage rows again without opening the usage overlay.
+    pub(crate) fn load_usage(&self) {
+        self.usage.reading();
+        drop(self.cmd.send(Cmd::ListUsage));
+    }
+
     pub(crate) fn show_tab(&self, tab: Tab) {
         let Some(from) = self.tab().filter(|from| *from != tab) else {
             return;

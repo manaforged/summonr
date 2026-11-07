@@ -7,39 +7,39 @@ const ROOM: usize = 78;
 const PLACES: usize = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Metric {
+pub(crate) enum Metric {
     Tokens,
     Cost,
 }
 
-pub(super) const METRICS: [Metric; 2] = [Metric::Tokens, Metric::Cost];
+pub(crate) const METRICS: [Metric; 2] = [Metric::Tokens, Metric::Cost];
 
 impl Metric {
-    pub(super) const fn name(self) -> &'static str {
+    pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::Tokens => "tokens",
             Self::Cost => "cost",
         }
     }
 
-    pub(super) const fn cost(self) -> bool {
+    pub(crate) const fn cost(self) -> bool {
         matches!(self, Self::Cost)
     }
 }
 
-pub(super) struct Report {
-    pub(super) total: Total,
-    pub(super) models: Vec<(String, Total)>,
-    pub(super) columns: Vec<f64>,
-    pub(super) series: Vec<Vec<f64>>,
-    pub(super) span: u64,
-    pub(super) first: &'static str,
-    pub(super) places: Vec<(String, f64)>,
-    pub(super) hours: [f64; 24],
+pub(crate) struct Report {
+    pub(crate) total: Total,
+    pub(crate) models: Vec<(String, Total)>,
+    pub(crate) columns: Vec<f64>,
+    pub(crate) series: Vec<Vec<f64>>,
+    pub(crate) span: u64,
+    pub(crate) first: &'static str,
+    pub(crate) places: Vec<(String, f64)>,
+    pub(crate) hours: [f64; 24],
 }
 
 impl Report {
-    pub(super) fn build(rows: &[&Spend], range: usize, metric: Metric, now: u64) -> Self {
+    pub(crate) fn build(rows: &[&Spend], range: usize, metric: Metric, now: u64) -> Self {
         let cost = metric.cost();
         let oldest = rows.iter().map(|row| row.hour).min();
         let (span, count, first) = buckets(range, oldest, now, ROOM);
@@ -91,12 +91,12 @@ impl Report {
         }
     }
 
-    pub(super) fn cache_hit(&self) -> f64 {
+    pub(crate) fn cache_hit(&self) -> f64 {
         hit(&self.total)
     }
 }
 
-pub(super) fn hit(total: &Total) -> f64 {
+pub(crate) fn hit(total: &Total) -> f64 {
     if total.input == 0 {
         0.0
     } else {
@@ -104,7 +104,7 @@ pub(super) fn hit(total: &Total) -> f64 {
     }
 }
 
-pub(super) fn turn_secs(total: &Total) -> f64 {
+pub(crate) fn turn_secs(total: &Total) -> f64 {
     if total.turns == 0 {
         0.0
     } else {

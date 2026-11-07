@@ -68,7 +68,11 @@ impl App {
             Some(summonr_agent::SlashCommand::New) => {
                 self.open_session(summonr_agent::hub::Open::New)
             }
-            Some(summonr_agent::SlashCommand::Usage) if argument.is_none() => self.open_usage(),
+            Some(summonr_agent::SlashCommand::Usage) if argument.is_none() => {
+                if !self.window.show_usage(self) {
+                    self.open_usage();
+                }
+            }
             settings => return self.local_settings(settings, argument),
         }
         true

@@ -97,13 +97,14 @@ enum Action {
     Changes,
     Files,
     Settings,
+    Usage,
     Steps,
     Needing,
     Split,
     ClosePane,
 }
 
-const ACTIONS: [(&str, &str, Action); 11] = [
+const ACTIONS: [(&str, &str, Action); 12] = [
     ("New agent", "⌘N", Action::NewAgent),
     ("New terminal", "⌘T", Action::NewTerminal),
     ("Claude Code terminal", "", Action::ClaudeCode),
@@ -115,6 +116,7 @@ const ACTIONS: [(&str, &str, Action); 11] = [
     ("Files", "", Action::Files),
     ("All steps", "", Action::Steps),
     ("Settings", "⌘,", Action::Settings),
+    ("Usage", "", Action::Usage),
 ];
 
 fn run(app: &App, action: Action) {
@@ -133,6 +135,7 @@ fn run(app: &App, action: Action) {
         Action::Changes => pane.toggle_pane(Pane::Diff),
         Action::Files => pane.toggle_pane(Pane::Files),
         Action::Settings => app.settings_open.set(true),
+        Action::Usage => super::settings::open(app, super::settings::Page::Usage),
         Action::Needing => super::jump(app, crate::view::keys::bindings::Jump::Needing),
         Action::Steps => {
             use summonr_agent::prefs::ToolOutput;

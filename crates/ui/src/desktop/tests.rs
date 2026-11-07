@@ -31,6 +31,7 @@ mod terminals;
 mod panes;
 mod topics;
 mod transcript;
+mod usage;
 mod window_chrome;
 mod window_composer;
 mod window_focus;

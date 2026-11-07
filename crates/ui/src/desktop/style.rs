@@ -47,6 +47,8 @@ pub(super) const DIALOG: f32 = 520.0;
 pub(super) const PANE_WIDTH: f32 = 360.0;
 /// The shortest a pane may get.
 pub(super) const PANE_HEIGHT: f32 = 240.0;
+/// The height of a chart's plot.
+pub(super) const CHART: f32 = 120.0;
 /// The width of the focused pane's edge.
 pub(super) const RING: f32 = 2.0;
 
@@ -83,6 +85,8 @@ pub(super) const FAILED_DOT: Token = Token::Error9;
 pub(super) const NEEDS_DOT: Token = Token::Warn9;
 /// The status dot of a finished agent the user has not seen.
 pub(super) const UNREAD_DOT: Token = Token::Info9;
+/// The bars of a chart.
+pub(super) const CHART_BAR: Token = Token::Accent9;
 /// The edge of the focused pane.
 pub(super) const FOCUS_RING: Token = Token::Accent9;
 

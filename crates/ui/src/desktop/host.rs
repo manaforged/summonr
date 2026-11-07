@@ -75,6 +75,15 @@ impl Window {
         self.friends = window.friends;
     }
 
+    /// Shows the Usage page of Settings; false outside a window.
+    pub(crate) fn show_usage(&self, app: &App) -> bool {
+        let window = crate::canvas::is_window();
+        if window {
+            super::settings::open(app, super::settings::Page::Usage);
+        }
+        window
+    }
+
     /// Runs the friend's own sign-in for `route`; false when `route` has no friend.
     pub(crate) fn sign_in(&self, app: &App, route: &str) -> bool {
         let friend = summonr_agent::endpoint::Friend::of(route);

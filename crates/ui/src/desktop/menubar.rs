@@ -7,6 +7,7 @@ use summonr_agent::prefs::Hotkey;
 
 const SETTINGS: &str = "Settings…";
 const QUIT: &str = "Quit Summonr";
+const USAGE: &str = "Usage";
 
 const FILE: [(&str, KeyCommand); 5] = [
     ("New agent", KeyCommand::NewSession),
@@ -45,6 +46,9 @@ pub(super) fn run(main: &App, id: &str) {
     if id == QUIT {
         return super::quit::request();
     }
+    if id == USAGE {
+        return super::settings::open(main, super::settings::Page::Usage);
+    }
     let command = if id == SETTINGS {
         Some(SETTINGS_KEY)
     } else {
@@ -77,6 +81,7 @@ fn bar() -> Menu {
         .standard(StandardItem::About)
         .separator()
         .item(SETTINGS, SETTINGS, shortcut(SETTINGS_KEY))
+        .item(USAGE, USAGE, None)
         .separator()
         .standard(StandardItem::Hide)
         .standard(StandardItem::HideOthers)

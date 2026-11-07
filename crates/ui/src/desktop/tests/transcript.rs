@@ -207,3 +207,44 @@ fn a_failed_turn_shows_one_line_and_a_retry_button() {
             .any(|cmd| matches!(cmd, Cmd::Command(text) if text == "/retry"))
     );
 }
+
+fn thought(app: &super::App, text: &str) {
+    app.update(Msg::Fact(Fact::Event(Event::Reasoning {
+        text: text.to_owned(),
+    })));
+}
+
+fn worked_turn(app: &super::App) {
+    thought(app, "Look at the tests first.");
+    tool(app, "a", "run_command", r#"{"command":"cargo test"}"#);
+    thought(app, "One failure in the parser.");
+    tool(app, "b", "run_command", r#"{"command":"rg parse"}"#);
+    thought(app, "Fix the off-by-one.");
+    tool(app, "c", "write", r#"{"path":"src/parse.rs","content":"x"}"#);
+    app.update(Msg::Fact(Fact::Event(Event::Assistant {
+        text: "Fixed.".to_owned(),
+    })));
+}
+
+#[test]
+fn a_finished_turn_folds_its_thoughts_and_steps_into_one_row() {
+    if !in_window("transcript::a_finished_turn_folds_its_thoughts_and_steps_into_one_row") {
+        return;
+    }
+    let folded = drive(worked_turn, Vec::new(), |_| ());
+    let rows = folded.texts.iter().filter(|text| text.starts_with("Thought")).count();
+    assert_eq!(rows, 0, "{}", folded.text());
+    assert!(
+        folded.shows(|text| text == "Edited 1 file, ran 2 commands"),
+        "{}",
+        folded.text()
+    );
+    let open = steps(
+        worked_turn,
+        vec![Step::Click("Edited 1 file, ran 2 commands")],
+        |_| (),
+    );
+    let thoughts = open.texts.iter().filter(|text| text.starts_with("Thought")).count();
+    assert_eq!(thoughts, 3, "{}", open.text());
+    assert!(open.shows(|text| text.contains("cargo test")), "{}", open.text());
+}

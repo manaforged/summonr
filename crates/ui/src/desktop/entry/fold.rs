@@ -15,6 +15,7 @@ use crate::chat::entry::tools::{call_output, flip, glyph, workspace_relative};
 use crate::chat::entry::tree::label;
 use crate::model::Entry;
 use crate::text_style::TextStyle;
+use summonr_agent::prefs::Visibility;
 
 fn flatten(entries: &[Entry], start: usize) -> Vec<Step<'_>> {
     let mut steps = Vec::new();
@@ -126,6 +127,8 @@ fn summary(
     }
     parts.push(plain(sum));
     let mut head = container()
+        .role(sigil::prelude::Role::Button)
+        .label(parts.join(" · "))
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
@@ -303,8 +306,17 @@ pub(crate) fn card(
                 )
                 .border_left(1)
                 .border_color(Token::BorderSubtle);
-            for step in &steps {
-                list = list.child(step_row(step, app, model.prefs.diff_layout));
+            let last = model.entries.len().saturating_sub(1);
+            for index in range.clone() {
+                if let Some(Entry::Thinking(text)) = model.entries.get(index)
+                    && model.prefs.reasoning != Visibility::Off
+                {
+                    let now = live && index == last;
+                    list = list.child(super::message::thinking(text, model.prefs.reasoning, now, app));
+                }
+                for step in steps.iter().filter(|step| step.index == index) {
+                    list = list.child(step_row(step, app, model.prefs.diff_layout));
+                }
             }
             card = card.child(list);
         }

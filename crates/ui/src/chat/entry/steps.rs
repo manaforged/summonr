@@ -69,18 +69,34 @@ pub(crate) fn slots(entries: &[Entry]) -> Vec<Slot> {
     found
 }
 
+fn joins(entry: &Entry, kind: Run) -> bool {
+    run(entry) == Some(kind) || (kind == Run::Steps && matches!(entry, Entry::Thinking(_)))
+}
+
 pub(crate) fn slot(entries: &[Entry], index: usize) -> Slot {
-    let Some(kind) = entries.get(index).and_then(run) else {
+    let Some(entry) = entries.get(index) else {
         return Slot::Single;
     };
-    if index > 0 && run(&entries[index - 1]) == Some(kind) {
+    let Some(kind) = run(entry).or_else(|| joins(entry, Run::Steps).then_some(Run::Steps)) else {
+        return Slot::Single;
+    };
+    let before = entries[..index]
+        .iter()
+        .rev()
+        .take_while(|entry| joins(entry, kind))
+        .count();
+    let after = entries[index..]
+        .iter()
+        .take_while(|entry| joins(entry, kind))
+        .count();
+    let block = index - before..index + after;
+    if !entries[block.clone()].iter().any(|entry| run(entry) == Some(kind)) {
+        return Slot::Single;
+    }
+    if before > 0 {
         return Slot::Member;
     }
-    let end = entries[index..]
-        .iter()
-        .position(|entry| run(entry) != Some(kind))
-        .map_or(entries.len(), |offset| index + offset);
-    Slot::Lead(index..end)
+    Slot::Lead(block)
 }
 
 #[cfg(test)]
@@ -132,8 +148,8 @@ mod tests {
             slots,
             vec![
                 Slot::Single,
-                Slot::Single,
-                Slot::Lead(2..5),
+                Slot::Lead(1..5),
+                Slot::Member,
                 Slot::Member,
                 Slot::Member,
                 Slot::Single,

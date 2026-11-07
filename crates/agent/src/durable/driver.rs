@@ -348,9 +348,7 @@ pub(crate) fn canonical(path: &Path) -> PathBuf {
 impl From<DriverError> for summonr_core::error::Error {
     fn from(error: DriverError) -> Self {
         match &error {
-            DriverError::Io(cause) if cause.kind() == std::io::ErrorKind::WouldBlock => {
-                Self::Setup(error.to_string())
-            }
+            DriverError::Io(cause) if cause.kind() == std::io::ErrorKind::WouldBlock => Self::Held,
             _ => Self::Config(error.to_string()),
         }
     }

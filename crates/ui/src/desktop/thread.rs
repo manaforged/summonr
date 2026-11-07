@@ -23,7 +23,7 @@ mod mentions;
 mod queue;
 pub(crate) mod status;
 
-use super::style::{BODY, L, LINE, M, S, Text, XL, XS};
+use super::style::{BODY, GUTTER, L, LINE, M, S, Text, XL, XS};
 const COLUMN: f32 = chat::surface::READING;
 const CONNECT: &str = "Connect a model";
 
@@ -375,5 +375,38 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
         chat::panels::Band::Attached(count) => {
             notice_band(chat::panels::attached_note(&app, count), Tone::Info)
         }
+        chat::panels::Band::Held => held(app),
     }
+}
+
+/// The note that another window holds the chat, with Take over and Not now.
+fn held(app: App) -> NodeBuilder {
+    let (take, dismiss) = (app.clone(), app);
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .gap(S)
+                .padding_left(GUTTER)
+                .padding_bottom(S)
+                .align_items(AlignItems::Center),
+        )
+        .child(
+            container()
+                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
+                .child(super::style::text(Text::Meta, chat::panels::HELD)),
+        )
+        .child(
+            button("Not now")
+                .ghost()
+                .size(ControlSize::Compact)
+                .activate(move || dismiss.held.set(None)),
+        )
+        .child(
+            button("Take over")
+                .primary()
+                .size(ControlSize::Compact)
+                .activate(move || take.take_over()),
+        )
+        .into()
 }

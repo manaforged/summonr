@@ -42,7 +42,7 @@ pub(super) fn card(app: &App, band: &Band) -> Option<NodeBuilder> {
             };
             (head, detail)
         }
-        Band::Attached(_) => return None,
+        Band::Attached(_) | Band::Held => return None,
     };
     let picks = app.picks();
     let mut column = container()

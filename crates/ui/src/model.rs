@@ -257,6 +257,8 @@ impl Model {
             | Msg::Intent(Intent::Resume(_))
             | Msg::Fact(Fact::Replayed)
             | Msg::Fact(Fact::Transcript(_))
+            | Msg::Fact(Fact::Held(_))
+            | Msg::Fact(Fact::TakenOver)
             | Msg::Fact(Fact::LoginStep { .. })
             | Msg::Fact(Fact::LoginDone { .. })
             | Msg::Fact(Fact::Restored(_))

@@ -35,6 +35,15 @@ struct Hub {
     attached: UnboundedSender<(u64, Option<Cmd>)>,
     factory: Factory,
     info: Info,
+    taking: Option<Taking>,
+}
+
+/// A chat this hub asked another window to let go of.
+struct Taking {
+    pane: u64,
+    id: String,
+    path: std::path::PathBuf,
+    until: std::time::Instant,
 }
 
 /// The first pane, which also gets login prompts and ends the hub when it closes.
@@ -60,6 +69,7 @@ pub fn start(
         attached,
         factory,
         info,
+        taking: None,
     };
     let key = hub.spawn(loop_, ui, workflow, false);
     hub.show(MAIN, key);
@@ -105,6 +115,10 @@ impl Hub {
             self.open(pane, open);
             return true;
         }
+        if let Cmd::TakeOver(id) = command {
+            self.take_over(pane, id);
+            return true;
+        }
         if let Cmd::Attach(view) = command {
             self.attach(view);
             return true;
@@ -122,6 +136,7 @@ impl Hub {
             return true;
         };
         if matches!(command, Cmd::Tick) {
+            self.poll_take();
             let peers = peers();
             for session in self.sessions.values() {
                 drop(session.cmd.send(Cmd::Tick));
@@ -141,6 +156,9 @@ impl Hub {
     }
 
     fn message(&mut self, key: u64, msg: Msg) {
+        if matches!(msg, Msg::Fact(Fact::TakenOver)) {
+            return self.taken_over(key);
+        }
         if matches!(
             msg,
             Msg::Fact(Fact::Secret(_)) | Msg::Intent(Intent::OpenLogin(_))
@@ -174,7 +192,7 @@ impl Hub {
         }
     }
 
-    fn open(&mut self, pane: u64, open: Open) {
+    pub(super) fn open(&mut self, pane: u64, open: Open) {
         let Some(ui) = self.panes.get(&pane).map(|pane| pane.ui.clone()) else {
             return;
         };
@@ -183,19 +201,31 @@ impl Hub {
         {
             return self.activate(pane, key);
         }
+        let held = match &open {
+            Open::Resume(id) => Some(id.clone()),
+            _ => None,
+        };
+        match (self.place(pane, open), held) {
+            (Ok(()), _) => {}
+            (Err(crate::Error::Held), Some(id)) => drop(ui.send(Msg::Fact(Fact::Held(id)))),
+            (Err(error), _) => drop(ui.send(Msg::Fact(Fact::Failed(error.to_string())))),
+        }
+    }
+
+    /// Starts a session from `open` and shows it in `pane`.
+    pub(super) fn place(&mut self, pane: u64, open: Open) -> crate::Result<()> {
+        let Some(ui) = self.panes.get(&pane).map(|pane| pane.ui.clone()) else {
+            return Ok(());
+        };
         let (tx, rx) = unbounded_channel();
         let factory = self.factory.clone();
         let open = self.isolated(open);
-        let made = tokio::task::block_in_place(|| factory(open, Ui(tx.clone())));
-        match made {
-            Ok((loop_, workflow)) => {
-                drop(ui.send(Msg::Fact(Fact::Busy(None))));
-                let key = self.spawn(loop_, (tx, rx), workflow, true);
-                self.show(pane, key);
-                self.publish();
-            }
-            Err(error) => drop(ui.send(Msg::Fact(Fact::Failed(error.to_string())))),
-        }
+        let (loop_, workflow) = tokio::task::block_in_place(|| factory(open, Ui(tx.clone())))?;
+        drop(ui.send(Msg::Fact(Fact::Busy(None))));
+        let key = self.spawn(loop_, (tx, rx), workflow, true);
+        self.show(pane, key);
+        self.publish();
+        Ok(())
     }
 
     fn activate(&mut self, pane: u64, key: u64) {

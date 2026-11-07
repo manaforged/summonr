@@ -70,6 +70,7 @@ table! {
     watch_quiet_ms: u64 => watch_quiet(millis),
     watch_settle_ms: u64 => watch_settle(millis),
     session_lock_ms: u64 => session_lock(millis),
+    session_takeover_ms: u64 => session_takeover(millis),
     strip_rows: usize,
     mail_sweep_secs: u64,
     presence_secs: u64,

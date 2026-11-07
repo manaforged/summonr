@@ -26,6 +26,14 @@ impl App {
         drop(self.cmd.send(Cmd::Open(open)));
     }
 
+    /// Asks the window that holds the refused chat to let go of it.
+    pub(crate) fn take_over(&self) {
+        if let Some(id) = self.held.peek() {
+            self.held.set(None);
+            drop(self.cmd.send(Cmd::TakeOver(id)));
+        }
+    }
+
     fn new_agent_place(&self) -> summonr_agent::hub::Open {
         if crate::canvas::is_window() {
             summonr_agent::hub::Open::Folder(self.workspace())

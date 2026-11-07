@@ -74,6 +74,51 @@ fn the_strip_counts_tokens_and_the_busy_row_names_the_work() {
 }
 
 #[test]
+fn a_chat_held_elsewhere_offers_take_over_until_the_view_changes() {
+    if !in_window("controls::a_chat_held_elsewhere_offers_take_over_until_the_view_changes") {
+        return;
+    }
+    let held = |app: &super::super::App| {
+        app.update(Msg::Fact(Fact::Held("abc".to_owned())));
+    };
+    let taken = steps(held, vec![Step::Click("Take over")], |_| ());
+    assert!(
+        taken
+            .sent
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::TakeOver(id) if id == "abc"))
+    );
+    let dismissed = steps(held, vec![Step::Click("Not now")], |app| app.held.peek());
+    assert_eq!(dismissed.read, None);
+    let moved = drive(
+        |app| {
+            held(app);
+            app.update(Msg::Intent(summonr_agent::hub::Intent::Reset));
+        },
+        Vec::new(),
+        |_| (),
+    );
+    assert!(moved.named(Role::Button, "Take over").is_empty());
+}
+
+#[test]
+fn a_taken_chat_says_another_window_took_it() {
+    if !in_window("controls::a_taken_chat_says_another_window_took_it") {
+        return;
+    }
+    let seen = drive(
+        |app| app.update(Msg::Fact(Fact::TakenOver)),
+        Vec::new(),
+        |_| (),
+    );
+    assert!(
+        seen.shows(|text| text == "Another window took over this chat"),
+        "{}",
+        seen.text()
+    );
+}
+
+#[test]
 fn the_approval_chip_names_the_mode_and_toggles_it() {
     if !in_window("controls::the_approval_chip_names_the_mode_and_toggles_it") {
         return;

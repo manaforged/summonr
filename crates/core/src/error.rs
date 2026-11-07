@@ -34,6 +34,8 @@ impl std::fmt::Display for ProviderFailure {
 pub enum Error {
     #[error("configuration error: {0}")]
     Config(String),
+    #[error("This chat is open in another Summonr window.")]
+    Held,
     #[error("{0}")]
     Setup(String),
     #[error("I/O error: {0}")]
@@ -63,6 +65,7 @@ impl Error {
         match self {
             Self::Provider(failure) => Some(failure),
             Self::Config(_)
+            | Self::Held
             | Self::Setup(_)
             | Self::Io(_)
             | Self::Json(_)

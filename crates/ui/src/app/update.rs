@@ -1,11 +1,18 @@
 use super::*;
 
+const TAKEN_OVER: &str = "Another window took over this chat";
+
 impl App {
     pub(crate) fn update(&self, msg: Msg) {
         match msg {
             Msg::Fact(Fact::Transcript(lines)) => {
                 lines.into_iter().for_each(|msg| self.update(msg))
             }
+            Msg::Fact(Fact::Held(id)) => self.held.set(Some(id)),
+            Msg::Fact(Fact::TakenOver) => self.notice.set(Some(Notice {
+                text: TAKEN_OVER.to_owned(),
+                kind: NoticeKind::Failed,
+            })),
             Msg::Fact(Fact::Secret(request)) => self.secret_open(request),
             Msg::Fact(Fact::Moved(folder)) => {
                 self.open_session(summonr_agent::hub::Open::Folder(folder));
@@ -95,6 +102,7 @@ impl App {
                 }
             }
             Msg::Intent(Intent::Reset) => {
+                self.held.set(None);
                 self.approval.set(None);
                 self.form_close();
             }

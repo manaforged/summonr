@@ -17,7 +17,7 @@ impl Worker {
             Cmd::Submit(input) => return self.submit(input).await,
             Cmd::Login(name) => return self.login(&name).await,
             Cmd::SetKey(name, key) => return self.set_key(&name, &key).await,
-            Cmd::Cancel | Cmd::Open(_) | Cmd::SteerQueued | Cmd::Answer(..) => {}
+            Cmd::Cancel | Cmd::Open(_) | Cmd::TakeOver(_) | Cmd::SteerQueued | Cmd::Answer(..) => {}
             Cmd::CancelLogin => self.queue.drop_auth(),
             Cmd::Replay => {
                 super::history::replay_transcript(
@@ -37,7 +37,12 @@ impl Worker {
                 self.queue.announce(&self.ui);
             }
             Cmd::Send(to, text) => turn::mail(&self.ui, &self.loop_.session_id(), &to, &text),
-            Cmd::Tick => self.tick(),
+            Cmd::Tick => {
+                if super::history::released(self.loop_.session_path(), &self.ui) {
+                    return false;
+                }
+                self.tick();
+            }
             Cmd::Peers(peers) => self.peers(&peers),
             Cmd::LoginAnswer(_) => {
                 self.system("the sign-in already ended; the pasted code was not sent")

@@ -1,6 +1,8 @@
 use super::{Hub, Open, Status};
 use crate::hub::{Cmd, Fact, Msg};
 
+const GAVE_UP: &str = "The other window did not let go of this chat.";
+
 impl Hub {
     /// Runs a command aimed at one session; returns any other command.
     pub(super) fn targeted(&mut self, pane: u64, command: Cmd) -> Option<Cmd> {
@@ -31,6 +33,67 @@ impl Hub {
         } else {
             Open::Folder(checkout)
         }
+    }
+
+    /// Asks the window that holds `id` to let go; the next ticks open it here.
+    pub(super) fn take_over(&mut self, pane: u64, id: String) {
+        let asked = tokio::task::block_in_place(|| {
+            let path = crate::session::resolve_id(&id)?;
+            crate::durable::log::ask_release(&path)?;
+            Ok::<_, crate::Error>(path)
+        });
+        match asked {
+            Ok(path) => {
+                let until = std::time::Instant::now() + crate::limits::limits().session_takeover();
+                self.taking = Some(super::Taking {
+                    pane,
+                    id,
+                    path,
+                    until,
+                });
+            }
+            Err(error) => self.tell(pane, error.to_string()),
+        }
+    }
+
+    /// Tries again to open the chat being taken over.
+    pub(super) fn poll_take(&mut self) {
+        let Some(taking) = self.taking.take() else {
+            return;
+        };
+        match self.place(taking.pane, Open::Resume(taking.id.clone())) {
+            Err(crate::Error::Held) if std::time::Instant::now() < taking.until => {
+                self.taking = Some(taking);
+                return;
+            }
+            Err(crate::Error::Held) => {
+                self.tell(taking.pane, GAVE_UP.to_owned());
+            }
+            Err(error) => self.tell(taking.pane, error.to_string()),
+            Ok(()) => {}
+        }
+        crate::durable::log::clear_release(&taking.path);
+    }
+
+    /// Drops a session another window took, and moves its view to a new chat.
+    pub(super) fn taken_over(&mut self, key: u64) {
+        if self.sessions.remove(&key).is_none() {
+            return;
+        }
+        let shown: Vec<u64> = self
+            .panes
+            .iter()
+            .filter(|(_, pane)| pane.key == Some(key))
+            .map(|(id, _)| *id)
+            .collect();
+        for pane in shown {
+            if let Some(view) = self.panes.get_mut(&pane) {
+                view.key = None;
+                drop(view.ui.send(Msg::Fact(Fact::TakenOver)));
+            }
+            self.open(pane, Open::New);
+        }
+        self.publish();
     }
 
     fn stop(&self, id: &str) {

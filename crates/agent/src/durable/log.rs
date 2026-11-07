@@ -239,6 +239,34 @@ fn hold(path: &Path) -> io::Result<File> {
     }
 }
 
+fn release_path(path: &Path) -> std::path::PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".release");
+    name.into()
+}
+
+/// Asks the host that holds `path` to let go of it.
+pub(crate) fn ask_release(path: &Path) -> io::Result<()> {
+    clear_release(path);
+    fs::write(release_path(path), b"")
+}
+
+/// Withdraws a request to let go of `path`.
+pub(crate) fn clear_release(path: &Path) {
+    drop(fs::remove_file(release_path(path)));
+}
+
+/// Whether another host asked for `path` recently enough to still be waiting.
+pub(crate) fn release_asked(path: &Path) -> bool {
+    fs::metadata(release_path(path))
+        .and_then(|data| data.modified())
+        .is_ok_and(|asked| {
+            asked
+                .elapsed()
+                .is_ok_and(|age| age < crate::limits::limits().session_takeover())
+        })
+}
+
 impl Log {
     pub(crate) fn create(path: &Path) -> io::Result<Self> {
         if let Some(parent) = path.parent() {

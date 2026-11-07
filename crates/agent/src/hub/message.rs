@@ -101,6 +101,10 @@ pub enum Fact {
     Named(String),
     Approval(String),
     Replayed,
+    /// Another window holds this session, so it did not open.
+    Held(String),
+    /// Another window took this session, which has stopped here.
+    TakenOver,
     /// A saved conversation in one message, so a view never draws part of it.
     Transcript(Vec<Msg>),
     LoginStep {
@@ -129,6 +133,8 @@ pub enum Intent {
 }
 
 pub enum Cmd {
+    /// Asks the window that holds this session to let go, then opens it here.
+    TakeOver(String),
     /// Adds a window pane that shows its own agent.
     Attach(super::View),
     /// Closes the window pane that sends it; its agent keeps running.

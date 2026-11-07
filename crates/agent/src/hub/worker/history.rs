@@ -22,6 +22,15 @@ impl Worker {
     }
 }
 
+/// Whether another window asked for this session, telling the view when it did.
+pub(super) fn released(path: &Path, ui: &UnboundedSender<Msg>) -> bool {
+    let asked = log::release_asked(path);
+    if asked {
+        drop(ui.send(Msg::Fact(Fact::TakenOver)));
+    }
+    asked
+}
+
 pub(super) fn replay_transcript(
     path: &Path,
     session: Option<String>,

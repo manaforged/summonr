@@ -35,6 +35,43 @@ fn task_progress_replays_the_current_numbered_plan() {
 }
 
 #[tokio::test]
+async fn a_release_request_stops_the_session_and_frees_its_journal() {
+    let home = tempfile::tempdir().expect("session home");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let model = "gpt-5.4";
+    let client = Client::new("test", "http://127.0.0.1:9/v1").expect("local client");
+    let driver = SessionDriver::open(home.path(), workspace.path(), model, "system", None)
+        .expect("session driver");
+    let path = driver.path().to_path_buf();
+    let loop_ = Loop::open(client, model, workspace.path(), "system", driver).expect("loop");
+    let info = Info {
+        version: String::new(),
+        model: model.to_string(),
+        relay: None,
+        session: loop_.session_id(),
+        endpoint: "openai".to_string(),
+        pick: None,
+        prefs: crate::prefs::Prefs::default(),
+        splash: false,
+        inline: false,
+        strict: false,
+        workspace: workspace.path().display().to_string(),
+        workflow: None,
+        config: None,
+        prompt: None,
+    };
+    let (commands, receiver) = unbounded_channel();
+    let (ui, mut inbox) = unbounded_channel();
+    crate::durable::log::ask_release(&path).expect("ask");
+    commands.send(Cmd::Tick).expect("tick");
+    worker(loop_, receiver, ui, info, false).await;
+    let told = std::iter::from_fn(|| inbox.try_recv().ok())
+        .any(|msg| matches!(msg, Msg::Fact(Fact::TakenOver)));
+    assert!(told);
+    assert!(crate::durable::log::Log::open(&path).is_ok());
+}
+
+#[tokio::test]
 async fn startup_effort_reaches_the_composer_before_a_model_switch() {
     let home = tempfile::tempdir().expect("session home");
     let workspace = tempfile::tempdir().expect("workspace");

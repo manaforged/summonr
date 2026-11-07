@@ -4,6 +4,7 @@ retry_base_ms = 1000
 retry_max_ms = 30000
 retry_after_max_secs = 60
 session_lock_ms = 250
+session_takeover_ms = 10000
 stream_idle_secs = 240
 stream_total_secs = 86400
 connect_secs = 20

@@ -102,11 +102,17 @@ impl Worker {
                         Some(Cmd::Answer(dialog, text)) => {
                             self.queue.steering.answer(dialog, UserInput::from(text));
                         }
-                        Some(Cmd::Tick) => self.queue.announce(&self.ui),
+                        Some(Cmd::Tick) => {
+                            if super::history::released(&session_path, &self.ui) {
+                                quit = true;
+                                break None;
+                            }
+                            self.queue.announce(&self.ui);
+                        }
                         Some(Cmd::Peers(peers)) => {
                             publish_peers(&peers, &session_id, &mut self.last_peers, &self.ui);
                         }
-                        Some(Cmd::Mail | Cmd::LoginAnswer(_) | Cmd::Open(_)) => {}
+                        Some(Cmd::Mail | Cmd::LoginAnswer(_) | Cmd::Open(_) | Cmd::TakeOver(_)) => {}
                         Some(command) => self.reader.run(command).await,
                     },
                     () = arrived.notified() => self.queue.announce(&self.ui),

@@ -35,6 +35,7 @@ impl Cmd {
             | Cmd::Tick
             | Cmd::Peers(_)
             | Cmd::Open(_)
+            | Cmd::TakeOver(_)
             | Cmd::Attach(_)
             | Cmd::Detach
             | Cmd::Mail

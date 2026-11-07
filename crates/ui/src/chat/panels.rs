@@ -12,7 +12,12 @@ pub(crate) enum Band {
     Approval { detail: String, persist: bool },
     Form { lines: Vec<String>, review: bool },
     Attached(usize),
+    Held,
 }
+
+/// What a chat held by another window says.
+pub(crate) const HELD: &str =
+    "This chat is open in another Summonr window. Taking over stops anything running there.";
 
 pub(crate) fn band(app: &App) -> Option<Band> {
     if let Some(crate::app::Asked {
@@ -26,6 +31,9 @@ pub(crate) fn band(app: &App) -> Option<Band> {
             lines: state.shown(&app.draft.get()),
             review: state.stage == crate::app::Stage::Review,
         });
+    }
+    if app.held.get().is_some() {
+        return Some(Band::Held);
     }
     let attached = app.attached.get();
     (attached > 0).then_some(Band::Attached(attached))
@@ -54,6 +62,7 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
         Band::Form { lines, review } => {
             above(super::form::form_band(app.clone(), width, lines, review))
         }
+        Band::Held => above(notice_band(HELD, Tone::Warn)),
         Band::Attached(attached) => above(notice_band(attached_note(app, attached), Tone::Info)),
     }
 }

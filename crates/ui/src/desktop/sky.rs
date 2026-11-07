@@ -4,14 +4,9 @@ use sigil::style::Rgba8;
 
 use super::App;
 use crate::canvas::rgb;
+use crate::scene::DAY;
 use crate::theme::Palette;
 
-const DAY: [Rgba8; 4] = [
-    rgb(64, 132, 214),
-    rgb(92, 96, 206),
-    rgb(168, 82, 190),
-    rgb(226, 88, 138),
-];
 const NIGHT: [Rgba8; 4] = [
     rgb(36, 92, 178),
     rgb(78, 62, 176),

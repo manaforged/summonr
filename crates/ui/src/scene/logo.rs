@@ -1,6 +1,6 @@
 use super::input::{glass, overlay};
 use super::mark::Shimmer;
-use super::space::{PLATE, Plate, STAR_BRIGHT};
+use super::space::Plate;
 use super::*;
 use sigil::animation::Easing;
 use sigil::prelude::Paint;
@@ -106,6 +106,8 @@ pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64) -> Composed
         (body_rows + 2).min(rows.saturating_sub(card_y)),
     ];
     let mut plate = glass(card);
+    let colours = stage();
+    let tone = colours.plate;
     let revealed =
         app.splash_revealed.peek() || !model.prefs.animations || !app.draft.peek().is_empty();
     let elapsed = if revealed { u64::MAX / 2 } else { elapsed };
@@ -130,7 +132,7 @@ pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64) -> Composed
             x,
             y,
             label,
-            blend(PLATE, palette().dim, facts_fade),
+            blend(tone, colours.label, facts_fade),
         );
         let value = crate::cells::ellipsize_start(value, value_width);
         overlay(
@@ -138,7 +140,7 @@ pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64) -> Composed
             x + FACT_LABEL,
             y,
             &value,
-            blend(PLATE, palette().gray, facts_fade),
+            blend(tone, colours.value, facts_fade),
         );
     }
     if let Some((at, start)) = placed.word.zip(card_kind.word_start()) {
@@ -163,12 +165,13 @@ pub(crate) fn shimmer_clock(app: &App) -> u64 {
 
 fn wordmark(plate: &mut Plate, [x, y]: [u16; 2], elapsed: u64) {
     let face = palette().text;
+    let tone = stage().plate;
     let width = summonr_agent::splash::logo_width();
     for (row, text) in summonr_agent::splash::logo().iter().enumerate() {
         for (col, glyph) in text.chars().enumerate() {
             let at = [x + col as u16, y + row as u16];
             let ink = bloom(col, width, elapsed, face);
-            if ink == PLATE {
+            if ink == tone {
                 continue;
             }
             if glyph == SOLID {
@@ -179,7 +182,7 @@ fn wordmark(plate: &mut Plate, [x, y]: [u16; 2], elapsed: u64) {
                     at[0],
                     at[1],
                     &glyph.to_string(),
-                    blend(ink, PLATE, SHADE),
+                    blend(ink, tone, SHADE),
                 );
             }
         }
@@ -278,7 +281,12 @@ fn bloom(col: usize, width: usize, elapsed: u64, settled: Rgba8) -> Rgba8 {
     let fade = Easing::SineOut.apply(age.min(FADE_MS) as f32 / FADE_MS as f32);
     let settle =
         Easing::SineInOut.apply(age.saturating_sub(FADE_MS).min(FADE_MS) as f32 / FADE_MS as f32);
-    blend(PLATE, blend(STAR_BRIGHT, settled, settle), fade)
+    let colours = stage();
+    blend(
+        colours.plate,
+        blend(colours.star_bright, settled, settle),
+        fade,
+    )
 }
 
 pub(crate) type Row = (u16, u16, Vec<Cell>);

@@ -63,16 +63,17 @@ const NEBULA: f32 = 0.45;
 pub(super) struct Field {
     pub(super) top: Rgba8,
     pub(super) bottom: Rgba8,
+    pub(super) glow: f32,
 }
 
-type Cached = ((u16, u16, u64), Rc<[Field]>);
+type Cached = ((u16, u16, u64, Rgba8), Rc<[Field]>);
 
 thread_local! {
     static FIELD: RefCell<Option<Cached>> = const { RefCell::new(None) };
 }
 
 pub(super) fn field(cols: u16, rows: u16, seed: u64) -> Rc<[Field]> {
-    let key = (cols, rows, seed);
+    let key = (cols, rows, seed, stage().void);
     FIELD.with_borrow_mut(|cached| {
         if let Some((held, field)) = cached.as_ref()
             && *held == key
@@ -151,26 +152,45 @@ impl Shape {
     }
 }
 
-struct Sample {
-    shade: f32,
-    glow: f32,
-    nebula: f32,
-    hue: f32,
+pub(super) struct Sample {
+    pub(super) shade: f32,
+    pub(super) glow: f32,
+    pub(super) nebula: f32,
+    pub(super) hue: f32,
 }
 
 fn draw(cols: u16, rows: u16, shape: &Shape) -> Vec<Field> {
-    let mut cells = Vec::with_capacity(usize::from(cols) * usize::from(rows));
+    let mut samples = Vec::with_capacity(usize::from(cols) * usize::from(rows) * 2);
     for y in 0..rows {
-        for x in 0..cols {
-            let upper = sample(cols, rows, f32::from(x), f32::from(y) - 0.25, shape);
-            let lower = sample(cols, rows, f32::from(x), f32::from(y) + 0.25, shape);
-            cells.push(Field {
-                top: haze(&upper),
-                bottom: haze(&lower),
-            });
+        for half in [-0.25, 0.25] {
+            for x in 0..cols {
+                samples.push(sample(cols, rows, f32::from(x), f32::from(y) + half, shape));
+            }
         }
     }
-    cells
+    let night: Vec<Rgba8> = samples.iter().map(haze).collect();
+    let colours = stage();
+    let tones = if colours.paper {
+        super::wash::paint(&samples, cols, colours.void)
+    } else {
+        night.clone()
+    };
+    let width = usize::from(cols).max(1);
+    (0..usize::from(rows))
+        .flat_map(|y| (0..width).map(move |x| (y, x)))
+        .map(|(y, x)| {
+            let (upper, lower) = ((y * 2) * width + x, (y * 2 + 1) * width + x);
+            Field {
+                top: tones[upper],
+                bottom: tones[lower],
+                glow: luminance(blend(night[upper], night[lower], 0.5)),
+            }
+        })
+        .collect()
+}
+
+fn luminance(colour: Rgba8) -> f32 {
+    (0.3 * f32::from(colour.r) + 0.55 * f32::from(colour.g) + 0.15 * f32::from(colour.b)) / 255.0
 }
 
 fn sample(cols: u16, rows: u16, x: f32, y: f32, shape: &Shape) -> Sample {
@@ -274,7 +294,7 @@ fn haze(sample: &Sample) -> Rgba8 {
     } else {
         blend(ZONES[zone][0], ZONES[zone][1], ramp)
     };
-    blend(VOID, tint, shade)
+    blend(super::space::VOID, tint, shade)
 }
 
 fn gauss(x: f32) -> f32 {

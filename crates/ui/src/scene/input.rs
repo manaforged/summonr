@@ -1,5 +1,7 @@
 use super::logo::{body, facts, fitting, layout};
-use super::space::{GLASS, PLATE, Plate};
+#[cfg(test)]
+use super::space::PLATE;
+use super::space::Plate;
 use super::*;
 
 pub(crate) fn window_area(app: &App, cols: u16, rows: u16) -> [u16; 4] {
@@ -11,9 +13,10 @@ pub(crate) fn window_area(app: &App, cols: u16, rows: u16) -> [u16; 4] {
 }
 
 pub(crate) fn glass(area: [u16; 4]) -> Plate {
+    let colours = stage();
     let tint = ink(Rgba8 {
-        a: (GLASS * 255.0) as u8,
-        ..PLATE
+        a: (colours.glass * 255.0) as u8,
+        ..colours.plate
     });
     let mut blank = Cell::blank();
     blank.bg = tint;

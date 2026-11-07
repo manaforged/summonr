@@ -14,7 +14,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         (rows, scene::window_area(&shape, cols, rows))
     });
     container()
-        .bg(scene::SCRIM)
+        .bg(scene::stage().scrim)
         .layout(LayoutStyle::block().fill_width().fill_height())
         .child(scene::layer(surface))
         .child(
@@ -37,16 +37,17 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
     let cell = canvas::cell();
     let spacer = app.clone();
     let inner = width.saturating_sub(4);
+    let colours = scene::stage();
     let tint = Rgba8 {
-        a: (scene::GLASS * 255.0) as u8,
-        ..scene::PLATE
+        a: (colours.pane * 255.0) as u8,
+        ..colours.plate
     };
-    let mut clear = super::super::theme::style(super::super::theme::splash());
+    let mut clear = super::super::theme::style(super::super::theme::palette());
     clear.register_token(
         "surface",
         ThemeValue::Color(Rgba8 {
             a: 0,
-            ..scene::PLATE
+            ..colours.plate
         }),
     );
     container()

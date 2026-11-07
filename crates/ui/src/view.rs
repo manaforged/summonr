@@ -59,11 +59,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
                     .bg(sigil::prelude::Token::Surface)
                     .child(chat)
                     .child(dialog)
-                    .theme(super::theme::style(if screen.splash.get() {
-                        super::theme::splash()
-                    } else {
-                        appearance
-                    })),
+                    .theme(super::theme::style(appearance)),
             ]
         })
 }

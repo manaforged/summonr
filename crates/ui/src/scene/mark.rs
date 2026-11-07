@@ -1,4 +1,4 @@
-use super::space::{PLATE, Plate};
+use super::space::Plate;
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -131,7 +131,7 @@ fn draw(mark: Mark, elapsed: u64, clock: Option<u64>) -> Grid {
 
 fn depth(layer: i32) -> Rgba8 {
     let front = (LAYERS - layer) as f32 / (LAYERS - 1) as f32;
-    blend(PLATE, palette().text, 0.14 + front * 0.34)
+    blend(stage().plate, palette().text, 0.14 + front * 0.34)
 }
 
 fn bars(bar: i32, gap: i32) -> [i32; 6] {

@@ -7,7 +7,7 @@ pub(super) use super::app::App;
 
 use super::canvas::{Cell, blend, cell as metrics, ink, rgb, shown};
 use super::model::Model;
-use super::theme::splash as palette;
+use super::theme::palette;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
@@ -23,12 +23,17 @@ mod mark;
 pub(crate) use logo::{Line, compose, placed, reveal_ms};
 pub(crate) use mark::Mark;
 pub(crate) use space::Plate;
-pub(crate) use space::{GLASS, PLATE, SCRIM, VOID, moving};
+pub(crate) use space::moving;
+pub(crate) use stage::stage;
+#[cfg(feature = "gui")]
+pub(crate) use wash::DAY;
 
 mod galaxy;
 mod input;
 mod space;
+mod stage;
 mod stars;
+mod wash;
 
 pub(crate) fn sky_seed() -> u64 {
     static SEED: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
@@ -59,7 +64,9 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
     });
     let size = sigil::reactive::derived(move || {
         let (cols, rows) = shape.viewport.get();
-        (u64::from(cols) << 16) | u64::from(rows)
+        let base = shape.appearance.get().base;
+        let tone = u64::from(u32::from_be_bytes([base.r, base.g, base.b, 0]));
+        (tone << 32) | (u64::from(cols) << 16) | u64::from(rows)
     });
     let mut beats = 0_u64;
     let twinkle = sigil::reactive::derived(move || {
@@ -69,7 +76,7 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
     });
     let card = card(app);
     container()
-        .bg(VOID)
+        .bg(stage().void)
         .layout(fill(LayoutStyle::flex_column()))
         .child(
             sigil::widgets::canvas(move |scene, area| {

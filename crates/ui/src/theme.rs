@@ -273,17 +273,6 @@ pub(super) fn palette() -> Palette {
     ACTIVE.with(Cell::get)
 }
 
-#[must_use]
-pub(super) fn splash() -> Palette {
-    let active = palette();
-    let [r, g, b] = [active.base.r, active.base.g, active.base.b].map(u32::from);
-    if r * 299 + g * 587 + b * 114 > 128_000 {
-        Palette::SPACE
-    } else {
-        active
-    }
-}
-
 pub(super) fn set(palette: Palette) {
     ACTIVE.with(|active| active.set(palette));
 }

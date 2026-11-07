@@ -7,17 +7,17 @@ use sigil::geometry::{Point, Rect};
 use sigil::scene::{DrawRect, GlyphRun, SceneBuilder};
 use sigil::style::TextStyle;
 
-pub(crate) const SCRIM: Rgba8 = rgb(10, 8, 20);
+pub(super) const SCRIM: Rgba8 = rgb(10, 8, 20);
 
-pub(crate) const VOID: Rgba8 = rgb(5, 5, 10);
+pub(super) const VOID: Rgba8 = rgb(5, 5, 10);
 
-pub(crate) const PLATE: Rgba8 = rgb(42, 44, 58);
+pub(super) const PLATE: Rgba8 = rgb(42, 44, 58);
 
-pub(crate) const GLASS: f32 = 0.62;
+pub(super) const GLASS: f32 = 0.62;
 
-pub(crate) const STAR_DIM: Rgba8 = rgb(58, 74, 110);
+pub(super) const STAR_DIM: Rgba8 = rgb(58, 74, 110);
 
-pub(crate) const STAR_BRIGHT: Rgba8 = rgb(176, 200, 240);
+pub(super) const STAR_BRIGHT: Rgba8 = rgb(176, 200, 240);
 
 #[derive(Clone, PartialEq)]
 pub(crate) struct Spot {
@@ -26,9 +26,9 @@ pub(crate) struct Spot {
     pub(crate) cell: Cell,
 }
 
-const WARM: Rgba8 = rgb(214, 176, 122);
+pub(super) const WARM: Rgba8 = rgb(214, 176, 122);
 
-const FLARE: Rgba8 = rgb(244, 246, 255);
+pub(super) const FLARE: Rgba8 = rgb(244, 246, 255);
 
 const SKY_PERIOD: u64 = 50;
 
@@ -165,7 +165,7 @@ fn sparkle(spots: &mut Vec<Spot>, cols: u16, rows: u16, ticks: u64, seed: u64) {
         x,
         y,
         "✦",
-        STAR_BRIGHT,
+        stage().star_bright,
         under(&field[index(cols, x, y)]),
         true,
     ));
@@ -176,15 +176,16 @@ fn meteor(spots: &mut Vec<Spot>, cols: u16, rows: u16, beat: f64, seed: u64) {
         return;
     };
     let field = field(cols, rows, seed);
+    let colours = stage();
     let head = inside(cols, rows, flight.x, flight.y);
     let mut trail: BTreeMap<(u16, u16), (u8, Rgba8)> = BTreeMap::new();
     for step in (1..TRAIL).rev() {
         let along = f32::from(step) * TRAIL_STEP;
         let fade = 1.0 - f32::from(step) / f32::from(TRAIL);
         let fg = if step < 4 {
-            blend(WARM, FLARE, fade)
+            blend(colours.warm, colours.flare, fade)
         } else {
-            blend(STAR_DIM, WARM, fade)
+            blend(colours.star_dim, colours.warm, fade)
         };
         let (x, y) = (flight.x - flight.ux * along, flight.y - flight.uy * along);
         let Some(at) = inside(cols, rows, x, y).filter(|at| Some(*at) != head) else {
@@ -209,7 +210,7 @@ fn meteor(spots: &mut Vec<Spot>, cols: u16, rows: u16, beat: f64, seed: u64) {
             x,
             y,
             "✦",
-            FLARE,
+            colours.flare,
             under(&field[index(cols, x, y)]),
             true,
         ));

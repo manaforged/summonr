@@ -87,14 +87,31 @@ impl App {
     }
 
     fn notify_user(&self, title: String, body: String) {
-        let sent = sigil::app::notify::Notification::new(title, body)
-            .app_name("Summonr")
-            .send();
-        if let Err(error) = sent {
-            self.notice.set(Some(Notice {
-                text: format!("Could not show a notification: {error}"),
-                kind: NoticeKind::Failed,
+        let notice = self.notice;
+        let send = move || {
+            let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
+            sigil::tasks::on_message(
+                inbox,
+                move |error: String| {
+                    notice.set(Some(Notice {
+                        text: format!("Could not show a notification: {error}"),
+                        kind: NoticeKind::Failed,
+                    }));
+                },
+                || {},
+            );
+            drop(tokio::task::spawn_blocking(move || {
+                let sent = sigil::app::notify::Notification::new(title, body)
+                    .app_name("Summonr")
+                    .send();
+                if let Err(error) = sent {
+                    drop(out.send(error.to_string()));
+                }
             }));
+        };
+        match self.window.owner {
+            Some(owner) => owner.with(send),
+            None => send(),
         }
     }
 }

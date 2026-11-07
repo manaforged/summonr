@@ -120,8 +120,11 @@ fn a_skill_with_no_arguments_runs_on_the_previous_task() {
 fn skill(root: &std::path::Path, path: &str, about: &str) {
     let dir = root.join(".summonr").join("skills").join(path);
     std::fs::create_dir_all(&dir).expect("skill directory");
-    std::fs::write(dir.join("SKILL.md"), format!("---\ndescription: {about}\n---\n{about}\n"))
-        .expect("skill body");
+    std::fs::write(
+        dir.join("SKILL.md"),
+        format!("---\ndescription: {about}\n---\n{about}\n"),
+    )
+    .expect("skill body");
 }
 
 #[test]
@@ -129,7 +132,10 @@ fn a_skill_in_a_folder_lists_under_it_and_loads_by_its_own_name() {
     let workspace = tempfile::tempdir().expect("workspace");
     skill(workspace.path(), "probe-review/probe-rust", "Rust review");
     let catalog = super::catalog(workspace.path(), None).expect("skill catalog");
-    assert!(catalog.contains("probe-rust [probe-review]: Rust review"), "{catalog}");
+    assert!(
+        catalog.contains("probe-rust [probe-review]: Rust review"),
+        "{catalog}"
+    );
     assert!(
         super::load(workspace.path(), None, "probe-rust")
             .expect("skill body")
@@ -158,7 +164,9 @@ fn two_skills_with_one_name_in_two_folders_both_list_by_folder() {
 #[test]
 fn a_claude_code_skill_folder_is_read_one_level_deep() {
     let workspace = tempfile::tempdir().expect("workspace");
-    let dir = workspace.path().join(".claude/skills/probe-group/probe-inner");
+    let dir = workspace
+        .path()
+        .join(".claude/skills/probe-group/probe-inner");
     std::fs::create_dir_all(&dir).expect("skill directory");
     std::fs::write(dir.join("SKILL.md"), "inner").expect("skill body");
     assert!(
@@ -178,9 +186,8 @@ fn a_skill_set_shows_its_folders_and_refuses_a_left_out_skill() {
     skill(workspace.path(), "probe-review/probe-rust", "Rust review");
     skill(workspace.path(), "probe-review/probe-panel", "Panel review");
     skill(workspace.path(), "probe-other", "Other");
-    let named = sets(
-        "[lean]\ninclude = [\"probe-review\"]\nexclude = [\"probe-review/probe-panel\"]\n",
-    );
+    let named =
+        sets("[lean]\ninclude = [\"probe-review\"]\nexclude = [\"probe-review/probe-panel\"]\n");
     let lean = super::Set::from_sets(&named, "lean").expect("lean set");
     let catalog = super::catalog(workspace.path(), Some(&lean)).expect("skill catalog");
     assert!(catalog.contains("probe-rust"), "{catalog}");

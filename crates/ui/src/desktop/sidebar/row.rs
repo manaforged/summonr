@@ -41,9 +41,21 @@ fn action_row(app: &App, action: Action) -> NodeBuilder {
         },
     );
     sigil::widgets::context_menu(row, move || {
-        let menu = menu.clone();
-        vec![MenuItem::new(UNPIN).activate(move || super::super::palette::unpin(&menu, action))]
+        let unpin = menu.clone();
+        std::iter::once(
+            MenuItem::new(UNPIN).activate(move || super::super::palette::unpin(&unpin, action)),
+        )
+        .chain(add_items(&menu))
+        .collect()
     })
+}
+
+/// The menu item that opens the list of actions to pin, or nothing when all are pinned.
+pub(super) fn add_items(app: &App) -> Vec<MenuItem> {
+    if super::super::palette::all_pinned(app) {
+        return Vec::new();
+    }
+    vec![MenuItem::new(super::super::palette::PIN).activate(super::super::palette::show_pins)]
 }
 
 /// The agents the repository lists show: not archived and not pinned.

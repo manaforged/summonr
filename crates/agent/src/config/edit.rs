@@ -140,6 +140,7 @@ pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
 pub(crate) enum Section {
     Mcp,
     Endpoint,
+    Workflow,
 }
 
 impl Section {
@@ -147,6 +148,7 @@ impl Section {
         match self {
             Self::Mcp => "mcp",
             Self::Endpoint => "endpoint",
+            Self::Workflow => "workflows",
         }
     }
 }
@@ -248,6 +250,10 @@ pub(crate) fn save_default_workflow(path: &Path, name: &str) -> Result<()> {
         Ok(true)
     })
     .map(drop)
+}
+
+pub(crate) fn clear_default_workflow(path: &Path) -> Result<()> {
+    update(path, |document| Ok(document.remove("workflow").is_some())).map(drop)
 }
 
 pub(crate) fn save_default_skills(path: &Path, name: Option<&str>) -> Result<()> {

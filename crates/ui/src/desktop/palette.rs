@@ -49,6 +49,14 @@ pub(crate) fn show() -> bool {
         .is_some()
 }
 
+/// Shows the palette's list of actions to pin.
+pub(super) fn show_pins() {
+    if let Some(shown) = OPEN.with(Cell::get) {
+        shown.pinning.set(true);
+        shown.open.set(true);
+    }
+}
+
 /// The palette: every agent, searchable by title and repo, then actions with their shortcuts.
 pub(super) fn view(app: &App) -> Option<NodeBuilder> {
     let shown = OPEN.with(Cell::get)?;
@@ -115,10 +123,7 @@ fn everything(app: &App, shown: Shown) -> NodeBuilder {
         })
         .detail(key)
     });
-    let all_pinned = app
-        .model
-        .with(|model| ROWS.iter().all(|row| model.prefs.sidebar.contains(&row.0)));
-    let menu = if all_pinned {
+    let menu = if all_pinned(app) {
         menu
     } else {
         menu.item(PIN, move || shown.pinning.set(true))
@@ -129,7 +134,14 @@ fn everything(app: &App, shown: Shown) -> NodeBuilder {
         .into()
 }
 
-const PIN: &str = "Pin to sidebar…";
+/// The item that lists the actions a person can pin.
+pub(super) const PIN: &str = "Pin to sidebar…";
+
+/// Whether every action is already on the sidebar.
+pub(super) fn all_pinned(app: &App) -> bool {
+    app.model
+        .with(|model| ROWS.iter().all(|row| model.prefs.sidebar.contains(&row.0)))
+}
 
 fn pin_list(app: &App, shown: Shown) -> NodeBuilder {
     let pinned = app.model.with(|model| model.prefs.sidebar.clone());
@@ -164,15 +176,21 @@ pub(super) fn unpin(app: &App, action: Action) {
 
 type Row = (Action, &'static str, &'static str, Icon);
 
-const ROWS: [Row; 22] = [
+const ROWS: [Row; 24] = [
     (Action::NewAgent, "New agent", "⌘N", Icon::Plus),
-    (Action::NewBranch, "New agent on branch", "", Icon::GitBranch),
+    (
+        Action::NewBranch,
+        "New agent on branch",
+        "",
+        Icon::GitBranch,
+    ),
     (
         Action::NewTerminal,
         super::terminal::NEW_TERMINAL_ACTION,
         "⌘T",
         Icon::Terminal,
     ),
+    (Action::NewWorkflow, "New workflow", "", Icon::Layers),
     (Action::ClaudeCode, "Claude Code terminal", "", Icon::Code),
     (Action::Split, "Split", "⌘D", Icon::PanelLeft),
     (Action::ClosePane, "Close pane", "⌘W", Icon::CircleX),
@@ -188,6 +206,7 @@ const ROWS: [Row; 22] = [
     (Action::Steps, "All steps", "", Icon::ScrollText),
     (Action::Settings, "Settings", "⌘,", Icon::Settings),
     page(Action::Models, Page::Models),
+    page(Action::Workflows, Page::Workflows),
     page(Action::Usage, Page::Usage),
     page(Action::Mcp, Page::Mcp),
     page(Action::Plugins, Page::Plugins),
@@ -207,8 +226,9 @@ const PANES: [(Action, Pane); 6] = [
     (Action::Ledger, Pane::Ledger),
 ];
 
-const PAGES: [(Action, Page); 5] = [
+const PAGES: [(Action, Page); 6] = [
     (Action::Models, Page::Models),
+    (Action::Workflows, Page::Workflows),
     (Action::Usage, Page::Usage),
     (Action::Mcp, Page::Mcp),
     (Action::Plugins, Page::Plugins),
@@ -240,6 +260,7 @@ pub(super) fn run(app: &App, action: Action) {
         Action::NewAgent => super::split::show(app, Open::New),
         Action::NewBranch => super::split::show(app, Open::Worktree(pane.workspace())),
         Action::NewTerminal => app.open_terminal(super::terminal::NEW_TERMINAL, None),
+        Action::NewWorkflow => super::settings::workflows::create(app),
         Action::ClaudeCode => app.open_terminal(
             super::terminal::CLAUDE,
             Some(super::terminal::CLAUDE_COMMAND),
@@ -258,6 +279,7 @@ pub(super) fn run(app: &App, action: Action) {
         | Action::Peers
         | Action::Ledger
         | Action::Models
+        | Action::Workflows
         | Action::Usage
         | Action::Mcp
         | Action::Plugins

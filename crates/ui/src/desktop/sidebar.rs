@@ -53,7 +53,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
                 container()
                     .layout(LayoutStyle::flex_column().fill().gap(XS).min_size(0.0, 0.0))
                     .child(brand(&app))
-                    .child(
+                    .child(sigil::widgets::context_menu(
                         container()
                             .layout(
                                 LayoutStyle::flex_column()
@@ -64,7 +64,11 @@ pub(super) fn view(app: App) -> NodeBuilder {
                                 let app = app.clone();
                                 move || row::actions(&app, actions)
                             }),
-                    )
+                        {
+                            let app = app.clone();
+                            move || row::add_items(&app)
+                        },
+                    ))
                     .child(
                         container()
                             .layout(

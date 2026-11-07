@@ -76,9 +76,27 @@ pub struct Workflow {
 }
 
 impl Workflow {
+    /// A workflow named `name` that runs every role on the primary model.
     #[must_use]
-    pub(crate) fn selection(&self, role: Role) -> Option<&ModelSelection> {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.trim().to_string(),
+            selections: BTreeMap::new(),
+        }
+    }
+
+    /// The endpoint and model `role` runs on, or None for the primary model.
+    #[must_use]
+    pub fn selection(&self, role: Role) -> Option<&ModelSelection> {
         self.selections.get(&role)
+    }
+
+    /// Runs `role` on `selection`, or on the primary model when it is None.
+    pub fn assign(&mut self, role: Role, selection: Option<ModelSelection>) {
+        match selection {
+            Some(selection) => drop(self.selections.insert(role, selection)),
+            None => drop(self.selections.remove(&role)),
+        }
     }
 
     #[must_use]
@@ -136,7 +154,8 @@ pub(crate) fn from_file(file: &File, name: &str) -> Result<Workflow> {
     })
 }
 
-pub(crate) fn save(workflow: &Workflow) -> Result<()> {
+/// Writes `workflow` to config.toml as `[workflows.NAME]`.
+pub fn save(workflow: &Workflow) -> Result<()> {
     let name = workflow.name.trim();
     if name.is_empty() {
         return Err(Error::Config("workflow name is empty".to_string()));
@@ -149,7 +168,18 @@ pub(crate) fn save(workflow: &Workflow) -> Result<()> {
     config::save_workflow(&config::path()?, workflow)
 }
 
-pub(crate) fn set_default(name: &str) -> Result<()> {
+/// Deletes the saved workflow `name`, and clears the default when it was the default; false when there was none.
+pub fn remove(name: &str) -> Result<bool> {
+    let path = config::path()?;
+    let removed = config::remove_named(&path, config::Section::Workflow, name)?;
+    if removed && default_name()?.as_deref() == Some(name) {
+        config::clear_default_workflow(&path)?;
+    }
+    Ok(removed)
+}
+
+/// Makes the saved workflow `name` the one new sessions start with.
+pub fn set_default(name: &str) -> Result<()> {
     let path = config::path()?;
     from_file(&config::parse(&path)?, name)?;
     config::save_default_workflow(&path, name)

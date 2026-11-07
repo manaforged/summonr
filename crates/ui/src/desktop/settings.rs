@@ -21,12 +21,14 @@ mod shortcuts;
 mod tools;
 mod usage;
 mod will;
+pub(super) mod workflows;
 
 /// One page of the Settings window.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Page {
     General,
     Models,
+    Workflows,
     Accounts,
     Mcp,
     Plugins,
@@ -38,9 +40,10 @@ pub(super) enum Page {
 }
 
 impl Page {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::General,
         Self::Models,
+        Self::Workflows,
         Self::Accounts,
         Self::Usage,
         Self::Mcp,
@@ -56,6 +59,7 @@ impl Page {
         match self {
             Self::General => "General",
             Self::Models => "Models",
+            Self::Workflows => "Workflows",
             Self::Accounts => "Accounts",
             Self::Mcp => "MCP servers",
             Self::Plugins => "Plugins & skills",
@@ -72,6 +76,7 @@ impl Page {
         match self {
             Self::General => Icon::SlidersHorizontal,
             Self::Models => Icon::Cpu,
+            Self::Workflows => Icon::Layers,
             Self::Accounts => Icon::Key,
             Self::Mcp => Icon::Server,
             Self::Plugins => Icon::Package,
@@ -95,6 +100,7 @@ impl Page {
         match self {
             Self::General => general::view(app),
             Self::Models => models::view(app),
+            Self::Workflows => workflows::view(app),
             Self::Accounts => accounts::view(app),
             Self::Mcp => mcp::view(app),
             Self::Plugins => plugins::view(app),

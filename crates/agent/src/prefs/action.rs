@@ -4,6 +4,7 @@ pub enum Action {
     NewAgent,
     NewBranch,
     NewTerminal,
+    NewWorkflow,
     ClaudeCode,
     Split,
     ClosePane,
@@ -22,13 +23,15 @@ pub enum Action {
     Usage,
     Mcp,
     Plugins,
+    Workflows,
     Shortcuts,
 }
 
-const NAMES: [(Action, &str); 22] = [
+const NAMES: [(Action, &str); 24] = [
     (Action::NewAgent, "new_agent"),
     (Action::NewBranch, "new_branch"),
     (Action::NewTerminal, "new_terminal"),
+    (Action::NewWorkflow, "new_workflow"),
     (Action::ClaudeCode, "claude_code"),
     (Action::Split, "split"),
     (Action::ClosePane, "close_pane"),
@@ -47,12 +50,18 @@ const NAMES: [(Action, &str); 22] = [
     (Action::Usage, "usage"),
     (Action::Mcp, "mcp"),
     (Action::Plugins, "plugins"),
+    (Action::Workflows, "workflows"),
     (Action::Shortcuts, "shortcuts"),
 ];
 
 impl Action {
     /// The sidebar rows before a person changes them.
-    pub const PINNED: [Self; 3] = [Self::NewAgent, Self::NewTerminal, Self::Search];
+    pub const PINNED: [Self; 4] = [
+        Self::NewAgent,
+        Self::NewTerminal,
+        Self::NewWorkflow,
+        Self::Search,
+    ];
 
     /// The name the config file stores.
     pub fn name(self) -> &'static str {

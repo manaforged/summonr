@@ -290,9 +290,10 @@ pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
 }
 
 pub(crate) use edit::{
-    Section, add_plugin_off, drop_plugin_off, remove_key, remove_named, save_browser_chrome,
-    save_default_model, save_default_skills, save_default_workflow, save_module, save_named,
-    save_prefs, save_provider, save_workflow, save_write_root, write_root_entry,
+    Section, add_plugin_off, clear_default_workflow, drop_plugin_off, remove_key, remove_named,
+    save_browser_chrome, save_default_model, save_default_skills, save_default_workflow,
+    save_module, save_named, save_prefs, save_provider, save_workflow, save_write_root,
+    write_root_entry,
 };
 
 #[cfg(test)]

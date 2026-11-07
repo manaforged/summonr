@@ -71,6 +71,10 @@ impl Speed {
         Some(chars as f64 / self.chars_per_token / span)
     }
 
+    pub(super) fn streamed(&self) -> u64 {
+        (self.chars as f64 / self.chars_per_token) as u64
+    }
+
     pub(super) fn finish(&mut self, tokens: u32, now: Instant) {
         let Some(round) = self.round else {
             return;

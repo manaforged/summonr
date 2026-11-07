@@ -7,7 +7,7 @@ const LIFT: f32 = 5.0;
 
 /// The working row above the composer: a spinner, what the agent is doing, and how long it has run.
 pub(super) fn row(app: &App) -> NodeBuilder {
-    let (clock, words) = (app.clone(), app.clone());
+    let (clock, words, count) = (app.clone(), app.clone(), app.clone());
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -42,6 +42,20 @@ pub(super) fn row(app: &App) -> NodeBuilder {
                     })
                     .ellipsize(),
                 ),
+        )
+        .child(
+            text(Text::Meta, move || {
+                count.model.with(|model| {
+                    let tokens = model.tokens(|round| round.prompt)
+                        + model.tokens(|round| round.completion)
+                        + model.speed.streamed();
+                    if tokens == 0 {
+                        return String::new();
+                    }
+                    format!("{} tokens", summonr_agent::provider::compact(tokens))
+                })
+            })
+            .nowrap(),
         )
         .child(
             text(Text::Meta, move || {

@@ -14,6 +14,7 @@ const HIGH: u64 = 80;
 pub(crate) fn meters(app: App) -> NodeBuilder {
     let (spend, tokens, gauges) = {
         let model = app.model.get();
+        let idle = model.busy_since.is_none();
         let started = !model.usage.is_empty() || model.entries.asked();
         let context = started.then(|| model.context_percent()).flatten();
         let cache = started.then(|| model.cache_percent());
@@ -21,7 +22,8 @@ pub(crate) fn meters(app: App) -> NodeBuilder {
         let cache_card = app.cache_open.get().then(|| model.cache_facts());
         (
             model.spend(),
-            model.tokens(|round| round.prompt) + model.tokens(|round| round.completion),
+            (model.tokens(|round| round.prompt) + model.tokens(|round| round.completion))
+                * u64::from(idle),
             [
                 context.map(|percent| (Target::Context, percent, context_card)),
                 cache.map(|percent| (Target::Cache, percent, cache_card)),

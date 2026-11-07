@@ -51,8 +51,8 @@ fn the_composer_shows_how_full_the_context_is() {
 }
 
 #[test]
-fn the_strip_counts_tokens_and_the_busy_row_names_the_work() {
-    if !in_window("controls::the_strip_counts_tokens_and_the_busy_row_names_the_work") {
+fn a_running_chat_shows_its_work_time_and_tokens_above_the_composer() {
+    if !in_window("controls::a_running_chat_shows_its_work_time_and_tokens_above_the_composer") {
         return;
     }
     let seen = drive(
@@ -61,13 +61,51 @@ fn the_strip_counts_tokens_and_the_busy_row_names_the_work() {
             app.update(Msg::Fact(Fact::Busy(Some(
                 summonr_agent::hub::Activity::Turn,
             ))));
+            app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Reasoning {
+                text: "a".repeat(4000),
+            })));
         },
         Vec::new(),
         |_| (),
     );
+    let at = |wanted: &dyn Fn(&str) -> bool| {
+        seen.texts
+            .iter()
+            .position(|text| wanted(text))
+            .unwrap_or_else(|| panic!("missing from {}", seen.text()))
+    };
+    let tokens = at(&|text| text == "2.5k tokens");
+    let work = at(&|text| text.contains("Thinking…"));
+    let clock = at(&|text| {
+        text.strip_suffix('s')
+            .is_some_and(|secs| !secs.is_empty() && secs.chars().all(|ch| ch.is_ascii_digit()))
+    });
+    let composer = at(&|text| text == "What should this agent do?");
+    assert!(
+        work < tokens && tokens < clock && clock < composer,
+        "{}",
+        seen.text()
+    );
+    assert_eq!(
+        seen.texts
+            .iter()
+            .filter(|text| text.ends_with(" tokens"))
+            .count(),
+        1,
+        "{}",
+        seen.text()
+    );
+}
+
+#[test]
+fn an_idle_chat_keeps_its_tokens_under_the_composer() {
+    if !in_window("controls::an_idle_chat_keeps_its_tokens_under_the_composer") {
+        return;
+    }
+    let seen = drive(used, Vec::new(), |_| ());
     assert!(seen.shows(|text| text == "1.5k tokens"), "{}", seen.text());
     assert!(
-        seen.shows(|text| text.contains("Thinking…")),
+        !seen.shows(|text| text.contains("Thinking…")),
         "{}",
         seen.text()
     );

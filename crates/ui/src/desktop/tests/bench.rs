@@ -7,12 +7,13 @@ use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::{App, root, split};
 use super::VIEW;
-use crate::view::keys::bindings::Split;
+use crate::view::keys::bindings::{Dir, Split};
 use summonr_agent::hub::{Activity, Fact, Intent, Msg};
 use summonr_agent::tools::Event;
 
 const DELTAS: usize = 400;
 const WARM: usize = 50;
+const GRID: [Split; 4] = [Split::Open, Split::Below, Split::Focus(Dir::Left), Split::Below];
 
 fn stream(app: &App, n: usize) {
     app.update(Msg::Fact(Fact::Event(Event::Delta {
@@ -57,8 +58,11 @@ fn run(panes: usize, streaming: usize, history: usize) -> f64 {
         let tree = app.clone();
         host.mount(move || root(tree.clone()));
         host.frame(VIEW, 1.0, FrameHooks::default());
-        for _ in 1..panes {
-            split::act(Split::Open);
+        for action in GRID {
+            if split::apps().len() == panes {
+                break;
+            }
+            split::act(action);
             host.frame(VIEW, 1.0, FrameHooks::default());
         }
         let apps = split::apps();
@@ -146,6 +150,31 @@ fn over_text(n: usize) -> sigil::geometry::Point {
     sigil::geometry::Point::new(VIEW.0 * 0.45 + along, VIEW.1 * 0.25 + along)
 }
 
+#[derive(Default)]
+struct Held(std::rc::Rc<std::cell::RefCell<String>>);
+
+impl sigil::clipboard::Clipboard for Held {
+    fn get(&self) -> Option<String> {
+        Some(self.0.borrow().clone())
+    }
+
+    fn set(&self, text: &str) -> sigil::AppResult<sigil::clipboard::Delivery> {
+        text.clone_into(&mut self.0.borrow_mut());
+        Ok(sigil::clipboard::Delivery::Confirmed)
+    }
+}
+
+fn release(host: &mut Host) {
+    let held = Held::default();
+    let copied = std::rc::Rc::clone(&held.0);
+    sigil::clipboard::install(held);
+    host.route(sigil::events::Event::pointer_up(over_text(MOVES_WARM + MOVES - 1)));
+    host.frame(VIEW, 1.0, FrameHooks::default());
+    host.route(super::harness::command("c"));
+    host.frame(VIEW, 1.0, FrameHooks::default());
+    assert!(copied.borrow().lines().count() > 1, "the drag selected no lines");
+}
+
 fn navigate(step: Step) -> f64 {
     let mut runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
     runtime.install_current();
@@ -230,6 +259,9 @@ fn navigate(step: Step) -> f64 {
         scene_us.set(0.0);
         a11y_us.set(0.0);
         (MOVES_WARM..MOVES_WARM + MOVES).for_each(&mut act);
+        if matches!(step, Step::Drag(_) | Step::DragBig) {
+            release(&mut host);
+        }
         println!(
             "SPLIT scene {:.1} a11y {:.1}",
             scene_us.get() / MOVES as f64,
@@ -250,6 +282,7 @@ fn bench_navigate_frames() {
         ("settings", Step::Settings),
         ("switch", Step::Switch(HISTORY)),
         ("switch-long", Step::Switch(LONG_HISTORY)),
+        ("drag", Step::Drag(HISTORY)),
     ] {
         let trace = std::env::var_os("SUMMONR_BENCH_TRACE").filter(|_| cell == "switch");
         if trace.is_some() {

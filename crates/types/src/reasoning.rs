@@ -51,6 +51,19 @@ impl<'de> Deserialize<'de> for Effort {
 }
 
 impl Effort {
+    /// The name a person reads.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::None => "Off",
+            Self::Minimal => "Minimal",
+            Self::Low => "Low",
+            Self::Medium => "Medium",
+            Self::High => "High",
+            Self::XHigh => "Extra high",
+            Self::Max => "Max",
+        }
+    }
+
     pub const ALL: [Self; 7] = [
         Self::None,
         Self::Minimal,

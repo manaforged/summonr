@@ -74,6 +74,38 @@ fn the_strip_counts_tokens_and_the_busy_row_names_the_work() {
 }
 
 #[test]
+fn the_model_chip_shows_effort_and_its_menu_changes_it() {
+    if !in_window("controls::the_model_chip_shows_effort_and_its_menu_changes_it") {
+        return;
+    }
+    let seen = steps(
+        settings(graded()),
+        vec![Step::Click("Model"), Step::Click("High")],
+        |app| app.model.peek().snapshot.effort,
+    );
+    assert_eq!(seen.read, Some(summonr_agent::provider::Effort::High));
+    let none = drive(
+        settings(Snapshot {
+            levels: Vec::new(),
+            ..graded()
+        }),
+        Vec::new(),
+        |_| (),
+    );
+    assert!(
+        !none.shows(|text| text.contains(" · Low")),
+        "{}",
+        none.text()
+    );
+    let shown = drive(settings(graded()), Vec::new(), |_| ());
+    assert!(
+        shown.shows(|text| text.ends_with(" · Low")),
+        "{}",
+        shown.text()
+    );
+}
+
+#[test]
 fn a_chat_held_elsewhere_offers_take_over_until_the_view_changes() {
     if !in_window("controls::a_chat_held_elsewhere_offers_take_over_until_the_view_changes") {
         return;

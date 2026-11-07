@@ -48,7 +48,7 @@ fn thinking(app: &App, levels: &[Effort], effort: Option<Effort>) -> Option<Node
         .unwrap_or(0);
     let names = levels
         .iter()
-        .map(|level| effort_name(*level).to_owned())
+        .map(|level| level.label().to_owned())
         .collect();
     let set = app.clone();
     let levels = levels.to_vec();
@@ -63,18 +63,6 @@ fn thinking(app: &App, levels: &[Effort], effort: Option<Effort>) -> Option<Node
             }
         },
     ))
-}
-
-const fn effort_name(effort: Effort) -> &'static str {
-    match effort {
-        Effort::None => "Off",
-        Effort::Minimal => "Minimal",
-        Effort::Low => "Low",
-        Effort::Medium => "Medium",
-        Effort::High => "High",
-        Effort::XHigh => "Extra high",
-        Effort::Max => "Max",
-    }
 }
 
 fn display(app: &App) -> NodeBuilder {

@@ -2,26 +2,31 @@ use sigil::prelude::{ControlSize, NodeBuilder, Signal, Widget, button};
 use sigil::widgets::{MenuItem, menu};
 
 use super::App;
-use summonr_agent::hub::Cmd;
 use summonr_agent::provider::Effort;
 use summonr_agent::recent::ModelId;
 
 const ROWS_MAX: usize = 8;
-const THINK: Effort = Effort::High;
+const CURRENT: &str = "✓";
 
-/// The model chip; it opens the menu above the composer.
+/// The model chip, with its effort when the model has levels; it opens the menu above the composer.
 pub(super) fn chip(app: &App, open: Signal<bool>) -> NodeBuilder {
     let model = app.model;
-    button(move || model.get().snapshot.model.clone())
-        .ghost()
-        .trailing(sigil::icons::Icon::ChevronDown)
-        .size(ControlSize::Compact)
-        .accessible("Model")
-        .activate(move || open.set(!open.peek()))
-        .into()
+    button(move || {
+        let snapshot = &model.get().snapshot;
+        match snapshot.effort.filter(|_| !snapshot.levels.is_empty()) {
+            Some(effort) => format!("{} · {}", snapshot.model, effort.label()),
+            None => snapshot.model.clone(),
+        }
+    })
+    .ghost()
+    .trailing(sigil::icons::Icon::ChevronDown)
+    .size(ControlSize::Compact)
+    .accessible("Model")
+    .activate(move || open.set(!open.peek()))
+    .into()
 }
 
-/// Favourite and recent models, Think longer, All models and Manage accounts, above the chip.
+/// Favourite and recent models, effort levels, All models and Manage accounts, above the chip.
 pub(super) fn panel(app: &App, open: Signal<bool>) -> Option<NodeBuilder> {
     if !open.get() {
         return None;
@@ -43,14 +48,18 @@ pub(super) fn panel(app: &App, open: Signal<bool>) -> Option<NodeBuilder> {
         }
     }
     menu = menu.separator();
-    if let Some(level) = think_level(&snapshot.levels) {
-        let on = snapshot.effort.is_some_and(|effort| effort != Effort::None);
-        let cmd = app.cmd.clone();
-        menu = menu.item(
-            MenuItem::new("Think longer")
-                .shortcut(if on { "On" } else { "Off" })
-                .activate(move || drop(cmd.send(Cmd::SetEffort((!on).then_some(level))))),
-        );
+    for level in snapshot.levels.iter().copied() {
+        let set = app.clone();
+        let item =
+            MenuItem::new(level.label()).activate(move || set.effort_command(level.as_str()));
+        menu = menu.item(if snapshot.effort == Some(level) {
+            item.shortcut(CURRENT)
+        } else {
+            item
+        });
+    }
+    if !snapshot.levels.is_empty() {
+        menu = menu.separator();
     }
     let (all, accounts) = (app.clone(), app.clone());
     Some(
@@ -94,15 +103,4 @@ fn groups(current: &ModelId, pinned: &[ModelId]) -> Vec<(String, Vec<ModelId>)> 
 
 fn account(endpoint: &str) -> String {
     summonr_agent::endpoint::label(endpoint).map_or_else(|| endpoint.to_string(), str::to_string)
-}
-
-fn think_level(levels: &[Effort]) -> Option<Effort> {
-    if levels.contains(&THINK) {
-        return Some(THINK);
-    }
-    levels
-        .iter()
-        .rev()
-        .copied()
-        .find(|level| *level != Effort::None)
 }

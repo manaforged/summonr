@@ -20,7 +20,7 @@ pub(super) fn toggles(app: &App) -> Vec<NodeBuilder> {
         .layout(LayoutStyle::flex_row().shrink(0.0))
         .children_reactive(move || {
             let model = watch.model.get();
-            if model.diff.files.is_empty() {
+            if model.diff.files.is_empty() || model.entries.only_notes().is_some() {
                 return Vec::new();
             }
             let open = watch.clone();

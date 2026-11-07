@@ -7,12 +7,15 @@ use sigil::prelude::{
 use super::super::app::{App, armed};
 use super::super::canvas;
 use sigil::prelude::{Paint, Widget};
+use summonr_agent::hub::Cmd;
 
 const MERGE: &str = "Merge";
 const DISCARD: &str = "Discard";
 const CONFIRM_DISCARD: &str = "Confirm discard";
+const UNDO: &str = "Undo";
+const UNDO_FILES: &str = "/undo files";
 
-/// The Changes panel's top row: this agent's branch, with Merge and Discard in a worktree.
+/// The Changes panel's top row: this agent's branch, Undo after an edit, and Merge and Discard in a worktree.
 pub(super) fn review(app: &App) -> Option<NodeBuilder> {
     if !canvas::is_window() {
         return None;
@@ -40,6 +43,20 @@ pub(super) fn review(app: &App) -> Option<NodeBuilder> {
                 .text_color(Token::OnSurfaceMuted),
         )
         .child(spacer());
+    let row = if !model.recent.is_empty() && model.busy_since.is_none() {
+        let sender = app.clone();
+        row.child(
+            button(UNDO)
+                .ghost()
+                .size(ControlSize::Compact)
+                .activate(move || {
+                    drop(sender.cmd.send(Cmd::Command(UNDO_FILES.to_string())));
+                    drop(sender.cmd.send(Cmd::Diff(sender.root())));
+                }),
+        )
+    } else {
+        row
+    };
     Some(match tree.filter(|_| model.busy_since.is_none()) {
         Some(seen) => row.child(buttons(app, &seen.tree.path)),
         None => row,

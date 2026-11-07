@@ -9,7 +9,6 @@ use super::{App, chat};
 
 mod ask;
 mod busy;
-mod changes;
 mod composer;
 mod model_menu;
 mod place;
@@ -111,24 +110,6 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                                 chat::surface::transcript(app.clone(), (L, L), empty_home)
                             }))
                     })]
-                }),
-        )
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .shrink(0.0)
-                        .padding_x(0.0),
-                )
-                .children_reactive({
-                    let changed = app.clone();
-                    move || {
-                        if chat::panels::band(&changed).is_some() {
-                            return Vec::new();
-                        }
-                        changes::bar(&changed).map(column).into_iter().collect()
-                    }
                 }),
         )
         .child(

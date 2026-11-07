@@ -236,11 +236,7 @@ pub(crate) fn shell(app: &App) -> NodeBuilder {
     for (shortcut, when, command) in bindings() {
         let app = app.clone();
         let handler = move |event: &mut KeyEvent| {
-            let app = if command.windowed() {
-                app.clone()
-            } else {
-                app.target()
-            };
+            let app = app.route(command);
             if when.holds(&app) && app.run_key(command) {
                 event.stop_propagation();
             }
@@ -287,6 +283,15 @@ impl App {
     /// The app that takes keys: the focused split pane in the window, else this one.
     pub(crate) fn target(&self) -> App {
         self.window.focused_pane().unwrap_or_else(|| self.clone())
+    }
+
+    /// The app a window command runs on: this window's for window-wide commands, else the focused pane's.
+    pub(crate) fn route(&self, command: KeyCommand) -> App {
+        if command.windowed() {
+            self.clone()
+        } else {
+            self.target()
+        }
     }
 
     fn type_elsewhere(&self, event: &mut KeyEvent) {

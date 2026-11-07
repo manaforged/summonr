@@ -41,7 +41,7 @@ pub(super) fn install(app: &App) {
     }
 }
 
-fn run(main: &App, id: &str) {
+pub(super) fn run(main: &App, id: &str) {
     if id == QUIT {
         return super::quit::request();
     }
@@ -55,7 +55,7 @@ fn run(main: &App, id: &str) {
             .map(|(_, command)| *command)
     };
     if let Some(command) = command {
-        super::split::current(main).run_key(command);
+        main.route(command).run_key(command);
     }
 }
 

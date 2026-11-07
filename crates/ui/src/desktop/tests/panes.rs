@@ -140,3 +140,23 @@ fn dragging_a_border_saves_the_new_shares() {
     assert!(left > right, "the left pane grew: {left} against {right}");
     assert_eq!(left + right, WHOLE, "shares cover the split");
 }
+
+#[cfg(feature = "menu")]
+#[test]
+fn the_menu_bar_opens_the_window_sidebar_and_settings_from_a_split_pane() {
+    if !in_window("panes::the_menu_bar_opens_the_window_sidebar_and_settings_from_a_split_pane") {
+        return;
+    }
+    let seen = steps(
+        |app| app.window.sidebar.set(true),
+        vec![
+            cmd("d", CMD),
+            Step::Wait(Box::new(|app| {
+                super::super::menubar::run(app, "Sidebar");
+                super::super::menubar::run(app, "Settings…");
+            })),
+        ],
+        |app| (split::tracked().1, app.window.sidebar.peek(), app.settings_open.peek()),
+    );
+    assert_eq!(seen.read, (1, false, true));
+}

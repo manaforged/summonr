@@ -9,7 +9,7 @@ mod shape;
 pub use hotkeys::Hotkey;
 pub use hotkeys::{EditorKey, Hotkeys};
 pub use layout::{Layout, Mark, Slot};
-pub use shape::{Axis, Part, Shape};
+pub use shape::{Axis, Part, Shape, WHOLE};
 pub use summonr_types::{Background, DiffLayout, Notify};
 
 pub const AUTO_THEME: &str = "auto";

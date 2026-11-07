@@ -10,10 +10,11 @@ const EDGE: f32 = 2.0;
 
 /// Where each pane sits; tracked.
 pub(in crate::desktop) fn shape() -> Shape {
-    let Some(revision) = with(|split| split.revision) else {
+    let Some((revision, resized)) = with(|split| (split.revision, split.resized)) else {
         return Shape::default();
     };
     revision.with(|_| ());
+    resized.with(|_| ());
     with(|split| split.shape.clone()).unwrap_or_default()
 }
 

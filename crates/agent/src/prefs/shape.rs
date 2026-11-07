@@ -16,12 +16,16 @@ pub enum Shape {
     Split { axis: Axis, parts: Vec<Part> },
 }
 
-/// One part of a split: its shape and its size in pixels; the last part takes the rest.
+/// One part of a split: its shape and its share of the split, relative to its siblings.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Part {
     pub shape: Shape,
-    pub size: u32,
+    #[serde(alias = "size")]
+    pub share: u32,
 }
+
+/// The share of a part that fills its split alone.
+pub const WHOLE: u32 = 10_000;
 
 impl Default for Shape {
     fn default() -> Self {
@@ -38,12 +42,7 @@ impl Shape {
         }
         Self::Split {
             axis: Axis::Right,
-            parts: (0..count)
-                .map(|at| Part {
-                    shape: Self::Pane(at),
-                    size: 0,
-                })
-                .collect(),
+            parts: (0..count).map(|at| part(at, WHOLE)).collect(),
         }
     }
 
@@ -56,14 +55,13 @@ impl Shape {
         }
     }
 
-    /// Splits pane `at` along `axis`, giving pane `new` the far half of its `extent` pixels.
-    pub fn split(&mut self, at: usize, axis: Axis, new: usize, extent: f32) -> bool {
-        let half = half(extent);
+    /// Splits pane `at` along `axis`, giving pane `new` the far half of its space.
+    pub fn split(&mut self, at: usize, axis: Axis, new: usize) -> bool {
         match self {
             Self::Pane(id) if *id == at => {
                 *self = Self::Split {
                     axis,
-                    parts: vec![part(at, half), part(new, half)],
+                    parts: vec![part(at, WHOLE / 2), part(new, WHOLE / 2)],
                 };
                 true
             }
@@ -71,13 +69,12 @@ impl Shape {
             Self::Split { axis: own, parts } => {
                 let here = parts.iter().position(|part| part.shape == Self::Pane(at));
                 if let (true, Some(i)) = (*own == axis, here) {
-                    parts[i].size = half;
+                    let half = (parts[i].share / 2).max(1);
+                    parts[i].share = half;
                     parts.insert(i + 1, part(new, half));
                     return true;
                 }
-                parts
-                    .iter_mut()
-                    .any(|part| part.shape.split(at, axis, new, extent))
+                parts.iter_mut().any(|part| part.shape.split(at, axis, new))
             }
         }
     }
@@ -98,7 +95,7 @@ impl Shape {
         let gone = parts.remove(i);
         let heir = i.checked_sub(1).unwrap_or(0);
         if let Some(heir) = parts.get_mut(heir) {
-            heir.size = heir.size.saturating_add(gone.size);
+            heir.share = heir.share.saturating_add(gone.share);
         }
         if parts.len() == 1 {
             *self = parts.remove(0).shape;
@@ -132,7 +129,7 @@ impl Shape {
         }
     }
 
-    /// Sets the part sizes of the split found by following the part indices in `path`.
+    /// Sets the shares of the split at `path` (part indices) from its parts' sizes in pixels.
     pub fn set_sizes(&mut self, path: &[usize], sizes: &[f32]) {
         let Self::Split { parts, .. } = self else {
             return;
@@ -144,32 +141,33 @@ impl Shape {
                 }
             }
             None => {
+                let total: f32 = sizes.iter().sum();
+                if total <= 0.0 {
+                    return;
+                }
                 for (part, size) in parts.iter_mut().zip(sizes) {
-                    part.size = pixels(*size);
+                    part.share = share(*size / total);
                 }
             }
         }
     }
 }
 
-const fn part(at: usize, size: u32) -> Part {
+const fn part(at: usize, share: u32) -> Part {
     Part {
         shape: Shape::Pane(at),
-        size,
+        share,
     }
-}
-
-fn half(extent: f32) -> u32 {
-    pixels(extent / 2.0)
 }
 
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    reason = "a pane size is a small, non-negative pixel count"
+    clippy::cast_precision_loss,
+    reason = "a fraction from 0 to 1 scaled to WHOLE fits a u32"
 )]
-fn pixels(size: f32) -> u32 {
-    size.max(0.0).round() as u32
+fn share(fraction: f32) -> u32 {
+    ((fraction.clamp(0.0, 1.0) * WHOLE as f32).round() as u32).max(1)
 }
 
 #[cfg(test)]

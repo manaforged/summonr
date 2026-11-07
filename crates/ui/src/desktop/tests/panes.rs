@@ -1,6 +1,6 @@
 use sigil::events::{Key, LogicalKey, ModifiersState};
 use sigil::prelude::Role;
-use summonr_agent::prefs::{Axis, Shape};
+use summonr_agent::prefs::{Axis, Shape, WHOLE};
 
 use super::harness::{Step, named, press, steps};
 use super::in_window;
@@ -118,4 +118,25 @@ fn closing_the_middle_pane_gives_its_space_to_its_neighbour() {
         |_| layout(&split::shape()),
     );
     assert_eq!(seen.read, "(0 | 1)");
+}
+
+#[test]
+fn dragging_a_border_saves_the_new_shares() {
+    if !in_window("panes::dragging_a_border_saves_the_new_shares") {
+        return;
+    }
+    let seen = steps(
+        |_| {},
+        vec![
+            cmd("d", CMD),
+            Step::DragControl("Resize panes", (200.0, 0.0)),
+        ],
+        |_| split::shape(),
+    );
+    let Shape::Split { parts, .. } = &seen.read else {
+        panic!("expected two panes, got {:?}", seen.read);
+    };
+    let (left, right) = (parts[0].share, parts[1].share);
+    assert!(left > right, "the left pane grew: {left} against {right}");
+    assert_eq!(left + right, WHOLE, "shares cover the split");
 }

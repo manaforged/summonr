@@ -32,6 +32,7 @@ struct Split {
     zoom: Option<usize>,
     focus: Signal<usize>,
     revision: Signal<u64>,
+    resized: Signal<u64>,
     root: Option<Owner>,
 }
 
@@ -51,6 +52,7 @@ pub(super) fn install(main: &App) {
         zoom: None,
         focus: signal(0),
         revision: signal(0),
+        resized: signal(0),
         root: Owner::current(),
     };
     SPLIT.with(|slot| *slot.borrow_mut() = Some(split));
@@ -276,7 +278,7 @@ fn add(axis: Axis, open: impl FnOnce(std::path::PathBuf) -> Open) -> Option<App>
             bounds,
         });
         let new = split.panes.len() - 1;
-        split.shape.split(at, axis, new, extent);
+        split.shape.split(at, axis, new);
         split.zoom = None;
         new
     })?;

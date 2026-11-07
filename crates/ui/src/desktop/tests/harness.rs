@@ -71,6 +71,8 @@ pub(super) enum Step {
     RightClick(&'static str),
     Wait(Box<dyn FnOnce(&App)>),
     Drag((f32, f32), (f32, f32)),
+    /// Drags the control with this label by an offset in pixels.
+    DragControl(&'static str, (f32, f32)),
 }
 
 pub(super) fn drive<T>(
@@ -79,6 +81,23 @@ pub(super) fn drive<T>(
     read: impl FnOnce(&App) -> T,
 ) -> Seen<T> {
     steps(setup, keys.into_iter().map(Step::Key).collect(), read)
+}
+
+fn center(host: &mut Host, label: &str) -> (f32, f32) {
+    let bounds = host
+        .accessibility_tree()
+        .nodes
+        .iter()
+        .find_map(|(_, node)| {
+            (node.label().as_deref() == Some(label))
+                .then(|| node.bounds())
+                .flatten()
+        })
+        .unwrap_or_else(|| panic!("no control named {label}"));
+    (
+        ((bounds.x0 + bounds.x1) / 2.0) as f32,
+        ((bounds.y0 + bounds.y1) / 2.0) as f32,
+    )
 }
 
 fn click(host: &mut Host, label: &str) {
@@ -163,6 +182,10 @@ pub(super) fn steps<T>(
                 Step::RightClick(label) => right_click(&mut host, label),
                 Step::Wait(until) => until(&app),
                 Step::Drag(from, to) => drag(&mut host, from, to),
+                Step::DragControl(label, (dx, dy)) => {
+                    let (x, y) = center(&mut host, label);
+                    drag(&mut host, (x, y), (x + dx, y + dy));
+                }
             }
             host.frame(VIEW, 1.0, FrameHooks::default());
         }

@@ -23,7 +23,7 @@ pub(crate) fn view() -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
-            revision.get();
+            revision.with(|_| ());
             let Some((panes, shape)) = with(|split| {
                 let panes: Vec<Drawn> = split
                     .panes
@@ -52,35 +52,38 @@ fn node(panes: &[Drawn], shape: &Shape, path: Vec<usize>, framed: bool) -> NodeB
 }
 
 fn split(panes: &[Drawn], axis: Axis, parts: &[Part], path: Vec<usize>) -> NodeBuilder {
-    let sizes = signal(Vec::new());
+    let settled = signal(Vec::new());
     let at = path.clone();
     effect(move || {
-        let next = sizes.get();
-        with(|split| split.shape.set_sizes(&at, &next));
+        let sizes = settled.get();
+        if sizes.is_empty() {
+            return;
+        }
+        let resized = with(|split| {
+            split.shape.set_sizes(&at, &sizes);
+            split.resized
+        });
+        if let Some(resized) = resized {
+            untrack(|| resized.update(|value| *value = value.wrapping_add(1)));
+        }
     });
     let (orientation, least) = match axis {
         Axis::Right => (Orientation::Horizontal, PANE_WIDTH),
         Axis::Down => (Orientation::Vertical, PANE_HEIGHT),
     };
-    let last = parts.len().saturating_sub(1);
-    let mut row = sigil::widgets::splitter(orientation);
+    let mut row = sigil::widgets::splitter(orientation).proportional();
     for (i, part) in parts.iter().enumerate() {
         let mut inner = path.clone();
         inner.push(i);
-        let pane = row.pane(node(panes, &part.shape, inner, true)).min(least);
-        #[allow(
-            clippy::cast_precision_loss,
-            reason = "a pane size is a small pixel count"
-        )]
-        let size = part.size as f32;
-        row = if i == last || part.size == 0 {
-            pane.grow(1.0)
-        } else {
-            pane.initial(size)
-        }
-        .commit();
+        #[allow(clippy::cast_precision_loss, reason = "a share is at most WHOLE")]
+        let share = part.share as f32;
+        row = row
+            .pane(node(panes, &part.shape, inner, true))
+            .initial(share)
+            .min(least)
+            .commit();
     }
-    row.sizes_bind(sizes).grow(1.0).into()
+    row.settle_bind(settled).into()
 }
 
 fn cell(app: &App, at: usize, bounds: Signal<Bounds>, framed: bool) -> NodeBuilder {

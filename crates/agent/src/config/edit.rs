@@ -17,6 +17,18 @@ pub(crate) fn save_prefs(path: &Path, before: &Prefs, prefs: &Prefs) -> Result<(
             ("splash", before.splash != prefs.splash, value(prefs.splash)),
             ("will", before.will != prefs.will, value(prefs.will)),
             (
+                "will_tint",
+                before.will_tint != prefs.will_tint,
+                value(prefs.will_tint.name()),
+            ),
+            (
+                "will_spot",
+                before.will_spot != prefs.will_spot,
+                toml_edit::Item::Value(toml_edit::Value::Array(
+                    prefs.will_spot.iter().map(|at| i64::from(*at)).collect(),
+                )),
+            ),
+            (
                 "animations",
                 before.animations != prefs.animations,
                 value(prefs.animations),

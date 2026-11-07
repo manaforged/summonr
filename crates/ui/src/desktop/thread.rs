@@ -168,6 +168,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                     }
                 }),
         )
+        .child(super::will::layer(&app))
 }
 
 fn empty_home() -> NodeBuilder {

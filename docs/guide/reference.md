@@ -211,6 +211,9 @@ Top-level keys in `~/.summonr/config.toml`:
 | `fps` | 1 to 240, default 25 | Interface frame rate. |
 | `diff_layout` | `split` (default), `unified` | Diff pane layout. |
 | `spacing` | 8 to 24, default 16 | Pixels between paragraphs and blocks in a desktop reply; **Paragraph spacing** under Settings → Appearance. |
+| `will` | `true`, `false` (default) | Show Will, a small flame that floats over the desktop agent and works while it works; **Show Will** under Settings → Will. |
+| `will_tint` | `wisp` (default), `flame`, `foxfire`, `arcane` | Will's colour. |
+| `will_spot` | `[right, bottom]` in points, default `[24, 120]` | Where Will sits, from the agent column's right and bottom edges; dragging him sets it. |
 | `sidebar` | A list of action names such as `new_agent`, `jobs`, `usage`; default `["new_agent", "new_terminal", "search"]` | Rows at the top of the desktop sidebar. **Pin to sidebar…** in the ⌘K palette adds one; right-click a row and pick **Unpin** to remove it. |
 
 Keys on an `[endpoint.NAME]` row:

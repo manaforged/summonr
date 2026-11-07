@@ -20,6 +20,7 @@ mod plugins;
 mod shortcuts;
 mod tools;
 mod usage;
+mod will;
 
 /// One page of the Settings window.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -30,13 +31,14 @@ pub(super) enum Page {
     Mcp,
     Plugins,
     Appearance,
+    Will,
     Shortcuts,
     Tools,
     Usage,
 }
 
 impl Page {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::General,
         Self::Models,
         Self::Accounts,
@@ -44,6 +46,7 @@ impl Page {
         Self::Mcp,
         Self::Plugins,
         Self::Appearance,
+        Self::Will,
         Self::Shortcuts,
         Self::Tools,
     ];
@@ -57,6 +60,7 @@ impl Page {
             Self::Mcp => "MCP servers",
             Self::Plugins => "Plugins & skills",
             Self::Appearance => "Appearance",
+            Self::Will => "Will",
             Self::Shortcuts => "Keyboard shortcuts",
             Self::Tools => "Tools",
             Self::Usage => "Usage",
@@ -72,9 +76,18 @@ impl Page {
             Self::Mcp => Icon::Server,
             Self::Plugins => Icon::Package,
             Self::Appearance => Icon::Sun,
+            Self::Will => Icon::Star,
             Self::Shortcuts => Icon::Command,
             Self::Tools => Icon::Zap,
             Self::Usage => Icon::ChartColumn,
+        }
+    }
+
+    /// The page's mark in the Settings list: its icon, or Will himself on his own page.
+    fn leading(self, app: &App) -> NodeBuilder {
+        match self {
+            Self::Will => super::will::still(app, ICON),
+            _ => icon(self.icon()).px(ICON).into(),
         }
     }
 
@@ -86,6 +99,7 @@ impl Page {
             Self::Mcp => mcp::view(app),
             Self::Plugins => plugins::view(app),
             Self::Appearance => appearance::view(app),
+            Self::Will => will::view(app),
             Self::Shortcuts => shortcuts::view(app),
             Self::Tools => tools::view(app),
             Self::Usage => usage::view(app),
@@ -195,7 +209,7 @@ pub(super) fn view(app: &App) -> NodeBuilder {
 }
 
 fn nav(app: &App, current: Signal<Page>) -> NodeBuilder {
-    let back = app.clone();
+    let (back, app) = (app.clone(), app.clone());
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -228,7 +242,7 @@ fn nav(app: &App, current: Signal<Page>) -> NodeBuilder {
                                 page == at,
                                 page.name(),
                                 ListRowSlots {
-                                    leading: Some(Box::new(icon(page.icon()).px(ICON))),
+                                    leading: Some(Box::new(page.leading(&app))),
                                     activate: Some(std::rc::Rc::new(move || current.set(page))),
                                     ..ListRowSlots::default()
                                 },

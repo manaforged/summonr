@@ -1,20 +1,24 @@
+use std::cell::Cell;
 use std::f32::consts::TAU;
+use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use sigil::geometry::Rect;
-use sigil::prelude::{LayoutStyle, NodeBuilder, Rgba8, Role, Theme, Widget, container, interval, signal};
+use sigil::prelude::{
+    LayoutStyle, NodeBuilder, Position, Role, Signal, Theme, Widget, container, interval, signal,
+};
+use sigil::reactive::{derived, untrack};
 use sigil::scene::SceneBuilder;
 use sigil::widgets::PathNode;
 
-use super::style::{MARK, WILL_DARK, WILL_LIGHT};
+use super::App;
+use super::style::{WILL, will_colors};
 
 const PERIOD: Duration = Duration::from_millis(50);
-const FLICKER: f32 = 1.1;
-const SWAY: f32 = 2.1;
-const STRETCH: f32 = 0.025;
-const POSE: (f32, f32) = (1.03, 1.08);
 const BASE: (f32, f32) = (8.0, 15.0);
+/// The closest Will comes to the column's right and bottom edges, in points.
+const EDGE: f32 = 8.0;
 
 static CLOCK: OnceLock<Instant> = OnceLock::new();
 
@@ -25,6 +29,31 @@ enum Seg {
     Curve([f32; 6]),
     Close,
 }
+
+/// How Will holds himself in one state.
+struct Pose {
+    flicker: f32,
+    sway: f32,
+    stretch: f32,
+    scale: (f32, f32),
+    eyes: &'static [Seg],
+}
+
+const IDLE: Pose = Pose {
+    flicker: 2.6,
+    sway: 2.0,
+    stretch: 0.02,
+    scale: (1.0, 1.0),
+    eyes: &OPEN,
+};
+
+const WORKING: Pose = Pose {
+    flicker: 1.1,
+    sway: 2.1,
+    stretch: 0.025,
+    scale: (1.03, 1.08),
+    eyes: &FOCUS,
+};
 
 const FLAME: [Seg; 9] = [
     Seg::Move(7.3, 1.8),
@@ -47,21 +76,112 @@ const CORE: [Seg; 6] = [
     Seg::Close,
 ];
 
-const EYES: [Seg; 10] = [
-    Seg::Move(5.9, 10.0),
-    Seg::Line(7.3, 10.0),
-    Seg::Line(7.3, 11.2),
-    Seg::Line(5.9, 11.2),
+const OPEN: [Seg; 10] = [
+    Seg::Move(6.0, 9.0),
+    Seg::Line(7.2, 9.0),
+    Seg::Line(7.2, 11.2),
+    Seg::Line(6.0, 11.2),
     Seg::Close,
-    Seg::Move(8.7, 10.0),
-    Seg::Line(10.1, 10.0),
-    Seg::Line(10.1, 11.2),
-    Seg::Line(8.7, 11.2),
+    Seg::Move(8.8, 9.0),
+    Seg::Line(10.0, 9.0),
+    Seg::Line(10.0, 11.2),
+    Seg::Line(8.8, 11.2),
     Seg::Close,
 ];
 
-/// Will in the working row's mark slot: a flame that flickers while the agent works.
-pub(super) fn mark(moving: bool) -> NodeBuilder {
+const FOCUS: [Seg; 10] = [
+    Seg::Move(5.85, 10.7),
+    Seg::Line(7.35, 10.7),
+    Seg::Line(7.35, 11.4),
+    Seg::Line(5.85, 11.4),
+    Seg::Close,
+    Seg::Move(8.65, 10.7),
+    Seg::Line(10.15, 10.7),
+    Seg::Line(10.15, 11.4),
+    Seg::Line(8.65, 11.4),
+    Seg::Close,
+];
+
+/// Will over the main column while the Will setting is on; the user drags him anywhere.
+pub(super) fn layer(app: &App) -> NodeBuilder {
+    let model = app.model;
+    let live = signal(None::<(f32, f32)>);
+    let spot = move |axis: usize| {
+        derived(move || {
+            let saved = model.with(|model| model.prefs.will_spot[axis]) as f32;
+            let held = live.get().map(|at: (f32, f32)| [at.0, at.1][axis]);
+            -held.unwrap_or(saved)
+        })
+    };
+    let shown = derived(move || model.with(|model| model.prefs.will));
+    let app = app.clone();
+    container()
+        .layout(
+            LayoutStyle::block()
+                .position(Position::Absolute)
+                .inset_right(0.0)
+                .inset_bottom(0.0),
+        )
+        .animate_translate_x(spot(0))
+        .animate_translate_y(spot(1))
+        .children_reactive(move || {
+            if shown.get() {
+                vec![untrack(|| grip(&app, live))]
+            } else {
+                Vec::new()
+            }
+        })
+}
+
+/// Will drawn `size` points square, still, for Settings.
+pub(super) fn still(app: &App, size: f32) -> NodeBuilder {
+    art(app, size, false)
+}
+
+fn grip(app: &App, live: Signal<Option<(f32, f32)>>) -> NodeBuilder {
+    let moving = untrack(|| app.model.with(|model| model.prefs.animations));
+    let held = Rc::new(Cell::new(None::<(f32, f32, f32, f32)>));
+    let (press, drag, model, save) = (Rc::clone(&held), Rc::clone(&held), app.model, app.clone());
+    container()
+        .role(Role::Image)
+        .label("Will")
+        .layout(LayoutStyle::block().width(WILL).height(WILL))
+        .child(art(app, WILL, moving))
+        .pointer_down(move |event| {
+            let [right, bottom] = untrack(|| model.with(|model| model.prefs.will_spot));
+            let at = event.window_position;
+            press.set(Some((at.x, at.y, right as f32, bottom as f32)));
+            event.capture_pointer();
+            event.stop_propagation();
+        })
+        .pointer_move(move |event| {
+            let Some((x, y, right, bottom)) = drag.get() else {
+                return;
+            };
+            let at = event.window_position;
+            live.set(Some((
+                (right - (at.x - x)).max(EDGE),
+                (bottom - (at.y - y)).max(EDGE),
+            )));
+            event.stop_propagation();
+        })
+        .pointer_up(move |event| {
+            if held.take().is_none() {
+                return;
+            }
+            if let Some((right, bottom)) = live.peek() {
+                save.flip(|prefs| prefs.will_spot = [right.round() as i32, bottom.round() as i32]);
+            }
+            live.set(None);
+            event.stop_propagation();
+        })
+}
+
+fn art(app: &App, size: f32, moving: bool) -> NodeBuilder {
+    let model = app.model;
+    let look = derived(move || {
+        model.with(|model| u64::from(model.busy_since.is_some()) << 8 | model.prefs.will_tint as u64)
+    });
     let frame = signal(0_u64);
     if moving {
         interval(PERIOD, move || frame.update(|at| *at = at.wrapping_add(1)));
@@ -69,33 +189,48 @@ pub(super) fn mark(moving: bool) -> NodeBuilder {
     let start = *CLOCK.get_or_init(Instant::now);
     let theme = Theme::dark();
     let paint = sigil::widgets::canvas(move |scene, area| {
+        let (working, tint) =
+            untrack(|| model.with(|model| (model.busy_since.is_some(), model.prefs.will_tint)));
+        let pose = if working { &WORKING } else { &IDLE };
         let seconds = if moving { start.elapsed().as_secs_f32() } else { 0.0 };
-        draw(scene, area, seconds, &theme);
+        let colors = will_colors(tint, crate::theme::palette().light());
+        draw(scene, area, pose, seconds, colors, &theme);
     })
-    .redraw_on(frame)
-    .layout(LayoutStyle::block().width(MARK).height(MARK));
+    .redraw_on(if moving { frame } else { look })
+    .layout(LayoutStyle::block().width(size).height(size));
     container()
-        .role(Role::ProgressIndicator)
-        .label("Working")
-        .layout(LayoutStyle::block().width(MARK).height(MARK))
+        .layout(LayoutStyle::block().width(size).height(size).shrink(0.0))
         .child(paint)
 }
 
-fn draw(scene: &mut SceneBuilder, area: Rect, seconds: f32, theme: &Theme) {
-    let [edge, core, eyes] = if crate::theme::palette().light() { WILL_LIGHT } else { WILL_DARK };
-    let wave = (seconds * TAU / FLICKER).sin();
-    let (sin, cos) = (wave * SWAY).to_radians().sin_cos();
-    let (sx, sy) = (POSE.0, POSE.1 * (1.0 + STRETCH * (wave + 1.0) / 2.0));
+fn draw(
+    scene: &mut SceneBuilder,
+    area: Rect,
+    pose: &Pose,
+    seconds: f32,
+    [edge, core, eyes]: [sigil::prelude::Rgba8; 3],
+    theme: &Theme,
+) {
+    let wave = (seconds * TAU / pose.flicker).sin();
+    let (sin, cos) = (wave * pose.sway).to_radians().sin_cos();
+    let (sx, sy) = (
+        pose.scale.0,
+        pose.scale.1 * (1.0 + pose.stretch * (wave + 1.0) / 2.0),
+    );
     let place = move |x: f32, y: f32| {
         let (dx, dy) = ((x - BASE.0) * sx, (y - BASE.1) * sy);
         (BASE.0 + dx * cos - dy * sin, BASE.1 + dx * sin + dy * cos)
     };
-    for (segs, color) in [(&FLAME[..], edge), (&CORE[..], core), (&EYES[..], eyes)] {
+    for (segs, color) in [(&FLAME[..], edge), (&CORE[..], core), (pose.eyes, eyes)] {
         outline(segs, &place, color).draw(scene, area, theme);
     }
 }
 
-fn outline(segs: &[Seg], place: &impl Fn(f32, f32) -> (f32, f32), color: Rgba8) -> PathNode {
+fn outline(
+    segs: &[Seg],
+    place: &impl Fn(f32, f32) -> (f32, f32),
+    color: sigil::prelude::Rgba8,
+) -> PathNode {
     segs.iter()
         .fold(sigil::widgets::path(16, 16), |node, seg| match *seg {
             Seg::Move(x, y) => {

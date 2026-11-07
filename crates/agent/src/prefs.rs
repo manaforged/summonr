@@ -52,6 +52,32 @@ pub const SPACING_DEFAULT: u8 = 16;
 pub const FPS_MIN: u32 = 1;
 pub const FPS_MAX: u32 = 240;
 
+/// Will's colour.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tint {
+    #[default]
+    Wisp,
+    Flame,
+    Foxfire,
+    Arcane,
+}
+
+impl Tint {
+    /// Every tint, in the order Settings lists them.
+    pub const ALL: [Self; 4] = [Self::Wisp, Self::Flame, Self::Foxfire, Self::Arcane];
+
+    /// The tint's name in the config file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Wisp => "wisp",
+            Self::Flame => "flame",
+            Self::Foxfire => "foxfire",
+            Self::Arcane => "arcane",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Spinner {
@@ -83,6 +109,8 @@ pub struct Prefs {
     pub notify: Notify,
     pub splash: bool,
     pub will: bool,
+    pub will_tint: Tint,
+    pub will_spot: [i32; 2],
     pub animations: bool,
     pub spinner: Spinner,
     pub fps: u32,
@@ -104,7 +132,9 @@ impl Default for Prefs {
             background: Background::default(),
             notify: Notify::All,
             splash: false,
-            will: true,
+            will: false,
+            will_tint: Tint::Wisp,
+            will_spot: [24, 120],
             animations: true,
             spinner: Spinner::default(),
             fps: FPS_DEFAULT,
@@ -135,6 +165,8 @@ fn from_file(file: &config::File) -> Result<Prefs> {
         notify: file.notify.unwrap_or(base.notify),
         splash: file.splash.unwrap_or(base.splash),
         will: file.will.unwrap_or(base.will),
+        will_tint: file.will_tint.unwrap_or(base.will_tint),
+        will_spot: file.will_spot.unwrap_or(base.will_spot),
         animations: file.animations.unwrap_or(base.animations),
         spinner: file.spinner.unwrap_or(base.spinner),
         fps: file.fps.unwrap_or(base.fps),

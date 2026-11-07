@@ -28,6 +28,8 @@ pub(crate) struct File {
     pub notify: Option<summonr_types::Notify>,
     pub splash: Option<bool>,
     pub will: Option<bool>,
+    pub will_tint: Option<crate::prefs::Tint>,
+    pub will_spot: Option<[i32; 2]>,
     pub animations: Option<bool>,
     pub spinner: Option<crate::prefs::Spinner>,
     pub fps: Option<u32>,

@@ -4,6 +4,7 @@ use sigil::prelude::{
 };
 
 use summonr_agent::hub::Status;
+use summonr_agent::prefs::Tint;
 
 use crate::canvas::rgb;
 
@@ -91,18 +92,22 @@ pub(super) const UNREAD_DOT: Token = Token::Info9;
 pub(super) const CHART_BAR: Token = Token::Accent9;
 /// The edge of the focused pane.
 pub(super) const FOCUS_RING: Token = Token::Accent9;
-/// Will's edge, core and eyes on dark themes.
-pub(super) const WILL_DARK: [Rgba8; 3] = [
-    rgb(0x3b, 0x7b, 0xff),
-    rgb(0xef, 0xfb, 0xff),
-    rgb(0x05, 0x05, 0x0a),
-];
-/// Will's edge, core and eyes on light themes.
-pub(super) const WILL_LIGHT: [Rgba8; 3] = [
-    rgb(0x1d, 0x5b, 0xe6),
-    rgb(0xf3, 0xfb, 0xff),
-    rgb(0x1c, 0x1d, 0x1a),
-];
+/// Will's size where he floats over the main column.
+pub(super) const WILL: f32 = 48.0;
+
+/// Will's edge, core and eyes for `tint` on a light or dark theme.
+pub(super) const fn will_colors(tint: Tint, light: bool) -> [Rgba8; 3] {
+    match (tint, light) {
+        (Tint::Wisp, false) => [rgb(0x3b, 0x7b, 0xff), rgb(0xef, 0xfb, 0xff), rgb(0x05, 0x05, 0x0a)],
+        (Tint::Wisp, true) => [rgb(0x1d, 0x5b, 0xe6), rgb(0xf3, 0xfb, 0xff), rgb(0x1c, 0x1d, 0x1a)],
+        (Tint::Flame, false) => [rgb(0xf0, 0x65, 0x2b), rgb(0xff, 0xf3, 0xd6), rgb(0x1a, 0x0f, 0x08)],
+        (Tint::Flame, true) => [rgb(0xd9, 0x54, 0x1f), rgb(0xff, 0xf4, 0xdc), rgb(0x1c, 0x1d, 0x1a)],
+        (Tint::Foxfire, false) => [rgb(0x2f, 0xbf, 0x71), rgb(0xf0, 0xff, 0xf4), rgb(0x04, 0x10, 0x0a)],
+        (Tint::Foxfire, true) => [rgb(0x16, 0x93, 0x4f), rgb(0xf2, 0xff, 0xf6), rgb(0x1c, 0x1d, 0x1a)],
+        (Tint::Arcane, false) => [rgb(0x8b, 0x5c, 0xf6), rgb(0xfb, 0xf4, 0xff), rgb(0x0a, 0x05, 0x14)],
+        (Tint::Arcane, true) => [rgb(0x6d, 0x3f, 0xd6), rgb(0xfa, 0xf5, 0xff), rgb(0x1c, 0x1d, 0x1a)],
+    }
+}
 
 /// An agent's status mark in an `ICON` slot, so it lines up with icons: spinner, a dot, or empty.
 pub(super) fn mark(status: Status) -> NodeBuilder {

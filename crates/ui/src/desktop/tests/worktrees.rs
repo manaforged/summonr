@@ -138,3 +138,21 @@ fn an_agent_in_a_conductor_workspace_lists_under_its_repository() {
     assert!(!listed.contains(&"tokyo"), "{listed:?}");
     assert!(!listed.contains(&BRANCH), "{listed:?}");
 }
+
+#[test]
+fn a_leftover_run_worktree_is_not_listed() {
+    if !in_window("worktrees::a_leftover_run_worktree_is_not_listed") {
+        return;
+    }
+    let shop = shop_with_a_conductor_workspace();
+    let run = shop.repo.parent().expect("root").join("shop-worktrees/18e5d8d1791d1038");
+    let target = run.to_str().expect("utf-8 path");
+    git(&shop.repo, &["worktree", "add", "-q", "-b", "summonr/18e5d8d1791d1038", target]);
+    let seen = steps(open_in(shop.repo.clone(), Vec::new()), Vec::new(), |_| ());
+    let listed = rows(&seen.controls);
+    assert!(listed.contains(&BRANCH), "{listed:?}");
+    assert!(
+        !listed.iter().any(|row| row.contains("18e5d8d1791d1038")),
+        "{listed:?}"
+    );
+}

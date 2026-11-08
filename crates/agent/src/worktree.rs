@@ -171,6 +171,11 @@ pub(crate) fn is_delta_of(workspace: &Path, candidate: &Path) -> bool {
 }
 
 impl Tree {
+    /// The run id when summonr made this worktree for a run, from its `summonr/<id>` branch.
+    pub fn run_id(&self) -> Option<&str> {
+        worktree_id(&self.branch)
+    }
+
     pub fn unchanged(&self) -> Result<bool> {
         Ok(self.changes()?.is_empty())
     }

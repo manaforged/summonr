@@ -176,7 +176,7 @@ fn chats(
     nodes
 }
 
-/// A row for each worktree of `folder` that no agent has worked in yet.
+/// A row for each worktree of `folder` that no agent has worked in yet, except summonr's own run worktrees.
 fn adopted(app: &App, trees: &[Tree], folder: &std::path::Path) -> Vec<NodeBuilder> {
     let chats = app.sessions.all_chats();
     let worked = |tree: &Tree| {
@@ -186,7 +186,7 @@ fn adopted(app: &App, trees: &[Tree], folder: &std::path::Path) -> Vec<NodeBuild
     };
     trees
         .iter()
-        .filter(|tree| tree.primary == folder && !worked(tree))
+        .filter(|tree| tree.primary == folder && tree.run_id().is_none() && !worked(tree))
         .map(|tree| super::topic::worktree_row(app, tree))
         .collect()
 }

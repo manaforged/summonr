@@ -45,6 +45,7 @@ impl App {
         self.place.with(|place| place.git_branch.clone())
     }
 
+    #[cfg(feature = "gui")]
     /// Every worktree of the active folder's repository except its primary checkout.
     pub(crate) fn worktrees(&self) -> Vec<Tree> {
         self.place.with(|place| place.worktrees.clone())

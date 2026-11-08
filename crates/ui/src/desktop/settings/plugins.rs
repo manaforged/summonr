@@ -10,11 +10,10 @@ use sigil::reactive::{defer, untrack};
 use super::super::App;
 use super::super::style::{ICON, L, M, Text, XS, text};
 use super::parts::{actions, confirm_remove, first_line, item, kept_note, section};
+use crate::usage::report::EVERY_SKILL;
 use summonr_agent::plugins::manage::Plugin;
 
 const DESCRIPTION: usize = 96;
-/// The picker's first choice: no set, so new agents see every skill.
-const EVERY_SKILL: &str = "All skills";
 
 #[derive(Clone, PartialEq)]
 struct Installed {

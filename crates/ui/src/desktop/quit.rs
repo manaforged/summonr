@@ -39,6 +39,7 @@ pub(super) fn on_close() -> CloseAction {
 }
 
 /// Quits the app by the same rule as closing the window.
+#[cfg(feature = "menu")]
 pub(super) fn request() {
     if on_close() == CloseAction::Close {
         sigil::request_exit();

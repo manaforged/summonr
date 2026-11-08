@@ -1,7 +1,11 @@
 use sigil::prelude::{Signal, signal};
-use summonr_agent::forge::{Ask, Error, Pull};
+#[cfg(feature = "gui")]
+use summonr_agent::forge::Ask;
+use summonr_agent::forge::{Error, Pull};
 
-use super::{App, Cmd, Notice, NoticeKind};
+#[cfg(feature = "gui")]
+use super::Cmd;
+use super::{App, Notice, NoticeKind};
 
 /// The last forge answer for this pane's branch, and whether an Open PR or Merge is in flight.
 #[derive(Clone, Copy)]
@@ -20,6 +24,7 @@ impl Forge {
 }
 
 impl App {
+    #[cfg(feature = "gui")]
     /// Sends `ask` to the hub; Open PR and Merge hold the buttons until the answer.
     pub(crate) fn forge_ask(&self, ask: Ask) {
         if ask != Ask::Status {

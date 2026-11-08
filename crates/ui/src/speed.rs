@@ -71,6 +71,7 @@ impl Speed {
         Some(chars as f64 / self.chars_per_token / span)
     }
 
+    #[cfg(feature = "gui")]
     pub(super) fn streamed(&self) -> u64 {
         (self.chars as f64 / self.chars_per_token) as u64
     }

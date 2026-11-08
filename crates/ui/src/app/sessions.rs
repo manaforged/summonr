@@ -27,6 +27,7 @@ impl App {
         drop(self.cmd.send(Cmd::Open(open)));
     }
 
+    #[cfg(feature = "gui")]
     /// Asks the window that holds the refused chat to let go of it.
     pub(crate) fn take_over(&self) {
         if let Some(id) = self.held.peek() {

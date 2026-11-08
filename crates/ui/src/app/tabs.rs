@@ -34,6 +34,7 @@ impl App {
         drop(self.cmd.send(Cmd::ListUsage));
     }
 
+    #[cfg(feature = "gui")]
     /// Reads the usage rows again without opening the usage overlay.
     pub(crate) fn load_usage(&self) {
         self.usage.reading();

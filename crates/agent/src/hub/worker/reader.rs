@@ -19,6 +19,7 @@ mod files;
 mod forge;
 mod load;
 mod models;
+mod streams;
 
 use files::{add, clipboard, files, relative, unignored, view, watch};
 use load::Load;
@@ -31,6 +32,7 @@ pub(super) struct Reader {
     diff_load: Arc<Load>,
     files_load: Arc<Load>,
     panel_load: Arc<Load>,
+    streams: Arc<std::sync::Mutex<std::collections::HashMap<String, crate::panel::Stream>>>,
     trust: bool,
 }
 
@@ -48,6 +50,7 @@ impl Reader {
             diff_load: Arc::default(),
             files_load: Arc::default(),
             panel_load: Arc::default(),
+            streams: Arc::default(),
             trust,
         }
     }
@@ -80,6 +83,9 @@ impl Reader {
             }));
             return;
         }
+        let Some(command) = self.streamed(command) else {
+            return;
+        };
         let slot = self.load_slot(&command);
         let first = match &slot {
             Some(slot) => slot.claim(command),

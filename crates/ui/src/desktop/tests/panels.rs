@@ -147,3 +147,53 @@ fn a_team_event_in_a_side_panel_goes_back_to_the_panel_with_its_context() {
     );
     assert!(!seen.sent.iter().any(|cmd| matches!(cmd, Cmd::Open(_))), "no agent opens");
 }
+
+fn live_panel(place: Place) -> Panel {
+    Panel {
+        name: "live".to_owned(),
+        title: "Live".to_owned(),
+        kind: Fill::Stream,
+        place,
+        command: vec!["true".to_owned()],
+        every_secs: None,
+        root: None,
+        problem: None,
+    }
+}
+
+fn opened_and_closed(sent: &[Cmd]) -> (Vec<String>, Vec<String>, usize) {
+    let mut opened = Vec::new();
+    let mut closed = Vec::new();
+    let mut reruns = 0;
+    for cmd in sent {
+        match cmd {
+            Cmd::OpenPanel(name) => opened.push(name.clone()),
+            Cmd::ClosePanel(name) => closed.push(name.clone()),
+            Cmd::RunPanel(_) => reruns += 1,
+            _ => {}
+        }
+    }
+    (opened, closed, reruns)
+}
+
+#[test]
+fn a_stream_side_panel_starts_while_it_shows_and_stops_when_it_goes() {
+    if !in_window("panels::a_stream_side_panel_starts_while_it_shows_and_stops_when_it_goes") {
+        return;
+    }
+    let seen = steps(
+        |app| {
+            settings(graded())(app);
+            app.window.sidebar.set(true);
+            app.update(Msg::Fact(Fact::Panels(vec![live_panel(Place::Side)])));
+        },
+        vec![Step::Wait(Box::new(|app| {
+            app.update(Msg::Fact(Fact::Panels(Vec::new())));
+        }))],
+        |_| (),
+    );
+    assert_eq!(
+        opened_and_closed(&seen.sent),
+        (vec!["live".to_owned()], vec!["live".to_owned()], 0)
+    );
+}

@@ -7,8 +7,10 @@ use serde::Deserialize;
 
 pub mod cli;
 mod run;
+mod stream;
 
 pub use run::{action, run};
+pub(crate) use stream::Stream;
 
 /// How a panel fills its tab.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -19,6 +21,8 @@ pub enum Fill {
     Data,
     /// The command is a program shown in a terminal.
     Terminal,
+    /// The command keeps running: each line it prints is a whole surface, and each event goes to its stdin as a line.
+    Stream,
 }
 
 /// Where a panel shows in the window.

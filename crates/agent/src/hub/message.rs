@@ -194,6 +194,10 @@ pub enum Cmd {
     Trees,
     ListPanels,
     RunPanel(String),
+    /// Starts a stream panel's command while the panel shows.
+    OpenPanel(String),
+    /// Stops a stream panel's command.
+    ClosePanel(String),
     /// Runs a panel's command again with a pressed A2UI button's event on stdin.
     ActPanel {
         /// The panel's name.

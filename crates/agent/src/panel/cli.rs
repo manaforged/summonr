@@ -32,6 +32,10 @@ With place = "side" in the file, the panel is a section of the sidebar instead o
 
 With kind = "terminal" in the file, the tab opens the command in a terminal instead.
 
+With kind = "stream", the command keeps running while the panel shows and stops when it closes. Each line it prints is a whole A2UI surface that replaces the last one, and each button event reaches its stdin as one A2UI action line.
+
+Besides the A2UI basic catalog, a surface can use Sigil's components: Chart, Stat, Table, Markdown, Mermaid, Diff and Item, a clickable row with a title, status, detail, marker, tone, depth and action.
+
 Run `summonr panel check NAME` after writing a panel. It runs the command and reports what the app cannot draw."#;
 
 /// Runs `summonr panel`, with the workspace's panels when it is trusted.

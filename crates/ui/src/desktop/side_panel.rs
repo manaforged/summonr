@@ -7,7 +7,7 @@ use sigil::prelude::{
 };
 use sigil::reactive::{on_cleanup, untrack};
 use summonr_agent::hub::{Cmd, Open};
-use summonr_agent::panel::{Action, Content, Item, Mood, Panel, Place};
+use summonr_agent::panel::{Action, Content, Fill, Item, Mood, Panel, Place};
 
 use super::App;
 use super::style::{DANGER, M, S, SCROLLBAR, Text, text};
@@ -55,13 +55,23 @@ pub(super) fn view(app: &App) -> NodeBuilder {
         })
 }
 
-fn section(app: &App, panel: Panel) -> NodeBuilder {
-    drop(app.cmd.send(Cmd::RunPanel(panel.name.clone())));
+/// Runs a panel's command while its view shows: a stream starts once and stops on cleanup, a data panel runs and repeats.
+pub(super) fn keep_running(app: &App, panel: &Panel) {
+    let (again, name) = (app.clone(), panel.name.clone());
+    if panel.kind == Fill::Stream {
+        drop(app.cmd.send(Cmd::OpenPanel(name.clone())));
+        on_cleanup(move || drop(again.cmd.send(Cmd::ClosePanel(name))));
+        return;
+    }
+    drop(app.cmd.send(Cmd::RunPanel(name.clone())));
     if let Some(every) = panel.every() {
-        let (again, name) = (app.clone(), panel.name.clone());
         let timer = interval(every, move || drop(again.cmd.send(Cmd::RunPanel(name.clone()))));
         on_cleanup(move || timer.cancel());
     }
+}
+
+fn section(app: &App, panel: Panel) -> NodeBuilder {
+    keep_running(app, &panel);
     let (app, results, name) = (app.clone(), app.panels.results, panel.name);
     container()
         .layout(LayoutStyle::flex_column().fill_width())

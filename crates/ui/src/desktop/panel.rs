@@ -86,15 +86,7 @@ pub(super) fn view(app: &App) -> NodeBuilder {
             let Some(panel) = open.get() else {
                 return vec![text(Text::Meta, "This panel is gone").into()];
             };
-            drop(runner.cmd.send(Cmd::RunPanel(panel.name.clone())));
-            if let Some(every) = panel.every() {
-                let again = runner.clone();
-                let name = panel.name;
-                let timer = interval(every, move || {
-                    drop(again.cmd.send(Cmd::RunPanel(name.clone())));
-                });
-                on_cleanup(move || timer.cancel());
-            }
+            super::side_panel::keep_running(&runner, &panel);
             vec![body(&runner, panels)]
         })
 }

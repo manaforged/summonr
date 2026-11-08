@@ -17,8 +17,8 @@ pub fn action(panel: &str, event: &str, context: serde_json::Value) -> String {
     .to_string()
 }
 
-/// Runs a data panel's command in the workspace and reads what it printed.
-pub async fn run(panel: &Panel, workspace: &Path, input: Option<String>) -> Result<Content, String> {
+/// Starts a panel's command in the workspace with a clean environment.
+pub(super) fn start(panel: &Panel, workspace: &Path) -> Result<crate::process::Process, String> {
     if let Some(problem) = &panel.problem {
         return Err(problem.clone());
     }
@@ -34,7 +34,12 @@ pub async fn run(panel: &Panel, workspace: &Path, input: Option<String>) -> Resu
             args,
         )
     };
-    let process = crate::process::start(spec).map_err(|error| format!("did not start: {error}"))?;
+    crate::process::start(spec).map_err(|error| format!("did not start: {error}"))
+}
+
+/// Runs a data panel's command in the workspace and reads what it printed.
+pub async fn run(panel: &Panel, workspace: &Path, input: Option<String>) -> Result<Content, String> {
+    let process = start(panel, workspace)?;
     let limits = crate::limits::limits();
     let max = limits.panel_output_bytes;
     let mut child = process.child;

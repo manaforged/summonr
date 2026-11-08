@@ -76,6 +76,10 @@ A command can print an [A2UI 1.0](https://a2ui.org/specification/v1.0-a2ui/) sur
  {"version":"1.0","updateDataModel":{"surfaceId":"queue","path":"/","value":{"prs":[{"title":"Fix cart rounding","prompt":"Review PR #12"}]}}}]
 ```
 
+A surface can also use Sigil's own components beside the basic catalog: `Chart`, `Stat`, `Table`, `Markdown`, `Mermaid`, `Diff`, and `Item`, a clickable row with a `title`, `status`, `detail`, `marker`, `tone`, `depth` and `action`. Their schemas are Sigil's A2UI catalog.
+
+With `kind = "stream"`, the command keeps running while the panel shows and stops when it closes. Each line it prints is a whole surface that replaces the last one, and each button event reaches its stdin as one A2UI action line, so a script can push updates as they happen instead of polling with `every_secs`.
+
 The command runs only while its tab is open, in the workspace, with the same environment as a hook. With `--no-trust`, workspace panels are ignored. A project's panel runs a command from that repository when you open its tab, so treat the tab like running a script from the repository.
 
 ## Install a plugin

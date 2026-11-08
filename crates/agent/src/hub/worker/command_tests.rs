@@ -208,3 +208,45 @@ async fn three_panels_asked_at_once_each_report() {
     names.sort();
     assert_eq!(names, ["a", "b", "c"]);
 }
+
+const LIVE: &str = r#"{"version":"1.0","updateComponents":{"surfaceId":"live","components":[{"id":"root","component":"Text","text":"waiting"}]}}"#;
+const GOT: &str = r#"{"version":"1.0","updateComponents":{"surfaceId":"live","components":[{"id":"root","component":"Text","text":"got it"}]}}"#;
+
+fn gone(pid: &str) -> bool {
+    !std::process::Command::new("kill")
+        .args(["-0", pid])
+        .status()
+        .expect("kill runs")
+        .success()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stream_panel_redraws_per_line_reads_events_on_stdin_and_stops_on_close() {
+    let script = format!(
+        "echo $$ > live.pid; printf '%s\\n' '{LIVE}'; while read -r line; do printf '%s\\n' '{GOT}'; done"
+    );
+    let file = format!(
+        "kind = \"stream\"\ncommand = [\"sh\", \"-c\", {}]",
+        toml::Value::String(script)
+    );
+    let (dir, reader, mut inbox) = panel_reader(&[("live", &file)]);
+    reader.run(Cmd::OpenPanel("live".to_string())).await;
+    assert_eq!(panel_fact(&mut inbox).await, ("live".to_string(), Ok(crate::panel::Content::Surface(LIVE.to_string()))));
+    reader
+        .run(Cmd::ActPanel {
+            name: "live".to_string(),
+            event: "refresh".to_string(),
+            context: serde_json::json!({}),
+        })
+        .await;
+    assert_eq!(panel_fact(&mut inbox).await, ("live".to_string(), Ok(crate::panel::Content::Surface(GOT.to_string()))));
+    let pid = std::fs::read_to_string(dir.path().join("live.pid")).expect("pid file");
+    let pid = pid.trim().to_string();
+    assert!(!gone(&pid), "the stream runs while the panel is open");
+    reader.run(Cmd::ClosePanel("live".to_string())).await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !gone(&pid) {
+        assert!(std::time::Instant::now() < deadline, "the stream stops when the panel closes");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}

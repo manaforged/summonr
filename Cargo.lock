@@ -1165,7 +1165,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -3057,6 +3057,8 @@ dependencies = [
 [[package]]
 name = "leyline-bssl"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "234dbcc5ecc42b7afc22ec20a59ae903e65ff398bb37c8a73834ea01c7fc1c5e"
 dependencies = [
  "bitflags 2.13.1",
  "foreign-types 0.5.0",
@@ -3068,6 +3070,8 @@ dependencies = [
 [[package]]
 name = "leyline-bssl-sys"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94994cccbb9758d3d30eee961a5e6cc0b262ebc1ee2a2f40462cd9a763353afb"
 dependencies = [
  "cc",
  "fslock",
@@ -3077,6 +3081,8 @@ dependencies = [
 [[package]]
 name = "leyline-bssl-tokio"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f1cf5312316639c4d80002a2efe8a5f5fd08c0316411fb4ec90ce1f84b6f1fb"
 dependencies = [
  "leyline-bssl",
  "leyline-bssl-sys",
@@ -3086,6 +3092,8 @@ dependencies = [
 [[package]]
 name = "leyline-http"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ec0408ee306c2c925992af6bad68ca2366028ae2d5e593c97f44a83abaab192"
 dependencies = [
  "base64 0.22.1",
  "brotli",
@@ -3529,7 +3537,7 @@ dependencies = [
  "once_cell",
  "png",
  "thiserror 2.0.21",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5411,7 +5419,7 @@ version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d43fb82d550b07e6f929a58d7d0935182602f48ddead875f5ee313c41c8f07fe"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "nohash-hasher",
  "num-traits",
  "serde_core",
@@ -6175,7 +6183,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7798,7 +7806,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
 dependencies = [
  "cfg-if",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

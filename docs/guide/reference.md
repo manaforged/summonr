@@ -843,7 +843,7 @@ write_roots = ["~/.cargo/registry", "~/code"]
 
 A `~/` prefix expands to your home directory. A listed path that does not exist is skipped at startup; it is still a writable root for policy checks.
 
-A provider reply of 429, a 5xx status, or a connection error is retried up to three times with a wait that doubles from 1 s to 8 s. A `Retry-After` header replaces that wait; one over 60 s stops the retries so the turn can fall back to the next endpoint. A reply that already streamed output is retried once, then the turn falls back. A rate limit, or a connection failure before any output, also gets one more completion after those retries, unless its `Retry-After` is over 60 s.
+A provider reply of 429, a 5xx status, or a connection error is retried up to `retry_limit` times with a wait that doubles from `retry_base_ms` to `retry_max_ms` (`[limits]` below). A `Retry-After` header replaces that wait; under `--max-secs` a rate limit is retried while the budget lasts, waiting the `Retry-After` but never less than that backoff; one over 60 s stops the retries so the turn can fall back to the next endpoint. A reply that already streamed output is retried once, then the turn falls back. A rate limit, or a connection failure before any output, also gets one more completion after those retries, unless its `Retry-After` is over 60 s.
 
 A language server gets 30 s to start and 30 s to answer an `lsp` call. The diagnostics check after an edit waits 5 s and is skipped when the server is slower. A server that misses a deadline keeps running, so a slow first index can finish in the background.
 

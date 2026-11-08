@@ -6,29 +6,19 @@ shape = "wham"
 
 [[plan]]
 name = "Codex"
-installed = "codex"
-url = "https://chatgpt.com/backend-api/wham/usage"
-token = { file = "~/.codex/auth.json", pointer = "/tokens/access_token" }
-headers = { "ChatGPT-Account-Id" = { file = "~/.codex/auth.json", pointer = "/tokens/account_id" } }
-shape = "wham"
+command = ["codex", "app-server"]
+stdin = [
+    '{"method":"initialize","id":1,"params":{"clientInfo":{"name":"summonr","title":null,"version":"1"},"capabilities":null}}',
+    '{"method":"initialized"}',
+    '{"method":"account/rateLimits/read","id":2,"params":{}}',
+]
+reply = "/result/rateLimits"
+shape = "codex"
 
 [[plan]]
 name = "Claude Code"
-os = "macos"
-installed = "claude"
-url = "https://api.anthropic.com/api/oauth/usage"
-token = { command = ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"], pointer = "/claudeAiOauth/accessToken" }
-headers = { "anthropic-beta" = "oauth-2025-04-20", "User-Agent" = "claude-cli (external, cli)" }
-shape = "claude"
-
-[[plan]]
-name = "Claude Code"
-os = "linux"
-installed = "claude"
-url = "https://api.anthropic.com/api/oauth/usage"
-token = { file = "~/.claude/.credentials.json", pointer = "/claudeAiOauth/accessToken" }
-headers = { "anthropic-beta" = "oauth-2025-04-20", "User-Agent" = "claude-cli (external, cli)" }
-shape = "claude"
+file = "$SUMMONR_HOME/cache/quota/claude-code.json"
+shape = "windows"
 
 [[plan]]
 name = "Antigravity"

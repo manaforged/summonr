@@ -11,6 +11,8 @@ use super::frame::{Control, Finished, Frame, LimitStatus};
 use super::run::{Call, Run};
 use summonr_core::error::{Error, Result};
 
+const CLAUDE_CODE: &str = "claude-code";
+
 pub(in crate::provider) enum Step {
     Paused(AssistantMessage),
     Done(AssistantMessage),
@@ -90,6 +92,7 @@ impl Run {
                 }
                 Frame::RateLimitEvent { rate_limit_info } => {
                     self.rejected |= rate_limit_info.status == LimitStatus::Rejected;
+                    drop(crate::quota::remember(CLAUDE_CODE, rate_limit_info.windows.as_ref()));
                 }
                 Frame::Result(finished) => {
                     self.seen = true;

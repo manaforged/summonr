@@ -99,6 +99,8 @@ pub(super) struct AssistantContent<'a> {
 #[derive(Deserialize)]
 pub(super) struct RateLimit {
     pub(super) status: LimitStatus,
+    #[serde(default, rename = "unifiedWindows")]
+    pub(super) windows: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, PartialEq, Eq)]

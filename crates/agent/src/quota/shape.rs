@@ -10,10 +10,10 @@ const WEEK: u64 = 10_080;
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Shape {
-    /// ChatGPT and Codex `backend-api/wham/usage`.
+    /// ChatGPT `backend-api/wham/usage`.
     Wham,
-    /// Claude `api/oauth/usage`.
-    Claude,
+    /// Codex app-server `account/rateLimits/read`, at `/result/rateLimits`.
+    Codex,
     /// z.ai and BigModel `monitor/usage/quota/limit`.
     Zai,
     /// Antigravity `agy -p /usage --output-format json`.
@@ -26,7 +26,7 @@ impl Shape {
     pub(super) fn parse(self, value: &Value) -> Result<Vec<Window>, String> {
         let windows = match self {
             Self::Wham => wham(value),
-            Self::Claude => claude(value),
+            Self::Codex => codex(value),
             Self::Zai => zai(value),
             Self::Antigravity => antigravity(value),
             Self::Windows => serde_json::from_value(value.clone()).map_err(|error| error.to_string())?,
@@ -65,24 +65,35 @@ fn wham(value: &Value) -> Vec<Window> {
         .collect()
 }
 
-fn claude(value: &Value) -> Vec<Window> {
-    [
-        ("five_hour", None, FIVE_HOURS),
-        ("seven_day", None, WEEK),
-        ("seven_day_sonnet", Some("Sonnet"), WEEK),
-        ("seven_day_opus", Some("Opus"), WEEK),
-    ]
-    .iter()
-    .filter_map(|(key, group, minutes)| {
-        let window = value.get(key)?;
-        Some(Window {
-            group: group.map(str::to_string),
-            minutes: Some(*minutes),
-            used: window["utilization"].as_f64()?,
-            resets: window["resets_at"].as_str().map(str::to_string),
+fn codex(value: &Value) -> Vec<Window> {
+    ["primary", "secondary"]
+        .iter()
+        .filter_map(|key| {
+            let window = value.get(key).filter(|window| !window.is_null())?;
+            Some(Window {
+                group: None,
+                minutes: window["windowDurationMins"].as_u64(),
+                used: window["usedPercent"].as_f64()?,
+                resets: window["resetsAt"].as_i64().and_then(|at| time(at, 1)),
+            })
         })
-    })
-    .collect()
+        .collect()
+}
+
+/// Claude Code's `rate_limit_event` `unifiedWindows`, with utilization from 0 to 1.
+pub(super) fn unified(value: &Value) -> Vec<Window> {
+    [("five_hour", FIVE_HOURS), ("seven_day", WEEK)]
+        .iter()
+        .filter_map(|(key, minutes)| {
+            let window = value.get(key)?;
+            Some(Window {
+                group: None,
+                minutes: Some(*minutes),
+                used: window["utilization"].as_f64()? * 100.0,
+                resets: window["resetsAt"].as_i64().and_then(|at| time(at, 1)),
+            })
+        })
+        .collect()
 }
 
 fn zai(value: &Value) -> Vec<Window> {

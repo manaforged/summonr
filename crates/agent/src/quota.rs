@@ -43,6 +43,12 @@ pub struct Plan {
     command: Vec<String>,
     #[serde(default)]
     env: BTreeMap<String, String>,
+    #[serde(default)]
+    stdin: Vec<String>,
+    #[serde(default)]
+    reply: Option<String>,
+    #[serde(default)]
+    file: Option<String>,
     shape: Shape,
 }
 
@@ -129,6 +135,21 @@ pub struct Reading {
     pub windows: Vec<Window>,
     /// Why the windows could not be read.
     pub error: Option<String>,
+    /// When a recorded reading was taken, as an RFC 3339 time.
+    pub at: Option<String>,
+}
+
+/// Records windows a running tool reported, for the plan that reads `cache/quota/NAME.json`.
+pub(crate) fn remember(name: &str, reported: Option<&Value>) -> std::io::Result<()> {
+    let windows = reported.map(shape::unified).unwrap_or_default();
+    if windows.is_empty() {
+        return Ok(());
+    }
+    let home = summonr_core::dirs::summonr_home().map_err(std::io::Error::other)?;
+    let folder = home.join("cache/quota");
+    std::fs::create_dir_all(&folder)?;
+    let bytes = serde_json::to_vec(&windows).map_err(std::io::Error::other)?;
+    crate::durable::store::write(&folder.join(format!("{name}.json")), bytes, crate::durable::store::Durability::Renamed)
 }
 
 /// Reads every plan that applies here: shipped plans and `[usage]` plans, minus `[usage] off`.
@@ -155,6 +176,7 @@ enum Source<'a> {
     Login(&'a Endpoint, &'a str),
     Direct(&'a str),
     Command,
+    File(&'a str),
 }
 
 fn source<'a>(plan: &'a Plan, endpoints: &'a [Endpoint]) -> Option<Source<'a>> {
@@ -167,6 +189,9 @@ fn source<'a>(plan: &'a Plan, endpoints: &'a [Endpoint]) -> Option<Source<'a>> {
     }
     if !plan.command.is_empty() {
         return Some(Source::Command);
+    }
+    if let Some(file) = plan.file.as_deref() {
+        return path(file).exists().then_some(Source::File(file));
     }
     let url = plan.url.as_deref()?;
     let Some(via) = plan.via.as_deref() else {
@@ -185,10 +210,16 @@ fn source<'a>(plan: &'a Plan, endpoints: &'a [Endpoint]) -> Option<Source<'a>> {
 }
 
 async fn fetch(plan: &Plan, source: Source<'_>) -> Reading {
+    let at = match source {
+        Source::File(file) => modified(&path(file)),
+        _ => None,
+    };
     let (endpoint, body) = match source {
         Source::Login(endpoint, url) => (Some(endpoint.name.clone()), login(endpoint, url).await),
         Source::Direct(url) => (None, direct(plan, url).await),
+        Source::Command if plan.reply.is_some() => (None, exchange(plan).await),
         Source::Command => (None, json(output(&plan.command, &plan.env).await)),
+        Source::File(file) => (None, json(std::fs::read_to_string(path(file)).map_err(|error| error.to_string()))),
     };
     let (windows, error) = match body.and_then(|value| plan.shape.parse(&value)) {
         Ok(windows) => (windows, None),
@@ -199,7 +230,46 @@ async fn fetch(plan: &Plan, source: Source<'_>) -> Reading {
         endpoint,
         windows,
         error,
+        at,
     }
+}
+
+fn path(file: &str) -> std::path::PathBuf {
+    let file = match summonr_core::dirs::summonr_home() {
+        Ok(home) => file.replace("$SUMMONR_HOME", &home.to_string_lossy()),
+        Err(_) => file.to_string(),
+    };
+    crate::config::expand_tilde(&file).unwrap_or_else(|| file.into())
+}
+
+fn modified(path: &std::path::Path) -> Option<String> {
+    let time = std::fs::metadata(path).ok()?.modified().ok()?;
+    jiff::Timestamp::try_from(time).ok().map(|time| time.to_string())
+}
+
+async fn exchange(plan: &Plan) -> Result<Value, String> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+    let reply = plan.reply.as_deref().unwrap_or_default();
+    let (program, args) = plan.command.split_first().ok_or("`command` is empty")?;
+    let mut spec = crate::process::Spec::new(program, args);
+    spec.env = plan.env.iter().map(|(key, value)| (key.into(), value.into())).collect();
+    let mut process = crate::process::start(spec).map_err(|error| format!("did not start: {error}"))?;
+    for line in &plan.stdin {
+        process.stdin.write_all(format!("{line}\n").as_bytes()).await.map_err(|error| error.to_string())?;
+    }
+    let mut lines = tokio::io::BufReader::new(&mut process.stdout).lines();
+    let answer = async {
+        while let Some(line) = lines.next_line().await.map_err(|error| error.to_string())? {
+            let value: Option<Value> = serde_json::from_str(&line).ok();
+            if let Some(found) = value.as_ref().and_then(|value| value.pointer(reply)) {
+                return Ok(found.clone());
+            }
+        }
+        Err(format!("exited before printing {reply}"))
+    };
+    tokio::time::timeout(crate::limits::limits().panel_timeout(), answer)
+        .await
+        .map_err(|_| format!("no {reply} within {}s", crate::limits::limits().panel_timeout_secs))?
 }
 
 async fn login(endpoint: &Endpoint, url: &str) -> Result<Value, String> {

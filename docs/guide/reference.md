@@ -499,7 +499,7 @@ The `body` table of an endpoint is merged last, so it can still set any field by
 | Work | `/steps FILE`, `--steps` | steps end (auto), `/auto` | Run a plan's `## Steps` one at a time, each with its check. |
 | Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto`; the session returns to the mode it had before | Loop until the configured check, or the accepted contract, passes. |
 
-`/goal` with no check in `.summonr/check.toml` asks the model for a contract in `.summonr/contract.toml`; until the judge accepts one, the judge decides when the goal is met. `/goal` says so and how to set a check.
+`/goal` with no check in `.summonr/check.toml` asks the model for a contract in `.summonr/contract.toml`; until the judge accepts one, the judge decides when the goal is met. `/goal` says so and how to set a check. With Verify off or `--no-verify`, `/goal` runs without the check, as `--goal` does. A goal or steps run whose turn aborts runs the check once before it stops, in both.
 
 ### Confirmation
 

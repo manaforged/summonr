@@ -44,7 +44,7 @@ impl Worker {
             self.clear_steps();
             return true;
         }
-        let Some((markdown, steps)) = self.read_steps(plan_path) else {
+        let Some((plan, markdown, steps)) = self.read_steps(plan_path) else {
             return true;
         };
         let checks = self.loop_.verify_commands().to_vec();
@@ -53,7 +53,6 @@ impl Worker {
             return true;
         }
         announce_run_mode(&self.loop_, &self.ui);
-        let plan = plan_path.to_string();
         self.run_work(&crate::Job::Steps { plan, steps }).await
     }
 
@@ -70,17 +69,10 @@ impl Worker {
         }
     }
 
-    fn read_steps(&mut self, plan_path: &str) -> Option<(String, Vec<crate::steps::Step>)> {
-        let path = self.loop_.workspace().join(plan_path);
-        let markdown = match std::fs::read_to_string(&path) {
-            Ok(markdown) => markdown,
-            Err(error) => {
-                self.fail(&format!("cannot read {}: {error}", path.display()));
-                return None;
-            }
-        };
-        match crate::steps::parse(&markdown) {
-            Ok(steps) => Some((markdown, steps)),
+    fn read_steps(&mut self, plan_path: &str) -> Option<(String, String, Vec<crate::steps::Step>)> {
+        let workspace = self.loop_.workspace().to_path_buf();
+        match crate::steps::load(&workspace, &workspace.join(plan_path)) {
+            Ok(plan) => Some(plan),
             Err(error) => {
                 self.fail(&error.to_string());
                 None
@@ -101,9 +93,7 @@ impl Worker {
             crate::WorkKind::Goal => crate::WorkKind::Single,
             mode => mode,
         };
-        let Some(gates) = self.goal_gates() else {
-            return true;
-        };
+        let gates = self.goal_gates();
         if let Err(error) = self.loop_.select_goal(objective, &gates) {
             self.fail(&error.to_string());
             return true;
@@ -115,23 +105,14 @@ impl Worker {
         keep_running
     }
 
-    fn goal_gates(&mut self) -> Option<Vec<String>> {
+    fn goal_gates(&mut self) -> Vec<String> {
         let gates = self.loop_.verify_commands().to_vec();
-        if !gates.is_empty() {
-            return Some(gates);
+        if gates.is_empty() {
+            self.system(
+                "check: none; the judge decides when the goal is met. Set check = \"CMD\" in .summonr/check.toml and turn Verify on to gate it",
+            );
         }
-        match crate::verify::check_commands(self.loop_.workspace()) {
-            Ok(Some(commands)) => return Some(commands),
-            Ok(None) => {}
-            Err(error) => {
-                self.fail(&error.to_string());
-                return None;
-            }
-        }
-        self.system(
-            "check: none; the judge decides when the goal is met. Set check = \"CMD\" in .summonr/check.toml to gate it",
-        );
-        Some(Vec::new())
+        gates
     }
 
     async fn run_work(&mut self, job: &crate::Job) -> bool {
@@ -242,11 +223,41 @@ impl Worker {
                 Some(true)
             }
             Some(turn) if turn.aborted => {
-                self.abandon(aborted);
+                if !self.stop_work(aborted).await {
+                    return Some(false);
+                }
                 self.system(&format!("{label} stopped; the turn aborted: {}", turn.text));
                 Some(true)
             }
             Some(_) => None,
+        }
+    }
+
+    async fn stop_work(&mut self, reason: &str) -> bool {
+        let ui = self.ui.clone();
+        let outcome = wait_cancelable(
+            &mut self.cmd,
+            &mut self.queue,
+            &self.reader,
+            &self.ui,
+            Waiting::Work,
+            None,
+            self.loop_.stop_work(reason, move |event| {
+                drop(ui.send(Msg::Fact(Fact::Event(event.clone()))));
+            }),
+        )
+        .await;
+        match outcome {
+            Completion::Done(Ok(_)) => true,
+            Completion::Done(Err(error)) => {
+                self.fail(&error.to_string());
+                true
+            }
+            Completion::Cancelled => {
+                self.abandon(reason);
+                true
+            }
+            Completion::Quit => false,
         }
     }
 

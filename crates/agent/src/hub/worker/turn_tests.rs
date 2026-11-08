@@ -179,6 +179,20 @@ fn worker_at(
     tokio::sync::mpsc::UnboundedReceiver<Msg>,
     [tempfile::TempDir; 2],
 ) {
+    worker_with(base, |loop_| loop_)
+}
+
+fn worker_with(
+    base: &str,
+    prepare: impl FnOnce(
+        crate::runtime::Loop<crate::provider::Client>,
+    ) -> crate::runtime::Loop<crate::provider::Client>,
+) -> (
+    super::Worker,
+    tokio::sync::mpsc::UnboundedSender<Cmd>,
+    tokio::sync::mpsc::UnboundedReceiver<Msg>,
+    [tempfile::TempDir; 2],
+) {
     let home = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
     let client = crate::provider::Client::new("test", base).unwrap();
@@ -190,8 +204,9 @@ fn worker_at(
         None,
     )
     .unwrap();
-    let loop_ =
-        crate::runtime::Loop::open(client, "gpt-5.4", workspace.path(), "system", driver).unwrap();
+    let loop_ = prepare(
+        crate::runtime::Loop::open(client, "gpt-5.4", workspace.path(), "system", driver).unwrap(),
+    );
     let info = super::super::Info {
         version: String::new(),
         model: "gpt-5.4".to_string(),
@@ -294,4 +309,57 @@ fn identical_pending_rows_follow_the_steering_queue() {
         })
         .last();
     assert_eq!(rows, Some(vec![(true, "same".to_string())]));
+}
+
+#[tokio::test]
+async fn a_goal_with_verify_off_takes_no_gates_from_the_check_file() {
+    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/v1", silent.local_addr().unwrap());
+    let (mut worker, _commands, mut inbox, dirs) = worker_at(&base);
+    let checks = dirs[1].path().join(".summonr");
+    std::fs::create_dir_all(&checks).unwrap();
+    std::fs::write(checks.join("check.toml"), "check = \"false\"\n").unwrap();
+    drop(tokio::time::timeout(std::time::Duration::from_secs(2), worker.goal("ship it")).await);
+    let notes: Vec<String> = std::iter::from_fn(|| inbox.try_recv().ok())
+        .filter_map(|msg| match msg {
+            Msg::Fact(Fact::System(text)) => Some(text),
+            _msg => None,
+        })
+        .collect();
+    assert!(
+        notes.iter().any(|text| text.starts_with("check: none")),
+        "Verify is off, so the goal runs without the check file's gates: {notes:?}"
+    );
+    drop(silent);
+}
+
+#[tokio::test]
+async fn an_aborted_goal_turn_runs_the_exit_check_before_it_stops() {
+    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/v1", silent.local_addr().unwrap());
+    let (mut worker, _commands, mut inbox, _dirs) = worker_with(&base, |loop_| {
+        let budget = crate::Budget {
+            max_tokens: None,
+            max_secs: Some(1),
+        };
+        loop_
+            .with_verify(vec!["false".to_string()])
+            .and_then(|loop_| loop_.with_budget(budget))
+            .unwrap()
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(20), worker.goal("ship it"))
+        .await
+        .expect("the time budget ends the goal");
+    let progress = worker.loop_.work_progress().unwrap();
+    let verified = std::iter::from_fn(|| inbox.try_recv().ok()).any(|msg| {
+        matches!(
+            msg,
+            Msg::Fact(Fact::Event(crate::Event::Verify { passed: false, .. }))
+        )
+    });
+    assert!(
+        verified && progress.checks_failed,
+        "the stopped goal reports its failing check: verified={verified} {progress:?}"
+    );
+    drop(silent);
 }

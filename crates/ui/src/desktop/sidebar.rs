@@ -15,6 +15,7 @@ use summonr_agent::session::SessionInfo;
 use summonr_agent::worktree::Tree;
 
 pub(super) mod row;
+mod workspace;
 
 pub(super) const WIDTH: f32 = 248.0;
 pub(super) const BAR: f32 = 40.0;
@@ -127,7 +128,7 @@ fn brand(app: &App) -> NodeBuilder {
         .child(super::drag_area())
 }
 
-/// The Repositories heading, with a button that adds one.
+/// The Workspaces heading, with a button that adds a repository.
 fn repositories(app: &App) -> NodeBuilder {
     let picked = sigil::prelude::signal(None);
     super::welcome::follow(app, picked);
@@ -145,13 +146,13 @@ fn repositories(app: &App) -> NodeBuilder {
                 .align_items(AlignItems::Center),
         )
         .child(
-            text(Text::Heading, REPOSITORIES)
+            text(Text::Heading, WORKSPACES)
                 .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
         )
         .child(super::tip(super::thread::ADD_REPOSITORY, None, add.into()))
 }
 
-const REPOSITORIES: &str = "Repositories";
+const WORKSPACES: &str = "Workspaces";
 
 fn chats(
     app: &App,
@@ -186,28 +187,9 @@ fn chats(
             continue;
         }
         nodes.extend(super::terminal::rows(app, &terms, &folder));
-        for topic in super::topic::group(agents) {
-            let selected = topic.threads.iter().any(|info| shown.contains(&info.id));
-            nodes.extend(super::topic::row(app, &topic, selected, &live));
-        }
-        nodes.extend(adopted(app, &trees, &folder));
+        nodes.extend(workspace::rows(app, &trees, &folder, agents, (&live, &shown)));
     }
     nodes
-}
-
-/// A row for each worktree of `folder` that no agent has worked in yet.
-fn adopted(app: &App, trees: &[Tree], folder: &std::path::Path) -> Vec<NodeBuilder> {
-    let chats = app.sessions.all_chats();
-    let worked = |tree: &Tree| {
-        chats
-            .iter()
-            .any(|info| info.cwd.as_deref().map(std::path::Path::new) == Some(tree.path.as_path()))
-    };
-    trees
-        .iter()
-        .filter(|tree| tree.primary == folder && !worked(tree))
-        .map(|tree| super::topic::worktree_row(app, tree))
-        .collect()
 }
 
 /// Every repository an agent ran in, by name, without `here`.

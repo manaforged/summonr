@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use sigil::icons::Icon;
 use sigil::prelude::{
     AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Space, Tone, Widget, container, derived,
     effect, list_row, signal, tabs,
@@ -9,7 +8,6 @@ use sigil::reactive::untrack;
 use summonr_agent::endpoint::Friend;
 use summonr_agent::hub::{Live, Open, Status};
 use summonr_agent::session::SessionInfo;
-use summonr_agent::worktree::Tree;
 
 use super::App;
 use super::style::{ICON, Text, text};
@@ -81,7 +79,7 @@ impl Topic {
     }
 }
 
-const fn rank(status: Status) -> u8 {
+pub(super) const fn rank(status: Status) -> u8 {
     match status {
         Status::NeedsYou => 4,
         Status::Working => 3,
@@ -123,33 +121,6 @@ pub(super) fn row(app: &App, topic: &Topic, selected: bool, live: &[Live]) -> Op
     Some(sigil::widgets::context_menu(row, move || {
         super::agent_menu::items(&menu.0, &menu.1, state)
     }))
-}
-
-/// The sidebar row of a worktree no agent has worked in: its branch and folder; opening it starts an agent there.
-pub(super) fn worktree_row(app: &App, tree: &Tree) -> NodeBuilder {
-    let folder = tree
-        .path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let label = if tree.branch.is_empty() {
-        folder.clone()
-    } else {
-        tree.branch.clone()
-    };
-    let (open, path) = (app.clone(), tree.path.clone());
-    list_row(
-        false,
-        label.clone(),
-        ListRowSlots {
-            leading: Some(Box::new(sigil::widgets::icon(Icon::GitBranch).px(ICON))),
-            status: (folder != label).then(|| folder.into()),
-            activate: Some(Rc::new(move || {
-                super::split::show(&open, Open::Folder(path.clone()))
-            })),
-            ..ListRowSlots::default()
-        },
-    )
 }
 
 const fn word(status: Status) -> Option<(&'static str, Tone)> {

@@ -74,7 +74,8 @@ pub(crate) struct Asked {
 }
 
 pub(super) use super::ui::shift;
-use files::{Confirm, confirm, file_url, read_git_branch, save};
+use files::{Confirm, confirm, file_url, save};
+pub(crate) use files::read_git_branch;
 pub(super) use files::{PaneRow, armed};
 
 mod secret;

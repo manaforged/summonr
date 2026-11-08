@@ -18,6 +18,7 @@ use summonr_core::text::Fnv64;
 pub(crate) struct Entry(u64, u64, u64);
 
 const WALK_LIMIT: usize = 20_000;
+const UNREAD: u64 = 0;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Snapshot {
@@ -127,6 +128,9 @@ fn mark(
         Some(mark) => mark,
         None => match fingerprint(path, &metadata) {
             Ok(mark) => mark,
+            Err(error) if locked(&error) => previous
+                .and_then(|previous| previous.known(name, metadata.len(), modified, stamp))
+                .unwrap_or(UNREAD),
             Err(error) if skippable(&error) => return Ok(None),
             Err(error) => return Err(at(path, error)),
         },
@@ -186,12 +190,14 @@ fn fingerprint(path: &Path, metadata: &Metadata) -> io::Result<u64> {
 
 impl Snapshot {
     fn unchanged(&self, name: &str, len: u64, modified: u64, stamp: Stamp) -> Option<u64> {
+        self.known(name, len, modified, stamp)
+            .filter(|mark| modified < self.taken || *mark == UNREAD)
+    }
+
+    fn known(&self, name: &str, len: u64, modified: u64, stamp: Stamp) -> Option<u64> {
         let Entry(was_len, was_modified, mark) = *self.files.get(name)?;
-        (was_len == len
-            && was_modified == modified
-            && modified < self.taken
-            && self.stamps.get(name) == Some(&stamp))
-        .then_some(mark)
+        (was_len == len && was_modified == modified && self.stamps.get(name) == Some(&stamp))
+            .then_some(mark)
     }
 }
 

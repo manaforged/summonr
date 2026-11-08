@@ -316,3 +316,46 @@ fn a_new_agent_pane_gets_ignored_env_files_before_setup_reads_them() {
     let copied = std::fs::read_to_string(folder.join(".env.local")).expect("copied file");
     assert_eq!(copied, "SECRET=from-root\n");
 }
+
+#[test]
+fn the_run_button_starts_the_default_action_and_its_menu_starts_another() {
+    if !in_window("scripts::the_run_button_starts_the_default_action_and_its_menu_starts_another") {
+        return;
+    }
+    let runtime = pumped();
+    let (_root, repo) = repository(
+        "[run.api]\ncommand = 'echo api-up'\n[run.web]\ncommand = 'echo web-up'\n[run.docs]\ncommand = 'echo docs'\navailable_in = ['cloud']\n",
+    );
+    let at = || {
+        settings(Snapshot {
+            workspace: repo.clone(),
+            ..graded()
+        })
+    };
+    let names = |app: &App| -> Vec<String> {
+        app.window
+            .terminals
+            .list
+            .peek()
+            .iter()
+            .map(|term| term.label())
+            .collect()
+    };
+    let seen = steps(at(), vec![Step::Click("Run in terminal")], |app| {
+        (screen_until(runtime, app, "api-up"), names(app), app.window.showing.peek().is_some())
+    });
+    let painted = seen.text();
+    let (screen, listed, showing) = seen.read;
+    assert_eq!(listed, ["Run api"], "{painted}");
+    assert!(showing, "the pane does not show the Run terminal: {painted}");
+    assert!(screen.iter().any(|line| line.trim() == "api-up"), "{screen:?}");
+    let opened = steps(at(), vec![Step::RightClick("Run in terminal")], |_| ());
+    assert!(opened.shows(|text| text == "Run docs"), "{}", opened.text());
+    assert!(opened.shows(|text| text == super::super::palette::CLOUD_ONLY), "{}", opened.text());
+    let menu = vec![Step::RightClick("Run in terminal"), Step::Click("Run web")];
+    let seen = steps(at(), menu, |app| (screen_until(runtime, app, "web-up"), names(app)));
+    let painted = seen.text();
+    let (screen, listed) = seen.read;
+    assert_eq!(listed, ["Run web"], "{painted}");
+    assert!(screen.iter().any(|line| line.trim() == "web-up"), "{screen:?}");
+}

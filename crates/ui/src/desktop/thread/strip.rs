@@ -54,6 +54,7 @@ fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
         .accessible(CLOSE_TERMINAL);
         items.push(super::super::tip(CLOSE_TERMINAL, None, button.into()));
     }
+    items.extend(run(app));
     let pane = app.clone();
     let button = sigil::prelude::icon_button(sigil::icons::Icon::Columns2, move || {
         super::super::split::split_app(&pane)
@@ -71,6 +72,33 @@ fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
     items
 }
 
+/// The Run button when the folder has a run action; a right-click lists every action.
+fn run(app: &App) -> Option<NodeBuilder> {
+    let rows = super::super::terminal::run_rows(&app.workspace());
+    let first = rows.iter().find(|row| !row.cloud_only)?;
+    let (start, id) = (app.clone(), first.id.clone());
+    let button = sigil::prelude::icon_button(sigil::icons::Icon::Play, move || {
+        super::super::terminal::run_action(&start, id.as_deref())
+    })
+    .accessible(RUN_BUTTON);
+    let list = app.clone();
+    let menu = sigil::widgets::context_menu(button, move || {
+        super::super::terminal::run_rows(&list.workspace())
+            .into_iter()
+            .map(|row| {
+                let (pick, id) = (list.clone(), row.id.clone());
+                let item = sigil::widgets::MenuItem::new(row.label).disabled(row.cloud_only);
+                match row.cloud_only {
+                    true => item.shortcut(super::super::palette::CLOUD_ONLY),
+                    false => item.activate(move || super::super::terminal::run_action(&pick, id.as_deref())),
+                }
+            })
+            .collect()
+    });
+    Some(super::super::tip(&first.label, None, menu))
+}
+
+const RUN_BUTTON: &str = "Run in terminal";
 const CLOSE_PANE: &str = "Close pane";
 const SPLIT_PANE: &str = "Split pane";
 const CLOSE_TERMINAL: &str = "Close terminal";

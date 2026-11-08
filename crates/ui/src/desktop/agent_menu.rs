@@ -216,6 +216,9 @@ fn space_items(info: &SessionInfo) -> Vec<MenuItem> {
     items
 }
 
+/// What the project name field shows while it is empty.
+const PROJECT_NAME: &str = "Project name";
+
 fn space_dialog(open: Signal<bool>, space: String, name: Signal<String>) -> ModalBuilder {
     let close = move || open.set(false);
     let save = Rc::new(move |text: &str| {
@@ -227,7 +230,7 @@ fn space_dialog(open: Signal<bool>, space: String, name: Signal<String>) -> Moda
     let submit = save.clone();
     modal(open)
         .title("Name project")
-        .child(text_field(name).autofocus().submit(move |text| {
+        .child(text_field(name).placeholder(PROJECT_NAME).autofocus().submit(move |text| {
             submit(text);
             close();
         }))

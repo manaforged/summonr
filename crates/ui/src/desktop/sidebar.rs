@@ -1,21 +1,20 @@
-use std::rc::Rc;
-
-use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Space, Tone, Widget, container,
-    effect, list_row, scroll, sidebar,
+    AlignItems, LayoutStyle, NodeBuilder, Paint, Signal, Space, Tone, Widget, container, effect, scroll,
+    sidebar,
 };
-use sigil::widgets::icon;
 
 use super::App;
-use super::style::{ICON, RECESSED, S, SCROLLBAR, XS};
+use super::style::{RECESSED, S, SCROLLBAR, XS};
 use summonr_agent::hub::Cmd;
 use summonr_agent::hub::{Live, Open, Status};
 use summonr_agent::session::SessionInfo;
 use summonr_agent::worktree::Tree;
 
+mod repo;
 pub(super) mod row;
 mod space;
+
+use repo::{Group, Seen, repository};
 
 pub(super) const WIDTH: f32 = 248.0;
 pub(super) const BAR: f32 = 40.0;
@@ -48,6 +47,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
     });
     let list = app.clone();
     let shut = sigil::prelude::signal(Vec::<std::path::PathBuf>::new());
+    let folded = sigil::prelude::signal(Vec::<String>::new());
     container()
         .layout(LayoutStyle::flex_column().fill_height().shrink(0.0))
         .child(
@@ -88,12 +88,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
                         scroll(
                             container()
                                 .layout(LayoutStyle::flex_column().fill_width())
-                                .child(space::rows(&app, live, shown))
-                                .child(
-                                    container()
-                                        .layout(LayoutStyle::flex_column().fill_width())
-                                        .children_reactive(move || chats(&list, shut, live, shown)),
-                                ),
+                                .children_reactive(move || chats(&list, (shut, folded), live, shown)),
                         )
                         .bg(RECESSED)
                         .grow(1.0),
@@ -133,70 +128,44 @@ fn brand(app: &App) -> NodeBuilder {
         .child(super::drag_area())
 }
 
+/// Each workspace with its repositories, then every repository in no workspace; tracked.
 fn chats(
     app: &App,
-    shut: Signal<Vec<std::path::PathBuf>>,
+    (shut, folded): (Signal<Vec<std::path::PathBuf>>, Signal<Vec<String>>),
     live: Signal<Vec<Live>>,
     shown: Signal<Vec<String>>,
 ) -> Vec<NodeBuilder> {
-    let live = live.get();
-    let shown = shown.get();
-    let closed = shut.get();
-    let terms = app.window.terminals.list.get();
-    let trees = app.worktrees();
-    let added = super::spaces::repositories();
-    let mut groups = projects(&trees, &app.workspace(), (&added, space::outside(row::listed(app))));
-    let open_folders = terms
+    let seen = Seen {
+        live: live.get(),
+        shown: shown.get(),
+        terms: app.window.terminals.list.get(),
+        trees: app.worktrees(),
+        closed: shut.get(),
+        shut,
+    };
+    let list = super::spaces::all();
+    let (put, rest) = space::split(&list, row::listed(app));
+    let mut added = super::spaces::repositories();
+    added.extend(list.iter().flat_map(|space| space.folders.iter().cloned()));
+    let mut groups = projects(&seen.trees, &app.workspace(), (&added, rest));
+    let open_folders = seen
+        .terms
         .iter()
-        .map(|term| repo_folder(&trees, &term.folder))
-        .chain(live.iter().map(|entry| repo_folder(&trees, &entry.workspace)));
+        .map(|term| repo_folder(&seen.trees, &term.folder))
+        .chain(seen.live.iter().map(|entry| repo_folder(&seen.trees, &entry.workspace)));
     for folder in open_folders {
-        if !groups.iter().any(|(seen, _)| *seen == folder) {
+        if !groups.iter().any(|(at, _)| *at == folder) {
             groups.push((folder, Vec::new()));
         }
     }
-    let mut nodes = Vec::new();
-    for (folder, agents) in groups {
-        let open = !closed.contains(&folder);
-        let states: Vec<Status> = agents
-            .iter()
-            .filter_map(|info| shown_state(&live, &info.id))
-            .collect();
-        nodes.push(section(app, &folder, open, &states, shut));
-        if !open {
-            continue;
-        }
-        let branches = workspaces(&trees, &folder);
-        let (nested, loose): (Vec<SessionInfo>, Vec<SessionInfo>) = agents
-            .into_iter()
-            .partition(|info| branches.iter().any(|tree| ran_in(info, tree)));
-        nodes.extend(super::terminal::rows(app, &terms, &folder, 0));
-        nodes.extend(topics(app, loose, (&shown, &live), 0));
-        for tree in branches {
-            nodes.push(super::topic::worktree_row(app, tree));
-            nodes.extend(super::terminal::rows(app, &terms, &tree.path, 1));
-            let inside = nested.iter().filter(|info| ran_in(info, tree)).cloned().collect();
-            nodes.extend(topics(app, inside, (&shown, &live), 1));
-        }
+    let (mut nodes, loose) = space::sections(app, (&list, folded), (put, groups), &seen);
+    for group in loose {
+        nodes.extend(repository(app, group, &seen, 0));
     }
     nodes
 }
 
-/// The worktrees of `folder` a person made, by branch; summonr's own run worktrees stay out.
-fn workspaces<'a>(trees: &'a [Tree], folder: &std::path::Path) -> Vec<&'a Tree> {
-    let mut found: Vec<&Tree> = trees
-        .iter()
-        .filter(|tree| tree.primary == folder && tree.path != folder && tree.run_id().is_none())
-        .collect();
-    found.sort_by_cached_key(|tree| tree.branch.to_lowercase());
-    found
-}
-
-fn ran_in(info: &SessionInfo, tree: &Tree) -> bool {
-    info.cwd.as_deref().map(std::path::Path::new) == Some(tree.path.as_path())
-}
-
-fn topics(
+pub(super) fn topics(
     app: &App,
     agents: Vec<SessionInfo>,
     (shown, live): (&[String], &[Live]),
@@ -264,55 +233,6 @@ fn projects(
         agents.sort_by(|a, b| b.id.cmp(&a.id));
     }
     groups
-}
-
-/// A repository row that folds its agents; folded, it shows their strongest status and count.
-fn section(
-    app: &App,
-    folder: &std::path::Path,
-    open: bool,
-    states: &[Status],
-    shut: sigil::prelude::Signal<Vec<std::path::PathBuf>>,
-) -> NodeBuilder {
-    let flip = folder.to_path_buf();
-    let strongest = [
-        Status::NeedsYou,
-        Status::Failed,
-        Status::Working,
-        Status::Review,
-    ]
-    .into_iter()
-    .find(|status| states.contains(status));
-    let summary = strongest.filter(|_| !open).map(|status| {
-        let count = states.iter().filter(|seen| **seen == status).count();
-        (count.to_string().into(), tone(status))
-    });
-    let folder_icon = if open { Icon::FolderOpen } else { Icon::Folder };
-    let row = list_row(
-        false,
-        folder_name(folder),
-        ListRowSlots {
-            leading: Some(Box::new(icon(folder_icon).px(ICON))),
-            badge: summary,
-            activate: Some(Rc::new(move || {
-                shut.update(|closed| {
-                    if let Some(at) = closed.iter().position(|seen| *seen == flip) {
-                        closed.remove(at);
-                    } else {
-                        closed.push(flip.clone());
-                    }
-                });
-            })),
-            ..ListRowSlots::default()
-        },
-    )
-    .expanded(sigil::prelude::signal(open));
-    let (menu, folder) = (app.clone(), folder.to_path_buf());
-    container()
-        .layout(LayoutStyle::flex_row().fill_width().padding_top(S))
-        .child(sigil::widgets::context_menu(row, move || {
-            super::agent_menu::folder_items(&menu, &folder)
-        }))
 }
 
 pub(super) fn folder_name(folder: &std::path::Path) -> String {

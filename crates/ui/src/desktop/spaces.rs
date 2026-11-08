@@ -183,10 +183,16 @@ pub(super) fn new_agent(app: &App, space: &str) {
 
 /// The workspace `info` is in: the one it was put in, else the one holding the deepest folder it ran in.
 pub(super) fn of(list: &[Space], info: &SessionInfo) -> Option<usize> {
-    if let Some(at) = list.iter().position(|space| space.sessions.contains(&info.id)) {
-        return Some(at);
-    }
-    let cwd = Path::new(info.cwd.as_deref()?);
+    put_in(list, info).or_else(|| holding(list, Path::new(info.cwd.as_deref()?)))
+}
+
+/// The workspace agent `info` was put in by hand.
+pub(super) fn put_in(list: &[Space], info: &SessionInfo) -> Option<usize> {
+    list.iter().position(|space| space.sessions.contains(&info.id))
+}
+
+/// The workspace holding the deepest of its folders that contains `cwd`.
+pub(super) fn holding(list: &[Space], cwd: &Path) -> Option<usize> {
     list.iter()
         .enumerate()
         .filter_map(|(at, space)| {

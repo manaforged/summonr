@@ -6,13 +6,13 @@ use sigil::prelude::{
     list_row, signal,
 };
 use sigil::widgets::{MenuItem, icon};
-use summonr_agent::hub::Live;
 use summonr_agent::prefs::Space;
 use summonr_agent::session::SessionInfo;
 
 use super::super::App;
 use super::super::spaces;
 use super::super::style::{ICON, M, S, SCROLLBAR, Text, text};
+use super::{Group, Seen, repository, topics};
 
 const PROJECTS: &str = "Projects";
 const NEW_PROJECT: &str = "New project";
@@ -50,7 +50,7 @@ pub(in crate::desktop) fn heading(app: &App) -> NodeBuilder {
                         .item(MenuItem::new(NEW_PROJECT).activate(|| {
                             sigil::reactive::defer(|| {
                                 let made = spaces::create(NEW_PROJECT);
-                                super::super::agent_menu::rename_space(&made, NEW_PROJECT);
+                                super::super::agent_menu::rename_space(&made, "");
                             });
                         }));
                     vec![NodeBuilder::from(menu)]
@@ -73,42 +73,47 @@ fn title_row(title: &str, button: NodeBuilder) -> NodeBuilder {
         .child(button)
 }
 
-/// Each workspace, folded or followed by its agents; tracked.
-pub(in crate::desktop) fn rows(app: &App, live: Signal<Vec<Live>>, shown: Signal<Vec<String>>) -> NodeBuilder {
-    let (app, shut) = (app.clone(), signal(Vec::<String>::new()));
-    container()
-        .layout(LayoutStyle::flex_column().fill_width())
-        .children_reactive(move || {
-            let (list, live, shown, closed) = (spaces::all(), live.get(), shown.get(), shut.get());
-            let chats = super::row::listed(&app);
-            let mut nodes = Vec::new();
-            for (at, space) in list.iter().enumerate() {
-                let agents: Vec<SessionInfo> = chats
-                    .iter()
-                    .filter(|info| spaces::of(&list, info) == Some(at))
-                    .cloned()
-                    .collect();
-                let open = !closed.contains(&space.id);
-                nodes.push(section(&app, space, (open, agents.len()), shut));
-                if !open {
-                    continue;
-                }
-                for topic in super::super::topic::group(agents) {
-                    let selected = topic.threads.iter().any(|info| shown.contains(&info.id));
-                    nodes.extend(super::super::topic::row(&app, &topic, (selected, 0), &live));
-                }
-            }
-            nodes
-        })
-}
-
-/// The agents in no workspace; tracked.
-pub(in crate::desktop) fn outside(chats: Vec<SessionInfo>) -> Vec<SessionInfo> {
-    let list = spaces::all();
+/// Splits `chats` into the agents put in a workspace by hand and the rest; tracked.
+pub(in crate::desktop) fn split(list: &[Space], chats: Vec<SessionInfo>) -> (Vec<SessionInfo>, Vec<SessionInfo>) {
     chats
         .into_iter()
-        .filter(|info| spaces::of(&list, info).is_none())
-        .collect()
+        .partition(|info| spaces::put_in(list, info).is_some())
+}
+
+/// Each workspace with the agents put in it and the repositories it holds, then the repositories no workspace holds.
+pub(in crate::desktop) fn sections(
+    app: &App,
+    (list, folded): (&[Space], Signal<Vec<String>>),
+    (put, groups): (Vec<SessionInfo>, Vec<Group>),
+    seen: &Seen,
+) -> (Vec<NodeBuilder>, Vec<Group>) {
+    let closed = folded.get();
+    let (mut held, loose): (Vec<Group>, Vec<Group>) = groups
+        .into_iter()
+        .partition(|(folder, _)| spaces::holding(list, folder).is_some());
+    let mut nodes = Vec::new();
+    for (at, space) in list.iter().enumerate() {
+        let theirs: Vec<SessionInfo> = put
+            .iter()
+            .filter(|info| spaces::put_in(list, info) == Some(at))
+            .cloned()
+            .collect();
+        let (mine, others): (Vec<Group>, Vec<Group>) = held
+            .into_iter()
+            .partition(|(folder, _)| spaces::holding(list, folder) == Some(at));
+        held = others;
+        let count = theirs.len() + mine.iter().map(|(_, agents)| agents.len()).sum::<usize>();
+        let open = !closed.contains(&space.id);
+        nodes.push(section(app, space, (open, count), folded));
+        if !open {
+            continue;
+        }
+        nodes.extend(topics(app, theirs, (&seen.shown, &seen.live), 1));
+        for group in mine {
+            nodes.extend(repository(app, group, seen, 1));
+        }
+    }
+    (nodes, loose)
 }
 
 fn section(app: &App, space: &Space, (open, count): (bool, usize), shut: Signal<Vec<String>>) -> NodeBuilder {
@@ -146,7 +151,7 @@ fn items(app: &App, space: &Space) -> Vec<MenuItem> {
     let name = space.name.clone();
     vec![
         MenuItem::new("New agent here").activate(move || spaces::new_agent(&open, &start)),
-        MenuItem::new("Add folder…").activate(move || spaces::pick_folder(&pick)),
+        MenuItem::new(super::super::thread::ADD_REPOSITORY).activate(move || spaces::pick_folder(&pick)),
         MenuItem::new("Rename…").activate(move || super::super::agent_menu::rename_space(&rename, &name)),
         MenuItem::new("Delete project").activate(move || spaces::remove(&gone)),
     ]

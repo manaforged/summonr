@@ -129,7 +129,7 @@ pub(super) fn row(app: &App, topic: &Topic, (selected, depth): (bool, u16), live
 }
 
 /// The sidebar row of a worktree: its branch, and its folder when that differs; opening it starts an agent there.
-pub(super) fn worktree_row(app: &App, tree: &Tree) -> NodeBuilder {
+pub(super) fn worktree_row(app: &App, tree: &Tree, depth: u16) -> NodeBuilder {
     let folder = tree
         .path
         .file_name()
@@ -145,6 +145,7 @@ pub(super) fn worktree_row(app: &App, tree: &Tree) -> NodeBuilder {
         false,
         label.clone(),
         ListRowSlots {
+            depth,
             leading: Some(Box::new(sigil::widgets::icon(Icon::GitBranch).px(ICON))),
             status: (folder != label).then(|| folder.into()),
             activate: Some(Rc::new(move || {

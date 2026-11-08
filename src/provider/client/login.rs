@@ -39,7 +39,7 @@ impl Client {
             .connect(crate::limits::limits().connect())
             .response_header(opts.idle_timeout)
             .read(opts.idle_timeout);
-        let builder = leyline::Session::builder().timeout(timeouts);
+        let builder = summonr_auth::session(timeouts);
         let mut headers = headers;
         let named: std::collections::HashSet<String> =
             headers.iter().map(|(key, _)| key.clone()).collect();

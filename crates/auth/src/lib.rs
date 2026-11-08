@@ -245,7 +245,21 @@ pub fn http(timeout: Duration, connect: Duration) -> Result<Session> {
 }
 
 pub fn builder(timeout: Duration, connect: Duration) -> leyline::SessionBuilder {
-    Session::builder().timeout(leyline::Timeout::new().total(timeout).connect(connect))
+    session(leyline::Timeout::new().total(timeout).connect(connect))
+}
+
+/// Starts a session that follows a redirect only when it stays on the same origin.
+pub fn session(timeouts: leyline::Timeout) -> leyline::SessionBuilder {
+    Session::builder()
+        .timeout(timeouts)
+        .redirect(leyline::Redirect::custom(|attempt| {
+            attempt
+                .url()
+                .zip(attempt.location())
+                .is_some_and(|(from, to)| {
+                    from.join(to).is_ok_and(|to| to.origin() == from.origin())
+                })
+        }))
 }
 
 #[cfg(test)]

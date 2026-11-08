@@ -443,3 +443,68 @@ async fn a_refused_token_exchange_never_repeats_the_reply_body() {
     assert!(error.contains("invalid_grant"), "got {error}");
     assert!(!error.contains("exchange-reply-value"), "got {error}");
 }
+
+async fn redirecting(
+    location: impl Fn(std::net::SocketAddr) -> String,
+) -> (String, Arc<Mutex<Vec<String>>>) {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("the mock binds");
+    let address = listener.local_addr().expect("the mock has an address");
+    let to = location(address);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let heard = seen.clone();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut raw = vec![0u8; 8192];
+            let read = tokio::io::AsyncReadExt::read(&mut stream, &mut raw)
+                .await
+                .expect("the mock reads");
+            let request = String::from_utf8_lossy(&raw[..read]).to_string();
+            let path = request.split(' ').nth(1).unwrap_or_default().to_string();
+            heard.lock().expect("the mock log").push(request);
+            let reply = if path == "/start" {
+                format!(
+                    "HTTP/1.1 307 Temporary Redirect\r\nlocation: {to}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                )
+            } else {
+                "HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok".to_string()
+            };
+            tokio::io::AsyncWriteExt::write_all(&mut stream, reply.as_bytes())
+                .await
+                .expect("the mock answers");
+        }
+    });
+    (format!("http://{address}/start"), seen)
+}
+
+#[tokio::test]
+async fn a_key_is_never_sent_to_the_origin_a_redirect_names() {
+    let (elsewhere, reached) = redirecting(|_| String::new()).await;
+    let target = elsewhere.replace("/start", "/v1/messages");
+    let (url, _) = redirecting(move |_| target.clone()).await;
+    let http = http(Duration::from_secs(5), Duration::from_secs(5)).expect("the session builds");
+    let status = Scheme::ApiKey
+        .apply(http.post(&url), "sk-test-key")
+        .send()
+        .await
+        .map(|response| response.status().as_u16());
+    assert!(
+        reached.lock().expect("the mock log").is_empty(),
+        "the other origin got a request"
+    );
+    assert_eq!(status.ok(), Some(307));
+}
+
+#[tokio::test]
+async fn a_redirect_within_one_origin_is_followed() {
+    let (url, seen) = redirecting(|address| format!("http://{address}/v1/messages")).await;
+    let http = http(Duration::from_secs(5), Duration::from_secs(5)).expect("the session builds");
+    let response = Scheme::ApiKey
+        .apply(http.post(&url), "sk-test-key")
+        .send()
+        .await
+        .expect("the redirect is followed");
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(seen.lock().expect("the mock log").len(), 2);
+}

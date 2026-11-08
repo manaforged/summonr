@@ -103,13 +103,13 @@ impl Reader {
         }
     }
 
-    fn run_panel(&self, name: String) -> Msg {
+    fn run_panel(&self, name: String, input: Option<String>) -> Msg {
         let panel = crate::panel::list(&self.workspace, self.trust)
             .into_iter()
             .find(|panel| panel.name == name);
         let result = match panel {
             Some(panel) => tokio::runtime::Handle::current()
-                .block_on(crate::panel::run(&panel, &self.workspace)),
+                .block_on(crate::panel::run(&panel, &self.workspace, input)),
             None => Err(format!("no panel named `{name}`")),
         };
         Msg::Fact(Fact::Panel { name, result })
@@ -179,7 +179,11 @@ impl Reader {
                 &self.workspace,
                 self.trust,
             )))),
-            Cmd::RunPanel(name) => self.send(self.run_panel(name)),
+            Cmd::RunPanel(name) => self.send(self.run_panel(name, None)),
+            Cmd::ActPanel { name, event, context } => {
+                let action = Some(crate::panel::action(&name, &event, context));
+                self.send(self.run_panel(name, action));
+            }
             Cmd::Forge(ask) => self.ship(&ask, ""),
             Cmd::Offers => self.offers(),
             Cmd::Save(file, text) => self.save(file, text),

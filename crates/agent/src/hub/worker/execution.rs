@@ -71,6 +71,7 @@ impl Cmd {
             | Cmd::Trees
             | Cmd::ListPanels
             | Cmd::RunPanel(_)
+            | Cmd::ActPanel { .. }
             | Cmd::View(..)
             | Cmd::Save(..)
             | Cmd::DeleteSession(_)

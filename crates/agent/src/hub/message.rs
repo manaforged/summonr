@@ -194,6 +194,15 @@ pub enum Cmd {
     Trees,
     ListPanels,
     RunPanel(String),
+    /// Runs a panel's command again with a pressed A2UI button's event on stdin.
+    ActPanel {
+        /// The panel's name.
+        name: String,
+        /// The event's name.
+        event: String,
+        /// The event's context, its bound paths resolved.
+        context: serde_json::Value,
+    },
     /// Asks the workspace's GitHub repository through `gh`.
     Forge(crate::forge::Ask),
     View(Option<std::path::PathBuf>, String),

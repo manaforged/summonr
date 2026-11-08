@@ -2,7 +2,7 @@ use sigil::prelude::{
     AlignItems, ControlSize, LayoutStyle, NodeBuilder, Overflow, Paint, Tone, Widget, button,
     container, derived, interval,
 };
-use sigil::reactive::on_cleanup;
+use sigil::reactive::{on_cleanup, untrack};
 use summonr_agent::hub::Cmd;
 use summonr_agent::panel::{Content, Fill, Mood, Panel, Place, Plot, Series, Stat};
 
@@ -115,6 +115,10 @@ fn body(app: &App, panels: crate::app::panels::Panels) -> NodeBuilder {
             None => Vec::new(),
             Some(Err(reason)) => vec![text(Text::Meta, reason).text_color(DANGER).into()],
             Some(Ok(Content::List { rows })) => super::side_panel::list(&app, rows),
+            Some(Ok(Content::Surface(json))) => {
+                let name = untrack(|| panels.shown.get()).unwrap_or_default();
+                vec![super::side_panel::surface(&app, &name, json)]
+            }
             Some(Ok(content)) => vec![draw(content)],
         })
 }
@@ -130,7 +134,7 @@ pub(super) fn draw(content: Content) -> NodeBuilder {
         Content::Stat { items } => stats(items),
         Content::Table { columns, rows } => table(columns, rows),
         Content::Text { text: body } => text(Text::Meta, body).into(),
-        Content::List { .. } => text(Text::Meta, "No rows").into(),
+        Content::List { .. } | Content::Surface(_) => text(Text::Meta, "No rows").into(),
     }
 }
 

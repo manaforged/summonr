@@ -128,3 +128,82 @@ command = ["sh", "-c", "printf '%s' '{\"view\":\"list\",\"rows\":[{\"title\":\"C
         })
     );
 }
+
+fn panel_reader(files: &[(&str, &str)]) -> (tempfile::TempDir, Reader, tokio::sync::mpsc::UnboundedReceiver<Msg>) {
+    let dir = tempfile::tempdir().expect("workspace");
+    let panels = dir.path().join(".summonr").join("panels");
+    std::fs::create_dir_all(&panels).expect("panels folder");
+    for (name, body) in files {
+        std::fs::write(panels.join(format!("{name}.toml")), body).expect("panel file");
+    }
+    let (ui, inbox) = tokio::sync::mpsc::unbounded_channel();
+    let reader = Reader::new(dir.path().to_path_buf(), Default::default(), ui, true);
+    (dir, reader, inbox)
+}
+
+async fn panel_fact(inbox: &mut tokio::sync::mpsc::UnboundedReceiver<Msg>) -> (String, Result<crate::panel::Content, String>) {
+    loop {
+        let message = tokio::time::timeout(Duration::from_secs(10), inbox.recv())
+            .await
+            .expect("a panel result within 10s")
+            .expect("hub open");
+        if let Msg::Fact(crate::hub::Fact::Panel { name, result }) = message {
+            return (name, result);
+        }
+    }
+}
+
+const SURFACE: &str = r#"[{"version":"v0.9.1","updateComponents":{"surfaceId":"queue","components":[{"id":"root","component":"Text","text":"Nothing to review"}]}}]"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_panel_that_prints_a2ui_reports_the_surface_as_printed() {
+    let file = format!("command = [\"printf\", \"%s\", '{SURFACE}']");
+    let (_dir, reader, mut inbox) = panel_reader(&[("queue", &file)]);
+    reader.run(Cmd::RunPanel("queue".to_string())).await;
+    let (name, result) = panel_fact(&mut inbox).await;
+    assert_eq!(name, "queue");
+    assert_eq!(result, Ok(crate::panel::Content::Surface(SURFACE.to_string())));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_panel_event_runs_the_command_again_with_the_action_on_stdin() {
+    let file = format!("command = [\"sh\", \"-c\", \"cat > action.json; printf '%s' '{}'\"]", SURFACE.replace('"', "\\\""));
+    let (dir, reader, mut inbox) = panel_reader(&[("queue", &file)]);
+    reader
+        .run(Cmd::ActPanel {
+            name: "queue".to_string(),
+            event: "approve".to_string(),
+            context: serde_json::json!({"pr": 12}),
+        })
+        .await;
+    let (name, result) = panel_fact(&mut inbox).await;
+    assert_eq!(name, "queue");
+    assert_eq!(result, Ok(crate::panel::Content::Surface(SURFACE.to_string())));
+    let sent: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("action.json")).expect("the command read stdin"),
+    )
+    .expect("the action is JSON");
+    let action = &sent["action"];
+    assert_eq!(action["name"], "approve");
+    assert_eq!(action["surfaceId"], "queue");
+    assert_eq!(action["context"], serde_json::json!({"pr": 12}));
+    assert!(
+        action["timestamp"].as_str().is_some_and(|stamp| stamp.parse::<jiff::Timestamp>().is_ok()),
+        "an ISO 8601 timestamp: {action}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn three_panels_asked_at_once_each_report() {
+    let slow = r#"command = ["sh", "-c", "sleep 0.3; printf '{\"view\":\"text\",\"text\":\"ok\"}'"]"#;
+    let (_dir, reader, mut inbox) = panel_reader(&[("a", slow), ("b", slow), ("c", slow)]);
+    for name in ["a", "b", "c"] {
+        reader.run(Cmd::RunPanel(name.to_string())).await;
+    }
+    let mut names = Vec::new();
+    for _ in 0..3 {
+        names.push(panel_fact(&mut inbox).await.0);
+    }
+    names.sort();
+    assert_eq!(names, ["a", "b", "c"]);
+}

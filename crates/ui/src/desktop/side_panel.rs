@@ -70,6 +70,7 @@ fn section(app: &App, panel: Panel) -> NodeBuilder {
             None => Vec::new(),
             Some(Err(reason)) => vec![text(Text::Meta, reason).text_color(DANGER).into()],
             Some(Ok(Content::List { rows })) => list(&app, rows),
+            Some(Ok(Content::Surface(json))) => vec![surface(&app, &name, json)],
             Some(Ok(content)) => vec![super::panel::draw(content)],
         })
 }
@@ -107,6 +108,27 @@ pub(super) fn list(app: &App, rows: Vec<Item>) -> Vec<NodeBuilder> {
             .into()
         })
         .collect()
+}
+
+/// A panel's A2UI surface; a pressed button starts or opens an agent, or hands its event to the panel.
+pub(super) fn surface(app: &App, panel: &str, json: String) -> NodeBuilder {
+    let (app, panel) = (app.clone(), panel.to_owned());
+    sigil::widgets::a2ui(move || json.clone())
+        .activate(move |event, context| pressed(&app, &panel, event, context))
+        .into()
+}
+
+fn pressed(app: &App, panel: &str, event: &str, context: &str) {
+    let context: serde_json::Value = serde_json::from_str(context).unwrap_or_default();
+    let ours = serde_json::from_value::<Action>(serde_json::json!({ event: context.clone() }));
+    match ours {
+        Ok(action) => act(app, Some(action)),
+        Err(_) => drop(app.cmd.send(Cmd::ActPanel {
+            name: panel.to_owned(),
+            event: event.to_owned(),
+            context,
+        })),
+    }
 }
 
 fn act(app: &App, action: Option<Action>) {

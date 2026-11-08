@@ -75,3 +75,75 @@ fn a_right_panel_stays_out_of_the_sidebar() {
     let seen = steps(team(Place::Right), Vec::new(), |_| ());
     assert!(!seen.shows(|text| text == ISSUE), "{}", seen.text());
 }
+
+const REVIEW: &str = "Review PR #12";
+const SURFACE: &str = r#"[{"version":"v0.9.1","updateComponents":{"surfaceId":"queue","components":[
+  {"id":"root","component":"List","children":{"componentId":"pr","path":"/prs"}},
+  {"id":"pr","component":"Row","children":["review","approve"]},
+  {"id":"review","component":"Button","child":"review-label",
+   "action":{"event":{"name":"start","context":{"prompt":{"path":"prompt"},"pr":{"path":"number"}}}}},
+  {"id":"review-label","component":"Text","text":{"path":"title"}},
+  {"id":"approve","component":"Button","child":"approve-label",
+   "action":{"event":{"name":"approve","context":{"pr":{"path":"number"}}}}},
+  {"id":"approve-label","component":"Text","text":"Approve"}]}},
+ {"version":"v0.9.1","updateDataModel":{"surfaceId":"queue","path":"/","value":
+  {"prs":[{"title":"Fix cart rounding","number":12,"prompt":"Review PR #12"}]}}}]"#;
+
+fn queue(app: &super::super::App) {
+    settings(graded())(app);
+    app.window.sidebar.set(true);
+    app.update(Msg::Fact(Fact::Panels(vec![Panel {
+        name: "queue".to_owned(),
+        title: "Review queue".to_owned(),
+        kind: Fill::Data,
+        place: Place::Side,
+        command: vec!["true".to_owned()],
+        every_secs: None,
+        root: None,
+        problem: None,
+    }])));
+    app.update(Msg::Fact(Fact::Panel {
+        name: "queue".to_owned(),
+        result: Ok(Content::Surface(SURFACE.to_owned())),
+    }));
+}
+
+#[test]
+fn an_a2ui_button_in_a_side_panel_starts_an_agent_with_its_bound_prompt() {
+    if !in_window("panels::an_a2ui_button_in_a_side_panel_starts_an_agent_with_its_bound_prompt") {
+        return;
+    }
+    let seen = steps(
+        queue,
+        vec![
+            Step::Click("Fix cart rounding"),
+            Step::Wait(Box::new(|app| {
+                app.update(Msg::Fact(Fact::Session("01a1000000000000000000000000ffff".to_owned())));
+            })),
+        ],
+        |_| (),
+    );
+    assert!(seen.sent.iter().any(|cmd| matches!(cmd, Cmd::Open(_))), "a new agent opens");
+    assert_eq!(prompts(&seen.sent), [REVIEW], "the bound prompt goes to the new agent");
+}
+
+#[test]
+fn a_team_event_in_a_side_panel_goes_back_to_the_panel_with_its_context() {
+    if !in_window("panels::a_team_event_in_a_side_panel_goes_back_to_the_panel_with_its_context") {
+        return;
+    }
+    let seen = steps(queue, vec![Step::Click("Approve")], |_| ());
+    let acted: Vec<_> = seen
+        .sent
+        .iter()
+        .filter_map(|cmd| match cmd {
+            Cmd::ActPanel { name, event, context } => Some((name.clone(), event.clone(), context.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        acted,
+        [("queue".to_owned(), "approve".to_owned(), serde_json::json!({"pr": 12}))]
+    );
+    assert!(!seen.sent.iter().any(|cmd| matches!(cmd, Cmd::Open(_))), "no agent opens");
+}

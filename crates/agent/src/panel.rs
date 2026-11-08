@@ -4,9 +4,11 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::process::{Cap, Env, Spec, Tail};
 
 pub mod cli;
+mod run;
+
+pub use run::{action, run};
 
 /// How a panel fills its tab.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -127,9 +129,9 @@ pub struct Stat {
     pub tone: Mood,
 }
 
-/// What clicking a list row does.
+/// What clicking a list row does; extra fields, such as more A2UI event context, are ignored.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
 pub enum Action {
     /// Starts a new agent with this prompt.
     Start {
@@ -197,12 +199,20 @@ pub enum Content {
         /// The rows.
         rows: Vec<Item>,
     },
+    /// An A2UI surface, kept as printed for the renderer to read.
+    #[serde(skip)]
+    Surface(String),
 }
 
 impl Content {
     fn parse(output: &str) -> Result<Self, String> {
-        let content: Self =
+        let document: serde_json::Value =
             serde_json::from_str(output).map_err(|error| format!("invalid output: {error}"))?;
+        if document.get("view").is_none() {
+            return Ok(Self::Surface(output.trim().to_string()));
+        }
+        let content: Self =
+            serde_json::from_value(document).map_err(|error| format!("invalid output: {error}"))?;
         content.mismatch().map_or(Ok(content), Err)
     }
 
@@ -229,7 +239,11 @@ impl Content {
                         columns.len()
                     )
                 }),
-            Self::Chart { .. } | Self::Stat { .. } | Self::Text { .. } | Self::List { .. } => None,
+            Self::Chart { .. }
+            | Self::Stat { .. }
+            | Self::Text { .. }
+            | Self::List { .. }
+            | Self::Surface(_) => None,
         }
     }
 }
@@ -336,56 +350,4 @@ pub fn shell_line(panel: &Panel, workspace: &Path) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-/// Runs a data panel's command in the workspace and reads what it printed.
-pub async fn run(panel: &Panel, workspace: &Path) -> Result<Content, String> {
-    if let Some(problem) = &panel.problem {
-        return Err(problem.clone());
-    }
-    let (word, args) = panel
-        .command
-        .split_first()
-        .ok_or_else(|| "`command` is empty".to_string())?;
-    let spec = Spec {
-        cwd: Some(workspace.to_path_buf()),
-        base: Env::Clean,
-        ..Spec::new(
-            program(word, panel.root.as_deref().unwrap_or(workspace)),
-            args,
-        )
-    };
-    let process = crate::process::start(spec).map_err(|error| format!("did not start: {error}"))?;
-    let limits = crate::limits::limits();
-    let max = limits.panel_output_bytes;
-    let mut child = process.child;
-    let group = process.group;
-    drop(process.stdin);
-    let mut stdout = Tail::spawn(Some(process.stdout), Cap::Head(max + 1));
-    let mut stderr = Tail::spawn(process.stderr, Cap::Tail(limits.mcp_stderr_tail_bytes));
-    let work = async {
-        let status = child.wait().await.map_err(|error| error.to_string())?;
-        drop(stdout.settle().await);
-        drop(stderr.settle().await);
-        Ok::<_, String>(status)
-    };
-    let mut finished = None;
-    crate::supervise::within(limits.panel_timeout(), async {
-        finished = Some(work.await)
-    })
-    .await;
-    drop(group);
-    let status = finished.ok_or_else(|| format!("ran past {}s", limits.panel_timeout_secs))??;
-    if !status.success() {
-        let reason = stderr.text();
-        return Err(match reason.trim() {
-            "" => format!("exited with {:?}", status.code()),
-            reason => reason.to_string(),
-        });
-    }
-    let output = stdout.text();
-    if output.len() > max {
-        return Err(format!("printed more than {max} bytes"));
-    }
-    Content::parse(&output)
 }

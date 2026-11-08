@@ -10,6 +10,7 @@ mod run;
 mod stream;
 
 pub use run::{action, run};
+pub(crate) use run::output;
 pub(crate) use stream::Stream;
 
 /// How a panel fills its tab.

@@ -11,6 +11,7 @@ Sessions:
 
 Providers:
   endpoint list               list endpoints, their models, and each key state (--all, --check)
+  endpoint usage              show each plan's usage windows and when they reset (--json)
   endpoint add NAME --url URL add your own OpenAI-compatible server (--model NAME to pick one)
   endpoint add NAME --model M change the model of a server you added
   endpoint remove NAME        delete an endpoint you added

@@ -1,0 +1,23 @@
+[[plan]]
+name = "ChatGPT"
+via = "https://auth.openai.com/"
+url = "https://chatgpt.com/backend-api/wham/usage"
+shape = "wham"
+
+[[plan]]
+name = "GLM coding plan"
+via = "https://open.bigmodel.cn/api/coding/"
+url = "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
+shape = "zai"
+
+[[plan]]
+name = "GLM coding plan"
+via = "https://api.z.ai/api/coding/"
+url = "https://api.z.ai/api/monitor/usage/quota/limit"
+shape = "zai"
+
+[[plan]]
+name = "Antigravity"
+command = ["agy", "-p", "/usage", "--output-format", "json"]
+env = { AGY_CLI_DISABLE_AUTO_UPDATE = "true" }
+shape = "antigravity"

@@ -40,6 +40,14 @@ pub(super) fn start(panel: &Panel, workspace: &Path) -> Result<crate::process::P
 /// Runs a data panel's command in the workspace and reads what it printed.
 pub async fn run(panel: &Panel, workspace: &Path, input: Option<String>) -> Result<Content, String> {
     let process = start(panel, workspace)?;
+    Content::parse(&output(process, input).await?)
+}
+
+/// Waits for a started command within the panel limits and returns what it printed.
+pub(crate) async fn output(
+    process: crate::process::Process,
+    input: Option<String>,
+) -> Result<String, String> {
     let limits = crate::limits::limits();
     let max = limits.panel_output_bytes;
     let mut child = process.child;
@@ -72,7 +80,7 @@ pub async fn run(panel: &Panel, workspace: &Path, input: Option<String>) -> Resu
     if output.len() > max {
         return Err(format!("printed more than {max} bytes"));
     }
-    Content::parse(&output)
+    Ok(output)
 }
 
 async fn feed(mut stdin: tokio::process::ChildStdin, input: Option<String>) {

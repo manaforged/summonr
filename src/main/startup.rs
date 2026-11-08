@@ -115,6 +115,7 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
         Verb::Logout => logout(args),
         Verb::Classify => run_classify(args).await,
         Verb::Endpoints => done(endpoints::list(args.all, args.live).await),
+        Verb::Plans => done(endpoints::usage(args.json).await),
         Verb::Mcp(command) => done(mcp(command, args.json).await),
         Verb::Sessions => done(match args.grep.as_deref() {
             Some(pattern) => grep_sessions(pattern),

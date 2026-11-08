@@ -181,7 +181,7 @@ impl Client {
             })
     }
 
-    pub(super) async fn get(&self, url: String) -> Result<Value> {
+    pub(crate) async fn get(&self, url: String) -> Result<Value> {
         let token = self.token().await?;
         let response = self
             .attach(self.http.get(&url), &token, None, true)

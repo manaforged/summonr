@@ -20,6 +20,7 @@ pub(super) use mcp::McpCommand;
 #[derive(Clone, Debug)]
 pub(super) enum Verb {
     Endpoints,
+    Plans,
     Sessions,
     Doctor,
     Classify,

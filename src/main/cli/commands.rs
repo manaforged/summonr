@@ -28,6 +28,7 @@ pub(super) const SECTIONS: [(&str, &[&str]); 4] = [
         "Providers",
         &[
             "endpoint list",
+            "endpoint usage",
             "endpoint add",
             "endpoint remove",
             "login",
@@ -174,7 +175,7 @@ pub(super) const COMMANDS: [Command; 19] = [
     },
 ];
 
-pub(super) const SUBCOMMANDS: [Command; 17] = [
+pub(super) const SUBCOMMANDS: [Command; 18] = [
     Command {
         name: "session list",
         most: Some(0),
@@ -222,6 +223,12 @@ pub(super) const SUBCOMMANDS: [Command; 17] = [
         most: Some(0),
         run: |args, _| verb(args, Verb::Endpoints),
         help: "endpoint list               list endpoints, their models, and each key state (--all, --check)",
+    },
+    Command {
+        name: "endpoint usage",
+        most: Some(0),
+        run: |args, _| verb(args, Verb::Plans),
+        help: "endpoint usage              show each plan's usage windows and when they reset (--json)",
     },
     Command {
         name: "endpoint add",

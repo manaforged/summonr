@@ -41,13 +41,8 @@ impl ToolRegistry {
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(DEFAULT_TIMEOUT_MS)
             .clamp(1_000, MAX_TIMEOUT_MS);
-        let spec = Spec::new(
-            summonr_core::shell::program()?,
-            summonr_core::shell::arguments(command, &cwd),
-        )
-        .envs(self.env.iter().cloned());
+        let spec = super::proc::shell(command, &cwd)?.envs(self.env.iter().cloned());
         let mut child = spawn_blocking(Spec {
-            cwd: Some(cwd),
             stdin: Io::Null,
             stderr: Io::Null,
             ..spec

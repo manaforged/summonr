@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::jobs::Owner;
@@ -88,20 +88,26 @@ pub(super) fn spawn_command(
         .unwrap_or_default();
     crate::process::spawn(
         Spec {
-            cwd: Some(cwd.to_path_buf()),
-            base: Env::Clean,
             stdin: Io::Null,
             stdout: Io::File(log),
             stderr: Io::File(err),
             kill_on_drop: !background,
-            ..Spec::new(
-                summonr_core::shell::program()?,
-                summonr_core::shell::arguments(script, cwd),
-            )
+            ..shell(script, cwd)?
         }
         .envs(crate::askpass::env(&path))
         .envs(env.iter().cloned()),
     )
+}
+
+pub(super) fn shell(script: &str, cwd: &Path) -> Result<Spec> {
+    Ok(Spec {
+        cwd: Some(cwd.to_path_buf()),
+        base: Env::Clean,
+        ..Spec::new(
+            summonr_core::shell::program()?,
+            summonr_core::shell::arguments(script, cwd),
+        )
+    })
 }
 
 pub(super) fn background_result(started: StartedCommand) -> ToolOutput {

@@ -74,3 +74,31 @@ async fn a_finished_monitor_cancels_its_pending_timer() -> crate::Result<()> {
     );
     Ok(())
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_monitor_command_sees_only_the_clean_environment() -> crate::Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let tools = ToolRegistry::with_policy_and_search(
+        workspace.path(),
+        crate::policy::Policy::builtin(),
+        None,
+    )?;
+    tools.set_session("monitor-env-test");
+    tools
+        .monitor(&serde_json::json!({
+            "description": "environment",
+            "command": "printf '%s' \"${CARGO_MANIFEST_DIR:-unset}\" > seen.tmp && mv seen.tmp seen.txt",
+            "timeout_ms": 5000,
+        }))
+        .await?;
+    let seen = workspace.path().join("seen.txt");
+    for _ in 0..250 {
+        if seen.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(std::fs::read_to_string(seen)?, "unset");
+    Ok(())
+}

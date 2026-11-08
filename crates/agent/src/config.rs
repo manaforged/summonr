@@ -70,6 +70,8 @@ pub(crate) struct File {
     pub limits: Option<crate::limits::Overrides>,
     #[serde(default)]
     pub skills: Skills,
+    #[serde(default)]
+    pub usage: crate::quota::Settings,
     #[serde(flatten)]
     pub other: BTreeMap<String, toml::Value>,
 }

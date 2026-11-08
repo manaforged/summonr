@@ -48,3 +48,25 @@ fn an_agent_moved_into_a_new_workspace_lists_under_it_and_leaves_its_repository(
         "the moved agent lists once: {listed:?}"
     );
 }
+
+#[test]
+fn a_repository_added_with_no_agent_lists_at_once() {
+    if !in_window("spaces::a_repository_added_with_no_agent_lists_at_once") {
+        return;
+    }
+    let root = tempfile::tempdir().expect("folder");
+    let shop = root.path().join("shop");
+    std::fs::create_dir(&shop).expect("shop");
+    sigil::app::dialog::mock::push_path(Some(shop));
+    let seen = steps(
+        two_chats,
+        vec![Step::Click("Add project"), Step::Click("Add repository…")],
+        |_| (),
+    );
+    let listed = rows(&seen.controls);
+    assert!(listed.contains(&"shop"), "the new repository lists: {listed:?}");
+    assert!(
+        listed.contains(&"Fix the parser bug") && listed.contains(&"Write release notes"),
+        "the other agents still list: {listed:?}"
+    );
+}

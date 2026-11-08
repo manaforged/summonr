@@ -151,7 +151,8 @@ pub(super) fn folder_items(app: &App, folder: &std::path::Path) -> Vec<MenuItem>
         folder.to_path_buf(),
     );
     let open = app.clone();
-    vec![
+    let gone = folder.to_path_buf();
+    let mut items = vec![
         MenuItem::new("New agent here").activate(move || {
             super::split::show(&open, summonr_agent::hub::Open::Folder(here.clone()));
         }),
@@ -161,7 +162,14 @@ pub(super) fn folder_items(app: &App, folder: &std::path::Path) -> Vec<MenuItem>
         MenuItem::new("Reveal repository").activate(move || {
             drop(summonr_auth::open::external(&reveal));
         }),
-    ]
+    ];
+    if super::spaces::is_added(folder) {
+        items.push(
+            MenuItem::new("Remove from sidebar")
+                .activate(move || super::spaces::remove_repository(&gone)),
+        );
+    }
+    items
 }
 
 /// The rename or delete dialog, when one is open.

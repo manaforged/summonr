@@ -125,6 +125,7 @@ fn snapshot(main: &App, marks: &Marks) -> Option<Layout> {
         pinned: kept(super::shelf::pinned(), &chats),
         archived: kept(super::shelf::archived(), &chats),
         spaces: super::spaces::kept(&chats),
+        repositories: super::spaces::repositories(),
     })
 }
 

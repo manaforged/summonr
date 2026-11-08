@@ -9,7 +9,7 @@ use summonr_core::error::Result;
 
 const FILE: &str = "desktop.json";
 
-/// What a restart restores: panes, terminals and the marks on agents out of view.
+/// What a restart restores: panes, terminals, the marks on agents out of view and the repositories a person added.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Layout {
@@ -21,6 +21,7 @@ pub struct Layout {
     pub pinned: Vec<String>,
     pub archived: Vec<String>,
     pub spaces: Vec<Space>,
+    pub repositories: Vec<PathBuf>,
 }
 
 /// A workspace a person made: its name, the folders it holds and the agents put in it.

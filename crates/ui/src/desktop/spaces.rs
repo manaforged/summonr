@@ -9,10 +9,11 @@ use summonr_agent::session::SessionInfo;
 
 use super::App;
 
-/// The workspaces, the one a new agent joins next, and a folder being picked for one.
+/// The workspaces, the repositories a person added, the workspace a new agent joins next, and a folder being picked for one.
 #[derive(Clone, Copy)]
 struct Spaces {
     list: Signal<Vec<Space>>,
+    repos: Signal<Vec<PathBuf>>,
     joining: Signal<Option<String>>,
     picking: Signal<Option<(String, Picked<PathBuf>)>>,
 }
@@ -25,6 +26,7 @@ thread_local! {
 pub(super) fn install(app: &App) {
     let made = Spaces {
         list: signal(Vec::new()),
+        repos: signal(Vec::new()),
         joining: signal(None),
         picking: signal(None),
     };
@@ -61,9 +63,35 @@ fn spaces() -> Spaces {
         .expect("invariant: the window installs workspaces before it builds a view")
 }
 
-/// Takes the workspaces from a saved layout.
+/// Takes the workspaces and repositories from a saved layout.
 pub(super) fn load(saved: &Layout) {
     spaces().list.set(saved.spaces.clone());
+    spaces().repos.set(saved.repositories.clone());
+}
+
+/// The repositories a person added, in the order added; tracked.
+pub(super) fn repositories() -> Vec<PathBuf> {
+    spaces().repos.get()
+}
+
+/// Adds `folder` to the repositories, so it lists before any agent runs in it.
+pub(super) fn add_repository(folder: PathBuf) {
+    let folder = folder.canonicalize().unwrap_or(folder);
+    spaces().repos.update(|list| {
+        if !list.contains(&folder) {
+            list.push(folder);
+        }
+    });
+}
+
+/// Whether `folder` is one of the repositories a person added.
+pub(super) fn is_added(folder: &Path) -> bool {
+    spaces().repos.peek().iter().any(|seen| seen == folder)
+}
+
+/// Takes `folder` off the repositories; its agents still list while they exist.
+pub(super) fn remove_repository(folder: &Path) {
+    spaces().repos.update(|list| list.retain(|seen| seen != folder));
 }
 
 /// The workspaces to save, holding only agents that still exist when the list of agents is known.

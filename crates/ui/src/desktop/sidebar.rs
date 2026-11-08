@@ -144,7 +144,8 @@ fn chats(
     let closed = shut.get();
     let terms = app.window.terminals.list.get();
     let trees = app.worktrees();
-    let mut groups = projects(&trees, &app.workspace(), space::outside(row::listed(app)));
+    let added = super::spaces::repositories();
+    let mut groups = projects(&trees, &app.workspace(), (&added, space::outside(row::listed(app))));
     let open_folders = terms
         .iter()
         .map(|term| repo_folder(&trees, &term.folder))
@@ -214,7 +215,7 @@ fn topics(
 pub(super) fn folders(app: &App) -> Vec<std::path::PathBuf> {
     let here = app.workspace();
     let trees = app.worktrees();
-    projects(&trees, &here, app.sessions.all_chats())
+    projects(&trees, &here, (&super::spaces::repositories(), app.sessions.all_chats()))
         .into_iter()
         .map(|(folder, _)| folder)
         .filter(|folder| *folder != repo_folder(&trees, &here))
@@ -232,13 +233,20 @@ fn repo_folder(trees: &[Tree], folder: impl AsRef<std::path::Path>) -> std::path
         .unwrap_or_else(|| folder.to_path_buf())
 }
 
+/// Every repository with its agents: the current one, the ones a person added, and the ones agents ran in.
 fn projects(
     trees: &[Tree],
     here: &std::path::Path,
-    rows: Vec<SessionInfo>,
+    (added, rows): (&[std::path::PathBuf], Vec<SessionInfo>),
 ) -> Vec<(std::path::PathBuf, Vec<SessionInfo>)> {
     let mut groups: Vec<(std::path::PathBuf, Vec<SessionInfo>)> =
         vec![(repo_folder(trees, here), Vec::new())];
+    for folder in added {
+        let folder = repo_folder(trees, folder);
+        if !groups.iter().any(|(seen, _)| *seen == folder) {
+            groups.push((folder, Vec::new()));
+        }
+    }
     for info in rows {
         let folder = info
             .cwd
@@ -250,7 +258,7 @@ fn projects(
         }
     }
     let here = repo_folder(trees, here);
-    groups.retain(|(folder, chats)| !chats.is_empty() || *folder == here);
+    groups.retain(|(folder, chats)| !chats.is_empty() || *folder == here || added.contains(folder));
     groups.sort_by_cached_key(|(folder, _)| folder_name(folder).to_lowercase());
     for (_, agents) in &mut groups {
         agents.sort_by(|a, b| b.id.cmp(&a.id));
@@ -366,7 +374,7 @@ pub(super) fn jump(app: &App, to: crate::view::keys::bindings::Jump) {
     let order: Vec<String> = super::shelf::pinned()
         .into_iter()
         .chain(
-            projects(&app.worktrees(), &app.workspace(), row::listed(app))
+            projects(&app.worktrees(), &app.workspace(), (&[], row::listed(app)))
                 .into_iter()
                 .flat_map(|(_, agents)| agents.into_iter().map(|info| info.id)),
         )

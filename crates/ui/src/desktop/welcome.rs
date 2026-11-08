@@ -139,6 +139,7 @@ pub(super) fn follow(app: &super::App, picked: Signal<Option<Picked<PathBuf>>>) 
             let app = app.clone();
             sigil::reactive::defer(move || {
                 picked.set(None);
+                super::spaces::add_repository(path.clone());
                 app.open_session(summonr_agent::hub::Open::Folder(path));
             });
         }

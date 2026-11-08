@@ -66,14 +66,14 @@ every_secs = 120
 command = ["sh", "-c", "gh issue list --assignee @me --json number,title | jq '{view: \"list\", rows: map({title, meta: \"#\\(.number)\", action: {start: {prompt: \"Fix issue #\\(.number): \\(.title)\"}}})}'"]
 ```
 
-A command can print an [A2UI v0.9.1](https://a2ui.org/specification/v0.9.1-a2ui/) surface instead of a view: one message, an array of messages, or `{"messages": [...]}`, with a component whose id is `root`. The desktop draws its basic-catalog components (Text, Button, Row, Column, Card, List, Tabs, Image, Icon, Divider and the inputs), and inputs bind to the data model by JSON Pointer. A Button's `action.event` named `start`, with a `prompt` in its context, opens a new agent with that prompt. One named `open`, with a `session`, shows that agent. Any other event runs the command again with the A2UI `action` message on stdin (`name`, `surfaceId` set to the panel's name, `timestamp` and `context`), and what it prints replaces the surface:
+A command can print an [A2UI 1.0](https://a2ui.org/specification/v1.0-a2ui/) surface instead of a view: a `createSurface` message with the basic catalog, then `updateComponents` with a component whose id is `root` and `updateDataModel`, as an array or `{"messages": [...]}`. The desktop draws its basic-catalog components (Text, Button, Row, Column, Card, List, Tabs, Image, Icon, Divider and the inputs), and inputs bind to the data model by JSON Pointer. A Button's `action.event` named `start`, with a `prompt` in its context, opens a new agent with that prompt. One named `open`, with a `session`, shows that agent. Any other event runs the command again with the A2UI `action` message on stdin (`version`, then `action` with `name`, `surfaceId` set to the panel's name, `timestamp` and `context`), and what it prints replaces the surface:
 
 ```json
-[{"version":"v0.9.1","updateComponents":{"surfaceId":"queue","components":[
+[{"version":"1.0","createSurface":{"surfaceId":"queue","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},{"version":"1.0","updateComponents":{"surfaceId":"queue","components":[
   {"id":"root","component":"List","children":{"componentId":"pr","path":"/prs"}},
-  {"id":"pr","component":"Button","child":"title","action":{"event":{"name":"start","context":{"prompt":{"path":"prompt"}}}}},
-  {"id":"title","component":"Text","text":{"path":"title"}}]}},
- {"version":"v0.9.1","updateDataModel":{"surfaceId":"queue","path":"/","value":{"prs":[{"title":"Fix cart rounding","prompt":"Review PR #12"}]}}}]
+  {"id":"pr","component":"Button","child":"title","action":{"event":{"name":"start","context":{"prompt":{"@path":"prompt"}}}}},
+  {"id":"title","component":"Text","text":{"@path":"title"}}]}},
+ {"version":"1.0","updateDataModel":{"surfaceId":"queue","path":"/","value":{"prs":[{"title":"Fix cart rounding","prompt":"Review PR #12"}]}}}]
 ```
 
 The command runs only while its tab is open, in the workspace, with the same environment as a hook. With `--no-trust`, workspace panels are ignored. A project's panel runs a command from that repository when you open its tab, so treat the tab like running a script from the repository.

@@ -153,7 +153,7 @@ async fn panel_fact(inbox: &mut tokio::sync::mpsc::UnboundedReceiver<Msg>) -> (S
     }
 }
 
-const SURFACE: &str = r#"[{"version":"v0.9.1","updateComponents":{"surfaceId":"queue","components":[{"id":"root","component":"Text","text":"Nothing to review"}]}}]"#;
+const SURFACE: &str = r#"[{"version":"1.0","createSurface":{"surfaceId":"queue","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},{"version":"1.0","updateComponents":{"surfaceId":"queue","components":[{"id":"root","component":"Text","text":"Nothing to review"}]}}]"#;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_panel_that_prints_a2ui_reports_the_surface_as_printed() {
@@ -183,6 +183,7 @@ async fn a_panel_event_runs_the_command_again_with_the_action_on_stdin() {
         &std::fs::read_to_string(dir.path().join("action.json")).expect("the command read stdin"),
     )
     .expect("the action is JSON");
+    assert_eq!(sent["version"], "1.0");
     let action = &sent["action"];
     assert_eq!(action["name"], "approve");
     assert_eq!(action["surfaceId"], "queue");

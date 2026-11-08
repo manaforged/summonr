@@ -24,9 +24,9 @@ The command runs in the workspace and prints one JSON document:
 
 A chart's kind is line, bar, area or pie. A stat's or a row's tone is neutral, success, warning or danger. A row's action starts a new agent with a prompt, or opens one: {"open":{"session":"ID"}}.
 
-It can print an A2UI v0.9.1 surface instead, with a component whose id is "root". A Button whose action.event is named start, with a prompt in its context, opens an agent with that prompt; one named open, with a session, shows that agent. Any other event runs the command again with the A2UI action message on stdin, and what it prints replaces the surface:
+It can print an A2UI 1.0 surface instead, starting with createSurface, with a component whose id is "root". A Button whose action.event is named start, with a prompt in its context, opens an agent with that prompt; one named open, with a session, shows that agent. Any other event runs the command again with the A2UI action message on stdin, and what it prints replaces the surface:
 
-  [{"version":"v0.9.1","updateComponents":{"surfaceId":"queue","components":[{"id":"root","component":"Button","child":"label","action":{"event":{"name":"start","context":{"prompt":"Review PR 12"}}}},{"id":"label","component":"Text","text":"Review PR 12"}]}}]
+  [{"version":"1.0","createSurface":{"surfaceId":"queue","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},{"version":"1.0","updateComponents":{"surfaceId":"queue","components":[{"id":"root","component":"Button","child":"label","action":{"event":{"name":"start","context":{"prompt":"Review PR 12"}}}},{"id":"label","component":"Text","text":"Review PR 12"}]}}]
 
 With place = "side" in the file, the panel is a section of the sidebar instead of a tab. Commit the file in the workspace's panels folder to share it with everyone who works in the repository.
 

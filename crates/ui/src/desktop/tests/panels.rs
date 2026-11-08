@@ -77,16 +77,16 @@ fn a_right_panel_stays_out_of_the_sidebar() {
 }
 
 const REVIEW: &str = "Review PR #12";
-const SURFACE: &str = r#"[{"version":"v0.9.1","updateComponents":{"surfaceId":"queue","components":[
+const SURFACE: &str = r#"[{"version":"1.0","createSurface":{"surfaceId":"queue","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},{"version":"1.0","updateComponents":{"surfaceId":"queue","components":[
   {"id":"root","component":"List","children":{"componentId":"pr","path":"/prs"}},
   {"id":"pr","component":"Row","children":["review","approve"]},
   {"id":"review","component":"Button","child":"review-label",
-   "action":{"event":{"name":"start","context":{"prompt":{"path":"prompt"},"pr":{"path":"number"}}}}},
-  {"id":"review-label","component":"Text","text":{"path":"title"}},
+   "action":{"event":{"name":"start","context":{"prompt":{"@path":"prompt"},"pr":{"@path":"number"}}}}},
+  {"id":"review-label","component":"Text","text":{"@path":"title"}},
   {"id":"approve","component":"Button","child":"approve-label",
-   "action":{"event":{"name":"approve","context":{"pr":{"path":"number"}}}}},
+   "action":{"event":{"name":"approve","context":{"pr":{"@path":"number"}}}}},
   {"id":"approve-label","component":"Text","text":"Approve"}]}},
- {"version":"v0.9.1","updateDataModel":{"surfaceId":"queue","path":"/","value":
+ {"version":"1.0","updateDataModel":{"surfaceId":"queue","path":"/","value":
   {"prs":[{"title":"Fix cart rounding","number":12,"prompt":"Review PR #12"}]}}}]"#;
 
 fn queue(app: &super::super::App) {

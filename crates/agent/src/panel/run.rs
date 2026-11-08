@@ -8,7 +8,7 @@ use crate::process::{Cap, Env, Spec, Tail};
 /// The A2UI `action` message for a pressed button, as a panel command reads it on stdin.
 #[must_use]
 pub fn action(panel: &str, event: &str, context: serde_json::Value) -> String {
-    serde_json::json!({"action": {
+    serde_json::json!({"version": "1.0", "action": {
         "name": event,
         "surfaceId": panel,
         "timestamp": jiff::Timestamp::now().to_string(),

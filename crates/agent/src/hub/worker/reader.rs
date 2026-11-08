@@ -155,6 +155,17 @@ impl Reader {
                     .map_err(|error| error.to_string());
                 self.send(Msg::Fact(Fact::Usage(rows)));
             }
+            Cmd::ReadPlans { due } => {
+                let read = async move {
+                    if due {
+                        crate::quota::refresh().await
+                    } else {
+                        crate::quota::latest(true).await
+                    }
+                };
+                let readings = tokio::runtime::Handle::current().block_on(read);
+                self.send(Msg::Fact(Fact::Plans(readings)));
+            }
             Cmd::DeleteSession(id) => {
                 match crate::session::remove(&id) {
                     Ok(name) => {

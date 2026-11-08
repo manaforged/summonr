@@ -50,6 +50,7 @@ pub enum Fact {
     Defaulted(Option<crate::recent::ModelId>),
     Sessions(std::result::Result<Vec<(crate::session::SessionInfo, bool)>, String>),
     Usage(std::result::Result<Vec<crate::session::Spend>, String>),
+    Plans(Vec<crate::quota::Reading>),
     Prompts {
         session: Option<String>,
         result: std::result::Result<(Vec<Prompt>, Vec<String>), String>,
@@ -171,6 +172,7 @@ pub enum Cmd {
     SaveDefault(Option<crate::recent::ModelId>),
     ListSessions,
     ListUsage,
+    ReadPlans { due: bool },
     ListPrompts(Option<String>),
     Branch {
         session: String,

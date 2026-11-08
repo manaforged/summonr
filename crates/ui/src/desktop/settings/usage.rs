@@ -12,6 +12,8 @@ use super::parts::{row, section};
 use crate::usage::RANGES;
 use crate::usage::report::{METRICS, Metric, Report, hit};
 
+mod plans;
+
 const SCOPES: [&str; 2] = ["Everywhere", "This repository"];
 const NONE: &str = "No usage yet";
 const NOTHING_HERE: &str = "No usage in this range";
@@ -21,6 +23,7 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
     app.load_usage();
     let usage = app.usage;
     vec![
+        plans::view(app),
         controls(usage.range, usage.local, usage.metric),
         container()
             .layout(

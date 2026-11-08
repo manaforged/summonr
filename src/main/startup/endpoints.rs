@@ -134,7 +134,7 @@ fn count(models: usize) -> String {
 }
 
 pub(super) async fn usage(json: bool) -> Result<()> {
-    let readings = summonr_agent::quota::read().await;
+    let readings = summonr_agent::quota::refresh().await;
     if json {
         println!("{}", serde_json::to_string(&readings).map_err(|error| summonr_agent::Error::Config(error.to_string()))?);
         return Ok(());
@@ -144,7 +144,8 @@ pub(super) async fn usage(json: bool) -> Result<()> {
     }
     for reading in &readings {
         let via = reading.endpoint.as_deref().map_or_else(String::new, |name| format!(" ({name})"));
-        println!("{}{via}", reading.plan);
+        let updated = reading.updated().map_or_else(String::new, |updated| format!("  {updated}"));
+        println!("{}{via}{updated}", reading.plan);
         if let Some(error) = &reading.error {
             println!("  {error}");
         }

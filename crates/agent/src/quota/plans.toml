@@ -31,3 +31,18 @@ name = "GLM coding plan"
 via = "https://api.z.ai/api/coding/"
 url = "https://api.z.ai/api/monitor/usage/quota/limit"
 shape = "zai"
+
+[[refresh]]
+viewed_within_secs = 300
+every_secs = 120
+
+[[refresh]]
+viewed_within_secs = 3600
+every_secs = 300
+
+[[refresh]]
+viewed_within_secs = 14400
+every_secs = 900
+
+[[refresh]]
+every_secs = 1800

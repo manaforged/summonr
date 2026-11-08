@@ -57,6 +57,7 @@ impl Cmd {
             | Cmd::SaveDefault(_)
             | Cmd::ListSessions
             | Cmd::ListUsage
+            | Cmd::ReadPlans { .. }
             | Cmd::ListPrompts(_)
             | Cmd::ListFiles
             | Cmd::Jobs

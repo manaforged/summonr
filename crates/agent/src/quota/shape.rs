@@ -47,6 +47,32 @@ pub(super) fn label(minutes: Option<u64>) -> String {
     }
 }
 
+pub(super) fn countdown(secs: i64) -> String {
+    if secs <= 0 {
+        return "Resets now".to_string();
+    }
+    let minutes = (secs + 59) / 60;
+    let (days, hours, minutes) = (minutes / 1440, minutes % 1440 / 60, minutes % 60);
+    match (days, hours) {
+        (0, 0) => format!("Resets in {minutes}m"),
+        (0, _) => format!("Resets in {hours}h {minutes}m"),
+        _ => format!("Resets in {days}d {hours}h"),
+    }
+}
+
+pub(super) fn updated(at: jiff::Timestamp, now: jiff::Timestamp) -> String {
+    let secs = now.duration_since(at).as_secs();
+    match secs {
+        ..60 => "Updated just now".to_string(),
+        60..3600 => format!("Updated {}m ago", secs / 60),
+        3600..86_400 => format!("Updated {}h ago", secs / 3600),
+        _ => format!(
+            "Updated {}",
+            at.to_zoned(jiff::tz::TimeZone::system()).strftime("%H:%M")
+        ),
+    }
+}
+
 fn codex(value: &Value) -> Vec<Window> {
     ["primary", "secondary"]
         .iter()

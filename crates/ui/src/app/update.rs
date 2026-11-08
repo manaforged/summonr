@@ -45,6 +45,7 @@ impl App {
             }
             Msg::Fact(Fact::Sessions(rows)) => self.sessions.update(rows),
             Msg::Fact(Fact::Usage(rows)) => self.usage.update(rows),
+            Msg::Fact(Fact::Plans(readings)) => self.usage.plans.set(readings),
             Msg::Fact(Fact::Forge(reply)) => self.forged(reply),
             msg @ Msg::Fact(Fact::Models { .. }) => self.models_loaded(msg),
             Msg::Fact(Fact::ModelNote(note)) => self.picker.note.set(note),

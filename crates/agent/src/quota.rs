@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::endpoint::{Endpoint, Requirement};
 
+mod refresh;
 mod shape;
 
 pub use shape::Shape;
@@ -20,6 +21,25 @@ pub struct Settings {
     /// Extra plans, read after the shipped ones.
     #[serde(default)]
     pub plan: Vec<Plan>,
+    /// A fixed refresh cadence in seconds instead of the adaptive one; 0 refreshes only on `endpoint usage`.
+    #[serde(default)]
+    pub every_secs: Option<u64>,
+}
+
+#[derive(Deserialize, Default)]
+struct Shipped {
+    #[serde(default)]
+    plan: Vec<Plan>,
+    #[serde(default)]
+    refresh: Vec<refresh::Step>,
+}
+
+fn shipped() -> Shipped {
+    toml::from_str(PLANS).unwrap_or_default()
+}
+
+fn settings() -> Settings {
+    crate::config::file().map(|file| file.usage.clone()).unwrap_or_default()
 }
 
 /// Where one plan's usage comes from and how to read the reply.
@@ -122,10 +142,26 @@ impl Window {
     pub fn label(&self) -> String {
         shape::label(self.minutes)
     }
+
+    /// The time left before the window resets, as `Resets in 2d 4h`, `Resets in 45m` or `Resets now`.
+    #[must_use]
+    pub fn resets_in(&self) -> Option<String> {
+        let at: jiff::Timestamp = self.resets.as_deref()?.parse().ok()?;
+        Some(shape::countdown(at.duration_since(jiff::Timestamp::now()).as_secs()))
+    }
+}
+
+impl Reading {
+    /// How old the windows are, as `Updated just now`, `Updated 5m ago` or `Updated 14:05`.
+    #[must_use]
+    pub fn updated(&self) -> Option<String> {
+        let at: jiff::Timestamp = self.at.as_deref()?.parse().ok()?;
+        Some(shape::updated(at, jiff::Timestamp::now()))
+    }
 }
 
 /// A plan's windows, or why they could not be read.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Reading {
     /// The plan name.
     pub plan: String,
@@ -135,7 +171,7 @@ pub struct Reading {
     pub windows: Vec<Window>,
     /// Why the windows could not be read.
     pub error: Option<String>,
-    /// When a recorded reading was taken, as an RFC 3339 time.
+    /// When the windows were read, as an RFC 3339 time.
     pub at: Option<String>,
 }
 
@@ -152,10 +188,27 @@ pub(crate) fn remember(name: &str, reported: Option<&Value>) -> std::io::Result<
     crate::durable::store::write(&folder.join(format!("{name}.json")), bytes, crate::durable::store::Durability::Renamed)
 }
 
-/// Reads every plan that applies here: shipped plans and `[usage]` plans, minus `[usage] off`.
-pub async fn read() -> Vec<Reading> {
-    let settings = crate::config::file().map(|file| file.usage.clone()).unwrap_or_default();
-    let shipped = toml::from_str::<Settings>(PLANS).map(|plans| plans.plan).unwrap_or_default();
+/// The saved readings while they are fresh for the adaptive cadence, else a new read; `viewed` counts as a view now.
+pub async fn latest(viewed: bool) -> Vec<Reading> {
+    let since = refresh::mark(viewed);
+    let every = refresh::every(&shipped().refresh, settings().every_secs, since);
+    refresh::cached(every, read).await
+}
+
+/// Reads every plan now and saves the readings for `latest`.
+pub async fn refresh() -> Vec<Reading> {
+    refresh::cached(Some(std::time::Duration::ZERO), read).await
+}
+
+/// How often a view that stays open calls `refresh`; `None` when refresh is manual.
+#[must_use]
+pub fn cadence() -> Option<std::time::Duration> {
+    refresh::every(&shipped().refresh, settings().every_secs, Some(std::time::Duration::ZERO))
+}
+
+async fn read() -> Vec<Reading> {
+    let settings = settings();
+    let shipped = shipped().plan;
     let endpoints: Vec<Endpoint> = crate::endpoint::set_up()
         .iter()
         .filter_map(|name| crate::endpoint::resolve(Some(name), None, Requirement::ModelAndKey).ok())
@@ -212,7 +265,7 @@ fn source<'a>(plan: &'a Plan, endpoints: &'a [Endpoint]) -> Option<Source<'a>> {
 async fn fetch(plan: &Plan, source: Source<'_>) -> Reading {
     let at = match source {
         Source::File(file) => modified(&path(file)),
-        _ => None,
+        _ => Some(jiff::Timestamp::now().to_string()),
     };
     let (endpoint, body) = match source {
         Source::Login(endpoint, url) => (Some(endpoint.name.clone()), login(endpoint, url).await),

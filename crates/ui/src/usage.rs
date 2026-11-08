@@ -31,6 +31,7 @@ pub(super) struct Panel {
     pub(super) local: Signal<bool>,
     pub(super) rows: Signal<Vec<Spend>>,
     pub(super) status: Signal<String>,
+    pub(super) plans: Signal<Vec<summonr_agent::quota::Reading>>,
 }
 
 impl Panel {
@@ -42,6 +43,7 @@ impl Panel {
             local: signal(false),
             rows: signal(Vec::new()),
             status: signal(String::new()),
+            plans: signal(Vec::new()),
         }
     }
 

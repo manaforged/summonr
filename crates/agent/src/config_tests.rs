@@ -1,4 +1,5 @@
 use super::edit::save_default_model;
+use super::decode::unknown;
 use super::parse;
 
 fn written(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -288,7 +289,6 @@ fn a_workflow_saves_next_to_an_inline_workflows_table() {
     assert_eq!(old.selections[&Role::Scout].endpoint, "zai");
 }
 
-
 #[test]
 fn the_default_skill_set_saves_next_to_the_sets_and_clears() {
     let (_dir, path) = written("[skills.sets.lean]\ninclude = [\"review\"]\n");
@@ -298,4 +298,11 @@ fn the_default_skill_set_saves_next_to_the_sets_and_clears() {
     assert!(file.skills.sets.contains_key("lean"));
     super::save_default_skills(&path, None).unwrap();
     assert_eq!(parse(&path).unwrap().skills.default, None);
+}
+
+#[test]
+fn a_misspelled_limit_is_named_as_an_unknown_key() {
+    let (_dir, path) = written("[limits]\nretry_limit = 3\nretry_limitt = 3\n");
+    let file = parse(&path).unwrap();
+    assert_eq!(unknown(&file), ["limits.retry_limitt"]);
 }

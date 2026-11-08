@@ -263,3 +263,45 @@ fn dragging_over_output_selects_it_for_copy() {
     let seen = steps(|_| {}, keys, |_| ());
     assert_eq!(copied.borrow().as_str(), "select-2", "{}", seen.text());
 }
+
+fn exit_row(code: &str) -> Vec<String> {
+    let runtime = pumped();
+    let mut keys = vec![Step::Key(command("t"))];
+    keys.extend(line(&format!("exit {code}")));
+    keys.push(Step::Wait(Box::new(move |app| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while app
+            .window
+            .terminals
+            .list
+            .peek()
+            .first()
+            .is_some_and(|term| term.session.exited.peek().is_none())
+            && Instant::now() < deadline
+        {
+            runtime.borrow_mut().pump();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    })));
+    steps(|app| app.window.sidebar.set(true), keys, |_| ()).texts
+}
+
+#[test]
+fn a_terminal_whose_program_fails_says_failed_in_the_sidebar() {
+    if !in_window("terminals::a_terminal_whose_program_fails_says_failed_in_the_sidebar") {
+        return;
+    }
+    let texts = exit_row("3");
+    assert!(texts.iter().any(|text| text == "failed"), "{texts:?}");
+    assert!(!texts.iter().any(|text| text == "exited"), "{texts:?}");
+}
+
+#[test]
+fn a_terminal_whose_program_ends_cleanly_says_exited() {
+    if !in_window("terminals::a_terminal_whose_program_ends_cleanly_says_exited") {
+        return;
+    }
+    let texts = exit_row("0");
+    assert!(texts.iter().any(|text| text == "exited"), "{texts:?}");
+    assert!(!texts.iter().any(|text| text == "failed"), "{texts:?}");
+}

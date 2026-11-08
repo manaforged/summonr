@@ -17,6 +17,7 @@ use super::style::{DIVIDER, ICON, S, Text, text};
 const TITLE_CHARS: usize = 60;
 const SHELL: &str = "Shell";
 const EXITED: &str = "exited";
+const FAILED: &str = "failed";
 const BELL: &str = "Bell";
 
 mod scripts;
@@ -323,7 +324,7 @@ fn row(app: &App, term: &Rc<Term>, depth: u16) -> NodeBuilder {
                 .iter()
                 .any(|pane| pane.window.showing.get() == Some(term.id));
             let rang = term.session.bell.get() != term.seen.get();
-            let done = term.session.exited.get().is_some();
+            let code = term.session.exited.get();
             let (open, id, menu) = (app.clone(), term.id, app.clone());
             let row = list_row(
                 selected,
@@ -331,7 +332,8 @@ fn row(app: &App, term: &Rc<Term>, depth: u16) -> NodeBuilder {
                 ListRowSlots {
                     depth,
                     leading: Some(Box::new(icon(Icon::Terminal).px(ICON))),
-                    status: done.then(|| EXITED.into()),
+                    status: code.map(|code| if code == 0 { EXITED } else { FAILED }.into()),
+                    status_tone: code.filter(|code| *code != 0).map(|_| Tone::Error),
                     badge: rang.then(|| (BELL.into(), Tone::Info)),
                     activate: Some(Rc::new(move || reveal(&open, id))),
                     ..ListRowSlots::default()

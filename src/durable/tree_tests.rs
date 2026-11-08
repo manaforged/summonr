@@ -147,3 +147,17 @@ fn a_cached_tree_exactly_at_the_retention_age_is_kept() {
     assert!(edge.is_file());
     assert!(!old.exists());
 }
+
+#[test]
+fn a_git_workspace_git_cannot_list_stops_the_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join(".git"), "gitdir: missing\n").unwrap();
+    std::fs::write(root.join("new.txt"), "written by the agent").unwrap();
+    let result = snapshot(root, &[], None);
+    assert!(
+        result.is_err(),
+        "a listing git refused must not pass as an empty workspace: {:?}",
+        result.map(|snapshot| snapshot.files.keys().cloned().collect::<Vec<_>>())
+    );
+}

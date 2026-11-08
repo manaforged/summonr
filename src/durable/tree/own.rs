@@ -5,13 +5,12 @@ use std::path::PathBuf;
 
 use super::listing;
 
-pub(crate) fn own_files(root: &Path) -> Vec<String> {
+pub(crate) fn own_files(root: &Path) -> std::io::Result<Vec<String>> {
     let own = own_outputs();
     if own.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    listing(root)
-        .unwrap_or_default()
+    Ok(listing(root)?
         .into_iter()
         .filter(|relative| {
             let path = root.join(relative);
@@ -19,7 +18,7 @@ pub(crate) fn own_files(root: &Path) -> Vec<String> {
                 .is_ok_and(|metadata| is_own(&path, &metadata, &own))
         })
         .map(|relative| relative.to_string_lossy().replace('\\', "/"))
-        .collect()
+        .collect())
 }
 
 #[cfg(unix)]

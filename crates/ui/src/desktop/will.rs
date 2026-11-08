@@ -2,7 +2,6 @@ mod mood;
 mod shape;
 
 use std::cell::{Cell, RefCell};
-use std::f32::consts::TAU;
 use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -30,6 +29,8 @@ const SETTLE: Duration = Duration::from_millis(250);
 const EDGE: f32 = 8.0;
 /// How far the pointer moves before a press becomes a drag, in points.
 const SLOP: f32 = 3.0;
+/// The resting flicker period; a pose with a shorter one sways faster.
+const CALM: f32 = 2.6;
 /// Spring stiffness and damping for pose changes: a short ease with a little overshoot.
 const SPRING: (f32, f32) = (180.0, 14.0);
 /// How long a blink keeps the eyes shut, and the shortest and longest gaps between blinks.
@@ -74,28 +75,47 @@ pub(super) fn layer(app: &App) -> NodeBuilder {
             let saved = model.with(|model| model.prefs.will_spot[axis]) as f32;
             let held = live.get().map(|at: (f32, f32)| [at.0, at.1][axis]);
             let most = room();
-            -fit(held.unwrap_or(saved), [most.0, most.1][axis])
+            fit(held.unwrap_or(saved), [most.0, most.1][axis])
         })
     };
     let shown = derived(move || model.with(|model| model.prefs.will));
     let mind = Mind::watch(app);
     let app = app.clone();
-    container()
-        .layout(
-            LayoutStyle::block()
-                .position(Position::Absolute)
-                .inset_right(0.0)
-                .inset_bottom(0.0),
-        )
-        .animate_translate_x(spot(0))
-        .animate_translate_y(spot(1))
+    let body = container()
+        .layout(LayoutStyle::block().shrink(0.0))
+        .hittable(false)
         .children_reactive(move || {
             if shown.get() {
                 vec![untrack(|| grip(&app, &mind, live, room))]
             } else {
                 Vec::new()
             }
-        })
+        });
+    let beside = spacer().animate_width(spot(0));
+    let below = spacer().animate_height(spot(1));
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .position(Position::Absolute)
+                .inset_right(0.0)
+                .inset_bottom(0.0),
+        )
+        .hittable(false)
+        .child(
+            container()
+                .layout(LayoutStyle::flex_row())
+                .hittable(false)
+                .child(body)
+                .child(beside),
+        )
+        .child(below)
+}
+
+/// An empty box that only takes up room, so Will sits away from the column's corner.
+fn spacer() -> NodeBuilder {
+    container()
+        .layout(LayoutStyle::block().shrink(0.0))
+        .hittable(false)
 }
 
 /// Will drawn `size` points square, still and idle, for Settings.
@@ -230,7 +250,7 @@ fn art(app: &App, size: f32, moving: bool, source: Source) -> NodeBuilder {
 struct Body {
     at: [f32; 7],
     speed: [f32; 7],
-    phase: f32,
+    clock: f32,
     last: Option<Instant>,
     blink: Instant,
 }
@@ -240,7 +260,7 @@ impl Body {
         Self {
             at: target(&Mood::Idle.pose()),
             speed: [0.0; 7],
-            phase: 0.0,
+            clock: 0.0,
             last: None,
             blink: Instant::now() + Duration::from_secs_f32(BLINK.1),
         }
@@ -256,7 +276,7 @@ impl Body {
                 .last
                 .map_or(0.0, |last| now.duration_since(last).as_secs_f32().min(0.1));
             self.spring(&goal, dt);
-            self.phase = (self.phase + dt * TAU / pose.flicker) % TAU;
+            self.clock += dt * CALM / pose.flicker;
             if now >= self.blink + BLINK.0 {
                 self.blink = now + Duration::from_secs_f32(gap(now));
             }
@@ -269,19 +289,19 @@ impl Body {
         } else {
             self.at = goal;
             self.speed = [0.0; 7];
-            self.phase = 0.0;
+            self.clock = 0.0;
         }
         self.last = Some(now);
-        let wave = self.phase.sin();
         let [sx, sy, tilt, lift, fade, lx, ly] = self.at;
         Frame {
-            scale: (sx, sy * (1.0 + pose.stretch * (wave + 1.0) / 2.0)),
-            tilt: tilt + wave * pose.sway,
+            scale: (sx, sy),
+            tilt,
             lift: lift + tick,
             fade,
             eyes: pose.eyes,
             look: (lx, ly),
             blink,
+            time: moving.then_some(self.clock),
         }
     }
 

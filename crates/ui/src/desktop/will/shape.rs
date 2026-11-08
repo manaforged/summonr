@@ -3,8 +3,10 @@ use sigil::prelude::{Rgba8, Theme};
 use sigil::scene::SceneBuilder;
 use sigil::widgets::PathNode;
 
-/// The point Will scales and leans about, on the 16 grid.
-const BASE: (f32, f32) = (8.0, 15.0);
+/// The point Will scales and leans about, on the 16 grid: the bottom of his body.
+const BASE: (f32, f32) = (8.0, 14.0);
+/// How far and how often his whole body bobs, on the 16 grid and in seconds.
+const BOB: (f32, f32) = (-0.33, 3.4);
 
 #[derive(Clone, Copy)]
 enum Seg {
@@ -26,13 +28,46 @@ const FLAME: [Seg; 9] = [
     Seg::Close,
 ];
 
-const CORE: [Seg; 6] = [
-    Seg::Move(11.1, 10.0),
-    Seg::Curve([11.1, 11.712, 9.712, 13.1, 8.0, 13.1]),
-    Seg::Curve([6.288, 13.1, 4.9, 11.712, 4.9, 10.0]),
-    Seg::Curve([4.9, 8.288, 6.288, 6.9, 8.0, 6.9]),
-    Seg::Curve([9.712, 6.9, 11.1, 8.288, 11.1, 10.0]),
-    Seg::Close,
+/// One fill of the outline: its size, and the two holds it eases between, one way per `period` seconds.
+struct Layer {
+    size: f32,
+    period: f32,
+    from: Hold,
+    to: Hold,
+}
+
+/// A layer's lean, slant and stretch at one end of its sway.
+#[derive(Clone, Copy)]
+struct Hold {
+    tilt: f32,
+    skew: f32,
+    scale: (f32, f32),
+}
+
+const fn hold(tilt: f32, skew: f32, scale: (f32, f32)) -> Hold {
+    Hold { tilt, skew, scale }
+}
+
+/// The edge, mid and core: the same outline at full, 0.8 and 0.6 size, each swaying on its own.
+const LAYERS: [Layer; 3] = [
+    Layer {
+        size: 1.0,
+        period: 2.6,
+        from: hold(-1.6, 0.0, (1.0, 0.985)),
+        to: hold(1.8, 0.0, (1.0, 1.025)),
+    },
+    Layer {
+        size: 0.8,
+        period: 1.9,
+        from: hold(2.0, -2.5, (1.0, 1.0)),
+        to: hold(-1.6, 1.6, (1.0, 1.04)),
+    },
+    Layer {
+        size: 0.6,
+        period: 1.3,
+        from: hold(0.0, 0.0, (0.975, 0.965)),
+        to: hold(0.0, 0.0, (1.025, 1.045)),
+    },
 ];
 
 /// Two block eyes `width` by `height`, their tops at `top`.
@@ -130,37 +165,68 @@ pub(super) struct Frame {
     pub(super) eyes: Eyes,
     pub(super) look: (f32, f32),
     pub(super) blink: f32,
+    pub(super) time: Option<f32>,
 }
 
-/// Paints `frame` into `area` with the edge, core and eye colours.
+/// Paints `frame` into `area` with the edge, mid, core and eye colours.
 pub(super) fn draw(
     scene: &mut SceneBuilder,
     area: Rect,
     frame: &Frame,
-    colors: [Rgba8; 3],
+    colors: [Rgba8; 4],
     theme: &Theme,
 ) {
-    let (sin, cos) = frame.tilt.to_radians().sin_cos();
-    let (sx, sy) = frame.scale;
-    let place = move |x: f32, y: f32| {
-        let (dx, dy) = ((x - BASE.0) * sx, (y - BASE.1) * sy);
-        (
-            BASE.0 + dx * cos - dy * sin,
-            BASE.1 + dx * sin + dy * cos + frame.lift,
-        )
-    };
-    let middle = frame.eyes.middle();
-    let (lx, ly) = frame.look;
-    let gaze = move |x: f32, y: f32| place(x + lx, middle + (y - middle) * frame.blink + ly);
-    let [edge, core, ink] = colors.map(|color| Rgba8 {
+    let [edge, mid, core, ink] = colors.map(|color| Rgba8 {
         a: (f32::from(color.a) * frame.fade.clamp(0.0, 1.0)).round() as u8,
         ..color
     });
-    outline(&FLAME, &place, edge).draw(scene, area, theme);
-    outline(&CORE, &place, core).draw(scene, area, theme);
+    let bob = frame
+        .time
+        .map_or(0.0, |time| BOB.0 * ease(time, BOB.1 / 2.0));
+    let lift = frame.lift + bob;
+    let mut held = hold(0.0, 0.0, (1.0, 1.0));
+    for (layer, color) in LAYERS.iter().zip([edge, mid, core]) {
+        let at = frame.time.map_or(0.5, |time| ease(time, layer.period));
+        held = between(layer.from, layer.to, at);
+        let place = mapper(frame, held, layer.size, lift);
+        outline(&FLAME, &place, color).draw(scene, area, theme);
+    }
+    let place = mapper(frame, held, 1.0, lift);
+    let middle = frame.eyes.middle();
+    let (lx, ly) = frame.look;
+    let gaze = move |x: f32, y: f32| place(x + lx, middle + (y - middle) * frame.blink + ly);
     outline(frame.eyes.segs(), &gaze, ink).draw(scene, area, theme);
 }
 
+/// Where a sway that turns every `period` seconds sits at `time`, from 0 to 1, easing at each end.
+fn ease(time: f32, period: f32) -> f32 {
+    (1.0 - (time * std::f32::consts::PI / period).cos()) / 2.0
+}
+
+fn between(from: Hold, to: Hold, at: f32) -> Hold {
+    let mix = |a: f32, b: f32| a + (b - a) * at;
+    hold(
+        mix(from.tilt, to.tilt),
+        mix(from.skew, to.skew),
+        (mix(from.scale.0, to.scale.0), mix(from.scale.1, to.scale.1)),
+    )
+}
+
+/// Maps a point on the 16 grid through the pose and one layer's hold, about the base point.
+fn mapper(frame: &Frame, held: Hold, size: f32, lift: f32) -> impl Fn(f32, f32) -> (f32, f32) {
+    let (sin, cos) = (frame.tilt + held.tilt).to_radians().sin_cos();
+    let slant = held.skew.to_radians().tan();
+    let sx = frame.scale.0 * held.scale.0 * size;
+    let sy = frame.scale.1 * held.scale.1 * size;
+    move |x, y| {
+        let (dy, dx) = ((y - BASE.1) * sy, (x - BASE.0) * sx);
+        let dx = dx + slant * dy;
+        (
+            BASE.0 + dx * cos - dy * sin,
+            BASE.1 + dx * sin + dy * cos + lift,
+        )
+    }
+}
 fn outline(segs: &[Seg], place: &impl Fn(f32, f32) -> (f32, f32), color: Rgba8) -> PathNode {
     segs.iter()
         .fold(sigil::widgets::path(16, 16), |node, seg| match *seg {

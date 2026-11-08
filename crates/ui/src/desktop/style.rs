@@ -95,20 +95,25 @@ pub(super) const FOCUS_RING: Token = Token::Accent9;
 /// Will's size where he floats over the main column.
 pub(super) const WILL: f32 = 48.0;
 
-/// Will's edge, core and eyes for `tint` on a light or dark theme.
-pub(super) const fn will_colors(tint: Tint, light: bool) -> [Rgba8; 3] {
+/// Will's edge, mid, core and eyes for `tint` on a light or dark theme.
+pub(super) const fn will_colors(tint: Tint, light: bool) -> [Rgba8; 4] {
     match (tint, light) {
         (Tint::Auto, true) => will_colors(Tint::Flame, true),
         (Tint::Auto, false) => will_colors(Tint::Wisp, false),
-        (Tint::Wisp, false) => [rgb(0x3b, 0x7b, 0xff), rgb(0xef, 0xfb, 0xff), rgb(0x05, 0x05, 0x0a)],
-        (Tint::Wisp, true) => [rgb(0x1d, 0x5b, 0xe6), rgb(0xf3, 0xfb, 0xff), rgb(0x1c, 0x1d, 0x1a)],
-        (Tint::Flame, false) => [rgb(0xf0, 0x65, 0x2b), rgb(0xff, 0xf3, 0xd6), rgb(0x1a, 0x0f, 0x08)],
-        (Tint::Flame, true) => [rgb(0xd9, 0x54, 0x1f), rgb(0xff, 0xf4, 0xdc), rgb(0x1c, 0x1d, 0x1a)],
-        (Tint::Foxfire, false) => [rgb(0x2f, 0xbf, 0x71), rgb(0xf0, 0xff, 0xf4), rgb(0x04, 0x10, 0x0a)],
-        (Tint::Foxfire, true) => [rgb(0x16, 0x93, 0x4f), rgb(0xf2, 0xff, 0xf6), rgb(0x1c, 0x1d, 0x1a)],
-        (Tint::Arcane, false) => [rgb(0x8b, 0x5c, 0xf6), rgb(0xfb, 0xf4, 0xff), rgb(0x0a, 0x05, 0x14)],
-        (Tint::Arcane, true) => [rgb(0x6d, 0x3f, 0xd6), rgb(0xfa, 0xf5, 0xff), rgb(0x1c, 0x1d, 0x1a)],
+        (Tint::Wisp, false) => [hex(0x3b7bff), hex(0xaac8ff), hex(0xf4f6ff), hex(0x05050a)],
+        (Tint::Wisp, true) => [hex(0x1d5be6), hex(0x93b9ee), hex(0xf6f9ff), hex(0x1c1d1a)],
+        (Tint::Flame, false) => [hex(0xf0652b), hex(0xf6a54a), hex(0xfff3d6), hex(0x1a0f08)],
+        (Tint::Flame, true) => [hex(0xd9541f), hex(0xf0a048), hex(0xfff4dc), hex(0x1c1d1a)],
+        (Tint::Foxfire, false) => [hex(0x2fbf71), hex(0x9ee8bf), hex(0xf0fff4), hex(0x04100a)],
+        (Tint::Foxfire, true) => [hex(0x16934f), hex(0x86d6a8), hex(0xf2fff6), hex(0x1c1d1a)],
+        (Tint::Arcane, false) => [hex(0x8b5cf6), hex(0xd4b4ff), hex(0xfbf4ff), hex(0x0a0514)],
+        (Tint::Arcane, true) => [hex(0x6d3fd6), hex(0xbf9bf2), hex(0xfaf5ff), hex(0x1c1d1a)],
     }
+}
+
+const fn hex(value: u32) -> Rgba8 {
+    let [_, r, g, b] = value.to_be_bytes();
+    rgb(r, g, b)
 }
 
 /// An agent's status mark in an `ICON` slot, so it lines up with icons: spinner, a dot, or empty.

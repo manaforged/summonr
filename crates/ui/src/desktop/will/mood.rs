@@ -32,8 +32,6 @@ pub(super) struct Pose {
     pub(super) lift: f32,
     pub(super) fade: f32,
     pub(super) flicker: f32,
-    pub(super) sway: f32,
-    pub(super) stretch: f32,
     pub(super) eyes: Eyes,
     pub(super) look: (f32, f32),
 }
@@ -44,8 +42,6 @@ const REST: Pose = Pose {
     lift: 0.0,
     fade: 1.0,
     flicker: 2.6,
-    sway: 2.0,
-    stretch: 0.02,
     eyes: Eyes::Open,
     look: (0.0, 0.0),
 };
@@ -58,8 +54,6 @@ impl Mood {
             Self::Working => Pose {
                 scale: (1.03, 1.08),
                 flicker: 1.1,
-                sway: 2.1,
-                stretch: 0.025,
                 eyes: Eyes::Focus,
                 ..REST
             },

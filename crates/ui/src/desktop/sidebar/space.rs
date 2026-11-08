@@ -2,7 +2,8 @@ use std::rc::Rc;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Signal, Widget, container, list_row, signal,
+    AlignItems, Dimension, LayoutStyle, ListRowSlots, NodeBuilder, Position, Signal, Widget, container,
+    list_row, signal,
 };
 use sigil::widgets::{MenuItem, icon};
 use summonr_agent::hub::Live;
@@ -13,32 +14,52 @@ use super::super::App;
 use super::super::spaces;
 use super::super::style::{ICON, M, S, SCROLLBAR, Text, text};
 
-const WORKSPACES: &str = "Workspaces";
-const NEW_WORKSPACE: &str = "New workspace";
-const REPOSITORIES: &str = "Repositories";
+const PROJECTS: &str = "Projects";
+const NEW_PROJECT: &str = "New project";
+const ADD_PROJECT: &str = "Add project";
 
-/// The Workspaces heading, with a button that makes one and asks for its name.
-pub(in crate::desktop) fn heading() -> NodeBuilder {
-    let add = sigil::prelude::icon_button(Icon::Plus, || {
-        let made = spaces::create(NEW_WORKSPACE);
-        super::super::agent_menu::rename_space(&made, NEW_WORKSPACE);
-    })
-    .accessible(NEW_WORKSPACE);
-    title_row(WORKSPACES, NEW_WORKSPACE, add.into())
-}
-
-/// The Repositories heading, with a button that adds one.
-pub(in crate::desktop) fn repositories(app: &App) -> NodeBuilder {
+/// The Projects heading, with a button whose menu adds a repository or makes a named project.
+pub(in crate::desktop) fn heading(app: &App) -> NodeBuilder {
     let picked = signal(None);
     super::super::welcome::follow(app, picked);
-    let add = sigil::prelude::icon_button(Icon::Plus, move || {
-        picked.set(Some(super::super::welcome::folder()))
-    })
-    .accessible(super::super::thread::ADD_REPOSITORY);
-    title_row(REPOSITORIES, super::super::thread::ADD_REPOSITORY, add.into())
+    let open = signal(false);
+    let button = sigil::prelude::icon_button(Icon::Plus, move || open.update(|shown| *shown = !*shown))
+        .accessible(ADD_PROJECT);
+    let anchored = container()
+        .layout(LayoutStyle::block().position(Position::Relative).shrink(0.0))
+        .child(super::super::tip(ADD_PROJECT, None, button.into()))
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::block()
+                        .position(Position::Absolute)
+                        .inset_top(Dimension::Percent(1.0))
+                        .inset_right(0.0)
+                        .width(super::super::style::MENU),
+                )
+                .children_reactive(move || {
+                    if !open.get() {
+                        return Vec::new();
+                    }
+                    let menu = sigil::widgets::menu(open)
+                        .label(ADD_PROJECT)
+                        .item(
+                            MenuItem::new(super::super::thread::ADD_REPOSITORY)
+                                .activate(move || picked.set(Some(super::super::welcome::folder()))),
+                        )
+                        .item(MenuItem::new(NEW_PROJECT).activate(|| {
+                            sigil::reactive::defer(|| {
+                                let made = spaces::create(NEW_PROJECT);
+                                super::super::agent_menu::rename_space(&made, NEW_PROJECT);
+                            });
+                        }));
+                    vec![NodeBuilder::from(menu)]
+                }),
+        );
+    title_row(PROJECTS, anchored.into())
 }
 
-fn title_row(title: &str, action: &'static str, button: NodeBuilder) -> NodeBuilder {
+fn title_row(title: &str, button: NodeBuilder) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -49,7 +70,7 @@ fn title_row(title: &str, action: &'static str, button: NodeBuilder) -> NodeBuil
                 .align_items(AlignItems::Center),
         )
         .child(text(Text::Heading, title).layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)))
-        .child(super::super::tip(action, None, button))
+        .child(button)
 }
 
 /// Each workspace, folded or followed by its agents; tracked.
@@ -127,6 +148,6 @@ fn items(app: &App, space: &Space) -> Vec<MenuItem> {
         MenuItem::new("New agent here").activate(move || spaces::new_agent(&open, &start)),
         MenuItem::new("Add folder…").activate(move || spaces::pick_folder(&pick)),
         MenuItem::new("Rename…").activate(move || super::super::agent_menu::rename_space(&rename, &name)),
-        MenuItem::new("Delete workspace").activate(move || spaces::remove(&gone)),
+        MenuItem::new("Delete project").activate(move || spaces::remove(&gone)),
     ]
 }

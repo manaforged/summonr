@@ -200,10 +200,10 @@ fn space_items(info: &SessionInfo) -> Vec<MenuItem> {
         );
     }
     let id = info.id.clone();
-    items.push(MenuItem::new("New workspace with this agent").activate(move || {
-        let made = super::spaces::create("New workspace");
+    items.push(MenuItem::new("New project with this agent").activate(move || {
+        let made = super::spaces::create("New project");
         super::spaces::put(&id, &made);
-        rename_space(&made, "New workspace");
+        rename_space(&made, "New project");
     }));
     items
 }
@@ -218,7 +218,7 @@ fn space_dialog(open: Signal<bool>, space: String, name: Signal<String>) -> Moda
     });
     let submit = save.clone();
     modal(open)
-        .title("Name workspace")
+        .title("Name project")
         .child(text_field(name).autofocus().submit(move |text| {
             submit(text);
             close();

@@ -21,7 +21,8 @@ fn an_agent_moved_into_a_new_workspace_lists_under_it_and_leaves_its_repository(
         return;
     }
     let mut actions = vec![
-        Step::Click("New workspace"),
+        Step::Click("Add project"),
+        Step::Click("New project"),
         Step::Key(press(LogicalKey::character("a"), ModifiersState::META, Some("a"))),
     ];
     actions.extend(typed("Launch").into_iter().map(Step::Key));

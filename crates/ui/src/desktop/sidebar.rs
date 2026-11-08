@@ -83,13 +83,12 @@ pub(super) fn view(app: App) -> NodeBuilder {
                                 move || row::pinned(&app, live, shown)
                             }),
                     )
-                    .child(space::heading())
+                    .child(space::heading(&app))
                     .child(
                         scroll(
                             container()
                                 .layout(LayoutStyle::flex_column().fill_width())
                                 .child(space::rows(&app, live, shown))
-                                .child(space::repositories(&app))
                                 .child(
                                     container()
                                         .layout(LayoutStyle::flex_column().fill_width())

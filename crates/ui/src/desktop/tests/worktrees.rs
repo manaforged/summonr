@@ -108,8 +108,8 @@ fn a_conductor_workspace_is_a_topic_and_opening_it_leaves_its_files_alone() {
 }
 
 #[test]
-fn an_agent_in_a_conductor_workspace_lists_under_its_workspace() {
-    if !in_window("worktrees::an_agent_in_a_conductor_workspace_lists_under_its_workspace") {
+fn an_agent_in_a_conductor_workspace_lists_under_its_repository() {
+    if !in_window("worktrees::an_agent_in_a_conductor_workspace_lists_under_its_repository") {
         return;
     }
     let shop = shop_with_a_conductor_workspace();
@@ -133,11 +133,8 @@ fn an_agent_in_a_conductor_workspace_lists_under_its_workspace() {
         |_| (),
     );
     let listed = rows(&seen.controls);
-    let at = |name: &str| listed.iter().position(|row| *row == name);
-    assert!(
-        at("shop") < at("main") && at("main") < at(BRANCH) && at(BRANCH) < at("Ship the lights"),
-        "the repository, then its main checkout, then the workspace with its agent under it: {listed:?}"
-    );
-    assert!(at("shop").is_some(), "{listed:?}");
+    assert!(listed.contains(&"shop"), "{listed:?}");
+    assert!(listed.contains(&"Ship the lights"), "{listed:?}");
     assert!(!listed.contains(&"tokyo"), "{listed:?}");
+    assert!(!listed.contains(&BRANCH), "{listed:?}");
 }

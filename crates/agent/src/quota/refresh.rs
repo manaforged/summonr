@@ -1,20 +1,10 @@
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use super::Reading;
 
-static VIEWED: Mutex<Option<Instant>> = Mutex::new(None);
 static BATCH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-/// One row of the refresh table: the cadence while the last view is at most `viewed_within_secs` old.
-#[derive(Deserialize, Clone, Copy, Debug)]
-pub(super) struct Step {
-    #[serde(default)]
-    viewed_within_secs: Option<u64>,
-    every_secs: u64,
-}
 
 #[derive(Serialize, Deserialize)]
 struct Saved {
@@ -22,31 +12,7 @@ struct Saved {
     readings: Vec<Reading>,
 }
 
-/// The cadence for a last view `viewed` ago: the fixed `every_secs`, or the first matching row; `None` is manual.
-pub(super) fn every(steps: &[Step], fixed: Option<u64>, viewed: Option<Duration>) -> Option<Duration> {
-    if let Some(secs) = fixed {
-        return (secs > 0).then(|| Duration::from_secs(secs));
-    }
-    steps
-        .iter()
-        .find(|step| match (step.viewed_within_secs, viewed) {
-            (None, _) => true,
-            (Some(within), Some(ago)) => ago.as_secs() <= within,
-            (Some(_), None) => false,
-        })
-        .map(|step| Duration::from_secs(step.every_secs))
-}
-
-/// Notes a view now when `viewed`, and returns how long ago the last view was.
-pub(super) fn mark(viewed: bool) -> Option<Duration> {
-    let mut last = VIEWED.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if viewed {
-        *last = Some(Instant::now());
-    }
-    last.map(|at| at.elapsed())
-}
-
-/// The saved readings while they are younger than `every`; one batch runs at a time, and `None` reads again.
+/// The saved readings while younger than `every` (always, when `None`), else a new read; one batch runs at a time.
 pub(super) async fn cached<F>(every: Option<Duration>, fetch: F) -> Vec<Reading>
 where
     F: AsyncFnOnce() -> Vec<Reading>,

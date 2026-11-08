@@ -160,7 +160,7 @@ impl Reader {
                     if due {
                         crate::quota::refresh().await
                     } else {
-                        crate::quota::latest(true).await
+                        crate::quota::latest().await
                     }
                 };
                 let readings = tokio::runtime::Handle::current().block_on(read);

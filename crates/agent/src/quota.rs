@@ -21,7 +21,7 @@ pub struct Settings {
     /// Extra plans, read after the shipped ones.
     #[serde(default)]
     pub plan: Vec<Plan>,
-    /// A fixed refresh cadence in seconds instead of the adaptive one; 0 refreshes only on `endpoint usage`.
+    /// Seconds between reads, 1800 by default; 0 reads only on `endpoint usage`.
     #[serde(default)]
     pub every_secs: Option<u64>,
 }
@@ -31,7 +31,7 @@ struct Shipped {
     #[serde(default)]
     plan: Vec<Plan>,
     #[serde(default)]
-    refresh: Vec<refresh::Step>,
+    every_secs: u64,
 }
 
 fn shipped() -> Shipped {
@@ -188,11 +188,9 @@ pub(crate) fn remember(name: &str, reported: Option<&Value>) -> std::io::Result<
     crate::durable::store::write(&folder.join(format!("{name}.json")), bytes, crate::durable::store::Durability::Renamed)
 }
 
-/// The saved readings while they are fresh for the adaptive cadence, else a new read; `viewed` counts as a view now.
-pub async fn latest(viewed: bool) -> Vec<Reading> {
-    let since = refresh::mark(viewed);
-    let every = refresh::every(&shipped().refresh, settings().every_secs, since);
-    refresh::cached(every, read).await
+/// The saved readings while younger than the cadence, else a new read.
+pub async fn latest() -> Vec<Reading> {
+    refresh::cached(cadence(), read).await
 }
 
 /// Reads every plan now and saves the readings for `latest`.
@@ -203,7 +201,8 @@ pub async fn refresh() -> Vec<Reading> {
 /// How often a view that stays open calls `refresh`; `None` when refresh is manual.
 #[must_use]
 pub fn cadence() -> Option<std::time::Duration> {
-    refresh::every(&shipped().refresh, settings().every_secs, Some(std::time::Duration::ZERO))
+    let secs = settings().every_secs.unwrap_or(shipped().every_secs);
+    (secs > 0).then(|| std::time::Duration::from_secs(secs))
 }
 
 async fn read() -> Vec<Reading> {

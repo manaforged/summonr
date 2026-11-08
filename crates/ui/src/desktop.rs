@@ -29,6 +29,7 @@ mod ship;
 mod side;
 mod sidebar;
 mod sky;
+mod spaces;
 pub(crate) mod split;
 pub(crate) mod style;
 pub(crate) mod terminal;
@@ -119,6 +120,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
     split::install(&app);
     panel::install(&app);
     shelf::install();
+    spaces::install(&app);
     restore::install(&app);
     quit::install(&app);
     #[cfg(feature = "menu")]

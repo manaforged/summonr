@@ -8,13 +8,14 @@ use sigil::prelude::{
 use sigil::widgets::icon;
 
 use super::App;
-use super::style::{ICON, M, RECESSED, S, SCROLLBAR, Text, XS, text};
+use super::style::{ICON, RECESSED, S, SCROLLBAR, XS};
 use summonr_agent::hub::Cmd;
 use summonr_agent::hub::{Live, Open, Status};
 use summonr_agent::session::SessionInfo;
 use summonr_agent::worktree::Tree;
 
 pub(super) mod row;
+mod space;
 
 pub(super) const WIDTH: f32 = 248.0;
 pub(super) const BAR: f32 = 40.0;
@@ -82,12 +83,18 @@ pub(super) fn view(app: App) -> NodeBuilder {
                                 move || row::pinned(&app, live, shown)
                             }),
                     )
-                    .child(repositories(&app))
+                    .child(space::heading())
                     .child(
                         scroll(
                             container()
                                 .layout(LayoutStyle::flex_column().fill_width())
-                                .children_reactive(move || chats(&list, shut, live, shown)),
+                                .child(space::rows(&app, live, shown))
+                                .child(space::repositories(&app))
+                                .child(
+                                    container()
+                                        .layout(LayoutStyle::flex_column().fill_width())
+                                        .children_reactive(move || chats(&list, shut, live, shown)),
+                                ),
                         )
                         .bg(RECESSED)
                         .grow(1.0),
@@ -127,32 +134,6 @@ fn brand(app: &App) -> NodeBuilder {
         .child(super::drag_area())
 }
 
-/// The Repositories heading, with a button that adds one.
-fn repositories(app: &App) -> NodeBuilder {
-    let picked = sigil::prelude::signal(None);
-    super::welcome::follow(app, picked);
-    let add = sigil::prelude::icon_button(Icon::Plus, move || {
-        picked.set(Some(super::welcome::folder()))
-    })
-    .accessible(super::thread::ADD_REPOSITORY);
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .padding_top(M)
-                .padding_left(S)
-                .padding_right(SCROLLBAR)
-                .align_items(AlignItems::Center),
-        )
-        .child(
-            text(Text::Heading, REPOSITORIES)
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
-        )
-        .child(super::tip(super::thread::ADD_REPOSITORY, None, add.into()))
-}
-
-const REPOSITORIES: &str = "Repositories";
-
 fn chats(
     app: &App,
     shut: Signal<Vec<std::path::PathBuf>>,
@@ -164,7 +145,7 @@ fn chats(
     let closed = shut.get();
     let terms = app.window.terminals.list.get();
     let trees = app.worktrees();
-    let mut groups = projects(&trees, &app.workspace(), row::listed(app));
+    let mut groups = projects(&trees, &app.workspace(), space::outside(row::listed(app)));
     let open_folders = terms
         .iter()
         .map(|term| term.folder.clone())

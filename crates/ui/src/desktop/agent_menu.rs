@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::rc::Rc;
 use std::path::PathBuf;
 
 use sigil::prelude::{NodeBuilder, Signal, Widget, button, container, modal, signal, text_field};
@@ -14,6 +15,7 @@ use summonr_agent::session::SessionInfo;
 #[derive(Clone, PartialEq)]
 enum Dialog {
     Rename { id: String, name: Signal<String> },
+    RenameSpace { space: String, name: Signal<String> },
     Delete { id: String, title: String },
     Quit { running: usize },
 }
@@ -39,6 +41,14 @@ fn show(dialog: Dialog) {
         current.set(Some(dialog));
         open.set(true);
     }
+}
+
+/// Asks for a new name for workspace `space`.
+pub(super) fn rename_space(space: &str, name: &str) {
+    show(Dialog::RenameSpace {
+        space: space.to_owned(),
+        name: signal(name.to_owned()),
+    });
 }
 
 /// Asks whether to quit while `running` agents still work.
@@ -99,6 +109,7 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
                 .activate(move || mark_unread(&mark, &unread)),
         );
     }
+    items.extend(space_items(info));
     items.extend(reveal(info));
     if running {
         let (stop, target) = (app.clone(), id.clone());
@@ -162,10 +173,63 @@ pub(super) fn view(app: &App) -> Option<NodeBuilder> {
     let dialog = current.get()?;
     let body = match dialog {
         Dialog::Rename { id, name } => rename_dialog(app, open, &id, name),
+        Dialog::RenameSpace { space, name } => space_dialog(open, space, name),
         Dialog::Delete { id, title } => delete_dialog(app, open, id, &title),
         Dialog::Quit { running } => quit_dialog(open, running),
     };
     Some(container().child(body.width(DIALOG)))
+}
+
+/// The items that move agent `info` into or out of a workspace.
+fn space_items(info: &SessionInfo) -> Vec<MenuItem> {
+    let list = super::spaces::all();
+    let home = super::spaces::of(&list, info);
+    let mut items = Vec::new();
+    if let Some(at) = home.filter(|at| list[*at].sessions.contains(&info.id)) {
+        let id = info.id.clone();
+        items.push(
+            MenuItem::new(format!("Remove from {}", list[at].name))
+                .activate(move || super::spaces::take_out(&id)),
+        );
+    }
+    for (_, space) in list.iter().enumerate().filter(|(at, _)| Some(*at) != home) {
+        let (id, target) = (info.id.clone(), space.id.clone());
+        items.push(
+            MenuItem::new(format!("Move to {}", space.name))
+                .activate(move || super::spaces::put(&id, &target)),
+        );
+    }
+    let id = info.id.clone();
+    items.push(MenuItem::new("New workspace with this agent").activate(move || {
+        let made = super::spaces::create("New workspace");
+        super::spaces::put(&id, &made);
+        rename_space(&made, "New workspace");
+    }));
+    items
+}
+
+fn space_dialog(open: Signal<bool>, space: String, name: Signal<String>) -> ModalBuilder {
+    let close = move || open.set(false);
+    let save = Rc::new(move |text: &str| {
+        let text = text.trim();
+        if !text.is_empty() {
+            super::spaces::rename(&space, text);
+        }
+    });
+    let submit = save.clone();
+    modal(open)
+        .title("Name workspace")
+        .child(text_field(name).autofocus().submit(move |text| {
+            submit(text);
+            close();
+        }))
+        .actions(
+            button("Cancel").ghost().shortcut("esc").activate(close),
+            button("Save").primary().shortcut("⏎").activate(move || {
+                save(&name.peek());
+                close();
+            }),
+        )
 }
 
 fn rename(app: &App, id: &str, text: &str) {

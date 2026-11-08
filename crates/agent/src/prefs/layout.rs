@@ -20,6 +20,17 @@ pub struct Layout {
     pub marks: BTreeMap<String, Mark>,
     pub pinned: Vec<String>,
     pub archived: Vec<String>,
+    pub spaces: Vec<Space>,
+}
+
+/// A workspace a person made: its name, the folders it holds and the agents put in it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Space {
+    pub id: String,
+    pub name: String,
+    pub folders: Vec<PathBuf>,
+    pub sessions: Vec<String>,
 }
 
 /// One pane: its agent, and the index of the terminal it shows.
@@ -45,6 +56,17 @@ fn doc() -> Result<store::Doc<store::Json<Layout>>> {
         store::Invalid::Warn,
         store::Wait::Never,
     ))
+}
+
+impl Space {
+    /// An empty workspace named `name`, with a new id.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            id: uuid::Uuid::now_v7().simple().to_string(),
+            name: name.into(),
+            ..Self::default()
+        }
+    }
 }
 
 impl Layout {

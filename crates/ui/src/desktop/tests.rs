@@ -29,6 +29,7 @@ mod setup;
 mod ship;
 mod side;
 mod sidebar;
+mod spaces;
 mod terminals;
 mod panes;
 mod pins;

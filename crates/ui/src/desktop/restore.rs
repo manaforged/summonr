@@ -23,6 +23,7 @@ pub(super) fn install(main: &App) {
     }
     let saved = Layout::load();
     super::shelf::load(&saved);
+    super::spaces::load(&saved);
     let marks = signal(saved.marks.clone());
     MARKS.with(|slot| slot.set(Some(marks)));
     reopen(main, &saved);
@@ -123,6 +124,7 @@ fn snapshot(main: &App, marks: &Marks) -> Option<Layout> {
         marks: next_marks(marks, &live, &chats),
         pinned: kept(super::shelf::pinned(), &chats),
         archived: kept(super::shelf::archived(), &chats),
+        spaces: super::spaces::kept(&chats),
     })
 }
 

@@ -10,7 +10,7 @@ mod shape;
 pub use action::Action;
 pub use hotkeys::Hotkey;
 pub use hotkeys::{EditorKey, Hotkeys};
-pub use layout::{Layout, Mark, Slot};
+pub use layout::{Layout, Mark, Slot, Space};
 pub use shape::{Axis, Part, Shape, WHOLE};
 pub use summonr_types::{Background, DiffLayout, Notify};
 

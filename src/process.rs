@@ -15,7 +15,9 @@ use summonr_core::error::{Error, Result};
 mod info;
 mod tail;
 
-pub(crate) use info::{command, footprint_kb, parent, started, table};
+#[cfg(unix)]
+pub(crate) use info::{command, parent};
+pub(crate) use info::{footprint_kb, started, table};
 pub(crate) use tail::{Cap, Tail};
 
 const SECRET_MIN: usize = 8;

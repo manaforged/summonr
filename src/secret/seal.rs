@@ -265,6 +265,6 @@ pub(super) fn test_seal(file: &Path) -> [u8; KEY_LEN] {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "seal_tests.rs"]
 mod tests;

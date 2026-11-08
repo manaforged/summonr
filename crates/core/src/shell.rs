@@ -55,7 +55,6 @@ pub fn arguments(script: &str, cwd: &Path) -> Vec<String> {
     ]
 }
 
-#[cfg(any(unix, test))]
 pub fn quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }

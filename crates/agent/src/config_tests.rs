@@ -1,5 +1,5 @@
-use super::edit::save_default_model;
 use super::decode::unknown;
+use super::edit::save_default_model;
 use super::parse;
 
 fn written(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {

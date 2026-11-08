@@ -4,8 +4,12 @@ use summonr_agent::tools::{Hold, Kept};
 fn completed(kept: Option<Kept>) -> ChildRecord {
     let record = ChildRecord {
         version: 1,
-        id: "01a104ac000000000000000000001111".parse().expect("child id"),
-        parent: "01a104ac000000000000000000002222".parse().expect("parent id"),
+        id: "01a104ac000000000000000000001111"
+            .parse()
+            .expect("child id"),
+        parent: "01a104ac000000000000000000002222"
+            .parse()
+            .expect("parent id"),
         assignment: "Edit the parser".to_owned(),
         model: "m".to_owned(),
         name: String::new(),

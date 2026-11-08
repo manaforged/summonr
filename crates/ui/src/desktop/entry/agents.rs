@@ -1,10 +1,10 @@
 use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Widget, container};
 
 use super::super::style::{ACTIVE_DOT, DONE_DOT, FAILED_DOT, L, S, Text, XS, text};
-use crate::{Outcome, ToolState};
 use crate::app::App;
 use crate::model::Agent;
 use crate::model::Entry;
+use crate::{Outcome, ToolState};
 use summonr_agent::child::{ChildRecord, ChildState};
 
 struct Row {

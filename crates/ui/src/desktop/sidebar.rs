@@ -93,7 +93,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
                                         .layout(LayoutStyle::flex_column().fill_width())
                                         .children_reactive(move || chats(&list, (shut, folded), live, shown)),
                                 )
-                                .child(super::side_panel::view(&app)),
+                                .child(super::panel::side(&app)),
                         )
                         .bg(RECESSED)
                         .grow(1.0),
@@ -296,14 +296,7 @@ pub(super) fn jump(app: &App, to: crate::view::keys::bindings::Jump) {
     use crate::view::keys::bindings::Jump;
     let model = app.model.peek();
     let session = super::split::current(app).model.peek().session.clone();
-    let order: Vec<String> = super::shelf::pinned()
-        .into_iter()
-        .chain(
-            projects(&app.worktrees(), &app.workspace(), (&[], row::listed(app)))
-                .into_iter()
-                .flat_map(|(_, agents)| agents.into_iter().map(|info| info.id)),
-        )
-        .collect();
+    let order = ordered_ids(app);
     let at = order.iter().position(|id| *id == session);
     let target = match to {
         Jump::Nth(n) => order.get(n - 1),
@@ -328,4 +321,40 @@ pub(super) fn jump(app: &App, to: crate::view::keys::bindings::Jump) {
     if let Some(id) = target.filter(|id| **id != session) {
         super::split::show(app, Open::Resume(id.clone()));
     }
+}
+
+fn ordered_ids(app: &App) -> Vec<String> {
+    let trees = app.worktrees();
+    let list = super::spaces::all();
+    let (put, rest) = space::split(&list, row::listed(app));
+    let mut added = super::spaces::repositories();
+    added.extend(list.iter().flat_map(|space| space.folders.iter().cloned()));
+    let groups = projects(&trees, &app.workspace(), (&added, rest));
+    let (placed, loose) = space::by_space(&list, (put, groups));
+    let mut order = super::shelf::pinned();
+    for (_, theirs, mine) in placed {
+        order.extend(topic_ids(theirs));
+        for (folder, agents) in mine {
+            order.extend(repo_ids(&trees, &folder, agents));
+        }
+    }
+    for (folder, agents) in loose {
+        order.extend(repo_ids(&trees, &folder, agents));
+    }
+    order
+}
+
+fn repo_ids(trees: &[Tree], folder: &std::path::Path, agents: Vec<SessionInfo>) -> Vec<String> {
+    let (loose, branches) = repo::split_branches(trees, folder, agents);
+    topic_ids(loose)
+        .into_iter()
+        .chain(branches.into_iter().flat_map(|(_, inside)| topic_ids(inside)))
+        .collect()
+}
+
+fn topic_ids(agents: Vec<SessionInfo>) -> Vec<String> {
+    super::topic::group(agents)
+        .into_iter()
+        .flat_map(|topic| topic.threads.into_iter().map(|info| info.id))
+        .collect()
 }

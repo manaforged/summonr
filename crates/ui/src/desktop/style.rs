@@ -177,30 +177,24 @@ pub(super) fn dot(tone: Token) -> NodeBuilder {
 /// The text roles of the desktop window; every string uses one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Text {
-    /// A page title: 22 semibold.
-    Display,
     /// A region title such as the chat name: 15 semibold.
     Title,
     /// Reading text: 15 regular.
     Body,
-    /// Interface text in rows and controls: 13 regular.
+    /// Interface text in rows and controls: 14 regular.
     Label,
-    /// Secondary interface text: 13 regular, muted.
-    Hint,
-    /// A small section heading: 12 semibold, muted.
+    /// A small section heading: 13 semibold, muted.
     Heading,
-    /// Small secondary detail such as counts and shortcuts: 12 regular, muted.
+    /// Small secondary detail such as counts and shortcuts: 13 regular, muted.
     Meta,
 }
 
 impl Text {
     const fn spec(self) -> (f32, u16, Token) {
         match self {
-            Self::Display => (24.0, 600, Token::OnSurface),
             Self::Title => (BODY, 600, Token::OnSurface),
             Self::Body => (BODY, 400, Token::OnSurface),
             Self::Label => (14.0, 400, Token::OnSurface),
-            Self::Hint => (14.0, 400, SECONDARY),
             Self::Heading => (13.0, 600, SECONDARY),
             Self::Meta => (13.0, 400, SECONDARY),
         }

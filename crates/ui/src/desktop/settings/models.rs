@@ -1,7 +1,7 @@
 use sigil::prelude::{NodeBuilder, button};
 
 use super::super::App;
-use super::parts::{choice, row, section, select};
+use super::parts::{account, choice, row, section, select};
 use summonr_agent::prefs::{ToolOutput, Visibility};
 use summonr_agent::provider::Effort;
 
@@ -22,7 +22,7 @@ fn current(app: &App) -> NodeBuilder {
     let about = if snapshot.model.is_empty() {
         "No model chosen yet".to_owned()
     } else {
-        format!("{} · {}", snapshot.model, list::account(&snapshot.endpoint))
+        format!("{} · {}", snapshot.model, account(&snapshot.endpoint))
     };
     let change = app.clone();
     let mut rows = vec![row(

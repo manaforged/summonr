@@ -138,8 +138,8 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
                 .gap(S)
                 .align_items(AlignItems::Center),
         )
-        .child(styled(Text::Hint, if open { "▾" } else { "▸" }))
-        .child(styled(Text::Hint, head));
+        .child(styled(Text::Meta, if open { "▾" } else { "▸" }))
+        .child(styled(Text::Meta, head));
     let mut column = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(XS))
         .pointer_up(move |event: &mut PointerEvent| {
@@ -150,7 +150,7 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
         })
         .child(row);
     if open {
-        column = column.child(styled(Text::Hint, body.to_string()).line_height_px(LINE));
+        column = column.child(styled(Text::Meta, body.to_string()).line_height_px(LINE));
     }
     column
 }

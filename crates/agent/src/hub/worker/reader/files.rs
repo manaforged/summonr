@@ -1,8 +1,12 @@
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::Instant;
 
 use notify::event::{EventKind, ModifyKind};
 use notify::{Event as NotifyEvent, RecursiveMode, Watcher};
+use tokio::sync::mpsc::UnboundedSender;
 
+use super::{Fact, Msg};
 use crate::diff;
 use crate::process::{self, Spec};
 use summonr_core::error::{Error, Result};
@@ -128,4 +132,56 @@ fn png(reply: &str) -> Result<Vec<u8>> {
                 .ok_or_else(|| Error::Tool(format!("clipboard image has bad hex at {at}")))
         })
         .collect()
+}
+
+pub(super) fn forward(workspace: &Path, ui: &UnboundedSender<Msg>) {
+    let send = |msg| drop(ui.send(msg));
+    let (sender, receiver) = mpsc::channel::<notify::Result<NotifyEvent>>();
+    let started = std::fs::canonicalize(workspace)
+        .map_err(notify::Error::io)
+        .and_then(|root| {
+            let mut watcher = notify::recommended_watcher(sender)?;
+            watch(&mut watcher, vec![root.clone()])?;
+            Ok((root, watcher))
+        });
+    let (root, mut watcher) = match started {
+        Ok(started) => started,
+        Err(error) => {
+            send(Msg::Fact(Fact::System(format!(
+                "workspace watch unavailable: {error}"
+            ))));
+            return;
+        }
+    };
+    while let Ok(first) = receiver.recv() {
+        let mut events = vec![first];
+        let deadline = Instant::now() + crate::limits::limits().reader_window();
+        while let Ok(more) =
+            receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        {
+            events.push(more);
+            if Instant::now() >= deadline {
+                break;
+            }
+        }
+        let mut paths = Vec::new();
+        for event in events {
+            match event {
+                Ok(event) => paths.extend(relative(&root, &event)),
+                Err(error) => send(Msg::Fact(Fact::System(format!(
+                    "workspace watch failed: {error}"
+                )))),
+            }
+        }
+        let changed = unignored(&root, paths);
+        let dirs = changed.iter().map(|path| root.join(path));
+        if let Err(error) = watch(&mut watcher, dirs.filter(|dir| dir.is_dir()).collect()) {
+            send(Msg::Fact(Fact::System(format!(
+                "workspace watch failed: {error}"
+            ))));
+        }
+        if !changed.is_empty() && ui.send(Msg::Fact(Fact::Changed(changed))).is_err() {
+            return;
+        }
+    }
 }

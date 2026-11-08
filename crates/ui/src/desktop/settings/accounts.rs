@@ -9,7 +9,7 @@ use sigil::prelude::{
 use super::super::App;
 use super::super::friends::{self, Seen, State};
 use super::super::style::{ICON, S, XL};
-use super::parts::{row, section};
+use super::parts::{empty_accounts, row, section};
 use summonr_agent::endpoint::{AuthInfo, Friend, State as Health};
 
 const SEARCH_FROM: usize = 8;
@@ -150,7 +150,7 @@ fn groups(app: &App, query: &str) -> Vec<NodeBuilder> {
     let choices = app.auth.choices.get();
     let states = app.picker.groups.get();
     if choices.is_empty() {
-        return vec![empty(app)];
+        return vec![empty_accounts(app, "No accounts yet")];
     }
     let query = query.to_lowercase();
     let shown: Vec<&AuthInfo> = choices
@@ -171,23 +171,6 @@ fn groups(app: &App, query: &str) -> Vec<NodeBuilder> {
             (!rows.is_empty()).then(|| section(Some(group.title()), rows))
         })
         .collect()
-}
-
-fn empty(app: &App) -> NodeBuilder {
-    let open = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(S)
-                .align_items(AlignItems::Center),
-        )
-        .child(empty_state("No accounts yet", ""))
-        .child(
-            button("Add account")
-                .primary()
-                .activate(move || open.open_providers()),
-        )
 }
 
 fn entry(app: &App, choice: &AuthInfo, states: &BTreeMap<String, Health>) -> NodeBuilder {

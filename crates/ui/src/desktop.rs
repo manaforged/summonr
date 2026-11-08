@@ -27,7 +27,6 @@ mod settings;
 mod shelf;
 mod ship;
 mod side;
-mod side_panel;
 mod sidebar;
 mod sky;
 mod spaces;
@@ -89,7 +88,7 @@ const SIDEBAR: &str = "Sidebar";
 
 /// Whether an agent dialog holds the keyboard.
 pub(crate) fn dialog_open() -> bool {
-    agent_menu::is_open() || settings::is_open()
+    agent_menu::is_open()
 }
 
 /// Opens the agent a window shortcut names.
@@ -117,12 +116,10 @@ pub(super) fn root(app: App) -> NodeBuilder {
     sigil::style::text_scale(style::TEXT_SCALE);
     palette::install();
     agent_menu::install();
-    settings::install(&app);
     split::install(&app);
     panel::install(&app);
     shelf::install();
     spaces::install(&app);
-    side_panel::install(&app);
     restore::install(&app);
     quit::install(&app);
     #[cfg(feature = "menu")]

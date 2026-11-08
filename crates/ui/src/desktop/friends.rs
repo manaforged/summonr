@@ -41,14 +41,16 @@ pub(super) fn refresh(app: &App) {
     let list = app.window.friends;
     let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
     sigil::tasks::on_message(inbox, move |seen| list.set(seen), || {});
-    drop(sigil::tasks::spawn(async move {
-        let mut seen = Vec::new();
-        for friend in friends() {
-            seen.push(check(friend).await);
+    let _ = sigil::tasks::spawn(async move {
+        let mut set = tokio::task::JoinSet::new();
+        for (at, friend) in friends().enumerate() {
+            set.spawn(async move { (at, check(friend).await) });
         }
-        drop(out.send(seen));
+        let mut pairs = set.join_all().await;
+        pairs.sort_by_key(|(at, _)| *at);
+        let _ = out.send(pairs.into_iter().map(|(_, seen)| seen).collect());
         Ok::<(), std::convert::Infallible>(())
-    }));
+    });
 }
 
 /// Moves this chat to `model` on `friend`, after asking it whether it is signed in now.
@@ -58,10 +60,10 @@ pub(super) fn launch(app: &App, friend: Friend, model: String) {
     let ask = move || {
         let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
         sigil::tasks::on_message(inbox, move |seen| start(&app, seen, model.clone()), || {});
-        drop(sigil::tasks::spawn(async move {
-            drop(out.send(check(friend).await));
+        let _ = sigil::tasks::spawn(async move {
+            let _ = out.send(check(friend).await);
             Ok::<(), std::convert::Infallible>(())
-        }));
+        });
     };
     match owner {
         Some(owner) => owner.with(ask),

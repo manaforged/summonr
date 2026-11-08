@@ -9,7 +9,7 @@ use sigil::reactive::untrack;
 
 use super::super::super::App;
 use super::super::super::style::{ICON, S, XL};
-use super::super::parts::{row, section};
+use super::super::parts::{account, empty_accounts, row, section};
 use summonr_agent::catalog::{Cost, Model};
 use summonr_agent::recent::ModelId;
 
@@ -61,11 +61,6 @@ pub(super) fn view(app: &App) -> NodeBuilder {
         )
 }
 
-/// The name of the account that serves `endpoint`.
-pub(super) fn account(endpoint: &str) -> String {
-    summonr_agent::endpoint::label(endpoint).map_or_else(|| endpoint.to_owned(), str::to_owned)
-}
-
 fn search(query: Signal<String>) -> NodeBuilder {
     text_field(query)
         .placeholder("Search models")
@@ -88,7 +83,7 @@ fn accounts(current: &str) -> Vec<Account> {
         })
         .filter(|account| !account.models.is_empty())
         .collect();
-    accounts.sort_by_key(|account| (account.name != current, self::account(&account.name)));
+    accounts.sort_by_key(|entry| (entry.name != current, account(&entry.name)));
     accounts
 }
 
@@ -105,15 +100,15 @@ fn usable(name: &str, models: &[Model]) -> Vec<Model> {
 
 fn body(app: &App, accounts: &[Account], query: &str, using: Signal<ModelId>) -> Vec<NodeBuilder> {
     if accounts.is_empty() {
-        return vec![empty(app)];
+        return vec![empty_accounts(app, "No models yet")];
     }
     let query = query.trim().to_lowercase();
     let now = using.get();
     let mut room = MATCHES;
     let mut cut = false;
     let mut nodes = Vec::new();
-    for account in accounts {
-        let found: Vec<&Model> = account
+    for entry_acc in accounts {
+        let found: Vec<&Model> = entry_acc
             .models
             .iter()
             .filter(|model| matches(model, &query))
@@ -123,11 +118,11 @@ fn body(app: &App, accounts: &[Account], query: &str, using: Signal<ModelId>) ->
         let rows: Vec<NodeBuilder> = found
             .into_iter()
             .take(take)
-            .map(|model| entry(app, &account.name, model, (&now, using)))
+            .map(|model| entry(app, &entry_acc.name, model, (&now, using)))
             .collect();
         room = room.saturating_sub(rows.len());
         if !rows.is_empty() {
-            nodes.push(section(Some(&self::account(&account.name)), rows));
+            nodes.push(section(Some(&account(&entry_acc.name)), rows));
         }
     }
     if nodes.is_empty() {
@@ -201,22 +196,5 @@ fn more(app: &App) -> NodeBuilder {
             button("All models…")
                 .ghost()
                 .activate(move || open.begin_model_edit()),
-        )
-}
-
-fn empty(app: &App) -> NodeBuilder {
-    let open = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(S)
-                .align_items(AlignItems::Center),
-        )
-        .child(empty_state("No models yet", ""))
-        .child(
-            button("Add account")
-                .primary()
-                .activate(move || open.open_providers()),
         )
 }

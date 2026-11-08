@@ -2,8 +2,7 @@ use sigil::prelude::{NodeBuilder, button, derived};
 
 use super::super::App;
 use super::super::style::{Text, text};
-use super::mcp::actions;
-use super::parts::{kept_note, row, section, switch};
+use super::parts::{actions, kept_note, row, section, switch};
 use summonr_agent::modules::{ALL, Module, ModuleId};
 
 pub(super) fn view(app: &App) -> Vec<NodeBuilder> {

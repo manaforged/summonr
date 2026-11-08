@@ -56,7 +56,7 @@ pub(super) fn countdown(secs: i64) -> String {
     match (days, hours) {
         (0, 0) => format!("Resets in {minutes}m"),
         (0, _) => format!("Resets in {hours}h {minutes}m"),
-        _ => format!("Resets in {days}d {hours}h"),
+        (days, hours) => format!("Resets in {days}d {hours}h"),
     }
 }
 
@@ -66,7 +66,7 @@ pub(super) fn updated(at: jiff::Timestamp, now: jiff::Timestamp) -> String {
         ..60 => "Updated just now".to_string(),
         60..3600 => format!("Updated {}m ago", secs / 60),
         3600..86_400 => format!("Updated {}h ago", secs / 3600),
-        _ => format!(
+        86_400.. => format!(
             "Updated {}",
             at.to_zoned(jiff::tz::TimeZone::system()).strftime("%H:%M")
         ),
@@ -117,7 +117,7 @@ fn zai(value: &Value) -> Vec<Window> {
                 3 => 60,
                 5 => 1,
                 6 => WEEK,
-                _ => return None,
+                0 | 2 | 4 | 7.. => return None,
             };
             Some(Window {
                 group: None,
@@ -143,12 +143,15 @@ fn antigravity(value: &Value) -> Vec<Window> {
                 .flatten()
                 .filter(|bucket| !bucket["disabled"].as_bool().unwrap_or(false))
                 .filter_map(move |bucket| {
+                    let window = bucket["window"].as_str()?;
                     Some(Window {
                         group: name.clone(),
-                        minutes: match bucket["window"].as_str()? {
-                            "5h" => Some(FIVE_HOURS),
-                            "weekly" => Some(WEEK),
-                            _ => None,
+                        minutes: if window == "5h" {
+                            Some(FIVE_HOURS)
+                        } else if window == "weekly" {
+                            Some(WEEK)
+                        } else {
+                            None
                         },
                         used: (1.0 - bucket["remaining_fraction"].as_f64()?) * 100.0,
                         resets: bucket["reset_time"].as_str().map(str::to_string),

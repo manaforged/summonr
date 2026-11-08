@@ -10,7 +10,7 @@ mod shape;
 
 pub use shape::Shape;
 
-const PLANS: &str = include_str!("quota/plans.toml");
+const BUILTINS: &str = include_str!("quota/plans.toml");
 
 /// The `[usage]` table in config.toml: plans to skip and plans to add.
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -35,7 +35,7 @@ struct Shipped {
 }
 
 fn shipped() -> Shipped {
-    toml::from_str(PLANS).unwrap_or_default()
+    toml::from_str(BUILTINS).unwrap_or_default()
 }
 
 fn settings() -> Settings {
@@ -264,7 +264,9 @@ fn source<'a>(plan: &'a Plan, endpoints: &'a [Endpoint]) -> Option<Source<'a>> {
 async fn fetch(plan: &Plan, source: Source<'_>) -> Reading {
     let at = match source {
         Source::File(file) => modified(&path(file)),
-        _ => Some(jiff::Timestamp::now().to_string()),
+        Source::Login(..) | Source::Direct(_) | Source::Command => {
+            Some(jiff::Timestamp::now().to_string())
+        }
     };
     let (endpoint, body) = match source {
         Source::Login(endpoint, url) => (Some(endpoint.name.clone()), login(endpoint, url).await),
@@ -319,9 +321,12 @@ async fn exchange(plan: &Plan) -> Result<Value, String> {
         }
         Err(format!("exited before printing {reply}"))
     };
-    tokio::time::timeout(crate::limits::limits().panel_timeout(), answer)
-        .await
-        .map_err(|_| format!("no {reply} within {}s", crate::limits::limits().panel_timeout_secs))?
+    tokio::select! {
+        result = answer => result,
+        () = tokio::time::sleep(crate::limits::limits().panel_timeout()) => {
+            Err(format!("no {reply} within {}s", crate::limits::limits().panel_timeout_secs))
+        }
+    }
 }
 
 async fn login(endpoint: &Endpoint, url: &str) -> Result<Value, String> {

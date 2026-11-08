@@ -1,18 +1,20 @@
+use std::rc::Rc;
+
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Overflow, Paint, Tone, Widget, button,
-    container, derived, interval,
+    AlignItems, ControlSize, LayoutStyle, ListRowSlots, NodeBuilder, Overflow, Paint, Tone, Widget,
+    button, container, derived, effect, interval, list_row,
 };
 use sigil::reactive::{on_cleanup, untrack};
-use summonr_agent::hub::Cmd;
-use summonr_agent::panel::{Content, Fill, Mood, Panel, Place, Plot, Series, Stat};
+use summonr_agent::hub::{Cmd, Open};
+use summonr_agent::panel::{Action, Content, Fill, Item, Mood, Panel, Place, Plot, Series, Stat};
 
-use super::style::{DANGER, L, M, S, Text, XS, text};
+use super::style::{DANGER, L, M, S, SCROLLBAR, Text, XS, text};
 use super::{App, Pane};
 
 const CHART_HEIGHT: f32 = 240.0;
 const TONES: [Tone; 4] = [Tone::Primary, Tone::Success, Tone::Warn, Tone::Error];
 
-/// Keeps the tabs in step with the panel files of the chat's workspace.
+/// Keeps the tabs and started-agent prompt handoff in step with the workspace's panel files.
 pub(super) fn install(app: &App) {
     drop(app.cmd.send(Cmd::ListPanels));
     let poll = app.clone();
@@ -20,9 +22,21 @@ pub(super) fn install(app: &App) {
         drop(poll.cmd.send(Cmd::ListPanels))
     });
     on_cleanup(move || timer.cancel());
+    let waiting = app.window.panel_waiting;
+    let watch = app.clone();
+    effect(move || {
+        let pane = super::split::current(&watch);
+        if pane.model.with(|model| model.session.is_empty()) {
+            return;
+        }
+        if let Some(prompt) = untrack(|| waiting.get()) {
+            waiting.set(None);
+            sigil::reactive::defer(move || pane.send_text(&prompt));
+        }
+    });
 }
 
-/// One tab per panel, after the built-in tabs.
+/// One tab per right-hand panel, after the built-in tabs.
 pub(super) fn tabs(app: &App, pane: Pane) -> NodeBuilder {
     let app = app.clone();
     container()
@@ -63,7 +77,7 @@ fn show(app: &App, panel: &Panel) {
     }
 }
 
-/// The open panel. Its command runs only while this view is on screen.
+/// The open right-hand panel. Its command runs only while this view is on screen.
 pub(super) fn view(app: &App) -> NodeBuilder {
     let panels = app.panels;
     let open = derived(move || {
@@ -86,9 +100,45 @@ pub(super) fn view(app: &App) -> NodeBuilder {
             let Some(panel) = open.get() else {
                 return vec![text(Text::Meta, "This panel is gone").into()];
             };
-            super::side_panel::keep_running(&runner, &panel);
+            keep_running(&runner, &panel);
             vec![body(&runner, panels)]
         })
+}
+
+/// The sidebar sections of the panels placed there; each runs its command while it shows.
+pub(super) fn side(app: &App) -> NodeBuilder {
+    let panels = app.panels;
+    let side = derived(move || {
+        panels
+            .list
+            .get()
+            .into_iter()
+            .filter(|panel| panel.place == Place::Side)
+            .collect::<Vec<Panel>>()
+    });
+    let app = app.clone();
+    container()
+        .layout(LayoutStyle::flex_column().fill_width())
+        .children_reactive(move || {
+            side.get()
+                .into_iter()
+                .map(|panel| section(&app, panel))
+                .collect::<Vec<_>>()
+        })
+}
+
+fn keep_running(app: &App, panel: &Panel) {
+    let (again, name) = (app.clone(), panel.name.clone());
+    if panel.kind == Fill::Stream {
+        drop(app.cmd.send(Cmd::OpenPanel(name.clone())));
+        on_cleanup(move || drop(again.cmd.send(Cmd::ClosePanel(name))));
+        return;
+    }
+    drop(app.cmd.send(Cmd::RunPanel(name.clone())));
+    if let Some(every) = panel.every() {
+        let timer = interval(every, move || drop(again.cmd.send(Cmd::RunPanel(name.clone()))));
+        on_cleanup(move || timer.cancel());
+    }
 }
 
 fn body(app: &App, panels: crate::app::panels::Panels) -> NodeBuilder {
@@ -103,20 +153,47 @@ fn body(app: &App, panels: crate::app::panels::Panels) -> NodeBuilder {
                 .gap(M)
                 .overflow_y(Overflow::Scroll),
         )
-        .children_reactive(move || match panels.content.get() {
-            None => Vec::new(),
-            Some(Err(reason)) => vec![text(Text::Meta, reason).text_color(DANGER).into()],
-            Some(Ok(Content::List { rows })) => super::side_panel::list(&app, rows),
-            Some(Ok(Content::Surface(json))) => {
-                let name = untrack(|| panels.shown.get()).unwrap_or_default();
-                vec![super::side_panel::surface(&app, &name, json)]
-            }
-            Some(Ok(content)) => vec![draw(content)],
+        .children_reactive(move || {
+            let name = untrack(|| panels.shown.get()).unwrap_or_default();
+            render(&app, &name, panels.content.get())
         })
 }
 
-/// One view drawn with the app's widgets; a list needs `side_panel::list` for its actions.
-pub(super) fn draw(content: Content) -> NodeBuilder {
+fn section(app: &App, panel: Panel) -> NodeBuilder {
+    keep_running(app, &panel);
+    let (app, results, name) = (app.clone(), app.panels.results, panel.name);
+    container()
+        .layout(LayoutStyle::flex_column().fill_width())
+        .child(heading(&panel.title))
+        .children_reactive(move || {
+            render(&app, &name, results.with(|all| all.get(&name).cloned()))
+        })
+}
+
+fn heading(title: &str) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .padding_top(M)
+                .padding_left(S)
+                .padding_right(SCROLLBAR),
+        )
+        .child(text(Text::Heading, title))
+        .into()
+}
+
+fn render(app: &App, name: &str, outcome: Option<Result<Content, String>>) -> Vec<NodeBuilder> {
+    match outcome {
+        None => Vec::new(),
+        Some(Err(reason)) => vec![text(Text::Meta, reason).text_color(DANGER).into()],
+        Some(Ok(Content::List { rows })) => list(app, rows),
+        Some(Ok(Content::Surface(json))) => vec![surface(app, name, json)],
+        Some(Ok(content)) => vec![draw(content)],
+    }
+}
+
+fn draw(content: Content) -> NodeBuilder {
     match content {
         Content::Chart {
             kind,
@@ -127,6 +204,58 @@ pub(super) fn draw(content: Content) -> NodeBuilder {
         Content::Table { columns, rows } => table(columns, rows),
         Content::Text { text: body } => text(Text::Meta, body).into(),
         Content::List { .. } | Content::Surface(_) => text(Text::Meta, "No rows").into(),
+    }
+}
+
+fn list(app: &App, rows: Vec<Item>) -> Vec<NodeBuilder> {
+    rows.into_iter()
+        .map(|item| {
+            let run = (app.clone(), item.action.clone());
+            list_row(
+                false,
+                item.title,
+                ListRowSlots {
+                    status: item.meta.map(Into::into),
+                    status_tone: tone(item.tone),
+                    activate: run.1.is_some().then(|| -> Rc<dyn Fn()> {
+                        Rc::new(move || act(&run.0, run.1.clone()))
+                    }),
+                    ..ListRowSlots::default()
+                },
+            )
+            .into()
+        })
+        .collect()
+}
+
+fn surface(app: &App, panel: &str, json: String) -> NodeBuilder {
+    let (app, panel) = (app.clone(), panel.to_owned());
+    sigil::widgets::a2ui(move || json.clone())
+        .activate(move |event, context| pressed(&app, &panel, event, context))
+        .into()
+}
+
+fn pressed(app: &App, panel: &str, event: &str, context: &str) {
+    let context: serde_json::Value = serde_json::from_str(context).unwrap_or_default();
+    let ours = serde_json::from_value::<Action>(serde_json::json!({ event: context.clone() }));
+    match ours {
+        Ok(action) => act(app, Some(action)),
+        Err(_) => drop(app.cmd.send(Cmd::ActPanel {
+            name: panel.to_owned(),
+            event: event.to_owned(),
+            context,
+        })),
+    }
+}
+
+fn act(app: &App, action: Option<Action>) {
+    match action {
+        Some(Action::Start { prompt }) => {
+            app.window.panel_waiting.set(Some(prompt));
+            super::split::show(app, Open::New);
+        }
+        Some(Action::Open { session }) => super::split::show(app, Open::Resume(session)),
+        None => {}
     }
 }
 
@@ -154,11 +283,9 @@ fn stats(items: Vec<Stat>) -> NodeBuilder {
         container().layout(LayoutStyle::flex_column().fill_width().gap(S)),
         |column, item| {
             let tile = sigil::widgets::stat(item.label, item.value);
-            let tile = match item.tone {
-                Mood::Neutral => tile,
-                Mood::Success => tile.tone(Tone::Success),
-                Mood::Warning => tile.tone(Tone::Warn),
-                Mood::Danger => tile.tone(Tone::Error),
+            let tile = match tone(item.tone) {
+                Some(tone) => tile.tone(tone),
+                None => tile,
             };
             column.child(tile)
         },
@@ -189,4 +316,13 @@ fn table(columns: Vec<String>, rows: Vec<Vec<String>>) -> NodeBuilder {
             .child(row(columns, Text::Meta)),
         |table, cells| table.child(row(cells, Text::Body)),
     )
+}
+
+const fn tone(mood: Mood) -> Option<Tone> {
+    match mood {
+        Mood::Neutral => None,
+        Mood::Success => Some(Tone::Success),
+        Mood::Warning => Some(Tone::Warn),
+        Mood::Danger => Some(Tone::Error),
+    }
 }

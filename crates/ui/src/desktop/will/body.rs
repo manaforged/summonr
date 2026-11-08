@@ -1,8 +1,8 @@
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use super::mood::{Mood, Pose, Shot};
-use super::rig::Face;
+use super::mood::{Mood, Shot};
+use super::rig::{Face, Pose};
 use super::shape::{Frame, Hold, SWEEP, Sig};
 
 /// Spring stiffness and damping for a pose change: about 0.6 s with a little overshoot.

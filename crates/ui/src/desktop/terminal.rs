@@ -255,7 +255,7 @@ fn ended(app: &App, id: u64, code: u32) -> NodeBuilder {
         .border_top(1)
         .border_color(DIVIDER)
         .child(text(
-            Text::Hint,
+            Text::Meta,
             format!("The program exited with code {code}."),
         ))
         .child(
@@ -279,7 +279,7 @@ pub(super) fn view(app: &App, width: f32) -> NodeBuilder {
     match side_terminal(app, &folder) {
         Ok(term) => column.child(term.session.view().label(SHELL).autofocus()),
         Err(error) => column.child(text(
-            Text::Hint,
+            Text::Meta,
             format!("Could not start a shell: {error}"),
         )),
     }

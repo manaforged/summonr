@@ -104,7 +104,7 @@ pub(super) fn agent_row(
     let status = state.unwrap_or(Status::Idle);
     let needs = status == Status::NeedsYou;
     let friend = info.agent.as_deref().and_then(Friend::of);
-    let word = friend.and_then(|_| friend_word(status));
+    let word = friend.and_then(|_| status_word(status));
     let meta = if needs { None } else { info.modified.map(ago) };
     let meta = word.map(|(word, _)| word.to_owned()).or(meta);
     let row = list_row(
@@ -130,7 +130,8 @@ fn leading(friend: Option<Friend>, status: Status) -> NodeBuilder {
     friend.map_or_else(|| mark(status), super::super::friends::glyph)
 }
 
-const fn friend_word(status: Status) -> Option<(&'static str, Tone)> {
+/// The short status word and tone an agent or topic row shows on the right.
+pub(in crate::desktop) const fn status_word(status: Status) -> Option<(&'static str, Tone)> {
     match status {
         Status::Working => Some(("working", Tone::Neutral)),
         Status::Review => Some(("new", Tone::Info)),

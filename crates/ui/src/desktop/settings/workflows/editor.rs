@@ -1,7 +1,7 @@
 use sigil::prelude::{NodeBuilder, Tone, notice_band};
 
-use super::super::parts::{section, select};
-use super::{Page, first_line};
+use super::super::parts::{account, first_line, section, select};
+use super::Page;
 use summonr_agent::workflow::{self, ModelSelection, Role, Workflow};
 
 const ROLES: [(Role, &str); 5] = [
@@ -118,8 +118,4 @@ fn models(endpoint: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-fn account(endpoint: &str) -> String {
-    summonr_agent::endpoint::label(endpoint).map_or_else(|| endpoint.to_owned(), str::to_owned)
 }

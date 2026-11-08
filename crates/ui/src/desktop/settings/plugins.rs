@@ -9,8 +9,7 @@ use sigil::reactive::{defer, untrack};
 
 use super::super::App;
 use super::super::style::{ICON, L, M, Text, XS, text};
-use super::mcp::{actions, item};
-use super::parts::{kept_note, section};
+use super::parts::{actions, confirm_remove, first_line, item, kept_note, section};
 use summonr_agent::plugins::manage::Plugin;
 
 const DESCRIPTION: usize = 96;
@@ -168,24 +167,15 @@ fn set_on(page: Page, name: &str, on: bool) {
 }
 
 fn confirm(page: Page, name: &str) -> NodeBuilder {
-    let name = name.to_owned();
-    actions()
-        .child(
-            button("Cancel")
-                .ghost()
-                .size(ControlSize::Compact)
-                .activate(move || defer(move || page.armed.set(None))),
-        )
-        .child(
-            button("Remove")
-                .tone(Tone::Error)
-                .size(ControlSize::Compact)
-                .accessible(format!("Remove {name} now"))
-                .activate(move || {
-                    let name = name.clone();
-                    defer(move || remove(page, &name));
-                }),
-        )
+    let target = name.to_owned();
+    confirm_remove(
+        name,
+        move || defer(move || page.armed.set(None)),
+        move || {
+            let target = target.clone();
+            defer(move || remove(page, &target));
+        },
+    )
 }
 
 fn remove(page: Page, name: &str) {
@@ -313,8 +303,4 @@ fn open_skill(workspace: &Path, name: &str, page: Page) -> NodeBuilder {
             }
         })
         .into()
-}
-
-fn first_line(text: &str) -> String {
-    text.lines().next().unwrap_or(text).to_owned()
 }

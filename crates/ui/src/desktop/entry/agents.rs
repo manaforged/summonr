@@ -129,7 +129,7 @@ fn line(row: Row) -> NodeBuilder {
                         .padding_left(L)
                         .min_size(0.0, 0.0),
                 )
-                .child(text(Text::Hint, result).ellipsize()),
+                .child(text(Text::Meta, result).ellipsize()),
         ),
         None => column,
     }

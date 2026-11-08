@@ -52,6 +52,9 @@ pub(crate) struct Window {
     pub(crate) local: Signal<Vec<summonr_agent::endpoint::Local>>,
     pub(crate) friends: Signal<Vec<super::friends::Seen>>,
     pub(crate) owner: Option<sigil::reactive::Owner>,
+    pub(super) settings_page: Signal<super::settings::Page>,
+    pub(super) workflows_adding: Signal<bool>,
+    pub(super) panel_waiting: Signal<Option<String>>,
     setup: Signal<bool>,
 }
 
@@ -65,16 +68,18 @@ impl Window {
             local: signal(Vec::new()),
             friends: signal(Vec::new()),
             owner: sigil::reactive::Owner::current(),
+            settings_page: signal(super::settings::Page::General),
+            workflows_adding: signal(false),
+            panel_waiting: signal(None),
             setup: signal(false),
         }
     }
 
     /// Shares `window`'s window-wide state with this pane: terminals, the sidebar, and what the machine offers.
     pub(crate) fn share(&mut self, window: &Self) {
-        self.terminals = window.terminals;
-        self.sidebar = window.sidebar;
-        self.local = window.local;
-        self.friends = window.friends;
+        let showing = self.showing;
+        *self = window.clone();
+        self.showing = showing;
     }
 
     /// Shows the Usage page of Settings; false outside a window.

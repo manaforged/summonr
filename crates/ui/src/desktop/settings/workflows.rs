@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 use sigil::icons::Icon;
 use sigil::prelude::{
     AlignItems, ControlSize, JustifyContent, LayoutStyle, NodeBuilder, Signal, Tone, Widget,
@@ -9,8 +7,7 @@ use sigil::reactive::defer;
 
 use super::super::App;
 use super::super::style::{ICON, L, M, S, Text, XS, text};
-use super::mcp::{actions, item};
-use super::parts::section;
+use super::parts::{actions, confirm_remove, first_line, item, section};
 use summonr_agent::workflow::{self, Workflow};
 
 mod editor;
@@ -41,30 +38,15 @@ impl Page {
     }
 }
 
-thread_local! {
-    static ADDING: Cell<Option<Signal<bool>>> = const { Cell::new(None) };
-}
-
-fn adding() -> Signal<bool> {
-    ADDING.with(|slot| {
-        let adding = slot
-            .get()
-            .filter(|adding| adding.try_peek().is_some())
-            .unwrap_or_else(|| signal(false));
-        slot.set(Some(adding));
-        adding
-    })
-}
-
 /// Opens Settings → Workflows with the form for a new workflow.
 pub(in crate::desktop) fn create(app: &App) {
-    adding().set(true);
+    app.window.workflows_adding.set(true);
     super::open(app, super::Page::Workflows);
 }
 
-pub(super) fn view(_app: &App) -> Vec<NodeBuilder> {
+pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
     let page = Page {
-        adding: adding(),
+        adding: app.window.workflows_adding,
         editing: signal(None),
         armed: signal(None),
         error: signal(None),
@@ -178,30 +160,21 @@ fn listed(page: Page, name: &str, default: bool) -> NodeBuilder {
 }
 
 fn confirm(page: Page, name: &str) -> NodeBuilder {
-    let name = name.to_owned();
-    actions()
-        .child(
-            button("Cancel")
-                .ghost()
-                .size(ControlSize::Compact)
-                .activate(move || defer(move || page.armed.set(None))),
-        )
-        .child(
-            button(REMOVE)
-                .tone(Tone::Error)
-                .size(ControlSize::Compact)
-                .accessible(format!("Remove {name} now"))
-                .activate(move || {
-                    let name = name.clone();
-                    defer(move || {
-                        page.armed.set(None);
-                        if page.editing.peek().as_deref() == Some(name.as_str()) {
-                            page.editing.set(None);
-                        }
-                        page.wrote(workflow::remove(&name).map(drop));
-                    });
-                }),
-        )
+    let target = name.to_owned();
+    confirm_remove(
+        name,
+        move || defer(move || page.armed.set(None)),
+        move || {
+            let target = target.clone();
+            defer(move || {
+                page.armed.set(None);
+                if page.editing.peek().as_deref() == Some(target.as_str()) {
+                    page.editing.set(None);
+                }
+                page.wrote(workflow::remove(&target).map(drop));
+            });
+        },
+    )
 }
 
 fn add_row(page: Page) -> NodeBuilder {
@@ -291,8 +264,4 @@ fn close(page: Page) {
     page.name.set(String::new());
     page.error.set(None);
     defer(move || page.adding.set(false));
-}
-
-fn first_line(text: &str) -> String {
-    text.lines().next().unwrap_or(text).to_owned()
 }

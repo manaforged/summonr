@@ -36,20 +36,36 @@ pub(super) fn repository(app: &App, (folder, agents): Group, seen: &Seen, depth:
     if !open {
         return nodes;
     }
-    let branches = workspaces(&seen.trees, &folder);
-    let (nested, loose): (Vec<SessionInfo>, Vec<SessionInfo>) = agents
-        .into_iter()
-        .partition(|info| branches.iter().any(|tree| ran_in(info, tree)));
+    let (loose, branches) = split_branches(&seen.trees, &folder, agents);
     let inner = depth + 1;
     nodes.extend(super::super::terminal::rows(app, &seen.terms, &folder, depth));
     nodes.extend(topics(app, loose, (&seen.shown, &seen.live), depth));
-    for tree in branches {
+    for (tree, inside) in branches {
         nodes.push(super::super::topic::worktree_row(app, tree, depth));
         nodes.extend(super::super::terminal::rows(app, &seen.terms, &tree.path, inner));
-        let inside = nested.iter().filter(|info| ran_in(info, tree)).cloned().collect();
         nodes.extend(topics(app, inside, (&seen.shown, &seen.live), inner));
     }
     nodes
+}
+
+/// Splits a repository's agents into the main checkout's and each worktree branch's.
+pub(super) fn split_branches<'a>(
+    trees: &'a [Tree],
+    folder: &Path,
+    agents: Vec<SessionInfo>,
+) -> (Vec<SessionInfo>, Vec<(&'a Tree, Vec<SessionInfo>)>) {
+    let branches = workspaces(trees, folder);
+    let (nested, loose): (Vec<SessionInfo>, Vec<SessionInfo>) = agents
+        .into_iter()
+        .partition(|info| branches.iter().any(|tree| ran_in(info, tree)));
+    let by_branch = branches
+        .into_iter()
+        .map(|tree| {
+            let inside = nested.iter().filter(|info| ran_in(info, tree)).cloned().collect();
+            (tree, inside)
+        })
+        .collect();
+    (loose, by_branch)
 }
 
 /// The worktrees of `folder` a person made, by branch; summonr's own run worktrees stay out.

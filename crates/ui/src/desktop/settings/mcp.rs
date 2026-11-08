@@ -10,7 +10,7 @@ use sigil::reactive::{defer, on_cleanup};
 
 use super::super::App;
 use super::super::style::{ICON, L, M, S, Text, XS, text};
-use super::parts::section;
+use super::parts::{actions, confirm_remove, first_line, item, section};
 use summonr_agent::hub::Cmd;
 use summonr_agent::mcp::{McpState, McpTransport, ServerStatus};
 use summonr_agent::supervise::ServerKind;
@@ -160,7 +160,7 @@ fn server_row(app: &App, page: Page, server: &Server, armed: bool) -> NodeBuilde
         .as_deref()
         .filter(|_| server.state == McpState::Failed)
     {
-        words = words.child(text(Text::Meta, first_line(detail).to_owned()));
+        words = words.child(text(Text::Meta, first_line(detail)));
     }
     let trailing = if armed {
         confirm(app, page, &server.name)
@@ -188,24 +188,15 @@ fn status(page: Page, server: &Server) -> NodeBuilder {
 
 fn confirm(app: &App, page: Page, name: &str) -> NodeBuilder {
     let app = app.clone();
-    let name = name.to_owned();
-    actions()
-        .child(
-            button("Cancel")
-                .ghost()
-                .size(ControlSize::Compact)
-                .activate(move || defer(move || page.armed.set(None))),
-        )
-        .child(
-            button("Remove")
-                .tone(Tone::Error)
-                .size(ControlSize::Compact)
-                .accessible(format!("Remove {name} now"))
-                .activate(move || {
-                    let (app, name) = (app.clone(), name.clone());
-                    defer(move || remove(&app, page, &name));
-                }),
-        )
+    let target = name.to_owned();
+    confirm_remove(
+        name,
+        move || defer(move || page.armed.set(None)),
+        move || {
+            let (app, target) = (app.clone(), target.clone());
+            defer(move || remove(&app, page, &target));
+        },
+    )
 }
 
 fn form(app: &App, page: Page) -> NodeBuilder {
@@ -275,7 +266,7 @@ fn create(app: &App, page: Page) {
             close(page);
             refresh(app);
         }
-        Err(error) => page.error.set(Some(first_line(&error).to_owned())),
+        Err(error) => page.error.set(Some(first_line(&error))),
     }
 }
 
@@ -292,9 +283,7 @@ fn remove(app: &App, page: Page, name: &str) {
     match summonr_agent::mcp::remove(name) {
         Ok(true) => page.error.set(None),
         Ok(false) => page.error.set(Some("A plugin adds this server".to_owned())),
-        Err(error) => page
-            .error
-            .set(Some(first_line(&error.to_string()).to_owned())),
+        Err(error) => page.error.set(Some(first_line(&error.to_string()))),
     }
     refresh(app);
 }
@@ -322,46 +311,4 @@ const fn state_chip(state: McpState) -> (&'static str, Tone) {
         McpState::Stopped => ("Stopped", Tone::Neutral),
         McpState::Failed => ("Failed", Tone::Error),
     }
-}
-
-fn first_line(text: &str) -> &str {
-    text.lines().next().unwrap_or(text)
-}
-
-/// A row of controls with the standard gap.
-pub(super) fn actions() -> NodeBuilder {
-    container().layout(
-        LayoutStyle::flex_row()
-            .gap(S)
-            .align_items(AlignItems::Center),
-    )
-}
-
-/// One list row inside a section: a leading mark, the words, and trailing controls.
-pub(super) fn item(lead: NodeBuilder, words: NodeBuilder, trailing: NodeBuilder) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(M)
-                .padding_x(L)
-                .padding_y(M)
-                .align_items(AlignItems::Center),
-        )
-        .child(lead)
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .grow(1.0)
-                        .shrink(1.0)
-                        .min_size(0.0, 0.0),
-                )
-                .child(words),
-        )
-        .child(
-            container()
-                .layout(LayoutStyle::flex_row().shrink(0.0))
-                .child(trailing),
-        )
 }

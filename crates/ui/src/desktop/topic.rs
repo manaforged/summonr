@@ -100,7 +100,7 @@ pub(super) fn row(app: &App, topic: &Topic, (selected, depth): (bool, u16), live
     let state = topic.state(live);
     let status = state.unwrap_or(Status::Idle);
     let needs = status == Status::NeedsYou;
-    let word = word(status);
+    let word = super::sidebar::row::status_word(status);
     let meta = if needs {
         None
     } else {
@@ -154,15 +154,6 @@ pub(super) fn worktree_row(app: &App, tree: &Tree, depth: u16) -> NodeBuilder {
             ..ListRowSlots::default()
         },
     )
-}
-
-const fn word(status: Status) -> Option<(&'static str, Tone)> {
-    match status {
-        Status::Working => Some(("working", Tone::Neutral)),
-        Status::Review => Some(("new", Tone::Info)),
-        Status::Failed => Some(("failed", Tone::Error)),
-        Status::NeedsYou | Status::Idle => None,
-    }
 }
 
 /// Up to three outside agents' marks, overlapping, then `+N`; an empty slot for Summonr alone.

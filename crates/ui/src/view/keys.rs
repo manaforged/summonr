@@ -130,7 +130,7 @@ impl App {
     }
 
     fn enter(&self) -> bool {
-        if self.window.dialog_open() {
+        if self.window.dialog_open() || (crate::canvas::is_window() && self.settings_open.peek()) {
             return false;
         }
         if self.note_target.peek().is_some() && !self.options_active() {

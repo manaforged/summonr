@@ -108,7 +108,7 @@ fn card(
                 .child(
                     container()
                         .layout(LayoutStyle::block().padding_top(S))
-                        .child(super::style::text(Text::Display, TITLE)),
+                        .child(super::style::text(Text::Title, TITLE)),
                 )
                 .child(
                     container()

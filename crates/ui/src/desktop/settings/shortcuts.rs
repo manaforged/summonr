@@ -5,8 +5,7 @@ use sigil::prelude::{
 
 use super::super::App;
 use super::super::style::{OUTLINE, S, TINT, Text, XL, XS, text};
-use super::mcp::actions;
-use super::parts::{row, section};
+use super::parts::{actions, row, section};
 use crate::pane::Pane;
 use crate::view::KeyCommand;
 use crate::view::keys::bindings::{Jump, Split, WINDOW};

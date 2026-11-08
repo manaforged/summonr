@@ -1,9 +1,7 @@
-use std::cell::Cell;
-
 use sigil::icons::Icon;
 use sigil::prelude::{
     AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Signal, Space, Widget, container, icon,
-    scroll, signal,
+    scroll,
 };
 use sigil::widgets::{ListRowSlots, list_row};
 
@@ -122,52 +120,16 @@ impl Page {
     }
 }
 
-/// The window's Settings state: whether it shows, and the open group of its pages.
-type Shown = (Signal<bool>, Signal<Option<crate::settings::Group>>);
-
-thread_local! {
-    static PAGE: Cell<Option<Signal<Page>>> = const { Cell::new(None) };
-    static OPEN: Cell<Option<Shown>> = const { Cell::new(None) };
-}
-
-/// Creates the Settings page state for this window.
-pub(super) fn install(app: &App) {
-    page();
-    OPEN.with(|slot| slot.set(Some((app.settings_open, app.settings_group))));
-}
-
-/// Whether the Settings window shows.
-pub(super) fn is_open() -> bool {
-    OPEN.with(Cell::get)
-        .and_then(|(open, _)| open.try_peek())
-        .unwrap_or(false)
-}
-
-fn page() -> Signal<Page> {
-    PAGE.with(|slot| {
-        let page = slot
-            .get()
-            .filter(|page| page.try_peek().is_some())
-            .unwrap_or_else(|| signal(Page::General));
-        slot.set(Some(page));
-        page
-    })
-}
-
 /// Shows `page` in the window's Settings, from any pane.
 pub(super) fn open(app: &App, at: Page) {
-    let (open, group) = OPEN
-        .with(Cell::get)
-        .filter(|(open, _)| open.try_peek().is_some())
-        .unwrap_or((app.settings_open, app.settings_group));
-    page().set(at);
-    group.set(None);
-    open.set(true);
+    app.window.settings_page.set(at);
+    app.settings_group.set(None);
+    app.settings_open.set(true);
 }
 
 /// The Settings window: page list on the left, the page on the right.
 pub(super) fn view(app: &App) -> NodeBuilder {
-    let current = page();
+    let current = app.window.settings_page;
     let body = app.clone();
     container()
         .layout(LayoutStyle::flex_row().fill().min_size(0.0, 0.0))
@@ -203,7 +165,7 @@ pub(super) fn view(app: &App) -> NodeBuilder {
                                 .padding_x(XL)
                                 .padding_bottom(XL),
                         )
-                        .child(text(Text::Display, at.name()));
+                        .child(text(Text::Title, at.name()));
                     let content = sigil::reactive::untrack(|| at.view(&body))
                         .into_iter()
                         .fold(content, NodeBuilder::child);

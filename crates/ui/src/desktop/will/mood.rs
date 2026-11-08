@@ -7,8 +7,6 @@ use sigil::reactive::{effect, untrack};
 use summonr_agent::prefs::Reaction;
 
 use super::super::App;
-use super::rig::Face;
-use super::shape::{Hold, Sig};
 use crate::model::Entry;
 
 /// What Will shows: the states on the design sheet.
@@ -45,117 +43,6 @@ impl Shot {
             Self::Burst => 800,
             Self::Sweep => 1800,
         })
-    }
-}
-
-/// How Will holds himself in one mood, on the 120 grid.
-pub(super) struct Pose {
-    pub(super) hold: Hold,
-    pub(super) fade: f32,
-    pub(super) face: Face,
-    pub(super) gaze: (f32, f32),
-    pub(super) glow: f32,
-    pub(super) pace: [f32; 3],
-    pub(super) bob: f32,
-    pub(super) embers: bool,
-    pub(super) ring: bool,
-    pub(super) mote: bool,
-    pub(super) sig: Option<Sig>,
-}
-
-/// Seconds per sway of the edge, mid and core at rest, at work, and when low.
-const CALM: [f32; 3] = [2.6, 1.9, 1.3];
-const FAST: [f32; 3] = [1.1, 0.8, 0.55];
-const LOW: [f32; 3] = [3.6, 3.6, 3.6];
-
-const REST: Pose = Pose {
-    hold: Hold::REST,
-    fade: 1.0,
-    face: Face::Open,
-    gaze: (0.0, 0.0),
-    glow: 0.5,
-    pace: CALM,
-    bob: 3.4,
-    embers: false,
-    ring: false,
-    mote: false,
-    sig: None,
-};
-
-const fn held(tilt: f32, scale: (f32, f32), shift: (f32, f32)) -> Hold {
-    Hold::new(tilt, 0.0, scale, shift)
-}
-
-impl Mood {
-    /// The pose for this mood, from the sheet's state table.
-    pub(super) const fn pose(self) -> Pose {
-        match self {
-            Self::Idle => REST,
-            Self::Summoned => Pose {
-                hold: held(0.0, (0.6, 0.6), (0.0, 0.0)),
-                face: Face::Wide,
-                ring: true,
-                ..REST
-            },
-            Self::Notice => Pose {
-                hold: held(0.0, (1.04, 1.04), (0.0, -4.0)),
-                face: Face::Wide,
-                ..REST
-            },
-            Self::Typing => Pose {
-                hold: held(-7.0, (1.0, 1.0), (-3.0, 0.0)),
-                gaze: (-3.0, 2.5),
-                ..REST
-            },
-            Self::Thinking => Pose {
-                hold: held(4.0, (1.0, 1.0), (0.0, 0.0)),
-                gaze: (2.5, -3.0),
-                ..REST
-            },
-            Self::Working => Pose {
-                hold: held(0.0, (1.03, 1.08), (0.0, 0.0)),
-                face: Face::Focus,
-                pace: FAST,
-                embers: true,
-                ..REST
-            },
-            Self::Needs => Pose {
-                hold: held(6.0, (1.0, 1.0), (0.0, 0.0)),
-                face: Face::Wide,
-                gaze: (3.0, 0.0),
-                sig: Some(Sig::Warn),
-                ..REST
-            },
-            Self::Passed => Pose {
-                hold: held(0.0, (1.06, 1.12), (0.0, 0.0)),
-                face: Face::Happy,
-                glow: 1.0,
-                ..REST
-            },
-            Self::Failed => Pose {
-                hold: held(0.0, (1.12, 0.72), (0.0, 0.0)),
-                fade: 0.6,
-                face: Face::Sad,
-                glow: 0.15,
-                pace: LOW,
-                sig: Some(Sig::Bad),
-                ..REST
-            },
-            Self::Stopped => Pose {
-                hold: held(-11.0, (1.0, 1.0), (0.0, 0.0)),
-                face: Face::Puzzled,
-                ..REST
-            },
-            Self::Doze => Pose {
-                hold: held(0.0, (1.02, 0.94), (0.0, 3.0)),
-                face: Face::Closed,
-                glow: 0.15,
-                pace: LOW,
-                bob: 5.0,
-                mote: true,
-                ..REST
-            },
-        }
     }
 }
 

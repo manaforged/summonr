@@ -331,7 +331,7 @@ fn turn(color: Rgba8, degrees: f32) -> Rgba8 {
         2 => (0.0, chroma, x),
         3 => (0.0, x, chroma),
         4 => (x, 0.0, chroma),
-        _ => (chroma, 0.0, x),
+        5..=u8::MAX => (chroma, 0.0, x),
     };
     let lift = light - chroma / 2.0;
     let byte = |each: f32| ((each + lift).clamp(0.0, 1.0) * 255.0).round() as u8;

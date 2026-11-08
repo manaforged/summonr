@@ -73,11 +73,37 @@ fn title_row(title: &str, button: NodeBuilder) -> NodeBuilder {
         .child(button)
 }
 
+pub(in crate::desktop) type SpaceGroup = (Space, Vec<SessionInfo>, Vec<Group>);
+
 /// Splits `chats` into the agents put in a workspace by hand and the rest; tracked.
 pub(in crate::desktop) fn split(list: &[Space], chats: Vec<SessionInfo>) -> (Vec<SessionInfo>, Vec<SessionInfo>) {
     chats
         .into_iter()
         .partition(|info| spaces::put_in(list, info).is_some())
+}
+
+/// Pairs each workspace with its direct agents and its repositories, returning the loose repositories last.
+pub(in crate::desktop) fn by_space(
+    list: &[Space],
+    (put, groups): (Vec<SessionInfo>, Vec<Group>),
+) -> (Vec<SpaceGroup>, Vec<Group>) {
+    let (mut held, loose): (Vec<Group>, Vec<Group>) = groups
+        .into_iter()
+        .partition(|(folder, _)| spaces::holding(list, folder).is_some());
+    let mut placed = Vec::with_capacity(list.len());
+    for (at, space) in list.iter().enumerate() {
+        let theirs = put
+            .iter()
+            .filter(|info| spaces::put_in(list, info) == Some(at))
+            .cloned()
+            .collect();
+        let (mine, others) = held
+            .into_iter()
+            .partition(|(folder, _)| spaces::holding(list, folder) == Some(at));
+        held = others;
+        placed.push((space.clone(), theirs, mine));
+    }
+    (placed, loose)
 }
 
 /// Each workspace with the agents put in it and the repositories it holds, then the repositories no workspace holds.
@@ -88,23 +114,12 @@ pub(in crate::desktop) fn sections(
     seen: &Seen,
 ) -> (Vec<NodeBuilder>, Vec<Group>) {
     let closed = folded.get();
-    let (mut held, loose): (Vec<Group>, Vec<Group>) = groups
-        .into_iter()
-        .partition(|(folder, _)| spaces::holding(list, folder).is_some());
+    let (placed, loose) = by_space(list, (put, groups));
     let mut nodes = Vec::new();
-    for (at, space) in list.iter().enumerate() {
-        let theirs: Vec<SessionInfo> = put
-            .iter()
-            .filter(|info| spaces::put_in(list, info) == Some(at))
-            .cloned()
-            .collect();
-        let (mine, others): (Vec<Group>, Vec<Group>) = held
-            .into_iter()
-            .partition(|(folder, _)| spaces::holding(list, folder) == Some(at));
-        held = others;
+    for (space, theirs, mine) in placed {
         let count = theirs.len() + mine.iter().map(|(_, agents)| agents.len()).sum::<usize>();
         let open = !closed.contains(&space.id);
-        nodes.push(section(app, space, (open, count), folded));
+        nodes.push(section(app, &space, (open, count), folded));
         if !open {
             continue;
         }

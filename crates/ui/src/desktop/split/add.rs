@@ -54,6 +54,8 @@ fn attach(main: &App) -> App {
     })));
     let mut app = App::new(main.info.clone(), main.workspace(), commands);
     app.window.share(&main.window);
+    app.settings_open = main.settings_open;
+    app.settings_group = main.settings_group;
     let size = main.viewport;
     let fit = app.clone();
     effect(move || {

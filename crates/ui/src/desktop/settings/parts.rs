@@ -1,9 +1,10 @@
 use sigil::prelude::{
-    AlignItems, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Widget, container, dropdown,
-    effect, segmented, signal, toggle,
+    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Tone, Widget,
+    button, container, dropdown, effect, empty_state, segmented, signal, toggle,
 };
 use sigil::reactive::{defer, untrack};
 
+use super::super::App;
 use super::super::style::{DIVIDER, L, M, RAISED, S, Text, XS, text};
 
 /// The widest a Settings page grows.
@@ -70,7 +71,7 @@ pub(in crate::desktop) fn row(
         )
         .child(text(Text::Body, label));
     let words = match about {
-        Some(about) => words.child(text(Text::Hint, about).wrap()),
+        Some(about) => words.child(text(Text::Meta, about).wrap()),
         None => words,
     };
     container()
@@ -198,4 +199,96 @@ pub(in crate::desktop) fn slider(
             defer(move || pick(whole));
         });
     row(label, about, control.into())
+}
+
+/// A row of controls with the standard gap.
+pub(in crate::desktop) fn actions() -> NodeBuilder {
+    container().layout(
+        LayoutStyle::flex_row()
+            .gap(S)
+            .align_items(AlignItems::Center),
+    )
+}
+
+/// One list row inside a section: a leading mark, the words, and trailing controls.
+pub(in crate::desktop) fn item(
+    lead: NodeBuilder,
+    words: NodeBuilder,
+    trailing: NodeBuilder,
+) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .gap(M)
+                .padding_x(L)
+                .padding_y(M)
+                .align_items(AlignItems::Center),
+        )
+        .child(lead)
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .grow(1.0)
+                        .shrink(1.0)
+                        .min_size(0.0, 0.0),
+                )
+                .child(words),
+        )
+        .child(
+            container()
+                .layout(LayoutStyle::flex_row().shrink(0.0))
+                .child(trailing),
+        )
+}
+
+/// Cancel and error-toned Remove buttons for an armed row.
+pub(in crate::desktop) fn confirm_remove(
+    name: &str,
+    cancel: impl Fn() + 'static,
+    remove: impl Fn() + 'static,
+) -> NodeBuilder {
+    actions()
+        .child(
+            button("Cancel")
+                .ghost()
+                .size(ControlSize::Compact)
+                .activate(move || cancel()),
+        )
+        .child(
+            button("Remove")
+                .tone(Tone::Error)
+                .size(ControlSize::Compact)
+                .accessible(format!("Remove {name} now"))
+                .activate(move || remove()),
+        )
+}
+
+/// The first line of `text`, owned.
+pub(in crate::desktop) fn first_line(text: &str) -> String {
+    text.lines().next().unwrap_or(text).to_owned()
+}
+
+/// The display name of the account that serves `endpoint`.
+pub(in crate::desktop) fn account(endpoint: &str) -> String {
+    summonr_agent::endpoint::label(endpoint).map_or_else(|| endpoint.to_owned(), str::to_owned)
+}
+
+/// An empty state with an `Add account` button that opens the provider picker.
+pub(in crate::desktop) fn empty_accounts(app: &App, title: &'static str) -> NodeBuilder {
+    let open = app.clone();
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .gap(S)
+                .align_items(AlignItems::Center),
+        )
+        .child(empty_state(title, ""))
+        .child(
+            button("Add account")
+                .primary()
+                .activate(move || open.open_providers()),
+        )
 }

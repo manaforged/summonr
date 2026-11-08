@@ -10,8 +10,6 @@ const WEEK: u64 = 10_080;
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Shape {
-    /// ChatGPT `backend-api/wham/usage`.
-    Wham,
     /// Codex app-server `account/rateLimits/read`, at `/result/rateLimits`.
     Codex,
     /// z.ai and BigModel `monitor/usage/quota/limit`.
@@ -25,7 +23,6 @@ pub enum Shape {
 impl Shape {
     pub(super) fn parse(self, value: &Value) -> Result<Vec<Window>, String> {
         let windows = match self {
-            Self::Wham => wham(value),
             Self::Codex => codex(value),
             Self::Zai => zai(value),
             Self::Antigravity => antigravity(value),
@@ -48,21 +45,6 @@ pub(super) fn label(minutes: Option<u64>) -> String {
         Some(minutes) => format!("{minutes} min"),
         None => "window".to_string(),
     }
-}
-
-fn wham(value: &Value) -> Vec<Window> {
-    ["primary_window", "secondary_window"]
-        .iter()
-        .filter_map(|key| {
-            let window = value["rate_limit"].get(key)?;
-            Some(Window {
-                group: None,
-                minutes: window["limit_window_seconds"].as_u64().map(|seconds| seconds / 60),
-                used: window["used_percent"].as_f64()?,
-                resets: window["reset_at"].as_i64().and_then(|at| time(at, 1)),
-            })
-        })
-        .collect()
 }
 
 fn codex(value: &Value) -> Vec<Window> {

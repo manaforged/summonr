@@ -1,10 +1,4 @@
 [[plan]]
-name = "ChatGPT"
-via = "https://auth.openai.com/"
-url = "https://chatgpt.com/backend-api/wham/usage"
-shape = "wham"
-
-[[plan]]
 name = "Codex"
 command = ["codex", "app-server"]
 stdin = [

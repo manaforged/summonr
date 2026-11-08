@@ -31,6 +31,7 @@ mod side;
 mod sidebar;
 mod spaces;
 mod terminals;
+mod panels;
 mod panes;
 mod pins;
 mod topics;

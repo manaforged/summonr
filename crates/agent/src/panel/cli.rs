@@ -6,7 +6,7 @@ use super::{Content, Fill, Panel};
 
 const USAGE: &str = r#"summonr panel list|check NAME
 
-A panel is a tab in the desktop app's right panel. It appears within seconds of writing its file, and its command runs only while its tab is open.
+A panel is a tab in the desktop app's right panel, or a section of its sidebar. It appears within seconds of writing its file. A tab's command runs only while the tab is open; a sidebar section's command runs while the sidebar shows.
 
 Write panels/NAME.toml under .summonr in the workspace, or under ~/.summonr for every workspace:
 
@@ -20,8 +20,11 @@ The command runs in the workspace and prints one JSON document:
   {"view":"stat","items":[{"label":"p50","value":"38 ms","tone":"success"}]}
   {"view":"table","columns":["host","state"],"rows":[["web-1","up"]]}
   {"view":"text","text":"all green"}
+  {"view":"list","rows":[{"title":"Fix the cart total","meta":"issue 212","tone":"warning","action":{"start":{"prompt":"Fix issue 212"}}}]}
 
-A chart's kind is line, bar, area or pie. A stat's tone is neutral, success, warning or danger.
+A chart's kind is line, bar, area or pie. A stat's or a row's tone is neutral, success, warning or danger. A row's action starts a new agent with a prompt, or opens one: {"open":{"session":"ID"}}.
+
+With place = "side" in the file, the panel is a section of the sidebar instead of a tab. Commit the file in the workspace's panels folder to share it with everyone who works in the repository.
 
 With kind = "terminal" in the file, the tab opens the command in a terminal instead.
 
@@ -77,5 +80,6 @@ fn shape(content: &Content) -> String {
         Content::Stat { items } => format!("{} stats", items.len()),
         Content::Table { rows, .. } => format!("a table of {} rows", rows.len()),
         Content::Text { .. } => "text".to_string(),
+        Content::List { rows } => format!("a list of {} rows", rows.len()),
     }
 }

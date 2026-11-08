@@ -19,12 +19,25 @@ pub enum Fill {
     Terminal,
 }
 
+/// Where a panel shows in the window.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Place {
+    /// A tab in the right panel.
+    #[default]
+    Right,
+    /// A section of the sidebar, under the repositories.
+    Side,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
     title: Option<String>,
     #[serde(default)]
     kind: Fill,
+    #[serde(default)]
+    place: Place,
     command: Vec<String>,
     every_secs: Option<u64>,
 }
@@ -38,6 +51,8 @@ pub struct Panel {
     pub title: String,
     /// How the panel fills its tab.
     pub kind: Fill,
+    /// Where the panel shows.
+    pub place: Place,
     /// The program and its arguments.
     pub command: Vec<String>,
     /// How often the open panel runs again, if at all.
@@ -112,6 +127,39 @@ pub struct Stat {
     pub tone: Mood,
 }
 
+/// What clicking a list row does.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Action {
+    /// Starts a new agent with this prompt.
+    Start {
+        /// The first message.
+        prompt: String,
+    },
+    /// Opens the agent with this session id.
+    Open {
+        /// The session id.
+        session: String,
+    },
+}
+
+/// One row of a list.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Item {
+    /// The row's text.
+    pub title: String,
+    /// A short line after the title.
+    #[serde(default)]
+    pub meta: Option<String>,
+    /// What the meta line means, which the app colors.
+    #[serde(default)]
+    pub tone: Mood,
+    /// What clicking the row does.
+    #[serde(default)]
+    pub action: Option<Action>,
+}
+
 /// What a data panel's command prints.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(tag = "view", rename_all = "snake_case", deny_unknown_fields)]
@@ -143,6 +191,11 @@ pub enum Content {
     Text {
         /// The text.
         text: String,
+    },
+    /// Rows that each start or open an agent.
+    List {
+        /// The rows.
+        rows: Vec<Item>,
     },
 }
 
@@ -176,7 +229,7 @@ impl Content {
                         columns.len()
                     )
                 }),
-            Self::Chart { .. } | Self::Stat { .. } | Self::Text { .. } => None,
+            Self::Chart { .. } | Self::Stat { .. } | Self::Text { .. } | Self::List { .. } => None,
         }
     }
 }
@@ -224,6 +277,7 @@ fn read_file(path: &Path) -> Option<Panel> {
             title: file.title.unwrap_or_else(|| name.clone()),
             name,
             kind: file.kind,
+            place: file.place,
             command: file.command,
             every_secs: file.every_secs,
             root: None,
@@ -233,6 +287,7 @@ fn read_file(path: &Path) -> Option<Panel> {
             title: name.clone(),
             name,
             kind: Fill::Data,
+            place: Place::Right,
             command: Vec::new(),
             every_secs: None,
             root: None,

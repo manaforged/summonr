@@ -90,3 +90,41 @@ async fn a_panel_command_runs_off_the_worker_and_reports_its_chart() {
     };
     assert_eq!(result, Err("no panel named `build`".to_string()));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_side_panel_lists_rows_whose_action_starts_an_agent() {
+    let dir = tempfile::tempdir().expect("workspace");
+    let panels = dir.path().join(".summonr").join("panels");
+    std::fs::create_dir_all(&panels).expect("panels folder");
+    std::fs::write(
+        panels.join("team.toml"),
+        r##"place = "side"
+command = ["sh", "-c", "printf '%s' '{\"view\":\"list\",\"rows\":[{\"title\":\"Checkout total off by a cent\",\"meta\":\"#212\",\"tone\":\"warning\",\"action\":{\"start\":{\"prompt\":\"Fix issue #212\"}}}]}'"]"##,
+    )
+    .expect("panel file");
+    let (ui, mut inbox) = tokio::sync::mpsc::unbounded_channel();
+    let reader = Reader::new(dir.path().to_path_buf(), Default::default(), ui, true);
+    reader.run(Cmd::ListPanels).await;
+    let Some(Msg::Fact(crate::hub::Fact::Panels(list))) = inbox.recv().await else {
+        panic!("no panel list");
+    };
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].place, crate::panel::Place::Side);
+    reader.run(Cmd::RunPanel("team".to_string())).await;
+    let Some(Msg::Fact(crate::hub::Fact::Panel { result, .. })) = inbox.recv().await else {
+        panic!("no panel result");
+    };
+    assert_eq!(
+        result,
+        Ok(crate::panel::Content::List {
+            rows: vec![crate::panel::Item {
+                title: "Checkout total off by a cent".to_string(),
+                meta: Some("#212".to_string()),
+                tone: crate::panel::Mood::Warning,
+                action: Some(crate::panel::Action::Start {
+                    prompt: "Fix issue #212".to_string()
+                }),
+            }]
+        })
+    );
+}

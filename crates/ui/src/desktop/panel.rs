@@ -4,7 +4,7 @@ use sigil::prelude::{
 };
 use sigil::reactive::on_cleanup;
 use summonr_agent::hub::Cmd;
-use summonr_agent::panel::{Content, Fill, Mood, Panel, Plot, Series, Stat};
+use summonr_agent::panel::{Content, Fill, Mood, Panel, Place, Plot, Series, Stat};
 
 use super::style::{DANGER, L, M, S, Text, XS, text};
 use super::{App, Pane};
@@ -33,6 +33,7 @@ pub(super) fn tabs(app: &App, pane: Pane) -> NodeBuilder {
                 .list
                 .get()
                 .into_iter()
+                .filter(|panel| panel.place == Place::Right)
                 .map(|panel| {
                     let current =
                         pane == Pane::Custom && shown.as_deref() == Some(panel.name.as_str());
@@ -94,11 +95,12 @@ pub(super) fn view(app: &App) -> NodeBuilder {
                 });
                 on_cleanup(move || timer.cancel());
             }
-            vec![body(panels)]
+            vec![body(&runner, panels)]
         })
 }
 
-fn body(panels: crate::app::panels::Panels) -> NodeBuilder {
+fn body(app: &App, panels: crate::app::panels::Panels) -> NodeBuilder {
+    let app = app.clone();
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -112,11 +114,13 @@ fn body(panels: crate::app::panels::Panels) -> NodeBuilder {
         .children_reactive(move || match panels.content.get() {
             None => Vec::new(),
             Some(Err(reason)) => vec![text(Text::Meta, reason).text_color(DANGER).into()],
+            Some(Ok(Content::List { rows })) => super::side_panel::list(&app, rows),
             Some(Ok(content)) => vec![draw(content)],
         })
 }
 
-fn draw(content: Content) -> NodeBuilder {
+/// One view drawn with the app's widgets; a list needs `side_panel::list` for its actions.
+pub(super) fn draw(content: Content) -> NodeBuilder {
     match content {
         Content::Chart {
             kind,
@@ -126,6 +130,7 @@ fn draw(content: Content) -> NodeBuilder {
         Content::Stat { items } => stats(items),
         Content::Table { columns, rows } => table(columns, rows),
         Content::Text { text: body } => text(Text::Meta, body).into(),
+        Content::List { .. } => text(Text::Meta, "No rows").into(),
     }
 }
 

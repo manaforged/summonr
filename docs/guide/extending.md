@@ -55,7 +55,16 @@ Put the binary on `PATH` or under `~/.summonr/bin/<name>/`. The model runs it wi
 
 ## Add a panel
 
-A panel is a tab in the desktop app's right panel, drawn with the app's own widgets. Write `panels/NAME.toml` under `.summonr` in the workspace, or under `~/.summonr` for every workspace. A plugin can ship the same files in its `panels` directory. `summonr panel --help` has the file format and every view: chart, stat, table and text.
+A panel is a tab in the desktop app's right panel, or a section of its sidebar, drawn with the app's own widgets. Write `panels/NAME.toml` under `.summonr` in the workspace, or under `~/.summonr` for every workspace. A plugin can ship the same files in its `panels` directory. `summonr panel --help` has the file format and every view: chart, stat, table, text and list.
+
+Set `place = "side"` to put the panel in the sidebar under the repositories. A `list` view gives each row an action: `start` opens a new agent with the row's prompt, and `open` shows an existing one. Commit the workspace's panel file to share a team's process, such as the issues assigned to you:
+
+```toml
+title = "Assigned to me"
+place = "side"
+every_secs = 120
+command = ["sh", "-c", "gh issue list --assignee @me --json number,title | jq '{view: \"list\", rows: map({title, meta: \"#\\(.number)\", action: {start: {prompt: \"Fix issue #\\(.number): \\(.title)\"}}})}'"]
+```
 
 The command runs only while its tab is open, in the workspace, with the same environment as a hook. With `--no-trust`, workspace panels are ignored. A project's panel runs a command from that repository when you open its tab, so treat the tab like running a script from the repository.
 

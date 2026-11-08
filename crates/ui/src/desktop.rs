@@ -27,6 +27,7 @@ mod settings;
 mod shelf;
 mod ship;
 mod side;
+mod side_panel;
 mod sidebar;
 mod sky;
 mod spaces;
@@ -121,6 +122,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
     panel::install(&app);
     shelf::install();
     spaces::install(&app);
+    side_panel::install(&app);
     restore::install(&app);
     quit::install(&app);
     #[cfg(feature = "menu")]

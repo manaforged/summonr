@@ -88,7 +88,12 @@ pub(super) fn view(app: App) -> NodeBuilder {
                         scroll(
                             container()
                                 .layout(LayoutStyle::flex_column().fill_width())
-                                .children_reactive(move || chats(&list, (shut, folded), live, shown)),
+                                .child(
+                                    container()
+                                        .layout(LayoutStyle::flex_column().fill_width())
+                                        .children_reactive(move || chats(&list, (shut, folded), live, shown)),
+                                )
+                                .child(super::side_panel::view(&app)),
                         )
                         .bg(RECESSED)
                         .grow(1.0),

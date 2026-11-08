@@ -46,7 +46,25 @@ impl Worker {
             return;
         }
         self.titled = true;
-        let named = match self.loop_.title(request, reply).await {
+        let titled = {
+            let title = self.loop_.title(request, reply);
+            tokio::pin!(title);
+            loop {
+                tokio::select! {
+                    titled = &mut title => break titled,
+                    command = self.cmd.recv() => match command {
+                        Some(Cmd::Tick | Cmd::Peers(_)) => {}
+                        Some(command) => {
+                            self.queue.deferred.push_front(command);
+                            self.titled = false;
+                            return;
+                        }
+                        None => return,
+                    },
+                }
+            }
+        };
+        let named = match titled {
             Ok(title) if title.is_empty() => return,
             Ok(title) => self.loop_.set_name(&title).map(|()| title),
             Err(error) => Err(error),

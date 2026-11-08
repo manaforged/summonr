@@ -167,9 +167,21 @@ fn worker() -> (
     tokio::sync::mpsc::UnboundedReceiver<Msg>,
     [tempfile::TempDir; 2],
 ) {
+    let (worker, _commands, inbox, dirs) = worker_at("http://127.0.0.1:9/v1");
+    (worker, inbox, dirs)
+}
+
+fn worker_at(
+    base: &str,
+) -> (
+    super::Worker,
+    tokio::sync::mpsc::UnboundedSender<Cmd>,
+    tokio::sync::mpsc::UnboundedReceiver<Msg>,
+    [tempfile::TempDir; 2],
+) {
     let home = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
-    let client = crate::provider::Client::new("test", "http://127.0.0.1:9/v1").unwrap();
+    let client = crate::provider::Client::new("test", base).unwrap();
     let driver = crate::durable::driver::SessionDriver::open(
         home.path(),
         workspace.path(),
@@ -197,13 +209,33 @@ fn worker() -> (
         prompt: None,
         trust: true,
     };
-    let (_commands, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (commands, receiver) = tokio::sync::mpsc::unbounded_channel();
     let (ui, inbox) = tokio::sync::mpsc::unbounded_channel();
     (
         super::Worker::new(loop_, receiver, ui, info),
+        commands,
         inbox,
         [home, workspace],
     )
+}
+
+#[tokio::test]
+async fn a_message_sent_while_the_title_waits_is_served_without_waiting_for_the_title() {
+    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/v1", silent.local_addr().unwrap());
+    let (mut worker, commands, _inbox, _dirs) = worker_at(&base);
+    commands.send(Cmd::Submit(UserInput::from("next"))).unwrap();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        worker.title_session("hi", "hello"),
+    )
+    .await
+    .expect("the title gave way to the waiting message");
+    assert!(matches!(
+        worker.queue.deferred.front(),
+        Some(Cmd::Submit(input)) if input.text == "next"
+    ));
+    drop(silent);
 }
 
 #[tokio::test]

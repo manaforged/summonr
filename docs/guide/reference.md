@@ -543,7 +543,7 @@ judge = "zai"
 /workflow default NAME       the workflow new sessions start with
 ```
 
-In the window, Settings → Workflows lists the saved workflows, marks the default, makes another the default, sets each role's endpoint and model, and removes one. New workflow, pinned to the sidebar by default and in the `cmd+k` list, opens that page with a form for a new one; right-click the sidebar's top rows to pin or unpin actions.
+In the window, Settings → Workflows lists the saved workflows, marks the default, makes another the default, sets each role's endpoint and model, and removes one. New workflow, in the `cmd+k` list, opens that page with a form for a new one; right-click the sidebar's top rows to pin or unpin actions.
 
 ## Workspaces
 

@@ -62,10 +62,7 @@ fn unpinning_a_default_row_takes_it_out_of_the_sidebar() {
         seen.text()
     );
     assert!(seen.shows(|text| text == "Search"), "{}", seen.text());
-    assert_eq!(
-        seen.read,
-        vec![Action::NewAgent, Action::NewWorkflow, Action::Search]
-    );
+    assert_eq!(seen.read, vec![Action::NewAgent, Action::Search]);
 }
 
 #[test]

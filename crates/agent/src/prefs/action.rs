@@ -62,12 +62,7 @@ const NAMES: [(Action, &str); 27] = [
 
 impl Action {
     /// The sidebar rows before a person changes them.
-    pub const PINNED: [Self; 4] = [
-        Self::NewAgent,
-        Self::NewTerminal,
-        Self::NewWorkflow,
-        Self::Search,
-    ];
+    pub const PINNED: [Self; 3] = [Self::NewAgent, Self::NewTerminal, Self::Search];
 
     /// The name the config file stores.
     pub fn name(self) -> &'static str {

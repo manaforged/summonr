@@ -13,6 +13,8 @@ macro_rules! table {
         #[derive(Clone, Debug, Default, Deserialize)]
         pub(crate) struct Overrides {
             $(pub $name: Option<$ty>,)*
+            #[serde(flatten)]
+            pub other: std::collections::BTreeMap<String, toml::Value>,
         }
 
         impl Limits {

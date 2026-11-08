@@ -254,7 +254,6 @@ cache_ttl = "5m"
 | `grant_wait_secs` | `600` | Wait for a permission answer. |
 | `job_poll_start_secs` | `1` | First job poll interval. |
 | `job_poll_cap_secs` | `2` | Longest job poll interval. |
-| `mail_stale_secs` | `120` | A mail peer with no heartbeat for this long is stale. |
 | `mail_per_round` | `5` | Most peer mail messages delivered into one model round; the rest wait for the next round. |
 | `mail_sweep_secs` | `86400` | Mail entries older than this are removed. |
 | `verify_timeout_secs` | `600` | Timeout for a check command. |

@@ -1,4 +1,5 @@
 use super::edit::save_default_model;
+use super::decode::unknown;
 use super::parse;
 
 fn written(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -287,4 +288,11 @@ fn a_workflow_saves_next_to_an_inline_workflows_table() {
     assert_eq!(crate::workflow::from_file(&file, "new").unwrap(), workflow);
     let old = crate::workflow::from_file(&file, "old").unwrap();
     assert_eq!(old.selections[&Role::Scout].endpoint, "zai");
+}
+
+#[test]
+fn a_misspelled_limit_is_named_as_an_unknown_key() {
+    let (_dir, path) = written("[limits]\nretry_limit = 3\nretry_limitt = 3\n");
+    let file = parse(&path).unwrap();
+    assert_eq!(unknown(&file), ["limits.retry_limitt"]);
 }

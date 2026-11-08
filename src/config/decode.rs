@@ -47,8 +47,20 @@ pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
 }
 
 pub(super) fn warn_unknown(path: &Path, file: &File) {
-    let unknown: Vec<String> = file
-        .other
+    let unknown = unknown(file);
+    if !unknown.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "summonr: {} has unknown key{} {}. Check the spelling; summonr ignores {}",
+            tilde(path),
+            if unknown.len() == 1 { "" } else { "s" },
+            unknown.join(", "),
+            if unknown.len() == 1 { "it" } else { "them" }
+        );
+    }
+}
+
+pub(super) fn unknown(file: &File) -> Vec<String> {
+    file.other
         .keys()
         .cloned()
         .chain(file.endpoint.iter().flat_map(|(name, row)| {
@@ -68,16 +80,12 @@ pub(super) fn warn_unknown(path: &Path, file: &File) {
                 .keys()
                 .map(move |key| format!("provider.{name}.{key}"))
         }))
-        .collect();
-    if !unknown.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        eprintln!(
-            "summonr: {} has unknown key{} {}. Check the spelling; summonr ignores {}",
-            tilde(path),
-            if unknown.len() == 1 { "" } else { "s" },
-            unknown.join(", "),
-            if unknown.len() == 1 { "it" } else { "them" }
-        );
-    }
+        .chain(
+            file.limits
+                .iter()
+                .flat_map(|limits| limits.other.keys().map(|key| format!("limits.{key}"))),
+        )
+        .collect()
 }
 
 pub(super) fn validate(path: &Path, file: &File) -> Result<()> {

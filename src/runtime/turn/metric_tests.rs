@@ -141,7 +141,7 @@ async fn a_first_turn_that_regresses_from_the_unchanged_workspace_is_reverted() 
 #[tokio::test]
 async fn a_turn_that_edits_a_protected_file_is_reverted_without_running_the_metric() {
     let check =
-        "[metric]\ncommand = \"sh bench.sh\"\nbetter = \"higher\"\nprotect = [\"bench.sh\"]\n";
+        "[metric]\ncommand = \"cat score\"\nbetter = \"higher\"\nprotect = [\"bench.sh\"]\n";
     let mut run = metric_goal(check, attempt("bench.sh", "echo 999\n").into());
     std::fs::write(run.workspace.join("bench.sh"), "cat score\n").unwrap();
     let commands = crate::verify::check_commands(&run.workspace)

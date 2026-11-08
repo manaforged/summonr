@@ -233,8 +233,9 @@ fn a_second_named_endpoint_keeps_the_first_and_a_taken_name_is_refused() {
 #[test]
 fn write_roots_accumulate_once_each_and_keep_absolute_paths_whole() {
     let (_dir, path) = written("write_roots = [\"~/code\"]\n");
-    let outside = tempfile::tempdir().unwrap();
-    let dir = outside.path().display().to_string();
+    let cwd = std::env::current_dir().unwrap();
+    let root = cwd.ancestors().last().unwrap();
+    let dir = root.join("summonr-write-root").display().to_string();
     super::save_write_root(&path, &dir).unwrap();
     super::save_write_root(&path, &dir).unwrap();
     super::save_write_root(&path, "relative/dir").unwrap();

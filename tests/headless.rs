@@ -297,7 +297,7 @@ fn a_json_steps_run_starts_each_step_with_its_check_and_exits_zero() {
     std::fs::create_dir(&work).unwrap();
     std::fs::write(
         work.join("PLAN.md"),
-        "## Steps\n\n1. Say done. Run `true`.\n2. Say done again. Run `test -d .`.\n",
+        "## Steps\n\n1. Say done. Run `exit 0`.\n2. Say done again. Run `cd .`.\n",
     )
     .unwrap();
     let mut child = launch(home.path(), port, &["--version"], &[]);
@@ -333,10 +333,10 @@ fn a_json_steps_run_starts_each_step_with_its_check_and_exits_zero() {
     assert_eq!(
         steps,
         [
-            (1, "start", Some("true")),
-            (1, "check passed", Some("true")),
-            (2, "start", Some("test -d .")),
-            (2, "check passed", Some("test -d .")),
+            (1, "start", Some("exit 0")),
+            (1, "check passed", Some("exit 0")),
+            (2, "start", Some("cd .")),
+            (2, "check passed", Some("cd .")),
         ],
         "{stderr}"
     );

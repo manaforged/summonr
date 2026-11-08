@@ -108,8 +108,8 @@ fn a_conductor_workspace_is_a_topic_and_opening_it_leaves_its_files_alone() {
 }
 
 #[test]
-fn an_agent_in_a_conductor_workspace_lists_under_its_repository() {
-    if !in_window("worktrees::an_agent_in_a_conductor_workspace_lists_under_its_repository") {
+fn an_agent_in_a_worktree_lists_under_its_branch() {
+    if !in_window("worktrees::an_agent_in_a_worktree_lists_under_its_branch") {
         return;
     }
     let shop = shop_with_a_conductor_workspace();
@@ -133,10 +133,30 @@ fn an_agent_in_a_conductor_workspace_lists_under_its_repository() {
         |_| (),
     );
     let listed = rows(&seen.controls);
-    assert!(listed.contains(&"shop"), "{listed:?}");
-    assert!(listed.contains(&"Ship the lights"), "{listed:?}");
     assert!(!listed.contains(&"tokyo"), "{listed:?}");
-    assert!(!listed.contains(&BRANCH), "{listed:?}");
+    assert_eq!(after(&listed, "shop", 2), vec![BRANCH, "Ship the lights"], "{listed:?}");
+}
+
+#[test]
+fn a_terminal_in_a_worktree_lists_under_its_branch() {
+    if !in_window("worktrees::a_terminal_in_a_worktree_lists_under_its_branch") {
+        return;
+    }
+    let _runtime = super::terminals::pumped();
+    let shop = shop_with_a_conductor_workspace();
+    let seen = steps(
+        open_in(shop.tree.clone(), Vec::new()),
+        vec![Step::Key(super::harness::command("t"))],
+        |_| (),
+    );
+    let listed = rows(&seen.controls);
+    assert!(!listed.contains(&"tokyo"), "{listed:?}");
+    assert_eq!(after(&listed, "shop", 2), vec![BRANCH, "Terminal"], "{listed:?}");
+}
+
+fn after<'a>(listed: &[&'a str], row: &str, count: usize) -> Vec<&'a str> {
+    let at = listed.iter().position(|seen| *seen == row).map_or(listed.len(), |at| at + 1);
+    listed.iter().skip(at).take(count).copied().collect()
 }
 
 #[test]

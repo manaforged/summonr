@@ -74,7 +74,7 @@ pub(in crate::desktop) fn rows(app: &App, live: Signal<Vec<Live>>, shown: Signal
                 }
                 for topic in super::super::topic::group(agents) {
                     let selected = topic.threads.iter().any(|info| shown.contains(&info.id));
-                    nodes.extend(super::super::topic::row(&app, &topic, selected, &live));
+                    nodes.extend(super::super::topic::row(&app, &topic, (selected, 0), &live));
                 }
             }
             nodes

@@ -92,7 +92,7 @@ const fn rank(status: Status) -> u8 {
 }
 
 /// The sidebar row of a topic: its agents' marks, its first thread's title, and its state.
-pub(super) fn row(app: &App, topic: &Topic, selected: bool, live: &[Live]) -> Option<NodeBuilder> {
+pub(super) fn row(app: &App, topic: &Topic, (selected, depth): (bool, u16), live: &[Live]) -> Option<NodeBuilder> {
     let mut root = topic.root()?.clone();
     super::sidebar::live_title(&mut root, live);
     let state = topic.state(live);
@@ -110,6 +110,7 @@ pub(super) fn row(app: &App, topic: &Topic, selected: bool, live: &[Live]) -> Op
         selected,
         super::sidebar::title(&root),
         ListRowSlots {
+            depth,
             leading: Some(Box::new(stack(&topic.agents()))),
             status: word.map(|(word, _)| word.to_owned()).or(meta).map(Into::into),
             status_tone: word.map(|(_, tone)| tone),
@@ -125,7 +126,7 @@ pub(super) fn row(app: &App, topic: &Topic, selected: bool, live: &[Live]) -> Op
     }))
 }
 
-/// The sidebar row of a worktree no agent has worked in: its branch and folder; opening it starts an agent there.
+/// The sidebar row of a worktree: its branch, and its folder when that differs; opening it starts an agent there.
 pub(super) fn worktree_row(app: &App, tree: &Tree) -> NodeBuilder {
     let folder = tree
         .path

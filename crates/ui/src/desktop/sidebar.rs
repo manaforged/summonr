@@ -148,7 +148,7 @@ fn chats(
     let mut groups = projects(&trees, &app.workspace(), space::outside(row::listed(app)));
     let open_folders = terms
         .iter()
-        .map(|term| term.folder.clone())
+        .map(|term| repo_folder(&trees, &term.folder))
         .chain(live.iter().map(|entry| repo_folder(&trees, &entry.workspace)));
     for folder in open_folders {
         if !groups.iter().any(|(seen, _)| *seen == folder) {
@@ -166,28 +166,48 @@ fn chats(
         if !open {
             continue;
         }
-        nodes.extend(super::terminal::rows(app, &terms, &folder));
-        for topic in super::topic::group(agents) {
-            let selected = topic.threads.iter().any(|info| shown.contains(&info.id));
-            nodes.extend(super::topic::row(app, &topic, selected, &live));
+        let branches = workspaces(&trees, &folder);
+        let (nested, loose): (Vec<SessionInfo>, Vec<SessionInfo>) = agents
+            .into_iter()
+            .partition(|info| branches.iter().any(|tree| ran_in(info, tree)));
+        nodes.extend(super::terminal::rows(app, &terms, &folder, 0));
+        nodes.extend(topics(app, loose, (&shown, &live), 0));
+        for tree in branches {
+            nodes.push(super::topic::worktree_row(app, tree));
+            nodes.extend(super::terminal::rows(app, &terms, &tree.path, 1));
+            let inside = nested.iter().filter(|info| ran_in(info, tree)).cloned().collect();
+            nodes.extend(topics(app, inside, (&shown, &live), 1));
         }
-        nodes.extend(adopted(app, &trees, &folder));
     }
     nodes
 }
 
-/// A row for each worktree of `folder` that no agent has worked in yet, except summonr's own run worktrees.
-fn adopted(app: &App, trees: &[Tree], folder: &std::path::Path) -> Vec<NodeBuilder> {
-    let chats = app.sessions.all_chats();
-    let worked = |tree: &Tree| {
-        chats
-            .iter()
-            .any(|info| info.cwd.as_deref().map(std::path::Path::new) == Some(tree.path.as_path()))
-    };
-    trees
+/// The worktrees of `folder` a person made, by branch; summonr's own run worktrees stay out.
+fn workspaces<'a>(trees: &'a [Tree], folder: &std::path::Path) -> Vec<&'a Tree> {
+    let mut found: Vec<&Tree> = trees
         .iter()
-        .filter(|tree| tree.primary == folder && tree.run_id().is_none() && !worked(tree))
-        .map(|tree| super::topic::worktree_row(app, tree))
+        .filter(|tree| tree.primary == folder && tree.path != folder && tree.run_id().is_none())
+        .collect();
+    found.sort_by_cached_key(|tree| tree.branch.to_lowercase());
+    found
+}
+
+fn ran_in(info: &SessionInfo, tree: &Tree) -> bool {
+    info.cwd.as_deref().map(std::path::Path::new) == Some(tree.path.as_path())
+}
+
+fn topics(
+    app: &App,
+    agents: Vec<SessionInfo>,
+    (shown, live): (&[String], &[Live]),
+    depth: u16,
+) -> Vec<NodeBuilder> {
+    super::topic::group(agents)
+        .iter()
+        .filter_map(|topic| {
+            let selected = topic.threads.iter().any(|info| shown.contains(&info.id));
+            super::topic::row(app, topic, (selected, depth), live)
+        })
         .collect()
 }
 

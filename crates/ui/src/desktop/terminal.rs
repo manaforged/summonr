@@ -304,16 +304,16 @@ fn side_terminal(app: &App, folder: &Path) -> Result<Rc<Term>, String> {
     )
 }
 
-/// The sidebar rows of the terminals in `folder`.
-pub(super) fn rows(app: &App, terms: &[Rc<Term>], folder: &Path) -> Vec<NodeBuilder> {
+/// The rows of the terminals open in `folder`, at `depth` in the sidebar tree.
+pub(super) fn rows(app: &App, terms: &[Rc<Term>], folder: &Path, depth: u16) -> Vec<NodeBuilder> {
     terms
         .iter()
         .filter(|term| term.folder == folder)
-        .map(|term| row(app, term))
+        .map(|term| row(app, term, depth))
         .collect()
 }
 
-fn row(app: &App, term: &Rc<Term>) -> NodeBuilder {
+fn row(app: &App, term: &Rc<Term>, depth: u16) -> NodeBuilder {
     let (app, term) = (app.clone(), Rc::clone(term));
     container()
         .layout(LayoutStyle::block().fill_width())
@@ -329,6 +329,7 @@ fn row(app: &App, term: &Rc<Term>) -> NodeBuilder {
                 selected,
                 term.label(),
                 ListRowSlots {
+                    depth,
                     leading: Some(Box::new(icon(Icon::Terminal).px(ICON))),
                     status: done.then(|| EXITED.into()),
                     badge: rang.then(|| (BELL.into(), Tone::Info)),

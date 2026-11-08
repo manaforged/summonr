@@ -37,6 +37,7 @@ pub(crate) struct Policy {
 pub(crate) use summonr_types::Grant;
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct File {
     #[serde(default)]
     strict: bool,
@@ -69,10 +70,7 @@ impl Policy {
     }
 
     fn overlay_file(&mut self, path: &Path) -> Result<()> {
-        if !path.is_file() {
-            return Ok(());
-        }
-        let text = std::fs::read_to_string(path)?;
+        let text = crate::durable::store::read_or_empty(path)?;
         let file: File = toml::from_str(&text)
             .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
         self.overlay(file);

@@ -401,3 +401,29 @@ fn a_deny_pattern_wins_over_an_allow_pattern() {
         Error::Denied("denied by policy `git push`".to_string()).to_string()
     );
 }
+
+#[test]
+fn a_misspelled_policy_key_is_a_config_error_instead_of_no_rule() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("policy.toml");
+    std::fs::write(&path, "denny = [\"touch\"]\n").unwrap();
+    let error = Policy::builtin()
+        .overlay_file(&path)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("denny"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_policy_folder_is_an_error_instead_of_no_rule() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join(".summonr");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("policy.toml"), "deny = [\"touch\"]\n").unwrap();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let result = Policy::builtin().overlay_file(&folder.join("policy.toml"));
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.is_err(), "{result:?}");
+}

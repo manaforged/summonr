@@ -23,3 +23,22 @@ fn a_bad_metric_pattern_or_an_unknown_metric_key_is_a_config_error() {
     let error = check_commands(unknown.path()).unwrap_err().to_string();
     assert!(error.contains("target_ms"), "{error}");
 }
+
+#[test]
+fn a_misspelled_check_key_is_a_config_error_instead_of_no_check() {
+    let dir = workspace("checkz = \"false\"\n");
+    let error = check_commands(dir.path()).unwrap_err().to_string();
+    assert!(error.contains("checkz"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_check_folder_is_an_error_instead_of_no_check() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = workspace("check = \"false\"\n");
+    let folder = dir.path().join(".summonr");
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let result = check_commands(dir.path());
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.is_err(), "{result:?}");
+}

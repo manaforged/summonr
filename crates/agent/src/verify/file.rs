@@ -6,6 +6,7 @@ use super::Metric;
 use summonr_core::error::{Error, Result};
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CheckFile {
     check: Option<String>,
     checks: Option<Vec<String>>,
@@ -21,10 +22,10 @@ pub(crate) struct Contract {
 }
 
 fn check_file(path: &Path) -> Result<Option<CheckFile>> {
-    if !path.is_file() {
+    let text = crate::durable::store::read_or_empty(path)?;
+    if text.is_empty() {
         return Ok(None);
     }
-    let text = std::fs::read_to_string(path)?;
     let file: CheckFile = toml::from_str(&text)
         .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
     if file.check.is_some() && file.checks.is_some() {

@@ -65,6 +65,28 @@ fn panes_split_right_and_down_until_they_run_out_of_room() {
 }
 
 #[test]
+fn the_split_button_puts_a_new_agent_beside_the_pane_it_sits_in() {
+    if !in_window("panes::the_split_button_puts_a_new_agent_beside_the_pane_it_sits_in") {
+        return;
+    }
+    let seen = steps(
+        |_| {},
+        vec![Step::Click("Split pane")],
+        |_| (layout(&split::shape()), split::tracked().1),
+    );
+    assert_eq!(seen.read, ("(0 | 1)".to_owned(), 1));
+    let seen = steps(
+        |_| {},
+        vec![cmd("d", CMD_ALT), Step::Click("Split pane")],
+        |_| layout(&split::shape()),
+    );
+    assert_eq!(
+        seen.read, "((0 | 2) / 1)",
+        "the first pane's button splits the first pane, not the focused one"
+    );
+}
+
+#[test]
 fn arrows_move_focus_and_swap_panes_and_zoom_shows_one() {
     if !in_window("panes::arrows_move_focus_and_swap_panes_and_zoom_shows_one") {
         return;

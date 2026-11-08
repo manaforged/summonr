@@ -54,6 +54,12 @@ fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
         .accessible(CLOSE_TERMINAL);
         items.push(super::super::tip(CLOSE_TERMINAL, None, button.into()));
     }
+    let pane = app.clone();
+    let button = sigil::prelude::icon_button(sigil::icons::Icon::Columns2, move || {
+        super::super::split::split_app(&pane)
+    })
+    .accessible(SPLIT_PANE);
+    items.push(super::super::tip(SPLIT_PANE, Some("⌘D"), button.into()));
     if split {
         let close = app.clone();
         let button = sigil::prelude::icon_button(sigil::icons::Icon::X, move || {
@@ -66,6 +72,7 @@ fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
 }
 
 const CLOSE_PANE: &str = "Close pane";
+const SPLIT_PANE: &str = "Split pane";
 const CLOSE_TERMINAL: &str = "Close terminal";
 
 /// The agent's title and repo, shown in the strip while the sidebar is hidden.

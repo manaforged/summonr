@@ -257,16 +257,27 @@ fn close_focused() {
     close(at);
 }
 
-/// Closes the pane that shows `app`.
-pub(super) fn close_app(app: &App) {
-    if let Some(at) = with(|split| {
+fn position(app: &App) -> Option<usize> {
+    with(|split| {
         split
             .panes
             .iter()
             .position(|pane| pane.app.cmd.same_channel(&app.cmd))
     })
     .flatten()
-    {
+}
+
+/// Opens a new agent in a pane beside the one that shows `app`.
+pub(super) fn split_app(app: &App) {
+    if let Some(at) = position(app) {
+        focus(at);
+    }
+    open();
+}
+
+/// Closes the pane that shows `app`.
+pub(super) fn close_app(app: &App) {
+    if let Some(at) = position(app) {
         close(at);
     }
 }

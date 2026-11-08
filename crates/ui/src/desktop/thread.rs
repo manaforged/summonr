@@ -62,6 +62,7 @@ fn reading(child: NodeBuilder, grow: bool) -> NodeBuilder {
 }
 
 pub(super) fn main_col(app: App) -> NodeBuilder {
+    let pointer = super::will::Pointer::default();
     let input = app.clone();
     let transcript_app = app.clone();
     let empty = {
@@ -70,7 +71,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
             watch.overlay().is_none() && watch.model.get().entries.only_notes().is_some()
         })
     };
-    container()
+    let col = container()
         .layout(
             LayoutStyle::flex_column()
                 .grow(1.0)
@@ -168,7 +169,8 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                     }
                 }),
         )
-        .child(super::will::layer(&app))
+        .child(super::will::layer(&app, &pointer));
+    super::will::track(col, &pointer)
 }
 
 fn empty_home() -> NodeBuilder {

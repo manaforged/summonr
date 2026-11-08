@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, ControlSize, JustifyContent, LayoutStyle, NodeBuilder, Paint, Position, Radius,
-    Signal, Widget, button, container, signal,
+    AlignItems, ControlSize, FlexWrap, JustifyContent, LayoutStyle, NodeBuilder, Paint, Position,
+    Radius, Signal, Widget, button, container, signal,
 };
 use summonr_agent::prefs::{Prefs, Reaction, Tint};
 
@@ -15,13 +15,18 @@ const STAGE: f32 = 160.0;
 const SHOWN: f32 = 72.0;
 
 /// The moods the preview can show, with their button labels.
-const TRIES: [(&str, Mood); 6] = [
+const TRIES: [(&str, Mood); 11] = [
     ("Idle", Mood::Idle),
+    ("Summon", Mood::Summoned),
+    ("Notice", Mood::Notice),
+    ("Typing", Mood::Typing),
+    ("Thinking", Mood::Thinking),
     ("Working", Mood::Working),
-    ("Listening", Mood::Listening),
-    ("Done", Mood::Pleased),
-    ("Failed", Mood::Drooping),
-    ("Needs you", Mood::Asking),
+    ("Needs you", Mood::Needs),
+    ("Done", Mood::Passed),
+    ("Failed", Mood::Failed),
+    ("Stopped short", Mood::Stopped),
+    ("Doze", Mood::Doze),
 ];
 
 pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
@@ -50,6 +55,7 @@ fn tries(mood: Signal<Mood>) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .gap(S)
+                .flex_wrap(FlexWrap::Wrap)
                 .align_items(AlignItems::Center),
         )
         .children_reactive(move || {
@@ -88,12 +94,28 @@ fn reactions(app: &App) -> NodeBuilder {
 
 const fn reaction_label(reaction: Reaction) -> (&'static str, &'static str) {
     match reaction {
-        Reaction::Type => ("Listen", "Lean in while you type"),
-        Reaction::Send => ("Hop", "Jump when you send a message"),
-        Reaction::Stop => ("Flinch", "Shut his eyes when you stop the agent"),
-        Reaction::Finish => ("Smile", "Brighten when a turn finishes"),
-        Reaction::Fail => ("Droop", "Sag when a turn fails"),
-        Reaction::Ask => ("Look up", "Tilt his head while the agent needs you"),
+        Reaction::Look => (
+            "Follow the pointer",
+            "His eyes follow your pointer around the window",
+        ),
+        Reaction::Type => ("Read along", "Lean toward the text while you type"),
+        Reaction::Send => ("Hop", "Hop when you send, then think and work"),
+        Reaction::Finish => (
+            "Brighten",
+            "Brighten with a small spark burst when work finishes well",
+        ),
+        Reaction::Fail => ("Flinch", "Flinch, then squash and dim when work fails"),
+        Reaction::Stop => ("Tilt", "Tilt, unsure, when you stop the agent"),
+        Reaction::Ask => (
+            "Glance",
+            "Glance aside with an amber dot while the agent needs you",
+        ),
+        Reaction::Hover => (
+            "Notice",
+            "Widen his eyes and lift a little when you hover him",
+        ),
+        Reaction::Poke => ("Poke", "Hop with a spark burst when you click him"),
+        Reaction::Doze => ("Doze", "Close his eyes after 12 seconds alone"),
     }
 }
 

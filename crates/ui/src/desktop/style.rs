@@ -95,19 +95,45 @@ pub(super) const FOCUS_RING: Token = Token::Accent9;
 /// Will's size where he floats over the main column.
 pub(super) const WILL: f32 = 48.0;
 
-/// Will's edge, mid, core and eyes for `tint` on a light or dark theme.
-pub(super) const fn will_colors(tint: Tint, light: bool) -> [Rgba8; 4] {
-    match (tint, light) {
-        (Tint::Auto, true) => will_colors(Tint::Flame, true),
-        (Tint::Auto, false) => will_colors(Tint::Wisp, false),
-        (Tint::Wisp, false) => [hex(0x3b7bff), hex(0xaac8ff), hex(0xf4f6ff), hex(0x05050a)],
-        (Tint::Wisp, true) => [hex(0x1d5be6), hex(0x93b9ee), hex(0xf6f9ff), hex(0x1c1d1a)],
-        (Tint::Flame, false) => [hex(0xf0652b), hex(0xf6a54a), hex(0xfff3d6), hex(0x1a0f08)],
-        (Tint::Flame, true) => [hex(0xd9541f), hex(0xf0a048), hex(0xfff4dc), hex(0x1c1d1a)],
-        (Tint::Foxfire, false) => [hex(0x2fbf71), hex(0x9ee8bf), hex(0xf0fff4), hex(0x04100a)],
-        (Tint::Foxfire, true) => [hex(0x16934f), hex(0x86d6a8), hex(0xf2fff6), hex(0x1c1d1a)],
-        (Tint::Arcane, false) => [hex(0x8b5cf6), hex(0xd4b4ff), hex(0xfbf4ff), hex(0x0a0514)],
-        (Tint::Arcane, true) => [hex(0x6d3fd6), hex(0xbf9bf2), hex(0xfaf5ff), hex(0x1c1d1a)],
+/// Will's paints for one tint on one theme.
+#[derive(Clone, Copy)]
+pub(super) struct Ink {
+    pub(super) edge: Rgba8,
+    pub(super) mid: Rgba8,
+    pub(super) core: Rgba8,
+    pub(super) eye: Rgba8,
+    pub(super) glow: Rgba8,
+    pub(super) warn: Rgba8,
+    pub(super) bad: Rgba8,
+}
+
+/// Will's paints for `tint` on a light or dark theme.
+pub(super) const fn will_ink(tint: Tint, light: bool) -> Ink {
+    let [edge, mid, core, eye, glow] = match (tint, light) {
+        (Tint::Auto, true) => return will_ink(Tint::Flame, true),
+        (Tint::Auto, false) => return will_ink(Tint::Wisp, false),
+        (Tint::Wisp, false) => [0x4f86e8, 0xaac8ff, 0xf4f6ff, 0x05050a, 0x6aa0ff],
+        (Tint::Wisp, true) => [0x4084d6, 0x93b9ee, 0xf6f9ff, 0x1c1d1a, 0x4084d6],
+        (Tint::Flame, false) => [0xf0652b, 0xf6a54a, 0xfff3d6, 0x1a0f08, 0xff8a4a],
+        (Tint::Flame, true) => [0xd9541f, 0xf0a048, 0xfff4dc, 0x1c1d1a, 0xd9541f],
+        (Tint::Foxfire, false) => [0x2fbf71, 0x9ee8bf, 0xf0fff4, 0x04100a, 0x3ad6b8],
+        (Tint::Foxfire, true) => [0x16934f, 0x86d6a8, 0xf2fff6, 0x1c1d1a, 0x16934f],
+        (Tint::Arcane, false) => [0x8b5cf6, 0xd4b4ff, 0xfbf4ff, 0x0a0514, 0xa070ff],
+        (Tint::Arcane, true) => [0x6d3fd6, 0xbf9bf2, 0xfaf5ff, 0x1c1d1a, 0x6d3fd6],
+    };
+    let [warn, bad] = if light {
+        [0xa87a12, 0xb03a2e]
+    } else {
+        [0xdcc85a, 0xdc5a5a]
+    };
+    Ink {
+        edge: hex(edge),
+        mid: hex(mid),
+        core: hex(core),
+        eye: hex(eye),
+        glow: hex(glow),
+        warn: hex(warn),
+        bad: hex(bad),
     }
 }
 

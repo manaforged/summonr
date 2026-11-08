@@ -97,17 +97,25 @@ pub enum Reaction {
     Finish,
     Ask,
     Type,
+    Look,
+    Hover,
+    Poke,
+    Doze,
 }
 
 impl Reaction {
     /// Every reaction, in the order Settings lists them.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 10] = [
+        Self::Look,
         Self::Type,
         Self::Send,
-        Self::Stop,
         Self::Finish,
         Self::Fail,
+        Self::Stop,
         Self::Ask,
+        Self::Hover,
+        Self::Poke,
+        Self::Doze,
     ];
 
     /// The reaction's name in the config file.
@@ -119,6 +127,10 @@ impl Reaction {
             Self::Finish => "finish",
             Self::Ask => "ask",
             Self::Type => "type",
+            Self::Look => "look",
+            Self::Hover => "hover",
+            Self::Poke => "poke",
+            Self::Doze => "doze",
         }
     }
 }

@@ -1,9 +1,10 @@
+mod body;
 mod mood;
+mod rig;
 mod shape;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use sigil::prelude::{
@@ -15,11 +16,11 @@ use sigil::widgets::MenuItem;
 
 pub(super) use mood::Mood;
 
-use self::mood::{Mind, Pose};
-use self::shape::Frame;
+use self::body::Body;
+use self::mood::{Mind, Shot};
 use super::App;
 use super::settings::Page;
-use super::style::{WILL, will_colors};
+use super::style::{WILL, will_ink};
 
 /// How often a moving Will redraws.
 const PERIOD: Duration = Duration::from_millis(33);
@@ -29,18 +30,15 @@ const SETTLE: Duration = Duration::from_millis(250);
 const EDGE: f32 = 8.0;
 /// How far the pointer moves before a press becomes a drag, in points.
 const SLOP: f32 = 3.0;
-/// The resting flicker period; a pose with a shorter one sways faster.
-const CALM: f32 = 2.6;
-/// Spring stiffness and damping for pose changes: a short ease with a little overshoot.
-const SPRING: (f32, f32) = (180.0, 14.0);
-/// How long a blink keeps the eyes shut, and the shortest and longest gaps between blinks.
-const BLINK: (Duration, f32, f32) = (Duration::from_millis(110), 2.4, 6.0);
-/// How long one keystroke lifts Will, and by how much on the 16 grid.
-const TICK: (Duration, f32) = (Duration::from_millis(70), -0.7);
+/// How much larger than his box Will's drawing is, so embers, sparks and the dot have room.
+const ROOM: f32 = 1.5;
+/// How far down his box the middle of his body sits.
+const MIDDLE: f32 = 0.6;
 const SETTINGS: &str = "Will settings…";
 const HIDE: &str = "Hide Will";
 
-static CLOCK: OnceLock<Instant> = OnceLock::new();
+/// The last pointer position over the main column, in window points.
+pub(super) type Pointer = Rc<Cell<Option<(f32, f32)>>>;
 
 /// Where a drawn Will takes his mood from.
 #[derive(Clone)]
@@ -57,16 +55,32 @@ impl Source {
         }
     }
 
-    fn typed_at(&self) -> Option<Instant> {
+    fn shots(&self) -> Vec<(Shot, Instant)> {
         match self {
-            Self::Live(mind) => *mind.typed_at.borrow(),
-            Self::Fixed(_) => None,
+            Self::Live(mind) => mind.shots(),
+            Self::Fixed(_) => Vec::new(),
+        }
+    }
+
+    fn look(&self, app: &App) -> (f32, f32) {
+        match self {
+            Self::Live(mind) => mind.look(app),
+            Self::Fixed(_) => (0.0, 0.0),
         }
     }
 }
 
+/// Records where the pointer is over `node` so Will's eyes can follow it.
+pub(super) fn track(node: NodeBuilder, pointer: &Pointer) -> NodeBuilder {
+    let pointer = Rc::clone(pointer);
+    node.pointer_move_capture(move |event| {
+        let at = event.window_position;
+        pointer.set(Some((at.x, at.y)));
+    })
+}
+
 /// Will over the main column while the Will setting is on; the user drags him anywhere.
-pub(super) fn layer(app: &App) -> NodeBuilder {
+pub(super) fn layer(app: &App, pointer: &Pointer) -> NodeBuilder {
     let model = app.model;
     let live = signal(None::<(f32, f32)>);
     let room = room(app);
@@ -78,8 +92,18 @@ pub(super) fn layer(app: &App) -> NodeBuilder {
             fit(held.unwrap_or(saved), [most.0, most.1][axis])
         })
     };
+    let (right, bottom) = (spot(0), spot(1));
     let shown = derived(move || model.with(|model| model.prefs.will));
-    let mind = Mind::watch(app);
+    let place = Rc::new(move || {
+        let view = untrack(|| sigil::app::viewport_size().get());
+        let (right, bottom) = untrack(|| (right.get(), bottom.get()));
+        (
+            view.width - right - WILL / 2.0,
+            view.height - bottom - WILL * (1.0 - MIDDLE),
+            WILL,
+        )
+    });
+    let mind = Mind::watch(app, Rc::clone(pointer), place);
     let app = app.clone();
     let body = container()
         .layout(LayoutStyle::block().shrink(0.0))
@@ -91,8 +115,8 @@ pub(super) fn layer(app: &App) -> NodeBuilder {
                 Vec::new()
             }
         });
-    let beside = spacer().animate_width(spot(0));
-    let below = spacer().animate_height(spot(1));
+    let beside = spacer().animate_width(right);
+    let below = spacer().animate_height(bottom);
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -156,14 +180,14 @@ fn grip(
     let moving = untrack(|| app.model.with(|model| model.prefs.animations));
     let held = Rc::new(Cell::new(None::<(f32, f32, f32, f32)>));
     let (press, drag, model, save) = (Rc::clone(&held), Rc::clone(&held), app.model, app.clone());
-    let (enter, leave) = (mind.hover, mind.hover);
+    let (enter, poke, watched) = (mind.clone(), mind.clone(), app.clone());
+    let touched = watched.clone();
     let body = container()
         .role(Role::Image)
         .label("Will")
         .layout(LayoutStyle::block().width(WILL).height(WILL))
         .child(art(app, WILL, moving, Source::Live(mind.clone())))
-        .pointer_enter(move |_| enter.set(true))
-        .pointer_leave(move |_| leave.set(false))
+        .pointer_enter(move |_| enter.enter(&watched))
         .pointer_down(move |event| {
             if event.button != Some(MouseButton::Left) {
                 return;
@@ -201,6 +225,8 @@ fn grip(
             }
             if let Some((right, bottom)) = live.peek() {
                 save.flip(|prefs| prefs.will_spot = [right.round() as i32, bottom.round() as i32]);
+            } else {
+                poke.poke(&touched);
             }
             live.set(None);
             event.stop_propagation();
@@ -229,113 +255,42 @@ fn art(app: &App, size: f32, moving: bool, source: Source) -> NodeBuilder {
         let tint = model.with(|model| model.prefs.will_tint) as u64;
         light << 16 | tint << 8 | seen.mood(&watch) as u64
     });
-    let body = RefCell::new(Body::new());
+    let body = RefCell::new(Body::new(Mood::Idle));
     let (theme, app) = (Theme::dark(), app.clone());
+    let drawn = size * ROOM;
     let paint = sigil::widgets::canvas(move |scene, area| {
-        let (mood, tint) =
-            untrack(|| (source.mood(&app), model.with(|model| model.prefs.will_tint)));
-        let pose = mood.pose();
-        let drawn = body.borrow_mut().step(&pose, moving, source.typed_at());
-        let colors = will_colors(tint, appearance.peek().light());
-        shape::draw(scene, area, &drawn, colors, &theme);
+        let (mood, tint, shots, eyes) = untrack(|| {
+            (
+                source.mood(&app),
+                model.with(|model| model.prefs.will_tint),
+                source.shots(),
+                source.look(&app),
+            )
+        });
+        let frame = body.borrow_mut().step(mood, moving, &shots, eyes);
+        let ink = will_ink(tint, appearance.peek().light());
+        shape::draw(scene, area, &frame, &ink, &theme);
     })
     .redraw_on(if moving { frame } else { look })
-    .layout(LayoutStyle::block().width(size).height(size));
+    .layout(LayoutStyle::block().width(drawn).height(drawn));
+    let paint = container()
+        .hittable(false)
+        .layout(
+            LayoutStyle::block()
+                .position(Position::Absolute)
+                .inset_left((size - drawn) / 2.0)
+                .inset_top((size - drawn) / 2.0)
+                .width(drawn)
+                .height(drawn),
+        )
+        .child(paint);
     container()
-        .layout(LayoutStyle::block().width(size).height(size).shrink(0.0))
+        .layout(
+            LayoutStyle::block()
+                .position(Position::Relative)
+                .width(size)
+                .height(size)
+                .shrink(0.0),
+        )
         .child(paint)
-}
-
-/// Will's moving body: each pose value springs toward its target, and the flame flickers.
-struct Body {
-    at: [f32; 7],
-    speed: [f32; 7],
-    clock: f32,
-    last: Option<Instant>,
-    blink: Instant,
-}
-
-impl Body {
-    fn new() -> Self {
-        Self {
-            at: target(&Mood::Idle.pose()),
-            speed: [0.0; 7],
-            clock: 0.0,
-            last: None,
-            blink: Instant::now() + Duration::from_secs_f32(BLINK.1),
-        }
-    }
-
-    fn step(&mut self, pose: &Pose, moving: bool, typed_at: Option<Instant>) -> Frame {
-        let goal = target(pose);
-        let now = Instant::now();
-        let mut blink = 1.0;
-        let mut tick = 0.0;
-        if moving {
-            let dt = self
-                .last
-                .map_or(0.0, |last| now.duration_since(last).as_secs_f32().min(0.1));
-            self.spring(&goal, dt);
-            self.clock += dt * CALM / pose.flicker;
-            if now >= self.blink + BLINK.0 {
-                self.blink = now + Duration::from_secs_f32(gap(now));
-            }
-            if now >= self.blink {
-                blink = 0.1;
-            }
-            if typed_at.is_some_and(|at| now.duration_since(at) < TICK.0) {
-                tick = TICK.1;
-            }
-        } else {
-            self.at = goal;
-            self.speed = [0.0; 7];
-            self.clock = 0.0;
-        }
-        self.last = Some(now);
-        let [sx, sy, tilt, lift, fade, lx, ly] = self.at;
-        Frame {
-            scale: (sx, sy),
-            tilt,
-            lift: lift + tick,
-            fade,
-            eyes: pose.eyes,
-            look: (lx, ly),
-            blink,
-            time: moving.then_some(self.clock),
-        }
-    }
-
-    fn spring(&mut self, goal: &[f32; 7], dt: f32) {
-        const STEP: f32 = 1.0 / 120.0;
-        let (stiff, damp) = SPRING;
-        let mut left = dt;
-        while left > 0.0 {
-            let h = left.min(STEP);
-            for at in 0..7 {
-                let pull = stiff * (goal[at] - self.at[at]) - damp * self.speed[at];
-                self.speed[at] += pull * h;
-                self.at[at] += self.speed[at] * h;
-            }
-            left -= h;
-        }
-    }
-}
-
-const fn target(pose: &Pose) -> [f32; 7] {
-    [
-        pose.scale.0,
-        pose.scale.1,
-        pose.tilt,
-        pose.lift,
-        pose.fade,
-        pose.look.0,
-        pose.look.1,
-    ]
-}
-
-/// A gap before the next blink, spread between the shortest and longest from the clock.
-fn gap(now: Instant) -> f32 {
-    let start = *CLOCK.get_or_init(Instant::now);
-    let spread = (now.duration_since(start).subsec_micros() % 1000) as f32 / 1000.0;
-    BLINK.1 + (BLINK.2 - BLINK.1) * spread
 }

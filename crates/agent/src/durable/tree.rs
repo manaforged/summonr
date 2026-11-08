@@ -74,7 +74,7 @@ pub(crate) fn snapshot(
         let mut stamps = BTreeMap::new();
         let mut hashed = 0;
         let own = own_outputs();
-        for relative in listing(root, previous, scope) {
+        for relative in listing(root, previous, scope)? {
             let path = root.join(&relative);
             // complexity: bounded by the summonr state directories the driver excludes
             if exclude.iter().any(|exclude| path.starts_with(exclude)) {
@@ -247,32 +247,21 @@ pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
     paths
 }
 
-fn listing(root: &Path, previous: Option<&Snapshot>, scope: &[String]) -> Vec<PathBuf> {
-    if crate::diff::inside_git(root)
-        && let Ok(output) = crate::diff::git_output(
-            root,
-            &[],
-            &[
-                "ls-files",
-                "-z",
-                "--cached",
-                "--others",
-                "--exclude-standard",
-            ],
-            None,
-        )
-    {
-        return output
+fn listing(root: &Path, previous: Option<&Snapshot>, scope: &[String]) -> io::Result<Vec<PathBuf>> {
+    if crate::diff::inside_git(root) {
+        let args = ["ls-files", "-z", "--cached", "--others", "--exclude-standard"];
+        let output = crate::diff::git_output(root, &[], &args, None).map_err(io::Error::other)?;
+        return Ok(output
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty())
             .map(git_path)
-            .collect();
+            .collect());
     }
     let known = previous
         .into_iter()
         .flat_map(|previous| previous.files.keys());
     let paths: std::collections::BTreeSet<&String> = known.chain(scope).collect();
-    paths.into_iter().map(PathBuf::from).collect()
+    Ok(paths.into_iter().map(PathBuf::from).collect())
 }
 
 #[cfg(unix)]

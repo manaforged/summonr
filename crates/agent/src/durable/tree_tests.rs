@@ -147,3 +147,17 @@ fn a_folder_outside_git_is_never_walked_and_covers_what_the_session_touched() {
         "a known file that goes away is a change"
     );
 }
+
+#[test]
+fn a_git_workspace_git_cannot_list_stops_the_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join(".git"), "gitdir: missing\n").unwrap();
+    std::fs::write(root.join("new.txt"), "written by the agent").unwrap();
+    let result = snapshot(root, &[], None, &[]);
+    assert!(
+        result.is_err(),
+        "a listing git refused must not pass as an empty workspace: {:?}",
+        result.map(|snapshot| snapshot.files.keys().cloned().collect::<Vec<_>>())
+    );
+}

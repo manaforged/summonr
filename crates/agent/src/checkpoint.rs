@@ -154,7 +154,7 @@ impl Checkpoints {
         let mut paths: Vec<String> = read_text(&self.skip)?.lines().map(str::to_string).collect();
         let known = paths.len();
         let mut seen: std::collections::HashSet<String> = paths.iter().cloned().collect();
-        for path in crate::durable::tree::own_files(&self.root) {
+        for path in crate::durable::tree::own_files(&self.root)? {
             if seen.insert(path.clone()) {
                 paths.push(path);
             }

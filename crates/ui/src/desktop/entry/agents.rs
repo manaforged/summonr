@@ -1,7 +1,7 @@
 use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Widget, container};
 
 use super::super::style::{ACTIVE_DOT, DONE_DOT, FAILED_DOT, L, S, Text, XS, text};
-use crate::ToolState;
+use crate::{Outcome, ToolState};
 use crate::app::App;
 use crate::model::Agent;
 use crate::model::Entry;
@@ -49,12 +49,22 @@ fn rows_of(entry: &Entry, live: impl Fn(&str) -> Vec<Agent>) -> Vec<Row> {
 }
 
 fn finished(record: &ChildRecord) -> Row {
-    let (state, word, result) = match &record.state {
-        ChildState::Running => (ToolState::Running, "Running", None),
-        ChildState::Completed(result) => (ToolState::Ok, "Done", Some(result)),
-        ChildState::Aborted(result) => (ToolState::Failed, "Stopped", Some(result)),
-        ChildState::Failed(result) => (ToolState::Failed, "Failed", Some(result)),
-        ChildState::Interrupted(result) => (ToolState::Failed, "Interrupted", Some(result)),
+    let outcome = Outcome::of(&record.state);
+    let word = match outcome {
+        Outcome::Running => "Running",
+        Outcome::Done => "Done",
+        Outcome::Conflict => "Conflict",
+        Outcome::Kept => "Kept",
+        Outcome::Stopped => "Stopped",
+        Outcome::Failed => "Failed",
+        Outcome::Interrupted => "Interrupted",
+    };
+    let result = match &record.state {
+        ChildState::Running => None,
+        ChildState::Completed(result)
+        | ChildState::Aborted(result)
+        | ChildState::Failed(result)
+        | ChildState::Interrupted(result) => Some(result),
     };
     let result = result.and_then(|result| {
         let text = if result.text.trim().is_empty() {
@@ -68,7 +78,7 @@ fn finished(record: &ChildRecord) -> Row {
     });
     Row {
         title: Agent::title_of(&record.assignment),
-        state,
+        state: outcome.tool_state(),
         word,
         result,
     }
@@ -142,3 +152,7 @@ fn dot(state: ToolState) -> NodeBuilder {
         ToolState::Failed => FAILED_DOT,
     })
 }
+
+#[cfg(test)]
+#[path = "agents_tests.rs"]
+mod tests;

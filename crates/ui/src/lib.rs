@@ -69,3 +69,40 @@ enum ToolState {
     Ok,
     Failed,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Outcome {
+    Running,
+    Done,
+    Conflict,
+    Kept,
+    Stopped,
+    Failed,
+    Interrupted,
+}
+
+impl Outcome {
+    fn of(state: &summonr_agent::child::ChildState) -> Self {
+        use summonr_agent::child::ChildState;
+        use summonr_agent::tools::Hold;
+        match state {
+            ChildState::Running => Self::Running,
+            ChildState::Completed(result) => match result.kept.as_ref().map(|kept| kept.hold) {
+                Some(Hold::Conflict) => Self::Conflict,
+                Some(Hold::OffBase | Hold::Unreadable | Hold::Unremoved) => Self::Kept,
+                None => Self::Done,
+            },
+            ChildState::Aborted(_) => Self::Stopped,
+            ChildState::Failed(_) => Self::Failed,
+            ChildState::Interrupted(_) => Self::Interrupted,
+        }
+    }
+
+    fn tool_state(self) -> ToolState {
+        match self {
+            Self::Running => ToolState::Running,
+            Self::Done | Self::Conflict | Self::Kept => ToolState::Ok,
+            Self::Stopped | Self::Failed | Self::Interrupted => ToolState::Failed,
+        }
+    }
+}

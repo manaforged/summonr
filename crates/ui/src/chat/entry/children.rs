@@ -5,11 +5,11 @@ use super::super::{Agent, App, Call};
 use super::preview;
 use super::tools::{call_line, header, workspace_relative};
 use super::tree::{branch, label, tree};
-use crate::ToolState;
+use crate::{Outcome, ToolState};
 use crate::text_style::TextStyle;
 use sigil::prelude::Widget;
 use summonr_agent::child::{ChildRecord, ChildState};
-use summonr_agent::tools::{Builtin, Hold, Kept};
+use summonr_agent::tools::{Builtin, Kept};
 
 fn task_title(kid: &Agent, roots: &[String]) -> String {
     if kid.assignment.is_empty() {
@@ -138,17 +138,17 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
 }
 
 fn receipt_state(state: &ChildState) -> (ToolState, &'static str) {
-    match state {
-        ChildState::Running => (ToolState::Running, "running"),
-        ChildState::Completed(result) => match result.kept.as_ref().map(|kept| kept.hold) {
-            Some(Hold::Conflict) => (ToolState::Ok, "conflict"),
-            Some(Hold::OffBase | Hold::Unreadable | Hold::Unremoved) => (ToolState::Ok, "kept"),
-            None => (ToolState::Ok, "completed"),
-        },
-        ChildState::Aborted(_) => (ToolState::Failed, "aborted"),
-        ChildState::Failed(_) => (ToolState::Failed, "failed"),
-        ChildState::Interrupted(_) => (ToolState::Failed, "interrupted"),
-    }
+    let outcome = Outcome::of(state);
+    let word = match outcome {
+        Outcome::Running => "running",
+        Outcome::Done => "completed",
+        Outcome::Conflict => "conflict",
+        Outcome::Kept => "kept",
+        Outcome::Stopped => "aborted",
+        Outcome::Failed => "failed",
+        Outcome::Interrupted => "interrupted",
+    };
+    (outcome.tool_state(), word)
 }
 
 pub(super) fn receipt_card(

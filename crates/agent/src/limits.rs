@@ -41,6 +41,11 @@ impl Limits {
             })
     }
 
+    pub(crate) fn budget_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
+        let backoff = self.retry_policy(Reach::Remote).delay(retries);
+        retry_after.map_or(backoff, |secs| Duration::from_secs(secs).max(backoff))
+    }
+
     pub(crate) fn retry_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
         retry_after.map_or_else(
             || self.retry_policy(Reach::Remote).delay(retries),

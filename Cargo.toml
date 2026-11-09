@@ -33,7 +33,7 @@ harness = false
 
 [workspace.dependencies]
 base64 = "0.22"
-leyline = { package = "leyline-http", version = "0.1.4", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
+leyline = { package = "leyline-http", version = "0.2.0", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
 rand = { version = "0.9", default-features = false, features = ["os_rng"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
@@ -51,6 +51,7 @@ summonr-auth = { path = "crates/auth" }
 summonr-core = { path = "crates/core" }
 summonr-types = { path = "crates/types" }
 base64 = { workspace = true }
+bytes = "1"
 futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
 regex = { workspace = true }
 serde = { version = "1", features = ["derive"] }

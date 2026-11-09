@@ -240,11 +240,15 @@ fn well_formed(token: &str) -> bool {
     })
 }
 
-fn send_policy() -> leyline::RetryPolicy {
+fn send_policy() -> leyline::Retry {
     crate::limits::limits()
         .retry_policy(crate::limits::Reach::Remote)
-        .retry_on([leyline::RetryTrigger::Status(TOO_MANY)])
-        .allow_non_idempotent(true)
+        .when(|attempt| {
+            attempt
+                .status()
+                .is_some_and(|status| status.as_u16() == TOO_MANY)
+        })
+        .any_method(true)
 }
 
 pub(crate) fn split(text: &str, max: usize) -> Vec<String> {

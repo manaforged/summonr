@@ -21,29 +21,29 @@ impl Limits {
         summonr_core::table::embedded("limits", BUILT_IN)
     }
 
-    pub(crate) fn retry_policy(&self, reach: Reach) -> leyline::RetryPolicy {
+    pub(crate) fn retry_policy(&self, reach: Reach) -> leyline::Retry {
         self.retry_policy_for(reach, true)
     }
 
-    pub(crate) fn retry_policy_for(&self, reach: Reach, rate_limits: bool) -> leyline::RetryPolicy {
-        let mut triggers = vec![leyline::RetryTrigger::ServerError];
-        if rate_limits {
-            triggers.push(leyline::RetryTrigger::Status(429));
-        }
-        if reach == Reach::Remote {
-            triggers.push(leyline::RetryTrigger::ConnectionError);
-        }
-        leyline::RetryPolicy::transient()
-            .max_retries(self.retry_limit)
-            .initial_backoff(self.retry_base())
-            .max_backoff(self.retry_max())
-            .max_retry_after(self.retry_after_max())
-            .retry_on(triggers)
+    pub(crate) fn retry_policy_for(&self, reach: Reach, rate_limits: bool) -> leyline::Retry {
+        let remote = reach == Reach::Remote;
+        leyline::Retry::new(self.retry_limit)
+            .backoff(self.retry_base(), self.retry_max())
+            .max_wait(self.retry_after_max())
+            .when(move |attempt| match (attempt.status(), attempt.error()) {
+                (Some(status), _) => {
+                    status.is_server_error() || (rate_limits && status.as_u16() == 429)
+                }
+                (None, Some(error)) => {
+                    remote && error.is_retryable() && error.kind() != leyline::Kind::Timeout
+                }
+                (None, None) => false,
+            })
     }
 
     pub(crate) fn retry_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
         retry_after.map_or_else(
-            || self.retry_policy(Reach::Remote).backoff(retries),
+            || self.retry_policy(Reach::Remote).delay(retries),
             |secs| Duration::from_secs(secs).min(self.retry_after_max()),
         )
     }

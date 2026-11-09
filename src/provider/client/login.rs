@@ -34,7 +34,7 @@ impl Client {
                 }
             }
         }
-        let timeouts = leyline::TimeoutConfig::new()
+        let timeouts = leyline::Timeout::new()
             .total(crate::limits::limits().stream_total())
             .connect(crate::limits::limits().connect())
             .response_header(opts.idle_timeout)

@@ -286,7 +286,7 @@ impl Client {
             .retry(
                 crate::limits::limits()
                     .retry_policy_for(self.reach(), rate_limits)
-                    .allow_non_idempotent(true),
+                    .any_method(true),
             );
         for (key, value) in &wire::spec(self.wire).headers {
             request = request.header(key.as_str(), value.as_str());

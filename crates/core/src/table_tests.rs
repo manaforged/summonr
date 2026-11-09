@@ -8,7 +8,7 @@ struct Row {
 
 #[test]
 fn a_built_in_table_parses_into_its_type() {
-    let row: Row = embedded("sample", "name = \"read\"\nlimit = 3\n");
+    let row: Row = embedded("sample", r#"{"name":"read","limit":3}"#);
     assert_eq!(
         row,
         Row {
@@ -21,5 +21,5 @@ fn a_built_in_table_parses_into_its_type() {
 #[test]
 #[should_panic(expected = "the built-in sample table is invalid")]
 fn an_invalid_built_in_table_names_the_table() {
-    let _row: Row = embedded("sample", "name = \"read\"\nlimit = \"three\"\n");
+    let _row: Row = embedded("sample", r#"{"name":"read","limit":"three"}"#);
 }

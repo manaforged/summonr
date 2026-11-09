@@ -248,10 +248,8 @@ pub(crate) struct Rules {
     pub(crate) secrets: Secrets,
 }
 
-const BUILT_IN: &str = include_str!("rules.toml");
-
 fn load() -> Rules {
-    let mut rules: Rules = summonr_core::table::embedded("policy rule", BUILT_IN);
+    let mut rules: Rules = summonr_core::embedded!("policy rule", "policy/rules.toml");
     rules.index = rules
         .verbs
         .iter()

@@ -83,6 +83,10 @@ dunce = { workspace = true }
 jiff = "0.2.38"
 httparse = "1.10"
 
+[build-dependencies]
+serde_json = { workspace = true }
+toml = { workspace = true }
+
 [dev-dependencies]
 summonr-core = { path = "crates/core", features = ["test-home"] }
 fastrand = "2.5"

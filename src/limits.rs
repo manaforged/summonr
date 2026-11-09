@@ -10,15 +10,9 @@ pub(crate) const fn seconds(value: u64) -> Duration {
     Duration::from_secs(value)
 }
 
-const BUILT_IN: &str = include_str!("limits.toml");
-#[cfg(test)]
-const TEST: &str = include_str!("limits_test.toml");
-#[cfg(test)]
-const TEST_WINDOWS: &str = include_str!("limits_test_windows.toml");
-
 impl Limits {
     pub(crate) fn built_in() -> Self {
-        summonr_core::table::embedded("limits", BUILT_IN)
+        summonr_core::embedded!("limits", "limits.toml")
     }
 
     pub(crate) fn retry_policy(&self, reach: Reach) -> leyline::Retry {
@@ -74,11 +68,12 @@ fn load() -> Limits {
 
 #[cfg(test)]
 fn load() -> Limits {
-    let test = Limits::built_in().overlay(&summonr_core::table::embedded("test limits", TEST));
+    let test =
+        Limits::built_in().overlay(&summonr_core::embedded!("test limits", "limits_test.toml"));
     if cfg!(windows) {
-        test.overlay(&summonr_core::table::embedded(
+        test.overlay(&summonr_core::embedded!(
             "windows test limits",
-            TEST_WINDOWS,
+            "limits_test_windows.toml"
         ))
     } else {
         test

@@ -72,9 +72,8 @@ fn any(rules: &[Words], lower: &str) -> bool {
         .any(|rule| rule.matches(lower))
 }
 
-static MARKERS: LazyLock<Markers> = LazyLock::new(|| {
-    summonr_core::table::embedded("provider failure", include_str!("failures.toml"))
-});
+static MARKERS: LazyLock<Markers> =
+    LazyLock::new(|| summonr_core::embedded!("provider failure", "provider/client/failures.toml"));
 
 pub(super) fn markers() -> &'static Markers {
     &MARKERS

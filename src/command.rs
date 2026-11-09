@@ -104,8 +104,7 @@ pub mod table;
 fn commands() -> &'static Commands {
     static LOADED: OnceLock<Commands> = OnceLock::new();
     LOADED.get_or_init(|| {
-        let data: Data =
-            summonr_core::table::embedded("command", include_str!("command/commands.toml"));
+        let data: Data = summonr_core::embedded!("command", "command/commands.toml");
         let mut specs = Vec::new();
         for group in data.group {
             let title: &'static str = group.title.leak();

@@ -92,7 +92,8 @@ struct Wires {
 }
 
 static WIRES: LazyLock<Vec<WireSpec>> = LazyLock::new(|| {
-    summonr_core::table::embedded::<Wires>("wire", include_str!("wires.toml")).wire
+    let table: Wires = summonr_core::embedded!("wire", "provider/wire/wires.toml");
+    table.wire
 });
 
 pub(crate) fn spec(wire: Wire) -> &'static WireSpec {

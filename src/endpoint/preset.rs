@@ -118,8 +118,12 @@ mod row;
 use row::File;
 pub(crate) use row::wire;
 
+#[cfg(test)]
 pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
-    let File { mut preset, oauth } = summonr_core::table::parse(text)?;
+    rows(summonr_core::table::parse(text)?)
+}
+
+fn rows(File { mut preset, oauth }: File) -> std::result::Result<Vec<Preset>, String> {
     let mut seen = std::collections::BTreeSet::new();
     for row in &mut preset {
         row.check(&oauth)?;
@@ -137,14 +141,14 @@ pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
     Ok(preset)
 }
 
-const PRESETS: &str = include_str!("presets.toml");
-
 pub(super) fn listed() -> &'static [Preset] {
     static ROWS: OnceLock<Vec<Preset>> = OnceLock::new();
-    ROWS.get_or_init(|| match table(PRESETS) {
-        Ok(rows) => rows,
-        Err(error) => panic!("the built-in provider table is invalid: {error}"),
-    })
+    ROWS.get_or_init(
+        || match rows(summonr_core::embedded!("provider", "endpoint/presets.toml")) {
+            Ok(rows) => rows,
+            Err(error) => panic!("the built-in provider table is invalid: {error}"),
+        },
+    )
 }
 
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {

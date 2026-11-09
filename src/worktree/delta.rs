@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::{CHILDREN, Tree, checkout_dir, new_id};
 use crate::diff;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const SHARED: &[&str] = &["target", "node_modules"];
 const LINK_LISTS: &[&str] = &[".summonr/linked", ".agents/linked"];
@@ -82,14 +82,7 @@ fn seal(path: &Path, head: &str, snapshot: &str) -> Result<()> {
 }
 
 fn objects_dir(primary: &Path) -> Result<PathBuf> {
-    let text = diff::git_env(primary, &[], &["rev-parse", "--git-common-dir"])?;
-    let common = PathBuf::from(&text);
-    let common = if common.is_absolute() {
-        common
-    } else {
-        primary.join(common)
-    };
-    Ok(common.join("objects"))
+    Ok(super::common_dir(primary)?.join("objects"))
 }
 
 fn link_names(primary: &Path) -> Vec<String> {
@@ -128,12 +121,7 @@ fn exclude(dest: &Path, names: &[String]) -> Result<()> {
 fn overlay(primary: &Path, dest: &Path, names: &[String]) -> Result<()> {
     let patch = diff::git_output(primary, &[], &["diff", "--binary", "HEAD"], None)?;
     if !patch.is_empty() {
-        diff::git_output(
-            dest,
-            &[],
-            &["apply", "--binary", "--whitespace=nowarn", "-"],
-            Some(&patch),
-        )?;
+        diff::git_apply(dest, &patch, &[])?;
     }
     let listed = diff::git_paths(
         primary,

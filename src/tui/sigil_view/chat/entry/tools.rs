@@ -9,15 +9,15 @@ use super::{COMPACT_ROWS, patch_of, patch_path, patch_view, preview, wrap};
 use crate::prefs::{DiffLayout, ToolOutput};
 use crate::tools::Builtin;
 use crate::tui::ToolState;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
-pub(super) type Detail = Option<(String, Look)>;
+pub(super) type Detail = Option<(String, TextStyle)>;
 
-pub(in crate::tui::sigil_view) fn glyph(state: &ToolState) -> (&'static str, Look) {
+pub(in crate::tui::sigil_view) fn glyph(state: &ToolState) -> (&'static str, TextStyle) {
     match state {
-        ToolState::Running => ("○", Look::xs(Token::Gray11)),
-        ToolState::Ok => ("●", Look::xs(Token::Success11)),
-        ToolState::Failed => ("●", Look::xs(Token::Error11)),
+        ToolState::Running => ("○", TextStyle::xs(Token::Gray11)),
+        ToolState::Ok => ("●", TextStyle::xs(Token::Success11)),
+        ToolState::Failed => ("●", TextStyle::xs(Token::Error11)),
     }
 }
 
@@ -49,32 +49,30 @@ pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]
         .join(" ")
 }
 
-fn verb<'a>(name: &'a str, arg: &'a str) -> (&'a str, &'a str) {
-    (Builtin::of(name).map_or(name, |kind| kind.verb()), arg)
-}
-
 fn detail(name: &str, call: &Call, output: &str) -> Detail {
     match call.state {
         ToolState::Running => None,
-        ToolState::Failed => {
-            preview::exit(output).map(|code| (format!("exit {code}"), Look::xs(Token::Error11)))
-        }
+        ToolState::Failed => preview::exit(output)
+            .map(|code| (format!("exit {code}"), TextStyle::xs(Token::Error11))),
         ToolState::Ok => Builtin::is(name, Builtin::Read)
             .then(|| crate::tools::read_span(output))
             .flatten()
             .filter(|_| output.starts_with(call.arg.as_str()))
-            .map(|(from, to)| (format!("{from}-{to}"), Look::xs(Token::Gray10))),
+            .map(|(from, to)| (format!("{from}-{to}"), TextStyle::xs(Token::Gray10))),
     }
 }
 
 pub(super) fn call_line(verb: &str, arg: &str, detail: Detail, strong: bool) -> NodeBuilder {
     let (head, body) = if strong {
         (
-            Look::xs(Token::Gray12).bold(),
-            Look::xs(Token::Gray12).mono(),
+            TextStyle::xs(Token::Gray12).bold(),
+            TextStyle::xs(Token::Gray12).mono(),
         )
     } else {
-        (Look::xs(Token::Gray11), Look::xs(Token::Gray11).mono())
+        (
+            TextStyle::xs(Token::Gray11),
+            TextStyle::xs(Token::Gray11).mono(),
+        )
     };
     let mut row = container()
         .layout(
@@ -115,25 +113,18 @@ pub(super) fn header(state: &ToolState, words: NodeBuilder) -> NodeBuilder {
 pub(in crate::tui::sigil_view) fn flip(
     app: &App,
     index: usize,
-    call: Option<usize>,
+    at: usize,
 ) -> impl Fn(&mut PointerEvent) + 'static {
     let app = app.clone();
     move |event: &mut PointerEvent| {
         if event.button != Some(MouseButton::Left) {
             return;
         }
-        app.model_mut(|model| match call {
-            None => {
-                if let Some(Entry::Tool { expanded, .. }) = model.entries.get_mut(index) {
-                    *expanded = !*expanded;
-                }
-            }
-            Some(at) => {
-                if let Some(Entry::ToolGroup { calls, .. }) = model.entries.get_mut(index)
-                    && let Some(call) = calls.get_mut(at)
-                {
-                    call.expanded = !call.expanded;
-                }
+        app.model_mut(|model| {
+            if let Some(Entry::Tool { calls, .. }) = model.entries.get_mut(index)
+                && let Some(call) = calls.get_mut(at)
+            {
+                call.expanded = !call.expanded;
             }
         });
         event.stop_propagation();
@@ -184,7 +175,7 @@ pub(super) fn tool_card(
     layout: DiffLayout,
     app: &App,
     index: usize,
-    at: Option<usize>,
+    at: usize,
 ) -> NodeBuilder {
     if Builtin::is(name, Builtin::Task)
         && let Some(card) = super::children::task_card(app, &call.id)
@@ -205,7 +196,7 @@ pub(super) fn tool_card(
         return super::children::starting_card();
     }
     let shown = workspace_relative(&call.arg, &app.roots);
-    let (verb, arg) = verb(name, &shown);
+    let (verb, arg) = (tool_label(name), shown.as_str());
     let output = preview::plain(&call.output)
         .lines()
         .map(|line| workspace_relative(line, &app.roots))
@@ -243,10 +234,9 @@ fn group_state(calls: &[Call]) -> ToolState {
 
 fn group_title<'a>(name: &'a str, calls: &[Call]) -> (&'a str, String) {
     if !Builtin::is(name, Builtin::Read) {
-        let verb = Builtin::of(name).map_or(name, |kind| kind.verb());
-        return (verb, format!("×{}", calls.len()));
+        return (tool_label(name), format!("×{}", calls.len()));
     }
-    ("Explored", crate::text::plural(calls.len(), "file"))
+    ("Explored", summonr_core::text::plural(calls.len(), "file"))
 }
 
 fn group_row(
@@ -260,13 +250,16 @@ fn group_row(
 ) -> NodeBuilder {
     let output = preview::plain(&call.output);
     let shown = workspace_relative(&call.arg, &app.roots);
-    let (verb, arg) = verb(name, &shown);
+    let (verb, arg) = (tool_label(name), shown.as_str());
     let detail = match call.state {
-        ToolState::Failed => Some((preview::summary(&output, true), Look::xs(Token::Error11))),
+        ToolState::Failed => Some((
+            preview::summary(&output, true),
+            TextStyle::xs(Token::Error11),
+        )),
         _ => detail(name, call, &output),
     };
     let line =
-        branch(at == 0, call_line(verb, arg, detail, false)).pointer_up(flip(app, index, Some(at)));
+        branch(at == 0, call_line(verb, arg, detail, false)).pointer_up(flip(app, index, at));
     let expanded = call.expanded || tools == ToolOutput::Full;
     let column = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
@@ -293,10 +286,22 @@ pub(super) fn group_card(
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .child(header(
             &group_state(calls),
-            call_line(title, "", Some((counts, Look::xs(Token::Gray10))), true),
+            call_line(
+                title,
+                "",
+                Some((counts, TextStyle::xs(Token::Gray10))),
+                true,
+            ),
         ));
     for (at, call) in calls.iter().enumerate() {
         card = card.child(group_row(name, call, at, tools, layout, app, index));
     }
     card
+}
+
+pub(in crate::tui::sigil_view) fn tool_label(name: &str) -> &str {
+    match crate::tools::Builtin::of(name) {
+        Some(kind) => kind.verb(),
+        None => name,
+    }
 }

@@ -80,7 +80,7 @@ jobs:
         run: cargo test --workspace --locked --no-fail-fast -- --test-threads=2
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -109,7 +109,7 @@ jobs:
             libc: musl
           - os: ubuntu-24.04-arm
             libc: gnu
-          - os: macos-14
+          - os: macos-15
           - os: windows-2025
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10

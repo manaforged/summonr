@@ -38,15 +38,28 @@ impl Model {
                 ),
             ));
         }
-        let out = self.completion_tokens.saturating_sub(self.reasoning_tokens);
-        if self.reasoning_tokens > 0 {
-            rows.push((
-                "think".to_string(),
-                crate::provider::compact(self.reasoning_tokens),
-            ));
+        let reasoning = self.tokens(|round| round.reasoning);
+        let out = self
+            .tokens(|round| round.completion)
+            .saturating_sub(reasoning);
+        if reasoning > 0 {
+            rows.push(("think".to_string(), crate::provider::compact(reasoning)));
         }
         if out > 0 {
             rows.push(("out".to_string(), crate::provider::compact(out)));
+        }
+        for (name, chars) in [
+            ("system", self.snapshot.prompt_system),
+            ("schemas", self.snapshot.prompt_schemas),
+            ("tools", self.snapshot.prompt_tools),
+            ("other", self.snapshot.prompt_other),
+        ] {
+            if chars > 0 {
+                rows.push((
+                    name.to_string(),
+                    format!("{} chars", crate::provider::compact(chars as u64)),
+                ));
+            }
         }
         rows
     }
@@ -56,28 +69,27 @@ impl Model {
         if let Some(last) = self.last_hit() {
             rows.push(("last".to_string(), format!("{last}%")));
         }
-        if self.cached_tokens > 0 {
-            rows.push((
-                "cached".to_string(),
-                crate::provider::compact(self.cached_tokens),
-            ));
+        let (cached, prompt) = (
+            self.tokens(|round| round.cached),
+            self.tokens(|round| round.prompt),
+        );
+        if cached > 0 {
+            rows.push(("cached".to_string(), crate::provider::compact(cached)));
         }
-        if self.prompt_tokens > 0 {
-            rows.push((
-                "in".to_string(),
-                crate::provider::compact(self.prompt_tokens),
-            ));
-            let fresh = self.prompt_tokens.saturating_sub(self.cached_tokens);
+        if prompt > 0 {
+            rows.push(("in".to_string(), crate::provider::compact(prompt)));
+            let fresh = prompt.saturating_sub(cached);
             rows.push(("fresh".to_string(), crate::provider::compact(fresh)));
         }
         rows
     }
 
     fn cache_hit(&self) -> u64 {
-        if self.prompt_tokens == 0 {
+        let prompt = self.tokens(|round| round.prompt);
+        if prompt == 0 {
             return 0;
         }
-        self.cached_tokens.min(self.prompt_tokens) * 100 / self.prompt_tokens.max(1)
+        self.tokens(|round| round.cached).min(prompt) * 100 / prompt.max(1)
     }
 
     fn last_hit(&self) -> Option<u64> {

@@ -1,0 +1,103 @@
+window_after = [
+    "maximum allowed length (",
+    "maximum context length is ",
+    "maximum number of tokens allowed (",
+    "available context size (",
+    "context window of ",
+    "context limit of ",
+    "maximum prompt length (",
+    "max context length: ",
+]
+
+missing_model = [
+    { all = ["model"], any = ["not found", "not exist", "unknown", "invalid", "not supported"] },
+]
+
+plan_cap = "subscription_sharing_usage_limit_exceeded"
+plan_settings = "https://chatgpt.com/settings/usage"
+
+named = [
+    { marker = "subscription_sharing_usage_limit_exceeded", kind = "usage_limit" },
+    { marker = "subscription_sharing_user_not_eligible", kind = "http" },
+    { marker = "subscription_sharing_unsupported_capability", kind = "http" },
+    { marker = "subscription_sharing_route_not_supported", kind = "http" },
+    { marker = "subscription_sharing_invalid_user", kind = "authentication" },
+    { marker = "subscription_sharing_usage_unavailable", kind = "server" },
+    { marker = "subscription_sharing_user_unavailable", kind = "server" },
+    { marker = "chatpass_v2_scope_not_authorized", kind = "http" },
+    { marker = "chatpass_v2_invalid_authorization_context", kind = "http" },
+    { marker = "insufficient_quota", kind = "usage_limit" },
+    { marker = "hit your session limit", kind = "usage_limit" },
+]
+
+malformed_tool_call = [
+    { all = ["tool call", "arguments", "json"], any = ["parse", "invalid", "valid"] },
+]
+
+context_overflow = [
+    { all = ["maximum allowed length"] },
+    { all = ["maximum context length"] },
+    { all = ["maximum number of tokens"] },
+    { all = ["prompt is too long"] },
+    { all = ["available context size"] },
+    { all = ["context limit"] },
+    { all = ["context window"] },
+    { all = ["too many tokens"] },
+    { all = ["context"], any = ["length", "too long", "exceed"] },
+    { all = ["input length", "exceed"] },
+]
+
+status = [
+    { marker = "overload", code = 503 },
+    { marker = "unavailable", code = 503 },
+    { marker = "server", code = 503 },
+    { marker = "api_error", code = 503 },
+    { marker = "internal", code = 503 },
+    { marker = "rate", code = 429 },
+    { marker = "exhausted", code = 429 },
+]
+
+[stop.anthropic]
+"*" = "stop"
+tool_use = "tool_calls"
+max_tokens = "length"
+model_context_window_exceeded = "length"
+refusal = "blocked"
+pause_turn = "blocked"
+
+[stop.completions]
+"*" = "other"
+stop = "stop"
+tool_calls = "tool_calls"
+length = "length"
+model_context_window_exceeded = "length"
+content_filter = "blocked"
+sensitive = "blocked"
+network_error = "server"
+insufficient_system_resource = "server"
+
+[stop.gemini]
+"*" = "other"
+STOP = "stop"
+MAX_TOKENS = "length"
+SAFETY = "blocked"
+RECITATION = "blocked"
+LANGUAGE = "blocked"
+BLOCKLIST = "blocked"
+PROHIBITED_CONTENT = "blocked"
+SPII = "blocked"
+IMAGE_SAFETY = "blocked"
+IMAGE_PROHIBITED_CONTENT = "blocked"
+IMAGE_RECITATION = "blocked"
+ESCALATION = "blocked"
+PUP_LIMITED_DISABLED = "blocked"
+MALFORMED_FUNCTION_CALL = "malformed_tool_call"
+UNEXPECTED_TOOL_CALL = "http"
+TOO_MANY_TOOL_CALLS = "http"
+MISSING_THOUGHT_SIGNATURE = "http"
+MALFORMED_RESPONSE = "http"
+
+[stop.responses]
+completed = "stop"
+max_output_tokens = "length"
+content_filter = "blocked"

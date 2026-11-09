@@ -32,8 +32,12 @@ impl App {
             Msg::Usage(rows) => self.usage.update(rows),
             msg @ Msg::Models { .. } => self.models_loaded(msg),
             Msg::ModelNote(note) => self.picker.note.set(note),
-            Msg::Defaulted(seat) => self.defaulted(seat),
-            Msg::Workflow { name, names, seats } => self.workflow_loaded(name, names, seats),
+            Msg::Defaulted(selection) => self.defaulted(selection),
+            Msg::Workflow {
+                name,
+                names,
+                selections,
+            } => self.workflow_loaded(name, names, selections),
             msg @ Msg::Patch { .. } => self.patch_loaded(msg),
             msg => self.apply_msg(msg),
         }
@@ -97,8 +101,7 @@ impl App {
     fn changed_files(&self, paths: &[String]) {
         let viewing = self.model.get().view.as_ref().map(|view| view.path.clone());
         match self.layout.peek().secondary {
-            Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
-            Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
+            Some(Pane::Files | Pane::Diff) => self.load(),
             Some(Pane::View) => {
                 if let Some(path) = viewing.filter(|path| paths.contains(path)) {
                     drop(self.cmd.send(Cmd::View(self.root(), path)));
@@ -147,48 +150,51 @@ impl App {
             return;
         }
         if !self.picker.open.peek() {
-            self.picker.groups.update(|held| held.extend(groups));
-            if self.auth.open.peek() {
-                self.picker.choices.set(std::rc::Rc::new(rows));
-                self.picker.facts.set(std::rc::Rc::new(facts));
-            }
+            batch(|| {
+                self.picker.groups.update(|held| held.extend(groups));
+                if self.auth.open.peek() {
+                    self.picker.choices.set(Rc::new(rows));
+                    self.picker.facts.set(Rc::new(facts));
+                }
+            });
             return;
         }
         let snapshot = self.model.peek().snapshot.clone();
-        let current = Seat::new(snapshot.endpoint, snapshot.model);
-        let seated = !current.model.is_empty();
-        let mut counts = [usize::from(seated), pinned, recent];
+        let current = ModelId::new(snapshot.endpoint, snapshot.model);
+        let selected = !current.model.is_empty();
+        let mut counts = [usize::from(selected), pinned, recent];
         if let Some(at) = rows.iter().position(|row| *row == current) {
             rows.remove(at);
             let slot = if at < pinned { 1 } else { 2 };
             counts[slot] = counts[slot].saturating_sub(usize::from(at < pinned + recent));
         }
-        if seated {
+        if selected {
             rows.insert(0, current.clone());
         }
         let selected = self.picked_model();
-        self.picker.facts.set(Rc::new(facts));
-        self.picker.causes.update(|held| {
-            held.retain(|name, _| !groups.contains_key(name));
-            held.extend(causes);
+        batch(|| {
+            self.picker.facts.set(Rc::new(facts));
+            self.picker.causes.update(|held| {
+                held.retain(|name, _| !groups.contains_key(name));
+                held.extend(causes);
+            });
+            self.picker.groups.update(|held| held.extend(groups));
+            self.picker.choices.set(Rc::new(rows));
+            self.picker.recent.set(counts);
         });
-        self.picker.groups.update(|held| held.extend(groups));
-        self.picker.choices.set(Rc::new(rows));
-        self.picker.recent.set(counts);
-        self.rank();
         let shown = self.picker.shown.peek();
         let sel = [selected.unwrap_or_default(), current]
             .iter()
             .find_map(|wanted| shown.iter().position(|row| row == wanted))
             .unwrap_or(0);
-        self.picker.sel.set(sel);
+        self.picker.list.cursor.set(sel);
         self.picker.loading.set(loading);
         self.picker.error.set(error);
     }
 
     fn login_opened(&self, note: String) {
         self.begin_auth(None);
-        if self.unseated() {
+        if self.unconfigured() {
             let rows = self.filtered_auth();
             let ready = crate::endpoint::set_up();
             let at = rows
@@ -196,7 +202,7 @@ impl App {
                 .position(|choice| ready.contains(&choice.name))
                 .or_else(|| rows.iter().position(|choice| !choice.keyless()))
                 .unwrap_or(0);
-            self.auth.sel.set(at);
+            self.auth.list.cursor.set(at);
         }
         self.auth
             .step
@@ -238,7 +244,7 @@ impl App {
                 model.entries.push(Entry::System(format!(
                     "saved {} · {}",
                     file.display(),
-                    crate::text::plural(lines, "line")
+                    summonr_core::text::plural(lines, "line")
                 )));
                 saved = viewed && editing;
             }
@@ -251,7 +257,7 @@ impl App {
         });
         if saved {
             self.view_saved.set(text);
-            self.discard_armed.set(false);
+            self.discard_armed.set(None);
         }
     }
 
@@ -259,12 +265,12 @@ impl App {
         &self,
         name: Option<String>,
         names: Vec<String>,
-        mut seats: Vec<Option<String>>,
+        mut selections: Vec<Option<String>>,
     ) {
         self.workflow.name.set(name.unwrap_or_default());
         self.workflow.names.set(names);
-        seats.resize(Role::ALL.len(), None);
-        self.workflow.seats.set(seats);
+        selections.resize(Role::ALL.len(), None);
+        self.workflow.selections.set(selections);
     }
 
     pub(in crate::tui::sigil_view) fn approval_answer(&self, answer: crate::runtime::GrantAnswer) {

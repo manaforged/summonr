@@ -29,7 +29,7 @@ impl Listing {
 
 fn file(key: &str, extension: &str) -> Option<PathBuf> {
     Some(
-        crate::prompt::summonr_home()
+        summonr_core::dirs::summonr_home()
             .ok()?
             .join("mcp")
             .join(format!("{key}.{extension}")),
@@ -86,7 +86,7 @@ pub(super) fn forget(name: &str) {
         return;
     };
     let stem = stem(name);
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+    for entry in summonr_core::walk::children(&dir) {
         let path = entry.path();
         let owned = path
             .file_stem()

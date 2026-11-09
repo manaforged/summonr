@@ -1,5 +1,7 @@
 use serde_json::{Value, json};
 
+use super::config::Server;
+
 pub(super) struct Tool {
     pub(super) alias: String,
     pub(super) name: String,
@@ -35,6 +37,22 @@ impl Tool {
             name,
         })
     }
+}
+
+pub(super) fn offered<'a>(
+    server: &'a Server,
+    items: &'a [Value],
+) -> impl Iterator<Item = (&'a Value, Tool)> + 'a {
+    items
+        .iter()
+        .filter_map(|item| Tool::parse(&server.name, item).map(|tool| (item, tool)))
+        .filter(|(_, tool)| {
+            server
+                .allow
+                .as_ref()
+                // complexity: bounded by a BTreeSet lookup, O(log n)
+                .is_none_or(|allow| allow.contains(&tool.name))
+        })
 }
 
 #[cfg(test)]

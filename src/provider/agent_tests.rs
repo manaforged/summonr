@@ -3,6 +3,9 @@ use std::os::unix::fs::PermissionsExt;
 use super::super::{Client, CompletionRequest, Message, Partial, Provider, Role, StopReason};
 use crate::provider::{ToolCall, ToolFunction, ToolKind};
 
+#[path = "agent_tests/auth_tests.rs"]
+mod auth_tests;
+
 const STUB: &str = r#"#!/bin/sh
 log="$0.log"
 printf '%s\n' "$@" > "$0.args"
@@ -70,15 +73,15 @@ while take; do
 done
 "#;
 
-pub(super) fn seat_at(dir: &std::path::Path, script: &str) -> Client {
+pub(super) fn client_at(dir: &std::path::Path, script: &str) -> Client {
     let stub = dir.join("claude");
     std::fs::write(&stub, script).unwrap();
     std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let mut seat =
+    let mut selection =
         crate::endpoint::resolve(Some("claude"), Some("claude-opus-5-5"), crate::Need::Config)
             .unwrap();
-    seat.base_url = Some(stub.display().to_string());
-    Client::connect(&seat).unwrap()
+    selection.base_url = Some(stub.display().to_string());
+    Client::connect(&selection).unwrap()
 }
 
 pub(super) fn said(dir: &std::path::Path) -> Vec<String> {
@@ -106,7 +109,7 @@ pub(super) fn reply(messages: &mut Vec<Message>, next: &str) {
 #[tokio::test(flavor = "multi_thread")]
 async fn two_turns_share_one_claude_process() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), PLAIN);
+    let client = client_at(dir.path(), PLAIN);
     let mut earlier = Message::user("earlier answer");
     earlier.role = Role::Assistant;
     let mut messages = vec![
@@ -147,7 +150,7 @@ async fn two_turns_share_one_claude_process() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_plan_turn_runs_summonr_tools_through_the_sdk_bridge() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), STUB);
+    let client = client_at(dir.path(), STUB);
     let tools = [read_tool()];
     let mut messages = vec![Message::system("sys"), Message::user("read a.txt")];
 
@@ -256,17 +259,17 @@ pub(super) fn runs(dir: &std::path::Path) -> Vec<String> {
 async fn claude_code_never_sees_an_api_key() {
     let unset = crate::endpoint::env_unset("claude");
     for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
-        assert!(unset.contains(&key), "{key} reaches Claude Code");
+        assert!(
+            unset.iter().any(|name| name == key),
+            "{key} reaches Claude Code"
+        );
     }
     let cwd = std::env::current_dir().unwrap();
-    let mut process = crate::rpc::start(&crate::rpc::Launch {
-        program: "sh",
-        args: &["-c", "printf %s \"${HOME-absent}\""],
-        env: &[],
-        unset: &["HOME"],
-        cwd: &cwd,
-        base: crate::rpc::Env::Inherit,
-        stderr: crate::rpc::Stderr::Discard,
+    let mut process = crate::process::start(crate::process::Spec {
+        remove: vec!["HOME".into()],
+        cwd: Some(cwd),
+        stderr: crate::process::Io::Null,
+        ..crate::process::Spec::new("sh", ["-c", "printf %s \"${HOME-absent}\""])
     })
     .unwrap();
     let mut seen = String::new();
@@ -288,7 +291,7 @@ sleep 20
 #[tokio::test(flavor = "multi_thread")]
 async fn a_malformed_control_request_fails_the_turn() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), MALFORMED);
+    let client = client_at(dir.path(), MALFORMED);
     let messages = vec![Message::system("sys"), Message::user("hi")];
     let turn = tokio::time::timeout(
         std::time::Duration::from_secs(10),
@@ -303,7 +306,7 @@ async fn a_malformed_control_request_fails_the_turn() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_rewritten_history_starts_a_fresh_thread() {
     let dir = tempfile::tempdir().unwrap();
-    let client = seat_at(dir.path(), PLAIN);
+    let client = client_at(dir.path(), PLAIN);
     let mut first = vec![Message::system("sys"), Message::user("long history")];
     client
         .stream(&ask(&first, &[]), &mut Partial::default())

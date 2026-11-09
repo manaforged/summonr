@@ -11,21 +11,17 @@ pub(crate) enum Pipe {
 impl Pipe {
     pub(crate) fn apply(self, text: &str) -> String {
         let lines: Vec<&str> = text.lines().collect();
-        let (keep, skipped) = match self {
-            Pipe::Head(n) => (n.min(lines.len()), lines.len().saturating_sub(n)),
-            Pipe::Tail(n) => (n.min(lines.len()), lines.len().saturating_sub(n)),
-        };
+        let (Pipe::Head(keep) | Pipe::Tail(keep)) = self;
+        let skipped = lines.len().saturating_sub(keep);
         if skipped == 0 {
             return text.trim_end().to_string();
         }
-        let mut kept: Vec<String> = match self {
-            Pipe::Head(_) => lines[..keep].iter().map(|l| l.to_string()).collect(),
-            Pipe::Tail(_) => lines[lines.len() - keep..]
-                .iter()
-                .map(|l| l.to_string())
-                .collect(),
+        let mut kept = match self {
+            Pipe::Head(_) => lines[..keep].to_vec(),
+            Pipe::Tail(_) => lines[skipped..].to_vec(),
         };
-        kept.push(format!("[{skipped} lines clipped]"));
+        let mark = format!("[{skipped} lines clipped]");
+        kept.push(&mark);
         kept.join("\n")
     }
 }
@@ -48,8 +44,8 @@ impl ReadArgs {
         }
     }
 
-    pub(crate) fn to_json(&self) -> String {
-        serde_json::json!(self).to_string()
+    pub(crate) fn value(&self) -> serde_json::Value {
+        serde_json::json!(self)
     }
 }
 
@@ -89,7 +85,7 @@ fn unsupported(command: &str) -> bool {
         || command.contains(" --bytes")
 }
 
-fn pipe_stage(command: &str) -> Option<Pipe> {
+pub(super) fn pipe_stage(command: &str) -> Option<Pipe> {
     let mut words = command.split_whitespace();
     let verb = words.next()?.rsplit('/').next()?;
     let n = match (words.next(), words.next(), words.next()) {

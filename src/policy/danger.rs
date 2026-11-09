@@ -4,8 +4,8 @@ use super::shell::{command_word, interpreter, shell};
 use super::verbs::{Rule, SubRule};
 use super::walk::{Step, heredocs, resolve, walk, without_heredocs};
 use super::{
-    Block, Gate, Hazard, INQUIRY_FLAGS, TEXT_HAZARDS, any_hit, builtin_deny, catastrophic,
-    subcommand, unquoted, verb_row, write_block,
+    Block, Gate, Hazard, any_hit, builtin_deny, catastrophic, rules, subcommand, unquoted,
+    verb_row, write_block,
 };
 
 pub(crate) fn danger(
@@ -61,10 +61,8 @@ fn inquiry(args: &[String]) -> bool {
                 .starts_with(['>', '<'])
         })
         .collect();
-    !asked.is_empty()
-        && asked
-            .iter()
-            .all(|arg| INQUIRY_FLAGS.contains(&arg.as_str()))
+    // complexity: bounded by one BTreeSet lookup per argument
+    !asked.is_empty() && asked.iter().all(|arg| rules().inquiry_flags.contains(*arg))
 }
 
 fn risky(step: &Step, workspace: &Path, gate: Gate) -> Option<&'static str> {
@@ -72,10 +70,15 @@ fn risky(step: &Step, workspace: &Path, gate: Gate) -> Option<&'static str> {
     let args = &step.argv()[1..];
     let cwd = step.cwd.as_deref();
     let lower = step.text.to_ascii_lowercase();
-    if let Some((_, reason)) = TEXT_HAZARDS.iter().find(|(text, _)| lower.contains(text)) {
-        return Some(reason);
+    if let Some(hazard) = rules()
+        .text_hazards
+        .iter()
+        // complexity: bounded by text_hazards in rules.toml
+        .find(|hazard| lower.contains(&hazard.text))
+    {
+        return Some(hazard.reason.as_str());
     }
-    match verb_row(&verb)?.hazard {
+    match &verb_row(&verb)?.hazard {
         Hazard::None => None,
         Hazard::Args(_) if inquiry(args) => None,
         Hazard::Args(rules) => args_reason(rules, args, workspace, cwd, gate),
@@ -84,7 +87,7 @@ fn risky(step: &Step, workspace: &Path, gate: Gate) -> Option<&'static str> {
 }
 
 fn args_reason(
-    rules: &[Rule],
+    rules: &'static [Rule],
     args: &[String],
     workspace: &Path,
     cwd: Option<&Path>,
@@ -94,15 +97,15 @@ fn args_reason(
         .iter()
         .find(|rule| {
             rule.gate <= gate
-                && any_hit(rule.when, args)
+                && any_hit(&rule.when, args)
                 && !(rule.broad && narrow(args, workspace, cwd))
         })
-        .map(|rule| rule.reason)
+        .map(|rule| rule.reason.as_str())
 }
 
 fn sub_reason(
-    skip: &[&str],
-    rules: &[SubRule],
+    skip: &std::collections::BTreeSet<String>,
+    rules: &'static [SubRule],
     args: &[String],
     gate: Gate,
 ) -> Option<&'static str> {
@@ -112,40 +115,14 @@ fn sub_reason(
     }
     rules
         .iter()
-        .find(|rule| rule.gate <= gate && rule.names.contains(&sub) && any_hit(rule.when, rest))
-        .map(|rule| rule.reason)
+        // complexity: bounded by one BTreeSet lookup per subcommand rule
+        .find(|rule| rule.gate <= gate && rule.names.contains(sub) && any_hit(&rule.when, rest))
+        .map(|rule| rule.reason.as_str())
 }
-
-const ROOTS: &[&str] = &[
-    "bin",
-    "boot",
-    "dev",
-    "etc",
-    "home",
-    "lib",
-    "lib32",
-    "lib64",
-    "opt",
-    "proc",
-    "root",
-    "run",
-    "sbin",
-    "srv",
-    "sys",
-    "usr",
-    "var",
-    "tmp",
-    "Applications",
-    "Library",
-    "System",
-    "Users",
-    "Volumes",
-    "private",
-];
 
 fn narrow(args: &[String], workspace: &Path, cwd: Option<&Path>) -> bool {
     let targets = found_roots(args);
-    let home = crate::config::home_dir().map(|home| super::paths::resolved(&home));
+    let home = summonr_core::dirs::home_dir().map(|home| super::paths::resolved(&home));
     let workspace = super::paths::resolved(workspace);
     let workspace = workspace.as_path();
     !targets.is_empty()
@@ -200,13 +177,11 @@ fn broad(path: &Path, workspace: &Path, home: Option<&Path>) -> bool {
             | Component::ParentDir => None,
         })
         .collect();
+    let roots = &rules().roots;
     let shallow = match parts.as_slice() {
         [] => true,
-        [first] => ROOTS.contains(&first.as_str()) || !path.is_absolute(),
-        [first, _] => matches!(
-            first.as_str(),
-            "usr" | "etc" | "var" | "opt" | "System" | "Library" | "private"
-        ),
+        [first] => roots.top.contains(first) || !path.is_absolute(),
+        [first, _] => roots.nested.contains(first),
         [_, _, _, ..] => false,
     };
     let guarded = |root: &Path| root.starts_with(path);

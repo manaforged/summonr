@@ -1,3 +1,5 @@
+use sigil::widgets::CursorEdge;
+
 use super::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -46,20 +48,15 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn hunk_move(&self, delta: isize) {
-        let count = self.hunks().len();
-        if count == 0 {
-            return;
-        }
-        let cursor = self.hunk_cursor.peek().min(count - 1) as isize;
-        self.hunk_cursor
-            .set((cursor + delta).clamp(0, count as isize - 1) as usize);
+        self.hunk_list
+            .shift(delta, self.hunks().len(), CursorEdge::Clamp);
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn current_hunk(&self) -> Option<(String, String)> {
         let path = self.diff_view.peek()?;
         let hunks = self.hunks();
-        let hunk = hunks.get(self.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))?;
+        let hunk = hunks.get(self.hunk_list.at(hunks.len()))?;
         Some((path, hunk.id.clone()))
     }
 
@@ -109,12 +106,10 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn file_revert(&self, path: &str) {
-        if self.revert_armed.peek().as_deref() != Some(path) {
-            self.revert_armed.set(Some(path.to_string()));
+        if !confirm(&self.revert_armed, path.to_string(), None) {
             self.refresh();
             return;
         }
-        self.revert_armed.set(None);
         self.hunk_mark(path, "", crate::hunks::Op::RejectFile);
     }
 
@@ -167,33 +162,6 @@ impl App {
                 })
             })
             .collect()
-    }
-
-    pub(in crate::tui::sigil_view) fn hunk_context(&self, index: usize) {
-        let Some(path) = self.diff_view.peek() else {
-            return;
-        };
-        let hunks = self.hunks();
-        let Some(hunk) = hunks.get(index) else {
-            return;
-        };
-        self.hunk_cursor.set(index);
-        self.pane_focus.set(true);
-        self.context.set(Some(Context {
-            col: 0,
-            row: 0,
-            cursor: 0,
-            target: FileRow {
-                path,
-                name: hunk.header.clone(),
-                depth: 0,
-                dir: false,
-                open: false,
-            },
-            kind: Pane::Diff,
-            hunk: Some(hunk.id.clone()),
-        }));
-        self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn note_start(&self, path: String, hunk: String) {

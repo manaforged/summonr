@@ -4,6 +4,13 @@ use std::path::{Path, PathBuf};
 
 use tempfile::NamedTempFile;
 
+mod doc;
+mod retain;
+mod stamp;
+pub(crate) use doc::{Codec, Doc, Encode, Invalid, Json, Lines, Toml, Wait, hold};
+pub(crate) use retain::{retain, retention};
+pub(crate) use stamp::{Stamp, forget, memo, settled, stamp};
+
 pub(crate) struct Staged<'a> {
     temp: NamedTempFile,
     path: &'a Path,
@@ -77,6 +84,17 @@ pub fn lock(path: &Path, wait: bool) -> io::Result<Option<File>> {
         Err(TryLockError::WouldBlock) => Ok(None),
         Err(TryLockError::Error(error)) => Err(error),
     }
+}
+
+/// Takes the lock beside `path`, waiting up to `limit` for a holder to let go.
+pub(crate) fn lock_within(path: &Path, limit: std::time::Duration) -> io::Result<Option<File>> {
+    if let Some(file) = lock(path, false)? {
+        return Ok(Some(file));
+    }
+    let (send, receive) = std::sync::mpsc::channel();
+    let owned = path.to_path_buf();
+    std::thread::spawn(move || drop(send.send(lock(&owned, true))));
+    receive.recv_timeout(limit).unwrap_or(Ok(None))
 }
 
 pub(crate) fn stage<'a>(path: &'a Path, bytes: &[u8], keep_mode: bool) -> io::Result<Staged<'a>> {

@@ -4,8 +4,9 @@ use std::path::Path;
 
 use sigil::prelude::Rgba8;
 
-use crate::error::{Error, Result};
+use super::canvas::rgb;
 use crate::prefs::{Background, Prefs};
+use summonr_core::error::{Error, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Palette {
@@ -264,10 +265,6 @@ pub(super) fn hex(value: &str) -> Result<Rgba8> {
         _ => return Err(invalid()),
     };
     Ok(color)
-}
-
-const fn rgb(r: u8, g: u8, b: u8) -> Rgba8 {
-    Rgba8 { r, g, b, a: 255 }
 }
 
 #[cfg(test)]

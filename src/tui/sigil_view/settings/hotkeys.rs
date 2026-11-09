@@ -1,7 +1,4 @@
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Tone, WidgetLayoutExt, container,
-    virtual_list,
-};
+use sigil::prelude::{NodeBuilder, Tone};
 
 use super::{App, canvas};
 use crate::prefs::Hotkey;
@@ -19,6 +16,8 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let state = app.clone();
+    let choose = app.clone();
+    let viewport = app.viewport;
     let hotkeys = app.model.peek().prefs.hotkeys.clone();
     Dialog::new(Size::Reading, "Hotkeys", Hints::new())
         .live_hints(move || {
@@ -38,80 +37,58 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .key(Key::Esc, "close")
             }
         })
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(canvas::overlay_gap()),
+        .child(super::dialog_body({
+            let note = app.hotkeys.note;
+            move || match note.get() {
+                text if text.is_empty() => Vec::new(),
+                text => vec![notice(text, Tone::Error)],
+            }
+        }))
+        .collection(
+            app.hotkeys.list,
+            move || {
+                let selected = paint.hotkeys.list.cursor.get().min(Hotkey::ALL.len() - 1);
+                let recording = paint.hotkeys.recording.get();
+                let armed = paint.hotkeys.armed.get();
+                let model = paint.model.get();
+                Ok(Hotkey::ALL
+                    .iter()
+                    .copied()
+                    .map(|action| {
+                        let binding = if recording && action == Hotkey::ALL[selected] {
+                            if armed {
+                                "press a letter".to_string()
+                            } else {
+                                "press ctrl+letter or ctrl+x, then a letter".to_string()
+                            }
+                        } else {
+                            model.prefs.hotkeys.label(action)
+                        };
+                        (action, binding)
+                    })
+                    .collect())
+            },
+            String::new,
+            move |len| {
+                Some((
+                    canvas::overlay_list_row(),
+                    canvas::overlay_shown(len, viewport.get().1),
+                ))
+            },
+            |(action, binding), active| {
+                pick(
+                    active,
+                    action.name(),
+                    format!("{binding} · {}", description(*action)),
                 )
-                .children_reactive(move || {
-                    let selected = paint.hotkeys.sel.get().min(Hotkey::ALL.len() - 1);
-                    let visible = canvas::overlay_shown(Hotkey::ALL.len(), paint.viewport.get().1);
-                    let recording = paint.hotkeys.recording.get();
-                    let armed = paint.hotkeys.armed.get();
-                    let note = paint.hotkeys.note.get();
-                    let rows: Vec<(Hotkey, String)> = {
-                        let model = paint.model.get();
-                        Hotkey::ALL
-                            .iter()
-                            .copied()
-                            .map(|action| {
-                                let binding = if recording && action == Hotkey::ALL[selected] {
-                                    if armed {
-                                        "press a letter".to_string()
-                                    } else {
-                                        "press ctrl+letter or ctrl+x, then a letter".to_string()
-                                    }
-                                } else {
-                                    model.prefs.hotkeys.label(action)
-                                };
-                                (action, binding)
-                            })
-                            .collect()
-                    };
-                    let source = paint.clone();
-                    let mut items: Vec<NodeBuilder> = Vec::new();
-                    if !note.is_empty() {
-                        items.push(notice(note, Tone::Error));
-                    }
-                    items.push(
-                        container().layout(LayoutStyle::block().fill_width()).child(
-                            virtual_list(rows, move |index, row: &(Hotkey, String)| {
-                                entry(source.clone(), index, row, selected)
-                            })
-                            .row_height(canvas::overlay_list_row())
-                            .height(canvas::overlay_list_row() * visible as f32)
-                            .viewport_height(canvas::overlay_list_row() * visible as f32)
-                            .scroll_into_view(selected),
-                        ),
-                    );
-                    items
-                }),
+            },
+            move || {
+                choose.hotkeys.recording.set(false);
+                choose.hotkeys.armed.set(false);
+                choose.edit_hotkey();
+            },
         )
         .build(app.hotkeys.open, app.viewport.peek().0, &hotkeys)
-}
-
-fn entry(
-    app: App,
-    index: usize,
-    (action, binding): &(Hotkey, String),
-    selected: usize,
-) -> NodeBuilder {
-    let choose = app.clone();
-    let active = index == selected;
-    pick(
-        active,
-        action.name().to_string(),
-        format!("{} · {}", binding, description(*action)),
-    )
-    .pointer_down(move |event| {
-        choose.hotkeys.recording.set(false);
-        choose.hotkeys.armed.set(false);
-        choose.hotkeys.sel.set(index);
-        choose.edit_hotkey();
-        event.stop_propagation();
-    })
 }
 
 const fn description(action: Hotkey) -> &'static str {

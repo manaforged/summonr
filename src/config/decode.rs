@@ -2,23 +2,24 @@ use std::path::Path;
 
 use serde::{Deserialize, Deserializer};
 
-use super::{File, tilde};
-use crate::endpoint::Wire;
-use crate::error::{Error, Result};
+use super::{File, OAuth, tilde};
+use summonr_core::error::{Error, Result};
+use summonr_types::endpoint::Wire;
 
 static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub(super) fn wire<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Option<Wire>, D::Error> {
-    Ok(Option::<String>::deserialize(deserializer)?.map(|name| Wire::parse(&name)))
+    Ok(Option::<String>::deserialize(deserializer)?
+        .map(|name| Wire::parse(&name).unwrap_or_default()))
 }
 
 fn bad(path: &Path, message: &str) -> Error {
     Error::Config(format!("{}: {message}", tilde(path)))
 }
 
-const RETIRED: &[&str] = &["last_endpoint", "plan_mode", "ban_comments", "ban_tests"];
+pub(super) const RETIRED: &[&str] = &["last_endpoint", "plan_mode", "ban_comments", "ban_tests"];
 
 pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
     let mut table: toml::Table = toml::from_str(text).map_err(|error| {
@@ -46,22 +47,7 @@ pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
 }
 
 pub(super) fn warn_unknown(path: &Path, file: &File) {
-    let unknown: Vec<String> = file
-        .other
-        .keys()
-        .cloned()
-        .chain(file.endpoint.iter().flat_map(|(name, row)| {
-            row.other
-                .keys()
-                .map(move |key| format!("endpoint.{name}.{key}"))
-        }))
-        .chain(file.provider.iter().flat_map(|(name, choice)| {
-            choice
-                .other
-                .keys()
-                .map(move |key| format!("provider.{name}.{key}"))
-        }))
-        .collect();
+    let unknown = unknown(file);
     if !unknown.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         eprintln!(
             "summonr: {} has unknown key{} {}. Check the spelling; summonr ignores {}",
@@ -71,6 +57,35 @@ pub(super) fn warn_unknown(path: &Path, file: &File) {
             if unknown.len() == 1 { "it" } else { "them" }
         );
     }
+}
+
+pub(super) fn unknown(file: &File) -> Vec<String> {
+    file.other
+        .keys()
+        .cloned()
+        .chain(file.endpoint.iter().flat_map(|(name, row)| {
+            row.other
+                .keys()
+                .map(move |key| format!("endpoint.{name}.{key}"))
+        }))
+        .chain(file.endpoint.iter().flat_map(|(name, row)| {
+            row.auth
+                .iter()
+                .flat_map(OAuth::unknown)
+                .map(move |(key, value)| format!("endpoint.{name}.auth.{key} = \"{value}\""))
+        }))
+        .chain(file.provider.iter().flat_map(|(name, choice)| {
+            choice
+                .other
+                .keys()
+                .map(move |key| format!("provider.{name}.{key}"))
+        }))
+        .chain(
+            file.limits
+                .iter()
+                .flat_map(|limits| limits.other.keys().map(|key| format!("limits.{key}"))),
+        )
+        .collect()
 }
 
 pub(super) fn validate(path: &Path, file: &File) -> Result<()> {

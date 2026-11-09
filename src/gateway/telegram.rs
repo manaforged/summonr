@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const BASE: &str = "https://api.telegram.org/bot";
 pub(crate) const MESSAGE_MAX: usize = 4096;
@@ -140,7 +140,7 @@ impl Bot {
     }
 
     fn failed(&self, name: &str, why: &str) -> Error {
-        let why = crate::text::redact(why, [self.token.as_str()]);
+        let why = summonr_core::text::redact(why, [self.token.as_str()]);
         Error::Tool(format!("telegram {name}: {why}"))
     }
 
@@ -240,11 +240,15 @@ fn well_formed(token: &str) -> bool {
     })
 }
 
-fn send_policy() -> leyline::RetryPolicy {
+fn send_policy() -> leyline::Retry {
     crate::limits::limits()
         .retry_policy(crate::limits::Reach::Remote)
-        .retry_on([leyline::RetryTrigger::Status(TOO_MANY)])
-        .allow_non_idempotent(true)
+        .when(|attempt| {
+            attempt
+                .status()
+                .is_some_and(|status| status.as_u16() == TOO_MANY)
+        })
+        .any_method(true)
 }
 
 pub(crate) fn split(text: &str, max: usize) -> Vec<String> {

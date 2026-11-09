@@ -75,6 +75,8 @@ struct Record {
     line: log::Line,
 }
 
+impl log::Fill for Record {}
+
 pub(super) struct Journals(Sidecar<Entry>);
 
 impl Journals {
@@ -107,57 +109,58 @@ impl Journals {
 }
 
 fn full(path: &Path, size: Option<u64>) -> Option<Entry> {
-    let records = log::records::<Record>(path).ok()?;
-    let mut entry = Entry {
+    let entry = Entry {
         size,
         resume: Some(Resume { model: None }),
         ..Entry::default()
     };
-    entry.add(records);
-    Some(entry)
+    extend(entry, path, 0)
 }
 
 fn grown(cached: &Entry, path: &Path, size: u64) -> Option<Entry> {
     cached.resume.as_ref()?;
-    let records = log::records_after::<Record>(path, cached.size?).ok()?;
-    let mut entry = cached.clone();
+    let mut entry = extend(cached.clone(), path, cached.size?)?;
     entry.size = Some(size);
-    entry.add(records);
+    Some(entry)
+}
+
+fn extend(mut entry: Entry, path: &Path, from: u64) -> Option<Entry> {
+    for record in log::records(path, from) {
+        entry.add(record.ok()?);
+    }
     Some(entry)
 }
 
 impl Entry {
-    fn add(&mut self, records: impl IntoIterator<Item = Record>) {
+    fn add(&mut self, record: Record) {
         let Some(resume) = self.resume.as_mut() else {
             return;
         };
-        for record in records {
-            let reported = record.reported;
-            let (model, usage, cost) = match record.line {
-                log::Line::Session { model, .. } => {
-                    resume.model = Some(model);
-                    continue;
-                }
-                log::Line::Assistant {
-                    model, usage, cost, ..
-                } => (model, usage, cost),
-                log::Line::Charge {
-                    model, usage, cost, ..
-                } if reported != Some(false) => (model, usage, cost),
-                _ => continue,
-            };
-            if usage.input == 0 && usage.output == 0 {
-                continue;
+        let reported = record.reported;
+        let (model, usage, cost) = match record.line {
+            log::Line::Session { model, .. } => {
+                resume.model = Some(model);
+                return;
             }
-            let model = if model.is_empty() {
-                resume.model.clone()
-            } else {
-                Some(model)
-            };
-            self.undated |= record.at == 0;
-            self.charges
-                .push(Charge::new(model, record.at, usage, cost));
+            log::Line::Assistant {
+                model, usage, cost, ..
+            } => (model, usage, cost),
+            log::Line::Charge {
+                model, usage, cost, ..
+            } if reported != Some(false) => (model, usage, cost),
+            _ => return,
+        };
+        if usage.input == 0 && usage.output == 0 {
+            return;
         }
+        let model = if model.is_empty() {
+            resume.model.clone()
+        } else {
+            Some(model)
+        };
+        self.undated |= record.at == 0;
+        self.charges
+            .push(Charge::new(model, record.at, usage, cost));
     }
 }
 

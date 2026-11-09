@@ -178,7 +178,7 @@ impl<P: Provider> Loop<P> {
     }
 
     fn child_refusal(&self, name: &str) -> Option<String> {
-        if self.depth == 0 {
+        if self.session.depth() == 0 {
             return None;
         }
         match Builtin::of(name) {
@@ -217,8 +217,11 @@ impl<P: Provider> Loop<P> {
         if is_mail_tool(name) {
             return Ok((self.mail_execute(call).map(ToolOutput::ok), None));
         }
-        let output = self.tools.execute_outcome(call).await;
-        Ok((self.with_grant(output, call, events, emit).await?, None))
+        let (output, usage) = self.run_or_wake(call, events, emit).await?;
+        Ok((
+            self.with_grant(output, call, events, emit).await?,
+            Some(usage),
+        ))
     }
 
     async fn heard(
@@ -274,8 +277,7 @@ impl<P: Provider> Loop<P> {
             )?;
         }
         self.session
-            .finish_tool(planned, text.as_str(), success, mutated, millis, patch)
-            .map_err(super::session_err)?;
+            .finish_tool(planned, text.as_str(), success, mutated, millis, patch)?;
         self.emit_records(events, emit)?;
         let todo = success && Builtin::is(&call.function.name, Builtin::Todo);
         let arguments = call.function.arguments.clone();
@@ -305,7 +307,7 @@ impl<P: Provider> Loop<P> {
                 self.push_event(events, emit, Event::Work { progress })
             }
             Err(crate::durable::driver::DriverError::NoWork) => Ok(()),
-            Err(error) => Err(super::session_err(error)),
+            Err(error) => Err(Error::from(error)),
         }
     }
 

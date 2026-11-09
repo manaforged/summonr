@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]

@@ -3,22 +3,23 @@ use std::path::Path;
 
 use super::store::{self, Job, Notify, Outcome, Run};
 use crate::Event;
-use crate::error::Result;
+use summonr_core::error::Result;
 
 const NO_ANSWER: &str = "(no answer)";
 const STILL_RUNNING: &str = "still running";
 const CHECK_FAILED: &str = "check failed";
 
 #[derive(Default)]
-pub(super) struct Report {
-    text: Option<String>,
-    aborted: Option<String>,
+pub(crate) struct Report {
+    pub(crate) session: Option<String>,
+    pub(crate) text: Option<String>,
+    pub(crate) aborted: Option<String>,
     check: Option<(String, bool)>,
     stopped: Option<String>,
 }
 
 impl Report {
-    pub(super) fn read(log: &Path) -> Self {
+    pub(super) fn load(log: &Path) -> Self {
         let mut report = Self::default();
         let Ok(file) = std::fs::File::open(log) else {
             return report;
@@ -27,15 +28,20 @@ impl Report {
             .lines()
             .map_while(std::result::Result::ok)
         {
-            if let Ok(event) = serde_json::from_str::<Event>(&line) {
-                report.see(event);
-            }
+            report.read(&line);
         }
         report
     }
 
+    pub(crate) fn read(&mut self, line: &str) {
+        if let Ok(event) = serde_json::from_str::<Event>(line) {
+            self.see(event);
+        }
+    }
+
     fn see(&mut self, event: Event) {
         match event {
+            Event::Session { id } => self.session = Some(id),
             Event::Assistant { text } if !text.trim().is_empty() => self.text = Some(text),
             Event::Aborted { reason, .. } => self.aborted = Some(reason),
             Event::Verify { command, passed } => self.check = Some((command, passed)),
@@ -87,7 +93,7 @@ impl Report {
 pub(super) fn render(job: &Job, run: &Run) -> Option<String> {
     let record = crate::jobs::load(&job.dir, run.job.as_deref()?).ok()?;
     let log = crate::jobs::log_path(&job.dir, &record);
-    let report = Report::read(&log);
+    let report = Report::load(&log);
     let fallback = match run.outcome {
         Outcome::Running => STILL_RUNNING,
         Outcome::Done
@@ -153,16 +159,19 @@ pub(super) fn notify(job: &Job, outcome: Outcome, reason: Option<&str>, paused: 
 #[cfg(target_os = "macos")]
 fn desktop(text: &str) {
     let quoted = text.replace('\\', "\\\\").replace('"', "\\\"");
-    quiet(std::process::Command::new("/usr/bin/osascript").args([
-        "-e",
-        &format!("display notification \"{quoted}\" with title \"summonr\""),
-    ]));
+    quiet(crate::process::Spec::new(
+        "/usr/bin/osascript",
+        [
+            "-e",
+            &format!("display notification \"{quoted}\" with title \"summonr\""),
+        ],
+    ));
 }
 
 #[cfg(target_os = "linux")]
 fn desktop(text: &str) {
     if let Some(program) = crate::askpass::on_path("notify-send") {
-        quiet(std::process::Command::new(program).args(["summonr", text]));
+        quiet(crate::process::Spec::new(program, ["summonr", text]));
     }
 }
 
@@ -170,12 +179,13 @@ fn desktop(text: &str) {
 fn desktop(_: &str) {}
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn quiet(command: &mut std::process::Command) {
-    drop(
-        command
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status(),
-    );
+fn quiet(spec: crate::process::Spec) {
+    if let Ok(mut child) = crate::process::spawn_blocking(crate::process::Spec {
+        stdin: crate::process::Io::Null,
+        stdout: crate::process::Io::Null,
+        stderr: crate::process::Io::Null,
+        ..spec
+    }) {
+        drop(child.wait());
+    }
 }

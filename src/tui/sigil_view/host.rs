@@ -16,15 +16,15 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use super::app::App;
 use super::model::Entry;
 use super::view::root;
-use crate::error::{Error, Result};
 use crate::provider::Client;
 use crate::runtime::Loop;
 use crate::tui::hub::{Factory, Started, start};
 use crate::tui::{Cmd, Info, Msg};
+use summonr_core::error::{Error, Result};
 
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use run::{start_tick, stop};
 
 mod edit;
-mod intake;
+pub(super) mod intake;
 pub(super) mod run;

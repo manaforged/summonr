@@ -10,8 +10,8 @@ impl ToolRegistry {
             .clear();
     }
 
-    pub(super) fn dedup_read(&self, arguments: &str, out: ToolOutput) -> ToolOutput {
-        let Some((path, served)) = served_range(arguments, &out.text) else {
+    pub(super) fn dedup_read(&self, args: &serde_json::Value, out: ToolOutput) -> ToolOutput {
+        let Some((path, served)) = served_range(args, &out.text) else {
             return out;
         };
         let stamp = std::fs::metadata(self.workspace.join(&path))
@@ -33,24 +33,19 @@ impl ToolRegistry {
         if entry.0 != stamp {
             *entry = (stamp, Vec::new());
         }
-        let mut cursor = served.0;
-        for &(a, b) in &entry.1 {
-            if a <= cursor {
-                cursor = cursor.max(b + 1);
+        let text = match omit_shown(&out.text, &entry.1) {
+            Omitted::Repeat => {
+                return ToolOutput {
+                    text: format!(
+                        "{path} lines {}-{} already shown by earlier reads; file unchanged",
+                        served.0, served.1
+                    ),
+                    ..out
+                };
             }
-            if cursor > served.1 {
-                break;
-            }
-        }
-        if cursor > served.1 {
-            return ToolOutput {
-                text: format!(
-                    "{path} lines {}-{} already shown by earlier reads; file unchanged",
-                    served.0, served.1
-                ),
-                ..out
-            };
-        }
+            Omitted::Partial(text) => text,
+            Omitted::Fresh => out.text,
+        };
         entry.1.push(served);
         entry.1.sort_unstable();
         let mut merged: Vec<(usize, usize)> = Vec::with_capacity(entry.1.len());
@@ -64,19 +59,95 @@ impl ToolRegistry {
             }
         }
         *entry = (entry.0, merged);
-        out
+        ToolOutput { text, ..out }
     }
 }
 
-fn served_range(arguments: &str, text: &str) -> Option<(String, (usize, usize))> {
-    let args: serde_json::Value = serde_json::from_str(arguments).ok()?;
+enum Omitted {
+    Fresh,
+    Repeat,
+    Partial(String),
+}
+
+fn omit_shown(text: &str, shown: &[(usize, usize)]) -> Omitted {
+    if shown.is_empty() {
+        return Omitted::Fresh;
+    }
+    let mut lines = text.lines();
+    let Some(header) = lines.next() else {
+        return Omitted::Fresh;
+    };
+    let Some((path, rest)) = header.split_once("  lines ") else {
+        return Omitted::Fresh;
+    };
+    let Some((_, total_rest)) = rest.split_once('/') else {
+        return Omitted::Fresh;
+    };
+    let total = total_rest.split_whitespace().next().unwrap_or(total_rest);
+    let mut kept = Vec::new();
+    let mut skipped = 0usize;
+    let mut tail = Vec::new();
+    let mut body = true;
+    for line in lines {
+        if body {
+            if let Some(number) = line_no(line) {
+                if covers(shown, number) {
+                    skipped += 1;
+                } else {
+                    kept.push(line);
+                }
+                continue;
+            }
+            body = false;
+        }
+        if !line.is_empty() {
+            tail.push(line);
+        }
+    }
+    if skipped == 0 {
+        return Omitted::Fresh;
+    }
+    if kept.is_empty() {
+        return Omitted::Repeat;
+    }
+    let Some(first) = line_no(kept[0]) else {
+        return Omitted::Fresh;
+    };
+    let Some(last) = kept.last().copied().and_then(line_no) else {
+        return Omitted::Fresh;
+    };
+    let mut out = format!("{path}  lines {first}-{last}/{total}  [{skipped} already shown]");
+    for line in kept {
+        out.push('\n');
+        out.push_str(line);
+    }
+    for line in tail {
+        out.push('\n');
+        out.push_str(line);
+    }
+    Omitted::Partial(out)
+}
+
+fn line_no(line: &str) -> Option<usize> {
+    let (n, _) = line.split_once(':')?;
+    if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    n.parse().ok()
+}
+
+fn covers(shown: &[(usize, usize)], number: usize) -> bool {
+    shown.iter().any(|&(a, b)| number >= a && number <= b)
+}
+
+fn served_range(args: &serde_json::Value, text: &str) -> Option<(String, (usize, usize))> {
     if args
         .get("op")
         .and_then(serde_json::Value::as_str)
         .is_some_and(|op| op != "file")
         || args.get("pattern").is_some()
         || args.get("paths").is_some()
-        || object_bool(&args, "tags")
+        || object_bool(args, "tags")
     {
         return None;
     }

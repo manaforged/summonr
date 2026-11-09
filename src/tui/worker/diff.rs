@@ -32,12 +32,12 @@ impl Worker {
     pub(super) fn tree_at(
         &self,
         path: &std::path::Path,
-    ) -> crate::error::Result<crate::worktree::Tree> {
+    ) -> summonr_core::error::Result<crate::worktree::Tree> {
         crate::worktree::list(self.loop_.workspace())?
             .into_iter()
             .find(|tree| tree.path == path)
             .ok_or_else(|| {
-                crate::error::Error::Config(format!("no worktree at {}", path.display()))
+                summonr_core::error::Error::Config(format!("no worktree at {}", path.display()))
             })
     }
 }

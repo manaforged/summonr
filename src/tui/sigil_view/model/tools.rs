@@ -2,6 +2,14 @@ use super::entry::linked;
 use super::*;
 
 impl Model {
+    pub(in crate::tui::sigil_view) fn entry_at(
+        &self,
+        index: usize,
+    ) -> (Option<Entry>, bool, Prefs) {
+        let live = self.busy_since.is_some() && index + 1 == self.entries.len();
+        (self.entries.get(index).cloned(), live, self.prefs.clone())
+    }
+
     pub(in crate::tui::sigil_view) fn start_tool(
         &mut self,
         id: String,
@@ -19,13 +27,13 @@ impl Model {
         }
         self.tools.insert(id.clone(), self.entries.len());
         self.entries.push(Entry::Tool {
-            id,
             name: name.clone(),
-            arg: arg.clone(),
-            state: ToolState::Running,
-            output: String::new(),
-            expanded: false,
-            patch: None,
+            calls: vec![Call::new(
+                id,
+                arg.clone(),
+                ToolState::Running,
+                String::new(),
+            )],
         });
         self.live_tool = Some((name, arg));
     }
@@ -36,68 +44,25 @@ impl Model {
         {
             return false;
         }
-        enum Tail {
-            Group,
-            Single,
+        let joins = matches!(
+            self.entries.last(),
+            Some(Entry::Tool { name: prior, calls })
+                if prior == name
+                    && (calls.len() > 1 || !matches!(calls[0].state, ToolState::Running))
+        );
+        if !joins {
+            return false;
         }
-        let last = self.entries.last();
-        let tail = if matches!(last, Some(Entry::ToolGroup { name: prior, .. }) if prior == name) {
-            Tail::Group
-        } else if matches!(
-            last,
-            Some(Entry::Tool {
-                name: prior,
-                state: ToolState::Ok | ToolState::Failed,
-                ..
-            }) if prior == name
-        ) {
-            Tail::Single
-        } else {
+        let index = self.entries.len().saturating_sub(1);
+        let Some(Entry::Tool { calls, .. }) = self.entries.last_mut() else {
             return false;
         };
-        let index = self.entries.len().saturating_sub(1);
-        match tail {
-            Tail::Group => {
-                let Some(Entry::ToolGroup { calls, .. }) = self.entries.last_mut() else {
-                    return false;
-                };
-                calls.push(Call::new(
-                    id.to_string(),
-                    arg,
-                    ToolState::Running,
-                    String::new(),
-                ));
-            }
-            Tail::Single => {
-                let Some(Entry::Tool {
-                    id: old_id,
-                    arg: old_arg,
-                    state: old_state,
-                    output: old_output,
-                    expanded,
-                    patch,
-                    ..
-                }) = self.entries.pop()
-                else {
-                    return false;
-                };
-                let calls = vec![
-                    Call {
-                        id: old_id,
-                        arg: old_arg,
-                        state: old_state,
-                        output: old_output,
-                        expanded,
-                        patch,
-                    },
-                    Call::new(id.to_string(), arg, ToolState::Running, String::new()),
-                ];
-                self.entries.push(Entry::ToolGroup {
-                    name: name.to_string(),
-                    calls,
-                });
-            }
-        }
+        calls.push(Call::new(
+            id.to_string(),
+            arg,
+            ToolState::Running,
+            String::new(),
+        ));
         self.tools.insert(id.to_string(), index);
         true
     }
@@ -114,24 +79,13 @@ impl Model {
         } else {
             ToolState::Failed
         };
-        if let Some(index) = self.tools.remove(id) {
-            if let Some(Entry::Tool {
-                state: stored,
-                output: body,
-                patch: shown,
-                ..
-            }) = self.entries.get_mut(index)
-            {
-                *stored = state;
-                *body = output;
-                *shown = patch;
-            } else if let Some(Entry::ToolGroup { calls, .. }) = self.entries.get_mut(index)
-                && let Some(call) = calls.iter_mut().find(|call| call.id == id)
-            {
-                call.state = state;
-                call.output = output;
-                call.patch = patch;
-            }
+        if let Some(index) = self.tools.remove(id)
+            && let Some(Entry::Tool { calls, .. }) = self.entries.get_mut(index)
+            && let Some(call) = calls.iter_mut().find(|call| call.id == id)
+        {
+            call.state = state;
+            call.output = output;
+            call.patch = patch;
         }
         self.live_tool = Some(("thinking".to_string(), String::new()));
     }

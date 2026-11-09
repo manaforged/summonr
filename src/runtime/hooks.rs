@@ -88,6 +88,17 @@ impl<P: Provider> Loop<P> {
         text
     }
 
+    pub(super) async fn pre_tool(&self, call: &ToolCall) -> Heard {
+        let (tool, input) = seen(call);
+        let payload = json!({
+            "event": "pre_tool",
+            "id": call.id,
+            "tool": tool,
+            "arguments": input,
+        });
+        self.hook(HookEvent::PreTool, Some(&tool), payload).await
+    }
+
     pub(super) async fn screen(
         &mut self,
         planned: Vec<Call>,
@@ -101,14 +112,7 @@ impl<P: Provider> Loop<P> {
         }
         let mut kept = (Vec::new(), Vec::new());
         for (planned, call) in planned.into_iter().zip(calls) {
-            let (tool, input) = seen(&call);
-            let payload = json!({
-                "event": "pre_tool",
-                "id": call.id,
-                "tool": tool,
-                "arguments": input,
-            });
-            let heard = self.hook(HookEvent::PreTool, Some(&tool), payload).await;
+            let heard = self.pre_tool(&call).await;
             for note in &heard.notes {
                 self.push_event(
                     events,
@@ -120,9 +124,7 @@ impl<P: Provider> Loop<P> {
             }
             match heard.blocked {
                 Some(reason) => {
-                    let blocked = Err(Error::Denied(format!(
-                        "the pre_tool hook blocked this call: {reason}"
-                    )));
+                    let blocked = Err(blocked(&reason));
                     self.finish_call(planned, call, (blocked, 0), messages, events, emit)
                         .await?;
                 }
@@ -134,6 +136,10 @@ impl<P: Provider> Loop<P> {
         }
         Ok(kept)
     }
+}
+
+pub(super) fn blocked(reason: &str) -> Error {
+    Error::Denied(format!("the pre_tool hook blocked this call: {reason}"))
 }
 
 pub(super) fn arguments(text: &str) -> Value {

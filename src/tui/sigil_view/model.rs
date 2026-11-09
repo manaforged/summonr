@@ -80,10 +80,6 @@ pub(super) struct Model {
     pub(super) recent: Vec<String>,
     tools: HashMap<String, usize>,
     pub(super) usage: Vec<Round>,
-    pub(super) prompt_tokens: u64,
-    pub(super) completion_tokens: u64,
-    pub(super) reasoning_tokens: u64,
-    pub(super) cached_tokens: u64,
     pub(super) unreported_tokens: u64,
     pub(super) rounds: usize,
     pub(super) speed: Speed,
@@ -107,6 +103,10 @@ impl Model {
             .then(|| self.usage.iter().filter_map(|round| round.cost).sum())
     }
 
+    pub(in crate::tui::sigil_view) fn tokens(&self, field: fn(&Round) -> u32) -> u64 {
+        self.usage.iter().map(|round| u64::from(field(round))).sum()
+    }
+
     pub(in crate::tui::sigil_view) fn commit_lines(&mut self) -> String {
         let len = self.entries.len();
         let last = len.saturating_sub(1);
@@ -117,10 +117,7 @@ impl Model {
                 || match &self.entries[index] {
                     Entry::Thinking(_) => index < last,
                     Entry::Assistant { done, .. } => *done && index < last,
-                    Entry::Tool { state, .. } => {
-                        index < last && !matches!(state, ToolState::Running)
-                    }
-                    Entry::ToolGroup { calls, .. } => {
+                    Entry::Tool { calls, .. } => {
                         index < last
                             && calls
                                 .iter()
@@ -172,10 +169,6 @@ impl Model {
             recent: Vec::new(),
             tools: HashMap::new(),
             usage: Vec::new(),
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            reasoning_tokens: 0,
-            cached_tokens: 0,
             unreported_tokens: 0,
             rounds: 0,
             speed: Speed::default(),
@@ -284,8 +277,8 @@ impl Model {
             Msg::Cleared => self.clear(),
             Msg::Reset => self.reset(),
             Msg::RunMode(mode) => {
-                self.snapshot.work = mode == crate::RunMode::Work;
-                self.snapshot.goal = mode == crate::RunMode::Goal;
+                self.snapshot.work = mode == crate::WorkKind::Steps;
+                self.snapshot.goal = mode == crate::WorkKind::Goal;
             }
             Msg::Settings(snapshot) => {
                 if (&snapshot.endpoint, &snapshot.model)
@@ -349,26 +342,14 @@ impl Model {
     }
 
     fn reset(&mut self) {
-        self.committed = 0;
-        self.entries.clear();
-        self.tools.clear();
-        self.ledger.clear();
-        self.child_todos.clear();
+        self.clear_transcript();
         self.todos_expanded = false;
         self.todos_offset = 0;
-        self.plan_current = None;
-        self.plan_total = 0;
-        self.plan_objective.clear();
         self.recent.clear();
         self.usage.clear();
-        self.prompt_tokens = 0;
-        self.completion_tokens = 0;
-        self.reasoning_tokens = 0;
-        self.cached_tokens = 0;
         self.unreported_tokens = 0;
         self.rounds = 0;
         self.live_tool = None;
-        self.agents.clear();
         self.agents_hidden.clear();
         self.speed = Speed::default();
         self.marks = None;

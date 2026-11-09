@@ -1,14 +1,8 @@
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-#[cfg(windows)]
-use process_wrap::tokio::{ChildWrapper, CommandWrap, JobObject};
-#[cfg(unix)]
-use tokio::process::Child;
-use tokio::process::Command;
-
-use crate::error::{Error, Result};
+use crate::process::{Env, Io, Spec};
+use summonr_core::error::{Error, Result};
 
 use super::ToolOutput;
 
@@ -20,40 +14,7 @@ pub(super) struct StartedCommand {
     pub(super) group: ProcessGroup,
 }
 
-#[cfg(unix)]
-pub(super) type CommandChild = Child;
-
-#[cfg(windows)]
-pub(super) struct CommandChild {
-    child: Box<dyn ChildWrapper>,
-    kill_on_drop: bool,
-}
-
-#[cfg(windows)]
-impl CommandChild {
-    pub(super) fn id(&self) -> Option<u32> {
-        self.child.id()
-    }
-
-    pub(super) async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
-        self.child.wait().await
-    }
-
-    fn start_kill(&mut self) -> std::io::Result<()> {
-        self.child.start_kill()
-    }
-}
-
-#[cfg(windows)]
-impl Drop for CommandChild {
-    fn drop(&mut self) {
-        if self.kill_on_drop
-            && let Err(error) = self.start_kill()
-        {
-            eprintln!("command cleanup failed: {error}");
-        }
-    }
-}
+pub(super) type CommandChild = crate::process::Child;
 
 pub(crate) struct ProcessGroup {
     pid: u32,
@@ -120,41 +81,26 @@ pub(super) fn spawn_command(
     let err = log
         .try_clone()
         .map_err(|error| Error::Tool(format!("cannot clone job log: {error}")))?;
-    let shell = crate::shell::program()?;
-    let args = crate::shell::arguments(script, cwd);
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let base = command_env();
-    let path = base
-        .iter()
-        .find_map(|(key, value)| (key == "PATH").then(|| value.clone()))
+    let path = command_env()
+        .into_iter()
+        .find_map(|(key, value)| (key == "PATH").then_some(value))
         .unwrap_or_default();
-    let mut cmd = Command::new(&shell);
-    cmd.args(&args)
-        .current_dir(cwd)
-        .env_clear()
-        .envs(base)
-        .envs(crate::askpass::env(&path))
-        .envs(env.iter().cloned())
-        .stdout(Stdio::from(log))
-        .stderr(Stdio::from(err))
-        .kill_on_drop(!background)
-        .stdin(Stdio::null());
-    #[cfg(unix)]
-    {
-        cmd.process_group(0);
-    }
-    #[cfg(unix)]
-    let child = cmd.spawn();
-    #[cfg(windows)]
-    let child = {
-        let mut command = CommandWrap::from(cmd);
-        command.wrap(JobObject);
-        command.spawn().map(|child| CommandChild {
-            child,
+    crate::process::spawn(
+        Spec {
+            cwd: Some(cwd.to_path_buf()),
+            base: Env::Clean,
+            stdin: Io::Null,
+            stdout: Io::File(log),
+            stderr: Io::File(err),
             kill_on_drop: !background,
-        })
-    };
-    child.map_err(|error| Error::Tool(format!("cannot start command: {error}")))
+            ..Spec::new(
+                summonr_core::shell::program()?,
+                summonr_core::shell::arguments(script, cwd),
+            )
+        }
+        .envs(crate::askpass::env(&path))
+        .envs(env.iter().cloned()),
+    )
 }
 
 pub(super) fn background_result(started: StartedCommand) -> ToolOutput {
@@ -168,14 +114,7 @@ pub(super) fn background_result(started: StartedCommand) -> ToolOutput {
     } = started;
     group.disarm();
     drop(child);
-    ToolOutput {
-        text: job_text(&id, pid, &log_path),
-        success: true,
-        mutated: false,
-        grant: None,
-        images: Vec::new(),
-        patch: None,
-    }
+    ToolOutput::ok(job_text(&id, pid, &log_path))
 }
 
 pub(super) fn job_text(id: &str, pid: u32, log_path: &std::path::Path) -> String {
@@ -225,6 +164,7 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
         "PROCESSOR_ARCHITECTURE",
         "NUMBER_OF_PROCESSORS",
         "OS",
+        POWERSHELL_CACHE,
     ];
     let mut env: Vec<_> = KEEP
         .iter()
@@ -247,20 +187,36 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
             None => env.push(("PATH".to_string(), extra)),
         }
     }
+    if cfg!(windows)
+        && !env.iter().any(|(key, _)| key == POWERSHELL_CACHE)
+        && let Some(cache) = powershell_cache()
+    {
+        env.push((POWERSHELL_CACHE.to_string(), cache.to_string()));
+    }
     env
+}
+
+const POWERSHELL_CACHE: &str = "PSModuleAnalysisCachePath";
+
+fn powershell_cache() -> Option<&'static str> {
+    static CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let dir = summonr_core::dirs::summonr_home().ok()?.join("powershell");
+            std::fs::create_dir_all(&dir).ok()?;
+            dir.join("ModuleAnalysisCache").to_str().map(str::to_string)
+        })
+        .as_deref()
 }
 
 pub(in crate::tools) fn kill_group(pid: u32) {
     #[cfg(unix)]
     signal(pid, libc::SIGKILL);
     #[cfg(windows)]
-    drop(
-        std::process::Command::new("taskkill")
-            .args(["/F", "/T", "/PID", &pid.to_string()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status(),
-    );
+    drop(crate::process::output(
+        Spec::new("taskkill", ["/F", "/T", "/PID", &pid.to_string()]),
+        None,
+    ));
 }
 
 #[cfg(unix)]
@@ -296,17 +252,22 @@ pub(super) async fn wait_shell(
     }
     #[cfg(windows)]
     {
-        child.child.inner_mut().wait().await
+        child.inner.inner_mut().wait().await
     }
 }
 
-pub(super) fn stop_job(workspace: &std::path::Path, record: &crate::jobs::Record) -> Result<()> {
+pub(super) fn stop_job(
+    workspace: &std::path::Path,
+    record: &crate::jobs::Record,
+) -> Result<Vec<String>> {
     let exit = crate::jobs::exit_path(workspace, &record.id);
+    let mut children = Vec::new();
     if crate::jobs::alive_since(record.pid, record.started) {
+        children = crate::jobs::child_lines(record.pid, workspace);
         kill_group(record.pid);
     }
     if !exit.is_file() {
-        crate::jobs::write_killed(&exit)?;
+        crate::jobs::write_killed(&exit, &children)?;
     }
-    Ok(())
+    Ok(children)
 }

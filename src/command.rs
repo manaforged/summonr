@@ -1,30 +1,14 @@
+use std::collections::BTreeMap;
+use std::sync::OnceLock;
+
+use serde::Deserialize;
+use serde::de::IntoDeserializer;
+use serde::de::value::{Error, StrDeserializer};
+
 use Argument::{Bare, Text, Value};
-use Category::{Developer, Files, Model, Session, Settings};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Category {
-    Session,
-    Model,
-    Files,
-    Settings,
-    Developer,
-}
-
-impl Category {
-    pub(crate) const ALL: [Self; 5] = [Session, Model, Files, Settings, Developer];
-
-    pub(crate) const fn title(self) -> &'static str {
-        match self {
-            Session => "conversation and sessions",
-            Model => "model and mode",
-            Files => "files and panes",
-            Settings => "settings and permissions",
-            Developer => "developer",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SlashCommand {
     Help,
     Settings,
@@ -67,59 +51,114 @@ pub struct CommandSpec {
     pub description: &'static str,
     pub command: SlashCommand,
     argument: Argument,
-    pub(crate) category: Category,
+    pub(crate) group: &'static str,
+    developer: bool,
     pub(crate) usage: &'static str,
 }
 
 impl CommandSpec {
-    const fn usage(mut self, usage: &'static str) -> Self {
-        self.usage = usage;
-        self
-    }
-
     #[must_use]
     pub fn shown(&self) -> bool {
-        self.category != Developer || std::env::var_os("SUMMONR_DEV").is_some()
+        !self.developer || std::env::var_os("SUMMONR_DEV").is_some()
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum Argument {
     Bare,
     Value,
     Text,
 }
 
-mod specs;
+#[derive(Deserialize)]
+struct Data {
+    retired: BTreeMap<String, String>,
+    group: Vec<Group>,
+}
 
-use specs::{ALIASES, SPECS};
+#[derive(Deserialize)]
+struct Group {
+    title: String,
+    #[serde(default)]
+    developer: bool,
+    commands: Vec<Row>,
+}
+
+#[derive(Deserialize)]
+struct Row {
+    name: String,
+    takes: Argument,
+    #[serde(default)]
+    usage: String,
+    help: String,
+}
+
+struct Commands {
+    specs: Vec<CommandSpec>,
+    retired: Vec<(&'static str, &'static str)>,
+}
+
+pub mod table;
+
+fn commands() -> &'static Commands {
+    static LOADED: OnceLock<Commands> = OnceLock::new();
+    LOADED.get_or_init(|| {
+        let data: Data = summonr_core::embedded!("command", "command/commands.toml");
+        let mut specs = Vec::new();
+        for group in data.group {
+            let title: &'static str = group.title.leak();
+            for row in group.commands {
+                let key: StrDeserializer<'_, Error> =
+                    row.name.trim_start_matches('/').into_deserializer();
+                let command = match SlashCommand::deserialize(key) {
+                    Ok(command) => command,
+                    Err(error) => panic!("the built-in command table is invalid: {error}"),
+                };
+                specs.push(CommandSpec {
+                    name: row.name.leak(),
+                    description: row.help.leak(),
+                    command,
+                    argument: row.takes,
+                    group: title,
+                    developer: group.developer,
+                    usage: row.usage.leak(),
+                });
+            }
+        }
+        let retired = data
+            .retired
+            .into_iter()
+            .map(|(name, target)| -> (&'static str, &'static str) { (name.leak(), target.leak()) })
+            .collect();
+        Commands { specs, retired }
+    })
+}
 
 #[must_use]
-pub const fn command_specs() -> &'static [CommandSpec] {
-    SPECS
+pub fn command_specs() -> &'static [CommandSpec] {
+    &commands().specs
+}
+
+fn retired(head: &str) -> Option<&'static str> {
+    commands()
+        .retired
+        .iter()
+        .find(|(name, _)| *name == head)
+        .map(|(_, target)| *target)
 }
 
 #[must_use]
 pub fn parse_command(line: &str) -> Option<SlashCommand> {
-    let tokens: Vec<&str> = line.split_whitespace().collect();
-    if !tokens.first().is_some_and(|head| head.starts_with('/')) || server_prompt(line) {
+    let head = line.split_whitespace().next()?;
+    if !head.starts_with('/') || server_prompt(line) {
         return None;
     }
-    (1..=tokens.len().min(2))
-        .rev()
-        .find_map(|count| {
-            let head = tokens[..count].join(" ");
-            SPECS
-                .iter()
-                .find(|spec| spec.name == head && spec.shown())
-                .map(|spec| spec.command)
-        })
-        .or_else(|| {
-            ALIASES
-                .iter()
-                .find(|(name, _)| *name == tokens[0])
-                .and_then(|(_, target)| parse_command(target))
-        })
+    command_specs()
+        .iter()
+        .find(|spec| spec.name == head && spec.shown())
+        .map(|spec| spec.command)
+        .or_else(|| retired(head).and_then(parse_command))
 }
 
 #[must_use]
@@ -133,12 +172,12 @@ pub(crate) fn server_prompt(line: &str) -> bool {
 pub(crate) fn alias(line: &str) -> Option<String> {
     let line = line.trim();
     let (head, tail) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
-    let (_, target) = ALIASES.iter().find(|(name, _)| *name == head)?;
-    let bare = SPECS
+    let target = retired(head)?;
+    let bare = command_specs()
         .iter()
-        .any(|spec| spec.name == *target && spec.argument == Bare);
+        .any(|spec| spec.name == target && spec.argument == Bare);
     Some(if bare || tail.trim().is_empty() {
-        (*target).to_string()
+        target.to_string()
     } else {
         format!("{target} {}", tail.trim())
     })
@@ -152,7 +191,7 @@ pub(crate) fn argument<'a>(
         if let Some(head) = line.split_whitespace().next().filter(|head| {
             head.starts_with('/')
                 && !server_prompt(head)
-                && !crate::plugins::commands::named(head)
+                && !crate::plugins::commands::named(head, workspace)
                 && !crate::skills::list(workspace)
                     .iter()
                     .any(|(name, _)| head.strip_prefix('/') == Some(name.as_str()))
@@ -163,15 +202,13 @@ pub(crate) fn argument<'a>(
         }
         return Ok(None);
     };
-    let Some(spec) = SPECS.iter().find(|spec| spec.command == command) else {
+    let Some(spec) = command_specs().iter().find(|spec| spec.command == command) else {
         return Ok(None);
     };
-    let mut tail = line.trim();
-    for _ in spec.name.split_whitespace() {
-        tail = tail
-            .split_once(char::is_whitespace)
-            .map_or("", |(_, tail)| tail.trim());
-    }
+    let mut tail = line
+        .trim()
+        .split_once(char::is_whitespace)
+        .map_or("", |(_, tail)| tail.trim());
     if tail.is_empty() {
         return Ok(None);
     }

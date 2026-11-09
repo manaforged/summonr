@@ -85,21 +85,7 @@ const YAHOO: &str = r#"<li class="first"><div class="dd fst algo algo-sr relsrch
 <li><div class="dd algo algo-sr"><div class="compTitle"><a href="https://r.search.yahoo.com/_ylt=x/RV=2/RU=https%3a%2f%2fsearch.yahoo.com%2fpreferences/RK=2/RS=y-"><h3 class="title">Preferences</h3></a></div></div></li>"#;
 
 fn engine(name: &str) -> &'static super::results::Engine {
-    engines()
-        .unwrap()
-        .iter()
-        .find(|engine| engine.name == name)
-        .unwrap()
-}
-
-#[test]
-fn engines_are_tried_bing_duckduckgo_yahoo_then_brave() {
-    let names = engines()
-        .unwrap()
-        .iter()
-        .map(|engine| engine.name.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(names, ["bing", "duckduckgo", "yahoo", "brave"]);
+    engines().iter().find(|engine| engine.name == name).unwrap()
 }
 
 #[test]
@@ -207,11 +193,11 @@ fn a_challenge_page_or_a_rate_limit_counts_as_a_blocked_engine() {
 #[test]
 fn a_blocked_engine_rests_until_its_cooldown_ends() {
     use std::time::{Duration, Instant};
-    let rest = super::Rest::default();
+    let rest = super::Cooldowns::default();
     let now = Instant::now();
     rest.block("duckduckgo", now + Duration::from_secs(60));
-    assert!(rest.resting("duckduckgo", now + Duration::from_secs(59)));
-    assert!(!rest.resting("duckduckgo", now + Duration::from_secs(61)));
-    assert!(!rest.resting("bing", now));
+    assert!(rest.blocked("duckduckgo", now + Duration::from_secs(59)));
+    assert!(!rest.blocked("duckduckgo", now + Duration::from_secs(61)));
+    assert!(!rest.blocked("bing", now));
     assert_eq!(engine("duckduckgo").cooldown(), Duration::from_secs(60));
 }

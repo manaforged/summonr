@@ -1,8 +1,4 @@
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::time::Instant;
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use chacha20poly1305::aead::{Aead, KeyInit};
@@ -13,7 +9,9 @@ use toml_edit::DocumentMut;
 
 #[cfg(target_os = "macos")]
 use crate::durable::store;
-use crate::error::{Error, Result};
+#[cfg(any(target_os = "macos", all(test, unix)))]
+use crate::process::{self, Deadline, Spec};
+use summonr_core::error::{Error, Result};
 
 use super::*;
 
@@ -63,6 +61,7 @@ pub(super) fn decode_wrap_bytes(bytes: &[u8]) -> Result<[u8; KEY_LEN]> {
     decode_wrap(text)
 }
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 pub(super) fn find(tool: &Path, account: &str) -> Result<Option<String>> {
     match run(
         tool,
@@ -75,13 +74,16 @@ pub(super) fn find(tool: &Path, account: &str) -> Result<Option<String>> {
     }
 }
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 const ITEM_NOT_FOUND: i32 = 44;
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 pub(super) struct SecurityExit {
     code: i32,
     reason: String,
 }
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 impl From<SecurityExit> for Error {
     fn from(exit: SecurityExit) -> Self {
         Error::Config(format!("security exit {}: {}", exit.code, exit.reason))
@@ -93,56 +95,32 @@ pub(super) fn security(tool: &Path, args: &[&str], stdin: Option<String>) -> Res
     run(tool, args, stdin)?.map_err(Error::from)
 }
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 fn run(
     tool: &Path,
     args: &[&str],
     stdin: Option<String>,
 ) -> Result<std::result::Result<String, SecurityExit>> {
-    let mut child = Command::new(tool)
-        .args(args)
-        .stdin(if stdin.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| Error::Config(format!("cannot run {}: {error}", tool.display())))?;
-    if let (Some(text), Some(mut pipe)) = (stdin, child.stdin.take()) {
-        use std::io::Write as _;
-        pipe.write_all(text.as_bytes())?;
-        pipe.flush()?;
-    }
-    let (_tick, wait) = mpsc::channel::<()>();
-    let deadline = Instant::now() + crate::limits::limits().keychain();
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            drop(child.kill());
-            drop(child.wait());
-            return Err(Error::Config(LOCKED.to_string()));
-        }
-        if wait
-            .recv_timeout(crate::limits::limits().keychain_poll())
-            .is_ok()
-        {
-            continue;
-        }
+    let limits = crate::limits::limits();
+    let deadline = Deadline {
+        after: limits.keychain(),
+        poll: limits.keychain_poll(),
     };
-    let mut out = String::new();
-    if let Some(mut stdout) = child.stdout.take() {
-        drop(stdout.read_to_string(&mut out));
-    }
+    let finished = process::output_within(
+        Spec::new(tool, args),
+        stdin.as_deref().map(str::as_bytes),
+        deadline,
+    )
+    .map_err(|error| Error::Config(format!("credential store: {error}")))?;
+    let Some(output) = finished else {
+        return Err(Error::Config(LOCKED.to_string()));
+    };
+    let status = output.status;
+    let out = String::from_utf8_lossy(&output.stdout).into_owned();
     if status.success() {
         return Ok(Ok(out.trim_end_matches(['\n', '\r']).to_string()));
     }
-    let mut err = String::new();
-    if let Some(mut stderr) = child.stderr.take() {
-        drop(stderr.read_to_string(&mut err));
-    }
+    let err = String::from_utf8_lossy(&output.stderr);
     Ok(Err(SecurityExit {
         code: status.code().unwrap_or(-1),
         reason: err.lines().next().unwrap_or("").trim().to_string(),
@@ -244,10 +222,7 @@ pub(super) fn decode_wrap(encoded: &str) -> Result<[u8; KEY_LEN]> {
     Ok(key)
 }
 
-pub(super) fn os_wrap_key(tool: Option<&Path>) -> Result<[u8; KEY_LEN]> {
-    if let Some(tool) = tool {
-        return wrap_via_security(tool);
-    }
+pub(super) fn os_wrap_key() -> Result<[u8; KEY_LEN]> {
     #[cfg(target_os = "macos")]
     {
         wrap_via_security(Path::new("/usr/bin/security"))
@@ -264,6 +239,7 @@ pub(super) fn os_wrap_key(tool: Option<&Path>) -> Result<[u8; KEY_LEN]> {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub(super) fn wrap_via_security(tool: &Path) -> Result<[u8; KEY_LEN]> {
     match find(tool, SEAL)? {
         Some(encoded) => decode_wrap(&encoded),
@@ -289,6 +265,6 @@ pub(super) fn test_seal(file: &Path) -> [u8; KEY_LEN] {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "seal_tests.rs"]
 mod tests;

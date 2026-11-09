@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
-use super::{Cmd, MidTurn, Msg, steerable};
+use super::super::steer::{InputQueue, steerable};
+use super::{Cmd, Msg};
 use crate::provider::UserInput;
 
 #[test]
@@ -32,42 +33,25 @@ struct Fixture {
     ui: tokio::sync::mpsc::UnboundedSender<Msg>,
     inbox: tokio::sync::mpsc::UnboundedReceiver<Msg>,
     steering: std::sync::Arc<crate::runtime::Steering>,
-    reader: super::super::reader::Reader,
-    auto_reply: bool,
 }
 
 impl Fixture {
     fn new() -> Self {
         let workspace = tempfile::tempdir().unwrap();
         let (ui, inbox) = tokio::sync::mpsc::unbounded_channel();
-        let reader = super::super::reader::Reader::new(
-            workspace.path().to_path_buf(),
-            Default::default(),
-            ui.clone(),
-        );
         Self {
             workspace,
             ui,
             inbox,
             steering: std::sync::Arc::default(),
-            reader,
-            auto_reply: false,
         }
     }
 
-    fn mid<'a>(
-        &'a mut self,
-        deferred: &'a mut VecDeque<Cmd>,
-        followups: &'a mut VecDeque<UserInput>,
-    ) -> MidTurn<'a> {
-        MidTurn {
-            deferred,
-            followups,
-            steering: &self.steering,
-            auto_reply: &mut self.auto_reply,
-            ui: &self.ui,
-            reader: &self.reader,
-        }
+    fn queue(&self, deferred: VecDeque<Cmd>, followups: VecDeque<UserInput>) -> InputQueue {
+        let mut queue = InputQueue::new(self.steering.clone());
+        queue.deferred = deferred;
+        queue.followups = followups;
+        queue
     }
 
     fn steered(&self) -> Vec<String> {
@@ -86,25 +70,27 @@ fn texts(inputs: &VecDeque<UserInput>) -> Vec<&str> {
 
 #[test]
 fn steering_queue_routes_plain_lines_into_the_turn_and_keeps_the_rest_in_order() {
-    let mut fixture = Fixture::new();
+    let fixture = Fixture::new();
     let path = fixture.workspace.path().to_path_buf();
-    let (mut deferred, mut followups) = (VecDeque::new(), VecDeque::new());
-    let mut mid = fixture.mid(&mut deferred, &mut followups);
+    let mut queue = fixture.queue(VecDeque::new(), VecDeque::new());
     for line in ["check the tests", "!ls", "and the logs"] {
-        mid.queued(Cmd::Steer(UserInput::from(line)), &path);
+        queue.during_turn(Cmd::Steer(UserInput::from(line)), &path, &fixture.ui);
     }
     assert_eq!(fixture.steered(), ["check the tests"]);
-    assert_eq!(texts(&followups), ["!ls", "and the logs"]);
+    assert_eq!(texts(&queue.followups), ["!ls", "and the logs"]);
 }
 
 #[test]
 fn steering_queue_count_keeps_messages_held_behind_a_deferred_command() {
     let mut fixture = Fixture::new();
     let path = fixture.workspace.path().to_path_buf();
-    let (mut deferred, mut followups) = (VecDeque::new(), VecDeque::new());
-    let mut mid = fixture.mid(&mut deferred, &mut followups);
-    mid.queued(Cmd::Queue(UserInput::from("check the tests")), &path);
-    mid.later(Cmd::Command("/model opus".to_string()));
+    let mut queue = fixture.queue(VecDeque::new(), VecDeque::new());
+    queue.during_turn(
+        Cmd::Queue(UserInput::from("check the tests")),
+        &path,
+        &fixture.ui,
+    );
+    queue.defer(Cmd::Command("/model opus".to_string()), &fixture.ui);
     let last = fixture
         .messages()
         .into_iter()
@@ -122,9 +108,10 @@ fn blank_enter(
 ) -> (Vec<String>, Vec<Msg>) {
     let mut fixture = Fixture::new();
     let path = fixture.workspace.path().to_path_buf();
-    fixture
-        .mid(deferred, followups)
-        .queued(Cmd::SteerQueued, &path);
+    let mut queue = fixture.queue(std::mem::take(deferred), std::mem::take(followups));
+    queue.during_turn(Cmd::SteerQueued, &path, &fixture.ui);
+    *deferred = queue.deferred;
+    *followups = queue.followups;
     (fixture.steered(), fixture.messages())
 }
 
@@ -156,20 +143,17 @@ fn blank_enter_says_why_when_only_shell_and_slash_lines_wait() {
     )));
 }
 
-#[tokio::test]
-async fn steering_queue_runs_an_effort_change_after_messages_queued_before_it() {
-    let mut fixture = Fixture::new();
+#[test]
+fn steering_queue_runs_an_effort_change_after_messages_queued_before_it() {
+    let fixture = Fixture::new();
     let path = fixture.workspace.path().to_path_buf();
-    let (mut deferred, mut followups) = (VecDeque::new(), VecDeque::new());
-    let mut mid = fixture.mid(&mut deferred, &mut followups);
-    mid.queued(Cmd::Queue(UserInput::from("!check")), &path);
-    mid.command(
+    let mut queue = fixture.queue(VecDeque::new(), VecDeque::new());
+    queue.during_turn(Cmd::Queue(UserInput::from("!check")), &path, &fixture.ui);
+    queue.defer(
         Cmd::SetEffort(Some(crate::provider::Effort::High)),
-        &path,
-        "session",
-        &path,
-    )
-    .await;
+        &fixture.ui,
+    );
+    let deferred = queue.deferred;
     assert!(matches!(
         deferred.front(),
         Some(Cmd::Submit(input)) if input.text == "!check"

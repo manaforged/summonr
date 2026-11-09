@@ -151,6 +151,13 @@ fn row(palette: &Palette, label: &str, value: &str) -> String {
 pub fn host_of(url: Option<&str>) -> Option<&str> {
     let url = url?;
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
-    let host = rest.split('/').next().unwrap_or("");
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
     (!host.is_empty()).then_some(host)
 }
+
+#[cfg(test)]
+#[path = "splash_tests.rs"]
+mod tests;

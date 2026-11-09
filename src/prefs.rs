@@ -1,17 +1,12 @@
 use std::path::Path;
 
 use crate::config;
-use crate::error::Result;
+use summonr_core::error::Result;
 
-mod background;
-mod diff;
 mod hotkeys;
-mod notify;
-pub(crate) use background::Background;
-pub(crate) use diff::DiffLayout;
 pub use hotkeys::Hotkey;
 pub(crate) use hotkeys::{EditorKey, Hotkeys};
-pub(crate) use notify::Notify;
+pub(crate) use summonr_types::{Background, DiffLayout, Notify};
 
 pub(crate) const AUTO_THEME: &str = "auto";
 pub(crate) const THEMES: [&str; 4] = ["space", "nord", "dawn", AUTO_THEME];
@@ -41,86 +36,7 @@ pub(crate) fn known_theme(name: &str) -> bool {
     THEMES.contains(&name) || RETIRED_THEMES.iter().any(|(retired, _)| *retired == name)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum ToolOutput {
-    Compact,
-    Full,
-    Hidden,
-}
-
-impl ToolOutput {
-    pub(crate) fn text(self, output: &str) -> &str {
-        if self == Self::Full {
-            return output;
-        }
-        let line = output
-            .lines()
-            .rev()
-            .find(|line| !line.trim().is_empty())
-            .unwrap_or("");
-        let end = line
-            .char_indices()
-            .nth(120)
-            .map_or(line.len(), |(index, _)| index);
-        &line[..end]
-    }
-
-    #[must_use]
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Compact => "compact",
-            Self::Full => "full",
-            Self::Hidden => "hidden",
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn toggle(self) -> Self {
-        match self {
-            Self::Compact => Self::Full,
-            Self::Full => Self::Hidden,
-            Self::Hidden => Self::Compact,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Visibility {
-    Off,
-    Collapsed,
-    Expanded,
-}
-
-impl Visibility {
-    #[must_use]
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Collapsed => "collapsed",
-            Self::Expanded => "expanded",
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn toggle(self) -> Self {
-        match self {
-            Self::Off => Self::Collapsed,
-            Self::Collapsed => Self::Expanded,
-            Self::Expanded => Self::Off,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn parse(value: &str, fallback: Self) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "off" | "false" | "hidden" => Self::Off,
-            "collapsed" => Self::Collapsed,
-            "expanded" | "on" | "true" | "shown" => Self::Expanded,
-            _ => fallback,
-        }
-    }
-}
+pub(crate) use summonr_types::prefs::{ToolOutput, Visibility};
 
 pub(crate) const FPS_DEFAULT: u32 = 25;
 pub(crate) const FPS_MIN: u32 = 1;

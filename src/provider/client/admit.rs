@@ -5,7 +5,7 @@ use crate::provider::wire::ImageBudget;
 
 impl Client {
     pub(super) fn admit<'m>(&self, request: &CompletionRequest<'m>) -> Cow<'m, [Message]> {
-        let mut budget = crate::provider::wire::image_budget(self.wire);
+        let mut budget = crate::provider::wire::spec(self.wire).images.clone();
         budget.tool_images |= request.traits.tool_images;
         admit(request.messages, self.images, &budget)
     }
@@ -54,12 +54,12 @@ fn verdicts(
         for (image, reason) in message.images.iter().zip(reasons.iter_mut()).rev() {
             let size = image.data.len();
             let allowed = if message.role == Role::Tool {
-                budget.tool_types
+                &budget.tool_types
             } else {
-                budget.types
+                &budget.types
             };
             // complexity: bounded by the five media types a wire names
-            let typed = allowed.contains(&image.media_type.as_str());
+            let typed = allowed.contains(&image.media_type);
             *reason = if !seen {
                 Some("the active model does not accept image input".to_string())
             } else if message.role == Role::Tool && !budget.tool_images {

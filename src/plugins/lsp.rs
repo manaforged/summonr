@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use super::{Plugin, enabled, read_json};
+use super::{Plugin, Vars, enabled, expand, read_json};
 
 const FILE: &str = ".lsp.json";
 
@@ -43,35 +43,34 @@ pub(crate) fn servers(workspace: &Path) -> Vec<Server> {
 }
 
 pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
-    let Ok(entries) = serde_json::from_value::<BTreeMap<String, serde_json::Value>>(read_json(
-        &plugin.dir.join(FILE),
-    )) else {
-        return Vec::new();
+    let maps = [read_json(&plugin.dir.join(FILE))];
+    let user_config = BTreeMap::new();
+    let vars = Vars {
+        user_config: Some(&user_config),
+        ..plugin.vars(workspace)
     };
-    entries
+    let fill = |text: String| expand(&text, &vars);
+    plugin
+        .servers(&maps, ":", workspace, |_entry: &mut Entry| Vec::new())
         .into_iter()
-        .filter_map(|(name, entry)| Some((name, serde_json::from_value::<Entry>(entry).ok()?)))
-        .map(|(name, entry)| {
-            let expand = |text: &String| plugin.expand(text, workspace);
-            Server {
-                key: format!("{}:{name}", plugin.name),
-                argv: std::iter::once(&entry.command)
-                    .chain(&entry.args)
-                    .map(expand)
-                    .collect(),
-                env: entry
-                    .env
-                    .iter()
-                    .map(|(key, value)| (key.clone(), expand(value)))
-                    .collect(),
-                languages: entry
-                    .extension_to_language
-                    .into_iter()
-                    .map(|(extension, language)| {
-                        (extension.trim_start_matches('.').to_string(), language)
-                    })
-                    .collect(),
-            }
+        .map(|(key, entry)| Server {
+            key,
+            argv: std::iter::once(entry.command)
+                .chain(entry.args)
+                .map(fill)
+                .collect(),
+            env: entry
+                .env
+                .into_iter()
+                .map(|(key, value)| (key, fill(value)))
+                .collect(),
+            languages: entry
+                .extension_to_language
+                .into_iter()
+                .map(|(extension, language)| {
+                    (extension.trim_start_matches('.').to_string(), language)
+                })
+                .collect(),
         })
         .collect()
 }

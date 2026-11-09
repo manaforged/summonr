@@ -1,97 +1,200 @@
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
-use crate::error::{Error, Result};
-use crate::hashline::resolve_span;
-use crate::text::squash;
+use crate::hashline::{resolve_span, tagged_span};
+use summonr_core::error::{Error, Result};
+use summonr_core::text::squash;
 
 use super::edit::Patch;
-use super::object_string;
 
-mod nested;
+mod closest;
 
-use nested::nested_patch;
+use closest::no_match;
 
-const OP_REPLACE_TEXT: &str = "replace_text";
-const OP_INSERT_AFTER: &str = "insert_after";
-
-pub(super) fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
-    if let Some(patch) = flat_patch(text, op)? {
-        return Ok(patch);
-    }
-    if let Some(patch) = nested_patch(text, op)? {
-        return Ok(patch);
-    }
-    let keys = op
-        .as_object()
-        .map(|object| object.keys().cloned().collect::<Vec<_>>().join(", "))
-        .unwrap_or_default();
-    Err(Error::Tool(format!(
-        "edit got keys [{keys}]; it takes old+new, tag+new, tag+text, op=delete, or edits"
-    )))
+#[derive(Default, Deserialize)]
+#[serde(default)]
+pub(super) struct EditOp {
+    #[serde(deserialize_with = "present")]
+    tag: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    old: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    new: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    text: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    end_tag: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    op: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    replace_all: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    expected_matches: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    all: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    replace_text: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    replace: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    insert_after: Option<Value>,
+    #[serde(deserialize_with = "present")]
+    delete: Option<Value>,
+    #[serde(skip)]
+    keys: Vec<String>,
 }
 
-fn flat_patch(text: &str, op: &Value) -> Result<Option<Patch>> {
-    if let Some(tag) = op.get(OP_REPLACE_TEXT).and_then(Value::as_str) {
-        return replace_text_patch(
-            text,
-            Some(tag),
-            object_string(op, "old")?,
-            object_string(op, "new")?,
-            replace_all(op),
-        )
-        .map(Some);
-    }
-    if op.get("old").is_some() && op.get("new").is_some() {
-        return replace_text_patch(
-            text,
-            optional_tag(op)?,
-            object_string(op, "old")?,
-            object_string(op, "new")?,
-            replace_all(op),
-        )
-        .map(Some);
-    }
-    if optional_tag(op)?.is_some() {
-        return tag_patch(text, op);
-    }
-    Ok(None)
+fn present<'de, D: Deserializer<'de>>(input: D) -> std::result::Result<Option<Value>, D::Error> {
+    Value::deserialize(input).map(Some)
 }
 
-fn tag_patch(text: &str, op: &Value) -> Result<Option<Patch>> {
-    let tag = object_string(op, "tag")?;
-    if op.get("new").is_some() {
-        return replace_patch(
+fn string<'a>(field: &'a Option<Value>, name: &str) -> Result<&'a str> {
+    text_of(field).ok_or_else(|| Error::Tool(format!("{name} is required")))
+}
+
+fn text_of(field: &Option<Value>) -> Option<&str> {
+    field.as_ref().and_then(Value::as_str)
+}
+
+impl EditOp {
+    pub(super) fn parse(op: &Value) -> Self {
+        let mut parsed: Self = serde_json::from_value(op.clone()).unwrap_or_default();
+        parsed.keys = op
+            .as_object()
+            .map(|object| object.keys().cloned().collect())
+            .unwrap_or_default();
+        parsed
+    }
+
+    pub(super) fn patch(&self, text: &str) -> Result<Patch> {
+        if let Some(Value::String(tag)) = &self.replace_text {
+            return self.replace_text(text, Some(tag));
+        }
+        if self.old.is_some() && self.new.is_some() {
+            return self.replace_text(text, self.optional_tag()?);
+        }
+        if let Some(tag) = self.optional_tag()? {
+            let end_tag = text_of(&self.end_tag);
+            if self.new.is_some() {
+                return replace_patch(text, tag, end_tag, lines(string(&self.new, "new")?));
+            }
+            if self.text.is_some() {
+                return insert_patch(text, tag, string(&self.text, "text")?);
+            }
+            if text_of(&self.op) == Some("delete") {
+                return replace_patch(text, tag, end_tag, Vec::new());
+            }
+        }
+        if let Some(replace) = &self.replace {
+            let inner = nested(
+                replace,
+                "replace must be an object with tag, new, and optional end_tag; use replace_text with old and new for exact text",
+            )?;
+            let new = inner
+                .new
+                .as_ref()
+                .or(inner.text.as_ref())
+                .and_then(Value::as_str)
+                .ok_or_else(|| Error::Tool("replace requires new".to_string()))?;
+            let tag = string(&inner.tag, "tag")?;
+            return replace_patch(text, tag, text_of(&inner.end_tag), lines(new));
+        }
+        if let Some(replace) = &self.replace_text {
+            let inner = nested(
+                replace,
+                "replace_text must be an object with old, new, and optional tag",
+            )?;
+            return inner.replace_text(text, inner.optional_tag()?);
+        }
+        if let Some(insert) = &self.insert_after {
+            let inner = nested(insert, "insert_after must be an object with tag and text")?;
+            return insert_patch(
+                text,
+                string(&inner.tag, "tag")?,
+                string(&inner.text, "text")?,
+            );
+        }
+        if let Some(delete) = &self.delete {
+            let inner = nested(
+                delete,
+                "delete must be an object with tag and optional end_tag",
+            )?;
+            let tag = string(&inner.tag, "tag")?;
+            return replace_patch(text, tag, text_of(&inner.end_tag), Vec::new());
+        }
+        Err(Error::Tool(format!(
+            "edit got keys [{}]; it takes old+new, tag+new, tag+text, op=delete, or edits",
+            self.keys.join(", ")
+        )))
+    }
+
+    pub(super) fn context(&self, error: Error, text: &str) -> Error {
+        let Error::Tool(message) = error else {
+            return error;
+        };
+        let Some(Ok((line, _))) = text_of(&self.tag).map(|tag| resolve_span(text, tag, None))
+        else {
+            return Error::Tool(message);
+        };
+        Error::Tool(format!(
+            "{message}\nCurrent lines:\n{}",
+            tagged_span(
+                &text.lines().collect::<Vec<_>>(),
+                line.saturating_sub(2),
+                line.saturating_add(2)
+            )
+        ))
+    }
+
+    fn replace_text(&self, text: &str, tag: Option<&str>) -> Result<Patch> {
+        let all = self
+            .replace_all
+            .as_ref()
+            .or(self.all.as_ref())
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let (old, new) = (string(&self.old, "old")?, string(&self.new, "new")?);
+        let expected = self
+            .expected_matches
+            .as_ref()
+            .map(|value| {
+                value.as_u64().filter(|count| *count > 0).ok_or_else(|| {
+                    Error::Tool("expected_matches must be a positive integer".to_string())
+                })
+            })
+            .transpose()?;
+        if let Some(expected) = expected {
+            let found = count_matches(text, old);
+            if u64::try_from(found).ok() != Some(expected) {
+                return Err(Error::Tool(format!(
+                    "expected {expected} exact matches for old, found {found}"
+                )));
+            }
+        }
+        replace_text_patch(
             text,
             tag,
-            op.get("end_tag").and_then(Value::as_str),
-            object_string(op, "new")?,
+            old,
+            new,
+            all || expected.is_some_and(|count| count > 1),
         )
-        .map(Some);
     }
-    if op.get("text").is_some() {
-        return insert_patch(text, tag, object_string(op, "text")?).map(Some);
-    }
-    if op.get("op").and_then(Value::as_str) == Some("delete") {
-        return delete_patch(text, tag, op.get("end_tag").and_then(Value::as_str)).map(Some);
-    }
-    Ok(None)
-}
 
-fn optional_tag(value: &Value) -> Result<Option<&str>> {
-    match value.get("tag") {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(tag)) if tag.trim().is_empty() => Ok(None),
-        Some(Value::String(tag)) => Ok(Some(tag)),
-        Some(_) => Err(Error::Tool("tag must be a non-empty string".to_string())),
+    fn optional_tag(&self) -> Result<Option<&str>> {
+        match &self.tag {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(tag)) if tag.trim().is_empty() => Ok(None),
+            Some(Value::String(tag)) => Ok(Some(tag)),
+            Some(_) => Err(Error::Tool("tag must be a non-empty string".to_string())),
+        }
     }
 }
 
-fn replace_all(value: &Value) -> bool {
-    value
-        .get("replace_all")
-        .or_else(|| value.get("all"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+fn nested(value: &Value, shape: &str) -> Result<EditOp> {
+    if !value.is_object() {
+        return Err(Error::Tool(shape.to_string()));
+    }
+    Ok(EditOp::parse(value))
 }
 
 pub(super) fn replace_text_patch(
@@ -119,9 +222,9 @@ pub(super) fn replace_text_patch(
         });
     }
     let (byte, line_index) = if global_matches == 1 {
-        let byte = text.find(old).ok_or_else(|| {
-            Error::Tool("replace_text.old disappeared while resolving the edit".to_string())
-        })?;
+        let byte = text
+            .find(old)
+            .ok_or_else(|| Error::Tool("old disappeared while resolving the edit".to_string()))?;
         (
             byte,
             text[..byte].bytes().filter(|byte| *byte == b'\n').count(),
@@ -157,7 +260,7 @@ fn tagged_match(text: &str, tag: &str, old: &str) -> Result<(usize, usize)> {
         .collect::<Vec<_>>();
     if matches.len() != 1 {
         return Err(Error::Tool(format!(
-            "replace_text.old must start exactly once on the anchored line; found {}",
+            "old must start exactly once on the anchored line; found {}",
             matches.len()
         )));
     }
@@ -254,101 +357,26 @@ fn count_matches(text: &str, needle: &str) -> usize {
     text.match_indices(needle).count()
 }
 
-fn no_match(text: &str, old: &str) -> Error {
-    let mut out = "old does not appear in the file".to_string();
-    let needle = old
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.len() >= 4)
-        .max_by_key(|line| line.len());
-    if let Some(needle) = needle {
-        let squashed = squash(needle);
-        let floor = squashed.len().div_ceil(2);
-        let mut needle_counts = [0_u32; 256];
-        for byte in squashed.bytes() {
-            needle_counts[usize::from(byte)] += 1;
-        }
-        let mut line_counts = [0_u32; 256];
-        let mut scored: Vec<(f64, usize, &str)> = text
-            .lines()
-            .enumerate()
-            .filter_map(|(index, line)| {
-                if line.len() < floor {
-                    return None;
-                }
-                line_counts.fill(0);
-                for byte in line.bytes() {
-                    line_counts[usize::from(byte)] += 1;
-                }
-                let mut shared = 0_usize;
-                for byte in 0..256_usize {
-                    if needle_counts[byte] > 0 {
-                        shared += (needle_counts[byte].min(line_counts[byte])) as usize;
-                    }
-                }
-                if shared < floor {
-                    return None;
-                }
-                let candidate = squash(line);
-                if candidate.is_empty() {
-                    return None;
-                }
-                let score = lcs(&squashed, &candidate) as f64 / squashed.len() as f64;
-                (score >= 0.5).then_some((score, index, line))
-            })
-            .collect();
-        scored.sort_by(|left, right| {
-            right
-                .0
-                .partial_cmp(&left.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(left.1.cmp(&right.1))
-        });
-        let found: Vec<String> = scored
-            .iter()
-            .take(5)
-            .map(|(_, index, line)| format!("  {}: {}", index + 1, line.trim()))
-            .collect();
-        if !found.is_empty() {
-            out.push_str(&format!("; closest lines:\n{}", found.join("\n")));
-        }
-    }
-    Error::Tool(out)
-}
-
-fn lcs(left: &str, right: &str) -> usize {
-    let (left, right) = (left.as_bytes(), right.as_bytes());
-    let mut row = vec![0_usize; right.len() + 1];
-    for &a in left {
-        let mut diagonal = 0;
-        for index in 1..=right.len() {
-            let above = row[index];
-            row[index] = if a == right[index - 1] {
-                diagonal + 1
-            } else {
-                above.max(row[index - 1])
-            };
-            diagonal = above;
-        }
-    }
-    row[right.len()]
-}
-
-fn replace_patch(text: &str, tag: &str, end_tag: Option<&str>, new: &str) -> Result<Patch> {
+fn replace_patch(
+    text: &str,
+    tag: &str,
+    end_tag: Option<&str>,
+    replacement: Vec<String>,
+) -> Result<Patch> {
     let (start, end) = resolve_span(text, tag, end_tag)?;
     Ok(Patch {
         start,
         end: end + 1,
         anchor_start: start,
         anchor_end: end + 1,
-        replacement: lines(new),
+        replacement,
         relaxed: false,
     })
 }
 
 fn insert_patch(text: &str, tag: &str, body: &str) -> Result<Patch> {
     if body.is_empty() {
-        return Err(Error::Tool("insert_after.text is empty".to_string()));
+        return Err(Error::Tool("text is empty".to_string()));
     }
     let (anchor, _) = resolve_span(text, tag, None)?;
     Ok(Patch {
@@ -357,18 +385,6 @@ fn insert_patch(text: &str, tag: &str, body: &str) -> Result<Patch> {
         anchor_start: anchor,
         anchor_end: anchor + 1,
         replacement: lines(body),
-        relaxed: false,
-    })
-}
-
-fn delete_patch(text: &str, tag: &str, end_tag: Option<&str>) -> Result<Patch> {
-    let (start, end) = resolve_span(text, tag, end_tag)?;
-    Ok(Patch {
-        start,
-        end: end + 1,
-        anchor_start: start,
-        anchor_end: end + 1,
-        replacement: Vec::new(),
         relaxed: false,
     })
 }

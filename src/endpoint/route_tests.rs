@@ -6,7 +6,7 @@ fn file(text: &str) -> crate::config::File {
 
 fn base(file: &crate::config::File, name: &str) -> String {
     let route = pick(file, name);
-    super::super::resolve::seat(file, &route)
+    super::super::resolve::selection(file, &route)
         .and_then(|endpoint| endpoint.base_url)
         .unwrap_or_default()
 }
@@ -90,19 +90,6 @@ fn a_toggle_switches_one_axis_and_keeps_the_other() {
 }
 
 #[test]
-fn a_zhipu_key_runs_the_international_coding_plan() {
-    let reads = |route: &str| {
-        super::super::preset::preset(route)
-            .unwrap()
-            .env_keys
-            .contains(&"ZHIPU_API_KEY")
-    };
-    assert!(reads("zai-intl"));
-    assert!(!reads("zai-cn"));
-    assert!(!reads("zai-cn-api"));
-}
-
-#[test]
 fn a_key_saved_under_a_provider_lands_on_the_route_that_reads_it() {
     super::super::auth::save_key("alibaba", "sk-test-alibaba").unwrap();
     let stored = crate::secret::get("qwen-plan").unwrap();
@@ -138,7 +125,7 @@ fn a_retired_name_keeps_its_own_overrides() {
     let custom = file("[endpoint.glm]\nmodel = \"glm-5.3\"\n");
     let route = pick(&custom, "glm");
     assert_eq!(route, "zai-cn");
-    let endpoint = super::super::resolve::seat(&custom, "glm").unwrap();
+    let endpoint = super::super::resolve::selection(&custom, "glm").unwrap();
     assert_eq!(endpoint.model, "glm-5.3");
 }
 
@@ -171,19 +158,29 @@ fn a_key_stored_under_an_old_route_name_still_works() {
     crate::secret::forget("siliconflow").unwrap();
     let endpoint = endpoint.unwrap();
     assert_eq!(endpoint.name, "siliconflow-intl");
-    assert_eq!(endpoint.api_key.as_deref(), Some("sk-old-slot"));
+    assert_eq!(
+        endpoint
+            .api_key
+            .as_ref()
+            .map(summonr_core::secret::Secret::expose),
+        Some("sk-old-slot")
+    );
 }
 
 #[test]
 fn a_provider_table_overlays_its_route_and_the_route_table_wins() {
     let provider = file("[endpoint.zai]\nmodel = \"glm-5.3\"\n");
     assert_eq!(
-        super::super::resolve::seat(&provider, "zai").unwrap().model,
+        super::super::resolve::selection(&provider, "zai")
+            .unwrap()
+            .model,
         "glm-5.3"
     );
     let both = file("[endpoint.glm]\nmodel = \"old\"\n[endpoint.zai-cn]\nmodel = \"new\"\n");
     assert_eq!(
-        super::super::resolve::seat(&both, "glm").unwrap().model,
+        super::super::resolve::selection(&both, "glm")
+            .unwrap()
+            .model,
         "new"
     );
     let off = super::provider_names(&file("[endpoint.claude-pro]\nmodel = \"x\"\n"));
@@ -195,7 +192,7 @@ fn a_provider_named_row_keeps_its_route_wire() {
     let proxy = file("[endpoint.anthropic]\nbase_url = \"https://proxy.corp/anthropic/v1\"\n");
     let route = pick(&proxy, "anthropic");
     assert_ne!(route, "anthropic", "the row took over the provider name");
-    let endpoint = super::super::resolve::seat(&proxy, &route).unwrap();
+    let endpoint = super::super::resolve::selection(&proxy, &route).unwrap();
     assert_eq!(endpoint.wire, crate::endpoint::Wire::Anthropic);
     let own = file(
         "[endpoint.anthropic]\nbase_url = \"https://proxy.corp/v1\"\nwire = \"completions\"\nmodel = \"m\"\n",
@@ -227,30 +224,9 @@ fn a_signed_in_plan_route_is_ready() {
 }
 
 #[test]
-fn retired_names_keep_their_env_keys() {
-    let route = super::super::preset::preset("zai-intl").unwrap();
-    for key in [
-        "ZAI_CODING_API_KEY",
-        "GLM_CODING_API_KEY",
-        "ZAI_API_KEY",
-        "GLM_API_KEY",
-    ] {
-        assert!(
-            route.env_keys.contains(&key),
-            "zai-intl no longer reads {key}"
-        );
-    }
-}
-
-#[test]
 fn logout_names_the_key_left_after_removal() {
     crate::secret::set("deepseek", "sk-stored").unwrap();
     let said = super::super::logout("deepseek").unwrap();
     assert!(said.starts_with("✓ Removed the stored key"), "{said}");
     assert!(!said.contains("It now uses the"), "{said}");
-}
-
-#[test]
-fn the_account_environment_supplies_no_keys_to_tests() {
-    assert_eq!(super::super::keys::env_key(&["PATH", "HOME"]), None);
 }

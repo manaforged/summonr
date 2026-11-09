@@ -15,7 +15,7 @@ use crate::command::argument;
 use crate::endpoint::State;
 use crate::prefs::{self, Hotkey, Prefs};
 use crate::provider::{Image, UserInput};
-use crate::recent::Seat;
+use crate::recent::ModelId;
 use crate::tools::IMAGES_MAX_BYTES;
 use crate::workflow::Role;
 
@@ -24,7 +24,7 @@ pub(super) use super::chat;
 use super::canvas::cell;
 pub(super) use super::model;
 use super::model::{Entry, Model, preview};
-use super::pane::{Layout, Pane};
+use super::pane::{Layout, Pane, Target};
 pub(super) use super::settings;
 pub(super) use super::suggest;
 use super::suggest::Picker;
@@ -46,14 +46,13 @@ pub(super) use models::Mark;
 mod files;
 mod frame;
 mod history;
-mod jobs;
-mod mcp;
+mod layout;
 mod models;
 mod note;
 mod overlays;
 mod panes;
-mod peers;
 pub(super) mod presentation;
+mod rows;
 mod sessions;
 mod tabs;
 mod turn;
@@ -68,8 +67,9 @@ pub(in crate::tui::sigil_view) struct Asked {
     pub(in crate::tui::sigil_view) dialog: u64,
 }
 
-pub(super) use files::{Action, Context, FileRow};
-use files::{armed, file_url, read_git_branch, save};
+pub(super) use super::ui::shift;
+pub(super) use files::PaneRow;
+use files::{Confirm, confirm, file_url, read_git_branch, save};
 
 mod secret;
 mod state;
@@ -82,6 +82,7 @@ pub(super) enum Overlay {
     Help,
     Search,
     Sessions,
+    Usage,
     Auth,
     Model,
     Effort,
@@ -90,7 +91,6 @@ pub(super) enum Overlay {
     Settings,
     Context,
     Cache,
-    Usage,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -132,7 +132,7 @@ pub(super) struct App {
     pub(super) context_open: Signal<bool>,
     pub(super) cache_open: Signal<bool>,
     pub(super) scroll: Signal<usize>,
-    pub(super) settings_sel: Signal<usize>,
+    pub(super) settings: super::ui::List,
     pub(super) modules: Signal<std::collections::BTreeMap<crate::modules::ModuleId, bool>>,
     pub(super) ticks: Signal<u64>,
     pub(super) splash_revealed: Signal<bool>,
@@ -141,40 +141,29 @@ pub(super) struct App {
     pub(super) sky: u64,
     pub(super) sky_clock: Signal<Option<Signal<f64>>>,
     pub(super) settle: Signal<bool>,
-    pub(super) theme_name: Signal<String>,
-    pub(super) backdrop: Signal<prefs::Background>,
+    pub(super) appearance: Signal<theme::Palette>,
     pub(super) viewport: Signal<(u16, u16)>,
     pub(super) layout: Signal<Layout>,
     pub(super) pane_focus: Signal<bool>,
-    pub(super) file_cursor: Signal<usize>,
-    pub(super) expanded: Signal<Vec<String>>,
+    pub(super) pane_lists: [super::ui::List; panes::PANES],
+    pub(super) hunk_list: super::ui::List,
     pub(super) last_pane: Signal<Option<Pane>>,
-    pub(super) context: Signal<Option<Context>>,
-    pub(super) diff_cursor: Signal<usize>,
     pub(super) diff_view: Signal<Option<String>>,
     pub(super) diff_root: Signal<Option<(PathBuf, String)>>,
-    pub(super) hunk_cursor: Signal<usize>,
     pub(super) note_target: Signal<Option<(String, String)>>,
     pub(super) note_text: Signal<String>,
     pub(super) note_caret: Signal<usize>,
-    pub(super) tree_cursor: Signal<usize>,
-    pub(super) job_cursor: Signal<usize>,
-    pub(super) job_open: Signal<Option<String>>,
-    pub(super) mcp_cursor: Signal<usize>,
-    pub(super) mcp_open: Signal<Option<String>>,
-    pub(super) peer_cursor: Signal<usize>,
-    pub(super) view_scroll: Signal<usize>,
     pub(super) view_from: Signal<Option<Pane>>,
     pub(super) diff_recent: Signal<bool>,
     pub(super) diff_session: Signal<bool>,
     pub(super) options_menu: Signal<bool>,
-    pub(super) revert_armed: Signal<Option<String>>,
-    pub(super) worktree_discard: Signal<Option<PathBuf>>,
+    pub(super) revert_armed: Confirm<String>,
+    pub(super) worktree_discard: Confirm<PathBuf>,
     pub(super) view_edit: Signal<bool>,
     pub(super) view_text: Signal<String>,
     pub(super) view_caret: Signal<usize>,
     view_saved: Signal<String>,
-    discard_armed: Signal<bool>,
+    discard_armed: Confirm<()>,
     pub(super) copy: Signal<Option<String>>,
     pub(super) approval: Signal<Option<Asked>>,
     pub(super) form: Signal<Option<FormState>>,
@@ -185,8 +174,8 @@ pub(super) struct App {
     copy_pending: Signal<Option<(Option<PathBuf>, String)>>,
     pub(super) open_file: Signal<Option<PathBuf>>,
     pub(super) quit: Signal<bool>,
-    quit_armed: Rc<Cell<Option<std::time::Instant>>>,
-    escape_armed: Rc<Cell<Option<std::time::Instant>>>,
+    quit_armed: Confirm<()>,
+    escape_armed: Confirm<()>,
     pub(super) editor_requested: Signal<bool>,
     pub(super) commands: Picker,
     pub(super) sessions: super::sessions::Picker,
@@ -229,13 +218,14 @@ impl Attachment {
 
 impl App {
     pub(super) fn new(info: Info, workspace: PathBuf, cmd: UnboundedSender<Cmd>) -> Self {
-        let model = Model::new(&info);
+        let model = signal(Rc::new(Model::new(&info)));
+        let picker = ModelPicker::new();
         let git_branch = read_git_branch(&workspace);
         let draft = signal(String::new());
         let caret = signal(0);
         let app = Self {
             inline: info.inline,
-            model: signal(Rc::new(model)),
+            model,
             search: super::search::Picker::new(),
             help: super::help::View::new(),
             cmd,
@@ -254,9 +244,9 @@ impl App {
             context_open: signal(false),
             cache_open: signal(false),
             scroll: signal(0),
-            settings_sel: signal(0),
+            settings: super::ui::List::new(),
             modules: signal({
-                let switches = crate::modules::Switches::load(&workspace).ok();
+                let switches = crate::modules::load(&workspace).ok();
                 crate::modules::ALL
                     .iter()
                     .map(|module| {
@@ -274,29 +264,18 @@ impl App {
             sky: super::scene::fresh_sky(),
             sky_clock: signal(None),
             settle: signal(false),
-            theme_name: signal(info.prefs.theme.clone()),
-            backdrop: signal(info.prefs.background),
+            appearance: signal(theme::palette()),
             viewport: signal((80, 24)),
             layout: signal(Layout::parse(&info.prefs.layout).unwrap_or_default()),
             pane_focus: signal(false),
-            file_cursor: signal(0),
-            expanded: signal(Vec::new()),
+            pane_lists: std::array::from_fn(|_| super::ui::List::new()),
+            hunk_list: super::ui::List::new(),
             last_pane: signal(None),
-            context: signal(None),
-            diff_cursor: signal(0),
             diff_view: signal(None),
             diff_root: signal(None),
-            hunk_cursor: signal(0),
             note_target: signal(None),
             note_text: signal(String::new()),
             note_caret: signal(0),
-            tree_cursor: signal(0),
-            job_cursor: signal(0),
-            job_open: signal(None),
-            mcp_cursor: signal(0),
-            mcp_open: signal(None),
-            peer_cursor: signal(0),
-            view_scroll: signal(0),
             view_from: signal(None),
             diff_recent: signal(false),
             diff_session: signal(false),
@@ -307,7 +286,7 @@ impl App {
             view_text: signal(String::new()),
             view_caret: signal(0),
             view_saved: signal(String::new()),
-            discard_armed: signal(false),
+            discard_armed: signal(None),
             copy: signal(None),
             approval: signal(None),
             form: signal(None),
@@ -318,14 +297,14 @@ impl App {
             copy_pending: signal(None),
             open_file: signal(None),
             quit: signal(false),
-            quit_armed: Rc::new(Cell::new(None)),
-            escape_armed: Rc::new(Cell::new(None)),
+            quit_armed: signal(None),
+            escape_armed: signal(None),
             editor_requested: signal(false),
-            commands: Picker::new(),
+            commands: Picker::new(draft, model, picker.facts),
             sessions: super::sessions::Picker::new(),
             usage: super::usage::Panel::new(),
             effort: super::effort::Strip::new(),
-            picker: ModelPicker::new(),
+            picker,
             workflow: WorkflowDialog::new(),
             auth: AuthDialog::new(),
             hotkeys: HotkeyDialog::new(),

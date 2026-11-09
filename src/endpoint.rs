@@ -2,38 +2,21 @@ use std::collections::BTreeMap;
 
 use crate::config::{self, Endpoint as FileEndpoint, File};
 use crate::credentials::{flow, logged_in};
-use crate::error::{Error, Result};
 use crate::provider::{Effort, Price, Reasoning};
 use crate::secret::{self, Source};
+use summonr_core::error::{Error, Result};
+use summonr_core::secret::Secret;
 
 pub(crate) const ENV_ENDPOINT: &str = "env";
 const PLAN_PATH_MARKER: &str = "/coding/";
-const GITHUB_DEVICE: &str = "https://github.com/login/device/code";
-const GITHUB_TOKEN: &str = "https://github.com/login/oauth/access_token";
-const COPILOT_CLIENT: &str = "Iv1.b507a08c87ecfe98";
-const CLAUDE_CLIENT: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-const CLAUDE_SCOPES: &str = "org:create_api_key user:profile user:inference user:sessions:claude_code \
-     user:mcp_servers user:file_upload";
-const OPENAI_API: &str = "https://api.openai.com/v1";
-const CHATGPT_AUTHORIZE: &str = "https://auth.openai.com/api/accounts/authorize";
-const CHATGPT_TOKEN: &str = "https://auth.openai.com/api/accounts/oauth/token";
-const CHATGPT_CLIENT: &str = "dynamic_agent_client";
-const CHATGPT_REDIRECT: &str = "http://127.0.0.1:0/auth/callback";
-const CHATGPT_PLAN_SCOPE: &str = "chatgpt.tokens.use.direct";
-const CHATGPT_SCOPES: &str =
-    "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
-const XAI_DEVICE: &str = "https://auth.x.ai/oauth2/device/code";
-const XAI_TOKEN: &str = "https://auth.x.ai/oauth2/token";
-const XAI_CLIENT: &str = "b1a00492-073a-47ea-816f-4c329264a828";
-const XAI_SCOPES: &str = "openid profile email offline_access grok-cli:access api:access";
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Endpoint {
     pub name: String,
     pub model: String,
     pub base_url: Option<String>,
     pub models_url: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key: Option<Secret>,
     pub source: Option<Source>,
     pub oauth: Option<crate::config::OAuth>,
     pub body: Option<serde_json::Value>,
@@ -41,72 +24,28 @@ pub struct Endpoint {
     pub idle_timeout_secs: Option<u64>,
     pub effort: Option<Effort>,
     pub price: Option<Price>,
-    pub env: BTreeMap<String, String>,
-    pub headers: BTreeMap<String, String>,
+    pub env: BTreeMap<String, Secret>,
+    pub headers: BTreeMap<String, Secret>,
     pub wire: Wire,
     pub fallback: Vec<String>,
     pub compact_tokens: Option<u32>,
     pub images: Option<bool>,
     pub keep_reasoning: bool,
-    pub opencode: bool,
+    pub session_headers: BTreeMap<String, SessionValue>,
     pub prompt_cache_key: bool,
     pub assistant_after_tool: bool,
     pub cache_ttl: CacheTtl,
-    pub cache_header: Option<String>,
     pub cache_marks: bool,
     pub(crate) reasoning: Reasoning,
 }
 
-impl std::fmt::Debug for Endpoint {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("Endpoint")
-            .field("name", &self.name)
-            .field("model", &self.model)
-            .field("base_url", &self.base_url)
-            .field("models_url", &self.models_url)
-            .field("api_key", &self.api_key.is_some())
-            .field("source", &self.source)
-            .field("oauth", &self.oauth.is_some())
-            .field("body", &self.body)
-            .field("context_window", &self.context_window)
-            .field("idle_timeout_secs", &self.idle_timeout_secs)
-            .field("effort", &self.effort)
-            .field("price", &self.price)
-            .field("env", &self.env.keys().collect::<Vec<_>>())
-            .field("headers", &self.headers.keys().collect::<Vec<_>>())
-            .field("wire", &self.wire)
-            .field("fallback", &self.fallback)
-            .field("compact_tokens", &self.compact_tokens)
-            .field("images", &self.images)
-            .field("keep_reasoning", &self.keep_reasoning)
-            .field("opencode", &self.opencode)
-            .field("prompt_cache_key", &self.prompt_cache_key)
-            .field("assistant_after_tool", &self.assistant_after_tool)
-            .field("cache_ttl", &self.cache_ttl)
-            .field("cache_header", &self.cache_header)
-            .field("reasoning", &self.reasoning)
-            .finish()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Wire {
-    #[default]
-    Completions,
-    Responses,
-    Anthropic,
-    Gemini,
-    Decisions,
-    AgentSdk,
-}
+pub(crate) use summonr_types::endpoint::{CacheTtl, Wire};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
-pub enum CacheTtl {
-    #[serde(rename = "5m")]
-    FiveMinutes,
-    #[serde(rename = "1h")]
-    OneHour,
+#[serde(rename_all = "snake_case")]
+pub enum SessionValue {
+    SessionId,
+    RequestId,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -153,6 +92,28 @@ pub(crate) fn local(url: &str) -> bool {
         }
         None => false,
     }
+}
+
+pub(crate) fn host_port(url: &str) -> Option<String> {
+    let url = url::Url::parse(url.trim().trim_end_matches('/')).ok()?;
+    Some(format!(
+        "{}:{}",
+        url.host_str()?,
+        url.port_or_known_default()?
+    ))
+}
+
+pub(crate) fn providers_at(url: &str) -> Vec<&'static str> {
+    let Some(wanted) = host_port(url) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<&str> = preset::presets()
+        .filter(|preset| host_port(&preset.base_url).as_deref() == Some(wanted.as_str()))
+        .flat_map(|preset| preset.opencode_ids.iter().map(String::as_str))
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,18 +189,6 @@ impl LoginFlow {
     }
 }
 
-impl Wire {
-    pub(crate) fn parse(value: &str) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "responses" => Self::Responses,
-            "anthropic" | "claude" => Self::Anthropic,
-            "gemini" | "google" => Self::Gemini,
-            "decisions" | "systemone" | "system-one" => Self::Decisions,
-            _ => Self::Completions,
-        }
-    }
-}
-
 #[must_use]
 pub fn is_named(token: &str) -> bool {
     builtin(token).is_some()
@@ -254,7 +203,7 @@ pub fn names() -> Result<Vec<String>> {
 }
 
 fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
-    if endpoint.wire == Wire::Decisions {
+    if crate::provider::wire::spec(endpoint.wire).classifies() {
         return LoginGroup::Decide;
     }
     if let Some(preset) = preset(name) {
@@ -282,26 +231,27 @@ mod info;
 mod keys;
 mod preset;
 mod reasoning;
+mod record;
 mod resolve;
 mod route;
 mod server;
 
-#[cfg(test)]
-pub(crate) use auth::catalog;
-pub use auth::{adopt_keys, auth_info, check_key, first_classify, login_seat, logout};
+pub use auth::{adopt_keys, auth_info, check_key, first_classify, login_endpoint, logout};
 pub(crate) use auth::{ready, step};
 pub use choice::{Need, Pick};
 pub use info::AuthInfo;
 use info::LoginGroup;
 use keys::*;
-pub use preset::label;
+pub(crate) use preset::label;
 use preset::preset;
+pub(crate) use preset::wire as deserialize_wire;
 pub(crate) use preset::{catalog_providers, env_unset, provider_ids, start_command};
-pub(crate) use resolve::default_seat;
+use record::Record;
+pub(crate) use resolve::default_model_selection;
 use resolve::hosted;
 pub(crate) use resolve::{Keys, is_set_up};
 pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
-pub(crate) use route::{Choice, Region, Route, Toggle, remembered, select, toggle};
+pub(crate) use route::{Region, Route, Toggle, remembered, select, toggle};
 pub use server::{add_server, remove_server, set_default};
 
 #[cfg(test)]

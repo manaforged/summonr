@@ -202,35 +202,70 @@ pub(super) fn apply_text_edits(text: &str, edits: &[TextEdit]) -> Result<String>
             ));
         }
     }
-    let mut out = text.to_string();
-    for edit in ordered.iter().rev() {
-        let start = offset(&out, edit.start_line, edit.start_col)?;
-        let end = offset(&out, edit.end_line, edit.end_col)?;
-        if start > end {
-            return Err(Error::Tool("lsp edit range is inverted".to_string()));
+    let rows: Vec<&str> = text.split('\n').collect();
+    let mut groups: Vec<Vec<&TextEdit>> = Vec::new();
+    let mut reach: Option<usize> = None;
+    for edit in ordered {
+        match groups.last_mut() {
+            Some(group) if reach.is_some_and(|line| line >= edit.start_line) => group.push(edit),
+            _ => groups.push(vec![edit]),
         }
-        out.replace_range(start..end, &edit.new_text);
+        reach = Some(reach.map_or(edit.end_line, |line| line.max(edit.end_line)));
     }
-    Ok(out)
+    let patches = groups
+        .iter()
+        .map(|group| line_patch(&rows, group))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(edit::apply_patches(text, patches)?.0)
 }
 
-pub(super) fn offset(text: &str, line: usize, character: usize) -> Result<usize> {
-    let mut pos = 0usize;
-    let mut rest = text;
-    for _ in 0..line {
-        let Some(index) = rest.find('\n') else {
-            return Err(Error::Tool(
-                "lsp edit line is past the end of the file".to_string(),
-            ));
-        };
-        pos += index + 1;
-        rest = &rest[index + 1..];
+fn line_patch(rows: &[&str], group: &[&TextEdit]) -> Result<edit::Patch> {
+    if group
+        .iter()
+        .any(|edit| (edit.start_line, edit.start_col) > (edit.end_line, edit.end_col))
+    {
+        return Err(Error::Tool("lsp edit range is inverted".to_string()));
     }
-    let row = rest.split('\n').next().unwrap_or(rest);
+    let first = group[0].start_line;
+    let last = group
+        .iter()
+        .map(|edit| edit.end_line)
+        .max()
+        .unwrap_or(first);
+    let span = rows
+        .get(first..=last)
+        .ok_or_else(|| Error::Tool("lsp edit line is past the end of the file".to_string()))?
+        .join("\n");
+    let byte = |line: usize, character: usize| -> Result<usize> {
+        // complexity: bounded by the lines one rename group spans
+        let before: usize = rows[first..line].iter().map(|row| row.len() + 1).sum();
+        Ok(before + utf16_byte(rows[line], character)?)
+    };
+    let mut out = String::with_capacity(span.len());
+    let mut kept = 0;
+    for edit in group {
+        let start = byte(edit.start_line, edit.start_col)?;
+        let end = byte(edit.end_line, edit.end_col)?;
+        out.push_str(&span[kept..start]);
+        out.push_str(&edit.new_text);
+        kept = end;
+    }
+    out.push_str(&span[kept..]);
+    Ok(edit::Patch {
+        start: first,
+        end: last + 1,
+        anchor_start: first,
+        anchor_end: last + 1,
+        replacement: out.split('\n').map(str::to_string).collect(),
+        relaxed: false,
+    })
+}
+
+fn utf16_byte(row: &str, character: usize) -> Result<usize> {
     let mut units = 0usize;
     for (index, ch) in row.char_indices() {
         if units == character {
-            return Ok(pos + index);
+            return Ok(index);
         }
         if units > character {
             return Err(Error::Tool(
@@ -240,7 +275,7 @@ pub(super) fn offset(text: &str, line: usize, character: usize) -> Result<usize>
         units += ch.len_utf16();
     }
     if units == character {
-        return Ok(pos + row.len());
+        return Ok(row.len());
     }
     Err(Error::Tool(
         "lsp edit column is past the end of the line".to_string(),
@@ -266,61 +301,11 @@ pub(super) fn format_location(item: &Value) -> Option<String> {
         .and_then(Value::as_u64)
         .unwrap_or(0)
         + 1;
-    let path = uri
-        .strip_prefix("file://")
-        .unwrap_or(uri)
-        .replace("%20", " ");
+    let path = Url::parse(uri)
+        .ok()
+        .and_then(|url| url.to_file_path().ok())
+        .map_or_else(|| uri.to_string(), |path| path.display().to_string());
     Some(format!("{path}:{line}:{col}"))
-}
-
-pub(super) async fn write_msg(writer: &mut (impl AsyncWrite + Unpin), value: &Value) -> Result<()> {
-    let body = serde_json::to_vec(value)?;
-    let header = format!("Content-Length: {}\r\n\r\n", body.len());
-    writer
-        .write_all(header.as_bytes())
-        .await
-        .map_err(|error| Error::Tool(format!("lsp write: {error}")))?;
-    writer
-        .write_all(&body)
-        .await
-        .map_err(|error| Error::Tool(format!("lsp write: {error}")))?;
-    writer
-        .flush()
-        .await
-        .map_err(|error| Error::Tool(format!("lsp write: {error}")))?;
-    Ok(())
-}
-
-pub(super) async fn read_msg(reader: &mut BufReader<impl AsyncRead + Unpin>) -> Result<Value> {
-    let mut length = None;
-    loop {
-        let mut line = String::new();
-        let n = reader
-            .read_line(&mut line)
-            .await
-            .map_err(|error| Error::Tool(format!("lsp read: {error}")))?;
-        if n == 0 {
-            return Err(Error::Tool("language server closed".to_string()));
-        }
-        if line == "\r\n" || line == "\n" {
-            break;
-        }
-        if let Some(value) = line
-            .to_ascii_lowercase()
-            .strip_prefix("content-length:")
-            .map(str::trim)
-        {
-            length = value.parse().ok();
-        }
-    }
-    let length =
-        length.ok_or_else(|| Error::Tool("lsp message missing Content-Length".to_string()))?;
-    let mut body = vec![0_u8; length];
-    reader
-        .read_exact(&mut body)
-        .await
-        .map_err(|error| Error::Tool(format!("lsp read: {error}")))?;
-    serde_json::from_slice(&body).map_err(|error| Error::Tool(format!("lsp json: {error}")))
 }
 
 #[cfg(test)]

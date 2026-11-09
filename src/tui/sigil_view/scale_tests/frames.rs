@@ -72,11 +72,11 @@ fn guarded(act: impl FnOnce(&App) -> bool) -> bool {
 fn the_provider_cannot_change_during_a_login_step() {
     assert!(guarded(|app| {
         login(app);
-        let held = app.auth.sel.peek();
+        let held = app.auth.list.cursor.peek();
         app.auth.step.set(Login::Confirm);
         app.replace_auth_filter("deep".to_owned());
         app.pick_auth(held + 1);
-        app.auth.sel.peek() == held && app.auth.filter.peek().is_empty()
+        app.auth.list.cursor.peek() == held && app.auth.list.query.peek().is_empty()
     }));
 }
 
@@ -99,8 +99,8 @@ fn arrows_do_not_move_a_hidden_provider_list() {
         rejected_openai(app);
         select(app, "openai");
         app.commit_model_edit();
-        let held = app.auth.sel.peek();
+        let held = app.auth.list.cursor.peek();
         app.move_auth(1);
-        app.auth.sel.peek() == held
+        app.auth.list.cursor.peek() == held
     }));
 }

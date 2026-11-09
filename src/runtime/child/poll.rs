@@ -25,14 +25,8 @@ impl<P: Provider> Loop<P> {
                 .and_then(|id| self.session.child(id))
                 .ok_or_else(|| Error::Tool(format!("unknown child `{id}`")))?;
             return Ok(Execution {
-                output: ToolOutput {
-                    text: serde_json::to_string(&settled)?,
-                    success: matches!(settled.state, ChildState::Completed(_)),
-                    mutated: false,
-                    grant: None,
-                    images: Vec::new(),
-                    patch: None,
-                },
+                output: ToolOutput::ok(serde_json::to_string(&settled)?)
+                    .with_success(matches!(settled.state, ChildState::Completed(_))),
                 usage: Usage::default(),
                 millis: 0,
             });
@@ -53,23 +47,16 @@ impl<P: Provider> Loop<P> {
                 return Err(Error::Tool(format!("unknown child `{id}`")));
             };
             return Ok(Execution {
-                output: ToolOutput {
-                    text: format!(
-                        "child {id}\nstate: running\nelapsed: {}s\nassignment: {}\nlast: {}",
-                        spawned.started.elapsed().as_secs(),
-                        ellipsize(&spawned.record.assignment, LAST_CHARS),
-                        if spawned.last.is_empty() {
-                            "starting"
-                        } else {
-                            spawned.last.as_str()
-                        }
-                    ),
-                    success: true,
-                    mutated: false,
-                    grant: None,
-                    images: Vec::new(),
-                    patch: None,
-                },
+                output: ToolOutput::ok(format!(
+                    "child {id}\nstate: running\nelapsed: {}s\nassignment: {}\nlast: {}",
+                    spawned.started.elapsed().as_secs(),
+                    ellipsize(&spawned.record.assignment, LAST_CHARS),
+                    if spawned.last.is_empty() {
+                        "starting"
+                    } else {
+                        spawned.last.as_str()
+                    }
+                )),
                 usage: Usage::default(),
                 millis: 0,
             });
@@ -293,5 +280,39 @@ impl<P: Provider> Loop<P> {
             _ => return,
         };
         spawned.last = last;
+    }
+
+    pub(in crate::runtime) async fn run_or_wake(
+        &mut self,
+        call: &ToolCall,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<(Result<ToolOutput>, Usage)> {
+        let waits =
+            crate::tools::Builtin::is(&call.function.name, crate::tools::Builtin::RunCommand)
+                && serde_json::from_str::<serde_json::Value>(&call.function.arguments)
+                    .is_ok_and(|args| args.get("job").is_some() && args.get("kill").is_none());
+        let mut usage = Usage::default();
+        if waits {
+            self.settle_ready(events, emit, &mut usage).await?;
+        }
+        if !waits || self.spawned.is_empty() {
+            return Ok((self.tools.execute_outcome(call).await, usage));
+        }
+        let ids: Vec<String> = self.spawned.keys().cloned().collect();
+        let handles = self.spawned.values_mut().map(|spawned| &mut spawned.handle);
+        let (index, joined) = tokio::select! {
+            biased;
+            (joined, index, _) = futures::future::select_all(handles) => (index, joined),
+            output = self.tools.execute_outcome(call) => return Ok((output, usage)),
+        };
+        let id = &ids[index];
+        self.announce_finished(id, joined, events, emit, &mut usage)?;
+        Ok((
+            Ok(ToolOutput::ok(format!(
+                "returned early: background child {id} finished before this job did; its result is delivered; wait on the job again"
+            ))),
+            usage,
+        ))
     }
 }

@@ -1,15 +1,17 @@
 #[cfg(test)]
 use serde_json::Value;
 
+use super::reply::ReplyBuilder;
 use super::{Accumulate, Chat, Delta};
-use crate::provider::message::Checked;
+#[cfg(test)]
+use crate::provider::Usage;
 use crate::provider::{
-    AssistantMessage, CompletionRequest, Continuation, Partial, Reasoning, StopReason, ToolCall,
-    ToolFunction, ToolKind, Usage,
+    AssistantMessage, CompletionRequest, Continuation, StopReason, ToolCall, ToolFunction, ToolKind,
 };
 #[cfg(test)]
 use frame::Counted;
 use frame::{Call, Chunk};
+use summonr_types::Checked;
 
 #[cfg(test)]
 use crate::provider::{Message, Role};
@@ -18,7 +20,6 @@ use serde_json::json;
 
 mod body;
 mod config;
-mod finish;
 mod frame;
 
 const SYNTHETIC: &str = "call-";
@@ -28,47 +29,25 @@ pub(crate) struct Wire;
 impl Chat for Wire {
     type Stream = Reply;
 
-    fn path(model: &str, stream: bool) -> String {
-        if stream {
-            format!("/models/{model}:streamGenerateContent?alt=sse")
-        } else {
-            format!("/models/{model}:generateContent")
-        }
-    }
-
     fn body(
         call: &CompletionRequest<'_>,
-        reasoning: &Reasoning,
-        _cache: crate::endpoint::CacheTtl,
-        _stream: bool,
-    ) -> crate::error::Result<super::Wired> {
-        body::body(call, reasoning)
-    }
-
-    #[cfg(test)]
-    fn parse(model: &str, body: &Value) -> AssistantMessage {
-        let mut reply = <Reply as Accumulate>::new(model);
-        drop(reply.take(body));
-        reply.finish()
+        encoding: &super::Encoding<'_>,
+    ) -> summonr_core::error::Result<super::Wired> {
+        body::body(call, encoding.reasoning)
     }
 }
 
 #[cfg(test)]
-pub(crate) fn request(call: &CompletionRequest<'_>) -> crate::error::Result<Value> {
+pub(crate) fn request(call: &CompletionRequest<'_>) -> summonr_core::error::Result<Value> {
     body::body(call, &call.reasoning)?.value()
 }
 
 #[derive(Default)]
 pub(crate) struct Reply {
     pub(crate) model: String,
-    text: String,
-    thinking: String,
+    reply: ReplyBuilder,
     pub(crate) signatures: Vec<String>,
     pub(crate) said: String,
-    calls: Vec<ToolCall>,
-    usage: Usage,
-    stop: StopReason,
-    done: bool,
 }
 
 impl Accumulate for Reply {
@@ -79,7 +58,7 @@ impl Accumulate for Reply {
         }
     }
 
-    fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>> {
+    fn on(&mut self, frame: &str) -> summonr_core::error::Result<Vec<Delta>> {
         let Some(frame) = crate::provider::wire::parse::<Option<Chunk<'_>>>(frame)? else {
             return Ok(Vec::new());
         };
@@ -98,33 +77,25 @@ impl Accumulate for Reply {
             return Err(super::blocked(reason));
         }
         if let Some(reason) = frame.finish_reason() {
-            self.done = true;
-            finish::Finish::parse(reason).ended(reason)?;
+            self.reply.finished = true;
+            crate::provider::client::ending(crate::endpoint::Wire::Gemini, reason, "")?;
         }
         Ok(self.value(&frame))
     }
 
-    fn finished(&self) -> bool {
-        self.done
-    }
-
-    fn spill(&mut self, partial: &mut Partial) {
-        partial.text.push_str(&self.text);
-        partial.reasoning.push_str(&self.thinking);
-        if self.usage != Usage::default() {
-            partial.usage = Some(self.usage.clone());
-        }
+    fn reply(&self) -> &ReplyBuilder {
+        &self.reply
     }
 
     fn finish(mut self) -> AssistantMessage {
-        if !self.calls.is_empty() {
-            self.stop = StopReason::ToolCalls;
+        if !self.reply.calls.is_empty() {
+            self.reply.stop = StopReason::ToolCalls;
             let mut signatures = std::mem::take(&mut self.signatures);
             if !self.said.is_empty() {
                 signatures.push(std::mem::take(&mut self.said));
             }
             if signatures.iter().any(|signature| !signature.is_empty())
-                && let Some(call) = self.calls.first_mut()
+                && let Some(call) = self.reply.calls.first_mut()
             {
                 call.continuation = Some(Continuation::Gemini {
                     model: self.model.clone(),
@@ -133,34 +104,27 @@ impl Accumulate for Reply {
             }
         }
         let continuation =
-            (self.calls.is_empty() && !self.said.is_empty()).then(|| Continuation::Gemini {
+            (self.reply.calls.is_empty() && !self.said.is_empty()).then(|| Continuation::Gemini {
                 model: self.model.clone(),
                 signatures: vec![std::mem::take(&mut self.said)],
             });
-        AssistantMessage {
-            continuation,
-            content: (!self.text.is_empty()).then_some(self.text),
-            tool_calls: self.calls,
-            reasoning_content: (!self.thinking.is_empty()).then_some(self.thinking),
-            usage: self.usage,
-            stop_reason: self.stop,
-        }
+        self.reply.finish(continuation)
     }
 }
 
 impl Reply {
     fn value(&mut self, frame: &Chunk<'_>) -> Vec<Delta> {
-        let thought = self.thinking.len();
-        let named = self.calls.len();
+        let thought = self.reply.reasoning.len();
+        let named = self.reply.calls.len();
         let text = self.absorb(frame);
         let mut deltas = Vec::new();
-        if self.thinking.len() > thought {
-            deltas.push(Delta::Thinking(self.thinking[thought..].to_string()));
+        if self.reply.reasoning.len() > thought {
+            deltas.push(Delta::Thinking(self.reply.reasoning[thought..].to_string()));
         }
         if let Some(chunk) = text {
             deltas.push(Delta::Text(chunk));
         }
-        for call in self.calls.iter().skip(named) {
+        for call in self.reply.calls.iter().skip(named) {
             deltas.push(Delta::Call(call.function.name.clone()));
         }
         deltas
@@ -175,16 +139,17 @@ impl Reply {
 
     fn absorb(&mut self, body: &Chunk<'_>) -> Option<String> {
         if let Some(counted) = &body.usage_metadata {
-            self.usage = counted.usage();
+            self.reply.usage = counted.usage();
         }
         if let Some(reason) = body.finish_reason() {
-            self.stop = stop_reason(reason);
+            self.reply.stop = stop_reason(reason);
         }
         let mut chunk = String::new();
         for part in body.parts() {
             let signature = part.thought_signature.as_deref();
             if let Some(call) = &part.function_call {
-                self.calls.push(self.called(call));
+                let called = self.called(call);
+                self.reply.calls.push(called);
                 self.signatures
                     .push(signature.unwrap_or_default().to_string());
             } else if let Some(signature) = signature {
@@ -192,9 +157,9 @@ impl Reply {
             }
             if let Some(text) = part.text.as_deref() {
                 if part.thought == Some(true) {
-                    self.thinking.push_str(text);
+                    self.reply.reasoning.push_str(text);
                 } else {
-                    self.text.push_str(text);
+                    self.reply.text.push_str(text);
                     chunk.push_str(text);
                 }
             }
@@ -205,7 +170,7 @@ impl Reply {
     fn called(&self, call: &Call<'_>) -> ToolCall {
         let name = call.name.as_deref().unwrap_or_default().to_string();
         let id = call.id.as_deref().map_or_else(
-            || format!("{SYNTHETIC}{name}-{}", self.calls.len()),
+            || format!("{SYNTHETIC}{name}-{}", self.reply.calls.len()),
             str::to_string,
         );
         ToolCall {
@@ -231,7 +196,10 @@ pub(crate) fn usage(counted: &Value) -> Usage {
 }
 
 pub(crate) fn stop_reason(raw: &str) -> StopReason {
-    finish::Finish::parse(raw).stop()
+    crate::provider::client::ending(crate::endpoint::Wire::Gemini, raw, "")
+        .ok()
+        .flatten()
+        .unwrap_or(StopReason::Other)
 }
 
 #[cfg(test)]

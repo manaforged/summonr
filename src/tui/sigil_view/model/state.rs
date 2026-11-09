@@ -44,12 +44,16 @@ impl Agent {
 
     pub(in crate::tui::sigil_view) fn title_of(assignment: &str) -> String {
         let line = assignment.lines().next().unwrap_or_default().trim();
+        let line = line
+            .split_once(": ")
+            .filter(|(label, _)| label.chars().all(|c| c.is_ascii_uppercase() || c == ' '))
+            .map_or(line, |(_, goal)| goal);
         let clause = [". ", ": ", " (", ", ", " — "]
             .iter()
             .filter_map(|mark| line.find(mark))
             .min()
             .map_or(line, |at| &line[..at]);
-        crate::text::ellipsize(clause.trim_end_matches('.'), TITLE_CHARS).to_string()
+        crate::display::ellipsize(clause.trim_end_matches('.'), TITLE_CHARS).to_string()
     }
 
     pub(in crate::tui::sigil_view) fn roots(&self, roots: &[String]) -> Vec<String> {
@@ -66,7 +70,7 @@ impl Agent {
     }
 
     pub(in crate::tui::sigil_view) fn clock(&self) -> String {
-        crate::text::duration(self.elapsed())
+        summonr_core::text::duration(self.elapsed())
     }
 
     pub(in crate::tui::sigil_view) fn state(&self) -> ToolState {
@@ -162,16 +166,6 @@ impl Entries {
         self.revs.truncate(index);
         self.sync();
         self.reask();
-        entry
-    }
-
-    pub(in crate::tui::sigil_view) fn pop(&mut self) -> Option<Entry> {
-        self.sync();
-        let entry = self.inner.pop();
-        self.sync();
-        if matches!(entry, Some(Entry::User(_))) {
-            self.reask();
-        }
         entry
     }
 

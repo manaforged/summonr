@@ -1,3 +1,6 @@
+use sigil::widgets::CursorEdge;
+
+use super::settings::Setting;
 use super::*;
 
 const AUTO_COMMAND: &str = "/auto";
@@ -10,68 +13,24 @@ impl App {
         if self.picker.open.peek() {
             return;
         }
-        let last = super::settings::setting_rows(self).len().saturating_sub(1);
-        self.settings_sel.set(
-            self.settings_sel
-                .peek()
-                .saturating_add_signed(delta)
-                .min(last),
-        );
+        self.settings
+            .shift(delta, Setting::all().count(), CursorEdge::Clamp);
     }
 
-    pub(in crate::tui::sigil_view) fn selected_setting(&self) -> Option<super::settings::Setting> {
-        super::settings::setting_rows(self)
-            .get(self.settings_sel.peek())
-            .map(|row| row.setting)
+    pub(in crate::tui::sigil_view) fn selected_setting(&self) -> Option<Setting> {
+        Setting::all().nth(self.settings.cursor.peek())
     }
 
     pub(in crate::tui::sigil_view) fn adjust_setting(&self) {
-        use super::settings::Setting;
-
         if self.picker.open.peek() {
             return;
         }
-        let Some(setting) = self.selected_setting() else {
-            return;
-        };
-        match setting {
-            Setting::Verify => self.toggle_verify(),
-            Setting::Workflow => self.open_workflow(),
-            Setting::Endpoint => self.cycle_endpoint(),
-            Setting::Model => self.begin_model_edit(),
-            Setting::Reasoning => self.reasoning_command(None),
-            Setting::Tools => self.toggle_tools(),
-            setting => self.adjust_display(setting),
+        if let Some(setting) = self.selected_setting() {
+            setting.activate(self);
         }
     }
 
-    fn adjust_display(&self, setting: super::settings::Setting) {
-        use super::settings::Setting;
-
-        match setting {
-            Setting::DiffLayout => {
-                self.set_diff_layout(self.model.get().prefs.diff_layout.toggle());
-            }
-            Setting::Mail => self.toggle_mail(),
-            Setting::Module(id) => self.toggle_module(id),
-            Setting::Theme => self.toggle_theme(),
-            Setting::Background => self.toggle_background(),
-            Setting::Notify => self.flip(|prefs| prefs.notify = prefs.notify.toggle()),
-            Setting::Receipts => self.receipts_command(None),
-            Setting::Hotkeys => self.open_hotkeys(),
-            Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
-            Setting::Motion => self.toggle_motion(),
-            Setting::Mode => self.cycle_run_mode(),
-            Setting::Verify
-            | Setting::Workflow
-            | Setting::Endpoint
-            | Setting::Model
-            | Setting::Reasoning
-            | Setting::Tools => {}
-        }
-    }
-
-    fn toggle_motion(&self) {
+    pub(in crate::tui::sigil_view) fn toggle_motion(&self) {
         self.flip(|prefs| prefs.animations = !prefs.animations);
         self.splash_since.set(std::time::Instant::now());
         self.splash_revealed.set(!self.model.get().prefs.animations);
@@ -94,7 +53,7 @@ impl App {
             Some(Overlay::Settings) | None => {
                 let open = !self.settings_open.peek();
                 if open {
-                    self.settings_sel.set(0);
+                    self.settings.cursor.set(0);
                 }
                 self.settings_open.set(open);
             }
@@ -105,7 +64,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn open_hotkeys(&self) {
-        self.hotkeys.sel.set(0);
+        self.hotkeys.list.cursor.set(0);
         self.stop_recording();
         self.hotkeys.open.set(true);
     }
@@ -132,13 +91,9 @@ impl App {
         if self.hotkeys.recording.peek() {
             return;
         }
-        self.hotkeys.sel.set(
-            self.hotkeys
-                .sel
-                .peek()
-                .saturating_add_signed(delta)
-                .min(Hotkey::ALL.len() - 1),
-        );
+        self.hotkeys
+            .list
+            .shift(delta, Hotkey::ALL.len(), CursorEdge::Clamp);
     }
 
     pub(in crate::tui::sigil_view) fn edit_hotkey(&self) {
@@ -195,11 +150,11 @@ impl App {
         if action != Hotkey::Options && self.options_active() {
             return true;
         }
-        self.run_hotkey(action)
+        self.run_key(super::super::view::KeyCommand::Hotkey(action))
     }
 
     pub(in crate::tui::sigil_view) fn record_chord(&self, key: char, leader: bool) {
-        let action = Hotkey::ALL[self.hotkeys.sel.peek().min(Hotkey::ALL.len() - 1)];
+        let action = Hotkey::ALL[self.hotkeys.list.at(Hotkey::ALL.len())];
         let mut assigned = false;
         self.model_mut(|model| {
             assigned = model.prefs.hotkeys.assign(action, key, leader);
@@ -214,25 +169,6 @@ impl App {
             return;
         }
         self.save_hotkeys();
-    }
-
-    fn run_hotkey(&self, action: Hotkey) -> bool {
-        match action {
-            Hotkey::Options => self.toggle_options(),
-            Hotkey::Newline => return false,
-            Hotkey::Editor => self.editor_requested.set(true),
-            Hotkey::Files => self.toggle_pane(Pane::Files),
-            Hotkey::Ledger => self.toggle_todos(),
-            Hotkey::Agents => self.toggle_agents(),
-            Hotkey::Diff => self.toggle_pane(Pane::Diff),
-            Hotkey::Copy => self.copy_chat(None),
-            Hotkey::Select => self.select.set(!self.select.peek()),
-            Hotkey::Pane => self.toggle_side(),
-            Hotkey::Search => self.search.start(""),
-            Hotkey::History => self.prompt_history(""),
-            Hotkey::Fold => self.fold_cycle(),
-        }
-        true
     }
 
     pub(in crate::tui::sigil_view) fn toggle_theme(&self) {
@@ -252,7 +188,7 @@ impl App {
         self.refresh();
     }
 
-    fn toggle_background(&self) {
+    pub(in crate::tui::sigil_view) fn toggle_background(&self) {
         self.model_mut(|model| {
             model.prefs.background = model.prefs.background.toggle();
             model.entries.invalidate();
@@ -265,7 +201,9 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn apply_theme(&self) {
         let prefs = self.model.peek().prefs.clone();
-        for problem in theme::install(&prefs, &self.workspace, self.info.config.as_deref()) {
+        let problems = theme::install(&prefs, &self.workspace, self.info.config.as_deref());
+        self.appearance.set(theme::palette());
+        for problem in problems {
             self.push_entry(Entry::System(problem));
         }
     }

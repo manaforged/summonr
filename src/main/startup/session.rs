@@ -47,11 +47,11 @@ pub(super) fn apply_workflow(
     json: bool,
 ) -> Result<workflow::Workflow> {
     let workflow = workflow::load(name)?;
-    loop_.apply_workflow(&workflow, |seat| {
+    loop_.configure_workflow(&workflow, |selection| {
         let endpoint = resolve_endpoint(
-            Some(&seat.endpoint),
-            seat.model.as_deref(),
-            summonr::Need::Seat,
+            Some(&selection.endpoint),
+            selection.model.as_deref(),
+            summonr::Need::ModelAndKey,
         )?;
         let client = provider(&endpoint, ui, json)?;
         Ok((client, endpoint))
@@ -95,17 +95,6 @@ fn journal_workspace(path: &Path) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-pub(super) fn route_checks(
-    goal: bool,
-    checks: Option<Vec<String>>,
-) -> (Option<Vec<String>>, Vec<String>) {
-    if goal {
-        (checks.clone(), checks.unwrap_or_default())
-    } else {
-        (checks, Vec::new())
-    }
-}
-
 pub(super) fn build(
     args: &Args,
     endpoint: &Endpoint,
@@ -114,7 +103,7 @@ pub(super) fn build(
     check: Option<Vec<String>>,
     action: SessionAction,
 ) -> Result<Loop<Client>> {
-    let switches = summonr::modules::Switches::load(workspace)?;
+    let switches = summonr::modules::load(workspace)?;
     let images = summonr::catalog::accepts_images(endpoint);
     let prompt = system_prompt(
         workspace,
@@ -150,6 +139,9 @@ fn configure(
     check: Option<Vec<String>>,
 ) -> Result<Loop<Client>> {
     loop_ = loop_.with_unrestricted_commands();
+    if args.print && args.goal.is_none() && args.steps.is_none() {
+        loop_ = loop_.without_task_list();
+    }
     for dir in &args.add_dir {
         loop_.allow_path(dir)?;
     }
@@ -163,7 +155,7 @@ fn configure(
         );
     }
     if let Some(check) = check {
-        loop_ = loop_.with_verify(check);
+        loop_ = loop_.with_verify(check)?;
     }
     if let Some(budget) = budget(args) {
         loop_ = loop_.with_budget(budget)?;

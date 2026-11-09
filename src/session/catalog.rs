@@ -6,8 +6,8 @@ use super::{Prompt, SessionInfo, Summary, user_text};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line};
 use crate::durable::store;
-use crate::error::{Error, Result};
-use crate::prompt::summonr_home;
+use summonr_core::dirs::summonr_home;
+use summonr_core::error::{Error, Result};
 
 pub fn last_for(workspace: &Path) -> Result<Option<SessionInfo>> {
     latest_in(&summonr_home()?, workspace, None)
@@ -81,14 +81,20 @@ pub fn short(id: &str) -> &str {
 const PREVIEW_WIDTH: usize = 72;
 
 pub(crate) fn preview(text: &str, source: Option<&str>) -> String {
-    crate::text::ellipsize(user_text(text, source), PREVIEW_WIDTH)
+    crate::display::ellipsize(user_text(text, source), PREVIEW_WIDTH)
 }
 
 pub(crate) fn name_of(path: &Path) -> Option<String> {
-    std::fs::read_to_string(log::name_path(path))
-        .ok()
-        .map(|text| text.trim().to_string())
-        .filter(|name| !name.is_empty())
+    name_doc(path).load().ok()?.into_iter().next()
+}
+
+fn name_doc(path: &Path) -> store::Doc<store::Lines> {
+    store::Doc::new(
+        log::name_path(path),
+        store::Durability::Synced,
+        store::Invalid::Fail,
+        store::Wait::Never,
+    )
 }
 
 pub(crate) fn set_name(path: &Path, name: &str) -> Result<()> {
@@ -98,12 +104,7 @@ pub(crate) fn set_name(path: &Path, name: &str) -> Result<()> {
             "a session name is one non-empty line".to_string(),
         ));
     }
-    store::write(
-        &log::name_path(path),
-        format!("{name}\n"),
-        store::Durability::Synced,
-    )?;
-    Ok(())
+    name_doc(path).replace(&vec![name.to_string()])
 }
 
 pub fn resolve_id(id: &str) -> Result<PathBuf> {
@@ -135,7 +136,7 @@ pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
     match hits.as_slice() {
         [(_, only)] => Ok(only.clone()),
         [] => Err(Error::Config(format!("no session `{id}`"))),
-        _ => Err(ambiguous(id, &hits)),
+        [_, _, ..] => Err(ambiguous(id, &hits)),
     }
 }
 
@@ -177,7 +178,7 @@ pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
                 .map(Path::to_path_buf)
                 .ok_or_else(|| Error::Config(format!("session `{id}` has no directory")))?,
             [] => return Err(Error::Config(format!("no session `{id}`"))),
-            _ => return Err(ambiguous(id, &hits)),
+            [_, _, ..] => return Err(ambiguous(id, &hits)),
         }
     };
     let name = dir
@@ -191,8 +192,6 @@ pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
 pub fn list() -> Result<Vec<SessionInfo>> {
     list_in(&summonr_home()?)
 }
-
-const PROMPT_SESSIONS: usize = 64;
 
 pub(crate) fn prompts(scope: Option<&str>) -> Result<(Vec<Prompt>, Vec<String>)> {
     prompts_in(&summonr_home()?, scope)
@@ -213,24 +212,13 @@ pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt
     for session in sessions
         .into_iter()
         .rev()
-        .filter(|info| info.depth == 0)
-        .take(PROMPT_SESSIONS)
+        .take(crate::limits::limits().prompt_sessions)
     {
-        let lines = match log::read(&session.path) {
-            Ok(lines) => lines,
-            Err(error) => {
-                let error = format!("Cannot read session {}: {error}", session.path.display());
-                if scope.is_some() {
-                    return Err(Error::Config(error));
-                }
-                skipped.push(error);
-                continue;
-            }
-        };
+        let path = session.path.clone();
         let session = Arc::new(session);
         let mut saved: Vec<Prompt> = Vec::new();
-        for line in lines {
-            match line {
+        let read = log::records(&path, 0).try_for_each(|line| {
+            line.map(|line| match line {
                 Line::User {
                     text,
                     source,
@@ -249,7 +237,15 @@ pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt
                     }
                 }
                 _ => {}
+            })
+        });
+        if let Err(error) = read {
+            let error = format!("Cannot read session {}: {error}", path.display());
+            if scope.is_some() {
+                return Err(Error::Config(error));
             }
+            skipped.push(error);
+            continue;
         }
         saved.reverse();
         prompts.extend(saved);
@@ -269,6 +265,7 @@ pub(crate) fn list_in(home: &Path) -> Result<Vec<SessionInfo>> {
                     .into_info(id.clone(), path.clone()),
             )
         })
+        .filter(|info| info.depth == 0)
         .collect();
     index.save(&sessions);
     Ok(infos)

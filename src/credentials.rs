@@ -1,32 +1,32 @@
 use std::sync::Arc;
 
-use summonr_auth::{Auth, Grant, Method, Scheme, Spec, Store, TokenStyle};
+use summonr_auth::{Auth, Method, Scheme, Spec, Store};
+use summonr_core::secret::Secret;
+use summonr_types::oauth::{Grant, TokenScheme};
 
 use crate::endpoint::{Endpoint, LoginFlow, Wire};
-use crate::error::{Error, Result};
 use crate::secret;
-
-struct Keeper;
+use summonr_core::error::{Error, Result};
 
 pub(crate) fn login_slot(name: &str) -> String {
     format!("oauth:{name}")
 }
 
-impl Store for Keeper {
+impl Store for secret::Store {
     fn get(&self, name: &str) -> summonr_auth::Result<Option<String>> {
-        secret::get(&login_slot(name))
+        secret::Store::get(self, &login_slot(name))
             .map(|found| found.map(|(secret, _)| secret))
             .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 
     fn set(&self, name: &str, secret: &str) -> summonr_auth::Result<()> {
-        secret::set(&login_slot(name), secret)
+        secret::Store::set(self, &login_slot(name), secret)
             .map(|_source| ())
             .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 
     fn forget(&self, name: &str) -> summonr_auth::Result<bool> {
-        secret::forget(&login_slot(name))
+        secret::Store::forget(self, &login_slot(name))
             .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 
@@ -41,23 +41,19 @@ impl Store for Keeper {
                 }
             })
             .collect();
-        crate::prompt::summonr_home()
+        summonr_core::dirs::summonr_home()
             .and_then(|home| crate::config::hold(&home.join("locks").join(safe)))
             .map(|file| Box::new(file) as Box<dyn Send>)
             .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 }
 
-pub(crate) fn keeper() -> Arc<dyn Store> {
-    Arc::new(Keeper)
+fn store() -> Result<Arc<dyn Store>> {
+    Ok(Arc::new(secret::Store::discover()?))
 }
 
 pub(crate) fn scheme(wire: Wire) -> Scheme {
-    match wire {
-        Wire::Anthropic => Scheme::ApiKey,
-        Wire::Gemini => Scheme::GoogleKey,
-        Wire::Completions | Wire::Responses | Wire::Decisions | Wire::AgentSdk => Scheme::Bearer,
-    }
+    crate::provider::wire::spec(wire).scheme
 }
 
 pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
@@ -66,28 +62,20 @@ pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
             "a login needs token_url and client_id".to_string(),
         ));
     }
-    let grant = match row.grant.as_deref().map(str::trim) {
-        Some("device_code") => Grant::DeviceCode,
-        Some("authorization_code") => Grant::AuthorizationCode,
-        _ => Grant::RefreshToken,
-    };
     let spec = Spec {
         token_url: row.token_url.clone(),
         client_id: row.client_id.clone(),
         client_secret: row.client_secret.clone(),
         refresh_token: row.refresh_token.clone(),
         scope: row.scope.clone(),
-        grant,
+        grant: row.grant(),
         device_url: row.device_url.clone(),
         exchange_url: row.exchange_url.clone(),
         authorize_url: row.authorize_url.clone(),
         redirect_uri: row.redirect_uri.clone(),
         authorize_params: row.authorize_params.clone(),
         token_params: row.token_params.clone(),
-        token_style: match row.token_style.as_deref().map(str::trim) {
-            Some("json") => TokenStyle::Json,
-            _ => TokenStyle::Form,
-        },
+        token_style: row.token_style(),
         pkce: row.pkce,
         claim_headers: row.claim_headers.clone(),
         required_scope: row.required_scope.clone(),
@@ -103,19 +91,22 @@ pub(crate) fn auth(endpoint: &Endpoint) -> Result<Auth> {
         None => match endpoint
             .api_key
             .clone()
-            .filter(|key| !key.trim().is_empty())
+            .filter(|key| !key.expose().trim().is_empty())
         {
             Some(key) => Method::Key(key),
-            None if endpoint.keyless() => Method::Key("local".to_string()),
-            None => Method::Key(String::new()),
+            None if endpoint.keyless() => Method::Key(Secret::new("local")),
+            None => Method::Key(Secret::new("")),
         },
     };
-    let carrier = match (&method, endpoint.oauth.as_ref().and_then(named_scheme)) {
-        (Method::Login(_), Some(named)) => named,
+    let carrier = match (
+        &method,
+        endpoint.oauth.as_ref().and_then(|row| row.scheme()),
+    ) {
+        (Method::Login(_), Some(named)) => carrier(named),
         (Method::Login(_), None) => Scheme::Bearer,
         (Method::Key(_), _) => scheme(endpoint.wire),
     };
-    Ok(Auth::new(method, carrier, &endpoint.name, keeper()))
+    Ok(Auth::new(method, carrier, &endpoint.name, store()?))
 }
 
 pub(crate) fn mcp_auth(row: crate::config::OAuth, name: &str) -> Result<Auth> {
@@ -123,27 +114,29 @@ pub(crate) fn mcp_auth(row: crate::config::OAuth, name: &str) -> Result<Auth> {
         Method::Login(Box::new(spec(&row)?)),
         Scheme::Bearer,
         name,
-        keeper(),
+        store()?,
     ))
 }
 
-pub(crate) fn bearer(key: impl Into<String>) -> Auth {
-    Auth::new(Method::Key(key.into()), Scheme::Bearer, "local", keeper())
+pub(crate) fn bearer(key: impl Into<String>) -> Result<Auth> {
+    Ok(Auth::new(
+        Method::Key(Secret::new(key)),
+        Scheme::Bearer,
+        "local",
+        store()?,
+    ))
 }
 
-pub(crate) fn http() -> Result<leyline::Session> {
+pub(crate) fn http(total: std::time::Duration) -> Result<leyline::Session> {
     session(
-        summonr_auth::builder(
-            crate::limits::limits().auth(),
-            crate::limits::limits().connect(),
-        ),
+        summonr_auth::builder(total, crate::limits::limits().connect()),
         crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
     )
 }
 
 pub(crate) fn session(
     builder: leyline::SessionBuilder,
-    retry: leyline::RetryPolicy,
+    retry: leyline::Retry,
 ) -> Result<leyline::Session> {
     builder
         .retry(retry)
@@ -156,26 +149,25 @@ pub(crate) fn logged_in(row: &crate::config::OAuth, name: &str) -> Result<bool> 
         Method::Login(Box::new(spec(row)?)),
         Scheme::Bearer,
         name,
-        keeper(),
+        store()?,
     )
     .ready()
     .map_err(|error| Error::Config(error.to_string()))
 }
 
-fn named_scheme(row: &crate::config::OAuth) -> Option<Scheme> {
-    match row.scheme.as_deref().map(str::trim) {
-        Some("api_key") => Some(Scheme::ApiKey),
-        Some("google_key") => Some(Scheme::GoogleKey),
-        Some("bearer") => Some(Scheme::Bearer),
-        _ => None,
+fn carrier(named: TokenScheme) -> Scheme {
+    match named {
+        TokenScheme::ApiKey => Scheme::ApiKey,
+        TokenScheme::GoogleKey => Scheme::GoogleKey,
+        TokenScheme::Bearer => Scheme::Bearer,
     }
 }
 
 pub(crate) fn flow(row: &crate::config::OAuth) -> LoginFlow {
-    match row.grant.as_deref().map(str::trim) {
-        Some("device_code") => LoginFlow::Device,
-        Some("authorization_code") => LoginFlow::Browser,
-        _ => LoginFlow::Key,
+    match row.grant() {
+        Grant::DeviceCode => LoginFlow::Device,
+        Grant::AuthorizationCode => LoginFlow::Browser,
+        Grant::RefreshToken => LoginFlow::Key,
     }
 }
 

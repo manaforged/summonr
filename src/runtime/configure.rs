@@ -1,7 +1,6 @@
 use super::*;
-use crate::durable::driver::work_at;
+use crate::durable::driver::{Parent, work_at};
 use crate::durable::log;
-use crate::durable::work::Policy as WorkPolicy;
 use crate::workflow;
 
 impl<P: Provider> Loop<P> {
@@ -15,22 +14,12 @@ impl<P: Provider> Loop<P> {
         let model = model.into();
         let system_prompt = system_prompt.into();
         let session = session_home::fresh(
-            crate::prompt::summonr_home(),
+            summonr_core::dirs::summonr_home(),
             workspace,
             &model,
             &system_prompt,
         )?;
-        let mut loop_ = Self::with_parts(
-            provider,
-            model,
-            workspace,
-            system_prompt,
-            session,
-            Policy::discover(workspace)?,
-            Some(crate::web::Search::discover()?),
-        )?;
-        loop_.join_mail();
-        Ok(loop_)
+        Self::open(provider, model, workspace, system_prompt, session)
     }
 
     pub fn resume_path(
@@ -41,11 +30,8 @@ impl<P: Provider> Loop<P> {
         path: &Path,
     ) -> Result<Self> {
         let session = resume_driver(workspace.as_ref(), path)?;
-        let replay = session.replay();
         let workspace = session.workspace().to_path_buf();
-        let mut loop_ = Self::open(provider, model, workspace, system_prompt, session)?;
-        loop_ = loop_.restore_replay(replay);
-        Ok(loop_)
+        Self::open(provider, model, workspace, system_prompt, session)
     }
 
     pub fn fork_path(
@@ -56,7 +42,7 @@ impl<P: Provider> Loop<P> {
         source: &Path,
     ) -> Result<Self> {
         let parent = resume_driver(workspace.as_ref(), source)?;
-        let child = parent.fork(None).map_err(super::session_err)?;
+        let child = parent.fork(None)?;
         Self::resume_path(provider, model, workspace, system_prompt, &child)
     }
 
@@ -96,7 +82,6 @@ impl<P: Provider> Loop<P> {
             return Err(Error::Config("SUMMONR_MODEL is empty".to_string()));
         }
         let system_prompt = system_prompt.into();
-        let (max_tokens, max_live_millis) = session.budget_limits();
         let run_base = (session.spent_tokens(), session.elapsed_millis());
         let depth = session.depth();
         let tools = ToolRegistry::with_policy_and_search(workspace, policy, search)?;
@@ -108,11 +93,12 @@ impl<P: Provider> Loop<P> {
         Ok(Self {
             provider,
             model,
-            seats: BTreeMap::new(),
+            selections: BTreeMap::new(),
+            prompt_parts: (0, 0, 0, 0),
             tuning: BTreeMap::new(),
             price: None,
             system_prompt,
-            mode: crate::RunMode::Auto,
+            mode: crate::WorkKind::Single,
             tools,
             schema: None,
 
@@ -120,16 +106,11 @@ impl<P: Provider> Loop<P> {
             session,
             verify: None,
             check_file: None,
-            budget: Budget {
-                max_tokens,
-                max_secs: max_live_millis
-                    .map(|millis| millis.saturating_add(999).saturating_div(1_000)),
-            },
-            spent_tokens: 0,
+            metric: None,
             run_base,
             context_sample: None,
             context_window: None,
-            probe: None,
+            probes: Vec::new(),
             effort: None,
             chosen_effort: None,
             turn_started: 0,
@@ -141,16 +122,11 @@ impl<P: Provider> Loop<P> {
             checkpoints: None,
             fallbacks: VecDeque::new(),
             compact_tokens: None,
-            hooks: config
-                .hooks
-                .clone()
-                .with_plugins(&crate::plugins::enabled()),
+            hooks: crate::hooks::with_plugins(config.hooks.clone(), &crate::plugins::enabled()),
             mcp_wanted: false,
             mcp_board: crate::mcp::Board::default(),
             inbox: std::collections::VecDeque::new(),
-            steer: std::collections::VecDeque::new(),
             steer_shared: None,
-            depth,
             tasks: true,
             interactive: false,
             spawned: BTreeMap::new(),
@@ -162,6 +138,13 @@ impl<P: Provider> Loop<P> {
     pub(crate) fn steer_with(&mut self, source: std::sync::Arc<super::turn::Steering>) {
         self.steer_shared = Some(source);
         self.interactive = true;
+    }
+
+    #[must_use]
+    pub fn without_task_list(mut self) -> Self {
+        self.tools.set_task_list(false);
+        self.schema = None;
+        self
     }
 
     #[must_use]
@@ -226,19 +209,42 @@ impl<P: Provider> Loop<P> {
         self.context_window = window;
     }
 
-    pub fn set_context_probe(&mut self, probe: tokio::task::JoinHandle<Option<u32>>) {
-        self.probe = Some(probe);
+    pub(crate) fn watch_window(
+        &mut self,
+        role: Option<workflow::Role>,
+        probe: tokio::task::JoinHandle<Option<u32>>,
+    ) {
+        self.probes.push((role, probe));
+    }
+
+    pub(super) fn learn_role_window(&mut self, role: workflow::Role, window: u32) {
+        if self.selections.contains_key(&role) {
+            self.learn_window(Some(role), window);
+        } else {
+            self.learn_window(None, window);
+        }
+    }
+
+    fn learn_window(&mut self, role: Option<workflow::Role>, window: u32) {
+        let slot = match role {
+            Some(role) => self.selections.get_mut(&role).map(|(_, _, slot)| slot),
+            None => Some(&mut self.context_window),
+        };
+        if let Some(slot) = slot {
+            *slot = Some(slot.map_or(window, |have| have.min(window)));
+        }
     }
 
     pub(crate) async fn settle_probe(&mut self) {
-        if self
-            .probe
-            .as_ref()
-            .is_some_and(tokio::task::JoinHandle::is_finished)
-            && let Some(probe) = self.probe.take()
-            && let Ok(Some(window)) = probe.await
-        {
-            self.context_window = Some(self.context_window.map_or(window, |have| have.min(window)));
+        let pending = std::mem::take(&mut self.probes);
+        for (role, probe) in pending {
+            if !probe.is_finished() {
+                self.probes.push((role, probe));
+                continue;
+            }
+            if let Ok(Some(window)) = probe.await {
+                self.learn_window(role, window);
+            }
         }
     }
 
@@ -275,22 +281,22 @@ impl<P: Provider> Loop<P> {
         self
     }
 
-    pub(crate) fn set_mode(&mut self, mode: crate::RunMode) {
+    pub(crate) fn set_mode(&mut self, mode: crate::WorkKind) {
         self.mode = mode;
     }
 
     #[must_use]
     pub(crate) fn is_work(&self) -> bool {
-        self.mode == crate::RunMode::Work
+        self.mode == crate::WorkKind::Steps
     }
 
     #[must_use]
     pub(crate) fn is_goal(&self) -> bool {
-        self.mode == crate::RunMode::Goal
+        self.mode == crate::WorkKind::Goal
     }
 
     #[must_use]
-    pub fn mode(&self) -> crate::RunMode {
+    pub fn mode(&self) -> crate::WorkKind {
         self.mode
     }
 
@@ -305,13 +311,17 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn budget(&self) -> &Budget {
-        &self.budget
+    pub fn budget(&self) -> Budget {
+        let (max_tokens, millis) = self.session.budget_limits();
+        Budget {
+            max_tokens,
+            max_secs: millis.map(|millis| millis.saturating_add(999).saturating_div(1_000)),
+        }
     }
 
     #[must_use]
     pub(crate) fn spent_tokens(&self) -> u64 {
-        self.spent_tokens
+        self.session.spent_tokens()
     }
 
     #[must_use]
@@ -324,7 +334,7 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub(crate) fn run_tokens(&self) -> u64 {
-        self.spent_tokens.saturating_sub(self.run_base.0)
+        self.spent_tokens().saturating_sub(self.run_base.0)
     }
 
     #[must_use]
@@ -333,7 +343,7 @@ impl<P: Provider> Loop<P> {
     }
 }
 
-mod seat;
+mod selection;
 mod session_home;
 mod work;
 
@@ -344,7 +354,7 @@ fn resume_driver(workspace: &Path, path: &Path) -> Result<SessionDriver> {
             path.display()
         )));
     };
-    SessionDriver::resume(home, session, workspace).map_err(super::session_err)
+    SessionDriver::resume(home, session, workspace).map_err(Error::from)
 }
 
 pub(super) fn open_driver(
@@ -353,5 +363,16 @@ pub(super) fn open_driver(
     model: &str,
     system: &str,
 ) -> Result<SessionDriver> {
-    SessionDriver::open(home.as_ref(), workspace, model, system, None).map_err(super::session_err)
+    let parent = std::env::var_os(crate::session::PARENT_ENV)
+        .map(|value| value.to_string_lossy().parse())
+        .transpose()
+        .map_err(|error| Error::Config(format!("invalid parent session: {error}")))?;
+    SessionDriver::open(
+        home.as_ref(),
+        workspace,
+        model,
+        system,
+        parent.map(Parent::Session),
+    )
+    .map_err(Error::from)
 }

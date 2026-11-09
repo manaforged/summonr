@@ -1,54 +1,11 @@
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
-use serde::{Deserialize, Serialize};
+pub(crate) use summonr_types::endpoint::{Access, Choice, Region};
 
 use super::preset::{Preset, presets};
 use super::*;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Region {
-    Intl,
-    Cn,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Access {
-    Key,
-    Plan,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
-pub(crate) struct Choice {
-    #[serde(default)]
-    pub(crate) region: Option<Region>,
-    #[serde(default)]
-    pub(crate) access: Option<Access>,
-    #[serde(flatten, default)]
-    pub(crate) other: BTreeMap<String, toml::Value>,
-}
-
-impl Region {
-    #[must_use]
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Intl => "international",
-            Self::Cn => "China",
-        }
-    }
-}
-
-impl Access {
-    #[must_use]
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Key => "API key",
-            Self::Plan => "coding plan",
-        }
-    }
-}
 
 impl Preset {
     pub(super) const fn access(&self) -> Access {
@@ -135,7 +92,7 @@ fn ready(file: &File, route: &Preset) -> bool {
         .is_some_and(|key| !key.trim().is_empty());
     let stored = |slot: &str| secret::get(slot).ok().flatten().is_some();
     configured
-        || env_key(route.env_keys).is_some()
+        || env_key(&route.env_keys).is_some()
         || stored(&route.name)
         || stored(&crate::credentials::login_slot(&route.name))
         || route.key_from.iter().any(|slot| stored(slot))

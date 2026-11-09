@@ -8,9 +8,8 @@ pub(in crate::tui) fn export_session(
 ) {
     let out = match target {
         Some(path) => Ok(std::path::PathBuf::from(path)),
-        None => {
-            crate::prompt::summonr_home().map(|home| home.join("exports").join(format!("{id}.md")))
-        }
+        None => summonr_core::dirs::summonr_home()
+            .map(|home| home.join("exports").join(format!("{id}.md"))),
     };
     let written = out.and_then(|out| {
         let text = crate::export_session(session)?;
@@ -39,21 +38,4 @@ pub(in crate::tui) fn export_session(
         Err(error) => Msg::Failed(error.to_string()),
     };
     drop(ui.send(message));
-}
-
-pub(in crate::tui) fn announce(
-    ui: &UnboundedSender<Msg>,
-    steering: &Arc<crate::runtime::Steering>,
-    followups: &VecDeque<UserInput>,
-    deferred: &VecDeque<Cmd>,
-) {
-    let steering = steering.lock().map_or(0, |queue| queue.len());
-    let held = deferred
-        .iter()
-        .filter(|command| matches!(command, Cmd::Submit(_)))
-        .count();
-    drop(ui.send(Msg::Queued {
-        steering,
-        queued: followups.len() + held,
-    }));
 }

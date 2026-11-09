@@ -1,9 +1,34 @@
 use super::*;
 
 impl Work {
+    pub(super) fn repair_steps(&mut self) {
+        if self.policy != WorkKind::Steps || self.checks.is_empty() {
+            return;
+        }
+        let planned = self
+            .plan
+            .as_deref()
+            .and_then(|plan| crate::steps::parse(plan).ok())
+            .is_some_and(|parsed| {
+                parsed
+                    .iter()
+                    .map(|step| step.text.as_str())
+                    .eq(self.steps.iter().map(|step| step.title.as_str()))
+            });
+        if planned {
+            return;
+        }
+        let all: Vec<usize> = (0..self.checks.len()).collect();
+        for step in &mut self.steps {
+            if step.checks.is_empty() {
+                step.checks = all.clone();
+            }
+        }
+    }
+
     pub(crate) fn select(&mut self, markdown: &str, commands: &[String]) -> Result<(), WorkError> {
         let checks = checks(markdown, self.policy, commands)?;
-        if self.policy == Policy::Steps {
+        if self.policy == WorkKind::Steps {
             let parsed = crate::steps::parse(markdown)?;
             let last = parsed.len().saturating_sub(1);
             self.steps = parsed
@@ -80,7 +105,7 @@ impl Work {
         if passed
             && matches!(
                 (self.policy, &decision),
-                (Policy::Goal { .. }, Decision::Automatic)
+                (WorkKind::Goal, Decision::Automatic)
             )
         {
             return Err(WorkError(DECISION.to_string()));
@@ -102,21 +127,21 @@ impl Work {
         step.rounds = step.rounds.saturating_add(1);
         step.attempts = 0;
         match (policy, decision) {
-            (Policy::Single, _) | (Policy::Goal { .. }, Decision::GoalComplete) => {
+            (WorkKind::Single, _) | (WorkKind::Goal, Decision::GoalComplete) => {
                 step.state = StepState::Completed;
                 self.active = None;
                 self.status = Status::Completed;
             }
-            (Policy::Steps, _) => {
+            (WorkKind::Steps, _) => {
                 step.state = StepState::Completed;
                 self.advance_step();
             }
-            (Policy::Goal { .. }, Decision::GoalStop(reason)) => {
+            (WorkKind::Goal, Decision::GoalStop(reason)) => {
                 step.state = StepState::Blocked;
                 self.active = None;
                 self.status = Status::Abandoned(reason);
             }
-            (Policy::Goal { .. }, Decision::GoalContinue(reason)) => {
+            (WorkKind::Goal, Decision::GoalContinue(reason)) => {
                 step.state = StepState::Active;
                 self.status = Status::Active(Stage::Execute);
                 self.rebase();
@@ -124,7 +149,7 @@ impl Work {
                     "[summon goal: the objective is not complete; {reason}]"
                 ));
             }
-            (Policy::Goal { .. }, Decision::Automatic) => {
+            (WorkKind::Goal, Decision::Automatic) => {
                 return Err(WorkError(DECISION.to_string()));
             }
         }
@@ -202,7 +227,7 @@ impl Work {
             .ok_or_else(|| WorkError("active item is not in the plan".to_string()))?;
         step.rounds = step.rounds.saturating_add(1);
         step.attempts = step.attempts.saturating_add(1);
-        if !matches!(self.policy, Policy::Goal { .. })
+        if !matches!(self.policy, WorkKind::Goal)
             && step.attempts >= crate::limits::limits().step_attempts
         {
             self.active = Some(active);

@@ -1,6 +1,6 @@
 use super::brief::{agent_brief, instruction, rebase_paths};
-use super::record::*;
 use super::*;
+use crate::durable::driver::Parent;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
@@ -22,18 +22,11 @@ impl<P: Provider> Loop<P> {
             },
         );
         Ok(Execution {
-            output: ToolOutput {
-                text: format!(
-                    "started child {id}\naccess: {}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
-                    record.access.name(),
-                    ellipsize(&record.assignment, LAST_CHARS)
-                ),
-                success: true,
-                mutated: false,
-                grant: None,
-                images: Vec::new(),
-                patch: None,
-            },
+            output: ToolOutput::ok(format!(
+                "started child {id}\naccess: {}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
+                record.access.name(),
+                ellipsize(&record.assignment, LAST_CHARS)
+            )),
             usage: Usage::default(),
             millis: 0,
         })
@@ -59,11 +52,11 @@ impl<P: Provider> Loop<P> {
         budget: &Budget,
         tree: Option<Tree>,
     ) -> Result<Run<P>> {
-        let role = self.round_role();
-        let provider = self.seat(role).0.child().ok_or_else(|| {
+        let role = crate::workflow::Role::Implement;
+        let provider = self.selection(role).0.child().ok_or_else(|| {
             Error::Denied("the active provider cannot create children".to_string())
         })?;
-        let model = self.seat(role).1.to_string();
+        let model = self.selection(role).1.to_string();
         let home = log::home_of(self.session.path())
             .ok_or_else(|| Error::Config("the parent session has no durable home".to_string()))?;
         let workspace = tree
@@ -74,9 +67,8 @@ impl<P: Provider> Loop<P> {
             &workspace,
             &model,
             &self.system_prompt,
-            Some(self.session.id()),
-        )
-        .map_err(super::session_err)?;
+            Some(Parent::Task(self.session.id())),
+        )?;
         let (opener, tools) = self.child_opener(&args, tree.as_ref(), &workspace)?;
         let mut child = Self::with_parts(
             provider,
@@ -88,8 +80,8 @@ impl<P: Provider> Loop<P> {
             None,
         )?;
         child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
-        child.depth = 1;
-        child.context_window = self.context_window;
+        child.context_window = self.receiver_window(role);
+        child.compact_tokens = self.compact_tokens;
         child.context_sample = self.context_sample;
         child.effort = self.effort_for(role);
         child.price = self.price_for(role);
@@ -108,9 +100,7 @@ impl<P: Provider> Loop<P> {
             call: Some(args.call.clone()),
             state: ChildState::Running,
         };
-        self.session
-            .start_child(record.clone())
-            .map_err(super::session_err)?;
+        self.session.start_child(record.clone())?;
         drop(self.events.0.send(Event::Child {
             id: record.id.to_string(),
             event: Box::new(Event::Spawned {
@@ -161,6 +151,9 @@ impl<P: Provider> Loop<P> {
         let mut registry = self.tools.child_at(workspace, &child.session_id())?;
         if access == Access::Research || self.tools.is_read_only() {
             registry.contain_read_only();
+        }
+        if access == Access::Research {
+            registry.allow_shell();
         }
         if let Some(tools) = tools {
             registry.restrict_to(tools);
@@ -231,14 +224,9 @@ impl<P: Provider> Loop<P> {
         let success = matches!(record.state, ChildState::Completed(_));
         let mutated = record.record_paths() > 0;
         Ok(Execution {
-            output: ToolOutput {
-                text,
-                success,
-                mutated,
-                grant: None,
-                images: Vec::new(),
-                patch: None,
-            },
+            output: ToolOutput::ok(text)
+                .with_success(success)
+                .with_mutated(mutated),
             usage: done.usage,
             millis: done.millis,
         })
@@ -250,14 +238,14 @@ impl<P: Provider> Loop<P> {
         if children == 0 {
             return Err(Error::Config("task batch is empty".to_string()));
         }
-        let tokens = self.budget.max_tokens.map(|limit| {
+        let tokens = self.budget().max_tokens.map(|limit| {
             limit
                 .saturating_sub(self.run_tokens())
                 .saturating_sub(self.child_budget_reserved())
                 / children
         });
         let secs = self
-            .budget
+            .budget()
             .max_secs
             .map(|limit| limit.saturating_sub(self.elapsed_secs()));
         if tokens == Some(0) || secs == Some(0) {
@@ -321,7 +309,7 @@ fn release_unfinished(done: &mut Done) {
         "the delta at {} holds changes and was kept",
         tree.path.display()
     );
-    let Some(result) = result_mut(&mut done.record.state) else {
+    let Some(result) = done.record.state.result_mut() else {
         return;
     };
     result.diagnostic = Some(match result.diagnostic.take() {
@@ -339,7 +327,7 @@ impl ChildRecord {
             }
             self.note_record(&kept);
         }
-        let Some(result) = result_mut(&mut self.state) else {
+        let Some(result) = self.state.result_mut() else {
             return;
         };
         result.kept = landing.held;

@@ -1,28 +1,20 @@
-use std::io::Read as _;
 use std::path::Path;
 
-use serde_json::Value;
-
-use crate::error::{Error, Result};
 use crate::provider::{CompletionRequest, Image, Message, Provider, Source, UserInput};
+use summonr_core::error::{Error, Result};
 
-use super::{ToolOutput, ToolRegistry, object_string, parse_args};
+use super::{ToolOutput, ToolRegistry};
 
 pub(crate) const IMAGES_MAX_BYTES: usize = 10 * 1024 * 1024;
 
 impl ToolRegistry {
-    pub(super) fn show_image(&self, arguments: &str) -> Result<ToolOutput> {
-        let args: Value = parse_args("show_image", arguments)?;
-        let path = object_string(&args, "path")?;
-        let canonical = self.resolve_read(path, crate::tools::paths::Shield::Contained)?;
-        let mut head = Vec::new();
-        std::fs::File::open(&canonical)
-            .and_then(|file| file.take(12).read_to_end(&mut head))
-            .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
-        image_type(&head).ok_or_else(|| {
-            Error::Tool(format!("`{path}` is not a PNG, JPEG, GIF, or WebP image"))
-        })?;
-        self.read_file(arguments)
+    pub(super) fn show_image(&self, path: &str) -> Result<ToolOutput> {
+        match self.open_text(path)? {
+            super::read::Opened::Image(image) => Ok(image),
+            super::read::Opened::Text(_) => Err(Error::Tool(format!(
+                "`{path}` is not a PNG, JPEG, GIF, or WebP image"
+            ))),
+        }
     }
 
     pub(super) fn image_outcome(
@@ -35,12 +27,12 @@ impl ToolRegistry {
     ) -> Result<ToolOutput> {
         if self.model_images {
             return Ok(ToolOutput {
-                images: vec![Image::fit(bytes)?],
+                images: vec![crate::provider::fit(bytes)?],
                 ..ToolOutput::ok(format!("{path} ({media}, {width}x{height}) is attached"))
             });
         }
         if let Some(endpoint) = &self.vision {
-            let images = [Image::fit(bytes)?];
+            let images = [crate::provider::fit(bytes)?];
             let described =
                 tokio::runtime::Handle::current().block_on(self.narrate_images(endpoint, &images));
             return match described {
@@ -140,7 +132,7 @@ pub(crate) fn attach(workspace: &Path, line: &str) -> Result<UserInput> {
                         "attached images are larger than {IMAGES_MAX_BYTES} bytes"
                     )));
                 }
-                images.push(Image::fit(&bytes)?);
+                images.push(crate::provider::fit(&bytes)?);
             } else {
                 let text = String::from_utf8(bytes).map_err(|error| {
                     Error::Tool(format!(

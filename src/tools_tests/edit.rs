@@ -68,3 +68,156 @@ fn a_large_edit_returns_a_short_diff() {
     assert!(text.len() < 200, "{text}");
     assert!(text.contains("lines 1-200"), "{text}");
 }
+
+#[test]
+fn checked_file_batches_preview_validate_all_files_and_then_apply() {
+    let (dir, tools) = workspace(&[("a.txt", "old old\n"), ("b.txt", "old\n")]);
+    let mut args = serde_json::json!({"files": [
+        {"path": "a.txt", "old": "old", "new": "new", "expected_matches": 2},
+        {"path": "b.txt", "old": "old", "new": "new", "expected_matches": 1}
+    ], "preview": true});
+    let text = run(&tools, "edit", args.clone());
+    assert!(text.contains("Preview only"), "{text}");
+    assert!(text.contains("new new"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "old old\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("b.txt")).unwrap(),
+        "old\n"
+    );
+    args["preview"] = serde_json::json!(false);
+    args["files"][1]["expected_matches"] = serde_json::json!(2);
+    let text = outcome_of(&tools, "edit", args.clone());
+    assert!(text.contains("expected 2 exact matches"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "old old\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("b.txt")).unwrap(),
+        "old\n"
+    );
+    args["files"][1]["expected_matches"] = serde_json::json!(1);
+    let text = run(&tools, "edit", args);
+    assert!(
+        text.contains("edited a.txt") && text.contains("edited b.txt"),
+        "{text}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "new new\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("b.txt")).unwrap(),
+        "new\n"
+    );
+}
+
+#[test]
+fn patch_moves_preserve_edits_and_leave_the_git_index_unchanged() {
+    let (dir, tools) = workspace(&[("a.txt", "one\ntwo\n")]);
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir.path())
+            .output()
+            .unwrap()
+    };
+    assert!(git(&["init", "-q"]).status.success());
+    assert!(git(&["add", "a.txt"]).status.success());
+    let index = git(&["ls-files", "--stage"]).stdout;
+    let text = run(
+        &tools,
+        "apply_patch",
+        serde_json::json!({"patch": "*** Begin Patch\n*** Update File: a.txt\n*** Move to: nested/b.txt\n@@\n one\n-two\n+three\n*** End Patch\n"}),
+    );
+    assert!(text.contains("moved a.txt"), "{text}");
+    assert!(!dir.path().join("a.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("nested/b.txt")).unwrap(),
+        "one\nthree\n"
+    );
+    assert_eq!(git(&["ls-files", "--stage"]).stdout, index);
+    let text = run(
+        &tools,
+        "apply_patch",
+        serde_json::json!({"patch": "*** Begin Patch\n*** Update File: nested/b.txt\n*** Move to: c.txt\n*** End Patch\n"}),
+    );
+    assert!(text.contains("moved nested/b.txt"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("c.txt")).unwrap(),
+        "one\nthree\n"
+    );
+}
+
+#[test]
+fn patch_move_destinations_are_checked_before_any_changes() {
+    let (dir, tools) = workspace(&[("a.txt", "one\n"), ("b.txt", "two\n")]);
+    let text = outcome_of(
+        &tools,
+        "apply_patch",
+        serde_json::json!({"patch": "*** Begin Patch\n*** Update File: a.txt\n*** Move to: b.txt\n@@\n-one\n+three\n*** End Patch\n"}),
+    );
+    assert!(text.contains("already exists"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "one\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("b.txt")).unwrap(),
+        "two\n"
+    );
+    let text = outcome_of(
+        &tools,
+        "apply_patch",
+        serde_json::json!({"patch": "*** Begin Patch\n*** Update File: a.txt\n*** Move to: c.txt\n*** Update File: b.txt\n*** Move to: c.txt\n*** End Patch\n"}),
+    );
+    assert!(text.contains("multiple changes"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "one\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("b.txt")).unwrap(),
+        "two\n"
+    );
+    assert!(!dir.path().join("c.txt").exists());
+}
+
+#[test]
+fn an_applied_patch_returns_a_diff_of_every_file_it_changed() {
+    let (_dir, tools) = workspace(&[("a.txt", "one\ntwo\n")]);
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "apply_patch".to_string(),
+            arguments: serde_json::json!({"patch": "*** Begin Patch\n*** Update File: a.txt\n@@\n one\n-two\n+three\n*** Add File: b.txt\n+new\n*** End Patch\n"}).to_string(),
+        },
+        continuation: None,
+    };
+    let output = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call))
+        .unwrap();
+    let patch = output
+        .patch
+        .expect("the result carries the change as a diff");
+    let lines: Vec<&str> = patch.lines().collect();
+    for expected in [
+        "--- a/a.txt",
+        "+++ b/a.txt",
+        "-two",
+        "+three",
+        "--- /dev/null",
+        "+++ b/b.txt",
+        "+new",
+    ] {
+        assert!(lines.contains(&expected), "{expected} missing from {patch}");
+    }
+}

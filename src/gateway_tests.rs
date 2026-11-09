@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
-use super::child::{Seen, argv, outcome};
+use super::child::{argv, outcome};
 use super::store::{State, code_from};
 use super::telegram::split;
 use super::turn::Options;
 use super::webhook::{Status, decide};
 use super::{Action, addressed, route};
+use crate::cron::report::Report;
 
 const OWNER: i64 = 7;
 const STRANGER: i64 = 9;
@@ -88,7 +89,7 @@ fn a_chat_turn_resumes_its_session_and_keeps_text_out_of_flags() {
 
 #[test]
 fn the_turn_reply_is_the_last_answer_with_any_abort() {
-    let mut seen = Seen::default();
+    let mut seen = Report::default();
     seen.read(r#"{"type":"session","id":"s9"}"#);
     seen.read(r#"{"type":"assistant","text":"first"}"#);
     seen.read(r#"{"type":"assistant","text":"done"}"#);
@@ -152,11 +153,11 @@ fn unpairing_revokes_chats_and_notifications() {
 
 #[test]
 fn the_reply_says_when_the_check_failed_or_the_run_broke() {
-    let mut seen = Seen::default();
+    let mut seen = Report::default();
     seen.read(r#"{"type":"assistant","text":"done"}"#);
     assert_eq!(outcome(&seen, Some(0), &[]), "done");
     assert!(outcome(&seen, Some(2), &[]).contains("the check failed"));
-    let silent = Seen::default();
+    let silent = Report::default();
     let broke = outcome(&silent, Some(1), &["summonr: no provider".to_string()]);
     assert!(broke.contains("failed (exit 1)"), "{broke}");
     assert!(broke.contains("no provider"), "{broke}");

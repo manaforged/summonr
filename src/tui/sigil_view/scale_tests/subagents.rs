@@ -357,7 +357,7 @@ fn a_narrow_subagent_row_keeps_its_activity_and_names_a_listing_as_a_directory()
         .iter()
         .filter(|line| {
             let line = line.trim_start();
-            line.starts_with("○ Subagent") || line.starts_with("◆ Subagent")
+            line.starts_with("○") || line.starts_with("◆")
         })
         .collect();
     assert!(
@@ -387,7 +387,10 @@ fn a_long_subagent_activity_leaves_the_task_title_readable() {
     });
     let rows: Vec<&String> = shown
         .iter()
-        .filter(|line| line.contains("Subagent") && line.contains("· Read cli.py"))
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            (trimmed.starts_with('○') || trimmed.starts_with('◆')) && line.contains("· Read cli.py")
+        })
         .collect();
     assert!(rows.len() >= 2, "{}", shown.join("\n"));
     for row in rows {

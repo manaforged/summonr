@@ -1,16 +1,16 @@
 use sigil::prelude::Paint;
+use sigil::widgets::CursorEdge;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::session::SessionInfo;
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, WidgetLayoutExt, container, signal, text_edit, virtual_list,
-};
+use crate::tui::matching::all_words;
 use sigil::prelude::{NodeBuilder, Signal};
+use sigil::prelude::{container, signal};
 
 use super::app::App;
 use super::canvas;
-use super::ui::{Bindings, Dialog, Hints, Key, Size, alt};
+use super::ui::{Bindings, Dialog, Hints, Key, List, Size, alt, filter_field};
 
 mod resume_row;
 use resume_row::row;
@@ -20,15 +20,13 @@ const CURRENT: &str = " (current)";
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
     pub(super) open: Signal<bool>,
-    pub(super) query: Signal<String>,
-    pub(super) caret: Signal<usize>,
-    pub(super) selected: Signal<usize>,
+    pub(super) list: List,
     scope: Signal<Scope>,
     current: Signal<String>,
     loading: Signal<bool>,
     choices: Signal<Vec<(SessionInfo, bool)>>,
     error: Signal<String>,
-    armed: Signal<Option<(String, std::time::Instant)>>,
+    pub(super) armed: Signal<Option<(String, std::time::Instant)>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -42,9 +40,7 @@ impl Picker {
     pub(super) fn new() -> Self {
         Self {
             open: signal(false),
-            query: signal(String::new()),
-            caret: signal(0),
-            selected: signal(0),
+            list: List::new(),
             scope: signal(Scope::Project),
             current: signal(String::new()),
             loading: signal(false),
@@ -56,9 +52,8 @@ impl Picker {
 
     pub(super) fn start(self, current: &str, related: bool) {
         self.open.set(true);
-        self.query.set(String::new());
-        self.caret.set(0);
-        self.selected.set(0);
+        self.list.type_query(String::new());
+        self.list.select(0);
         self.scope.set(if related {
             Scope::Related
         } else {
@@ -84,7 +79,7 @@ impl Picker {
 
     fn focus(self) {
         if self.scope.peek() == Scope::Related {
-            self.selected.set(
+            self.list.select(
                 self.rows()
                     .iter()
                     .position(|info| info.id == self.current.peek())
@@ -93,27 +88,12 @@ impl Picker {
         }
     }
 
-    pub(super) fn arm(self, id: &str) -> bool {
-        let now = std::time::Instant::now();
-        let window = crate::limits::limits().repeat_window();
-        let repeat = self
-            .armed
-            .peek()
-            .is_some_and(|(armed, at)| armed == id && now.duration_since(at) <= window);
-        self.armed.set(if repeat {
-            None
-        } else {
-            Some((id.to_string(), now))
-        });
-        repeat
-    }
-
     pub(super) fn note(self, text: &str) {
         self.error.set(text.to_string());
     }
 
     pub(super) fn rows(self) -> Vec<SessionInfo> {
-        let query = self.query.get().to_lowercase();
+        let query = self.list.query.get();
         let scope = self.scope.get();
         let choices = self.choices.get();
         let rows = if scope == Scope::Related {
@@ -134,9 +114,8 @@ impl Picker {
                     info.cwd.as_deref().unwrap_or(""),
                     info.model.as_deref().unwrap_or(""),
                     info.preview
-                )
-                .to_lowercase();
-                query.split_whitespace().all(|word| text.contains(word))
+                );
+                all_words(&text, &query)
             })
             .collect()
     }
@@ -266,14 +245,7 @@ impl Picker {
             self.armed.set(None);
             self.error.set(String::new());
         }
-        let last = self.rows().len().saturating_sub(1);
-        self.selected.set(
-            self.selected
-                .peek()
-                .min(last)
-                .saturating_add_signed(delta)
-                .min(last),
-        );
+        self.list.shift(delta, self.rows().len(), CursorEdge::Clamp);
     }
 
     pub(super) fn scope(self) {
@@ -284,7 +256,7 @@ impl Picker {
             Scope::All => Scope::Related,
             Scope::Related => Scope::Project,
         });
-        self.selected.set(0);
+        self.list.select(0);
         self.focus();
     }
 }
@@ -300,28 +272,19 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.sessions;
     let cols = app.viewport.peek().0;
     let keys = app.model.peek().prefs.hotkeys.clone();
+    let viewport = app.viewport;
+    let source = app.clone();
     Dialog::new(Size::Normal, picker.heading(), Hints::new())
         .live_hints(move || {
-            let total = picker.rows().len();
-            let count = if total == 0 {
-                String::new()
-            } else {
-                format!("{} / {}", picker.selected.get().min(total - 1) + 1, total)
-            };
             Hints::new()
                 .key(Key::UpDown, "move")
                 .key(Key::Enter, "resume")
                 .key(Key::Tab, "scope")
                 .key(Key::Alt('d'), "delete")
                 .key(Key::Esc, "close")
-                .right(count)
+                .count(picker.list.cursor.get(), picker.rows().len())
         })
-        .child(
-            text_edit(picker.query)
-                .caret_position(picker.caret)
-                .placeholder(super::ui::FILTER_HINT)
-                .height(canvas::overlay_list_row()),
-        )
+        .child(filter_field(&app, picker.list.query, picker.list.caret))
         .child(container().children_reactive(move || {
             let note = picker.error.get();
             if note.is_empty() || picker.rows().is_empty() {
@@ -336,44 +299,20 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 ]
             }
         }))
-        .child(list(app, picker))
-        .build(picker.open, cols, &keys)
-}
-
-fn list(app: App, picker: Picker) -> NodeBuilder {
-    let paint = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .grow(1.0)
-                .min_size(0.0, 0.0),
+        .collection(
+            picker.list,
+            move || Ok(picker.rows()),
+            move || picker.empty(),
+            move |len| {
+                (len > 0).then(|| {
+                    (
+                        canvas::overlay_list_row(),
+                        canvas::overlay_shown(len, viewport.get().1),
+                    )
+                })
+            },
+            move |info, selected| row(&source, picker, info, selected),
+            move || app.resume_session(),
         )
-        .children_reactive(move || {
-            let rows = picker.rows();
-            let selected = picker.selected.get().min(rows.len().saturating_sub(1));
-            if rows.is_empty() {
-                return vec![
-                    container().child(
-                        sigil::kernel::text(picker.empty())
-                            .nowrap()
-                            .text_color(sigil::prelude::Token::OnSurface),
-                    ),
-                ];
-            }
-            let source = paint.clone();
-            let band = canvas::overlay_list_row();
-            let shown = canvas::overlay_shown(rows.len(), paint.viewport.get().1);
-            vec![
-                container().layout(LayoutStyle::block().fill_width()).child(
-                    virtual_list(rows, move |index, info: &SessionInfo| {
-                        row(source.clone(), picker, index, info, selected)
-                    })
-                    .row_height(band)
-                    .height(band * shown as f32)
-                    .viewport_height(band * shown as f32)
-                    .follow_row(paint.sessions.selected),
-                ),
-            ]
-        })
+        .build(picker.open, cols, &keys)
 }

@@ -6,10 +6,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Vec<Outcome>> {
-        let declared = self
-            .session
-            .completion_checks()
-            .map_err(super::session_err)?;
+        let declared = self.session.completion_checks()?;
         if self.check_file_drifted() {
             self.restore_check_file();
             self.push_event(
@@ -42,7 +39,7 @@ impl<P: Provider> Loop<P> {
                     },
                 },
                 Some(Observation::Stdout(expected)) => {
-                    let result = self.tools.run_check(&command).await;
+                    let result = self.tools.run_check(&command, None).await;
                     let mut outcome = verify::outcome(&command, &result);
                     if outcome.passed && !outcome.output.contains(expected.as_str()) {
                         outcome.passed = false;
@@ -54,7 +51,7 @@ impl<P: Provider> Loop<P> {
                     outcome
                 }
                 None => {
-                    let result = self.tools.run_check(&command).await;
+                    let result = self.tools.run_check(&command, None).await;
                     verify::outcome(&command, &result)
                 }
             };
@@ -80,8 +77,7 @@ impl<P: Provider> Loop<P> {
             let checks = self.run_verify(&mut Vec::new(), &mut emit).await?;
             if !checks.is_empty() {
                 self.session
-                    .record_check(checks.iter().all(|check| check.passed))
-                    .map_err(super::session_err)?;
+                    .record_check(checks.iter().all(|check| check.passed))?;
             }
         }
         self.abandon_work(reason)?;
@@ -89,7 +85,7 @@ impl<P: Provider> Loop<P> {
         emit(&Event::Work {
             progress: progress.clone(),
         });
-        Ok(progress.exit_code().unwrap_or(3))
+        Ok(progress.exit_status(false, !progress.terminal()))
     }
 
     fn restore_check_file(&self) {
@@ -115,12 +111,10 @@ impl<P: Provider> Loop<P> {
         pre: &mut Pretask,
     ) -> Result<Turn> {
         let snapshot = self.settle(pre, events, &mut emit).await?;
-        let receipt = Receipt::aborted(snapshot, events);
+        let receipt = crate::verify::aborted(snapshot);
         drop(self.kill_spawned(&abort.reason, usage).await?);
         self.tools.stop_jobs()?;
-        self.session
-            .abort(&abort, Some(&receipt))
-            .map_err(super::session_err)?;
+        self.session.abort(&abort, Some(&receipt))?;
         self.emit_records(events, &mut emit)?;
         self.sync_usage(&mut emit);
         Ok(Turn {
@@ -137,8 +131,7 @@ impl<P: Provider> Loop<P> {
         let mut parts = Vec::new();
         if let Some(reason) = self.session.last_close_reason() {
             parts.push(format!(
-                "Harness: the previous turn stopped early ({reason}). Address the user's \
-                 message directly before resuming tool work."
+                "Harness: the previous turn stopped early ({reason})."
             ));
         }
         parts.push(harness_section(&Harness {
@@ -146,27 +139,112 @@ impl<P: Provider> Loop<P> {
             checks: self.verify.as_deref().unwrap_or_default(),
             children: self.task_available(),
         }));
-        if progress.kind == WorkKind::Goal {
+        if self.is_goal() && !progress.objective.is_empty() {
             parts.push(format!(
                 "Harness objective (verbatim, this is what must be met):\n{}",
                 progress.objective
             ));
         }
+        if let Some((metric, _)) = self.goal_metric() {
+            parts.push(metric.rules());
+        }
         if progress.kind != WorkKind::Single && !progress.ledger.is_empty() {
             parts.push(format!(
                 "{}\n{}",
-                crate::durable::work::Work::ledger_legend(),
+                crate::durable::work::Work::ledger_legend(progress.kind),
                 progress.ledger.join("\n")
             ));
         }
-        if !progress.todos.is_empty() {
-            let tasks: Vec<String> = progress.todos.iter().map(|todo| todo.line()).collect();
-            parts.push(format!(
-                "Harness task list (update with `todo` as work starts or finishes; a done item is not a passing check):\n{}",
-                tasks.join("\n")
+        let mut status = Vec::new();
+        let open_tasks = progress
+            .todos
+            .iter()
+            .any(|todo| todo.status != crate::tools::TodoStatus::Done);
+        let lasting = progress.kind != WorkKind::Single;
+        let unfinished = lasting || open_tasks || self.session.turn_open();
+        if open_tasks || (lasting && !progress.todos.is_empty()) {
+            let mut done = 0;
+            let mut pending = 0;
+            let mut completed = None;
+            for todo in &progress.todos {
+                match todo.status {
+                    crate::tools::TodoStatus::Active => {
+                        status.push(format!("Current: {}", todo.text))
+                    }
+                    crate::tools::TodoStatus::Done => {
+                        done += 1;
+                        completed = Some(&todo.text);
+                    }
+                    crate::tools::TodoStatus::Pending => pending += 1,
+                }
+            }
+            if let Some(completed) = completed {
+                status.push(format!("Last completed: {completed}"));
+            }
+            status.push(format!("Tasks: {done} done, {pending} pending. Update todo on status changes; done is not a passing check."));
+        }
+        let mut job_failure = false;
+        let mut job_success = false;
+        let mut completed = std::collections::HashSet::new();
+        for job in crate::jobs::since(self.workspace(), 0, Some(&self.session_id()))
+            .into_iter()
+            .rev()
+        {
+            let Ok(report) = crate::jobs::status(self.workspace(), &job) else {
+                continue;
+            };
+            if !matches!(report.state, crate::jobs::JobState::Running)
+                && (!unfinished || !completed.insert(job.command.clone()))
+            {
+                continue;
+            }
+            match report.state {
+                crate::jobs::JobState::Running => {
+                    status.push(format!("Running job {}: {}", job.id, job.command))
+                }
+                crate::jobs::JobState::Exited(0) if !job_success => {
+                    status.push(format!("Latest successful job {}: {}", job.id, job.command));
+                    job_success = true;
+                }
+                crate::jobs::JobState::Exited(0) => {}
+                crate::jobs::JobState::Exited(_)
+                | crate::jobs::JobState::Killed
+                | crate::jobs::JobState::Dead
+                    if !job_failure =>
+                {
+                    status.push(format!(
+                        "Unresolved job failure {} ({:?}): {}",
+                        job.id, report.state, job.command
+                    ));
+                    job_failure = true;
+                }
+                crate::jobs::JobState::Exited(_)
+                | crate::jobs::JobState::Killed
+                | crate::jobs::JobState::Dead => {}
+            }
+        }
+        if let Some(failed) = unfinished
+            .then(|| self.session.history())
+            .into_iter()
+            .flatten()
+            .rev()
+            .find(|message| message.role == crate::provider::Role::Tool)
+            .filter(|message| message.failed)
+        {
+            let text = failed
+                .content
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or("tool returned a failure");
+            status.push(format!(
+                "Latest tool failure: {}",
+                crate::display::ellipsize(text, crate::limits::limits().output_line_bytes)
             ));
         }
-        if self.seat_model(workflow::Role::Review).is_some() {
+        if !status.is_empty() {
+            parts.push(format!("Harness progress:\n{}", status.join("\n")));
+        }
+        if self.role_model(workflow::Role::Review).is_some() {
             parts.push(
                 "Harness: a reviewer reads the change after the completion check and can send it back."
                     .to_string(),

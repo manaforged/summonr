@@ -4,7 +4,7 @@ use sigil::prelude::{
 
 use super::super::{App, canvas};
 use crate::tui::sigil_view::app::{Login, Note};
-use crate::tui::sigil_view::ui::{Size, group, notice};
+use crate::tui::sigil_view::ui::{Size, group, input_keys, notice};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Input {
@@ -74,7 +74,7 @@ pub(super) fn notes(note: &Note, width: usize) -> Vec<NodeBuilder> {
     } else {
         Tone::Neutral
     };
-    crate::text::lines_within(&note.text, width)
+    crate::display::lines_within(&note.text, width)
         .into_iter()
         .map(|part| notice(part, tone))
         .collect()
@@ -85,11 +85,11 @@ pub(super) fn field(app: &App, input: Input, focus: bool) -> NodeBuilder {
     let save = app.clone();
     let filter = input == Input::Search;
     let value = if filter {
-        app.auth.filter
+        app.auth.list.query
     } else {
         app.auth.key
     };
-    let field = text_field(value).placeholder(input.placeholder());
+    let field = input_keys(app, text_field(value)).placeholder(input.placeholder());
     let field = if focus {
         field.focus_when(app.auth.focus).autofocus()
     } else {
@@ -121,7 +121,7 @@ fn entering(app: &App, note: &str, width: usize) -> Vec<NodeBuilder> {
         field(app, Input::Key, true),
     ];
     nodes.extend(
-        crate::text::lines_within(note, width)
+        crate::display::lines_within(note, width)
             .into_iter()
             .map(|part| notice(part, Tone::Error)),
     );
@@ -141,19 +141,23 @@ fn signing(
     if !url.is_empty() {
         nodes.push(line(format!(
             "1. Open         {}",
-            crate::text::ellipsize(&url, width)
+            crate::display::ellipsize(&url, width)
         )));
     }
     if !code.is_empty() {
         nodes.push(line(format!("2. Enter code   {code}")));
     }
-    nodes.extend(crate::text::lines_within(&text, wide).into_iter().map(line));
+    nodes.extend(
+        crate::display::lines_within(&text, wide)
+            .into_iter()
+            .map(line),
+    );
     if asking {
         nodes.push(field(app, Input::Code, true));
     }
     if !note.is_empty() {
         nodes.extend(
-            crate::text::lines_within(&note, wide)
+            crate::display::lines_within(&note, wide)
                 .into_iter()
                 .map(|part| notice(part, Tone::Error)),
         );

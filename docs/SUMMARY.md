@@ -61,6 +61,7 @@
     - [summonr::splash](reference/summonr/summonr-splash.md)
     - [summonr::steps](reference/summonr/summonr-steps.md)
     - [summonr::supervise](reference/summonr/summonr-supervise.md)
+    - [summonr::table](reference/summonr/summonr-table.md)
     - [summonr::tui](reference/summonr/summonr-tui.md)
     - [summonr::tui::hub](reference/summonr/summonr-tui-hub.md)
     - [summonr::update](reference/summonr/summonr-update.md)

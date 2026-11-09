@@ -1,59 +1,16 @@
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 use super::args::parse_args;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TodoStatus {
-    Pending,
-    Active,
-    Done,
-}
-
-impl TodoStatus {
-    fn parse(name: &str) -> Option<Self> {
-        match name {
-            "pending" => Some(Self::Pending),
-            "active" | "in_progress" => Some(Self::Active),
-            "done" | "completed" => Some(Self::Done),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn acp(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Active => "in_progress",
-            Self::Done => "completed",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Todo {
-    pub text: String,
-    pub status: TodoStatus,
-}
-
-impl Todo {
-    pub(crate) fn mark(&self) -> &'static str {
-        match self.status {
-            TodoStatus::Done => "✓",
-            TodoStatus::Active => "●",
-            TodoStatus::Pending => "○",
-        }
-    }
-
-    pub(crate) fn line(&self) -> String {
-        format!("{} {}", self.mark(), self.text)
-    }
-}
+pub(crate) use summonr_types::{Todo, TodoStatus};
 
 pub(crate) fn todos_from_args(arguments: &str) -> Result<Vec<Todo>> {
-    let value = parse_args("todo", arguments)?;
+    todos(&parse_args("todo", arguments)?)
+}
+
+fn todos(value: &Value) -> Result<Vec<Todo>> {
     let items = value
         .get("items")
         .or_else(|| value.get("todos"))
@@ -98,8 +55,8 @@ pub(crate) fn todos_from_args(arguments: &str) -> Result<Vec<Todo>> {
     Ok(todos)
 }
 
-pub(super) fn parse_todo(arguments: &str) -> Result<String> {
-    let todos = todos_from_args(arguments)?;
+pub(super) fn parse_todo(args: &Value) -> Result<String> {
+    let todos = todos(args)?;
     if todos.is_empty() {
         return Ok("no todos".to_string());
     }

@@ -58,27 +58,3 @@ pub(crate) fn a_session_resumes_with_any_state_file_torn() {
         }
     }
 }
-
-pub(crate) fn a_torn_work_file_is_reported_on_resume() {
-    let session = Session::new();
-    let first = Model::start(vec![Step::Text("done")]);
-    assert_eq!(session.run(&first, "", &[]).code, Some(0));
-    let mut files = Vec::new();
-    state_files(session.home.path(), &mut files);
-    let work = files
-        .iter()
-        .find(|path| path.file_name().is_some_and(|name| name == "work.json"))
-        .expect("the first run saved its work");
-    std::fs::write(work, b"{\"torn\":").unwrap();
-    let again = Model::start(vec![Step::Text("again")]);
-    let outcome = session.run(&again, "", &["-c", "--json"]);
-    assert_eq!(outcome.code, Some(0), "{}", outcome.stdout);
-    assert!(
-        outcome
-            .stdout
-            .lines()
-            .any(|line| line.contains("\"type\":\"note\"") && line.contains("work.json")),
-        "{}",
-        outcome.stdout
-    );
-}

@@ -1,9 +1,8 @@
 use serde_json::Value;
 
-use crate::error::{Error, Result};
-use crate::hashline::{resolve_span, tagged_span};
+use summonr_core::error::{Error, Result};
 
-use super::ops::{lines, parse_patch};
+use super::ops::{EditOp, lines};
 
 pub(super) fn move_target(args: &Value) -> Option<&str> {
     args.get("to")
@@ -22,54 +21,47 @@ pub(super) fn uses_tags(args: &Value) -> bool {
     }
 }
 
-pub(super) fn edit_error_context(error: Error, text: &str, args: &Value) -> Error {
-    let Error::Tool(message) = error else {
-        return error;
-    };
-    let Some(tag) = args.get("tag").and_then(Value::as_str) else {
-        return Error::Tool(message);
-    };
-    let Ok((line, _)) = resolve_span(text, tag, None) else {
-        return Error::Tool(message);
-    };
-    Error::Tool(format!(
-        "{message}\nCurrent lines:\n{}",
-        tagged_span(
-            &text.lines().collect::<Vec<_>>(),
-            line.saturating_sub(2),
-            line.saturating_add(2)
-        )
-    ))
+pub(in crate::tools) struct Patch {
+    pub(in crate::tools) start: usize,
+    pub(in crate::tools) end: usize,
+    pub(in crate::tools) anchor_start: usize,
+    pub(in crate::tools) anchor_end: usize,
+    pub(in crate::tools) replacement: Vec<String>,
+    pub(in crate::tools) relaxed: bool,
 }
 
-pub(super) fn apply_one(text: &str, op: &Value) -> Result<(String, bool)> {
-    apply_patches(text, vec![parse_patch(text, op)?])
+pub(super) fn apply_one(text: &str, op: &EditOp) -> Result<(String, bool)> {
+    let patch = op.patch(text).map_err(|error| op.context(error, text))?;
+    apply_patches(text, vec![patch])
 }
 
-pub(super) struct Patch {
-    pub(super) start: usize,
-    pub(super) end: usize,
-    pub(super) anchor_start: usize,
-    pub(super) anchor_end: usize,
-    pub(super) replacement: Vec<String>,
-    pub(super) relaxed: bool,
-}
-
-pub(super) fn apply_many(original: &str, ops: &[Value]) -> Result<(String, bool)> {
-    let mut patches = Vec::with_capacity(ops.len());
+pub(super) fn apply_many(original: &str, ops: &[EditOp], sequence: bool) -> Result<(String, bool)> {
+    if !sequence {
+        let mut patches = Vec::with_capacity(ops.len());
+        for (index, op) in ops.iter().enumerate() {
+            patches.push(numbered(index, original, op)?);
+        }
+        if !overlaps(&mut patches) {
+            return apply_patches(original, patches);
+        }
+    }
+    let mut edited = original.to_string();
+    let mut relaxed = false;
     for (index, op) in ops.iter().enumerate() {
-        let patch = parse_patch(original, op).map_err(|error| {
-            match edit_error_context(error, original, op) {
-                Error::Tool(message) => Error::Tool(format!("edit {}: {message}", index + 1)),
-                other => other,
-            }
-        })?;
-        patches.push(patch);
+        let patch = numbered(index, &edited, op)?;
+        let (text, patch_relaxed) = apply_patches(&edited, vec![patch])?;
+        relaxed |= patch_relaxed;
+        edited = text;
     }
-    if overlaps(&mut patches) {
-        return apply_sequence(original, ops);
-    }
-    apply_patches(original, patches)
+    Ok((edited, relaxed))
+}
+
+fn numbered(index: usize, text: &str, op: &EditOp) -> Result<Patch> {
+    op.patch(text)
+        .map_err(|error| match op.context(error, text) {
+            Error::Tool(message) => Error::Tool(format!("edit {}: {message}", index + 1)),
+            other => other,
+        })
 }
 
 fn overlaps(patches: &mut [Patch]) -> bool {
@@ -79,24 +71,10 @@ fn overlaps(patches: &mut [Patch]) -> bool {
         .any(|pair| pair[1].anchor_start < pair[0].anchor_end)
 }
 
-pub(super) fn apply_sequence(original: &str, ops: &[Value]) -> Result<(String, bool)> {
-    let mut edited = original.to_string();
-    let mut relaxed = false;
-    for (index, op) in ops.iter().enumerate() {
-        let patch = parse_patch(&edited, op).map_err(|error| {
-            match edit_error_context(error, &edited, op) {
-                Error::Tool(message) => Error::Tool(format!("edit {}: {message}", index + 1)),
-                other => other,
-            }
-        })?;
-        let (text, patch_relaxed) = apply_patches(&edited, vec![patch])?;
-        relaxed |= patch_relaxed;
-        edited = text;
-    }
-    Ok((edited, relaxed))
-}
-
-pub(super) fn apply_patches(original: &str, mut patches: Vec<Patch>) -> Result<(String, bool)> {
+pub(in crate::tools) fn apply_patches(
+    original: &str,
+    mut patches: Vec<Patch>,
+) -> Result<(String, bool)> {
     let relaxed = patches.iter().any(|patch| patch.relaxed);
     if overlaps(&mut patches) {
         return Err(Error::Tool(

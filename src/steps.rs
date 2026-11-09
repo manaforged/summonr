@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Step {
@@ -59,22 +59,19 @@ pub(crate) fn contract(markdown: &str) -> Result<Contract> {
     Ok(Contract { items })
 }
 
-impl Contract {
-    #[must_use]
-    pub fn missing(&self, workspace: &std::path::Path) -> Vec<String> {
-        let mut gone = Vec::new();
-        for item in &self.items {
-            match item {
-                Item::File(path) => {
-                    if !workspace.join(path).exists() {
-                        gone.push(format!("file `{path}` does not exist"));
-                    }
-                }
-                Item::Stdout { .. } => {}
-            }
-        }
-        gone
-    }
+/// Reads and parses the plan at `path`, named relative to `workspace` when it lies inside it.
+pub fn load(
+    workspace: &std::path::Path,
+    path: &std::path::Path,
+) -> Result<(String, String, Vec<Step>)> {
+    let markdown = std::fs::read_to_string(path)
+        .map_err(|error| Error::Config(format!("cannot read {}: {error}", path.display())))?;
+    let steps = parse(&markdown)?;
+    let name = match path.strip_prefix(workspace) {
+        Ok(relative) => relative.to_string_lossy().replace('\\', "/"),
+        Err(_) => path.to_string_lossy().into_owned(),
+    };
+    Ok((name, markdown, steps))
 }
 
 pub fn parse(markdown: &str) -> Result<Vec<Step>> {
@@ -170,7 +167,6 @@ pub fn prompt(step: &Step, total: usize, plan_path: &str) -> String {
     text
 }
 
-#[must_use]
-pub fn exit_code(output: &str) -> Option<i32> {
-    crate::tools::command_exit_code(output)
-}
+#[cfg(test)]
+#[path = "steps_tests.rs"]
+mod tests;

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A `[metric]` table in `.summonr/check.toml` makes `--goal` climb a number: summonr measures a baseline first, then measures each turn after the checks, keeps it only when it beats the best by more than `noise`, and otherwise reverts it to the start of the turn. A turn that changes a file listed in `protect` is reverted unmeasured. The goal ends at `target` or at a budget, and the ledger shows every attempt.
+
 ## 0.1.1
 
 ### Fixed

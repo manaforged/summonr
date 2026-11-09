@@ -2,14 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::Msg;
-use crate::error::Result;
 use crate::provider::Client;
 use crate::runtime::Loop;
 use crate::tools::Event;
 use crate::workflow::Workflow;
+use summonr_core::error::Result;
 
+mod replay;
 mod run;
-mod sticky;
 #[cfg(test)]
 mod tests;
 

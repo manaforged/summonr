@@ -141,7 +141,7 @@ fn status(file: &MemoryFile, cap: usize) -> String {
     format!(
         "{} of {cap} bytes, {}{over}",
         file.bytes,
-        crate::text::plural(entries, "entry")
+        summonr_core::text::plural(entries, "entry")
     )
 }
 
@@ -161,7 +161,7 @@ pub(crate) fn guidance(files: &[MemoryFile]) -> String {
             .unwrap_or_default()
     };
     format!(
-        "Memory: project memory is {project} and user memory is {user}. Save a durable fact to project memory with edit or write (write creates a missing file): a user correction, a stable preference, a non-obvious project fact, or a pointer to an outside resource. Put cross-project preferences in user memory. Never save task state or what git already records. Start each entry with its date (YYYY-MM-DD); today is {today}. Read the file before you change it; use edit for one entry, never rewrite the whole file from memory. Keep the file under {cap} bytes. Never delete entries the user did not ask you to remove. When the file is over the cap, ask the user which entries to drop before pruning; never prune with a shell command. After saving, tell the user in one line what you saved and where. Check a remembered fact against the code before you act on it; delete it when wrong.",
+        "Memory: project {project}, user {user}. Save durable facts with edit or write: user corrections, stable preferences, non-obvious project facts, outside pointers; cross-project preferences go to user memory. Never save task state or what git records. Start entries with the date; today is {today}. Read before changing; edit one entry, never rewrite the file. Over {cap} bytes, ask the user what to drop; never prune by shell or delete unasked. After saving, say what and where in one line. Verify a remembered fact before acting on it; delete it if wrong.",
         project = path(Scope::Project),
         user = path(Scope::User),
         cap = crate::limits::limits().memory_bytes,
@@ -188,15 +188,13 @@ fn key(memory: &Path, workspace: &Path) -> String {
         })
         .take(KEY_NAME_CHARS)
         .collect();
-    let hash = crate::text::fnv64(identity.as_bytes());
+    let hash = summonr_core::text::fnv64(identity.as_bytes());
     existing(memory, &hash).unwrap_or_else(|| format!("{name}-{hash}"))
 }
 
 fn existing(memory: &Path, hash: &str) -> Option<String> {
     let suffix = format!("-{hash}");
-    std::fs::read_dir(memory)
-        .ok()?
-        .flatten()
+    summonr_core::walk::children(memory)
         .filter_map(|entry| entry.file_name().into_string().ok())
         .find(|name| name.ends_with(&suffix))
 }

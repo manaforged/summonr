@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -34,10 +34,10 @@ fn provider(reply: Option<&'static str>) -> u16 {
 }
 
 fn start(home: &Path, port: u16) -> Child {
-    launch(home, port, &["-p", "--json", "hi"])
+    launch(home, port, &["-p", "--json", "hi"], &[])
 }
 
-fn launch(home: &Path, port: u16, args: &[&str]) -> Child {
+fn launch(home: &Path, port: u16, args: &[&str], env: &[(&str, &str)]) -> Child {
     std::fs::write(
         home.join("config.toml"),
         format!(
@@ -52,6 +52,7 @@ fn launch(home: &Path, port: u16, args: &[&str]) -> Child {
         .env("HOME", home)
         .env("USERPROFILE", home)
         .env("SUMMONR_HOME", home)
+        .envs(env.iter().copied())
         .env(
             "SUMMONR_MODELS_URL",
             format!("http://127.0.0.1:{port}/registry.json"),
@@ -78,6 +79,48 @@ fn aborted(events: &[serde_json::Value]) -> Option<&str> {
         .iter()
         .rfind(|event| event["type"] == "aborted")
         .and_then(|event| event["code"].as_str())
+}
+
+#[test]
+fn a_shell_worker_registers_with_its_parent_on_launch_and_resume()
+-> Result<(), Box<dyn std::error::Error>> {
+    let home = tempfile::tempdir()?;
+    let parent = uuid::Uuid::now_v7().simple().to_string();
+    let env = [
+        ("SUMMONR_PARENT_SESSION", parent.as_str()),
+        ("SUMMONR_MAIL", "on"),
+    ];
+    for args in [
+        &["-p", "--json", "hi"][..],
+        &["--continue", "-p", "--json", "hi"][..],
+    ] {
+        let mut child = launch(home.path(), provider(None), args, &env);
+        let stdout = child.stdout.take().expect("worker stdout");
+        let record = (|| -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+            for line in BufReader::new(stdout).lines() {
+                let event: serde_json::Value = serde_json::from_str(&line?)?;
+                if event["type"] == "session" {
+                    let id = event["id"].as_str().expect("session ID");
+                    let path = home.path().join("mail/agents").join(format!("{id}.json"));
+                    return Ok(serde_json::from_slice(&std::fs::read(path)?)?);
+                }
+            }
+            Err("worker ended before announcing its session".into())
+        })();
+        drop(child.kill());
+        child.wait()?;
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .expect("worker stderr")
+            .read_to_string(&mut stderr)?;
+        let record = record.map_err(|error| format!("{args:?}: {error}; {stderr}"))?;
+        assert_eq!(record["parent"], parent);
+        assert_eq!(record["pid"], child.id());
+        assert_ne!(record["id"], parent);
+    }
+    Ok(())
 }
 
 #[test]
@@ -212,7 +255,7 @@ fn a_text_run_keeps_stdout_to_the_answer_and_marks_reasoning_only_before_it() {
         r#"{"choices":[{"index":0,"delta":{"reasoning_content":"more"}}]}"#,
         r#"{"choices":[{"index":0,"delta":{"content":"tests"},"finish_reason":"stop"}]}"#,
     ]);
-    let output = launch(home.path(), port, &["-p", "hi"])
+    let output = launch(home.path(), port, &["-p", "hi"], &[])
         .wait_with_output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -220,7 +263,7 @@ fn a_text_run_keeps_stdout_to_the_answer_and_marks_reasoning_only_before_it() {
     assert_eq!(output.status.code(), Some(0), "{stderr}");
     assert_eq!(stdout.trim(), "pytest runs tests", "{stderr}");
     assert_eq!(stderr.matches("… reasoning").count(), 1, "{stderr}");
-    assert!(stderr.contains("Turn receipt"), "{stderr}");
+    assert!(!stderr.contains("Turn receipt"), "{stderr}");
 }
 
 #[test]
@@ -233,8 +276,93 @@ fn a_plain_run_names_its_workspace_check_and_a_json_run_does_not() {
     )
     .unwrap();
     let rejected = "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\ncontent-length: 41\r\nconnection: close\r\n\r\n{\"error\":{\"message\":\"invalid api key\"}}\n";
-    let (_, _, plain) = finish(launch(home.path(), provider(Some(rejected)), &["-p", "hi"]));
+    let (_, _, plain) = finish(launch(
+        home.path(),
+        provider(Some(rejected)),
+        &["-p", "hi"],
+        &[],
+    ));
     assert!(plain.contains("summonr: workspace check: true"), "{plain}");
     let (_, _, json) = finish(start(home.path(), provider(Some(rejected))));
     assert!(!json.contains("workspace check"), "{json}");
+}
+
+#[test]
+fn a_json_steps_run_starts_each_step_with_its_check_and_exits_zero() {
+    let home = tempfile::tempdir().unwrap();
+    let port = streaming(&[
+        r#"{"choices":[{"index":0,"delta":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}"#,
+    ]);
+    let work = home.path().join("work");
+    std::fs::create_dir(&work).unwrap();
+    std::fs::write(
+        work.join("PLAN.md"),
+        "## Steps\n\n1. Say done. Run `exit 0`.\n2. Say done again. Run `cd .`.\n",
+    )
+    .unwrap();
+    let mut child = launch(home.path(), port, &["--version"], &[]);
+    drop(child.wait());
+    let child = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["-e", "local", "--steps", "PLAN.md", "--json"])
+        .current_dir(&work)
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .env(
+            "SUMMONR_MODELS_URL",
+            format!("http://127.0.0.1:{port}/registry.json"),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (code, events, stderr) = finish(child);
+    let steps: Vec<(u64, &str, Option<&str>)> = events
+        .iter()
+        .filter(|event| event["type"] == "step")
+        .map(|event| {
+            (
+                event["index"].as_u64().unwrap(),
+                event["state"].as_str().unwrap(),
+                event["check"].as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(code, Some(0), "{stderr}");
+    assert_eq!(
+        steps,
+        [
+            (1, "start", Some("exit 0")),
+            (1, "check passed", Some("exit 0")),
+            (2, "start", Some("cd .")),
+            (2, "check passed", Some("cd .")),
+        ],
+        "workspace files: {:?}\n{stderr}",
+        walk(&work)
+    );
+}
+
+fn walk(root: &std::path::Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path.clone());
+            }
+            found.push(
+                path.strip_prefix(root)
+                    .unwrap_or(&path)
+                    .display()
+                    .to_string(),
+            );
+        }
+    }
+    found.sort();
+    found
 }

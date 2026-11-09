@@ -42,7 +42,7 @@ pub(in crate::tui::sigil_view) fn layer(
                     let probe = hint_app.clone();
                     let hint = derived(move || {
                         probe.model.with(|_| ());
-                        if probe.unseated() {
+                        if probe.unconfigured() {
                             "ask anything · /login · @file · !cmd · /help"
                         } else {
                             "ask anything · @file · !cmd · /help"
@@ -116,26 +116,45 @@ fn row(
     prefs: Signal<Prefs>,
     table: Signal<Rc<[entry::Slot]>>,
 ) -> NodeBuilder {
-    #[cfg(feature = "gui")]
-    if canvas::is_window() {
-        return super::super::desktop::entry::row(app, index, spacing);
-    }
     let probe = app.clone();
-    let current = sigil::reactive::derived(move || {
+    let current = derived(move || {
         let at = table.with(|table| table.get(index).cloned().unwrap_or(entry::Slot::Single));
         probe
             .model
-            .with(|model| (slot_marks(model, index, at), model.entries.stamp))
+            .with(|model| (slot_revisions(model, index, at), model.entries.stamp))
     });
+    #[cfg(feature = "gui")]
+    let open: Signal<Option<bool>> = signal(None);
     container()
         .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
         .children_reactive(move || {
             let ((at, _), _) = current.get();
             prefs.with(|_| ());
+            #[cfg(feature = "gui")]
+            if canvas::is_window() {
+                let unfolded = open.get();
+                return untrack(|| match at {
+                    entry::Slot::Member => Vec::new(),
+                    entry::Slot::Lead(range)
+                        if app.model.with(|model| {
+                            model.entries.get(range.start).is_some_and(entry::subagents)
+                        }) =>
+                    {
+                        vec![inset(group(&app, range), spacing)]
+                    }
+                    entry::Slot::Lead(range) => {
+                        vec![inset(
+                            entry::fold::card(&app, range, unfolded, open),
+                            spacing,
+                        )]
+                    }
+                    entry::Slot::Single => super::super::desktop::entry::single(&app, index)
+                        .map(|node| vec![inset(node, spacing)])
+                        .unwrap_or_default(),
+                });
+            }
             untrack(|| match at {
-                entry::Slot::Member => vec![
-                    container().layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0)),
-                ],
+                entry::Slot::Member => Vec::new(),
                 entry::Slot::Lead(range) if range.end - range.start > 1 => {
                     vec![inset(group(&app, range), spacing)]
                 }
@@ -144,30 +163,28 @@ fn row(
         })
 }
 
-fn slot_marks(model: &Model, index: usize, at: entry::Slot) -> (entry::Slot, Vec<entry::Mark>) {
-    let range = match &at {
-        entry::Slot::Lead(range) => range.clone(),
-        entry::Slot::Single => index..index + 1,
-        entry::Slot::Member => index..index,
-    };
+fn slot_revisions(
+    model: &Model,
+    index: usize,
+    at: entry::Slot,
+) -> (entry::Slot, Vec<(entry::Revision, bool)>) {
+    let range = at.span(index);
     let last = model.entries.len();
     let live = model.busy_since.is_some();
-    let mark: Vec<_> = model
+    let revisions: Vec<_> = model
         .entries
         .get(range.clone())
         .unwrap_or_default()
         .iter()
         .enumerate()
-        .map(|(offset, item)| {
-            entry::mark(
-                item,
-                live && range.start + offset + 1 == last,
+        .map(|(offset, _)| {
+            (
                 entry::revision(&model.entries, range.start + offset),
-                entry::Prose::Patch,
+                live && range.start + offset + 1 == last,
             )
         })
         .collect();
-    (at, mark)
+    (at, revisions)
 }
 
 fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
@@ -203,13 +220,7 @@ fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
 }
 
 fn single(app: &App, index: usize, spacing: (f32, f32)) -> Vec<NodeBuilder> {
-    let (item, live, prefs) = app.model.with(|model| {
-        (
-            model.entries.get(index).cloned(),
-            model.busy_since.is_some() && index + 1 == model.entries.len(),
-            model.prefs.clone(),
-        )
-    });
+    let (item, live, prefs) = app.model.with(|model| model.entry_at(index));
     item.filter(|item| !entry::hidden(item, &prefs))
         .map(|item| vec![inset(entry::row(item, live, &prefs, app, index), spacing)])
         .unwrap_or_default()

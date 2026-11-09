@@ -1,0 +1,4 @@
+{
+  "name": "hillclimb",
+  "description": "Predict a performance bound, change one parameter, and keep the change only when the measurement moves toward that bound."
+}

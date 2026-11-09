@@ -3,15 +3,13 @@ use crate::provider::Provider;
 use crate::runtime::Loop;
 use crate::{Error, ProviderFailureKind, Result};
 
-const REPAIRS: usize = 2;
-
 const JUDGE_SYSTEM: &str = "You judge whether a coding objective is complete. Reply with one \
 line of JSON: {\"verdict\": \"done\"|\"continue\"|\"stalled\"|\"impossible\", \"reason\": \
 \"<one sentence>\"}. `done` only when the response shows concrete evidence (a command result, \
 file, or test output) that the objective is met. Never `done` when the pass depends on hidden \
 state, call order, special cases for test inputs, or changed test expectations, or on a \
 changed environment for the check (a stub or shim on PATH, an edited file outside the \
-workspace, a faked clock or tool); reply `continue` and name the trick. `continue` when work remains; name what remains. `stalled` when the response reports no concrete action on the objective. \
+workspace, a faked clock or tool); reply `continue` and name the trick. `continue` when work remains; name what remains. For an open-ended objective, `done` needs the outcome the agent committed to and the evidence that shows it, on something a user would notice; formatting, renames, comments, docs, a test run alone, or the agent's belief that it is done are `continue`, so name the bigger gap. `stalled` when the response reports no concrete action on the objective; a question the agent could answer from the workspace is `continue`, not `stalled`. \
 `impossible` when the objective cannot be met in this workspace; name the blocker. When two \
 tests expect different results for the same input, reply `impossible` and name both tests.";
 
@@ -33,9 +31,10 @@ pub(crate) async fn decision<P: Provider>(
         usage.add(&judge_usage);
         match parse_verdict(&reply) {
             Ok(verdict) => break verdict,
-            Err(error) if repairs >= REPAIRS => {
+            Err(error) if repairs >= crate::limits::limits().judge_repairs => {
                 return Decision::GoalContinue(format!(
-                    "goal judge stayed malformed after {REPAIRS} repairs: {error}"
+                    "goal judge stayed malformed after {} repairs: {error}",
+                    crate::limits::limits().judge_repairs
                 ));
             }
             Err(_) => {
@@ -61,7 +60,11 @@ pub fn prompt(objective: &str, gates: &[String], round: u32) -> String {
         "Work toward this objective. Keep going until it is fully met. Do not stop halfway or \
 ask questions you can resolve yourself:\n\n{objective}\n"
     );
-    if !gates.is_empty() {
+    if gates.is_empty() {
+        text.push_str(
+            "\nNo check is set. Before changing anything, turn the objective into a contract: the outcome that should be true when you are done, the command or evidence that will show it, and what must not regress. Pick the outcome that matters most to a user of this code, not the easiest one. Work to that contract, and end with the evidence. Formatting, renames, comments, and docs alone are not an outcome.\n",
+        );
+    } else {
         let list = gates
             .iter()
             .map(|gate| format!("`{gate}`"))
@@ -100,21 +103,34 @@ struct Verdict {
     reason: String,
 }
 
-fn parse_verdict(reply: &str) -> Result<Verdict> {
+#[derive(serde::Deserialize)]
+struct Reply {
+    verdict: Option<String>,
+    done: Option<bool>,
+    reason: Option<String>,
+}
+
+pub(crate) fn reply_object<T: serde::de::DeserializeOwned>(
+    reply: &str,
+) -> Option<serde_json::Result<T>> {
     let trimmed = reply.trim();
-    let start = trimmed.find('{').ok_or_else(malformed_judge)?;
-    let end = trimmed.rfind('}').ok_or_else(malformed_judge)?;
-    if end < start {
-        return Err(malformed_judge());
-    }
-    let value: serde_json::Value =
-        serde_json::from_str(&trimmed[start..=end]).map_err(|error| {
-            Error::provider(
+    let start = trimmed.find('{')?;
+    let end = trimmed.rfind('}')?;
+    (start <= end).then(|| serde_json::from_str(&trimmed[start..=end]))
+}
+
+fn parse_verdict(reply: &str) -> Result<Verdict> {
+    let reply: Reply = match reply_object(reply).ok_or_else(malformed_judge)? {
+        Ok(reply) => reply,
+        Err(error) if error.is_data() => return Err(malformed_judge()),
+        Err(error) => {
+            return Err(Error::provider(
                 ProviderFailureKind::Malformed,
                 format!("goal judge returned invalid JSON: {error}"),
-            )
-        })?;
-    let state = match value.get("verdict").and_then(|verdict| verdict.as_str()) {
+            ));
+        }
+    };
+    let state = match reply.verdict.as_deref() {
         Some("done") => State::Done,
         Some("continue") => State::Continue,
         Some("stalled") => State::Stalled,
@@ -125,17 +141,13 @@ fn parse_verdict(reply: &str) -> Result<Verdict> {
                 format!("goal judge returned unknown verdict `{value}`"),
             ));
         }
-        None => match value.get("done").and_then(serde_json::Value::as_bool) {
+        None => match reply.done {
             Some(true) => State::Done,
             Some(false) => State::Continue,
             None => return Err(malformed_judge()),
         },
     };
-    let reason = value
-        .get("reason")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(malformed_judge)?
-        .to_string();
+    let reason = reply.reason.ok_or_else(malformed_judge)?;
     Ok(Verdict { state, reason })
 }
 

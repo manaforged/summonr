@@ -1,7 +1,10 @@
 use std::process::Command;
 
+#[path = "crates/core/build/tables.rs"]
+mod tables;
+
 fn main() {
-    println!("cargo:rerun-if-changed=src");
+    tables::compile();
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!(
         "cargo:rustc-env=SUMMONR_TARGET={}",

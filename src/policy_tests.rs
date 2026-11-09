@@ -365,3 +365,65 @@ fn a_numbered_redirect_into_a_file_outside_the_workspace_is_refused() {
         "{error}"
     );
 }
+
+fn layered(files: &[&str]) -> Policy {
+    let dir = tempfile::tempdir().unwrap();
+    let mut policy = Policy::builtin();
+    for (slot, text) in files.iter().enumerate() {
+        let path = dir.path().join(format!("{slot}.toml"));
+        std::fs::write(&path, text).unwrap();
+        policy.overlay_file(&path).unwrap();
+    }
+    policy
+}
+
+#[test]
+fn a_workspace_policy_cannot_widen_the_user_allow_list() {
+    let policy = layered(&["allow = [\"git status\"]", "allow = [\"rm\", \"git\"]"]);
+    let workspace = Path::new("/app");
+    policy.command("git status", workspace, workspace).unwrap();
+    let error = policy
+        .command("rm notes.txt", workspace, workspace)
+        .unwrap_err();
+    assert!(matches!(error, Error::Denied(_)), "{error}");
+}
+
+#[test]
+fn a_deny_pattern_wins_over_an_allow_pattern() {
+    let policy = layered(&["allow = [\"git\"]\ndeny = [\"git push\"]"]);
+    let workspace = Path::new("/app");
+    policy.command("git status", workspace, workspace).unwrap();
+    let error = policy
+        .command("git push origin main", workspace, workspace)
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        Error::Denied("denied by policy `git push`".to_string()).to_string()
+    );
+}
+
+#[test]
+fn a_misspelled_policy_key_is_a_config_error_instead_of_no_rule() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("policy.toml");
+    std::fs::write(&path, "denny = [\"touch\"]\n").unwrap();
+    let error = Policy::builtin()
+        .overlay_file(&path)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("denny"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_policy_folder_is_an_error_instead_of_no_rule() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join(".summonr");
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("policy.toml"), "deny = [\"touch\"]\n").unwrap();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let result = Policy::builtin().overlay_file(&folder.join("policy.toml"));
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.is_err(), "{result:?}");
+}

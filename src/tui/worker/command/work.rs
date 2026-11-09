@@ -4,31 +4,30 @@ impl Worker {
     pub(in crate::tui::worker) async fn compact(&mut self) -> bool {
         drop(self.ui.send(Msg::Busy(Some(Activity::Compact))));
         let ui = self.ui.clone();
-        let outcome = attend(
-            Inbox {
-                cmd: &mut self.cmd,
-                reader: &self.reader,
-                followups: &mut self.followups,
-                deferred: &mut self.deferred,
-                ui: &self.ui,
-                answers: None,
-            },
+        let outcome = wait_cancelable(
+            &mut self.cmd,
+            &mut self.queue,
+            &self.reader,
+            &self.ui,
+            None,
             self.loop_
                 .compact_with(move |event| drop(ui.send(Msg::Event(event.clone())))),
         )
         .await;
-        if !matches!(outcome, Attended::Done(Ok(_))) {
+        if !matches!(outcome, Completion::Done(Ok(_))) {
             self.recover();
         }
         drop(self.ui.send(Msg::Busy(None)));
         match outcome {
-            Attended::Done(Ok(true)) => self.system("context compacted: earlier turns summarized"),
-            Attended::Done(Ok(false)) => self.system("nothing to compact yet"),
-            Attended::Done(Err(error)) => self.fail(&error.to_string()),
-            Attended::Cancelled => {
+            Completion::Done(Ok(true)) => {
+                self.system("context compacted: earlier turns summarized")
+            }
+            Completion::Done(Ok(false)) => self.system("nothing to compact yet"),
+            Completion::Done(Err(error)) => self.fail(&error.to_string()),
+            Completion::Cancelled => {
                 self.system("Compaction cancelled. The conversation is unchanged.");
             }
-            Attended::Quit => return false,
+            Completion::Quit => return false,
         }
         true
     }
@@ -40,47 +39,20 @@ impl Worker {
             );
             return true;
         }
-        if clears(plan_path) {
+        if is_stop_word(plan_path) {
             self.clear_steps();
             return true;
         }
-        let Some((markdown, steps)) = self.read_steps(plan_path) else {
+        let Some((plan, markdown, steps)) = self.read_steps(plan_path) else {
             return true;
         };
-        let total = steps.len();
         let checks = self.loop_.verify_commands().to_vec();
         if let Err(error) = self.loop_.select_steps(&markdown, &checks) {
             self.fail(&error.to_string());
             return true;
         }
         announce_run_mode(&self.loop_, &self.ui);
-        let code = loop {
-            let prompt = match self.loop_.next_step(&steps, plan_path) {
-                Ok(crate::StepRun::Done(code)) => break code,
-                Ok(crate::StepRun::Run { prompt, .. }) => prompt,
-                Err(error) => {
-                    self.fail(&error.to_string());
-                    return true;
-                }
-            };
-            if self.cleared("/steps", "steps cleared by user", "steps cleared") {
-                return true;
-            }
-            let paused = "steps paused: cancelled by user; /steps PLAN.md resumes";
-            if let Some(keep_running) = self
-                .work_turn(prompt, paused, "step execution aborted", "steps")
-                .await
-            {
-                return keep_running;
-            }
-        };
-        if code == 0 {
-            self.outcome(&format!("steps complete: {total} of {total}"));
-        } else {
-            let reason = self.stop_reason().unwrap_or_default();
-            self.outcome(&format!("steps stopped (exit {code}): {reason}"));
-        }
-        true
+        self.run_work(&crate::Job::Steps { plan, steps }).await
     }
 
     fn clear_steps(&mut self) {
@@ -96,17 +68,10 @@ impl Worker {
         }
     }
 
-    fn read_steps(&mut self, plan_path: &str) -> Option<(String, Vec<crate::steps::Step>)> {
-        let path = self.loop_.workspace().join(plan_path);
-        let markdown = match std::fs::read_to_string(&path) {
-            Ok(markdown) => markdown,
-            Err(error) => {
-                self.fail(&format!("cannot read {}: {error}", path.display()));
-                return None;
-            }
-        };
-        match crate::steps::parse(&markdown) {
-            Ok(steps) => Some((markdown, steps)),
+    fn read_steps(&mut self, plan_path: &str) -> Option<(String, String, Vec<crate::steps::Step>)> {
+        let workspace = self.loop_.workspace().to_path_buf();
+        match crate::steps::load(&workspace, &workspace.join(plan_path)) {
+            Ok(plan) => Some(plan),
             Err(error) => {
                 self.fail(&error.to_string());
                 None
@@ -118,13 +83,13 @@ impl Worker {
         if objective.is_empty() {
             return self.goal_status();
         }
-        if clears(objective) {
+        if is_stop_word(objective) {
             self.clear_goal();
-            self.leave_goal(crate::RunMode::Auto);
+            self.leave_goal(crate::WorkKind::Single);
             return true;
         }
         let before = match self.loop_.mode() {
-            crate::RunMode::Goal => crate::RunMode::Auto,
+            crate::WorkKind::Goal => crate::WorkKind::Single,
             mode => mode,
         };
         let Some(gates) = self.goal_gates() else {
@@ -135,7 +100,8 @@ impl Worker {
             return true;
         }
         announce_run_mode(&self.loop_, &self.ui);
-        let keep_running = self.run_goal(objective, &gates).await;
+        let objective = objective.to_string();
+        let keep_running = self.run_work(&crate::Job::Goal { objective, gates }).await;
         self.leave_goal(before);
         keep_running
     }
@@ -146,7 +112,12 @@ impl Worker {
             return Some(gates);
         }
         match crate::verify::check_commands(self.loop_.workspace()) {
-            Ok(Some(commands)) => return Some(commands),
+            Ok(Some(_)) => {
+                self.system(
+                    "check: none; Verify is off, so the judge decides when the goal is met. Turn Verify on to gate it",
+                );
+                return Some(Vec::new());
+            }
             Ok(None) => {}
             Err(error) => {
                 self.fail(&error.to_string());
@@ -165,49 +136,63 @@ impl Worker {
         Some(Vec::new())
     }
 
-    async fn run_goal(&mut self, objective: &str, gates: &[String]) -> bool {
+    async fn run_work(&mut self, job: &crate::Job) -> bool {
         let code = loop {
-            let progress = match self.loop_.work_progress() {
-                Ok(progress) => progress,
+            let prompt = match self.loop_.next_action(job) {
+                Ok(crate::NextAction::Done(code)) => break code,
+                Ok(crate::NextAction::Run { prompt, .. }) => prompt,
                 Err(error) => {
                     self.fail(&error.to_string());
                     return true;
                 }
             };
-            if let Some(code) = progress.exit_code() {
-                break code;
-            }
-            let title = objective.lines().next().unwrap_or_default();
-            let notice = format!("goal cleared: {title}");
-            if self.cleared("/goal", "goal cleared by user", &notice) {
+            let (command, notice, paused) = match job {
+                crate::Job::Goal { objective, .. } => (
+                    crate::SlashCommand::Goal,
+                    format!(
+                        "goal cleared: {}",
+                        objective.lines().next().unwrap_or_default()
+                    ),
+                    "goal paused: cancelled by user",
+                ),
+                crate::Job::Steps { .. } => (
+                    crate::SlashCommand::Steps,
+                    "steps cleared".to_string(),
+                    "steps paused: cancelled by user; /steps PLAN.md resumes",
+                ),
+            };
+            let reason = format!("{} cleared by user", job.label());
+            if self.cleared(command, &reason, &notice) {
                 return true;
             }
-            let prompt = crate::goal::prompt(objective, gates, progress.rounds);
             if let Some(keep_running) = self
-                .work_turn(
-                    prompt,
-                    "goal paused: cancelled by user",
-                    "goal execution aborted",
-                    "goal",
-                )
+                .work_turn(prompt, paused, job.aborted(), job.label())
                 .await
             {
                 return keep_running;
             }
         };
-        if code == 0 {
-            self.outcome("goal achieved");
-        } else {
-            let reason = self
-                .stop_reason()
-                .unwrap_or_else(|| "resume with `summonr --goal`".to_string());
-            self.outcome(&format!("goal stopped (exit {code}): {reason}"));
-        }
+        let outcome = match (job, code) {
+            (crate::Job::Goal { .. }, 0) => "goal achieved".to_string(),
+            (crate::Job::Steps { steps, .. }, 0) => {
+                format!("steps complete: {0} of {0}", steps.len())
+            }
+            (crate::Job::Goal { .. }, code) => format!(
+                "goal stopped (exit {code}): {}",
+                self.stop_reason()
+                    .unwrap_or_else(|| "resume with `summonr --goal`".to_string())
+            ),
+            (crate::Job::Steps { .. }, code) => format!(
+                "steps stopped (exit {code}): {}",
+                self.stop_reason().unwrap_or_default()
+            ),
+        };
+        self.outcome(&outcome);
         true
     }
 
-    fn leave_goal(&mut self, mode: crate::RunMode) {
-        if self.loop_.mode() == crate::RunMode::Goal
+    fn leave_goal(&mut self, mode: crate::WorkKind) {
+        if self.loop_.mode() == crate::WorkKind::Goal
             && self.loop_.active_goal().ok().flatten().is_none()
         {
             self.loop_.set_mode(mode);
@@ -234,7 +219,7 @@ impl Worker {
         }
     }
 
-    fn cleared(&mut self, command: &str, reason: &str, notice: &str) -> bool {
+    fn cleared(&mut self, command: crate::SlashCommand, reason: &str, notice: &str) -> bool {
         if !self.take_clear(command) {
             return false;
         }
@@ -259,11 +244,40 @@ impl Worker {
                 Some(true)
             }
             Some(turn) if turn.aborted => {
-                self.abandon(aborted);
+                if !self.stop_work(aborted).await {
+                    return Some(false);
+                }
                 self.system(&format!("{label} stopped; the turn aborted: {}", turn.text));
                 Some(true)
             }
             Some(_) => None,
+        }
+    }
+
+    async fn stop_work(&mut self, reason: &str) -> bool {
+        let ui = self.ui.clone();
+        let outcome = wait_cancelable(
+            &mut self.cmd,
+            &mut self.queue,
+            &self.reader,
+            &self.ui,
+            None,
+            self.loop_.stop_work(reason, move |event| {
+                drop(ui.send(Msg::Event(event.clone())));
+            }),
+        )
+        .await;
+        match outcome {
+            Completion::Done(Ok(_)) => true,
+            Completion::Done(Err(error)) => {
+                self.fail(&error.to_string());
+                true
+            }
+            Completion::Cancelled => {
+                self.abandon(reason);
+                true
+            }
+            Completion::Quit => false,
         }
     }
 
@@ -286,6 +300,6 @@ impl Worker {
     }
 }
 
-fn clears(argument: &str) -> bool {
+pub(super) fn is_stop_word(argument: &str) -> bool {
     matches!(argument, "clear" | "stop" | "off" | "cancel")
 }

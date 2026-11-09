@@ -17,13 +17,16 @@ fn only_the_last_entry_of_a_live_group_is_marked_live() {
     let mut model = receipts(3);
     model.set_busy(Some(Activity::Turn));
     let len = model.entries.len();
-    let (_, marks) = slot_marks(&model, len - 2, entry::Slot::Lead(len - 2..len));
-    let live: Vec<bool> = marks.iter().map(|mark| mark.2).collect();
+    let (_, marks) = slot_revisions(&model, len - 2, entry::Slot::Lead(len - 2..len));
+    let live: Vec<bool> = marks.iter().map(|mark| mark.1).collect();
     assert_eq!(live, [false, true]);
     assert_ne!(model.entries.rev(len - 3), model.entries.rev(len - 2));
-    let revs: Vec<u64> = marks.iter().map(|mark| mark.3).collect();
+    let revs: Vec<entry::Revision> = marks.iter().map(|mark| mark.0).collect();
     assert_eq!(
         revs,
-        [model.entries.rev(len - 2), model.entries.rev(len - 1)]
+        [
+            entry::Revision::Entry(model.entries.rev(len - 2)),
+            entry::Revision::Entry(model.entries.rev(len - 1))
+        ]
     );
 }

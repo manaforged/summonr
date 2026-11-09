@@ -7,7 +7,7 @@ use sigil::prelude::{
 use super::super::App;
 use super::wrap;
 use crate::prefs::Visibility;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 pub(super) fn collapsible(
     body: Signal<String>,
@@ -19,17 +19,18 @@ pub(super) fn collapsible(
 ) -> NodeBuilder {
     let toggle = app.clone();
     let next = if visibility == Visibility::Expanded {
-        "collapsed"
+        Visibility::Collapsed
     } else {
-        "expanded"
+        Visibility::Expanded
+    };
+    let field: fn(&mut crate::prefs::Prefs) -> &mut Visibility = if reasoning {
+        |prefs| &mut prefs.reasoning
+    } else {
+        |prefs| &mut prefs.receipts
     };
     let press = move |event: &mut PointerEvent| {
         if event.button == Some(MouseButton::Left) {
-            if reasoning {
-                toggle.reasoning_command(Some(next));
-            } else {
-                toggle.receipts_command(Some(next));
-            }
+            toggle.set_visibility(field, Some(next));
             event.stop_propagation();
         }
     };
@@ -52,7 +53,7 @@ pub(super) fn collapsible(
             )
             .child(prose(
                 body,
-                Look::xs(sigil::prelude::Token::Gray10).italic(),
+                TextStyle::xs(sigil::prelude::Token::Gray10).italic(),
             )),
     }
 }
@@ -61,7 +62,7 @@ fn folded(body: Signal<String>, kind: &'static str, reasoning: bool) -> NodeBuil
     if reasoning {
         return caption(move || {
             let words = body.with(|body| body.split_whitespace().count());
-            format!("▸ {kind} · {}", crate::text::plural(words, "word"))
+            format!("▸ {kind} · {}", summonr_core::text::plural(words, "word"))
         });
     }
     caption(move || body.with(|body| gist(kind, body)))
@@ -74,13 +75,13 @@ fn gist(kind: &str, body: &str) -> String {
         .next()
         .and_then(|line| line.split_once(" · "))
         .map_or_else(
-            || crate::text::plural(count, "line"),
+            || summonr_core::text::plural(count, "line"),
             |(_, gist)| gist.to_string(),
         );
     format!("▸ {kind} · {gist}")
 }
 
-struct Line(String, Look);
+struct Line(String, TextStyle);
 
 impl IntoNode for Line {
     fn build(self, cx: &mut Cx) -> NodeId {
@@ -88,14 +89,19 @@ impl IntoNode for Line {
     }
 }
 
-fn prose(body: Signal<String>, look: Look) -> NodeBuilder {
+fn prose(body: Signal<String>, text_style: TextStyle) -> NodeBuilder {
     container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .children_keyed(move || {
             body.with(|body| {
                 body.split('\n')
                     .enumerate()
-                    .map(|(index, para)| ((index, para.to_string()), Line(para.to_string(), look)))
+                    .map(|(index, para)| {
+                        (
+                            (index, para.to_string()),
+                            Line(para.to_string(), text_style),
+                        )
+                    })
                     .collect::<Vec<_>>()
             })
         })
@@ -105,7 +111,6 @@ fn caption(text: impl Into<sigil::kernel::TextContent>) -> NodeBuilder {
     wrap(
         sigil::kernel::text(text)
             .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
             .font_size(12.0)
             .font_italic(true)
             .text_color(sigil::prelude::Token::Gray11),

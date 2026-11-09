@@ -167,7 +167,7 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
         println!("key for {name} stored in {}", source.label());
         return Ok(());
     }
-    let endpoint = summonr::login_seat(name)?;
+    let endpoint = summonr::login_endpoint(name)?;
     let flow = summonr::auth_info(name)?.login;
     match flow {
         summonr::LoginFlow::Browser => {

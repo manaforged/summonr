@@ -1,10 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use chacha20poly1305::aead::{OsRng, rand_core::RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::durable::store;
-use crate::error::{Error, Result};
+use crate::durable::store::{Doc, Durability, Invalid, Toml, Wait};
+use summonr_core::error::{Error, Result};
 
 const FILE: &str = "gateway.toml";
 pub(crate) const CODE_LEN: usize = 6;
@@ -129,27 +129,27 @@ pub(crate) fn new_code() -> String {
 }
 
 pub(crate) fn path() -> Result<PathBuf> {
-    Ok(crate::prompt::summonr_home()?.join(FILE))
+    Ok(summonr_core::dirs::summonr_home()?.join(FILE))
+}
+
+fn doc() -> Result<Doc<Toml<State>>> {
+    Ok(Doc::new(
+        path()?,
+        Durability::Synced,
+        Invalid::Fail,
+        Wait::Forever,
+    ))
 }
 
 pub(crate) fn load() -> Result<State> {
-    let path = path()?;
-    let _guard = store::lock(&path, true)?;
-    read(&path)
+    doc()?.load()
 }
 
 pub(crate) fn update<T>(change: impl FnOnce(&mut State) -> T) -> Result<T> {
-    let path = path()?;
-    let _guard = store::lock(&path, true)?;
-    let mut state = read(&path)?;
-    let out = change(&mut state);
-    let text = toml::to_string(&state)
-        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
-    store::write(&path, text, store::Durability::Synced)?;
-    Ok(out)
-}
-
-fn read(path: &Path) -> Result<State> {
-    let text = store::read_or_empty(path)?;
-    toml::from_str(&text).map_err(|error| Error::Config(format!("{}: {error}", path.display())))
+    let mut out = None;
+    doc()?.update(|state| {
+        out = Some(change(state));
+        Ok(true)
+    })?;
+    out.ok_or_else(|| Error::Config(format!("{FILE}: the change did not run")))
 }

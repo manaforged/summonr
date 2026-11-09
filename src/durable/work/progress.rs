@@ -29,7 +29,7 @@ pub(crate) fn roman(number: usize) -> String {
 
 pub(crate) fn checks(
     markdown: &str,
-    policy: Policy,
+    policy: WorkKind,
     commands: &[String],
 ) -> Result<Vec<Check>, WorkError> {
     let mut checks: Vec<Check> = commands
@@ -39,7 +39,7 @@ pub(crate) fn checks(
             observation: None,
         })
         .collect();
-    if policy != Policy::Steps {
+    if policy != WorkKind::Steps {
         return Ok(checks);
     }
     let mut push = |command: String, observation: Option<Observation>| {
@@ -75,94 +75,27 @@ pub(crate) fn checks(
     Ok(checks)
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum WorkKind {
+enum Persisted {
     Single,
     Steps,
-    Goal,
+    Goal {},
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkPhase {
-    Plan,
-    Execute,
-    Verify,
-    Review,
-    Completed,
-    Failed,
-}
-
-impl Display for WorkPhase {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::Plan => "planning",
-            Self::Execute => "running",
-            Self::Verify => "verifying",
-            Self::Review => "reviewing",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-        })
+pub(super) fn persist<S: serde::Serializer>(kind: &WorkKind, to: S) -> Result<S::Ok, S::Error> {
+    match kind {
+        WorkKind::Single => Persisted::Single,
+        WorkKind::Steps => Persisted::Steps,
+        WorkKind::Goal => Persisted::Goal {},
     }
+    .serialize(to)
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct WorkProgress {
-    pub kind: WorkKind,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub objective: String,
-    pub phase: WorkPhase,
-    #[serde(default)]
-    pub checks_failed: bool,
-    pub current: Option<usize>,
-    pub total: usize,
-    pub attempts: u16,
-    pub rounds: u32,
-    pub reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub ledger: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub todos: Vec<crate::tools::Todo>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub touched: Vec<String>,
-}
-
-impl WorkProgress {
-    #[must_use]
-    pub fn terminal(&self) -> bool {
-        matches!(self.phase, WorkPhase::Completed | WorkPhase::Failed)
-    }
-
-    #[must_use]
-    pub fn exit_code(&self) -> Option<i32> {
-        match self.phase {
-            WorkPhase::Completed => Some(0),
-            WorkPhase::Failed if self.checks_failed => Some(2),
-            WorkPhase::Failed => Some(3),
-            WorkPhase::Plan | WorkPhase::Execute | WorkPhase::Verify | WorkPhase::Review => None,
-        }
-    }
-}
-
-impl Display for WorkProgress {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        match (self.kind, self.current) {
-            (WorkKind::Steps, Some(current)) => {
-                write!(
-                    formatter,
-                    "Work step {current}/{} · {}",
-                    self.total, self.phase
-                )?;
-            }
-            (WorkKind::Goal, _) => {
-                write!(formatter, "Work goal turn {} · {}", self.rounds, self.phase)?;
-            }
-            _ => write!(formatter, "Work · {}", self.phase)?,
-        }
-        if let Some(reason) = &self.reason {
-            write!(formatter, " · {reason}")?;
-        }
-        Ok(())
-    }
+pub(super) fn restore<'de, D: serde::Deserializer<'de>>(from: D) -> Result<WorkKind, D::Error> {
+    Ok(match Persisted::deserialize(from)? {
+        Persisted::Single => WorkKind::Single,
+        Persisted::Steps => WorkKind::Steps,
+        Persisted::Goal {} => WorkKind::Goal,
+    })
 }

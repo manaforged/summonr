@@ -5,7 +5,7 @@ use super::App;
 use crate::AuthInfo;
 use crate::endpoint::{State, Toggle};
 use crate::tui::sigil_view::canvas;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{alt_label, blank, field as kv, heading, part as text};
 
 const CONTEXT: usize = 8;
@@ -30,15 +30,14 @@ pub(super) fn pane(
     };
     let mut nodes = vec![
         heading(vec![
-            (choice.name.clone(), Look::sm(Token::OnSurface).bold()),
+            (choice.name.clone(), TextStyle::sm(Token::OnSurface).bold()),
             text("   ", Token::Gray10),
             text(state, color),
         ]),
         blank(),
     ];
-    let key = key_line(choice, state);
-    if let Some(key) = key {
-        let rejected = tier == Some(State::KeyRejected);
+    let rejected = tier == Some(State::KeyRejected);
+    if let Some(key) = key_line(choice, rejected) {
         nodes.push(kv(
             "key",
             key,
@@ -50,7 +49,11 @@ pub(super) fn pane(
         ));
     }
     if choice.login.signs_in() {
-        nodes.push(kv("sign-in", login_line(choice), Token::OnSurface));
+        nodes.push(kv(
+            "sign-in",
+            login_line(choice, tier == Some(State::Ready)),
+            Token::OnSurface,
+        ));
     }
     for (name, toggle) in [("region", Toggle::Region), ("access", Toggle::Access)] {
         if let Some(options) = choice.options(toggle) {
@@ -76,7 +79,7 @@ pub(super) fn pane(
                 text(
                     format!(
                         "  {:<name$}",
-                        crate::text::ellipsize(id, name.saturating_sub(2))
+                        crate::display::ellipsize(id, name.saturating_sub(2))
                     ),
                     Token::Gray12,
                 ),
@@ -132,7 +135,7 @@ fn route_choice(
     )
 }
 
-fn key_line(choice: &AuthInfo, state: &str) -> Option<String> {
+fn key_line(choice: &AuthInfo, rejected: bool) -> Option<String> {
     if choice.keyless() {
         return Some("none needed".to_string());
     }
@@ -141,9 +144,9 @@ fn key_line(choice: &AuthInfo, state: &str) -> Option<String> {
     }
     let signed_in = choice.flow.signs_in() && choice.configured;
     Some(match (choice.env, choice.configured && !signed_in) {
-        (Some(env), _) if state == State::KeyRejected.word() => format!("${env} · rejected"),
+        (Some(env), _) if rejected => format!("${env} · rejected"),
         (Some(env), _) => format!("${env}"),
-        (None, true) if state == State::KeyRejected.word() => "stored · rejected".to_string(),
+        (None, true) if rejected => "stored · rejected".to_string(),
         (None, true) => choice
             .source
             .map_or_else(|| "stored".to_string(), |source| source.label().to_string()),
@@ -151,8 +154,8 @@ fn key_line(choice: &AuthInfo, state: &str) -> Option<String> {
     })
 }
 
-fn login_line(choice: &AuthInfo) -> String {
-    if choice.flow.signs_in() && choice.configured {
+fn login_line(choice: &AuthInfo, ready: bool) -> String {
+    if choice.flow.signs_in() && (choice.configured || ready) {
         return format!("signed in · {}", choice.plan);
     }
     format!("{} · not signed in", choice.plan)
@@ -179,11 +182,11 @@ fn models(app: &App, name: &str) -> Vec<(String, String, String)> {
         .choices
         .get()
         .iter()
-        .filter(|seat| seat.endpoint == name)
-        .map(|seat| {
-            let fact = facts.get(seat);
+        .filter(|selection| selection.endpoint == name)
+        .map(|selection| {
+            let fact = facts.get(selection);
             let context = fact.map(crate::catalog::Model::window).unwrap_or_default();
-            (seat.model.clone(), context, price(fact))
+            (selection.model.clone(), context, price(fact))
         })
         .collect()
 }

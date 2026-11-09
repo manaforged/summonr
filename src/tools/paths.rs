@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::{Component, Path, PathBuf};
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 use super::ToolRegistry;
 
@@ -107,11 +107,12 @@ impl ToolRegistry {
             .canonicalize()
             .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?;
         let normal = crate::policy::normalize(&requested);
-        if (shield == Shield::Always || !self.policy.is_unrestricted())
-            && [&requested, &normal, &opened]
-                .into_iter()
-                .any(|path| crate::policy::protected_read(path))
-        {
+        let shielded = shield == Shield::Always;
+        if [&requested, &normal, &opened].into_iter().any(|path| {
+            self.policy
+                .decide(crate::policy::Action::Read { path, shielded })
+                != crate::policy::Decision::Allow
+        }) {
             return Err(Error::Denied(format!("`{path}` is a protected path")));
         }
         Ok(opened)
@@ -269,11 +270,7 @@ fn existing(path: &Path) -> PathBuf {
         return path.to_path_buf();
     };
     let wanted = fold(name);
-    let Ok(entries) = std::fs::read_dir(existing(parent)) else {
-        return path.to_path_buf();
-    };
-    let mut found = entries
-        .filter_map(std::result::Result::ok)
+    let mut found = summonr_core::walk::children(&existing(parent))
         .filter(|entry| fold(&entry.file_name()) == wanted);
     match (found.next(), found.next()) {
         (Some(entry), None) => entry.path(),
@@ -283,7 +280,7 @@ fn existing(path: &Path) -> PathBuf {
 
 fn clean_path(path: &str) -> Cow<'_, str> {
     let expanded = if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
-        crate::config::home_dir()
+        summonr_core::dirs::home_dir()
             .map(|home| {
                 if path == "~" {
                     home.to_string_lossy().into_owned()

@@ -42,10 +42,7 @@ impl Worker {
             auto_reply: info.prefs.mail,
             pending_mail: false,
             last_auto: Instant::now(),
-            steering,
-            deferred: VecDeque::new(),
-            followups: VecDeque::new(),
-            carried: 0,
+            queue: super::steer::InputQueue::new(steering),
             last_turn: None,
             mail_error: None,
             last_diff: None,
@@ -73,20 +70,20 @@ impl Worker {
     }
 
     pub(super) async fn next(&mut self) -> Option<Cmd> {
-        if self.carried > 0
-            && let Some(next) = self.followups.pop_front()
+        if self.queue.carried > 0
+            && let Some(next) = self.queue.followups.pop_front()
         {
-            self.carried -= 1;
-            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
+            self.queue.carried -= 1;
+            self.queue.announce(&self.ui);
             return Some(Cmd::Submit(next));
         }
-        self.carried = 0;
-        if let Some(command) = self.deferred.pop_front() {
-            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
+        self.queue.carried = 0;
+        if let Some(command) = self.queue.deferred.pop_front() {
+            self.queue.announce(&self.ui);
             return Some(command);
         }
-        if let Some(next) = self.followups.pop_front() {
-            announce(&self.ui, &self.steering, &self.followups, &self.deferred);
+        if let Some(next) = self.queue.followups.pop_front() {
+            self.queue.announce(&self.ui);
             return Some(Cmd::Submit(next));
         }
         let command = self.cmd.recv().await?;
@@ -101,27 +98,12 @@ impl Worker {
     }
 
     fn peers(&mut self) {
-        let peers: Vec<_> = self
-            .loop_
-            .peers()
-            .into_iter()
-            .filter(|agent| agent.id != self.loop_.session_id())
-            .collect();
-        let last = self.last_peers.as_deref().unwrap_or(&[]);
-        let same = last.len() == peers.len()
-            && last.iter().zip(&peers).all(|(a, b)| {
-                a.id == b.id
-                    && a.name == b.name
-                    && a.kind == b.kind
-                    && a.model == b.model
-                    && a.cwd == b.cwd
-                    && a.pid == b.pid
-                    && a.status == b.status
-            });
-        if !same {
-            self.last_peers = Some(peers.clone());
-            drop(self.ui.send(Msg::Peers(peers)));
-        }
+        publish_peers(
+            self.loop_.peers(),
+            &self.loop_.session_id(),
+            &mut self.last_peers,
+            &self.ui,
+        );
     }
 
     pub(super) fn tick(&mut self) {
@@ -166,13 +148,6 @@ impl Worker {
         }
     }
 
-    pub(super) fn set_mail_reply(&mut self, on: bool) {
-        self.auto_reply = on;
-        if !on {
-            self.pending_mail = false;
-        }
-    }
-
     pub(super) fn system(&self, text: &str) {
         drop(self.ui.send(Msg::System(text.to_string())));
     }
@@ -192,5 +167,40 @@ impl Worker {
 
     pub(super) fn fail(&self, text: &str) {
         drop(self.ui.send(Msg::Failed(text.to_string())));
+    }
+}
+
+pub(super) fn set_mail_reply(auto_reply: &mut bool, pending_mail: &mut bool, on: bool) {
+    *auto_reply = on;
+    if !on {
+        *pending_mail = false;
+    }
+}
+
+pub(super) fn publish_peers(
+    peers: Vec<crate::mail::Agent>,
+    session: &str,
+    previous: &mut Option<Vec<crate::mail::Agent>>,
+    ui: &UnboundedSender<Msg>,
+) {
+    let peers: Vec<_> = peers
+        .into_iter()
+        .filter(|agent| agent.id != session)
+        .collect();
+    let last = previous.as_deref().unwrap_or(&[]);
+    let same = last.len() == peers.len()
+        && last.iter().zip(&peers).all(|(a, b)| {
+            a.id == b.id
+                && a.parent == b.parent
+                && a.name == b.name
+                && a.kind == b.kind
+                && a.model == b.model
+                && a.cwd == b.cwd
+                && a.pid == b.pid
+                && a.status == b.status
+        });
+    if !same {
+        *previous = Some(peers.clone());
+        drop(ui.send(Msg::Peers(peers)));
     }
 }

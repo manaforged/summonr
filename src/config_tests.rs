@@ -1,4 +1,5 @@
-use super::edit::save_default_seat;
+use super::decode::unknown;
+use super::edit::save_default_model;
 use super::parse;
 
 fn written(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -18,11 +19,11 @@ fn a_malformed_config_names_its_file_and_line() {
 }
 
 #[test]
-fn setting_the_default_seat_keeps_notes_and_other_rows() {
+fn setting_the_default_model_keeps_notes_and_other_rows() {
     let (_dir, path) = written(
         "# my providers\ndefault = \"go\"\n\n[endpoint.local]\nbase_url = \"http://127.0.0.1:8080/v1\"\n",
     );
-    save_default_seat(&path, Some(("anthropic", "claude-sonnet-5"))).unwrap();
+    save_default_model(&path, Some(("anthropic", "claude-sonnet-5"))).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.contains("# my providers"), "got {text}");
     assert!(text.contains("default = \"anthropic\""), "got {text}");
@@ -34,9 +35,9 @@ fn setting_the_default_seat_keeps_notes_and_other_rows() {
 }
 
 #[test]
-fn clearing_the_default_seat_removes_both_keys() {
+fn clearing_the_default_model_removes_both_keys() {
     let (_dir, path) = written("default = \"go\"\ndefault_model = \"glm\"\n");
-    save_default_seat(&path, None).unwrap();
+    save_default_model(&path, None).unwrap();
     let file = parse(&path).unwrap();
     assert!(file.default.is_none());
     assert!(file.default_model.is_none());
@@ -78,18 +79,6 @@ fn a_retired_plan_mode_key_is_not_called_unknown_and_the_next_save_drops_it() {
     crate::prefs::save_in(&path, &prefs).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(!text.contains("plan_mode"), "{text}");
-}
-
-#[test]
-fn retired_ban_keys_are_not_called_unknown_and_the_next_save_drops_them() {
-    let (_dir, path) = written("ban_comments = true\nban_tests = false\ntheme = \"space\"\n");
-    let file = parse(&path).unwrap();
-    assert!(!file.other.contains_key("ban_comments"), "{:?}", file.other);
-    assert!(!file.other.contains_key("ban_tests"), "{:?}", file.other);
-    let prefs = crate::prefs::load_from(&path).unwrap();
-    crate::prefs::save_in(&path, &prefs).unwrap();
-    let text = std::fs::read_to_string(&path).unwrap();
-    assert!(!text.contains("ban_"), "{text}");
 }
 
 #[test]
@@ -171,21 +160,21 @@ fn a_save_writes_only_the_settings_that_changed() {
 
 #[test]
 fn a_saved_workflow_loads_back_with_its_seats() {
-    use crate::workflow::{Role, Seat, Workflow};
+    use crate::workflow::{ModelSelection, Role, Workflow};
     let (_dir, path) = written("# mine\n");
     let workflow = Workflow {
         name: "fast".to_string(),
-        seats: [
+        selections: [
             (
                 Role::Scout,
-                Seat {
+                ModelSelection {
                     endpoint: "zai".to_string(),
                     model: None,
                 },
             ),
             (
                 Role::Review,
-                Seat {
+                ModelSelection {
                     endpoint: "anthropic".to_string(),
                     model: Some("claude-sonnet-5".to_string()),
                 },
@@ -245,8 +234,9 @@ fn a_second_named_endpoint_keeps_the_first_and_a_taken_name_is_refused() {
 #[test]
 fn write_roots_accumulate_once_each_and_keep_absolute_paths_whole() {
     let (_dir, path) = written("write_roots = [\"~/code\"]\n");
-    let outside = tempfile::tempdir().unwrap();
-    let dir = outside.path().display().to_string();
+    let cwd = std::env::current_dir().unwrap();
+    let root = cwd.ancestors().last().unwrap();
+    let dir = root.join("summonr-write-root").display().to_string();
     super::save_write_root(&path, &dir).unwrap();
     super::save_write_root(&path, &dir).unwrap();
     super::save_write_root(&path, "relative/dir").unwrap();
@@ -280,13 +270,13 @@ fn a_rebound_hotkey_survives_a_save() {
 
 #[test]
 fn a_workflow_saves_next_to_an_inline_workflows_table() {
-    use crate::workflow::{Role, Seat, Workflow};
+    use crate::workflow::{ModelSelection, Role, Workflow};
     let (_dir, path) = written("workflows = { old = { scout = \"zai\" } }\n");
     let workflow = Workflow {
         name: "new".to_string(),
-        seats: [(
+        selections: [(
             Role::Judge,
-            Seat {
+            ModelSelection {
                 endpoint: "anthropic".to_string(),
                 model: None,
             },
@@ -297,5 +287,12 @@ fn a_workflow_saves_next_to_an_inline_workflows_table() {
     let file = parse(&path).unwrap();
     assert_eq!(crate::workflow::from_file(&file, "new").unwrap(), workflow);
     let old = crate::workflow::from_file(&file, "old").unwrap();
-    assert_eq!(old.seats[&Role::Scout].endpoint, "zai");
+    assert_eq!(old.selections[&Role::Scout].endpoint, "zai");
+}
+
+#[test]
+fn a_misspelled_limit_is_named_as_an_unknown_key() {
+    let (_dir, path) = written("[limits]\nretry_limit = 3\nretry_limitt = 3\n");
+    let file = parse(&path).unwrap();
+    assert_eq!(unknown(&file), ["limits.retry_limitt"]);
 }

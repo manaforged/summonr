@@ -2,10 +2,65 @@ use sigil::events::ModifiersState;
 use sigil::prelude::Key;
 
 use super::super::Pane;
-use super::harness::{command, drive, graded, named, settings, typed, unseated};
+use super::harness::{command, drive, graded, named, settings, typed, unconfigured};
 use super::in_window;
 use crate::mcp::{Field, FieldKind, Form};
-use crate::tui::Snapshot;
+use crate::tui::{Msg, Snapshot};
+
+#[test]
+fn typing_replaces_the_desktop_composer_selection() {
+    if !in_window("window_focus::typing_replaces_the_desktop_composer_selection") {
+        return;
+    }
+    let mut keys = vec![named(
+        Key::Home,
+        ModifiersState::CONTROL | ModifiersState::SHIFT,
+    )];
+    keys.extend(typed("X"));
+    let seen = drive(
+        |app| app.replace("replace me".to_owned()),
+        keys,
+        |app| app.draft.peek(),
+    );
+    assert_eq!(seen.read, "X");
+}
+
+#[test]
+fn a_modal_round_trip_keeps_the_composer_selection() {
+    if !in_window("window_focus::a_modal_round_trip_keeps_the_composer_selection") {
+        return;
+    }
+    let mut keys = vec![
+        named(Key::Home, ModifiersState::CONTROL | ModifiersState::SHIFT),
+        command(","),
+        named(Key::Escape, ModifiersState::empty()),
+    ];
+    keys.extend(typed("X"));
+    let seen = drive(
+        |app| app.replace("replace me".to_owned()),
+        keys,
+        |app| (app.settings_open.peek(), app.draft.peek()),
+    );
+    assert_eq!(seen.read, (false, "X".to_owned()));
+}
+
+#[test]
+fn keyboard_folder_expansion_updates_the_files_pane() {
+    if !in_window("window_focus::keyboard_folder_expansion_updates_the_files_pane") {
+        return;
+    }
+    let seen = drive(
+        |app| {
+            app.update(Msg::Files(vec!["src/lib.rs".to_owned()]));
+            app.toggle_pane(Pane::Files);
+            app.focus_pane(true);
+        },
+        vec![named(Key::ArrowRight, ModifiersState::empty())],
+        |app| app.pane_list(Pane::Files).is_expanded(&"src".to_owned()),
+    );
+    assert!(seen.read, "the folder expanded");
+    assert!(seen.shows(|text| text == "lib.rs"), "{}", seen.text());
+}
 
 fn question() -> Form {
     Form {
@@ -129,7 +184,7 @@ fn the_last_settings_page_shows_its_rows() {
         |app| {
             app.toggle_options();
             let rows = crate::tui::sigil_view::settings::setting_rows(app);
-            app.settings_sel.set(rows.len() - 1);
+            app.settings.cursor.set(rows.len() - 1);
         },
         Vec::new(),
         |app| {
@@ -149,10 +204,10 @@ fn the_last_settings_page_shows_its_rows() {
 
 #[test]
 fn a_failed_send_with_no_provider_adds_one_notice_and_opens_at_the_top() {
-    let seen = drive(settings(unseated()), Vec::new(), |app| {
+    let seen = drive(settings(unconfigured()), Vec::new(), |app| {
         for _ in 0..2 {
             app.open_providers();
-            app.auth.sel.set(5);
+            app.auth.list.cursor.set(5);
             app.cancel_auth();
         }
         app.open_providers();
@@ -163,7 +218,7 @@ fn a_failed_send_with_no_provider_adds_one_notice_and_opens_at_the_top() {
             .iter()
             .filter(|entry| matches!(entry, crate::tui::sigil_view::model::Entry::System(_)))
             .count();
-        (notices, app.auth.sel.peek())
+        (notices, app.auth.list.cursor.peek())
     });
     assert_eq!(seen.read, (1, 0));
 }

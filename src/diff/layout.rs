@@ -37,10 +37,7 @@ impl Layout {
             .filter(|name| *name == GIT_DIR)
             .and(self.common.parent())
             .map(Path::to_path_buf);
-        let linked = std::fs::read_dir(self.common.join(WORKTREES))
-            .into_iter()
-            .flatten()
-            .flatten()
+        let linked = summonr_core::walk::children(&self.common.join(WORKTREES))
             .filter(|entry| owned(&entry.path()))
             .filter_map(|entry| std::fs::read_to_string(entry.path().join(GITDIR_FILE)).ok())
             .filter_map(|text| PathBuf::from(text.trim()).parent().map(Path::to_path_buf));

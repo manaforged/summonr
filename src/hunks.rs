@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::diff;
 use crate::durable::store;
-use crate::error::{Error, Result};
-use crate::text::Fnv64;
+use summonr_core::error::{Error, Result};
+use summonr_core::text::Fnv64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Hunk {
@@ -52,60 +52,45 @@ fn file(root: &Path) -> PathBuf {
         .map_or_else(|| root.join(".summonr").join(FILE), |dir| dir.join(FILE))
 }
 
-pub(crate) fn load(root: &Path) -> Marks {
-    std::fs::read_to_string(file(root))
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+fn doc(root: &Path) -> store::Doc<store::Json<Marks>> {
+    store::Doc::new(
+        file(root),
+        store::Durability::Renamed,
+        store::Invalid::Warn,
+        store::Wait::Forever,
+    )
 }
 
-fn save(root: &Path, marks: &Marks) -> Result<()> {
-    let path = file(root);
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    store::write(
-        &path,
-        serde_json::to_string_pretty(marks)?,
-        store::Durability::Renamed,
-    )?;
-    Ok(())
+pub(crate) fn load(root: &Path) -> Marks {
+    doc(root).load().unwrap_or_default()
 }
 
 impl Hunk {
     pub(crate) fn body(&self) -> &str {
-        self.patch
-            .match_indices("@@ ")
-            .find(|(at, _)| *at == 0 || self.patch.as_bytes()[at - 1] == b'\n')
-            .map_or(self.patch.as_str(), |(at, _)| &self.patch[at..])
+        let offset = diff::parse_hunks(&self.patch)
+            .first()
+            .map_or(0, |hunk| hunk.offset);
+        &self.patch[offset..]
     }
 }
 
 pub(crate) fn split(path: &str, patch: &str) -> Vec<Hunk> {
-    let mut head = String::new();
-    let mut bodies: Vec<String> = Vec::new();
-    for line in patch.lines() {
-        if line.starts_with("@@ ") {
-            bodies.push(String::new());
-        }
-        let target = bodies.last_mut().unwrap_or(&mut head);
-        target.push_str(line);
-        target.push('\n');
-    }
-    bodies
+    let parsed = diff::parse_hunks(patch);
+    let head = &patch[..parsed.first().map_or(0, |hunk| hunk.offset)];
+    parsed
         .into_iter()
-        .map(|body| {
-            let header = body.lines().next().unwrap_or_default().to_string();
+        .map(|hunk| {
             let mut hash = Fnv64::default();
             hash.write(path.as_bytes());
-            for line in body.lines().skip(1) {
+            for line in hunk.body.lines().skip(1) {
                 hash.write_u8(b'\n');
                 hash.write(line.as_bytes());
             }
+            let newline = if hunk.body.ends_with('\n') { "" } else { "\n" };
             Hunk {
                 id: format!("{:016x}", hash.finish()),
-                header,
-                patch: format!("{head}{body}"),
+                header: hunk.header.to_string(),
+                patch: format!("{head}{}{newline}", hunk.body),
             }
         })
         .collect()
@@ -127,11 +112,21 @@ fn prune(marks: &mut Marks) {
 }
 
 pub(crate) fn apply(root: &Path, path: &str, hunk: &str, op: Op) -> Result<Marks> {
-    let mut marks = load(root);
+    let mut saved = Marks::new();
+    doc(root).update(|marks| {
+        apply_op(root, marks, path, hunk, op)?;
+        prune(marks);
+        saved = marks.clone();
+        Ok(true)
+    })?;
+    Ok(saved)
+}
+
+fn apply_op(root: &Path, marks: &mut Marks, path: &str, hunk: &str, op: Op) -> Result<()> {
     match op {
-        Op::Verdict(verdict) => note(&mut marks, path, hunk).verdict = verdict,
+        Op::Verdict(verdict) => note(marks, path, hunk).verdict = verdict,
         Op::Comment(comment) => {
-            note(&mut marks, path, hunk).comment = comment.filter(|text| !text.trim().is_empty());
+            note(marks, path, hunk).comment = comment.filter(|text| !text.trim().is_empty());
         }
         Op::Reject => {
             let patch = diff::patch(root, Some(path))?;
@@ -140,36 +135,34 @@ pub(crate) fn apply(root: &Path, path: &str, hunk: &str, op: Op) -> Result<Marks
                     "the hunk is gone; {path} changed since it was loaded"
                 )));
             };
-            git_apply(root, &target.patch, true)?;
-            rejected(&mut marks, path, target);
+            diff::git_apply(root, target.patch.as_bytes(), &["--reverse"])?;
+            rejected(marks, path, target);
         }
         Op::RejectFile => {
             let patch = diff::patch(root, Some(path))?;
             if patch.trim().is_empty() {
                 return Err(Error::Config(format!("{path} has no changes to revert")));
             }
-            git_apply(root, &patch, true)?;
+            diff::git_apply(root, patch.as_bytes(), &["--reverse"])?;
             for target in split(path, &patch) {
-                rejected(&mut marks, path, target);
+                rejected(marks, path, target);
             }
         }
         Op::Restore => {
-            let entry = note(&mut marks, path, hunk);
+            let entry = note(marks, path, hunk);
             let Some(patch) = entry.patch.clone() else {
                 return Err(Error::Config(format!(
                     "nothing to undo for this hunk in {path}"
                 )));
             };
-            git_apply(root, &patch, false)?;
+            diff::git_apply(root, patch.as_bytes(), &[])?;
             *entry = Note {
                 comment: entry.comment.take(),
                 ..Note::default()
             };
         }
     }
-    prune(&mut marks);
-    save(root, &marks)?;
-    Ok(marks)
+    Ok(())
 }
 
 fn rejected(marks: &mut Marks, path: &str, target: Hunk) {
@@ -179,37 +172,33 @@ fn rejected(marks: &mut Marks, path: &str, target: Hunk) {
     entry.patch = Some(target.patch);
 }
 
-fn git_apply(root: &Path, patch: &str, reverse: bool) -> Result<()> {
-    let mut args = vec!["apply", "--whitespace=nowarn"];
-    if reverse {
-        args.push("--reverse");
-    }
-    diff::git_output(root, &[], &args, Some(patch.as_bytes()))?;
-    Ok(())
-}
-
 pub(crate) fn drain(root: &Path) -> Option<String> {
-    let mut marks = load(root);
     let mut lines = Vec::new();
-    for (path, hunks) in marks.iter_mut() {
-        for (id, note) in hunks.iter_mut() {
-            let hunk = id.get(..8).unwrap_or(id);
-            if note.verdict == Some(Verdict::Rejected) && !note.reported {
-                note.reported = true;
-                lines.push(format!(
-                    "{path} hunk {hunk}: the user reverted this hunk; do not reapply it unless asked"
-                ));
-            }
-            if let Some(comment) = note.comment.take() {
-                lines.push(format!("{path} hunk {hunk}: {comment}"));
+    let saved = doc(root).update(|marks| {
+        for (path, hunks) in marks.iter_mut() {
+            for (id, note) in hunks.iter_mut() {
+                let hunk = id.get(..8).unwrap_or(id);
+                if note.verdict == Some(Verdict::Rejected) && !note.reported {
+                    note.reported = true;
+                    lines.push(format!(
+                        "{path} hunk {hunk}: the user reverted this hunk; do not reapply it unless asked"
+                    ));
+                }
+                if let Some(comment) = note.comment.take() {
+                    lines.push(format!("{path} hunk {hunk}: {comment}"));
+                }
             }
         }
-    }
+        if lines.is_empty() {
+            return Ok(false);
+        }
+        prune(marks);
+        Ok(true)
+    });
+    drop(saved);
     if lines.is_empty() {
         return None;
     }
-    prune(&mut marks);
-    drop(save(root, &marks));
     Some(format!(
         "[review notes on the diff pane: address each one or say why not]\n{}",
         lines.join("\n")

@@ -101,14 +101,12 @@ pub(crate) struct Counted {
 
 impl Counted {
     pub(crate) fn usage(&self) -> Usage {
-        let field = Usage::clamp;
-        Usage {
-            prompt_tokens: field(self.prompt_token_count),
-            completion_tokens: field(self.candidates_token_count)
-                + field(self.thoughts_token_count),
-            reasoning_tokens: field(self.thoughts_token_count),
-            cached_tokens: field(self.cached_content_token_count),
-            cache_write_tokens: 0,
-        }
+        Usage::counted(
+            self.prompt_token_count,
+            self.candidates_token_count + self.thoughts_token_count,
+            self.thoughts_token_count,
+            self.cached_content_token_count,
+            0,
+        )
     }
 }

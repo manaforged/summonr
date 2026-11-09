@@ -1,3 +1,5 @@
+use sigil::widgets::CursorEdge;
+
 use super::*;
 use crate::tui::sigil_view::ui::{Hints, Key};
 
@@ -11,7 +13,7 @@ impl App {
                 ..layout
             });
         }
-        self.view_scroll.set(0);
+        self.pane_list(Pane::View).select(0);
         self.pane_focus.set(true);
         drop(self.cmd.send(Cmd::View(self.root(), path)));
         self.refresh();
@@ -25,7 +27,7 @@ impl App {
         self.view_saved.set(text.clone());
         self.view_text.set(text);
         self.view_caret.set(0);
-        self.discard_armed.set(false);
+        self.discard_armed.set(None);
         self.view_edit.set(true);
         self.pane_focus.set(true);
         self.refresh();
@@ -35,8 +37,9 @@ impl App {
         if !self.view_edit.peek() {
             return false;
         }
-        if self.view_text.peek() != self.view_saved.peek() && !self.discard_armed.peek() {
-            self.discard_armed.set(true);
+        if self.view_text.peek() != self.view_saved.peek()
+            && !confirm(&self.discard_armed, (), None)
+        {
             let keys = Hints::new()
                 .key(Key::Fixed("ctrl+s"), "save")
                 .key(Key::Esc, "again discard")
@@ -46,7 +49,7 @@ impl App {
             return true;
         }
         self.view_edit.set(false);
-        self.discard_armed.set(false);
+        self.discard_armed.set(None);
         self.refresh();
         true
     }
@@ -57,7 +60,7 @@ impl App {
             return;
         };
         let text = self.view_text.peek();
-        self.discard_armed.set(false);
+        self.discard_armed.set(None);
         drop(self.cmd.send(Cmd::Save(path, text)));
         self.refresh();
     }
@@ -78,9 +81,8 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn view_move(&self, delta: isize) {
-        let last = self.view_lines().saturating_sub(1) as isize;
-        let scroll = (self.view_scroll.peek() as isize + delta).clamp(0, last);
-        self.view_scroll.set(scroll as usize);
+        self.pane_list(Pane::View)
+            .shift(delta, self.view_lines(), CursorEdge::Clamp);
         self.refresh();
     }
 

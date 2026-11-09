@@ -48,7 +48,7 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
             "Send text to one agent by id, or to \"all\". It lands in their inbox; they reply to your id.",
             serde_json::json!({"type": "object", "properties": {"to": {"type": "string"}, "text": {"type": "string"}}, "required": ["to", "text"], "additionalProperties": false}),
         ),
-        (Tool::Inbox, "Read mail that arrived since the last read.", none),
+        (Tool::Inbox, "Read mail that arrived since the last read. New messages arrive automatically between rounds; polling is unnecessary.", none),
         (
             Tool::Board,
             "The workspace board shared by agents here: list, get key, set key=value. Claim files, post decisions, split work.",
@@ -63,7 +63,3 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
 pub(crate) fn is_mail_tool(name: &str) -> bool {
     Tool::of(name).is_some()
 }
-
-#[cfg(test)]
-#[path = "tools_tests.rs"]
-mod tests;

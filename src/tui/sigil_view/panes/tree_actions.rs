@@ -18,7 +18,11 @@ pub(super) fn buttons(app: &App, path: &Path) -> NodeBuilder {
     }
     let (merge, discard) = (app.clone(), app.clone());
     let (merged, discarded) = (path.to_path_buf(), path.to_path_buf());
-    let label = if app.worktree_discard.peek().as_deref() == Some(path) {
+    let label = if app
+        .worktree_discard
+        .get()
+        .is_some_and(|(armed, _)| armed == path)
+    {
         CONFIRM_DISCARD
     } else {
         DISCARD

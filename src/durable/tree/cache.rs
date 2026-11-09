@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use super::Snapshot;
+use crate::durable::store::{self, Doc, Durability, Invalid, Json, Wait};
 
 const CACHE_DIR: &str = "cache";
 const TREES_DIR: &str = "trees";
@@ -11,12 +12,16 @@ pub(crate) fn cache_dir(home: &Path) -> PathBuf {
 }
 
 fn remembered_at(cache: &Path, root: &Path) -> PathBuf {
-    let key = crate::text::fnv64(root.to_string_lossy().as_bytes());
+    let key = summonr_core::text::fnv64(root.to_string_lossy().as_bytes());
     cache.join(format!("{key}.json"))
 }
 
+fn doc(path: PathBuf) -> Doc<Json<Option<Snapshot>>> {
+    Doc::new(path, Durability::Renamed, Invalid::Fail, Wait::Never)
+}
+
 pub(crate) fn remembered(cache: &Path, root: &Path) -> Option<Snapshot> {
-    serde_json::from_slice(&std::fs::read(remembered_at(cache, root)).ok()?).ok()
+    doc(remembered_at(cache, root)).load().ok().flatten()
 }
 
 pub(crate) fn remember(cache: &Path, root: &Path, snapshot: &mut Snapshot) {
@@ -24,35 +29,11 @@ pub(crate) fn remember(cache: &Path, root: &Path, snapshot: &mut Snapshot) {
         return;
     }
     let path = remembered_at(cache, root);
-    if let Ok(bytes) = serde_json::to_vec(snapshot) {
-        drop(crate::durable::store::write(
-            &path,
-            bytes,
-            crate::durable::store::Durability::Renamed,
-        ));
-    }
+    drop(doc(path.clone()).replace(&Some(snapshot.clone())));
     snapshot.hashed = 0;
-    let retain = crate::config::file().map_or(crate::limits::limits().session_retain(), |file| {
-        file.sessions.retain()
+    store::retain(cache, store::retention(), SystemTime::now(), |stale| {
+        stale != path && std::fs::remove_file(stale).is_ok()
     });
-    prune(cache, &path, retain, SystemTime::now());
-}
-
-pub(super) fn prune(cache: &Path, keep: &Path, retain: Duration, now: SystemTime) {
-    let Ok(entries) = std::fs::read_dir(cache) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let stale = path != keep
-            && entry
-                .metadata()
-                .and_then(|metadata| metadata.modified())
-                .is_ok_and(|at| now.duration_since(at).is_ok_and(|age| age > retain));
-        if stale {
-            drop(std::fs::remove_file(path));
-        }
-    }
 }
 
 pub(super) mod shared {

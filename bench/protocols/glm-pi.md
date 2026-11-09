@@ -34,7 +34,7 @@ On the 89 tasks, against each of pi and OpenCode 2 separately, paired ratios as 
 
 ## Reruns and scoring
 
-Reruns follow `rerun.py` as in `protocols/glm.md`: setup timeouts, rate-limit or network errors the proxy saw for that trial, and exceptions with no proxy request. Task timeouts and wrong answers stand. A solve voided by the dataset-source scan or the judge (`harbor analyze -r judge.toml`) scores 0; the report gives solve rates with and without voids.
+Reruns follow `rerun.py`, the same rule for every arm: a setup failure (setup timeout, `BaseInstallError`, `HarnessInstallError`), a trial whose last proxy request got a 429 or a 5xx whatever the harness's exit, and a crash with no proxy request. A solve, a task timeout, and a wrong answer stand. `table.py` refuses a run resumed under another bench commit. A solve voided by the dataset-source scan or the judge (`harbor analyze -r judge.toml`) scores 0; the report gives solve rates with and without voids.
 
 ## Report
 

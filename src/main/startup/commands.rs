@@ -171,9 +171,9 @@ pub(super) fn print_workflows() -> Result<()> {
         } else {
             " "
         };
-        let seats = workflow::load(&name)
+        let selections = workflow::load(&name)
             .map_or_else(|error| error.to_string(), |workflow| workflow.summary());
-        println!("{mark} {name}\t{seats}");
+        println!("{mark} {name}\t{selections}");
     }
     Ok(())
 }

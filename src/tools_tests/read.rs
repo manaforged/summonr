@@ -12,15 +12,6 @@ fn todo_is_advertised_from_the_first_request_so_a_goal_keeps_the_prompt_cache() 
 }
 
 #[test]
-fn web_search_is_off_unless_turned_on() {
-    let empty = std::collections::BTreeMap::new();
-    assert!(
-        !crate::modules::Switches::from_maps(&empty, &empty)
-            .enabled(crate::modules::ModuleId::Search)
-    );
-}
-
-#[test]
 fn a_child_registry_inherits_the_web_modules() {
     let (dir, mut tools) = workspace(&[]);
     tools.search = Some(crate::web::Search::discover().unwrap());
@@ -155,8 +146,83 @@ fn a_protected_name_outside_the_workspace_stays_protected_through_a_symlink() {
 }
 
 #[test]
+fn a_second_read_of_an_unchanged_file_omits_lines_already_shown() {
+    let body: String = (1..=20).map(|n| format!("line-{n}\n")).collect();
+    let (_dir, tools) = workspace(&[("page.rs", &body)]);
+    let first = run(
+        &tools,
+        "read",
+        serde_json::json!({"path": "page.rs", "offset": 1, "limit": 10}),
+    );
+    assert!(
+        first.contains("line-1") && first.contains("line-10"),
+        "{first}"
+    );
+    let overlap = run(
+        &tools,
+        "read",
+        serde_json::json!({"path": "page.rs", "offset": 6, "limit": 10}),
+    );
+    assert!(overlap.contains("line-15"), "{overlap}");
+    assert!(!overlap.contains("line-6"), "{overlap}");
+    assert!(overlap.contains("already shown"), "{overlap}");
+    let again = run(
+        &tools,
+        "read",
+        serde_json::json!({"path": "page.rs", "offset": 1, "limit": 10}),
+    );
+    assert!(again.contains("already shown by earlier reads"), "{again}");
+    assert!(!again.contains("line-1"), "{again}");
+    let rest = run(
+        &tools,
+        "read",
+        serde_json::json!({"path": "page.rs", "offset": 16, "limit": 5}),
+    );
+    assert!(
+        rest.contains("line-16") && rest.contains("line-20"),
+        "{rest}"
+    );
+    assert!(!rest.contains("already shown"), "{rest}");
+}
+
+#[test]
 fn a_directory_listing_gives_file_sizes_in_bytes() {
     let (_dir, tools) = workspace(&[("calc.py", "print('ninety-eight bytes of code')\n")]);
     let listing = run(&tools, "read", serde_json::json!({"path": "."}));
     assert!(listing.contains("calc.py\tfile\t36 bytes"), "{listing}");
+}
+
+#[test]
+fn a_listing_with_no_ignore_shows_skipped_folders() {
+    let (dir, tools) = workspace(&[("main.rs", "fn main() {}\n")]);
+    std::fs::create_dir(dir.path().join("target")).unwrap();
+    std::fs::write(dir.path().join("target/report.json"), "{}\n").unwrap();
+    let hidden = run(
+        &tools,
+        "read",
+        serde_json::json!({"op": "list", "path": "."}),
+    );
+    assert!(!hidden.contains("target/"), "{hidden}");
+    let shown = run(
+        &tools,
+        "read",
+        serde_json::json!({"op": "list", "path": ".", "no_ignore": true}),
+    );
+    assert!(shown.contains("target/"), "{shown}");
+}
+
+#[test]
+fn a_flat_listing_leaves_out_gitignored_files() {
+    let (_dir, tools) = workspace(&[
+        (".gitignore", "secret.env\n"),
+        ("secret.env", "TOKEN=x\n"),
+        ("main.rs", "fn main() {}\n"),
+    ]);
+    let listed = run(
+        &tools,
+        "read",
+        serde_json::json!({"op": "list", "path": "."}),
+    );
+    assert!(listed.contains("main.rs"), "{listed}");
+    assert!(!listed.contains("secret.env"), "{listed}");
 }

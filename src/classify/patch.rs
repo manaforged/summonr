@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use super::{Answer, Decision, Question};
 use crate::endpoint::Endpoint;
-use crate::error::Result;
+use summonr_core::error::Result;
 
 pub struct Change {
     pub path: String,
@@ -94,7 +94,7 @@ pub fn table(changes: &[Change], decided: &[Decision], floor: f64) -> String {
             .unwrap_or("-");
         out.push_str(&format!(
             "{:<44} {:<10} risk {:.2}\n",
-            crate::text::ellipsize_start(&change.path, 44),
+            crate::display::ellipsize_start(&change.path, 44),
             kind,
             decision.severity()
         ));

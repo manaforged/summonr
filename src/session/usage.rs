@@ -6,8 +6,8 @@ mod charges;
 
 use self::charges::{Charge, Journals};
 use super::catalog::list_in;
-use crate::error::Result;
-use crate::provider::Price;
+use summonr_core::error::Result;
+use summonr_types::Price;
 
 pub(crate) const HOUR: u64 = 3600;
 pub(crate) const DAY: u64 = 24 * HOUR;
@@ -100,10 +100,7 @@ pub(crate) fn spend(
     prices: &BTreeMap<String, Price>,
 ) -> Result<Vec<Spend>> {
     let mut totals: BTreeMap<(String, u64, String), Spend> = BTreeMap::new();
-    let sessions: Vec<_> = list_in(home)?
-        .into_iter()
-        .filter(|info| info.depth == 0)
-        .collect();
+    let sessions = list_in(home)?;
     let mut journals = Journals::load(home);
     for info in &sessions {
         let Some(entry) = journals.entry(info) else {

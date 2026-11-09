@@ -4,7 +4,8 @@ use sigil::prelude::{
 
 use super::app::App;
 use super::canvas;
-use super::ui::{Dialog, Hints, Key, Size, pick};
+use super::ui::{Dialog, Hints, Key, List, Size, input_keys, pick};
+use crate::tui::matching::all_words;
 
 const ROW_MARKER: usize = 2;
 const DIALOG_PADDING: f32 = 16.0;
@@ -12,35 +13,33 @@ const DIALOG_PADDING: f32 = 16.0;
 #[derive(Clone, Copy)]
 pub(super) struct View {
     pub(super) open: Signal<bool>,
-    pub(super) query: Signal<String>,
+    list: List,
     focus: Signal<u64>,
-    scroll: Signal<f32>,
 }
 
 impl View {
     pub(super) fn new() -> Self {
         Self {
             open: signal(false),
-            query: signal(String::new()),
+            list: List::new(),
             focus: signal(0),
-            scroll: signal(0.0),
         }
     }
 
     pub(super) fn show(self) {
-        self.query.set(String::new());
-        self.scroll.set(0.0);
+        self.list.query.set(String::new());
+        self.list.scroll.set(0.0);
         self.focus.set(self.focus.peek() + 1);
         self.open.set(true);
     }
 }
 
 pub(super) fn shift(app: &App, delta: isize) {
-    let total = lines(app, &app.help.query.peek()).len();
+    let total = lines(app, &app.help.list.query.peek()).len();
     let row = canvas::overlay_list_row();
     let max = total.saturating_sub(visible(app)) as f32 * row;
-    let next = delta as f32 * row + app.help.scroll.peek();
-    app.help.scroll.set(next.clamp(0.0, max));
+    let next = delta as f32 * row + app.help.list.scroll.peek();
+    app.help.list.scroll.set(next.clamp(0.0, max));
 }
 
 fn visible(app: &App) -> usize {
@@ -49,13 +48,11 @@ fn visible(app: &App) -> usize {
 
 fn lines(app: &App, query: &str) -> Vec<String> {
     let width = row_cells(app.viewport.peek().0);
-    matching(
-        &crate::tui::help_text(&app.model.get().prefs.hotkeys),
-        query,
-    )
-    .into_iter()
-    .map(|line| crate::text::ellipsize(&line, width))
-    .collect()
+    crate::tui::help_text(&app.model.get().prefs.hotkeys)
+        .lines()
+        .filter(|line| all_words(line, query))
+        .map(|line| crate::display::ellipsize(line, width))
+        .collect()
 }
 
 fn row_cells(cols: u16) -> usize {
@@ -66,12 +63,8 @@ fn row_cells(cols: u16) -> usize {
 }
 
 pub(super) fn layer(app: App) -> NodeBuilder {
-    let View {
-        query,
-        focus,
-        scroll,
-        ..
-    } = app.help;
+    let View { list, focus, .. } = app.help;
+    let List { query, scroll, .. } = list;
     let keys = app.clone();
     let cols = app.viewport.peek().0;
     let visible = visible(&app) as f32;
@@ -82,7 +75,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .key(Key::Esc, "close");
     Dialog::new(Size::Reading, "Help", hints)
         .child(
-            text_field(query)
+            input_keys(&app, text_field(query))
                 .placeholder("find")
                 .focus_when(focus)
                 .autofocus()
@@ -99,18 +92,4 @@ pub(super) fn layer(app: App) -> NodeBuilder {
             .scroll_bind(scroll),
         )
         .build(app.help.open, cols, &app.model.peek().prefs.hotkeys)
-}
-
-fn matching(text: &str, query: &str) -> Vec<String> {
-    let terms: Vec<String> = query
-        .split_whitespace()
-        .map(|term| term.to_lowercase())
-        .collect();
-    text.lines()
-        .filter(|line| {
-            let line = line.to_lowercase();
-            terms.iter().all(|term| line.contains(term))
-        })
-        .map(str::to_string)
-        .collect()
 }

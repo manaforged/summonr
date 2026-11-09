@@ -1,7 +1,9 @@
 use super::*;
+use crate::tui::sigil_view::ui::input_keys;
 use sigil::layout::Dimension;
 use sigil::prelude::Paint;
 use sigil::reactive::untrack;
+use sigil::widgets::TextEditBuilder;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let (cols, _rows) = app.viewport.get();
@@ -33,22 +35,33 @@ fn side(app: App, pane: Pane, cols: u16) -> NodeBuilder {
         .children_reactive(move || vec![panes::body(&app, pane, cols)])
 }
 
-pub(super) fn editor(app: App) -> impl FnOnce() -> NodeBuilder {
-    let submit = app.clone();
+pub(in crate::tui::sigil_view) fn editor(app: &App, editing: bool) -> TextEditBuilder {
+    let (value, caret) = if editing {
+        (app.view_text, app.view_caret)
+    } else {
+        (app.draft, app.caret)
+    };
+    let editor = input_keys(app, text_edit(value))
+        .caret_position(caret)
+        .focus_when(app.editor_focus);
+    if editing {
+        return editor;
+    }
     let changed = app.clone();
-    let editor = text_edit(app.draft)
-        .caret_position(app.caret)
-        .state(app.editor.clone())
+    editor.state(app.editor.clone()).change(move |draft| {
+        changed.pane_focus.set(false);
+        changed.change(draft);
+    })
+}
+
+pub(super) fn terminal_editor(app: App) -> impl FnOnce() -> NodeBuilder {
+    let submit = app.clone();
+    let editor = editor(&app, false)
         .content_padding(0.0, 0.0)
         .chrome(false)
         .layout(editor_layout(app.viewport.peek().1))
         .placeholder("")
-        .change(move |draft| {
-            changed.pane_focus.set(false);
-            changed.change(draft);
-        })
-        .submit(move |_| submit.submit())
-        .focus_when(app.editor_focus);
+        .submit(move |_| submit.submit());
     move || {
         if untrack(|| app.overlay().is_none() && app.note_target.peek().is_none()) {
             editor.autofocus().into()
@@ -59,7 +72,7 @@ pub(super) fn editor(app: App) -> impl FnOnce() -> NodeBuilder {
 }
 
 fn chat_surface(app: App, cols: u16) -> NodeBuilder {
-    let editor = editor(app.clone());
+    let editor = terminal_editor(app.clone());
     let surface = if app.inline {
         chat::inline_layer(app, cols, editor)
     } else if app.view_edit.get() {
@@ -90,11 +103,7 @@ fn editor_layout(rows: u16) -> LayoutStyle {
         .shrink(0.0)
 }
 
-pub(super) fn theme(_name: &str, background: crate::prefs::Background) -> Theme {
-    let mut palette = canvas::palette();
-    if background == crate::prefs::Background::Terminal {
-        palette.base.a = 0;
-    }
+pub(super) fn theme(palette: Palette) -> Theme {
     let mut theme = Theme::dark();
     for (token, color) in tokens(palette) {
         theme.register_token(token, ThemeValue::Color(color));

@@ -18,6 +18,7 @@ fn the_footer_shows_spend_beside_the_meters_and_no_rate() {
             completion_tokens: 300,
             reasoning_tokens: 0,
             cached_tokens: 800,
+            cache_write_tokens: 0,
             millis: Some(2000),
             prefix_hash: String::new(),
             cost: Some(0.0412),
@@ -107,6 +108,7 @@ fn the_context_meter_shows_only_when_the_window_is_known() {
             completion_tokens: 20,
             reasoning_tokens: 0,
             cached_tokens: 0,
+            cache_write_tokens: 0,
             millis: None,
             prefix_hash: String::new(),
             cost: None,
@@ -122,7 +124,7 @@ fn an_unseated_session_shows_no_provider_instead_of_a_model() {
         app.update(Msg::Settings(crate::tui::Snapshot {
             model: "glm-5.3-flash".to_owned(),
             endpoint: "zai".to_owned(),
-            unseated: true,
+            unconfigured: true,
             ..crate::tui::Snapshot::default()
         }));
     });
@@ -228,6 +230,7 @@ fn spent(app: &super::super::app::App) {
         completion_tokens: 300,
         reasoning_tokens: 0,
         cached_tokens: 800,
+        cache_write_tokens: 0,
         millis: Some(2000),
         prefix_hash: String::new(),
         cost: Some(0.0412),

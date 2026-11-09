@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use crate::error::Result;
 use crate::prefs::Prefs;
 use crate::provider::Client;
 use crate::provider::UserInput;
 use crate::runtime::Loop;
 use crate::session::Prompt;
 use crate::tools::Event;
+use summonr_core::error::Result;
 
 mod channel;
 mod help;
@@ -40,14 +40,14 @@ pub(crate) enum Msg {
     Session(String),
     Cleared,
     Reset,
-    RunMode(crate::RunMode),
+    RunMode(crate::WorkKind),
     OpenLogin(String),
     OpenHelp,
     Settings(Snapshot),
     Models {
         request: u64,
-        rows: Vec<crate::recent::Seat>,
-        facts: std::collections::BTreeMap<crate::recent::Seat, crate::catalog::Model>,
+        rows: Vec<crate::recent::ModelId>,
+        facts: std::collections::BTreeMap<crate::recent::ModelId, crate::catalog::Model>,
         groups: std::collections::BTreeMap<String, crate::endpoint::State>,
         causes: std::collections::BTreeMap<String, String>,
         pinned: usize,
@@ -56,7 +56,7 @@ pub(crate) enum Msg {
         error: String,
     },
     ModelNote(String),
-    Defaulted(Option<crate::recent::Seat>),
+    Defaulted(Option<crate::recent::ModelId>),
     Sessions(std::result::Result<Vec<(crate::session::SessionInfo, bool)>, String>),
     Usage(std::result::Result<Vec<crate::session::Spend>, String>),
     Prompts {
@@ -66,7 +66,7 @@ pub(crate) enum Msg {
     Workflow {
         name: Option<String>,
         names: Vec<String>,
-        seats: Vec<Option<String>>,
+        selections: Vec<Option<String>>,
     },
     Mail {
         from: String,
@@ -161,14 +161,14 @@ enum Cmd {
     ToggleApproval,
     SetEndpoint(String),
     SetModel(String),
-    SetSeat(String, String),
+    SelectModel(String, String),
     ListModels {
         request: u64,
         only: Option<String>,
         cancel: tokio::sync::oneshot::Receiver<()>,
     },
-    Pin(crate::recent::Seat, bool),
-    SaveDefault(Option<crate::recent::Seat>),
+    Pin(crate::recent::ModelId, bool),
+    SaveDefault(Option<crate::recent::ModelId>),
     ListSessions,
     ListUsage,
     ListPrompts(Option<String>),
@@ -196,7 +196,7 @@ enum Cmd {
     Save(PathBuf, String),
     Merge(std::path::PathBuf),
     Discard(std::path::PathBuf),
-    SeatRole(crate::workflow::Role, String, String),
+    AssignModel(crate::workflow::Role, String, String),
     ClearRole(crate::workflow::Role),
     SaveWorkflow(String),
     ListWorkflows,
@@ -243,12 +243,16 @@ pub(crate) struct Snapshot {
     pub endpoint: String,
     pub context_window: Option<u32>,
     pub workflow: Option<String>,
-    pub unseated: bool,
+    pub unconfigured: bool,
+    pub prompt_system: usize,
+    pub prompt_schemas: usize,
+    pub prompt_tools: usize,
+    pub prompt_other: usize,
 }
 
 impl Snapshot {
     #[must_use]
-    pub(crate) fn seat_label(&self, suffix: &str) -> String {
+    pub(crate) fn model_label(&self, suffix: &str) -> String {
         if self.endpoint.is_empty() {
             format!("{}{suffix}", self.model)
         } else {
@@ -259,11 +263,11 @@ impl Snapshot {
     #[must_use]
     pub(crate) fn mode_name(&self) -> &'static str {
         if self.work {
-            crate::RunMode::Work.name()
+            crate::WorkKind::Steps.name()
         } else if self.goal {
-            crate::RunMode::Goal.name()
+            crate::WorkKind::Goal.name()
         } else {
-            crate::RunMode::Auto.name()
+            crate::WorkKind::Single.name()
         }
     }
 }
@@ -299,7 +303,7 @@ pub fn run(
         #[cfg(feature = "gui")]
         return sigil_view::run_gui(loop_, workspace, info, ui_tx, ui_rx, factory);
         #[cfg(not(feature = "gui"))]
-        return Err(crate::error::Error::Config(
+        return Err(summonr_core::error::Error::Config(
             "this build has no window; install with `cargo install --features gui`".to_string(),
         ));
     }
@@ -346,6 +350,10 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
         .or(paths)
         .or_else(|| field("patch").map(|patch| crate::tools::patch_files(patch).join(", ")))
         .unwrap_or_default();
+    let picked = url::Url::parse(&picked)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or(picked);
     let mut picked = after_cd(&picked)
         .split_whitespace()
         .collect::<Vec<_>>()

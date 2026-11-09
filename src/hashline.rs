@@ -1,7 +1,7 @@
 use std::hash::Hasher;
 
-use crate::error::{Error, Result};
-use crate::text::Fnv64;
+use summonr_core::error::{Error, Result};
+use summonr_core::text::Fnv64;
 
 const ALPH: &[u8] = b"0123456789abcdefghijklmnopqrstuv";
 
@@ -95,7 +95,7 @@ fn parse_tag(tag: &str) -> Result<Tag> {
         return Ok(Tag::Hash(tag.to_string()));
     }
     Err(Error::Tool(format!(
-        "`{tag}` is not a tag; pass N:hash exactly as read_file printed it"
+        "`{tag}` is not a tag; pass N:hash exactly as read printed it"
     )))
 }
 
@@ -132,7 +132,7 @@ fn stale(content: &str, tag: &str, parsed: &Tag) -> Error {
             ))
         }
         _ => Error::Tool(format!(
-            "stale or unknown tag `{tag}`; the line changed; use a tag from the latest edit result or read_file"
+            "stale or unknown tag `{tag}`; the line changed; use a tag from the latest edit result or read"
         )),
     }
 }

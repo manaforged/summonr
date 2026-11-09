@@ -28,24 +28,21 @@ impl Worker {
             arguments: serde_json::json!({ "command": command }).to_string(),
         })));
         let started = std::time::Instant::now();
-        let outcome = attend(
-            Inbox {
-                cmd: &mut self.cmd,
-                reader: &self.reader,
-                followups: &mut self.followups,
-                deferred: &mut self.deferred,
-                ui: &self.ui,
-                answers: None,
-            },
+        let outcome = wait_cancelable(
+            &mut self.cmd,
+            &mut self.queue,
+            &self.reader,
+            &self.ui,
+            None,
             self.loop_.shell(command),
         )
         .await;
-        let completed = matches!(outcome, Attended::Done(_));
-        let running = !matches!(outcome, Attended::Quit);
+        let completed = matches!(outcome, Completion::Done(_));
+        let running = !matches!(outcome, Completion::Quit);
         let (output, success) = match outcome {
-            Attended::Done(Ok(result)) => result,
-            Attended::Done(Err(error)) => (error.to_string(), false),
-            Attended::Cancelled | Attended::Quit => ("command cancelled".to_string(), false),
+            Completion::Done(Ok(result)) => result,
+            Completion::Done(Err(error)) => (error.to_string(), false),
+            Completion::Cancelled | Completion::Quit => ("command cancelled".to_string(), false),
         };
         drop(self.ui.send(Msg::Event(crate::tools::Event::ToolResult {
             id,
@@ -68,17 +65,17 @@ impl Worker {
         if line.is_empty() {
             return Some(true);
         }
-        let argument = match argument(line, self.loop_.workspace()) {
-            Ok(argument) => argument,
-            Err(_) if crate::parse_command(line).is_none() => return self.unknown(line),
-            Err(error) => {
+        match (
+            argument(line, self.loop_.workspace()),
+            crate::parse_command(line),
+        ) {
+            (Ok(argument), Some(command)) => self.slash(command, line, argument).await,
+            (Ok(_), None) => None,
+            (Err(_), None) => self.unknown(line),
+            (Err(error), Some(_)) => {
                 self.fail(&error);
-                return Some(true);
+                Some(true)
             }
-        };
-        match crate::parse_command(line) {
-            Some(command) => self.slash(command, line, argument).await,
-            None => None,
         }
     }
 
@@ -102,7 +99,7 @@ impl Worker {
             crate::SlashCommand::Retry => Some(self.retry().await),
             crate::SlashCommand::Steps => Some(self.steps(argument.unwrap_or_default()).await),
             crate::SlashCommand::Auto => {
-                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
+                set_run_mode(&mut self.loop_, &self.ui, crate::WorkKind::Single);
                 Some(true)
             }
             other => self.local(other, line, argument).then_some(true),
@@ -237,7 +234,9 @@ impl Worker {
     }
 
     pub(in crate::tui::worker) async fn retry(&mut self) -> bool {
-        let lines = match log::read(self.loop_.session_path()) {
+        let lines = match log::records(self.loop_.session_path(), 0)
+            .collect::<std::io::Result<Vec<Line>>>()
+        {
             Ok(lines) => lines,
             Err(error) => {
                 self.fail(&format!("Cannot read the last turn: {error}"));
@@ -268,7 +267,7 @@ impl Worker {
     }
 
     fn memory(&self) -> bool {
-        let home = match crate::prompt::summonr_home() {
+        let home = match summonr_core::dirs::summonr_home() {
             Ok(home) => home,
             Err(error) => {
                 self.fail(&error.to_string());
@@ -276,7 +275,7 @@ impl Worker {
             }
         };
         let workspace = self.loop_.workspace();
-        let on = crate::modules::Switches::load(workspace)
+        let on = crate::modules::load(workspace)
             .is_ok_and(|switches| switches.enabled(crate::modules::ModuleId::Memory));
         let report = crate::memory::report(&crate::memory::files(&home, workspace));
         let text = if on {

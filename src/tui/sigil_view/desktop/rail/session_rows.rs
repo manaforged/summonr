@@ -7,7 +7,7 @@ use sigil::prelude::{
 };
 
 use super::{App, UNTITLED, section};
-use crate::session::{self, SessionInfo};
+use crate::session::{self, DAY, HOUR, SessionInfo};
 use crate::tui::hub::{Live, Open, Status};
 
 const PREVIEW_CELLS: usize = 36;
@@ -16,8 +16,6 @@ const RENAME: &str = "Rename";
 const DELETE: &str = "Delete";
 const NOW: &str = "now";
 const MINUTE: u64 = 60;
-const HOUR: u64 = 60 * MINUTE;
-const DAY: u64 = 24 * HOUR;
 
 pub(super) fn sessions(app: &App) -> NodeBuilder {
     let live = {
@@ -70,7 +68,7 @@ pub(in crate::tui::sigil_view::desktop) fn recent(
     let mut seen = HashSet::new();
     let mut recent: Vec<SessionInfo> = sessions
         .into_iter()
-        .filter(|info| info.cwd.as_deref() == Some(here) && info.depth == 0)
+        .filter(|info| info.cwd.as_deref() == Some(here))
         .filter(|info| !info.preview.trim().is_empty())
         .collect();
     recent.reverse();
@@ -96,7 +94,7 @@ fn titled(text: &str) -> String {
     if text.is_empty() {
         UNTITLED.to_string()
     } else {
-        crate::text::ellipsize(text, PREVIEW_CELLS)
+        crate::display::ellipsize(text, PREVIEW_CELLS)
     }
 }
 

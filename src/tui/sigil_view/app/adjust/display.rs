@@ -29,34 +29,15 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn reasoning_command(&self, argument: Option<&str>) {
-        self.model_mut(|model| {
-            model.prefs.reasoning = match argument {
-                Some(value) => {
-                    crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Collapsed)
-                }
-                None => model.prefs.reasoning.toggle(),
-            };
-            model.entries.invalidate();
+    pub(in crate::tui::sigil_view) fn set_visibility(
+        &self,
+        field: fn(&mut crate::prefs::Prefs) -> &mut crate::prefs::Visibility,
+        next: Option<crate::prefs::Visibility>,
+    ) {
+        self.flip(|prefs| {
+            let shown = field(prefs);
+            *shown = next.unwrap_or_else(|| shown.toggle());
         });
-        let prefs = self.model.peek().prefs.clone();
-        self.persist(&prefs);
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn receipts_command(&self, argument: Option<&str>) {
-        self.model_mut(|model| {
-            model.prefs.receipts = match argument {
-                Some(value) => {
-                    crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Off)
-                }
-                None => model.prefs.receipts.toggle(),
-            };
-            model.entries.invalidate();
-        });
-        let prefs = self.model.peek().prefs.clone();
-        self.persist(&prefs);
-        self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn toggle_tools(&self) {
@@ -64,16 +45,10 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn set_tools(&self, tools: crate::prefs::ToolOutput) {
-        self.model_mut(|model| {
-            model.prefs.tools = tools;
-            model.entries.invalidate();
-        });
-        let prefs = self.model.peek().prefs.clone();
-        self.persist(&prefs);
-        self.refresh();
+        self.flip(|prefs| prefs.tools = tools);
     }
 
-    pub(super) fn fold_cycle(&self) {
+    pub(in crate::tui::sigil_view) fn fold_cycle(&self) {
         use crate::prefs::{ToolOutput, Visibility};
         let prefs = &self.model.peek().prefs;
         let (reasoning, tools) = match (prefs.reasoning, prefs.tools) {
@@ -81,17 +56,13 @@ impl App {
             (Visibility::Expanded, _) => (Visibility::Collapsed, ToolOutput::Compact),
             _ => (Visibility::Collapsed, ToolOutput::Hidden),
         };
-        self.model_mut(|model| {
-            model.prefs.reasoning = reasoning;
-            model.prefs.tools = tools;
-            model.entries.invalidate();
+        self.flip(|prefs| {
+            prefs.reasoning = reasoning;
+            prefs.tools = tools;
         });
-        let prefs = self.model.peek().prefs.clone();
-        self.persist(&prefs);
-        self.refresh();
     }
 
-    pub(super) fn cycle_run_mode(&self) {
+    pub(in crate::tui::sigil_view) fn cycle_run_mode(&self) {
         let (goal, work) = {
             let model = self.model.peek();
             (model.snapshot.goal, model.snapshot.work)

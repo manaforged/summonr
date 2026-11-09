@@ -1,13 +1,5 @@
 use super::*;
 
-impl App {
-    pub(in crate::tui::sigil_view) fn file_rows(&self) -> Vec<FileRow> {
-        let model = self.model.get();
-        let expanded = self.expanded.peek();
-        file_rows(&model.files, &expanded)
-    }
-}
-
 pub(in crate::tui::sigil_view) fn save(path: Option<&Path>, prefs: &Prefs) -> Result<(), String> {
     let path = path.ok_or_else(|| "settings not saved: home directory unavailable".to_string())?;
     prefs::save_in(path, prefs).map_err(|error| format!("settings not saved: {error}"))
@@ -74,16 +66,66 @@ pub(in crate::tui::sigil_view) fn read_git_branch(workspace: &Path) -> Option<St
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::tui::sigil_view) struct FileRow {
+pub(in crate::tui::sigil_view) struct PaneRow {
     pub(in crate::tui::sigil_view) path: String,
     pub(in crate::tui::sigil_view) name: String,
     pub(in crate::tui::sigil_view) depth: usize,
     pub(in crate::tui::sigil_view) dir: bool,
     pub(in crate::tui::sigil_view) open: bool,
+    pub(in crate::tui::sigil_view) status: String,
+    pub(in crate::tui::sigil_view) badge: Option<(String, sigil::prelude::Tone)>,
+    pub(in crate::tui::sigil_view) note: Option<String>,
+    pub(in crate::tui::sigil_view) detail: Vec<String>,
 }
 
-pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String]) -> Vec<FileRow> {
-    let mut rows: Vec<FileRow> = Vec::new();
+impl PaneRow {
+    pub(in crate::tui::sigil_view) fn flat(path: String, name: String, open: bool) -> Self {
+        Self {
+            path,
+            name,
+            depth: 0,
+            dir: false,
+            open,
+            status: String::new(),
+            badge: None,
+            note: None,
+            detail: Vec::new(),
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn status(mut self, status: String) -> Self {
+        self.status = status;
+        self
+    }
+
+    pub(in crate::tui::sigil_view) fn badge(
+        mut self,
+        label: impl Into<String>,
+        tone: sigil::prelude::Tone,
+    ) -> Self {
+        self.badge = Some((label.into(), tone));
+        self
+    }
+
+    pub(in crate::tui::sigil_view) fn note(mut self, note: Option<String>) -> Self {
+        self.note = note;
+        self
+    }
+
+    pub(in crate::tui::sigil_view) fn detail(
+        mut self,
+        lines: impl IntoIterator<Item = String>,
+    ) -> Self {
+        if self.open {
+            self.detail = lines.into_iter().collect();
+        }
+        self
+    }
+}
+
+pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String]) -> Vec<PaneRow> {
+    let expanded: std::collections::HashSet<&str> = expanded.iter().map(String::as_str).collect();
+    let mut rows: Vec<PaneRow> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut sorted: Vec<&String> = files.iter().collect();
     sorted.sort();
@@ -98,112 +140,32 @@ pub(in crate::tui::sigil_view) fn file_rows(files: &[String], expanded: &[String
             } else {
                 format!("{prefix}/{part}")
             };
+            let shut = !last && !expanded.contains(path.as_str());
             if !hidden && seen.insert(path.clone()) {
-                let open = last || expanded.contains(&path);
-                rows.push(FileRow {
-                    path: path.clone(),
-                    name: (*part).to_string(),
+                rows.push(PaneRow {
                     depth,
                     dir: !last,
-                    open,
+                    ..PaneRow::flat(path.clone(), (*part).to_string(), !shut)
                 });
             }
-            if !last && !expanded.contains(&path) {
-                hidden = true;
-            }
+            hidden |= shut;
             prefix = path;
         }
     }
     rows
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::tui::sigil_view) enum Action {
-    Attach,
-    Open,
-    Insert,
-    Toggle,
-    Hunks,
-    Accept,
-    Reject,
-    Note,
-    Kill,
-    Diff,
-    Merge,
-    Discard,
-    View,
-}
+pub(in crate::tui::sigil_view) type Confirm<K> = Signal<Option<(K, std::time::Instant)>>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::tui::sigil_view) struct Context {
-    pub(in crate::tui::sigil_view) col: usize,
-    pub(in crate::tui::sigil_view) row: usize,
-    pub(in crate::tui::sigil_view) cursor: usize,
-    pub(in crate::tui::sigil_view) target: FileRow,
-    pub(in crate::tui::sigil_view) kind: Pane,
-    pub(in crate::tui::sigil_view) hunk: Option<String>,
-}
-
-impl Context {
-    pub(in crate::tui::sigil_view) fn items(&self) -> Vec<(&'static str, Action)> {
-        if self.kind == Pane::Diff && self.hunk.is_some() {
-            vec![
-                ("accept hunk", Action::Accept),
-                ("reject hunk", Action::Reject),
-                ("note hunk", Action::Note),
-            ]
-        } else if self.kind == Pane::Jobs {
-            vec![("kill job", Action::Kill), ("view log", Action::View)]
-        } else if self.kind == Pane::Mcp {
-            vec![("view server", Action::View)]
-        } else if self.kind == Pane::Peers {
-            vec![("mention @name", Action::Attach)]
-        } else if self.kind == Pane::Worktrees {
-            vec![
-                ("show diff", Action::Diff),
-                ("merge (ff-only)", Action::Merge),
-                ("remove worktree (clean only)", Action::Discard),
-                ("insert path", Action::Insert),
-            ]
-        } else if self.kind == Pane::Diff {
-            vec![
-                ("view hunks", Action::Hunks),
-                ("view file", Action::View),
-                ("attach @path to prompt", Action::Attach),
-                ("open in $EDITOR", Action::Open),
-                ("insert path", Action::Insert),
-            ]
-        } else if self.target.dir {
-            vec![
-                (
-                    if self.target.open {
-                        "collapse"
-                    } else {
-                        "expand"
-                    },
-                    Action::Toggle,
-                ),
-                ("insert path", Action::Insert),
-            ]
-        } else {
-            vec![
-                ("attach @path to prompt", Action::Attach),
-                ("view file", Action::View),
-                ("open in $EDITOR", Action::Open),
-                ("insert path", Action::Insert),
-            ]
-        }
-    }
-}
-
-pub(in crate::tui::sigil_view) fn armed(
-    slot: &Cell<Option<std::time::Instant>>,
-    window: std::time::Duration,
+pub(in crate::tui::sigil_view) fn confirm<K: Clone + PartialEq + 'static>(
+    slot: &Confirm<K>,
+    key: K,
+    window: Option<std::time::Duration>,
 ) -> bool {
     let now = std::time::Instant::now();
-    let repeat = slot
-        .get()
-        .is_some_and(|last| now.duration_since(last) <= window);
-    slot.set(if repeat { None } else { Some(now) });
+    let repeat = slot.peek().is_some_and(|(armed, at)| {
+        armed == key && window.is_none_or(|window| now.duration_since(at) <= window)
+    });
+    slot.set(if repeat { None } else { Some((key, now)) });
     repeat
 }

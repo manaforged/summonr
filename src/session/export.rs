@@ -3,15 +3,15 @@ use std::path::Path;
 use super::catalog::{name_of, short};
 use super::user_text;
 use crate::durable::log::{self, Line};
-use crate::error::Result;
-use crate::provider::ToolCall;
+use summonr_core::error::Result;
+use summonr_types::ToolCall;
 
 const ARG_WIDTH: usize = 100;
 
 pub fn export(path: &Path) -> Result<String> {
     let mut out = String::new();
-    for line in log::read(path)? {
-        match line {
+    for line in log::records(path, 0) {
+        match line? {
             Line::Session {
                 id,
                 model,
@@ -39,6 +39,7 @@ pub fn export(path: &Path) -> Result<String> {
             }
             Line::Clear => out.push_str("---\n\n"),
             Line::Tools { .. }
+            | Line::Work { .. }
             | Line::Budget { .. }
             | Line::Workflow { .. }
             | Line::Child { .. }
@@ -80,7 +81,7 @@ fn export_assistant(out: &mut String, text: &str, tool_calls: &[ToolCall]) {
     }
     for call in tool_calls {
         let args =
-            crate::text::ellipsize(&crate::tui::tool_arg(&call.function.arguments), ARG_WIDTH);
+            crate::display::ellipsize(&crate::tui::tool_arg(&call.function.arguments), ARG_WIDTH);
         out.push_str(&format!("- `{}` {args}\n", call.function.name));
     }
     if !tool_calls.is_empty() {

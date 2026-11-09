@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, FlexWrap, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone,
-    container, heatmap, panel, progress, signal, sparkline,
+    AlignItems, FlexWrap, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone, container,
+    heatmap, panel, progress, signal, sparkline,
 };
 use sigil::prelude::{Paint, WidgetLayoutExt};
 use sigil::widgets::SparkMark;
@@ -36,19 +36,15 @@ pub(super) fn ink(index: usize) -> Rgba8 {
 }
 
 pub(super) fn colored(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
-    container().layout(LayoutStyle::block().shrink(0.0)).child(
-        sigil::kernel::text(value.into())
-            .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
-            .text_color(color),
-    )
+    container()
+        .layout(LayoutStyle::block().shrink(0.0))
+        .child(sigil::kernel::text(value.into()).nowrap().text_color(color))
 }
 
 pub(super) fn strong(value: impl Into<String>) -> NodeBuilder {
     container().child(
         sigil::kernel::text(value.into())
             .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
             .font_weight(700)
             .text_color(palette().text),
     )
@@ -68,12 +64,7 @@ fn row(children: Vec<NodeBuilder>) -> NodeBuilder {
 fn wrapped(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
-        .child(
-            sigil::kernel::text(value.into())
-                .wrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .text_color(color),
-        )
+        .child(sigil::kernel::text(value.into()).wrap().text_color(color))
 }
 
 fn column(children: Vec<NodeBuilder>) -> NodeBuilder {
@@ -164,7 +155,7 @@ pub(super) fn cards(report: &Report) -> NodeBuilder {
             "sessions",
             group(total.sessions),
             None,
-            crate::text::plural(usize::try_from(total.turns).unwrap_or(usize::MAX), "turn")
+            summonr_core::text::plural(usize::try_from(total.turns).unwrap_or(usize::MAX), "turn")
                 .replacen(&total.turns.to_string(), &group(total.turns), 1),
         ))
         .child(card("cost", cost, None, priced.to_string()))
@@ -197,7 +188,7 @@ fn model_line(
 ) -> NodeBuilder {
     let share = model.value(metric.cost()) / whole * 100.0;
     let tint = ink(at);
-    let short = crate::text::ellipsize(name, name_cells);
+    let short = crate::display::ellipsize(name, name_cells);
     let short = format!(
         "{short}{}",
         " ".repeat(name_cells.saturating_sub(sigil::app::cell_width(&short)))
@@ -264,7 +255,7 @@ pub(super) fn places(report: &Report, metric: Metric) -> NodeBuilder {
     let mut lines = vec![strong("Workspaces")];
     for (name, value) in &report.places {
         let filled = ((value / peak) * PLACE_CELLS as f64).round() as usize;
-        let short = crate::text::ellipsize(name, PLACE_NAME_CELLS);
+        let short = crate::display::ellipsize(name, PLACE_NAME_CELLS);
         let pad = PLACE_NAME_CELLS.saturating_sub(sigil::app::cell_width(&short));
         lines.push(row(vec![
             colored(format!("{short}{}", " ".repeat(pad)), palette().text),
@@ -322,8 +313,4 @@ pub(super) fn bottom(report: &Report, metric: Metric, width: f32) -> NodeBuilder
                 .child(places(report, metric))
                 .child(hours(report)),
         )
-}
-
-pub(super) fn spacer() -> impl IntoNode {
-    container().layout(LayoutStyle::block().grow(1.0))
 }

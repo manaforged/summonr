@@ -1,5 +1,5 @@
 use super::super::super::{Message, Partial, Provider, Role, StopReason};
-use super::{ask, read_tool, said, seat_at};
+use super::{ask, client_at, read_tool, said};
 use crate::provider::{ToolCall, ToolFunction, ToolKind};
 
 const RUNS: &str = r#"#!/bin/sh
@@ -38,7 +38,7 @@ async fn turn(
     client: &super::super::super::Client,
     messages: &[Message],
     tools: &[crate::provider::ToolDefinition],
-) -> crate::error::Result<crate::provider::AssistantMessage> {
+) -> summonr_core::error::Result<crate::provider::AssistantMessage> {
     let request = ask(messages, tools);
     let mut partial = Partial::default();
     tokio::time::timeout(
@@ -92,7 +92,7 @@ fn call(id: &str) -> ToolCall {
 async fn a_prompt_after_an_abandoned_tool_call_starts_a_fresh_resumed_run() {
     let dir = tempfile::tempdir().unwrap();
     mode(dir.path(), "tool");
-    let client = seat_at(dir.path(), RUNS);
+    let client = client_at(dir.path(), RUNS);
     let tools = [read_tool()];
     let mut messages = vec![Message::system("sys"), Message::user("read")];
     let paused = turn(&client, &messages, &tools).await.unwrap();
@@ -114,7 +114,7 @@ async fn a_prompt_after_an_abandoned_tool_call_starts_a_fresh_resumed_run() {
 async fn a_resumed_run_after_tool_results_gets_those_results_as_input() {
     let dir = tempfile::tempdir().unwrap();
     mode(dir.path(), "plain");
-    let client = seat_at(dir.path(), RUNS);
+    let client = client_at(dir.path(), RUNS);
     let mut messages = vec![Message::system("sys"), Message::user("first")];
     turn(&client, &messages, &[]).await.unwrap();
     messages.push(assistant("run 1", Vec::new()));
@@ -136,7 +136,7 @@ async fn a_resumed_run_after_tool_results_gets_those_results_as_input() {
 async fn a_failed_turn_starts_the_next_turn_in_a_new_session() {
     let dir = tempfile::tempdir().unwrap();
     mode(dir.path(), "fail");
-    let client = seat_at(dir.path(), RUNS);
+    let client = client_at(dir.path(), RUNS);
     let mut messages = vec![Message::system("sys"), Message::user("first")];
     let failed = turn(&client, &messages, &[]).await.unwrap_err();
     assert!(failed.to_string().contains("boom"), "{failed}");
@@ -153,7 +153,7 @@ async fn a_failed_turn_starts_the_next_turn_in_a_new_session() {
 async fn claude_code_gets_the_users_environment_and_the_prompt_in_a_file() {
     let dir = tempfile::tempdir().unwrap();
     mode(dir.path(), "plain");
-    let client = seat_at(dir.path(), RUNS);
+    let client = client_at(dir.path(), RUNS);
     let messages = [Message::system("the system prompt"), Message::user("hi")];
     turn(&client, &messages, &[]).await.unwrap();
     let env = std::fs::read_to_string(dir.path().join("claude.env")).unwrap();
@@ -174,7 +174,7 @@ async fn claude_code_gets_the_users_environment_and_the_prompt_in_a_file() {
 async fn a_built_in_claude_code_tool_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     mode(dir.path(), "deny");
-    let client = seat_at(dir.path(), RUNS);
+    let client = client_at(dir.path(), RUNS);
     let messages = [Message::system("sys"), Message::user("hi")];
     turn(&client, &messages, &[]).await.unwrap();
     let log = std::fs::read_to_string(dir.path().join("claude.log")).unwrap();
@@ -190,7 +190,7 @@ async fn a_built_in_claude_code_tool_is_refused() {
 async fn two_turns_on_one_session_run_one_after_the_other() {
     let dir = tempfile::tempdir().unwrap();
     mode(dir.path(), "plain");
-    let client = seat_at(dir.path(), RUNS);
+    let client = client_at(dir.path(), RUNS);
     let messages = [Message::system("sys"), Message::user("hi")];
     let (left, right) = tokio::join!(turn(&client, &messages, &[]), turn(&client, &messages, &[]));
     left.unwrap();

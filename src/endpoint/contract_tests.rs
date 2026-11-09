@@ -13,14 +13,14 @@ async fn every_preset_row_matches_the_live_catalog_and_its_host_answers() {
     let serves = crate::catalog::serves_live()
         .await
         .expect("models.dev catalog");
-    let http = crate::credentials::http().expect("http session");
+    let http = crate::credentials::http(crate::limits::limits().auth()).expect("http session");
     let mut broken = Vec::new();
     for preset in super::preset::presets().filter(|preset| !preset.off) {
         let models = std::iter::once(&preset.model)
             .chain(preset.login_model.as_ref())
             .filter(|model| !model.is_empty() && model.as_str() != "default");
         for model in models {
-            if serves(preset.opencode_ids, model) == Some(false) {
+            if serves(&preset.opencode_ids, model) == Some(false) {
                 broken.push(format!(
                     "{}: models.dev does not list {model} as current",
                     preset.name
@@ -30,7 +30,7 @@ async fn every_preset_row_matches_the_live_catalog_and_its_host_answers() {
         if !hosted(&preset.base_url) {
             continue;
         }
-        let url = preset.models_url.map_or_else(
+        let url = preset.models_url.as_deref().map_or_else(
             || format!("{}/models", preset.base_url.trim_end_matches('/')),
             str::to_string,
         );

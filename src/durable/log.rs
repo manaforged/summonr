@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::id::SessionId;
-use crate::provider::{Continuation, Image, Message, Role, ToolCall};
-use crate::session::Replay;
+use super::store::Durability;
+use super::work::Work;
+use summonr_types::{Continuation, Image, Message, Role, ToolCall};
 
 const FILE: &str = "session.jsonl";
 const WORK: &str = "work.json";
@@ -32,7 +33,7 @@ pub(crate) struct UsageMeta {
 }
 
 impl Usage {
-    pub(crate) fn measured(usage: &crate::provider::Usage, millis: u64) -> Self {
+    pub(crate) fn measured(usage: &summonr_types::Usage, millis: u64) -> Self {
         Self {
             input: u64::from(usage.prompt_tokens),
             output: u64::from(usage.completion_tokens),
@@ -41,6 +42,15 @@ impl Usage {
             written: u64::from(usage.cache_write_tokens),
             millis,
         }
+    }
+
+    pub(crate) fn add(&mut self, other: Self) {
+        self.input = self.input.saturating_add(other.input);
+        self.output = self.output.saturating_add(other.output);
+        self.reasoning = self.reasoning.saturating_add(other.reasoning);
+        self.cached = self.cached.saturating_add(other.cached);
+        self.written = self.written.saturating_add(other.written);
+        self.millis = self.millis.saturating_add(other.millis);
     }
 
     fn tokens(self) -> u64 {
@@ -60,6 +70,8 @@ pub(crate) enum Line {
         parent: Option<SessionId>,
         #[serde(default, skip_serializing_if = "is_zero")]
         depth: u8,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision: Option<String>,
     },
     Tools {
         bytes: u64,
@@ -141,11 +153,14 @@ pub(crate) enum Line {
         edits: Vec<(usize, Message)>,
     },
     Clear,
+    Work {
+        work: Box<Work>,
+    },
     Close {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        code: Option<crate::tools::AbortCode>,
+        code: Option<summonr_types::AbortCode>,
         #[serde(default, skip_serializing_if = "Option::is_none", alias = "rss_kb")]
         footprint_kb: Option<u64>,
     },
@@ -173,27 +188,27 @@ pub(crate) struct State {
     pub(crate) children: std::collections::BTreeMap<SessionId, crate::child::ChildRecord>,
     pub(crate) history: Vec<Message>,
     pub(crate) spent: u64,
+    pub(crate) metered: Usage,
+    pub(crate) turns: usize,
     pub(crate) unreported: u64,
     pub(crate) elapsed: u64,
     pub(crate) opener: Option<usize>,
     pub(crate) unanswered: Vec<String>,
     pub(crate) last_close_reason: Option<String>,
+    pub(crate) work: Option<Work>,
 }
 
 impl State {
-    fn charge(&mut self, usage: Usage) {
+    fn charge(&mut self, usage: Usage, reported: bool) {
         self.spent = self.spent.saturating_add(usage.tokens());
         self.elapsed = self.elapsed.saturating_add(usage.millis);
-    }
-
-    pub(crate) fn replay(&self) -> Replay {
-        Replay {
-            history: self.history.clone(),
-            prompt: Some(self.system.clone()),
-            model: Some(self.model.clone()),
-            id: self.id.map(|id| id.to_string()).unwrap_or_default(),
-            spent_tokens: self.spent,
-            elapsed_millis: self.elapsed,
+        if reported {
+            self.metered.add(Usage {
+                input: usage.input,
+                output: usage.output,
+                cached: usage.cached,
+                ..Usage::default()
+            });
         }
     }
 }
@@ -205,7 +220,7 @@ pub(crate) struct Log {
 }
 
 fn hold(path: &Path) -> io::Result<File> {
-    super::store::lock(path, false)?.ok_or_else(|| {
+    super::store::lock_within(path, crate::limits::limits().session_lock())?.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::WouldBlock,
             format!("{} is open in another summonr window", path.display()),
@@ -241,7 +256,7 @@ impl Log {
         })
     }
 
-    pub(crate) fn append(&mut self, line: &Line) -> io::Result<()> {
+    pub(crate) fn append(&mut self, line: &Line, durability: Durability) -> io::Result<()> {
         #[derive(Serialize)]
         struct At<'a> {
             at: u64,
@@ -258,7 +273,11 @@ impl Log {
             let before = file.metadata()?.len();
             file.write_all(&bytes)
                 .and_then(|()| file.flush())
-                .inspect_err(|_| drop(file.set_len(before)))
+                .inspect_err(|_| drop(file.set_len(before)))?;
+            match durability {
+                Durability::Synced => file.sync_data(),
+                Durability::Renamed => Ok(()),
+            }
         })
     }
 
@@ -299,8 +318,10 @@ fn now_millis() -> u64 {
 
 mod apply;
 mod paths;
+mod records;
 
 pub(crate) use paths::*;
+pub(crate) use records::{Fill, records};
 
 #[cfg(test)]
 #[path = "log_tests.rs"]

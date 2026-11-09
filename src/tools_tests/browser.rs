@@ -6,7 +6,10 @@ fn browsing(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
     (dir, tools)
 }
 
-async fn call(tools: &ToolRegistry, arguments: serde_json::Value) -> crate::error::Result<String> {
+async fn call(
+    tools: &ToolRegistry,
+    arguments: serde_json::Value,
+) -> summonr_core::error::Result<String> {
     let call = ToolCall {
         id: "t1".to_string(),
         kind: ToolKind::Function,
@@ -56,7 +59,7 @@ fn the_browser_refuses_private_hosts_and_plain_http_before_launching() {
 
 #[test]
 fn a_short_javascript_wall_is_detected_and_a_real_page_is_not() {
-    let wall = crate::browser::wall::WALL;
+    let wall = crate::web::wall();
     assert!(wall.body("Just a moment...", "<title>Just a moment...</title>"));
     assert!(wall.body(
         "",

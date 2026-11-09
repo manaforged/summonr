@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use leyline::{RequestBuilder, Session};
+use summonr_core::secret::Secret;
 
 mod oauth;
 pub mod open;
@@ -61,7 +62,7 @@ impl Prompt {
         (self.say)(line);
     }
 
-    pub(crate) async fn request(&mut self, line: &str) -> Result<String> {
+    pub async fn request(&mut self, line: &str) -> Result<String> {
         (self.ask)(line.to_string())
             .await
             .map(|text| text.trim().to_string())
@@ -81,7 +82,8 @@ pub trait Store: Send + Sync {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Scheme {
     #[default]
     Bearer,
@@ -101,11 +103,11 @@ impl Scheme {
 
 #[derive(Clone, Debug)]
 pub enum Method {
-    Key(String),
+    Key(Secret),
     Login(Box<Spec>),
 }
 
-struct Seat {
+struct LoginState {
     spec: Spec,
     name: String,
     held: Mutex<Option<Issued>>,
@@ -128,8 +130,8 @@ impl Issued {
 }
 
 enum Held {
-    Key(String),
-    Login(Box<Seat>),
+    Key(Secret),
+    Login(Box<LoginState>),
 }
 
 #[derive(Clone)]
@@ -143,7 +145,7 @@ impl Auth {
     pub fn new(method: Method, scheme: Scheme, name: &str, store: Arc<dyn Store>) -> Self {
         let held = match method {
             Method::Key(key) => Held::Key(key),
-            Method::Login(spec) => Held::Login(Box::new(Seat {
+            Method::Login(spec) => Held::Login(Box::new(LoginState {
                 spec: *spec,
                 name: name.to_string(),
                 held: Mutex::new(None),
@@ -166,8 +168,8 @@ impl Auth {
 
     pub async fn token(&self, http: &Session) -> Result<String> {
         match self.held.as_ref() {
-            Held::Key(key) => Ok(key.clone()),
-            Held::Login(seat) => oauth::token(parts(seat), http, self.store.as_ref()).await,
+            Held::Key(key) => Ok(key.expose().to_string()),
+            Held::Login(login) => oauth::token(parts(login), http, self.store.as_ref()).await,
         }
     }
 
@@ -177,46 +179,46 @@ impl Auth {
     }
 
     pub async fn login(&self, http: &Session, prompt: &mut Prompt) -> Result<()> {
-        let Held::Login(seat) = self.held.as_ref() else {
+        let Held::Login(login) = self.held.as_ref() else {
             return Err(Error::Config(
                 "this endpoint takes a key, not a login".to_string(),
             ));
         };
-        oauth::login(parts(seat), http, self.store.as_ref(), prompt).await
+        oauth::login(parts(login), http, self.store.as_ref(), prompt).await
     }
 
     pub fn stamped(&self) -> Vec<(String, String)> {
-        let Held::Login(seat) = self.held.as_ref() else {
+        let Held::Login(login) = self.held.as_ref() else {
             return Vec::new();
         };
-        if seat.spec.claim_headers.is_empty() {
+        if login.spec.claim_headers.is_empty() {
             return Vec::new();
         }
-        let Ok(slot) = seat.held.lock() else {
+        let Ok(slot) = login.held.lock() else {
             return Vec::new();
         };
         let Some(issued) = slot.as_ref() else {
             return Vec::new();
         };
-        oauth::stamped(&seat.spec, issued)
+        oauth::stamped(&login.spec, issued)
     }
 
     pub fn forget_live(&self) {
-        let Held::Login(seat) = self.held.as_ref() else {
+        let Held::Login(login) = self.held.as_ref() else {
             return;
         };
-        if let Ok(mut slot) = seat.held.lock() {
+        if let Ok(mut slot) = login.held.lock() {
             slot.take();
         }
-        drop(oauth::stale(&parts(seat), self.store.as_ref()));
+        drop(oauth::stale(&parts(login), self.store.as_ref()));
     }
 
     pub fn ready(&self) -> Result<bool> {
         match self.held.as_ref() {
             Held::Key(_) => Ok(true),
-            Held::Login(seat) => Ok(self
+            Held::Login(login) => Ok(self
                 .store
-                .get(&seat.name)?
+                .get(&login.name)?
                 .is_some_and(|raw| oauth::parse_stored(&raw).is_some())),
         }
     }
@@ -228,11 +230,11 @@ pub(crate) struct Parts<'a> {
     pub(crate) held: &'a Mutex<Option<Issued>>,
 }
 
-fn parts(seat: &Seat) -> Parts<'_> {
+fn parts(login: &LoginState) -> Parts<'_> {
     Parts {
-        spec: &seat.spec,
-        name: &seat.name,
-        held: &seat.held,
+        spec: &login.spec,
+        name: &login.name,
+        held: &login.held,
     }
 }
 
@@ -243,11 +245,21 @@ pub fn http(timeout: Duration, connect: Duration) -> Result<Session> {
 }
 
 pub fn builder(timeout: Duration, connect: Duration) -> leyline::SessionBuilder {
-    Session::builder().timeout(
-        leyline::TimeoutConfig::new()
-            .total(timeout)
-            .connect(connect),
-    )
+    session(leyline::Timeout::new().total(timeout).connect(connect))
+}
+
+/// Starts a session that follows a redirect only when it stays on the same origin.
+pub fn session(timeouts: leyline::Timeout) -> leyline::SessionBuilder {
+    Session::builder()
+        .timeout(timeouts)
+        .redirect(leyline::Redirect::custom(|attempt| {
+            attempt
+                .url()
+                .zip(attempt.location())
+                .is_some_and(|(from, to)| {
+                    from.join(to).is_ok_and(|to| to.origin() == from.origin())
+                })
+        }))
 }
 
 #[cfg(test)]

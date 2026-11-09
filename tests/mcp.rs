@@ -32,6 +32,8 @@ mod secrets;
 #[path = "mcp/session.rs"]
 mod session;
 mod support;
+#[path = "mcp/tools.rs"]
+mod tools;
 #[path = "mcp/torn.rs"]
 mod torn;
 #[path = "mcp/transport.rs"]
@@ -59,14 +61,18 @@ fn main() {
         content::an_unreadable_skill_fails_before_the_model_is_called,
         progress::task_progress_reaches_the_next_provider_turn,
         session::a_goal_recovers_after_more_than_three_failed_checks,
+        session::a_goal_with_no_check_and_no_score_runs_until_the_judge_says_done,
         #[cfg(unix)]
         compat::sessions_saved_by_0_1_0_list_export_and_profile,
         #[cfg(unix)]
         compat::a_cron_job_saved_by_0_1_0_still_lists,
         #[cfg(unix)]
         compat::a_session_saved_by_0_1_0_resumes_with_its_history,
+        tools::tools_core_calls_return_results_to_the_model,
+        tools::tools_module_configuration_errors_are_reported,
+        tools::tools_optional_modules_are_advertised_and_dispatch_calls,
+        tools::tools_disabled_modules_are_hidden_and_refuse_calls,
         torn::a_session_resumes_with_any_state_file_torn,
-        torn::a_torn_work_file_is_reported_on_resume,
         content::a_server_prompt_becomes_the_user_message,
         content::a_prompt_without_its_required_argument_is_refused,
         content::a_server_resource_is_attached_to_the_prompt,
@@ -97,6 +103,8 @@ fn main() {
         plugins::an_uninstalled_or_disabled_plugin_does_not_load,
         #[cfg(unix)]
         plugins::a_claude_hook_blocks_only_on_exit_two_or_a_deny,
+        #[cfg(unix)]
+        plugins::a_pre_tool_hook_screens_scout_tool_calls,
         plugins::two_pre_tool_hooks_both_run_in_order,
         #[cfg(unix)]
         plugins::a_chatty_hook_does_not_stall_the_call,
@@ -140,6 +148,9 @@ fn main() {
         session::a_session_resumed_by_id_from_another_folder_runs_in_its_own_workspace,
         session::a_goal_run_whose_output_lands_in_the_workspace_still_passes,
         session::a_print_run_says_its_check_was_not_run,
+        session::a_session_header_names_the_build_that_wrote_it,
+        session::a_print_run_offers_no_task_list_and_a_goal_run_does,
+        session::a_print_run_sends_a_lean_first_request,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         session::a_failing_grep_check_does_not_complete_a_goal,
         session::forking_a_named_session_keeps_the_original_transcript,
@@ -175,5 +186,6 @@ fn main() {
         transport::a_request_the_server_does_not_read_times_out,
         transport::a_remote_server_reconnects_after_its_session_expires,
         transport::a_remote_reply_on_a_stream_held_open_returns_at_once,
+        transport::a_remote_server_request_gets_an_answer,
     ]);
 }

@@ -23,7 +23,7 @@
 
 ### `review`
 
-<pre>pub async fn <a href="#review">review</a>(endpoint: &amp;<a href="summonr.html#endpoint">Endpoint</a>, changes: &amp;[<a href="#change">Change</a>], questions: &amp;BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;, budget: usize) -&gt; <a href="summonr.html#result">Result</a>&lt;Vec&lt;<a href="summonr-classify.html#decision">Decision</a>&gt;&gt;</pre>
+<pre>pub async fn <a href="#review">review</a>(endpoint: &amp;<a href="summonr.html#endpoint">Endpoint</a>, changes: &amp;[<a href="#change">Change</a>], questions: &amp;BTreeMap&lt;String, <a href="summonr-classify.html#question">Question</a>&gt;, budget: usize) -&gt; Result&lt;Vec&lt;<a href="summonr-classify.html#decision">Decision</a>&gt;&gt;</pre>
 
 
 ### `split`

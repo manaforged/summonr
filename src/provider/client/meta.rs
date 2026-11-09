@@ -1,3 +1,4 @@
+use super::failure::markers;
 use super::*;
 use crate::catalog::{Cost, Model, tokens};
 
@@ -16,106 +17,21 @@ pub(super) fn listed(value: &Value, model: &str) -> Option<u32> {
     crate::catalog::window(row)
 }
 
-pub(crate) fn input_cap(text: &str) -> Option<u32> {
-    let rest = text.split("maximum allowed length (").nth(1)?;
-    let digits: String = rest.chars().take_while(|ch| ch.is_ascii_digit()).collect();
-    digits.parse().ok().filter(|value| *value > 0)
-}
-
-const PLAN_USAGE: &[(&str, ProviderFailureKind)] = &[
-    (
-        "subscription_sharing_usage_limit_exceeded",
-        ProviderFailureKind::RateLimited,
-    ),
-    (
-        "subscription_sharing_user_not_eligible",
-        ProviderFailureKind::Http,
-    ),
-    (
-        "subscription_sharing_unsupported_capability",
-        ProviderFailureKind::Http,
-    ),
-    (
-        "subscription_sharing_route_not_supported",
-        ProviderFailureKind::Http,
-    ),
-    (
-        "subscription_sharing_invalid_user",
-        ProviderFailureKind::Authentication,
-    ),
-    (
-        "subscription_sharing_usage_unavailable",
-        ProviderFailureKind::Server,
-    ),
-    (
-        "subscription_sharing_user_unavailable",
-        ProviderFailureKind::Server,
-    ),
-    (
-        "chatpass_v2_scope_not_authorized",
-        ProviderFailureKind::Http,
-    ),
-    (
-        "chatpass_v2_invalid_authorization_context",
-        ProviderFailureKind::Http,
-    ),
-];
-
-const PLAN_USAGE_CAP: &str = "subscription_sharing_usage_limit_exceeded";
-const PLAN_USAGE_SETTINGS: &str = "https://chatgpt.com/settings/usage";
-
-pub(crate) fn plan_usage(code: u16, text: &str, retry_after: Option<u64>) -> Option<Error> {
-    let (named, kind) = PLAN_USAGE
-        .iter()
-        .find(|(code, _)| text.contains(code))
-        .copied()?;
-    Some(Error::Provider(ProviderFailure {
-        kind,
-        status: Some(code),
-        message: format!("HTTP {code}: {named}: {}", reason(text)),
-        partial_output: false,
-        retry_after,
-    }))
-}
-
 pub(crate) fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
-    if let Some(error) = plan_usage(code, text, retry_after) {
-        return error;
-    }
+    let lower = text.to_ascii_lowercase();
+    let table = markers();
+    let known = table.named(&lower);
+    let detail = reason(text);
     Error::Provider(ProviderFailure {
-        kind: failure_kind(code, &text.to_lowercase()),
+        kind: known.map_or_else(|| table.kind(code, &lower), |(_, kind)| kind),
         status: Some(code),
-        message: format!("HTTP {code}: {}", reason(text)),
+        message: known.map_or_else(
+            || format!("HTTP {code}: {detail}"),
+            |(marker, _)| format!("HTTP {code}: {marker}: {detail}"),
+        ),
         partial_output: false,
         retry_after: retry_after.or_else(|| retry_delay(text)),
     })
-}
-
-fn failure_kind(code: u16, lower: &str) -> ProviderFailureKind {
-    match code {
-        401 | 403 => ProviderFailureKind::Authentication,
-        429 => ProviderFailureKind::RateLimited,
-        400 | 500..=599 if malformed_tool_call(lower) => ProviderFailureKind::MalformedToolCall,
-        500..=599 => ProviderFailureKind::Server,
-        400 if context_overflow(lower) => ProviderFailureKind::ContextOverflow,
-        _ => ProviderFailureKind::Http,
-    }
-}
-
-fn malformed_tool_call(lower: &str) -> bool {
-    lower.contains("tool call")
-        && lower.contains("arguments")
-        && lower.contains("json")
-        && (lower.contains("parse") || lower.contains("invalid") || lower.contains("valid"))
-}
-
-fn context_overflow(lower: &str) -> bool {
-    (lower.contains("context")
-        && ["window", "length", "too long", "exceed"]
-            .iter()
-            .any(|word| lower.contains(word)))
-        || lower.contains("maximum allowed length")
-        || (lower.contains("input length") && lower.contains("exceed"))
 }
 
 fn retry_delay(text: &str) -> Option<u64> {
@@ -142,8 +58,8 @@ pub(super) fn reason(text: &str) -> String {
         .or(Some(error))
         .and_then(Value::as_str)
         .map_or_else(
-            || crate::text::hide_key_echo(text),
-            crate::text::hide_key_echo,
+            || summonr_core::text::hide_key_echo(text),
+            summonr_core::text::hide_key_echo,
         )
 }
 
@@ -206,9 +122,18 @@ impl Client {
         };
         let lower = failure.message.to_lowercase();
         let advice = match (failure.kind, model) {
-            (ProviderFailureKind::RateLimited, _) if lower.contains(PLAN_USAGE_CAP) => format!(
-                "{name} reached this app's cap on your ChatGPT plan; open Manage usage at {PLAN_USAGE_SETTINGS} to raise it, or pick another model with /model"
-            ),
+            (ProviderFailureKind::UsageLimit, _) => {
+                if lower.contains(markers().plan_cap.as_str()) {
+                    format!(
+                        "{name} reached this app's cap on your ChatGPT plan; open Manage usage at {} to raise it, or pick another model with /model",
+                        markers().plan_settings
+                    )
+                } else {
+                    format!(
+                        "{name} exhausted its usage allowance; wait for its reset or select another account or provider"
+                    )
+                }
+            }
             (ProviderFailureKind::Authentication, _) if !keyed => {
                 failure.kind = ProviderFailureKind::MissingKey;
                 format!("{name} needs a key and none is set; run `summonr login {name}` to add one")
@@ -223,17 +148,7 @@ impl Client {
                     .map_or_else(String::new, |seconds| format!(" {seconds}s"))
             ),
             (ProviderFailureKind::Http, Some(model))
-                if failure.status == Some(404)
-                    || (lower.contains("model")
-                        && [
-                            "not found",
-                            "not exist",
-                            "unknown",
-                            "invalid",
-                            "not supported",
-                        ]
-                        .iter()
-                        .any(|word| lower.contains(word))) =>
+                if failure.status == Some(404) || markers().missing_model(&lower) =>
             {
                 let known: Vec<String> = crate::catalog::cached()
                     .get(&self.name)
@@ -260,7 +175,7 @@ impl Client {
     }
 
     pub async fn discover(endpoint: &crate::Endpoint) -> Result<Vec<Model>> {
-        if endpoint.wire == Wire::AgentSdk {
+        if let Transport::ClaudeCode(agent) = Transport::of(endpoint) {
             let program = endpoint.base_url.as_deref().unwrap_or_default();
             if !std::path::Path::new(program).is_file()
                 && crate::askpass::on_path(program).is_none()
@@ -269,6 +184,7 @@ impl Client {
                     "{program} not found; install Claude Code and run `claude auth login`"
                 )));
             }
+            agent.status().await?;
             return Ok(crate::catalog::listing(&endpoint.name).map_or_else(
                 || crate::catalog::offered(&endpoint.name, Cost::Plan),
                 |listing| listing.models,
@@ -304,7 +220,7 @@ impl Client {
         match error.provider_failure().map(|failure| failure.kind) {
             Some(Kind::Authentication) => State::KeyRejected,
             Some(Kind::MissingKey) => State::NeedsKey,
-            Some(Kind::RateLimited) => State::RateLimited,
+            Some(Kind::RateLimited | Kind::UsageLimit) => State::RateLimited,
             Some(Kind::Transport) => State::Offline,
             Some(
                 Kind::Server
@@ -346,37 +262,28 @@ impl Client {
     }
 
     pub async fn context(&self, endpoint: &str, model: &str) -> Option<u32> {
-        let local = crate::endpoint::auth_info(endpoint).is_ok_and(|info| info.keyless());
+        let local = crate::endpoint::local(&self.base);
         if !local && let Some(limit) = self.recorded(endpoint, model) {
             return Some(limit);
         }
-        tokio::time::timeout(crate::limits::limits().probe(), self.probe(model))
+        let probed = tokio::time::timeout(crate::limits::limits().probe(), self.probe(model))
             .await
             .ok()
-            .flatten()
-            .or_else(|| self.recorded(endpoint, model))
+            .flatten();
+        if local {
+            probed
+        } else {
+            probed.or_else(|| self.recorded(endpoint, model))
+        }
     }
 
     fn recorded(&self, endpoint: &str, model: &str) -> Option<u32> {
-        if let Some(limit) = crate::catalog::known(endpoint, model).and_then(|row| row.context) {
-            return Some(limit);
-        }
-        let mut rows = [Model {
-            id: model.to_string(),
-            ..Model::default()
-        }];
-        crate::catalog::enrich(endpoint, Some(&self.base), &mut rows);
-        rows[0].context
+        crate::catalog::context_limit(endpoint, model, Some(&self.base))
     }
 
     pub(super) async fn probe(&self, model: &str) -> Option<u32> {
         let base = &self.base;
-        let field = match self.wire {
-            Wire::Anthropic => Some("max_input_tokens"),
-            Wire::Gemini => Some("inputTokenLimit"),
-            Wire::Completions | Wire::Responses | Wire::Decisions | Wire::AgentSdk => None,
-        };
-        if let Some(field) = field {
+        if let Some(field) = wire::spec(self.wire).probe.as_deref() {
             let mut url = url::Url::parse(&format!("{base}/models/")).ok()?;
             url.path_segments_mut()
                 .ok()?

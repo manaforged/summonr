@@ -61,7 +61,7 @@ fn body(app: &App, narrow: bool) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_height())
         .child(
-            sidebar(column.child(spacer()).child(seat(app, narrow))).width(if narrow {
+            sidebar(column.child(spacer()).child(selection(app, narrow))).width(if narrow {
                 COMPACT_RAIL
             } else {
                 RAIL
@@ -135,25 +135,25 @@ fn section(title: impl Into<TextContent>) -> NodeBuilder {
         .child(section_label(title))
 }
 
-fn seat(app: &App, narrow: bool) -> NodeBuilder {
+fn selection(app: &App, narrow: bool) -> NodeBuilder {
     let open = app.clone();
-    let unseated = app.model.get().snapshot.unseated;
+    let unconfigured = app.model.get().snapshot.unconfigured;
     if narrow {
-        let label = if unseated {
+        let label = if unconfigured {
             ADD_PROVIDER.to_string()
         } else {
             app.model.get().snapshot.endpoint.clone()
         };
         let control =
             icon_button(icons::SEAT, move || open.open_providers()).accessible(label.clone());
-        let control = if unseated {
+        let control = if unconfigured {
             control.tone(Tone::Warn)
         } else {
             control
         };
         return container().child(tooltip(label).child(control));
     }
-    if unseated {
+    if unconfigured {
         return container().child(
             button(ADD_PROVIDER)
                 .tone(Tone::Warn)

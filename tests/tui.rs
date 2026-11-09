@@ -28,10 +28,10 @@ impl Drop for Terminal {
 }
 
 impl Terminal {
-    fn open(home: &Path, cols: u16, rows: u16) -> Self {
+    fn open(home: &Path, cols: u16, rows: u16, port: u16) -> Self {
         std::fs::write(
             home.join("config.toml"),
-            "[endpoint.local]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\napi_key = \"k\"\ncontext_window = 32768\n",
+            format!("[endpoint.local]\nbase_url = \"http://127.0.0.1:{port}/v1\"\nmodel = \"m\"\napi_key = \"k\"\ncontext_window = 32768\n"),
         )
         .unwrap();
         let pair = native_pty_system()
@@ -50,6 +50,7 @@ impl Terminal {
             ("PATH", "/usr/bin:/bin"),
             ("LANG", "en_US.UTF-8"),
             ("TERM", "xterm-256color"),
+            ("RUST_MIN_STACK", "16777216"),
             ("SUMMONR_MODELS_URL", "http://127.0.0.1:9/registry.json"),
         ] {
             command.env(key, value);
@@ -216,7 +217,7 @@ fn claude_skills_appear_in_slash_typeahead_and_refresh_without_a_restart() {
         "---\ndescription: inspect this project\n---\nInspect the project.\n",
     )
     .expect("Claude skill file");
-    let terminal = Terminal::open(home.path(), 120, 40);
+    let terminal = Terminal::open(home.path(), 120, 40, 9);
     terminal.settle("the splash", |splash| splash.workdir.is_some());
     let query = b"/probe-disc";
     terminal.send(query);
@@ -246,7 +247,7 @@ fn claude_skills_appear_in_slash_typeahead_and_refresh_without_a_restart() {
 fn the_splash_prompt_holds_its_row_inside_the_window_while_typing() {
     for (cols, rows) in SIZES {
         let home = tempfile::tempdir().unwrap();
-        let terminal = Terminal::open(home.path(), cols, rows);
+        let terminal = Terminal::open(home.path(), cols, rows, 9);
         let idle = terminal.settle("the splash", |splash| splash.workdir.is_some());
         assert!(idle.composer_inside(), "{cols}x{rows}\n{}", idle.screen());
 
@@ -272,7 +273,7 @@ fn the_splash_prompt_holds_its_row_inside_the_window_while_typing() {
 #[test]
 fn a_resized_splash_keeps_the_draft_inside_the_window() {
     let home = tempfile::tempdir().unwrap();
-    let terminal = Terminal::open(home.path(), 223, 67);
+    let terminal = Terminal::open(home.path(), 223, 67, 9);
     terminal.settle("the splash", |splash| splash.workdir.is_some());
     terminal.send(DRAFT.as_bytes());
     terminal.settle("the wrapped draft", |splash| splash.shows("tail"));
@@ -289,4 +290,105 @@ fn a_resized_splash_keeps_the_draft_inside_the_window() {
     });
     let at = format!("100x30 typed after resize\n{}", typed.screen());
     assert_eq!(typed.prompt, resized.prompt, "the prompt moved: {at}");
+}
+
+#[test]
+fn a_headless_worker_appears_while_the_parent_is_waiting_for_the_model() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (requested, requests) = channel();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for mut stream in listener.incoming().flatten() {
+            let mut buffer = [0_u8; 16384];
+            let read = stream.read(&mut buffer).unwrap();
+            println!(
+                "request: {}",
+                String::from_utf8_lossy(&buffer[..read])
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+            );
+            if buffer[..read].starts_with(b"POST ") && requested.send(()).is_err() {
+                return;
+            }
+            held.push(stream);
+        }
+    });
+    let home = tempfile::tempdir().unwrap();
+    let terminal = Terminal::open(home.path(), 120, 40, port);
+    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.send(b"work\r");
+    assert!(
+        requests.recv_timeout(Duration::from_secs(30)).is_ok(),
+        "parent model request never arrived:\n{}",
+        terminal.rows().join("\n")
+    );
+    let record = std::fs::read_dir(home.path().join("mail/agents"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let parent = record.file_stem().unwrap();
+    let lane = home.path().join("lane");
+    std::fs::create_dir(&lane).unwrap();
+    let mut worker = std::process::Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["-e", "local", "-p", "--json", "hi"])
+        .current_dir(&lane)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .env("SUMMONR_PARENT_SESSION", parent)
+        .env("SUMMONR_MAIL", "on")
+        .env("SUMMONR_MODELS_URL", "http://127.0.0.1:9/registry.json")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let frame = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        terminal.settle("the active headless worker", |splash| {
+            splash.shows("Subagents") && splash.shows("Headless") && splash.shows("lane-1")
+        })
+    }));
+    drop(worker.kill());
+    worker.wait().unwrap();
+    match frame {
+        Ok(frame) => println!("{}", frame.screen()),
+        Err(error) => std::panic::resume_unwind(error),
+    }
+}
+
+#[test]
+fn the_status_row_names_the_tool_the_first_model_is_calling() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for mut stream in listener.incoming().flatten() {
+            let mut buffer = [0_u8; 65536];
+            let read = stream.read(&mut buffer).unwrap();
+            if !buffer[..read].starts_with(b"POST ") {
+                drop(stream.write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n"));
+                continue;
+            }
+            let call = r#"{"id":"c","object":"chat.completion.chunk","model":"m","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"run_command","arguments":""}}]}}]}"#;
+            let body = format!("data: {call}\n\n");
+            let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n";
+            let chunk = format!("{:x}\r\n{body}\r\n", body.len());
+            drop(stream.write_all(head.as_bytes()));
+            drop(stream.write_all(chunk.as_bytes()));
+            drop(stream.flush());
+            held.push(stream);
+        }
+    });
+    let home = tempfile::tempdir().unwrap();
+    let terminal = Terminal::open(home.path(), 120, 40, port);
+    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.send(b"list the files\r");
+    terminal.settle("the running tool on the status row", |splash| {
+        splash.shows("run_command")
+    });
 }

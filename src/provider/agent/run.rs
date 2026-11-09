@@ -1,13 +1,15 @@
-use std::sync::{Arc, Mutex};
-
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::io::AsyncWriteExt;
+use tokio::process::{ChildStdin, ChildStdout};
 
-use super::super::{CompletionRequest, Effort, Message, Role, ToolDefinition};
+use crate::process::{Cap, Child, Tail};
+use crate::rpc::{Framing, Lines, Read};
+
+use super::super::reasoning::{EffortField, Off, Plan, Step};
+use super::super::{CompletionRequest, Effort, Message, Role};
 use super::frame::{Frame, Ready, ReplyKind};
-use super::{Seat, bridge};
-use crate::error::{Error, ProviderFailureKind, Result};
+use super::{AgentClient, bridge};
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 const INIT: &str = "init";
 
@@ -25,11 +27,23 @@ pub(super) struct Call {
     pub(super) arguments: Value,
 }
 
+const EFFORT: Plan<'static> = Plan {
+    field: EffortField::ReasoningEffort,
+    levels: &[
+        Effort::Low,
+        Effort::Medium,
+        Effort::High,
+        Effort::XHigh,
+        Effort::Max,
+    ],
+    off: Off::Unsupported,
+    up: false,
+};
+
 struct Spec<'a> {
     model: &'a str,
     system: Option<&'a str>,
     effort: Option<Effort>,
-    tools: &'a [ToolDefinition],
     thread: Thread,
 }
 
@@ -37,10 +51,10 @@ pub(in crate::provider) struct Run {
     child: Child,
     _group: Option<crate::tools::command::ProcessGroup>,
     stdin: ChildStdin,
-    pub(super) reader: BufReader<ChildStdout>,
-    stderr: Arc<Mutex<Vec<u8>>>,
-    drain: Option<tokio::task::JoinHandle<()>>,
-    pub(super) tools: Vec<ToolDefinition>,
+    pub(super) reader: Lines<ChildStdout>,
+    stderr: Tail,
+    secrets: Vec<String>,
+    pub(super) listing: Vec<Value>,
     pub(super) pending: Vec<Call>,
     thread: Option<String>,
     pub(super) seen: bool,
@@ -58,16 +72,13 @@ pub(in crate::provider) struct Run {
 
 impl Drop for Run {
     fn drop(&mut self) {
-        if let Some(drain) = &self.drain {
-            drain.abort();
-        }
         let _killed = self.child.start_kill();
     }
 }
 
 impl Run {
     pub(super) async fn start(
-        seat: &Seat,
+        agent: &AgentClient,
         request: &CompletionRequest<'_>,
         thread: Thread,
         input: &[Message],
@@ -81,10 +92,10 @@ impl Run {
             model: &request.model,
             system,
             effort: request.effort,
-            tools: request.tools,
             thread,
         };
-        let mut run = Self::open(seat, spec).await?;
+        let listing = super::super::wire::tools(request, "inputSchema", &[]);
+        let mut run = Self::open(agent, spec, listing).await?;
         run.shape = request.shape_hash();
         for message in input {
             run.send(&bridge::user(message)).await?;
@@ -92,7 +103,7 @@ impl Run {
         Ok(run)
     }
 
-    async fn open(seat: &Seat, spec: Spec<'_>) -> Result<Self> {
+    async fn open(agent: &AgentClient, spec: Spec<'_>, listing: Vec<Value>) -> Result<Self> {
         let prompt = match spec.system {
             Some(system) => {
                 let mut file = tempfile::NamedTempFile::new()?;
@@ -102,26 +113,24 @@ impl Run {
             None => None,
         };
         let args = arguments(&spec, prompt.as_ref().map(tempfile::NamedTempFile::path));
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let cwd = std::env::current_dir()?;
-        let process = crate::rpc::start(&crate::rpc::Launch {
-            program: &seat.program,
-            args: &args,
-            env: &seat.env,
-            unset: seat.unset,
-            cwd: &cwd,
-            base: crate::rpc::Env::Inherit,
-            stderr: crate::rpc::Stderr::Pipe,
-        })
+        let process = crate::process::start(
+            crate::process::Spec {
+                remove: agent.unset.iter().map(Into::into).collect(),
+                cwd: Some(cwd),
+                ..crate::process::Spec::new(&agent.program, args)
+            }
+            .envs(agent.env.iter().cloned()),
+        )
         .map_err(|error| {
             Error::Config(format!(
                 "{error}; install Claude Code and run `claude auth login`"
             ))
         })?;
-        let stderr = Arc::new(Mutex::new(Vec::new()));
-        let drain = process
-            .stderr
-            .map(|pipe| tokio::spawn(crate::rpc::tail(pipe, Arc::clone(&stderr))));
+        let stderr = Tail::spawn(
+            process.stderr,
+            Cap::Tail(crate::limits::limits().mcp_stderr_tail_bytes),
+        );
         let thread = match &spec.thread {
             Thread::Start(id) | Thread::Resume(id) => Some(id.clone()),
             Thread::Once => None,
@@ -130,10 +139,14 @@ impl Run {
             child: process.child,
             _group: process.group,
             stdin: process.stdin,
-            reader: BufReader::new(process.stdout),
+            reader: Lines::framed(
+                process.stdout,
+                Framing::Line,
+                crate::limits::limits().agent_line_max_bytes,
+            ),
             stderr,
-            drain,
-            tools: spec.tools.to_vec(),
+            secrets: agent.env.iter().map(|(_, value)| value.clone()).collect(),
+            listing,
             pending: Vec::new(),
             thread,
             seen: false,
@@ -155,13 +168,17 @@ impl Run {
         }))
         .await?;
         run.handshake().await?;
-        keep_listing(&seat.name, &run.ready);
+        keep_listing(&agent.name, &run.ready);
         Ok(run)
     }
 
     async fn handshake(&mut self) -> Result<()> {
         loop {
-            match self.event().await? {
+            let line = self.line().await?;
+            let Some(frame) = Self::frame(&line)? else {
+                continue;
+            };
+            match frame {
                 Frame::ControlResponse { response } if response.request_id == INIT => {
                     if response.subtype == ReplyKind::Error {
                         return Err(Error::provider(
@@ -198,37 +215,39 @@ impl Run {
         self.thread.as_deref().filter(|_| self.seen)
     }
 
-    pub(super) async fn event(&mut self) -> Result<Frame> {
-        loop {
-            let mut line = String::new();
-            if self.reader.read_line(&mut line).await? == 0 {
-                return Err(self.exited(""));
-            }
-            match serde_json::from_str::<Frame>(&line) {
-                Ok(frame) => return Ok(frame),
-                Err(error) => {
-                    if let Some(subtype) = unanswerable(&line) {
-                        return Err(Error::provider(
-                            ProviderFailureKind::Malformed,
-                            format!(
-                                "Claude Code sent a {subtype} control request summonr could not read: {error}"
-                            ),
-                        ));
-                    }
-                }
-            }
+    pub(super) async fn line(&mut self) -> Result<String> {
+        match self.reader.next().await? {
+            Read::Line(line) => Ok(line),
+            Read::Oversize => Err(Error::provider(
+                ProviderFailureKind::Malformed,
+                format!(
+                    "Claude Code sent a line over {} MiB; summonr dropped it",
+                    crate::limits::limits().agent_line_max_bytes / (1024 * 1024)
+                ),
+            )),
+            Read::Closed => Err(self.exited("")),
+        }
+    }
+
+    pub(super) fn frame(line: &str) -> Result<Option<Frame<'_>>> {
+        match serde_json::from_str::<Frame<'_>>(line) {
+            Ok(frame) => Ok(Some(frame)),
+            Err(error) => match unanswerable(line) {
+                Some(subtype) => Err(Error::provider(
+                    ProviderFailureKind::Malformed,
+                    format!(
+                        "Claude Code sent a {subtype} control request summonr could not read: {error}"
+                    ),
+                )),
+                None => Ok(None),
+            },
         }
     }
 
     pub(super) fn exited(&self, cause: &str) -> Error {
-        let tail = self
+        let note = self
             .stderr
-            .lock()
-            .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string())
-            .unwrap_or_default();
-        let note = tail
-            .lines()
-            .last()
+            .last_line(&self.secrets)
             .map(|last| format!(": {last}"))
             .unwrap_or_default();
         Error::provider(
@@ -318,8 +337,8 @@ fn arguments(spec: &Spec<'_>, prompt: Option<&std::path::Path>) -> Vec<String> {
             "off".to_string(),
         ]);
     }
-    if let Some(effort) = spec.effort {
-        args.extend(["--effort".to_string(), level(effort).to_string()]);
+    if let Step::Level(effort) = EFFORT.step(spec.effort) {
+        args.extend(["--effort".to_string(), effort.as_str().to_string()]);
     }
     match &spec.thread {
         Thread::Start(id) => args.extend(["--session-id".to_string(), id.clone()]),
@@ -327,16 +346,6 @@ fn arguments(spec: &Spec<'_>, prompt: Option<&std::path::Path>) -> Vec<String> {
         Thread::Once => args.push("--no-session-persistence".to_string()),
     }
     args
-}
-
-fn level(effort: Effort) -> &'static str {
-    match effort {
-        Effort::None | Effort::Minimal | Effort::Low => "low",
-        Effort::Medium => "medium",
-        Effort::High => "high",
-        Effort::XHigh => "xhigh",
-        Effort::Max => "max",
-    }
 }
 
 #[cfg(test)]

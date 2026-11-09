@@ -83,21 +83,18 @@ impl Prompt {
 
     #[must_use]
     pub(in crate::tui) fn build(self, width: usize, keys: &Hotkeys) -> NodeBuilder {
-        let fit = |text: &str| crate::text::ellipsize(text, width.saturating_sub(4));
+        let fit = |text: &str| crate::display::ellipsize(text, width.saturating_sub(4));
         let mut band = container()
             .layout(LayoutStyle::flex_column().fill_width().gap(8.0))
             .child(notice_band(fit(&self.head), self.tone));
-        for line in &self.lines {
+        let hints = self.hints.text(keys);
+        for line in self
+            .lines
+            .iter()
+            .chain((!hints.is_empty()).then_some(&hints))
+        {
             band = band.child(
                 sigil::kernel::text(fit(line))
-                    .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface),
-            );
-        }
-        let hints = self.hints.text(keys);
-        if !hints.is_empty() {
-            band = band.child(
-                sigil::kernel::text(fit(&hints))
                     .nowrap()
                     .text_color(sigil::prelude::Token::OnSurface),
             );

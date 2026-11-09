@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
-use crate::config::{self, File, SeatRow};
-use crate::error::{Error, Result};
+use crate::config::{self, File, ModelSelectionRow};
+use summonr_core::error::{Error, Result};
 
 pub(crate) const RESERVED: [&str; 7] = ["off", "list", "show", "set", "clear", "save", "default"];
 
@@ -55,12 +55,12 @@ impl FromStr for Role {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Seat {
+pub struct ModelSelection {
     pub endpoint: String,
     pub model: Option<String>,
 }
 
-impl fmt::Display for Seat {
+impl fmt::Display for ModelSelection {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.model {
             Some(model) => write!(formatter, "{} {model}", self.endpoint),
@@ -72,23 +72,23 @@ impl fmt::Display for Seat {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Workflow {
     pub name: String,
-    pub(crate) seats: BTreeMap<Role, Seat>,
+    pub(crate) selections: BTreeMap<Role, ModelSelection>,
 }
 
 impl Workflow {
     #[must_use]
-    pub(crate) fn seat(&self, role: Role) -> Option<&Seat> {
-        self.seats.get(&role)
+    pub(crate) fn selection(&self, role: Role) -> Option<&ModelSelection> {
+        self.selections.get(&role)
     }
 
     #[must_use]
     pub fn summary(&self) -> String {
-        if self.seats.is_empty() {
-            return "every role on the driving seat".to_string();
+        if self.selections.is_empty() {
+            return "every role on the primary model".to_string();
         }
-        self.seats
+        self.selections
             .iter()
-            .map(|(role, seat)| format!("{role} {seat}"))
+            .map(|(role, selection)| format!("{role} {selection}"))
             .collect::<Vec<_>>()
             .join(" · ")
     }
@@ -111,28 +111,28 @@ pub(crate) fn from_file(file: &File, name: &str) -> Result<Workflow> {
         .workflows
         .get(name)
         .ok_or_else(|| Error::Config(format!("no workflow `{name}` in config.toml")))?;
-    let mut seats = BTreeMap::new();
+    let mut selections = BTreeMap::new();
     for (role, row) in rows {
-        let seat = match row {
-            SeatRow::Name(endpoint) => Seat {
+        let selection = match row {
+            ModelSelectionRow::Name(endpoint) => ModelSelection {
                 endpoint: endpoint.clone(),
                 model: None,
             },
-            SeatRow::Full { endpoint, model } => Seat {
+            ModelSelectionRow::Full { endpoint, model } => ModelSelection {
                 endpoint: endpoint.clone(),
                 model: model.clone(),
             },
         };
-        if seat.endpoint.trim().is_empty() {
+        if selection.endpoint.trim().is_empty() {
             return Err(Error::Config(format!(
                 "workflow `{name}`: `{role}` names no endpoint"
             )));
         }
-        seats.insert(role.parse()?, seat);
+        selections.insert(role.parse()?, selection);
     }
     Ok(Workflow {
         name: name.to_string(),
-        seats,
+        selections,
     })
 }
 

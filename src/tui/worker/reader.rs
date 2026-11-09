@@ -9,9 +9,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::{Cmd, Msg};
 use crate::diff;
 use crate::endpoint;
-use crate::prompt::summonr_home;
 use crate::session::prompts;
 use crate::worktree;
+use summonr_core::dirs::summonr_home;
 
 mod files;
 mod models;
@@ -66,30 +66,6 @@ impl Reader {
 
     pub(super) fn serve(&self, command: Cmd) {
         match command {
-            command @ (Cmd::ListPrompts(_)
-            | Cmd::ListSessions
-            | Cmd::ListUsage
-            | Cmd::DeleteSession(_)) => self.sessions(command),
-            command @ (Cmd::ListFiles
-            | Cmd::Jobs
-            | Cmd::Mcp
-            | Cmd::KillJob(_)
-            | Cmd::Clipboard
-            | Cmd::Diff(_)
-            | Cmd::SessionDiff(_)
-            | Cmd::Patch(..)
-            | Cmd::Review { .. }
-            | Cmd::Trees
-            | Cmd::Offers
-            | Cmd::Save(..)
-            | Cmd::View(..)) => self.panes(command),
-            command @ (Cmd::Pin(..) | Cmd::SaveDefault(_)) => self.seats(command),
-            _ => {}
-        }
-    }
-
-    fn sessions(&self, command: Cmd) {
-        match command {
             Cmd::ListPrompts(session) => {
                 let result = prompts(session.as_deref()).map_err(|error| error.to_string());
                 self.send(Msg::Prompts { session, result });
@@ -100,7 +76,6 @@ impl Reader {
                     .map(|rows| {
                         rows.into_iter()
                             .rev()
-                            .filter(|info| info.depth == 0)
                             .map(|info| {
                                 let local =
                                     info.cwd.as_ref().is_some_and(|cwd| roots.contains(cwd));
@@ -115,7 +90,7 @@ impl Reader {
                 let prices = endpoint::ready(endpoint::Need::Key)
                     .0
                     .into_iter()
-                    .filter_map(|seat| Some((seat.model, seat.price?)))
+                    .filter_map(|selection| Some((selection.model, selection.price?)))
                     .collect();
                 let roots = crate::session::roots(&self.workspace);
                 let rows = summonr_home()
@@ -130,12 +105,6 @@ impl Reader {
                 }
                 self.serve(Cmd::ListSessions);
             }
-            _command => unreachable!("serve routes only session listings"),
-        }
-    }
-
-    fn panes(&self, command: Cmd) {
-        match command {
             Cmd::ListFiles => self.send(Msg::Files(files(&self.workspace))),
             Cmd::Jobs => self.jobs(),
             Cmd::Mcp => self.mcp(),
@@ -156,7 +125,26 @@ impl Reader {
             Cmd::Offers => self.offers(),
             Cmd::Save(file, text) => self.save(file, text),
             Cmd::View(root, path) => self.show(root.as_deref(), path),
-            _command => unreachable!("serve routes only pane commands"),
+            Cmd::Pin(selection, on) => {
+                if let Err(error) =
+                    summonr_home().and_then(|home| crate::recent::pin(&home, &selection, on))
+                {
+                    self.send(Msg::ModelNote(format!("pin not saved: {error}")));
+                }
+            }
+            Cmd::SaveDefault(selection) => {
+                let saved = crate::config::path().and_then(|path| {
+                    let pair = selection
+                        .as_ref()
+                        .map(|selection| (selection.endpoint.as_str(), selection.model.as_str()));
+                    crate::config::save_default_model(&path, pair)
+                });
+                self.send(match saved {
+                    Ok(()) => Msg::Defaulted(selection),
+                    Err(error) => Msg::ModelNote(error.to_string()),
+                });
+            }
+            _ => {}
         }
     }
 
@@ -209,31 +197,6 @@ impl Reader {
             self.send(Msg::System(note));
         }
         self.send(Msg::Review { root, result });
-    }
-
-    fn seats(&self, command: Cmd) {
-        match command {
-            Cmd::Pin(seat, on) => {
-                if let Err(error) = summonr_home()
-                    .and_then(|home| crate::recent::pin(&home, &seat, on).map_err(Into::into))
-                {
-                    self.send(Msg::ModelNote(format!("pin not saved: {error}")));
-                }
-            }
-            Cmd::SaveDefault(seat) => {
-                let saved = crate::config::path().and_then(|path| {
-                    let pair = seat
-                        .as_ref()
-                        .map(|seat| (seat.endpoint.as_str(), seat.model.as_str()));
-                    crate::config::save_default_seat(&path, pair)
-                });
-                self.send(match saved {
-                    Ok(()) => Msg::Defaulted(seat),
-                    Err(error) => Msg::ModelNote(error.to_string()),
-                });
-            }
-            _command => unreachable!("serve routes only seat commands"),
-        }
     }
 
     pub(super) fn diff(&self, root: &Path) {

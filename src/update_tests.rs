@@ -76,7 +76,7 @@ fn beside(exe: &Path) -> Vec<String> {
 #[tokio::test]
 #[ignore = "live: reaches github.com"]
 async fn github_serves_a_release_the_updater_can_download() {
-    let http = super::client().unwrap();
+    let http = crate::credentials::http(crate::limits::limits().update()).unwrap();
     let latest = super::latest(&http, "https://github.com/cli/cli/releases")
         .await
         .unwrap();

@@ -5,20 +5,21 @@ use serde::Deserialize;
 use url::Url;
 
 use super::{domain_match, host_of};
-use crate::error::{Error, Result};
-use crate::text::ellipsize;
+use crate::display::ellipsize;
+use summonr_core::error::{Error, Result};
 
-mod markup;
+pub(super) mod markup;
 
-use markup::{attr, decode, element, plain, tag};
+use crate::browser::wall::Block;
+use markup::{Space, attr, collapse, decode, element, tag, text};
 
 const SNIPPET_MAX: usize = 280;
 const TITLE_MAX: usize = 120;
-const ENGINES: &str = include_str!("engines.toml");
 
 #[derive(Deserialize)]
 struct Table {
     engine: Vec<Engine>,
+    wall: Block,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,9 +41,7 @@ pub(super) struct Engine {
     freshness: Option<Freshness>,
     #[serde(default)]
     hosts: Vec<String>,
-    block_status: Vec<u16>,
-    #[serde(default)]
-    block_markers: Vec<String>,
+    blocked: Block,
     cooldown_secs: u64,
 }
 
@@ -97,16 +96,17 @@ struct Freshness {
     values: HashMap<Window, String>,
 }
 
-pub(super) fn table(text: &str) -> std::result::Result<Vec<Engine>, String> {
-    let table: Table = toml::from_str(text).map_err(|error| error.to_string())?;
-    Ok(table.engine)
+fn table() -> &'static Table {
+    static TABLE: OnceLock<Table> = OnceLock::new();
+    TABLE.get_or_init(|| summonr_core::embedded!("search engine", "web/engines.toml"))
 }
 
-pub(super) fn engines() -> Result<&'static [Engine]> {
-    static ROWS: OnceLock<std::result::Result<Vec<Engine>, String>> = OnceLock::new();
-    ROWS.get_or_init(|| table(ENGINES))
-        .as_deref()
-        .map_err(|error| Error::Tool(format!("web_search engines: {error}")))
+pub(super) fn engines() -> &'static [Engine] {
+    &table().engine
+}
+
+pub(crate) fn wall() -> &'static Block {
+    &table().wall
 }
 
 impl Engine {
@@ -181,11 +181,7 @@ impl Engine {
     }
 
     pub(super) fn blocked(&self, status: u16, body: &str) -> bool {
-        self.block_status.contains(&status)
-            || self
-                .block_markers
-                .iter()
-                .any(|marker| body.contains(marker.as_str()))
+        self.blocked.status(status) || self.blocked.body(body, body)
     }
 
     pub(super) fn cooldown(&self) -> std::time::Duration {
@@ -265,6 +261,6 @@ pub(super) fn format_hits(query: &str, hits: &[Hit]) -> String {
     out
 }
 
-pub(super) fn flat(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+fn plain(html: &str) -> String {
+    collapse(&text(html), Space::Flat)
 }

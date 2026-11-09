@@ -108,7 +108,7 @@ fn busy_row(app: &App, width: usize) -> NodeBuilder {
         probe
             .model
             .with(|model| busy_status(model, tick))
-            .map(|status| crate::text::ellipsize(&status, width))
+            .map(|status| crate::display::ellipsize(&status, width))
             .unwrap_or_default()
     });
     let split = move |head: bool| {
@@ -122,19 +122,18 @@ fn busy_row(app: &App, width: usize) -> NodeBuilder {
             LayoutStyle::flex_row()
                 .fill_width()
                 .shrink(0.0)
-                .min_size(0.0, 0.0),
+                .min_size(0.0, 0.0)
+                .padding_top(super::canvas::cell().h),
         )
         .child(
             sigil::kernel::text(move || split(true))
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Accent),
         )
         .child(
             sigil::kernel::text(move || split(false))
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         )
@@ -192,7 +191,7 @@ pub(in crate::tui::sigil_view) fn approval_band(
 const APPROVAL_LINES: usize = 12;
 
 fn approval_lines(prompt: Prompt, detail: &str, width: usize) -> Prompt {
-    let mut lines = crate::text::lines_within(detail, width.saturating_sub(4));
+    let mut lines = crate::display::lines_within(detail, width.saturating_sub(4));
     if lines.len() > APPROVAL_LINES {
         lines.truncate(APPROVAL_LINES);
         if let Some(last) = lines.last_mut() {

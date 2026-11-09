@@ -7,22 +7,23 @@ use ignore::overrides::{Override, OverrideBuilder};
 use ignore::types::TypesBuilder;
 use serde_json::Value;
 
-use crate::error::{Error, Result};
-use crate::tools::{ToolRegistry, object_bool, object_usize, parse_args};
+use crate::tools::{ToolRegistry, object_bool, object_usize};
+use summonr_core::error::{Error, Result};
 
 pub(in crate::tools) const GREP_DEFAULT: usize = 50;
 pub(in crate::tools) const GREP_MAX: usize = 200;
 const GREP_FILE_HITS: usize = 20;
 const GREP_FILE_MAX: u64 = 1024 * 1024;
-const GREP_LINE_MAX: usize = 500;
 pub(in crate::tools) const CONTEXT_MAX: usize = 10;
 const OUTPUT_MAX: usize = 50 * 1024;
 
 impl ToolRegistry {
-    pub(in crate::tools) fn search_files(&self, arguments: &str) -> Result<String> {
-        let args: Value = parse_args("search", arguments)?;
-        let (roots, missing) = self.search_roots(&args)?;
-        let query = Arc::new(self.query(&args, roots)?);
+    pub(in crate::tools) fn search_files(&self, args: &Value) -> Result<String> {
+        if args.get("op").and_then(Value::as_str) == Some("help") {
+            return Ok(crate::tools::catalog::help(crate::tools::Builtin::Search));
+        }
+        let (roots, missing) = self.search_roots(args)?;
+        let query = Arc::new(self.query(args, roots)?);
         let started = Instant::now();
         let report = walk::run(&query)?;
         let slow = started.elapsed().as_millis()

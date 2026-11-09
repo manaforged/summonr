@@ -61,7 +61,7 @@ fn elsewhere(live: &[crate::tui::hub::Live]) -> Option<(String, bool)> {
         .iter()
         .filter(|entry| entry.status == crate::tui::hub::Status::NeedsYou)
         .count();
-    let open = crate::text::plural(others.len(), "other session");
+    let open = summonr_core::text::plural(others.len(), "other session");
     Some(if waiting == 0 {
         (open, false)
     } else {
@@ -123,7 +123,7 @@ fn place_of(app: &App, view: &FooterView, width: usize) -> String {
             .map_or(0, |branch| cell_width(branch) + 4)
         + spend.as_deref().map_or(0, |cost| cell_width(cost) + 2)
         + notice.as_ref().map_or(0, |note| cell_width(&note.text) + 2);
-    crate::text::ellipsize_start(&app.info.workspace, width.saturating_sub(taken))
+    crate::display::ellipsize_start(&app.info.workspace, width.saturating_sub(taken))
 }
 
 fn footer_row(
@@ -143,7 +143,6 @@ fn footer_row(
         row = row.child(
             sigil::kernel::text(place)
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray12),
         );
@@ -160,14 +159,12 @@ fn footer_row(
                 .child(
                     sigil::kernel::text("⎇")
                         .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface)
                         .font_size(12.0)
                         .text_color(sigil::prelude::Token::Gray11),
                 )
                 .child(
                     sigil::kernel::text(branch.clone())
                         .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface)
                         .font_size(12.0)
                         .text_color(sigil::prelude::Token::Warn11),
                 ),
@@ -265,7 +262,6 @@ fn meter(caption: &str, percent: u64, fill: sigil::prelude::Token) -> NodeBuilde
         .child(
             sigil::kernel::text(caption)
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         )
@@ -286,7 +282,6 @@ fn meter(caption: &str, percent: u64, fill: sigil::prelude::Token) -> NodeBuilde
         .child(
             sigil::kernel::text(format!("{percent}%"))
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray12),
         )
@@ -344,7 +339,6 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
             "─".repeat(card_width.saturating_sub(cell_width(title) + 2))
         ))
         .nowrap()
-        .text_color(sigil::prelude::Token::OnSurface)
         .font_size(12.0)
         .font_family(sigil::prelude::FontFamily::Mono)
         .text_color(sigil::prelude::Token::Gray11),
@@ -361,7 +355,6 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
                 .child(
                     sigil::kernel::text(format!("│ {key}"))
                         .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface)
                         .font_size(12.0)
                         .font_family(sigil::prelude::FontFamily::Mono)
                         .text_color(sigil::prelude::Token::Gray11),
@@ -370,7 +363,6 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
                 .child(
                     sigil::kernel::text(format!("{value} │"))
                         .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface)
                         .font_size(12.0)
                         .font_family(sigil::prelude::FontFamily::Mono)
                         .text_color(sigil::prelude::Token::Gray12),
@@ -380,7 +372,6 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
     card.child(
         sigil::kernel::text(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))))
             .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
             .font_size(12.0)
             .font_family(sigil::prelude::FontFamily::Mono)
             .text_color(sigil::prelude::Token::Gray11),

@@ -190,6 +190,15 @@ fn a_server_prompt_line_is_sent_as_a_turn_and_an_unknown_command_is_not() {
 }
 
 pub(super) fn splash_screen(cols: u16, rows: u16) -> (App, sigil::Host, sigil::terminal::Screen) {
+    let app = splash_app(cols, rows);
+    app.animate();
+    let mut host = sigil::Host::cells();
+    let tree = app.clone();
+    host.mount(move || root(tree));
+    (app, host, sigil::terminal::Screen::new(cols, rows))
+}
+
+pub(super) fn splash_app(cols: u16, rows: u16) -> App {
     let workspace = tempfile::tempdir().unwrap();
     let (commands, _receiver) = unbounded_channel();
     let app = App::new(info(), workspace.path().to_owned(), commands);
@@ -197,11 +206,7 @@ pub(super) fn splash_screen(cols: u16, rows: u16) -> (App, sigil::Host, sigil::t
     app.splash.set(true);
     app.splash_revealed.set(true);
     app.resize(cols, rows);
-    app.animate();
-    let mut host = sigil::Host::cells();
-    let tree = app.clone();
-    host.mount(move || root(tree));
-    (app, host, sigil::terminal::Screen::new(cols, rows))
+    app
 }
 
 #[test]
@@ -309,7 +314,7 @@ fn a_long_workdir_on_a_narrow_splash_stays_on_its_row() {
         app.splash_revealed.set(true);
         let (cols, rows) = (60_u16, 30_u16);
         app.resize(cols, rows);
-        let plate = crate::tui::sigil_view::scene::compose(cols, rows, &app).plate;
+        let plate = crate::tui::sigil_view::scene::compose(cols, rows, &app, 0).plate;
         let lines: Vec<String> = plate
             .cells
             .chunks(usize::from(plate.area[2]))
@@ -350,10 +355,18 @@ fn a_start_without_the_splash_reveals_without_a_panic() {
         std::panic::set_hook(Box::new(move |_| {
             seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }));
-        let reveal = std::time::Duration::from_millis(crate::limits::limits().splash_reveal_ms);
+        let reveal = std::time::Duration::from_millis(
+            crate::limits::limits()
+                .splash_reveal_ms
+                .max(super::super::reveal_ms(&app)),
+        );
         let end = std::time::Instant::now() + reveal * 2;
         while std::time::Instant::now() < end && !app.splash_revealed.peek() {
             screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();
+            if app.splash_since.get().elapsed().as_millis() < reveal.as_millis().saturating_sub(40)
+            {
+                assert!(!app.splash_revealed.peek(), "the wordmark was cut short");
+            }
             std::thread::park_timeout(crate::limits::limits().animation());
         }
         screen.frame(&mut host, &mut router, [], (80, 24)).unwrap();

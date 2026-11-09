@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use serde_json::{Value, json};
 
 use super::Effort;
 use super::wire::traits::Traits;
@@ -8,69 +7,9 @@ pub(crate) mod levels {
     use crate::provider::Effort;
 
     pub(crate) const STANDARD: &[Effort] = &[Effort::Low, Effort::Medium, Effort::High];
-    pub(crate) const EXTENDED: &[Effort] =
-        &[Effort::Low, Effort::Medium, Effort::High, Effort::XHigh];
-    pub(crate) const HIGH_MAX: &[Effort] =
-        &[Effort::Low, Effort::Medium, Effort::High, Effort::Max];
-    pub(crate) const FULL: &[Effort] = &[
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::XHigh,
-        Effort::Max,
-    ];
-    pub(crate) const MINIMAL_UP: &[Effort] =
-        &[Effort::Minimal, Effort::Low, Effort::Medium, Effort::High];
-    pub(crate) const MINIMAL_XHIGH: &[Effort] = &[
-        Effort::Minimal,
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::XHigh,
-    ];
-    pub(crate) const ALL_POSITIVE: &[Effort] = &[
-        Effort::Minimal,
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::XHigh,
-        Effort::Max,
-    ];
-    pub(crate) const LOW_HIGH: &[Effort] = &[Effort::Low, Effort::High];
-    pub(crate) const LOW_HIGH_MAX: &[Effort] = &[Effort::Low, Effort::High, Effort::Max];
-    pub(crate) const MEDIUM_UP: &[Effort] = &[Effort::Medium, Effort::High, Effort::XHigh];
-    pub(crate) const HIGH_ONLY: &[Effort] = &[Effort::High];
-    pub(crate) const NO_EFFORT: &[Effort] = &[];
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Off {
-    Omit,
-    #[serde(rename = "none")]
-    EffortNone,
-    #[serde(rename = "disabled")]
-    ThinkingDisabled,
-    BetweenTools,
-    #[serde(rename = "chat_template_kwargs")]
-    TemplateKwarg,
-    EnableThinking,
-    Unsupported,
-}
-
-impl Off {
-    pub(crate) fn fragment(self) -> Option<(&'static str, Value)> {
-        match self {
-            Self::ThinkingDisabled => Some(("thinking", json!({"type": "disabled"}))),
-            Self::BetweenTools => Some(("thinking", json!({"type": "between_tools"}))),
-            Self::TemplateKwarg => {
-                Some(("chat_template_kwargs", json!({"enable_thinking": false})))
-            }
-            Self::EnableThinking => Some(("enable_thinking", json!(false))),
-            Self::Omit | Self::EffortNone | Self::Unsupported => None,
-        }
-    }
-}
+pub(crate) use summonr_types::Off;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

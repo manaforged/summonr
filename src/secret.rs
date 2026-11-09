@@ -8,7 +8,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use toml_edit::{DocumentMut, value};
 
 use crate::durable::store;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const SERVICE: &str = "summoner";
 #[cfg(any(target_os = "macos", all(test, unix)))]
@@ -18,14 +18,8 @@ const MAGIC: &[u8] = b"SMNR1";
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 const FILE: &str = "credentials.toml";
+#[cfg(any(target_os = "macos", all(test, unix)))]
 const LOCKED: &str = "the keychain did not answer; unlock it";
-#[cfg_attr(
-    test,
-    expect(
-        dead_code,
-        reason = "discover() is elided under test, so the choice parser has no caller"
-    )
-)]
 const CHOICES: &str = "secrets must be \"file\" or \"keychain\"";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,11 +49,8 @@ enum Backend {
     File,
     #[cfg(any(target_os = "macos", all(test, unix)))]
     #[cfg_attr(
-        test,
-        expect(
-            dead_code,
-            reason = "discover() is elided under test, so platform() never builds this"
-        )
+        all(test, not(target_os = "macos")),
+        expect(dead_code, reason = "only macOS builds the security backend")
     )]
     Security(PathBuf),
     #[cfg(not(target_os = "macos"))]
@@ -70,13 +61,18 @@ pub(crate) struct Store {
     file: PathBuf,
     backend: Backend,
     seal: Option<[u8; KEY_LEN]>,
-    wrap_tool: Option<PathBuf>,
 }
 
 impl Store {
-    #[cfg(not(test))]
     pub(crate) fn discover() -> Result<Self> {
-        let file = crate::prompt::summonr_home()?.join(FILE);
+        #[cfg(test)]
+        if std::env::var_os("SUMMONR_LIVE_KEYS").is_none() {
+            let file = std::env::temp_dir()
+                .join(format!("summon-test-{}", std::process::id()))
+                .join(FILE);
+            return Ok(Self::file_with_seal(file.clone(), test_seal(&file)));
+        }
+        let file = summonr_core::dirs::summonr_home()?.join(FILE);
         let choice = match std::env::var("SUMMONR_SECRETS") {
             Ok(choice) => choice,
             Err(_) => crate::config::file()?.secrets.clone().unwrap_or_default(),
@@ -85,16 +81,7 @@ impl Store {
             file,
             backend: backend(&choice)?,
             seal: None,
-            wrap_tool: None,
         })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn discover() -> Result<Self> {
-        let file = std::env::temp_dir()
-            .join(format!("summon-test-{}", std::process::id()))
-            .join(FILE);
-        Ok(Self::file_with_seal(file.clone(), test_seal(&file)))
     }
 
     #[cfg(test)]
@@ -103,7 +90,6 @@ impl Store {
             file,
             backend: Backend::File,
             seal: Some(seal),
-            wrap_tool: None,
         }
     }
 
@@ -118,16 +104,16 @@ impl Store {
     }
 
     pub(crate) fn set(&self, name: &str, secret: &str) -> Result<Source> {
-        cache::clear();
+        store::forget(&self.file);
         let outcome = self.write_secret(name, secret);
-        cache::clear();
+        store::forget(&self.file);
         outcome
     }
 
     pub(crate) fn forget(&self, name: &str) -> Result<bool> {
-        cache::clear();
+        store::forget(&self.file);
         let outcome = self.remove_secret(name);
-        cache::clear();
+        store::forget(&self.file);
         outcome
     }
 
@@ -244,20 +230,13 @@ impl Store {
         match self.backend {
             Backend::File => file_wrap(&self.file),
             #[cfg(any(target_os = "macos", all(test, unix)))]
-            Backend::Security(_) => os_wrap_key(self.wrap_tool.as_deref()),
+            Backend::Security(_) => os_wrap_key(),
             #[cfg(not(target_os = "macos"))]
-            Backend::Native => os_wrap_key(self.wrap_tool.as_deref()),
+            Backend::Native => os_wrap_key(),
         }
     }
 }
 
-#[cfg_attr(
-    test,
-    expect(
-        dead_code,
-        reason = "discover() is elided under test, so nothing parses the choice"
-    )
-)]
 fn backend(choice: &str) -> Result<Backend> {
     match choice.trim().to_ascii_lowercase().as_str() {
         "" | "file" => Ok(Backend::File),
@@ -281,13 +260,6 @@ fn native_get(name: &str) -> Result<Option<String>> {
     }
 }
 
-#[cfg_attr(
-    test,
-    expect(
-        dead_code,
-        reason = "discover() is elided under test, so backend() never asks for it"
-    )
-)]
 fn platform() -> Backend {
     #[cfg(target_os = "macos")]
     {
@@ -300,7 +272,6 @@ fn platform() -> Backend {
 }
 
 mod backends;
-mod cache;
 mod seal;
 pub(crate) mod shield;
 

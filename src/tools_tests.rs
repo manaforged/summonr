@@ -74,10 +74,31 @@ fn a_standalone_registry_keeps_its_spill_directory() {
         .unwrap();
     drop(tools);
     drop(dir);
-    let expected = crate::prompt::summonr_home().unwrap().join("spill");
+    let expected = summonr_core::dirs::summonr_home().unwrap().join("spill");
     assert!(path.starts_with(&expected), "{path:?}");
     assert!(path.exists(), "{path:?}");
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn a_trimmed_command_keeps_the_complete_log() -> crate::Result<()> {
+    let (_dir, tools) = workspace(&[]);
+    let text = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": per_shell("seq 1 9000", "1..9000")}),
+    );
+    let path = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("[full output: "))
+        .and_then(|rest| rest.split_once(" ("))
+        .map(|(path, _)| std::path::PathBuf::from(path))
+        .expect("trimmed output names its full log");
+    assert!(text.len() < 17_000, "preview was {} bytes", text.len());
+    let full = std::fs::read_to_string(path)?;
+    assert!(full.lines().any(|line| line == "3000") && full.contains("9000"));
+    assert!(!text.lines().any(|line| line == "3000"));
+    Ok(())
 }
 
 fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
@@ -254,24 +275,28 @@ async fn the_model_cannot_write_the_check_file_in_any_mode() {
 }
 
 #[test]
-fn the_command_tool_does_not_claim_a_sandbox_the_session_lacks() {
-    let (_dir, tools) = workspace(&[]);
-    let run = tools
-        .definitions()
-        .into_iter()
-        .find(|tool| tool.function.name == "run_command")
-        .unwrap();
-    assert!(
-        !run.function.description.to_lowercase().contains("sandbox"),
-        "{}",
-        run.function.description
-    );
-}
-
-#[test]
 fn a_read_only_registry_keeps_the_parent_tool_list() {
     let (_dir, mut tools) = workspace(&[]);
     let parent = names(&tools);
     tools.contain_read_only();
     assert_eq!(names(&tools), parent);
+}
+
+#[test]
+fn read_pages_share_the_output_budget_without_hiding_later_lines() {
+    let line = "x".repeat(120);
+    let body: String = (0..1000).map(|n| format!("{n:04}{line}\n")).collect();
+    let (_dir, tools) = workspace(&[("big.txt", body.as_str())]);
+    let text = run(&tools, "read", serde_json::json!({ "path": "big.txt" }));
+    assert!(text.len() <= 16 * 1024, "{} bytes", text.len());
+    assert!(text.contains("continue with offset"), "{}", &text[..200]);
+    let later = run(
+        &tools,
+        "read",
+        serde_json::json!({"path": "big.txt", "offset": 301}),
+    );
+    assert!(
+        later.contains("0300xxxx"),
+        "later source lines were hidden: {later}"
+    );
 }

@@ -2,18 +2,22 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use crate::provider::{Message, Role, ToolFunction};
-use crate::text::{Fnv64, plural};
+use summonr_core::text::{Fnv64, plural};
 
 const MARK: &str = "[summon control: repeated tool results.";
-const CYCLE_MAX: usize = 3;
 
 pub(super) fn nudge(history: &[Message], function: &ToolFunction, text: &str) -> Option<String> {
-    let repeats = crate::limits::limits().repeat_nudge;
+    let limits = crate::limits::limits();
+    let repeats = limits.repeat_nudge;
     if repeats < 2 {
         return None;
     }
-    let keys = recent(history, key(function, text), CYCLE_MAX * repeats);
-    let cycle = (1..=CYCLE_MAX).find(|&cycle| {
+    let keys = recent(
+        history,
+        key(function, text),
+        limits.repeat_cycle_max * repeats,
+    );
+    let cycle = (1..=limits.repeat_cycle_max).find(|&cycle| {
         let span = cycle * repeats;
         keys.len() >= span && (cycle..span).all(|index| keys[index] == keys[index - cycle])
     })?;

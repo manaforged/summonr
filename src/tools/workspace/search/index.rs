@@ -4,7 +4,8 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock, PoisonError};
 
-use ignore::WalkBuilder;
+use crate::process::{Io, Spec};
+use summonr_core::walk::{self, Walk};
 
 const MAGIC: &str = "summonr-names 1";
 pub(crate) const ENTRY: &str = "--index-files";
@@ -23,13 +24,13 @@ fn folder() -> Option<PathBuf> {
 
 #[cfg(not(test))]
 fn folder() -> Option<PathBuf> {
-    crate::prompt::summonr_home()
+    summonr_core::dirs::summonr_home()
         .ok()
         .map(|home| home.join("cache").join("names"))
 }
 
 fn file_for(root: &Path) -> Option<PathBuf> {
-    let key = crate::text::fnv64(root.to_string_lossy().as_bytes());
+    let key = summonr_core::text::fnv64(root.to_string_lossy().as_bytes());
     folder().map(|dir| dir.join(format!("{key}.idx")))
 }
 
@@ -76,7 +77,6 @@ pub(super) fn each(
     }
     let prefix = root.to_string_lossy().into_owned();
     let prefix = prefix.trim_end_matches('/').as_bytes().to_vec();
-    let words: Vec<&[u8]> = words.iter().map(String::as_bytes).collect();
     let mut entry: Vec<u8> = Vec::new();
     let mut inside = false;
     while let (Some(shared), Some(len)) = (number(&mut reader), number(&mut reader)) {
@@ -93,10 +93,11 @@ pub(super) fn each(
             continue;
         }
         inside = true;
-        if !named(&entry, &words) {
+        let name = String::from_utf8_lossy(&entry);
+        if !super::filter::named(words, Path::new(name.as_ref())) {
             continue;
         }
-        let path = PathBuf::from(String::from_utf8_lossy(&entry).into_owned());
+        let path = PathBuf::from(name.into_owned());
         if !visit(path) {
             return;
         }
@@ -106,22 +107,6 @@ pub(super) fn each(
 fn under(entry: &[u8], prefix: &[u8]) -> bool {
     entry.starts_with(prefix)
         && (prefix.is_empty() || entry.get(prefix.len()).is_none_or(|next| *next == b'/'))
-}
-
-fn named(entry: &[u8], words: &[&[u8]]) -> bool {
-    if words.is_empty() {
-        return true;
-    }
-    let name = entry
-        .iter()
-        .rposition(|byte| *byte == b'/')
-        .map_or(entry, |slash| &entry[slash + 1..]);
-    words.iter().all(|word| {
-        !word.is_ascii()
-            || name
-                .windows(word.len().max(1))
-                .any(|window| window.eq_ignore_ascii_case(word))
-    })
 }
 
 fn number(reader: &mut impl Read) -> Option<usize> {
@@ -160,17 +145,16 @@ pub(super) fn refresh(root: &Path, slow: bool) {
     }
 }
 
-fn spawn(root: &Path) -> std::io::Result<()> {
-    let mut command = std::process::Command::new(std::env::current_exe()?);
-    command
-        .arg(ENTRY)
-        .arg(root)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let mut child = command.spawn()?;
+fn spawn(root: &Path) -> summonr_core::error::Result<()> {
+    let mut child = crate::process::spawn_blocking(Spec {
+        stdin: Io::Null,
+        stdout: Io::Null,
+        stderr: Io::Null,
+        ..Spec::new(
+            std::env::current_exe()?,
+            [std::ffi::OsStr::new(ENTRY), root.as_os_str()],
+        )
+    })?;
     let root = root.to_path_buf();
     std::thread::Builder::new()
         .name("search-index".to_string())
@@ -188,14 +172,14 @@ fn in_progress(root: &Path) -> bool {
     let Some(target) = file_for(root) else {
         return false;
     };
-    let Some(Ok(entries)) = target.parent().map(std::fs::read_dir) else {
+    let Some(dir) = target.parent() else {
         return false;
     };
     let prefix = format!(
         "{}.",
         target.file_stem().unwrap_or_default().to_string_lossy()
     );
-    entries.filter_map(Result::ok).any(|entry| {
+    walk::children(dir).any(|entry| {
         let name = entry.file_name().to_string_lossy().into_owned();
         name.starts_with(&prefix) && name.ends_with(".tmp") && !aged(&entry)
     })
@@ -226,24 +210,14 @@ pub(crate) fn build(root: &Path) -> std::io::Result<()> {
         crate::mail::now()
     )?;
     let mut last: Vec<u8> = Vec::new();
-    let walk = WalkBuilder::new(root)
-        .standard_filters(false)
-        .sort_by_file_name(std::ffi::OsStr::cmp)
-        .filter_entry(|entry| {
-            entry.depth() == 0
-                || !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !(crate::STATE_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
-                    || super::walk::skipped_root(entry.path())
-                    || crate::policy::protected_read(entry.path()))
-        })
-        .build();
-    for entry in walk.filter_map(Result::ok) {
-        let listed = entry
-            .file_type()
-            .is_some_and(|kind| kind.is_file() || (kind.is_symlink() && !entry.path().is_dir()));
-        if !listed {
-            continue;
-        }
+    let entries = Walk {
+        guard: Some(crate::policy::protected_read),
+        sorted: true,
+        ..Walk::RAW
+    }
+    .entries(root)
+    .filter(walk::listed);
+    for entry in entries {
         let text = entry.path().to_string_lossy();
         let bytes = text.as_bytes();
         let shared = last
@@ -268,10 +242,7 @@ pub(crate) fn build(root: &Path) -> std::io::Result<()> {
 }
 
 fn sweep(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(Result::ok) {
+    for entry in walk::children(dir) {
         let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "tmp") && aged(&entry) {
             drop(std::fs::remove_file(path));

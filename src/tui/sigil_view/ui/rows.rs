@@ -1,10 +1,13 @@
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Token, Tone,
-    container, list_row_with, notice_band, section_label,
+    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Token,
+    Tone, WidgetLayoutExt, container, list_row_with, notice_band, section_label, text_edit,
 };
+use sigil::widgets::{RowRender, TextEditBuilder, VirtualListBuilder};
 
+use super::input_keys;
+use crate::tui::sigil_view::app::App;
 use crate::tui::sigil_view::canvas;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 pub(super) fn row(padding: f32) -> LayoutStyle {
     LayoutStyle::flex_row()
@@ -55,10 +58,10 @@ pub(in crate::tui) fn group(title: impl Into<String>) -> NodeBuilder {
     section_label(title.into()).layout(row(8.0))
 }
 
-pub(in crate::tui) fn heading(parts: Vec<(String, Look)>) -> NodeBuilder {
+pub(in crate::tui) fn heading(parts: Vec<(String, TextStyle)>) -> NodeBuilder {
     parts.into_iter().fold(
         container().layout(row(8.0).align_items(AlignItems::Center)),
-        |line, (text, look)| line.child(look.on(sigil::kernel::text(text).nowrap())),
+        |line, (text, text_style)| line.child(text_style.on(sigil::kernel::text(text).nowrap())),
     )
 }
 
@@ -75,8 +78,8 @@ pub(in crate::tui) fn notice(text: impl Into<String>, tone: Tone) -> NodeBuilder
 
 const FIELD_KEY: usize = 11;
 
-pub(in crate::tui) fn part(value: impl Into<String>, color: Token) -> (String, Look) {
-    (value.into(), Look::sm(color))
+pub(in crate::tui) fn part(value: impl Into<String>, color: Token) -> (String, TextStyle) {
+    (value.into(), TextStyle::sm(color))
 }
 
 pub(in crate::tui) fn field(key: &str, value: impl Into<String>, color: Token) -> NodeBuilder {
@@ -92,4 +95,85 @@ pub(in crate::tui) fn blank() -> NodeBuilder {
 
 pub(in crate::tui) const fn field_width(width: usize) -> usize {
     width.saturating_sub(FIELD_KEY)
+}
+
+pub(in crate::tui) fn overlay_list<T: 'static, R: RowRender<T>>(
+    list: VirtualListBuilder<T, R>,
+    row: f32,
+    shown: usize,
+) -> NodeBuilder {
+    let height = row * shown as f32;
+    container()
+        .layout(LayoutStyle::block().fill_width())
+        .child(list.row_height(row).height(height).viewport_height(height))
+}
+
+pub(in crate::tui) fn browser_split(cols: u16, threshold: u16) -> bool {
+    cols >= threshold && !canvas::is_window()
+}
+
+pub(in crate::tui) fn browser_layout(
+    (cols, rows): (u16, u16),
+    threshold: u16,
+    (chrome, below): (u16, u16),
+) -> (bool, usize, usize) {
+    let split = browser_split(cols, threshold);
+    (
+        split,
+        super::Size::Page.cells(cols),
+        canvas::list_rows(rows, chrome.saturating_add(if split { 0 } else { below })),
+    )
+}
+
+pub(in crate::tui) fn browser_columns(
+    list: impl IntoIterator<Item = NodeBuilder>,
+    layout: LayoutStyle,
+    detail: Vec<NodeBuilder>,
+    gap: f32,
+) -> Vec<NodeBuilder> {
+    let list = list
+        .into_iter()
+        .fold(container().layout(layout), |node, child| node.child(child));
+    let detail = detail.into_iter().fold(
+        container().layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .gap(canvas::overlay_gap()),
+        ),
+        |node, child| node.child(child),
+    );
+    vec![
+        container()
+            .layout(LayoutStyle::flex_row().fill_width().gap(gap))
+            .child(list)
+            .child(detail),
+    ]
+}
+
+pub(in crate::tui::sigil_view) fn filter_field(
+    app: &App,
+    query: Signal<String>,
+    caret: Signal<usize>,
+) -> TextEditBuilder {
+    input_keys(app, text_edit(query))
+        .caret_position(caret)
+        .placeholder(super::FILTER_HINT)
+        .height(canvas::overlay_list_row())
+}
+
+pub(in crate::tui) fn filter_column() -> NodeBuilder {
+    container().layout(
+        LayoutStyle::flex_column()
+            .fill_width()
+            .grow(1.0)
+            .min_size(0.0, 0.0),
+    )
+}
+
+pub(in crate::tui) fn plain(text: impl Into<String>) -> NodeBuilder {
+    container().child(
+        sigil::kernel::text(text.into())
+            .nowrap()
+            .text_color(Token::OnSurface),
+    )
 }

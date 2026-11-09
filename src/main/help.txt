@@ -44,32 +44,7 @@ Integrations:
   gateway telegram|webhook    start work from a Telegram chat or a web request; gateway --help
 
 Options:
-  -e, --endpoint NAME  endpoint: {endpoints}
-      --model NAME     override the endpoint model
-      --effort LEVEL   none, minimal, low, medium, high, xhigh, or max
-  -w, --workflow NAME  pick each role's endpoint from [workflows.NAME]
-  -p, --print          run one prompt and exit
-      --json           print JSON (with -p, diff, worktrees, mcp, classify, cron list)
-  -c, --continue       resume the last session here
-      --session ID     resume a session by id, prefix, or name
-      --fork           copy the resumed session before continuing
-      --name TEXT      name this session
-      --steps PLAN.md  run each step under `## Steps` and gate on its check
-      --goal TEXT      work toward TEXT across turns
-      --add-dir DIR    extra writable root under --strict (repeatable)
-      --strict         allow only commands listed in policy.toml
-      --no-trust       ignore workspace SYSTEM.md, AGENTS.md, CLAUDE.md
-      --trust          on by default; the last of --trust and --no-trust wins
-      --here           work in this checkout (default; not with --worktree)
-      --no-verify      skip the .summonr/check.toml gate
-      --worktree       isolate this session in a git worktree
-      --max-tokens N   session token budget; a breach stops the run
-      --max-secs N     session wall-clock budget; a breach stops the run
-      --no-splash      skip the startup banner
-      --inline         scrollback transcript, composer pinned at the bottom
-      --gui            open the desktop window (a --features gui build)
-  -h, --help           show this help
-  -V, --version        show the version
+{options}
 
 Exit codes: 0 ok · 1 harness error · 2 check failed · 3 stopped short: no check, or the goal is unmet
 

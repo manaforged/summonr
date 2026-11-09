@@ -14,7 +14,7 @@ enum Step {
     Add,
 }
 
-fn trimmed(old: &[&str], new: &[&str]) -> (usize, usize, usize) {
+pub(in crate::tools) fn trimmed(old: &[&str], new: &[&str]) -> (usize, usize, usize) {
     let mut head = 0;
     while head < old.len() && head < new.len() && old[head] == new[head] {
         head += 1;
@@ -116,11 +116,7 @@ fn walk(old: &[&str], new: &[&str]) -> Vec<Step> {
 }
 
 pub(in crate::tools) fn patch(old: &[&str], new: &[&str]) -> Option<String> {
-    let mut computed = steps(old, new)?;
-    for run in computed.split_mut(|step| *step == Step::Keep) {
-        run.sort_by_key(|step| *step == Step::Add);
-    }
-    render(&computed, old, new)
+    changed_and_patch(old, new).1
 }
 
 fn render(steps: &[Step], old: &[&str], new: &[&str]) -> Option<String> {

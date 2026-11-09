@@ -29,7 +29,7 @@ impl SessionDriver {
 
     pub(crate) fn apply_todos(
         &mut self,
-        todos: Vec<crate::tools::Todo>,
+        todos: Vec<summonr_types::Todo>,
     ) -> Result<(), DriverError> {
         let work = self
             .work
@@ -62,8 +62,8 @@ impl SessionDriver {
         self.active().is_some_and(|work| {
             work.brief.is_none()
                 && match work.policy {
-                    Policy::Steps | Policy::Goal { .. } => true,
-                    Policy::Single => false,
+                    WorkKind::Steps | WorkKind::Goal => true,
+                    WorkKind::Single => false,
                 }
         })
     }
@@ -75,7 +75,7 @@ impl SessionDriver {
 
     pub(crate) fn goal_objective(&self) -> Result<Option<String>, DriverError> {
         let work = self.work.as_ref().ok_or(DriverError::NoWork)?;
-        Ok(matches!(work.policy, Policy::Goal { .. }).then(|| work.objective.clone()))
+        Ok(matches!(work.policy, WorkKind::Goal).then(|| work.objective.clone()))
     }
 
     pub(crate) fn completion_checks(&self) -> Result<Vec<Check>, DriverError> {
@@ -89,10 +89,10 @@ impl SessionDriver {
     pub(crate) fn prepare_external_work(
         &mut self,
         text: &str,
-        policy: Policy,
+        policy: WorkKind,
         commands: &[String],
     ) -> Result<(), DriverError> {
-        if policy == Policy::Single {
+        if policy == WorkKind::Single {
             return Err(DriverError::State(
                 "external Work requires Steps or Goal policy".to_string(),
             ));
@@ -111,7 +111,7 @@ impl SessionDriver {
         self.resume_external_work()
     }
 
-    fn adopt_external_work(&mut self, text: &str, policy: Policy) -> Result<(), DriverError> {
+    fn adopt_external_work(&mut self, text: &str, policy: WorkKind) -> Result<(), DriverError> {
         match self.active() {
             Some(work)
                 if std::mem::discriminant(&work.policy) != std::mem::discriminant(&policy) =>
@@ -158,7 +158,7 @@ impl SessionDriver {
                 .as_ref()
                 .map(|work| work.todos.clone())
                 .unwrap_or_default();
-            let mut work = Work::new(objective, Policy::Single);
+            let mut work = Work::new(objective, WorkKind::Single);
             work.select(objective, commands)?;
             work.apply_todos(todos);
             self.work = Some(work);
@@ -170,7 +170,7 @@ impl SessionDriver {
 
     fn sync_turn_checks(&mut self, commands: &[String]) -> Result<(), DriverError> {
         let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
-        if work.policy == Policy::Single
+        if work.policy == WorkKind::Single
             && work
                 .checks
                 .iter()
@@ -190,8 +190,11 @@ impl SessionDriver {
         commands: &[String],
     ) -> Result<(), DriverError> {
         let work = self.work.as_ref().ok_or(DriverError::NoWork)?;
+        if work.policy == WorkKind::Single && work.objective != objective {
+            return self.replace_single(objective, commands);
+        }
         match work.stage() {
-            Some(Stage::Plan) if work.policy == Policy::Single && work.plan.is_none() => {
+            Some(Stage::Plan) if work.policy == WorkKind::Single && work.plan.is_none() => {
                 self.replan_turn_work(objective, commands)
             }
             Some(Stage::Plan) => self.execute(),
@@ -203,6 +206,15 @@ impl SessionDriver {
         }
     }
 
+    fn replace_single(&mut self, objective: &str, commands: &[String]) -> Result<(), DriverError> {
+        self.set_work(objective, WorkKind::Single)?;
+        self.work
+            .as_mut()
+            .ok_or(DriverError::NoWork)?
+            .select(objective, commands)?;
+        self.execute()
+    }
+
     fn replan_turn_work(
         &mut self,
         objective: &str,
@@ -211,7 +223,7 @@ impl SessionDriver {
         if let Some(work) = self.work.as_mut() {
             work.abandon("the plan turn selected no plan");
         }
-        self.set_work(objective, Policy::Single)?;
+        self.set_work(objective, WorkKind::Single)?;
         self.work
             .as_mut()
             .ok_or(DriverError::NoWork)?
@@ -227,11 +239,40 @@ impl SessionDriver {
         self.checkpoint()
     }
 
+    pub(crate) fn measured(&self) -> Result<bool, DriverError> {
+        Ok(!self
+            .work
+            .as_ref()
+            .ok_or(DriverError::NoWork)?
+            .measurements
+            .is_empty())
+    }
+
+    pub(crate) fn best_measurement(&self) -> Result<Option<f64>, DriverError> {
+        Ok(self.work.as_ref().ok_or(DriverError::NoWork)?.best())
+    }
+
+    pub(crate) fn record_measurement(
+        &mut self,
+        value: Option<String>,
+        kept: bool,
+    ) -> Result<(), DriverError> {
+        self.work
+            .as_mut()
+            .ok_or(DriverError::NoWork)?
+            .measure(value, kept);
+        self.checkpoint()
+    }
+
     pub(super) fn active(&self) -> Option<&Work> {
         self.work.as_ref().filter(|work| !work.terminal())
     }
 
-    pub(super) fn set_work(&mut self, objective: &str, policy: Policy) -> Result<(), DriverError> {
+    pub(super) fn set_work(
+        &mut self,
+        objective: &str,
+        policy: WorkKind,
+    ) -> Result<(), DriverError> {
         self.work = Some(Work::new(objective, policy));
         self.checkpoint()
     }

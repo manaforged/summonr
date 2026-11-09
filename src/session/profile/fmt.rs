@@ -25,7 +25,7 @@ pub(super) fn head_tail(command: &str) -> bool {
 const BRIEF_WIDTH: usize = 80;
 
 pub(super) fn brief(arguments: &str) -> String {
-    crate::text::ellipsize(&crate::tui::tool_arg(arguments), BRIEF_WIDTH)
+    crate::display::ellipsize(&crate::tui::tool_arg(arguments), BRIEF_WIDTH)
 }
 
 pub(super) fn secs(millis: u64) -> String {

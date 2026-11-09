@@ -1,6 +1,58 @@
 use super::Model;
 
 #[test]
+fn grok_4_7_takes_its_context_window_from_the_catalog() {
+    assert_eq!(
+        super::context_limit("grok", "grok-4.7", Some("https://api.x.ai/v1")),
+        Some(500_000)
+    );
+}
+
+#[test]
+fn a_url_takes_the_preset_providers_window() {
+    assert_eq!(
+        super::context_limit("proxy", "grok-4.7", Some("https://api.x.ai/v1")),
+        Some(500_000)
+    );
+    assert_eq!(
+        super::context_limit(
+            "copilot",
+            "claude-opus-5-5",
+            Some("https://api.githubcopilot.com")
+        ),
+        Some(1_000_000)
+    );
+}
+
+#[test]
+fn context_limit_does_not_inherit_another_providers_window() {
+    assert_eq!(
+        super::context_limit(
+            "not-a-provider",
+            "grok-4.7",
+            Some("https://example.test/v1")
+        ),
+        None
+    );
+    assert_eq!(
+        super::context_limit(
+            "proxy",
+            "deepseek-flash",
+            Some("https://api.deepseek.com/v1")
+        ),
+        Some(1_000_000)
+    );
+    assert_eq!(
+        super::context_limit("proxy", "gpt-6-astra", Some("https://api.x.ai/v1")),
+        None
+    );
+    assert_eq!(
+        super::context_limit("grok", "no-such-model", Some("https://api.x.ai/v1")),
+        None
+    );
+}
+
+#[test]
 fn a_december_release_keeps_its_own_year() {
     let model = Model {
         release: Some(19_722),
@@ -9,7 +61,7 @@ fn a_december_release_keeps_its_own_year() {
     assert_eq!(model.released().as_deref(), Some("2023-12"));
 }
 
-fn seat(images: Option<bool>) -> crate::Endpoint {
+fn selection(images: Option<bool>) -> crate::Endpoint {
     let mut endpoint =
         crate::endpoint::resolve(Some("zai"), Some("glm-5.3-flash"), crate::Need::Config).unwrap();
     endpoint.name = "env".to_string();
@@ -32,18 +84,21 @@ fn registry() -> super::registry::Registry {
 }
 
 #[test]
-fn a_seat_behind_a_proxy_sees_images_when_the_catalog_says_its_model_does() {
-    assert!(super::vision_of(&seat(None), &registry()));
+fn a_model_behind_a_proxy_sees_images_when_the_catalog_says_its_model_does() {
+    assert!(super::vision_of(&selection(None), &registry()));
 }
 
 #[test]
 fn a_declared_images_row_wins_over_the_catalog() {
-    assert!(!super::accepts_images(&seat(Some(false))));
+    assert!(!super::accepts_images(&selection(Some(false))));
 }
 
 #[test]
 fn a_known_vision_model_reads_images_with_no_downloaded_catalog() {
-    assert!(super::vision_of(&seat(None), &super::registry::snapshot()));
+    assert!(super::vision_of(
+        &selection(None),
+        &super::registry::snapshot()
+    ));
 }
 
 #[test]
@@ -53,9 +108,9 @@ fn the_catalog_keeps_only_providers_summonr_can_reach() {
             "nowhere": {"name": "Nowhere", "models": {"seer": {"modalities": {"input": ["text", "image"]}}}}}"#,
     )
     .unwrap();
-    let mut elsewhere = seat(None);
+    let mut elsewhere = selection(None);
     elsewhere.model = "seer".to_string();
-    assert!(super::vision_of(&seat(None), &registry));
+    assert!(super::vision_of(&selection(None), &registry));
     assert!(!super::vision_of(&elsewhere, &registry));
 }
 
@@ -132,10 +187,10 @@ fn a_claude_plan_offers_models_without_a_listing() {
 
 #[test]
 fn a_remembered_listing_is_in_the_cached_listings() {
-    super::remember("lane-cached-seat", vec![Model::named("lane-model")]).unwrap();
+    super::remember("lane-cached-selection", vec![Model::named("lane-model")]).unwrap();
     let cached = super::cached();
     let listing = cached
-        .get("lane-cached-seat")
+        .get("lane-cached-selection")
         .expect("the listing is cached");
     assert_eq!(listing.models[0].id, "lane-model");
 }

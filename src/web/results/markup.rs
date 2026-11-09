@@ -1,4 +1,4 @@
-pub(super) fn element<'a>(html: &'a str, class: &str) -> Option<&'a str> {
+pub(in crate::web) fn element<'a>(html: &'a str, class: &str) -> Option<&'a str> {
     let marker = "class=\"";
     let mut from = 0;
     while let Some(relative) = html[from..].find(marker) {
@@ -16,7 +16,7 @@ pub(super) fn element<'a>(html: &'a str, class: &str) -> Option<&'a str> {
     None
 }
 
-pub(super) fn tag<'a>(html: &'a str, name: &str) -> Option<&'a str> {
+pub(in crate::web) fn tag<'a>(html: &'a str, name: &str) -> Option<&'a str> {
     let opener = format!("<{name}");
     let mut from = 0;
     while let Some(relative) = html[from..].find(&opener) {
@@ -58,14 +58,23 @@ fn closing(html: &str, open: usize) -> Option<usize> {
     }
 }
 
-pub(super) fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    let marker = format!(" {name}=\"");
-    let start = tag.find(&marker)? + marker.len();
-    let end = start + tag[start..].find('"')?;
-    Some(&tag[start..end])
+pub(in crate::web) fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let needle = format!("{name}=");
+    let (at, _) = tag
+        .to_ascii_lowercase()
+        .match_indices(&needle)
+        .find(|(at, _)| tag[..*at].ends_with(char::is_whitespace))?;
+    let rest = tag[at + needle.len()..].trim_start();
+    match rest.chars().next()? {
+        quote @ ('"' | '\'') => rest[1..].find(quote).map(|end| &rest[1..1 + end]),
+        _ => rest
+            .split(|c: char| c.is_whitespace() || c == '>')
+            .next()
+            .map(|value| value.trim_end_matches('/')),
+    }
 }
 
-pub(super) fn plain(html: &str) -> String {
+pub(in crate::web) fn strip(html: &str) -> String {
     let mut out = String::new();
     let mut tag = false;
     for ch in html.chars() {
@@ -76,10 +85,44 @@ pub(super) fn plain(html: &str) -> String {
             _ => {}
         }
     }
-    super::flat(&decode(&out))
+    out
 }
 
-pub(super) fn decode(text: &str) -> String {
+pub(in crate::web) fn text(html: &str) -> String {
+    decode(&strip(html))
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::web) enum Space {
+    Flat,
+    Lines,
+}
+
+pub(in crate::web) fn collapse(text: &str, space: Space) -> String {
+    if let Space::Flat = space {
+        return text.split_whitespace().collect::<Vec<_>>().join(" ");
+    }
+    let mut out = String::new();
+    let mut blank = 0;
+    for line in text.lines() {
+        let line = collapse(line, Space::Flat);
+        if line.is_empty() {
+            blank += 1;
+            if blank <= 1 && !out.is_empty() {
+                out.push('\n');
+            }
+        } else {
+            blank = 0;
+            if !out.is_empty() && !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(&line);
+        }
+    }
+    out
+}
+
+pub(in crate::web) fn decode(text: &str) -> String {
     numeric(text)
         .replace("&amp;", "&")
         .replace("&lt;", "<")

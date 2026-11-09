@@ -4,27 +4,27 @@
 
 ## summonr-auth 0.1.1
 
-- [Every public item, one per line](reference/summonr-auth/api.txt): 111 lines
+- [Every public item, one per line](reference/summonr-auth/api.txt): 87 lines
 - [API overview](reference/summonr-auth/index.html): tasks, modules, features, and examples
 - [API changes by release](reference/summonr-auth/changes.html)
-- [summonr_auth](reference/summonr-auth/summonr_auth.html): 66 items
+- [summonr_auth](reference/summonr-auth/summonr_auth.html): 58 items
 - [summonr_auth::open](reference/summonr-auth/summonr_auth-open.html): 2 items
 
 ## summonr 0.1.1
 
-- [Every public item, one per line](reference/summonr/api.txt): 1288 lines
+- [Every public item, one per line](reference/summonr/api.txt): 963 lines
 - [API overview](reference/summonr/index.html): tasks, modules, features, and examples
 - [API changes by release](reference/summonr/changes.html)
-- [summonr](reference/summonr/summonr.html): 532 items
+- [summonr](reference/summonr/summonr.html): 332 items
 - [summonr::acp](reference/summonr/summonr-acp.html): 1 items
 - [summonr::askpass](reference/summonr/summonr-askpass.html): 5 items
 - [summonr::catalog](reference/summonr/summonr-catalog.html): 29 items
-- [summonr::child](reference/summonr/summonr-child.html): 5 items
+- [summonr::child](reference/summonr/summonr-child.html): 1 items
 - [summonr::classify](reference/summonr/summonr-classify.html): 38 items
 - [summonr::classify::digest](reference/summonr/summonr-classify-digest.html): 1 items
 - [summonr::classify::eval](reference/summonr/summonr-classify-eval.html): 20 items
 - [summonr::classify::patch](reference/summonr/summonr-classify-patch.html): 6 items
-- [summonr::classify::sets](reference/summonr/summonr-classify-sets.html): 5 items
+- [summonr::classify::sets](reference/summonr/summonr-classify-sets.html): 2 items
 - [summonr::classify::sweep](reference/summonr/summonr-classify-sweep.html): 2 items
 - [summonr::cron](reference/summonr/summonr-cron.html): 0 items
 - [summonr::cron::cli](reference/summonr/summonr-cron-cli.html): 1 items
@@ -35,13 +35,14 @@
 - [summonr::mail](reference/summonr/summonr-mail.html): 0 items
 - [summonr::mail::cli](reference/summonr/summonr-mail-cli.html): 1 items
 - [summonr::memory](reference/summonr/summonr-memory.html): 11 items
-- [summonr::modules](reference/summonr/summonr-modules.html): 22 items
+- [summonr::modules](reference/summonr/summonr-modules.html): 2 items
 - [summonr::prefs](reference/summonr/summonr-prefs.html): 19 items
 - [summonr::secret](reference/summonr/summonr-secret.html): 9 items
 - [summonr::splash](reference/summonr/summonr-splash.html): 13 items
-- [summonr::steps](reference/summonr/summonr-steps.html): 16 items
+- [summonr::steps](reference/summonr/summonr-steps.html): 14 items
 - [summonr::supervise](reference/summonr/summonr-supervise.html): 4 items
-- [summonr::tui](reference/summonr/summonr-tui.html): 22 items
+- [summonr::table](reference/summonr/summonr-table.html): 35 items
+- [summonr::tui](reference/summonr/summonr-tui.html): 23 items
 - [summonr::tui::hub](reference/summonr/summonr-tui-hub.html): 5 items
-- [summonr::update](reference/summonr/summonr-update.html): 14 items
+- [summonr::update](reference/summonr/summonr-update.html): 13 items
 - [summonr::workflow](reference/summonr/summonr-workflow.html): 9 items

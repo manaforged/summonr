@@ -4,7 +4,9 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::durable::log::{self, Line};
-use crate::provider::Message;
+
+pub(crate) const PARENT_ENV: &str = "SUMMONR_PARENT_SESSION";
+pub(crate) const SESSION_ENV: &str = "SUMMONR_SESSION_ID";
 
 mod catalog;
 mod export;
@@ -34,8 +36,6 @@ pub struct SessionInfo {
     pub depth: u8,
 }
 
-const PEEK_LINES: usize = 64;
-
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Summary {
     cwd: Option<String>,
@@ -49,22 +49,9 @@ pub(crate) struct Summary {
 
 impl Summary {
     pub(crate) fn peek(path: &Path) -> (Self, bool) {
-        if let Ok(head) = log::head(path, PEEK_LINES) {
-            let (summary, found) = Self::from_lines(&head);
-            if found {
-                return (summary, true);
-            }
-        }
-        match log::scan(path) {
-            Ok(lines) => Self::from_lines(&lines.collect::<Vec<Line>>()),
-            Err(_) => (Self::default(), false),
-        }
-    }
-
-    fn from_lines(lines: &[Line]) -> (Self, bool) {
         let mut summary = Self::default();
-        for line in lines {
-            match line {
+        for line in log::records::<Line>(path, 0).filter_map(Result::ok) {
+            match &line {
                 Line::Session {
                     workspace,
                     model,
@@ -129,16 +116,6 @@ pub(crate) struct Prompt {
     pub text: String,
     pub images: usize,
     pub closed: bool,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Replay {
-    pub history: Vec<Message>,
-    pub prompt: Option<String>,
-    pub model: Option<String>,
-    pub id: String,
-    pub spent_tokens: u64,
-    pub elapsed_millis: u64,
 }
 
 pub(crate) fn decorate(harness: &str, text: &str) -> String {

@@ -1,7 +1,16 @@
 use super::*;
-use crate::tools::Builtin;
+use crate::tui::sigil_view::chat::entry::tool_label;
 
 impl Model {
+    pub(in crate::tui::sigil_view) fn agents_of<'a>(
+        &'a self,
+        call: &'a str,
+    ) -> impl Iterator<Item = &'a Agent> {
+        self.agents
+            .iter()
+            .filter(move |kid| !call.is_empty() && kid.call == call)
+    }
+
     pub(in crate::tui::sigil_view) fn apply_child(&mut self, id: &str, event: Event) {
         let tag = crate::child::tag(id);
         if let Event::Work { progress } = &event
@@ -65,7 +74,7 @@ impl Model {
         if let Some(at) = self
             .entries
             .iter()
-            .rposition(|entry| matches!(entry, Entry::Tool { id, .. } if *id == call))
+            .rposition(|entry| matches!(entry, Entry::Tool { calls, .. } if calls.iter().any(|tool| tool.id == call)))
         {
             self.entries.touch(at);
         }
@@ -76,8 +85,7 @@ impl Model {
         call: &str,
     ) -> Option<crate::child::ChildRecord> {
         let output = self.entries.iter().rev().find_map(|entry| match entry {
-            Entry::Tool { id, output, .. } if id == call => Some(output),
-            Entry::ToolGroup { calls, .. } => calls
+            Entry::Tool { calls, .. } => calls
                 .iter()
                 .find(|item| item.id == call)
                 .map(|item| &item.output),
@@ -98,6 +106,12 @@ impl Model {
         reasoning: u32,
         cost: Option<f64>,
     ) {
+        let agent = self.child_mut(tag);
+        agent.tokens += u64::from(prompt) + u64::from(completion) + u64::from(reasoning);
+        agent.cost += cost.unwrap_or(0.0);
+    }
+
+    fn child_mut(&mut self, tag: String) -> &mut Agent {
         let index = match self.agents.iter().position(|agent| agent.id == tag) {
             Some(index) => index,
             None => {
@@ -105,20 +119,11 @@ impl Model {
                 self.agents.len() - 1
             }
         };
-        let agent = &mut self.agents[index];
-        agent.tokens += u64::from(prompt) + u64::from(completion) + u64::from(reasoning);
-        agent.cost += cost.unwrap_or(0.0);
+        &mut self.agents[index]
     }
 
     fn child_status(&mut self, tag: String, last: String, done: bool, failed: bool) {
-        let index = match self.agents.iter().position(|agent| agent.id == tag) {
-            Some(index) => index,
-            None => {
-                self.agents.push(Agent::placeholder(tag.clone()));
-                self.agents.len() - 1
-            }
-        };
-        let agent = &mut self.agents[index];
+        let agent = self.child_mut(tag.clone());
         let finished = done && !agent.done;
         agent.last = last;
         if finished {
@@ -138,13 +143,9 @@ fn child_line(event: &Event) -> Option<(String, bool, bool)> {
         Event::ToolCall {
             name, arguments, ..
         } => (
-            format!(
-                "{} {}",
-                Builtin::of(name).map_or(name.as_str(), |kind| kind.verb()),
-                tool_arg(arguments)
-            )
-            .trim()
-            .to_string(),
+            format!("{} {}", tool_label(name), tool_arg(arguments))
+                .trim()
+                .to_string(),
             false,
             false,
         ),

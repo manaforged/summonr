@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "development-tools"]
 publish = false
 
 [workspace]
-members = ["crates/auth"]
+members = ["crates/auth", "crates/core", "crates/types"]
 
 [workspace.package]
 version = "0.1.1"
@@ -33,7 +33,7 @@ harness = false
 
 [workspace.dependencies]
 base64 = "0.22"
-leyline = { package = "leyline-http", version = "0.1.4", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
+leyline = { package = "leyline-http", version = "0.2.0", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
 rand = { version = "0.9", default-features = false, features = ["os_rng"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
@@ -41,19 +41,26 @@ sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["time"] }
 url = "2"
+dunce = "1.0"
+ignore = "0.4"
+regex = "1"
+toml = "0.8"
 
 [dependencies]
 summonr-auth = { path = "crates/auth" }
+summonr-core = { path = "crates/core" }
+summonr-types = { path = "crates/types" }
 base64 = { workspace = true }
+bytes = "1"
 futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
-regex = "1"
+regex = { workspace = true }
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["raw_value"] }
-thiserror = "2"
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 sha2 = { workspace = true }
 tempfile = "3"
 zeroize = "1"
-toml = "0.8"
+toml = { workspace = true }
 toml_edit = "0.22"
 unicode-segmentation = "1.13.3"
 uuid = { version = "1.24", features = ["v7"] }
@@ -63,8 +70,8 @@ leyline = { workspace = true }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "441cf15b45d85afde220572ecb19f2cc623edcf5", default-features = false, features = ["terminal", "inspect"] }
-ignore = "0.4"
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "d6f7c249e80d27b578dc3574284f86370fa78d66", default-features = false, features = ["terminal", "inspect"] }
+ignore = { workspace = true }
 grep-matcher = "0.1"
 grep-regex = "0.1"
 grep-searcher = "0.1"
@@ -72,12 +79,18 @@ unicode-normalization = "0.1"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 chacha20poly1305 = "0.10"
 libc = "0.2"
-dunce = "1.0"
+dunce = { workspace = true }
 jiff = "0.2.38"
 httparse = "1.10"
 
+[build-dependencies]
+serde_json = { workspace = true }
+toml = { workspace = true }
+
 [dev-dependencies]
+summonr-core = { path = "crates/core", features = ["test-home"] }
 fastrand = "2.5"
+tokio = { version = "1", features = ["test-util"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 portable-pty = "0.9"
@@ -105,12 +118,15 @@ keyring = { version = "3", features = ["windows-native", "sync-secret-service", 
 process-wrap = { version = "9.1", default-features = false, features = ["job-object", "tokio1"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 
-[lints.rust]
+[lints]
+workspace = true
+
+[workspace.lints.rust]
 unsafe_code = "deny"
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage)"] }
 unreachable_pub = "deny"
 
-[lints.clippy]
+[workspace.lints.clippy]
 todo = "deny"
 unimplemented = "deny"
 dbg_macro = "deny"

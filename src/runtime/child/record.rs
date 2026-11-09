@@ -32,31 +32,15 @@ pub(super) async fn killed(spawned: Spawned, parent: &Path, reason: &str) -> Res
 
 pub(super) fn accounting_at(path: &Path) -> Result<(u64, Usage)> {
     let mut state = State::default();
-    let mut usage = Usage::default();
-    let lines = log::read(path)
+    log::records(path, 0)
+        .try_for_each(|line| line.map(|line| state.apply(line)))
         .map_err(|error| Error::Config(format!("cannot read child session log: {error}")))?;
-    for line in lines {
-        match &line {
-            log::Line::Assistant { usage: meter, .. }
-            | log::Line::Charge {
-                usage: meter,
-                reported: true,
-                ..
-            } => {
-                usage.prompt_tokens = usage
-                    .prompt_tokens
-                    .saturating_add(Usage::clamp(meter.input));
-                usage.completion_tokens = usage
-                    .completion_tokens
-                    .saturating_add(Usage::clamp(meter.output));
-                usage.cached_tokens = usage
-                    .cached_tokens
-                    .saturating_add(Usage::clamp(meter.cached));
-            }
-            _ => {}
-        }
-        state.apply(line);
-    }
+    let usage = Usage {
+        prompt_tokens: Usage::clamp(state.metered.input),
+        completion_tokens: Usage::clamp(state.metered.output),
+        cached_tokens: Usage::clamp(state.metered.cached),
+        ..Usage::default()
+    };
     Ok((state.spent, usage))
 }
 
@@ -76,42 +60,46 @@ pub(super) fn empty(diagnostic: Option<&str>) -> ChildResult {
 
 impl ChildRecord {
     pub(super) fn note_record(&mut self, diagnostic: &str) {
-        if let Some(result) = result_mut(&mut self.state) {
+        if let Some(result) = self.state.result_mut() {
             result.diagnostic = Some(diagnostic.to_string());
         }
     }
 
     pub(super) fn fail_record(&mut self, diagnostic: &str) {
-        let state = std::mem::replace(&mut self.state, ChildState::Running);
-        let mut result = match state {
-            ChildState::Completed(result)
-            | ChildState::Aborted(result)
-            | ChildState::Failed(result)
-            | ChildState::Interrupted(result) => result,
-            ChildState::Running => return,
+        let Some(result) = self.state.result_mut() else {
+            return;
         };
+        let mut result = std::mem::replace(result, empty(None));
         result.diagnostic = Some(diagnostic.to_string());
         self.state = ChildState::Failed(result);
     }
 
     pub(super) fn record_paths(&self) -> usize {
-        match &self.state {
-            ChildState::Running => 0,
-            ChildState::Completed(result)
-            | ChildState::Aborted(result)
-            | ChildState::Failed(result)
-            | ChildState::Interrupted(result) => result.changed_paths_total,
-        }
+        self.state
+            .result()
+            .map_or(0, |result| result.changed_paths_total)
     }
 }
 
-pub(super) fn result_mut(state: &mut ChildState) -> Option<&mut ChildResult> {
-    match state {
-        ChildState::Running => None,
-        ChildState::Completed(result)
-        | ChildState::Aborted(result)
-        | ChildState::Failed(result)
-        | ChildState::Interrupted(result) => Some(result),
+impl ChildState {
+    pub(crate) fn result(&self) -> Option<&ChildResult> {
+        match self {
+            Self::Running => None,
+            Self::Completed(result)
+            | Self::Aborted(result)
+            | Self::Failed(result)
+            | Self::Interrupted(result) => Some(result),
+        }
+    }
+
+    pub(crate) fn result_mut(&mut self) -> Option<&mut ChildResult> {
+        match self {
+            Self::Running => None,
+            Self::Completed(result)
+            | Self::Aborted(result)
+            | Self::Failed(result)
+            | Self::Interrupted(result) => Some(result),
+        }
     }
 }
 

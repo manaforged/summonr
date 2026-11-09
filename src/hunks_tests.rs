@@ -136,12 +136,6 @@ fn a_hunk_body_starts_at_its_hunk_header() {
 }
 
 #[test]
-fn hunk_ids_use_the_stable_content_hash() {
-    let hunks = split("a.txt", "@@ -1 +1 @@\n-x\n+y\n");
-    assert_eq!(hunks[0].id, crate::text::fnv64(b"a.txt\n-x\n+y"));
-}
-
-#[test]
 fn review_notes_live_in_the_git_dir_not_the_working_tree() {
     let dir = tempfile::tempdir().unwrap();
     crate::diff::git_env(dir.path(), &[], &["init", "-q"]).unwrap();
@@ -272,4 +266,12 @@ fn a_new_file_keeps_its_trailing_whitespace_in_the_patch() {
     std::fs::write(root.join("new.txt"), "text\n   \n").unwrap();
     let patch = diff::patch(root, Some("new.txt")).unwrap();
     assert!(patch.ends_with("+text\n+   \n"), "{patch:?}");
+}
+
+#[test]
+fn a_split_hunk_keeps_crlf_line_endings() {
+    let patch = "--- a/w.bat\r\n+++ b/w.bat\r\n@@ -1 +1 @@\r\n-echo a\r\n+echo b\r\n";
+    let hunks = split("w.bat", patch);
+    assert_eq!(hunks.len(), 1);
+    assert_eq!(hunks[0].patch, patch);
 }

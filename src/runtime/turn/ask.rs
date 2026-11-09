@@ -74,7 +74,7 @@ pub(in crate::runtime) fn definition() -> ToolDefinition {
 
 impl<P: Provider> Loop<P> {
     pub(in crate::runtime) fn ask_available(&self) -> bool {
-        self.depth == 0 && self.steer_shared.is_some()
+        self.session.depth() == 0 && self.steer_shared.is_some()
     }
 
     pub(super) async fn ask(

@@ -2,19 +2,19 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use super::{Plugin, enabled};
-use crate::error::Result;
 use crate::mcp::{Offer, OfferKind};
 use crate::skills;
-use crate::text::Frontmatter;
+use summonr_core::error::Result;
 
 const DIR: &str = "commands";
-const EXTENSION: &str = "md";
 const DESCRIPTION: &str = "description";
 const HINT: &str = "argument-hint";
 const SIGIL: char = '$';
 const ARGUMENTS: &str = "ARGUMENTS";
 const FIRST: u8 = b'1';
 const LAST: u8 = b'9';
+const PROJECT: &str = "project";
+const USER: &str = "user";
 
 #[derive(Clone, Debug)]
 pub(crate) struct Command {
@@ -31,7 +31,7 @@ impl Command {
     }
 
     pub(crate) fn render(&self, arguments: &str, workspace: &Path) -> String {
-        let template = self.plugin.expand(&self.template, workspace);
+        let template = super::expand(&self.template, &self.plugin.vars(workspace));
         let words = crate::policy::shell_words(arguments);
         let mut out = String::with_capacity(template.len() + arguments.len());
         let mut rest = template.as_str();
@@ -67,13 +67,34 @@ impl Command {
     }
 }
 
-pub(crate) fn commands() -> Vec<Command> {
-    enabled().iter().flat_map(load).collect()
+pub(crate) fn commands(workspace: &Path) -> Vec<Command> {
+    let mut seen = HashSet::new();
+    let mut all: Vec<Command> = folders(workspace)
+        .iter()
+        .flat_map(load)
+        .filter(|command| seen.insert(command.name.clone()))
+        .collect();
+    all.extend(enabled().iter().flat_map(load));
+    all
 }
 
-pub(crate) fn find(head: &str) -> Option<Command> {
+fn folders(workspace: &Path) -> Vec<Plugin> {
+    let mut folders = vec![
+        Plugin::at(PROJECT.to_string(), workspace.join(".summonr")),
+        Plugin::at(PROJECT.to_string(), workspace.join(".claude")),
+    ];
+    if let Ok(home) = summonr_core::dirs::summonr_home() {
+        folders.push(Plugin::at(USER.to_string(), home));
+    }
+    if let Some(home) = summonr_core::dirs::user_home() {
+        folders.push(Plugin::at(USER.to_string(), home.join(".claude")));
+    }
+    folders
+}
+
+pub(crate) fn find(head: &str, workspace: &Path) -> Option<Command> {
     let head = head.strip_prefix('/')?;
-    let all = commands();
+    let all = commands(workspace);
     if let Some((plugin, name)) = head.split_once(':') {
         return all
             .into_iter()
@@ -84,8 +105,11 @@ pub(crate) fn find(head: &str) -> Option<Command> {
         .flatten()
 }
 
-pub(crate) fn named(line: &str) -> bool {
-    line.split_whitespace().next().and_then(find).is_some()
+pub(crate) fn named(line: &str, workspace: &Path) -> bool {
+    line.split_whitespace()
+        .next()
+        .and_then(|head| find(head, workspace))
+        .is_some()
 }
 
 pub(crate) fn expand(input: &str, workspace: &Path) -> Result<Option<String>> {
@@ -94,8 +118,9 @@ pub(crate) fn expand(input: &str, workspace: &Path) -> Result<Option<String>> {
     if crate::parse_command(head).is_some() {
         return Ok(None);
     }
-    if let Some(command) = find(head) {
-        return Ok(Some(command.render(rest.trim(), workspace)));
+    if let Some(command) = find(head, workspace) {
+        let text = command.render(rest.trim(), workspace);
+        return Ok(Some(crate::secret::shield::scrub_found(&text, workspace)));
     }
     let Some(name) = head.strip_prefix('/').filter(|name| {
         skills::list(workspace)
@@ -114,7 +139,7 @@ pub(crate) fn expand(input: &str, workspace: &Path) -> Result<Option<String>> {
 }
 
 pub(crate) fn offers(workspace: &Path) -> Vec<Offer> {
-    let all = commands();
+    let all = commands(workspace);
     let mut offers = Vec::new();
     for command in &all {
         let about = command.about();
@@ -151,33 +176,17 @@ fn bare(all: &[Command], name: &str) -> bool {
 }
 
 pub(super) fn load(plugin: &Plugin) -> Vec<Command> {
-    let Ok(entries) = std::fs::read_dir(plugin.dir.join(DIR)) else {
-        return Vec::new();
-    };
-    let mut commands: Vec<Command> = entries
-        .filter_map(std::result::Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == EXTENSION))
-        .filter_map(|path| read(plugin, &path))
-        .collect();
+    let mut commands = skills::markdown_entries(&plugin.dir.join(DIR), |name, front| {
+        skills::valid(&name).then(|| Command {
+            plugin: plugin.clone(),
+            name,
+            description: front.get(DESCRIPTION).unwrap_or_default().to_string(),
+            hint: front.get(HINT).unwrap_or_default().to_string(),
+            template: front.body.trim().to_string(),
+        })
+    });
     commands.sort_by(|left, right| left.name.cmp(&right.name));
     commands
-}
-
-fn read(plugin: &Plugin, path: &Path) -> Option<Command> {
-    let name = path.file_stem()?.to_str()?.to_string();
-    if !skills::valid(&name) {
-        return None;
-    }
-    let text = std::fs::read_to_string(path).ok()?;
-    let front = Frontmatter::parse(&text);
-    Some(Command {
-        plugin: plugin.clone(),
-        name,
-        description: front.get(DESCRIPTION).unwrap_or_default().to_string(),
-        hint: front.get(HINT).unwrap_or_default().to_string(),
-        template: front.body.trim().to_string(),
-    })
 }
 
 #[cfg(test)]

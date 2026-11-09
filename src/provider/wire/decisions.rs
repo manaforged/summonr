@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 
 use crate::classify::{Decision, Question};
-use crate::error::{Error, ProviderFailureKind, Result};
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 pub(crate) fn body(model: &str, state: &Value, questions: &BTreeMap<String, Question>) -> Value {
     json!({

@@ -2,16 +2,16 @@ use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use summonr::{Client, Endpoint, Event, Loop, Result, finish_worktree, splash, workflow};
+use summonr::{Client, Delta, Endpoint, Event, Loop, Result, finish_worktree, splash, workflow};
 
 use super::commands::workspace;
-use super::session::{apply_workflow, build, isolate, route_checks, workflow_name};
+use super::session::{apply_workflow, build, isolate, workflow_name};
 use crate::cli::Args;
 use crate::{diagnostics, modes};
 
-#[path = "lifecycle/seat.rs"]
-mod seat;
-use seat::{ask_login, seat};
+#[path = "lifecycle/selection.rs"]
+mod selection;
+use selection::{ask_login, selection};
 
 type Ui = (Option<summonr::tui::Ui>, Option<summonr::tui::Inbox>);
 
@@ -22,10 +22,10 @@ pub(super) async fn launch(
 ) -> Result<i32> {
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
-    let endpoint = seat(args, adopted).await?;
+    let endpoint = selection(args, adopted).await?;
     let ui = channels(use_tui(args));
     ask_login(&ui, &endpoint, args.endpoint.is_some());
-    let (loop_, goal_checks, workflow) = assemble(args, &endpoint, &workspace, action, &ui)?;
+    let (loop_, workflow) = assemble(args, &endpoint, &workspace, action, &ui)?;
     if !args.json {
         for check in loop_.verify_commands() {
             eprintln!("summonr: workspace check: {check}");
@@ -37,14 +37,14 @@ pub(super) async fn launch(
     if let Some(log) = log {
         log.session(&session, loop_.session_path(), &workspace);
     }
-    let code = dispatch(loop_, args, &endpoint, workspace, ui, goal_checks, workflow).await?;
+    let code = dispatch(loop_, args, &endpoint, workspace, ui, workflow).await?;
     let Some(tree) = tree else {
         return Ok(code);
     };
     Ok(land(&tree, code, args, &session, &session_path))
 }
 
-type Assembled = (Loop<Client>, Vec<String>, Option<workflow::Workflow>);
+type Assembled = (Loop<Client>, Option<workflow::Workflow>);
 
 fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr::tui::hub::Factory {
     let (args, endpoint) = (args.clone(), endpoint.clone());
@@ -59,8 +59,7 @@ fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr::tui::hub:
             summonr::tui::hub::Open::Resume(id) => Some(id),
         };
         let (workspace, _, action) = isolate(&args, &cwd)?;
-        let (loop_, _, workflow) =
-            assemble(&args, &endpoint, &workspace, action, &(Some(ui), None))?;
+        let (loop_, workflow) = assemble(&args, &endpoint, &workspace, action, &(Some(ui), None))?;
         Ok((loop_, workflow))
     })
 }
@@ -73,18 +72,12 @@ fn assemble(
     ui: &Ui,
 ) -> Result<Assembled> {
     let provider = provider(endpoint, ui.0.as_ref(), args.json)?;
-    let probe = endpoint.context_window.is_none().then(|| {
-        let client = provider.clone();
-        let name = endpoint.name.clone();
-        let model = endpoint.model.clone();
-        tokio::spawn(async move { client.context(&name, &model).await })
-    });
-    let checks = if args.no_verify {
+    let check = if args.no_verify {
         None
     } else {
         summonr::check_commands(workspace)?
     };
-    let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
+    let spare = endpoint.context_window.is_none().then(|| provider.clone());
     let mut loop_ = build(args, endpoint, provider, workspace, check, action)?;
     let (fallbacks, skipped) = summonr::endpoint_fallbacks(endpoint, |fallback| {
         self::provider(fallback, ui.0.as_ref(), args.json)
@@ -93,13 +86,13 @@ fn assemble(
         eprintln!("summonr: {note}");
     }
     loop_.set_fallbacks(fallbacks);
-    if let Some(probe) = probe {
-        loop_.set_context_probe(probe);
+    if let Some(client) = spare {
+        loop_.watch_driver(client, &endpoint.name, &endpoint.model);
     }
     let workflow = workflow_name(args, &loop_)?
         .map(|name| apply_workflow(&mut loop_, &name, ui.0.as_ref(), args.json))
         .transpose()?;
-    Ok((loop_, goal_checks, workflow))
+    Ok((loop_, workflow))
 }
 
 const LISTED: usize = 3;
@@ -161,14 +154,11 @@ fn land(
                     .collect::<String>()
             );
             if args.json {
-                let event = summonr::Event::Merged {
+                modes::print_json(&summonr::Event::Merged {
                     branch: tree.branch.clone(),
                     base: tree.base.clone(),
                     files,
-                };
-                if let Ok(line) = serde_json::to_string(&event) {
-                    println!("{line}");
-                }
+                });
             }
             code
         }
@@ -197,7 +187,6 @@ async fn dispatch(
     endpoint: &Endpoint,
     workspace: PathBuf,
     ui: Ui,
-    goal_checks: Vec<String>,
     workflow: Option<workflow::Workflow>,
 ) -> Result<i32> {
     let model = endpoint.model.as_str();
@@ -218,7 +207,7 @@ async fn dispatch(
         modes::steps(loop_, args, plan_path).await
     } else if let Some(objective) = args.goal.as_deref() {
         splash.line();
-        modes::goal(loop_, args, objective, goal_checks).await
+        modes::goal(loop_, args, objective).await
     } else if args.print || !args.prompt.is_empty() {
         splash.line();
         modes::print(loop_, args).await
@@ -277,54 +266,34 @@ pub(super) fn provider(
     ui: Option<&summonr::tui::Ui>,
     json: bool,
 ) -> Result<Client> {
-    let mut provider = Client::connect(endpoint)?;
     if let Some(ui) = ui {
-        let text = ui.clone();
-        provider = provider.on_delta(move |delta| {
-            text.event(Event::Delta {
-                text: delta.to_string(),
-            });
-        });
-        let reasoning = ui.clone();
-        provider = provider.on_reasoning(move |delta| {
-            reasoning.event(Event::Reasoning {
-                text: delta.to_string(),
-            });
-        });
-    } else if json {
-        provider = provider.on_delta(|text| {
-            modes::print_json(&summonr::Event::Delta {
-                text: text.to_string(),
-            });
-        });
-        provider = provider.on_reasoning(|text| {
-            modes::print_json(&summonr::Event::Reasoning {
-                text: text.to_string(),
-            });
-        });
-    } else {
-        let stream = Arc::new(Mutex::new(Stream::Idle));
-        let text_state = stream.clone();
-        provider = provider.on_delta(move |text| {
-            *text_state.lock().unwrap_or_else(PoisonError::into_inner) = Stream::Answer;
-            print!("{text}");
-            drop(std::io::stdout().flush());
-        });
-        let reasoning_state = stream.clone();
-        provider = provider.on_reasoning(move |_| {
-            let mut state = reasoning_state
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if *state == Stream::Idle {
+        return ui.client(endpoint);
+    }
+    let provider = Client::connect(endpoint)?;
+    if json {
+        return Ok(provider.on_stream(|delta| match delta {
+            Delta::Text(text) => modes::print_json(&Event::Delta { text: text.clone() }),
+            Delta::Thinking(text) => modes::print_json(&Event::Reasoning { text: text.clone() }),
+            Delta::Call(_) | Delta::Progress => {}
+        }));
+    }
+    let stream = Mutex::new(Stream::Idle);
+    Ok(provider.on_stream(move |delta| {
+        let mut state = stream.lock().unwrap_or_else(PoisonError::into_inner);
+        match delta {
+            Delta::Text(text) => {
+                *state = Stream::Answer;
+                print!("{text}");
+                drop(std::io::stdout().flush());
+            }
+            Delta::Thinking(_) if *state == Stream::Idle => {
                 *state = Stream::Reasoning;
                 eprintln!("\n… reasoning");
             }
-        });
-        provider = provider.on_tool(move |_| {
-            *stream.lock().unwrap_or_else(PoisonError::into_inner) = Stream::Idle;
-        });
-    }
-    Ok(provider)
+            Delta::Call(_) => *state = Stream::Idle,
+            Delta::Thinking(_) | Delta::Progress => {}
+        }
+    }))
 }
 
 pub(super) fn use_tui(args: &Args) -> bool {

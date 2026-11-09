@@ -1,89 +1,39 @@
 use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::error::{Error, ProviderFailureKind, Result};
-use crate::provider::{AssistantMessage, CompletionRequest, Partial, Reasoning};
+use crate::provider::{AssistantMessage, CompletionRequest, Reasoning};
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 pub(crate) mod anthropic;
 pub(crate) mod completions;
 pub(crate) mod decisions;
 pub(crate) mod gemini;
+pub(crate) mod reply;
 pub(crate) mod responses;
+mod spec;
 pub(crate) mod traits;
 
-pub(crate) fn headers(wire: crate::endpoint::Wire) -> &'static [(&'static str, &'static str)] {
-    match wire {
-        crate::endpoint::Wire::Anthropic => anthropic::Wire::headers(),
-        crate::endpoint::Wire::Gemini => gemini::Wire::headers(),
-        crate::endpoint::Wire::Responses => responses::Wire::headers(),
-        crate::endpoint::Wire::Completions => completions::Wire::headers(),
-        crate::endpoint::Wire::Decisions | crate::endpoint::Wire::AgentSdk => &[],
-    }
-}
+pub(crate) use spec::{Codec, ImageBudget, codec, spec};
 
-pub(crate) struct ImageBudget {
-    pub(crate) types: &'static [&'static str],
-    pub(crate) tool_types: &'static [&'static str],
-    pub(crate) count: usize,
-    pub(crate) each: usize,
-    pub(crate) bytes: usize,
-    pub(crate) tool_images: bool,
-}
-
-const PNG_JPEG: &[&str] = &["image/png", "image/jpeg"];
-const WEB_IMAGES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
-const GEMINI_IMAGES: &[&str] = &[
-    "image/png",
-    "image/jpeg",
-    "image/webp",
-    "image/heic",
-    "image/heif",
-];
-const GEMINI_TOOL_IMAGES: &[&str] = &["image/png", "image/jpeg", "image/webp"];
-
-pub(crate) fn image_budget(wire: crate::endpoint::Wire) -> ImageBudget {
-    match wire {
-        crate::endpoint::Wire::Anthropic | crate::endpoint::Wire::AgentSdk => ImageBudget {
-            types: WEB_IMAGES,
-            tool_types: WEB_IMAGES,
-            count: 100,
-            each: 10_000_000,
-            bytes: 24_000_000,
-            tool_images: true,
-        },
-        crate::endpoint::Wire::Gemini => ImageBudget {
-            types: GEMINI_IMAGES,
-            tool_types: GEMINI_TOOL_IMAGES,
-            count: 3600,
-            each: 15_000_000,
-            bytes: 15_000_000,
-            tool_images: false,
-        },
-        crate::endpoint::Wire::Responses => ImageBudget {
-            types: WEB_IMAGES,
-            tool_types: WEB_IMAGES,
-            count: 1500,
-            each: 256_000_000,
-            bytes: 256_000_000,
-            tool_images: true,
-        },
-        crate::endpoint::Wire::Completions => ImageBudget {
-            types: PNG_JPEG,
-            tool_types: PNG_JPEG,
-            count: 100,
-            each: 10_000_000,
-            bytes: 20_000_000,
-            tool_images: true,
-        },
-        crate::endpoint::Wire::Decisions => ImageBudget {
-            types: PNG_JPEG,
-            tool_types: PNG_JPEG,
-            count: 0,
-            each: 0,
-            bytes: 0,
-            tool_images: true,
-        },
-    }
+pub(crate) fn tools(
+    call: &CompletionRequest<'_>,
+    schema: &str,
+    extra: &[(&str, Value)],
+) -> Vec<Value> {
+    call.tools
+        .iter()
+        .map(|tool| {
+            let mut entry = serde_json::json!({
+                "name": tool.function.name,
+                "description": tool.function.description,
+                (schema): tool.function.parameters,
+            });
+            for (key, value) in extra {
+                entry[*key] = value.clone();
+            }
+            entry
+        })
+        .collect()
 }
 
 pub(crate) fn arguments<'a>(name: &str, raw: &'a str) -> Result<&'a RawValue> {
@@ -103,21 +53,8 @@ pub(crate) fn checked(function: &crate::provider::ToolFunction) -> Result<()> {
 }
 
 pub(crate) fn failed(status: Option<u16>, kind: &str, message: &str) -> Error {
-    let lower = kind.to_ascii_lowercase();
-    let code = status.unwrap_or(
-        if ["overload", "unavailable", "server", "api_error", "internal"]
-            .iter()
-            .any(|word| lower.contains(word))
-        {
-            503
-        } else if lower.contains("rate") || lower.contains("exhausted") {
-            429
-        } else {
-            400
-        },
-    );
-    let mut error = super::client::plan_usage(code, &format!("{kind}: {message}"), None)
-        .unwrap_or_else(|| super::client::response_failure(code, message, None));
+    let code = status.unwrap_or_else(|| super::client::status_code(kind));
+    let mut error = super::client::response_failure(code, &format!("{kind}: {message}"), None);
     if let Error::Provider(failure) = &mut error {
         failure.status = status;
     }
@@ -131,7 +68,7 @@ pub(crate) fn blocked(reason: &str) -> Error {
     )
 }
 
-pub(crate) enum Delta {
+pub enum Delta {
     Text(String),
     Thinking(String),
     Call(String),
@@ -247,10 +184,20 @@ impl Slot {
     }
 }
 
+pub(crate) struct Encoding<'a> {
+    pub(crate) reasoning: &'a Reasoning,
+    pub(crate) cache: crate::endpoint::CacheTtl,
+    pub(crate) stream: bool,
+    pub(crate) keep_reasoning: bool,
+    pub(crate) cache_marks: bool,
+    pub(crate) assistant_after_tool: bool,
+}
+
 pub(crate) struct Wired {
     pub(crate) head: Value,
     pub(crate) messages: Option<Vec<u8>>,
     pub(crate) slot: Slot,
+    pub(crate) raw_tools: bool,
 }
 
 impl Wired {
@@ -259,6 +206,7 @@ impl Wired {
             head,
             messages: None,
             slot: Slot::Messages,
+            raw_tools: false,
         }
     }
 
@@ -276,9 +224,9 @@ pub(crate) trait Accumulate {
     fn new(model: &str) -> Self;
     fn on(&mut self, frame: &str) -> Result<Vec<Delta>>;
     fn finish(self) -> AssistantMessage;
-    fn spill(&mut self, partial: &mut Partial);
+    fn reply(&self) -> &reply::ReplyBuilder;
     fn finished(&self) -> bool {
-        false
+        self.reply().finished
     }
     fn thinking(&self) -> bool {
         false
@@ -286,42 +234,29 @@ pub(crate) trait Accumulate {
 }
 
 pub(crate) trait Chat {
-    type Stream: Accumulate;
-
-    fn path(model: &str, stream: bool) -> String;
-
-    fn headers() -> &'static [(&'static str, &'static str)] {
-        &[]
-    }
-
-    fn sentinel() -> Option<&'static str> {
-        None
-    }
+    type Stream: Accumulate + Send;
 
     fn beta(_call: &CompletionRequest<'_>) -> Option<(&'static str, &'static str)> {
         None
     }
 
-    fn body(
-        call: &CompletionRequest<'_>,
-        reasoning: &Reasoning,
-        cache: crate::endpoint::CacheTtl,
-        stream: bool,
-    ) -> Result<Wired>;
+    fn body(call: &CompletionRequest<'_>, encoding: &Encoding<'_>) -> Result<Wired>;
 
     #[cfg(test)]
     fn request(call: &CompletionRequest<'_>, stream: bool) -> Result<Value> {
         Self::body(
             call,
-            &call.reasoning,
-            crate::limits::limits().cache_ttl,
-            stream,
+            &Encoding {
+                reasoning: &call.reasoning,
+                cache: crate::limits::limits().cache_ttl,
+                stream,
+                keep_reasoning: false,
+                cache_marks: false,
+                assistant_after_tool: false,
+            },
         )?
         .value()
     }
-
-    #[cfg(test)]
-    fn parse(model: &str, body: &Value) -> AssistantMessage;
 }
 
 #[cfg(test)]

@@ -55,10 +55,17 @@ fn a_resumed_session_keeps_the_reply_phase_and_commentary() {
     };
     std::fs::write(&path, "").unwrap();
     let mut log = Log::open(&path).unwrap();
-    log.append(&answer(Vec::new(), Some(said.clone()))).unwrap();
+    log.append(
+        &answer(Vec::new(), Some(said.clone())),
+        crate::durable::store::Durability::Renamed,
+    )
+    .unwrap();
     drop(log);
     let mut state = State::default();
-    for line in read(&path).unwrap() {
+    for line in records::<Line>(&path, 0)
+        .collect::<io::Result<Vec<_>>>()
+        .unwrap()
+    {
         state.apply(line);
     }
     let last = state.history.last().expect("the reply is in history");
@@ -156,7 +163,9 @@ fn records_skip_a_malformed_line_in_the_middle_of_the_log() {
         "{\"kind\":\"clear\"}\n{\"kind\":\"clear\"\n{\"kind\":\"clear\"}\n",
     )
     .unwrap();
-    let lines = read(&path).unwrap();
+    let lines = records::<Line>(&path, 0)
+        .collect::<io::Result<Vec<_>>>()
+        .unwrap();
     assert_eq!(lines, [Line::Clear, Line::Clear]);
 }
 
@@ -181,7 +190,7 @@ fn a_session_journal_opens_in_one_host_at_a_time() {
 #[test]
 fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
     use crate::child::{Access, ChildRecord, ChildState};
-    use crate::durable::projection::Speech;
+    use crate::durable::projection::AssistantEvents;
     use crate::tools::AbortCode;
     let record = ChildRecord {
         version: 1,
@@ -226,15 +235,20 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
         ChildState::Completed(empty),
     ] {
         journal
-            .append(&Line::Child {
-                record: ChildRecord {
-                    state,
-                    ..record.clone()
+            .append(
+                &Line::Child {
+                    record: ChildRecord {
+                        state,
+                        ..record.clone()
+                    },
                 },
-            })
+                crate::durable::store::Durability::Renamed,
+            )
             .expect("child record");
     }
-    let records = read(&path).expect("read journal");
+    let records = records::<Line>(&path, 0)
+        .collect::<io::Result<Vec<_>>>()
+        .expect("read journal");
     assert_eq!(records.len(), 5);
     for (line, expected) in records.into_iter().zip([
         Event::Assistant {
@@ -256,7 +270,7 @@ fn child_journal_records_notify_terminals_even_when_parent_speech_is_skipped() {
             text: String::new(),
         },
     ]) {
-        let events = line.into_events(Speech::Skip);
+        let events = line.into_events(AssistantEvents::Skip);
         assert_eq!(events.len(), 1, "{events:?}");
         let Event::Child { id, event } = &events[0] else {
             panic!("child notification")
@@ -281,4 +295,60 @@ fn records_after_reads_from_a_line_boundary_and_rejects_a_mid_line_offset() {
     assert_eq!(tail, vec![serde_json::json!({"n": 2})]);
     let torn = records_after::<serde_json::Value>(&path, 3).unwrap_err();
     assert_eq!(torn.kind(), std::io::ErrorKind::InvalidData);
+}
+
+fn records_after<T: Fill>(path: &Path, offset: u64) -> io::Result<Vec<T>> {
+    records(path, offset).collect()
+}
+
+#[test]
+fn a_journal_usage_record_reports_its_cache_writes() {
+    use crate::durable::projection::AssistantEvents;
+    let line: Line = serde_json::from_str(
+        r#"{"kind":"assistant","text":"hi","usage":{"input":100,"output":20,"reasoning":0,"cached":40,"written":7,"millis":5}}"#,
+    )
+    .expect("a journal assistant line parses");
+    let written = line
+        .into_events(AssistantEvents::Skip)
+        .into_iter()
+        .find_map(|event| match event {
+            Event::Usage {
+                cache_write_tokens, ..
+            } => Some(cache_write_tokens),
+            _ => None,
+        });
+    assert_eq!(written, Some(7));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_closed_session_reopens_while_other_threads_start_programs() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session.jsonl");
+    drop(Log::create(&path).unwrap());
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let spawners: Vec<_> = (0..3)
+        .map(|_| {
+            let stop = std::sync::Arc::clone(&stop);
+            std::thread::spawn(move || {
+                let search = std::env::var("PATH").unwrap_or_default();
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let status = std::process::Command::new("sh")
+                        .args(["-c", "true"])
+                        .env_clear()
+                        .env("PATH", &search)
+                        .status();
+                    drop(status);
+                }
+            })
+        })
+        .collect();
+    let refused = (0..300)
+        .filter(|_| Log::open(&path).map(drop).is_err())
+        .count();
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    for spawner in spawners {
+        spawner.join().expect("spawner thread");
+    }
+    assert_eq!(refused, 0, "a closed session must reopen");
 }

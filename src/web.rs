@@ -1,15 +1,12 @@
 use std::collections::HashMap;
-use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use leyline::{
-    Browser, CompressionConfig, DnsConfig, Family, RedirectAction, RedirectPolicy, Session,
-};
+use leyline::{Browser, Redirect, Session};
 use url::Url;
 
 use crate::config;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 const HITS_DEFAULT: usize = 5;
 const HITS_MAX: usize = 8;
@@ -18,29 +15,12 @@ mod fetch;
 mod results;
 
 pub(crate) use fetch::OUT_MAX;
-use fetch::{check_url, host_blocked, resolves_blocked};
+pub(crate) use fetch::PRIVATE_URL_PATTERNS;
+use fetch::{check_url, fetch_targets, host_blocked, public_targets};
 const INERT_SCHEMES: [&str; 3] = ["about", "data", "chrome-error"];
-pub(crate) const PRIVATE_URL_PATTERNS: &[&str] = &[
-    "*://localhost/*",
-    "*://localhost:*/*",
-    "*://localhost./*",
-    "*://localhost.:*/*",
-    "*://*.localhost/*",
-    "*://*.localhost:*/*",
-    "*://*.local/*",
-    "*://*.local:*/*",
-    "*://*.internal/*",
-    "*://*.internal:*/*",
-    "*://127.0.0.1/*",
-    "*://127.0.0.1:*/*",
-    "*://0.0.0.0/*",
-    "*://0.0.0.0:*/*",
-    "*://[::1]/*",
-    "*://[::1]:*/*",
-    "*://metadata.google.internal/*",
-    "*://metadata.google.internal:*/*",
-];
-use results::{Engine, Hit, Window, engines, flat, format_hits, parse_page};
+use results::markup::{Space, collapse};
+pub(crate) use results::wall;
+use results::{Engine, Hit, Window, engines, format_hits, parse_page};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Format {
@@ -69,20 +49,20 @@ pub(crate) struct Search {
     allowed: Vec<String>,
     excluded: Vec<String>,
     browser: Arc<Mutex<Option<crate::browser::Browser>>>,
-    rest: Arc<Rest>,
+    cooldowns: Arc<Cooldowns>,
 }
 
 #[derive(Default)]
-pub(crate) struct Rest(Mutex<HashMap<String, Instant>>);
+pub(crate) struct Cooldowns(Mutex<HashMap<String, Instant>>);
 
-impl Rest {
+impl Cooldowns {
     pub(crate) fn block(&self, name: &str, until: Instant) {
         if let Ok(mut held) = self.0.lock() {
             held.insert(name.to_string(), until);
         }
     }
 
-    pub(crate) fn resting(&self, name: &str, now: Instant) -> bool {
+    pub(crate) fn blocked(&self, name: &str, now: Instant) -> bool {
         self.0
             .lock()
             .ok()
@@ -109,7 +89,7 @@ impl Search {
             allowed,
             excluded,
             browser: Arc::new(Mutex::new(None)),
-            rest: Arc::default(),
+            cooldowns: Arc::default(),
         })
     }
 
@@ -154,8 +134,8 @@ impl Search {
         let mut failure = None;
         let mut found = None;
         let mut tried = 0;
-        for engine in engines()? {
-            if self.rest.resting(&engine.name, Instant::now()) {
+        for engine in engines() {
+            if self.cooldowns.blocked(&engine.name, Instant::now()) {
                 continue;
             }
             tried += 1;
@@ -166,16 +146,16 @@ impl Search {
                 }
                 Ok(Page::Hits(_)) => {}
                 Ok(Page::Blocked(wait)) => {
-                    self.rest.block(&engine.name, Instant::now() + wait);
+                    self.cooldowns.block(&engine.name, Instant::now() + wait);
                 }
                 Err(error) => {
                     failure.get_or_insert(error);
                 }
             }
         }
-        if found.is_none() && failure.is_none() && tried < engines()?.len() {
+        if found.is_none() && failure.is_none() && tried < engines().len() {
             return Err(Error::Tool(
-                "web_search engines are resting after rate limits; try again in a minute"
+                "web_search engines are blocked after rate limits; try again in a minute"
                     .to_string(),
             ));
         }
@@ -222,7 +202,7 @@ impl Search {
             return Err(Error::Tool(format!(
                 "web_search {} HTTP {status}: {}",
                 engine.name,
-                crate::text::ellipsize(&flat(&body), 200)
+                crate::display::ellipsize(&collapse(&body, Space::Flat), 200)
             )));
         }
         Ok(Page::Hits(parse_page(&body, engine)))
@@ -252,16 +232,11 @@ fn http_builder() -> leyline::SessionBuilder {
         crate::limits::limits().web_search(),
         crate::limits::limits().web_connect(),
     )
-    .browser(Browser::latest(Family::Chrome))
-    .compression(CompressionConfig::new().max_body_size(crate::limits::limits().web_body_bytes))
-    .redirect(RedirectPolicy::custom(|attempt| {
-        if attempt.previous.len() >= crate::limits::limits().web_redirect_max
-            || !safe_redirect(attempt.url)
-        {
-            RedirectAction::Stop
-        } else {
-            RedirectAction::Follow
-        }
+    .browser(Browser::chrome())
+    .max_body_size(crate::limits::limits().web_body_bytes)
+    .redirect(Redirect::custom(|attempt| {
+        attempt.previous().len() < crate::limits::limits().web_redirect_max
+            && attempt.url().is_some_and(safe_redirect)
     }))
 }
 
@@ -270,38 +245,26 @@ fn client() -> Result<Session> {
         http_builder(),
         crate::limits::limits()
             .retry_policy(crate::limits::Reach::Remote)
-            .retry_on([leyline::RetryTrigger::ConnectionError]),
+            .when(|attempt| {
+                attempt.error().is_some_and(|error| {
+                    error.is_retryable() && error.kind() != leyline::Kind::Timeout
+                })
+            }),
     )
-}
-
-pub(super) fn fetch_targets(host: &str) -> std::result::Result<Vec<std::net::SocketAddr>, ()> {
-    let addrs = match host.parse::<std::net::IpAddr>() {
-        Ok(ip) => vec![std::net::SocketAddr::new(ip, 443)],
-        Err(_) => match (host, 443).to_socket_addrs() {
-            Ok(addrs) => addrs.collect::<Vec<_>>(),
-            Err(_) => return Err(()),
-        },
-    };
-    if addrs.is_empty() || addrs.iter().any(|addr| fetch::ip_blocked(addr.ip())) {
-        return Err(());
-    }
-    Ok(addrs)
 }
 
 pub(super) fn pinned_session(host: &str, addrs: &[std::net::SocketAddr]) -> Result<Session> {
     crate::credentials::session(
-        http_builder().dns(DnsConfig::new().resolve_host(host, addrs.iter().copied())),
+        http_builder().resolve(host, addrs.iter().copied()),
         crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
     )
 }
 
 pub(crate) async fn allowed_url(raw: &str) -> Result<String> {
     let url = check_url(raw)?;
-    let host = url.host_str().unwrap_or("").to_string();
-    tokio::task::spawn_blocking(move || fetch_targets(&host))
+    public_targets(url.host_str().unwrap_or(""))
         .await
-        .unwrap_or(Err(()))
-        .map_err(|()| Error::Tool("browser: that host is not allowed".to_string()))?;
+        .ok_or_else(|| Error::Tool("browser: that host is not allowed".to_string()))?;
     Ok(url.to_string())
 }
 
@@ -312,13 +275,8 @@ pub(crate) async fn reachable(raw: &str) -> bool {
     if INERT_SCHEMES.contains(&url.scheme()) {
         return true;
     }
-    let host = url.host_str().unwrap_or("").to_string();
-    if url.scheme() != "https" || host_blocked(&host) {
-        return false;
-    }
-    tokio::task::spawn_blocking(move || !resolves_blocked(&host))
-        .await
-        .unwrap_or(false)
+    let host = url.host_str().unwrap_or("");
+    url.scheme() == "https" && !host_blocked(host) && public_targets(host).await.is_some()
 }
 
 fn safe_redirect(url: &Url) -> bool {
@@ -327,7 +285,7 @@ fn safe_redirect(url: &Url) -> bool {
         && url.username().is_empty()
         && url.password().is_none()
         && !host_blocked(host)
-        && !resolves_blocked(host)
+        && fetch_targets(host).is_some()
 }
 
 fn host_of(url: &str) -> String {

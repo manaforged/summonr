@@ -1,111 +1,226 @@
+use sigil::prelude::NodeBuilder;
+
+use super::super::ui::Bindings;
 use super::*;
 
-mod context;
+pub(super) mod context;
+
+struct Row {
+    overlay: Overlay,
+    open: fn(&App) -> Signal<bool>,
+    keys: fn() -> Bindings,
+    node: Option<fn(App) -> NodeBuilder>,
+    shift: fn(&App, isize),
+    tab: Option<fn(&App, isize)>,
+    adjust: fn(&App, isize) -> bool,
+    viewport: Option<fn(&App) -> Signal<f32>>,
+    enter: fn(&App),
+    close: Option<fn(&App)>,
+    dismiss: fn(&App),
+}
+
+const ROW: Row = Row {
+    overlay: Overlay::Secret,
+    open: |app| app.secret_dialog,
+    keys: Vec::new,
+    node: None,
+    shift: |_, _| {},
+    tab: None,
+    adjust: |_, _| false,
+    viewport: None,
+    enter: |_| {},
+    close: None,
+    dismiss: |app| {
+        app.overlay_close();
+    },
+};
+
+static ROWS: [Row; 13] = [
+    Row {
+        overlay: Overlay::Secret,
+        open: |app| app.secret_dialog,
+        node: Some(super::super::secret::layer),
+        enter: |app| app.secret_finish(true),
+        close: Some(|app| app.secret_finish(false)),
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Help,
+        open: |app| app.help.open,
+        node: Some(super::super::help::layer),
+        shift: super::super::help::shift,
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Search,
+        open: |app| app.search.open,
+        node: Some(super::super::search::layer),
+        shift: |app, delta| app.search.shift(&app.model.get(), delta),
+        enter: App::jump,
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Sessions,
+        open: |app| app.sessions.open,
+        keys: super::super::sessions::keys,
+        node: Some(super::super::sessions::layer),
+        shift: |app, delta| app.sessions.shift(delta),
+        tab: Some(|app, _| app.sessions.scope()),
+        enter: App::resume_session,
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Usage,
+        open: |app| app.usage.open,
+        node: Some(super::super::usage::layer),
+        shift: |app, delta| app.usage.shift(delta),
+        tab: Some(|app, _| app.usage.metric()),
+        adjust: App::step_tab,
+        enter: |app| app.usage.scope(),
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Auth,
+        open: |app| app.auth.open,
+        keys: settings::auth_keys,
+        node: Some(|app| {
+            if app.picker.open.peek() {
+                settings::model_picker_layer(app)
+            } else {
+                settings::auth_layer(app)
+            }
+        }),
+        shift: App::move_auth,
+        adjust: App::step_tab,
+        viewport: Some(|app| {
+            if app.picker.open.peek() {
+                app.picker.list.scroll
+            } else {
+                app.auth.list.scroll
+            }
+        }),
+        enter: App::commit_auth,
+        close: Some(App::cancel_auth),
+        dismiss: |app| {
+            if app.picker.open.peek() {
+                app.overlay_close();
+            } else {
+                app.dismiss_auth();
+            }
+        },
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Model,
+        open: |app| app.picker.open,
+        keys: settings::model_picker_keys,
+        node: Some(settings::model_picker_layer),
+        shift: App::move_model,
+        tab: Some(App::cycle_facet),
+        adjust: App::step_tab,
+        viewport: Some(|app| app.picker.list.scroll),
+        enter: App::commit_model_edit,
+        close: Some(App::cancel_model_edit),
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Effort,
+        open: |app| app.effort.open,
+        shift: App::shift_effort,
+        adjust: |app, delta| {
+            app.shift_effort(delta);
+            true
+        },
+        enter: App::commit_effort,
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Workflow,
+        open: |app| app.workflow.open,
+        keys: settings::workflow_keys,
+        node: Some(settings::workflow_layer),
+        shift: App::move_workflow,
+        adjust: |app, delta| {
+            let cycle = !app.workflow.naming.peek();
+            if cycle {
+                app.cycle_workflow(delta);
+            }
+            cycle
+        },
+        enter: App::pick_workflow_model,
+        close: Some(App::close_workflow),
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Hotkeys,
+        open: |app| app.hotkeys.open,
+        keys: settings::hotkeys_keys,
+        node: Some(settings::hotkeys_layer),
+        shift: App::move_hotkey,
+        enter: App::edit_hotkey,
+        close: Some(App::close_hotkey),
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Settings,
+        open: |app| app.settings_open,
+        keys: settings::settings_keys,
+        node: Some(settings::settings_layer),
+        shift: App::move_setting,
+        viewport: Some(|app| app.settings.scroll),
+        adjust: |app, delta| {
+            if app.selected_setting() == Some(super::settings::Setting::Endpoint) {
+                app.cycle_model(delta >= 0);
+            } else {
+                app.adjust_setting();
+            }
+            true
+        },
+        enter: App::adjust_setting,
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Context,
+        open: |app| app.context_open,
+        enter: App::close_meters,
+        close: Some(App::close_meters),
+        ..ROW
+    },
+    Row {
+        overlay: Overlay::Cache,
+        open: |app| app.cache_open,
+        enter: App::close_meters,
+        close: Some(App::close_meters),
+        ..ROW
+    },
+];
 
 impl Overlay {
-    const STACK: [Self; 12] = [
-        Self::Help,
-        Self::Search,
-        Self::Sessions,
-        Self::Usage,
-        Self::Auth,
-        Self::Model,
-        Self::Effort,
-        Self::Workflow,
-        Self::Hotkeys,
-        Self::Settings,
-        Self::Context,
-        Self::Cache,
-    ];
-
-    pub(in crate::tui::sigil_view) fn open(self, app: &App) -> Signal<bool> {
-        match self {
-            Self::Secret => app.secret_dialog,
-            Self::Help => app.help.open,
-            Self::Search => app.search.open,
-            Self::Sessions => app.sessions.open,
-            Self::Usage => app.usage.open,
-            Self::Auth => app.auth.open,
-            Self::Model => app.picker.open,
-            Self::Effort => app.effort.open,
-            Self::Workflow => app.workflow.open,
-            Self::Hotkeys => app.hotkeys.open,
-            Self::Settings => app.settings_open,
-            Self::Context => app.context_open,
-            Self::Cache => app.cache_open,
-        }
+    fn row(self) -> &'static Row {
+        &ROWS[self as usize]
     }
 
-    fn keys(self) -> super::super::ui::Bindings {
-        match self {
-            Self::Sessions => super::super::sessions::keys(),
-            Self::Auth => settings::auth_keys(),
-            Self::Model => settings::model_picker_keys(),
-            Self::Workflow => settings::workflow_keys(),
-            Self::Hotkeys => settings::hotkeys_keys(),
-            Self::Settings => settings::settings_keys(),
-            Self::Secret
-            | Self::Usage
-            | Self::Help
-            | Self::Search
-            | Self::Effort
-            | Self::Context
-            | Self::Cache => Vec::new(),
-        }
-    }
-
-    const fn modal(self) -> bool {
-        !matches!(self, Self::Effort | Self::Context | Self::Cache)
-    }
-
-    pub(in crate::tui::sigil_view) fn layer(self, app: App) -> Option<sigil::prelude::NodeBuilder> {
-        if !self.modal() {
-            return None;
-        }
-        let keys = self.keys();
+    pub(in crate::tui::sigil_view) fn layer(self, app: App) -> Option<NodeBuilder> {
+        let row = self.row();
+        let node = row.node?;
         let owner = app.clone();
-        let closer = app.clone();
-        let close: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
-            if closer.overlay() == Some(Self::Auth) && !closer.picker.open.peek() {
-                closer.dismiss_auth();
-            } else {
-                closer.overlay_close();
-            }
-        });
-        let node = super::super::ui::dismissing(close, || self.node(app))?;
-        Some(super::super::ui::keyed(node, &owner, keys))
-    }
-
-    fn node(self, app: App) -> Option<sigil::prelude::NodeBuilder> {
-        Some(match self {
-            Self::Secret => super::super::secret::layer(app),
-            Self::Help => super::super::help::layer(app),
-            Self::Search => super::super::search::layer(app),
-            Self::Sessions => super::super::sessions::layer(app),
-            Self::Usage => super::super::usage::layer(app),
-            Self::Auth if app.picker.open.peek() => settings::model_picker_layer(app),
-            Self::Auth => settings::auth_layer(app),
-            Self::Model => settings::model_picker_layer(app),
-            Self::Workflow => settings::workflow_layer(app),
-            Self::Hotkeys => settings::hotkeys_layer(app),
-            Self::Settings => settings::settings_layer(app),
-            Self::Effort | Self::Context | Self::Cache => return None,
-        })
+        let (closer, dismiss) = (app.clone(), row.dismiss);
+        let close: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || dismiss(&closer));
+        let node = super::super::ui::dismissing(close, || node(app));
+        Some(super::super::ui::keyed(node, &owner, (row.keys)()))
     }
 }
 
 impl App {
     pub(in crate::tui::sigil_view) fn overlay(&self) -> Option<Overlay> {
-        if self.secret_dialog.get() {
-            return Some(Overlay::Secret);
-        }
-        Overlay::STACK
-            .into_iter()
-            .find(|overlay| overlay.open(self).get())
+        ROWS.iter()
+            .find(|row| (row.open)(self).get())
+            .map(|row| row.overlay)
     }
 
     pub(in crate::tui::sigil_view) fn covered(&self) -> bool {
-        self.overlay().is_some_and(Overlay::modal)
+        self.overlay()
+            .is_some_and(|overlay| overlay.row().node.is_some())
     }
 
     pub(in crate::tui::sigil_view) fn options_active(&self) -> bool {
@@ -113,20 +228,10 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn overlay_move(&self, delta: isize) -> bool {
-        match self.overlay() {
-            Some(Overlay::Help) => crate::tui::sigil_view::help::shift(self, delta),
-            Some(Overlay::Search) => self.search.shift(&self.model.get(), delta),
-            Some(Overlay::Sessions) => self.sessions.shift(delta),
-            Some(Overlay::Auth) => self.move_auth(delta),
-            Some(Overlay::Model) => self.move_model(delta),
-            Some(Overlay::Effort) => self.effort.shift(&self.model.get().snapshot.levels, delta),
-            Some(Overlay::Workflow) => self.move_workflow(delta),
-            Some(Overlay::Hotkeys) => self.move_hotkey(delta),
-            Some(Overlay::Settings) => self.move_setting(delta),
-            Some(Overlay::Usage) => self.usage.shift(delta),
-            Some(Overlay::Secret | Overlay::Context | Overlay::Cache) => {}
-            None => return false,
-        }
+        let Some(overlay) = self.overlay() else {
+            return false;
+        };
+        (overlay.row().shift)(self, delta);
         true
     }
 
@@ -134,63 +239,51 @@ impl App {
         if !super::super::canvas::is_window() {
             return self.overlay_move(lines);
         }
-        let viewport = match self.overlay() {
-            Some(Overlay::Auth) if !self.picker.open.peek() => self.auth.scroll,
-            Some(Overlay::Auth | Overlay::Model) => self.picker.scroll,
-            Some(_) | None => return self.overlay_move(lines),
+        let Some(viewport) = self.overlay().and_then(|overlay| overlay.row().viewport) else {
+            return self.overlay_move(lines);
         };
+        let viewport = viewport(self);
         let step = lines as f32 * super::super::canvas::overlay_list_row();
         viewport.set((viewport.peek() + step).max(0.0));
         true
     }
 
     pub(in crate::tui::sigil_view) fn overlay_tab(&self, delta: isize) -> bool {
-        match self.overlay() {
-            Some(Overlay::Sessions) => self.sessions.scope(),
-            Some(Overlay::Usage) => self.usage.metric(),
-            Some(Overlay::Model) => self.cycle_facet(delta),
-            Some(_) | None => return self.overlay_move(delta),
-        }
+        let Some(tab) = self.overlay().and_then(|overlay| overlay.row().tab) else {
+            return self.overlay_move(delta);
+        };
+        tab(self, delta);
         true
     }
 
     pub(in crate::tui::sigil_view) fn overlay_enter(&self) -> bool {
-        match self.overlay() {
-            Some(Overlay::Secret) => self.secret_finish(true),
-            Some(Overlay::Help) => return true,
-            Some(Overlay::Search) => self.jump(),
-            Some(Overlay::Sessions) => self.resume_session(),
-            Some(Overlay::Auth) => self.commit_auth(),
-            Some(Overlay::Model) => self.commit_model_edit(),
-            Some(Overlay::Effort) => self.commit_effort(),
-            Some(Overlay::Workflow) => self.pick_workflow_seat(),
-            Some(Overlay::Hotkeys) => self.edit_hotkey(),
-            Some(Overlay::Settings) => self.adjust_setting(),
-            Some(Overlay::Usage) => self.usage.scope(),
-            Some(Overlay::Context | Overlay::Cache) => self.close_meters(),
-            None => return false,
-        }
+        let Some(overlay) = self.overlay() else {
+            return false;
+        };
+        (overlay.row().enter)(self);
         true
     }
 
     pub(in crate::tui::sigil_view) fn overlay_close(&self) -> bool {
         self.scroll.set(0);
-        match self.overlay() {
-            Some(Overlay::Secret) => self.secret_finish(false),
-            Some(Overlay::Help) => self.help.open.set(false),
-            Some(Overlay::Search) => self.search.open.set(false),
-            Some(Overlay::Sessions) => self.sessions.open.set(false),
-            Some(Overlay::Auth) => self.cancel_auth(),
-            Some(Overlay::Model) => self.cancel_model_edit(),
-            Some(Overlay::Effort) => self.effort.open.set(false),
-            Some(Overlay::Workflow) => self.close_workflow(),
-            Some(Overlay::Hotkeys) => self.close_hotkey(),
-            Some(Overlay::Settings) => self.settings_open.set(false),
-            Some(Overlay::Usage) => self.usage.open.set(false),
-            Some(Overlay::Context | Overlay::Cache) => self.close_meters(),
-            None => return false,
+        let Some(overlay) = self.overlay() else {
+            return false;
+        };
+        let row = overlay.row();
+        match row.close {
+            Some(close) => close(self),
+            None => (row.open)(self).set(false),
         }
         true
+    }
+
+    pub(in crate::tui::sigil_view) fn overlay_adjust(&self, delta: isize) -> bool {
+        self.overlay()
+            .is_some_and(|overlay| (overlay.row().adjust)(self, delta))
+    }
+
+    fn shift_effort(&self, delta: isize) {
+        self.effort.shift(&self.model.get().snapshot.levels, delta);
     }
 
     fn close_hotkey(&self) {
@@ -229,39 +322,24 @@ impl App {
         }
     }
 
-    pub(in crate::tui::sigil_view) fn overlay_adjust(&self, delta: isize) -> bool {
-        match self.overlay() {
-            Some(Overlay::Workflow) if !self.workflow.naming.peek() => self.cycle_workflow(delta),
-            Some(Overlay::Settings)
-                if self.selected_setting() == Some(super::settings::Setting::Endpoint) =>
-            {
-                self.cycle_seat(delta >= 0);
-            }
-            Some(Overlay::Settings) => self.adjust_setting(),
-            Some(Overlay::Model | Overlay::Auth | Overlay::Usage) => return self.step_tab(delta),
-            Some(Overlay::Effort) => self.effort.shift(&self.model.get().snapshot.levels, delta),
-            _ => return false,
-        }
-        true
-    }
-
     pub(in crate::tui::sigil_view) fn workflow_keys(&self) -> bool {
         self.overlay() == Some(Overlay::Workflow) && !self.workflow.naming.peek()
     }
 
-    pub(in crate::tui::sigil_view) fn copy_seat(&self, from: usize, to: usize) {
+    pub(in crate::tui::sigil_view) fn copy_model(&self, from: usize, to: usize) {
         let Some(role) = Role::ALL.get(to) else {
             return;
         };
-        let seat = self.workflow.seats.peek().get(from).cloned().flatten();
-        let command = match seat.and_then(|seat| {
-            seat.split_once('\t')
+        let selection = self.workflow.selections.peek().get(from).cloned().flatten();
+        let command = match selection.and_then(|selection| {
+            selection
+                .split_once('\t')
                 .map(|(endpoint, model)| (endpoint.to_string(), model.to_string()))
         }) {
-            Some((endpoint, model)) => Cmd::SeatRole(*role, endpoint, model),
+            Some((endpoint, model)) => Cmd::AssignModel(*role, endpoint, model),
             None => Cmd::ClearRole(*role),
         };
-        self.workflow.sel.set(to);
+        self.workflow.list.cursor.set(to);
         drop(self.cmd.send(command));
     }
 }

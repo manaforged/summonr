@@ -44,3 +44,10 @@ fn rank(name: &str, description: &str, needle: &str) -> Option<usize> {
         .or_else(|| description.to_lowercase().contains(needle).then_some(35))
         .or(named)
 }
+
+pub(crate) fn all_words(text: &str, query: &str) -> bool {
+    let text = text.to_lowercase();
+    query
+        .split_whitespace()
+        .all(|word| text.contains(&word.to_lowercase()))
+}

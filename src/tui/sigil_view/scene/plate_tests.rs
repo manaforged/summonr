@@ -228,7 +228,7 @@ fn a_wide_splash_centers_the_wordmark_and_facts_on_the_face_of_the_s() {
 fn the_splash_glass_reaches_the_window_frame() {
     Runtime::scope("splash-glass-edge", || {
         let (app, _host, _screen) = splash_screen(120, 40);
-        let card = super::compose(120, 40, &app).plate.area;
+        let card = super::compose(120, 40, &app, 0).plate.area;
         let window = super::window_area(&app, 120, 40);
         assert_eq!(
             (card[0], card[1], card[2]),
@@ -247,8 +247,107 @@ fn the_splash_card_is_two_rows_taller_than_its_body() {
         let [_, body_rows] = super::body(cols, card, &facts);
         assert!(body_rows > 2);
         assert_eq!(
-            super::compose(cols, rows, &app).plate.area[3],
+            super::compose(cols, rows, &app, 0).plate.area[3],
             body_rows + 2
         );
+    });
+}
+
+#[test]
+fn the_wordmark_overlaps_the_s_and_facts_fade_during_the_final_settle() {
+    Runtime::scope("splash-wordmark-sequence", || {
+        let (app, _host, _screen) = splash_screen(120, 40);
+        let settled = super::compose(120, 40, &app, 0).plate;
+        let white = sigil::terminal::Ink::Exact(super::palette().text);
+        let width = usize::from(settled.area[2]);
+        let first = settled
+            .cells
+            .iter()
+            .position(|cell| cell.bg == white)
+            .expect("settled wordmark has solid text cells");
+        let x = settled.area[0] + (first % width) as u16;
+        let y = settled.area[1] + (first / width) as u16;
+        app.splash_revealed.set(false);
+        let at = |millis| super::compose(120, 40, &app, millis).plate;
+        let early = at(460);
+        assert!(early.cells.iter().any(|cell| cell.text == "┌"));
+        assert!(!early.cells.iter().any(|cell| cell.text == "┏"));
+        assert_eq!(
+            early.at([x, y]).expect("wordmark origin").bg,
+            early.cells[0].bg
+        );
+        let overlap = at(520);
+        assert!(!overlap.cells.iter().any(|cell| cell.text == "┏"));
+        let faint = overlap.at([x, y]).expect("fading wordmark").bg;
+        let brighter = at(560).at([x, y]).expect("fading wordmark").bg;
+        assert_ne!(faint, early.cells[0].bg);
+        assert_ne!(faint, brighter, "wordmark must fade rather than pop in");
+        let middle = at(760);
+        let left = middle.at([x, y]).expect("leading column").bg;
+        let edge = middle.at([x + 28, y]).expect("soft edge").bg;
+        assert_ne!(left, edge);
+        assert_ne!(edge, middle.cells[0].bg);
+        assert_eq!(
+            middle.at([x + 56, y]).expect("unrevealed column").bg,
+            middle.cells[0].bg
+        );
+        assert_eq!(
+            middle.at([x + 28, y + 1]).expect("next wordmark row").bg,
+            edge,
+            "the fade must stay aligned across rows"
+        );
+        assert!(!middle.cells.iter().any(|cell| cell.text == "w"));
+        let workdir = settled
+            .cells
+            .iter()
+            .position(|cell| cell.text == "w")
+            .expect("workdir label");
+        assert!(!at(1_100).cells.iter().any(|cell| cell.text == "w"));
+        let fading = at(1_200);
+        assert_eq!(fading.cells[workdir].text, "w");
+        assert_ne!(fading.cells[workdir].fg, settled.cells[workdir].fg);
+        assert_eq!(at(1_280), settled);
+        assert_eq!(super::reveal_ms(&app), 1_280);
+        assert!(super::compose(120, 40, &app, 1_200).shimmer.is_none());
+        assert!(super::compose(120, 40, &app, 1_280).shimmer.is_some());
+    });
+}
+
+#[test]
+fn compact_cards_skip_the_beats_for_elements_they_do_not_show() {
+    Runtime::scope("splash-compact-sequence", || {
+        for (cols, rows, facts_start, end) in [(60, 40, 600, 760), (120, 20, 640, 800)] {
+            let (app, _host, _screen) = splash_screen(cols, rows);
+            let settled = super::compose(cols, rows, &app, 0).plate;
+            let workdir = settled
+                .cells
+                .iter()
+                .position(|cell| cell.text == "w")
+                .expect("workdir label");
+            app.splash_revealed.set(false);
+            app.splash_since
+                .set(std::time::Instant::now() - std::time::Duration::from_secs(10));
+            let at = |millis| super::compose(cols, rows, &app, millis).plate;
+            assert!(!at(facts_start).cells.iter().any(|cell| cell.text == "w"));
+            let fading = at(facts_start + 80);
+            assert_eq!(fading.cells[workdir].text, "w");
+            assert_ne!(fading.cells[workdir].fg, settled.cells[workdir].fg);
+            assert_eq!(at(end), settled, "{cols}x{rows}");
+            assert_eq!(super::reveal_ms(&app), end);
+        }
+    });
+}
+
+#[test]
+fn typing_or_disabling_animations_skips_the_whole_splash_sequence() {
+    Runtime::scope("splash-reveal-skip", || {
+        let (app, _host, _screen) = splash_screen(120, 40);
+        let settled = super::compose(120, 40, &app, 0).plate;
+        app.splash_revealed.set(false);
+        app.draft.set("hello".to_string());
+        assert_eq!(super::compose(120, 40, &app, 0).plate, settled);
+        app.draft.set(String::new());
+        app.model_mut(|model| model.prefs.animations = false);
+        assert_eq!(super::compose(120, 40, &app, 0).plate, settled);
     });
 }

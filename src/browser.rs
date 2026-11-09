@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use url::Url;
 
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 mod call;
 mod extras;
@@ -35,6 +35,12 @@ pub(crate) struct Settings {
     out_max: usize,
 }
 
+#[derive(Clone, Copy)]
+enum Profile {
+    Named,
+    Ephemeral,
+}
+
 #[derive(Clone)]
 pub(crate) struct Browser {
     live: Arc<Mutex<Option<Live>>>,
@@ -43,40 +49,31 @@ pub(crate) struct Browser {
 
 impl Browser {
     pub(crate) fn discover() -> Result<Self> {
-        let file = crate::config::file()?;
-        let raw = &file.browser;
-        let name = raw.profile.as_deref().unwrap_or(DEFAULT_PROFILE).trim();
-        if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
-            return Err(Error::Config(format!(
-                "[browser] profile `{name}` must be a plain directory name"
-            )));
-        }
-        let profile = crate::prompt::summonr_home()?
-            .join(BROWSER_DIR)
-            .join(PROFILES_DIR)
-            .join(name);
-        let events = raw
-            .events
-            .map_or_else(charm::Events::all, |events| charm::Events {
-                page: events.page,
-                runtime: events.runtime,
-            });
-        Ok(Self {
-            live: Arc::new(Mutex::new(None)),
-            settings: Arc::new(Settings {
-                name: name.to_string(),
-                profile: Some(profile),
-                headed: raw.headed.unwrap_or(false),
-                chrome: raw.chrome.clone(),
-                events,
-                timing: launch::timing(),
-                out_max: crate::web::OUT_MAX,
-            }),
-        })
+        Self::open_with(Profile::Named)
     }
 
     pub(crate) fn ephemeral() -> Result<Self> {
+        Self::open_with(Profile::Ephemeral)
+    }
+
+    fn open_with(profile: Profile) -> Result<Self> {
         let raw = &crate::config::file()?.browser;
+        let (name, profile, headed) = match profile {
+            Profile::Ephemeral => (String::new(), None, false),
+            Profile::Named => {
+                let name = raw.profile.as_deref().unwrap_or(DEFAULT_PROFILE).trim();
+                if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+                    return Err(Error::Config(format!(
+                        "[browser] profile `{name}` must be a plain directory name"
+                    )));
+                }
+                let path = summonr_core::dirs::summonr_home()?
+                    .join(BROWSER_DIR)
+                    .join(PROFILES_DIR)
+                    .join(name);
+                (name.to_string(), Some(path), raw.headed.unwrap_or(false))
+            }
+        };
         let events = raw
             .events
             .map_or_else(charm::Events::all, |events| charm::Events {
@@ -86,9 +83,9 @@ impl Browser {
         Ok(Self {
             live: Arc::new(Mutex::new(None)),
             settings: Arc::new(Settings {
-                name: String::new(),
-                profile: None,
-                headed: false,
+                name,
+                profile,
+                headed,
                 chrome: raw.chrome.clone(),
                 events,
                 timing: launch::timing(),
@@ -162,7 +159,7 @@ impl Browser {
 }
 
 fn shots_dir(session: Option<&str>) -> Result<PathBuf> {
-    let home = crate::prompt::summonr_home()?;
+    let home = summonr_core::dirs::summonr_home()?;
     Ok(match session {
         Some(id) => crate::durable::log::sessions_dir(&home).join(id),
         None => home.join(BROWSER_DIR).join(SHOTS_DIR),

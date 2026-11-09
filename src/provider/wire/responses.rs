@@ -15,29 +15,19 @@ pub(crate) struct Wire;
 impl Chat for Wire {
     type Stream = Stream;
 
-    fn path(_model: &str, _stream: bool) -> String {
-        "/responses".to_string()
-    }
-
     fn body(
         call: &CompletionRequest<'_>,
-        reasoning: &Reasoning,
-        _cache: crate::endpoint::CacheTtl,
-        stream: bool,
-    ) -> crate::error::Result<super::Wired> {
-        body(call, reasoning, stream).map(super::Wired::head)
-    }
-
-    #[cfg(test)]
-    fn parse(model: &str, body: &Value) -> AssistantMessage {
-        let mut reply = Stream::new(model);
-        drop(reply.whole(body));
-        reply.finish()
+        encoding: &super::Encoding<'_>,
+    ) -> summonr_core::error::Result<super::Wired> {
+        body(call, encoding.reasoning, encoding.stream).map(super::Wired::head)
     }
 }
 
 #[cfg(test)]
-pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
+pub(crate) fn request(
+    call: &CompletionRequest<'_>,
+    stream: bool,
+) -> summonr_core::error::Result<Value> {
     body(call, &call.reasoning, stream)
 }
 
@@ -45,12 +35,19 @@ pub(crate) fn body(
     call: &CompletionRequest<'_>,
     reasoning: &Reasoning,
     stream: bool,
-) -> crate::error::Result<Value> {
+) -> summonr_core::error::Result<Value> {
     let mut body = Map::new();
     body.insert("model".to_string(), json!(call.model));
     body.insert("input".to_string(), Value::Array(input(call)?));
     if !call.tools.is_empty() {
-        body.insert("tools".to_string(), Value::Array(tools(call)));
+        body.insert(
+            "tools".to_string(),
+            Value::Array(super::tools(
+                call,
+                "parameters",
+                &[("type", json!("function")), ("strict", json!(false))],
+            )),
+        );
     }
     if let Some(max) = call.max_output_tokens {
         body.insert("max_output_tokens".to_string(), json!(max));
@@ -63,7 +60,7 @@ pub(crate) fn body(
     Ok(Value::Object(body))
 }
 
-fn input(call: &CompletionRequest<'_>) -> crate::error::Result<Vec<Value>> {
+fn input(call: &CompletionRequest<'_>) -> summonr_core::error::Result<Vec<Value>> {
     let fixed: Vec<&str> = call
         .messages
         .iter()
@@ -139,21 +136,6 @@ pub(crate) fn namespace(tools: Value) -> Value {
     })
 }
 
-fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
-    call.tools
-        .iter()
-        .map(|tool| {
-            json!({
-                "type": "function",
-                "name": tool.function.name,
-                "description": tool.function.description,
-                "parameters": tool.function.parameters,
-                "strict": false,
-            })
-        })
-        .collect()
-}
-
 fn tool_output(message: &Message) -> Value {
     if message.images.is_empty() {
         return json!(message.content);
@@ -175,7 +157,7 @@ fn user_parts(message: &Message) -> Vec<Value> {
     parts
 }
 
-fn assistant_items(message: &Message, model: &str) -> crate::error::Result<Vec<Value>> {
+fn assistant_items(message: &Message, model: &str) -> summonr_core::error::Result<Vec<Value>> {
     let mut items = Vec::new();
     let mut phase = None;
     let mut remarks: &[String] = &[];
@@ -204,7 +186,12 @@ fn assistant_items(message: &Message, model: &str) -> crate::error::Result<Vec<V
             }
         }
     }
-    for remark in remarks.iter().filter(|remark| !remark.is_empty()) {
+    let remarks: Vec<&str> = remarks
+        .iter()
+        .map(String::as_str)
+        .filter(|remark| !remark.is_empty())
+        .collect();
+    for remark in &remarks {
         items.push(json!({
             "type": "message",
             "role": "assistant",
@@ -212,11 +199,19 @@ fn assistant_items(message: &Message, model: &str) -> crate::error::Result<Vec<V
             "phase": "commentary",
         }));
     }
-    if !message.content.is_empty() {
+    let said = remarks.join("\n\n");
+    let reply = message
+        .content
+        .strip_prefix(said.as_str())
+        .filter(|_| !said.is_empty())
+        .map_or(message.content.as_str(), |rest| {
+            rest.trim_start_matches("\n\n")
+        });
+    if !reply.is_empty() {
         let mut item = json!({
             "type": "message",
             "role": "assistant",
-            "content": [{"type": "output_text", "text": message.content}],
+            "content": [{"type": "output_text", "text": reply}],
         });
         if let Some(phase) = phase {
             item["phase"] = json!(phase);
@@ -235,10 +230,10 @@ fn assistant_items(message: &Message, model: &str) -> crate::error::Result<Vec<V
     Ok(items)
 }
 
-fn call_id(id: &str) -> crate::error::Result<&str> {
+fn call_id(id: &str) -> summonr_core::error::Result<&str> {
     if id.is_empty() {
-        return Err(crate::error::Error::provider(
-            crate::error::ProviderFailureKind::MalformedToolCall,
+        return Err(summonr_core::error::Error::provider(
+            summonr_core::error::ProviderFailureKind::MalformedToolCall,
             "responses: a tool call has an empty call_id",
         ));
     }

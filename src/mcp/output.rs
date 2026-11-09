@@ -85,6 +85,6 @@ fn image(item: &mut Value, used: &mut usize) -> Option<Image> {
     .bytes()
     .ok()?;
     (crate::tools::image_type(&raw) == Some(media_type.as_str()))
-        .then(|| Image::fit(&raw).ok())
+        .then(|| crate::provider::fit(&raw).ok())
         .flatten()
 }

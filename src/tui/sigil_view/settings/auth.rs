@@ -1,14 +1,12 @@
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container, signal,
-    virtual_list,
-};
+use sigil::prelude::{LayoutStyle, NodeBuilder, NodeEventsExt, signal, virtual_list};
 
 use super::{App, canvas};
 use crate::AuthInfo;
 use crate::endpoint::State;
 use crate::tui::sigil_view::app::{Login, Note, matching, section};
 use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, Size, Tab, alt, group, pick, tab_strip,
+    Bindings, Dialog, Hints, Key, Size, Tab, alt, browser_columns, browser_layout, browser_split,
+    group, overlay_list, pick, tab_strip,
 };
 
 mod detail;
@@ -42,10 +40,6 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     bindings
 }
 
-fn split(app: &App) -> bool {
-    app.viewport.get().0 >= SPLIT_COLS && !canvas::is_window()
-}
-
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let state = app.clone();
@@ -55,33 +49,20 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
         .header(Some(tab_strip(&app, Tab::Providers)))
         .fixed(canvas::picker_rows(rows))
         .live_hints(move || hints(&state))
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(canvas::overlay_gap()),
-                )
-                .children_reactive(move || body(&paint)),
-        )
+        .child(super::dialog_body(move || body(&paint)))
         .build(app.auth.open, cols, &hotkeys)
 }
 
 fn body(app: &App) -> Vec<NodeBuilder> {
     let listing_app = app.clone();
     let listing = matches!(app.auth.step.get(), Login::List(_));
-    if !listing && !split(app) {
-        return form(app, span(app));
+    let cols = app.viewport.get().0;
+    if !listing && !browser_split(cols, SPLIT_COLS) {
+        return form(app, Size::Page.cells(cols));
     }
     vec![
         field(app, Input::Search, listing),
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .children_reactive(move || self::listing(&listing_app)),
+        super::dialog_body(move || self::listing(&listing_app)),
     ]
 }
 
@@ -91,7 +72,7 @@ pub(super) fn hints(app: &App) -> Hints {
         Login::Key(_) => Hints::new()
             .key(Key::Enter, "save and check")
             .key(Key::Esc, "back")
-            .right(crate::text::plural(
+            .right(summonr_core::text::plural(
                 app.auth.key.get().chars().count(),
                 "char",
             )),
@@ -108,8 +89,8 @@ pub(super) fn hints(app: &App) -> Hints {
 }
 
 fn listing_hints(app: &App) -> Hints {
-    let rows = matching(app.auth.choices.get(), &app.auth.filter.get());
-    let selected = app.auth.sel.get().min(rows.len().saturating_sub(1));
+    let rows = matching(app.auth.choices.get(), &app.auth.list.query.get());
+    let selected = app.auth.list.cursor.get().min(rows.len().saturating_sub(1));
     let Some(choice) = rows.get(selected) else {
         return Hints::new().key(Key::Esc, "close").right("0 / 0");
     };
@@ -139,37 +120,30 @@ fn listing_hints(app: &App) -> Hints {
         .right(format!("{} / {}", selected + 1, rows.len()))
 }
 
-fn span(app: &App) -> usize {
-    let (cols, _) = app.viewport.get();
-    Size::Page.cells(cols)
-}
-
 fn chip(choice: &AuthInfo, state: Option<&State>) -> String {
     state
-        .filter(|state| state.failed())
+        .filter(|state| state.failed() || choice.login.signs_in())
         .map_or_else(|| choice.state(), ToString::to_string)
 }
 
 fn listing(app: &App) -> Vec<NodeBuilder> {
     let source = app.clone();
-    let rows = matching(app.auth.choices.get(), &app.auth.filter.get());
-    let selected = app.auth.sel.get().min(rows.len().saturating_sub(1));
+    let rows = matching(app.auth.choices.get(), &app.auth.list.query.get());
+    let selected = app.auth.list.cursor.get().min(rows.len().saturating_sub(1));
     let Some(choice) = rows.get(selected) else {
         return vec![group("No providers match.")];
     };
     let states = app.picker.groups.get();
     let (lookup, shown) = sections(&rows, &states, selected);
-    let explain = canvas::is_window() && app.auth.filter.get().is_empty();
-    let chrome = LIST_CHROME
-        + u16::from(explain)
-        + if split(app) {
-            0
-        } else {
-            NARROW_NOTE_ROWS as u16
-        };
-    let visible = canvas::list_rows(canvas::picker_rows(app.viewport.get().1), chrome);
+    let explain = canvas::is_window() && app.auth.list.query.get().is_empty();
+    let (cols, term_rows) = app.viewport.get();
+    let (split, span, visible) = browser_layout(
+        (cols, canvas::picker_rows(term_rows)),
+        SPLIT_COLS,
+        (LIST_CHROME + u16::from(explain), NARROW_NOTE_ROWS as u16),
+    );
     let state = chip(choice, states.get(&choice.name));
-    let list = container().layout(LayoutStyle::block().fill_width()).child(
+    let list = overlay_list(
         virtual_list(
             lookup,
             move |_, (name, chip, index): &(String, String, Option<usize>)| match index {
@@ -177,14 +151,13 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
                 None => group(name.clone()),
             },
         )
-        .row_height(canvas::overlay_list_row())
-        .height(canvas::overlay_list_row() * visible as f32)
-        .viewport_height(canvas::overlay_list_row() * visible as f32)
-        .scroll_bind(app.auth.scroll)
+        .scroll_bind(app.auth.list.scroll)
         .follow_row(signal(shown)),
+        canvas::overlay_list_row(),
+        visible,
     );
-    if !split(app) {
-        let wide = span(app).saturating_sub(10);
+    if !split {
+        let wide = span.saturating_sub(10);
         let note = match app.auth.step.get() {
             Login::List(note) => note,
             Login::Key(_) | Login::Checking | Login::SignIn { .. } | Login::Confirm => {
@@ -193,7 +166,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         };
         let mut below = notes(&note, wide);
         if below.is_empty() {
-            below.push(group(crate::text::ellipsize(
+            below.push(group(crate::display::ellipsize(
                 &detail::summary(choice, &state),
                 wide,
             )));
@@ -206,25 +179,13 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         nodes.extend(below.into_iter().take(NARROW_NOTE_ROWS));
         return nodes;
     }
-    let width = span(app).saturating_sub(LIST_CELLS as usize + 12);
-    let pane = step_pane(app, width, visible).into_iter().fold(
-        container().layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(canvas::overlay_gap()),
-        ),
-        |node, child| node.child(child),
-    );
-    vec![
-        container()
-            .layout(LayoutStyle::flex_row().fill_width().gap(16.0))
-            .child(
-                container()
-                    .layout(LayoutStyle::flex_column().width(LIST_CELLS * canvas::cell().w))
-                    .child(list),
-            )
-            .child(pane),
-    ]
+    let width = span.saturating_sub(LIST_CELLS as usize + 12);
+    browser_columns(
+        [list],
+        LayoutStyle::flex_column().width(LIST_CELLS * canvas::cell().w),
+        step_pane(app, width, visible),
+        16.0,
+    )
 }
 
 pub(super) fn step_pane(app: &App, width: usize, rows: usize) -> Vec<NodeBuilder> {
@@ -258,8 +219,10 @@ fn sections(
     let mut lookup: Vec<Row> = Vec::new();
     let mut shown = 0;
     for (index, row) in rows.iter().enumerate() {
-        let tier = section(row);
-        if index == 0 || tier != section(&rows[index - 1]) {
+        let tier = section(row, states.get(&row.name).copied());
+        if index == 0
+            || tier != section(&rows[index - 1], states.get(&rows[index - 1].name).copied())
+        {
             lookup.push((tier.title().to_string(), String::new(), None));
         }
         if index == selected {

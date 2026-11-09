@@ -7,52 +7,11 @@ use sigil::prelude::{
 use super::super::App;
 use crate::prefs::Visibility;
 use crate::tui::sigil_view::chat::entry::label;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::chat::entry::reply::{self, Part, parts};
+use crate::tui::sigil_view::text_style::TextStyle;
 
 const FENCE: &str = "```";
 const LINE: f32 = 22.0;
-
-enum Block {
-    Prose(String),
-    Code { lang: String, body: String },
-}
-
-fn blocks(body: &str) -> Vec<Block> {
-    let mut out = Vec::new();
-    let mut prose = Vec::new();
-    let mut code: Option<(String, Vec<&str>)> = None;
-    for line in body.lines() {
-        let fence = line.trim_start().strip_prefix(FENCE);
-        match (code.take(), fence) {
-            (Some((lang, lines)), Some(_)) => out.push(Block::Code {
-                lang,
-                body: lines.join("\n"),
-            }),
-            (Some((lang, mut lines)), None) => {
-                lines.push(line);
-                code = Some((lang, lines));
-            }
-            (None, Some(lang)) => {
-                if !prose.is_empty() {
-                    out.push(Block::Prose(prose.join("\n")));
-                    prose.clear();
-                }
-                code = Some((lang.trim().to_string(), Vec::new()));
-            }
-            (None, None) => prose.push(line),
-        }
-    }
-    if let Some((lang, lines)) = code {
-        out.push(Block::Code {
-            lang,
-            body: lines.join("\n"),
-        });
-    }
-    if !prose.is_empty() {
-        out.push(Block::Prose(prose.join("\n")));
-    }
-    out
-}
 
 pub(super) fn user(body: String) -> NodeBuilder {
     container()
@@ -73,14 +32,11 @@ pub(super) fn user(body: String) -> NodeBuilder {
                 )
                 .bg(Token::SurfaceHover)
                 .rounded(Radius::Lg)
-                .child(Look::sm(Token::Gray12).on(sigil::kernel::text(body))),
+                .child(TextStyle::sm(Token::Gray12).on(sigil::kernel::text(body))),
         )
 }
 
 fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
-    if let Some(card) = crate::tui::sigil_view::chat::entry::diff_card(app, &body) {
-        return card;
-    }
     let copy = app.clone();
     let copied = body.clone();
     let head = container()
@@ -100,7 +56,7 @@ fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
             } else {
                 lang.as_str()
             },
-            Look::xs(Token::Gray10),
+            TextStyle::xs(Token::Gray10),
         ))
         .child(
             button("Copy")
@@ -128,13 +84,21 @@ pub(super) fn assistant(body: &str, app: &App) -> NodeBuilder {
     if body.trim().is_empty() {
         return column;
     }
-    for block in blocks(body) {
+    let layout = app.model.get().prefs.diff_layout;
+    for block in parts(body) {
         column = column.child(match block {
-            Block::Prose(text) => container()
+            Part::Prose(text) => container()
                 .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
                 .line_height_px(LINE)
                 .child(markdown(signal(text))),
-            Block::Code { lang, body } => code_block(app, lang, body),
+            Part::Code { lang, body, closed } => {
+                if !closed && let Some(card) = reply::diff_card(app, &body) {
+                    card
+                } else {
+                    code_block(app, lang, body)
+                }
+            }
+            Part::Shown(shown) => reply::paint(shown, app, layout),
         });
     }
     column
@@ -146,8 +110,12 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
     }
     let toggle = app.clone();
     let open = visibility == Visibility::Expanded;
-    let next = if open { "collapsed" } else { "expanded" };
-    let words = crate::text::plural(body.split_whitespace().count(), "word");
+    let next = if open {
+        Visibility::Collapsed
+    } else {
+        Visibility::Expanded
+    };
+    let words = summonr_core::text::plural(body.split_whitespace().count(), "word");
     let head = if live {
         "Thinking…".to_string()
     } else {
@@ -159,20 +127,23 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
                 .gap(8.0)
                 .align_items(AlignItems::Center),
         )
-        .child(label(if open { "▾" } else { "▸" }, Look::sm(Token::Gray10)))
-        .child(label(head, Look::sm(Token::Gray10)));
+        .child(label(
+            if open { "▾" } else { "▸" },
+            TextStyle::sm(Token::Gray10),
+        ))
+        .child(label(head, TextStyle::sm(Token::Gray10)));
     let mut column = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
         .pointer_up(move |event: &mut PointerEvent| {
             if event.button == Some(MouseButton::Left) {
-                toggle.reasoning_command(Some(next));
+                toggle.set_visibility(|prefs| &mut prefs.reasoning, Some(next));
                 event.stop_propagation();
             }
         })
         .child(row);
     if open {
         column = column.child(
-            Look::sm(Token::Gray10)
+            TextStyle::sm(Token::Gray10)
                 .italic()
                 .on(sigil::kernel::text(body.to_string()))
                 .line_height_px(LINE),
@@ -184,7 +155,7 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
 pub(super) fn quiet(body: String) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
-        .child(Look::xs(Token::Gray10).on(sigil::kernel::text(body)))
+        .child(TextStyle::xs(Token::Gray10).on(sigil::kernel::text(body)))
 }
 
 pub(super) fn error(reason: String) -> NodeBuilder {
@@ -196,31 +167,10 @@ pub(super) fn error(reason: String) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Start),
         )
-        .child(label("⚠", Look::xs(Token::Error11)))
-        .child(Look::xs(Token::Error11).on(sigil::kernel::text(reason)))
+        .child(label("⚠", TextStyle::xs(Token::Error11)))
+        .child(TextStyle::xs(Token::Error11).on(sigil::kernel::text(reason)))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Block, blocks};
-
-    #[test]
-    fn fenced_code_splits_out_with_its_language() {
-        let parts = blocks("intro\n```rust\nfn a() {}\n```\nafter");
-        let shapes: Vec<(bool, String)> = parts
-            .into_iter()
-            .map(|block| match block {
-                Block::Prose(text) => (false, text),
-                Block::Code { lang, body } => (true, format!("{lang}:{body}")),
-            })
-            .collect();
-        assert_eq!(
-            shapes,
-            vec![
-                (false, "intro".to_string()),
-                (true, "rust:fn a() {}".to_string()),
-                (false, "after".to_string()),
-            ]
-        );
-    }
-}
+#[path = "message_tests.rs"]
+mod tests;

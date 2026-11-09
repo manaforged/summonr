@@ -154,7 +154,10 @@ impl App {
 }
 
 fn paste_token(lines: usize, index: usize) -> String {
-    format!("[pasted {} #{index}]", crate::text::plural(lines, "line"))
+    format!(
+        "[pasted {} #{index}]",
+        summonr_core::text::plural(lines, "line")
+    )
 }
 
 fn image_path(workspace: &Path, text: &str) -> Option<PathBuf> {
@@ -209,12 +212,12 @@ fn read_image(path: &Path) -> Result<Option<(Image, ImageSource)>, String> {
         };
     };
     let source = preview(&bytes)?;
-    let image = Image::fit(&bytes).map_err(|error| error.to_string())?;
+    let image = crate::provider::fit(&bytes).map_err(|error| error.to_string())?;
     Ok(Some((image, source)))
 }
 
 fn image_from_bytes(bytes: &[u8]) -> Option<(Image, ImageSource)> {
     crate::tools::image_type(bytes)?;
     let source = preview(bytes).ok()?;
-    Some((Image::fit(bytes).ok()?, source))
+    Some((crate::provider::fit(bytes).ok()?, source))
 }

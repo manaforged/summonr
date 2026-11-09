@@ -51,3 +51,26 @@ fn an_lsp_entry_without_a_command_does_not_hide_the_others() {
         .collect();
     assert_eq!(keys, ["py:pyls"]);
 }
+
+#[test]
+fn an_lsp_entry_expands_environment_placeholders() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join(FILE),
+        serde_json::json!({"go": {
+            "command": "gopls",
+            "args": ["-logfile=${SUMMONR_LSP_TEST_UNSET:-/opt/gopls.log}"],
+            "env": {"GOPATH": "${SUMMONR_LSP_TEST_UNSET:-/opt/go}"},
+            "extensionToLanguage": {".go": "go"}
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    let plugin = Plugin::at("go".to_string(), dir.path().to_owned());
+    let [server] = of(&plugin, dir.path()).try_into().unwrap();
+    assert_eq!(server.argv, ["gopls", "-logfile=/opt/gopls.log"]);
+    assert_eq!(
+        server.env.get("GOPATH").map(String::as_str),
+        Some("/opt/go")
+    );
+}

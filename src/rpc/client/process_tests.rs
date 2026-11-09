@@ -1,17 +1,14 @@
 use tokio::io::AsyncReadExt;
 
-use super::*;
+use crate::process::{Env, Io, Spec, start};
 
 async fn seen(base: Env) -> String {
     let dir = tempfile::tempdir().unwrap();
-    let mut process = start(&Launch {
-        program: "sh",
-        args: &["-c", "printf %s \"${CARGO_MANIFEST_DIR:-unset}\""],
-        env: &[],
-        unset: &[],
-        cwd: dir.path(),
+    let mut process = start(Spec {
+        cwd: Some(dir.path().to_path_buf()),
         base,
-        stderr: Stderr::Discard,
+        stderr: Io::Null,
+        ..Spec::new("sh", ["-c", "printf %s \"${CARGO_MANIFEST_DIR:-unset}\""])
     })
     .unwrap();
     let mut out = String::new();
@@ -35,6 +32,10 @@ async fn dropping_a_client_returns_before_the_close_grace() {
         env: &[],
         cwd: dir.path(),
         wait: std::time::Duration::from_secs(5),
+        base: Env::Clean,
+        framing: crate::rpc::Framing::Line,
+        max: crate::limits::limits().mcp_frame_max_bytes,
+        peer: crate::rpc::Peer::Mcp,
     })
     .unwrap();
     let started = std::time::Instant::now();

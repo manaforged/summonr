@@ -111,7 +111,9 @@ fn the_tree_cache_drops_workspaces_past_the_retention() {
     std::fs::write(&stale, "{}").unwrap();
     let retain = std::time::Duration::from_secs(60);
     let later = std::time::SystemTime::now() + retain * 2;
-    super::cache::prune(cache.path(), &kept, retain, later);
+    crate::durable::store::retain(cache.path(), retain, later, |path| {
+        path != kept && std::fs::remove_file(path).is_ok()
+    });
     assert!(kept.exists());
     assert!(!stale.exists());
 }
@@ -138,7 +140,24 @@ fn a_cached_tree_exactly_at_the_retention_age_is_kept() {
     let retain = Duration::from_secs(60);
     backdate(&old, retain * 2);
     let at = std::fs::metadata(&edge).unwrap().modified().unwrap();
-    super::cache::prune(cache, &cache.join("keep.json"), retain, at + retain);
+    let keep = cache.join("keep.json");
+    crate::durable::store::retain(cache, retain, at + retain, |path| {
+        path != keep && std::fs::remove_file(path).is_ok()
+    });
     assert!(edge.is_file());
     assert!(!old.exists());
+}
+
+#[test]
+fn a_git_workspace_git_cannot_list_stops_the_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join(".git"), "gitdir: missing\n").unwrap();
+    std::fs::write(root.join("new.txt"), "written by the agent").unwrap();
+    let result = snapshot(root, &[], None);
+    assert!(
+        result.is_err(),
+        "a listing git refused must not pass as an empty workspace: {:?}",
+        result.map(|snapshot| snapshot.files.keys().cloned().collect::<Vec<_>>())
+    );
 }

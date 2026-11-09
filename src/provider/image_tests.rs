@@ -4,7 +4,7 @@ use crate::endpoint::Endpoint;
 fn endpoint(name: &str, model: &str, images: Option<bool>) -> Endpoint {
     let mut endpoint =
         crate::endpoint::resolve(Some(name), Some(model), crate::Need::Config).unwrap();
-    endpoint.api_key = Some("k".to_string());
+    endpoint.api_key = Some(summonr_core::secret::Secret::new("k"));
     if images.is_some() {
         endpoint.images = images;
     }

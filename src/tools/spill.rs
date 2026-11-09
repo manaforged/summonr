@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 
 use crate::durable::store;
-use crate::error::{Error, Result};
 use crate::tools::budget;
 use crate::tools::{ToolOutput, ToolRegistry};
+use summonr_core::error::{Error, Result};
 
 const SNIFF_CHARS: usize = 24;
 const SPILL_PREFIX: &str = "output-";
@@ -29,7 +29,7 @@ impl ToolRegistry {
         if budget::within(raw) {
             return raw.trim_end().to_string();
         }
-        let shown = budget::plain(raw);
+        let shown = budget::shaped(raw, |lines| lines);
         if !shown.cut {
             return shown.text;
         }
@@ -47,7 +47,7 @@ impl ToolRegistry {
 
     pub(super) fn spill_file(&self, prefix: &str, bytes: &[u8]) -> Result<PathBuf> {
         if self.standalone {
-            let dir = crate::prompt::summonr_home()?.join(SPILL_HOME);
+            let dir = summonr_core::dirs::summonr_home()?.join(SPILL_HOME);
             std::fs::create_dir_all(&dir)?;
             return Ok(store::keep(&dir, prefix, SPILL_SUFFIX, bytes)?);
         }

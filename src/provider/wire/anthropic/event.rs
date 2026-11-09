@@ -7,7 +7,7 @@ use crate::provider::Usage;
 
 #[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum EventKind {
+pub(crate) enum EventKind {
     MessageStart,
     ContentBlockStart,
     ContentBlockDelta,
@@ -21,15 +21,15 @@ pub(super) enum EventKind {
 }
 
 #[derive(Default, Deserialize)]
-pub(super) struct Event<'a> {
+pub(crate) struct Event<'a> {
     #[serde(default, rename = "type")]
-    pub(super) kind: EventKind,
+    pub(crate) kind: EventKind,
     #[serde(default)]
     pub(super) message: Started,
     #[serde(borrow, default)]
     pub(super) content_block: Option<&'a RawValue>,
     #[serde(borrow, default)]
-    pub(super) delta: Change<'a>,
+    pub(crate) delta: Change<'a>,
     #[serde(default)]
     pub(super) usage: Option<Counted>,
     #[serde(borrow, default)]
@@ -44,7 +44,7 @@ pub(super) struct Started {
 
 #[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum Shape {
+pub(crate) enum Shape {
     Text,
     Thinking,
     ToolUse,
@@ -54,13 +54,13 @@ pub(super) enum Shape {
 }
 
 #[derive(Default, Deserialize)]
-pub(super) struct Opened<'a> {
+pub(crate) struct Opened<'a> {
     #[serde(default, rename = "type")]
-    pub(super) shape: Shape,
+    pub(crate) shape: Shape,
     #[serde(borrow, default)]
-    pub(super) text: Cow<'a, str>,
+    pub(crate) text: Cow<'a, str>,
     #[serde(borrow, default)]
-    pub(super) thinking: Cow<'a, str>,
+    pub(crate) thinking: Cow<'a, str>,
     #[serde(borrow, default)]
     pub(super) signature: Cow<'a, str>,
     #[serde(borrow, default)]
@@ -70,11 +70,11 @@ pub(super) struct Opened<'a> {
 }
 
 #[derive(Default, Deserialize)]
-pub(super) struct Change<'a> {
+pub(crate) struct Change<'a> {
     #[serde(borrow, default)]
-    pub(super) text: Cow<'a, str>,
+    pub(crate) text: Cow<'a, str>,
     #[serde(borrow, default)]
-    pub(super) thinking: Cow<'a, str>,
+    pub(crate) thinking: Cow<'a, str>,
     #[serde(borrow, default)]
     pub(super) signature: Cow<'a, str>,
     #[serde(borrow, default)]
@@ -142,18 +142,16 @@ impl Counted {
     }
 
     pub(crate) fn usage(&self) -> Usage {
-        let field = |count: Option<u64>| Usage::clamp(count.unwrap_or_default());
-        Usage {
-            prompt_tokens: field(self.input_tokens)
-                + field(self.cache_creation_input_tokens)
-                + field(self.cache_read_input_tokens),
-            completion_tokens: field(self.output_tokens),
-            reasoning_tokens: field(
-                self.output_tokens_details
-                    .and_then(|details| details.thinking_tokens),
-            ),
-            cached_tokens: field(self.cache_read_input_tokens),
-            cache_write_tokens: field(self.cache_creation_input_tokens),
-        }
+        let read = self.cache_read_input_tokens.unwrap_or_default();
+        let written = self.cache_creation_input_tokens.unwrap_or_default();
+        Usage::counted(
+            self.input_tokens.unwrap_or_default() + written + read,
+            self.output_tokens.unwrap_or_default(),
+            self.output_tokens_details
+                .and_then(|details| details.thinking_tokens)
+                .unwrap_or_default(),
+            read,
+            written,
+        )
     }
 }

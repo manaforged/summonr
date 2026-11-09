@@ -1,61 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, Result};
-
-static READY: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
-
-pub fn summonr_home() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("SUMMONR_HOME") {
-        if path.is_empty() {
-            return Err(Error::Config("SUMMONR_HOME is empty".to_string()));
-        }
-        return Ok(PathBuf::from(path));
-    }
-    let home = user_home().ok_or_else(|| {
-        Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
-    })?;
-    let dir = home.join(".summonr");
-    if READY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .as_ref()
-        == Some(&dir)
-    {
-        return Ok(dir);
-    }
-    if !dir.is_dir() {
-        std::fs::create_dir_all(&dir)?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(&dir)?.permissions().mode() & 0o777;
-        if mode != 0o700 {
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
-        }
-    }
-    *READY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(dir.clone());
-    Ok(dir)
-}
-
-#[cfg(not(test))]
-pub(crate) fn user_home() -> Option<PathBuf> {
-    crate::config::home_dir()
-}
-
-#[cfg(test)]
-pub(crate) fn user_home() -> Option<PathBuf> {
-    static HOME: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-    Some(
-        HOME.get_or_init(|| {
-            std::env::temp_dir().join(format!("summonr-tests-{}", std::process::id()))
-        })
-        .clone(),
-    )
-}
+use summonr_core::dirs::summonr_home;
 
 #[derive(Clone, Copy, Default)]
 pub struct Sources {
@@ -115,7 +61,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
 }
 
 pub(crate) struct Harness<'a> {
-    pub(crate) mode: crate::RunMode,
+    pub(crate) mode: crate::WorkKind,
     pub(crate) checks: &'a [String],
     pub(crate) children: bool,
 }
@@ -129,9 +75,9 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     } = harness;
     let mut parts = vec![
         match mode {
-            crate::RunMode::Work => "Harness state: work mode. Execute the selected steps in order.",
-            crate::RunMode::Goal => "Harness state: goal mode. The turn loop runs until the objective is met; a failed check starts another turn.",
-            crate::RunMode::Auto => "Harness state: auto mode.",
+            crate::WorkKind::Steps => "Harness state: work mode. Execute the selected steps in order.",
+            crate::WorkKind::Goal => "Harness state: goal mode. The turn loop runs until the objective is met; a failed check starts another turn.",
+            crate::WorkKind::Single => "Harness state: auto mode.",
         }
         .to_string(),
     ];
@@ -150,13 +96,13 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
             "Harness: before Work can complete, summonr runs {list} as the completion check."
         ));
     }
-    if children && matches!(mode, crate::RunMode::Work | crate::RunMode::Goal) {
+    if children && matches!(mode, crate::WorkKind::Steps | crate::WorkKind::Goal) {
         parts.push(
             "Spawn a child only for disjoint paths. An implement child gets an isolated checkout that shares the parent build cache. The parent runs the completion check."
                 .to_string(),
         );
     }
-    if mode == crate::RunMode::Auto && parts.len() == 1 {
+    if mode == crate::WorkKind::Single && parts.len() == 1 {
         return String::new();
     }
     parts.join("\n\n")
@@ -165,7 +111,7 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
 fn instructions(parts: &mut Vec<String>, workspace: &Path) {
     let mut seen = HashSet::new();
     let mut sections = HashSet::new();
-    let home = crate::config::home_dir();
+    let home = summonr_core::dirs::home_dir();
     let user = home.iter().flat_map(|home| {
         [
             ".agents/AGENTS.md",
@@ -241,7 +187,7 @@ fn dedup_sections(text: &str, seen: &mut HashSet<u64>) -> Option<String> {
             .to_lowercase();
         let hash = {
             use std::hash::Hasher;
-            let mut hasher = crate::text::Fnv64::default();
+            let mut hasher = summonr_core::text::Fnv64::default();
             hasher.write(normalized.as_bytes());
             hasher.finish()
         };
@@ -265,9 +211,8 @@ const DEFAULT: &str = "You are an expert coding assistant running inside summonr
 
 <rules>
 - Use search to find text in files or files by name, anywhere on disk; read for files and directories; run_command for builds, tests, and git
-- Unsure of read, edit, or run_command options? call it with op=help for the full reference
-- Tool schemas are the full callable surface; modules add more when on: web (search, fetch), mail (agents, send, inbox, board), MCP servers, skills, LSP, background jobs, child tasks
-- A listed tool you cannot see is a module that is off (`summonr modules` lists them; ask the user to enable) or on with nothing installed: skills need a SKILL.md under `~/.summonr/skills/<name>/`, MCP needs `summonr mcp add NAME -- CMD`, web needs a provider. Name the exact step instead of hunting the harness
+- Unsure of a tool's options? call it with op=help for the full reference
+- A tool missing from the schemas is an off or empty module: web (search, fetch), mail (agents, send, inbox, board), MCP, skills, LSP, jobs, child tasks. Name the step (`summonr modules`, `summonr mcp add NAME -- CMD`, `~/.summonr/skills/<name>/SKILL.md`) instead of hunting the harness
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
 - write is for new files and complete rewrites
 - Be concise in your responses

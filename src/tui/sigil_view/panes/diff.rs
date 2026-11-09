@@ -7,9 +7,10 @@ use sigil::prelude::{
 
 use std::collections::BTreeSet;
 
-use super::App;
-use super::body::{Empty, empty, header};
+use super::body::{Empty, Extra, header, listing};
+use super::{App, Pane, PaneRow};
 use crate::tui::sigil_view::canvas;
+use sigil::prelude::context_menu;
 
 const ACCEPT: &str = "Accept";
 const REVERT: &str = "Revert";
@@ -26,11 +27,11 @@ const NO_CHANGES: Empty = Empty {
     window: "No changes yet. Files the agent edits show here while the turn runs.",
     terminal: "no changes",
 };
-use crate::tui::sigil_view::ui::{Hints, Key};
+use crate::tui::sigil_view::ui::{Hints, Key, input_keys};
 
 pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder {
     let model = app.model.get();
-    if let Some(path) = app.diff_view.peek() {
+    if let Some(path) = app.diff_view.get() {
         let back = app.clone();
         column = column
             .child(header(
@@ -45,7 +46,6 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
             return column.child(
                 sigil::kernel::text("loading…")
                     .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
                     .font_size(12.0)
                     .text_color(sigil::prelude::Token::Gray11),
             );
@@ -80,10 +80,10 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                 crate::tui::sigil_view::chat::entry::Fit::of(cols),
             ));
         }
-        let cursor = app.hunk_cursor.peek();
+        let cursor = app.hunk_list.cursor.get();
         let notes = format!(
             "{} · {}",
-            crate::text::plural(hunks.len(), "hunk"),
+            summonr_core::text::plural(hunks.len(), "hunk"),
             Hints::new()
                 .key(Key::Fixed("a"), "accept")
                 .key(Key::Fixed("r"), "revert")
@@ -118,36 +118,9 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
     if window {
         column = column.child(scope(&app));
     }
-    let stats = app.diff_stats();
-    let listed: BTreeSet<String> = stats.iter().map(|stat| stat.path.clone()).collect();
-    if stats.is_empty() {
-        column = column.child(empty(&NO_CHANGES));
-        return undo_rows(&app, column, None, &listed);
-    }
-    for (index, stat) in stats.into_iter().enumerate() {
-        let open = app.clone();
-        let path = stat.path.clone();
-        let menu = app.clone();
-        column = column.child(
-            list_row(
-                index == app.diff_cursor.peek(),
-                stat.path.clone(),
-                format!("+{} −{}", stat.added, stat.removed),
-            )
-            .pointer_down(move |event| {
-                if event.button == Some(MouseButton::Right) {
-                    menu.context_row(index);
-                } else {
-                    open.diff_cursor.set(index);
-                    open.diff_open(path.clone());
-                }
-                event.stop_propagation();
-            }),
-        );
-        if window {
-            column = column.child(file_actions(&app, &stat.path));
-        }
-    }
+    let listed: BTreeSet<String> = app.diff_rows().into_iter().map(|row| row.path).collect();
+    let below = window.then_some(file_actions as Extra);
+    column = listing(&app, Pane::Diff, column, &NO_CHANGES, (None, below));
     undo_rows(&app, column, None, &listed)
 }
 
@@ -182,7 +155,8 @@ fn hunk_actions(app: &App, path: &str, hunk: &str) -> NodeBuilder {
         )
 }
 
-fn file_actions(app: &App, path: &str) -> NodeBuilder {
+fn file_actions(app: &App, changed: &PaneRow) -> NodeBuilder {
+    let path = changed.path.as_str();
     let (accepted, reverted) = app.file_review(path);
     let revert = app.clone();
     let target = path.to_string();
@@ -196,7 +170,11 @@ fn file_actions(app: &App, path: &str) -> NodeBuilder {
     if reverted > 0 {
         row = row.child(chip(format!("{reverted} reverted"), Tone::Warn));
     }
-    let label = if app.revert_armed.peek().as_deref() == Some(target.as_str()) {
+    let label = if app
+        .revert_armed
+        .get()
+        .is_some_and(|(armed, _)| armed == target)
+    {
         CONFIRM_REVERT
     } else {
         REVERT_FILE
@@ -254,13 +232,13 @@ fn undo_rows(
 
 fn scope(app: &App) -> NodeBuilder {
     let toggle = app.clone();
-    let label = if app.diff_recent.peek() {
+    let label = if app.diff_recent.get() {
         SCOPE_RECENT
     } else {
         SCOPE_ALL
     };
     let session = app.clone();
-    let whole = if app.diff_session.peek() {
+    let whole = if app.diff_session.get() {
         SESSION_ON
     } else {
         SESSION_OFF
@@ -293,12 +271,12 @@ fn hunk_view(
     };
     let editing = app
         .note_target
-        .peek()
+        .get()
         .is_some_and(|(target, id)| target == path && id == hunk.id);
-    let menu = app.clone();
+    let (menu, items) = (app.clone(), app.clone());
     let mut card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
-        .child(
+        .child(context_menu(
             list_row(focused, hunk.header.clone(), String::new())
                 .layout(
                     LayoutStyle::flex_row()
@@ -311,15 +289,14 @@ fn hunk_view(
                 .child(chip(verdict, tone))
                 .child(spacer())
                 .pointer_down(move |event| {
-                    if event.button == Some(MouseButton::Right) {
-                        menu.hunk_context(index);
-                    } else {
-                        menu.hunk_cursor.set(index);
-                        menu.focus_pane(true);
+                    menu.hunk_list.select(index);
+                    menu.focus_pane(true);
+                    if event.button != Some(MouseButton::Right) {
+                        event.stop_propagation();
                     }
-                    event.stop_propagation();
                 }),
-        );
+            move || items.hunk_menu(index),
+        ));
     if canvas::is_window() && !editing {
         card = card.child(hunk_actions(app, path, &hunk.id));
     }
@@ -327,7 +304,7 @@ fn hunk_view(
         let commit = app.clone();
         let edit = app.clone();
         card = card.child(node(move || {
-            text_edit(edit.note_text)
+            input_keys(&edit, text_edit(edit.note_text))
                 .caret_position(edit.note_caret)
                 .submit(move |text| commit.note_commit(text))
                 .autofocus()
@@ -348,7 +325,7 @@ fn hunk_view(
                 Hints::new()
                     .key(Key::Enter, "save")
                     .key(Key::Esc, "cancel")
-                    .text(&app.model.peek().prefs.hotkeys)
+                    .text(&app.model.get().prefs.hotkeys)
             ))
             .wrap()
             .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))

@@ -1,16 +1,9 @@
-use sigil::prelude::{NodeBuilder, NodeEventsExt};
+use sigil::prelude::NodeBuilder;
 
 use super::super::ui::pick;
 use super::{App, Picker, SessionInfo};
 
-pub(super) fn row(
-    app: App,
-    picker: Picker,
-    index: usize,
-    info: &SessionInfo,
-    selected: usize,
-) -> NodeBuilder {
-    let choose = app.clone();
+pub(super) fn row(app: &App, picker: Picker, info: &SessionInfo, selected: bool) -> NodeBuilder {
     let title = picker.title(info);
     let detail = app
         .model
@@ -26,9 +19,5 @@ pub(super) fn row(
                 format!("{state} · {}", picker.detail(info))
             },
         );
-    pick(index == selected, title, detail).pointer_down(move |event| {
-        choose.sessions.selected.set(index);
-        choose.resume_session();
-        event.stop_propagation();
-    })
+    pick(selected, title, detail)
 }

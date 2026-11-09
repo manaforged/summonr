@@ -5,11 +5,12 @@ use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::{Instant, UNIX_EPOCH};
 
 use grep_searcher::Searcher;
+use ignore::WalkState;
 use ignore::overrides::Override;
-use ignore::{WalkBuilder, WalkState};
 
-use crate::error::{Error, Result};
-use crate::{SKIP_DIRS, STATE_DIRS};
+use summonr_core::error::{Error, Result};
+use summonr_core::walk::SKIP_DIRS;
+use summonr_core::walk::Walk;
 
 use super::scan::{self, Found};
 use super::{Query, Root, filter, index};
@@ -108,8 +109,6 @@ pub(super) fn run(query: &Arc<Query>) -> Result<Report> {
     Ok(shared.take())
 }
 
-const SKIP_ROOTS: &[&str] = &["/System/Volumes/Data", "/proc", "/sys", "/dev"];
-
 fn walk_all(query: &Query, shared: &Shared) {
     let (files, dirs): (Vec<&Root>, Vec<&Root>) =
         query.roots.iter().partition(|root| root.path.is_file());
@@ -124,11 +123,19 @@ fn walk_all(query: &Query, shared: &Shared) {
     let Some((first, rest)) = dirs.split_first() else {
         return;
     };
-    let mut walker = walker(&first.path, query.types.clone(), query.no_ignore);
+    let mut walker = Walk {
+        guard: Some(crate::policy::protected_read),
+        depth: query.depth,
+        ..Walk::tool(query.no_ignore)
+    }
+    .builder(&first.path);
+    walker.git_global(true);
     for root in rest {
         walker.add(&root.path);
     }
-    walker.max_depth(query.depth);
+    if let Some(types) = query.types.clone() {
+        walker.types(types);
+    }
     walker.build_parallel().run(|| {
         let mut searcher = scan::searcher(query);
         let dirs = &dirs;
@@ -202,10 +209,6 @@ fn fits(query: &Query, root: &Path, path: &Path) -> bool {
             .is_none_or(|types| !types.matched(path, false).is_ignore())
 }
 
-pub(super) fn skipped_root(path: &Path) -> bool {
-    SKIP_ROOTS.iter().any(|skipped| path == Path::new(skipped))
-}
-
 fn visit_path(query: &Query, shared: &Shared, root: &Root, path: PathBuf, searcher: &mut Searcher) {
     if query.matcher.is_none() {
         shared.searched.fetch_add(1, Ordering::Relaxed);
@@ -255,32 +258,6 @@ fn newest_first(found: &mut [Found]) {
             .cmp(&left.modified)
             .then_with(|| left.path.cmp(&right.path))
     });
-}
-
-fn walker(root: &Path, types: Option<ignore::types::Types>, no_ignore: bool) -> WalkBuilder {
-    let mut walker = WalkBuilder::new(root);
-    let skipped: &'static [&'static str] = if no_ignore { STATE_DIRS } else { SKIP_DIRS };
-    walker
-        .require_git(false)
-        .hidden(false)
-        .filter_entry(move |entry| {
-            entry.depth() == 0
-                || !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !(skipped.contains(&entry.file_name().to_string_lossy().as_ref())
-                    || skipped_root(entry.path())
-                    || crate::policy::protected_read(entry.path()))
-        });
-    if no_ignore {
-        walker
-            .ignore(false)
-            .git_ignore(false)
-            .git_exclude(false)
-            .parents(false);
-    }
-    if let Some(types) = types {
-        walker.types(types);
-    }
-    walker
 }
 
 fn keep(path: &Path, overrides: Option<&Override>, require_match: bool) -> bool {

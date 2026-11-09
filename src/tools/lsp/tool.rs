@@ -1,39 +1,61 @@
 use std::time::Duration;
 
 use super::*;
+use crate::tools::args::{nonblank, typed};
+use crate::tools::workspace::write;
 
-impl ToolRegistry {
-    pub(in crate::tools) async fn lsp(&self, arguments: &str) -> Result<ToolOutput> {
-        let args = parse_args("lsp", arguments)?;
-        match super::super::args::named(&args, "op") {
-            Some("diagnostics") => return self.diagnostics(arguments).await,
-            Some("definition") => return self.definition(arguments).await,
-            Some(operation) => {
-                return Err(Error::Tool(format!("unknown lsp operation `{operation}`")));
-            }
-            None => {}
-        }
-        let placed = |field| {
-            args.get(field)
-                .and_then(Value::as_u64)
-                .is_some_and(|n| n > 0)
-        };
-        if placed("line")
-            || placed("character")
-            || args.get("references").and_then(Value::as_bool) == Some(true)
-            || args
-                .get("new_name")
-                .and_then(Value::as_str)
-                .is_some_and(|name| !name.trim().is_empty())
-        {
-            return self.definition(arguments).await;
-        }
-        self.diagnostics(arguments).await
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Operation {
+    Diagnostics,
+    Definition,
+}
+
+#[derive(serde::Deserialize)]
+struct LspArgs {
+    op: Option<String>,
+    path: Option<String>,
+    line: Option<u64>,
+    character: Option<u64>,
+    #[serde(default)]
+    references: bool,
+    new_name: Option<String>,
+}
+
+impl LspArgs {
+    fn path(&self, operation: &str) -> Result<&str> {
+        nonblank(self.path.as_deref())
+            .ok_or_else(|| Error::Tool(format!("{operation} requires a non-empty path")))
     }
 
-    pub(in crate::tools) async fn diagnostics(&self, arguments: &str) -> Result<ToolOutput> {
-        let args = parse_args("diagnostics", arguments)?;
-        let path = nonempty_path(&args, "diagnostics")?;
+    fn new_name(&self) -> Option<&str> {
+        nonblank(self.new_name.as_deref()).map(str::trim)
+    }
+}
+
+impl ToolRegistry {
+    pub(in crate::tools) async fn lsp(&self, args: &Value) -> Result<ToolOutput> {
+        let args: LspArgs = typed("lsp", args)?;
+        if let Some(operation) = nonblank(args.op.as_deref()) {
+            return match serde_json::from_value(Value::String(operation.to_string())) {
+                Ok(Operation::Diagnostics) => self.diagnostics(&args).await,
+                Ok(Operation::Definition) => self.definition(&args).await,
+                Err(_) => Err(Error::Tool(format!("unknown lsp operation `{operation}`"))),
+            };
+        }
+        let placed = |field: Option<u64>| field.is_some_and(|n| n > 0);
+        if placed(args.line)
+            || placed(args.character)
+            || args.references
+            || args.new_name().is_some()
+        {
+            return self.definition(&args).await;
+        }
+        self.diagnostics(&args).await
+    }
+
+    async fn diagnostics(&self, args: &LspArgs) -> Result<ToolOutput> {
+        let path = args.path("diagnostics")?;
         let file = self.resolve_existing(path)?;
         let request_path = file.clone();
         let (text, _) = self
@@ -47,26 +69,20 @@ impl ToolRegistry {
         Ok(ToolOutput::ok(text))
     }
 
-    pub(in crate::tools) async fn definition(&self, arguments: &str) -> Result<ToolOutput> {
-        let args = parse_args("definition", arguments)?;
-        let path = nonempty_path(&args, "definition")?;
+    async fn definition(&self, args: &LspArgs) -> Result<ToolOutput> {
+        let path = args.path("definition")?;
         let file = self.resolve_existing(path)?;
-        let line = object_usize(&args, "line").unwrap_or(1).max(1) as u32;
-        let character = match object_usize(&args, "character") {
+        let line = args.line.unwrap_or(1).max(1) as u32;
+        let character = match args.character {
             Some(character) => character.max(1) as u32,
-            None if args.get("line").is_some() => {
+            None if args.line.is_some() => {
                 return Err(Error::Tool(format!(
                     "definition at line {line} needs `character`; use the column a read search hit prints (path:line:col)"
                 )));
             }
             None => 1,
         };
-        let new_name = args
-            .get("new_name")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|name| !name.is_empty());
-        if let Some(new_name) = new_name {
+        if let Some(new_name) = args.new_name() {
             if self.policy.is_read_only() {
                 return Err(Error::Denied(
                     "this session is read-only; no rename".to_string(),
@@ -88,7 +104,7 @@ impl ToolRegistry {
                 .await?;
             return self.apply_workspace_edit(&edit);
         }
-        let refs = object_bool(&args, "references");
+        let refs = args.references;
         let request_path = file.clone();
         let text = self
             .with_lsp(
@@ -142,82 +158,62 @@ impl ToolRegistry {
     }
 
     pub(in crate::tools) fn apply_workspace_edit(&self, edit: &Value) -> Result<ToolOutput> {
-        if edit.is_null() {
-            return Err(Error::Tool(
-                "language server has no rename for this symbol".to_string(),
-            ));
-        }
         let ops = collect_changes(edit)?;
         if ops.is_empty() {
             return Err(Error::Tool(
                 "language server has no rename for this symbol".to_string(),
             ));
         }
-        let names = ops
-            .into_iter()
-            .map(|op| match op {
-                Change::Text { uri, edits } => self.edit_text(&uri, &edits),
-                Change::Create { uri } => self.create_file(&uri),
-                Change::Rename { from, to } => self.rename_file(&from, &to),
-                Change::Delete { uri } => self.delete_file(&uri),
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(ToolOutput {
-            text: format!("renamed {}", names.join(", ")),
-            success: true,
-            mutated: true,
-            grant: None,
-            images: Vec::new(),
-            patch: None,
-        })
-    }
-
-    fn edit_text(&self, uri: &str, edits: &[TextEdit]) -> Result<String> {
-        let dest = self.uri_path(uri)?;
-        self.check_write(&dest)?;
-        let original = std::fs::read_to_string(&dest)
-            .map_err(|error| Error::Tool(format!("cannot read {}: {error}", dest.display())))?;
-        let edited = apply_text_edits(&original, edits)?;
-        let name = self.relative(&dest)?;
-        drop(self.atomic_write(&dest, &name, &original, &edited, false)?);
-        Ok(name)
-    }
-
-    fn create_file(&self, uri: &str) -> Result<String> {
-        let dest = self.uri_path(uri)?;
-        self.check_write(&dest)?;
-        let name = self.relative(&dest)?;
-        if !dest.exists() {
-            drop(self.atomic_write(&dest, &name, "", "", false)?);
+        let mut changes = Vec::with_capacity(ops.len());
+        let mut names = Vec::with_capacity(ops.len());
+        for op in ops {
+            names.push(self.plan_lsp_change(op, &mut changes)?);
         }
-        Ok(name)
+        let patch = write::patch_of(&changes);
+        self.apply_changes(&changes)?;
+        let text = format!("renamed {}", names.join(", "));
+        Ok(ToolOutput::mutated(text, patch))
     }
 
-    fn rename_file(&self, from: &str, to: &str) -> Result<String> {
-        let src = self.uri_path(from)?;
-        let dest = self.uri_path(to)?;
-        self.check_write(&src)?;
-        self.check_write(&dest)?;
-        crate::durable::store::rename(&src, &dest).map_err(|error| {
-            Error::Tool(format!(
-                "cannot rename {} → {}: {error}",
-                src.display(),
-                dest.display()
-            ))
-        })?;
-        Ok(format!(
-            "{} → {}",
-            self.relative(&src)?,
-            self.relative(&dest)?
-        ))
-    }
-
-    fn delete_file(&self, uri: &str) -> Result<String> {
+    fn plan_lsp_change(&self, op: Change, changes: &mut Vec<write::Change>) -> Result<String> {
+        let uri = match &op {
+            Change::Text { uri, .. } | Change::Create { uri } | Change::Delete { uri } => uri,
+            Change::Rename { from, .. } => from,
+        };
         let dest = self.uri_path(uri)?;
         self.check_write(&dest)?;
-        std::fs::remove_file(&dest)
-            .map_err(|error| Error::Tool(format!("cannot delete {}: {error}", dest.display())))?;
-        self.relative(&dest)
+        let name = self.relative(&dest)?;
+        let pending = write::staged(changes, &dest);
+        let (action, label) = match op {
+            Change::Text { edits, .. } => {
+                let original = match pending {
+                    Some(content) => content.unwrap_or_default().to_string(),
+                    None => std::fs::read_to_string(&dest).map_err(|error| {
+                        Error::Tool(format!("cannot read {}: {error}", dest.display()))
+                    })?,
+                };
+                let edited = apply_text_edits(&original, &edits)?;
+                (write::Action::Write(edited), name.clone())
+            }
+            Change::Create { .. } if pending.map_or_else(|| dest.exists(), |c| c.is_some()) => {
+                return Ok(name);
+            }
+            Change::Create { .. } => (write::Action::Write(String::new()), name.clone()),
+            Change::Delete { .. } => (write::Action::Delete, name.clone()),
+            Change::Rename { to, .. } => {
+                let to = self.uri_path(&to)?;
+                self.check_write(&to)?;
+                let display = self.relative(&to)?;
+                let label = format!("{name} → {display}");
+                (write::Action::Move { to, display }, label)
+            }
+        };
+        changes.push(write::Change {
+            dest,
+            display: name,
+            action,
+        });
+        Ok(label)
     }
 
     fn uri_path(&self, uri: &str) -> Result<PathBuf> {
@@ -282,24 +278,19 @@ impl ToolRegistry {
                 crate::supervise::register(
                     crate::supervise::ServerKind::Lsp,
                     &launch.key,
-                    conn.child.as_ref().and_then(|child| child.id()),
+                    conn.pid(),
                     Some(crate::limits::limits().lsp_idle()),
                     &slot,
                 );
                 conn
             }
         };
-        let outcome = tokio::time::timeout(deadline, f(&mut conn)).await;
+        conn.set_wait(deadline);
+        let outcome = f(&mut conn).await;
         crate::supervise::touch(&slot);
-        if conn.clean {
+        if conn.alive() {
             *state = Some(conn);
         }
-        outcome.map_err(|_elapsed| {
-            Error::Tool(format!(
-                "{} did not answer within {} s; the server may still be indexing",
-                launch.argv[0],
-                deadline.as_secs()
-            ))
-        })?
+        outcome
     }
 }

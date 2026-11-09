@@ -7,9 +7,9 @@ use super::catalog;
 use super::config;
 use super::conn::Conn;
 use super::link::Link;
-use super::tool::Tool;
-use crate::error::Result;
+use super::tool::offered;
 use crate::supervise::Slot;
+use summonr_core::error::Result;
 
 pub async fn probe(workspace: &Path, name: &str) -> Result<Option<usize>> {
     let Some(server) = config::servers(workspace)?
@@ -23,20 +23,7 @@ pub async fn probe(workspace: &Path, name: &str) -> Result<Option<usize>> {
     let listed = Link::list(&server, workspace, &slot).await;
     *slot.lock().await = None;
     match listed {
-        Ok(listing) => Ok(Some(
-            listing
-                .tools
-                .iter()
-                .filter_map(|item| Tool::parse(&server.name, item))
-                .filter(|tool| {
-                    server
-                        .allow
-                        .as_ref()
-                        // complexity: bounded by a BTreeSet lookup, O(log n)
-                        .is_none_or(|allow| allow.contains(&tool.name))
-                })
-                .count(),
-        )),
+        Ok(listing) => Ok(Some(offered(&server, &listing.tools).count())),
         Err(error) => {
             catalog::fail(&server.key, &error.to_string());
             Err(error)

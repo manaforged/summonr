@@ -9,8 +9,8 @@ pub mod sweep;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::endpoint::{Endpoint, Wire};
-use crate::error::{Error, ProviderFailureKind, Result};
+use crate::endpoint::Endpoint;
+use summonr_core::error::{Error, ProviderFailureKind, Result};
 
 pub(crate) const AT_ONCE: usize = 8;
 
@@ -65,6 +65,7 @@ impl Question {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn bounded(
         instructions: impl Into<Value>,
         yes: impl Into<Value>,
@@ -79,6 +80,7 @@ impl Question {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn choice<K, V>(
         instructions: impl Into<Value>,
         options: impl IntoIterator<Item = (K, V)>,
@@ -192,7 +194,7 @@ pub async fn ask(
 }
 
 fn target(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> Result<()> {
-    if endpoint.wire != Wire::Decisions {
+    if !crate::provider::wire::spec(endpoint.wire).classifies() {
         return Err(Error::Config(format!(
             "`{}` is not a classify endpoint; see `summonr endpoints`",
             endpoint.name
@@ -216,8 +218,8 @@ fn target(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> Result
     }
     if endpoint
         .api_key
-        .as_deref()
-        .is_none_or(|key| key.trim().is_empty())
+        .as_ref()
+        .is_none_or(|key| key.expose().trim().is_empty())
         && endpoint.oauth.is_none()
     {
         return Err(Error::Config(format!(
@@ -283,7 +285,7 @@ impl std::fmt::Display for Decision {
 }
 
 fn headline(name: &str, value: &str, confidence: Option<f64>) -> String {
-    let value = crate::text::ellipsize(value, 28);
+    let value = crate::display::ellipsize(value, 28);
     match confidence {
         Some(confidence) => format!("{name:<16} {value:<28} conf {confidence:.2}\n"),
         None => format!("{name:<16} {value}\n"),
@@ -299,7 +301,7 @@ fn bars(probabilities: &BTreeMap<String, f64>, label: impl Fn(&str) -> String) -
         let bar: String = "█".repeat(filled) + &"░".repeat(WIDTH - filled);
         out.push_str(&format!(
             "  {:<18} {bar} {share:.2}\n",
-            crate::text::ellipsize(&label(key), 18)
+            crate::display::ellipsize(&label(key), 18)
         ));
     }
     out

@@ -31,7 +31,7 @@ pub async fn add_server(
     let replaced = config::remove_named(&path, config::Section::Endpoint, name)?;
     save(&path, name, &url, &model)?;
     if default {
-        config::save_default_seat(&path, Some((name, &model)))?;
+        config::save_default_model(&path, Some((name, &model)))?;
     }
     Ok(added(name, &url, &model, replaced))
 }
@@ -49,8 +49,8 @@ fn saved_url(name: &str) -> Result<String> {
 }
 
 pub fn set_default(name: &str, model: Option<&str>) -> Result<String> {
-    let endpoint = resolve(Some(name), model, Need::Seat)?;
-    config::save_default_seat(&config::path()?, Some((name, &endpoint.model)))?;
+    let endpoint = resolve(Some(name), model, Need::ModelAndKey)?;
+    config::save_default_model(&config::path()?, Some((name, &endpoint.model)))?;
     Ok(format!(
         "✓ {name} is the default endpoint: {}. Run `summonr` to start on it.",
         endpoint.model
@@ -66,7 +66,7 @@ async fn only_model(name: &str, url: &str) -> Result<String> {
             ..FileEndpoint::default()
         },
     );
-    let endpoint = seat(&file, name)
+    let endpoint = selection(&file, name)
         .ok_or_else(|| Error::Config(format!("cannot read the endpoint `{name}`")))?;
     let endpoint = fill_key(endpoint, false)?;
     let models = crate::provider::Client::discover(&endpoint)
@@ -134,6 +134,6 @@ fn clear_default(name: &str) -> Result<String> {
     if config::file()?.default.as_deref() != Some(name) {
         return Ok(String::new());
     }
-    config::save_default_seat(&config::path()?, None)?;
+    config::save_default_model(&config::path()?, None)?;
     Ok(" It was the default, so `default` and `default_model` are cleared; the next run picks the first endpoint that is set up.".to_string())
 }

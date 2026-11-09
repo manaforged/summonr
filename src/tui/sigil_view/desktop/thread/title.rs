@@ -19,7 +19,7 @@ pub(super) fn active(app: &App) -> Option<crate::tui::hub::Live> {
 fn first_prompt(app: &App) -> Option<String> {
     app.model.get().entries.iter().find_map(|entry| {
         if let crate::tui::sigil_view::model::Entry::User(text) = entry {
-            Some(crate::text::ellipsize(text.trim(), TITLE_CELLS))
+            Some(crate::display::ellipsize(text.trim(), TITLE_CELLS))
         } else {
             None
         }
@@ -28,7 +28,7 @@ fn first_prompt(app: &App) -> Option<String> {
 
 fn session_title(app: &App) -> String {
     active(app)
-        .map(|entry| crate::text::ellipsize(entry.title.trim(), TITLE_CELLS))
+        .map(|entry| crate::display::ellipsize(entry.title.trim(), TITLE_CELLS))
         .filter(|title| !title.trim().is_empty())
         .or_else(|| first_prompt(app).filter(|title| !title.is_empty()))
         .unwrap_or_else(|| super::super::rail::UNTITLED.to_string())

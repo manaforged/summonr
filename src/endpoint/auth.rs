@@ -7,20 +7,29 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
     let name = route.as_str();
     let endpoint = resolve(Some(name), None, Need::Config)?;
     let offered = offered_login(name, &endpoint);
+    let external = matches!(endpoint.wire, Wire::AgentSdk);
     let provider = super::route::provider_of(name).to_string();
     let mut info = AuthInfo {
         name: name.to_string(),
         routes: super::route::options(&provider),
         provider,
-        flow: endpoint.oauth.as_ref().map(flow).unwrap_or_default(),
-        login: offered.as_ref().map(flow).unwrap_or_default(),
+        flow: if external {
+            LoginFlow::Browser
+        } else {
+            endpoint.oauth.as_ref().map(flow).unwrap_or_default()
+        },
+        login: if external {
+            LoginFlow::Browser
+        } else {
+            offered.as_ref().map(flow).unwrap_or_default()
+        },
         key: endpoint.takes_key() || (preset(name).is_none() && offered.is_none()),
         plan: offered
             .as_ref()
             .and_then(|row| row.label.clone())
             .unwrap_or_default(),
-        configured: endpoint.api_key.is_some(),
-        source: endpoint.source,
+        configured: !external && endpoint.api_key.is_some(),
+        source: if external { None } else { endpoint.source },
         setup: missing_setup(name, &endpoint),
         env: (endpoint.source == Some(Source::Env))
             .then(|| preset(name).or_else(|| endpoint.base_url.as_deref().and_then(hosted)))
@@ -28,15 +37,18 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
             .and_then(|row| {
                 row.env_keys
                     .iter()
-                    .copied()
+                    .map(String::as_str)
                     .find(|key| env_key(&[key]).is_some())
             }),
         model: endpoint.model.clone(),
         base_url: endpoint.base_url.clone(),
         own: preset(name).is_none(),
-        env_hint: preset(name).and_then(|row| row.env_keys.first().copied()),
+        env_hint: preset(name).and_then(|row| row.env_keys.first().map(String::as_str)),
         group: login_group(name, &endpoint),
     };
+    if external {
+        info.plan = label(name).unwrap_or(name).to_string();
+    }
     if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| flow(spec).signs_in()) {
         info.setup = match (flow(spec), info.key) {
             (_, true) => format!(
@@ -87,7 +99,7 @@ fn offered_login(name: &str, endpoint: &Endpoint) -> Option<crate::config::OAuth
         })
 }
 
-pub fn login_seat(name: &str) -> Result<Endpoint> {
+pub fn login_endpoint(name: &str) -> Result<Endpoint> {
     let mut endpoint = resolve(Some(name), None, Need::Config)?;
     if endpoint.oauth.is_none() {
         endpoint.oauth = offered_login(name, &endpoint);
@@ -119,7 +131,7 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
 
 pub async fn check_key(name: &str, key: &str) -> Result<Source> {
     let mut endpoint = resolve(Some(name), None, Need::Config)?;
-    endpoint.api_key = Some(key.trim().to_string());
+    endpoint.api_key = Some(Secret::new(key.trim()));
     endpoint.source = None;
     endpoint.oauth = None;
     if let Err(error) = crate::provider::Client::discover(&endpoint).await
@@ -129,7 +141,7 @@ pub async fn check_key(name: &str, key: &str) -> Result<Source> {
         )
     {
         return Err(Error::provider(
-            crate::error::ProviderFailureKind::Authentication,
+            summonr_core::error::ProviderFailureKind::Authentication,
             format!("{name} rejected the key"),
         ));
     }
@@ -222,7 +234,7 @@ pub(crate) fn ready(need: Need) -> (Vec<Endpoint>, Vec<String>) {
     let mut errors = Vec::new();
     for name in names {
         let endpoint = match resolve(Some(&name), None, need) {
-            Ok(endpoint) if endpoint.wire == Wire::Decisions => continue,
+            Ok(endpoint) if crate::provider::wire::spec(endpoint.wire).classifies() => continue,
             Ok(endpoint) => endpoint,
             Err(_) => {
                 if let Err(error) = resolve(Some(&name), None, need.without_key())
@@ -248,12 +260,13 @@ pub(crate) fn ready(need: Need) -> (Vec<Endpoint>, Vec<String>) {
 
 pub fn first_classify() -> Option<String> {
     names().unwrap_or_default().into_iter().find(|name| {
-        resolve(Some(name), None, Need::Key).is_ok_and(|endpoint| endpoint.wire == Wire::Decisions)
+        resolve(Some(name), None, Need::Key)
+            .is_ok_and(|endpoint| crate::provider::wire::spec(endpoint.wire).classifies())
     })
 }
 
 pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
-    let (endpoints, _) = ready(Need::Seat);
+    let (endpoints, _) = ready(Need::ModelAndKey);
     if endpoints.is_empty() {
         return None;
     }
@@ -267,23 +280,4 @@ pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
         (None, false) => endpoints.len() - 1,
     };
     (endpoints[target].name != current).then(|| endpoints[target].name.clone())
-}
-
-#[cfg(test)]
-pub(crate) fn catalog(wire: Wire) -> Vec<String> {
-    let mut models = Vec::new();
-    for row in super::preset::presets() {
-        if row.wire != wire {
-            continue;
-        }
-        if !models.contains(&row.model) {
-            models.push(row.model.clone());
-        }
-        for (_, canon) in row.aliases {
-            if !models.contains(canon) {
-                models.push(canon.clone());
-            }
-        }
-    }
-    models
 }

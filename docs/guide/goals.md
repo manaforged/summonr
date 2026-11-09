@@ -26,7 +26,7 @@ With no check file, `/goal` in the interface detects a check from the workspace 
 | `package.json` with a non-empty `test` script | `npm test` |
 | `go.mod` | `go test ./...` |
 
-A Python project gets no detected check, and the judge decides.
+A Python project gets no detected check, and the judge decides. A goal with no check, such as "make the system better", asks the model to first write a contract: the outcome that matters most, the command or evidence that will show it, and what must not regress. The judge counts the goal done only when that evidence is shown; formatting, renames, comments, docs, or a bare test run count as unfinished.
 
 Use one key, not both. The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. If the check file changes during a run anyway, summonr restores it, a `note` event says so, and the run keeps the check it loaded at start. `--no-verify` skips the check gate for one run.
 
@@ -52,6 +52,41 @@ In the interface, `/goal TEXT` starts a goal, `/goal` alone shows it, and `/goal
 A goal has no turn cap and no failed-check attempt limit. It runs until the judge stops it, a budget ends it, you cancel it, or a harness error occurs. A precise goal ("make `cargo test` pass") ends sooner than an open one.
 
 A turn that ends while a background command it started is still running is deferred, with no verdict and no repair strike, until the job exits or the model kills it. A later turn cannot complete while that job runs.
+
+## Climb a metric
+
+A goal can also climb a number: kernel time, an eval score, a loss, bundle size. Add a `[metric]` table to `.summonr/check.toml`:
+
+```toml
+check = "pytest -q"
+
+[metric]
+command = "python3 bench.py"
+better = "lower"
+target = 240.0
+noise = 1.5
+protect = ["bench.py"]
+```
+
+```sh
+summonr --goal "make bench.py faster" --max-secs 28800
+```
+
+Before the first turn, summonr runs the metric on the unchanged workspace; that value is the baseline. After each goal turn, summonr runs the checks, then the metric command, and reads one number from its output. The change stays only when that number beats the best so far by more than `noise`. Otherwise, and whenever a check fails, the command prints no number, or the turn changed a protected file, summonr restores the turn's files to how they were when the turn started. The model never decides whether a change was better.
+
+| Key | Value |
+| --- | --- |
+| `command` | The command that prints the metric. |
+| `better` | `higher` or `lower`. |
+| `pattern` | Optional regular expression; its first group, or the whole match, is the value. Without it, summonr reads the last number in the output. |
+| `target` | Optional. The goal ends when the best reaches it. Without one, the goal runs until a budget ends it. |
+| `noise` | Optional, default 0. How much a value must beat the best by to count. Measure it by running the unchanged code a few times. |
+| `timeout_secs` | Optional. The metric command's time limit; the default is the check's. |
+| `protect` | Optional list of files the model must not change, such as the benchmark script and its inputs. A turn that changes one is reverted without running the metric. |
+
+Every attempt goes in the run's ledger, which the model reads at the start of each turn: the baseline, then each value and whether it was kept or reverted. summonr holds the best value in the session log, outside the workspace, and the check file is protected as above. The metric command's own files are not protected unless you list them in `protect`; a model that can rewrite the benchmark can fake a better number.
+
+Reverting uses the same turn checkpoints as `/undo`, so a metric goal works in a git repository or a plain folder. In a git repository, those checkpoints skip files that `.gitignore` covers, so keep the files the model changes, and the files in `protect`, out of ignored paths. Repeated identical failures do not end a metric goal; a budget does.
 
 ## Run a plan
 
@@ -132,7 +167,7 @@ summonr anthropic --goal "make cargo test pass" --max-secs 1800 --json
 echo $?
 ```
 
-JSON turn receipts keep model text separate from the changed-path list and every configured completion check. `verified` on a receipt is true only when at least one check ran and every check passed; a turn with no configured check completes with `verified: false`. The [API map](../api.md) lists the event shapes.
+JSON turn receipts keep model text separate from the files this turn wrote and every check this turn ran. `verified` is true only when at least one of those checks passed and none failed. A turn that ran no check completes with `verified: false`. The [API map](../api.md) lists the event shapes.
 
 ## Workflows
 

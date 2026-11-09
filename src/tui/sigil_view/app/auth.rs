@@ -1,3 +1,5 @@
+use sigil::widgets::CursorEdge;
+
 pub(in crate::tui::sigil_view) use super::note::Note;
 use rank::best_match;
 pub(in crate::tui::sigil_view) use rank::matching;
@@ -33,7 +35,7 @@ impl Login {
     }
 }
 
-fn providers() -> Vec<crate::endpoint::AuthInfo> {
+fn providers(states: &std::collections::BTreeMap<String, State>) -> Vec<crate::endpoint::AuthInfo> {
     let mut choices: Vec<_> = crate::endpoint::names()
         .unwrap_or_default()
         .into_iter()
@@ -41,7 +43,7 @@ fn providers() -> Vec<crate::endpoint::AuthInfo> {
         .collect();
     choices.sort_by_key(|choice| {
         (
-            section(choice),
+            section(choice, states.get(&choice.name).copied()),
             !choice.keyless(),
             choice.catalog_rank(),
             choice.name.clone(),
@@ -65,11 +67,14 @@ impl Tier {
     }
 }
 
-pub(in crate::tui::sigil_view) fn section(choice: &crate::endpoint::AuthInfo) -> Tier {
+pub(in crate::tui::sigil_view) fn section(
+    choice: &crate::endpoint::AuthInfo,
+    state: Option<State>,
+) -> Tier {
     if choice.unmodeled() {
         return Tier::Unset;
     }
-    if choice.configured || choice.keyless() {
+    if choice.configured || choice.keyless() || state == Some(State::Ready) {
         return Tier::Ready;
     }
     Tier::Unset
@@ -82,7 +87,7 @@ impl App {
         {
             self.push_entry(Entry::Error(error.to_string()));
         }
-        let choices = providers();
+        let choices = providers(&self.picker.groups.peek());
         let current = self.model.get().snapshot.endpoint.clone();
         let focus = focus.map(|name| {
             let provider = crate::endpoint::auth_info(name).map(|info| info.provider);
@@ -116,10 +121,10 @@ impl App {
             .unwrap_or(0);
         let named = asked && choices.get(selected).is_some_and(|row| !row.dual());
         self.auth.choices.set(choices);
-        self.auth.filter.set(String::new());
-        self.auth.seat.set(None);
+        self.auth.list.query.set(String::new());
+        self.auth.selection.set(None);
         self.auth.focus.set(self.auth.focus.peek() + 1);
-        self.auth.sel.set(selected);
+        self.auth.list.cursor.set(selected);
         self.auth.step.set(Login::List(Note::default()));
         self.replace_auth_key(String::new());
         self.auth.open.set(true);
@@ -134,17 +139,14 @@ impl App {
         if !self.auth_listing() || self.picker.open.peek() {
             return;
         }
-        let last = self.filtered_auth().len().saturating_sub(1);
         self.auth
-            .sel
-            .set(self.auth.sel.peek().saturating_add_signed(delta).min(last));
+            .list
+            .shift(delta, self.filtered_auth().len(), CursorEdge::Clamp);
     }
 
     pub(in crate::tui::sigil_view) fn auth_choice(&self) -> Option<crate::endpoint::AuthInfo> {
         let choices = self.filtered_auth();
-        choices
-            .get(self.auth.sel.peek().min(choices.len().saturating_sub(1)))
-            .cloned()
+        choices.get(self.auth.list.at(choices.len())).cloned()
     }
 
     pub(in crate::tui::sigil_view) fn commit_auth(&self) {
@@ -167,7 +169,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn filtered_auth(&self) -> Vec<crate::endpoint::AuthInfo> {
-        matching(self.auth.choices.peek(), &self.auth.filter.peek())
+        matching(self.auth.choices.peek(), &self.auth.list.query.peek())
     }
 
     pub(in crate::tui::sigil_view) fn auth_listing(&self) -> bool {
@@ -176,7 +178,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn pick_auth(&self, index: usize) {
         if self.auth_listing() && !self.picker.open.peek() {
-            self.auth.sel.set(index);
+            self.auth.list.cursor.set(index);
             self.commit_auth();
         }
     }
@@ -184,8 +186,8 @@ impl App {
     pub(in crate::tui::sigil_view) fn replace_auth_filter(&self, filter: String) {
         if self.auth_listing() {
             let best = best_match(&matching(self.auth.choices.peek(), &filter), &filter);
-            self.auth.filter.set(filter);
-            self.auth.sel.set(best);
+            self.auth.list.query.set(filter);
+            self.auth.list.cursor.set(best);
         }
     }
 
@@ -198,13 +200,13 @@ impl App {
         }
         match crate::endpoint::toggle(&choice, toggle) {
             Ok(Some(_)) => {
-                self.auth.choices.set(providers());
+                self.auth.choices.set(providers(&self.picker.groups.peek()));
                 let rows = self.filtered_auth();
                 let selected = rows
                     .iter()
                     .position(|row| row.provider == choice.provider)
                     .unwrap_or(0);
-                self.auth.sel.set(selected);
+                self.auth.list.cursor.set(selected);
                 self.list_models(None);
             }
             Ok(None) => {}
@@ -313,27 +315,36 @@ impl App {
         let mut groups = self.picker.groups.peek();
         match result {
             Ok(text) => {
-                groups.remove(name);
+                if matches!(self.auth.step.peek(), Login::SignIn { .. }) {
+                    groups.insert(name.to_string(), State::Ready);
+                } else {
+                    groups.remove(name);
+                }
                 self.picker.groups.set(groups);
                 self.replace_auth_key(String::new());
                 if self.picker.open.peek() {
                     self.push_entry(Entry::System(text.clone()));
                     self.auth.open.set(false);
-                    match self.auth.seat.peek().filter(|(owner, _)| owner == name) {
+                    match self
+                        .auth
+                        .selection
+                        .peek()
+                        .filter(|(owner, _)| owner == name)
+                    {
                         Some((owner, model)) => {
                             self.cancel_model_edit();
-                            drop(self.cmd.send(Cmd::SetSeat(owner, model)));
+                            drop(self.cmd.send(Cmd::SelectModel(owner, model)));
                         }
                         None => self.refresh_models(),
                     }
                     return;
                 }
-                self.auth.choices.set(providers());
+                self.auth.choices.set(providers(&self.picker.groups.peek()));
                 let found = self
                     .filtered_auth()
                     .iter()
                     .position(|choice| choice.name == name);
-                self.auth.sel.set(found.unwrap_or_default());
+                self.auth.list.cursor.set(found.unwrap_or_default());
                 self.auth.step.set(Login::List(Note::plain(text)));
                 self.auth.focus.set(self.auth.focus.peek() + 1);
             }

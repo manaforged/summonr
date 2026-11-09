@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{Display, Formatter};
+
 use std::hash::{Hash, Hasher};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use super::log::{self, Line};
 use super::store;
 use super::tree::{Entry, Snapshot, changed};
 
@@ -14,12 +15,11 @@ mod ledger;
 mod progress;
 mod stage;
 
-pub(crate) use progress::WorkPhase;
-pub use progress::{WorkKind, WorkProgress};
 pub(crate) use progress::{checks, roman};
+pub(crate) use summonr_types::WorkPhase;
+pub use summonr_types::{WorkKind, WorkProgress};
 
 const LEDGER_WIDTH: usize = 72;
-const LEDGER_MAX: usize = 40;
 const TREES: &str = "tree.json";
 const DECISION: &str = "Goal Work requires a completion decision";
 
@@ -31,14 +31,6 @@ impl From<crate::Error> for WorkError {
     fn from(error: crate::Error) -> Self {
         Self(error.to_string())
     }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Policy {
-    Single,
-    Steps,
-    Goal {},
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -87,6 +79,13 @@ pub(crate) struct Check {
     pub(crate) command: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) observation: Option<Observation>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub(crate) struct Measurement {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) value: Option<String>,
+    pub(crate) kept: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -140,7 +139,11 @@ struct LegacyFiles(BTreeMap<String, Entry>);
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Work {
     pub(crate) objective: String,
-    pub(crate) policy: Policy,
+    #[serde(
+        serialize_with = "progress::persist",
+        deserialize_with = "progress::restore"
+    )]
+    pub(crate) policy: WorkKind,
     pub(crate) status: Status,
     pub(crate) plan: Option<String>,
     pub(crate) checks: Vec<Check>,
@@ -160,15 +163,19 @@ pub(crate) struct Work {
     pub(crate) jobs: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) check: Option<CheckVerdict>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) failed_checks: Option<Vec<crate::verify::Outcome>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) todos: Vec<crate::tools::Todo>,
+    pub(crate) todos: Vec<summonr_types::Todo>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) measurements: Vec<Measurement>,
 }
 
 impl Work {
-    pub(crate) fn new(objective: &str, policy: Policy) -> Self {
+    pub(crate) fn new(objective: &str, policy: WorkKind) -> Self {
         let steps = match policy {
-            Policy::Steps => Vec::new(),
-            Policy::Single | Policy::Goal { .. } => vec![Step::new("Objective", None, Vec::new())],
+            WorkKind::Steps => Vec::new(),
+            WorkKind::Single | WorkKind::Goal => vec![Step::new("Objective", None, Vec::new())],
         };
         Self {
             objective: objective.to_string(),
@@ -186,7 +193,9 @@ impl Work {
             touched: BTreeSet::new(),
             jobs: Vec::new(),
             check: None,
+            failed_checks: None,
             todos: Vec::new(),
+            measurements: Vec::new(),
         }
     }
 
@@ -202,7 +211,7 @@ impl Work {
     }
 
     pub(crate) fn completion_checks(&self) -> Vec<Check> {
-        if self.policy != Policy::Steps {
+        if self.policy != WorkKind::Steps {
             return self.checks.clone();
         }
         self.active
@@ -224,16 +233,24 @@ impl Work {
         });
     }
 
-    pub(crate) fn apply_todos(&mut self, todos: Vec<crate::tools::Todo>) {
+    pub(crate) fn best(&self) -> Option<f64> {
+        self.measurements
+            .iter()
+            .rev()
+            .filter(|measurement| measurement.kept)
+            .find_map(|measurement| measurement.value.as_deref()?.parse().ok())
+    }
+
+    pub(crate) fn measure(&mut self, value: Option<String>, kept: bool) {
+        self.measurements.push(Measurement { value, kept });
+    }
+
+    pub(crate) fn apply_todos(&mut self, todos: Vec<summonr_types::Todo>) {
         self.todos = todos;
     }
 
     pub(crate) fn progress(&self) -> WorkProgress {
-        let kind = match self.policy {
-            Policy::Single => WorkKind::Single,
-            Policy::Steps => WorkKind::Steps,
-            Policy::Goal { .. } => WorkKind::Goal,
-        };
+        let kind = self.policy;
         let (phase, reason) = match &self.status {
             Status::Active(Stage::Plan) => (WorkPhase::Plan, None),
             Status::Active(Stage::Execute) => (WorkPhase::Execute, None),
@@ -276,78 +293,50 @@ impl Work {
     }
 
     pub(crate) fn trees_mark(&self) -> u64 {
-        let mut hasher = crate::text::Fnv64::default();
+        let mut hasher = summonr_core::text::Fnv64::default();
         self.trees().hash(&mut hasher);
         hasher.finish()
     }
 
-    fn durability(&self) -> store::Durability {
+    pub(crate) fn durability(&self) -> store::Durability {
         match self.policy {
-            Policy::Single => store::Durability::Renamed,
-            Policy::Steps | Policy::Goal { .. } => store::Durability::Synced,
+            WorkKind::Single => store::Durability::Renamed,
+            WorkKind::Steps | WorkKind::Goal => store::Durability::Synced,
         }
     }
 
-    pub(crate) fn save(&self, path: &Path, trees: bool) -> io::Result<()> {
-        let sidecar = path.with_extension(TREES);
-        let durability = self.durability();
-        if trees && self.base.is_none() && self.candidate.is_none() {
-            match std::fs::remove_file(&sidecar) {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error),
-            }
-        } else if trees {
-            store::write(&sidecar, serde_json::to_vec(&self.trees())?, durability)?;
+    pub(crate) fn save_trees(&self, session: &Path) -> io::Result<()> {
+        let sidecar = trees_path(session);
+        if self.base.is_none() && self.candidate.is_none() {
+            return match std::fs::remove_file(&sidecar) {
+                Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+                _ => Ok(()),
+            };
         }
-        store::write(path, serde_json::to_vec(self)?, durability)
+        store::write(
+            &sidecar,
+            serde_json::to_vec(&self.trees())?,
+            self.durability(),
+        )
     }
 
-    fn repair_steps(&mut self) {
-        if self.policy != Policy::Steps || self.checks.is_empty() {
-            return;
-        }
-        let planned = self
-            .plan
-            .as_deref()
-            .and_then(|plan| crate::steps::parse(plan).ok())
-            .is_some_and(|parsed| {
-                parsed
-                    .iter()
-                    .map(|step| step.text.as_str())
-                    .eq(self.steps.iter().map(|step| step.title.as_str()))
-            });
-        if planned {
-            return;
-        }
-        let all: Vec<usize> = (0..self.checks.len()).collect();
-        for step in &mut self.steps {
-            if step.checks.is_empty() {
-                step.checks = all.clone();
-            }
-        }
+    pub(crate) fn at(session: &Path) -> Option<Self> {
+        Self::restore(session, last_logged(session)).ok()?.ok()
     }
 
-    pub(crate) fn load(path: &Path) -> io::Result<Option<Self>> {
-        Ok(Self::read(path)?.ok())
-    }
-
-    pub(crate) fn read(path: &Path) -> io::Result<Result<Self, Option<String>>> {
-        let mut work: Self = match std::fs::read(path) {
-            Ok(bytes) => match serde_json::from_slice(&bytes) {
+    pub(crate) fn restore(
+        session: &Path,
+        logged: Option<Self>,
+    ) -> io::Result<Result<Self, Option<String>>> {
+        let mut work = match logged {
+            Some(work) => work,
+            None => match legacy(&log::work_path(session))? {
                 Ok(work) => work,
-                Err(error) => {
-                    return Ok(Err(Some(format!(
-                        "{} is unreadable ({error}); the session starts without its saved Work",
-                        path.display()
-                    ))));
-                }
+                Err(notice) => return Ok(Err(notice)),
             },
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Err(None)),
-            Err(error) => return Err(error),
         };
         work.repair_steps();
-        let Some(trees) = read_trees(&path.with_extension(TREES))? else {
+        let Some(trees) = read_trees(&trees_path(session))? else {
             return Ok(Ok(work));
         };
         work.base = trees.base;
@@ -356,6 +345,35 @@ impl Work {
         }
         Ok(Ok(work))
     }
+}
+
+fn last_logged(session: &Path) -> Option<Work> {
+    const MARK: &[u8] = br#""kind":"work""#;
+    let bytes = std::fs::read(session).ok()?;
+    bytes
+        .rsplit(|byte| *byte == b'\n')
+        .filter(|line| line.windows(MARK.len()).any(|window| window == MARK))
+        .find_map(|line| match serde_json::from_slice(line) {
+            Ok(Line::Work { work }) => Some(*work),
+            _ => None,
+        })
+}
+
+fn legacy(path: &Path) -> io::Result<Result<Work, Option<String>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes).map_err(|error| {
+            Some(format!(
+                "{} is unreadable ({error}); the session starts without its saved Work",
+                path.display()
+            ))
+        })),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Err(None)),
+        Err(error) => Err(error),
+    }
+}
+
+fn trees_path(session: &Path) -> PathBuf {
+    log::work_path(session).with_extension(TREES)
 }
 
 fn read_trees(path: &Path) -> io::Result<Option<Trees<Snapshot>>> {

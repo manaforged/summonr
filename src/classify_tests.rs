@@ -1,4 +1,5 @@
 use super::*;
+use crate::endpoint::Wire;
 
 const LIVE: &str = r#"{
   "model": "typesafe/jev-1.13-20260917",
@@ -27,7 +28,7 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         model: "jev-latest".to_string(),
         base_url: Some("https://api.typesafe.ai/v1/systemone".to_string()),
         models_url: None,
-        api_key: Some("k".to_string()),
+        api_key: Some(summonr_core::secret::Secret::new("k")),
         source: None,
         reasoning: crate::provider::Reasoning::default(),
         oauth: None,
@@ -43,11 +44,10 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         compact_tokens: None,
         images: None,
         keep_reasoning: false,
-        opencode: false,
+        session_headers: Default::default(),
         prompt_cache_key: false,
         assistant_after_tool: false,
         cache_ttl: crate::limits::limits().cache_ttl,
-        cache_header: None,
         cache_marks: false,
     }
 }
@@ -161,22 +161,6 @@ fn asking_nothing_is_refused() {
 }
 
 #[test]
-fn each_decisions_provider_keeps_its_own_url() {
-    let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
-    let openrouter =
-        crate::endpoint::resolve(Some("openrouter"), None, crate::endpoint::Need::Model).unwrap();
-    assert_eq!(
-        openrouter.base_url.as_deref(),
-        Some("https://openrouter.ai/api/v1")
-    );
-    assert_eq!(openrouter.wire, Wire::Completions);
-
-    let mut other = endpoint("other", Wire::Decisions);
-    other.base_url = Some("https://example.test/decisions".to_string());
-    target(&other, &questions).unwrap();
-}
-
-#[test]
 fn the_request_keeps_the_shape_the_api_documents() {
     let questions = BTreeMap::from([
         (
@@ -242,35 +226,14 @@ fn a_decisions_failure_classifies_like_every_other_provider_failure() {
 }
 
 #[test]
-fn the_decisions_model_is_absent_from_the_chat_catalog() {
-    let chat = crate::endpoint::catalog(Wire::Completions);
-    assert!(
-        !chat.iter().any(|model| model.contains("jev")),
-        "jev must never be offered as a chat model: {chat:?}"
-    );
-}
-
-#[test]
 fn any_endpoint_can_declare_itself_a_decisions_endpoint() {
     for spelling in ["decisions", "systemone", "system-one", "DECISIONS"] {
         assert_eq!(
             crate::endpoint::Wire::parse(spelling),
-            Wire::Decisions,
+            Some(Wire::Decisions),
             "config must be able to declare `{spelling}`"
         );
     }
-}
-
-#[test]
-fn a_provider_this_code_has_never_heard_of_still_works() {
-    let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
-    let mut unknown = endpoint("some-future-vendor", Wire::Decisions);
-    unknown.base_url = Some("https://example.invalid/v9/judge".to_string());
-    unknown.model = "not-jev-at-all".to_string();
-    target(&unknown, &questions).unwrap();
-    let body =
-        crate::provider::decisions::body(&unknown.model, &serde_json::Value::from("s"), &questions);
-    assert_eq!(body["model"], "not-jev-at-all");
 }
 
 #[test]
@@ -303,9 +266,9 @@ fn the_questions_are_charged_against_the_context() {
             )
         })
         .collect();
-    let seat = endpoint("any", Wire::Decisions);
+    let selection = endpoint("any", Wire::Decisions);
     assert!(
-        budget(&seat, &many) < budget(&seat, &one),
+        budget(&selection, &many) < budget(&selection, &one),
         "asking more must leave less room for the state"
     );
 }

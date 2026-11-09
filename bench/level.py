@@ -1,4 +1,7 @@
 import base64
+import contextlib
+
+from pydantic import BaseModel, Field
 
 TASK_PATH = "/etc/bench-task-path"
 SETUP_TIMEOUT_SEC = 1200.0
@@ -69,7 +72,7 @@ def wrap(name: str, env: dict[str, str] | None = None) -> str:
 
 PROBE = """echo "PATH=$PATH"
 for r in python3 pip3 node npm npx bun uv perl ruby go java gcc; do echo "$r=$(command -v $r)"; done
-echo "dpkg=$(dpkg-query -W -f '${Package}\\n' 2>/dev/null | sort | sha256sum | cut -c1-16)"
+echo "dpkg=$(dpkg-query -W -f '${Package}=${Version}\\n' 2>/dev/null | sort | sha256sum | cut -c1-16)"
 """
 
 
@@ -87,10 +90,35 @@ def snapshot_install() -> str:
     )
 
 
+class NodePin(BaseModel):
+    node: str | None = Field(default=None, description="Exact Node version nvm installs for the harness.")
+
+
+class BaseInstallError(RuntimeError):
+    pass
+
+
+class HarnessInstallError(RuntimeError):
+    pass
+
+
+@contextlib.contextmanager
+def harness():
+    try:
+        yield
+    except Exception as failed:
+        raise HarnessInstallError(str(failed)) from failed
+
+
 async def install(agent, environment) -> None:
+    if getattr(environment, "leveled", False):
+        return
     try:
         await agent.ensure_system_dependencies(environment, PACKAGES)
-    except Exception:
-        await agent.exec_as_root(environment, command=snapshot_install())
+    except Exception as mirror:
+        try:
+            await agent.exec_as_root(environment, command=snapshot_install())
+        except Exception as pinned:
+            raise BaseInstallError(f"{mirror}\nsnapshot: {pinned}") from mirror
     if keep := getattr(environment, "keep_level", None):
         await keep()

@@ -10,16 +10,19 @@ use serde_json::{Value, json};
 pub(crate) enum Mode {
     Expire,
     HeldOpen,
+    Asks,
 }
 
 pub(crate) struct Remote {
     pub(crate) port: u16,
+    state: Arc<Mutex<State>>,
 }
 
 #[derive(Default)]
 struct State {
     generation: u32,
     current: Option<String>,
+    answered: Vec<Value>,
 }
 
 impl Remote {
@@ -27,13 +30,18 @@ impl Remote {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let state = Arc::new(Mutex::new(State::default()));
+        let shared = Arc::clone(&state);
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
-                let state = Arc::clone(&state);
+                let state = Arc::clone(&shared);
                 thread::spawn(move || serve(stream, mode, &state));
             }
         });
-        Self { port }
+        Self { port, state }
+    }
+
+    pub(crate) fn answered(&self) -> Vec<Value> {
+        self.state.lock().unwrap().answered.clone()
     }
 
     pub(crate) fn config(&self, name: &str, extra: &str) -> String {
@@ -70,6 +78,11 @@ fn serve(stream: TcpStream, mode: Mode, state: &Mutex<State>) {
     let id = request["id"].clone();
     let mut stream = stream;
     let mut state = state.lock().unwrap();
+    if request.get("method").is_none() && request.get("result").is_some() {
+        state.answered.push(id);
+        reply(&mut stream, "202 Accepted", &[], "");
+        return;
+    }
     match request["method"].as_str().unwrap_or("") {
         "initialize" => {
             state.generation += 1;
@@ -105,6 +118,16 @@ fn serve(stream: TcpStream, mode: Mode, state: &Mutex<State>) {
                     ));
                     drop(stream.flush());
                     thread::park_timeout(Duration::from_secs(20));
+                }
+                Mode::Asks => {
+                    drop(state);
+                    let ask = json!({"jsonrpc": "2.0", "id": "server-1", "method": "roots/list"});
+                    drop(write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\ndata: {ask}\r\n\r\n"
+                    ));
+                    drop(write!(stream, "data: {}\r\n\r\n", envelope(&id, result)));
+                    drop(stream.flush());
                 }
             }
         }

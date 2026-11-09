@@ -1,11 +1,11 @@
 use std::borrow::{Borrow, Cow};
 
-const OUTPUT_BUDGET: usize = 50 * 1024;
+use crate::limits::limits;
+
+pub(super) const OUTPUT_BUDGET: usize = 16 * 1024;
 const NOTE_ROOM: usize = 1024;
-const SHAPED_BUDGET: usize = OUTPUT_BUDGET - NOTE_ROOM;
+pub(super) const SHAPED_BUDGET: usize = OUTPUT_BUDGET - NOTE_ROOM;
 const HEAD_SHARE: usize = 6;
-const LINE_MAX: usize = 8 * 1024;
-const CLIP_MARK: &str = " [line clipped]";
 
 pub(crate) struct Digest {
     pub(crate) text: String,
@@ -15,11 +15,13 @@ pub(crate) struct Digest {
 pub(crate) fn within(text: &str) -> bool {
     text.len() <= OUTPUT_BUDGET
         && !text.contains("\r\n")
-        && text.split('\n').all(|line| line.len() <= LINE_MAX)
+        && text
+            .split('\n')
+            .all(|line| line.len() <= limits().output_line_bytes)
 }
 
-pub(crate) fn plain(raw: &str) -> Digest {
-    shaped(raw, |lines| lines)
+pub(crate) fn clip_mark(limit: usize) -> String {
+    format!(" [line clipped at {limit} bytes]")
 }
 
 pub(crate) fn shaped<'a, S: Borrow<str>>(
@@ -40,19 +42,21 @@ pub(crate) fn shaped<'a, S: Borrow<str>>(
 }
 
 fn lines(raw: &str) -> (Vec<Cow<'_, str>>, bool) {
-    let mut clipped = false;
-    let lines = raw
+    let limit = limits().output_line_bytes;
+    let lines: Vec<_> = raw
         .lines()
         .map(|line| {
-            if line.len() > LINE_MAX {
-                clipped = true;
-                let keep = line.floor_char_boundary(LINE_MAX - CLIP_MARK.len());
-                Cow::Owned(format!("{}{CLIP_MARK}", &line[..keep]))
-            } else {
+            if line.len() <= limit {
                 Cow::Borrowed(line)
+            } else {
+                Cow::Owned(
+                    crate::display::ellipsize(line, crate::display::Span::Bytes(limit))
+                        + &clip_mark(limit),
+                )
             }
         })
         .collect();
+    let clipped = lines.iter().any(|line| matches!(line, Cow::Owned(_)));
     (lines, clipped)
 }
 

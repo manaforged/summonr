@@ -1,12 +1,13 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-mod said;
+mod content;
+mod messages;
 
+use super::reply::ReplyBuilder;
 use super::{Accumulate, Chat, Delta};
 use crate::provider::{
-    AssistantMessage, CompletionRequest, EffortField, Partial, Reasoning, Step, StopReason,
-    ToolCall, Usage, stream::merge_call, think,
+    AssistantMessage, CompletionRequest, EffortField, Reasoning, Step, stream::merge_call, think,
 };
 
 pub(crate) struct Wire;
@@ -34,20 +35,11 @@ fn effort(body: &mut Value, call: &CompletionRequest<'_>, reasoning: &Reasoning)
 impl Chat for Wire {
     type Stream = Stream;
 
-    fn path(_model: &str, _stream: bool) -> String {
-        "/chat/completions".to_string()
-    }
-
-    fn sentinel() -> Option<&'static str> {
-        Some("[DONE]")
-    }
-
     fn body(
         call: &CompletionRequest<'_>,
-        reasoning: &Reasoning,
-        _cache: crate::endpoint::CacheTtl,
-        stream: bool,
-    ) -> crate::error::Result<super::Wired> {
+        encoding: &super::Encoding<'_>,
+    ) -> summonr_core::error::Result<super::Wired> {
+        let (reasoning, stream) = (encoding.reasoning, encoding.stream);
         let mut body = json!({
             "model": call.model,
             "stream": stream,
@@ -69,52 +61,25 @@ impl Chat for Wire {
             }
         }
         effort(&mut body, call, reasoning);
-        Ok(super::Wired::head(body))
+        let messages = serde_json::to_vec(&messages::Messages {
+            list: call.messages,
+            keep_reasoning: encoding.keep_reasoning,
+            cached: encoding.cache_marks || call.traits.family == super::traits::Family::Anthropic,
+            assistant_after_tool: encoding.assistant_after_tool,
+        })?;
+        Ok(super::Wired {
+            messages: Some(messages),
+            raw_tools: true,
+            ..super::Wired::head(body)
+        })
     }
-
-    #[cfg(test)]
-    fn parse(_model: &str, body: &Value) -> AssistantMessage {
-        let reply: Reply = serde_json::from_value(body.clone()).unwrap_or_default();
-        let mut message = reply
-            .choices
-            .into_iter()
-            .next()
-            .map(|choice| {
-                let mut message = choice.message;
-                if let Some(reason) = choice.finish_reason {
-                    message.stop_reason = reason;
-                }
-                message
-            })
-            .unwrap_or_default();
-        if let Some(counted) = reply.usage {
-            message.usage = counted;
-        }
-        message
-    }
-}
-
-#[cfg(test)]
-#[derive(Default, Deserialize)]
-struct Reply {
-    #[serde(default)]
-    choices: Vec<Choice>,
-    usage: Option<Usage>,
-}
-
-#[cfg(test)]
-#[derive(Deserialize)]
-struct Choice {
-    #[serde(default)]
-    message: AssistantMessage,
-    finish_reason: Option<StopReason>,
 }
 
 #[derive(Default, Deserialize)]
 struct Frame {
     #[serde(default)]
     choices: Vec<FrameChoice>,
-    usage: Option<Usage>,
+    usage: Option<crate::provider::Usage>,
     error: Option<Failure>,
 }
 
@@ -128,12 +93,12 @@ struct Failure {
 struct FrameChoice {
     #[serde(default)]
     delta: Piece,
-    finish_reason: Option<said::Finish>,
+    finish_reason: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
 struct Piece {
-    content: Option<said::Said>,
+    content: Option<content::Content>,
     refusal: Option<String>,
     #[serde(
         default,
@@ -141,20 +106,15 @@ struct Piece {
         deserialize_with = "think::reasoning_field"
     )]
     reasoning_content: Option<String>,
-    #[serde(default, deserialize_with = "think::vec_or_null")]
+    #[serde(default, deserialize_with = "summonr_types::vec_or_null")]
     tool_calls: Vec<crate::provider::stream::CallDelta>,
 }
 
 #[derive(Default)]
 pub(crate) struct Stream {
-    text: String,
-    reasoning: String,
-    calls: Vec<ToolCall>,
+    reply: ReplyBuilder,
     named: usize,
     think: think::Scan,
-    usage: Usage,
-    stop: StopReason,
-    finished: bool,
 }
 
 impl Accumulate for Stream {
@@ -162,7 +122,7 @@ impl Accumulate for Stream {
         Self::default()
     }
 
-    fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>> {
+    fn on(&mut self, frame: &str) -> summonr_core::error::Result<Vec<Delta>> {
         let frame = crate::provider::wire::parse::<Frame>(frame)?;
         if let Some(failure) = frame.error {
             let message = if failure.message.is_empty() {
@@ -170,13 +130,13 @@ impl Accumulate for Stream {
             } else {
                 failure.message
             };
-            return Err(crate::error::Error::provider(
-                crate::error::ProviderFailureKind::Server,
+            return Err(summonr_core::error::Error::provider(
+                summonr_core::error::ProviderFailureKind::Server,
                 message,
             ));
         }
         if let Some(counted) = frame.usage {
-            self.usage = counted;
+            self.reply.usage = counted;
         }
         let mut deltas = Vec::new();
         let Some(choice) = frame.choices.into_iter().next() else {
@@ -188,21 +148,25 @@ impl Accumulate for Stream {
             )));
         }
         if let Some(reason) = choice.finish_reason {
-            self.stop = reason.stop()?;
-            self.finished = true;
+            let ended =
+                crate::provider::client::ending(crate::endpoint::Wire::Completions, &reason, "")?;
+            if let Some(stop) = ended {
+                self.reply.stop = stop;
+            }
+            self.reply.finished = true;
         }
         if let Some(part) = choice.delta.reasoning_content {
             self.thought(part, &mut deltas);
         }
         match choice.delta.content {
-            Some(said::Said::Text(part)) => self.said(&part, &mut deltas),
-            Some(said::Said::Chunks(chunks)) => {
+            Some(content::Content::Text(part)) => self.append_text(&part, &mut deltas),
+            Some(content::Content::Chunks(chunks)) => {
                 for chunk in &chunks {
-                    if let said::Chunk::Thinking { thinking } = chunk {
-                        let part: String = thinking.iter().map(said::Chunk::text).collect();
+                    if let content::Chunk::Thinking { thinking } = chunk {
+                        let part: String = thinking.iter().map(content::Chunk::text).collect();
                         self.thought(part, &mut deltas);
                     } else {
-                        self.said(chunk.text(), &mut deltas);
+                        self.append_text(chunk.text(), &mut deltas);
                     }
                 }
             }
@@ -212,37 +176,23 @@ impl Accumulate for Stream {
         Ok(deltas)
     }
 
-    fn finished(&self) -> bool {
-        self.finished
-    }
-
-    fn spill(&mut self, partial: &mut Partial) {
-        partial.text.push_str(&self.text);
-        partial.reasoning.push_str(&self.reasoning);
-        if self.usage != Usage::default() {
-            partial.usage = Some(self.usage.clone());
-        }
+    fn reply(&self) -> &ReplyBuilder {
+        &self.reply
     }
 
     fn finish(mut self) -> AssistantMessage {
+        let reply = &mut self.reply;
         self.think.finish(
-            |chunk| self.text.push_str(chunk),
-            |chunk| self.reasoning.push_str(chunk),
+            |chunk| reply.text.push_str(chunk),
+            |chunk| reply.reasoning.push_str(chunk),
         );
-        for (index, call) in self.calls.iter_mut().enumerate() {
+        for (index, call) in self.reply.calls.iter_mut().enumerate() {
             if call.id.is_empty() {
                 call.id = format!("call_{index}");
             }
             call.function.check();
         }
-        AssistantMessage {
-            content: (!self.text.is_empty()).then_some(self.text),
-            tool_calls: self.calls,
-            reasoning_content: (!self.reasoning.is_empty()).then_some(self.reasoning),
-            usage: self.usage,
-            stop_reason: self.stop,
-            continuation: None,
-        }
+        self.reply.finish(None)
     }
 }
 
@@ -251,11 +201,11 @@ impl Stream {
         if part.is_empty() {
             return;
         }
-        self.reasoning.push_str(&part);
+        self.reply.reasoning.push_str(&part);
         deltas.push(Delta::Thinking(part));
     }
 
-    fn said(&mut self, part: &str, deltas: &mut Vec<Delta>) {
+    fn append_text(&mut self, part: &str, deltas: &mut Vec<Delta>) {
         if part.is_empty() {
             return;
         }
@@ -268,7 +218,7 @@ impl Stream {
         );
         self.thought(thought, deltas);
         if !text.is_empty() {
-            self.text.push_str(&text);
+            self.reply.text.push_str(&text);
             deltas.push(Delta::Text(text));
         }
     }
@@ -277,7 +227,7 @@ impl Stream {
         &mut self,
         parts: Vec<crate::provider::stream::CallDelta>,
         deltas: &mut Vec<Delta>,
-    ) -> crate::error::Result<()> {
+    ) -> summonr_core::error::Result<()> {
         for part in parts {
             if part
                 .function
@@ -287,9 +237,9 @@ impl Stream {
             {
                 deltas.push(Delta::Progress);
             }
-            merge_call(&mut self.calls, part)?;
+            merge_call(&mut self.reply.calls, part)?;
         }
-        while let Some(call) = self.calls.get(self.named) {
+        while let Some(call) = self.reply.calls.get(self.named) {
             if call.function.name.is_empty() {
                 break;
             }

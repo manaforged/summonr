@@ -2,9 +2,8 @@ use super::Worker;
 use crate::endpoint::Endpoint;
 use crate::provider::Client;
 use crate::runtime::Loop;
-use crate::tools::Event;
 use crate::tui::{Msg, Snapshot};
-use crate::workflow::{self, Role, Seat, Workflow};
+use crate::workflow::{self, ModelSelection, Role, Workflow};
 use tokio::sync::mpsc::UnboundedSender;
 
 const WORKFLOW_USAGE: &str = "/workflow [NAME | off | list | show | set ROLE ENDPOINT [MODEL] | \
@@ -14,43 +13,29 @@ impl Worker {
     pub(super) fn set_verify(&mut self, on: bool) {
         if on {
             match crate::verify::check_commands(self.loop_.workspace()) {
-                Ok(Some(commands)) => self.loop_.set_verify(Some(commands)),
+                Ok(Some(commands)) => {
+                    if let Err(error) = self.loop_.set_verify(Some(commands)) {
+                        self.fail(&error.to_string());
+                    }
+                }
                 Ok(None) => {
                     self.fail("Add a check to .summonr/check.toml, then enable Verify again.")
                 }
                 Err(error) => self.fail(&error.to_string()),
             }
         } else {
-            self.loop_.set_verify(None);
+            drop(self.loop_.set_verify(None));
         }
         self.send_settings();
     }
 
-    pub(super) async fn set_endpoint(&mut self, name: &str) {
-        self.drive(crate::endpoint::resolve(
-            Some(name),
-            None,
-            crate::endpoint::Need::Seat,
-        ))
-        .await;
-    }
-
-    pub(super) async fn set_seat(&mut self, endpoint: &str, model: &str) {
-        self.drive(crate::endpoint::resolve(
-            Some(endpoint),
-            Some(model),
-            crate::endpoint::Need::Seat,
-        ))
-        .await;
-    }
-
-    pub(super) async fn set_model(&mut self, model: &str) {
-        self.drive(crate::endpoint::resolve(
-            Some(&self.endpoint),
-            Some(model),
-            crate::endpoint::Need::Seat,
-        ))
-        .await;
+    pub(super) async fn selection(&mut self, endpoint: Option<&str>, model: Option<&str>) {
+        let endpoint = crate::endpoint::resolve(
+            Some(endpoint.unwrap_or(&self.endpoint)),
+            model,
+            crate::endpoint::Need::ModelAndKey,
+        );
+        self.drive(endpoint).await;
     }
 
     pub(super) async fn drive(&mut self, endpoint: crate::Result<Endpoint>) {
@@ -63,7 +48,7 @@ impl Worker {
                     .is_none()
                     .then(|| (provider.clone(), endpoint.model.clone()));
                 self.use_endpoint(endpoint, provider);
-                self.remember_seat();
+                self.remember_model();
                 self.send_settings();
                 if let Some((provider, model)) = probe {
                     self.loop_
@@ -79,21 +64,7 @@ impl Worker {
     }
 
     fn client(ui: &UnboundedSender<Msg>, endpoint: &Endpoint) -> crate::Result<Client> {
-        let delta = ui.clone();
-        let thinking = ui.clone();
-        let calling = ui.clone();
-        Ok(Client::connect(endpoint)?
-            .on_delta(move |text| {
-                drop(delta.send(Msg::Event(Event::Delta {
-                    text: text.to_string(),
-                })))
-            })
-            .on_reasoning(move |text| {
-                drop(thinking.send(Msg::Event(Event::Reasoning {
-                    text: text.to_string(),
-                })));
-            })
-            .on_tool(move |name| drop(calling.send(Msg::Calling(name.to_string())))))
+        crate::tui::channel::client(ui, endpoint)
     }
 
     pub(super) fn workflow(&mut self, argument: Option<&str>) {
@@ -130,11 +101,11 @@ impl Worker {
 
     fn clear_workflow(&mut self) {
         for role in Role::ALL {
-            self.loop_.clear_seat(role);
+            self.loop_.clear_role_model(role);
         }
         self.workflow = Workflow::default();
         match self.loop_.set_workflow(None) {
-            Ok(()) => self.system("workflow off: every role on the driving seat"),
+            Ok(()) => self.system("workflow off: every role on the primary model"),
             Err(error) => self.fail(&error.to_string()),
         }
         self.send_workflow();
@@ -143,41 +114,51 @@ impl Worker {
 
     fn set_role(&mut self, role: &str, endpoint: &str, model: Option<&str>) {
         match role.parse() {
-            Ok(role) => self.seat_role(role, endpoint, model),
+            Ok(role) => self.assign_model(role, endpoint, model),
             Err(error) => self.fail(&error.to_string()),
         }
     }
 
-    pub(super) fn seat_role(&mut self, role: Role, endpoint: &str, model: Option<&str>) {
-        let resolved = crate::endpoint::resolve(Some(endpoint), model, crate::endpoint::Need::Seat)
-            .and_then(|endpoint| {
-                Self::client(&self.ui, &endpoint).map(|client| (endpoint, client))
-            });
+    pub(super) fn assign_model(&mut self, role: Role, endpoint: &str, model: Option<&str>) {
+        let resolved =
+            crate::endpoint::resolve(Some(endpoint), model, crate::endpoint::Need::ModelAndKey)
+                .and_then(|endpoint| {
+                    Self::client(&self.ui, &endpoint).map(|client| (endpoint, client))
+                });
         match resolved {
             Ok((endpoint, client)) => {
-                self.loop_.set_seat(
+                if endpoint.context_window.is_none() {
+                    self.loop_.watch_context(
+                        Some(role),
+                        client.clone(),
+                        &endpoint.name,
+                        &endpoint.model,
+                    );
+                }
+                self.loop_.set_role_model(
                     role,
                     client,
                     endpoint.model.clone(),
                     endpoint.effort,
                     endpoint.price,
+                    endpoint.context_window,
                 );
-                self.workflow.seats.insert(
+                self.workflow.selections.insert(
                     role,
-                    Seat {
+                    ModelSelection {
                         endpoint: endpoint.name,
                         model: Some(endpoint.model),
                     },
                 );
             }
-            Err(error) => self.fail(&format!("{role} seat: {error}")),
+            Err(error) => self.fail(&format!("{role} selection: {error}")),
         }
         self.send_workflow();
     }
 
     pub(super) fn clear_role(&mut self, role: Role) {
-        self.loop_.clear_seat(role);
-        self.workflow.seats.remove(&role);
+        self.loop_.clear_role_model(role);
+        self.workflow.selections.remove(&role);
         self.send_workflow();
     }
 
@@ -186,7 +167,7 @@ impl Worker {
             self.fail(&error.to_string());
             return;
         }
-        match crate::modules::Switches::load(self.loop_.workspace()) {
+        match crate::modules::load(self.loop_.workspace()) {
             Ok(switches) => {
                 if self.loop_.catalog_frozen() {
                     self.system("saved for the next process; this session's tools stay frozen");
@@ -215,14 +196,14 @@ impl Worker {
     }
 
     pub(super) fn send_workflow(&self) {
-        let seats = Role::ALL
+        let selections = Role::ALL
             .iter()
             .map(|role| {
-                self.workflow.seat(*role).map(|seat| {
+                self.workflow.selection(*role).map(|selection| {
                     format!(
                         "{}\t{}",
-                        seat.endpoint,
-                        seat.model.as_deref().unwrap_or_default()
+                        selection.endpoint,
+                        selection.model.as_deref().unwrap_or_default()
                     )
                 })
             })
@@ -230,7 +211,7 @@ impl Worker {
         drop(self.ui.send(Msg::Workflow {
             name: self.loop_.workflow(),
             names: workflow::names().unwrap_or_default(),
-            seats,
+            selections,
         }));
     }
 
@@ -249,10 +230,10 @@ impl Worker {
                         } else {
                             "  "
                         };
-                        let seats = workflow::load(name)
+                        let selections = workflow::load(name)
                             .map(|workflow| workflow.summary())
                             .unwrap_or_else(|error| error.to_string());
-                        format!("{mark}{name} · {seats}")
+                        format!("{mark}{name} · {selections}")
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -270,16 +251,15 @@ impl Worker {
             Err(error) => return self.fail(&error.to_string()),
         };
         let ui = &self.ui;
-        let applied = self.loop_.apply_workflow(&workflow, |seat| {
+        let selected = self.loop_.configure_workflow(&workflow, |selection| {
             let endpoint = crate::endpoint::resolve(
-                Some(&seat.endpoint),
-                seat.model.as_deref(),
-                crate::endpoint::Need::Seat,
+                Some(&selection.endpoint),
+                selection.model.as_deref(),
+                crate::endpoint::Need::ModelAndKey,
             )?;
-            let client = Self::client(ui, &endpoint)?;
-            Ok((client, endpoint))
+            Ok((Self::client(ui, &endpoint)?, endpoint))
         });
-        if let Err(error) = applied {
+        if let Err(error) = selected {
             return self.fail(&error.to_string());
         }
         self.system(&format!("workflow {name} · {}", workflow.summary()));
@@ -305,13 +285,13 @@ impl Worker {
         self.loop_.set_provider(provider, endpoint.model);
     }
 
-    pub(super) fn remember_seat(&self) {
+    pub(super) fn remember_model(&self) {
         if let Some(home) = &self.home {
-            let seat = crate::recent::Seat::new(
+            let selection = crate::recent::ModelId::new(
                 crate::endpoint::remembered(&self.endpoint),
                 self.loop_.model(),
             );
-            drop(crate::recent::record(home, &seat, self.loop_.effort()));
+            drop(crate::recent::record(home, &selection, self.loop_.effort()));
         }
     }
 
@@ -328,12 +308,16 @@ impl Worker {
                 strict: self.loop_.is_strict(),
                 approval: self.loop_.is_approval(),
                 endpoint: self.endpoint.clone(),
-                context_window: self.loop_.context_window(),
+                context_window: self.loop_.pressure_window(),
+                prompt_system: self.loop_.prompt_parts().0,
+                prompt_schemas: self.loop_.prompt_parts().1,
+                prompt_tools: self.loop_.prompt_parts().2,
+                prompt_other: self.loop_.prompt_parts().3,
                 workflow: self.loop_.workflow(),
-                unseated: crate::endpoint::resolve(
+                unconfigured: crate::endpoint::resolve(
                     Some(&self.endpoint),
                     None,
-                    crate::endpoint::Need::Seat,
+                    crate::endpoint::Need::ModelAndKey,
                 )
                 .is_err(),
             })),
@@ -344,7 +328,7 @@ impl Worker {
 pub(super) fn set_run_mode(
     loop_: &mut Loop<Client>,
     ui: &UnboundedSender<Msg>,
-    mode: crate::RunMode,
+    mode: crate::WorkKind,
 ) {
     if loop_.mode() == mode {
         return;
@@ -357,9 +341,9 @@ pub(super) fn announce_run_mode(loop_: &Loop<Client>, ui: &UnboundedSender<Msg>)
     let mode = loop_.mode();
     drop(ui.send(Msg::RunMode(mode)));
     let text = match mode {
-        crate::RunMode::Work => "work mode: run the steps in order with a check per step",
-        crate::RunMode::Goal => "goal mode: keep going until the objective is met",
-        crate::RunMode::Auto => "auto mode: full tools",
+        crate::WorkKind::Steps => "work mode: run the steps in order with a check per step",
+        crate::WorkKind::Goal => "goal mode: keep going until the objective is met",
+        crate::WorkKind::Single => "auto mode: full tools",
     };
     drop(ui.send(Msg::System(text.to_string())));
 }

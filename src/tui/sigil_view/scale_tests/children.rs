@@ -39,6 +39,24 @@ pub(super) fn task_call(app: &App) {
 }
 
 #[test]
+fn goal_briefs_show_the_task_and_web_host_without_repeated_labels() {
+    let shown = frame_with(busy_info(), 164, 40, State::Busy, |app| {
+        task_call(app);
+        spawn(app, IDS[0], "GOAL: Check subscription policy. PATHS: read-only", true);
+        act(app, IDS[0], Event::ToolCall {
+            id: "web-policy".to_string(),
+            name: "web".to_string(),
+            arguments: serde_json::json!({"url": "https://code.claude.com/docs/en/legal-and-compliance"}).to_string(),
+        });
+    }).join("\n");
+    assert!(shown.contains("Check subscription policy"), "{shown}");
+    assert!(shown.contains("Web code.claude.com"), "{shown}");
+    assert!(!shown.contains("GOAL"), "{shown}");
+    assert!(!shown.contains("/docs/en/legal-and-compliance"), "{shown}");
+    assert!(!shown.contains("Subagent Check subscription"), "{shown}");
+}
+
+#[test]
 fn children_the_turn_waits_on_sit_under_their_task_call() {
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
         task_call(app);
@@ -105,7 +123,10 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
         );
     })
     .join("\n");
-    assert_eq!(running, "2", "the Subagents header and one row");
+    assert_eq!(
+        running, "3",
+        "one blank row, the Subagents header, and one child row"
+    );
     assert!(
         done.contains("◆ Subagent completed in") && done.contains("“Benchmark startup and RSS”"),
         "{done}"
@@ -239,6 +260,80 @@ fn a_child_that_recovers_from_a_failed_command_reads_done_and_one_that_aborts_re
 }
 
 #[test]
+fn clicking_the_strip_header_expands_it() {
+    use super::super::view::root;
+    use sigil::{Host, events::EventRouter, reactive::Runtime, terminal::Screen};
+
+    Runtime::scope("strip-header", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _sent) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(100, 30);
+        spawn(&app, IDS[0], "Keep the parent working", true);
+        let mut host = Host::cells();
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(100, 30);
+        let mut router = EventRouter::new();
+        for _ in 0..2 {
+            screen
+                .frame(&mut host, &mut router, [], (100, 30))
+                .expect("frame");
+        }
+        let shown = screen
+            .frame(&mut host, &mut router, [], (100, 30))
+            .expect("frame")
+            .text();
+        let (row, line) = shown
+            .lines()
+            .enumerate()
+            .find(|(_, line)| line.contains("shows all"))
+            .expect("collapsed header");
+        let at = line.find('▸').expect("expand button");
+        let col = sigil::app::cell_width(&line[..at]);
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                sigil::terminal::click(col as u16, row as u16),
+                (100, 30),
+            )
+            .expect("click header");
+        let expanded = screen
+            .frame(&mut host, &mut router, [], (100, 30))
+            .expect("frame")
+            .text();
+        assert!(
+            expanded.contains("closes"),
+            "header click did not expand:\n{expanded}"
+        );
+        assert!(app.model.get().agents_expanded);
+        let ctrl_x = sigil::terminal::map_key(&crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('x'),
+            crossterm::event::KeyModifiers::CONTROL,
+        ))
+        .expect("ctrl+x");
+        let a = sigil::terminal::map_key(&crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('a'),
+            crossterm::event::KeyModifiers::NONE,
+        ))
+        .expect("a");
+        screen
+            .frame(&mut host, &mut router, [ctrl_x, a], (100, 30))
+            .expect("chord");
+        let collapsed = screen
+            .frame(&mut host, &mut router, [], (100, 30))
+            .expect("frame")
+            .text();
+        assert!(
+            collapsed.contains("shows all"),
+            "ctrl+x a did not collapse:\n{collapsed}"
+        );
+        assert!(!app.model.get().agents_expanded);
+    });
+}
+
+#[test]
 fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
     use super::super::{chat::panels, view::root};
     use crate::tui::{Activity, Cmd};
@@ -302,6 +397,7 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
                 completion_tokens: 2,
                 reasoning_tokens: 0,
                 cached_tokens: 0,
+                cache_write_tokens: 0,
                 millis: None,
                 prefix_hash: String::new(),
                 cost: Some(0.25),
@@ -316,11 +412,11 @@ fn a_cleared_background_child_stays_hidden_without_cancelling_the_parent() {
         );
         assert_eq!(panels::strip_rows(&app), 0);
         app.toggle_agents();
-        assert_eq!(panels::strip_rows(&app), 2);
-        app.clear_agent(&crate::child::tag(IDS[1]));
-        assert_eq!(panels::strip_rows(&app), 2);
-        spawn(&app, IDS[2], "New background child", true);
         assert_eq!(panels::strip_rows(&app), 3);
+        app.clear_agent(&crate::child::tag(IDS[1]));
+        assert_eq!(panels::strip_rows(&app), 3);
+        spawn(&app, IDS[2], "New background child", true);
+        assert_eq!(panels::strip_rows(&app), 4);
         act(
             &app,
             IDS[0],

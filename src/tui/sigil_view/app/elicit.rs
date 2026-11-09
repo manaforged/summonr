@@ -333,9 +333,7 @@ impl App {
         let Some(count) = state.options().map(|(options, _)| options.len()) else {
             return false;
         };
-        let count = isize::try_from(count).unwrap_or(isize::MAX).max(1);
-        let at = isize::try_from(state.cursor).unwrap_or(0);
-        state.cursor = usize::try_from((at + dir).rem_euclid(count)).unwrap_or(0);
+        state.cursor = crate::tui::sigil_view::ui::cycle(state.cursor, dir, count);
         self.form.set(Some(state));
         true
     }

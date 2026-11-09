@@ -6,8 +6,13 @@ impl SessionDriver {
         workspace: &Path,
         model: &str,
         system: &str,
-        parent: Option<SessionId>,
+        parent: Option<Parent>,
     ) -> Result<Self, DriverError> {
+        let (parent, depth) = match parent {
+            Some(Parent::Session(id)) => (Some(id), 0),
+            Some(Parent::Task(id)) => (Some(id), 1),
+            None => (None, 0),
+        };
         let id = SessionId::new();
         let path = log::session_path(home, id);
         let mut driver = Self {
@@ -19,7 +24,7 @@ impl SessionDriver {
             turn: None,
             next: 1,
             pending: Vec::new(),
-            saved: AtomicU64::new(0),
+            saved: 0,
             base: None,
             fresh: false,
             last: None,
@@ -31,7 +36,8 @@ impl SessionDriver {
             system: system.to_string(),
             workspace: driver.workspace.clone(),
             parent,
-            depth: u8::from(parent.is_some()),
+            depth,
+            revision: Some(crate::revision().to_string()),
         })?;
         Ok(driver)
     }
@@ -44,9 +50,7 @@ impl SessionDriver {
         let caller = workspace;
         let path = log::session_path(home, id);
         let mut state = State::default();
-        for line in log::read(&path)? {
-            state.apply(line);
-        }
+        log::records(&path, 0).try_for_each(|line| line.map(|line| state.apply(line)))?;
         if state.id != Some(id) {
             return Err(DriverError::State(format!(
                 "{} is not the log of session {id}",
@@ -58,7 +62,7 @@ impl SessionDriver {
         } else {
             state.workspace.clone()
         };
-        let (work, notice) = match Work::read(&log::work_path(&path))? {
+        let (work, notice) = match Work::restore(&path, state.work.take())? {
             Ok(work) => (Some(work), None),
             Err(notice) => (None, notice),
         };
@@ -81,7 +85,7 @@ impl SessionDriver {
             turn: None,
             next: 1,
             pending: Vec::new(),
-            saved: AtomicU64::new(0),
+            saved: 0,
             base: None,
             fresh: false,
             last: None,
@@ -99,8 +103,8 @@ impl SessionDriver {
                 calls: Vec::new(),
             });
             self.abort(
-                &crate::tools::Abort {
-                    code: crate::tools::AbortCode::Interrupted,
+                &summonr_types::Abort {
+                    code: summonr_types::AbortCode::Interrupted,
                     reason: "process stopped before the turn finished".to_string(),
                 },
                 None,
@@ -132,7 +136,7 @@ impl SessionDriver {
         if self.turn.is_some() {
             return Err(DriverError::Busy);
         }
-        let mut lines = log::read(self.log.path())?;
+        let mut lines = log::records(self.log.path(), 0).collect::<std::io::Result<Vec<Line>>>()?;
         if let Some(turn) = turn {
             truncate_to_turn(&mut lines, turn)?;
         }
@@ -141,17 +145,21 @@ impl SessionDriver {
         let child = SessionId::new();
         let path = log::session_path(home, child);
         let mut log = Log::create(&path)?;
-        log.append(&Line::Session {
-            id: child,
-            model: self.state.model.clone(),
-            system: self.state.system.clone(),
-            workspace: self.state.workspace.clone(),
-            parent: self.state.id,
-            depth: 0,
-        })?;
+        log.append(
+            &Line::Session {
+                id: child,
+                model: self.state.model.clone(),
+                system: self.state.system.clone(),
+                workspace: self.state.workspace.clone(),
+                parent: self.state.id,
+                depth: 0,
+                revision: Some(crate::revision().to_string()),
+            },
+            store::Durability::Renamed,
+        )?;
         for line in lines {
-            if !matches!(line, Line::Session { .. }) {
-                log.append(&line)?;
+            if !matches!(line, Line::Session { .. } | Line::Work { .. }) {
+                log.append(&line, store::Durability::Renamed)?;
             }
         }
         Ok(path)

@@ -56,11 +56,11 @@ The `claude` endpoint runs a Claude Pro or Max plan through your own Claude Code
 
 An endpoint can offer both a sign-in and a key. `summonr login NAME` then asks which one; `--key` skips the question. A stored sign-in wins over any key, and `summonr logout NAME` returns the endpoint to its key. `auth.label` names the subscription in that question.
 
-`openai` offers Sign in with ChatGPT (Plus or Pro) next to `OPENAI_API_KEY`, and runs on the subscription's usage through the Responses API. The first sign-in registers summonr with OpenAI and stores the issued client id; `~/.summonr/host-id` holds the install id that OpenAI asks for on every sign-in. OpenAI caps each app per week in ChatGPT settings → Usage; when the cap is reached, the error names that page after the standard retry policy. The subscription path rejects `max_output_tokens`, sampling fields, and hosted tools; on a subscription token summonr sends the session id as `prompt_cache_key` and in a `session-id` header for cache affinity, and groups its tools in one `namespace`, as that route requires. A sign-in that does not grant `chatgpt.tokens.use.direct` is refused, so the endpoint never shows signed in without subscription usage.
+`openai` offers Sign in with ChatGPT (Plus or Pro) next to `OPENAI_API_KEY`, and runs on the subscription's usage through the Responses API. The first sign-in registers summonr with OpenAI and stores the issued client id; `~/.summonr/host-id` holds the install id that OpenAI asks for on every sign-in. OpenAI caps each app per week in ChatGPT settings → Usage; when the cap is reached, the error names that page and stops without retrying the exhausted allowance. The subscription path rejects `max_output_tokens`, sampling fields, and hosted tools; on a subscription token summonr sends the session id as `prompt_cache_key` and in a `session-id` header for cache affinity, and groups its tools in one `namespace`, as that route requires. A sign-in that does not grant `chatgpt.tokens.use.direct` is refused, so the endpoint never shows signed in without subscription usage.
 
 `grok` offers a SuperGrok or X Premium+ sign-in next to `XAI_API_KEY`, through the device flow at `auth.x.ai`.
 
-Keys live in `~/.summonr/credentials.toml`, a plain TOML file with mode 0600, written through a rename. Only your account can read it. A sealed file from an earlier build is decrypted with its `credentials.wrap` key and rewritten as plain TOML the first time summonr reads it; after that, `credentials.wrap` is no longer used. The key prompt disables echo and stores the key; `summonr login NAME --key` skips the method question on a row that offers both, and storing a key signs that row out of its plan. `summonr logout NAME` forgets the key and any login token, says what it removed (`Signed out of NAME` for a sign-in token, `Removed the stored key for NAME` for a key, or that nothing was stored; on an endpoint that needs no key, it says nothing was stored), and names the key that applies next. A plaintext `api_key` in `config.toml` is moved into that file the first time summonr runs, and it says so once. Resolution order is the host's environment variable, the store, `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message; only local and keyless endpoints run without one. `--key` is refused on a row that only signs in, such as `copilot`.
+Keys live in `~/.summonr/credentials.toml`, a plain TOML file with mode 0600, written through a rename. Only your account can read it. A sealed file from an earlier build is decrypted with its `credentials.wrap` key and rewritten as plain TOML the first time summonr reads it; after that, `credentials.wrap` is no longer used. The key prompt disables echo and stores the key; `summonr login NAME --key` skips the method question on a row that offers both, and storing a key signs that row out of its plan. `summonr logout NAME` forgets the key and any login token, says what it removed (`Signed out of NAME` for a sign-in token, `Removed the stored key for NAME` for a key, or that nothing was stored; on an endpoint that needs no key, it says nothing was stored), and names the key that applies next. A plaintext `api_key` in `config.toml` is moved into that file the first time summonr runs, and it says so once. For a built-in endpoint, the key comes from the host's environment variable, then the store (the endpoint's own entry, then an entry it shares with a sibling endpoint), then `api_key` in `config.toml`, then the built-in default. For an endpoint you define, `api_key` in `config.toml` comes first, then the store, then the environment variable of a known host at the same `base_url`. An endpoint with no key fails with the missing-key message; only local and keyless endpoints run without one. `--key` is refused on a row that only signs in, such as `copilot`.
 
 
 If you want the OS store instead, set `secrets = "keychain"` in `config.toml` (or `SUMMONR_SECRETS=keychain`). On macOS that is one Keychain entry holding every secret, read and written through `/usr/bin/security`, so the one-time "Always Allow" is granted to Apple's signed tool and survives every rebuild of summonr; Windows uses Credential Manager and Linux the Secret Service, one entry per secret. A locked keychain is reported, never worked around with a file, and the two modes never fall back to each other.
@@ -69,7 +69,7 @@ Built-ins are providers: `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `z
 
 Prompt caching follows each host's documented session hint: OpenAI, xAI, Mistral, and DeepSeek-style rows send the session id as `prompt_cache_key`, OpenRouter gets it in `x-session-id`, Fireworks in `x-session-affinity`, and xAI in `x-grok-conv-id`, so a session's requests reach a warm cache. DashScope pay-as-you-go rows mark `cache_control` breakpoints, Alibaba's explicit cache, which its implicit cache does not guarantee.
 
-GPT-5, GPT-6, and Codex models see an `apply_patch` tool instead of `edit` and `write`, because OpenAI trains them on that patch format; it runs through the same edit engine. Every other model sees `edit` and `write`.
+GPT-5, GPT-6, and Codex models also see `apply_patch`, which runs through the same edit engine. All models keep `edit` and `write`. `apply_patch` accepts `*** Move to: destination` immediately after an `Update File` header, with optional content hunks. Moves refuse existing destinations and do not stage Git changes. For a checked replacement across explicit files, use `edit` with `files: [{path, old, new, expected_matches}]`. Set `preview: true` to validate and show changes without writing; a failed match count prevents the whole batch from being written.
 
 
 | Provider | Routes |
@@ -98,6 +98,8 @@ retain_days = 90
 
 `--goal` keeps one objective until `.summonr/check.toml` is green and a judge says stop. The judge answers `done`, `continue`, `stalled`, or `impossible`; the last two end the goal with the reason. A goal has no turn cap; it runs until the judge stops it, a budget ends it, or you cancel it. `--max-tokens` and `--max-secs` bound every mode. A budget counts from the run that loads the session, so a resumed or forked session starts with its full budget. Every goal turn restates the objective to the model, so a compacted context cannot lose it. `--steps` hands the model one numbered item at a time. A step that contains ``Run `CMD` `` gets `CMD` as its own check, in addition to `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check. A turn that ends while a background command it started is still running is deferred, with no verdict and no repair strike, until the job exits or the model kills it. The harness remembers that job across turns; a later turn cannot complete while it runs. A `### Heading` under `## Steps` groups the items that follow it into a phase. Every turn carries the ledger to the model and to the transcript: phases as Roman numerals, `[x]` done, `[/]` this step, `[ ]` later, `[!]` blocked. Both edit this directory. `--worktree` isolates in a git worktree (`<repo>-worktrees/<id>`). Exit 0 then commits the files the run changed as `summonr: <objective>` (files over 5 MB and anything the run did not touch are left in place and named), fast-forwards your branch, and removes the tree; a tree that cannot fast-forward or still holds uncommitted files is kept and named, and the exit code is 1. `--here` is the default.
 
+An unknown key in `.summonr/check.toml`, or a `.summonr` folder summonr cannot read, is a configuration error instead of a run with no check.
+
 ```markdown
 ## Steps
 
@@ -125,7 +127,7 @@ retain_days = 90
 | `--json` | Print JSON: one event per line with `-p`, `--goal`, and `--steps`, and JSON output from `diff`, `worktrees`, `mcp`, and `classify`. |
 | `--session ID` | Resume a session by id, short id, prefix, or name. |
 | `--name TEXT` | Name this session. |
-| `--goal TEXT` | Work toward TEXT across turns until the check passes and the judge says `done`. |
+| `--goal TEXT` | Work toward TEXT until the configured check passes; without a check, the judge decides. |
 | `--steps PLAN.md` | Run each item under `## Steps` in PLAN.md and gate it on its check. |
 | `--max-tokens N` | Session token budget. A breach stops the run. |
 | `--max-secs N` | Session wall-clock budget in seconds. A breach stops the run. |
@@ -208,11 +210,11 @@ Keys on an `[endpoint.NAME]` row:
 
 | Key | Effect |
 | --- | --- |
-| `context_window` | Context size in tokens. Without it, summonr asks the provider. |
+| `context_window` | Context size in tokens. Without it, a remote endpoint takes the catalog number for that model. A local URL stays unset so summonr asks the provider, and a failed ask leaves the window unset. Compaction uses the window of the model that receives the request. A seated model does not inherit the driving seat's window. An overflow that names a cap teaches that model its window. |
 | `idle_timeout_secs` | Seconds a response stream may stay silent before the request fails. At least 1; default 240. |
 | `headers` | A table of extra HTTP headers sent on every request. |
 | `fallback` | A list of endpoint names. When a request fails with an error that a retry cannot fix, the session moves to the next name. |
-| `compact_tokens` | Compact the context at this token count. With `context_window` also set, the smaller value applies. |
+| `compact_tokens` | An extra compaction ceiling in tokens. It does not count as a known model window. With `context_window` also set, the smaller value applies. |
 | `keep_reasoning` | `true` sends earlier reasoning back to the model on later requests. |
 | `cache_ttl` | Prompt-cache lifetime on the Anthropic wire: `"1h"` or `"5m"`; unset uses `[limits] cache_ttl`. A cache write costs 2x the input price at `1h` and 1.25x at `5m`; a read costs 0.1x either way. `grok` also sends `x-grok-conv-id` with the prompt hash so xAI routes each request to a warm cache. |
 | `auth.token_url` | Token endpoint of a login. Required with `auth.client_id`. |
@@ -231,16 +233,20 @@ cache_ttl = "5m"
 | Key | Built in | Meaning |
 | --- | --- | --- |
 | `cache_ttl` | `"1h"` | Prompt-cache lifetime for an endpoint that sets none: `"5m"` or `"1h"`. |
-| `retry_limit` | `5` | Retries for a 429, a 5xx, or a connection error. |
+| `retry_limit` | `5` | Retries for a 429, a 5xx, or a connection error. With `--max-secs` set, a rate-limited request waits the full `retry-after` the provider asks for and keeps retrying while the time left covers the wait; it stops at once when the provider asks for a longer wait than that. |
 | `retry_base_ms` | `1000` | First retry wait; each retry doubles it. |
 | `retry_max_ms` | `30000` | Longest retry wait. |
 | `retry_after_max_secs` | `60` | Longest `Retry-After` summonr waits for; a longer one falls back to the next endpoint. |
 | `stream_idle_secs` | `240` | Idle stream timeout for an endpoint with no `idle_timeout_secs`. |
 | `stream_total_secs` | `86400` | Total time limit for one request. |
 | `connect_secs` | `20` | Connect timeout. |
-| `compact_percent` | `80` | Share of the context window that starts compaction. |
+| `compact_percent` | `80` | Share of the context window that starts a summary. Old tool output clears earlier, at `clear_percent`. |
 | `elide_percent` | `60` | Share of the context window that compaction aims for by clearing old tool output; it summarizes only when clearing cannot get there. |
-| `compact_chars` | `400000` | Prompt size in characters that starts compaction when the window is unknown. |
+| `clear_percent` | `50` | With a known window, share of it at which old tool outputs clear. |
+| `clear_tokens` | `100000` | Prompt size in tokens at which old tool outputs clear, when that comes before `clear_percent`. |
+| `clear_keep` | `3` | Newest tool outputs that a clear keeps. |
+| `clear_at_least_percent` | `20` | Share of the clear trigger that a clear must free; a smaller clear would cost a cache rewrite for little, so it waits. |
+| `compact_chars` | `256000` | Prompt size in characters that starts compaction when the model window is unknown. A known window compacts at `compact_percent` of that window. `compact_tokens` does not replace this cap. |
 | `summary_retry_rounds` | `8` | Rounds before a failed compaction summary retries. |
 | `job_wait_secs` | `120` | Wait on a job or hook before it is reported still running. |
 | `command_wait_secs` | `120` | Time before a `run_command` continues as a background job. |
@@ -248,11 +254,12 @@ cache_ttl = "5m"
 | `grant_wait_secs` | `600` | Wait for a permission answer. |
 | `job_poll_start_secs` | `1` | First job poll interval. |
 | `job_poll_cap_secs` | `2` | Longest job poll interval. |
-| `mail_stale_secs` | `120` | A mail peer with no heartbeat for this long is stale. |
+| `mail_per_round` | `5` | Most peer mail messages delivered into one model round; the rest wait for the next round. |
 | `mail_sweep_secs` | `86400` | Mail entries older than this are removed. |
 | `verify_timeout_secs` | `600` | Timeout for a check command. |
 | `probe_secs` | `5` | Endpoint probe timeout. |
 | `auth_secs` | `30` | Sign-in request timeout. |
+| `session_lock_ms` | `1000` | How long opening a session waits for another holder of its log to let go before it reports the session open elsewhere. |
 | `update_secs` | `600` | `summonr update` download timeout. |
 | `model_probe_secs` | `8` | Model list request timeout. |
 | `web_search_secs` | `15` | Web search timeout. |
@@ -272,7 +279,6 @@ cache_ttl = "5m"
 | `mcp_idle_secs` | `120` | MCP idle stop when a server sets none. |
 | `lsp_idle_secs` | `300` | Language-server idle stop. |
 | `servers_max` | `8` | MCP and language servers live at once; past it the least recently used idle one stops. |
-| `receipt_items_max` | `5` | Failures and changed files listed in an expanded turn receipt. |
 | `closest_percent` | `34` | A name is offered as the closest match only when it differs by at most this percent of the name length. |
 | `typo_min_chars` | `3` | An endpoint name with at least this many characters also gets a hint for one changed, added, or removed character, or two swapped adjacent characters. |
 | `diff_split_min_cols` | `100` | Narrowest diff pane that shows hunks side by side; a narrower pane shows the unified diff. |
@@ -283,7 +289,11 @@ cache_ttl = "5m"
 | `image_bytes` | `5000000` | Largest image sent to the model; a larger one is re-encoded to fit. |
 | `mcp_log_max_bytes` | `1048576` | MCP log size before rotation. |
 | `mcp_frame_max_bytes` | `4194304` | Largest MCP reply. |
+| `lsp_frame_max_bytes` | `16777216` | Largest language-server message; a larger Content-Length is refused before it is read. |
+| `agent_line_max_bytes` | `268435456` | Largest line read from Claude Code; a longer line fails the turn instead of growing memory without bound. |
 | `mcp_stderr_tail_bytes` | `2048` | MCP stderr kept for diagnostics. |
+| `hook_output_max_bytes` | `65536` | Most bytes of a hook's stdout and stderr that summonr keeps. |
+| `gateway_stderr_tail_lines` | `20` | Last stderr lines of a gateway run kept for its failure report. |
 | `mcp_stderr_settle_secs` | `1` | Most time spent draining MCP stderr after stdout closes. |
 | `mcp_defer_bytes` | `8192` | Tool schemas above this size go behind one `mcp` tool. |
 | `mcp_found_max` | `8` | Most deferred tools returned per search. |
@@ -308,7 +318,8 @@ cache_ttl = "5m"
 | `repeat_window_secs` | `2` | Window for a double key press. |
 | `step_attempts` | `3` | Failed-check attempts per numbered plan step; not applied to goals. |
 | `repair_limit` | `6` | Argument repairs and overflow retries per turn. |
-| `repeat_nudge` | `5` | Times the same tool call, or the same cycle of up to three calls, may return the same result in a row before summonr adds a note to the result asking the model to change approach. The call still runs, and a new message starts the count again. `0` turns the note off. |
+| `repeat_nudge` | `5` | Times the same tool call, or the same cycle of up to `repeat_cycle_max` calls, may return the same result in a row before summonr adds a note to the result asking the model to change approach. The call still runs, and a new message starts the count again. `0` turns the note off. |
+| `repeat_cycle_max` | `3` | Longest cycle of tool calls, in calls, that `repeat_nudge` counts as a repeat. |
 | `edit_hunk_rows` | `80` | Rows shown per edit hunk. |
 | `display_patch_lines` | `1000` | Most patch lines shown. |
 | `read_line_limit` | `1000` | Largest `read` line limit. |
@@ -318,6 +329,12 @@ cache_ttl = "5m"
 | `cron_budget_secs` | `1800` | Time budget of a cron run that sets no `--max-secs`. |
 | `cron_runs_kept` | `50` | Runs kept per cron job; older runs and their saved webhook bodies are deleted. |
 | `cron_catchup_secs` | `604800` | A missed cron time older than this is logged as expired instead of run. |
+| `classify_task_chars` | `400` | Characters of the task kept in a session digest for `summonr classify`. |
+| `classify_closing_chars` | `600` | Characters of the closing reply kept in a session digest. |
+| `classify_command_chars` | `110` | Characters kept per command and per error line in a session digest. |
+| `classify_errors_max` | `12` | Most error lines kept in a session digest. |
+| `classify_commands_max` | `25` | Most distinct commands listed in a session digest. |
+| `classify_files_max` | `25` | Most changed files listed in a session digest. |
 | `cron_fail_pause` | `3` | Failed cron runs in a row before the job pauses itself. |
 | `memory_bytes` | `25000` | Bytes of each memory file loaded into a session. |
 | `gateway_poll_secs` | `50` | Long-poll wait of each Telegram update request. |
@@ -334,6 +351,8 @@ cache_ttl = "5m"
 | Variable | Effect |
 | --- | --- |
 | `SUMMONR_HOME` | summonr home directory. Default `~/.summonr`. |
+| `SUMMONR_SESSION_ID` | Set on shell commands to the current session ID, for command-line tools and hooks. |
+| `SUMMONR_PARENT_SESSION` | Set on shell commands so nested summonr sessions attach to their launching conversation. |
 | `SUMMONR_ENDPOINT` | Endpoint to start on when none is named on the command line. |
 | `SUMMONR_MODEL` | Model to start on when `--model` is not given. |
 | `SUMMONR_SECRETS` | Credential store: `file` (the default) or `keychain`. Overrides `secrets` in `config.toml`. |
@@ -453,9 +472,9 @@ The `body` table of an endpoint is merged last, so it can still set any field by
 | --- | --- | --- | --- |
 | Auto | default, `/auto` | `/goal`, `/steps` | Follow the request this turn. |
 | Work | `/steps FILE`, `--steps` | steps end (auto), `/auto` | Run a plan's `## Steps` one at a time, each with its check. |
-| Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto`; the session returns to the mode it had before | Loop on an objective until checks pass and the judge says `done`. |
+| Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto`; the session returns to the mode it had before | Loop until the configured check passes; without a check, the judge decides. |
 
-`/goal` with no check configured uses a check detected from the project: `cargo test` for `Cargo.toml`, `go test ./...` for `go.mod`, and `npm test` when `package.json` declares a `test` script. A Python project gets no detected check, and the judge decides. `/goal` prints the detected check and says how to set another in `.summonr/check.toml`.
+`/goal` with no check configured uses a check detected from the project: `cargo test` for `Cargo.toml`, `go test ./...` for `go.mod`, and `npm test` when `package.json` declares a `test` script. A Python project gets no detected check, and the judge decides. `/goal` prints the detected check and says how to set another in `.summonr/check.toml`. With Verify off or `--no-verify`, `/goal` runs without a check, as `--goal` does. A goal or steps run whose turn aborts runs the check once before it stops, in both.
 
 ### Confirmation
 
@@ -547,7 +566,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 
 ### Commands
 
-`/help` lists these by job. Old names such as `/rollback`, `/tree`, and `/net` still work for one release and print the new name once.
+`/help` lists these by job. Old names such as `/rollback` and `/tree` still run their new command.
 
 | Command | Job |
 | --- | --- |
@@ -557,7 +576,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `/clear` | start a fresh context; files stay |
 | `/compact` | summarize earlier turns |
 | `/retry` | continue a failed or cancelled turn (F5) |
-| `/undo [files [N]]` | undo the last turn; files N restores files |
+| `/undo [files [N]]` | undo the last turn; files N restores files to their state before turn N, in a git repository or not. Outside a repository the checkpoints live in `~/.summonr/checkpoints` and skip `target`, `node_modules`, `dist`, and `__pycache__`. |
 | `/fork [TEXT]` | fork this session; TEXT picks a turn |
 | `/export [PATH]` | write this session as markdown |
 | `/copy [all]` | copy the last reply; all copies everything |
@@ -596,11 +615,15 @@ A paste of eight or more lines, or a thousand or more bytes, folds into `[pasted
 
 While a turn runs, the composer status also counts waiting input (`2 queued, ↑ edits`). The terminal title reads `summonr · <workspace> · working` or `· ready`, and the terminal bell rings once when a turn ends while the terminal is not focused.
 
-`/settings` switches tool output between compact and full, sets chain of thought to `collapsed` (the default: one dim line with a line count), `expanded`, or `off`, and sets turn receipts to `off` (the default), `collapsed` (one line: files read, searches, commands, failures, changed files, and the check result), or `expanded` (that line, the start commit, the first five failures and changed files, and each check). A click on a receipt switches between `collapsed` and `expanded`.
+`/settings` switches tool output between compact and full, and sets chain of thought to `collapsed` (the default: one dim line with a line count), `expanded`, or `off`.
 
 `/export` writes the session as markdown to `~/.summonr/exports/<id>.md`; `/export PATH` writes it where you say. It works while a turn runs. `ctrl+x y` (the default copy hotkey) copies the latest assistant reply. `/copy all` copies the full transcript. Both use OSC 52 in the terminal and the system clipboard in the window. `ctrl+x t` releases the mouse to the terminal so you can select and copy any transcript span; press it again to restore mouse interaction.
 
 `/pane worktrees` lists the `summonr/*` worktrees of this repository: branch, commits ahead of the base, dirty or clean, the session that ran there, and the directory. Enter or `→` opens that worktree's diff (`esc` comes back); the right-click menu offers show diff, merge (the same ff-only merge a run ends with; a dirty tree is refused), remove worktree (only when clean and fully merged), and insert path. `summonr worktrees` prints the same rows; `summonr worktrees --json` as JSON. `summonr worktrees prune --json` prints the removed paths as a JSON array.
+
+Cancelling a reply preserves its background commands and unfinished objective. Continue by inspecting the existing job id; `run_command` with `kill: true` stops that job. Shutdown and budget stops still terminate owned jobs.
+
+Headless summonr sessions launched by a shell command inherit `SUMMONR_PARENT_SESSION`. They register as independent workers on launch and resume, and appear in the originating conversation's Subagents strip with their name, model, and presence. Native child tasks keep their own task lifecycle.
 
 `/pane jobs` lists this workspace's background commands (the records under `.summonr/jobs/`). Each row is the command and its state (`running`, `exit N`, `killed`, or `dead`); Enter or `→` expands the job's status lines, and the right-click menu offers view log (the job's `.log` in the view pane) and kill job (the same stop `run_command` performs for `{"job": ID, "kill": true}`). The list refreshes on its own while the pane is open.
 
@@ -617,7 +640,7 @@ In an interactive session the model can call `ask` to put one to four questions 
 
 The `task` tool delegates work to fresh child sessions. Only an interactive session offers it: `-p`, `--steps`, `--goal`, and `summonr acp` runs have no steering channel, so the model does not get `task` there. A model can emit several `task` calls in one response. summonr runs them concurrently. Each `implement` child edits an isolated checkout in `<repo>-children/<id>` that shares the parent's `target/` and `node_modules`. The parent applies each finished child's edits on its own. Generated files (`__pycache__`, `*.pyc`, and the pytest, mypy, and ruff caches) and summonr state under `.summonr/` other than `check.toml` and `policy.toml` never land. A child never inherits goal or steps mode: an implement child works in plain working mode. A child's first message names only its own checkout. Children started together do not see each other's edits. When two children change the same lines, that child's checkout stays on disk and the others still land. The child shows as a conflict, not a failure: `kept <repo>-children/<id>: conflicts with the parent`, followed by an `rm -rf` hint that removes the checkout when you are done. Task card titles use workspace-relative paths, and a card with one child takes that child's title. summonr never deletes a kept checkout. The receipt lists the files that landed. Implement children get the parent's file, shell, and language-server tools; background commands stay with the parent. The parent verifies after they finish. A `task` call may name a plugin agent with `agent`; its instructions open the child's first message, and its `tools` list limits what the child may call. The child's row names that agent. Pass `--worktree` on the session to isolate the whole run in a git worktree.
 
-A `research` child reads the parent workspace. It cannot write files or start background commands. It has no shell: it reads and searches. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task`, `web`, an MCP tool, or peer mail gets a refusal, and a research child that calls `edit` or `write` is told it is read-only. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
+A `research` child reads the parent workspace. It cannot write files or start background commands. It can run a foreground command. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task`, `web`, an MCP tool, or peer mail gets a refusal, and a research child that calls `edit` or `write` is told it is read-only. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
 
 `task` with `background: true` starts the child and returns its id at once. `task` with `child: ID` reports its state, elapsed time, and last action while it runs, and its full result once it finishes; `kill: true` stops it. A turn does not end while a background child runs: summonr waits, then defers the turn the way it does for a background command, until the child finishes or the model kills it. **Clear** on a background status row dismisses that row for the current view without stopping the child. Its completion report and session log stay available. New children still appear.
 
@@ -625,16 +648,16 @@ A `research` child reads the parent workspace. It cannot write files or start ba
 
 The model receives the full advertised schema every round (`Loop::advertised_tools`). Core names live in `src/tools/catalog.rs`.
 
-Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` lists a directory or shows an image. `search` finds text in files and files by name anywhere on disk. `pattern` is a regex over contents, or a list of alternatives; `name` matches files whose names hold every word in any order (`"q3 report"`); `glob` matches a file pattern, and a glob without wildcards matches names that contain it. Given together, they search the contents of the matching files only. `path` or `paths` pick where; the workspace is the default and `~` works. Case is ignored unless `case_sensitive` is true. `word` matches whole words, `literal` turns off regex, `newer` keeps files modified within a span such as `2d`, `output` picks `lines` (the default), `files`, `count`, or `folders` (matching files counted per folder), `offset` pages through long results and answers `no entries at offset N` past the end, and `depth`, `context`, and `path` given as a list narrow or widen it. A result over 50 KB is cut at a line and says how to narrow it. The older argument names `files`, `count`, `group`, `paths`, `type`, `exclude`, `before`, `after`, and `multiline` still work. Results are newest first, a name search lists symbolic links to files, and a result names the folders and gitignored files it skipped, the folders it could not read, and any path it could not open; `no_ignore` also searches gitignored files and build folders such as `node_modules` and `target`. `/proc`, `/sys`, `/dev`, and the macOS data-volume mirror are never walked. A call that runs past `search_secs` returns what it found and says so; a path that the disk never answers can still hold one background thread until the operating system returns. Overlapping paths count each file once. A name search (with `name` or `glob`) over a path outside the workspace that takes longer than `search_index_after_ms` starts a background file index of that path in `~/.summonr/cache/names/`; later name searches under it answer from the index in well under a second, check every hit on disk, and say how old the index is. An index older than `search_index_secs` refreshes in the background when it is used, so a file made since the last refresh appears after the next one. Answers from the index skip build folders unless `no_ignore`, and do not apply `.gitignore`. Search hits are `path:N:col:line`; `col` is the 1-based UTF-16 column of the match, which `lsp` takes as `character`. With `tags` true, hits are `path:N:hash|line`, and `N:hash` is the tag that `edit` takes. `edit` covers substring replace (`old`/`new`), line replace (`tag`/`new`), insert (`tag`/`text`), delete (`op: delete`), a batch (`edits`), and a rename or move (`path` with `to`). `write` creates or overwrites one file, or several (`files`); over an existing file it returns `wrote PATH (N lines, replaced M lines)`, not the diff. `read` pages by 50 KB by default; an explicit `limit` is capped at 1000 lines. `run_command` takes `workdir`; its output keeps about 50 KB of head and tail, a single line up to 8 KB, and the full log path is named only when that cut something. Only exact `cat FILE`, single-file `head`, and `sed -n A,Bp FILE` without a `workdir` are answered by `read`. Plain search commands without a `workdir` are answered by `search`: `grep` and `rg` with common flags (`-r`, `-n`, `-i`, `-l`, `-c`, `-w`, `-F`, `-e`, `--include`, `-g`, `-C`), `find PATH -name|-iname GLOB` with `-maxdepth`, `-type f`, and `-not -path`, and `mdfind -name WORDS [-onlyin DIR]`, alone, joined by `;`, or piped into `head`. The result names the search call it ran. Any other form, and `ls`, `wc`, and `tree`, run in the shell. A foreground command waits up to two minutes; past that it keeps running as a background job and returns its id and the call that waits for it, unless `timeout_secs` was set, which stops it instead. Where a command cannot become a job (a child session, a read-only session, or the jobs module turned off), it is stopped after an hour. Explicit and automatically backgrounded commands keep running after summonr exits, with logs and exit status under `.summonr/jobs/`. `background: true` cannot be combined with `timeout_secs`; use a foreground timeout or stop the returned job. Foreground commands own their descendants: cancellation and completion stop the process group. A background shell waits for its shell jobs before recording completion. A job poll waits until the job exits or the wait limit passes.
+Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` lists a directory or shows an image. `search` finds text in files and files by name anywhere on disk. `pattern` is a regex over contents, or a list of alternatives; `name` matches files whose names hold every word in any order (`"q3 report"`); `glob` matches a file pattern, and a glob without wildcards matches names that contain it. Given together, they search the contents of the matching files only. `path` or `paths` pick where; the workspace is the default and `~` works. Case is ignored unless `case_sensitive` is true. `word` matches whole words, `literal` turns off regex, `newer` keeps files modified within a span such as `2d`, `output` picks `lines` (the default), `files`, `count`, or `folders` (matching files counted per folder), `offset` pages through long results and answers `no entries at offset N` past the end, and `depth`, `context`, and `path` given as a list narrow or widen it. A result over 16 KiB is cut at a line and says how to narrow it. The older argument names `files`, `count`, `group`, `paths`, `type`, `exclude`, `before`, `after`, and `multiline` still work. Results are newest first, a name search lists symbolic links to files, and a result names the folders and gitignored files it skipped, the folders it could not read, and any path it could not open; `no_ignore` also searches gitignored files and build folders such as `node_modules` and `target`. `/proc`, `/sys`, `/dev`, and the macOS data-volume mirror are never walked. A call that runs past `search_secs` returns what it found and says so; a path that the disk never answers can still hold one background thread until the operating system returns. Overlapping paths count each file once. A name search (with `name` or `glob`) over a path outside the workspace that takes longer than `search_index_after_ms` starts a background file index of that path in `~/.summonr/cache/names/`; later name searches under it answer from the index in well under a second, check every hit on disk, and say how old the index is. An index older than `search_index_secs` refreshes in the background when it is used, so a file made since the last refresh appears after the next one. Answers from the index skip build folders unless `no_ignore`, and do not apply `.gitignore`. Search hits are `path:N:col:line`; `col` is the 1-based UTF-16 column of the match, which `lsp` takes as `character`. With `tags` true, hits are `path:N:hash|line`, and `N:hash` is the tag that `edit` takes. `edit` covers substring replace (`old`/`new`), line replace (`tag`/`new`), insert (`tag`/`text`), delete (`op: delete`), a batch (`edits`), and a rename or move (`path` with `to`). `write` creates or overwrites one file, or several (`files`); over an existing file it returns `wrote PATH (N lines, replaced M lines)`, not the diff. `read` pages by 15 KiB by default; an explicit `limit` is capped at 1000 lines. `run_command` takes `workdir`; its output keeps about 16 KiB of head and tail, a single line up to 8 KB, and the full log path is named only when that cut something. Only exact `cat FILE`, single-file `head`, and `sed -n A,Bp FILE` without a `workdir` are answered by `read`. Plain search commands without a `workdir` are answered by `search`: `grep` and `rg` with common flags (`-r`, `-n`, `-i`, `-l`, `-c`, `-w`, `-F`, `-e`, `--include`, `-g`, `-C`), `find PATH -name|-iname GLOB` with `-maxdepth`, `-type f`, and `-not -path`, and `mdfind -name WORDS [-onlyin DIR]`, alone, joined by `;`, or piped into `head`. The result names the search call it ran. Any other form, and `ls`, `wc`, and `tree`, run in the shell. A foreground command waits up to two minutes; past that it keeps running as a background job and returns its id and the call that waits for it, unless `timeout_secs` was set, which stops it instead. Where a command cannot become a job (a child session, a read-only session, or the jobs module turned off), it is stopped after an hour. Explicit and automatically backgrounded commands keep running after summonr exits, with logs and exit status under `.summonr/jobs/`. `background: true` cannot be combined with `timeout_secs`; use a foreground timeout or stop the returned job. Foreground commands own their descendants: cancellation and completion stop the process group. A background shell waits for its shell jobs before recording completion. A job poll waits until the job exits or the wait limit passes.
 
 | Name | When | Notes |
 | --- | --- | --- |
 | `read` | always | File, directory, or image |
-| `search` | always | Contents (`pattern`) or files by name (`name`, `glob`) under any readable path; ignores case; `newer`, `group`, `offset`, `word`; content search skips files over 1 MiB |
+| `search` | always | Contents (`pattern`) or files by name (`name`, `glob`) under any readable path; ignores case; `newer`, `group`, `offset`, `word`, and the other options that `op=help` lists; content search skips files over 1 MiB |
 | `edit` | always | Change or move a file; hashes from `read`; `edits` for a batch |
 | `write` | always | New or empty files; `files` for several |
 | `run_command` | always | `workdir` / `background` / `job` / `kill`; full log path |
-| `todo` | always | Replaces the Work task list; status `pending`, `active`, or `done`. Update it as tasks start or finish. |
+| `todo` | not in a one-shot `-p` prompt | Replaces the Work task list; status `pending`, `active`, or `done`. Update it as tasks start or finish. |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
 | `lsp` | `lsp` on | Diagnostics for a `path`; definition, `references`, or `new_name` at `line` and `character` |
 | `web` | `search` on (off by default) | `query` searches; `url` fetches as markdown, text, or html |
@@ -713,7 +736,7 @@ A schedule is five cron fields (minute, hour, day, month, weekday, with `*`, lis
 
 `summonr cron install` asks the OS to run `summonr cron tick` once a minute: a launch agent on macOS, a systemd user timer on Linux, and a scheduled task on Windows. A launch agent runs while you are logged in; when launchd refuses one, as on a Mac with no one signed in, summonr installs a crontab line instead, and cron then needs Full Disk Access for jobs that touch Desktop, Documents or Downloads. A systemd user timer stops at logout unless lingering is on (`loginctl enable-linger`); install says so, and falls back to a crontab line when systemd has no user session. On macOS and Linux it records your `HOME`, `PATH`, and `SUMMONR_HOME`, so jobs load the same user instruction files and tools as the shell you installed from; on Windows, set them as user environment variables. Store keys with `summonr login` rather than in your shell. `uninstall` removes it, and `status` says whether it is installed and when the next job fires. No summonr process stays running.
 
-Each due job starts as its own process with `--json` and a time budget: `--max-secs`, or `cron_budget_secs` (30 minutes). `--endpoint`, `--model`, `--max-tokens`, and `--worktree` pass through. A `--goal` job is done only when the workspace check passes. A job still running when its next time comes is skipped, and that skip is logged. When the machine was asleep, the latest missed time runs once; times older than `cron_catchup_secs` (7 days) are logged as expired. After `cron_fail_pause` failures in a row (3), the job pauses itself; `summonr cron resume NAME` restarts it. A run that cannot start, for example because its directory is gone, counts as a failure. An `--at` time that passed while the machine was off past the catch-up window is logged as expired and the job pauses. A goal cannot start with `-`. A goal runs until the judge agrees it is met; a precise goal ("make `cargo test` pass") ends sooner than an open one.
+Each due job starts as its own process with `--json` and a time budget: `--max-secs`, or `cron_budget_secs` (30 minutes). `--endpoint`, `--model`, `--max-tokens`, and `--worktree` pass through. A `--goal` job is done only when the workspace check passes. A job still running when its next time comes is skipped, and that skip is logged. When the machine was asleep, the latest missed time runs once; times older than `cron_catchup_secs` (7 days) are logged as expired. After `cron_fail_pause` failures in a row (3), the job pauses itself; `summonr cron resume NAME` restarts it. A run that cannot start, for example because its directory is gone, counts as a failure. An `--at` time that passed while the machine was off past the catch-up window is logged as expired and the job pauses. A goal cannot start with `-`. A goal with a check ends when that check passes, and stops when the same failed check output repeats. Without a check, the judge decides; a precise goal ("make `cargo test` pass") ends sooner than an open one.
 
 `--notify failure` (the default) shows a desktop notification when a run fails, `always` after every run, and `never` stays quiet. `--mail SESSION` also sends the result to that session's inbox, and `--chat` to every chat paired with `summonr gateway`. `summonr cron log NAME` lists past runs with their outcome, then the last run's final answer and verdict ("check passed", "check failed", or why it stopped) and the path of its full log; `--raw` shows the raw events. The run itself is a job under `.summonr/jobs` in the job's directory. `cron add` and `cron show` name the endpoint a run uses: the one set with `-e`, or the one summonr would pick now, with the reason. `cron add` warns when that endpoint has no stored key (cron runs do not see your shell's variables), when `--mail` names no live session, and when `--chat` has no paired chat. `summonr cron run NAME` runs a job now. Jobs live in `~/.summonr/cron/jobs.toml`. The model manages jobs with the same commands through `run_command`, except inside a cron run, which cannot add, edit, remove, pause, resume, run, install, or uninstall jobs, or print a token.
 
@@ -820,13 +843,13 @@ write_roots = ["~/.cargo/registry", "~/code"]
 
 A `~/` prefix expands to your home directory. A listed path that does not exist is skipped at startup; it is still a writable root for policy checks.
 
-A provider reply of 429, a 5xx status, or a connection error is retried up to three times with a wait that doubles from 1 s to 8 s. A `Retry-After` header replaces that wait; one over 60 s stops the retries so the turn can fall back to the next endpoint. A reply that already streamed output is retried once, then the turn falls back. A rate limit, or a connection failure before any output, also gets one more completion after those retries, unless its `Retry-After` is over 60 s.
+A provider reply of 429, a 5xx status, or a connection error is retried up to `retry_limit` times with a wait that doubles from `retry_base_ms` to `retry_max_ms` (`[limits]` below). A `Retry-After` header replaces that wait; under `--max-secs` a rate limit is retried while the budget lasts, waiting the `Retry-After` but never less than that backoff; one over 60 s stops the retries so the turn can fall back to the next endpoint. A reply that already streamed output is retried once, then the turn falls back. A rate limit, or a connection failure before any output, also gets one more completion after those retries, unless its `Retry-After` is over 60 s.
 
 A language server gets 30 s to start and 30 s to answer an `lsp` call. The diagnostics check after an edit waits 5 s and is skipped when the server is slower. A server that misses a deadline keeps running, so a slow first index can finish in the background.
 
-summonr does not steer the model. Tool results reach it unchanged, and it decides when a turn is done; only a token or wall-clock budget that you set ends a turn early. A reply cut off at the output limit gets one note saying so. The compaction summary request sends the session's tools and history unchanged, so it reuses the prompt cache; a failed summary retries after 8 rounds.
+summonr does not steer the model. Tool results reach it unchanged, and it decides when a turn is done; only a token or wall-clock budget that you set ends a turn early. A reply cut off at the output limit gets one note saying so. A message you send during a turn gets one note asking the model to answer it. The compaction summary request sends the session's tools and history unchanged, so it reuses the prompt cache; a failed summary retries after 8 rounds.
 
-User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.toml`. A nonempty command allow list must match on every overlay (intersection). Deny lists accumulate. `write` globs in policy.toml are a narrowing filter on paths relative to a writable root; extra roots themselves come only from `write_roots`, `--add-dir`, and `/write`. Empty lists add no restriction, except that `strict = true` with an empty allow list denies all commands. Repository policy can narrow user permissions, never widen them. Children inherit these restrictions.
+User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.toml`. A key summonr does not know, or a policy file it cannot read, is a configuration error, so a misspelled `deny` never runs without its rules. A nonempty command allow list must match on every overlay (intersection). Deny lists accumulate. `write` globs in policy.toml are a narrowing filter on paths relative to a writable root; extra roots themselves come only from `write_roots`, `--add-dir`, and `/write`. Empty lists add no restriction, except that `strict = true` with an empty allow list denies all commands. Repository policy can narrow user permissions, never widen them. Children inherit these restrictions.
 
 `confirm` picks which commands ask first. `confirm = "destructive"`, the default, asks only before irreversible destruction (see Confirmation). `confirm = "risky"` also asks before `sudo`, force pushes, pipes into a shell, git commands that discard work or rewrite history, and writes to protected paths. The stricter value wins across overlays. Shift+Tab toggles this session between auto approval and approval for risky commands. Auto approval still asks before destructive commands and configured `ask` patterns. The toggle cannot lower a configured `confirm = "risky"` or relax strict mode, command denies, or write restrictions. The composer labels approval separately from auto, work, and goal execution modes. During a turn, the change is queued until the turn ends and the active label stays unchanged.
 
@@ -847,6 +870,7 @@ The built-in modules are the binary (modules above). What you add lives in files
 
 | Layer | Where | What the model sees |
 | --- | --- | --- |
+| Command | `<name>.md` under `.summonr/commands/`, `.claude/commands/`, `~/.summonr/commands/`, or `~/.claude/commands/` | `/<name> args`, or `/project:<name>` and `/user:<name>` when a plugin command has the same name. The body is the prompt; `$ARGUMENTS` is everything after the name and `$1`..`$9` are its words. A project file wins over a user file with the same name. |
 | Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/` | `/skills` lists them; `/NAME [arguments]` invokes one; the model uses the `skill` tool. Slash completion refreshes on opening; no copying or sync option is needed. Built-ins and plugin commands win name collisions. |
 | MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt` and `@server:uri` expand server prompts and resources into the user message. |
 | Hook | `[hooks]` `pre_tool`, `post_tool`, `compact`, `stop` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call (stdin is JSON). |
@@ -855,7 +879,7 @@ The built-in modules are the binary (modules above). What you add lives in files
 
 `summonr install PATH` copies a plugin directory to `~/.summonr/plugins/<name>/`. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr install --list` prints one line per plugin: its name, on or off, and what it adds (skills, MCP servers, commands, agents, language servers, hooks, `bin`). There is no marketplace and no in-process loader.
 
-After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`, and a steps or goal run adds `todo`.
+After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`. A one-shot `-p` prompt never advertises `todo`.
 
 When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once. A line in one of these files that starts with `@` names another file relative to it, and its text joins the prompt in place; each file loads once, and a missing include stays as the literal line.
 

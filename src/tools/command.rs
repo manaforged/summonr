@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crate::error::{Error, Result};
 use crate::policy::Grant;
+use summonr_core::error::{Error, Result};
 
-use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize, parse_args};
+use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize};
 
 pub(super) mod digest;
 mod native;
@@ -31,13 +31,6 @@ enum Rewrite {
     Exact,
 }
 
-pub(crate) fn exit_code(output: &str) -> Option<i32> {
-    output
-        .lines()
-        .find_map(|line| line.strip_prefix("exit "))
-        .and_then(|code| code.trim().parse().ok())
-}
-
 pub(crate) fn kill_job(workspace: &Path, id: &str) -> Result<crate::jobs::Status> {
     let record = crate::jobs::load(workspace, id)?;
     stop_job(workspace, &record)?;
@@ -45,8 +38,7 @@ pub(crate) fn kill_job(workspace: &Path, id: &str) -> Result<crate::jobs::Status
 }
 
 impl ToolRegistry {
-    pub(super) async fn run_command(&self, arguments: &str) -> Result<ToolOutput> {
-        let args: serde_json::Value = parse_args("run_command", arguments)?;
+    pub(super) async fn run_command(&self, args: &serde_json::Value) -> Result<ToolOutput> {
         let named = |key| {
             args.get(key)
                 .and_then(serde_json::Value::as_str)
@@ -56,7 +48,9 @@ impl ToolRegistry {
             && !named("command")
             && !named("job")
         {
-            return Ok(ToolOutput::ok(super::help::RUN_COMMAND.to_string()));
+            return Ok(ToolOutput::ok(super::catalog::help(
+                super::Builtin::RunCommand,
+            )));
         }
         let locked = self.policy.is_read_only();
         if let Some(id) = args
@@ -69,15 +63,19 @@ impl ToolRegistry {
                     "run_command got both job `{id}` and a command; send job to poll or stop it, or command to start one"
                 )));
             }
-            return self.poll_job(&args, id, locked).await;
+            return self.poll_job(args, id, locked).await;
         }
-        self.launch_command(&args, locked, Rewrite::Native).await
+        self.launch_command(args, locked, Rewrite::Native).await
     }
 
-    pub(crate) async fn run_check(&self, command: &str) -> Result<ToolOutput> {
+    pub(crate) async fn run_check(
+        &self,
+        command: &str,
+        timeout_secs: Option<u64>,
+    ) -> Result<ToolOutput> {
         let args = serde_json::json!({
             "command": command,
-            "timeout_secs": crate::limits::limits().verify_timeout_secs,
+            "timeout_secs": timeout_secs.unwrap_or(crate::limits::limits().verify_timeout_secs),
         });
         self.launch_command(&args, self.policy.is_read_only(), Rewrite::Exact)
             .await
@@ -103,11 +101,18 @@ impl ToolRegistry {
         } else {
             Wait::chosen(explicit, self.can_detach(locked))
         };
+        let before = crate::diff::status_records(&self.workspace);
         let started = self.start_command(command, wait, cwd)?;
         if background {
             return Ok(background_result(started));
         }
-        self.wait_command(started, command, wait).await
+        let output = self.wait_command(started, command, wait).await?;
+        for path in
+            crate::diff::changed_paths(&before, &crate::diff::status_records(&self.workspace))
+        {
+            self.note_wrote(&path);
+        }
+        Ok(output)
     }
 
     fn shortcut(
@@ -148,17 +153,14 @@ impl ToolRegistry {
             && let Some(reason) = self.policy.needs_approval(command, &self.workspace, cwd)
         {
             return Ok(Some(ToolOutput {
-                text: format!(
-                    "summonr: not run; `{command}` needs the user's approval because {reason}"
-                ),
                 success: false,
-                mutated: false,
                 grant: Some(Grant::Danger {
                     command: command.to_string(),
                     reason: reason.to_string(),
                 }),
-                images: Vec::new(),
-                patch: None,
+                ..ToolOutput::ok(format!(
+                    "summonr: not run; `{command}` needs the user's approval because {reason}"
+                ))
             }));
         }
         if approved {
@@ -218,11 +220,7 @@ impl ToolRegistry {
                 status.state,
                 crate::jobs::JobState::Running | crate::jobs::JobState::Exited(0)
             ),
-            text: crate::askpass::scrub(&status.text),
-            mutated: false,
-            grant: None,
-            images: Vec::new(),
-            patch: None,
+            ..ToolOutput::ok(crate::askpass::scrub(&status.text))
         })
     }
 
@@ -230,7 +228,7 @@ impl ToolRegistry {
         let Some((read_args, pipe)) = native_read_args(command) else {
             return Ok(None);
         };
-        let mut text = crate::tools::blocking(|| self.read(&read_args.to_json()))?.text;
+        let mut text = crate::tools::blocking(|| self.read(&read_args.value()))?.text;
         if let Some(pipe) = pipe {
             text = pipe.apply(&text);
         }
@@ -252,20 +250,21 @@ impl ToolRegistry {
         };
         let mut answers = Vec::with_capacity(calls.len());
         for (part, call) in parts.iter().zip(calls) {
-            let text = crate::tools::blocking(|| self.search_files(&call.to_string()))?;
+            let text = crate::tools::blocking(|| self.search_files(&call))?;
             answers.push(format!("[`{part}` answered by search {call}]\n{text}"));
         }
         Ok(Some(ToolOutput::ok(answers.join("\n\n"))))
     }
 
-    pub(crate) fn stop_jobs(&self) -> Result<()> {
+    pub(crate) fn stop_jobs(&self) -> Result<Vec<String>> {
         let session = self
             .session
             .lock()
             .map_err(|error| Error::Tool(format!("cannot read tool session: {error}")))?;
         let Some(session) = session.clone() else {
-            return Ok(());
+            return Ok(Vec::new());
         };
+        let mut notes = Vec::new();
         for record in crate::jobs::since(&self.workspace, 0, Some(&session))
             .into_iter()
             .filter(|record| record.session.as_deref() == Some(&session))
@@ -273,10 +272,16 @@ impl ToolRegistry {
             if crate::jobs::status(&self.workspace, &record)?.state
                 == crate::jobs::JobState::Running
             {
-                stop_job(&self.workspace, &record)?;
+                let children = stop_job(&self.workspace, &record)?;
+                notes.push(format!(
+                    "killed job {} `{}`\n{}",
+                    record.id,
+                    crate::secret::shield::scrub_found(&record.command, &self.workspace),
+                    crate::jobs::block("child commands at kill", &children)
+                ));
             }
         }
-        Ok(())
+        Ok(notes)
     }
 
     fn check_command(&self, command: &str, cwd: &Path) -> Result<()> {
@@ -284,12 +289,15 @@ impl ToolRegistry {
     }
 
     fn check_policy(&self, command: &str, cwd: &Path) -> Result<()> {
-        self.policy.command_policy_checked(
-            command.trim(),
-            &crate::policy::split_segments(command.trim()),
-            &self.workspace,
-            cwd,
-        )
+        self.policy
+            .decide(crate::policy::Action::Command {
+                text: command.trim(),
+                workspace: &self.workspace,
+                cwd,
+                ask: false,
+                approved: true,
+            })
+            .into_result()
     }
 
     fn command_dir(&self, args: &serde_json::Value) -> Result<PathBuf> {

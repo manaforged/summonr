@@ -6,9 +6,9 @@ use futures::stream::FuturesUnordered;
 use super::{Msg, Reader, add};
 use crate::catalog::Model;
 use crate::endpoint::{self, State};
-use crate::prompt::summonr_home;
 use crate::provider::Client;
-use crate::recent::{self, Seat};
+use crate::recent::{self, ModelId};
+use summonr_core::dirs::summonr_home;
 
 fn due(name: &str, only: Option<&str>) -> bool {
     only.map_or_else(
@@ -52,8 +52,8 @@ fn waiting(ready: &[endpoint::Endpoint], errors: &mut Vec<String>) -> Vec<(Strin
         .collect()
 }
 
-fn order(rows: &mut [Seat], facts: &BTreeMap<Seat, Model>, groups: &BTreeMap<String, State>) {
-    let rank = |row: &Seat| facts.get(row).map_or(2, |model| model.cost.rank());
+fn order(rows: &mut [ModelId], facts: &BTreeMap<ModelId, Model>, groups: &BTreeMap<String, State>) {
+    let rank = |row: &ModelId| facts.get(row).map_or(2, |model| model.cost.rank());
     let mut best: BTreeMap<String, u8> = BTreeMap::new();
     for row in rows.iter() {
         let rank = rank(row);
@@ -77,7 +77,7 @@ fn order(rows: &mut [Seat], facts: &BTreeMap<Seat, Model>, groups: &BTreeMap<Str
     });
 }
 
-fn enrich(endpoints: &[endpoint::Endpoint], facts: &mut BTreeMap<Seat, Model>) {
+fn enrich(endpoints: &[endpoint::Endpoint], facts: &mut BTreeMap<ModelId, Model>) {
     for endpoint in endpoints {
         let mut models: Vec<Model> = facts
             .iter()
@@ -86,24 +86,24 @@ fn enrich(endpoints: &[endpoint::Endpoint], facts: &mut BTreeMap<Seat, Model>) {
             .collect();
         crate::catalog::enrich(&endpoint.name, endpoint.base_url.as_deref(), &mut models);
         for model in models {
-            facts.insert(Seat::new(&endpoint.name, &model.id), model);
+            facts.insert(ModelId::new(&endpoint.name, &model.id), model);
         }
     }
 }
 
 struct Board {
-    rows: Vec<Seat>,
+    rows: Vec<ModelId>,
     top: usize,
     sorted: bool,
-    facts: BTreeMap<Seat, Model>,
+    facts: BTreeMap<ModelId, Model>,
     groups: BTreeMap<String, State>,
     causes: BTreeMap<String, String>,
 }
 
 impl Board {
     fn seed(home: Option<&std::path::Path>, names: &[&str]) -> Self {
-        let known = |row: &Seat| names.contains(&row.endpoint.as_str());
-        let mut rows: Vec<Seat> = home.map(recent::pinned).unwrap_or_default();
+        let known = |row: &ModelId| names.contains(&row.endpoint.as_str());
+        let mut rows: Vec<ModelId> = home.map(recent::pinned).unwrap_or_default();
         rows.retain(known);
         let recents = home.map(recent::load).unwrap_or_default();
         for row in recents.into_iter().filter(known).take(5) {
@@ -132,10 +132,13 @@ impl Board {
                 self.groups.insert(endpoint.name.clone(), state);
             }
             if !endpoint.model.is_empty() {
-                add(&mut self.rows, Seat::new(&endpoint.name, &endpoint.model));
+                add(
+                    &mut self.rows,
+                    ModelId::new(&endpoint.name, &endpoint.model),
+                );
             }
             for model in listing.into_iter().flat_map(|listing| &listing.models) {
-                let row = Seat::new(&endpoint.name, &model.id);
+                let row = ModelId::new(&endpoint.name, &model.id);
                 self.facts.insert(row.clone(), model.clone());
                 add(&mut self.rows, row);
             }
@@ -145,7 +148,7 @@ impl Board {
     fn waiting(&mut self, setup: &[(String, String, State)]) {
         for (name, model, state) in setup {
             self.groups.insert(name.clone(), *state);
-            add(&mut self.rows, Seat::new(name, model));
+            add(&mut self.rows, ModelId::new(name, model));
         }
     }
 
@@ -161,7 +164,7 @@ impl Board {
             order(&mut self.rows[top..], &self.facts, &self.groups);
             self.sorted = true;
         }
-        let mut sent: Vec<Seat> = home.map(recent::pinned).unwrap_or_default();
+        let mut sent: Vec<ModelId> = home.map(recent::pinned).unwrap_or_default();
         sent.retain(|row| self.rows.contains(row));
         let pinned = sent.len();
         for row in &self.rows[..top] {
@@ -186,11 +189,11 @@ impl Board {
 
     fn discovered(&mut self, name: String, mut models: Vec<Model>) {
         models.sort_by_cached_key(|model| {
-            let row = Seat::new(&name, &model.id);
+            let row = ModelId::new(&name, &model.id);
             (model.cost.rank(), std::cmp::Reverse(model.release), row)
         });
         for model in models {
-            let row = Seat::new(&name, &model.id);
+            let row = ModelId::new(&name, &model.id);
             self.facts.insert(row.clone(), model);
             add(&mut self.rows, row);
         }
@@ -216,7 +219,11 @@ impl Reader {
         let mut registry = Some(tokio::spawn(crate::catalog::refresh_registry()));
         let mut pending: FuturesUnordered<_> = endpoints
             .iter()
-            .filter(|endpoint| due(&endpoint.name, only.as_deref()))
+            .filter(|endpoint| {
+                due(&endpoint.name, only.as_deref())
+                    || (checked(&endpoint.name)
+                        && matches!(endpoint.wire, endpoint::Wire::AgentSdk))
+            })
             .map(
                 |endpoint| async move { (endpoint.name.clone(), Client::discover(endpoint).await) },
             )
@@ -245,7 +252,16 @@ impl Reader {
             match result {
                 Ok(models) => board.discovered(name, models),
                 Err(error) => {
-                    board.groups.insert(name.clone(), Client::state(&error));
+                    let state = match Client::state(&error) {
+                        State::NeedsKey
+                            if endpoint::auth_info(&name)
+                                .is_ok_and(|info| info.login.signs_in()) =>
+                        {
+                            State::SignIn
+                        }
+                        state => state,
+                    };
+                    board.groups.insert(name.clone(), state);
                     board.causes.insert(name, error.to_string());
                 }
             }

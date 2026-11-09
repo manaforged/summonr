@@ -2,8 +2,10 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::{Client, Read};
-use crate::error::{Error, Result};
-use crate::rpc::{Ask, Frame, Notice, Reply, ask, failure, notice, outcome, parse, response};
+use crate::rpc::{Ask, Frame, Notice, Peer, Reply, ask, failure, notice, parse, response};
+use summonr_core::error::{Error, Result};
+
+type Raw = (Option<Value>, Option<Value>);
 
 struct Clock {
     deadline: Instant,
@@ -17,7 +19,7 @@ impl Client {
         method: &str,
         deadline: Instant,
         on_note: &mut impl FnMut(Notice<'_>),
-    ) -> Result<Value> {
+    ) -> Result<Raw> {
         let mut clock = Clock {
             deadline,
             hard: Instant::now()
@@ -27,7 +29,7 @@ impl Client {
         };
         loop {
             let read = self.next_read(&clock, id, method).await?;
-            if matches!(read, Read::Closed) && self.drain.is_some() {
+            if matches!(read, Read::Closed) && self.draining() {
                 clock.deadline = clock
                     .deadline
                     .min(Instant::now() + crate::limits::limits().mcp_stderr_settle());
@@ -44,11 +46,8 @@ impl Client {
             let Ok(frame) = parsed else {
                 continue;
             };
-            if let Some(done) = self
-                .dispatch(frame, id, method, &mut clock, on_note)
-                .await?
-            {
-                return done;
+            if let Some(done) = self.dispatch(frame, id, &mut clock, on_note).await? {
+                return Ok(done);
             }
         }
     }
@@ -57,9 +56,7 @@ impl Client {
         match tokio::time::timeout_at(clock.deadline, self.frame()).await {
             Ok(read) => read,
             Err(_elapsed) if self.broken => {
-                if let Some(drain) = &self.drain {
-                    drain.abort();
-                }
+                self.abort_stderr();
                 self.settle_stderr().await?;
                 Ok(Read::Closed)
             }
@@ -71,16 +68,15 @@ impl Client {
         &mut self,
         frame: Frame,
         id: &Value,
-        method: &str,
         clock: &mut Clock,
         on_note: &mut impl FnMut(Notice<'_>),
-    ) -> Result<Option<Result<Value>>> {
+    ) -> Result<Option<Raw>> {
         match frame {
             Frame::Response {
                 id: got,
                 result,
                 error,
-            } if got == *id => return Ok(Some(outcome(method, result, error))),
+            } if got == *id => return Ok(Some((result, error))),
             Frame::Response { id: got, .. } => self.abandoned.retain(|old| *old != got),
             Frame::Notification { method, params } => {
                 let notice = notice(&method, &params);
@@ -108,11 +104,12 @@ impl Client {
                 self.abandoned.remove(0);
                 Ok(None)
             }
-            Read::Oversize => Err(crate::rpc::oversize(method)),
-            Read::Closed => Err(Error::Tool(format!(
+            Read::Oversize => Err(crate::rpc::oversize(method, self.max)),
+            Read::Closed if self.piped() => Err(Error::Tool(format!(
                 "the child exited during `{method}`{}",
                 self.stderr_note()
             ))),
+            Read::Closed => Err(Error::Tool(format!("`{method}` returned no response"))),
         }
     }
 
@@ -124,6 +121,9 @@ impl Client {
         clock: &mut Clock,
         on_note: &mut impl FnMut(Notice<'_>),
     ) -> Value {
+        if let Peer::Lsp(lsp) = &self.peer {
+            return response(asked, lsp.answer(method, params));
+        }
         match ask(method) {
             Ask::Roots => response(asked, json!({"roots": self.roots})),
             Ask::Ping => response(asked, json!({})),
@@ -143,7 +143,14 @@ impl Client {
                     Reply::Error(code, message) => failure(asked, code, &message),
                 }
             }
-            Ask::Unsupported => failure(asked, -32601, &format!("{method} is not supported")),
+            Ask::Initialize
+            | Ask::Authenticate
+            | Ask::SessionNew
+            | Ask::SessionPrompt
+            | Ask::SessionCancel
+            | Ask::ToolsList
+            | Ask::ToolsCall
+            | Ask::Unsupported => crate::rpc::answer(asked, Err(crate::rpc::unsupported(method))),
         }
     }
 }

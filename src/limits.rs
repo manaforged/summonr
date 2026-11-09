@@ -10,46 +10,39 @@ pub(crate) const fn seconds(value: u64) -> Duration {
     Duration::from_secs(value)
 }
 
-const BUILT_IN: &str = include_str!("limits.toml");
-#[cfg(test)]
-const TEST: &str = include_str!("limits_test.toml");
-#[cfg(test)]
-const TEST_WINDOWS: &str = include_str!("limits_test_windows.toml");
-
-fn parse<T: serde::de::DeserializeOwned>(text: &str, name: &str) -> T {
-    match toml::from_str(text) {
-        Ok(table) => table,
-        Err(error) => panic!("the {name} limits table is invalid: {error}"),
-    }
-}
-
 impl Limits {
     pub(crate) fn built_in() -> Self {
-        parse(BUILT_IN, "built-in")
+        summonr_core::embedded!("limits", "limits.toml")
     }
 
-    pub(crate) fn retry_policy(&self, reach: Reach) -> leyline::RetryPolicy {
-        let policy = leyline::RetryPolicy::transient()
-            .max_retries(self.retry_limit)
-            .initial_backoff(self.retry_base())
-            .max_backoff(self.retry_max())
-            .max_retry_after(self.retry_after_max());
-        match reach {
-            Reach::Remote => policy.retry_on([
-                leyline::RetryTrigger::ConnectionError,
-                leyline::RetryTrigger::Status(429),
-                leyline::RetryTrigger::ServerError,
-            ]),
-            Reach::Local => policy.retry_on([
-                leyline::RetryTrigger::Status(429),
-                leyline::RetryTrigger::ServerError,
-            ]),
-        }
+    pub(crate) fn retry_policy(&self, reach: Reach) -> leyline::Retry {
+        self.retry_policy_for(reach, true)
+    }
+
+    pub(crate) fn retry_policy_for(&self, reach: Reach, rate_limits: bool) -> leyline::Retry {
+        let remote = reach == Reach::Remote;
+        leyline::Retry::new(self.retry_limit)
+            .backoff(self.retry_base(), self.retry_max())
+            .max_wait(self.retry_after_max())
+            .when(move |attempt| match (attempt.status(), attempt.error()) {
+                (Some(status), _) => {
+                    status.is_server_error() || (rate_limits && status.as_u16() == 429)
+                }
+                (None, Some(error)) => {
+                    remote && error.is_retryable() && error.kind() != leyline::Kind::Timeout
+                }
+                (None, None) => false,
+            })
+    }
+
+    pub(crate) fn budget_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
+        let backoff = self.retry_policy(Reach::Remote).delay(retries);
+        retry_after.map_or(backoff, |secs| Duration::from_secs(secs).max(backoff))
     }
 
     pub(crate) fn retry_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
         retry_after.map_or_else(
-            || self.retry_policy(Reach::Remote).backoff(retries),
+            || self.retry_policy(Reach::Remote).delay(retries),
             |secs| Duration::from_secs(secs).min(self.retry_after_max()),
         )
     }
@@ -64,7 +57,7 @@ pub(crate) enum Reach {
 #[cfg(not(test))]
 fn load() -> Limits {
     let built_in = Limits::built_in();
-    match crate::config::file() {
+    match crate::config::path().and_then(|path| crate::config::parse(&path)) {
         Ok(file) => match &file.limits {
             Some(with) => built_in.overlay(with),
             None => built_in,
@@ -75,9 +68,13 @@ fn load() -> Limits {
 
 #[cfg(test)]
 fn load() -> Limits {
-    let test = Limits::built_in().overlay(&parse(TEST, "test"));
+    let test =
+        Limits::built_in().overlay(&summonr_core::embedded!("test limits", "limits_test.toml"));
     if cfg!(windows) {
-        test.overlay(&parse(TEST_WINDOWS, "windows test"))
+        test.overlay(&summonr_core::embedded!(
+            "windows test limits",
+            "limits_test_windows.toml"
+        ))
     } else {
         test
     }

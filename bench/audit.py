@@ -139,12 +139,20 @@ def expectations(path):
     return found
 
 
+def rebenched(job):
+    lines = [line.split() for line in (job / "run.txt").read_text().splitlines()] if (job / "run.txt").is_file() else []
+    started = next((fields[1] for fields in lines if fields[:1] == ["bench"] and len(fields) > 1), None)
+    later = sorted({fields[3] for fields in lines if fields[:1] == ["resume"] and len(fields) > 3 and fields[2] == "bench"} - {started})
+    return [f"{job.name} resumed under bench {bench}, started under {started}" for bench in later] if started else []
+
+
 def refusals(jobs, runs, rows, vendor, pinned):
     problems = retasked(rows)
     settings = Path(__file__).parent / "pairs" / f"{vendor}.settings"
     for run in runs:
         log = Path(jobs).parent / "logs" / f"{run}.jsonl"
         problems += parity(Path(jobs) / run) if pinned else []
+        problems += rebenched(Path(jobs) / run)
         problems += orphans(Path(jobs) / run, requests([log])) if log.is_file() else []
     if pinned and not settings.is_file():
         return problems + [f"{settings.name} is missing: run the preflight and commit the settings it writes"]

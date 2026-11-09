@@ -24,7 +24,7 @@ impl<P: Provider> Loop<P> {
         if calls.is_empty() {
             return Vec::new();
         }
-        if self.depth != 0 {
+        if self.session.depth() != 0 {
             return rejected(calls.len(), "child sessions cannot delegate another task");
         }
         let args = match batch_args(calls) {
@@ -165,35 +165,28 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn task_record(&mut self, done: &mut Done) -> Result<()> {
-        self.session
-            .finish_child(done.record.clone())
-            .map_err(super::session_err)?;
-        self.session
-            .charge(
-                super::meter(&done.usage, 0),
-                &format!("child {}", done.record.id),
-                &done.record.model,
-                true,
-                UsageMeta::default(),
-            )
-            .map_err(super::session_err)?;
+        self.session.finish_child(done.record.clone())?;
+        self.session.charge(
+            Meter::measured(&done.usage, 0),
+            &format!("child {}", done.record.id),
+            &done.record.model,
+            true,
+            UsageMeta::default(),
+        )?;
         let reported =
             u64::from(done.usage.prompt_tokens) + u64::from(done.usage.completion_tokens);
         if done.billed > reported {
-            self.session
-                .charge(
-                    Meter {
-                        input: done.billed - reported,
-                        ..Meter::default()
-                    },
-                    &format!("child {} unconfirmed usage", done.record.id),
-                    &done.record.model,
-                    false,
-                    UsageMeta::default(),
-                )
-                .map_err(super::session_err)?;
+            self.session.charge(
+                Meter {
+                    input: done.billed - reported,
+                    ..Meter::default()
+                },
+                &format!("child {} unconfirmed usage", done.record.id),
+                &done.record.model,
+                false,
+                UsageMeta::default(),
+            )?;
         }
-        self.spent_tokens = self.session.spent_tokens();
         done.settled = true;
         Ok(())
     }

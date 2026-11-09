@@ -1,0 +1,453 @@
+[[tool]]
+kind = "read"
+claude = "Read"
+acp_kind = "read"
+verb = "Read"
+readonly = true
+advertise = "always"
+run = "always"
+description = "Read files (N:text; offset/limit, widened by before/after/context; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree, or view an image file. op=help returns the full reference."
+help = """read op reference: every form honors ignore rules unless no_ignore is true; search files with the search tool.
+
+op=file (default with path): N:text lines, one page of up to {read_page_kib} KiB by default; offset N starts at that line, limit caps lines (max {read_line_limit}); paths[] shares the page budget across files, reports missing ones inline, and gives each truncated file its own continuation offset; tags true adds hash tags for tag-edits.
+op=list: directory listing; recursive true or depth N returns a tree; truncation notes say how to narrow.
+op=image: returns the image so you can see it; a model without image input gets a description or a note instead."""
+
+[tool.schema]
+type = "object"
+additionalProperties = false
+
+[tool.schema.properties]
+path = { type = "string" }
+offset = { type = "integer", minimum = 1 }
+limit = { type = "integer", minimum = 1, maximum = { fill = "read_line_limit" } }
+paths = { type = "array", items = { type = "string" } }
+before = { type = "integer", minimum = 0, maximum = 10 }
+after = { type = "integer", minimum = 0, maximum = 10 }
+context = { type = "integer", minimum = 0, maximum = 10 }
+tags = { type = "boolean" }
+recursive = { type = "boolean" }
+depth = { type = "integer", minimum = 1 }
+no_ignore = { type = "boolean" }
+op = { type = "string", enum = ["file", "list", "image", "help"] }
+
+[[tool]]
+kind = "search"
+claude = "Grep"
+claude_aliases = ["Glob"]
+acp_kind = "search"
+verb = "Search"
+readonly = true
+advertise = "always"
+run = "always"
+description = "Find text in files (pattern) or files by name (name, glob), anywhere on disk; use it instead of grep, rg, or find. Newest first; secret files are never read. op=help lists the other options."
+help = """search reference: case is ignored unless case_sensitive is true; a call returns what it found after {search_secs}s.
+
+- pattern: regex over file contents, a|b for alternatives; literal true takes it as plain text; word true matches whole words
+- name: words that must all appear in the file name, any order ("q3 report"); glob: a file pattern such as *.rs or src/**/*.ts; with pattern, both narrow the files searched
+- path: folder or file to search; ~ and absolute paths work; default the workspace; depth N limits folder levels; no_ignore true includes gitignored files and build folders
+- output: lines (default) shows matches, files lists matching files, count counts per file, folders counts files per folder; context N adds lines around each match (max {search_context_max})
+- newer: only files changed within 30m, 2h, 3d, or 2w
+- limit: results to return (default {search_default}, max {search_max}); offset skips files for the next page; tags true prints N:hash tags that edit takes"""
+
+[tool.schema.properties]
+pattern = { type = "string" }
+name = { type = "string" }
+glob = { type = "string" }
+path = { type = "string" }
+output = { type = "string", enum = ["lines", "files", "count", "folders"] }
+context = { type = "integer", minimum = 0, maximum = { fill = "search_context_max" } }
+literal = { type = "boolean" }
+word = { type = "boolean" }
+depth = { type = "integer", minimum = 1 }
+no_ignore = { type = "boolean" }
+newer = { type = "string" }
+limit = { type = "integer", minimum = 1, maximum = { fill = "search_max" } }
+offset = { type = "integer", minimum = 0 }
+tags = { type = "boolean" }
+op = { type = "string", enum = ["help"] }
+
+[[tool]]
+kind = "edit"
+claude = "Edit"
+claude_aliases = ["MultiEdit", "NotebookEdit"]
+acp_kind = "edit"
+verb = "Edit"
+readonly = false
+advertise = "always"
+run = "always"
+description = "Edit existing files with old+new, edits[], or checked replacements in files[]. expected_matches checks the exact occurrence count; preview true shows the changes without writing. path+to moves a file without staging Git changes. Tags from read disambiguate ranges. New or empty files: write. op=help gives the grammar."
+help = """edit grammar: tags are the N:hash strings that read returns when asked for tags.
+
+- old+new: replace the unique substring (replace_all true replaces every occurrence); expected_matches requires that exact count and replaces those occurrences; without it a whitespace-only mismatch self-corrects and says so
+- tag+new: replace the tagged line(s), end_tag extends the range
+- tag+text: insert after the tagged line
+- op=delete: remove tagged lines
+- edits[]: apply several of the above atomically; if two overlap they apply in order, each against the result of the one before
+- op=sequence: resolve edits in order
+- patch: a full *** Begin Patch / Update|Add|Delete File document with @@ context lines; multiple files per document; every file is staged first, so a failed stage changes nothing
+- path+to: rename or move the file; an existing destination is rejected; Git's index is not changed
+- files[]: checked replacements in explicit files, each with path, old, new, and expected_matches; all files are validated before any writes; duplicate paths are rejected
+- preview true: validate and show the replacement diffs or move without writing or running diagnostics
+New or empty files: use write."""
+
+[tool.schema]
+type = "object"
+additionalProperties = false
+
+[tool.schema.properties]
+path = { type = "string" }
+old = { type = "string" }
+new = { type = "string" }
+tag = { type = "string" }
+end_tag = { type = "string" }
+text = { type = "string" }
+replace_all = { type = "boolean" }
+expected_matches = { type = "integer", minimum = 1 }
+to = { type = "string" }
+patch = { type = "string" }
+preview = { type = "boolean" }
+op = { type = "string", enum = ["delete", "sequence", "help"] }
+
+[tool.schema.properties.edits]
+type = "array"
+minItems = 1
+
+[tool.schema.properties.edits.items]
+type = "object"
+additionalProperties = false
+
+[tool.schema.properties.edits.items.properties]
+old = { type = "string" }
+new = { type = "string" }
+tag = { type = "string" }
+end_tag = { type = "string" }
+text = { type = "string" }
+replace_all = { type = "boolean" }
+expected_matches = { type = "integer", minimum = 1 }
+op = { type = "string", enum = ["delete"] }
+
+[tool.schema.properties.files]
+type = "array"
+minItems = 1
+
+[tool.schema.properties.files.items]
+type = "object"
+additionalProperties = false
+required = ["path", "old", "new", "expected_matches"]
+
+[tool.schema.properties.files.items.properties]
+path = { type = "string" }
+old = { type = "string" }
+new = { type = "string" }
+expected_matches = { type = "integer", minimum = 1 }
+
+[[tool]]
+kind = "write"
+claude = "Write"
+acp_kind = "edit"
+verb = "Write"
+readonly = false
+advertise = "always"
+run = "always"
+description = "Create or overwrite one file (path and content), or several at once with files."
+
+[tool.schema]
+type = "object"
+additionalProperties = false
+
+[tool.schema.properties]
+path = { type = "string" }
+content = { type = "string" }
+
+[tool.schema.properties.files]
+type = "array"
+minItems = 1
+
+[tool.schema.properties.files.items]
+type = "object"
+properties = { path = { type = "string" }, content = { type = "string" } }
+required = ["path", "content"]
+additionalProperties = false
+
+[[tool]]
+kind = "skill"
+claude = "Skill"
+acp_kind = "other"
+verb = "Skill"
+readonly = true
+advertise = "skill_catalog"
+run = "skills"
+description = "Load a skill body by name from the catalog in the system prompt."
+
+[tool.schema]
+type = "object"
+properties = { name = { type = "string" } }
+required = ["name"]
+additionalProperties = false
+
+[[tool]]
+kind = "lsp"
+claude_aliases = ["LSP"]
+acp_kind = "search"
+verb = "Lsp"
+readonly = true
+advertise = "lsp_available"
+run = "language"
+description = "Language server. Prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics."
+
+[tool.schema]
+type = "object"
+required = ["path"]
+additionalProperties = false
+
+[tool.schema.properties]
+path = { type = "string" }
+line = { type = "integer", minimum = 1 }
+character = { type = "integer", minimum = 1 }
+references = { type = "boolean" }
+op = { type = "string", enum = ["diagnostics", "definition"] }
+new_name = { type = "string" }
+
+[[tool]]
+kind = "run_command"
+claude = "Bash"
+acp_kind = "execute"
+verb = "Run"
+readonly = false
+advertise = "always"
+run = "writable"
+description = "Run builds, tests, and command-line tools in the workspace; use edit/write for source changes and search for files or text. After {command_wait_secs}s a foreground command continues as a job unless timeout_secs stops it; background returns a job id immediately and cannot be combined with timeout_secs; job waits on one, kill stops it. op=help returns output, job, and policy details."
+help = """run_command reference.
+
+- command runs via the shell in the workspace; workdir changes the directory; cwd does not persist between calls; stdin is closed; the environment is a safe allowlist
+- at the wait limit a command keeps running as a background job and returns its id; an explicit timeout_secs stops it instead; when the shell exits, leftover processes it started with & are stopped; background true returns a job id at once and rejects timeout_secs; jobs keep their log and exit status after summonr exits; pass job to wait for it (a poll waits until the job exits or the wait limit), kill true to stop; cancelling a reply keeps background jobs, so inspect or wait on an existing id before launching another
+- output is the exit code plus about 16 KB of head and tail; only when that cuts something is the full log path named; read it with the read tool; search command output gets clipped per file with an omission note
+- for a password use `sudo -A` or plain ssh (masked prompt); `summonr askpass "<label>"` prints a user-typed secret to pipe into a command; never echo or store it"""
+
+[tool.schema]
+type = "object"
+additionalProperties = false
+
+[tool.schema.properties]
+command = { type = "string" }
+workdir = { type = "string" }
+timeout_secs = { type = "integer", minimum = 1, description = "Foreground only. Cannot be combined with background." }
+background = { type = "boolean", description = "Return a job id immediately. Omit timeout_secs." }
+job = { type = "string" }
+kill = { type = "boolean" }
+op = { type = "string", enum = ["help"] }
+
+[[tool]]
+kind = "web"
+claude = "WebFetch"
+claude_aliases = ["WebSearch"]
+acp_kind = "fetch"
+verb = "Web"
+readonly = true
+advertise = "web"
+run = "web"
+description = "Search the public web (query) or fetch one https URL (url; format markdown|text|html; freshness day|week|month)."
+
+[tool.schema]
+type = "object"
+additionalProperties = false
+
+[tool.schema.properties]
+query = { type = "string" }
+url = { type = "string" }
+count = { type = "integer", minimum = 1, maximum = 8 }
+freshness = { type = "string", enum = ["day", "week", "month"] }
+op = { type = "string", enum = ["search", "fetch"] }
+format = { type = "string", enum = ["markdown", "text", "html"] }
+
+[[tool]]
+kind = "browser"
+acp_kind = "fetch"
+verb = "Browse"
+readonly = false
+advertise = "browser"
+run = "browser_writable"
+description = "Drive a real Chrome that keeps its logins. Start with snapshot, then act on refs such as e5: click, fill, type, press, select, check, hover, drag, scroll, upload (workspace files), navigate, back, forward, reload, wait, tab (new|select|close). Each action returns the url, title, new tabs, dialogs, console error count, and the snapshot delta (report none|delta|full). read returns the page text, screenshot saves a PNG and returns its path, tabs lists tabs, login opens a visible window for the user to sign in, close quits Chrome."
+
+[tool.schema]
+type = "object"
+required = ["action"]
+additionalProperties = false
+
+[tool.schema.properties]
+action = { type = "string", enum = ["snapshot", "read", "screenshot", "tabs", "login", "close", "navigate", "back", "forward", "reload", "click", "fill", "type", "press", "select", "check", "upload", "hover", "drag", "scroll", "wait", "tab"] }
+url = { type = "string" }
+target = { type = "string", description = "A ref such as e5, or a selector." }
+text = { type = "string" }
+key = { type = "string" }
+from = { type = "string" }
+to = { type = "string" }
+delta_y = { type = "number" }
+checked = { type = "boolean" }
+files = { type = "array", items = { type = "string" } }
+new = { type = ["string", "null"] }
+select = { type = "string" }
+close = { type = "string" }
+interactive_only = { type = "boolean" }
+max_chars = { type = "integer", minimum = 1 }
+format = { type = "string", enum = ["markdown", "text"] }
+full_page = { type = "boolean" }
+report = { type = "string", enum = ["none", "delta", "full"] }
+
+[tool.schema.properties.by]
+type = "object"
+minProperties = 1
+maxProperties = 1
+additionalProperties = false
+
+[tool.schema.properties.by.properties]
+value = { type = "array", items = { type = "string" } }
+label = { type = "array", items = { type = "string" } }
+index = { type = "array", items = { type = "integer", minimum = 0 } }
+
+[tool.schema.properties.for]
+type = "object"
+minProperties = 1
+maxProperties = 1
+additionalProperties = false
+
+[tool.schema.properties.for.properties]
+selector = { type = "string" }
+text = { type = "string" }
+url = { type = "string" }
+url_exact = { type = "string" }
+url_glob = { type = "string" }
+load = { type = "string", enum = ["load", "domcontentloaded", "networkidle"] }
+ms = { type = "integer", minimum = 0 }
+
+[tool.schema.properties.options]
+type = "object"
+additionalProperties = false
+
+[tool.schema.properties.options.properties]
+button = { type = "string", enum = ["left", "right", "middle"] }
+count = { type = "integer", minimum = 0, maximum = 255 }
+modifiers = { type = "array", items = { type = "string", enum = ["alt", "control", "meta", "shift"] } }
+position = { type = "array", items = { type = "number" }, minItems = 2, maxItems = 2 }
+
+[[tool]]
+kind = "todo"
+claude = "TodoWrite"
+acp_kind = "other"
+verb = "Tasks"
+readonly = true
+advertise = "task_list"
+run = "task_list"
+description = "Maintain the Work task list; status pending|active|done. Update statuses as tasks start or finish, not just when making the initial plan. A done item does not replace the completion check."
+
+[tool.schema]
+type = "object"
+required = ["items"]
+additionalProperties = false
+
+[tool.schema.properties.items]
+type = "array"
+
+[tool.schema.properties.items.items]
+type = "object"
+required = ["text"]
+
+[tool.schema.properties.items.items.properties]
+text = { type = "string" }
+status = { type = "string", enum = ["pending", "active", "done"] }
+
+[[tool]]
+kind = "task"
+claude = "Task"
+acp_kind = "other"
+verb = "Subagent"
+readonly = false
+advertise = "never"
+run = "never"
+
+[apply_patch]
+description = "Create, change, move, or delete files with one patch. The patch text is:\n*** Begin Patch\n*** Update File: path/to/file\n*** Move to: path/to/destination\n@@ optional line that sits above the change\n context line\n-removed line\n+added line\n*** Add File: path/to/new\n+every line of the new file\n*** Delete File: path/to/old\n*** End Patch\nMove to is optional and must follow Update File immediately; omit hunks for a move without edits. An existing destination is rejected. Update hunks need about three unchanged context lines around each change. All sections are validated before writes. Git's index is not changed. Use edit for checked multi-file replacements and previews."
+
+[apply_patch.schema]
+type = "object"
+properties = { patch = { type = "string" } }
+required = ["patch"]
+additionalProperties = false
+
+[[retired]]
+name = "read_file"
+live = "read"
+op = "file"
+
+[[retired]]
+name = "list_dir"
+live = "read"
+op = "list"
+
+[[retired]]
+name = "grep"
+live = "search"
+
+[[retired]]
+name = "glob"
+live = "search"
+
+[[retired]]
+name = "show_image"
+live = "read"
+op = "image"
+
+[[retired]]
+name = "apply_patch"
+live = "edit"
+
+[[retired]]
+name = "edit_file"
+live = "edit"
+
+[[retired]]
+name = "replace_text"
+live = "edit"
+
+[[retired]]
+name = "replace_texts"
+live = "edit"
+op = "sequence"
+
+[[retired]]
+name = "replace_lines"
+live = "edit"
+
+[[retired]]
+name = "insert_after"
+live = "edit"
+
+[[retired]]
+name = "delete_lines"
+live = "edit"
+op = "delete"
+
+[[retired]]
+name = "write_file"
+live = "write"
+
+[[retired]]
+name = "diagnostics"
+live = "lsp"
+op = "diagnostics"
+
+[[retired]]
+name = "definition"
+live = "lsp"
+op = "definition"
+
+[[retired]]
+name = "web_search"
+live = "web"
+op = "search"
+
+[[retired]]
+name = "web_fetch"
+live = "web"
+op = "fetch"

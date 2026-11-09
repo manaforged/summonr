@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
 const AGENT: &str = "summonr";
+const PRODUCTS: [&str; 3] = ["summon", "summoner", "summonr"];
 const SOURCE: &str = "summonr:lifecycle";
 const DISPLAY: &str = "summonr:display";
 
@@ -222,7 +223,7 @@ fn target(
     env: impl Fn(&str) -> Option<OsString>,
 ) -> Option<Target> {
     if env("HERDR_ENV").as_deref() != Some(OsStr::new("1"))
-        || !matches!(executable, Some(name) if name == "summon" || name == "summoner" || name == "summonr")
+        || !executable.is_some_and(|name| PRODUCTS.iter().any(|product| name == *product))
     {
         return None;
     }
@@ -260,7 +261,7 @@ fn product(executable: &Path) -> Option<&OsStr> {
         let part = part.as_os_str();
         part == "deps" || part.to_string_lossy().starts_with("test-")
     });
-    (!test && matches!(name.to_str(), Some("summon" | "summoner" | "summonr"))).then_some(name)
+    (!test && PRODUCTS.iter().any(|product| name == *product)).then_some(name)
 }
 
 fn present(value: Option<OsString>) -> Option<OsString> {
@@ -304,7 +305,7 @@ fn report_args(pane: &OsStr, report: &Report<'_>) -> Vec<OsString> {
     if let Some(message) = report.message {
         args.extend([
             OsString::from("--message"),
-            OsString::from(crate::text::ellipsize(message.trim(), 160)),
+            OsString::from(crate::display::ellipsize(message.trim(), 160)),
         ]);
     }
     args.extend([
@@ -339,7 +340,7 @@ fn metadata_args(pane: &OsStr, title: &str, model: &str, seq: u64) -> Vec<OsStri
         OsString::from("--agent"),
         OsString::from(AGENT),
         OsString::from("--title"),
-        OsString::from(crate::text::ellipsize(title.trim(), 80)),
+        OsString::from(crate::display::ellipsize(title.trim(), 80)),
         OsString::from("--display-agent"),
         OsString::from(shown),
         OsString::from("--seq"),
@@ -350,14 +351,14 @@ fn metadata_args(pane: &OsStr, title: &str, model: &str, seq: u64) -> Vec<OsStri
 
 fn model_label(model: &str) -> String {
     let name = model.rsplit(['/', ':']).next().unwrap_or(model);
-    crate::text::ellipsize(name.trim(), 80)
+    crate::display::ellipsize(name.trim(), 80)
 }
 
 fn folder(workspace: &Path) -> String {
     workspace
         .file_name()
         .and_then(|name| name.to_str())
-        .map(|name| crate::text::ellipsize(name.trim(), 80))
+        .map(|name| crate::display::ellipsize(name.trim(), 80))
         .unwrap_or_default()
 }
 

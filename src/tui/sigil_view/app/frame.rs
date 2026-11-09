@@ -1,13 +1,14 @@
 use sigil::prelude::{effect, interval};
 
 use super::*;
+use crate::tui::sigil_view::scene;
 
 fn sky_clock(app: &App) -> sigil::prelude::Signal<f64> {
     let seconds = sigil::prelude::signal(0.0_f64);
     let start = std::time::Instant::now();
     let app = app.clone();
     effect(move || {
-        let delay = crate::tui::sigil_view::scene::next_change(&app, seconds.get());
+        let delay = scene::next_change(&app, seconds.get());
         let wake = app.clone();
         interval(delay, move || {
             seconds.set(start.elapsed().as_secs_f64());
@@ -25,8 +26,6 @@ impl App {
                 self.splash.set(false);
             }
             self.status.set(model.status_line(&self.info));
-            self.theme_name.set(model.prefs.theme.clone());
-            self.backdrop.set(model.prefs.background);
         });
     }
 
@@ -132,25 +131,9 @@ impl App {
     fn poll(&self) {
         let app = self.clone();
         effect(move || {
-            let command: Option<fn() -> Cmd> = match app.layout.get().secondary {
-                Some(super::Pane::Jobs) => Some(|| Cmd::Jobs),
-                Some(super::Pane::Mcp) => Some(|| Cmd::Mcp),
-                Some(
-                    super::Pane::Chat
-                    | super::Pane::Ledger
-                    | super::Pane::Files
-                    | super::Pane::Diff
-                    | super::Pane::Worktrees
-                    | super::Pane::Peers
-                    | super::Pane::View,
-                )
-                | None => None,
-            };
-            if let Some(command) = command {
+            if app.layout.get().secondary.is_some_and(App::pane_polls) {
                 let poll = app.clone();
-                interval(crate::limits::limits().beat(), move || {
-                    drop(poll.cmd.send(command()))
-                });
+                interval(crate::limits::limits().beat(), move || poll.load());
             }
         });
     }
@@ -162,7 +145,11 @@ impl App {
     fn reveal(&self) {
         if !self.splash_revealed.peek()
             && self.splash_since.get().elapsed().as_millis()
-                > u128::from(crate::limits::limits().splash_reveal_ms)
+                > u128::from(
+                    crate::limits::limits()
+                        .splash_reveal_ms
+                        .max(scene::reveal_ms(self)),
+                )
         {
             self.splash_revealed.set(true);
         }

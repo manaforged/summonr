@@ -22,7 +22,7 @@ Typing `/` opens the command list above the composer. Each row shows the `/comma
 
 While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it runs), the round, the seconds so far, the output rate, and the queue count. The composer status counts waiting input, as in `2 queued, ↑ edits`.
 
-A message you send during a turn goes into the running turn. The model reads it after its current tool calls. The message waits in the queue for the next turn instead when:
+A message you send during a turn goes into the running turn. The model reads it after its current tool calls. It carries a note that asks the model to answer it in its next reply. The message waits in the queue for the next turn instead when:
 
 - an approval or a question is open,
 - earlier messages or commands still wait, or
@@ -75,7 +75,7 @@ In the files tree, `ctrl+→` focuses it, `↑↓` move, `←→` collapse or ex
 
 The layout persists in `~/.summonr/config.toml` as `layout`. `ctrl+o` opens the settings modal, where every hotkey is editable; your choices go under `[hotkeys]` in the same file.
 
-`/settings` switches tool output between compact and full. Chain of thought is `collapsed` (the default: one dim line with a line count), `expanded`, or `off`. Turn receipts are `off` (the default), `collapsed` (one line: files read, searches, commands, failures, changed files, and the check result), or `expanded` (adds the start commit, the first five failures and changed files, and each check). A click on a receipt toggles it.
+`/settings` switches tool output between compact and full. Chain of thought is `collapsed` (the default: one dim line with a line count), `expanded`, or `off`.
 
 `ctrl+x n` folds every thinking block, then every tool output (`tools = "hidden"`), then shows them all again. A click still opens one block.
 
@@ -155,7 +155,7 @@ The `task` tool delegates work to fresh child sessions. Only an interactive sess
 | Kind | Workspace | Can |
 | --- | --- | --- |
 | `implement` | An isolated checkout in `<repo>-children/<id>` that shares the parent's `target/` and `node_modules` | Use the parent's file, shell, and language-server tools; background commands stay with the parent |
-| `research` | The parent workspace | Read and search only; no shell, no writes, no background commands |
+| `research` | The parent workspace | Read and search; a foreground shell command; no writes, no background commands |
 
 The `task` module is on by default. Turn it off in the Modules rows of `/settings`, or with `task = false` under `[modules]` in `~/.summonr/config.toml`.
 

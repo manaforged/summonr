@@ -39,9 +39,6 @@ impl App {
     }
 
     fn secret(&self, key: &sigil::prelude::KeyEvent) {
-        let chord = key
-            .modifiers
-            .intersects(ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META);
         if key.key == LogicalKey::Named(Key::Enter) {
             self.secret_finish(true);
         } else if key.key == LogicalKey::Named(Key::Escape)
@@ -52,7 +49,7 @@ impl App {
         } else if key.key == LogicalKey::Named(Key::Backspace) {
             self.secret_pop();
         } else if let Some(text) = key.text.as_deref()
-            && !chord
+            && !chord(key.modifiers)
         {
             let text = text.replace("\r\n", "\n").replace('\r', "\n");
             self.secret_push(text.lines().next().unwrap_or_default());
@@ -92,10 +89,11 @@ fn is_enter(key: &sigil::prelude::KeyEvent) -> bool {
 }
 
 fn paste_chord(key: &sigil::prelude::KeyEvent) -> bool {
-    key.key == LogicalKey::character("v")
-        && key
-            .modifiers
-            .intersects(ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META)
+    key.key == LogicalKey::character("v") && chord(key.modifiers)
+}
+
+pub(in crate::tui::sigil_view) fn chord(modifiers: ModifiersState) -> bool {
+    modifiers.intersects(ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META)
 }
 
 fn graphics_junk(text: &str) -> bool {

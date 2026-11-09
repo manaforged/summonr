@@ -128,3 +128,55 @@ fn the_session_span_leaves_out_changes_made_before_the_first_turn() -> Result<()
     assert_eq!(diff.base, crate::diff::SESSION_BASE);
     Ok(())
 }
+
+#[test]
+fn a_workspace_outside_git_restores_a_turn() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    std::fs::write(workspace.join("notes.txt"), "before\n")?;
+    let checkpoints =
+        Checkpoints::open(workspace, "plain").expect("a plain folder supports checkpoints");
+    assert!(checkpoints.deferred());
+    checkpoints.capture_to(2)?;
+    assert_eq!(checkpoints.count(), 2);
+    std::fs::write(workspace.join("notes.txt"), "after\n")?;
+    std::fs::create_dir(workspace.join("node_modules"))?;
+    std::fs::write(workspace.join("node_modules/dep.js"), "x")?;
+    let restored = checkpoints.restore(1);
+    let text = std::fs::read_to_string(workspace.join("notes.txt"))?;
+    if let Some(store) = private_dir(workspace) {
+        drop(std::fs::remove_dir_all(store));
+    }
+    assert_eq!(restored?, vec!["notes.txt".to_string()]);
+    assert_eq!(text, "before\n");
+    assert!(!workspace.join(".git").exists());
+    Ok(())
+}
+
+#[test]
+fn restoring_the_middle_turn_brings_back_its_files_and_a_deleted_file() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    std::fs::write(workspace.join("draft.txt"), "one\n")?;
+    std::fs::write(workspace.join("keep.txt"), "kept\n")?;
+    let checkpoints = Checkpoints::open(workspace, "three").expect("a Git workspace");
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("draft.txt"), "two\n")?;
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("draft.txt"), "three\n")?;
+    std::fs::remove_file(workspace.join("keep.txt"))?;
+    checkpoints.capture()?;
+    let mut restored = checkpoints.restore(2)?;
+    restored.sort();
+    assert_eq!(restored, ["draft.txt", "keep.txt"]);
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("draft.txt"))?,
+        "two\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("keep.txt"))?,
+        "kept\n"
+    );
+    Ok(())
+}

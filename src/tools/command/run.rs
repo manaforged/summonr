@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use crate::error::{Error, Result};
 use crate::jobs;
 use crate::tools::spill::full_output_note;
 use crate::tools::{ToolOutput, ToolRegistry};
+use summonr_core::error::{Error, Result};
 
 use super::digest::digest;
 use super::proc::{
@@ -47,7 +47,7 @@ impl ToolRegistry {
         let persist = matches!(wait, Wait::Background | Wait::Detach(_));
         let (id, log_path, record_path) = if persist {
             let (id, record_path, log_path, exit_path) = jobs::prepare(&self.workspace)?;
-            let script = crate::shell::wrap(command, &exit_path, &cwd);
+            let script = summonr_core::shell::wrap(command, &exit_path, &cwd);
             (id, log_path, Some((record_path, script)))
         } else {
             (
@@ -59,7 +59,12 @@ impl ToolRegistry {
         let script = record_path
             .as_ref()
             .map_or(command, |(_, script)| script.as_str());
-        let child = spawn_command(&self.env, script, &log_path, persist, &cwd)?;
+        let mut env = self.env.clone();
+        if let Some(session) = self.session_id() {
+            env.push((crate::session::SESSION_ENV.to_string(), session.clone()));
+            env.push((crate::session::PARENT_ENV.to_string(), session));
+        }
+        let child = spawn_command(&env, script, &log_path, persist, &cwd)?;
         let pid = child
             .id()
             .ok_or_else(|| Error::Tool("command started without a pid".to_string()))?;
@@ -114,25 +119,11 @@ impl ToolRegistry {
     }
 
     fn finished(&self, log_path: PathBuf, command: &str, code: i32) -> Result<ToolOutput> {
-        let raw = scrubbed_preview(&log_path)?;
-        let shown = digest(command, &raw);
-        let output = format!(
-            "exit {code}{}\n{}",
-            full_output_note(
-                &log_path,
-                shown.cut,
-                crate::diff::line_count(&log_path).ok().flatten()
-            ),
-            shown.text,
-        );
-        keep_log(&log_path, shown.cut);
+        let (note, text) = logged(&log_path, command)?;
         Ok(ToolOutput {
-            text: output.trim_end().to_string(),
             success: code == 0,
             mutated: may_write(command),
-            grant: None,
-            images: Vec::new(),
-            patch: None,
+            ..ToolOutput::ok(format!("exit {code}{note}\n{text}").trim_end().to_string())
         })
     }
 
@@ -156,33 +147,18 @@ impl ToolRegistry {
         started.child.wait().await.map_err(cleanup)?;
         started.group.disarm();
         self.discard_job(&started.id);
-        let log_path = started.log_path;
-        let raw = scrubbed_preview(&log_path)?;
-        let shown = digest(command, &raw);
+        let (note, text) = logged(&started.log_path, command)?;
         let mutated = may_write(command);
         let warning = if mutated {
             "\nthe command may have changed workspace files before timeout"
         } else {
             ""
         };
-        let note = full_output_note(
-            &log_path,
-            shown.cut,
-            crate::diff::line_count(&log_path).ok().flatten(),
-        );
-        keep_log(&log_path, shown.cut);
+        let text = format!("command timed out after {seconds}s{detail}{warning}{note}\n{text}");
         Ok(ToolOutput {
-            text: format!(
-                "command timed out after {seconds}s{detail}{warning}{note}\n{}",
-                shown.text
-            )
-            .trim_end()
-            .to_string(),
             success: false,
             mutated,
-            grant: None,
-            images: Vec::new(),
-            patch: None,
+            ..ToolOutput::ok(text.trim_end().to_string())
         })
     }
 
@@ -215,10 +191,14 @@ impl ToolRegistry {
     }
 }
 
-fn keep_log(log_path: &std::path::Path, keep: bool) {
-    if !keep {
+fn logged(log_path: &std::path::Path, command: &str) -> Result<(String, String)> {
+    let shown = digest(command, &scrubbed_preview(log_path)?);
+    let lines = crate::diff::line_count(log_path).ok().flatten();
+    let note = full_output_note(log_path, shown.cut, lines);
+    if !shown.cut {
         drop(std::fs::remove_file(log_path));
     }
+    Ok((note, shown.text))
 }
 
 fn scrubbed_preview(log_path: &std::path::Path) -> Result<String> {

@@ -1,4 +1,5 @@
 use crate::provider::scripted::{Reply, Scripted};
+use crate::provider::{ToolCall, ToolFunction, ToolKind};
 use crate::runtime::Loop;
 use crate::tools::{Abort, AbortCode};
 
@@ -151,10 +152,10 @@ async fn a_cancelled_turn_leaves_background_children_settleable_by_poll() {
 async fn a_child_of_a_goal_session_works_in_plain_mode_and_finishes_its_turn() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("done")]);
     parent.select_goal("ship it", &[]).unwrap();
-    parent.set_mode(crate::RunMode::Goal);
+    parent.set_mode(crate::WorkKind::Goal);
     let budget = parent.task_budget(1).unwrap();
     let mut run = parent.task_start_in(implement(), &budget, None).unwrap();
-    assert_eq!(run.child.mode(), crate::RunMode::Auto);
+    assert_eq!(run.child.mode(), crate::WorkKind::Single);
     let assignment = run.assignment.clone();
     run.child.turn(&assignment).await.unwrap();
 }
@@ -238,4 +239,73 @@ async fn task_calls_beside_a_todo_update_start_together() {
         })
         .collect();
     assert_eq!(spawned.get(..2), Some(&[true, true][..]), "{spawned:?}");
+}
+
+#[tokio::test]
+async fn a_job_wait_settles_a_child_that_finished_before_it_and_then_waits_on_the_job() {
+    let (mut parent, _dirs) = parent(vec![Reply::Text("ok"), Reply::Text("child done")]);
+    parent.turn("hi").await.unwrap();
+    let id = spawn_background(&mut parent);
+    let started = std::time::Instant::now();
+    while !parent.spawned[&id].handle.is_finished() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let job = parent
+        .tools
+        .execute_outcome(&call(
+            "c1",
+            "run_command",
+            &serde_json::json!({"command": "sleep 30", "background": true}),
+        ))
+        .await
+        .unwrap()
+        .text;
+    let job = job
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .unwrap()
+        .to_string();
+    let mut events = Vec::new();
+    let waited = std::time::Instant::now();
+    let (output, _) = parent
+        .run_or_wake(
+            &call("c2", "run_command", &serde_json::json!({"job": job})),
+            &mut events,
+            &mut |_| {},
+        )
+        .await
+        .unwrap();
+    drop(parent.tools.stop_jobs());
+    let text = output.unwrap().text;
+    assert!(!parent.spawned.contains_key(&id));
+    assert!(!text.starts_with("returned early"), "{text}");
+    assert!(text.contains("state: running"), "{text}");
+    assert!(waited.elapsed() >= std::time::Duration::from_millis(900));
+}
+
+#[tokio::test]
+async fn a_research_child_can_run_a_foreground_command() {
+    let (mut parent, dirs) = parent(vec![Reply::Text("done")]);
+    let budget = parent.task_budget(1).unwrap();
+    let run = parent
+        .task_start_in(args("hold", "research", false), &budget, None)
+        .unwrap();
+    let output = run
+        .child
+        .execute_for_test(&ToolCall {
+            id: "t1".to_string(),
+            kind: ToolKind::Function,
+            function: ToolFunction {
+                checked: Default::default(),
+                name: "run_command".to_string(),
+                arguments: serde_json::json!({"command": "echo ok"}).to_string(),
+            },
+            continuation: None,
+        })
+        .await
+        .unwrap();
+    assert!(output.success, "{}", output.text);
+    assert!(output.text.contains("ok"), "{}", output.text);
+    drop(dirs);
 }

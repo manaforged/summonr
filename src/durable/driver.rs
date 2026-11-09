@@ -1,15 +1,14 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use thiserror::Error;
 
 use super::id::{Attempt, Call, SessionId};
 use super::log::{self, Line, Log, State, Usage, UsageMeta};
+use super::store;
 use super::tree::{self, Snapshot};
-use super::work::{Check, Decision, Policy, Stage, Work, WorkError};
+use super::work::{Check, Decision, Stage, Work, WorkError, WorkKind};
 use crate::WorkProgress;
-use crate::provider::{Message, Partial, ToolCall, UserInput};
-use crate::session::Replay;
+use summonr_types::{Message, Partial, ToolCall, UserInput};
 
 #[derive(Debug, Error)]
 pub(crate) enum DriverError {
@@ -65,6 +64,11 @@ pub(crate) struct Verdict {
     pub(crate) diagnostic: Option<String>,
 }
 
+pub(crate) enum Parent {
+    Session(SessionId),
+    Task(SessionId),
+}
+
 pub(crate) struct SessionDriver {
     pub(crate) partial: Partial,
     log: Log,
@@ -74,7 +78,7 @@ pub(crate) struct SessionDriver {
     turn: Option<Turn>,
     next: u64,
     pending: Vec<Line>,
-    saved: AtomicU64,
+    saved: u64,
     base: Option<base::Pending>,
     fresh: bool,
     last: Option<Snapshot>,
@@ -173,10 +177,6 @@ impl SessionDriver {
         self.turn.as_ref().and_then(|turn| turn.stage)
     }
 
-    pub(crate) fn replay(&self) -> Replay {
-        self.state.replay()
-    }
-
     pub(crate) fn history(&self) -> &[Message] {
         &self.state.history
     }
@@ -187,6 +187,10 @@ impl SessionDriver {
 
     pub(crate) fn spent_tokens(&self) -> u64 {
         self.state.spent
+    }
+
+    pub(crate) fn turns(&self) -> usize {
+        self.state.turns
     }
 
     pub(crate) fn elapsed_millis(&self) -> u64 {
@@ -259,18 +263,27 @@ impl SessionDriver {
         Ok(snapshot)
     }
 
-    fn checkpoint(&self) -> Result<(), DriverError> {
-        if let Some(work) = &self.work {
-            let mark = work.trees_mark();
-            let trees = self.saved.load(Ordering::Relaxed) != mark;
-            work.save(&log::work_path(self.log.path()), trees)?;
-            self.saved.store(mark, Ordering::Relaxed);
+    fn checkpoint(&mut self) -> Result<(), DriverError> {
+        let Some(work) = &self.work else {
+            return Ok(());
+        };
+        let mark = work.trees_mark();
+        if self.saved != mark {
+            work.save_trees(self.log.path())?;
         }
-        Ok(())
+        let line = Line::Work {
+            work: Box::new(work.clone()),
+        };
+        self.saved = mark;
+        self.append(line)
     }
 
     fn append(&mut self, line: Line) -> Result<(), DriverError> {
-        self.log.append(&line)?;
+        let durability = match &line {
+            Line::Work { work } => work.durability(),
+            _ => store::Durability::Renamed,
+        };
+        self.log.append(&line, durability)?;
         self.pending.push(line.clone());
         self.state.apply(line);
         Ok(())
@@ -291,55 +304,54 @@ impl SessionDriver {
     }
 }
 
-pub(crate) fn work_at(path: &Path, workspace: &Path, policy: Policy, text: &str) -> bool {
-    let Ok(Line::Session {
+pub(crate) fn work_at(path: &Path, workspace: &Path, policy: WorkKind, text: &str) -> bool {
+    let Some(Ok(Line::Session {
         workspace: recorded,
         ..
-    }) = log::header(path)
+    })) = log::records(path, 0).next()
     else {
         return false;
     };
     if recorded != canonical(workspace) {
         return false;
     }
-    Work::load(&log::work_path(path))
-        .ok()
-        .flatten()
-        .is_some_and(|work| {
-            std::mem::discriminant(&work.policy) == std::mem::discriminant(&policy)
-                && work.objective == text
-                && !work.terminal()
-        })
+    Work::at(path).is_some_and(|work| {
+        std::mem::discriminant(&work.policy) == std::mem::discriminant(&policy)
+            && work.objective == text
+            && !work.terminal()
+    })
 }
 
 pub(crate) fn touched_at(path: &Path) -> Vec<String> {
-    Work::load(&log::work_path(path))
-        .ok()
-        .flatten()
+    Work::at(path)
         .map(|work| work.touched.into_iter().collect())
         .unwrap_or_default()
 }
 
-pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(Policy, String)> {
-    let Ok(Line::Session {
+pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(WorkKind, String)> {
+    let Some(Ok(Line::Session {
         workspace: recorded,
         ..
-    }) = log::header(path)
+    })) = log::records(path, 0).next()
     else {
         return None;
     };
     if recorded != canonical(workspace) {
         return None;
     }
-    Work::load(&log::work_path(path))
-        .ok()
-        .flatten()
-        .filter(|work| work.policy != Policy::Single && !work.terminal())
+    Work::at(path)
+        .filter(|work| work.policy != WorkKind::Single && !work.terminal())
         .map(|work| (work.policy, work.objective))
 }
 
 pub(crate) fn canonical(path: &Path) -> PathBuf {
     dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+impl From<DriverError> for summonr_core::error::Error {
+    fn from(error: DriverError) -> Self {
+        Self::Config(error.to_string())
+    }
 }
 
 #[cfg(test)]

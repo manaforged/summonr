@@ -1,32 +1,24 @@
 use std::path::Path;
 
-use crate::SKIP_DIRS;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
+use summonr_core::walk::{self, Walk};
 
 const LIST_MAX: usize = 200;
 
-pub(super) fn format_tree(path: &str, dir: &Path, depth: usize) -> Result<String> {
+pub(super) fn format_tree(path: &str, dir: &Path, depth: usize, base: Walk) -> Result<String> {
     let mut rows = Vec::new();
-    for entry in ignore::WalkBuilder::new(dir)
-        .require_git(false)
-        .hidden(false)
-        .max_depth(Some(depth))
-        .filter_entry(|entry| {
-            entry.depth() == 0
-                || !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
-        })
-        .build()
-        .filter_map(std::result::Result::ok)
-        .skip(1)
-    {
+    let walk = Walk {
+        depth: Some(depth),
+        ..base
+    };
+    for entry in walk.entries(dir).skip(1) {
         let rel = entry
             .path()
             .strip_prefix(dir)
             .unwrap_or_else(|_| entry.path())
             .to_string_lossy()
             .replace('\\', "/");
-        let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
+        let is_dir = walk::is_dir(&entry);
         rows.push((
             entry.depth(),
             format!("{rel}{}", if is_dir { "/" } else { "" }),
@@ -50,16 +42,16 @@ pub(super) fn format_tree(path: &str, dir: &Path, depth: usize) -> Result<String
     Ok(out)
 }
 
-pub(super) fn format_directory(path: &str, dir: &Path) -> Result<String> {
+pub(super) fn format_directory(path: &str, dir: &Path, base: Walk) -> Result<String> {
+    std::fs::read_dir(dir)
+        .map_err(|error| Error::Tool(format!("cannot list `{path}`: {error}")))?;
     let mut entries = Vec::new();
-    for entry in std::fs::read_dir(dir)
-        .map_err(|error| Error::Tool(format!("cannot list `{path}`: {error}")))?
-    {
-        let entry = entry.map_err(|error| Error::Tool(format!("cannot list `{path}`: {error}")))?;
+    let walk = Walk {
+        depth: Some(1),
+        ..base
+    };
+    for entry in walk.entries(dir).skip(1) {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if SKIP_DIRS.contains(&name.as_str()) {
-            continue;
-        }
         let meta = entry.metadata().ok();
         let kind = if meta.as_ref().is_some_and(std::fs::Metadata::is_dir) {
             "dir"

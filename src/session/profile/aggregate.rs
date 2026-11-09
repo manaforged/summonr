@@ -1,14 +1,14 @@
 use std::collections::BTreeMap;
 
 use crate::durable::log::{self, Line, Usage};
-use crate::error::Result;
-use crate::provider::ToolCall;
+use summonr_core::error::Result;
+use summonr_types::ToolCall;
 
 use super::fmt::{count, line, secs, share};
 use super::health::Health;
 
 pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
-    let home = crate::prompt::summonr_home()?;
+    let home = summonr_core::dirs::summonr_home()?;
     let mut paths: Vec<_> = crate::session::catalog::ids_in(&home)?
         .into_iter()
         .rev()
@@ -19,15 +19,16 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
     paths.reverse();
     let mut totals = Totals::default();
     for path in &paths {
-        let lines = match log::read(path) {
-            Ok(lines) => lines,
-            Err(_) => {
-                totals.skipped += 1;
-                continue;
+        let mut scan = SessionScan::default();
+        match log::records(path, 0).collect::<std::io::Result<Vec<_>>>() {
+            Ok(lines) => {
+                for line in lines {
+                    totals.add_line(&mut scan, line);
+                }
+                totals.read_sessions += 1;
             }
-        };
-        totals.read_sessions += 1;
-        totals.add_session(lines);
+            Err(_) => totals.skipped += 1,
+        }
     }
     Ok(totals.render())
 }
@@ -40,11 +41,8 @@ struct Totals {
     failed: usize,
     millis: u64,
     chars: u64,
-    input: u64,
-    output: u64,
-    cached: u64,
-    warm_input: u64,
-    warm_cached: u64,
+    usage: Usage,
+    warm: Usage,
     health: Health,
     first_edit: Vec<usize>,
     rss: Vec<u64>,
@@ -59,44 +57,27 @@ struct SessionScan {
 }
 
 impl Totals {
-    fn add_session(&mut self, lines: Vec<Line>) {
-        let mut scan = SessionScan::default();
-        for line in lines {
-            match line {
-                Line::Assistant {
-                    tool_calls, usage, ..
-                } => self.add_assistant(&mut scan, tool_calls, &usage),
-                Line::Tool {
-                    call,
-                    text,
-                    success,
-                    millis,
-                    ..
-                } => self.add_tool(&mut scan, &call, &text, success, millis),
-                Line::Tools { .. }
-                | Line::Session { .. }
-                | Line::User { .. }
-                | Line::Charge { .. }
-                | Line::Budget { .. }
-                | Line::Workflow { .. }
-                | Line::Child { .. }
-                | Line::Interrupted { .. }
-                | Line::Receipt { .. }
-                | Line::Summary { .. }
-                | Line::Rewrite { .. }
-                | Line::Clear => {}
-                Line::Close { footprint_kb, .. } => self.rss.extend(footprint_kb),
-            }
+    fn add_line(&mut self, scan: &mut SessionScan, line: Line) {
+        match line {
+            Line::Assistant {
+                tool_calls, usage, ..
+            } => self.add_assistant(scan, tool_calls, &usage),
+            Line::Tool {
+                call,
+                text,
+                success,
+                millis,
+                ..
+            } => self.add_tool(scan, &call, &text, success, millis),
+            Line::Close { footprint_kb, .. } => self.rss.extend(footprint_kb),
+            _ => {}
         }
     }
 
     fn add_assistant(&mut self, scan: &mut SessionScan, tool_calls: Vec<ToolCall>, usage: &Usage) {
-        self.input = self.input.saturating_add(usage.input);
-        self.output = self.output.saturating_add(usage.output);
-        self.cached = self.cached.saturating_add(usage.cached);
+        self.usage.add(*usage);
         if scan.warm {
-            self.warm_input = self.warm_input.saturating_add(usage.input);
-            self.warm_cached = self.warm_cached.saturating_add(usage.cached);
+            self.warm.add(*usage);
         } else {
             scan.warm = true;
         }
@@ -146,15 +127,15 @@ impl Totals {
             &mut out,
             format!(
                 "tokens  in {} ({} cached · cold {} hit · warm {} hit · uncached {}) · out {}",
-                count(self.input),
-                share(self.cached, self.input),
+                count(self.usage.input),
+                share(self.usage.cached, self.usage.input),
                 share(
-                    self.cached.saturating_sub(self.warm_cached),
-                    self.input.saturating_sub(self.warm_input)
+                    self.usage.cached.saturating_sub(self.warm.cached),
+                    self.usage.input.saturating_sub(self.warm.input)
                 ),
-                share(self.warm_cached, self.warm_input),
-                count(self.input.saturating_sub(self.cached)),
-                count(self.output)
+                share(self.warm.cached, self.warm.input),
+                count(self.usage.input.saturating_sub(self.usage.cached)),
+                count(self.usage.output)
             ),
         );
         for text in self.health.lines() {
@@ -177,8 +158,8 @@ impl Totals {
                 &mut out,
                 format!(
                     "mem      median {} · max {}",
-                    crate::text::megabytes(median),
-                    crate::text::megabytes(max)
+                    summonr_core::text::megabytes(median),
+                    summonr_core::text::megabytes(max)
                 ),
             );
         }

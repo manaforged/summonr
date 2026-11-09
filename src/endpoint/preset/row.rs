@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use super::*;
 use crate::provider::levels::STANDARD;
@@ -8,79 +8,16 @@ use crate::provider::{Effort, EffortField, Off, Scale};
 
 #[derive(Deserialize)]
 pub(super) struct File {
-    pub(super) preset: Vec<Row>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Row {
-    pub(super) name: String,
-    pub(super) base_url: String,
+    pub(super) preset: Vec<Preset>,
     #[serde(default)]
-    models_url: Option<String>,
-    #[serde(default)]
-    model: String,
-    #[serde(default)]
-    login_model: Option<String>,
-    #[serde(default)]
-    env_keys: Vec<String>,
-    #[serde(default)]
-    env_unset: Vec<String>,
-    #[serde(default)]
-    default_key: Option<String>,
-    #[serde(default)]
-    missing: Option<String>,
-    #[serde(default)]
-    aliases: BTreeMap<String, String>,
-    #[serde(default)]
-    oauth: Option<String>,
-    #[serde(default)]
-    headers: BTreeMap<String, String>,
-    #[serde(default)]
-    wire: Option<String>,
-    #[serde(default)]
-    reasoning: ReasoningRow,
-    #[serde(default)]
-    context_window: Option<u32>,
-    #[serde(default)]
-    opencode: bool,
-    #[serde(default)]
-    prompt_cache_key: bool,
-    #[serde(default)]
-    assistant_after_tool: bool,
-    #[serde(default)]
-    cache_ttl: Option<CacheTtl>,
-    #[serde(default)]
-    cache_header: Option<String>,
-    #[serde(default)]
-    cache_marks: bool,
-    #[serde(default)]
-    env_default: bool,
-    #[serde(default)]
-    plan: bool,
-    #[serde(default)]
-    off: bool,
-    #[serde(default)]
-    opencode_ids: Vec<String>,
-    #[serde(default)]
-    label: Option<String>,
-    #[serde(default)]
-    start: Option<String>,
-    #[serde(default)]
-    key_from: Vec<String>,
-    #[serde(default)]
-    provider: Option<String>,
-    #[serde(default)]
-    region: Option<super::super::Region>,
-    #[serde(default)]
-    replaces: Vec<String>,
+    pub(super) oauth: BTreeMap<String, crate::config::OAuth>,
 }
 
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-struct ReasoningRow {
+pub(super) struct ReasoningRow {
     #[serde(default)]
-    field: Option<String>,
+    field: Option<EffortField>,
     #[serde(default)]
     levels: Option<Vec<Effort>>,
     #[serde(default)]
@@ -91,25 +28,11 @@ struct ReasoningRow {
 
 type Checked<T> = std::result::Result<T, String>;
 
-fn leak_str(value: Option<&str>) -> Option<&'static str> {
-    value.map(|text| Box::leak(text.to_string().into_boxed_str()) as &'static str)
-}
-
-fn leak_list(values: &[String]) -> &'static [&'static str] {
-    let kept: Vec<&'static str> = values
-        .iter()
-        .map(|value| Box::leak(value.clone().into_boxed_str()) as &'static str)
-        .collect();
-    Box::leak(kept.into_boxed_slice())
-}
-
-fn leak_pairs(pairs: BTreeMap<String, String>) -> &'static [(String, String)] {
-    Box::leak(
-        pairs
-            .into_iter()
-            .collect::<Vec<(String, String)>>()
-            .into_boxed_slice(),
-    )
+pub(crate) fn wire<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Wire, D::Error> {
+    let named = String::deserialize(deserializer)?;
+    Wire::parse(&named).ok_or_else(|| serde::de::Error::custom(format!("unknown wire `{named}`")))
 }
 
 fn env_key_ok(key: &str) -> bool {
@@ -119,108 +42,66 @@ fn env_key_ok(key: &str) -> bool {
 }
 
 impl ReasoningRow {
-    fn spec(self, name: &str) -> Checked<Spec> {
-        let field = match self.field.as_deref() {
-            None | Some("reasoning_effort") => EffortField::ReasoningEffort,
-            Some("reasoning_object") => EffortField::ReasoningObject,
-            Some(other) => {
-                return Err(format!("`{name}` names unknown effort field `{other}`"));
-            }
-        };
-        let mut levels = self.levels.unwrap_or_else(|| STANDARD.to_vec());
+    fn spec(&self) -> Spec {
+        let mut levels = self.levels.clone().unwrap_or_else(|| STANDARD.to_vec());
         levels.sort();
         levels.dedup();
-        let off = self.off.unwrap_or(Off::Omit);
-        Ok(Spec {
-            field,
-            scale: Scale::new(Box::leak(levels.into_boxed_slice()), off),
+        Spec {
+            field: self.field.unwrap_or(EffortField::ReasoningEffort),
+            scale: Scale::new(
+                Box::leak(levels.into_boxed_slice()),
+                self.off.unwrap_or(Off::Omit),
+            ),
             by_model: !self.host_only,
-        })
+        }
     }
 }
 
-impl Row {
-    fn oauth(&self, name: &str) -> Checked<Option<fn() -> crate::config::OAuth>> {
-        self.oauth
+impl Preset {
+    pub(super) fn check(&mut self, logins: &BTreeMap<String, crate::config::OAuth>) -> Checked<()> {
+        let name = self.name.trim().to_string();
+        let base_url = self.base_url.trim().to_string();
+        if name.is_empty() || base_url.is_empty() {
+            return Err("every preset needs a name and a base_url".to_string());
+        }
+        self.oauth = self
+            .login
             .as_deref()
             .map(|named| {
-                login(named).ok_or_else(|| format!("`{name}` names unknown login `{named}`"))
+                let login = logins
+                    .get(named)
+                    .ok_or_else(|| format!("`{name}` names unknown login `{named}`"))?;
+                match login.unknown().first() {
+                    Some((key, value)) => {
+                        Err(format!("login `{named}` has unknown {key} `{value}`"))
+                    }
+                    None => Ok(login.clone()),
+                }
             })
-            .transpose()
-    }
-
-    fn wire(&self, name: &str) -> Checked<Wire> {
-        match self.wire.as_deref() {
-            None => Ok(Wire::Completions),
-            Some(named) => {
-                wire(named).map_err(|error| format!("`{name}` has an invalid wire: {error}"))
-            }
-        }
-    }
-
-    fn check_env_keys(&self, name: &str) -> Checked<()> {
-        match self
+            .transpose()?;
+        if let Some(key) = self
             .env_keys
             .iter()
             .chain(&self.env_unset)
             .find(|key| !env_key_ok(key))
         {
-            Some(key) => Err(format!("`{name}` lists env key `{key}`")),
-            None => Ok(()),
+            return Err(format!("`{name}` lists env key `{key}`"));
         }
-    }
-
-    fn missing(&self, name: &str) -> String {
-        self.missing.clone().unwrap_or_else(|| {
-            if self.env_keys.is_empty() {
-                format!("run `summonr login {name}`")
-            } else {
-                format!("run `summonr login {name}` or set {}", self.env_keys[0])
-            }
-        })
-    }
-
-    pub(super) fn into_preset(self, name: String, base_url: String) -> Checked<Preset> {
-        let oauth = self.oauth(&name)?;
-        let wire = self.wire(&name)?;
-        self.check_env_keys(&name)?;
-        let missing = self.missing(&name);
-        let reasoning = self.reasoning.spec(&name)?;
         if self.key_from.contains(&name) {
             return Err(format!("`{name}` reads its key from itself"));
         }
-        Ok(Preset {
-            models_url: leak_str(self.models_url.as_deref()),
-            model: self.model,
-            login_model: self.login_model,
-            env_keys: leak_list(&self.env_keys),
-            env_unset: leak_list(&self.env_unset),
-            default_key: leak_str(self.default_key.as_deref()),
-            missing,
-            aliases: leak_pairs(self.aliases),
-            oauth,
-            headers: leak_pairs(self.headers),
-            wire,
-            reasoning,
-            context_window: self.context_window,
-            opencode: self.opencode,
-            prompt_cache_key: self.prompt_cache_key,
-            assistant_after_tool: self.assistant_after_tool,
-            cache_ttl: self.cache_ttl,
-            cache_header: self.cache_header,
-            cache_marks: self.cache_marks,
-            env_default: self.env_default,
-            plan: self.plan,
-            off: self.off,
-            opencode_ids: leak_list(&self.opencode_ids),
-            label: self.label,
-            start: self.start,
-            key_from: self.key_from,
-            provider: self.provider.unwrap_or_else(|| name.clone()),
-            region: self.region,
-            replaces: self.replaces,
-            name,
-            base_url,
-        })
+        if self.missing.is_empty() {
+            self.missing = match self.env_keys.first() {
+                None => format!("run `summonr login {name}`"),
+                Some(key) => format!("run `summonr login {name}` or set {key}"),
+            };
+        }
+        if self.provider.is_empty() {
+            self.provider.clone_from(&name);
+        }
+        self.reasoning = self.reasoning_row.spec();
+        self.name = name;
+        self.base_url = base_url;
+        Ok(())
     }
 }

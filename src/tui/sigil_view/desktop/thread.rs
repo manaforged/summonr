@@ -2,7 +2,7 @@ use sigil::prelude::Paint;
 use sigil::prelude::{
     AlignItems, ControlSize, JustifyContent, LayoutBuilderExt, LayoutStyle, LogicalKey,
     ModifiersState, NodeBuilder, NodeEventsExt, Shortcut, Token, Tone, WidgetLayoutExt, button,
-    container, icon_button, node, notice_band, spacer, text_edit,
+    container, icon_button, node, notice_band, spacer,
 };
 
 use super::{App, Pane, chat};
@@ -196,7 +196,7 @@ fn starters(app: &App) -> NodeBuilder {
             .align_items(AlignItems::Center)
             .justify_content(JustifyContent::Center),
     );
-    if app.model.get().snapshot.unseated {
+    if app.model.get().snapshot.unconfigured {
         let providers = app.clone();
         actions = actions.child(
             button(ADD_PROVIDER)

@@ -3,7 +3,7 @@ use sigil::kernel::Role;
 use sigil::prelude::Key;
 
 use super::super::Pane;
-use super::harness::{changed, command, drive, graded, named, settings, unseated};
+use super::harness::{changed, command, drive, graded, named, settings, unconfigured};
 use super::in_window;
 use crate::provider::Effort;
 use crate::tui::{Activity, Cmd, Msg, Snapshot};
@@ -76,7 +76,7 @@ fn escape_closes_the_list_and_the_pane_without_cancelling_the_turn() {
 
 #[test]
 fn sending_with_no_provider_opens_the_providers_and_sends_nothing() {
-    let seen = drive(settings(unseated()), Vec::new(), |app| {
+    let seen = drive(settings(unconfigured()), Vec::new(), |app| {
         app.replace("hello".to_owned());
         app.submit();
         (app.auth.open.peek(), app.draft.peek())
@@ -92,7 +92,7 @@ fn sending_with_no_provider_opens_the_providers_and_sends_nothing() {
 
 #[test]
 fn the_empty_window_with_no_provider_offers_only_add_a_provider() {
-    let seen = drive(settings(unseated()), Vec::new(), |_| ());
+    let seen = drive(settings(unconfigured()), Vec::new(), |_| ());
     assert!(
         seen.shows(|text| text == "Add a provider"),
         "{}",

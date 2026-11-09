@@ -229,8 +229,9 @@ impl Pump {
         {
             app.resize(size.0, size.1);
         }
-        if let Some(code) = status(self.closed.get(), app.quit.peek()) {
-            return self.finish(&app, code);
+        let (closed, quit) = (self.closed.get(), app.quit.peek());
+        if quit || closed {
+            return self.finish(&app, i32::from(!quit));
         }
         let busy = app.model.get().busy_since.is_some();
         let notify = app.model.get().prefs.notify;
@@ -317,14 +318,4 @@ pub(in crate::tui::sigil_view) fn stop<T>(
             }
         });
     });
-}
-
-pub(in crate::tui::sigil_view) fn status(closed: bool, quit: bool) -> Option<i32> {
-    if quit {
-        Some(0)
-    } else if closed {
-        Some(1)
-    } else {
-        None
-    }
 }

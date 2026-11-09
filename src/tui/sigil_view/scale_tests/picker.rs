@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::super::app::App;
 use super::{State, busy_info, frame_with, screens};
 use crate::catalog::Model;
-use crate::recent::Seat;
+use crate::recent::ModelId;
 use crate::tui::Msg;
 
 fn session(id: &str, parent: Option<&str>) -> crate::session::SessionInfo {
@@ -18,6 +18,31 @@ fn session(id: &str, parent: Option<&str>) -> crate::session::SessionInfo {
         parent: parent.map(str::to_string),
         depth: 0,
     }
+}
+
+#[test]
+fn filtering_sessions_keeps_the_cursor_on_the_visible_result() {
+    let selected = std::cell::Cell::new(usize::MAX);
+    let shown = screens(
+        110,
+        34,
+        |app| {
+            app.open_sessions(false);
+            app.update(Msg::Sessions(Ok(vec![
+                (session("first", None), true),
+                (session("second", None), true),
+                (session("third", None), true),
+            ])));
+            app.sessions.list.select(2);
+        },
+        &[
+            &|app: &App| app.sessions.list.type_query("first".to_string()),
+            &|app: &App| selected.set(app.sessions.list.cursor.peek()),
+        ],
+    );
+    assert!(shown[1].contains("Session first"), "{}", shown[1]);
+    assert!(!shown[1].contains("Session third"), "{}", shown[1]);
+    assert_eq!(selected.get(), 0, "cursor must follow the filtered result");
 }
 
 #[test]
@@ -87,7 +112,7 @@ fn cycling_to_related_sessions_selects_the_current_branch() {
         ])));
         app.sessions.scope();
         app.sessions.scope();
-        assert_eq!(app.sessions.selected.peek(), 1);
+        assert_eq!(app.sessions.list.cursor.peek(), 1);
         assert_eq!(app.sessions.rows()[1].id, current);
     });
 }
@@ -104,16 +129,16 @@ fn days_ago(days: u64) -> Option<u64> {
 fn open(app: &App, rows: &[(&str, Option<u64>)], pinned: usize) {
     app.replace("/model".to_owned());
     app.submit();
-    let seat = |id: &str| Seat::new("openrouter", id);
+    let selection = |id: &str| ModelId::new("openrouter", id);
     app.update(Msg::Models {
         request: 1,
-        rows: rows.iter().map(|(id, _)| seat(id)).collect(),
+        rows: rows.iter().map(|(id, _)| selection(id)).collect(),
         facts: rows
             .iter()
             .map(|(id, release)| {
                 let mut model = Model::named(*id);
                 model.release = *release;
-                (seat(id), model)
+                (selection(id), model)
             })
             .collect(),
         groups: BTreeMap::new(),

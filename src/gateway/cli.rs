@@ -3,7 +3,8 @@ use std::path::Path;
 use super::telegram::Bot;
 use super::turn::{self, Options};
 use super::{SECRET, block, store, token};
-use crate::error::{Error, Result};
+use crate::command::table::{self, Row, Table};
+use summonr_core::error::{Error, Result};
 
 const USAGE: &str = "usage:\n  summonr gateway setup telegram\n  summonr gateway telegram [--endpoint E] [--model M] [--dir D]\n  summonr gateway pair CODE\n  summonr gateway unpair USER_ID\n  summonr gateway status\n  summonr gateway webhook [--port N]\n\nThe Telegram bridge long-polls the Bot API; no port opens.";
 const TOKEN_PROMPT: &str = "Telegram bot token: ";
@@ -35,19 +36,16 @@ pub fn run(
 }
 
 fn asks_help(words: &[&str]) -> bool {
-    words.is_empty()
-        || words == ["help"]
-        || words.iter().any(|word| matches!(*word, "--help" | "-h"))
+    words.is_empty() || words == ["help"] || table::asks_help(words)
 }
 
 fn webhook(words: &[&str]) -> Result<i32> {
     match words {
         [] => super::webhook::serve(crate::limits::limits().gateway_port),
         ["--port"] => Err(misuse("--port needs a value")),
-        ["--port", port] => super::webhook::serve(
-            port.parse()
-                .map_err(|error| misuse(&format!("expected a number, got `{port}`: {error}")))?,
-        ),
+        ["--port", port] => {
+            super::webhook::serve(table::number(port).map_err(|message| misuse(&message))?)
+        }
         [..] => Err(misuse(&format!(
             "unknown webhook option `{}`",
             words.join(" ")
@@ -67,26 +65,37 @@ fn user_id(text: &str) -> Result<i64> {
     })
 }
 
+type OptionFlag = Row<Options>;
+
+const OPTIONS: Table<Options> = Table {
+    rows: &[
+        OptionFlag::value(&["--endpoint"], "", |options, value| {
+            options.endpoint = Some(value);
+            Ok(())
+        }),
+        OptionFlag::value(&["--model"], "", |options, value| {
+            options.model = Some(value);
+            Ok(())
+        }),
+        OptionFlag::value(&["--dir"], "", |options, value| {
+            options.dir = value.into();
+            Ok(())
+        }),
+    ],
+    missing: |flag, _| format!("{flag} needs a value"),
+    unknown: |flag| format!("unknown option `{flag}`"),
+    error: |message| misuse(&message),
+    dash_values: true,
+    pairs: true,
+};
+
 fn options(words: &[&str], cwd: &Path) -> Result<Options> {
     let mut options = Options {
         dir: cwd.to_path_buf(),
         ..Options::default()
     };
-    let mut words = words.iter().copied();
-    while let Some(flag) = words.next() {
-        let value = words
-            .next()
-            .ok_or_else(|| misuse(&format!("{flag} needs a value")))?
-            .to_string();
-        match flag {
-            "--endpoint" => options.endpoint = Some(value),
-            "--model" => options.model = Some(value),
-            "--dir" => options.dir = cwd.join(value),
-            unknown => {
-                return Err(misuse(&format!("unknown option `{unknown}`")));
-            }
-        }
-    }
+    OPTIONS.walk(&mut options, words.iter().map(ToString::to_string))?;
+    options.dir = cwd.join(&options.dir);
     Ok(options)
 }
 

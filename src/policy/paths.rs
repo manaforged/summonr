@@ -1,4 +1,4 @@
-use super::shell::{WRAPPERS, command_pieces, skip_wrapper_args};
+use super::shell::{command_pieces, skip_wrapper_args, wrapper};
 use super::*;
 
 pub(crate) fn split_segments(command: &str) -> Vec<String> {
@@ -27,7 +27,7 @@ pub(super) fn unwrap_segment(segment: &str) -> String {
         let (word, tail) = text.split_once([' ', '\t']).unwrap_or((text, ""));
         let name = word.trim_start_matches('\\');
         let name = name.rsplit('/').next().unwrap_or(name);
-        if !WRAPPERS.contains(&name) {
+        if !wrapper(name) {
             return text.trim_start_matches('\\').to_string();
         }
         text = skip_wrapper_args(name, tail.trim_start());
@@ -55,81 +55,6 @@ pub(super) fn inline_script(segment: &str) -> Option<String> {
     )
 }
 
-pub(crate) fn unquoted(command: &str, delimiters: &[&str]) -> Vec<String> {
-    let mut segments = Vec::new();
-    let mut current = String::new();
-    let mut open: Vec<char> = Vec::new();
-    let mut rest = command;
-    while let Some(ch) = rest.chars().next() {
-        let take = match open.last() {
-            Some('\'') => single_quoted(&mut open, ch),
-            Some('"') => double_quoted(&mut open, ch, rest),
-            _ => match bare(&mut open, ch, rest, &current, delimiters) {
-                Scan::Take(take) => take,
-                Scan::Split(len) => {
-                    segments.push(std::mem::take(&mut current));
-                    rest = &rest[len..];
-                    continue;
-                }
-            },
-        };
-        current.push_str(&rest[..take]);
-        rest = &rest[take..];
-    }
-    segments.push(current);
-    segments
-}
-
-enum Scan {
-    Take(usize),
-    Split(usize),
-}
-
-fn escaped(ch: char, rest: &str) -> usize {
-    let take = ch.len_utf8();
-    take + rest[take..].chars().next().map_or(0, char::len_utf8)
-}
-
-fn single_quoted(open: &mut Vec<char>, ch: char) -> usize {
-    if ch == '\'' {
-        open.pop();
-    }
-    ch.len_utf8()
-}
-
-fn double_quoted(open: &mut Vec<char>, ch: char, rest: &str) -> usize {
-    if ch == '\\' {
-        return escaped(ch, rest);
-    }
-    if ch == '"' {
-        open.pop();
-    } else if rest.starts_with("$(") {
-        open.push('(');
-        return 2;
-    }
-    ch.len_utf8()
-}
-
-fn bare(open: &mut Vec<char>, ch: char, rest: &str, current: &str, delimiters: &[&str]) -> Scan {
-    if ch == '\\' {
-        return Scan::Take(escaped(ch, rest));
-    }
-    if ch == '\'' || ch == '"' {
-        open.push(ch);
-    } else if rest.starts_with("$(") {
-        open.push('(');
-        return Scan::Take(2);
-    } else if ch == ')' && open.last() == Some(&'(') {
-        open.pop();
-    } else if let Some(delimiter) = delimiters.iter().find(|d| {
-        rest.starts_with(*d)
-            && !(**d == "&" && (current.ends_with(['>', '<']) || rest.starts_with("&>")))
-    }) {
-        return Scan::Split(delimiter.len());
-    }
-    Scan::Take(ch.len_utf8())
-}
-
 pub(super) fn in_temp(word: &str) -> bool {
     let temp = std::env::temp_dir();
     let target = Path::new(word.trim_end_matches('*'));
@@ -145,7 +70,7 @@ pub(super) fn is_outside(
     outside_cwd: bool,
     extra: &[PathBuf],
 ) -> bool {
-    if matches!(word, "/dev/null" | "/dev/stdout" | "/dev/stderr") {
+    if rules().shell.devices.contains(word) {
         return false;
     }
     if let Some(target) = crate::config::expand_tilde(word) {
@@ -160,7 +85,7 @@ pub(super) fn is_outside(
             .trim_start_matches('{')
             .trim_end_matches('}');
         let head = name.split(['/', '\\']).next().unwrap_or(name);
-        return matches!(head, "HOME" | "TMPDIR" | "TMP" | "TEMP" | "TEMPDIR" | "PWD");
+        return rules().shell.outside_vars.contains(head);
     }
     if Path::new(word).has_root() {
         return !is_inside(Path::new(word), workspace, extra);
@@ -275,7 +200,7 @@ pub(super) fn is_inside(target: &Path, workspace: &Path, extra: &[PathBuf]) -> b
 }
 
 pub(super) fn wipes_root(folded: &str) -> bool {
-    ["rm -rf /", "rm -fr /", "rm -r /"].iter().any(|prefix| {
+    rules().shell.root_wipes.iter().any(|prefix| {
         folded.match_indices(prefix).any(|(index, _)| {
             matches!(
                 folded[index + prefix.len()..].chars().next(),

@@ -2,50 +2,11 @@ use super::turn::WaitError;
 use super::*;
 use crate::workflow;
 
-pub(super) fn force_compact(history: &[Message]) -> Vec<(usize, Message)> {
-    let live = live_outputs(history, history.len());
-    let target = live
-        .iter()
-        .map(|index| history[*index].content.len())
-        .sum::<usize>()
-        .div_ceil(2);
-    let keep = live.len().saturating_sub(KEEP_TAIL).max(1).min(live.len());
-    clear_outputs(history, &live[..keep], target).0
-}
+mod clear;
+mod window;
 
-fn live_outputs(history: &[Message], before: usize) -> Vec<usize> {
-    history[..before.min(history.len())]
-        .iter()
-        .enumerate()
-        .filter(|(_, message)| {
-            message.role == Role::Tool && !message.content.starts_with("[cleared")
-        })
-        .map(|(index, _)| index)
-        .collect()
-}
-
-fn clear_outputs(
-    history: &[Message],
-    candidates: &[usize],
-    target: usize,
-) -> (Vec<(usize, Message)>, usize) {
-    let mut reclaimed = 0;
-    let mut edits = Vec::new();
-    for &index in candidates {
-        if reclaimed >= target {
-            break;
-        }
-        let message = &history[index];
-        let cleared = format!("[cleared {} chars]", message.content.len());
-        if cleared.len() >= message.content.len() {
-            continue;
-        }
-        reclaimed += message.content.len() - cleared.len();
-        let call = message.tool_call_id.clone().unwrap_or_default();
-        edits.push((index, Message::tool(call, cleared)));
-    }
-    (edits, reclaimed)
-}
+pub(super) use clear::force_compact;
+use window::fired_ceiling;
 
 pub(super) fn repair_arguments(history: &[Message]) -> Vec<(usize, Message)> {
     let Some(index) = history.iter().rposition(|m| m.role == Role::Assistant) else {
@@ -68,9 +29,6 @@ struct Size {
 }
 
 pub(super) const CHARS_PER_TOKEN: usize = 4;
-const KEEP_TAIL: usize = 2;
-const RESERVE_TOKENS: u32 = 16_384;
-const TAIL_TOKENS: u32 = 24_000;
 
 const SUMMARY_ASK: &str = "Do not call tools. Summarize this session so it can continue without the raw history. \
     Exactly these sections, terse bullets: Goal / Constraints / Progress / Key decisions / \
@@ -79,16 +37,11 @@ const SUMMARY_ASK: &str = "Do not call tools. Summarize this session so it can c
 
 pub(super) fn estimate(chars: usize, sample: Option<(usize, u32)>) -> usize {
     match sample {
-        Some((sample_chars, tokens)) if chars >= sample_chars && tokens > 0 => {
-            tokens as usize + chars.saturating_sub(sample_chars).div_ceil(CHARS_PER_TOKEN)
+        Some((sample_chars, tokens)) if sample_chars > 0 && tokens > 0 => {
+            chars.saturating_mul(tokens as usize).div_ceil(sample_chars)
         }
         _ => chars.div_ceil(CHARS_PER_TOKEN),
     }
-}
-
-fn under_pressure(estimated_tokens: usize, window: u32) -> bool {
-    estimated_tokens.saturating_mul(100)
-        >= (window as usize).saturating_mul(crate::limits::limits().compact_percent)
 }
 
 impl<P: Provider> Loop<P> {
@@ -105,7 +58,7 @@ impl<P: Provider> Loop<P> {
                 slot.clone_from(message);
             }
         }
-        self.session.rewrite(edits).map_err(super::session_err)?;
+        self.session.rewrite(edits)?;
         Ok(())
     }
 
@@ -119,29 +72,58 @@ impl<P: Provider> Loop<P> {
         request_messages.extend_from_slice(slice);
         request_messages.push(Message::user(SUMMARY_ASK.to_string()));
         let advertised = self.advertised_tools();
-        let request = self
-            .request(
+        match self
+            .side_call(
                 workflow::Role::Summary,
                 &request_messages,
-                &advertised.tools,
-                false,
+                Some(&advertised),
             )
-            .with_tools_json(&advertised.json);
-        match self
-            .complete_once(workflow::Role::Summary, &request)
             .await?
+            .map_err(|missed| missed.error)
         {
-            Ok(message)
-                if message
+            Ok(reply)
+                if reply
+                    .message
                     .content
                     .as_ref()
                     .is_some_and(|text| !text.trim().is_empty()) =>
             {
-                Ok(Some(message))
+                Ok(Some(reply.message))
             }
-            Ok(_) | Err(WaitError::Provider(_)) => Ok(None),
+            Ok(_) => Ok(None),
+            Err(WaitError::Provider(error)) => {
+                if let Some(cap) = crate::provider::input_cap(&error.to_string()) {
+                    self.learn_role_window(workflow::Role::Summary, cap);
+                }
+                Ok(None)
+            }
             Err(wait_error) => Err(wait_error.error()),
         }
+    }
+
+    async fn summarize_until(
+        &mut self,
+        messages: &[Message],
+        keep_from: usize,
+        usage: &mut Usage,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Option<String>> {
+        let Some(reply) = self
+            .summarize(&messages[0], &messages[1..keep_from])
+            .await?
+        else {
+            return Ok(None);
+        };
+        usage.add(&reply.usage);
+        self.emit_records(events, emit)?;
+        if let Some(reason) = self.round_abort() {
+            return Err(Error::Config(reason));
+        }
+        let summary = reply.content.unwrap_or_default();
+        self.session.compact(&summary, &messages[keep_from..])?;
+        self.tools.forget_reads();
+        Ok(Some(summary))
     }
 
     pub(super) async fn auto_compact(
@@ -155,15 +137,23 @@ impl<P: Provider> Loop<P> {
         if self.summary_wait > 0 {
             return Ok(false);
         }
-        let keep = self.provider.keeps_reasoning();
-        let chars: usize = messages.iter().map(|m| message_chars(m, keep)).sum();
+        let parts = self.measure_parts(messages, tool_bytes);
+        self.prompt_parts = parts;
+        let chars = parts.0 + parts.2 + parts.3;
         let estimated_tokens = self.estimated_prompt_tokens(chars, tool_bytes);
-        let window = self.compact_window();
+        let known = self.known_window();
+        if let Some(window) = known
+            && self.clear_old_outputs(messages, chars, estimated_tokens, window)?
+        {
+            return Ok(true);
+        }
+        let Some(window) = fired_ceiling(chars, estimated_tokens, known, self.compact_tokens)
+        else {
+            return Ok(false);
+        };
+        let keep = self.provider.keeps_reasoning();
         let compact_chars = crate::limits::limits().compact_chars;
-        let pressure = window.map_or(chars >= compact_chars, |window| {
-            under_pressure(estimated_tokens, window)
-        });
-        if !pressure || messages.len() < 8 {
+        if messages.len() < 8 {
             return Ok(false);
         }
         let tail_chars = tail_chars(window, chars, estimated_tokens, compact_chars);
@@ -177,18 +167,11 @@ impl<P: Provider> Loop<P> {
             window,
             keep_from,
         };
-        if self.elide_stale(messages, &size, events, emit)? {
+        if self.elide_stale(messages, &size)? {
             return Ok(true);
         }
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: "compacting the context…".to_string(),
-            },
-        )?;
         let Some(summary) = self
-            .summarize(&messages[0], &messages[1..keep_from])
+            .summarize_until(messages, keep_from, usage, events, emit)
             .await?
         else {
             self.summary_wait = crate::limits::limits().summary_retry_rounds;
@@ -205,70 +188,34 @@ impl<P: Provider> Loop<P> {
             )?;
             return Ok(false);
         };
-        self.count_usage(&summary, usage);
-        self.emit_records(events, emit)?;
-        if let Some(reason) = self.round_abort() {
-            return Err(Error::Config(reason));
-        }
-        let summary = summary.content.unwrap_or_default();
-        self.session
-            .compact(&summary, &messages[keep_from..])
-            .map_err(super::session_err)?;
-        self.tools.forget_reads();
         messages.truncate(1);
         messages.extend(self.session.history().iter().cloned());
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: "context auto-compacted: earlier turns summarized".to_string(),
-            },
-        )?;
         self.compact_hook(&summary, events, emit).await?;
         Ok(true)
     }
 
-    fn compact_window(&self) -> Option<u32> {
-        match (self.context_window, self.compact_tokens) {
-            (Some(window), Some(cap)) => Some(window.min(cap)),
-            (window, cap) => window.or(cap),
+    fn measure_parts(
+        &self,
+        messages: &[Message],
+        tool_bytes: usize,
+    ) -> (usize, usize, usize, usize) {
+        let keep = self.provider.keeps_reasoning();
+        let mut system = 0;
+        let mut tools = 0;
+        let mut other = 0;
+        for message in messages {
+            let chars = message_chars(message, keep);
+            match message.role {
+                Role::System => system += chars,
+                Role::Tool => tools += chars,
+                _ => other += chars,
+            }
         }
+        (system, tool_bytes, tools, other)
     }
 
-    fn elide_stale(
-        &mut self,
-        messages: &mut [Message],
-        size: &Size,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<bool> {
-        let limits = crate::limits::limits();
-        let target_chars = size.window.map_or(
-            limits.compact_chars.saturating_mul(limits.elide_percent)
-                / limits.compact_percent.max(1),
-            |window| {
-                size.chars
-                    .saturating_mul(window as usize * limits.elide_percent / 100)
-                    / size.estimated_tokens.max(1)
-            },
-        );
-        let needed = size.chars.saturating_sub(target_chars);
-        let stale = live_outputs(&messages[1..], size.keep_from - 1);
-        let (edits, reclaimed) = clear_outputs(&messages[1..], &stale, needed);
-        if needed == 0 || reclaimed < needed {
-            return Ok(false);
-        }
-        let cleared = edits.len();
-        self.rewrite(messages, edits)?;
-        self.tools.forget_reads();
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: format!("context compacted: cleared {cleared} old tool outputs"),
-            },
-        )?;
-        Ok(true)
+    pub(crate) fn prompt_parts(&self) -> (usize, usize, usize, usize) {
+        self.prompt_parts
     }
 
     async fn compact_hook(
@@ -309,25 +256,21 @@ impl<P: Provider> Loop<P> {
         else {
             return Ok(false);
         };
-        let Some(reply) = self
-            .summarize(&messages[0], &messages[1..keep_from])
+        if self
+            .summarize_until(
+                &messages,
+                keep_from,
+                &mut Usage::default(),
+                &mut Vec::new(),
+                &mut emit,
+            )
             .await?
-        else {
+            .is_none()
+        {
             return Err(Error::Config(
                 "the compaction summary failed; the context is unchanged".to_string(),
             ));
-        };
-        self.count_usage(&reply, &mut Usage::default());
-        self.emit_records(&mut Vec::new(), &mut emit)?;
-        if let Some(reason) = self.round_abort() {
-            return Err(Error::Config(reason));
         }
-        let summary = reply.content.unwrap_or_default();
-        self.session
-            .compact(&summary, &messages[keep_from..])
-            .map_err(super::session_err)?;
-        self.spent_tokens = self.session.spent_tokens();
-        self.tools.forget_reads();
         Ok(true)
     }
 }
@@ -354,9 +297,13 @@ fn tail_chars(
 ) -> usize {
     window.map_or(compact_chars / 4, |window| {
         let tail_tokens = window
-            .saturating_sub(RESERVE_TOKENS.min(window / 4))
+            .saturating_sub(
+                crate::limits::limits()
+                    .compact_reserve_tokens
+                    .min(window / 4),
+            )
             .div_ceil(4)
-            .clamp(1, TAIL_TOKENS);
+            .clamp(1, crate::limits::limits().compact_tail_tokens);
         chars
             .saturating_mul(tail_tokens as usize)
             .checked_div(estimated_tokens.max(1))

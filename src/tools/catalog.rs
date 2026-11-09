@@ -1,13 +1,14 @@
+use serde::Deserialize;
+use serde_json::Value;
+use summonr_types::catalog::{Gate, catalog};
+
 use crate::provider::ToolDefinition;
 
-use super::{ToolRegistry, tool};
+use super::ToolRegistry;
+use summonr_core::error::{Error, Result};
 
-mod browser;
-mod patch;
-mod search;
-use browser::browser;
-pub(crate) use patch::shaped;
-use search::search;
+pub(super) use summonr_types::catalog::retired;
+pub(crate) use summonr_types::catalog::{Builtin, readonly, retired_op};
 
 impl ToolRegistry {
     pub(crate) fn set_modules(&mut self, switches: &crate::modules::Switches) -> crate::Result<()> {
@@ -39,350 +40,156 @@ impl ToolRegistry {
         Ok(())
     }
 
+    pub(in crate::tools) fn set_browser(&mut self, on: bool) -> Result<()> {
+        self.browser = if on {
+            Some(match self.browser.take() {
+                Some(held) => held,
+                None => crate::browser::Browser::discover()?,
+            })
+        } else {
+            None
+        };
+        Ok(())
+    }
+
+    pub(in crate::tools) async fn browse(&self, arguments: &str) -> Result<String> {
+        let session = self.session.lock().ok().and_then(|held| held.clone());
+        let browser = self
+            .browser
+            .as_ref()
+            .ok_or_else(|| Error::Tool("the browser module is off".to_string()))?;
+        let resolve = |path: &str| self.resolve_read(path, crate::tools::paths::Shield::Contained);
+        browser.call(arguments, &resolve, session.as_deref()).await
+    }
+
     pub(crate) fn definitions(&self) -> Vec<ToolDefinition> {
-        let (lsp_on, skill_on) = *self.probed.get_or_init(|| {
+        catalog()
+            .tool
+            .iter()
+            .filter(|spec| self.allows(spec.advertise))
+            .filter_map(|spec| spec.definition.clone())
+            .map(shaped_tool)
+            .collect()
+    }
+
+    pub(super) fn enabled(&self, kind: Builtin) -> bool {
+        self.allows(kind.spec().run)
+    }
+
+    fn probed(&self) -> (bool, bool) {
+        *self.probed.get_or_init(|| {
             (
                 self.language && super::lsp::available(&self.workspace),
                 self.skills && crate::skills::catalog(&self.workspace).is_some(),
             )
-        });
-        let mut all = vec![read(), search(), edit(), write()];
-        if skill_on {
-            all.push(skill());
-        }
-        if lsp_on {
-            all.push(lsp());
-        }
-        all.push(run_command());
-        if self.search.is_some() {
-            all.push(web());
-        }
-        if self.browser.is_some() {
-            all.push(browser());
-        }
-        all.push(todo());
-        all
+        })
     }
 
-    pub(super) fn enabled(&self, kind: Builtin) -> bool {
-        match kind {
-            Builtin::Read | Builtin::Search | Builtin::Todo | Builtin::Edit | Builtin::Write => {
-                true
-            }
-            Builtin::Skill => self.skills,
-            Builtin::Lsp => self.language,
-            Builtin::RunCommand => !self.policy.is_read_only(),
-            Builtin::Web => self.search.is_some(),
-            Builtin::Browser => self.browser.is_some() && !self.policy.is_read_only(),
-            Builtin::Task => false,
+    fn allows(&self, gate: Gate) -> bool {
+        match gate {
+            Gate::Always => true,
+            Gate::Never => false,
+            Gate::TaskList => self.task_list,
+            Gate::Skills => self.skills,
+            Gate::SkillCatalog => self.probed().1,
+            Gate::Language => self.language,
+            Gate::LspAvailable => self.probed().0,
+            Gate::Writable => !self.policy.is_read_only() || self.policy.shell_allowed(),
+            Gate::Web => self.search.is_some(),
+            Gate::Browser => self.browser.is_some(),
+            Gate::BrowserWritable => self.browser.is_some() && !self.policy.is_read_only(),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Builtin {
-    Read,
-    Search,
-    Edit,
-    Write,
-    Lsp,
-    Skill,
-    RunCommand,
-    Todo,
-    Web,
-    Browser,
-    Task,
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Fill {
+    ReadLineLimit,
+    ReadPageKib,
+    CommandWaitSecs,
+    SearchSecs,
+    SearchContextMax,
+    SearchDefault,
+    SearchMax,
 }
 
-const LIVE: &[(&str, Builtin)] = &[
-    ("read", Builtin::Read),
-    ("search", Builtin::Search),
-    ("edit", Builtin::Edit),
-    ("write", Builtin::Write),
-    ("lsp", Builtin::Lsp),
-    ("skill", Builtin::Skill),
-    ("run_command", Builtin::RunCommand),
-    ("todo", Builtin::Todo),
-    ("web", Builtin::Web),
-    ("browser", Builtin::Browser),
-    ("task", Builtin::Task),
-];
-
-impl Builtin {
-    #[must_use]
-    pub(crate) fn live(name: &str) -> Option<Self> {
-        LIVE.iter()
-            .find(|(live, _)| *live == name)
-            .map(|(_, kind)| *kind)
-    }
-
-    #[must_use]
-    pub(crate) fn of(name: &str) -> Option<Self> {
-        Self::live(canonical(name))
-    }
-
-    #[must_use]
-    pub(crate) fn is(name: &str, kind: Self) -> bool {
-        Self::of(name) == Some(kind)
-    }
-
-    #[must_use]
-    pub(crate) fn readonly(self) -> bool {
-        matches!(
-            self,
-            Self::Read | Self::Search | Self::Lsp | Self::Skill | Self::Todo | Self::Web
-        )
-    }
-
-    #[must_use]
-    pub(crate) fn edits(self) -> bool {
-        matches!(self, Self::Edit | Self::Write)
-    }
-
-    #[must_use]
-    pub(crate) fn verb(self) -> &'static str {
+impl Fill {
+    fn value(self) -> u64 {
+        let limits = crate::limits::limits();
+        let count = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
         match self {
-            Self::Read => "Read",
-            Self::Search => "Search",
-            Self::Edit => "Edit",
-            Self::Write => "Write",
-            Self::Lsp => "Lsp",
-            Self::Skill => "Skill",
-            Self::RunCommand => "Run",
-            Self::Todo => "Tasks",
-            Self::Web => "Web",
-            Self::Browser => "Browse",
-            Self::Task => "Subagent",
+            Self::ReadLineLimit => count(limits.read_line_limit),
+            Self::ReadPageKib => count(super::budget::SHAPED_BUDGET / 1024),
+            Self::CommandWaitSecs => limits.command_wait_secs,
+            Self::SearchSecs => limits.search_secs,
+            Self::SearchContextMax => count(super::workspace::search::CONTEXT_MAX),
+            Self::SearchDefault => count(super::workspace::search::GREP_DEFAULT),
+            Self::SearchMax => count(super::workspace::search::GREP_MAX),
         }
     }
 }
 
-pub(crate) const RETIRED: &[(&str, &str, Option<&str>)] = &[
-    ("read_file", "read", Some("file")),
-    ("list_dir", "read", Some("list")),
-    ("grep", "search", None),
-    ("glob", "search", None),
-    ("show_image", "read", Some("image")),
-    ("apply_patch", "edit", None),
-    ("edit_file", "edit", None),
-    ("replace_text", "edit", None),
-    ("replace_texts", "edit", Some("sequence")),
-    ("replace_lines", "edit", None),
-    ("insert_after", "edit", None),
-    ("delete_lines", "edit", Some("delete")),
-    ("write_file", "write", None),
-    ("diagnostics", "lsp", Some("diagnostics")),
-    ("definition", "lsp", Some("definition")),
-    ("web_search", "web", Some("search")),
-    ("web_fetch", "web", Some("fetch")),
-];
-
-#[must_use]
-fn canonical(name: &str) -> &str {
-    RETIRED
-        .iter()
-        .find(|(retired, _, _)| *retired == name)
-        .map_or(name, |(_, live, _)| live)
+fn fill_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let token = after.find('}').map(|close| &after[..close]);
+        match token
+            .and_then(|token| serde_json::from_value::<Fill>(Value::String(token.to_string())).ok())
+        {
+            Some(fill) => {
+                out.push_str(&fill.value().to_string());
+                rest = &after[token.map_or(0, str::len) + 1..];
+            }
+            None => {
+                out.push('{');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
-pub(crate) fn retired_op(name: &str) -> Option<&'static str> {
-    RETIRED
-        .iter()
-        .find(|(retired, _, _)| *retired == name)
-        .and_then(|(_, _, op)| *op)
+fn fill_schema(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if map.len() == 1
+                && let Some(fill) = map
+                    .get("fill")
+                    .and_then(|token| serde_json::from_value::<Fill>(token.clone()).ok())
+            {
+                *value = Value::from(fill.value());
+                return;
+            }
+            map.values_mut().for_each(fill_schema);
+        }
+        Value::Array(items) => items.iter_mut().for_each(fill_schema),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
 }
 
-pub(crate) fn readonly(name: &str) -> bool {
-    Builtin::of(name).is_some_and(Builtin::readonly)
+fn shaped_tool(mut definition: ToolDefinition) -> ToolDefinition {
+    fill_schema(&mut definition.function.parameters);
+    definition.function.description = fill_text(&definition.function.description);
+    definition
 }
 
-fn read() -> ToolDefinition {
-    tool(
-        "read",
-        "Read files (N:text; offset/limit, widened by before/after/context; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree, or view an image file. op=help returns the full reference.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "offset": {"type": "integer", "minimum": 1},
-                "limit": {"type": "integer", "minimum": 1, "maximum": crate::limits::limits().read_line_limit},
-                "paths": {"type": "array", "items": {"type": "string"}},
-                "before": {"type": "integer", "minimum": 0, "maximum": 10},
-                "after": {"type": "integer", "minimum": 0, "maximum": 10},
-                "context": {"type": "integer", "minimum": 0, "maximum": 10},
-                "tags": {"type": "boolean"},
-                "recursive": {"type": "boolean"},
-                "depth": {"type": "integer", "minimum": 1},
-                "op": {"type": "string", "enum": ["file", "list", "image", "help"]}
-            },
-            "additionalProperties": false
-        }),
-    )
+pub(crate) fn shaped(definitions: Vec<ToolDefinition>, patch: bool) -> Vec<ToolDefinition> {
+    let mut shaped = definitions;
+    if patch {
+        shaped.push(shaped_tool(catalog().apply_patch.clone()));
+    }
+    shaped
 }
 
-fn edit() -> ToolDefinition {
-    tool(
-        "edit",
-        "Change an existing file. Use old+new: copy old exactly from the file, including indentation; it must be unique. edits[] applies several at once, in order if they overlap. Tags (from read with tags true) are only for when old is not unique. op=help covers moves, ranges, and patches. New or empty files: write.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "old": {"type": "string"},
-                "new": {"type": "string"},
-                "tag": {"type": "string"},
-                "text": {"type": "string"},
-                "replace_all": {"type": "boolean"},
-                "op": {"type": "string", "enum": ["delete", "sequence", "help"]},
-                "edits": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "old": {"type": "string"},
-                            "new": {"type": "string"},
-                            "tag": {"type": "string"},
-                            "text": {"type": "string"},
-                            "replace_all": {"type": "boolean"},
-                            "op": {"type": "string", "enum": ["delete"]}
-                        },
-                        "additionalProperties": false
-                    }
-                }
-            },
-            "additionalProperties": false
-        }),
-    )
+pub(super) fn help(kind: Builtin) -> String {
+    fill_text(&summonr_types::catalog::help(kind))
 }
 
-fn write() -> ToolDefinition {
-    tool(
-        "write",
-        "Create or overwrite one file (path and content), or several at once with files.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "content": {"type": "string"},
-                "files": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "path": {"type": "string"},
-                            "content": {"type": "string"}
-                        },
-                        "required": ["path", "content"],
-                        "additionalProperties": false
-                    }
-                }
-            },
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn todo() -> ToolDefinition {
-    tool(
-        "todo",
-        "Maintain the Work task list; status pending|active|done. Update statuses as tasks start or finish, not just when making the initial plan. A done item does not replace the completion check.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "text": { "type": "string" },
-                            "status": {
-                                "type": "string",
-                                "enum": ["pending", "active", "done"]
-                            }
-                        },
-                        "required": ["text"]
-                    }
-                }
-            },
-            "required": ["items"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn skill() -> ToolDefinition {
-    tool(
-        "skill",
-        "Load a skill body by name from the catalog in the system prompt.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {"name": {"type": "string"}},
-            "required": ["name"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn lsp() -> ToolDefinition {
-    tool(
-        "lsp",
-        "Language server. Prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "line": {"type": "integer", "minimum": 1},
-                "character": {"type": "integer", "minimum": 1},
-                "references": {"type": "boolean"},
-                "op": {"type": "string", "enum": ["diagnostics", "definition"]},
-                "new_name": {"type": "string"}
-            },
-            "required": ["path"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn run_command() -> ToolDefinition {
-    tool(
-        "run_command",
-        &format!(
-            "Run a shell command in the workspace. Use search, not grep or find, to search files. workdir picks the directory; after {wait}s a command continues as a job unless timeout_secs sets a hard stop; background returns a job to wait on, kill stops it. op=help returns output and policy details.",
-            wait = crate::limits::limits().command_wait_secs
-        ),
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "command": {"type": "string"},
-                "workdir": {"type": "string"},
-                "timeout_secs": {"type": "integer", "minimum": 1},
-                "background": {"type": "boolean"},
-                "job": {"type": "string"},
-                "kill": {"type": "boolean"},
-                "op": {"type": "string", "enum": ["help"]}
-            },
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn web() -> ToolDefinition {
-    tool(
-        "web",
-        "Search the public web (query) or fetch one https URL (url; format markdown|text|html; freshness day|week|month).",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "url": {"type": "string"},
-                "count": {"type": "integer", "minimum": 1, "maximum": 8},
-                "freshness": {"type": "string", "enum": ["day", "week", "month"]},
-                "op": {"type": "string", "enum": ["search", "fetch"]},
-                "format": {"type": "string", "enum": ["markdown", "text", "html"]}
-            },
-            "additionalProperties": false
-        }),
-    )
-}
+#[cfg(test)]
+#[path = "catalog/patch_tests.rs"]
+mod tests;

@@ -1,22 +1,10 @@
 use toml_edit::{Array, InlineTable, Item, Table, value};
 
+use super::config::Launch;
 use crate::config;
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
-#[derive(Clone)]
-pub enum McpLaunch {
-    Command {
-        command: String,
-        args: Vec<String>,
-        env: Vec<(String, String)>,
-    },
-    Url {
-        url: String,
-        headers: Vec<(String, String)>,
-    },
-}
-
-pub fn add(name: &str, launch: &McpLaunch) -> Result<String> {
+pub fn add(name: &str, launch: &Launch) -> Result<String> {
     if name.is_empty()
         || !name
             .chars()
@@ -28,7 +16,7 @@ pub fn add(name: &str, launch: &McpLaunch) -> Result<String> {
     }
     let mut table = Table::new();
     match launch {
-        McpLaunch::Command { command, args, env } => {
+        Launch::Stdio { command, args, env } => {
             table["command"] = value(command.as_str());
             if !args.is_empty() {
                 table["args"] = value(args.iter().map(String::as_str).collect::<Array>());
@@ -37,7 +25,7 @@ pub fn add(name: &str, launch: &McpLaunch) -> Result<String> {
                 table["env"] = value(pairs(env));
             }
         }
-        McpLaunch::Url { url, headers } => {
+        Launch::Http { url, headers, .. } => {
             table["url"] = value(url.as_str());
             if !headers.is_empty() {
                 table["headers"] = value(pairs(headers));

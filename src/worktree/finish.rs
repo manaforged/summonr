@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use summonr_core::error::{Error, Result};
 
 use super::{COMMIT_MAX, Tree, dirty};
 

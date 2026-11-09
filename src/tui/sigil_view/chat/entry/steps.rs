@@ -10,6 +10,16 @@ pub(in crate::tui::sigil_view) enum Slot {
     Member,
 }
 
+impl Slot {
+    pub(in crate::tui::sigil_view) fn span(&self, index: usize) -> Range<usize> {
+        match self {
+            Self::Lead(range) => range.clone(),
+            Self::Single => index..index + 1,
+            Self::Member => index..index,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Run {
     Steps,
@@ -18,7 +28,7 @@ enum Run {
 
 fn run(entry: &Entry) -> Option<Run> {
     let name = match entry {
-        Entry::Tool { name, .. } | Entry::ToolGroup { name, .. } => name,
+        Entry::Tool { name, .. } => name,
         Entry::User(_)
         | Entry::Thinking(_)
         | Entry::Receipt(_)
@@ -72,37 +82,21 @@ pub(in crate::tui::sigil_view) fn slot(entries: &[Entry], index: usize) -> Slot 
     Slot::Lead(index..end)
 }
 
-#[cfg(any(feature = "gui", test))]
-pub(in crate::tui::sigil_view) fn counts(patch: &str) -> (usize, usize) {
-    patch
-        .lines()
-        .filter(|line| !line.starts_with("+++ ") && !line.starts_with("--- "))
-        .fold((0, 0), |(adds, dels), line| {
-            if line.starts_with('+') {
-                (adds + 1, dels)
-            } else if line.starts_with('-') {
-                (adds, dels + 1)
-            } else {
-                (adds, dels)
-            }
-        })
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Slot, counts, slot};
+    use super::{Slot, slot};
     use crate::tui::ToolState;
     use crate::tui::sigil_view::model::{Call, Entry};
 
     fn tool(name: &str) -> Entry {
         Entry::Tool {
-            id: String::new(),
             name: name.to_owned(),
-            arg: "src/lib.rs".to_owned(),
-            state: ToolState::Ok,
-            output: String::new(),
-            expanded: false,
-            patch: None,
+            calls: vec![Call::new(
+                String::new(),
+                "src/lib.rs".to_owned(),
+                ToolState::Ok,
+                String::new(),
+            )],
         }
     }
 
@@ -112,7 +106,7 @@ mod tests {
             Entry::User("fix it".to_owned()),
             Entry::Thinking("look first".to_owned()),
             tool("read"),
-            Entry::ToolGroup {
+            Entry::Tool {
                 name: "read".to_owned(),
                 calls: vec![Call::new(
                     String::new(),
@@ -149,9 +143,17 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "gui")]
     #[test]
     fn edit_counts_skip_the_file_headers() {
         let patch = "--- a/x.rs\n+++ b/x.rs\n@@ -1,2 +1,2 @@\n-old\n+new\n+more\n same";
-        assert_eq!(counts(patch), (2, 1));
+        let mut call = Call::new(
+            String::new(),
+            "x.rs".to_owned(),
+            ToolState::Ok,
+            String::new(),
+        );
+        call.patch = Some(patch.to_owned());
+        assert_eq!(super::super::verb::patch_counts(&call), Some((2, 1)));
     }
 }

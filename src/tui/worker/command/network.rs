@@ -2,7 +2,7 @@ use super::*;
 
 impl Worker {
     pub(in crate::tui::worker) async fn login(&mut self, name: &str) -> bool {
-        let endpoint = match crate::endpoint::login_seat(name) {
+        let endpoint = match crate::endpoint::login_endpoint(name) {
             Ok(endpoint) => endpoint,
             Err(error) => {
                 self.done(name, Err(error.to_string()));
@@ -27,41 +27,41 @@ impl Worker {
         );
         let login = crate::provider::Client::login(&endpoint, &mut prompt);
         drop(self.ui.send(Msg::Busy(Some(Activity::Login))));
-        let outcome = attend(self.inbox(Some(answers)), login).await;
+        let outcome = self.wait(Some(answers), login).await;
         let running = match outcome {
-            Attended::Done(Ok(())) => {
+            Completion::Done(Ok(())) => {
                 if name == self.endpoint {
-                    self.set_endpoint(name).await;
+                    self.selection(Some(name), None).await;
                 }
                 self.done(name, Ok(format!("✓ Signed in to {name}.")));
                 true
             }
-            Attended::Done(Err(error)) => {
+            Completion::Done(Err(error)) => {
                 self.done(name, Err(format!("✗ {error}. ↵ try again")));
                 self.recover();
                 true
             }
-            Attended::Cancelled => {
+            Completion::Cancelled => {
                 self.done(name, Err(String::new()));
                 self.recover();
                 true
             }
-            Attended::Quit => false,
+            Completion::Quit => false,
         };
         drop(self.ui.send(Msg::Busy(None)));
         running
     }
 
     pub(in crate::tui::worker) async fn set_key(&mut self, name: &str, key: &str) -> bool {
-        let outcome = attend(self.inbox(None), checked(name, key)).await;
+        let outcome = self.wait(None, checked(name, key)).await;
         let (result, rejected) = match outcome {
-            Attended::Done(Ok(text)) => (Ok(text), false),
-            Attended::Done(Err((text, rejected))) => (Err(text), rejected),
-            Attended::Cancelled => (Err(String::new()), false),
-            Attended::Quit => return false,
+            Completion::Done(Ok(text)) => (Ok(text), false),
+            Completion::Done(Err((text, rejected))) => (Err(text), rejected),
+            Completion::Cancelled => (Err(String::new()), false),
+            Completion::Quit => return false,
         };
         if result.is_ok() && name == self.endpoint {
-            self.set_endpoint(name).await;
+            self.selection(Some(name), None).await;
         }
         self.report(name, result, rejected);
         true
@@ -70,7 +70,7 @@ impl Worker {
     pub(in crate::tui::worker) async fn logout(&mut self, name: &str) {
         let result = crate::endpoint::logout(name).map_err(|error| error.to_string());
         if result.is_ok() && name == self.endpoint {
-            self.set_endpoint(name).await;
+            self.selection(Some(name), None).await;
         }
         self.done(name, result);
     }
@@ -87,15 +87,20 @@ impl Worker {
         }));
     }
 
-    fn inbox(&mut self, answers: Option<tokio::sync::mpsc::UnboundedSender<String>>) -> Inbox<'_> {
-        Inbox {
-            cmd: &mut self.cmd,
-            reader: &self.reader,
-            followups: &mut self.followups,
-            deferred: &mut self.deferred,
-            ui: &self.ui,
+    async fn wait<T>(
+        &mut self,
+        answers: Option<UnboundedSender<String>>,
+        task: impl Future<Output = T>,
+    ) -> Completion<T> {
+        wait_cancelable(
+            &mut self.cmd,
+            &mut self.queue,
+            &self.reader,
+            &self.ui,
             answers,
-        }
+            task,
+        )
+        .await
     }
 
     pub(in crate::tui::worker) fn permissions(&mut self, argument: Option<&str>) -> bool {
@@ -137,8 +142,8 @@ async fn checked(name: &str, key: &str) -> std::result::Result<String, (String, 
                 format!("✗ {failure}"),
                 matches!(
                     failure.kind,
-                    crate::error::ProviderFailureKind::Authentication
-                        | crate::error::ProviderFailureKind::MissingKey
+                    summonr_core::error::ProviderFailureKind::Authentication
+                        | summonr_core::error::ProviderFailureKind::MissingKey
                 ),
             ),
             None => (format!("✗ {error}"), false),

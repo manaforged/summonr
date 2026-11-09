@@ -4,37 +4,74 @@ use std::sync::OnceLock;
 use super::*;
 use crate::provider::Spec;
 
+const HOST_ID: &str = "{host_id}";
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct Preset {
     pub(super) name: String,
-    pub(super) provider: String,
-    pub(super) region: Option<super::Region>,
-    pub(super) replaces: Vec<String>,
     pub(super) base_url: String,
-    pub(super) models_url: Option<&'static str>,
+    #[serde(default)]
+    pub(super) provider: String,
+    #[serde(default)]
+    pub(super) region: Option<super::Region>,
+    #[serde(default)]
+    pub(super) replaces: Vec<String>,
+    #[serde(default)]
+    pub(super) models_url: Option<String>,
+    #[serde(default)]
     pub(super) model: String,
+    #[serde(default)]
     pub(super) login_model: Option<String>,
-    pub(super) env_keys: &'static [&'static str],
-    pub(super) env_unset: &'static [&'static str],
-    pub(super) default_key: Option<&'static str>,
+    #[serde(default)]
+    pub(super) env_keys: Vec<String>,
+    #[serde(default)]
+    pub(super) env_unset: Vec<String>,
+    #[serde(default)]
+    pub(super) default_key: Option<String>,
+    #[serde(default)]
     pub(super) missing: String,
-    pub(super) aliases: &'static [(String, String)],
-    pub(super) oauth: Option<fn() -> crate::config::OAuth>,
-    pub(super) headers: &'static [(String, String)],
+    #[serde(default)]
+    pub(super) aliases: BTreeMap<String, String>,
+    #[serde(default, rename = "oauth")]
+    login: Option<String>,
+    #[serde(skip)]
+    pub(super) oauth: Option<crate::config::OAuth>,
+    #[serde(default)]
+    pub(super) headers: BTreeMap<String, String>,
+    #[serde(default, deserialize_with = "row::wire")]
     pub(super) wire: Wire,
+    #[serde(default, rename = "reasoning")]
+    reasoning_row: row::ReasoningRow,
+    #[serde(skip)]
     pub(super) reasoning: Spec,
+    #[serde(default)]
     pub(super) context_window: Option<u32>,
-    pub(super) opencode: bool,
+    #[serde(default)]
+    pub(super) session_headers: BTreeMap<String, SessionValue>,
+    #[serde(default)]
+    pub(super) keep_reasoning: bool,
+    #[serde(default)]
     pub(super) prompt_cache_key: bool,
+    #[serde(default)]
     pub(super) assistant_after_tool: bool,
+    #[serde(default)]
     pub(super) cache_ttl: Option<CacheTtl>,
-    pub(super) cache_header: Option<String>,
+    #[serde(default)]
     pub(super) cache_marks: bool,
+    #[serde(default)]
     pub(super) env_default: bool,
+    #[serde(default)]
     pub(super) plan: bool,
+    #[serde(default)]
     pub(super) off: bool,
-    pub(super) opencode_ids: &'static [&'static str],
+    #[serde(default)]
+    pub(super) opencode_ids: Vec<String>,
+    #[serde(default)]
     pub(super) label: Option<String>,
+    #[serde(default)]
     pub(super) start: Option<String>,
+    #[serde(default)]
     pub(super) key_from: Vec<String>,
 }
 
@@ -42,46 +79,8 @@ pub(super) fn env_default() -> Option<&'static Preset> {
     presets().find(|preset| preset.env_default)
 }
 
-fn claude_oauth() -> crate::config::OAuth {
-    crate::config::OAuth {
-        token_url: "https://platform.claude.com/v1/oauth/token".into(),
-        client_id: CLAUDE_CLIENT.into(),
-        label: Some("Claude Pro or Max".into()),
-        authorize_url: Some("https://claude.ai/oauth/authorize".into()),
-        redirect_uri: Some("https://platform.claude.com/oauth/code/callback".into()),
-        scope: Some(CLAUDE_SCOPES.into()),
-        grant: Some("authorization_code".into()),
-        token_style: Some("json".into()),
-        authorize_params: BTreeMap::from([("code".to_string(), "true".to_string())]),
-        ..crate::config::OAuth::default()
-    }
-}
-
-fn chatgpt_oauth() -> crate::config::OAuth {
-    let mut authorize_params = BTreeMap::from([
-        ("agent_name_hint".to_string(), "summonr".to_string()),
-        ("resource".to_string(), OPENAI_API.to_string()),
-    ]);
-    if let Some(host) = host_id() {
-        authorize_params.insert("ext_agent_host_id".to_string(), host);
-    }
-    crate::config::OAuth {
-        token_url: CHATGPT_TOKEN.into(),
-        client_id: CHATGPT_CLIENT.into(),
-        label: Some("ChatGPT Plus or Pro".into()),
-        authorize_url: Some(CHATGPT_AUTHORIZE.into()),
-        redirect_uri: Some(CHATGPT_REDIRECT.into()),
-        scope: Some(CHATGPT_SCOPES.into()),
-        grant: Some("authorization_code".into()),
-        authorize_params,
-        token_params: BTreeMap::from([("resource".to_string(), OPENAI_API.to_string())]),
-        required_scope: Some(CHATGPT_PLAN_SCOPE.into()),
-        ..crate::config::OAuth::default()
-    }
-}
-
 fn host_id() -> Option<String> {
-    let path = crate::prompt::summonr_home().ok()?.join("host-id");
+    let path = summonr_core::dirs::summonr_home().ok()?.join("host-id");
     if let Ok(found) = std::fs::read_to_string(&path)
         && !found.trim().is_empty()
     {
@@ -92,101 +91,64 @@ fn host_id() -> Option<String> {
     Some(fresh)
 }
 
-fn supergrok_oauth() -> crate::config::OAuth {
-    crate::config::OAuth {
-        token_url: XAI_TOKEN.into(),
-        client_id: XAI_CLIENT.into(),
-        label: Some("SuperGrok or X Premium+".into()),
-        scope: Some(XAI_SCOPES.into()),
-        grant: Some("device_code".into()),
-        device_url: Some(XAI_DEVICE.into()),
-        ..crate::config::OAuth::default()
+impl Preset {
+    pub(super) fn sign_in(&self) -> Option<crate::config::OAuth> {
+        let mut oauth = self.oauth.clone()?;
+        let host = host_id();
+        oauth
+            .authorize_params
+            .retain(|_, value| value != HOST_ID || host.is_some());
+        for value in oauth.authorize_params.values_mut() {
+            if value == HOST_ID
+                && let Some(host) = &host
+            {
+                value.clone_from(host);
+            }
+        }
+        Some(oauth)
     }
-}
 
-fn copilot_oauth() -> crate::config::OAuth {
-    crate::config::OAuth {
-        token_url: GITHUB_TOKEN.into(),
-        client_id: COPILOT_CLIENT.into(),
-        label: Some("GitHub Copilot".into()),
-        client_secret: None,
-        refresh_token: None,
-        scope: Some("read:user".into()),
-        grant: Some("device_code".into()),
-        device_url: Some(GITHUB_DEVICE.into()),
-        exchange_url: Some("https://api.github.com/copilot_internal/v2/token".into()),
-        ..crate::config::OAuth::default()
-    }
-}
-
-fn login(name: &str) -> Option<fn() -> crate::config::OAuth> {
-    [
-        ("claude", claude_oauth as fn() -> crate::config::OAuth),
-        ("chatgpt", chatgpt_oauth),
-        ("supergrok", supergrok_oauth),
-        ("copilot", copilot_oauth),
-    ]
-    .into_iter()
-    .find(|(known, _)| *known == name)
-    .map(|(_, make)| make)
-}
-
-fn wire(value: &str) -> std::result::Result<Wire, String> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "completions" => Ok(Wire::Completions),
-        "responses" => Ok(Wire::Responses),
-        "anthropic" => Ok(Wire::Anthropic),
-        "gemini" => Ok(Wire::Gemini),
-        "agent-sdk" => Ok(Wire::AgentSdk),
-        other => Err(format!("unknown wire `{other}`")),
+    pub(super) const fn keyless(&self) -> bool {
+        self.default_key.is_some() && self.env_keys.is_empty() && self.oauth.is_none()
     }
 }
 
 mod row;
 
 use row::File;
+pub(crate) use row::wire;
 
+#[cfg(test)]
 pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
-    let file: File = toml::from_str(text).map_err(|error| error.to_string())?;
-    let mut seen: Vec<String> = Vec::new();
-    let mut rows = Vec::new();
-    for row in file.preset {
-        let name = row.name.trim().to_string();
-        let base_url = row.base_url.trim().to_string();
-        if name.is_empty() || base_url.is_empty() {
-            return Err("every preset needs a name and a base_url".to_string());
-        }
-        if seen.contains(&name) {
-            return Err(format!("preset `{name}` is listed twice"));
-        }
-        seen.push(name.clone());
-        rows.push(row.into_preset(name, base_url)?);
-    }
-    let names: std::collections::BTreeSet<&str> = seen.iter().map(String::as_str).collect();
-    let retired: std::collections::BTreeSet<&str> = rows
-        .iter()
-        .flat_map(|row| row.replaces.iter().map(String::as_str))
-        .collect();
-    if let Some(old) = retired.iter().find(|old| names.contains(*old)) {
-        return Err(format!("`{old}` is retired but is still a preset"));
-    }
-    Ok(rows)
+    rows(summonr_core::table::parse(text)?)
 }
 
-const PRESETS: &str = include_str!("presets.toml");
+fn rows(File { mut preset, oauth }: File) -> std::result::Result<Vec<Preset>, String> {
+    let mut seen = std::collections::BTreeSet::new();
+    for row in &mut preset {
+        row.check(&oauth)?;
+        if !seen.insert(row.name.clone()) {
+            return Err(format!("preset `{}` is listed twice", row.name));
+        }
+    }
+    if let Some(old) = preset
+        .iter()
+        .flat_map(|row| &row.replaces)
+        .find(|old| seen.contains(*old))
+    {
+        return Err(format!("`{old}` is retired but is still a preset"));
+    }
+    Ok(preset)
+}
 
 pub(super) fn listed() -> &'static [Preset] {
     static ROWS: OnceLock<Vec<Preset>> = OnceLock::new();
-    ROWS.get_or_init(|| match table(PRESETS) {
-        Ok(rows) => rows,
-        Err(error) => panic!("the built-in provider table is invalid: {error}"),
-    })
-}
-
-impl Preset {
-    pub(super) const fn keyless(&self) -> bool {
-        self.default_key.is_some() && self.env_keys.is_empty() && self.oauth.is_none()
-    }
+    ROWS.get_or_init(
+        || match rows(summonr_core::embedded!("provider", "endpoint/presets.toml")) {
+            Ok(rows) => rows,
+            Err(error) => panic!("the built-in provider table is invalid: {error}"),
+        },
+    )
 }
 
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {
@@ -198,27 +160,21 @@ pub(super) fn preset(name: &str) -> Option<&'static Preset> {
 }
 
 pub(crate) fn catalog_providers() -> impl Iterator<Item = &'static str> {
-    listed()
-        .iter()
-        .filter(|preset| !preset.off)
-        .flat_map(|preset| preset.opencode_ids.iter().copied())
+    presets().flat_map(|preset| preset.opencode_ids.iter().map(String::as_str))
 }
 
 #[must_use]
-pub(crate) fn env_unset(name: &str) -> &'static [&'static str] {
-    preset(name).map_or(&[], |preset| preset.env_unset)
+pub(crate) fn env_unset(name: &str) -> &'static [String] {
+    preset(name).map_or(&[], |preset| &preset.env_unset)
 }
 
 #[must_use]
-pub(crate) fn provider_ids(name: &str) -> &'static [&'static str] {
-    listed()
-        .iter()
-        .find(|preset| preset.name == name && !preset.off)
-        .map_or(&[], |preset| preset.opencode_ids)
+pub(crate) fn provider_ids(name: &str) -> &'static [String] {
+    preset(name).map_or(&[], |preset| &preset.opencode_ids)
 }
 
 #[must_use]
-pub fn label(name: &str) -> Option<&'static str> {
+pub(crate) fn label(name: &str) -> Option<&'static str> {
     preset(name).and_then(|preset| preset.label.as_deref())
 }
 

@@ -16,7 +16,7 @@ impl<P: Provider> Loop<P> {
             .await?;
 
         loop {
-            while self.budget.max_tokens.is_some() && self.child_budget_reserved() > 0 {
+            while self.budget().max_tokens.is_some() && self.child_budget_reserved() > 0 {
                 self.await_children(events, &mut emit, usage).await?;
             }
             *reached = reached.saturating_add(1);
@@ -28,15 +28,15 @@ impl<P: Provider> Loop<P> {
                 abort = reason;
                 break;
             }
-            let Some((assistant, prefix_hash, request_chars, durable_attempt, live_millis)) = self
-                .complete_retry(&mut messages, &tools, events, &mut emit)
+            let Some((assistant, request_chars, (durable_attempt, meter, meta))) = self
+                .round_call(&mut messages, &tools, events, &mut emit)
                 .await?
             else {
                 abort = self.budget_abort().unwrap_or_else(Abort::time_limit);
                 break;
             };
-            let (message, stop_reason, meter, reasoning, meta) =
-                self.take_reply(assistant, prefix_hash, request_chars, live_millis, usage);
+            let (message, stop_reason, reasoning) =
+                self.take_reply(assistant, request_chars, usage);
             if stop_reason == StopReason::Length && message.tool_calls.is_empty() {
                 let mut steered = Vec::new();
                 self.steer_length(
@@ -55,9 +55,13 @@ impl<P: Provider> Loop<P> {
                 continue;
             }
             if message.tool_calls.is_empty() && self.steer_waiting() {
-                self.session
-                    .finish_provider(durable_attempt, &message.content, &reasoning, meter, meta)
-                    .map_err(super::session_err)?;
+                self.session.finish_provider(
+                    durable_attempt,
+                    &message.content,
+                    &reasoning,
+                    meter,
+                    meta,
+                )?;
                 self.emit_records(events, &mut emit)?;
                 if !message.content.is_empty() {
                     let text = message.content.clone();
@@ -107,21 +111,19 @@ impl<P: Provider> Loop<P> {
     ) -> Result<()> {
         let (message, reasoning, durable_attempt, meter, meta) = reply;
         let calls = message.tool_calls.clone();
-        let planned = self
-            .session
-            .finish_provider_with_tools(
-                durable_attempt,
-                &message.content,
-                &reasoning,
-                meter,
-                &calls,
-                meta,
-            )
-            .map_err(super::session_err)?;
+        let planned = self.session.finish_provider_with_tools(
+            durable_attempt,
+            &message.content,
+            &reasoning,
+            meter,
+            &calls,
+            meta,
+        )?;
         messages.push(message);
         self.emit_records(events, emit)?;
         self.settle(pre, events, emit).await?;
-        self.session.settle_base().map_err(super::session_err)?;
+        self.capture_deferred(events, emit)?;
+        self.session.settle_base()?;
         self.execute_calls(planned, calls, messages, events, emit, usage)
             .await
     }
@@ -159,30 +161,66 @@ impl<P: Provider> Loop<P> {
         Ok(self.budget_abort())
     }
 
+    async fn round_call(
+        &mut self,
+        messages: &mut Vec<Message>,
+        tools: &super::super::mail::Advertised,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Option<(AssistantMessage, usize, (Attempt, Meter, UsageMeta))>> {
+        let role = crate::workflow::Role::Implement;
+        let mut state = super::retry::RetryState::default();
+        loop {
+            let request = self.request_with(role, messages, tools);
+            self.freeze_catalog();
+            let options = CallOptions {
+                stream: true,
+                retry: RetryPolicy::Round,
+            };
+            let Missed { error, interrupted } = match self.call(role, request, options).await? {
+                Ok(reply) => {
+                    let open = reply
+                        .open
+                        .ok_or_else(|| Error::Config("no provider round is open".to_string()))?;
+                    return Ok(Some((reply.message, reply.chars, open)));
+                }
+                Err(missed) => missed,
+            };
+            let error = match error {
+                WaitError::Deadline(_) => None,
+                WaitError::Provider(error) => {
+                    messages.extend(interrupted);
+                    Some(error)
+                }
+            };
+            self.emit_records(events, emit)?;
+            self.sync_usage(emit);
+            let Some(error) = error else {
+                return Ok(None);
+            };
+            if !self
+                .provider_failed(error, &mut state, messages, tools, events, emit)
+                .await?
+            {
+                return Ok(None);
+            }
+        }
+    }
+
     fn take_reply(
         &mut self,
         assistant: AssistantMessage,
-        prefix_hash: String,
         request_chars: usize,
-        live_millis: u64,
         usage: &mut Usage,
-    ) -> (Message, StopReason, Meter, String, UsageMeta) {
+    ) -> (Message, StopReason, String) {
         self.summary_wait = self.summary_wait.saturating_sub(1);
         if assistant.usage.prompt_tokens > 0 {
             self.context_sample = Some((request_chars, assistant.usage.prompt_tokens));
         }
-        let role = self.round_role();
-        let meta = self.record_usage(&assistant, prefix_hash, role, usage);
+        usage.add(&assistant.usage);
         let stop_reason = assistant.stop_reason;
-        let meter = super::meter(&assistant.usage, live_millis);
         let reasoning = assistant.reasoning_content.clone().unwrap_or_default();
-        (
-            assistant.into_message(),
-            stop_reason,
-            meter,
-            reasoning,
-            meta,
-        )
+        (assistant.into_message(), stop_reason, reasoning)
     }
 
     pub(super) async fn scout(
@@ -192,10 +230,10 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        if self.seat_model(workflow::Role::Scout).is_none() || !self.session.needs_scout() {
+        if self.role_model(workflow::Role::Scout).is_none() || !self.session.needs_scout() {
             return Ok(());
         }
-        let objective = self.session.objective().map_err(super::session_err)?;
+        let objective = self.session.objective()?;
         let brief = scout::brief(self, &objective, usage).await;
         self.sync_usage(emit);
         let brief = match brief {
@@ -210,7 +248,7 @@ impl<P: Provider> Loop<P> {
                 );
             }
         };
-        self.session.set_brief(&brief).map_err(super::session_err)?;
+        self.session.set_brief(&brief)?;
         self.inject(scout::note(&brief), messages)?;
         self.push_event(
             events,
@@ -225,11 +263,12 @@ impl<P: Provider> Loop<P> {
         if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
-        let read_only = self.depth > 0 && self.tools.is_read_only();
+        let read_only = self.session.depth() > 0 && self.tools.is_read_only();
         self.tools.set_read_only(read_only);
         self.summary_wait = 0;
         self.turn_started = crate::mail::now();
         let commands = self.verify.clone().unwrap_or_default();
+        self.tools.clear_wrote();
         self.prepare_work(&input.text, &commands)?;
         let harness = self.harness_note(&self.work_progress()?);
         if !self.note_sent(&harness) {
@@ -241,9 +280,7 @@ impl<P: Provider> Loop<P> {
             }
             input.text = decorate(&harness, &input.text);
         }
-        self.session
-            .start_input(&input)
-            .map_err(super::session_err)?;
+        self.session.start_input(&input)?;
         let history = self.session.history();
         let mut messages = Vec::with_capacity(history.len() + 1);
         messages.push(Message::system(self.system_prompt.clone()));
@@ -252,18 +289,12 @@ impl<P: Provider> Loop<P> {
     }
 
     fn prepare_work(&mut self, text: &str, commands: &[String]) -> Result<()> {
-        if self.is_goal()
-            && self
-                .session
-                .goal_objective()
-                .map_err(super::session_err)?
-                .is_none()
-        {
+        if self.is_goal() && self.session.goal_objective()?.is_none() {
             self.select_goal(text, commands)?;
         }
         self.session
             .prepare_turn_work(text, commands)
-            .map_err(super::session_err)
+            .map_err(Error::from)
     }
 
     pub(in crate::runtime) fn round_abort(&self) -> Option<String> {
@@ -271,7 +302,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(in crate::runtime) fn budget_abort(&self) -> Option<Abort> {
-        self.budget.breach(self.run_tokens(), self.elapsed_secs())
+        self.budget().breach(self.run_tokens(), self.elapsed_secs())
     }
 
     pub(super) async fn prepare_round(
@@ -286,8 +317,15 @@ impl<P: Provider> Loop<P> {
         self.settle_probe().await;
         self.take_mail(messages, events, emit)?;
         self.drain(events, emit);
-        self.auto_compact(messages, tool_bytes, usage, events, emit)
-            .await?;
+        if self
+            .auto_compact(messages, tool_bytes, usage, events, emit)
+            .await?
+        {
+            let note = self.harness_note(&self.work_progress()?);
+            if !note.is_empty() {
+                self.inject(note, messages)?;
+            }
+        }
         Ok(())
     }
 }

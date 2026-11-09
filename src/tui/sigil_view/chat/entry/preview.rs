@@ -116,7 +116,10 @@ pub(super) fn text(full: bool, name: &str, output: &str, failed: bool, running: 
         let error = summary(output, true);
         return match lines.len() {
             0 | 1 => error,
-            count => format!("{error}\n… +{}", crate::text::plural(count - 1, "line")),
+            count => format!(
+                "{error}\n… +{}",
+                summonr_core::text::plural(count - 1, "line")
+            ),
         };
     }
     if lines.len() <= SHOWN {
@@ -126,14 +129,14 @@ pub(super) fn text(full: bool, name: &str, output: &str, failed: bool, running: 
         let tail = lines[lines.len() - SHOWN..].join("\n");
         return format!(
             "… +{}\n{tail}",
-            crate::text::plural(lines.len() - SHOWN, "line")
+            summonr_core::text::plural(lines.len() - SHOWN, "line")
         );
     }
     let tail = lines[lines.len() - (SHOWN - 1)..].join("\n");
     format!(
         "{}\n… +{}\n{tail}",
         lines[0],
-        crate::text::plural(lines.len() - SHOWN, "line")
+        summonr_core::text::plural(lines.len() - SHOWN, "line")
     )
 }
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tomllib
 from collections import Counter
 
 from census_source import ROOT, SKIP, block_end, production, rust_files, source_files, source_text
@@ -209,13 +210,12 @@ def write_baseline(hits: list[tuple[str, str, int]]) -> None:
 
 
 def command_drift() -> list[str]:
-    specs = (ROOT / "src/command/specs.rs").read_text().split("const ALIASES")[0]
+    table = tomllib.loads((ROOT / "src/command/commands.toml").read_text())
     code = {
-        name
-        for name, category in re.findall(
-            r'spec\(\s*"(/[^"]+)",\s*"[^"]*",\s*SlashCommand::\w+,\s*\w+,\s*(\w+)', specs
-        )
-        if category != "Developer"
+        row["name"]
+        for group in table["group"]
+        if not group.get("developer")
+        for row in group["commands"]
     }
     doc = set(
         re.findall(

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use crate::tools::Builtin;
+use summonr_types::catalog::Builtin;
 
 use super::fmt::{head_tail, share};
 
@@ -38,7 +38,7 @@ impl Health {
             }
             Some(Builtin::Search) => self.native += 1,
             Some(Builtin::Read) => {
-                let op = crate::tools::retired_op(name).unwrap_or_else(|| text("op"));
+                let op = summonr_types::catalog::retired_op(name).unwrap_or_else(|| text("op"));
                 if op == "search" || (op.is_empty() && !text("pattern").is_empty()) {
                     self.native += 1;
                 }

@@ -33,12 +33,12 @@
 
 ### `get`
 
-<pre>pub fn <a href="#get">get</a>(name: &amp;str) -&gt; <a href="summonr.html#result">Result</a>&lt;Option&lt;(String, <a href="#source">Source</a>)&gt;&gt;</pre>
+<pre>pub fn <a href="#get">get</a>(name: &amp;str) -&gt; Result&lt;Option&lt;(String, <a href="#source">Source</a>)&gt;&gt;</pre>
 
 
 ### `set`
 
-<pre>pub fn <a href="#set">set</a>(name: &amp;str, secret: &amp;str) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#source">Source</a>&gt;</pre>
+<pre>pub fn <a href="#set">set</a>(name: &amp;str, secret: &amp;str) -&gt; Result&lt;<a href="#source">Source</a>&gt;</pre>
 
 
 ---

@@ -7,8 +7,9 @@ use serde_json::Value;
 use super::Hub;
 use super::catalog;
 use super::config::{self, Launch, Server};
-use crate::error::Result;
+use super::tool::{Tool, offered};
 use crate::supervise::{self, Live, ServerKind};
+use summonr_core::error::Result;
 
 pub type Board = Arc<Mutex<Weak<Hub>>>;
 
@@ -76,7 +77,7 @@ impl ServerStatus {
 
     #[must_use]
     pub fn state_text(&self, width: usize) -> String {
-        crate::text::ellipsize(self.state.label(), width)
+        crate::display::ellipsize(self.state.label(), width)
     }
 }
 
@@ -125,17 +126,7 @@ fn row(server: &Server, hub: Option<&Hub>, live: &[Live]) -> ServerStatus {
     let items = catalog::load(&server.key)
         .map(|listing| listing.tools)
         .unwrap_or_default();
-    let advertised: Vec<&Value> = items
-        .iter()
-        .filter(|item| {
-            server.allow.as_ref().is_none_or(|allow| {
-                item.get("name")
-                    .and_then(Value::as_str)
-                    // complexity: bounded by a BTreeSet lookup, O(log n)
-                    .is_some_and(|name| allow.contains(name))
-            })
-        })
-        .collect();
+    let advertised: Vec<(&Value, Tool)> = offered(server, &items).collect();
     let (state, detail) = hub
         .and_then(|hub| hub.state(&server.name))
         .unwrap_or_else(|| {
@@ -182,12 +173,11 @@ fn row(server: &Server, hub: Option<&Hub>, live: &[Live]) -> ServerStatus {
         state,
         tools: advertised
             .iter()
-            .filter_map(|item| item.get("name").and_then(Value::as_str))
-            .map(str::to_string)
+            .map(|(_, tool)| tool.name.clone())
             .collect(),
         schema_bytes: advertised
             .iter()
-            .map(|item| serde_json::to_vec(item).map_or(0, |bytes| bytes.len()))
+            .map(|(item, _)| serde_json::to_vec(item).map_or(0, |bytes| bytes.len()))
             .sum(),
         launch: Some(launch),
         detail,

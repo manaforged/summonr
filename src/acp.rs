@@ -3,17 +3,17 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, Stdin};
+use tokio::io::{AsyncWriteExt, Stdin};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::endpoint::{self, Endpoint};
-use crate::error::{Error, Result};
 use crate::provider::Client;
-use crate::rpc::{self, Frame};
+use crate::rpc::{self, Ask, Frame, Read};
 use crate::runtime::Loop;
 use crate::tools::Event;
+use summonr_core::error::{Error, Result};
 
-type Input = Lines<BufReader<Stdin>>;
+type Input = rpc::Lines<Stdin>;
 type Reply = std::result::Result<Value, (i64, String)>;
 
 struct Server<F> {
@@ -37,14 +37,14 @@ where
         }
     });
     let mut server = Server {
-        endpoint: endpoint::resolve(name, model, crate::endpoint::Need::Seat)
+        endpoint: endpoint::resolve(name, model, crate::endpoint::Need::ModelAndKey)
             .map_err(|error| error.to_string()),
         build,
         out,
         sessions: BTreeMap::new(),
     };
-    let mut input = BufReader::new(tokio::io::stdin()).lines();
-    while let Some(line) = input.next_line().await? {
+    let mut input = rpc::Lines::new(tokio::io::stdin());
+    while let Some(line) = next_line(&mut input).await {
         server.handle(&line, &mut input).await;
     }
     drop(server);
@@ -60,24 +60,36 @@ where
         let Ok(Frame::Request { id, method, params }) = rpc::parse(line) else {
             return;
         };
-        let reply = match method.as_str() {
-            "initialize" => Ok(json!({
+        let reply = match rpc::ask(&method) {
+            Ask::Initialize => Ok(json!({
                 "protocolVersion": 1,
                 "agentCapabilities": {"loadSession": false},
                 "authMethods": []
             })),
-            "authenticate" => Ok(json!({})),
-            "session/new" => self.open(&params),
-            "session/prompt" => self.prompt(&params, input).await,
-            other => Err((-32601, format!("{other} is not supported"))),
+            Ask::Authenticate => Ok(json!({})),
+            Ask::SessionNew => self.open(&params),
+            Ask::SessionPrompt => self.prompt(&params, input).await,
+            Ask::Roots
+            | Ask::Elicit
+            | Ask::Ping
+            | Ask::SessionCancel
+            | Ask::ToolsList
+            | Ask::ToolsCall
+            | Ask::Unsupported => Err(rpc::unsupported(&method)),
         };
-        drop(self.out.send(frame_line(&answer(&id, reply))));
+        drop(self.out.send(frame_line(&rpc::answer(&id, reply))));
     }
 
     fn connect(&self, endpoint: &Endpoint, tag: &Arc<OnceLock<String>>) -> Result<Client> {
-        Ok(Client::connect(endpoint)?
-            .on_delta(self.stream("agent_message_chunk", tag))
-            .on_reasoning(self.stream("agent_thought_chunk", tag)))
+        let message = self.stream("agent_message_chunk", tag);
+        let thought = self.stream("agent_thought_chunk", tag);
+        Ok(
+            Client::connect(endpoint)?.on_stream(move |delta| match delta {
+                crate::Delta::Text(text) => message(text),
+                crate::Delta::Thinking(text) => thought(text),
+                crate::Delta::Call(_) | crate::Delta::Progress => {}
+            }),
+        )
     }
 
     fn open(&mut self, params: &Value) -> Reply {
@@ -142,20 +154,20 @@ where
             loop {
                 tokio::select! {
                     done = &mut turn => break Some(done),
-                    read = input.next_line() => {
-                        let Ok(Some(line)) = read else {
+                    read = next_line(input) => {
+                        let Some(line) = read else {
                             break None;
                         };
                         match rpc::parse(&line) {
                             Ok(Frame::Notification { method, params })
-                                if method == "session/cancel"
+                                if rpc::ask(&method) == Ask::SessionCancel
                                     && params.get("sessionId").and_then(Value::as_str) == Some(session.as_str()) =>
                             {
                                 break None;
                             }
                             Ok(Frame::Request { id, .. }) => {
                                 let busy = Err((-32000, "a prompt is already running".to_string()));
-                                drop(out.send(frame_line(&answer(&id, busy))));
+                                drop(out.send(frame_line(&rpc::answer(&id, busy))));
                             }
                             Ok(Frame::Notification { .. } | Frame::Response { .. }) | Err(_) => {}
                         }
@@ -239,9 +251,20 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
         | Event::Receipt { .. }
         | Event::Spawned { .. }
         | Event::Session { .. }
+        | Event::Step { .. }
         | Event::Child { .. } => return,
     };
     drop(out.send(frame_line(&update(session, content))));
+}
+
+async fn next_line(input: &mut Input) -> Option<String> {
+    loop {
+        match input.next().await {
+            Ok(Read::Line(line)) => return Some(line),
+            Ok(Read::Oversize) => {}
+            Ok(Read::Closed) | Err(_) => return None,
+        }
+    }
 }
 
 fn frame_line(frame: &Value) -> String {
@@ -255,28 +278,12 @@ fn update(session: &str, content: Value) -> Value {
     )
 }
 
-fn answer(id: &Value, reply: Reply) -> Value {
-    match reply {
-        Ok(result) => rpc::response(id, result),
-        Err((code, message)) => rpc::failure(id, code, &message),
-    }
-}
-
 fn failure(error: Error) -> (i64, String) {
     (-32603, error.to_string())
 }
 
 fn kind(name: &str) -> &'static str {
-    use crate::tools::Builtin;
-    match Builtin::live(name) {
-        Some(Builtin::Read) => "read",
-        Some(Builtin::Edit | Builtin::Write) => "edit",
-        Some(Builtin::RunCommand) => "execute",
-        Some(Builtin::Web) => "fetch",
-        Some(Builtin::Lsp | Builtin::Search) => "search",
-        Some(Builtin::Browser) => "fetch",
-        Some(Builtin::Skill | Builtin::Todo | Builtin::Task) | None => "other",
-    }
+    crate::tools::Builtin::live(name).map_or("other", crate::tools::Builtin::acp_kind)
 }
 
 fn block(item: &Value) -> Option<String> {

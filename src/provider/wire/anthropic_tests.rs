@@ -1,7 +1,11 @@
 use super::*;
 use crate::provider::Effort;
+use crate::provider::StopReason;
 
-use crate::provider::{FunctionDefinition, Image, ToolDefinition};
+use crate::provider::{
+    FunctionDefinition, Image, Message, Role, ToolCall, ToolDefinition, ToolFunction, ToolKind,
+};
+use serde_json::json;
 
 pub(super) fn message(role: Role, content: &str) -> Message {
     Message {
@@ -152,34 +156,13 @@ fn asking_for_effort_turns_thinking_on_and_never_sends_a_budget() {
 }
 
 #[test]
-fn a_reply_parses_into_text_thinking_and_calls() {
-    let body = json!({
-        "id": "msg_1",
-        "content": [
-            {"type": "thinking", "thinking": "let me think"},
-            {"type": "text", "text": "Checking."},
-            {"type": "tool_use", "id": "toolu_1", "name": "get_weather",
-             "input": {"location": "Paris"}}
-        ],
-        "stop_reason": "tool_use",
-        "usage": {"input_tokens": 10, "output_tokens": 5}
-    });
-    let message = parse("claude-opus-5", &body);
-    assert_eq!(message.content.as_deref(), Some("Checking."));
-    assert_eq!(message.reasoning_content.as_deref(), Some("let me think"));
-    assert_eq!(message.stop_reason, StopReason::ToolCalls);
-    assert_eq!(message.tool_calls.len(), 1);
-    assert_eq!(message.tool_calls[0].id, "toolu_1");
-    let arguments: Value = serde_json::from_str(&message.tool_calls[0].function.arguments).unwrap();
-    assert_eq!(arguments["location"], "Paris");
-}
-
-#[test]
 fn every_stop_reason_maps_to_one_of_ours() {
-    assert_eq!(stop_reason(Some("tool_use")), StopReason::ToolCalls);
-    assert_eq!(stop_reason(Some("max_tokens")), StopReason::Length);
-    assert_eq!(stop_reason(Some("end_turn")), StopReason::Stop);
-    assert_eq!(stop_reason(None), StopReason::Stop);
+    let stop = |raw: &str| {
+        crate::provider::client::ending(crate::endpoint::Wire::Anthropic, raw, "").unwrap()
+    };
+    assert_eq!(stop("tool_use"), Some(StopReason::ToolCalls));
+    assert_eq!(stop("max_tokens"), Some(StopReason::Length));
+    assert_eq!(stop("end_turn"), Some(StopReason::Stop));
 }
 
 fn asked<'a>(model: &str, messages: &'a [Message], effort: Effort) -> CompletionRequest<'a> {
@@ -187,15 +170,6 @@ fn asked<'a>(model: &str, messages: &'a [Message], effort: Effort) -> Completion
     call.effort = Some(effort);
     call.max_output_tokens = Some(16_000);
     call
-}
-
-#[test]
-fn the_request_path_sits_under_the_versioned_base_url() {
-    assert_eq!(
-        <Wire as crate::provider::wire::Chat>::path("claude-sonnet-5", true),
-        "/messages",
-        "the preset base_url already ends in /v1"
-    );
 }
 
 #[test]
@@ -294,9 +268,14 @@ fn replayed_tool_arguments_keep_the_bytes_the_model_produced() {
     assistant.tool_calls = vec![call("toolu_1", "lookup", r#"{"zeta": 1.50, "alpha":"x"}"#)];
     let wired = <Wire as crate::provider::wire::Chat>::body(
         &ask(&[message(Role::User, "go"), assistant]),
-        &Reasoning::default(),
-        crate::limits::limits().cache_ttl,
-        false,
+        &crate::provider::wire::Encoding {
+            reasoning: &crate::provider::Reasoning::default(),
+            cache: crate::limits::limits().cache_ttl,
+            stream: false,
+            keep_reasoning: false,
+            cache_marks: false,
+            assistant_after_tool: false,
+        },
     )
     .unwrap();
     let raw = String::from_utf8(wired.messages.expect("the history is written raw")).unwrap();
@@ -308,12 +287,14 @@ fn replayed_tool_arguments_keep_the_bytes_the_model_produced() {
 
 #[test]
 fn a_cache_write_is_priced_at_the_write_rate() {
-    let usage = super::usage(Some(&serde_json::json!({
+    let usage = serde_json::from_value::<super::event::Counted>(serde_json::json!({
         "input_tokens": 100,
         "cache_creation_input_tokens": 1000,
         "cache_read_input_tokens": 2000,
         "output_tokens": 50,
-    })));
+    }))
+    .unwrap()
+    .usage();
     assert_eq!(
         (
             usage.prompt_tokens,

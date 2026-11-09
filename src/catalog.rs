@@ -4,14 +4,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
-use crate::prompt::summonr_home;
+use summonr_core::error::Result;
 
 const FILE: &str = "models.json";
 
 mod listing;
 mod registry;
-mod shelf;
+mod storage;
 
 pub(crate) use listing::window;
 pub use listing::{parse, tokens};
@@ -193,7 +192,7 @@ pub fn listing(endpoint: &str) -> Option<Listing> {
 }
 
 fn listings() -> Arc<BTreeMap<String, Listing>> {
-    shelf::load(FILE).unwrap_or_default()
+    storage::load(FILE).unwrap_or_default()
 }
 
 #[must_use]
@@ -221,6 +220,13 @@ fn vision_of(endpoint: &crate::Endpoint, registry: &registry::Registry) -> bool 
 }
 
 #[must_use]
+pub(crate) fn context_limit(endpoint: &str, model: &str, base_url: Option<&str>) -> Option<u32> {
+    known(endpoint, model)
+        .and_then(|row| row.context)
+        .or_else(|| registry::context_of(endpoint, base_url, model))
+}
+
+#[must_use]
 pub(crate) fn known(endpoint: &str, id: &str) -> Option<Model> {
     listings()
         .get(endpoint)?
@@ -231,24 +237,16 @@ pub(crate) fn known(endpoint: &str, id: &str) -> Option<Model> {
 }
 
 pub(crate) fn remember(name: &str, models: Vec<Model>) -> Result<()> {
-    let path = summonr_home()?.join(FILE);
-    let held = crate::durable::store::lock(&path, true)?;
-    let mut all: BTreeMap<String, Listing> =
-        (*shelf::load::<BTreeMap<String, Listing>>(FILE)?).clone();
-    all.insert(
-        name.to_string(),
-        Listing {
-            models,
-            fetched: now(),
-        },
-    );
-    crate::durable::store::write(
-        &path,
-        serde_json::to_string(&all)?,
-        crate::durable::store::Durability::Renamed,
-    )?;
-    shelf::store(&path, all);
-    drop(held);
+    storage::doc::<BTreeMap<String, Listing>>(FILE)?.update(|all| {
+        all.insert(
+            name.to_string(),
+            Listing {
+                models,
+                fetched: now(),
+            },
+        );
+        Ok(true)
+    })?;
     Ok(())
 }
 

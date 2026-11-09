@@ -4,18 +4,17 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::error::{Error, Result};
 use crate::hashline::{Tags, line_hash, tagged_lines};
+use summonr_core::error::{Error, Result};
 
 use super::image::image_type;
-use super::{ToolRegistry, object_string, object_usize, parse_args};
+use super::{ToolRegistry, object_string, object_usize};
 use crate::tools::ToolOutput;
 
-const READ_PAGE_BYTES: usize = 50 * 1024;
-const READ_MAX_BYTES: usize = 8 * 1024;
+pub(super) const READ_PAGE_BYTES: usize = super::super::budget::SHAPED_BUDGET;
 const READ_MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 
-enum Opened {
+pub(super) enum Opened {
     Text(BufReader<std::fs::File>),
     Image(ToolOutput),
 }
@@ -25,6 +24,7 @@ struct Page {
     window: Vec<String>,
     hashes: Vec<String>,
     bytes: usize,
+    budget: usize,
     total: usize,
     truncated: bool,
     clipped: bool,
@@ -37,8 +37,12 @@ impl Page {
     }
 
     fn keep(&mut self, line: String, hash: String, clipped: bool) {
-        let size = line.len().saturating_add(1);
-        if self.window.is_empty() || self.bytes.saturating_add(size) <= READ_PAGE_BYTES {
+        let size = line
+            .len()
+            .saturating_add(self.total.saturating_add(1).to_string().len())
+            .saturating_add(hash.len())
+            .saturating_add(3);
+        if self.window.is_empty() || self.bytes.saturating_add(size) <= self.budget {
             self.bytes = self.bytes.saturating_add(size);
             self.clipped |= clipped;
             self.window.push(line);
@@ -85,7 +89,8 @@ impl Page {
             );
         }
         format!(
-            "[truncated at {READ_PAGE_BYTES} bytes after line {}; continue with offset {}]",
+            "[truncated at {} bytes after line {}; continue with offset {}]",
+            self.budget,
             first + shown,
             first + shown + 1
         )
@@ -102,23 +107,26 @@ impl ToolRegistry {
         let mut attempted = 0_usize;
         let mut failed = 0_usize;
         let mut first_failure: Option<String> = None;
+        let count = paths.iter().filter(|path| path.is_string()).count();
+        let share = READ_PAGE_BYTES / count.max(1);
         for path in paths {
             let Some(path) = path.as_str() else {
                 continue;
             };
             attempted += 1;
+            let reserve = format!("{path}  lines {n}-{n}/{n}\n[truncated at {share} bytes after line {n}; continue with offset {n}]\n\n", n = usize::MAX).len();
+            let budget = share.saturating_sub(reserve);
+            if budget <= super::super::budget::clip_mark(share).len() {
+                return Err(Error::Tool(
+                    "too many paths for one read page; send fewer paths".to_string(),
+                ));
+            }
             let mut call = args.clone();
             if let Some(fields) = call.as_object_mut() {
                 fields.remove("paths");
             }
             call["path"] = Value::String(path.to_string());
-            let call = call.to_string();
-            match self.read_file(&call) {
-                Ok(read) if !out.is_empty() && out.len() + read.text.len() > READ_PAGE_BYTES => {
-                    out.push_str(&format!(
-                        "{path}: not shown, the read passed {READ_PAGE_BYTES} bytes\n"
-                    ));
-                }
+            match self.read_file(&call, budget) {
                 Ok(read) => {
                     let read = self.dedup_read(&call, read);
                     out.push_str(&read.text);
@@ -142,14 +150,13 @@ impl ToolRegistry {
         })
     }
 
-    pub(super) fn read_file(&self, arguments: &str) -> Result<ToolOutput> {
-        let args: Value = parse_args("read", arguments)?;
-        let path = object_string(&args, "path")?;
-        let context = object_usize(&args, "context");
-        let before = object_usize(&args, "before").or(context).unwrap_or(0);
-        let after = object_usize(&args, "after").or(context).unwrap_or(0);
-        let offset = object_usize(&args, "offset").unwrap_or(1).max(1);
-        let limit = object_usize(&args, "limit").map_or(usize::MAX, |limit| {
+    pub(super) fn read_file(&self, args: &Value, budget: usize) -> Result<ToolOutput> {
+        let path = object_string(args, "path")?;
+        let context = object_usize(args, "context");
+        let before = object_usize(args, "before").or(context).unwrap_or(0);
+        let after = object_usize(args, "after").or(context).unwrap_or(0);
+        let offset = object_usize(args, "offset").unwrap_or(1).max(1);
+        let limit = object_usize(args, "limit").map_or(usize::MAX, |limit| {
             limit
                 .saturating_add(before.min(offset - 1))
                 .saturating_add(after)
@@ -161,12 +168,12 @@ impl ToolRegistry {
             Opened::Image(image) => return Ok(image),
         };
         let first = offset.saturating_sub(1).saturating_sub(before);
-        scan(&mut reader, path, first, limit, tags)?
+        scan(&mut reader, path, first, limit, tags, budget)?
             .render(path, first, tags)
             .map(ToolOutput::ok)
     }
 
-    fn open_text(&self, path: &str) -> Result<Opened> {
+    pub(super) fn open_text(&self, path: &str) -> Result<Opened> {
         let canonical = self.resolve_read(path, crate::tools::paths::Shield::Contained)?;
         let file = std::fs::File::open(&canonical)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
@@ -205,8 +212,12 @@ fn scan(
     first: usize,
     limit: usize,
     tags: bool,
+    budget: usize,
 ) -> Result<Page> {
-    let mut page = Page::default();
+    let mut page = Page {
+        budget,
+        ..Page::default()
+    };
     let mut read_bytes = 0_usize;
     let mut raw = Vec::new();
     loop {
@@ -245,7 +256,8 @@ fn scan(
             } else {
                 String::new()
             };
-            let (line, clipped) = decode(body, over && !ended);
+            let prefix = page.total.saturating_add(1).to_string().len() + hash.len() + 3;
+            let (line, clipped) = decode(body, over && !ended, budget.saturating_sub(prefix));
             page.keep(line, hash, clipped);
         }
         page.total += 1;
@@ -257,13 +269,17 @@ fn scan(
     Ok(page)
 }
 
-fn decode(raw: &[u8], partial: bool) -> (String, bool) {
+fn decode(raw: &[u8], partial: bool, budget: usize) -> (String, bool) {
     let mut raw = raw;
     if raw.last() == Some(&b'\r') {
         raw = &raw[..raw.len() - 1];
     }
-    let clipped = partial || raw.len() > READ_MAX_BYTES;
-    let prefix = &raw[..raw.len().min(READ_MAX_BYTES)];
+    let marker = super::super::budget::clip_mark(budget).len() + "…".len();
+    let limit = crate::limits::limits()
+        .output_line_bytes
+        .min(budget.saturating_sub(marker));
+    let clipped = partial || raw.len() > limit;
+    let prefix = &raw[..raw.len().min(limit)];
     let prefix = match std::str::from_utf8(prefix) {
         Err(error) if clipped && error.error_len().is_none() => &prefix[..error.valid_up_to()],
         Ok(_) | Err(_) => prefix,
@@ -273,7 +289,11 @@ fn decode(raw: &[u8], partial: bool) -> (String, bool) {
         Cow::Owned(text) => format!("{text} [invalid UTF-8 replaced]"),
     };
     if clipped {
-        text.push_str(&format!("… [line clipped at {READ_MAX_BYTES} bytes]"));
+        text.push('…');
+        text.push_str(&super::super::budget::clip_mark(limit));
+    }
+    if text.len() > budget {
+        text.truncate(text.floor_char_boundary(budget));
     }
     (text, clipped)
 }

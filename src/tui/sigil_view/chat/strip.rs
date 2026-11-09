@@ -1,28 +1,29 @@
 use sigil::prelude::{
-    AlignItems, ControlSize, JustifyContent, LayoutBuilderExt, LayoutStyle, MouseButton,
-    NodeBuilder, NodeEventsExt, Token, button, container,
+    AlignItems, ControlSize, JustifyContent, LayoutBuilderExt, LayoutStyle, NodeBuilder, Token,
+    button, container,
 };
 
+use super::entry::{bits, glyph};
 use super::{Agent, App};
-use crate::tui::ToolState;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 use crate::tui::sigil_view::ui::{Hints, Key};
 
-fn text(body: impl Into<sigil::kernel::TextContent>, look: Look) -> sigil::kernel::TextBuilder {
-    look.on(sigil::kernel::text(body).nowrap())
-}
-
-fn mark(agent: &Agent) -> (&'static str, Look) {
-    match agent.state() {
-        ToolState::Running => ("○", Look::xs(Token::Gray11)),
-        ToolState::Ok => ("●", Look::xs(Token::Success11)),
-        ToolState::Failed => ("●", Look::xs(Token::Error11)),
-    }
+fn text(
+    body: impl Into<sigil::kernel::TextContent>,
+    text_style: TextStyle,
+) -> sigil::kernel::TextBuilder {
+    text_style.on(sigil::kernel::text(body).nowrap())
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum Row {
     Head(bool),
+    Headless {
+        id: String,
+        title: String,
+        model: String,
+        status: String,
+    },
     Agent {
         id: String,
         title: String,
@@ -69,12 +70,12 @@ impl Widths {
 
 const TITLE_SHARE: (usize, usize) = (2, 5);
 const ACTIVITY_MIN: usize = 12;
-const CHROME: [&str; 5] = ["○", "Subagent", "·", "·", "tok"];
-const CHROME_GAPS: usize = 9;
+const CHROME: [&str; 4] = ["○", "·", "·", "tok"];
+const CHROME_GAPS: usize = 8;
 
 fn fixed(
     body: impl Into<sigil::kernel::TextContent>,
-    look: Look,
+    text_style: TextStyle,
     cells: usize,
     justify: JustifyContent,
 ) -> NodeBuilder {
@@ -86,22 +87,14 @@ fn fixed(
                 .min_size(0.0, 0.0)
                 .justify_content(justify),
         )
-        .child(text(body, look).ellipsize())
+        .child(text(body, text_style).ellipsize())
 }
 
-type View = sigil::prelude::Signal<(bool, Vec<Agent>)>;
-
-fn state_code(agent: &Agent) -> u8 {
-    match agent.state() {
-        ToolState::Running => 0,
-        ToolState::Ok => 1,
-        ToolState::Failed => 2,
-    }
-}
+type View = sigil::prelude::Signal<(bool, Vec<Agent>, Vec<crate::mail::Agent>)>;
 
 fn field(view: View, id: String, pick: impl Fn(&Agent) -> String + 'static) -> impl Fn() -> String {
     move || {
-        view.with(|(_, rows)| {
+        view.with(|(_, rows, _)| {
             rows.iter()
                 .find(|agent| agent.id == id)
                 .map(&pick)
@@ -120,7 +113,7 @@ fn doing(agent: &Agent, roots: &[String]) -> String {
 }
 
 fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> NodeBuilder {
-    let (glyph, tone) = mark(agent);
+    let (glyph, tone) = glyph(&agent.state());
     let roots = app.roots.clone();
     let mut line = container()
         .layout(
@@ -131,17 +124,16 @@ fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> N
                 .align_items(AlignItems::Center),
         )
         .child(text(glyph, tone))
-        .child(text("Subagent", Look::xs(Token::Accent11)))
         .child(fixed(
             agent.title.clone(),
-            Look::xs(Token::Gray12),
+            TextStyle::xs(Token::Gray12),
             widths.title,
             JustifyContent::Start,
         ))
         .child(
             text(
                 field(view, agent.id.clone(), move |agent| doing(agent, &roots)),
-                Look::xs(Token::Gray10),
+                TextStyle::xs(Token::Gray10),
             )
             .ellipsize()
             .layout(
@@ -155,29 +147,29 @@ fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> N
         line = line
             .child(fixed(
                 agent.access.name(),
-                Look::xs(Token::Gray10),
+                TextStyle::xs(Token::Gray10),
                 widths.access,
                 JustifyContent::Start,
             ))
-            .child(text("·", Look::xs(Token::Gray10)));
+            .child(text("·", TextStyle::xs(Token::Gray10)));
     }
     line = line
         .child(fixed(
             field(view, agent.id.clone(), Agent::clock),
-            Look::xs(Token::Gray10),
+            TextStyle::xs(Token::Gray10),
             widths.clock,
             JustifyContent::End,
         ))
-        .child(text("·", Look::xs(Token::Gray10)))
+        .child(text("·", TextStyle::xs(Token::Gray10)))
         .child(fixed(
             field(view, agent.id.clone(), |agent| {
                 crate::provider::compact(agent.tokens)
             }),
-            Look::xs(Token::Gray10),
+            TextStyle::xs(Token::Gray10),
             widths.tokens,
             JustifyContent::End,
         ))
-        .child(text("tok", Look::xs(Token::Gray10)));
+        .child(text("tok", TextStyle::xs(Token::Gray10)));
     if detail && agent.background {
         let clear = app.clone();
         let id = agent.id.clone();
@@ -192,7 +184,7 @@ fn line(agent: &Agent, app: &App, detail: bool, view: View, widths: Widths) -> N
     line
 }
 
-fn shown(app: &App) -> (bool, Vec<Agent>) {
+fn shown(app: &App) -> (bool, Vec<Agent>, Vec<crate::mail::Agent>) {
     let model = app.model.get();
     let expanded = model.agents_expanded;
     let hidden: &std::collections::BTreeSet<String> = &model.agents_hidden;
@@ -203,12 +195,19 @@ fn shown(app: &App) -> (bool, Vec<Agent>) {
         .filter(|agent| expanded || (agent.background && !agent.done))
         .cloned()
         .collect();
-    (expanded, rows)
+    let headless = model
+        .peers
+        .iter()
+        .filter(|peer| peer.parent.as_deref() == Some(model.session.as_str()))
+        .cloned()
+        .collect();
+    (expanded, rows, headless)
 }
 
 pub(in crate::tui::sigil_view) fn rows(app: &App) -> usize {
-    let (_, rows) = shown(app);
-    rows.len() + usize::from(!rows.is_empty())
+    let (_, rows, headless) = shown(app);
+    let count = rows.len() + headless.len();
+    count + 2 * usize::from(count > 0)
 }
 
 pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder {
@@ -218,7 +217,7 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
         if width >= 12 {
             shown(&update)
         } else {
-            (false, Vec::new())
+            (false, Vec::new(), Vec::new())
         }
     });
     container()
@@ -229,10 +228,12 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 .min_size(0.0, 0.0),
         )
         .children_keyed(move || {
-            let (expanded, rows) = view.get();
+            let (expanded, rows, headless) = view.get();
             let mut nodes = Vec::new();
-            if !rows.is_empty() {
-                let count = move || view.with(|(_, rows)| rows.len().to_string());
+            if !rows.is_empty() || !headless.is_empty() {
+                let count = move || {
+                    view.with(|(_, rows, headless)| (rows.len() + headless.len()).to_string())
+                };
                 let toggle = app.clone();
                 let hint = Hints::new()
                     .key(
@@ -243,20 +244,27 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 nodes.push((
                     Row::Head(expanded),
                     container()
-                        .layout(LayoutStyle::flex_row().fill_width().gap(8.0))
-                        .child(text(
-                            if expanded { "▾" } else { "▸" },
-                            Look::xs(Token::Gray10),
-                        ))
-                        .child(text("Subagents", Look::xs(Token::Gray12).bold()))
-                        .child(text(count, Look::xs(Token::Gray10)))
-                        .child(text(hint, Look::xs(Token::Gray9)))
-                        .pointer_down(move |event| {
-                            if event.button == Some(MouseButton::Left) {
-                                toggle.toggle_agents();
-                                event.stop_propagation();
-                            }
-                        }),
+                        .layout(
+                            LayoutStyle::flex_row()
+                                .fill_width()
+                                .padding_top(super::canvas::cell().h)
+                                .gap(8.0)
+                                .align_items(AlignItems::Center),
+                        )
+                        .child(
+                            button(if expanded { "▾" } else { "▸" })
+                                .ghost()
+                                .size(ControlSize::Compact)
+                                .accessible(if expanded {
+                                    "Collapse subagents"
+                                } else {
+                                    "Expand subagents"
+                                })
+                                .activate(move || toggle.toggle_agents()),
+                        )
+                        .child(text("Subagents", TextStyle::xs(Token::Gray12).bold()))
+                        .child(text(count, TextStyle::xs(Token::Gray10)))
+                        .child(text(hint, TextStyle::xs(Token::Gray9))),
                 ));
             }
             let widths = Widths::of(&rows, width);
@@ -264,12 +272,68 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 let key = Row::Agent {
                     id: agent.id.clone(),
                     title: agent.title.clone(),
-                    state: state_code(agent),
+                    state: bits(&agent.state(), false),
                     detail: expanded,
                     clear: expanded && agent.background,
                     widths,
                 };
                 nodes.push((key, line(agent, &app, expanded, view, widths)));
+            }
+            let model_width = headless
+                .iter()
+                .map(|peer| super::cell_width(&peer.model))
+                .max()
+                .unwrap_or(0)
+                .min(width / 4);
+            let status_width = headless
+                .iter()
+                .map(|peer| super::cell_width(&peer.status.to_string()))
+                .max()
+                .unwrap_or(0);
+            for peer in headless {
+                let title = peer.label().to_string();
+                let status = peer.status.to_string();
+                let tone = match peer.status {
+                    crate::mail::Presence::Working => Token::Accent11,
+                    crate::mail::Presence::Joined
+                    | crate::mail::Presence::Idle
+                    | crate::mail::Presence::Unknown => Token::Gray10,
+                };
+                nodes.push((
+                    Row::Headless {
+                        id: peer.id,
+                        title: title.clone(),
+                        model: peer.model.clone(),
+                        status: status.clone(),
+                    },
+                    container()
+                        .layout(
+                            LayoutStyle::flex_row()
+                                .fill_width()
+                                .gap(8.0)
+                                .min_size(0.0, 0.0)
+                                .align_items(AlignItems::Center),
+                        )
+                        .child(text("○", TextStyle::xs(tone)))
+                        .child(text("Headless", TextStyle::xs(Token::Accent11)))
+                        .child(
+                            text(title, TextStyle::xs(Token::Gray12))
+                                .ellipsize()
+                                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
+                        )
+                        .child(fixed(
+                            peer.model,
+                            TextStyle::xs(Token::Gray10),
+                            model_width,
+                            JustifyContent::Start,
+                        ))
+                        .child(fixed(
+                            status,
+                            TextStyle::xs(tone),
+                            status_width,
+                            JustifyContent::Start,
+                        )),
+                ));
             }
             nodes
         })

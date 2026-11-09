@@ -2,6 +2,94 @@ use super::*;
 use crate::provider::Image;
 use crate::provider::scripted::{Reply, Scripted};
 
+#[test]
+fn turn_prompts_summarize_tasks_and_show_background_job_state() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let mut driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    driver.prepare_turn_work("work", &[]).unwrap();
+    driver
+        .apply_todos(vec![
+            crate::tools::Todo {
+                text: "landed edit fix".to_string(),
+                status: crate::tools::TodoStatus::Done,
+            },
+            crate::tools::Todo {
+                text: "verify reads".to_string(),
+                status: crate::tools::TodoStatus::Active,
+            },
+            crate::tools::Todo {
+                text: "pending item must not repeat".to_string(),
+                status: crate::tools::TodoStatus::Pending,
+            },
+        ])
+        .unwrap();
+    for (code, command) in [
+        (None, "check the changed code"),
+        (Some(1), "failed verification"),
+        (Some(1), "recovered verification"),
+        (Some(0), "recovered verification"),
+    ] {
+        let (id, path, _, exit) = crate::jobs::prepare(workspace.path()).unwrap();
+        crate::jobs::write(
+            &path,
+            &crate::jobs::Record {
+                id,
+                pid: std::process::id(),
+                command: command.to_string(),
+                workspace: workspace.path().display().to_string(),
+                started: crate::mail::now(),
+                background: true,
+                session: Some(driver.id().to_string()),
+                log: None,
+            },
+        )
+        .unwrap();
+        if let Some(code) = code {
+            std::fs::write(exit, code.to_string()).unwrap();
+        }
+    }
+    let mut loop_ =
+        Loop::open(Scripted::default(), "m", workspace.path(), "system", driver).unwrap();
+    let messages = loop_.begin_turn(UserInput::from("work")).unwrap();
+    let prompt = &messages.last().unwrap().content;
+    assert!(prompt.contains("Current: verify reads"), "{prompt}");
+    assert!(
+        prompt.contains("Last completed: landed edit fix"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("Tasks: 1 done, 1 pending"), "{prompt}");
+    assert!(
+        prompt.lines().any(|line| line.starts_with("Running job ") && line.contains("check the changed code")),
+        "{prompt}"
+    );
+    assert!(
+        prompt
+            .lines()
+            .any(|line| line.starts_with("Unresolved job failure ")
+                && line.contains("failed verification")),
+        "{prompt}"
+    );
+    assert!(
+        prompt
+            .lines()
+            .any(|line| line.starts_with("Latest successful job ")
+                && line.contains("recovered verification")),
+        "{prompt}"
+    );
+    assert!(
+        prompt
+            .lines()
+            .all(|line| !line.starts_with("Unresolved job failure ")
+                || !line.contains("recovered verification")),
+        "{prompt}"
+    );
+    assert!(!prompt.contains("pending item must not repeat"), "{prompt}");
+    assert!(!prompt.contains("Harness task list"), "{prompt}");
+}
+
 fn blind_session(workspace: &Path, home: &Path, provider: Scripted) -> Loop<Scripted> {
     let driver =
         super::super::super::configure::open_driver(home, workspace, "m", "system").unwrap();
@@ -209,4 +297,228 @@ async fn a_fallback_keeps_the_effort_the_user_chose_later() {
         .await
         .unwrap();
     assert_eq!(loop_.effort(), Some(Effort::Max));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cancelling_a_reply_preserves_its_job() -> crate::Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let home = tempfile::tempdir()?;
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")?;
+    let mut parent = Loop::open(Scripted::new([]), "m", workspace.path(), "system", driver)?;
+    let call = |id: &str, name: &str, args: &serde_json::Value| crate::provider::ToolCall {
+        id: id.to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: name.to_string(),
+            arguments: args.to_string(),
+        },
+        continuation: None,
+    };
+    parent.begin_turn(crate::provider::UserInput::from(
+        "finish the kernel candidate",
+    ))?;
+    let release = workspace.path().join("release");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&release)
+            .status()?
+            .success()
+    );
+    let started = parent
+        .tools
+        .execute_outcome(&call(
+            "start",
+            "run_command",
+            &serde_json::json!({
+                "command": "printf '%s\\n' \"$SUMMONR_PARENT_SESSION\"; IFS= read -r line < release; printf finished",
+                "background": true
+            }),
+        ))
+        .await?;
+    let id = started
+        .text
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .expect("job id");
+    let record = crate::jobs::load(workspace.path(), id)?;
+    parent.abort_with(
+        &Abort {
+            code: crate::tools::AbortCode::Cancelled,
+            reason: "cancelled by user".to_string(),
+        },
+        |_| {},
+    )?;
+    assert_eq!(
+        crate::jobs::status(workspace.path(), &record)?.state,
+        crate::jobs::JobState::Running
+    );
+    let resumed = parent.begin_turn(crate::provider::UserInput::from("what is the status"))?;
+    let prompt = &resumed.last().expect("resumed prompt").content;
+    assert!(prompt.contains("what is the status"), "{prompt}");
+    assert!(!prompt.contains("finish the kernel candidate"), "{prompt}");
+    std::fs::write(&release, "continue\n")?;
+    let completed = parent
+        .tools
+        .execute_outcome(&call(
+            "wait",
+            "run_command",
+            &serde_json::json!({"job": id}),
+        ))
+        .await?;
+    assert!(
+        completed.success && completed.text.contains("finished"),
+        "{}",
+        completed.text
+    );
+    assert!(
+        completed.text.contains(&parent.session_id()),
+        "worker lost its originating session"
+    );
+    let started = parent
+        .tools
+        .execute_outcome(&call(
+            "again",
+            "run_command",
+            &serde_json::json!({
+                "command": "IFS= read -r line < release; printf stopped",
+                "background": true
+            }),
+        ))
+        .await?;
+    let id = started
+        .text
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .expect("second job id");
+    let record = crate::jobs::load(workspace.path(), id)?;
+    parent.abort_with(
+        &Abort {
+            code: crate::tools::AbortCode::Interrupted,
+            reason: "shutdown".to_string(),
+        },
+        |_| {},
+    )?;
+    assert_eq!(
+        crate::jobs::status(workspace.path(), &record)?.state,
+        crate::jobs::JobState::Killed
+    );
+    Ok(())
+}
+
+fn call(name: &str, arguments: serde_json::Value) -> Reply {
+    Reply::Call(crate::provider::ToolCall {
+        id: name.to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: name.to_string(),
+            arguments: arguments.to_string(),
+        },
+        continuation: None,
+    })
+}
+
+#[tokio::test]
+async fn a_finished_task_list_stays_out_of_the_next_turn() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let status = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(workspace.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    let provider = Scripted::new([
+        call(
+            "todo",
+            serde_json::json!({"items": [
+                {"text": "first", "status": "done"},
+                {"text": "second", "status": "done"}
+            ]}),
+        ),
+        call(
+            "write",
+            serde_json::json!({"path": "done.txt", "content": "done\n"}),
+        ),
+        Reply::Text("done"),
+        Reply::Text("answer"),
+    ]);
+    let sent = provider.sent();
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    loop_
+        .turn_with(UserInput::from("do the tasks"), |_| {})
+        .await
+        .unwrap();
+    loop_
+        .turn_with(UserInput::from("an unrelated question"), |_| {})
+        .await
+        .unwrap();
+    let sent = sent.lock().unwrap();
+    let prompt = &sent.last().unwrap().last().unwrap().content;
+    assert!(prompt.contains("an unrelated question"), "{prompt}");
+    assert!(!prompt.contains("Tasks: 2 done"), "{prompt}");
+    assert!(!prompt.contains("Last completed"), "{prompt}");
+}
+
+#[tokio::test]
+async fn a_finished_turn_leaves_its_failed_jobs_out_of_the_next_turn() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let status = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(workspace.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    let provider = Scripted::new([
+        call(
+            "todo",
+            serde_json::json!({"items": [{"text": "first", "status": "done"}]}),
+        ),
+        call(
+            "write",
+            serde_json::json!({"path": "done.txt", "content": "done\n"}),
+        ),
+        Reply::Text("done"),
+        Reply::Text("answer"),
+    ]);
+    let sent = provider.sent();
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    loop_
+        .turn_with(UserInput::from("do the tasks"), |_| {})
+        .await
+        .unwrap();
+    let (id, path, _, exit) = crate::jobs::prepare(workspace.path()).unwrap();
+    crate::jobs::write(
+        &path,
+        &crate::jobs::Record {
+            id,
+            pid: std::process::id(),
+            command: "old verification".to_string(),
+            workspace: workspace.path().display().to_string(),
+            started: crate::mail::now(),
+            background: true,
+            session: Some(loop_.session_id()),
+            log: None,
+        },
+    )
+    .unwrap();
+    std::fs::write(exit, "1").unwrap();
+    loop_
+        .turn_with(UserInput::from("an unrelated question"), |_| {})
+        .await
+        .unwrap();
+    let sent = sent.lock().unwrap();
+    let prompt = &sent.last().unwrap().last().unwrap().content;
+    assert!(prompt.contains("an unrelated question"), "{prompt}");
+    assert!(!prompt.contains("old verification"), "{prompt}");
 }

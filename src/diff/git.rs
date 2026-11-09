@@ -1,8 +1,9 @@
+use std::ffi::OsStr;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use super::Stat;
-use crate::error::{Error, Result};
+use crate::process::{self, Spec};
+use summonr_core::error::{Error, Result};
 
 pub(super) fn numstat_row(line: &str) -> Option<Stat> {
     let mut parts = line.splitn(3, '\t');
@@ -40,24 +41,11 @@ pub(crate) fn git_output(
     args: &[&str],
     input: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
-    use std::io::Write;
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .envs(env.iter().copied())
-        .args(args)
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-        stdin.write_all(input)?;
-    }
-    let output = child.wait_with_output()?;
+    let argv = [OsStr::new("-C"), root.as_os_str()]
+        .into_iter()
+        .chain(args.iter().map(OsStr::new));
+    let spec = Spec::new("git", argv).envs(env.iter().copied());
+    let output = process::output(spec, input)?;
     let different = args.starts_with(&["diff", "--no-index"])
         && output.status.code() == Some(1)
         && !output.stdout.is_empty();
@@ -78,10 +66,20 @@ pub(crate) fn git_output(
 }
 
 pub(crate) fn git_paths(root: &Path, args: &[&str]) -> Result<Vec<String>> {
-    let out = git_output(root, &[], args, None)?;
-    Ok(String::from_utf8_lossy(&out)
+    Ok(nul_paths(&git_output(root, &[], args, None)?))
+}
+
+pub(crate) fn nul_paths(out: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(out)
         .split('\0')
         .filter(|path| !path.is_empty())
         .map(str::to_string)
-        .collect())
+        .collect()
+}
+
+pub(crate) fn git_apply(root: &Path, patch: &[u8], flags: &[&str]) -> Result<()> {
+    let mut args = vec!["apply", "--binary", "--whitespace=nowarn"];
+    args.extend(flags);
+    git_output(root, &[], &args, Some(patch))?;
+    Ok(())
 }

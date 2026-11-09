@@ -16,7 +16,7 @@ impl App {
         if self.dispatch_line(&text) {
             return;
         }
-        if self.model.peek().snapshot.unseated {
+        if self.model.peek().snapshot.unconfigured {
             self.ask_provider();
             return;
         }
@@ -137,12 +137,10 @@ impl App {
             return false;
         }
         let typed = self.draft.peek();
-        let Some(name) = self.commands.complete(
-            &typed,
-            self.caret.peek(),
-            &self.model.get(),
-            &self.picker.facts.peek(),
-        ) else {
+        let Some(name) = self
+            .commands
+            .complete(&typed, self.caret.peek(), &self.model.get())
+        else {
             return false;
         };
         self.completion(&name);
@@ -168,7 +166,11 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn escape_idle(&self) -> bool {
-        if !armed(&self.escape_armed, crate::limits::limits().repeat_window()) {
+        if !confirm(
+            &self.escape_armed,
+            (),
+            Some(crate::limits::limits().repeat_window()),
+        ) {
             return false;
         }
         self.open_sessions(true);
@@ -215,7 +217,11 @@ impl App {
                 drop(self.cmd.send(Cmd::Cancel));
             }
         } else if self.draft.peek().is_empty() && self.attachments.borrow().is_empty() {
-            if armed(&self.quit_armed, crate::limits::limits().repeat_window()) {
+            if confirm(
+                &self.quit_armed,
+                (),
+                Some(crate::limits::limits().repeat_window()),
+            ) {
                 self.quit.set(true);
             } else {
                 self.push_entry(Entry::System("press ctrl+c again to quit".to_string()));

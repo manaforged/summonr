@@ -1,8 +1,10 @@
-use sigil::prelude::{AlignItems, LayoutBuilderExt, NodeBuilder, NodeEventsExt, Token, container};
+use sigil::prelude::{
+    AlignItems, LayoutBuilderExt, NodeBuilder, Token, container, effect, signal, tabs,
+};
 
 use crate::tui::sigil_view::app::App;
 use crate::tui::sigil_view::canvas;
-use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::text_style::TextStyle;
 
 use super::rows::row;
 
@@ -27,37 +29,28 @@ impl Tab {
     #[must_use]
     pub(in crate::tui) fn step(self, delta: isize) -> Self {
         let at = Self::ALL.iter().position(|tab| *tab == self).unwrap_or(0);
-        let next = (at as isize + delta).rem_euclid(Self::ALL.len() as isize);
-        Self::ALL[next as usize]
+        Self::ALL[super::cycle(at, delta, Self::ALL.len())]
     }
 }
 
 pub(in crate::tui::sigil_view) fn strip(app: &App, active: Tab) -> NodeBuilder {
-    let line = container().layout(
-        row(8.0)
-            .align_items(AlignItems::Center)
-            .gap(canvas::cell().w * 3.0),
-    );
-    let tabs = Tab::ALL.into_iter().fold(line, |line, tab| {
-        let look = if tab == active {
-            Look::sm(Token::Accent11).bold()
-        } else {
-            Look::sm(Token::Gray10)
-        };
-        let app = app.clone();
-        line.child(
-            container()
-                .child(look.on(sigil::kernel::text(tab.label()).nowrap()))
-                .pointer_down(move |event| {
-                    app.show_tab(tab);
-                    event.stop_propagation();
-                }),
-        )
+    let at = Tab::ALL.iter().position(|tab| *tab == active).unwrap_or(0);
+    let picked = signal(at);
+    let show = app.clone();
+    effect(move || {
+        let index = picked.get();
+        if index != at {
+            show.show_tab(Tab::ALL[index]);
+        }
     });
+    let labels: Vec<String> = Tab::ALL.iter().map(|tab| tab.label().to_string()).collect();
+    let line = container()
+        .layout(row(8.0).align_items(AlignItems::Center))
+        .child(tabs().labels(labels).active(picked).label("Settings tabs"));
     if canvas::is_window() {
-        return tabs;
+        return line;
     }
-    tabs.child(Look::xs(Token::Gray9).on(sigil::kernel::text(TAB_HINT).nowrap()))
+    line.child(TextStyle::xs(Token::Gray9).on(sigil::kernel::text(TAB_HINT).nowrap()))
 }
 
 const TAB_HINT: &str = "←/→";

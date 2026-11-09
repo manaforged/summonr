@@ -1,13 +1,14 @@
 use std::cmp::Ordering;
+use std::ffi::OsStr;
 use std::path::Path;
-use std::process::Command;
 
 use leyline::Session;
 use sha2::{Digest, Sha256};
 
-use crate::error::{Error, Result};
+use crate::process::{self, Spec};
+use summonr_core::error::{Error, Result};
 
-pub const RELEASES: &str = "https://github.com/manaforged/summonr/releases";
+const RELEASES: &str = "https://github.com/manaforged/summonr/releases";
 const FROM_SOURCE: &str = "cargo install --git https://github.com/manaforged/summonr --locked";
 const BINARY: &str = if cfg!(windows) {
     "summonr.exe"
@@ -50,7 +51,7 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
     }
     let dir = exe.parent().unwrap_or_else(|| Path::new("."));
     sweep(dir);
-    let http = client()?;
+    let http = crate::credentials::http(crate::limits::limits().update())?;
     let latest = latest(&http, source.releases).await?;
     match newer(&latest, source.current) {
         Ordering::Equal => return Ok(Outcome::Current(latest)),
@@ -78,21 +79,8 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
     })
 }
 
-fn client() -> Result<Session> {
-    crate::credentials::session(
-        summonr_auth::builder(
-            crate::limits::limits().update(),
-            crate::limits::limits().connect(),
-        ),
-        crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
-    )
-}
-
 fn sweep(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
+    for entry in summonr_core::walk::children(dir) {
         let stale = entry.file_name().to_string_lossy().starts_with(STAGE)
             && entry
                 .metadata()
@@ -187,21 +175,25 @@ fn check(archive: &[u8], listed: &[u8], asset: &str) -> Result<()> {
 fn unpack(stage: &Path, asset: &str, archive: &[u8]) -> Result<()> {
     let file = stage.join(asset);
     std::fs::write(&file, archive)?;
-    let status = Command::new("tar")
-        .arg("-xf")
-        .arg(&file)
-        .arg("-C")
-        .arg(stage)
-        .status()
-        .map_err(|error| Error::Setup(format!("cannot run tar to unpack {asset}: {error}")))?;
-    if !status.success() {
+    let tar = Spec::new(
+        "tar",
+        [
+            OsStr::new("-xf"),
+            file.as_os_str(),
+            OsStr::new("-C"),
+            stage.as_os_str(),
+        ],
+    );
+    let output = process::output(tar, None)
+        .map_err(|error| Error::Setup(format!("cannot unpack {asset}: {error}")))?;
+    if !output.status.success() {
         return Err(Error::Setup(format!("tar could not unpack {asset}")));
     }
     Ok(())
 }
 
 fn runs_as(fresh: &Path, version: &str) -> Result<()> {
-    let output = Command::new(fresh).arg("--version").output();
+    let output = process::output(Spec::new(fresh, ["--version"]), None);
     let printed = output
         .as_ref()
         .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())

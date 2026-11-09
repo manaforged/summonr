@@ -7,7 +7,6 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::durable::driver::{Exposure, SessionDriver};
 use crate::durable::log::{Usage as Meter, UsageMeta};
-use crate::error::{Error, Result};
 use crate::herdr::Reporter;
 use crate::mail::{Mail, Mailbox};
 use crate::policy::Policy;
@@ -18,7 +17,9 @@ use crate::provider::{
 use crate::tools::{Event, ToolRegistry};
 use crate::verify::Outcome;
 use crate::workflow;
+use summonr_core::error::{Error, Result};
 
+use turn::{CallOptions, RetryPolicy};
 pub(crate) use turn::{GrantAnswer, Steering};
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Budget {
@@ -53,25 +54,6 @@ impl Budget {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum RunMode {
-    #[default]
-    Auto,
-    Work,
-    Goal,
-}
-
-impl RunMode {
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Work => "work",
-            Self::Goal => "goal",
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Turn {
     pub text: String,
@@ -83,23 +65,64 @@ pub struct Turn {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum StepRun {
+pub enum NextAction {
     Done(i32),
     Run {
-        index: usize,
-        total: usize,
         prompt: String,
+        step: Option<(usize, usize)>,
     },
+}
+
+#[derive(Clone, Debug)]
+pub enum Job {
+    Goal {
+        objective: String,
+        gates: Vec<String>,
+    },
+    Steps {
+        plan: String,
+        steps: Vec<crate::steps::Step>,
+    },
+}
+
+impl Job {
+    #[must_use]
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::Goal { .. } => "goal",
+            Self::Steps { .. } => "steps",
+        }
+    }
+
+    #[must_use]
+    pub const fn aborted(&self) -> &'static str {
+        match self {
+            Self::Goal { .. } => "goal execution aborted",
+            Self::Steps { .. } => "step execution aborted",
+        }
+    }
+
+    #[must_use]
+    pub fn check(&self, index: usize) -> Option<String> {
+        let Self::Steps { steps, .. } = self else {
+            return None;
+        };
+        steps
+            .get(index.saturating_sub(1))
+            .map(|step| step.checks.join(" && "))
+            .filter(|check| !check.is_empty())
+    }
 }
 
 pub struct Loop<P> {
     provider: P,
     model: String,
-    seats: BTreeMap<workflow::Role, (P, String)>,
+    selections: BTreeMap<workflow::Role, (P, String, Option<u32>)>,
+    prompt_parts: (usize, usize, usize, usize),
     tuning: BTreeMap<workflow::Role, (Option<Effort>, Option<Price>)>,
     price: Option<Price>,
     system_prompt: String,
-    mode: RunMode,
+    mode: crate::WorkKind,
     tools: ToolRegistry,
     schema: Option<Arc<mail::Advertised>>,
 
@@ -107,12 +130,11 @@ pub struct Loop<P> {
     session: SessionDriver,
     verify: Option<Vec<String>>,
     check_file: Option<Vec<u8>>,
-    budget: Budget,
-    spent_tokens: u64,
+    metric: Option<(crate::verify::Metric, crate::verify::Protected)>,
     run_base: (u64, u64),
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,
-    probe: Option<tokio::task::JoinHandle<Option<u32>>>,
+    probes: Vec<(Option<workflow::Role>, tokio::task::JoinHandle<Option<u32>>)>,
     effort: Option<Effort>,
     chosen_effort: Option<Effort>,
     turn_started: u64,
@@ -128,9 +150,7 @@ pub struct Loop<P> {
     mcp_wanted: bool,
     mcp_board: crate::mcp::Board,
     inbox: VecDeque<Mail>,
-    steer: VecDeque<UserInput>,
     steer_shared: Option<Arc<turn::Steering>>,
-    depth: u8,
     tasks: bool,
     interactive: bool,
     spawned: BTreeMap<String, child::Spawned>,
@@ -164,18 +184,14 @@ impl<P: Provider> Loop<P> {
         Ok((output.text, output.success))
     }
 
-    fn seat(&self, role: workflow::Role) -> (&P, &str) {
-        self.seats.get(&role).map_or(
+    fn selection(&self, role: workflow::Role) -> (&P, &str) {
+        self.selections.get(&role).map_or(
             (&self.provider, self.model.as_str()),
-            |(provider, model)| (provider, model.as_str()),
+            |(provider, model, _)| (provider, model.as_str()),
         )
     }
 
     pub(crate) fn effort_for(&self, role: workflow::Role) -> Option<Effort> {
-        self.configured_effort(role)
-    }
-
-    fn configured_effort(&self, role: workflow::Role) -> Option<Effort> {
         self.tuning
             .get(&role)
             .and_then(|(effort, _)| *effort)
@@ -198,7 +214,7 @@ impl<P: Provider> Loop<P> {
     ) -> CompletionRequest<'a> {
         CompletionRequest::new(
             self.session_id(),
-            self.seat(role).1.to_string(),
+            self.selection(role).1.to_string(),
             messages,
             tools,
             None,
@@ -220,18 +236,6 @@ impl<P: Provider> Loop<P> {
         self.request(role, sent, &advertised.tools, true)
             .with_tools_json(&advertised.json)
     }
-
-    fn round_role(&self) -> workflow::Role {
-        workflow::Role::Implement
-    }
-}
-
-pub(super) fn session_err(error: impl std::fmt::Display) -> Error {
-    Error::Config(error.to_string())
-}
-
-pub(super) fn meter(usage: &Usage, millis: u64) -> Meter {
-    Meter::measured(usage, millis)
 }
 
 pub(crate) fn billable(error: &Error) -> bool {
@@ -244,6 +248,16 @@ pub(super) fn exposure(request: &CompletionRequest<'_>, request_chars: usize) ->
     Exposure {
         max_input_tokens: u64::try_from(request_chars / 4).unwrap_or(u64::MAX),
         max_output_tokens: request.max_output_tokens.map_or(0, u64::from),
+    }
+}
+
+#[cfg(test)]
+impl<P> Loop<P> {
+    pub(crate) async fn execute_for_test(
+        &self,
+        call: &crate::provider::ToolCall,
+    ) -> summonr_core::error::Result<crate::tools::ToolOutput> {
+        self.tools.execute_for_test(call).await
     }
 }
 

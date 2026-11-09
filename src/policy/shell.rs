@@ -25,29 +25,15 @@ pub(super) fn shell(program: &str) -> bool {
         .unwrap_or_default()
         .trim_matches(['\'', '"'])
         .to_ascii_lowercase();
-    matches!(
-        name.strip_suffix(".exe").unwrap_or(&name),
-        "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish" | "cmd" | "powershell" | "pwsh"
-    )
+    rules()
+        .shell
+        .shells
+        .contains(name.strip_suffix(".exe").unwrap_or(&name))
 }
 
-pub(super) const WRAPPERS: [&str; 20] = [
-    "env", "sudo", "doas", "nice", "nohup", "exec", "command", "builtin", "time", "xargs",
-    "timeout", "stdbuf", "setsid", "flock", "chronic", "eval", "then", "do", "else", "elif",
-];
-
-const WRAPPER_ARGS: &[(&str, &[&str])] = &[
-    ("env", &["-u", "-C", "--unset", "--chdir"]),
-    ("sudo", &["-u", "-g", "-h", "-p", "-C", "-T"]),
-    ("timeout", &["-k", "--kill-after"]),
-    ("nice", &["-n"]),
-    ("stdbuf", &["-i", "-o", "-e"]),
-    ("flock", &["-w"]),
-    (
-        "xargs",
-        &["-I", "-J", "-L", "-n", "-P", "-d", "-E", "-s", "-a"],
-    ),
-];
+pub(super) fn wrapper(name: &str) -> bool {
+    rules().wrappers.contains_key(name)
+}
 
 pub(super) fn command_pieces(segment: &str) -> Vec<String> {
     let Some(body) = arm_body(segment.trim()) else {
@@ -105,34 +91,33 @@ pub(super) fn skip_wrapper_args<'a>(wrapper: &str, mut text: &'a str) -> &'a str
 }
 
 fn wrapper_takes_value(wrapper: &str, flag: &str) -> bool {
-    let Some((_, flags)) = WRAPPER_ARGS.iter().find(|(name, _)| *name == wrapper) else {
-        return false;
-    };
-    flags.contains(&flag)
+    rules()
+        .wrappers
+        .get(wrapper)
+        .is_some_and(|flags| flags.contains(flag))
 }
 
-const XARGS: &str = "xargs";
-const XARGS_REPLACE: &[&str] = &["-I", "-J", "--replace=", "-i"];
-const XARGS_DEFAULT_TOKEN: &str = "{}";
-const XARGS_VALUE_FLAGS: &[&str] = &["-I", "-J", "-L", "-n", "-P", "-d", "-E", "-s", "-a"];
-
 fn xargs_runs_input(words: &[&str], at: usize) -> bool {
-    let Some(from) = words[..at].iter().position(|word| *word == XARGS) else {
+    let xargs = &rules().xargs;
+    let Some(from) = words[..at].iter().position(|word| *word == xargs.name) else {
         return false;
     };
     let options = &words[from + 1..at];
     let token = options.iter().enumerate().find_map(|(index, word)| {
-        let flag = XARGS_REPLACE.iter().find(|flag| word.starts_with(*flag))?;
+        let flag = xargs
+            .replace
+            .iter()
+            .find(|flag| word.starts_with(flag.as_str()))?;
         let rest = &word[flag.len()..];
         Some(if !rest.is_empty() {
             rest
-        } else if *flag == "-I" || *flag == "-J" {
+        } else if xargs.token_flags.contains(flag) {
             options
                 .get(index + 1)
                 .copied()
-                .unwrap_or(XARGS_DEFAULT_TOKEN)
+                .unwrap_or(xargs.default_token.as_str())
         } else {
-            XARGS_DEFAULT_TOKEN
+            xargs.default_token.as_str()
         })
     });
     let rest = &words[at + 1..];
@@ -158,15 +143,19 @@ pub(super) fn pipes_to_shell(command: &str) -> bool {
                 .split_whitespace()
                 .map(|word| word.rsplit('/').next().unwrap_or(word))
                 .collect();
+            let xargs = &rules().xargs.name;
+            let value_flags = rules().wrappers.get(xargs);
             let mut value = false;
             words
                 .iter()
                 .enumerate()
                 .position(|(index, word)| {
                     let skipped = value;
-                    value = XARGS_VALUE_FLAGS.contains(word) && words[..index].contains(&XARGS);
+                    // complexity: bounded by one BTreeSet lookup per word
+                    value = value_flags.is_some_and(|flags| flags.contains(*word))
+                        && words[..index].contains(&xargs.as_str());
                     !skipped
-                        && !WRAPPERS.contains(word)
+                        && !wrapper(word)
                         && !word.starts_with('-')
                         && !word.contains('=')
                         && !word.chars().all(|c| c.is_ascii_digit())
@@ -191,16 +180,18 @@ pub(super) fn pipes_to_shell(command: &str) -> bool {
 }
 
 pub(super) fn interpreter(name: &str) -> bool {
-    matches!(
-        name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.'),
-        "python" | "node" | "perl" | "ruby" | "php" | "deno" | "bun"
-    )
+    rules()
+        .shell
+        .interpreters
+        .contains(name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.'))
 }
 
 pub(super) fn reads_stdin(args: &[&str]) -> bool {
     args.contains(&"-")
         || args.iter().all(|arg| match arg.strip_prefix("--") {
-            Some(long) => !["eval", "print", "command"]
+            Some(long) => !rules()
+                .shell
+                .code_flags
                 .iter()
                 .any(|flag| long.starts_with(flag)),
             None => arg.starts_with('-') && !arg.contains(['c', 'e', 'E', 'm']),
@@ -212,7 +203,8 @@ pub(super) fn runs_substitution(segments: &[String]) -> bool {
         let mut words = segment.split_whitespace();
         words.next().is_some_and(|verb| {
             let name = verb.rsplit('/').next().unwrap_or(verb).to_ascii_lowercase();
-            shell(&name) || interpreter(&name) || matches!(name.as_str(), "source" | ".")
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            shell(&name) || interpreter(&name) || rules().shell.sourcing.contains(&name)
         }) && words.any(|word| word.starts_with("<("))
     })
 }
@@ -220,9 +212,12 @@ pub(super) fn runs_substitution(segments: &[String]) -> bool {
 pub(super) fn builtin_deny(command: &str, segments: &[String]) -> bool {
     let folded = collapse(command);
     catastrophic(command)
-        || folded.contains("git push --force")
-        || folded.contains("git push -f")
-        || folded.contains("git push --mirror")
+        || rules()
+            .shell
+            .denied_text
+            .iter()
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            .any(|text| folded.contains(text.as_str()))
         || pipes_to_shell(command)
         || runs_substitution(segments)
         || escalates(command)
@@ -231,18 +226,25 @@ pub(super) fn builtin_deny(command: &str, segments: &[String]) -> bool {
 
 pub(super) fn catastrophic(command: &str) -> bool {
     let folded = collapse(command);
+    let shell = &rules().shell;
     wipes_root(&folded)
-        || folded.contains("mkfs")
-        || folded.contains(":(){ :|:& };:")
-        || folded.contains("chmod -r 777 /")
-        || (folded.contains("dd if=") && folded.contains("of=/dev/"))
+        || shell
+            .catastrophic
+            .iter()
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            .any(|text| folded.contains(text.as_str()))
+        || shell
+            .device_write
+            .iter()
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            .all(|text| folded.contains(text.as_str()))
 }
 
 fn escalates(command: &str) -> bool {
     !running_as_root()
         && unquoted(command, &["&&", "||", "|", ";", "\n", "&"])
             .iter()
-            .any(|segment| matches!(command_word(segment, true), Some("sudo" | "doas")))
+            .any(|segment| command_word(segment, true).is_some_and(escalator))
 }
 
 pub(super) fn command_word(segment: &str, stop_at_escalator: bool) -> Option<&str> {
@@ -250,9 +252,13 @@ pub(super) fn command_word(segment: &str, stop_at_escalator: bool) -> Option<&st
         .split_whitespace()
         .map(|word| word.rsplit('/').next().unwrap_or(word))
         .find(|word| {
-            !word.contains('=') && !word.starts_with('-') && !WRAPPERS.contains(word)
-                || stop_at_escalator && matches!(*word, "sudo" | "doas")
+            !word.contains('=') && !word.starts_with('-') && !wrapper(word)
+                || stop_at_escalator && escalator(word)
         })
+}
+
+fn escalator(word: &str) -> bool {
+    rules().shell.escalators.contains(word)
 }
 
 #[cfg(unix)]
@@ -273,8 +279,7 @@ pub(super) fn powers_off(segments: &[String]) -> bool {
             .split_whitespace()
             .find(|word| !word.contains('='))
             .map(|word| word.rsplit('/').next().unwrap_or(word).to_ascii_lowercase())
-            .is_some_and(|verb| {
-                matches!(verb.as_str(), "shutdown" | "reboot" | "halt" | "poweroff")
-            })
+            // complexity: bounded by the fixed [shell] table in rules.toml
+            .is_some_and(|verb| rules().shell.power_off.contains(&verb))
     })
 }

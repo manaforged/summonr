@@ -8,7 +8,7 @@ use crate::endpoint::{CacheTtl, Endpoint};
 pub(super) fn endpoint(name: &str, model: &str) -> Endpoint {
     let mut endpoint =
         crate::endpoint::resolve(Some(name), Some(model), crate::Need::Config).unwrap();
-    endpoint.api_key = Some("k".to_string());
+    endpoint.api_key = Some(summonr_core::secret::Secret::new("k"));
     endpoint
 }
 
@@ -147,7 +147,11 @@ pub(super) fn sent(mut endpoint: Endpoint, request: &CompletionRequest<'_>) -> S
         .unwrap();
     let _context = runtime.enter();
     let client = Client::connect(&endpoint).unwrap();
-    let outcome = runtime.block_on(client.complete_stream(request, &mut Partial::default()));
+    let outcome = runtime.block_on(crate::provider::Provider::stream(
+        &client,
+        request,
+        &mut Partial::default(),
+    ));
     let failure = outcome.unwrap_err().to_string();
     let seen = heard.join().unwrap();
     assert!(!seen.is_empty(), "no request reached the server: {failure}");
@@ -368,12 +372,12 @@ fn mistral_gets_an_assistant_turn_between_a_tool_result_and_a_steer() {
 
 #[test]
 fn responses_login_uses_session_affinity() {
-    let seat = crate::endpoint::login_seat("openai").unwrap();
-    let client = Client::connect(&seat).unwrap();
+    let selection = crate::endpoint::login_endpoint("openai").unwrap();
+    let client = Client::connect(&selection).unwrap();
     let messages = tool_round();
     let request = CompletionRequest::new(
         "session-7".to_string(),
-        seat.model.clone(),
+        selection.model.clone(),
         &messages,
         &[],
         None,

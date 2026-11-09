@@ -9,7 +9,7 @@ async fn run_diff_review(
     floor: f64,
 ) -> Result<i32> {
     let questions = if asked.is_empty() {
-        summonr::classify::sets::diff()
+        summonr::classify::sets::by_name("diff").unwrap_or_default()
     } else {
         asked.clone()
     };
@@ -81,7 +81,11 @@ fn classify_endpoint(args: &Args) -> Result<summonr::Endpoint> {
             )
         })?,
     };
-    resolve_endpoint(Some(&name), args.model.as_deref(), summonr::Need::Seat)
+    resolve_endpoint(
+        Some(&name),
+        args.model.as_deref(),
+        summonr::Need::ModelAndKey,
+    )
 }
 
 type Questions = std::collections::BTreeMap<String, summonr::classify::Question>;
@@ -123,7 +127,7 @@ fn classify_questions(args: &Args) -> Result<Questions> {
         None => std::collections::BTreeMap::new(),
     };
     if args.review {
-        questions.extend(summonr::classify::sets::review());
+        questions.extend(summonr::classify::sets::by_name("review").unwrap_or_default());
     }
     if let Some(name) = args.set.as_deref() {
         let set = summonr::classify::sets::by_name(name).ok_or_else(|| {

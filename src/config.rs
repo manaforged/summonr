@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use serde::Deserialize;
 use toml_edit::{DocumentMut, value};
 
 use crate::durable::store;
-use crate::error::{Error, Result};
 use crate::prefs::Prefs;
-use crate::prompt::summonr_home;
 use crate::workflow::Workflow;
+use summonr_core::dirs::{home_dir, summonr_home};
+use summonr_core::error::{Error, Result};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct File {
@@ -18,20 +18,20 @@ pub(crate) struct File {
     #[serde(default)]
     pub endpoint: BTreeMap<String, Endpoint>,
     #[serde(default)]
-    pub provider: BTreeMap<String, crate::endpoint::Choice>,
+    pub provider: BTreeMap<String, summonr_types::endpoint::Choice>,
     #[serde(default)]
     pub search: Search,
     #[serde(default)]
     pub browser: Browser,
     pub theme: Option<String>,
-    pub background: Option<crate::prefs::Background>,
-    pub notify: Option<crate::prefs::Notify>,
+    pub background: Option<summonr_types::Background>,
+    pub notify: Option<summonr_types::Notify>,
     pub splash: Option<bool>,
     pub animations: Option<bool>,
     pub fps: Option<u32>,
     pub reasoning: Option<ReasoningSetting>,
-    pub tools: Option<crate::prefs::ToolOutput>,
-    pub diff_layout: Option<crate::prefs::DiffLayout>,
+    pub tools: Option<summonr_types::prefs::ToolOutput>,
+    pub diff_layout: Option<summonr_types::DiffLayout>,
     pub receipts: Option<String>,
     #[serde(alias = "bus")]
     pub mail: Option<bool>,
@@ -45,21 +45,21 @@ pub(crate) struct File {
     pub write_roots: Vec<String>,
     pub workflow: Option<String>,
     #[serde(default)]
-    pub workflows: BTreeMap<String, BTreeMap<String, SeatRow>>,
+    pub workflows: BTreeMap<String, BTreeMap<String, ModelSelectionRow>>,
     #[serde(default)]
-    #[serde(deserialize_with = "crate::modules::switch_map")]
-    pub modules: BTreeMap<crate::modules::ModuleId, bool>,
+    #[serde(deserialize_with = "summonr_types::modules::switch_map")]
+    pub modules: BTreeMap<summonr_types::modules::ModuleId, bool>,
     #[serde(default)]
     pub sessions: Sessions,
     #[serde(default)]
-    pub mcp: BTreeMap<String, crate::mcp::Entry>,
+    pub mcp: BTreeMap<String, summonr_types::mcp::Entry>,
     #[serde(default)]
     pub import_mcp: Option<bool>,
     pub models_catalog: Option<bool>,
     #[serde(default)]
-    pub hooks: crate::hooks::Hooks,
+    pub hooks: summonr_types::hooks::Hooks,
     #[serde(default)]
-    pub plugins: crate::plugins::Switches,
+    pub plugins: summonr_types::plugins::Switches,
     pub limits: Option<crate::limits::Overrides>,
     #[serde(flatten)]
     pub other: BTreeMap<String, toml::Value>,
@@ -67,7 +67,7 @@ pub(crate) struct File {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum SeatRow {
+pub(crate) enum ModelSelectionRow {
     Name(String),
     Full {
         endpoint: String,
@@ -125,22 +125,22 @@ pub(crate) struct Endpoint {
     pub body: Option<toml::Value>,
     pub context_window: Option<u32>,
     pub idle_timeout_secs: Option<u64>,
-    pub effort: Option<crate::provider::Effort>,
-    pub price: Option<crate::provider::Price>,
+    pub effort: Option<summonr_types::Effort>,
+    pub price: Option<summonr_types::Price>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     #[serde(default, deserialize_with = "decode::wire")]
-    pub wire: Option<crate::endpoint::Wire>,
+    pub wire: Option<summonr_types::endpoint::Wire>,
     #[serde(default)]
     pub fallback: Vec<String>,
     pub compact_tokens: Option<u32>,
     pub images: Option<bool>,
     pub keep_reasoning: Option<bool>,
-    pub cache_ttl: Option<crate::endpoint::CacheTtl>,
-    pub reasoning_levels: Option<Vec<crate::provider::Effort>>,
-    pub thinking_off: Option<crate::provider::Off>,
+    pub cache_ttl: Option<summonr_types::endpoint::CacheTtl>,
+    pub reasoning_levels: Option<Vec<summonr_types::Effort>>,
+    pub thinking_off: Option<summonr_types::Off>,
     #[serde(default)]
     pub models: BTreeMap<String, Model>,
     #[serde(flatten)]
@@ -151,47 +151,14 @@ pub(crate) struct Endpoint {
 pub(crate) struct Model {
     pub body: Option<toml::Value>,
     pub context_window: Option<u32>,
-    pub effort: Option<crate::provider::Effort>,
+    pub effort: Option<summonr_types::Effort>,
     pub compact_tokens: Option<u32>,
     pub keep_reasoning: Option<bool>,
-    pub reasoning_levels: Option<Vec<crate::provider::Effort>>,
-    pub thinking_off: Option<crate::provider::Off>,
+    pub reasoning_levels: Option<Vec<summonr_types::Effort>>,
+    pub thinking_off: Option<summonr_types::Off>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
-pub struct OAuth {
-    pub token_url: String,
-    pub client_id: String,
-    #[serde(default)]
-    pub label: Option<String>,
-    pub client_secret: Option<String>,
-    pub refresh_token: Option<String>,
-    pub scope: Option<String>,
-    #[serde(default)]
-    pub grant: Option<String>,
-    #[serde(default)]
-    pub device_url: Option<String>,
-    #[serde(default)]
-    pub exchange_url: Option<String>,
-    #[serde(default)]
-    pub authorize_url: Option<String>,
-    #[serde(default)]
-    pub redirect_uri: Option<String>,
-    #[serde(default)]
-    pub authorize_params: BTreeMap<String, String>,
-    #[serde(default)]
-    pub token_params: BTreeMap<String, String>,
-    #[serde(default)]
-    pub token_style: Option<String>,
-    #[serde(default)]
-    pub scheme: Option<String>,
-    #[serde(default)]
-    pub pkce: bool,
-    #[serde(default)]
-    pub claim_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub required_scope: Option<String>,
-}
+pub(crate) use summonr_types::OAuth;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct Search {
@@ -224,58 +191,62 @@ pub(crate) fn path() -> Result<PathBuf> {
     Ok(summonr_home()?.join("config.toml"))
 }
 
-static PARSED: RwLock<Option<Arc<File>>> = RwLock::new(None);
-
 pub(crate) fn file() -> Result<Arc<File>> {
-    if let Some(file) = PARSED.read().ok().and_then(|cached| cached.clone()) {
-        return Ok(file);
+    doc::<Parsed>(&path()?).current()
+}
+
+struct Parsed;
+
+impl store::Codec for Parsed {
+    type Value = File;
+
+    fn decode(path: &Path, text: &str) -> Result<File> {
+        let file = decode(path, text)?;
+        warn_unknown(path, &file);
+        validate(path, &file)?;
+        Ok(file)
     }
-    let file = Arc::new(parse(&path()?)?);
-    drop(
-        PARSED
-            .write()
-            .map(|mut cached| *cached = Some(Arc::clone(&file))),
-    );
-    Ok(file)
+}
+
+struct Edit;
+
+impl store::Codec for Edit {
+    type Value = DocumentMut;
+
+    fn decode(path: &Path, text: &str) -> Result<DocumentMut> {
+        text.parse::<DocumentMut>()
+            .map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))
+    }
+}
+
+impl store::Encode for Edit {
+    fn encode(document: &DocumentMut) -> Result<String> {
+        Ok(document.to_string())
+    }
+}
+
+fn lock_wait() -> store::Wait {
+    store::Wait::Within(|| crate::limits::limits().auth())
+}
+
+fn doc<C: store::Codec>(path: &Path) -> store::Doc<C>
+where
+    C::Value: Default,
+{
+    store::Doc::new(
+        path.to_path_buf(),
+        store::Durability::Synced,
+        store::Invalid::Fail,
+        lock_wait(),
+    )
 }
 
 fn update(path: &Path, change: impl FnOnce(&mut DocumentMut) -> Result<bool>) -> Result<bool> {
-    let held = hold(path)?;
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error.into()),
-    };
-    let mut document = text
-        .parse::<DocumentMut>()
-        .map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))?;
-    let changed = change(&mut document)?;
-    if changed {
-        store::write(path, document.to_string(), store::Durability::Synced)?;
-        drop(PARSED.write().map(|mut cached| *cached = None));
-    }
-    drop(held);
-    Ok(changed)
+    doc::<Edit>(path).update(change)
 }
 
 pub(crate) fn hold(path: &Path) -> Result<std::fs::File> {
-    if let Some(file) = store::lock(path, false)? {
-        return Ok(file);
-    }
-    let locked = || {
-        Error::Config(format!(
-            "{} is locked by another summonr process; gave up after {}s",
-            tilde(path),
-            crate::limits::limits().auth_secs
-        ))
-    };
-    let (send, wait) = std::sync::mpsc::channel();
-    let owned = path.to_path_buf();
-    std::thread::spawn(move || drop(send.send(store::lock(&owned, true))));
-    match wait.recv_timeout(crate::limits::limits().auth()) {
-        Ok(held) => held?.ok_or_else(locked),
-        Err(_) => Err(locked()),
-    }
+    store::hold(path, lock_wait())
 }
 
 pub fn check() -> Result<()> {
@@ -283,27 +254,13 @@ pub fn check() -> Result<()> {
 }
 
 pub(crate) fn parse(path: &Path) -> Result<File> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(File::default()),
-        Err(error) => return Err(error.into()),
-    };
-    let file = decode(path, &text)?;
-    warn_unknown(path, &file);
-    validate(path, &file)?;
-    Ok(file)
+    doc::<Parsed>(path).load()
 }
 
 mod decode;
 mod edit;
 use decode::{decode, validate, warn_unknown};
 pub use edit::tilde;
-
-pub(crate) fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
 
 pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
     if matches!(word, "~" | "$HOME" | "${HOME}") {
@@ -317,7 +274,7 @@ pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
 }
 
 pub(crate) use edit::{
-    Section, drop_plugin_off, remove_key, remove_named, save_default_seat, save_default_workflow,
+    Section, drop_plugin_off, remove_key, remove_named, save_default_model, save_default_workflow,
     save_module, save_named, save_prefs, save_provider, save_workflow, save_write_root,
     write_root_entry,
 };

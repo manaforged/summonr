@@ -35,6 +35,7 @@ class Summonr(BaseInstalledAgent):
 
     _OUTPUT_FILENAME = "summonr.txt"
     _instruction = ""
+    ASK = "-p -- {}"
 
     CLI_FLAGS = [
         CliFlag(
@@ -74,8 +75,9 @@ class Summonr(BaseInstalledAgent):
             raise ValueError(f"{self._binary} has sha256 {found}, but the job pins {self._binary_sha256}")
         await self.exec_as_root(environment, command=level.record())
         await level.install(self, environment)
-        await environment.upload_file(self._binary, BINARY)
-        await self.exec_as_root(environment, command=f"chmod 755 {BINARY} && {BINARY} --version")
+        with level.harness():
+            await environment.upload_file(self._binary, BINARY)
+            await self.exec_as_root(environment, command=f"chmod 755 {BINARY} && {BINARY} --version")
         await self.exec_as_agent(environment, command=level.snapshot())
 
     def _endpoint(self) -> tuple[str, str]:
@@ -112,7 +114,7 @@ class Summonr(BaseInstalledAgent):
             await self.exec_as_agent(
                 environment,
                 command=(
-                    f"{BINARY} -e {endpoint} --json {flags} -p -- {shlex.quote(instruction)} "
+                    f"{BINARY} -e {endpoint} --json {flags} {self.ASK.format(shlex.quote(instruction))} "
                     f"2>{EnvironmentPaths.agent_dir}/summonr.err </dev/null "
                     f"| tee {EnvironmentPaths.agent_dir / self._OUTPUT_FILENAME}"
                 ),
@@ -223,3 +225,12 @@ class SummonrControl(Summonr):
     @override
     def name() -> str:
         return "summonr-control"
+
+
+class SummonrGoal(Summonr):
+    ASK = "--goal {}"
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "summonr-goal"

@@ -1,50 +1,36 @@
+use std::ops::Range;
+
 use serde_json::{Value, json};
 
 use super::event::{Change, Counted, Event, EventKind, Opened, Shape};
-use super::stop_reason;
-use crate::provider::message::Checked;
 use crate::provider::stream::append_arguments;
+use crate::provider::wire::reply::ReplyBuilder;
 use crate::provider::wire::{Accumulate, Delta};
-use crate::provider::{
-    AssistantMessage, Partial, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
-};
+use crate::provider::{AssistantMessage, StopReason, ToolCall, ToolFunction, ToolKind};
+use summonr_types::Checked;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-enum Block {
+enum ContentBlock {
     #[default]
     Other,
     Raw(Value),
     Text {
         lead: String,
-        start: usize,
+        range: Range<usize>,
     },
     Thinking {
         lead: String,
-        start: usize,
+        range: Range<usize>,
         signature: String,
     },
-    Call {
+    ToolUse {
         id: String,
         name: String,
         input: String,
     },
 }
 
-enum Kept {
-    Raw(Value),
-    Text {
-        lead: String,
-        range: std::ops::Range<usize>,
-    },
-    Thinking {
-        lead: String,
-        range: std::ops::Range<usize>,
-        signature: String,
-    },
-    ToolUse(String),
-}
-
-impl Kept {
+impl ContentBlock {
     fn thought(&self) -> bool {
         match self {
             Self::Thinking { .. } => true,
@@ -52,7 +38,7 @@ impl Kept {
                 block.get("type").and_then(Value::as_str),
                 Some("thinking" | "redacted_thinking")
             ),
-            Self::Text { .. } | Self::ToolUse(_) => false,
+            Self::Text { .. } | Self::ToolUse { .. } | Self::Other => false,
         }
     }
 
@@ -71,7 +57,8 @@ impl Kept {
                 "thinking": lead + &thinking[range],
                 "signature": signature,
             }),
-            Self::ToolUse(id) => json!({"type": "tool_use", "id": id}),
+            Self::ToolUse { id, .. } => json!({"type": "tool_use", "id": id}),
+            Self::Other => Value::Null,
         }
     }
 }
@@ -79,16 +66,11 @@ impl Kept {
 #[derive(Default)]
 pub(crate) struct Stream {
     pub(crate) model: String,
-    blocks: Vec<Kept>,
-    block: Block,
-    text: String,
-    thinking: String,
-    calls: Vec<ToolCall>,
-    usage: Usage,
+    blocks: Vec<ContentBlock>,
+    block: ContentBlock,
+    reply: ReplyBuilder,
     counted: Counted,
-    broken: Option<crate::error::Error>,
-    stop: StopReason,
-    done: bool,
+    broken: Option<summonr_core::error::Error>,
 }
 
 impl Accumulate for Stream {
@@ -99,43 +81,49 @@ impl Accumulate for Stream {
         }
     }
 
-    fn on(&mut self, event: &str) -> crate::error::Result<Vec<Delta>> {
+    fn on(&mut self, event: &str) -> summonr_core::error::Result<Vec<Delta>> {
         let Some(event) = crate::provider::wire::parse::<Option<Event<'_>>>(event)? else {
             return Ok(Vec::new());
         };
         Ok(self.event(&event)?.into_iter().collect())
     }
 
-    fn finished(&self) -> bool {
-        self.done
+    fn reply(&self) -> &ReplyBuilder {
+        &self.reply
     }
 
-    fn finish(self) -> AssistantMessage {
-        self.done()
-    }
-
-    fn spill(&mut self, partial: &mut Partial) {
-        partial.text.push_str(&self.text);
-        partial.reasoning.push_str(&self.thinking);
-        if self.usage != Usage::default() {
-            partial.usage = Some(self.usage.clone());
+    fn finish(mut self) -> AssistantMessage {
+        let reply = &mut self.reply;
+        if !reply.calls.is_empty()
+            && self.blocks.iter().any(ContentBlock::thought)
+            && let Some(call) = reply.calls.first_mut()
+        {
+            let blocks = std::mem::take(&mut self.blocks)
+                .into_iter()
+                .map(|block| block.value(&reply.text, &reply.reasoning))
+                .collect();
+            call.continuation = Some(crate::provider::Continuation::Anthropic {
+                model: self.model.clone(),
+                blocks,
+            });
         }
+        self.reply.finish(None)
     }
 }
 
 impl Stream {
-    fn event(&mut self, event: &Event<'_>) -> crate::error::Result<Option<Delta>> {
+    fn event(&mut self, event: &Event<'_>) -> summonr_core::error::Result<Option<Delta>> {
         Ok(match event.kind {
             EventKind::MessageStart => {
                 self.counted = event.message.usage.unwrap_or_default();
-                self.usage = self.counted.usage();
+                self.reply.usage = self.counted.usage();
                 None
             }
             EventKind::ContentBlockStart => {
                 if let Some(block) = event.content_block {
-                    self.block = opened(block, self.text.len(), self.thinking.len())?;
+                    self.block = opened(block, self.reply.text.len(), self.reply.reasoning.len())?;
                 }
-                if let Block::Call { name, .. } = &self.block {
+                if let ContentBlock::ToolUse { name, .. } = &self.block {
                     Some(Delta::Call(name.clone()))
                 } else {
                     None
@@ -148,7 +136,7 @@ impl Stream {
             }
             EventKind::MessageDelta => self.message_delta(event)?,
             EventKind::MessageStop => {
-                self.done = true;
+                self.reply.finished = true;
                 None
             }
             EventKind::Error => {
@@ -162,104 +150,76 @@ impl Stream {
         })
     }
 
-    fn message_delta(&mut self, event: &Event<'_>) -> crate::error::Result<Option<Delta>> {
+    fn message_delta(&mut self, event: &Event<'_>) -> summonr_core::error::Result<Option<Delta>> {
         if let Some(fields) = event.usage {
             self.counted.merge(fields);
         }
-        self.usage = self.counted.usage();
-        let raw = event.delta.stop_reason.as_deref();
-        if let Some(reason @ ("refusal" | "pause_turn")) = raw {
-            let explanation = event
-                .delta
-                .stop_details
-                .as_ref()
-                .map_or("", |details| &details.explanation);
-            return Err(crate::provider::wire::blocked(&if explanation.is_empty() {
-                reason.to_string()
-            } else {
-                format!("{reason}: {explanation}")
-            }));
+        self.reply.usage = self.counted.usage();
+        let explanation = event
+            .delta
+            .stop_details
+            .as_ref()
+            .map_or("", |details| &details.explanation);
+        let raw = event.delta.stop_reason.as_deref().unwrap_or_default();
+        if let Some(stop) =
+            crate::provider::client::ending(crate::endpoint::Wire::Anthropic, raw, explanation)?
+        {
+            self.reply.stop = stop;
         }
-        self.stop = stop_reason(raw);
         if let Some(error) = self.broken.take()
-            && self.stop != StopReason::Length
+            && self.reply.stop != StopReason::Length
         {
             return Err(error);
         }
         Ok(None)
     }
 
-    fn done(mut self) -> AssistantMessage {
-        let mut calls = std::mem::take(&mut self.calls);
-        if !calls.is_empty()
-            && self.blocks.iter().any(Kept::thought)
-            && let Some(call) = calls.first_mut()
-        {
-            let blocks = std::mem::take(&mut self.blocks)
-                .into_iter()
-                .map(|block| block.value(&self.text, &self.thinking))
-                .collect();
-            call.continuation = Some(crate::provider::Continuation::Anthropic {
-                model: self.model.clone(),
-                blocks,
-            });
-        }
-        AssistantMessage {
-            content: (!self.text.is_empty()).then_some(self.text),
-            tool_calls: calls,
-            reasoning_content: (!self.thinking.is_empty()).then_some(self.thinking),
-            usage: self.usage,
-            stop_reason: self.stop,
-            continuation: None,
-        }
-    }
-}
-
-impl Stream {
-    fn delta(&mut self, change: &Change<'_>) -> crate::error::Result<Option<Delta>> {
+    fn delta(&mut self, change: &Change<'_>) -> summonr_core::error::Result<Option<Delta>> {
         match &mut self.block {
-            Block::Text { .. } => {
+            ContentBlock::Text { .. } => {
                 let chunk = change.text.to_string();
-                self.text.push_str(&chunk);
+                self.reply.text.push_str(&chunk);
                 Ok(Some(Delta::Text(chunk)))
             }
-            Block::Thinking { signature, .. } => {
+            ContentBlock::Thinking { signature, .. } => {
                 signature.push_str(&change.signature);
                 if change.thinking.is_empty() {
                     return Ok((!change.signature.is_empty()).then_some(Delta::Progress));
                 }
                 let chunk = change.thinking.to_string();
-                self.thinking.push_str(&chunk);
+                self.reply.reasoning.push_str(&chunk);
                 Ok(Some(Delta::Thinking(chunk)))
             }
-            Block::Call { input, .. } => {
+            ContentBlock::ToolUse { input, .. } => {
                 append_arguments(input, &change.partial_json)?;
                 Ok((!change.partial_json.is_empty()).then_some(Delta::Progress))
             }
-            Block::Raw(_) | Block::Other => Ok(None),
+            ContentBlock::Raw(_) | ContentBlock::Other => Ok(None),
         }
     }
 
     fn close(&mut self) {
         match std::mem::take(&mut self.block) {
-            Block::Thinking {
+            ContentBlock::Thinking {
                 lead,
-                start,
+                range,
                 signature,
-            } => self.blocks.push(Kept::Thinking {
+            } => self.blocks.push(ContentBlock::Thinking {
                 lead,
-                range: start..self.thinking.len(),
+                range: range.start..self.reply.reasoning.len(),
                 signature,
             }),
-            Block::Text { lead, start } if !lead.is_empty() || self.text.len() > start => {
-                self.blocks.push(Kept::Text {
+            ContentBlock::Text { lead, range }
+                if !lead.is_empty() || self.reply.text.len() > range.start =>
+            {
+                self.blocks.push(ContentBlock::Text {
                     lead,
-                    range: start..self.text.len(),
+                    range: range.start..self.reply.text.len(),
                 });
             }
-            Block::Raw(block) => self.blocks.push(Kept::Raw(block)),
-            Block::Call { id, name, input } => self.call(id, name, input),
-            Block::Text { .. } | Block::Other => {}
+            ContentBlock::ToolUse { id, name, input } => self.call(id, name, input),
+            block @ ContentBlock::Raw(_) => self.blocks.push(block),
+            ContentBlock::Text { .. } | ContentBlock::Other => {}
         }
     }
 
@@ -273,8 +233,12 @@ impl Stream {
             self.broken = Some(error);
             return;
         }
-        self.blocks.push(Kept::ToolUse(id.clone()));
-        self.calls.push(ToolCall {
+        self.blocks.push(ContentBlock::ToolUse {
+            id: id.clone(),
+            name: String::new(),
+            input: String::new(),
+        });
+        self.reply.calls.push(ToolCall {
             id,
             kind: ToolKind::Function,
             function: ToolFunction {
@@ -292,9 +256,11 @@ impl Stream {
             .iter()
             .rev()
             .find_map(|block| match block {
-                Kept::Thinking { signature, .. } => Some(signature.as_str()),
-                Kept::Raw(block) => block.get("signature").and_then(Value::as_str),
-                Kept::Text { .. } | Kept::ToolUse(_) => None,
+                ContentBlock::Thinking { signature, .. } => Some(signature.as_str()),
+                ContentBlock::Raw(block) => block.get("signature").and_then(Value::as_str),
+                ContentBlock::Text { .. } | ContentBlock::ToolUse { .. } | ContentBlock::Other => {
+                    None
+                }
             })
             .unwrap_or("")
     }
@@ -304,24 +270,24 @@ fn opened(
     block: &serde_json::value::RawValue,
     text: usize,
     thinking: usize,
-) -> crate::error::Result<Block> {
+) -> summonr_core::error::Result<ContentBlock> {
     let opened = crate::provider::wire::parse::<Opened<'_>>(block.get())?;
     Ok(match opened.shape {
-        Shape::Text => Block::Text {
+        Shape::Text => ContentBlock::Text {
             lead: opened.text.into_owned(),
-            start: text,
+            range: text..text,
         },
-        Shape::Thinking => Block::Thinking {
+        Shape::Thinking => ContentBlock::Thinking {
             lead: opened.thinking.into_owned(),
-            start: thinking,
+            range: thinking..thinking,
             signature: opened.signature.into_owned(),
         },
-        Shape::ToolUse => Block::Call {
+        Shape::ToolUse => ContentBlock::ToolUse {
             id: opened.id.into_owned(),
             name: opened.name.into_owned(),
             input: String::new(),
         },
-        Shape::Other => Block::Raw(crate::provider::wire::parse::<Value>(block.get())?),
+        Shape::Other => ContentBlock::Raw(crate::provider::wire::parse::<Value>(block.get())?),
     })
 }
 

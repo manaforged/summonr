@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::SystemTime;
 
-use super::cache::{Stamp, settled, stamp};
+use crate::durable::store::{Stamp, settled, stamp};
+use summonr_core::walk::{self, Walk};
 
 const DEPTH: usize = 3;
 const MIN_LEN: usize = 6;
@@ -42,7 +43,6 @@ const KEY_BEGIN: &str = "-----BEGIN ";
 const KEY_END: &str = "-----END ";
 const KEY_TAIL: &str = "PRIVATE KEY-----";
 const HIDDEN: &str = "[secret]";
-const TOKENS: &str = include_str!("tokens.toml");
 
 #[derive(serde::Deserialize, Clone, Copy, Default)]
 #[serde(rename_all = "lowercase")]
@@ -85,13 +85,13 @@ static SEEN: Mutex<Option<HashMap<PathBuf, Scan>>> = Mutex::new(None);
 pub(crate) fn scrub(text: &str, workspace: &Path) -> String {
     let text = crate::askpass::scrub(text);
     let values = known(workspace);
-    let text = crate::text::redact(&text, values.iter().map(String::as_str));
+    let text = summonr_core::text::redact(&text, values.iter().map(String::as_str));
     private_keys(&text)
 }
 
 pub(crate) fn scrub_found(text: &str, workspace: &Path) -> String {
     let found = secrets_in(text);
-    let text = crate::text::redact(text, found.iter().map(String::as_str));
+    let text = summonr_core::text::redact(text, found.iter().map(String::as_str));
     scrub(&text, workspace)
 }
 
@@ -141,25 +141,21 @@ fn values(files: &[PathBuf]) -> Vec<String> {
 }
 
 fn files(workspace: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let home = crate::config::home_dir();
+    let home = summonr_core::dirs::home_dir();
     let mut paths: Vec<PathBuf> = HOME_FILES
         .iter()
         .filter_map(|name| home.as_ref().map(|home| home.join(name)))
         .chain(WORKSPACE_FILES.iter().map(|name| workspace.join(name)))
         .collect();
-    let walk = ignore::WalkBuilder::new(workspace)
-        .standard_filters(false)
-        .max_depth(Some(DEPTH))
-        .filter_entry(|entry| {
-            entry.depth() == 0
-                || !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !crate::SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
-        })
-        .build();
+    let walk = Walk {
+        gitignore: false,
+        depth: Some(DEPTH),
+        ..Walk::TOOL
+    };
     let mut folders = Vec::new();
-    for entry in walk.filter_map(Result::ok) {
+    for entry in walk.entries(workspace) {
         let name = entry.file_name().to_string_lossy();
-        if entry.file_type().is_some_and(|kind| kind.is_dir()) {
+        if walk::is_dir(&entry) {
             folders.push(entry.into_path());
         } else if env_file(&name) {
             paths.push(entry.into_path());
@@ -201,10 +197,7 @@ fn secrets_in(text: &str) -> Vec<String> {
 fn shapes() -> &'static [Shape] {
     static LOADED: OnceLock<Shapes> = OnceLock::new();
     &LOADED
-        .get_or_init(|| match toml::from_str(TOKENS) {
-            Ok(shapes) => shapes,
-            Err(error) => panic!("the token shapes table is invalid: {error}"),
-        })
+        .get_or_init(|| summonr_core::embedded!("token shape", "secret/tokens.toml"))
         .token
 }
 

@@ -1,3 +1,7 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use sigil::prelude::fuzzy_score;
+
 use super::*;
 use crate::catalog::{Cost, Model};
 
@@ -63,39 +67,147 @@ impl App {
             .iter()
             .position(|facet| *facet == self.picker.facet.peek())
             .unwrap_or(0);
-        let next = (at as isize + delta).rem_euclid(Facet::ALL.len() as isize);
-        self.pick_facet(Facet::ALL[next as usize]);
+        self.pick_facet(Facet::ALL[crate::tui::sigil_view::ui::cycle(at, delta, Facet::ALL.len())]);
     }
 
     pub(in crate::tui::sigil_view) fn pick_facet(&self, facet: Facet) {
         self.picker.facet.set(facet);
-        self.rank();
         self.picker.note.set(String::new());
-        self.picker.sel.set(0);
+        self.picker.list.cursor.set(0);
     }
 
     pub(in crate::tui::sigil_view) fn facet_counts(&self) -> Vec<(Facet, usize)> {
+        let choices = self.picker.choices.get();
+        let counts = self.picker.recent.get();
+        let facts = self.picker.facts.get();
+        let groups = self.picker.groups.get();
+        let query = self.picker.list.query.get();
+        let older = self.picker.older.get();
         Facet::ALL
             .into_iter()
-            .map(|facet| (facet, self.ranked(facet).0.len()))
-            .collect()
-    }
-
-    pub(super) fn faceted(&self, rows: Vec<Seat>, facet: Facet) -> Vec<Seat> {
-        if facet == Facet::All {
-            return rows;
-        }
-        let facts = self.picker.facts.peek();
-        let groups = self.picker.groups.peek();
-        let mut seen = std::collections::BTreeSet::new();
-        rows.into_iter()
-            .filter(|seat| {
-                facet.keeps(
-                    facts.get(seat),
-                    groups.get(&seat.endpoint).copied(),
-                    self.favorite(seat),
-                ) && seen.insert(seat.clone())
+            .map(|facet| {
+                (
+                    facet,
+                    ranked(&choices, counts, &facts, &groups, &query, facet, older)
+                        .0
+                        .len(),
+                )
             })
             .collect()
     }
+}
+
+pub(super) fn ranked(
+    choices: &[ModelId],
+    counts: [usize; 3],
+    facts: &BTreeMap<ModelId, Model>,
+    groups: &BTreeMap<String, State>,
+    query: &str,
+    facet: Facet,
+    older: bool,
+) -> (Vec<ModelId>, usize) {
+    let query = query.to_lowercase();
+    if query.trim().is_empty() {
+        let (rows, hidden) =
+            picker_rows(choices, counts, facts, groups, older, facet == Facet::All);
+        return (faceted(rows, facet, choices, counts, facts, groups), hidden);
+    }
+    let (rows, _) = picker_rows(choices, counts, facts, groups, true, false);
+    let rows = faceted(rows, facet, choices, counts, facts, groups);
+    let words: Vec<&str> = query.split_whitespace().collect();
+    let mut ranked: Vec<(usize, ModelId)> = rows
+        .into_iter()
+        .filter_map(|row| {
+            let display = facts.get(&row).map_or("", |fact| fact.label());
+            let rank = words
+                .iter()
+                .map(|word| score(word, &row, display))
+                .try_fold(0, |worst, rank| Some(worst.max(rank?)))?;
+            Some((rank, row))
+        })
+        .collect();
+    ranked.sort_by_key(|(rank, _)| *rank);
+    (ranked.into_iter().map(|(_, row)| row).collect(), 0)
+}
+
+fn faceted(
+    rows: Vec<ModelId>,
+    facet: Facet,
+    choices: &[ModelId],
+    [current, pins, _]: [usize; 3],
+    facts: &BTreeMap<ModelId, Model>,
+    groups: &BTreeMap<String, State>,
+) -> Vec<ModelId> {
+    if facet == Facet::All {
+        return rows;
+    }
+    let pinned: BTreeSet<&ModelId> = choices.iter().skip(current).take(pins).collect();
+    let mut seen = BTreeSet::new();
+    rows.into_iter()
+        .filter(|selection| {
+            facet.keeps(
+                facts.get(selection),
+                groups.get(&selection.endpoint).copied(),
+                pinned.contains(selection),
+            ) && seen.insert(selection.clone())
+        })
+        .collect()
+}
+
+fn picker_rows(
+    choices: &[ModelId],
+    counts: [usize; 3],
+    facts: &BTreeMap<ModelId, Model>,
+    groups: &BTreeMap<String, State>,
+    older: bool,
+    collapse: bool,
+) -> (Vec<ModelId>, usize) {
+    let listed: usize = counts.iter().sum();
+    let (held, rest) = choices.split_at(listed.min(choices.len()));
+    let offline = |selection: &ModelId| groups.get(&selection.endpoint) == Some(&State::Offline);
+    let served: Vec<(&ModelId, Option<&Model>)> = rest
+        .iter()
+        .map(|selection| (selection, facts.get(selection)))
+        .filter(|(selection, fact)| !offline(selection) && fact.is_none_or(|fact| fact.usable()))
+        .collect();
+    let models: Vec<(&str, &Model)> = served
+        .iter()
+        .filter_map(|(selection, fact)| Some((selection.endpoint.as_str(), (*fact)?)))
+        .collect();
+    let mut current = crate::catalog::current(&models).into_iter();
+    let mut fixes = BTreeSet::new();
+    let mut hidden = 0;
+    let mut kept = Vec::new();
+    for (selection, fact) in &served {
+        let now = fact.is_none() || current.next().unwrap_or(true);
+        if collapse
+            && groups
+                .get(&selection.endpoint)
+                .is_some_and(|state| state.blocked())
+        {
+            if fixes.insert(selection.endpoint.as_str()) {
+                kept.push((*selection).clone());
+            }
+            continue;
+        }
+        hidden += usize::from(!now);
+        if older || now {
+            kept.push((*selection).clone());
+        }
+    }
+    (held.iter().cloned().chain(kept).collect(), hidden)
+}
+
+fn score(query: &str, row: &ModelId, display: &str) -> Option<usize> {
+    let query = match query.split_once('/') {
+        Some((want, rest)) if row.endpoint.to_lowercase().starts_with(want) => rest,
+        Some(_) | None => query,
+    };
+    let hay = format!("{}/{} {display}", row.endpoint, row.model);
+    let id = fuzzy_score(query, &row.model).map(|found| found.score);
+    let hay = fuzzy_score(query, &hay).map(|found| found.score);
+    id.filter(|score| *score <= 10)
+        .or(hay.filter(|score| *score < 40).map(|score| score.max(20)))
+        .or(id)
+        .or(hay.map(|score| score + 60))
 }

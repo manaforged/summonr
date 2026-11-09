@@ -38,7 +38,7 @@ const SKIP: &str = "skip_thought_signature_validator";
 pub(super) fn body(
     call: &CompletionRequest<'_>,
     reasoning: &Reasoning,
-) -> crate::error::Result<Wired> {
+) -> summonr_core::error::Result<Wired> {
     let names: std::collections::HashMap<&str, &str> = call
         .messages
         .iter()
@@ -90,7 +90,7 @@ pub(super) fn body(
     if !call.tools.is_empty() {
         body.insert(
             "tools".to_string(),
-            json!([{"functionDeclarations": declarations(call)}]),
+            json!([{"functionDeclarations": super::super::tools(call, "parametersJsonSchema", &[])}]),
         );
     }
     body.insert(
@@ -101,20 +101,8 @@ pub(super) fn body(
         head: Value::Object(body),
         messages: Some(serde_json::to_vec(&contents)?),
         slot: Slot::Contents,
+        raw_tools: false,
     })
-}
-
-fn declarations(call: &CompletionRequest<'_>) -> Vec<Value> {
-    call.tools
-        .iter()
-        .map(|tool| {
-            json!({
-                "name": tool.function.name,
-                "description": tool.function.description,
-                "parametersJsonSchema": tool.function.parameters,
-            })
-        })
-        .collect()
 }
 
 fn push<'a>(contents: &mut Vec<Content<'a>>, role: &'static str, parts: Vec<Part<'a>>) {
@@ -148,7 +136,7 @@ fn model_parts<'a>(
     message: &'a Message,
     model: &str,
     skip_signature: bool,
-) -> crate::error::Result<Vec<Part<'a>>> {
+) -> summonr_core::error::Result<Vec<Part<'a>>> {
     let first = message.tool_calls.first();
     let signatures: &[String] = if let Some(Continuation::Gemini {
         model: made,

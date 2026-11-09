@@ -13,7 +13,7 @@ impl<P: Provider> Loop<P> {
             }
             return;
         }
-        self.mcp_wanted = self.depth == 0 && self.mcp.is_none();
+        self.mcp_wanted = self.session.depth() == 0 && self.mcp.is_none();
     }
 
     pub(super) async fn settle_mcp(

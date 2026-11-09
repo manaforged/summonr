@@ -164,6 +164,7 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
         "PROCESSOR_ARCHITECTURE",
         "NUMBER_OF_PROCESSORS",
         "OS",
+        POWERSHELL_CACHE,
     ];
     let mut env: Vec<_> = KEEP
         .iter()
@@ -186,7 +187,26 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
             None => env.push(("PATH".to_string(), extra)),
         }
     }
+    if cfg!(windows)
+        && !env.iter().any(|(key, _)| key == POWERSHELL_CACHE)
+        && let Some(cache) = powershell_cache()
+    {
+        env.push((POWERSHELL_CACHE.to_string(), cache.to_string()));
+    }
     env
+}
+
+const POWERSHELL_CACHE: &str = "PSModuleAnalysisCachePath";
+
+fn powershell_cache() -> Option<&'static str> {
+    static CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let dir = summonr_core::dirs::summonr_home().ok()?.join("powershell");
+            std::fs::create_dir_all(&dir).ok()?;
+            dir.join("ModuleAnalysisCache").to_str().map(str::to_string)
+        })
+        .as_deref()
 }
 
 pub(in crate::tools) fn kill_group(pid: u32) {

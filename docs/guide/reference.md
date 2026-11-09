@@ -473,7 +473,7 @@ The `body` table of an endpoint is merged last, so it can still set any field by
 | Work | `/steps FILE`, `--steps` | steps end (auto), `/auto` | Run a plan's `## Steps` one at a time, each with its check. |
 | Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto`; the session returns to the mode it had before | Loop until the configured check passes; without a check, the judge decides. |
 
-`/goal` with no check configured uses a check detected from the project: `cargo test` for `Cargo.toml`, `go test ./...` for `go.mod`, and `npm test` when `package.json` declares a `test` script. A Python project gets no detected check, and the judge decides. `/goal` prints the detected check and says how to set another in `.summonr/check.toml`.
+`/goal` with no check configured uses a check detected from the project: `cargo test` for `Cargo.toml`, `go test ./...` for `go.mod`, and `npm test` when `package.json` declares a `test` script. A Python project gets no detected check, and the judge decides. `/goal` prints the detected check and says how to set another in `.summonr/check.toml`. With Verify off or `--no-verify`, `/goal` runs without a check, as `--goal` does. A goal or steps run whose turn aborts runs the check once before it stops, in both.
 
 ### Confirmation
 

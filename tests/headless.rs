@@ -338,6 +338,31 @@ fn a_json_steps_run_starts_each_step_with_its_check_and_exits_zero() {
             (2, "start", Some("cd .")),
             (2, "check passed", Some("cd .")),
         ],
-        "{stderr}"
+        "workspace files: {:?}\n{stderr}",
+        walk(&work)
     );
+}
+
+fn walk(root: &std::path::Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path.clone());
+            }
+            found.push(
+                path.strip_prefix(root)
+                    .unwrap_or(&path)
+                    .display()
+                    .to_string(),
+            );
+        }
+    }
+    found.sort();
+    found
 }

@@ -84,7 +84,7 @@ fn leak(text: String) -> &'static str {
 pub fn catalog() -> &'static Catalog {
     static LOADED: OnceLock<Catalog> = OnceLock::new();
     LOADED.get_or_init(|| {
-        let data: Data = summonr_core::table::embedded("tool", include_str!("tools.toml"));
+        let data: Data = summonr_core::embedded!("tool", "tools.toml");
         let tools = data
             .tool
             .into_iter()

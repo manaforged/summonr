@@ -131,22 +131,26 @@ mod row;
 use row::File;
 pub(crate) use row::wire;
 
+#[cfg(test)]
 pub(super) fn table(text: &str) -> std::result::Result<Catalog<Preset>, String> {
-    let File { mut preset, oauth } = summonr_core::table::parse(text)?;
+    rows(summonr_core::table::parse(text)?)
+}
+
+fn rows(File { mut preset, oauth }: File) -> std::result::Result<Catalog<Preset>, String> {
     for row in &mut preset {
         row.check(&oauth)?;
     }
     Catalog::from_rows("provider preset", preset)
 }
 
-const PRESETS: &str = include_str!("presets.toml");
-
 pub(super) fn listed() -> &'static Catalog<Preset> {
     static ROWS: OnceLock<Catalog<Preset>> = OnceLock::new();
-    ROWS.get_or_init(|| match table(PRESETS) {
-        Ok(rows) => rows,
-        Err(error) => panic!("the built-in provider table is invalid: {error}"),
-    })
+    ROWS.get_or_init(
+        || match rows(summonr_core::embedded!("provider", "endpoint/presets.toml")) {
+            Ok(rows) => rows,
+            Err(error) => panic!("the built-in provider table is invalid: {error}"),
+        },
+    )
 }
 
 /// How a local provider shows it is installed on this machine, and the name a user knows it by.

@@ -77,7 +77,8 @@ struct Catalog {
 }
 
 static ROWS: LazyLock<Vec<Row>> = LazyLock::new(|| {
-    summonr_core::table::embedded::<Catalog>("model", include_str!("models.toml")).rows
+    let table: Catalog = summonr_core::embedded!("model", "provider/wire/models.toml");
+    table.rows
 });
 
 pub(crate) fn traits(model: &str) -> Traits {

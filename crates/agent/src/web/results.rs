@@ -15,7 +15,6 @@ use markup::{Space, attr, collapse, decode, element, tag, text};
 
 const SNIPPET_MAX: usize = 280;
 const TITLE_MAX: usize = 120;
-const ENGINES: &str = include_str!("engines.toml");
 
 #[derive(Deserialize)]
 struct Table {
@@ -99,7 +98,7 @@ struct Freshness {
 
 fn table() -> &'static Table {
     static TABLE: OnceLock<Table> = OnceLock::new();
-    TABLE.get_or_init(|| summonr_core::table::embedded("search engine", ENGINES))
+    TABLE.get_or_init(|| summonr_core::embedded!("search engine", "web/engines.toml"))
 }
 
 pub(super) fn engines() -> &'static [Engine] {

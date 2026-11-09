@@ -1,7 +1,10 @@
 use std::process::Command;
 
+#[path = "../core/build/tables.rs"]
+mod tables;
+
 fn main() {
-    println!("cargo:rerun-if-changed=src");
+    tables::compile();
     if let Some(head) = git_path("HEAD") {
         println!("cargo:rerun-if-changed={head}");
         if let Some(reference) = std::fs::read_to_string(&head)

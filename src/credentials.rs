@@ -136,7 +136,7 @@ pub(crate) fn http(total: std::time::Duration) -> Result<leyline::Session> {
 
 pub(crate) fn session(
     builder: leyline::SessionBuilder,
-    retry: leyline::RetryPolicy,
+    retry: leyline::Retry,
 ) -> Result<leyline::Session> {
     builder
         .retry(retry)

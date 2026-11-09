@@ -64,9 +64,10 @@ impl<P: Provider> Loop<P> {
             .map(|failure| crate::limits::limits().retry_wait(failure.retry_after, state.retries));
         let retryable = match failure {
             Some(failure) if failure.kind == ProviderFailureKind::RateLimited => {
-                let asked = failure.retry_after.map(Duration::from_secs);
                 if self.remaining_time().is_some() {
-                    wait = asked.or(wait);
+                    wait = Some(
+                        crate::limits::limits().budget_wait(failure.retry_after, state.retries),
+                    );
                 }
                 self.can_wait(wait, state.retries)
             }

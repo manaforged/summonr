@@ -175,16 +175,7 @@ pub(crate) fn hold(path: &Path, wait: Wait) -> Result<std::fs::File> {
         Wait::Forever => return lock(path, true)?.ok_or_else(|| locked(path, None)),
         Wait::Within(limit) => limit(),
     };
-    if let Some(file) = lock(path, false)? {
-        return Ok(file);
-    }
-    let (send, receive) = std::sync::mpsc::channel();
-    let owned = path.to_path_buf();
-    std::thread::spawn(move || drop(send.send(lock(&owned, true))));
-    match receive.recv_timeout(limit) {
-        Ok(held) => held?.ok_or_else(|| locked(path, Some(limit))),
-        Err(_) => Err(locked(path, Some(limit))),
-    }
+    super::lock_within(path, limit)?.ok_or_else(|| locked(path, Some(limit)))
 }
 
 fn locked(path: &Path, limit: Option<Duration>) -> Error {

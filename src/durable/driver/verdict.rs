@@ -46,10 +46,17 @@ impl SessionDriver {
             .and_then(|work| work.candidate.as_ref())
             .map(|candidate| candidate.snapshot.clone());
         let now = self.snapshot(candidate.as_ref())?;
-        let stable = candidate.is_some_and(|candidate| candidate == now);
+        let diagnostic = match &candidate {
+            Some(candidate) if *candidate == now => None,
+            Some(candidate) => Some(format!(
+                "workspace changed after candidate capture: {}",
+                crate::durable::tree::changed(candidate, &now).join(", ")
+            )),
+            None => Some("workspace changed after candidate capture: no candidate".to_string()),
+        };
         Ok(Verdict {
-            passed: passed && stable,
-            diagnostic: (!stable).then(|| "workspace changed after candidate capture".to_string()),
+            passed: passed && diagnostic.is_none(),
+            diagnostic,
         })
     }
 

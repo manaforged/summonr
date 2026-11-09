@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use summonr::{Client, Delta, Endpoint, Event, Loop, Result, finish_worktree, splash, workflow};
 
 use super::commands::workspace;
-use super::session::{apply_workflow, build, isolate, route_checks, workflow_name};
+use super::session::{apply_workflow, build, isolate, workflow_name};
 use crate::cli::Args;
 use crate::{diagnostics, modes};
 
@@ -25,7 +25,7 @@ pub(super) async fn launch(
     let endpoint = selection(args, adopted).await?;
     let ui = channels(use_tui(args));
     ask_login(&ui, &endpoint, args.endpoint.is_some());
-    let (loop_, goal_checks, workflow) = assemble(args, &endpoint, &workspace, action, &ui)?;
+    let (loop_, workflow) = assemble(args, &endpoint, &workspace, action, &ui)?;
     if !args.json {
         for check in loop_.verify_commands() {
             eprintln!("summonr: workspace check: {check}");
@@ -37,14 +37,14 @@ pub(super) async fn launch(
     if let Some(log) = log {
         log.session(&session, loop_.session_path(), &workspace);
     }
-    let code = dispatch(loop_, args, &endpoint, workspace, ui, goal_checks, workflow).await?;
+    let code = dispatch(loop_, args, &endpoint, workspace, ui, workflow).await?;
     let Some(tree) = tree else {
         return Ok(code);
     };
     Ok(land(&tree, code, args, &session, &session_path))
 }
 
-type Assembled = (Loop<Client>, Vec<String>, Option<workflow::Workflow>);
+type Assembled = (Loop<Client>, Option<workflow::Workflow>);
 
 fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr::tui::hub::Factory {
     let (args, endpoint) = (args.clone(), endpoint.clone());
@@ -59,8 +59,7 @@ fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr::tui::hub:
             summonr::tui::hub::Open::Resume(id) => Some(id),
         };
         let (workspace, _, action) = isolate(&args, &cwd)?;
-        let (loop_, _, workflow) =
-            assemble(&args, &endpoint, &workspace, action, &(Some(ui), None))?;
+        let (loop_, workflow) = assemble(&args, &endpoint, &workspace, action, &(Some(ui), None))?;
         Ok((loop_, workflow))
     })
 }
@@ -73,12 +72,11 @@ fn assemble(
     ui: &Ui,
 ) -> Result<Assembled> {
     let provider = provider(endpoint, ui.0.as_ref(), args.json)?;
-    let checks = if args.no_verify {
+    let check = if args.no_verify {
         None
     } else {
         summonr::check_commands(workspace)?
     };
-    let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
     let spare = endpoint.context_window.is_none().then(|| provider.clone());
     let mut loop_ = build(args, endpoint, provider, workspace, check, action)?;
     let (fallbacks, skipped) = summonr::endpoint_fallbacks(endpoint, |fallback| {
@@ -94,7 +92,7 @@ fn assemble(
     let workflow = workflow_name(args, &loop_)?
         .map(|name| apply_workflow(&mut loop_, &name, ui.0.as_ref(), args.json))
         .transpose()?;
-    Ok((loop_, goal_checks, workflow))
+    Ok((loop_, workflow))
 }
 
 const LISTED: usize = 3;
@@ -189,7 +187,6 @@ async fn dispatch(
     endpoint: &Endpoint,
     workspace: PathBuf,
     ui: Ui,
-    goal_checks: Vec<String>,
     workflow: Option<workflow::Workflow>,
 ) -> Result<i32> {
     let model = endpoint.model.as_str();
@@ -210,7 +207,7 @@ async fn dispatch(
         modes::steps(loop_, args, plan_path).await
     } else if let Some(objective) = args.goal.as_deref() {
         splash.line();
-        modes::goal(loop_, args, objective, goal_checks).await
+        modes::goal(loop_, args, objective).await
     } else if args.print || !args.prompt.is_empty() {
         splash.line();
         modes::print(loop_, args).await

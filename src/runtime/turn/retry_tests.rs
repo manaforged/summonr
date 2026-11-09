@@ -257,6 +257,39 @@ async fn a_rate_limit_inside_a_time_budget_waits_the_full_time_the_provider_asks
     );
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_zero_retry_after_inside_a_time_budget_still_backs_off() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("session home");
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .expect("open journal");
+    let provider = Fault {
+        kind: ProviderFailureKind::RateLimited,
+        partial: false,
+        fails: 3,
+        asked: Some(0),
+        sent: Arc::default(),
+        text: "fixture failure",
+    };
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver)
+        .expect("open runtime")
+        .with_budget(crate::Budget {
+            max_tokens: None,
+            max_secs: Some(600),
+        })
+        .expect("budget");
+    let started = tokio::time::Instant::now();
+    let result = loop_.turn("hi there").await;
+    assert!(result.is_ok(), "{result:?}");
+    let floor = crate::limits::limits().retry_base() * 3;
+    assert!(
+        started.elapsed() >= floor,
+        "three retries took {:?}, under the {floor:?} backoff floor",
+        started.elapsed()
+    );
+}
+
 #[tokio::test]
 async fn an_overflow_cap_sticks_on_the_seated_model() {
     let workspace = tempfile::tempdir().expect("workspace");

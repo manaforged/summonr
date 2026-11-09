@@ -98,6 +98,8 @@ retain_days = 90
 
 `--goal` keeps one objective until `.summonr/check.toml` is green and a judge says stop. The judge answers `done`, `continue`, `stalled`, or `impossible`; the last two end the goal with the reason. A goal has no turn cap; it runs until the judge stops it, a budget ends it, or you cancel it. `--max-tokens` and `--max-secs` bound every mode. A budget counts from the run that loads the session, so a resumed or forked session starts with its full budget. Every goal turn restates the objective to the model, so a compacted context cannot lose it. `--steps` hands the model one numbered item at a time. A step that contains ``Run `CMD` `` gets `CMD` as its own check, in addition to `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check. A turn that ends while a background command it started is still running is deferred, with no verdict and no repair strike, until the job exits or the model kills it. The harness remembers that job across turns; a later turn cannot complete while it runs. A `### Heading` under `## Steps` groups the items that follow it into a phase. Every turn carries the ledger to the model and to the transcript: phases as Roman numerals, `[x]` done, `[/]` this step, `[ ]` later, `[!]` blocked. Both edit this directory. `--worktree` isolates in a git worktree (`<repo>-worktrees/<id>`). Exit 0 then commits the files the run changed as `summonr: <objective>` (files over 5 MB and anything the run did not touch are left in place and named), fast-forwards your branch, and removes the tree; a tree that cannot fast-forward or still holds uncommitted files is kept and named, and the exit code is 1. `--here` is the default.
 
+An unknown key in `.summonr/check.toml`, or a `.summonr` folder summonr cannot read, is a configuration error instead of a run with no check.
+
 ```markdown
 ## Steps
 
@@ -252,12 +254,12 @@ cache_ttl = "5m"
 | `grant_wait_secs` | `600` | Wait for a permission answer. |
 | `job_poll_start_secs` | `1` | First job poll interval. |
 | `job_poll_cap_secs` | `2` | Longest job poll interval. |
-| `mail_stale_secs` | `120` | A mail peer with no heartbeat for this long is stale. |
 | `mail_per_round` | `5` | Most peer mail messages delivered into one model round; the rest wait for the next round. |
 | `mail_sweep_secs` | `86400` | Mail entries older than this are removed. |
 | `verify_timeout_secs` | `600` | Timeout for a check command. |
 | `probe_secs` | `5` | Endpoint probe timeout. |
 | `auth_secs` | `30` | Sign-in request timeout. |
+| `session_lock_ms` | `1000` | How long opening a session waits for another holder of its log to let go before it reports the session open elsewhere. |
 | `update_secs` | `600` | `summonr update` download timeout. |
 | `model_probe_secs` | `8` | Model list request timeout. |
 | `web_search_secs` | `15` | Web search timeout. |
@@ -472,7 +474,7 @@ The `body` table of an endpoint is merged last, so it can still set any field by
 | Work | `/steps FILE`, `--steps` | steps end (auto), `/auto` | Run a plan's `## Steps` one at a time, each with its check. |
 | Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto`; the session returns to the mode it had before | Loop until the configured check passes; without a check, the judge decides. |
 
-`/goal` with no check configured uses a check detected from the project: `cargo test` for `Cargo.toml`, `go test ./...` for `go.mod`, and `npm test` when `package.json` declares a `test` script. A Python project gets no detected check, and the judge decides. `/goal` prints the detected check and says how to set another in `.summonr/check.toml`.
+`/goal` with no check configured uses a check detected from the project: `cargo test` for `Cargo.toml`, `go test ./...` for `go.mod`, and `npm test` when `package.json` declares a `test` script. A Python project gets no detected check, and the judge decides. `/goal` prints the detected check and says how to set another in `.summonr/check.toml`. With Verify off or `--no-verify`, `/goal` runs without a check, as `--goal` does. A goal or steps run whose turn aborts runs the check once before it stops, in both.
 
 ### Confirmation
 
@@ -841,13 +843,13 @@ write_roots = ["~/.cargo/registry", "~/code"]
 
 A `~/` prefix expands to your home directory. A listed path that does not exist is skipped at startup; it is still a writable root for policy checks.
 
-A provider reply of 429, a 5xx status, or a connection error is retried up to three times with a wait that doubles from 1 s to 8 s. A `Retry-After` header replaces that wait; one over 60 s stops the retries so the turn can fall back to the next endpoint. A reply that already streamed output is retried once, then the turn falls back. A rate limit, or a connection failure before any output, also gets one more completion after those retries, unless its `Retry-After` is over 60 s.
+A provider reply of 429, a 5xx status, or a connection error is retried up to `retry_limit` times with a wait that doubles from `retry_base_ms` to `retry_max_ms` (`[limits]` below). A `Retry-After` header replaces that wait; under `--max-secs` a rate limit is retried while the budget lasts, waiting the `Retry-After` but never less than that backoff; one over 60 s stops the retries so the turn can fall back to the next endpoint. A reply that already streamed output is retried once, then the turn falls back. A rate limit, or a connection failure before any output, also gets one more completion after those retries, unless its `Retry-After` is over 60 s.
 
 A language server gets 30 s to start and 30 s to answer an `lsp` call. The diagnostics check after an edit waits 5 s and is skipped when the server is slower. A server that misses a deadline keeps running, so a slow first index can finish in the background.
 
 summonr does not steer the model. Tool results reach it unchanged, and it decides when a turn is done; only a token or wall-clock budget that you set ends a turn early. A reply cut off at the output limit gets one note saying so. A message you send during a turn gets one note asking the model to answer it. The compaction summary request sends the session's tools and history unchanged, so it reuses the prompt cache; a failed summary retries after 8 rounds.
 
-User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.toml`. A nonempty command allow list must match on every overlay (intersection). Deny lists accumulate. `write` globs in policy.toml are a narrowing filter on paths relative to a writable root; extra roots themselves come only from `write_roots`, `--add-dir`, and `/write`. Empty lists add no restriction, except that `strict = true` with an empty allow list denies all commands. Repository policy can narrow user permissions, never widen them. Children inherit these restrictions.
+User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.toml`. A key summonr does not know, or a policy file it cannot read, is a configuration error, so a misspelled `deny` never runs without its rules. A nonempty command allow list must match on every overlay (intersection). Deny lists accumulate. `write` globs in policy.toml are a narrowing filter on paths relative to a writable root; extra roots themselves come only from `write_roots`, `--add-dir`, and `/write`. Empty lists add no restriction, except that `strict = true` with an empty allow list denies all commands. Repository policy can narrow user permissions, never widen them. Children inherit these restrictions.
 
 `confirm` picks which commands ask first. `confirm = "destructive"`, the default, asks only before irreversible destruction (see Confirmation). `confirm = "risky"` also asks before `sudo`, force pushes, pipes into a shell, git commands that discard work or rewrite history, and writes to protected paths. The stricter value wins across overlays. Shift+Tab toggles this session between auto approval and approval for risky commands. Auto approval still asks before destructive commands and configured `ask` patterns. The toggle cannot lower a configured `confirm = "risky"` or relax strict mode, command denies, or write restrictions. The composer labels approval separately from auto, work, and goal execution modes. During a turn, the change is queued until the turn ends and the active label stays unchanged.
 

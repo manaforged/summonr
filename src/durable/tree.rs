@@ -220,20 +220,15 @@ pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
 }
 
 pub(crate) fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
-    if crate::diff::inside_git(root)
-        && let Ok(output) = crate::diff::git_output(
-            root,
-            &[],
-            &[
-                "ls-files",
-                "-z",
-                "--cached",
-                "--others",
-                "--exclude-standard",
-            ],
-            None,
-        )
-    {
+    if crate::diff::inside_git(root) {
+        let args = [
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ];
+        let output = crate::diff::git_output(root, &[], &args, None).map_err(io::Error::other)?;
         return Ok(output
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty())

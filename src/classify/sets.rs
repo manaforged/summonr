@@ -17,7 +17,8 @@ struct Table {
 }
 
 static SETS: LazyLock<Vec<Set>> = LazyLock::new(|| {
-    summonr_core::table::embedded::<Table>("question set", include_str!("sets.toml")).set
+    let Table { set } = summonr_core::embedded!("question set", "classify/sets.toml");
+    set
 });
 
 static BY_NAME: LazyLock<BTreeMap<&'static str, &'static BTreeMap<String, Question>>> =

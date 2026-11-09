@@ -72,7 +72,7 @@ struct Table {
 const PLAIN_TEXT: &str = "plaintext";
 
 static TABLE: LazyLock<Table> =
-    LazyLock::new(|| summonr_core::table::embedded("language", include_str!("language.toml")));
+    LazyLock::new(|| summonr_core::embedded!("language", "language.toml"));
 
 impl Module {
     pub(crate) fn handles(&self, path: &Path) -> bool {

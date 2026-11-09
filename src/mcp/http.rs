@@ -1,7 +1,9 @@
 use std::collections::VecDeque;
+use std::io::ErrorKind;
 use std::time::Duration;
 
 use futures::StreamExt;
+use leyline::Kind;
 use leyline::http::StatusCode;
 use serde_json::{Value, json};
 
@@ -20,7 +22,8 @@ pub(crate) struct Http {
 }
 
 struct Body {
-    stream: leyline::BodyStream,
+    stream:
+        std::pin::Pin<Box<dyn futures::Stream<Item = leyline::Result<bytes::Bytes>> + Send + Sync>>,
     buffer: Vec<u8>,
     searched: usize,
     sse: bool,
@@ -69,6 +72,7 @@ impl Http {
                     false
                 })
                 .await
+                .map(|(bytes, _)| bytes)
                 .unwrap_or_default();
             self.expired = status == StatusCode::NOT_FOUND && self.session.is_some();
             let head: String = String::from_utf8_lossy(&body).chars().take(200).collect();
@@ -151,9 +155,11 @@ impl Body {
         let sse = response
             .header("content-type")
             .is_some_and(|kind| kind.contains("text/event-stream"));
-        let stream = response
-            .into_decoded_stream(None)
-            .map_err(|error| Error::Tool(format!("MCP response broke: {error}")))?;
+        let stream = Box::pin(
+            response
+                .bytes_stream()
+                .map_err(|error| Error::Tool(format!("MCP response broke: {error}")))?,
+        );
         Ok(Self {
             stream,
             buffer: Vec::new(),
@@ -173,7 +179,14 @@ impl Body {
                 return Ok(Read::Closed);
             }
             match self.stream.next().await {
-                Some(chunk) => self.buffer.extend_from_slice(&chunk?),
+                Some(chunk) => self.buffer.extend_from_slice(&chunk.map_err(|error| {
+                    let kind = if error.kind() == Kind::Timeout {
+                        ErrorKind::TimedOut
+                    } else {
+                        ErrorKind::Other
+                    };
+                    std::io::Error::new(kind, error)
+                })?),
                 None => {
                     self.done = true;
                     let rest = std::mem::take(&mut self.buffer);

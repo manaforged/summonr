@@ -38,7 +38,7 @@ impl Client {
                 true,
             )
             .await?
-            .into_stream()
+            .bytes_stream()
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
         let mut frames = super::wire::Frames::default();
         let mut state = Spill {

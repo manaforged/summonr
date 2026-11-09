@@ -30,21 +30,15 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
 }
 
 pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str) -> Result<i32> {
-    let markdown = std::fs::read_to_string(plan_path)
-        .map_err(|error| summonr::Error::Config(format!("cannot read {plan_path}: {error}")))?;
-    let steps = summonr::steps::parse(&markdown)?;
+    let path = std::path::absolute(plan_path)?;
+    let (plan, markdown, steps) = summonr::steps::load(loop_.workspace(), &path)?;
     let checks = loop_.verify_commands().to_vec();
     loop_.select_steps(&markdown, &checks)?;
-    let plan = plan_path.to_string();
     work(loop_, args, Job::Steps { plan, steps }).await
 }
 
-pub(super) async fn goal(
-    mut loop_: Loop<Client>,
-    args: &Args,
-    objective: &str,
-    gates: Vec<String>,
-) -> Result<i32> {
+pub(super) async fn goal(mut loop_: Loop<Client>, args: &Args, objective: &str) -> Result<i32> {
+    let gates = loop_.verify_commands().to_vec();
     loop_.select_goal(objective, &gates)?;
     let objective = objective.to_string();
     work(loop_, args, Job::Goal { objective, gates }).await

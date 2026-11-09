@@ -95,17 +95,6 @@ fn journal_workspace(path: &Path) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-pub(super) fn route_checks(
-    goal: bool,
-    checks: Option<Vec<String>>,
-) -> (Option<Vec<String>>, Vec<String>) {
-    if goal {
-        (checks.clone(), checks.unwrap_or_default())
-    } else {
-        (checks, Vec::new())
-    }
-}
-
 pub(super) fn build(
     args: &Args,
     endpoint: &Endpoint,

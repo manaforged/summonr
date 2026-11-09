@@ -43,7 +43,6 @@ const KEY_BEGIN: &str = "-----BEGIN ";
 const KEY_END: &str = "-----END ";
 const KEY_TAIL: &str = "PRIVATE KEY-----";
 const HIDDEN: &str = "[secret]";
-const TOKENS: &str = include_str!("tokens.toml");
 
 #[derive(serde::Deserialize, Clone, Copy, Default)]
 #[serde(rename_all = "lowercase")]
@@ -198,7 +197,7 @@ fn secrets_in(text: &str) -> Vec<String> {
 fn shapes() -> &'static [Shape] {
     static LOADED: OnceLock<Shapes> = OnceLock::new();
     &LOADED
-        .get_or_init(|| summonr_core::table::embedded("token shape", TOKENS))
+        .get_or_init(|| summonr_core::embedded!("token shape", "secret/tokens.toml"))
         .token
 }
 

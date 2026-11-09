@@ -59,6 +59,21 @@ pub(crate) fn contract(markdown: &str) -> Result<Contract> {
     Ok(Contract { items })
 }
 
+/// Reads and parses the plan at `path`, named relative to `workspace` when it lies inside it.
+pub fn load(
+    workspace: &std::path::Path,
+    path: &std::path::Path,
+) -> Result<(String, String, Vec<Step>)> {
+    let markdown = std::fs::read_to_string(path)
+        .map_err(|error| Error::Config(format!("cannot read {}: {error}", path.display())))?;
+    let steps = parse(&markdown)?;
+    let name = match path.strip_prefix(workspace) {
+        Ok(relative) => relative.to_string_lossy().replace('\\', "/"),
+        Err(_) => path.to_string_lossy().into_owned(),
+    };
+    Ok((name, markdown, steps))
+}
+
 pub fn parse(markdown: &str) -> Result<Vec<Step>> {
     let mut steps: Vec<Step> = Vec::new();
     let mut in_section = false;
@@ -151,3 +166,7 @@ pub fn prompt(step: &Step, total: usize, plan_path: &str) -> String {
     }
     text
 }
+
+#[cfg(test)]
+#[path = "steps_tests.rs"]
+mod tests;

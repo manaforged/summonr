@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, ListRowSlots, NodeBuilder, Overflow, Paint, Tone, Widget,
-    button, container, derived, effect, interval, list_row,
+    AlignItems, ControlSize, LayoutStyle, ListRowSlots, NodeBuilder, Overflow, Paint, Signal, Tone,
+    Widget, button, container, derived, effect, interval, list_row,
 };
 use sigil::reactive::{on_cleanup, untrack};
 use summonr_agent::hub::{Cmd, Open};
@@ -105,22 +105,27 @@ pub(super) fn view(app: &App) -> NodeBuilder {
         })
 }
 
-/// The sidebar sections of the panels placed there; each runs its command while it shows.
-pub(super) fn side(app: &App) -> NodeBuilder {
+/// The side panel the rail picked, while the workspace still has it.
+pub(super) fn picked(app: &App) -> Signal<Option<Panel>> {
     let panels = app.panels;
-    let side = derived(move || {
+    derived(move || {
+        let name = panels.side.get()?;
         panels
             .list
             .get()
             .into_iter()
-            .filter(|panel| panel.place == Place::Side)
-            .collect::<Vec<Panel>>()
-    });
+            .find(|panel| panel.place == Place::Side && panel.name == name)
+    })
+}
+
+/// The picked side panel as the sidebar's body; it runs its command while it shows.
+pub(super) fn side(app: &App, picked: Signal<Option<Panel>>) -> NodeBuilder {
     let app = app.clone();
     container()
         .layout(LayoutStyle::flex_column().fill_width())
         .children_reactive(move || {
-            side.get()
+            picked
+                .get()
                 .into_iter()
                 .map(|panel| section(&app, panel))
                 .collect::<Vec<_>>()
@@ -136,7 +141,9 @@ fn keep_running(app: &App, panel: &Panel) {
     }
     drop(app.cmd.send(Cmd::RunPanel(name.clone())));
     if let Some(every) = panel.every() {
-        let timer = interval(every, move || drop(again.cmd.send(Cmd::RunPanel(name.clone()))));
+        let timer = interval(every, move || {
+            drop(again.cmd.send(Cmd::RunPanel(name.clone())))
+        });
         on_cleanup(move || timer.cancel());
     }
 }
@@ -165,9 +172,7 @@ fn section(app: &App, panel: Panel) -> NodeBuilder {
     container()
         .layout(LayoutStyle::flex_column().fill_width())
         .child(heading(&panel.title))
-        .children_reactive(move || {
-            render(&app, &name, results.with(|all| all.get(&name).cloned()))
-        })
+        .children_reactive(move || render(&app, &name, results.with(|all| all.get(&name).cloned())))
 }
 
 fn heading(title: &str) -> NodeBuilder {
@@ -217,9 +222,10 @@ fn list(app: &App, rows: Vec<Item>) -> Vec<NodeBuilder> {
                 ListRowSlots {
                     status: item.meta.map(Into::into),
                     status_tone: tone(item.tone),
-                    activate: run.1.is_some().then(|| -> Rc<dyn Fn()> {
-                        Rc::new(move || act(&run.0, run.1.clone()))
-                    }),
+                    activate: run
+                        .1
+                        .is_some()
+                        .then(|| -> Rc<dyn Fn()> { Rc::new(move || act(&run.0, run.1.clone())) }),
                     ..ListRowSlots::default()
                 },
             )

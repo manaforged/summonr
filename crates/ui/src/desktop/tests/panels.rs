@@ -16,6 +16,7 @@ fn team(place: Place) -> impl FnOnce(&super::super::App) {
             title: "Team".to_owned(),
             kind: Fill::Data,
             place,
+            icon: None,
             command: vec!["true".to_owned()],
             every_secs: None,
             root: None,
@@ -28,7 +29,9 @@ fn team(place: Place) -> impl FnOnce(&super::super::App) {
                     title: ISSUE.to_owned(),
                     meta: Some("#212 · assigned to you".to_owned()),
                     tone: Mood::Warning,
-                    action: Some(Action::Start { prompt: PROMPT.to_owned() }),
+                    action: Some(Action::Start {
+                        prompt: PROMPT.to_owned(),
+                    }),
                 }],
             }),
         }));
@@ -52,19 +55,30 @@ fn a_side_panel_row_starts_an_agent_with_its_prompt() {
     let seen = steps(
         team(Place::Side),
         vec![
+            Step::Click("Team"),
             Step::Click(ISSUE),
             Step::Wait(Box::new(|app| {
-                app.update(Msg::Fact(Fact::Session("01a1000000000000000000000000eeee".to_owned())));
+                app.update(Msg::Fact(Fact::Session(
+                    "01a1000000000000000000000000eeee".to_owned(),
+                )));
             })),
         ],
         |_| (),
     );
-    assert!(seen.shows(|text| text == "Team"), "the panel's title shows: {}", seen.text());
+    assert!(
+        seen.shows(|text| text == "Team"),
+        "the panel's title shows: {}",
+        seen.text()
+    );
     assert!(
         seen.sent.iter().any(|cmd| matches!(cmd, Cmd::Open(_))),
         "a new agent opens"
     );
-    assert_eq!(prompts(&seen.sent), [PROMPT], "the row's prompt goes to the new agent");
+    assert_eq!(
+        prompts(&seen.sent),
+        [PROMPT],
+        "the row's prompt goes to the new agent"
+    );
 }
 
 #[test]
@@ -74,6 +88,32 @@ fn a_right_panel_stays_out_of_the_sidebar() {
     }
     let seen = steps(team(Place::Right), Vec::new(), |_| ());
     assert!(!seen.shows(|text| text == ISSUE), "{}", seen.text());
+}
+
+#[test]
+fn the_rail_shows_a_side_panel_only_while_it_is_picked() {
+    if !in_window("panels::the_rail_shows_a_side_panel_only_while_it_is_picked") {
+        return;
+    }
+    let before = steps(team(Place::Side), Vec::new(), |_| ());
+    assert!(
+        !before.shows(|text| text == ISSUE),
+        "threads show first: {}",
+        before.text()
+    );
+    let back = steps(
+        team(Place::Side),
+        vec![
+            Step::Click("Team"),
+            Step::Click(super::super::rail::THREADS),
+        ],
+        |_| (),
+    );
+    assert!(
+        !back.shows(|text| text == ISSUE),
+        "Threads hides the panel: {}",
+        back.text()
+    );
 }
 
 const REVIEW: &str = "Review PR #12";
@@ -97,6 +137,7 @@ fn queue(app: &super::super::App) {
         title: "Review queue".to_owned(),
         kind: Fill::Data,
         place: Place::Side,
+        icon: None,
         command: vec!["true".to_owned()],
         every_secs: None,
         root: None,
@@ -116,15 +157,25 @@ fn an_a2ui_button_in_a_side_panel_starts_an_agent_with_its_bound_prompt() {
     let seen = steps(
         queue,
         vec![
+            Step::Click("Review queue"),
             Step::Click("Fix cart rounding"),
             Step::Wait(Box::new(|app| {
-                app.update(Msg::Fact(Fact::Session("01a1000000000000000000000000ffff".to_owned())));
+                app.update(Msg::Fact(Fact::Session(
+                    "01a1000000000000000000000000ffff".to_owned(),
+                )));
             })),
         ],
         |_| (),
     );
-    assert!(seen.sent.iter().any(|cmd| matches!(cmd, Cmd::Open(_))), "a new agent opens");
-    assert_eq!(prompts(&seen.sent), [REVIEW], "the bound prompt goes to the new agent");
+    assert!(
+        seen.sent.iter().any(|cmd| matches!(cmd, Cmd::Open(_))),
+        "a new agent opens"
+    );
+    assert_eq!(
+        prompts(&seen.sent),
+        [REVIEW],
+        "the bound prompt goes to the new agent"
+    );
 }
 
 #[test]
@@ -132,20 +183,35 @@ fn a_team_event_in_a_side_panel_goes_back_to_the_panel_with_its_context() {
     if !in_window("panels::a_team_event_in_a_side_panel_goes_back_to_the_panel_with_its_context") {
         return;
     }
-    let seen = steps(queue, vec![Step::Click("Approve")], |_| ());
+    let seen = steps(
+        queue,
+        vec![Step::Click("Review queue"), Step::Click("Approve")],
+        |_| (),
+    );
     let acted: Vec<_> = seen
         .sent
         .iter()
         .filter_map(|cmd| match cmd {
-            Cmd::ActPanel { name, event, context } => Some((name.clone(), event.clone(), context.clone())),
+            Cmd::ActPanel {
+                name,
+                event,
+                context,
+            } => Some((name.clone(), event.clone(), context.clone())),
             _ => None,
         })
         .collect();
     assert_eq!(
         acted,
-        [("queue".to_owned(), "approve".to_owned(), serde_json::json!({"pr": 12}))]
+        [(
+            "queue".to_owned(),
+            "approve".to_owned(),
+            serde_json::json!({"pr": 12})
+        )]
     );
-    assert!(!seen.sent.iter().any(|cmd| matches!(cmd, Cmd::Open(_))), "no agent opens");
+    assert!(
+        !seen.sent.iter().any(|cmd| matches!(cmd, Cmd::Open(_))),
+        "no agent opens"
+    );
 }
 
 fn live_panel(place: Place) -> Panel {
@@ -154,6 +220,7 @@ fn live_panel(place: Place) -> Panel {
         title: "Live".to_owned(),
         kind: Fill::Stream,
         place,
+        icon: None,
         command: vec!["true".to_owned()],
         every_secs: None,
         root: None,
@@ -186,6 +253,7 @@ fn a_stream_side_panel_starts_while_it_shows_and_stops_when_it_goes() {
             settings(graded())(app);
             app.window.sidebar.set(true);
             app.update(Msg::Fact(Fact::Panels(vec![live_panel(Place::Side)])));
+            app.panels.side.set(Some("live".to_owned()));
         },
         vec![Step::Wait(Box::new(|app| {
             app.update(Msg::Fact(Fact::Panels(Vec::new())));

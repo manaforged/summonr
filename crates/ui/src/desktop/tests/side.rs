@@ -80,6 +80,7 @@ fn panel(name: &str, title: &str, every_secs: Option<u64>) -> summonr_agent::pan
         title: title.to_string(),
         kind: summonr_agent::panel::Fill::Data,
         place: summonr_agent::panel::Place::Right,
+        icon: None,
         command: vec!["true".to_string()],
         every_secs,
         root: None,

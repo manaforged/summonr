@@ -27,6 +27,7 @@ mod settings;
 mod shelf;
 mod ship;
 mod side;
+mod rail;
 mod sidebar;
 mod sky;
 mod spaces;

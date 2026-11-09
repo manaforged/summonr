@@ -8,6 +8,8 @@ use summonr_agent::panel::{Content, Panel};
 pub(crate) struct Panels {
     pub(crate) list: Signal<Vec<Panel>>,
     pub(crate) shown: Signal<Option<String>>,
+    /// The side panel the rail shows in the sidebar, or none for the threads.
+    pub(crate) side: Signal<Option<String>>,
     pub(crate) content: Signal<Option<Result<Content, String>>>,
     /// The last output of every panel that ran, by name.
     pub(crate) results: Signal<BTreeMap<String, Result<Content, String>>>,
@@ -18,6 +20,7 @@ impl Panels {
         Self {
             list: signal(Vec::new()),
             shown: signal(None),
+            side: signal(None),
             content: signal(None),
             results: signal(BTreeMap::new()),
         }
@@ -43,7 +46,8 @@ impl Panels {
             self.content.set(Some(result.clone()));
         }
         if self.results.with(|all| all.get(name) != Some(&result)) {
-            self.results.update(|all| drop(all.insert(name.to_owned(), result)));
+            self.results
+                .update(|all| drop(all.insert(name.to_owned(), result)));
         }
     }
 }

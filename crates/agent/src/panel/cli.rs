@@ -28,7 +28,7 @@ It can print an A2UI 1.0 surface instead, starting with createSurface, with a co
 
   [{"version":"1.0","createSurface":{"surfaceId":"queue","catalogId":"https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"}},{"version":"1.0","updateComponents":{"surfaceId":"queue","components":[{"id":"root","component":"Button","child":"label","action":{"event":{"name":"start","context":{"prompt":"Review PR 12"}}}},{"id":"label","component":"Text","text":"Review PR 12"}]}}]
 
-With place = "side" in the file, the panel is a section of the sidebar instead of a tab. Commit the file in the workspace's panels folder to share it with everyone who works in the repository.
+With place = "side" in the file, the panel shows in the sidebar instead of a tab, picked from an icon rail; icon = "inbox" names its Lucide icon. Commit the file in the workspace's panels folder to share it with everyone who works in the repository.
 
 With kind = "terminal" in the file, the tab opens the command in a terminal instead.
 

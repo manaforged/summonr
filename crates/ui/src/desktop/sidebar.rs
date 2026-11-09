@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, LayoutStyle, NodeBuilder, Paint, Signal, Space, Tone, Widget, container, effect, scroll,
-    sidebar,
+    AlignItems, LayoutStyle, NodeBuilder, Paint, Signal, Space, Tone, Widget, container, effect,
+    scroll, sidebar,
 };
 
 use super::App;
@@ -45,64 +45,99 @@ pub(super) fn view(app: App) -> NodeBuilder {
         let app = app.clone();
         move || app.model.with(|model| model.prefs.sidebar.clone())
     });
-    let list = app.clone();
     let shut = sigil::prelude::signal(Vec::<std::path::PathBuf>::new());
     let folded = sigil::prelude::signal(Vec::<String>::new());
+    let picked = super::panel::picked(&app);
+    let on_panel = sigil::reactive::derived(move || picked.with(Option::is_some));
+    let middle = app.clone();
     container()
-        .layout(LayoutStyle::flex_column().fill_height().shrink(0.0))
+        .layout(LayoutStyle::flex_row().fill_height().shrink(0.0))
+        .child(super::rail::view(&app))
         .child(
             sidebar(
                 container()
                     .layout(LayoutStyle::flex_column().fill().gap(XS).min_size(0.0, 0.0))
                     .child(brand(&app))
-                    .child(sigil::widgets::context_menu(
-                        container()
-                            .layout(
-                                LayoutStyle::flex_column()
-                                    .fill_width()
-                                    .padding_right(SCROLLBAR),
-                            )
-                            .children_reactive({
-                                let app = app.clone();
-                                move || row::actions(&app, actions)
-                            }),
-                        {
-                            let app = app.clone();
-                            move || row::add_items(&app)
-                        },
-                    ))
                     .child(
                         container()
                             .layout(
                                 LayoutStyle::flex_column()
                                     .fill_width()
-                                    .padding_right(SCROLLBAR),
+                                    .grow(1.0)
+                                    .gap(XS)
+                                    .min_size(0.0, 0.0),
                             )
-                            .children_reactive({
-                                let app = app.clone();
-                                move || row::pinned(&app, live, shown)
+                            .children_reactive(move || {
+                                if on_panel.get() {
+                                    vec![
+                                        scroll(super::panel::side(&middle, picked))
+                                            .bg(RECESSED)
+                                            .grow(1.0)
+                                            .into(),
+                                    ]
+                                } else {
+                                    threads(&middle, (shut, folded), (live, shown, actions))
+                                }
                             }),
-                    )
-                    .child(space::heading(&app))
-                    .child(
-                        scroll(
-                            container()
-                                .layout(LayoutStyle::flex_column().fill_width())
-                                .child(
-                                    container()
-                                        .layout(LayoutStyle::flex_column().fill_width())
-                                        .children_reactive(move || chats(&list, (shut, folded), live, shown)),
-                                )
-                                .child(super::panel::side(&app)),
-                        )
-                        .bg(RECESSED)
-                        .grow(1.0),
                     )
                     .child(row::footer(&app)),
             )
             .bg(RECESSED)
             .width(WIDTH),
         )
+}
+
+type Watched = (
+    Signal<Vec<Live>>,
+    Signal<Vec<String>>,
+    Signal<Vec<summonr_agent::prefs::Action>>,
+);
+
+/// The pinned actions, the pinned agents, and every repository with its agents.
+fn threads(
+    app: &App,
+    open: (Signal<Vec<std::path::PathBuf>>, Signal<Vec<String>>),
+    (live, shown, actions): Watched,
+) -> Vec<NodeBuilder> {
+    let list = app.clone();
+    vec![
+        sigil::widgets::context_menu(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .padding_right(SCROLLBAR),
+                )
+                .children_reactive({
+                    let app = app.clone();
+                    move || row::actions(&app, actions)
+                }),
+            {
+                let app = app.clone();
+                move || row::add_items(&app)
+            },
+        )
+        .into(),
+        container()
+            .layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .padding_right(SCROLLBAR),
+            )
+            .children_reactive({
+                let app = app.clone();
+                move || row::pinned(&app, live, shown)
+            }),
+        space::heading(app),
+        scroll(
+            container()
+                .layout(LayoutStyle::flex_column().fill_width())
+                .children_reactive(move || chats(&list, open, live, shown)),
+        )
+        .bg(RECESSED)
+        .grow(1.0)
+        .into(),
+    ]
 }
 
 fn refresh_on_switch(app: &App, session: Signal<String>, live: Signal<Vec<Live>>) {
@@ -157,7 +192,11 @@ fn chats(
         .terms
         .iter()
         .map(|term| repo_folder(&seen.trees, &term.folder))
-        .chain(seen.live.iter().map(|entry| repo_folder(&seen.trees, &entry.workspace)));
+        .chain(
+            seen.live
+                .iter()
+                .map(|entry| repo_folder(&seen.trees, &entry.workspace)),
+        );
     for folder in open_folders {
         if !groups.iter().any(|(at, _)| *at == folder) {
             groups.push((folder, Vec::new()));
@@ -189,11 +228,15 @@ pub(super) fn topics(
 pub(super) fn folders(app: &App) -> Vec<std::path::PathBuf> {
     let here = app.workspace();
     let trees = app.worktrees();
-    projects(&trees, &here, (&super::spaces::repositories(), app.sessions.all_chats()))
-        .into_iter()
-        .map(|(folder, _)| folder)
-        .filter(|folder| *folder != repo_folder(&trees, &here))
-        .collect()
+    projects(
+        &trees,
+        &here,
+        (&super::spaces::repositories(), app.sessions.all_chats()),
+    )
+    .into_iter()
+    .map(|(folder, _)| folder)
+    .filter(|folder| *folder != repo_folder(&trees, &here))
+    .collect()
 }
 
 /// The folder an agent lists under: its repository's checkout when it works in a worktree.
@@ -348,7 +391,11 @@ fn repo_ids(trees: &[Tree], folder: &std::path::Path, agents: Vec<SessionInfo>) 
     let (loose, branches) = repo::split_branches(trees, folder, agents);
     topic_ids(loose)
         .into_iter()
-        .chain(branches.into_iter().flat_map(|(_, inside)| topic_ids(inside)))
+        .chain(
+            branches
+                .into_iter()
+                .flat_map(|(_, inside)| topic_ids(inside)),
+        )
         .collect()
 }
 

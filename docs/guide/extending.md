@@ -57,11 +57,12 @@ Put the binary on `PATH` or under `~/.summonr/bin/<name>/`. The model runs it wi
 
 A panel is a tab in the desktop app's right panel, or a section of its sidebar, drawn with the app's own widgets. Write `panels/NAME.toml` under `.summonr` in the workspace, or under `~/.summonr` for every workspace. A plugin can ship the same files in its `panels` directory. `summonr panel --help` has the file format and every view: chart, stat, table, text and list.
 
-Set `place = "side"` to put the panel in the sidebar under the repositories. A `list` view gives each row an action: `start` opens a new agent with the row's prompt, and `open` shows an existing one. Commit the workspace's panel file to share a team's process, such as the issues assigned to you:
+Set `place = "side"` to put the panel in the sidebar. An icon rail then shows beside the sidebar: its first button shows the repositories and agents, and each side panel gets a button that shows that panel instead. `icon` names the button's [Lucide](https://lucide.dev/icons/) icon, such as `"inbox"` or `"git-pull-request"`; a name the app does not bundle shows a default icon. A `list` view gives each row an action: `start` opens a new agent with the row's prompt, and `open` shows an existing one. Commit the workspace's panel file to share a team's process, such as the issues assigned to you:
 
 ```toml
 title = "Assigned to me"
 place = "side"
+icon = "inbox"
 every_secs = 120
 command = ["sh", "-c", "gh issue list --assignee @me --json number,title | jq '{view: \"list\", rows: map({title, meta: \"#\\(.number)\", action: {start: {prompt: \"Fix issue #\\(.number): \\(.title)\"}}})}'"]
 ```

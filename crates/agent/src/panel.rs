@@ -45,6 +45,7 @@ struct File {
     kind: Fill,
     #[serde(default)]
     place: Place,
+    icon: Option<String>,
     command: Vec<String>,
     every_secs: Option<u64>,
 }
@@ -60,6 +61,8 @@ pub struct Panel {
     pub kind: Fill,
     /// Where the panel shows.
     pub place: Place,
+    /// The Lucide name of the icon for the panel's rail button.
+    pub icon: Option<String>,
     /// The program and its arguments.
     pub command: Vec<String>,
     /// How often the open panel runs again, if at all.
@@ -297,6 +300,7 @@ fn read_file(path: &Path) -> Option<Panel> {
             name,
             kind: file.kind,
             place: file.place,
+            icon: file.icon,
             command: file.command,
             every_secs: file.every_secs,
             root: None,
@@ -307,6 +311,7 @@ fn read_file(path: &Path) -> Option<Panel> {
             name,
             kind: Fill::Data,
             place: Place::Right,
+            icon: None,
             command: Vec::new(),
             every_secs: None,
             root: None,

@@ -220,7 +220,7 @@ pub(crate) struct Log {
 }
 
 fn hold(path: &Path) -> io::Result<File> {
-    super::store::lock(path, false)?.ok_or_else(|| {
+    super::store::lock_within(path, crate::limits::limits().session_lock())?.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::WouldBlock,
             format!("{} is open in another summonr window", path.display()),

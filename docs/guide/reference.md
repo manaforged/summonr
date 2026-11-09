@@ -259,6 +259,7 @@ cache_ttl = "5m"
 | `verify_timeout_secs` | `600` | Timeout for a check command. |
 | `probe_secs` | `5` | Endpoint probe timeout. |
 | `auth_secs` | `30` | Sign-in request timeout. |
+| `session_lock_ms` | `1000` | How long opening a session waits for another holder of its log to let go before it reports the session open elsewhere. |
 | `update_secs` | `600` | `summonr update` download timeout. |
 | `model_probe_secs` | `8` | Model list request timeout. |
 | `web_search_secs` | `15` | Web search timeout. |

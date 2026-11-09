@@ -86,6 +86,17 @@ pub fn lock(path: &Path, wait: bool) -> io::Result<Option<File>> {
     }
 }
 
+/// Takes the lock beside `path`, waiting up to `limit` for a holder to let go.
+pub(crate) fn lock_within(path: &Path, limit: std::time::Duration) -> io::Result<Option<File>> {
+    if let Some(file) = lock(path, false)? {
+        return Ok(Some(file));
+    }
+    let (send, receive) = std::sync::mpsc::channel();
+    let owned = path.to_path_buf();
+    std::thread::spawn(move || drop(send.send(lock(&owned, true))));
+    receive.recv_timeout(limit).unwrap_or(Ok(None))
+}
+
 pub(crate) fn stage<'a>(path: &'a Path, bytes: &[u8], keep_mode: bool) -> io::Result<Staged<'a>> {
     prepare(path, bytes, keep_mode, Durability::Renamed)
 }

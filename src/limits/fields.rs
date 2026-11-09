@@ -69,6 +69,7 @@ table! {
     verify_timeout_secs: u64,
     probe_secs: u64 => probe(secs),
     auth_secs: u64 => auth(secs),
+    session_lock_ms: u64 => session_lock(millis),
     update_secs: u64 => update(secs),
     model_probe_secs: u64 => model_probe(secs),
     web_search_secs: u64 => web_search(secs),

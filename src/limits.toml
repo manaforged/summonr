@@ -27,6 +27,7 @@ mail_per_round = 5
 verify_timeout_secs = 600
 probe_secs = 5
 auth_secs = 30
+session_lock_ms = 1000
 update_secs = 600
 model_probe_secs = 8
 web_search_secs = 15

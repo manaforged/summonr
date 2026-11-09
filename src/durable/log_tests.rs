@@ -319,3 +319,36 @@ fn a_journal_usage_record_reports_its_cache_writes() {
         });
     assert_eq!(written, Some(7));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_closed_session_reopens_while_other_threads_start_programs() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session.jsonl");
+    drop(Log::create(&path).unwrap());
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let spawners: Vec<_> = (0..3)
+        .map(|_| {
+            let stop = std::sync::Arc::clone(&stop);
+            std::thread::spawn(move || {
+                let search = std::env::var("PATH").unwrap_or_default();
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let status = std::process::Command::new("sh")
+                        .args(["-c", "true"])
+                        .env_clear()
+                        .env("PATH", &search)
+                        .status();
+                    drop(status);
+                }
+            })
+        })
+        .collect();
+    let refused = (0..300)
+        .filter(|_| Log::open(&path).map(drop).is_err())
+        .count();
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    for spawner in spawners {
+        spawner.join().expect("spawner thread");
+    }
+    assert_eq!(refused, 0, "a closed session must reopen");
+}

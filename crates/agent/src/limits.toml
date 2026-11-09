@@ -96,6 +96,7 @@ splash_reveal_ms = 760
 status_refresh_secs = 1
 beat_secs = 2
 presence_secs = 60
+presence_tool_ms = 1000
 notice_secs = 2
 worker_stop_secs = 2
 local_probe_ms = 300

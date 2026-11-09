@@ -70,6 +70,7 @@ pub(crate) struct Mailbox {
     parent: Option<String>,
     since: u64,
     stamp: Option<Stamp>,
+    noted: Option<std::time::Instant>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -172,6 +173,7 @@ impl Mailbox {
             parent: None,
             since: now(),
             stamp: None,
+            noted: None,
         };
         mailbox.write_record(model, cwd, Presence::Joined);
         Ok(mailbox)
@@ -262,7 +264,14 @@ impl Mailbox {
         self.tool = tool.to_string();
         self.detail = detail;
         self.since = now();
+        let recent = self
+            .noted
+            .is_some_and(|at| at.elapsed() < crate::limits::limits().presence_tool());
+        if recent && self.status == Presence::Working {
+            return;
+        }
         self.status = Presence::Working;
+        self.noted = Some(std::time::Instant::now());
         self.write_record(model, cwd, Presence::Working);
     }
 

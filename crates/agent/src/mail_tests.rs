@@ -310,3 +310,24 @@ fn the_sweep_removes_the_inbox_of_a_session_that_is_gone() {
         "the inbox of a gone session survived the sweep"
     );
 }
+
+#[test]
+fn a_burst_of_tool_calls_rewrites_the_presence_record_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = Path::new("/work/summonr");
+    let mut agent = Mailbox::open(dir.path(), "a1", Some("a1"), "summonr", "model", cwd).unwrap();
+    let record = || -> Agent {
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents/a1.json")).unwrap())
+            .unwrap()
+    };
+    agent.note_tool("model", cwd, ("read", r#"{"command":"one"}"#), None);
+    agent.note_tool("model", cwd, ("read", r#"{"command":"two"}"#), None);
+    assert_eq!(
+        record().detail,
+        "one",
+        "the second call inside the interval is not written"
+    );
+    agent.heartbeat("model", cwd, Presence::Idle);
+    let idle = record();
+    assert_eq!((idle.status, idle.detail.as_str()), (Presence::Idle, "two"));
+}

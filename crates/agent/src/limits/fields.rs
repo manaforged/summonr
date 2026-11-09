@@ -76,6 +76,7 @@ table! {
     strip_rows: usize,
     mail_sweep_secs: u64,
     presence_secs: u64,
+    presence_tool_ms: u64 => presence_tool(millis),
     mail_per_round: usize,
     verify_timeout_secs: u64,
     probe_secs: u64 => probe(secs),

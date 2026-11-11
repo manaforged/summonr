@@ -16,9 +16,9 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error via gtk in muda on Linux; desktop menu dependency only" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser via sctk-adwaita in winit; terminal and skrifa text paths do not use ab_glyph" },
-    { id = "RUSTSEC-2026-0370", reason = "zvariant via zbus 5 in accesskit_unix; waiting on an accesskit_unix release on zbus 6" },
-    { id = "RUSTSEC-2026-0371", reason = "zbus_names via zbus 5 in accesskit_unix; waiting on an accesskit_unix release on zbus 6" },
-    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via zbus 5 in accesskit_unix; waiting on an accesskit_unix release on zbus 6" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant via zbus 5 in dark-light (sigil-ui terminal) and accesskit_unix; unmaintained notice with no patched release; drop when both move to zbus 6" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names via zbus 5 in dark-light (sigil-ui terminal) and accesskit_unix; unmaintained notice with no patched release; drop when both move to zbus 6" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via zbus 5 in dark-light (sigil-ui terminal) and accesskit_unix; unmaintained notice with no patched release; drop when both move to zbus 6" },
 ]
 
 [licenses]

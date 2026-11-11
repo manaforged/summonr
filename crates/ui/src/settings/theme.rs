@@ -151,7 +151,7 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
                                 .gap(sigil::prelude::Space::None)
                                 .fill_width()
                                 .height(canvas::overlay_field())
-                                .change(move |value| change.preview_color(&value))
+                                .change(move |value| change.preview_color(value))
                                 .submit(move |_| apply.edit_theme()),
                         ),
                 );

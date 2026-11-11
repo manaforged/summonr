@@ -129,7 +129,13 @@ command = ["sh", "-c", "printf '%s' '{\"view\":\"list\",\"rows\":[{\"title\":\"C
     );
 }
 
-fn panel_reader(files: &[(&str, &str)]) -> (tempfile::TempDir, Reader, tokio::sync::mpsc::UnboundedReceiver<Msg>) {
+fn panel_reader(
+    files: &[(&str, &str)],
+) -> (
+    tempfile::TempDir,
+    Reader,
+    tokio::sync::mpsc::UnboundedReceiver<Msg>,
+) {
     let dir = tempfile::tempdir().expect("workspace");
     let panels = dir.path().join(".summonr").join("panels");
     std::fs::create_dir_all(&panels).expect("panels folder");
@@ -141,7 +147,9 @@ fn panel_reader(files: &[(&str, &str)]) -> (tempfile::TempDir, Reader, tokio::sy
     (dir, reader, inbox)
 }
 
-async fn panel_fact(inbox: &mut tokio::sync::mpsc::UnboundedReceiver<Msg>) -> (String, Result<crate::panel::Content, String>) {
+async fn panel_fact(
+    inbox: &mut tokio::sync::mpsc::UnboundedReceiver<Msg>,
+) -> (String, Result<crate::panel::Content, String>) {
     loop {
         let message = tokio::time::timeout(Duration::from_secs(10), inbox.recv())
             .await
@@ -162,12 +170,18 @@ async fn a_panel_that_prints_a2ui_reports_the_surface_as_printed() {
     reader.run(Cmd::RunPanel("queue".to_string())).await;
     let (name, result) = panel_fact(&mut inbox).await;
     assert_eq!(name, "queue");
-    assert_eq!(result, Ok(crate::panel::Content::Surface(SURFACE.to_string())));
+    assert_eq!(
+        result,
+        Ok(crate::panel::Content::Surface(SURFACE.to_string()))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_panel_event_runs_the_command_again_with_the_action_on_stdin() {
-    let file = format!("command = [\"sh\", \"-c\", \"cat > action.json; printf '%s' '{}'\"]", SURFACE.replace('"', "\\\""));
+    let file = format!(
+        "command = [\"sh\", \"-c\", \"cat > action.json; printf '%s' '{}'\"]",
+        SURFACE.replace('"', "\\\"")
+    );
     let (dir, reader, mut inbox) = panel_reader(&[("queue", &file)]);
     reader
         .run(Cmd::ActPanel {
@@ -178,7 +192,10 @@ async fn a_panel_event_runs_the_command_again_with_the_action_on_stdin() {
         .await;
     let (name, result) = panel_fact(&mut inbox).await;
     assert_eq!(name, "queue");
-    assert_eq!(result, Ok(crate::panel::Content::Surface(SURFACE.to_string())));
+    assert_eq!(
+        result,
+        Ok(crate::panel::Content::Surface(SURFACE.to_string()))
+    );
     let sent: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(dir.path().join("action.json")).expect("the command read stdin"),
     )
@@ -189,14 +206,17 @@ async fn a_panel_event_runs_the_command_again_with_the_action_on_stdin() {
     assert_eq!(action["surfaceId"], "queue");
     assert_eq!(action["context"], serde_json::json!({"pr": 12}));
     assert!(
-        action["timestamp"].as_str().is_some_and(|stamp| stamp.parse::<jiff::Timestamp>().is_ok()),
+        action["timestamp"]
+            .as_str()
+            .is_some_and(|stamp| stamp.parse::<jiff::Timestamp>().is_ok()),
         "an ISO 8601 timestamp: {action}"
     );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn three_panels_asked_at_once_each_report() {
-    let slow = r#"command = ["sh", "-c", "sleep 0.3; printf '{\"view\":\"text\",\"text\":\"ok\"}'"]"#;
+    let slow =
+        r#"command = ["sh", "-c", "sleep 0.3; printf '{\"view\":\"text\",\"text\":\"ok\"}'"]"#;
     let (_dir, reader, mut inbox) = panel_reader(&[("a", slow), ("b", slow), ("c", slow)]);
     for name in ["a", "b", "c"] {
         reader.run(Cmd::RunPanel(name.to_string())).await;
@@ -231,7 +251,13 @@ async fn a_stream_panel_redraws_per_line_reads_events_on_stdin_and_stops_on_clos
     );
     let (dir, reader, mut inbox) = panel_reader(&[("live", &file)]);
     reader.run(Cmd::OpenPanel("live".to_string())).await;
-    assert_eq!(panel_fact(&mut inbox).await, ("live".to_string(), Ok(crate::panel::Content::Surface(LIVE.to_string()))));
+    assert_eq!(
+        panel_fact(&mut inbox).await,
+        (
+            "live".to_string(),
+            Ok(crate::panel::Content::Surface(LIVE.to_string()))
+        )
+    );
     reader
         .run(Cmd::ActPanel {
             name: "live".to_string(),
@@ -239,14 +265,23 @@ async fn a_stream_panel_redraws_per_line_reads_events_on_stdin_and_stops_on_clos
             context: serde_json::json!({}),
         })
         .await;
-    assert_eq!(panel_fact(&mut inbox).await, ("live".to_string(), Ok(crate::panel::Content::Surface(GOT.to_string()))));
+    assert_eq!(
+        panel_fact(&mut inbox).await,
+        (
+            "live".to_string(),
+            Ok(crate::panel::Content::Surface(GOT.to_string()))
+        )
+    );
     let pid = std::fs::read_to_string(dir.path().join("live.pid")).expect("pid file");
     let pid = pid.trim().to_string();
     assert!(!gone(&pid), "the stream runs while the panel is open");
     reader.run(Cmd::ClosePanel("live".to_string())).await;
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while !gone(&pid) {
-        assert!(std::time::Instant::now() < deadline, "the stream stops when the panel closes");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the stream stops when the panel closes"
+        );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }

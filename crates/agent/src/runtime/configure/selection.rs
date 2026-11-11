@@ -29,7 +29,9 @@ impl<P: Provider> Loop<P> {
 
     /// Puts this session in the topic that `topic` started.
     pub fn join_topic(&mut self, topic: &str) -> Result<()> {
-        self.session.set_topic(topic.to_string()).map_err(Error::from)
+        self.session
+            .set_topic(topic.to_string())
+            .map_err(Error::from)
     }
 
     /// Limits this session to skill set `set` and records the choice in its journal.

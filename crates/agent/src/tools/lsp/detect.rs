@@ -18,10 +18,12 @@ enum Source {
     Tree(Arc<[Server]>),
 }
 
+type BuiltLaunches = BTreeMap<(language::Language, Option<PathBuf>), Arc<Launch>>;
+
 #[derive(Default)]
 pub(in crate::tools) struct Launches {
     source: Mutex<Option<Source>>,
-    built: Mutex<BTreeMap<(language::Language, Option<PathBuf>), Arc<Launch>>>,
+    built: Mutex<BuiltLaunches>,
 }
 
 impl Launches {

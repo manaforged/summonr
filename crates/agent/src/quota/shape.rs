@@ -26,7 +26,9 @@ impl Shape {
             Self::Codex => codex(value),
             Self::Zai => zai(value),
             Self::Antigravity => antigravity(value),
-            Self::Windows => serde_json::from_value(value.clone()).map_err(|error| error.to_string())?,
+            Self::Windows => {
+                serde_json::from_value(value.clone()).map_err(|error| error.to_string())?
+            }
         };
         if windows.is_empty() {
             return Err(format!("no usage windows in the {self:?} reply"));
@@ -110,7 +112,12 @@ fn zai(value: &Value) -> Vec<Window> {
     };
     limits
         .iter()
-        .filter(|limit| matches!(limit["type"].as_str(), Some("TOKENS_LIMIT" | "CREDIT_LIMIT")))
+        .filter(|limit| {
+            matches!(
+                limit["type"].as_str(),
+                Some("TOKENS_LIMIT" | "CREDIT_LIMIT")
+            )
+        })
         .filter_map(|limit| {
             let unit = match limit["unit"].as_u64()? {
                 1 => 1440,
@@ -123,7 +130,9 @@ fn zai(value: &Value) -> Vec<Window> {
                 group: None,
                 minutes: limit["number"].as_u64().map(|number| number * unit),
                 used: limit["percentage"].as_f64()?,
-                resets: limit["nextResetTime"].as_i64().and_then(|at| time(at, 1000)),
+                resets: limit["nextResetTime"]
+                    .as_i64()
+                    .and_then(|at| time(at, 1000)),
             })
         })
         .collect()

@@ -60,7 +60,10 @@ impl KeyCommand {
 
 /// What a split key does to the window's panes.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+#[cfg_attr(
+    not(feature = "gui"),
+    allow(dead_code, reason = "window pane shortcuts run only under gui")
+)]
 pub(crate) enum Split {
     /// Adds a pane right of the focused one, with a new agent.
     Open,
@@ -78,7 +81,10 @@ pub(crate) enum Split {
 
 /// A direction on screen.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+#[cfg_attr(
+    not(feature = "gui"),
+    allow(dead_code, reason = "window pane directions run only under gui")
+)]
 pub(crate) enum Dir {
     Left,
     Right,
@@ -88,7 +94,10 @@ pub(crate) enum Dir {
 
 /// Which agent a window shortcut opens.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(feature = "gui"), allow(dead_code))]
+#[cfg_attr(
+    not(feature = "gui"),
+    allow(dead_code, reason = "window sidebar jumps run only under gui")
+)]
 pub(crate) enum Jump {
     /// The nth agent in sidebar order, from 1.
     Nth(usize),

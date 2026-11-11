@@ -38,7 +38,11 @@ pub(super) fn start(panel: &Panel, workspace: &Path) -> Result<crate::process::P
 }
 
 /// Runs a data panel's command in the workspace and reads what it printed.
-pub async fn run(panel: &Panel, workspace: &Path, input: Option<String>) -> Result<Content, String> {
+pub async fn run(
+    panel: &Panel,
+    workspace: &Path,
+    input: Option<String>,
+) -> Result<Content, String> {
     let process = start(panel, workspace)?;
     Content::parse(&output(process, input).await?)
 }

@@ -216,6 +216,7 @@ fn a_long_board_folds_to_one_line_per_key_and_a_short_one_is_left_alone() {
         std::fs::read_dir(dir.join("board"))
             .unwrap()
             .flatten()
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jsonl"))
             .map(|entry| std::fs::read_to_string(entry.path()).unwrap())
             .next()
             .unwrap_or_default()

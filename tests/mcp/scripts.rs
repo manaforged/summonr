@@ -73,7 +73,7 @@ pub(crate) fn each_new_worktree_runs_setup_on_its_own_port_block() {
     assert_ne!(ports[0], ports[1], "{ports:?}");
     for port in &ports {
         assert!(
-            *port >= BASE && (port - BASE) % BLOCK == 0,
+            *port >= BASE && (port - BASE).is_multiple_of(BLOCK),
             "{port} starts no block: {ports:?}"
         );
     }

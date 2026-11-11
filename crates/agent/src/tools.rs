@@ -40,6 +40,9 @@ pub(crate) fn blocking<T>(work: impl FnOnce() -> T) -> T {
     }
 }
 
+type SharedConn = std::sync::Arc<tokio::sync::Mutex<Option<lsp::Conn>>>;
+type ConnMap = std::collections::BTreeMap<(String, Option<PathBuf>), SharedConn>;
+
 pub(crate) struct ToolRegistry {
     workspace: PathBuf,
     policy: Policy,
@@ -51,12 +54,7 @@ pub(crate) struct ToolRegistry {
     skills: bool,
     skill_set: Option<crate::skills::Set>,
     probed: std::sync::OnceLock<(bool, bool)>,
-    lsp: std::sync::Mutex<
-        std::collections::BTreeMap<
-            (String, Option<PathBuf>),
-            std::sync::Arc<tokio::sync::Mutex<Option<lsp::Conn>>>,
-        >,
-    >,
+    lsp: std::sync::Mutex<ConnMap>,
     session: std::sync::Mutex<Option<String>>,
     read_ranges: std::sync::Mutex<dedup::Ranges>,
     spill_dir: std::sync::OnceLock<tempfile::TempDir>,

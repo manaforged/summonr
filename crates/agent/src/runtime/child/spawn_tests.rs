@@ -577,7 +577,9 @@ async fn a_child_runs_with_the_skill_set_of_its_lead() {
         .unwrap();
     assert!(tool_names(&mut open.child).contains(&"skill".to_string()));
     parent
-        .choose_skills(crate::skills::Set::from_sets(&std::collections::BTreeMap::new(), "none").unwrap())
+        .choose_skills(
+            crate::skills::Set::from_sets(&std::collections::BTreeMap::new(), "none").unwrap(),
+        )
         .unwrap();
     let budget = parent.task_budget(1).unwrap();
     let mut run = parent

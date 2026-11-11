@@ -179,7 +179,13 @@ fn merge(dir: &Path) -> Result<Pull, Error> {
     gh(dir, &["pr", "merge", &pull.number.to_string(), "--merge"])?;
     let listed: Listed = json(&gh(
         dir,
-        &["pr", "view", &pull.number.to_string(), "--json", PULL_FIELDS],
+        &[
+            "pr",
+            "view",
+            &pull.number.to_string(),
+            "--json",
+            PULL_FIELDS,
+        ],
     )?)?;
     Ok(Pull {
         state: listed.state,
@@ -250,7 +256,13 @@ fn find(dir: &Path, branch: &str) -> Result<Option<Pull>, Error> {
     } else {
         json(&gh(
             dir,
-            &["pr", "checks", &listed.number.to_string(), "--json", CHECK_FIELDS],
+            &[
+                "pr",
+                "checks",
+                &listed.number.to_string(),
+                "--json",
+                CHECK_FIELDS,
+            ],
         )?)?
     };
     Ok(Some(Pull {
@@ -263,16 +275,21 @@ fn find(dir: &Path, branch: &str) -> Result<Option<Pull>, Error> {
 }
 
 fn signed_in(dir: &Path) -> Result<(), Error> {
-    let auth: Auth = match gh(dir, &["auth", "status", "--json", "hosts"]).and_then(|text| json(&text)) {
-        Err(error @ Error::TimedOut { .. }) => return Err(error),
-        read => read.map_err(|_error| Error::SignedOut)?,
-    };
+    let auth: Auth =
+        match gh(dir, &["auth", "status", "--json", "hosts"]).and_then(|text| json(&text)) {
+            Err(error @ Error::TimedOut { .. }) => return Err(error),
+            read => read.map_err(|_error| Error::SignedOut)?,
+        };
     let active = auth.hosts.get(HOST).is_some_and(|accounts| {
         accounts
             .iter()
             .any(|account| account.active && account.state == Sign::Success)
     });
-    if active { Ok(()) } else { Err(Error::SignedOut) }
+    if active {
+        Ok(())
+    } else {
+        Err(Error::SignedOut)
+    }
 }
 
 fn remote(dir: &Path) -> Result<String, Error> {
@@ -328,7 +345,8 @@ fn gh(dir: &Path, args: &[&str]) -> Result<String, Error> {
         after: limits.gh(),
         poll: limits.gh_poll(),
     };
-    let finished = process::output_within(spec, None, deadline).map_err(|_error| Error::SignedOut)?;
+    let finished =
+        process::output_within(spec, None, deadline).map_err(|_error| Error::SignedOut)?;
     let Some(output) = finished else {
         return Err(Error::TimedOut {
             command: named(args),
@@ -339,7 +357,11 @@ fn gh(dir: &Path, args: &[&str]) -> Result<String, Error> {
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(Error::Failed(format!("gh {} failed: {}", named(args), stderr.trim())))
+    Err(Error::Failed(format!(
+        "gh {} failed: {}",
+        named(args),
+        stderr.trim()
+    )))
 }
 
 fn named(args: &[&str]) -> String {
@@ -347,5 +369,6 @@ fn named(args: &[&str]) -> String {
 }
 
 fn json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, Error> {
-    serde_json::from_str(text).map_err(|error| Error::Failed(format!("gh sent unreadable JSON: {error}")))
+    serde_json::from_str(text)
+        .map_err(|error| Error::Failed(format!("gh sent unreadable JSON: {error}")))
 }

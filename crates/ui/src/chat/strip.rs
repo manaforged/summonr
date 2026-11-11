@@ -79,34 +79,40 @@ pub(crate) fn sheet(app: App) -> NodeBuilder {
             .key(Key::Esc, "close")
             .key(Key::Hotkey(Hotkey::Agents), "toggle agents"),
     )
-    .child(container().children_reactive(move || {
-        let (current, task_count, agent_count) = tabs_view.get();
-        let mut tabs = sigil::prelude::row()
-            .align_items(sigil::prelude::AlignItems::Stretch)
+    .child(
+        sigil::prelude::column()
+            .gap(Space::None)
             .fill_width()
-            .gap(Space::Sm);
-        for (tab, label) in [
-            (
-                StatusView::Tasks,
-                format!("Tasks {}/{}", task_count.0, task_count.1),
-            ),
-            (StatusView::Agents, format!("Agents {agent_count}")),
-        ] {
-            let show = paint.clone();
-            tabs = tabs.child(
-                button(label)
-                    .ghost()
-                    .size(ControlSize::Compact)
-                    .tone(if current == tab {
-                        sigil::prelude::Tone::Info
-                    } else {
-                        sigil::prelude::Tone::Neutral
-                    })
-                    .activate(move || show.show_status(tab)),
-            );
-        }
-        vec![tabs, details::list(paint.clone())]
-    }))
+            .child(container().children_reactive(move || {
+                let (current, task_count, agent_count) = tabs_view.get();
+                let mut tabs = sigil::prelude::row()
+                    .align_items(sigil::prelude::AlignItems::Stretch)
+                    .fill_width()
+                    .gap(Space::Sm);
+                for (tab, label) in [
+                    (
+                        StatusView::Tasks,
+                        format!("Tasks {}/{}", task_count.0, task_count.1),
+                    ),
+                    (StatusView::Agents, format!("Agents {agent_count}")),
+                ] {
+                    let show = paint.clone();
+                    tabs = tabs.child(
+                        button(label)
+                            .ghost()
+                            .size(ControlSize::Compact)
+                            .tone(if current == tab {
+                                sigil::prelude::Tone::Info
+                            } else {
+                                sigil::prelude::Tone::Neutral
+                            })
+                            .activate(move || show.show_status(tab)),
+                    );
+                }
+                vec![tabs]
+            }))
+            .child(details::list(app)),
+    )
     .build(open, viewport, &keys)
 }
 

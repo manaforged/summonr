@@ -2,27 +2,32 @@
 
 ## Unreleased
 
+### Added
+
+- `summonr-desktop` is the Summonr desktop app, a separate program that runs the same agent in a native window. On macOS `scripts/package-macos.sh` packs it as `Summonr.app` in `Summonr.dmg`.
+- The desktop app groups threads into topics with tabs, splits panes as a tree, keeps terminals beside agents, and restores panes, terminals and marks after a restart.
+- The desktop has a menu bar, a `⌘K` palette whose actions can be pinned to the sidebar, right-click split and copy, and a usage page in Settings.
+- The desktop starts a Claude Code chat or terminal in one click and signs in to Claude Code from Settings.
+- A finished turn in the desktop folds its thoughts and steps into one row; Settings has a paragraph spacing slider.
+- Custom panels show as tabs in the desktop's right panel.
+- The desktop runs a workspace's setup, run and archive scripts from summonr or Conductor settings.
+- Open PR and Merge work through `gh`, and each `gh` call times out after `gh_secs`.
+- Existing git worktrees, Conductor workspaces included, list as topics in the sidebar and open in place.
+- New agent and a second topic in a repository each start their own `summonr/<id>` worktree.
+- Named run actions read `run_mode`, files to copy and environment tables from Conductor settings; actions marked for the cloud show as "Cloud only" and never run locally.
+
 ## 0.2.0
 
 ### Added
 
 - A `[metric]` table in the workspace check file makes `--goal` climb a number: summonr measures a baseline first, then measures each turn after the checks, keeps it only when it beats the best by more than `noise`, and otherwise reverts it to the start of the turn. A turn that changes a file listed in `protect` is reverted unmeasured. The goal ends at `target` or at a budget, and the ledger shows every attempt.
-- `summonr-desktop` is the Summonr desktop app, a separate program that runs the same agent in a native window. On macOS `scripts/package-macos.sh` packs it as `Summonr.app` in `Summonr.dmg`.
 - The native `task` tool accepts `endpoint` to select a configured worker endpoint without changing the orchestrator's model.
 - Naming a task starts a persistent background worker that accepts follow-up messages through `send`.
 - `plugins/researchr` is research mode: `/researchr:research SPEC` runs any number of native workers on one measured goal in delta lanes, records each worker's child id and model through a `post_tool` hook, stores findings in SQLite, and imports messages and provider-returned reasoning for audit. It replaces `plugins/lanes`.
-- The desktop app groups threads into topics with tabs, splits panes as a tree, keeps terminals beside agents, and restores panes, terminals and marks after a restart.
-- The desktop has a menu bar, a `⌘K` palette whose actions can be pinned to the sidebar, right-click split and copy, and a usage page in Settings.
-- The desktop starts a Claude Code chat or terminal in one click and signs in to Claude Code from Settings.
-- A finished turn folds its thoughts and steps into one row; Settings has a paragraph spacing slider.
-- Custom panels are files checked by `summonr panel check NAME` and show as tabs in the desktop's right panel.
+- Custom panel files are validated by `summonr panel check NAME` and listed by `summonr panel list`.
 - `--skills NAME` and `[skills] default` choose a named set of skills per session; resumed sessions and children keep the set, and usage splits spend by set.
-- A second running agent in the same checkout gets its own worktree.
-- The desktop runs a workspace's setup, run and archive scripts from summonr or Conductor settings, and gives each worktree its own port block.
-- Open PR and Merge work through `gh`, and each `gh` call times out after `gh_secs`.
-- Existing git worktrees, Conductor workspaces included, list as topics in the sidebar and open in place.
-- New agent and a second topic in a repository each start their own `summonr/<id>` worktree.
-- Named run actions read `run_mode`, files to copy and environment tables from Conductor settings; actions marked for the cloud show as "Cloud only" and never run locally.
+- A second running agent in the same checkout gets its own worktree, and each new worktree runs workspace setup scripts on its own port block.
+- `summonr endpoint usage` reads configured plan usage windows and caches them across runs.
 - `summonr session children` lists a lead session's children.
 
 ### Changed

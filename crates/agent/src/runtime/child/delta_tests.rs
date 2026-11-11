@@ -91,7 +91,10 @@ async fn an_isolated_childs_delta_is_what_landed_in_the_lead_checkout() {
     git(&root, &["commit", "-q", "-m", "base"]);
 
     lead.turn("delegate").await.unwrap();
-    assert_eq!(std::fs::read_to_string(root.join("b.txt")).unwrap(), "landed\n");
+    assert_eq!(
+        std::fs::read_to_string(root.join("b.txt")).unwrap(),
+        "landed\n"
+    );
     let records = crate::diff::children(lead.session.path()).unwrap();
     assert_eq!(records.len(), 1, "{records:?}");
     assert_ne!(records[0].workspace, root);

@@ -63,7 +63,7 @@ impl Mail {
         Ok((count, self.id))
     }
 
-    pub(crate) fn from_monitor(&self) -> bool {
+    pub(crate) fn is_monitor(&self) -> bool {
         self.from == MONITOR
     }
 

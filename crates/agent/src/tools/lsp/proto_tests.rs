@@ -11,7 +11,7 @@ fn lean_goals_keep_each_proof_state() -> Result<(), Box<dyn std::error::Error>> 
         "no goals"
     );
     assert_eq!(goal(json!(null))?, "no tactic goal at this position");
-    assert!(goal(json!({"rendered": "broken", "goals": "not a list"})).is_err());
+    goal(json!({"rendered": "broken", "goals": "not a list"})).unwrap_err();
     Ok(())
 }
 

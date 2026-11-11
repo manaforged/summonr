@@ -16,7 +16,9 @@ impl Load {
     pub(super) fn claim(&self, command: Cmd) -> Option<Cmd> {
         let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if state.running {
-            state.queued.retain(|waiting| !same_target(waiting, &command));
+            state
+                .queued
+                .retain(|waiting| !same_target(waiting, &command));
             state.queued.push(command);
             return None;
         }

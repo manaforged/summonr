@@ -368,7 +368,10 @@ fn a_thread_that_joins_a_topic_lists_under_it_and_a_new_one_starts_its_own() {
     joined.prepare_turn_work("second", &[]).unwrap();
     joined.start_input(&UserInput::from("second")).unwrap();
     let info = crate::session::info(joined.path().to_path_buf());
-    assert_eq!(info.topic.as_deref(), Some("01a1000000000000000000000000aaaa"));
+    assert_eq!(
+        info.topic.as_deref(),
+        Some("01a1000000000000000000000000aaaa")
+    );
 
     let mut fresh = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
     fresh.prepare_turn_work("first", &[]).unwrap();
@@ -382,7 +385,10 @@ fn a_chosen_skill_set_is_recorded_in_the_journal() {
     let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
     driver.set_skills("lean".to_string()).unwrap();
     let journal = std::fs::read_to_string(driver.path()).unwrap();
-    assert!(journal.contains(r#""kind":"skills","set":"lean""#), "{journal}");
+    assert!(
+        journal.contains(r#""kind":"skills","set":"lean""#),
+        "{journal}"
+    );
 }
 
 #[test]
@@ -398,5 +404,9 @@ fn a_resumed_journal_keeps_its_skill_set_and_records_it_once() {
     assert_eq!(resumed.skills(), Some("lean"));
     resumed.set_skills("lean".to_string()).unwrap();
     let journal = std::fs::read_to_string(resumed.path()).unwrap();
-    assert_eq!(journal.matches(r#""kind":"skills""#).count(), 1, "{journal}");
+    assert_eq!(
+        journal.matches(r#""kind":"skills""#).count(),
+        1,
+        "{journal}"
+    );
 }

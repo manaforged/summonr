@@ -69,7 +69,7 @@ async fn a_release_request_stops_the_session_and_frees_its_journal() {
     let told = std::iter::from_fn(|| inbox.try_recv().ok())
         .any(|msg| matches!(msg, Msg::Fact(Fact::TakenOver)));
     assert!(told);
-    assert!(crate::durable::log::Log::open(&path).is_ok());
+    crate::durable::log::Log::open(&path).expect("reopen released log");
 }
 
 #[tokio::test]

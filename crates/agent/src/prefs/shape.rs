@@ -93,7 +93,7 @@ impl Shape {
             return parts.iter_mut().any(|part| part.shape.drop_pane(at));
         };
         let gone = parts.remove(i);
-        let heir = i.checked_sub(1).unwrap_or(0);
+        let heir = i.saturating_sub(1);
         if let Some(heir) = parts.get_mut(heir) {
             heir.share = heir.share.saturating_add(gone.share);
         }

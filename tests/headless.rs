@@ -342,7 +342,6 @@ fn a_json_steps_run_starts_each_step_with_its_check_and_exits_zero() {
     );
 }
 
-
 fn journal_of(root: &Path, id: &str) -> String {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {

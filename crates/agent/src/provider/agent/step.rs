@@ -92,7 +92,10 @@ impl Run {
                 }
                 Frame::RateLimitEvent { rate_limit_info } => {
                     self.rejected |= rate_limit_info.status == LimitStatus::Rejected;
-                    drop(crate::quota::remember(CLAUDE_CODE, rate_limit_info.windows.as_ref()));
+                    drop(crate::quota::remember(
+                        CLAUDE_CODE,
+                        rate_limit_info.windows.as_ref(),
+                    ));
                 }
                 Frame::Result(finished) => {
                     self.seen = true;

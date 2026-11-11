@@ -90,7 +90,7 @@ fn a_failed_clear_audit_preserves_the_inbox() {
     drop(receiver);
     std::fs::create_dir_all(files::audit_path(home.path(), RECEIVER))
         .expect("make the audit destination unwritable as a file");
-    assert!(answer(home.path(), home.path(), &["inbox", RECEIVER, "--clear"]).is_err());
+    answer(home.path(), home.path(), &["inbox", RECEIVER, "--clear"]).unwrap_err();
     let retained = read_inbox(home.path(), RECEIVER).expect("retained inbox");
     assert_eq!(retained.len(), 1);
     assert_eq!(retained[0].text, "keep this work");
@@ -103,7 +103,7 @@ fn clearing_a_corrupt_inbox_fails_without_deleting_evidence() {
     std::fs::create_dir_all(path.parent().expect("inbox folder")).expect("create inbox");
     let evidence = b"not a complete mail record\n";
     std::fs::write(&path, evidence).expect("corrupt inbox fixture");
-    assert!(answer(home.path(), home.path(), &["inbox", RECEIVER, "--clear"]).is_err());
+    answer(home.path(), home.path(), &["inbox", RECEIVER, "--clear"]).unwrap_err();
     assert_eq!(
         std::fs::read(&path).expect("retained corrupt evidence"),
         evidence

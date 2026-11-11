@@ -172,7 +172,9 @@ pub enum Cmd {
     SaveDefault(Option<crate::recent::ModelId>),
     ListSessions,
     ListUsage,
-    ReadPlans { due: bool },
+    ReadPlans {
+        due: bool,
+    },
     ListPrompts(Option<String>),
     Branch {
         session: String,

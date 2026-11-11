@@ -60,7 +60,19 @@ fn serve(version: &str, files: Vec<(String, Vec<u8>)>) -> Release {
 }
 
 fn version(exe: &Path) -> String {
-    let output = Command::new(exe).arg("--version").output().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
+    let output = loop {
+        match Command::new(exe).arg("--version").output() {
+            Ok(output) => break output,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::yield_now();
+            }
+            Err(error) => panic!("failed to run {}: {error}", exe.display()),
+        }
+    };
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 

@@ -19,9 +19,8 @@ impl State {
                 self.parent = parent;
                 self.depth = depth;
             }
-            Line::Agent { .. }
-            | Line::Topic { .. }
-            | Line::Tools { .. } | Line::Receipt { .. } => {}
+            Line::Agent { .. } | Line::Topic { .. } | Line::Tools { .. } | Line::Receipt { .. } => {
+            }
             Line::Budget { tokens, millis } => {
                 self.tokens = tokens;
                 self.millis = millis;

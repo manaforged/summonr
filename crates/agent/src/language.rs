@@ -154,9 +154,7 @@ fn has_marker(directory: &Path, module: &Module) -> bool {
 }
 
 fn project_dir<'a>(workspace: &Path, path: &'a Path, module: &Module) -> Option<&'a Path> {
-    let Some(start) = path.parent() else {
-        return None;
-    };
+    let start = path.parent()?;
     for directory in start.ancestors() {
         if !directory.starts_with(workspace) {
             break;

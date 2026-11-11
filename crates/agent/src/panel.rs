@@ -4,13 +4,12 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-
 pub mod cli;
 mod run;
 mod stream;
 
-pub use run::{action, run};
 pub(crate) use run::output;
+pub use run::{action, run};
 pub(crate) use stream::Stream;
 
 /// How a panel fills its tab.

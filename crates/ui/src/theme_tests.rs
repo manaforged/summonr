@@ -162,7 +162,8 @@ fn every_palette_keeps_text_hints_and_code_blocks_legible_on_base() {
             let tree = app.clone();
             host.mount(move || root(tree));
             let mut screen = sigil::terminal::Screen::new(110, 40);
-            let scenes: [(fn(&App), &str); 3] = [
+            type Scene = (fn(&App), &'static str);
+            let scenes: [Scene; 3] = [
                 (App::toggle_options, "Settings"),
                 (
                     |app| {

@@ -25,7 +25,12 @@ impl Reader {
     fn clean_up(&self, tree: &Tree, own: &str) {
         match worktree::dirty(&tree.path) {
             Ok(false) => {}
-            Ok(true) => return self.note(format!("kept worktree {}: it has uncommitted changes", tree.branch)),
+            Ok(true) => {
+                return self.note(format!(
+                    "kept worktree {}: it has uncommitted changes",
+                    tree.branch
+                ));
+            }
             Err(error) => return self.note(format!("kept worktree {}: {error}", tree.branch)),
         }
         if let Err(note) = archive(tree) {
@@ -62,7 +67,9 @@ fn archive(tree: &Tree) -> Result<(), String> {
     }
     Err(kept(format!(
         "archive script `{script}` exited with {}",
-        status.code().map_or_else(|| "a signal".to_owned(), |code| code.to_string())
+        status
+            .code()
+            .map_or_else(|| "a signal".to_owned(), |code| code.to_string())
     )))
 }
 

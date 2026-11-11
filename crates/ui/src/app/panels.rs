@@ -9,6 +9,7 @@ pub(crate) struct Panels {
     pub(crate) list: Signal<Vec<Panel>>,
     pub(crate) shown: Signal<Option<String>>,
     /// The side panel the rail shows in the sidebar, or none for the threads.
+    #[cfg(feature = "gui")]
     pub(crate) side: Signal<Option<String>>,
     pub(crate) content: Signal<Option<Result<Content, String>>>,
     /// The last output of every panel that ran, by name.
@@ -20,6 +21,7 @@ impl Panels {
         Self {
             list: signal(Vec::new()),
             shown: signal(None),
+            #[cfg(feature = "gui")]
             side: signal(None),
             content: signal(None),
             results: signal(BTreeMap::new()),

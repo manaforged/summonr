@@ -163,7 +163,7 @@ impl Worker {
             return;
         }
         self.queue_mail();
-        let monitor = mail.iter().any(crate::mail::Mail::from_monitor);
+        let monitor = mail.iter().any(crate::mail::Mail::is_monitor);
         if monitor && !self.mail_held {
             self.pending_mail = true;
         }
@@ -171,7 +171,7 @@ impl Worker {
             .iter()
             .map(|message| {
                 let at = message
-                    .from_monitor()
+                    .is_monitor()
                     .then(|| self.announced.iter().position(|note| *note == message.text))
                     .flatten();
                 at.map(|at| self.announced.swap_remove(at)).is_some()

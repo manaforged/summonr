@@ -131,6 +131,7 @@ def items() -> list[tuple[str, str, str, str]]:
 def functions() -> list[tuple[str, int, str, int, int]]:
     text = {p: source_text(p) for p in source_files()}
     blob = "\n".join(text.values())
+    counts = Counter(re.findall(r"\w+", blob))
     rows: list[tuple[str, int, str, int, int]] = []
     for path, body in text.items():
         rel = str(path.relative_to(ROOT))
@@ -146,8 +147,7 @@ def functions() -> list[tuple[str, int, str, int, int]]:
             start = offs[i] + m.start()
             end = block_end(body, offs[i])
             loc = body[start:end].count("\n") + 1
-            mentions = len(re.findall(r"\b" + re.escape(name) + r"\b", blob))
-            rows.append((rel, i + 1, name, loc, mentions))
+            rows.append((rel, i + 1, name, loc, counts[name]))
     return rows
 
 

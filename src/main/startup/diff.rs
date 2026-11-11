@@ -44,9 +44,14 @@ fn print_child(cwd: &Path, child: &str, path: Option<&str>, args: &Args) -> Resu
     let record = summonr_agent::diff::children(&journal)?
         .into_iter()
         .find(|record| record.id.to_string().ends_with(child))
-        .ok_or_else(|| summonr_agent::Error::Config(format!("no child `{child}` in the last session")))?;
+        .ok_or_else(|| {
+            summonr_agent::Error::Config(format!("no child `{child}` in the last session"))
+        })?;
     let mut delta = summonr_agent::diff::delta(cwd, &record)?;
-    delta.diff.files.retain(|stat| path.is_none_or(|path| stat.path == path));
+    delta
+        .diff
+        .files
+        .retain(|stat| path.is_none_or(|path| stat.path == path));
     if args.json || args.stat {
         return print_stats(&delta.diff, args.json);
     }

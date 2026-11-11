@@ -136,23 +136,42 @@ fn count(models: usize) -> String {
 pub(super) async fn usage(json: bool) -> Result<()> {
     let readings = summonr_agent::quota::refresh().await;
     if json {
-        println!("{}", serde_json::to_string(&readings).map_err(|error| summonr_agent::Error::Config(error.to_string()))?);
+        println!(
+            "{}",
+            serde_json::to_string(&readings)
+                .map_err(|error| summonr_agent::Error::Config(error.to_string()))?
+        );
         return Ok(());
     }
     if readings.is_empty() {
         println!("no plan with a usage source is set up · summonr endpoint list --all");
     }
     for reading in &readings {
-        let via = reading.endpoint.as_deref().map_or_else(String::new, |name| format!(" ({name})"));
-        let updated = reading.updated().map_or_else(String::new, |updated| format!("  {updated}"));
+        let via = reading
+            .endpoint
+            .as_deref()
+            .map_or_else(String::new, |name| format!(" ({name})"));
+        let updated = reading
+            .updated()
+            .map_or_else(String::new, |updated| format!("  {updated}"));
         println!("{}{via}{updated}", reading.plan);
         if let Some(error) = &reading.error {
             println!("  {error}");
         }
         for window in &reading.windows {
-            let group = window.group.as_deref().map_or_else(String::new, |group| format!("{group} · "));
-            let resets = window.resets.as_deref().map_or_else(String::new, |at| format!("  resets {}", local(at)));
-            println!("  {group}{:<7} {:>3.0}% used{resets}", window.label(), window.used);
+            let group = window
+                .group
+                .as_deref()
+                .map_or_else(String::new, |group| format!("{group} · "));
+            let resets = window
+                .resets
+                .as_deref()
+                .map_or_else(String::new, |at| format!("  resets {}", local(at)));
+            println!(
+                "  {group}{:<7} {:>3.0}% used{resets}",
+                window.label(),
+                window.used
+            );
         }
     }
     Ok(())
@@ -161,6 +180,10 @@ pub(super) async fn usage(json: bool) -> Result<()> {
 fn local(at: &str) -> String {
     at.parse::<jiff::Timestamp>().map_or_else(
         |_| at.to_string(),
-        |time| time.to_zoned(jiff::tz::TimeZone::system()).strftime("%a %-I:%M %p").to_string(),
+        |time| {
+            time.to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%a %-I:%M %p")
+                .to_string()
+        },
     )
 }

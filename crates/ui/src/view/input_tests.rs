@@ -70,7 +70,7 @@ fn drive<T>(
 #[cfg(not(target_os = "macos"))]
 #[test]
 fn cutting_file_text_uses_the_file_selection_with_an_empty_composer() {
-    use summonr_agent::hub::{Fact, Intent, Msg};
+    use summonr_agent::hub::{Fact, Msg};
 
     let seen = drive(
         |app| {

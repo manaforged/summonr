@@ -13,6 +13,9 @@ mod defaults;
 mod edit;
 #[path = "tools_tests/read.rs"]
 mod read;
+#[cfg(unix)]
+#[path = "tools_tests/read_links.rs"]
+mod read_links;
 #[path = "tools_tests/search.rs"]
 mod search;
 #[path = "tools_tests/search_power.rs"]

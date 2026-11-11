@@ -88,7 +88,12 @@ fn announce(body: &Value, prompt: &mut Prompt) {
         .or_else(|| body.get("verification_uri"))
         .and_then(Value::as_str)
         .unwrap_or_default();
-    super::open_browser(prompt, uri, &format!("open {uri} and enter {shown}"));
+    super::open_browser(
+        prompt,
+        uri,
+        &format!("open {uri} and enter {shown}"),
+        "open the link",
+    );
 }
 
 struct Poll<'a> {

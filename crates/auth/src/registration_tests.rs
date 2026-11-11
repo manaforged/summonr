@@ -233,3 +233,54 @@ async fn a_sign_in_without_the_plan_scope_is_refused() {
     );
     assert!(kept.get("plan").unwrap().is_none(), "nothing is stored");
 }
+
+async fn fallback(spec: Spec) -> String {
+    let auth = Auth::new(
+        Method::Login(Box::new(spec)),
+        Scheme::Bearer,
+        "plan",
+        Arc::new(Memory(Mutex::new(Default::default()))),
+    );
+    let http = http(Duration::from_secs(5), Duration::from_secs(5)).unwrap();
+    let line = Arc::new(Mutex::new(None));
+    let heard = Arc::new(tokio::sync::Notify::new());
+    let (kept, said) = (line.clone(), heard.clone());
+    let mut prompt = Prompt::telling(move |text| {
+        if text.starts_with("the browser did not open") {
+            *kept.lock().unwrap() = Some(text.to_string());
+            said.notify_one();
+        }
+    });
+    tokio::select! {
+        _ = auth.login(&http, &mut prompt) => {}
+        () = heard.notified() => {}
+    }
+    line.lock()
+        .unwrap()
+        .take()
+        .expect("the login says the browser did not open")
+}
+
+#[tokio::test]
+async fn each_login_flow_keeps_its_own_browser_fallback_line() {
+    let mut pkce = registering("http://127.0.0.1:9/token".into());
+    pkce.redirect_uri = Some("https://example.invalid/callback".into());
+    let line = fallback(pkce).await;
+    assert!(line.ends_with("; open the link above"), "got {line}");
+
+    let (device_url, _) = token_endpoint(
+        r#"{"device_code":"dc","user_code":"ABCD","verification_uri":"https://example.invalid/device","interval":1}"#,
+    )
+    .await;
+    let (token_url, _) =
+        token_endpoint(r#"{"access_token":"at","refresh_token":"rt","expires_in":3600}"#).await;
+    let device = Spec {
+        token_url,
+        client_id: "cli".into(),
+        grant: Grant::DeviceCode,
+        device_url: Some(device_url),
+        ..Spec::default()
+    };
+    let line = fallback(device).await;
+    assert!(line.ends_with("; open the link"), "got {line}");
+}

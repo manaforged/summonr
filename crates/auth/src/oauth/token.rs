@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use leyline::Session;
+use leyline::{RequestBuilder, Session};
 use serde_json::Value;
 
 use crate::{Error, Issued, Parts, Result, Store};
@@ -81,19 +81,13 @@ async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Result<Reply> {
     let Some(url) = spec.exchange() else {
         return Ok(Reply::Issued(grant));
     };
-    let response = http
-        .get(url)
-        .header("user-agent", crate::AGENT)
-        .header("Accept", "application/json")
-        .bearer_auth(&grant.access)
-        .send()
-        .await
-        .map_err(|error| Error::Transport(error.to_string()))?;
-    let status = response.status().as_u16();
-    let text = response
-        .text()
-        .await
-        .map_err(|error| Error::Transport(error.to_string()))?;
+    let (status, text) = sent(
+        http.get(url)
+            .header("user-agent", crate::AGENT)
+            .header("Accept", "application/json")
+            .bearer_auth(&grant.access),
+    )
+    .await?;
     let body = serde_json::from_str::<Value>(&text);
     if status >= 400 {
         let detail = match &body {
@@ -135,6 +129,11 @@ pub(super) async fn post(
                 .collect(),
         )),
     };
+    let (status, text) = sent(request).await?;
+    Ok((status, serde_json::from_str(&text).unwrap_or(Value::Null)))
+}
+
+async fn sent(request: RequestBuilder) -> Result<(u16, String)> {
     let response = request
         .send()
         .await
@@ -144,7 +143,7 @@ pub(super) async fn post(
         .text()
         .await
         .map_err(|error| Error::Transport(error.to_string()))?;
-    Ok((status, serde_json::from_str(&text).unwrap_or(Value::Null)))
+    Ok((status, text))
 }
 
 pub(crate) fn minted(body: &Value) -> Result<Issued> {

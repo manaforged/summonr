@@ -4,6 +4,8 @@ use sigil::prelude::{
 
 use super::super::{App, canvas, cell_width};
 use super::{BAR_CELLS, Target};
+use crate::text_style::TextStyle;
+use sigil::prelude::Token;
 
 #[expect(clippy::cast_precision_loss, reason = "a percentage fits in f32")]
 pub(super) fn meter(caption: &str, percent: u64, tone: sigil::prelude::Tone) -> NodeBuilder {
@@ -11,27 +13,11 @@ pub(super) fn meter(caption: &str, percent: u64, tone: sigil::prelude::Tone) -> 
     sigil::prelude::row()
         .align_items(AlignItems::Center)
         .gap(Space::Sm)
-        .child(
-            sigil::prelude::text(caption)
-                .nowrap()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray11),
-        )
+        .child(TextStyle::xs(Token::Gray11).line(caption))
         .child(container().width(bar).shrink(0.0).child(
             sigil::prelude::progress(sigil::prelude::signal(percent as f32), 100.0).tone(tone),
         ))
-        .child(
-            sigil::prelude::text(format!("{percent}%"))
-                .nowrap()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray12),
-        )
+        .child(TextStyle::xs(Token::Gray12).line(format!("{percent}%")))
 }
 
 pub(super) fn meter_button(
@@ -77,56 +63,25 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
         .gap(sigil::prelude::Space::None)
         .width(card_width as f32 * canvas::cell().w)
         .background(sigil::prelude::Token::Gray1);
-    card = card.child(
-        sigil::prelude::text(format!(
-            "╭{title}{}╮",
-            "─".repeat(card_width.saturating_sub(cell_width(title) + 2))
-        ))
-        .nowrap()
-        .font_size(
-            12.0,
-            "12 px chrome text that keeps its own line height and weight",
-        )
-        .font_family(sigil::prelude::FontFamily::Mono)
-        .text_color(sigil::prelude::Token::Gray11),
-    );
+    let border = TextStyle::xs(Token::Gray11).mono();
+    card = card.child(border.line(format!(
+        "╭{title}{}╮",
+        "─".repeat(card_width.saturating_sub(cell_width(title) + 2))
+    )));
     for (key, value) in rows {
         card = card.child(
             sigil::prelude::row()
                 .fill_width()
                 .align_items(AlignItems::Center)
                 .gap(Space::None)
-                .child(
-                    sigil::prelude::text(format!("│ {key}"))
-                        .nowrap()
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .font_family(sigil::prelude::FontFamily::Mono)
-                        .text_color(sigil::prelude::Token::Gray11),
-                )
+                .child(border.line(format!("│ {key}")))
                 .child(spacer())
                 .child(
-                    sigil::prelude::text(format!("{value} │"))
-                        .nowrap()
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .font_family(sigil::prelude::FontFamily::Mono)
-                        .text_color(sigil::prelude::Token::Gray12),
+                    TextStyle::xs(Token::Gray12)
+                        .mono()
+                        .line(format!("{value} │")),
                 ),
         );
     }
-    card.child(
-        sigil::prelude::text(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))))
-            .nowrap()
-            .font_size(
-                12.0,
-                "12 px chrome text that keeps its own line height and weight",
-            )
-            .font_family(sigil::prelude::FontFamily::Mono)
-            .text_color(sigil::prelude::Token::Gray11),
-    )
+    card.child(border.line(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2)))))
 }

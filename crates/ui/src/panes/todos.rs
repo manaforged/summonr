@@ -1,5 +1,4 @@
 use sigil::prelude::NodeBuilder;
-use sigil::prelude::Paint;
 
 use super::App;
 use super::body::{Empty, empty, header};
@@ -10,7 +9,8 @@ const NO_LEDGER: Empty = Empty {
 };
 use super::ledger::Mark;
 use crate::chat::todos::tally;
-use sigil::prelude::Widget;
+use crate::text_style::TextStyle;
+use sigil::prelude::Token;
 
 pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
@@ -25,23 +25,12 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(empty(&NO_LEDGER));
     }
     for row in lines {
-        let done = row.mark == Mark::Done;
-        column = column.child(
-            sigil::prelude::text(row.shown())
-                .wrap()
-                .fill_width()
-                .min_width(0.0)
-                .min_height(14.0)
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(if done {
-                    sigil::prelude::Token::Gray11
-                } else {
-                    sigil::prelude::Token::Gray12
-                }),
-        );
+        let tone = if row.mark == Mark::Done {
+            Token::Gray11
+        } else {
+            Token::Gray12
+        };
+        column = column.child(TextStyle::xs(tone).note(row.shown()));
     }
     column
 }

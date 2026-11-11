@@ -13,8 +13,9 @@ use sigil::prelude::divider;
 use sigil::prelude::node;
 use sigil::prelude::notice_band;
 
+use crate::text_style::TextStyle;
 use crate::ui::{Hints, Key};
-use sigil::prelude::Widget;
+use sigil::prelude::{Token, Widget};
 
 pub(in crate::chat) fn widget<E: IntoNode + 'static>(
     app: App,
@@ -43,15 +44,7 @@ pub(in crate::chat) fn widget<E: IntoNode + 'static>(
                 .min_height(0.0)
                 .align_items(AlignItems::Start)
                 .gap(Space::Sm)
-                .child(
-                    sigil::prelude::text("❯")
-                        .nowrap()
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .text_color(sigil::prelude::Token::Gray12),
-                )
+                .child(TextStyle::xs(sigil::prelude::Token::Gray12).line("❯"))
                 .child(
                     sigil::prelude::column()
                         .gap(sigil::prelude::Space::None)
@@ -121,28 +114,14 @@ fn pending_rows(app: &App, width: usize) -> NodeBuilder {
 }
 
 fn pending_line(line: String) -> NodeBuilder {
-    container().child(
-        sigil::prelude::text(line)
-            .nowrap()
-            .font_size(
-                12.0,
-                "12 px chrome text that keeps its own line height and weight",
-            )
-            .text_color(sigil::prelude::Token::Gray11),
-    )
+    container().child(TextStyle::xs(Token::Gray11).line(line))
 }
 
 fn rule() -> NodeBuilder {
     if crate::canvas::is_window() {
         return gap();
     }
-    sigil::prelude::row()
-        .gap(sigil::prelude::Space::None)
-        .align_items(sigil::prelude::AlignItems::Stretch)
-        .grow(1.0)
-        .min_width(0.0)
-        .min_height(0.0)
-        .child(divider(sigil::prelude::Orientation::Horizontal))
+    gap().child(divider(sigil::prelude::Orientation::Horizontal))
 }
 
 fn gap() -> NodeBuilder {
@@ -257,15 +236,7 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
             };
             vec![
                 node(rule()),
-                node(
-                    sigil::prelude::text(text)
-                        .nowrap()
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .text_color(sigil::prelude::Token::Gray11),
-                ),
+                node(TextStyle::xs(Token::Gray11).line(text)),
                 node(rule()),
             ]
         })
@@ -273,23 +244,12 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
 
 fn mode_label(mode: ModeText) -> NodeBuilder {
     let (text, class) = mode;
-    let tone = [
-        sigil::prelude::Token::Warning11,
-        sigil::prelude::Token::Error11,
-        sigil::prelude::Token::Success11,
-    ][usize::from(class).min(2)];
-    let title = sigil::prelude::text(text)
-        .nowrap()
-        .font_size(
-            12.0,
-            "12 px chrome text that keeps its own line height and weight",
-        )
-        .text_color(tone);
+    let tone = [Token::Warning11, Token::Error11, Token::Success11][usize::from(class).min(2)];
     container()
         .shrink(1.0)
         .min_width(0.0)
         .min_height(0.0)
-        .child(title.ellipsize())
+        .child(TextStyle::xs(tone).line(text).ellipsize())
 }
 
 fn model_label(model: String) -> NodeBuilder {
@@ -297,14 +257,5 @@ fn model_label(model: String) -> NodeBuilder {
         .shrink(1.0)
         .min_width(0.0)
         .min_height(0.0)
-        .child(
-            sigil::prelude::text(model)
-                .nowrap()
-                .ellipsize()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray12),
-        )
+        .child(TextStyle::xs(Token::Gray12).line(model).ellipsize())
 }

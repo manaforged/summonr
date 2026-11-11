@@ -7,7 +7,7 @@ use sigil::prelude::NodeBuilder;
 use sigil::prelude::Widget;
 
 pub(crate) fn label(body: impl Into<String>, text_style: TextStyle) -> TextBuilder {
-    text_style.on(sigil::prelude::text(body.into()).nowrap())
+    text_style.line(body.into())
 }
 
 pub(super) fn fill(body: impl Into<String>, text_style: TextStyle) -> TextBuilder {

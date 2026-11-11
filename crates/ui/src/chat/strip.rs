@@ -51,7 +51,7 @@ pub(crate) fn working(model: &Model) -> bool {
 }
 
 fn text(body: impl Into<sigil::prelude::TextContent>, token: Token) -> sigil::prelude::TextBuilder {
-    TextStyle::xs(token).on(sigil::prelude::text(body).nowrap())
+    TextStyle::xs(token).line(body)
 }
 
 pub(crate) fn sheet(app: App) -> NodeBuilder {

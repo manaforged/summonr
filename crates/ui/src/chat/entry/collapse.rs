@@ -1,7 +1,5 @@
 use sigil::prelude::Space;
-use sigil::prelude::{
-    MouseButton, NodeBuilder, Paint, PointerEvent, Signal, container, markdown_inline,
-};
+use sigil::prelude::{MouseButton, NodeBuilder, PointerEvent, Signal, container, markdown_inline};
 use sigil::{Cx, NodeId, prelude::IntoNode};
 
 use super::super::App;
@@ -112,13 +110,8 @@ fn prose(body: Signal<String>, text_style: TextStyle) -> NodeBuilder {
 
 fn caption(text: impl Into<sigil::prelude::TextContent>) -> NodeBuilder {
     wrap(
-        sigil::prelude::text(text)
-            .nowrap()
-            .font_size(
-                12.0,
-                "12 px chrome text that keeps its own line height and weight",
-            )
-            .font_italic(true)
-            .text_color(sigil::prelude::Token::Gray11),
+        TextStyle::xs(sigil::prelude::Token::Gray11)
+            .italic()
+            .line(text),
     )
 }

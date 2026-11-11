@@ -28,8 +28,9 @@ const NO_CHANGES: Empty = Empty {
     window: "No changes yet. Files the agent edits show here while the turn runs.",
     terminal: "no changes",
 };
+use crate::text_style::TextStyle;
 use crate::ui::{Hints, Key, input_keys};
-use sigil::prelude::Widget;
+use sigil::prelude::{Token, Widget};
 
 pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder {
     let model = app.model.get();
@@ -37,18 +38,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
         column = column.child(row);
     }
     if let Some(error) = model.diff_error.clone().filter(|_| canvas::is_window()) {
-        return column.child(
-            sigil::prelude::text(error)
-                .wrap()
-                .fill_width()
-                .min_width(0.0)
-                .min_height(14.0)
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Error11),
-        );
+        return column.child(TextStyle::xs(Token::Error11).note(error));
     }
     if let Some(path) = app.diff_view.get() {
         let back = app.clone();
@@ -62,44 +52,18 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                 back.pane_back();
             }));
         let Some((_, result)) = model.patch.as_ref().filter(|(seen, _)| *seen == path) else {
-            return column.child(
-                sigil::prelude::text("loading…")
-                    .nowrap()
-                    .font_size(
-                        12.0,
-                        "12 px chrome text that keeps its own line height and weight",
-                    )
-                    .text_color(sigil::prelude::Token::Gray11),
-            );
+            return column.child(TextStyle::xs(Token::Gray11).line("loading…"));
         };
         let text = match result {
             Ok(text) => text,
             Err(error) => {
-                return column.child(
-                    sigil::prelude::text(error.clone())
-                        .wrap()
-                        .fill_width()
-                        .min_width(0.0)
-                        .min_height(14.0)
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .text_color(sigil::prelude::Token::Error11),
-                );
+                return column.child(TextStyle::xs(Token::Error11).note(error.clone()));
             }
         };
         let hunks = app.hunks();
         if text.trim().is_empty() {
-            column = column.child(
-                sigil::prelude::text("no changes left in this file")
-                    .nowrap()
-                    .font_size(
-                        12.0,
-                        "12 px chrome text that keeps its own line height and weight",
-                    )
-                    .text_color(sigil::prelude::Token::Gray11),
-            );
+            column =
+                column.child(TextStyle::xs(Token::Gray11).line("no changes left in this file"));
             return undo_rows(&app, column, Some(&path), &BTreeSet::new());
         }
         if hunks.is_empty() {
@@ -120,18 +84,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                 .key(Key::Fixed("n"), "note")
                 .text(&model.prefs.hotkeys)
         );
-        column = column.child(
-            sigil::prelude::text(notes)
-                .wrap()
-                .fill_width()
-                .min_width(0.0)
-                .min_height(14.0)
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray11),
-        );
+        column = column.child(TextStyle::xs(Token::Gray11).note(notes));
         drop(model);
         for (index, hunk) in hunks.iter().enumerate() {
             column = column.child(hunk_view(
@@ -232,18 +185,13 @@ fn undo_rows(
         column = column.child(
             actions()
                 .child(
-                    sigil::prelude::text(label)
-                        .nowrap()
+                    TextStyle::xs(Token::Gray11)
+                        .line(label)
                         .ellipsize()
                         .grow(1.0)
                         .shrink(1.0)
                         .min_width(0.0)
-                        .min_height(14.0)
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .text_color(sigil::prelude::Token::Gray11),
+                        .min_height(14.0),
                 )
                 .child(
                     button(UNDO)
@@ -353,36 +301,17 @@ fn hunk_view(
                 .background(sigil::prelude::Token::Gray1)
                 .radius(sigil::prelude::Radius::Md)
         }));
-        card = card.child(
-            sigil::prelude::text(format!(
-                "{} · sent with your next prompt",
-                Hints::new()
-                    .key(Key::Enter, "save")
-                    .key(Key::Esc, "cancel")
-                    .text(&app.model.get().prefs.hotkeys)
-            ))
-            .wrap()
-            .fill_width()
-            .min_width(0.0)
-            .min_height(14.0)
-            .font_size(
-                12.0,
-                "12 px chrome text that keeps its own line height and weight",
-            )
-            .text_color(sigil::prelude::Token::Gray11),
-        );
+        card = card.child(TextStyle::xs(Token::Gray11).note(format!(
+            "{} · sent with your next prompt",
+            Hints::new()
+                .key(Key::Enter, "save")
+                .key(Key::Esc, "cancel")
+                .text(&app.model.get().prefs.hotkeys)
+        )));
     } else if let Some(comment) = note.and_then(|note| note.comment) {
         card = card.child(
-            sigil::prelude::text(format!("note: {comment}"))
-                .wrap()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Info11)
-                .fill_width()
-                .min_width(0.0)
-                .min_height(14.0)
+            TextStyle::xs(Token::Info11)
+                .note(format!("note: {comment}"))
                 .padding_x(Space::Sm),
         );
     }

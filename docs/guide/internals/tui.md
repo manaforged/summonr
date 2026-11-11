@@ -175,6 +175,7 @@ appear outside the transcript.
 | `overlay::band` | a tinted status band (errors, empty states) | `settings/models.rs` |
 | `settings/auth.rs::field` | the one text field: placeholder, focus trigger, optional mask | `settings/auth.rs`, `settings/models.rs` |
 | Sigil `Tone` | status vocabulary: `Ok` green, `Dim` gray, `Warn` yellow, `Err` red | all of the above |
+| `TextStyle` (`xs`, `sm`, `mono`, `italic`, `bold`, `on`, `line`, `note`) | shared 12/14 px chrome text styling, single-line `.nowrap()` labels, and wrapped 14 px-minimum pane notes | `chat/`, `panes/`, `settings/`, `search.rs`, `ui/` |
 
 ## 2. Target set (redesign)
 

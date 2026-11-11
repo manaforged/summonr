@@ -6,8 +6,9 @@ use sigil::prelude::{AlignItems, NodeBuilder, Paint, button, container, image, n
 
 use super::body::{close, dim};
 use super::{App, Pane};
+use crate::text_style::TextStyle;
 use crate::ui::input_keys;
-use sigil::prelude::Widget;
+use sigil::prelude::{Token, Widget};
 
 pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
@@ -90,29 +91,16 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
             row = row.background(sigil::prelude::Token::Success3);
         }
         body = body.child(
-            row.child(
-                sigil::prelude::text(number.to_string())
-                    .nowrap()
-                    .font_size(
-                        12.0,
-                        "12 px chrome text that keeps its own line height and weight",
-                    )
-                    .text_color(sigil::prelude::Token::Gray11),
-            )
-            .child(
-                sigil::prelude::text(line.replace('\t', "    "))
-                    .nowrap()
-                    .ellipsize()
-                    .grow(1.0)
-                    .min_width(0.0)
-                    .min_height(14.0)
-                    .font_size(
-                        12.0,
-                        "12 px chrome text that keeps its own line height and weight",
-                    )
-                    .font_family(sigil::prelude::FontFamily::Mono)
-                    .text_color(sigil::prelude::Token::Gray12),
-            ),
+            row.child(TextStyle::xs(Token::Gray11).line(number.to_string()))
+                .child(
+                    TextStyle::xs(Token::Gray12)
+                        .mono()
+                        .line(line.replace('\t', "    "))
+                        .ellipsize()
+                        .grow(1.0)
+                        .min_width(0.0)
+                        .min_height(14.0),
+                ),
         );
     }
     column = column.child(body);

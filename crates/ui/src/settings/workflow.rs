@@ -1,4 +1,3 @@
-use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::{NodeBuilder, button, container, text_edit, virtual_list};
 
@@ -126,30 +125,15 @@ fn saved(app: &App) -> NodeBuilder {
     let close = app.clone();
     let names = app.workflow.names.get();
     let current = app.workflow.name.get();
+    let label = crate::text_style::TextStyle::xs(sigil::prelude::Token::Gray11);
     let mut row = sigil::prelude::row()
         .align_items(sigil::prelude::AlignItems::Stretch)
         .fill_width()
         .gap(canvas::overlay_gap())
         .padding_x(Space::Sm)
-        .child(
-            sigil::prelude::text("saved:")
-                .nowrap()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray11),
-        );
+        .child(label.line("saved:"));
     if names.is_empty() {
-        row = row.child(
-            sigil::prelude::text("none")
-                .nowrap()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray11),
-        );
+        row = row.child(label.line("none"));
         return row;
     }
     for name in names {

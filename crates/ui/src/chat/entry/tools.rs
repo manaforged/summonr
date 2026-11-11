@@ -28,7 +28,7 @@ pub(crate) fn loading_mark(ticks: Signal<u64>) -> TextBuilder {
         let at = usize::try_from(ticks.get() % LOADING.len() as u64).unwrap_or(0);
         LOADING[at].to_owned()
     };
-    TextStyle::xs(Token::Accent11).on(sigil::prelude::text(body).nowrap())
+    TextStyle::xs(Token::Accent11).line(body)
 }
 
 pub(crate) fn workspace_relative(arg: &str, roots: &[String]) -> String {
@@ -106,16 +106,23 @@ pub(super) fn call_line(verb: &str, arg: &str, detail: Detail, strong: bool) -> 
     }
 }
 
-pub(super) fn header(state: &ToolState, words: NodeBuilder) -> NodeBuilder {
-    let (mark, tone) = glyph(state);
+pub(super) fn head_row(
+    mark: impl sigil::prelude::IntoNode + 'static,
+    words: impl sigil::prelude::IntoNode + 'static,
+) -> NodeBuilder {
     sigil::prelude::row()
         .fill_width()
         .gap(Space::Sm)
         .min_width(0.0)
         .min_height(0.0)
         .align_items(AlignItems::Center)
-        .child(label(mark, tone))
+        .child(mark)
         .child(words)
+}
+
+pub(super) fn header(state: &ToolState, words: NodeBuilder) -> NodeBuilder {
+    let (mark, tone) = glyph(state);
+    head_row(label(mark, tone), words)
 }
 
 pub(crate) fn flip(app: &App, index: usize, at: usize) -> impl Fn(&mut PointerEvent) + 'static {

@@ -91,7 +91,7 @@ surface painter	0	rows::paint
 sigil prelude glob	0	named imports
 legacy tool alias literal	0	one alias table
 match wildcard arm	106	name the arm
-timeout mention	15	one timeout policy
+timeout mention	14	one timeout policy
 delete winapi-util	0	nothing
 delete smol_str	0	nothing
 delete reqwest	0	nothing

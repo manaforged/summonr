@@ -14,7 +14,8 @@ use sigil::prelude::list_row;
 
 use super::{App, Pane, PaneRow, diff, todos, tree_actions, view};
 use crate::canvas;
-use sigil::prelude::Widget;
+use crate::text_style::TextStyle;
+use sigil::prelude::{Token, Widget};
 
 pub(super) type Extra = fn(&App, &PaneRow) -> NodeBuilder;
 
@@ -45,32 +46,16 @@ const NO_PEERS: Empty = Empty {
 };
 
 pub(super) fn empty(text: &Empty) -> NodeBuilder {
-    let line = if canvas::is_window() {
-        sigil::prelude::text(text.window)
-            .wrap()
-            .fill_width()
-            .min_width(0.0)
-            .min_height(14.0)
+    let style = TextStyle::xs(Token::Gray11);
+    if canvas::is_window() {
+        style.note(text.window).into()
     } else {
-        sigil::prelude::text(text.terminal).nowrap()
-    };
-    line.font_size(
-        12.0,
-        "12 px chrome text that keeps its own line height and weight",
-    )
-    .text_color(sigil::prelude::Token::Gray11)
-    .into()
+        style.line(text.terminal).into()
+    }
 }
 
 pub(super) fn dim(text: String) -> NodeBuilder {
-    sigil::prelude::text(text)
-        .nowrap()
-        .font_size(
-            12.0,
-            "12 px chrome text that keeps its own line height and weight",
-        )
-        .text_color(sigil::prelude::Token::Gray11)
-        .into()
+    TextStyle::xs(Token::Gray11).line(text).into()
 }
 
 pub(crate) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
@@ -216,16 +201,7 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
                     sigil::prelude::Token::Gray12
                 }),
         )
-        .child(
-            sigil::prelude::text(note)
-                .nowrap()
-                .shrink(0.0)
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray11),
-        );
+        .child(TextStyle::xs(Token::Gray11).line(note).shrink(0.0));
     if canvas::is_window() {
         return row;
     }
@@ -237,23 +213,17 @@ pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {
         .fill_width()
         .gap(Space::raw(1.0, "a one pixel row separation"))
         .radius(sigil::prelude::Radius::Md)
-        .background(sigil::prelude::Token::Gray1);
+        .background(Token::Gray1);
     for line in lines {
         detail = detail.child(
-            sigil::prelude::text(line)
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
+            TextStyle::xs(Token::Gray11)
+                .mono()
+                .line(line)
                 .ellipsize()
                 .fill_width()
                 .min_width(0.0)
                 .min_height(14.0)
-                .padding_x(Space::Sm)
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .font_family(sigil::prelude::FontFamily::Mono)
-                .text_color(sigil::prelude::Token::Gray11),
+                .padding_x(Space::Sm),
         );
     }
     detail

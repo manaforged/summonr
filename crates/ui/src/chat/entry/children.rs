@@ -1,15 +1,21 @@
-use sigil::prelude::Space;
-use sigil::prelude::{AlignItems, NodeBuilder, Signal, Token};
+use sigil::prelude::{NodeBuilder, Signal, Space, Token};
 
 use super::super::{Agent, App, Call};
 use super::preview;
-use super::tools::{call_line, header, workspace_relative};
+use super::tools::{call_line, head_row, header, workspace_relative};
 use super::tree::{branch, label, tree};
 use crate::text_style::TextStyle;
 use crate::{Outcome, ToolState};
 use sigil::prelude::Widget;
 use summonr_agent::child::{ChildRecord, ChildState};
 use summonr_agent::tools::{Builtin, Kept};
+
+fn subagent_row(mark: impl sigil::prelude::IntoNode + 'static) -> NodeBuilder {
+    head_row(
+        mark,
+        label("Subagent", TextStyle::xs(Token::Accent11).bold()),
+    )
+}
 
 fn task_title(kid: &Agent, roots: &[String]) -> String {
     if kid.assignment.is_empty() {
@@ -37,19 +43,11 @@ fn subagent_line(kid: &Agent, roots: &[String], ticks: Signal<u64>) -> NodeBuild
             None,
         ),
     };
-    let mark = if matches!(kid.state(), ToolState::Running) {
-        super::tools::loading_mark(ticks)
+    let mut line = if matches!(kid.state(), ToolState::Running) {
+        subagent_row(super::tools::loading_mark(ticks))
     } else {
-        label("◆", TextStyle::xs(tone))
+        subagent_row(label("◆", TextStyle::xs(tone)))
     };
-    let mut line = sigil::prelude::row()
-        .fill_width()
-        .gap(Space::Sm)
-        .min_width(0.0)
-        .min_height(0.0)
-        .align_items(AlignItems::Center)
-        .child(mark)
-        .child(label("Subagent", TextStyle::xs(Token::Accent11).bold()));
     if !kid.agent.is_empty() {
         line = line.child(label(kid.agent.clone(), TextStyle::xs(Token::Info11)));
     }
@@ -74,14 +72,7 @@ fn subagent_line(kid: &Agent, roots: &[String], ticks: Signal<u64>) -> NodeBuild
 }
 
 pub(super) fn starting_card(ticks: Signal<u64>) -> NodeBuilder {
-    sigil::prelude::row()
-        .fill_width()
-        .gap(Space::Sm)
-        .min_width(0.0)
-        .min_height(0.0)
-        .align_items(AlignItems::Center)
-        .child(super::tools::loading_mark(ticks))
-        .child(label("Subagent", TextStyle::xs(Token::Accent11).bold()))
+    subagent_row(super::tools::loading_mark(ticks))
         .child(label("starting…", TextStyle::xs(Token::Gray10)))
 }
 
@@ -99,16 +90,6 @@ fn kept_line(kept: &Kept, roots: &[String]) -> String {
     )
 }
 
-fn kept_of(record: &ChildRecord) -> Option<&Kept> {
-    match &record.state {
-        ChildState::Running => None,
-        ChildState::Completed(result)
-        | ChildState::Aborted(result)
-        | ChildState::Failed(result)
-        | ChildState::Interrupted(result) => result.kept.as_ref(),
-    }
-}
-
 pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
     let model = app.model.get();
     let kids: Vec<&Agent> = model.agents_of(call).collect();
@@ -118,7 +99,11 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
     let receipt = model.child_receipt(call);
     let kept = receipt.as_ref().and_then(|record| {
         let tag = summonr_agent::child::tag(&record.id.to_string());
-        kept_of(record).map(|kept| (tag, kept))
+        record
+            .state
+            .result()
+            .and_then(|result| result.kept.as_ref())
+            .map(|kept| (tag, kept))
     });
     let mut card = sigil::prelude::column().fill_width().gap(Space::None);
     for kid in kids {
@@ -174,12 +159,8 @@ pub(super) fn receipt_card(
                 true,
             ),
         ));
-    let result = match &record.state {
-        ChildState::Running => return Some(card),
-        ChildState::Completed(result)
-        | ChildState::Aborted(result)
-        | ChildState::Failed(result)
-        | ChildState::Interrupted(result) => result,
+    let Some(result) = record.state.result() else {
+        return Some(card);
     };
     if hidden {
         return Some(card);

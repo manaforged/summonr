@@ -1,12 +1,12 @@
 use sigil::prelude::AlignItems;
 
 use sigil::prelude::NodeBuilder;
-use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::spacer;
 
 use super::{App, cell_width};
-use sigil::prelude::Widget;
+use crate::text_style::TextStyle;
+use sigil::prelude::{Token, Widget};
 
 mod meter;
 use meter::{meter, meter_button};
@@ -136,15 +136,7 @@ fn footer_row(
         .align_items(AlignItems::Center)
         .gap(Space::Md);
     if place.with(|place| !place.is_empty()) {
-        row = row.child(
-            sigil::prelude::text(place)
-                .nowrap()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray12),
-        );
+        row = row.child(TextStyle::xs(Token::Gray12).line(place));
     }
     if let Some(branch) = &app.git_branch() {
         row = row.child(
@@ -152,80 +144,44 @@ fn footer_row(
                 .align_items(AlignItems::Center)
                 .shrink(0.0)
                 .gap(Space::Sm)
-                .child(
-                    sigil::prelude::text("⎇")
-                        .nowrap()
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .text_color(sigil::prelude::Token::Gray11),
-                )
-                .child(
-                    sigil::prelude::text(branch.clone())
-                        .nowrap()
-                        .font_size(
-                            12.0,
-                            "12 px chrome text that keeps its own line height and weight",
-                        )
-                        .text_color(sigil::prelude::Token::Warning11),
-                ),
+                .child(TextStyle::xs(Token::Gray11).line("⎇"))
+                .child(TextStyle::xs(Token::Warning11).line(branch.clone())),
         );
     }
     row = row.child(spacer());
     if let Some(note) = notice {
         let tone = match note.kind {
-            super::super::app::NoticeKind::Copied => sigil::prelude::Token::Success11,
-            super::super::app::NoticeKind::Failed => sigil::prelude::Token::Error11,
+            super::super::app::NoticeKind::Copied => Token::Success11,
+            super::super::app::NoticeKind::Failed => Token::Error11,
         };
-        row = row.child(
-            sigil::prelude::text(move || {
-                view.with(|view| {
-                    view.0
-                        .as_ref()
-                        .map(|note| note.text.clone())
-                        .unwrap_or_default()
-                })
+        row = row.child(TextStyle::xs(tone).line(move || {
+            view.with(|view| {
+                view.0
+                    .as_ref()
+                    .map(|note| note.text.clone())
+                    .unwrap_or_default()
             })
-            .nowrap()
-            .font_size(
-                12.0,
-                "12 px chrome text that keeps its own line height and weight",
-            )
-            .text_color(tone),
-        );
+        }));
     }
     if let Some((_, waiting)) = elsewhere {
-        row = row.child(
-            sigil::prelude::text(move || {
-                view.with(|view| {
-                    view.2
-                        .as_ref()
-                        .map(|(note, _)| note.clone())
-                        .unwrap_or_default()
-                })
+        let tone = if waiting {
+            Token::Warning11
+        } else {
+            Token::Gray11
+        };
+        row = row.child(TextStyle::xs(tone).line(move || {
+            view.with(|view| {
+                view.2
+                    .as_ref()
+                    .map(|(note, _)| note.clone())
+                    .unwrap_or_default()
             })
-            .nowrap()
-            .font_size(
-                12.0,
-                "12 px chrome text that keeps its own line height and weight",
-            )
-            .text_color(if waiting {
-                sigil::prelude::Token::Warning11
-            } else {
-                sigil::prelude::Token::Gray11
-            }),
-        );
+        }));
     }
     if spend.is_some() {
         row = row.child(
-            sigil::prelude::text(move || view.with(|view| view.1.clone().unwrap_or_default()))
-                .nowrap()
-                .font_size(
-                    12.0,
-                    "12 px chrome text that keeps its own line height and weight",
-                )
-                .text_color(sigil::prelude::Token::Gray12),
+            TextStyle::xs(Token::Gray12)
+                .line(move || view.with(|view| view.1.clone().unwrap_or_default())),
         );
     }
     let meters = [

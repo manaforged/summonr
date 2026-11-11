@@ -1,4 +1,4 @@
-use sigil::prelude::{FontFamily, Paint, Token};
+use sigil::prelude::{FontFamily, Paint, TextBuilder, TextContent, Token, Widget};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct TextStyle {
@@ -61,5 +61,17 @@ impl TextStyle {
         } else {
             node
         }
+    }
+
+    pub(crate) fn line(self, body: impl Into<TextContent>) -> TextBuilder {
+        self.on(sigil::prelude::text(body).nowrap())
+    }
+
+    pub(crate) fn note(self, body: impl Into<TextContent>) -> TextBuilder {
+        self.on(sigil::prelude::text(body)
+            .wrap()
+            .fill_width()
+            .min_width(0.0)
+            .min_height(14.0))
     }
 }

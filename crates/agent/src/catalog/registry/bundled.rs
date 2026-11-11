@@ -1,5 +1,10 @@
 use std::sync::Arc;
 
+use layout::{
+    DEPRECATED, METERED_SHIFT, NONE_U16, NONE_U32, NONE_U64, REASONING, TOOLS_SHIFT, TRI, TRI_MASK,
+    VISION,
+};
+
 use super::{Meta, ProviderMeta, Registry};
 use crate::provider::Price;
 
@@ -29,6 +34,9 @@ pub(super) struct BundledProvider {
     api_len: u16,
 }
 
+#[path = "layout.rs"]
+mod layout;
+
 include!(concat!(env!("OUT_DIR"), "/models_dev.rs"));
 
 fn str_at(off: u32, len: u16) -> &'static str {
@@ -37,11 +45,13 @@ fn str_at(off: u32, len: u16) -> &'static str {
 }
 
 fn opt_str_at(off: u32, len: u16) -> Option<&'static str> {
-    (len != u16::MAX).then(|| str_at(off, len))
+    (len != NONE_U16).then(|| str_at(off, len))
 }
 
-fn unpack_tri(bits: u8) -> Option<bool> {
-    [None, Some(false), Some(true), None][usize::from(bits & 3)]
+fn unpack_tri(flags: u8, shift: u8) -> Option<bool> {
+    TRI.get(usize::from((flags >> shift) & TRI_MASK))
+        .copied()
+        .flatten()
 }
 
 impl BundledModel {
@@ -52,21 +62,21 @@ impl BundledModel {
     fn view(self) -> MetaView<'static> {
         MetaView {
             display: opt_str_at(self.display_off, self.display_len),
-            context: (self.context != u32::MAX).then_some(self.context),
-            metered: unpack_tri(self.flags >> 3),
-            release: (self.release != u32::MAX).then_some(u64::from(self.release)),
-            reasoning: (self.flags & 1) != 0,
-            vision: (self.flags & 2) != 0,
+            context: (self.context != NONE_U32).then_some(self.context),
+            metered: unpack_tri(self.flags, METERED_SHIFT),
+            release: (self.release != NONE_U32).then_some(u64::from(self.release)),
+            reasoning: (self.flags & REASONING) != 0,
+            vision: (self.flags & VISION) != 0,
             family: opt_str_at(self.family_off, self.family_len),
-            deprecated: (self.flags & 4) != 0,
-            tools: unpack_tri(self.flags >> 5),
-            price: (self.price != u16::MAX).then(|| {
+            deprecated: (self.flags & DEPRECATED) != 0,
+            tools: unpack_tri(self.flags, TOOLS_SHIFT),
+            price: (self.price != NONE_U16).then(|| {
                 let [input, output, cached, write] = PRICES[usize::from(self.price)];
                 Price {
                     input: f64::from_bits(input),
                     output: f64::from_bits(output),
                     cached: f64::from_bits(cached),
-                    cache_write: (write != u64::MAX).then(|| f64::from_bits(write)),
+                    cache_write: (write != NONE_U64).then(|| f64::from_bits(write)),
                 }
             }),
         }

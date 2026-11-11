@@ -89,7 +89,10 @@ fn registry() -> super::registry::Registry {
 
 #[test]
 fn a_model_behind_a_proxy_sees_images_when_the_catalog_says_its_model_does() {
-    assert!(super::vision_of(&selection(None), &registry()));
+    assert!(super::registry::vision_of(
+        super::registry::Source::Cached(&registry()),
+        &selection(None)
+    ));
 }
 
 #[test]
@@ -131,8 +134,9 @@ fn the_catalog_keeps_only_providers_summonr_can_reach() {
     .unwrap();
     let mut elsewhere = selection(None);
     elsewhere.model = "seer".to_string();
-    assert!(super::vision_of(&selection(None), &registry));
-    assert!(!super::vision_of(&elsewhere, &registry));
+    let source = super::registry::Source::Cached(&registry);
+    assert!(super::registry::vision_of(source, &selection(None)));
+    assert!(!super::registry::vision_of(source, &elsewhere));
 }
 
 #[test]

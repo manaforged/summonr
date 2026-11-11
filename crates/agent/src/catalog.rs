@@ -199,11 +199,6 @@ pub fn accepts_images(endpoint: &crate::Endpoint) -> bool {
     })
 }
 
-#[cfg(test)]
-fn vision_of(endpoint: &crate::Endpoint, registry: &registry::Registry) -> bool {
-    registry::vision_of(registry::Source::Cached(registry), endpoint)
-}
-
 #[must_use]
 pub(crate) fn context_limit(endpoint: &str, model: &str, base_url: Option<&str>) -> Option<u32> {
     known(endpoint, model)

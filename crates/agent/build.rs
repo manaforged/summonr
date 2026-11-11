@@ -1,5 +1,7 @@
 use std::process::Command;
 
+#[path = "src/catalog/registry/layout.rs"]
+mod layout;
 #[path = "build/models_dev.rs"]
 mod models_dev;
 #[path = "../core/build/tables.rs"]

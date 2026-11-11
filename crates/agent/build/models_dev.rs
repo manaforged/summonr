@@ -4,6 +4,11 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::layout::{
+    DEPRECATED, METERED_SHIFT, NONE_U16, NONE_U32, NONE_U64, REASONING, TOOLS_SHIFT, TRI, TRI_MASK,
+    VISION,
+};
+
 const SOURCE: &str = "src/catalog/models-dev.json";
 
 pub(crate) fn compile() {
@@ -33,19 +38,19 @@ impl Pool {
         }
         let off = u32::try_from(self.strings.len()).expect("bundled catalog string pool fits u32");
         let len = u16::try_from(value.len()).expect("bundled catalog string fits u16");
-        assert!(len < u16::MAX, "u16::MAX is reserved for Option::None");
+        assert!(len < NONE_U16, "NONE_U16 is reserved for Option::None");
         self.strings.push_str(value);
         self.spans.insert(value.to_owned(), (off, len));
         (off, len)
     }
 
     fn opt_str(&mut self, value: Option<&str>) -> (u32, u16) {
-        value.map_or((0, u16::MAX), |text| self.str_span(text))
+        value.map_or((0, NONE_U16), |text| self.str_span(text))
     }
 
     fn opt_price(&mut self, value: Option<&Value>) -> u16 {
         let Some(price) = value.filter(|node| !node.is_null()) else {
-            return u16::MAX;
+            return NONE_U16;
         };
         let key = [
             req_f64(price, "input").to_bits(),
@@ -54,14 +59,14 @@ impl Pool {
             price
                 .get("cache_write")
                 .and_then(Value::as_f64)
-                .map_or(u64::MAX, f64::to_bits),
+                .map_or(NONE_U64, f64::to_bits),
         ];
-        assert!(key[3] != u64::MAX || price.get("cache_write").is_none_or(Value::is_null));
+        assert!(key[3] != NONE_U64 || price.get("cache_write").is_none_or(Value::is_null));
         if let Some(&id) = self.price_ids.get(&key) {
             return id;
         }
         let id = u16::try_from(self.prices.len()).expect("bundled catalog price pool fits u16");
-        assert!(id < u16::MAX, "u16::MAX is reserved for Option::None");
+        assert!(id < NONE_U16, "NONE_U16 is reserved for Option::None");
         self.prices.push(key);
         self.price_ids.insert(key, id);
         id
@@ -74,30 +79,30 @@ fn req_f64(node: &Value, key: &str) -> f64 {
         .unwrap_or_else(|| panic!("missing float field {key}"))
 }
 
-fn tri_bool(value: Option<bool>) -> u8 {
-    match value {
-        None => 0,
-        Some(false) => 1,
-        Some(true) => 2,
-    }
+fn tri_bits(value: Option<bool>, shift: u8) -> u8 {
+    let index = TRI
+        .iter()
+        .position(|&entry| entry == value)
+        .expect("TRI lists every Option<bool>");
+    (u8::try_from(index).expect("TRI index fits u8") & TRI_MASK) << shift
 }
 
 fn pack_flags(model: &Value) -> u8 {
-    let flag = |key: &str| u8::from(model.get(key).and_then(Value::as_bool).unwrap_or(false));
-    let tri = |key: &str| tri_bool(model.get(key).and_then(Value::as_bool));
-    flag("reasoning")
-        | (flag("vision") << 1)
-        | (flag("deprecated") << 2)
-        | (tri("metered") << 3)
-        | (tri("tools") << 5)
+    let get = |key: &str| model.get(key).and_then(Value::as_bool);
+    let flag = |key: &str, bit: u8| if get(key).unwrap_or(false) { bit } else { 0 };
+    flag("reasoning", REASONING)
+        | flag("vision", VISION)
+        | flag("deprecated", DEPRECATED)
+        | tri_bits(get("metered"), METERED_SHIFT)
+        | tri_bits(get("tools"), TOOLS_SHIFT)
 }
 
 fn opt_u32(model: &Value, key: &str) -> u32 {
     let Some(raw) = model.get(key).and_then(Value::as_u64) else {
-        return u32::MAX;
+        return NONE_U32;
     };
     let value = u32::try_from(raw).unwrap_or_else(|_| panic!("{key} overflows u32: {raw}"));
-    assert!(value < u32::MAX, "u32::MAX is reserved for Option::None");
+    assert!(value < NONE_U32, "NONE_U32 is reserved for Option::None");
     value
 }
 

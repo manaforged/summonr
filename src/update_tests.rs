@@ -60,19 +60,10 @@ fn serve(version: &str, files: Vec<(String, Vec<u8>)>) -> Release {
 }
 
 fn version(exe: &Path) -> String {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
-    let output = loop {
-        match Command::new(exe).arg("--version").output() {
-            Ok(output) => break output,
-            Err(error)
-                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
-                    && std::time::Instant::now() < deadline =>
-            {
-                std::thread::yield_now();
-            }
-            Err(error) => panic!("failed to run {}: {error}", exe.display()),
-        }
-    };
+    let output = Command::new(exe)
+        .arg("--version")
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run {}: {error}", exe.display()));
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
@@ -127,7 +118,7 @@ async fn a_release_archive_replaces_a_running_install() {
     let bin = root.path().join("home/bin");
     std::fs::create_dir_all(&bin).unwrap();
     let exe = bin.join(BINARY);
-    std::fs::copy(
+    std::fs::hard_link(
         root.path().join(format!("summonr-{target}")).join(BINARY),
         &exe,
     )
@@ -198,8 +189,14 @@ mod unix {
     const ASSET: &str = "summonr-test-target.tar.gz";
 
     fn script(path: &Path, prints: &str) {
-        std::fs::write(path, format!("#!/bin/sh\necho '{prints}'\n")).unwrap();
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let status = Command::new("sh")
+            .arg("-c")
+            .arg(r##"printf "#!/bin/sh\necho '%s'\n" "$1" > "$0" && chmod 755 "$0""##)
+            .arg(path)
+            .arg(prints)
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 
     fn release(root: &Path, sum_of: Option<&[u8]>) -> super::Release {

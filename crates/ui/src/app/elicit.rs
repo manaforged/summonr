@@ -286,11 +286,13 @@ impl App {
         true
     }
 
-    pub(crate) fn form_move(&self, dir: isize) -> bool {
-        let Some(mut state) = self
-            .form_shown()
+    fn form_filling(&self) -> Option<FormState> {
+        self.form_shown()
             .filter(|state| state.stage == Stage::Filling)
-        else {
+    }
+
+    pub(crate) fn form_move(&self, dir: isize) -> bool {
+        let Some(mut state) = self.form_filling() else {
             return false;
         };
         let Some(count) = state.options().map(|(options, _)| options.len()) else {
@@ -302,10 +304,7 @@ impl App {
     }
 
     pub(crate) fn form_toggle(&self) -> bool {
-        let Some(mut state) = self
-            .form_shown()
-            .filter(|state| state.stage == Stage::Filling)
-        else {
+        let Some(mut state) = self.form_filling() else {
             return false;
         };
         if !self.draft.peek().is_empty() || !state.options().is_some_and(|(_, many)| many) {

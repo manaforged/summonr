@@ -24,6 +24,10 @@ impl App {
                 return;
             }
         };
+        self.set_effort(next);
+    }
+
+    pub(in crate::app) fn set_effort(&self, next: summonr_agent::provider::Effort) {
         self.model_mut(|model| model.snapshot.effort = Some(next));
         drop(self.cmd.send(Cmd::SetEffort(Some(next))));
         self.refresh();

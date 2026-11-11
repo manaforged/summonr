@@ -201,9 +201,7 @@ impl App {
             None if delta < 0 => levels[levels.len() - 1],
             None => levels[0],
         };
-        self.model_mut(|model| model.snapshot.effort = Some(next));
-        drop(self.cmd.send(Cmd::SetEffort(Some(next))));
-        self.refresh();
+        self.set_effort(next);
     }
 
     pub(crate) fn toggle_verify(&self) {

@@ -227,21 +227,23 @@ pub(super) fn collapse(command: &str) -> String {
     out
 }
 
-pub(super) fn matches_allow(command: &str, pattern: &str) -> bool {
+fn collapsed(command: &str, pattern: &str) -> Option<(String, String)> {
     let command = collapse(command);
     let pattern = collapse(pattern);
-    if pattern.is_empty() {
+    (!pattern.is_empty()).then_some((command, pattern))
+}
+
+pub(super) fn matches_allow(command: &str, pattern: &str) -> bool {
+    let Some((command, pattern)) = collapsed(command, pattern) else {
         return false;
-    }
+    };
     command == pattern || command.starts_with(&format!("{pattern} "))
 }
 
 pub(super) fn matches_deny(command: &str, pattern: &str) -> bool {
-    let command = collapse(command);
-    let pattern = collapse(pattern);
-    if pattern.is_empty() {
+    let Some((command, pattern)) = collapsed(command, pattern) else {
         return false;
-    }
+    };
     command == pattern || command.starts_with(&format!("{pattern} ")) || command.contains(&pattern)
 }
 

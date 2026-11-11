@@ -235,12 +235,7 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
         ("refresh_token".to_string(), token.to_string()),
         ("client_id".to_string(), client.to_string()),
     ];
-    if let Some(secret) = &spec.client_secret {
-        form.push(("client_secret".to_string(), secret.expose().to_string()));
-    }
-    for (key, value) in &spec.token_params {
-        form.push((key.clone(), value.clone()));
-    }
+    spec.extend_token_form(&mut form, true);
     let (status, body) = post(http, &spec.token_url, &form, spec.token_style).await?;
     if status >= 400 {
         return Err(Error::Denied(format!(

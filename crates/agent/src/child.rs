@@ -47,6 +47,28 @@ impl ChildState {
         !matches!(self, Self::Running)
     }
 
+    /// Returns the terminal child result when the child is no longer running.
+    #[must_use]
+    pub fn result(&self) -> Option<&ChildResult> {
+        match self {
+            Self::Running => None,
+            Self::Completed(result)
+            | Self::Aborted(result)
+            | Self::Failed(result)
+            | Self::Interrupted(result) => Some(result),
+        }
+    }
+
+    pub(crate) fn result_mut(&mut self) -> Option<&mut ChildResult> {
+        match self {
+            Self::Running => None,
+            Self::Completed(result)
+            | Self::Aborted(result)
+            | Self::Failed(result)
+            | Self::Interrupted(result) => Some(result),
+        }
+    }
+
     pub(crate) fn notification(&self) -> Option<crate::tools::Event> {
         use crate::tools::{AbortCode, Event};
         let (label, result, code) = match self {
@@ -91,18 +113,7 @@ impl ChildRecord {
 
     pub fn interrupt(&self, reason: &str) -> Self {
         let mut record = self.clone();
-        record.state = ChildState::Interrupted(ChildResult {
-            text: String::new(),
-            changed_paths: Vec::new(),
-            changed_paths_total: 0,
-            rounds: 0,
-            usage: Usage::default(),
-            billed_tokens: 0,
-            elapsed_millis: 0,
-            diagnostic: Some(reason.to_string()),
-            kept: None,
-            head: String::new(),
-        });
+        record.state = ChildState::Interrupted(ChildResult::with_diagnostic(Some(reason)));
         record
     }
 
@@ -122,7 +133,7 @@ impl ChildRecord {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ChildResult {
     pub text: String,
     pub changed_paths: Vec<String>,
@@ -137,6 +148,15 @@ pub struct ChildResult {
     pub kept: Option<crate::tools::Kept>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub head: String,
+}
+
+impl ChildResult {
+    pub(crate) fn with_diagnostic(diagnostic: Option<&str>) -> Self {
+        Self {
+            diagnostic: diagnostic.map(str::to_string),
+            ..Self::default()
+        }
+    }
 }
 
 #[must_use]

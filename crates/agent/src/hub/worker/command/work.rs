@@ -4,17 +4,13 @@ impl Worker {
     pub(in crate::hub::worker) async fn compact(&mut self) -> bool {
         drop(self.ui.send(Msg::Fact(Fact::Busy(Some(Activity::Compact)))));
         let ui = self.ui.clone();
-        let outcome = wait_cancelable(
-            &mut self.cmd,
-            &mut self.queue,
-            &self.reader,
-            &self.ui,
-            Waiting::Work,
-            None,
-            self.loop_
-                .compact_with(move |event| drop(ui.send(Msg::Fact(Fact::Event(event.clone()))))),
-        )
-        .await;
+        let outcome = self
+            .wait_work(async |loop_| {
+                loop_
+                    .compact_with(move |event| drop(ui.send(Msg::Fact(Fact::Event(event.clone())))))
+                    .await
+            })
+            .await;
         if !matches!(outcome, Completion::Done(Ok(_))) {
             self.recover();
         }
@@ -235,18 +231,15 @@ impl Worker {
 
     async fn stop_work(&mut self, reason: &str) -> bool {
         let ui = self.ui.clone();
-        let outcome = wait_cancelable(
-            &mut self.cmd,
-            &mut self.queue,
-            &self.reader,
-            &self.ui,
-            Waiting::Work,
-            None,
-            self.loop_.stop_work(reason, move |event| {
-                drop(ui.send(Msg::Fact(Fact::Event(event.clone()))));
-            }),
-        )
-        .await;
+        let outcome = self
+            .wait_work(async |loop_| {
+                loop_
+                    .stop_work(reason, move |event| {
+                        drop(ui.send(Msg::Fact(Fact::Event(event.clone()))));
+                    })
+                    .await
+            })
+            .await;
         match outcome {
             Completion::Done(Ok(_)) => true,
             Completion::Done(Err(error)) => {

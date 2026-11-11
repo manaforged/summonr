@@ -47,7 +47,7 @@ fn aborted(spawned: Spawned, parent: &Path, reason: &str) -> Result<Done> {
         ));
     }
     let (billed, usage) = accounting_at(&spawned.path)?;
-    let mut result = empty(Some(&diagnostic));
+    let mut result = ChildResult::with_diagnostic(Some(&diagnostic));
     result.billed_tokens = billed;
     result.usage = usage.clone();
     record.state = ChildState::Aborted(result);
@@ -209,21 +209,6 @@ pub(super) fn accounting_at(path: &Path) -> Result<(u64, Usage)> {
     Ok((state.spent, usage))
 }
 
-pub(super) fn empty(diagnostic: Option<&str>) -> ChildResult {
-    ChildResult {
-        text: String::new(),
-        changed_paths: Vec::new(),
-        changed_paths_total: 0,
-        rounds: 0,
-        usage: Usage::default(),
-        billed_tokens: 0,
-        elapsed_millis: 0,
-        diagnostic: diagnostic.map(str::to_string),
-        kept: None,
-        head: String::new(),
-    }
-}
-
 impl ChildRecord {
     pub(super) fn note_record(&mut self, diagnostic: &str) {
         if let Some(result) = self.state.result_mut() {
@@ -235,7 +220,7 @@ impl ChildRecord {
         let Some(result) = self.state.result_mut() else {
             return;
         };
-        let mut result = std::mem::replace(result, empty(None));
+        let mut result = std::mem::take(result);
         result.diagnostic = Some(diagnostic.to_string());
         self.state = ChildState::Failed(result);
     }
@@ -247,31 +232,8 @@ impl ChildRecord {
     }
 }
 
-impl ChildState {
-    pub(crate) fn result(&self) -> Option<&ChildResult> {
-        match self {
-            Self::Running => None,
-            Self::Completed(result)
-            | Self::Aborted(result)
-            | Self::Failed(result)
-            | Self::Interrupted(result) => Some(result),
-        }
-    }
-
-    pub(crate) fn result_mut(&mut self) -> Option<&mut ChildResult> {
-        match self {
-            Self::Running => None,
-            Self::Completed(result)
-            | Self::Aborted(result)
-            | Self::Failed(result)
-            | Self::Interrupted(result) => Some(result),
-        }
-    }
-}
-
 pub(super) fn task_args(call: &ToolCall) -> Result<Args> {
-    let mut args: Args = serde_json::from_str(&call.function.arguments)
-        .map_err(|error| Error::Tool(format!("task arguments are invalid: {error}")))?;
+    let mut args: Args = crate::tools::parse_args("task", &call.function.arguments)?;
     if let Some(id) = &args.child {
         if id.trim().is_empty() {
             return Err(Error::Tool("task child id is empty".to_string()));

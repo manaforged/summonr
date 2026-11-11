@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use summonr_auth::{Auth, Method, Scheme, Spec, Store};
 use summonr_core::secret::Secret;
-use summonr_types::oauth::{Grant, TokenScheme};
+use summonr_types::oauth::Grant;
 
 use crate::endpoint::{Endpoint, LoginFlow, Wire};
 use crate::secret;
@@ -57,32 +57,7 @@ pub(crate) fn scheme(wire: Wire) -> Scheme {
 }
 
 pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
-    if row.token_url.trim().is_empty() || row.client_id.trim().is_empty() {
-        return Err(Error::Config(
-            "a login needs token_url and client_id".to_string(),
-        ));
-    }
-    let spec = Spec {
-        token_url: row.token_url.clone(),
-        client_id: row.client_id.clone(),
-        client_secret: row.client_secret.clone(),
-        refresh_token: row.refresh_token.clone(),
-        scope: row.scope.clone(),
-        grant: row.grant(),
-        device_url: row.device_url.clone(),
-        exchange_url: row.exchange_url.clone(),
-        authorize_url: row.authorize_url.clone(),
-        redirect_uri: row.redirect_uri.clone(),
-        authorize_params: row.authorize_params.clone(),
-        token_params: row.token_params.clone(),
-        token_style: row.token_style(),
-        pkce: row.pkce,
-        claim_headers: row.claim_headers.clone(),
-        required_scope: row.required_scope.clone(),
-    };
-    spec.check()
-        .map_err(|error| Error::Config(error.to_string()))?;
-    Ok(spec)
+    Spec::try_from(row).map_err(|error| Error::Config(error.to_string()))
 }
 
 pub(crate) fn auth(endpoint: &Endpoint) -> Result<Auth> {
@@ -102,7 +77,7 @@ pub(crate) fn auth(endpoint: &Endpoint) -> Result<Auth> {
         &method,
         endpoint.oauth.as_ref().and_then(|row| row.scheme()),
     ) {
-        (Method::Login(_), Some(named)) => carrier(named),
+        (Method::Login(_), Some(named)) => Scheme::from(named),
         (Method::Login(_), None) => Scheme::Bearer,
         (Method::Key(_), _) => scheme(endpoint.wire),
     };
@@ -153,14 +128,6 @@ pub(crate) fn logged_in(row: &crate::config::OAuth, name: &str) -> Result<bool> 
     )
     .ready()
     .map_err(|error| Error::Config(error.to_string()))
-}
-
-fn carrier(named: TokenScheme) -> Scheme {
-    match named {
-        TokenScheme::ApiKey => Scheme::ApiKey,
-        TokenScheme::GoogleKey => Scheme::GoogleKey,
-        TokenScheme::Bearer => Scheme::Bearer,
-    }
 }
 
 pub(crate) fn flow(row: &crate::config::OAuth) -> LoginFlow {

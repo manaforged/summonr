@@ -61,12 +61,9 @@ impl ToolRegistry {
         let file = self.resolve_existing(path)?;
         let request_path = file.clone();
         let (text, _) = self
-            .with_lsp(
-                &file,
-                Scope::Request,
-                crate::limits::limits().lsp_request(),
-                move |conn| Box::pin(async move { conn.diagnostics(&request_path).await }),
-            )
+            .lsp_request(&file, move |conn| {
+                Box::pin(async move { conn.diagnostics(&request_path).await })
+            })
             .await?;
         Ok(ToolOutput::ok(text))
     }
@@ -85,14 +82,9 @@ impl ToolRegistry {
         let character = position(args.character, "character")?;
         let request_path = file.clone();
         let text = self
-            .with_lsp(
-                &file,
-                Scope::Request,
-                crate::limits::limits().lsp_request(),
-                move |conn| {
-                    Box::pin(async move { conn.goal(&request_path, line, character).await })
-                },
-            )
+            .lsp_request(&file, move |conn| {
+                Box::pin(async move { conn.goal(&request_path, line, character).await })
+            })
             .await?;
         Ok(ToolOutput::ok(text))
     }
@@ -119,38 +111,42 @@ impl ToolRegistry {
             let name = new_name.to_string();
             let request_path = file.clone();
             let edit = self
-                .with_lsp(
-                    &file,
-                    Scope::Request,
-                    crate::limits::limits().lsp_request(),
-                    move |conn| {
-                        Box::pin(
-                            async move { conn.rename(&request_path, line, character, &name).await },
-                        )
-                    },
-                )
+                .lsp_request(&file, move |conn| {
+                    Box::pin(
+                        async move { conn.rename(&request_path, line, character, &name).await },
+                    )
+                })
                 .await?;
             return self.apply_workspace_edit(&edit);
         }
         let refs = args.references;
         let request_path = file.clone();
         let text = self
-            .with_lsp(
-                &file,
-                Scope::Request,
-                crate::limits::limits().lsp_request(),
-                move |conn| {
-                    Box::pin(async move {
-                        if refs {
-                            conn.references(&request_path, line, character).await
-                        } else {
-                            conn.definition(&request_path, line, character).await
-                        }
-                    })
-                },
-            )
+            .lsp_request(&file, move |conn| {
+                Box::pin(async move {
+                    if refs {
+                        conn.references(&request_path, line, character).await
+                    } else {
+                        conn.definition(&request_path, line, character).await
+                    }
+                })
+            })
             .await?;
         Ok(ToolOutput::ok(text))
+    }
+
+    async fn lsp_request<T>(
+        &self,
+        path: &Path,
+        f: impl for<'a> FnOnce(&'a mut Conn) -> Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>,
+    ) -> Result<T> {
+        self.with_lsp(
+            path,
+            Scope::Request,
+            crate::limits::limits().lsp_request(),
+            f,
+        )
+        .await
     }
 
     pub(in crate::tools) async fn check_after_edit(&self, dest: &Path) -> Option<ToolOutput> {

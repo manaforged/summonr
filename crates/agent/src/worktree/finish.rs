@@ -45,12 +45,7 @@ pub fn finish(tree: &Tree, own: &str, objective: &str, paths: &[String]) -> Resu
 
 /// Commits everything in the worktree, merges its branch into the checkout, and removes it.
 pub(crate) fn merge_all(tree: &Tree, own: &str, objective: &str) -> Result<()> {
-    if let Some(session) = tree.holder(own)? {
-        return Err(Error::Config(format!(
-            "agent {} still uses this worktree; stop it first",
-            crate::session::short(&session)
-        )));
-    }
+    tree.ensure_free(own)?;
     let base = tree.known_base()?;
     let paths: Vec<String> = leftover(&tree.path)?
         .iter()

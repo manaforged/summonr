@@ -88,12 +88,7 @@ fn announce(body: &Value, prompt: &mut Prompt) {
         .or_else(|| body.get("verification_uri"))
         .and_then(Value::as_str)
         .unwrap_or_default();
-    prompt.notice(&format!("open {uri} and enter {shown}"));
-    if let Err(error) = crate::open::external(uri) {
-        prompt.notice(&format!(
-            "the browser did not open ({error}); open the link"
-        ));
-    }
+    super::open_browser(prompt, uri, &format!("open {uri} and enter {shown}"));
 }
 
 struct Poll<'a> {
@@ -149,9 +144,7 @@ impl Poll<'_> {
         if let Some(verifier) = self.verifier {
             form.push(("code_verifier".to_string(), verifier.to_string()));
         }
-        for (key, value) in &spec.token_params {
-            form.push((key.clone(), value.clone()));
-        }
+        spec.extend_token_form(&mut form, false);
         form
     }
 }

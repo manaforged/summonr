@@ -28,6 +28,24 @@ enum Waiting {
     Login,
 }
 
+impl Worker {
+    async fn wait_work<T>(
+        &mut self,
+        run: impl AsyncFnOnce(&mut crate::Loop<crate::provider::Client>) -> T,
+    ) -> Completion<T> {
+        wait_cancelable(
+            &mut self.cmd,
+            &mut self.queue,
+            &self.reader,
+            &self.ui,
+            Waiting::Work,
+            None,
+            run(&mut self.loop_),
+        )
+        .await
+    }
+}
+
 async fn wait_cancelable<T>(
     cmd: &mut UnboundedReceiver<Cmd>,
     queue: &mut InputQueue,

@@ -37,12 +37,7 @@ pub(super) async fn login(
         authorize, parts, client, &redirect, &verifier, &state, &nonce,
     )?;
 
-    prompt.notice(&format!("open {asked}"));
-    if let Err(error) = crate::open::external(asked.as_str()) {
-        prompt.notice(&format!(
-            "the browser did not open ({error}); open the link above"
-        ));
-    }
+    super::open_browser(prompt, asked.as_str(), &format!("open {asked}"));
 
     let back = returned(listener.as_ref(), prompt, &state).await?;
     same_client(issued.as_deref(), back.client.as_deref())?;
@@ -154,12 +149,7 @@ async fn redeemed(
     if let Some(state) = state {
         form.push(("state".to_string(), state.to_string()));
     }
-    if let Some(secret) = &parts.spec.client_secret {
-        form.push(("client_secret".to_string(), secret.expose().to_string()));
-    }
-    for (key, value) in &parts.spec.token_params {
-        form.push((key.clone(), value.clone()));
-    }
+    parts.spec.extend_token_form(&mut form, true);
     let (status, body) = post(http, &parts.spec.token_url, &form, parts.spec.token_style).await?;
     if status >= 400 {
         let said = body

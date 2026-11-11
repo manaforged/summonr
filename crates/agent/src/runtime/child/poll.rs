@@ -112,7 +112,8 @@ impl<P: Provider> Loop<P> {
             Ok(done) => done,
             Err(error) => {
                 let mut record = spawned.record;
-                record.state = ChildState::Failed(empty(Some(&error.to_string())));
+                record.state =
+                    ChildState::Failed(ChildResult::with_diagnostic(Some(&error.to_string())));
                 Done {
                     record,
                     tree: None,

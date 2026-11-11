@@ -2,7 +2,10 @@ use serde_json::Value;
 use summonr_core::error::{Error, Result};
 pub(crate) use summonr_types::tool;
 
-pub(crate) fn parse_args(name: &str, arguments: &str) -> Result<Value> {
+pub(crate) fn parse_args<'a, T: serde::Deserialize<'a>>(
+    name: &str,
+    arguments: &'a str,
+) -> Result<T> {
     serde_json::from_str(arguments).map_err(|error| invalid(name, &error))
 }
 

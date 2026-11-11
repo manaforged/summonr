@@ -25,7 +25,7 @@ mod windows;
 
 #[test]
 fn empty_run_command_arguments_are_a_tool_error() {
-    let error = parse_args("run_command", "").unwrap_err();
+    let error = parse_args::<Value>("run_command", "").unwrap_err();
     let Error::Tool(message) = error else {
         panic!("{error}");
     };

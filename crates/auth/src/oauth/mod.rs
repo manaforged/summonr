@@ -82,6 +82,69 @@ impl Spec {
         }
         Ok(())
     }
+
+    pub(super) fn refresh_seed(&self) -> Issued {
+        Issued {
+            access: String::new(),
+            refresh: self
+                .refresh_token
+                .as_ref()
+                .map(|token| token.expose().to_string()),
+            expires: None,
+            identity: None,
+            client: None,
+        }
+    }
+
+    pub(super) fn extend_token_form(&self, form: &mut Vec<(String, String)>, include_secret: bool) {
+        if include_secret && let Some(secret) = &self.client_secret {
+            form.push(("client_secret".to_string(), secret.expose().to_string()));
+        }
+        for (key, value) in &self.token_params {
+            form.push((key.clone(), value.clone()));
+        }
+    }
+}
+
+impl TryFrom<&summonr_types::oauth::OAuth> for Spec {
+    type Error = Error;
+
+    fn try_from(row: &summonr_types::oauth::OAuth) -> Result<Self> {
+        if row.token_url.trim().is_empty() || row.client_id.trim().is_empty() {
+            return Err(Error::Config(
+                "a login needs token_url and client_id".to_string(),
+            ));
+        }
+        let spec = Self {
+            token_url: row.token_url.clone(),
+            client_id: row.client_id.clone(),
+            client_secret: row.client_secret.clone(),
+            refresh_token: row.refresh_token.clone(),
+            scope: row.scope.clone(),
+            grant: row.grant(),
+            device_url: row.device_url.clone(),
+            exchange_url: row.exchange_url.clone(),
+            authorize_url: row.authorize_url.clone(),
+            redirect_uri: row.redirect_uri.clone(),
+            authorize_params: row.authorize_params.clone(),
+            token_params: row.token_params.clone(),
+            token_style: row.token_style(),
+            pkce: row.pkce,
+            claim_headers: row.claim_headers.clone(),
+            required_scope: row.required_scope.clone(),
+        };
+        spec.check()?;
+        Ok(spec)
+    }
+}
+
+pub(super) fn open_browser(prompt: &mut Prompt, uri: &str, notice: &str) {
+    prompt.notice(notice);
+    if let Err(error) = crate::open::external(uri) {
+        prompt.notice(&format!(
+            "the browser did not open ({error}); open the link"
+        ));
+    }
 }
 
 pub(crate) async fn token(
@@ -147,18 +210,7 @@ async fn renew(parts: &Parts<'_>, http: &Session, shared: &Arc<dyn Store>) -> Re
             detail: format!("run `summonr login {}`", parts.name),
         });
     }
-    let seed = Issued {
-        access: String::new(),
-        refresh: parts
-            .spec
-            .refresh_token
-            .as_ref()
-            .map(|token| token.expose().to_string()),
-        expires: None,
-        identity: None,
-        client: None,
-    };
-    let minted = refresh(parts.spec, http, &seed).await?;
+    let minted = refresh(parts.spec, http, &parts.spec.refresh_seed()).await?;
     save(parts, store, &minted)?;
     exchanged(parts, http, shared, minted, true).await
 }
@@ -172,18 +224,7 @@ pub(crate) async fn login(
     parts.spec.check()?;
     match parts.spec.grant {
         Grant::RefreshToken => {
-            let seed = Issued {
-                access: String::new(),
-                refresh: parts
-                    .spec
-                    .refresh_token
-                    .as_ref()
-                    .map(|token| token.expose().to_string()),
-                expires: None,
-                identity: None,
-                client: None,
-            };
-            let minted = refresh(parts.spec, http, &seed).await?;
+            let minted = refresh(parts.spec, http, &parts.spec.refresh_seed()).await?;
             settle(&parts, http, shared, minted).await
         }
         Grant::DeviceCode => device::login(&parts, http, shared, prompt).await,

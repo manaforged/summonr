@@ -31,16 +31,9 @@ impl Worker {
                 }))),
         );
         let started = std::time::Instant::now();
-        let outcome = wait_cancelable(
-            &mut self.cmd,
-            &mut self.queue,
-            &self.reader,
-            &self.ui,
-            Waiting::Work,
-            None,
-            self.loop_.shell(command),
-        )
-        .await;
+        let outcome = self
+            .wait_work(async |loop_| loop_.shell(command).await)
+            .await;
         let completed = matches!(outcome, Completion::Done(_));
         let running = !matches!(outcome, Completion::Quit);
         let (output, success) = match outcome {

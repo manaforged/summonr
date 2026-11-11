@@ -351,7 +351,7 @@ fn arguments_of(name: &str, op: Option<&str>, call: &ToolCall) -> Result<Value> 
     let Some(op) = op else {
         return parse_args(name, &call.function.arguments);
     };
-    let mut args = parse_args(&call.function.name, &call.function.arguments)?;
+    let mut args: Value = parse_args(&call.function.name, &call.function.arguments)?;
     args.as_object_mut()
         .ok_or_else(|| {
             Error::Tool(format!(

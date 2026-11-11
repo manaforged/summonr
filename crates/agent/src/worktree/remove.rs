@@ -7,16 +7,21 @@ use super::{Tree, base, worktree_id};
 
 /// Removes the worktree and its branch, with any work on them.
 pub(crate) fn throw_away(tree: &Tree, own: &str) -> Result<()> {
-    if let Some(session) = tree.holder(own)? {
-        return Err(Error::Config(format!(
-            "agent {} still uses this worktree; stop it first",
-            crate::session::short(&session)
-        )));
-    }
+    tree.ensure_free(own)?;
     tree.delete()
 }
 
 impl Tree {
+    pub(super) fn ensure_free(&self, own: &str) -> Result<()> {
+        if let Some(session) = self.holder(own)? {
+            return Err(Error::Config(format!(
+                "agent {} still uses this worktree; stop it first",
+                crate::session::short(&session)
+            )));
+        }
+        Ok(())
+    }
+
     pub(crate) fn remove(&self) -> Result<()> {
         self.check_merged()?;
         self.delete()

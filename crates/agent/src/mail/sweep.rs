@@ -25,6 +25,12 @@ pub(crate) fn sweep_inboxes(dir: &Path, now: std::time::SystemTime) -> usize {
     inboxes + locks
 }
 
+fn older_than(path: &Path, window: std::time::Duration, now: std::time::SystemTime) -> bool {
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .is_ok_and(|at| now.duration_since(at).is_ok_and(|age| age > window))
+}
+
 fn stale_inbox(
     path: &Path,
     live: &std::collections::HashSet<String>,
@@ -38,10 +44,7 @@ fn stale_inbox(
     else {
         return false;
     };
-    let old = std::fs::metadata(path)
-        .and_then(|meta| meta.modified())
-        .is_ok_and(|at| now.duration_since(at).is_ok_and(|age| age > window));
-    old && !live.contains(id)
+    older_than(path, window, now) && !live.contains(id)
 }
 
 fn stale_lock(
@@ -59,9 +62,6 @@ fn stale_lock(
     let Some(id) = inbox.strip_suffix(".jsonl") else {
         return false;
     };
-    let old = std::fs::metadata(path)
-        .and_then(|meta| meta.modified())
-        .is_ok_and(|at| now.duration_since(at).is_ok_and(|age| age > window));
     let empty = std::fs::metadata(path.with_file_name(inbox)).map_or(true, |meta| meta.len() == 0);
-    old && empty && !live.contains(id)
+    older_than(path, window, now) && empty && !live.contains(id)
 }

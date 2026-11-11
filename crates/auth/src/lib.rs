@@ -101,6 +101,16 @@ impl Scheme {
     }
 }
 
+impl From<summonr_types::oauth::TokenScheme> for Scheme {
+    fn from(scheme: summonr_types::oauth::TokenScheme) -> Self {
+        match scheme {
+            summonr_types::oauth::TokenScheme::Bearer => Self::Bearer,
+            summonr_types::oauth::TokenScheme::ApiKey => Self::ApiKey,
+            summonr_types::oauth::TokenScheme::GoogleKey => Self::GoogleKey,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Method {
     Key(Secret),

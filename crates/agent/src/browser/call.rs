@@ -55,7 +55,7 @@ pub(super) enum Call {
 }
 
 pub(super) fn parse(arguments: &str) -> Result<Call> {
-    let value = crate::tools::parse_args(TOOL, arguments)?;
+    let value: Value = crate::tools::parse_args(TOOL, arguments)?;
     let name = value
         .get("action")
         .and_then(Value::as_str)

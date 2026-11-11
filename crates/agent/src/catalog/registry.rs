@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, OnceLock};
 
 use leyline::http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -11,10 +10,12 @@ use summonr_core::error::Result;
 const REGISTRY_URL: &str = "https://models.dev/api.json";
 pub(super) const FILE: &str = "models-dev.json";
 const REGISTRY_SCHEMA: u32 = 3;
-const SNAPSHOT: &str = include_str!("models-dev.json");
 
+mod bundled;
 mod upstream;
 
+pub(super) use bundled::{Current, Source};
+use bundled::{MetaView, ProviderRef};
 pub(super) use upstream::decode;
 
 pub(super) fn epoch_day(date: &str) -> Option<u64> {
@@ -78,19 +79,9 @@ pub(super) struct Registry {
     providers: Vec<ProviderMeta>,
 }
 
-pub(super) fn snapshot() -> Arc<Registry> {
-    static PARSED: OnceLock<Arc<Registry>> = OnceLock::new();
-    Arc::clone(PARSED.get_or_init(|| {
-        Arc::new(
-            serde_json::from_str(SNAPSHOT)
-                .expect("bundled provider registry snapshot must parse as a Registry"),
-        )
-    }))
-}
-
 #[cfg(test)]
 pub(crate) fn serves(providers: &[String], model: &str) -> Option<bool> {
-    serves_in(&snapshot(), providers, model)
+    serves_in(Source::Bundled, providers, model)
 }
 
 #[cfg(test)]
@@ -98,36 +89,36 @@ pub(crate) async fn serves_live() -> Result<impl Fn(&[String], &str) -> Option<b
     let registry = fetch_registry("").await?.ok_or_else(|| {
         summonr_core::error::Error::Config("models.dev sent no catalog".to_string())
     })?;
-    Ok(move |providers: &[String], model: &str| serves_in(&registry, providers, model))
+    Ok(move |providers: &[String], model: &str| {
+        serves_in(Source::Cached(&registry), providers, model)
+    })
 }
 
 #[cfg(test)]
-fn serves_in(registry: &Registry, providers: &[String], model: &str) -> Option<bool> {
-    let by_id: BTreeMap<&str, &ProviderMeta> = registry
-        .providers
-        .iter()
-        .map(|provider| (provider.id.as_str(), provider))
+fn serves_in(source: Source<'_>, providers: &[String], model: &str) -> Option<bool> {
+    let by_id: BTreeMap<&str, ProviderRef<'_>> = source
+        .providers()
+        .map(|provider| (provider.id(), provider))
         .collect();
-    let known: Vec<&ProviderMeta> = providers
+    let known: Vec<ProviderRef<'_>> = providers
         .iter()
         .filter_map(|id| by_id.get(id.as_str()).copied())
         .collect();
     if known.is_empty() {
         return None;
     }
-    Some(known.iter().any(|provider| {
-        provider
-            .models
-            .get(model)
-            .is_some_and(|meta| !meta.deprecated)
-    }))
+    Some(
+        known
+            .iter()
+            .any(|provider| provider.get(model).is_some_and(|meta| !meta.deprecated)),
+    )
 }
 
-pub(super) fn current() -> Arc<Registry> {
+pub(super) fn current() -> Current {
     storage::load::<Registry>(FILE)
         .ok()
         .filter(|cache| cache.schema == REGISTRY_SCHEMA && !cache.providers.is_empty())
-        .unwrap_or_else(snapshot)
+        .map_or(Current::Bundled, Current::Cached)
 }
 
 pub async fn refresh_registry() -> Result<()> {
@@ -184,19 +175,19 @@ async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
 }
 
 pub(crate) fn offered(endpoint: &str, cost: Cost) -> Vec<Model> {
-    let registry = current();
-    let by_id: BTreeMap<&str, &ProviderMeta> = registry
-        .providers
-        .iter()
-        .map(|provider| (provider.id.as_str(), provider))
+    let held = current();
+    let source = held.as_source();
+    let by_id: BTreeMap<&str, ProviderRef<'_>> = source
+        .providers()
+        .map(|provider| (provider.id(), provider))
         .collect();
     crate::endpoint::provider_ids(endpoint)
         .iter()
-        .filter_map(|id| by_id.get(id.as_str()))
-        .flat_map(|provider| provider.models.iter())
+        .filter_map(|id| by_id.get(id.as_str()).copied())
+        .flat_map(ProviderRef::models)
         .filter(|(_, meta)| !meta.deprecated)
         .map(|(id, meta)| {
-            let mut model = Model::named(id.clone());
+            let mut model = Model::named(id);
             model.apply(meta);
             model.cost = cost;
             model
@@ -205,20 +196,20 @@ pub(crate) fn offered(endpoint: &str, cost: Cost) -> Vec<Model> {
 }
 
 pub(crate) fn enrich(endpoint: &str, base_url: Option<&str>, models: &mut [Model]) {
-    enrich_from(&current(), endpoint, base_url, models);
+    enrich_from(current().as_source(), endpoint, base_url, models);
 }
 
 struct Hit<'a> {
-    provider: Option<&'a ProviderMeta>,
-    same_host: Vec<&'a ProviderMeta>,
+    provider: Option<ProviderRef<'a>>,
+    same_host: Vec<ProviderRef<'a>>,
 }
 
-fn locate<'a>(registry: &'a Registry, endpoint: &str, base_url: Option<&str>) -> Hit<'a> {
+fn locate<'a>(source: Source<'a>, endpoint: &str, base_url: Option<&str>) -> Hit<'a> {
     let base = base_url.unwrap_or_default().trim_end_matches('/');
     let from_host = base_url
         .map(crate::endpoint::providers_at)
         .unwrap_or_default();
-    let named = |provider: &&ProviderMeta| {
+    let named = |provider: &ProviderRef<'a>| {
         std::iter::once(endpoint)
             .chain(
                 crate::endpoint::provider_ids(endpoint)
@@ -226,20 +217,22 @@ fn locate<'a>(registry: &'a Registry, endpoint: &str, base_url: Option<&str>) ->
                     .map(String::as_str),
             )
             .chain(from_host.iter().copied())
-            .any(|name| provider.id == name || provider.name.eq_ignore_ascii_case(name))
+            .any(|name| provider.id() == name || provider.name().eq_ignore_ascii_case(name))
     };
-    let wanted = crate::endpoint::host_port(base);
-    let same_host: Vec<&ProviderMeta> = registry
-        .providers
-        .iter()
-        .filter(|provider| wanted.is_some() && crate::endpoint::host_port(&provider.api) == wanted)
-        .collect();
-    let provider = registry
-        .providers
-        .iter()
-        .find(|provider| !base.is_empty() && provider.api == base)
+    let same_host: Vec<ProviderRef<'a>> = match crate::endpoint::host_port(base) {
+        Some(wanted) => source
+            .providers()
+            .filter(|provider| {
+                crate::endpoint::host_port(provider.api()).as_deref() == Some(&wanted)
+            })
+            .collect(),
+        None => Vec::new(),
+    };
+    let provider = source
+        .providers()
+        .find(|provider| !base.is_empty() && provider.api() == base)
         .or_else(|| same_host.first().copied())
-        .or_else(|| registry.providers.iter().find(named));
+        .or_else(|| source.providers().find(named));
     Hit {
         provider,
         same_host,
@@ -262,73 +255,78 @@ fn version_spelling(model: &str) -> Option<String> {
     changed.then(|| chars.into_iter().collect())
 }
 
-fn meta_of<'a>(provider: &'a ProviderMeta, model: &str) -> Option<&'a Meta> {
+fn meta_of<'a>(provider: ProviderRef<'a>, model: &str) -> Option<MetaView<'a>> {
     provider
-        .models
         .get(model)
-        .or_else(|| version_spelling(model).and_then(|alt| provider.models.get(&alt)))
+        .or_else(|| version_spelling(model).and_then(|alt| provider.get(&alt)))
 }
 
-fn usable_window(meta: &Meta) -> Option<u32> {
+fn usable_window(meta: MetaView<'_>) -> Option<u32> {
     meta.context.filter(|window| *window > 0)
 }
 
 fn model_meta<'a>(
     hit: &Hit<'a>,
-    providers: &'a [ProviderMeta],
+    source: Source<'a>,
     model: &str,
     loose: bool,
-) -> Option<&'a Meta> {
+) -> Option<MetaView<'a>> {
     hit.provider
         .and_then(|provider| meta_of(provider, model))
         .or_else(|| {
             hit.same_host
                 .iter()
-                .find_map(|provider| meta_of(provider, model))
+                .find_map(|provider| meta_of(*provider, model))
         })
         .or_else(|| {
             loose
                 .then(|| {
-                    providers
-                        .iter()
+                    source
+                        .providers()
                         .find_map(|provider| meta_of(provider, model))
                 })
                 .flatten()
         })
 }
 
+pub(super) fn vision_of(source: Source<'_>, endpoint: &crate::Endpoint) -> bool {
+    if source.is_empty() {
+        return false;
+    }
+    let hit = locate(source, &endpoint.name, endpoint.base_url.as_deref());
+    model_meta(&hit, source, &endpoint.model, true).is_some_and(|meta| meta.vision)
+}
+
 pub(super) fn context_of(endpoint: &str, base_url: Option<&str>, model: &str) -> Option<u32> {
-    context_of_from(&current(), endpoint, base_url, model)
+    context_of_from(current().as_source(), endpoint, base_url, model)
 }
 
 pub(super) fn context_of_from(
-    registry: &Registry,
+    source: Source<'_>,
     endpoint: &str,
     base_url: Option<&str>,
     model: &str,
 ) -> Option<u32> {
-    if registry.providers.is_empty() {
+    if source.is_empty() {
         return None;
     }
-    let hit = locate(registry, endpoint, base_url);
-    model_meta(&hit, &registry.providers, model, false).and_then(usable_window)
+    let hit = locate(source, endpoint, base_url);
+    model_meta(&hit, source, model, false).and_then(usable_window)
 }
 
 pub(super) fn enrich_from(
-    registry: &Registry,
+    source: Source<'_>,
     endpoint: &str,
     base_url: Option<&str>,
     models: &mut [Model],
 ) {
-    if registry.providers.is_empty() {
+    if source.is_empty() {
         return;
     }
-    let hit = locate(registry, endpoint, base_url);
+    let hit = locate(source, endpoint, base_url);
     for model in models.iter_mut() {
-        let own = hit
-            .provider
-            .and_then(|provider| provider.models.get(&model.id));
-        let Some(meta) = model_meta(&hit, &registry.providers, &model.id, true) else {
+        let own = hit.provider.and_then(|provider| provider.get(&model.id));
+        let Some(meta) = model_meta(&hit, source, &model.id, true) else {
             continue;
         };
         model.apply(meta);
@@ -339,9 +337,9 @@ pub(super) fn enrich_from(
 }
 
 impl Model {
-    fn apply(&mut self, meta: &Meta) {
+    fn apply(&mut self, meta: MetaView<'_>) {
         if self.display.is_none() {
-            self.display = meta.display.clone();
+            self.display = meta.display.map(str::to_owned);
         }
         if self.context.is_none() {
             self.context = usable_window(meta);
@@ -349,12 +347,14 @@ impl Model {
         self.release = self.release.or(meta.release);
         self.reasoning |= meta.reasoning;
         self.vision |= meta.vision;
-        self.family = self.family.take().or_else(|| meta.family.clone());
+        if self.family.is_none() {
+            self.family = meta.family.map(str::to_owned);
+        }
         self.deprecated |= meta.deprecated;
         self.tools = self.tools.or(meta.tools);
     }
 
-    fn price(&mut self, meta: &Meta) {
+    fn price(&mut self, meta: MetaView<'_>) {
         self.price = self.price.or(meta.price);
         if self.cost == Cost::Unknown
             && let Some(metered) = meta.metered

@@ -193,24 +193,15 @@ fn listings() -> Arc<BTreeMap<String, Listing>> {
 pub fn accepts_images(endpoint: &crate::Endpoint) -> bool {
     endpoint.images.unwrap_or_else(|| {
         known(&endpoint.name, &endpoint.model).map_or_else(
-            || vision_of(endpoint, &registry::current()),
+            || registry::vision_of(registry::current().as_source(), endpoint),
             |model| model.vision,
         )
     })
 }
 
+#[cfg(test)]
 fn vision_of(endpoint: &crate::Endpoint, registry: &registry::Registry) -> bool {
-    let mut models = [Model {
-        id: endpoint.model.clone(),
-        ..Model::default()
-    }];
-    registry::enrich_from(
-        registry,
-        &endpoint.name,
-        endpoint.base_url.as_deref(),
-        &mut models,
-    );
-    models[0].vision
+    registry::vision_of(registry::Source::Cached(registry), endpoint)
 }
 
 #[must_use]

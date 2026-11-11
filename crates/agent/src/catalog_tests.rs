@@ -99,10 +99,27 @@ fn a_declared_images_row_wins_over_the_catalog() {
 
 #[test]
 fn a_known_vision_model_reads_images_with_no_downloaded_catalog() {
-    assert!(super::vision_of(
-        &selection(None),
-        &super::registry::snapshot()
+    assert!(super::registry::vision_of(
+        super::registry::Source::Bundled,
+        &selection(None)
     ));
+    let mut models = [Model::named("claude-opus-5-5")];
+    super::registry::enrich_from(
+        super::registry::Source::Bundled,
+        "anthropic",
+        None,
+        &mut models,
+    );
+    assert_eq!(models[0].display.as_deref(), Some("Claude Opus 5.5"));
+    assert_eq!(models[0].context, Some(1_000_000));
+    assert_eq!(models[0].family.as_deref(), Some("claude-opus"));
+    assert!(models[0].vision && models[0].reasoning);
+    assert_eq!(models[0].cost, super::Cost::Metered);
+    let price = models[0].price.expect("bundled model price");
+    assert_eq!(
+        (price.input, price.output, price.cached, price.cache_write),
+        (4.0, 20.0, 0.2, Some(5.0))
+    );
 }
 
 #[test]

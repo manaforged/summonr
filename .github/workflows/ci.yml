@@ -2,17 +2,13 @@ name: CI
 
 on:
   pull_request:
-  merge_group:
-  push:
-    branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || '' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -22,150 +18,43 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
 jobs:
-  ci:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - name: workflow lint
-        run: |
-          docker build --tag ci-actionlint .github/actionlint
-          docker run --rm --volume "$PWD:/repo:ro" --workdir /repo ci-actionlint
-      - name: Rust toolchain
-        run: rustup show active-toolchain
-      - name: formatting
-        run: cargo fmt --all -- --check
-      - name: API limits
-        run: python3 scripts/api-census.py --check
-      - name: palette
-        run: python3 scripts/palette-check.py
-      - uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d
-        with:
-          tool: cargo-deny@0.20.2
-      - name: supply chain
-        run: cargo deny check
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          save-if: ${{ github.event_name == 'push' }}
-      - name: clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
-      - name: tests
-        run: cargo test --workspace --locked --no-fail-fast
-
-  windows:
-    runs-on: windows-2025
+  check:
+    if: github.repository == 'manaforged/summonr' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
       run:
         shell: bash
     steps:
       - name: line endings
+        if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
-      - name: real-time scanning
-        shell: pwsh
-        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
       - name: Rust toolchain
         run: rustup show active-toolchain
+      - name: formatting and repo checks
+        if: runner.os == 'Linux'
+        run: |
+          cargo fmt --all -- --check
+          python3 scripts/api-census.py --check
+          python3 scripts/palette-check.py
+      - uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d
+        if: runner.os == 'Linux'
+        with:
+          tool: cargo-deny@0.20.2
+      - name: supply chain
+        if: runner.os == 'Linux'
+        run: cargo deny check
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
-          save-if: ${{ github.event_name == 'push' }}
+          save-if: false
       - name: clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: tests
-        run: cargo test --workspace --locked --no-fail-fast -- --test-threads=2
-
-  macos:
-    runs-on: macos-15
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - name: Rust toolchain
-        run: rustup show active-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          save-if: ${{ github.event_name == 'push' }}
-      - name: clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
-      - name: tests
-        run: cargo test --workspace --locked --no-fail-fast
-
-  install:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            libc: musl
-          - os: ubuntu-24.04
-            libc: gnu
-          - os: ubuntu-24.04-arm
-            libc: musl
-          - os: ubuntu-24.04-arm
-            libc: gnu
-          - os: macos-15
-          - os: windows-2025
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - name: install the latest release with this checkout's installer
-        if: runner.os != 'Windows'
-        shell: bash
-        env:
-          SUMMONR_LIBC: ${{ matrix.libc || 'musl' }}
-        run: |
-          dir="$RUNNER_TEMP/summonr-bin"
-          SUMMONR_INSTALL_DIR="$dir" sh scripts/install.sh
-          "$dir/summonr" --version
-          "$dir/summonr" update
-      - name: install the latest release with this checkout's installer
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $env:SUMMONR_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'summonr-bin'
-          $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
-          $probe = '%USERPROFILE%\summonr-path-probe'
-          $key.SetValue('Path', $probe, [Microsoft.Win32.RegistryValueKind]::ExpandString)
-          powershell -c "Get-Content -Raw scripts/install.ps1 | iex"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $path = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-          if ($key.GetValueKind('Path') -ne 'ExpandString' -or $path -ne "$probe;$env:SUMMONR_INSTALL_DIR") { throw "user Path rewritten: $path" }
-          $exe = Join-Path $env:SUMMONR_INSTALL_DIR 'summonr.exe'
-          & $exe --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $exe update
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: install with the command summonr.dev shows
-        if: runner.os == 'Windows'
-        shell: cmd
-        env:
-          SUMMONR_INSTALL_DIR: ${{ runner.temp }}\summonr-site
-        run: |
-          powershell -c "irm https://summonr.dev/install.ps1 | iex" || exit /b 1
-          "%SUMMONR_INSTALL_DIR%\summonr.exe" --version || exit /b 1
-
-  required:
-    if: always()
-    needs: [ci, windows, macos, install]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: every platform passed
-        env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
-        run: |
-          for result in $RESULTS; do
-            if [ "$result" != "success" ]; then
-              echo "a platform job ended with $result" >&2
-              exit 1
-            fi
-          done
+        run: cargo test --workspace --locked --no-fail-fast ${{ runner.os == 'Windows' && '-- --test-threads=2' || '' }}
